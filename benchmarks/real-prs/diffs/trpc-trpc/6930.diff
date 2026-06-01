@@ -1,0 +1,1671 @@
+diff --git a/.cursor/rules/coding-guidelines.mdc b/.cursor/rules/coding-guidelines.mdc
+index 541af856891..e2d3f0cc531 100644
+--- a/.cursor/rules/coding-guidelines.mdc
++++ b/.cursor/rules/coding-guidelines.mdc
+@@ -1,6 +1,6 @@
+ ---
+ description: tRPC coding style guidelines and conventions
+-globs: ['**/*.ts', '**/*.tsx']
++globs: ['**/*.ts', '**/*.tsx', '**/*.mdx', '**/*.md']
+ alwaysApply: false
+ ---
+ 
+@@ -36,16 +36,40 @@ import { AnyRouter, initTRPC } from '@trpc/server';
+ 
+ ### Variable Declarations
+ 
+-- **AVOID** destructuring in most cases (project convention)
+-- Prefer explicit variable assignments for better readability
++- **AVOID** overzealous destructuring and use accessors instead
++- **EXCEPTION**: Object destructuring is acceptable when a variable is used 3+ times
++- **PREFER** array destructuring, but avoid sparse array destructuring
++- **NEVER** use destructuring in function parameter declarations
++- **AVOID** destructuring potentially nullish nested properties
++- Use destructuring sparingly - prefer direct property access
+ 
+ ```typescript
+-// ✅ PREFERRED (following project patterns)
+-const client = ctx.client;
+-const httpUrl = ctx.httpUrl;
++// ✅ BEST - access directly without extracting
++function createClient(opts: ClientOptions) {
++  // Use opts.url and opts.transformer directly
++  return new Client(opts.url, opts.transformer);
++}
++
++// ✅ ACCEPTABLE - object destructuring when variable used 3+ times
++const { client } = ctx;
++const result1 = client.query();
++const result2 = client.mutate();
++const result3 = client.subscribe();
++
++// ✅ PREFERRED - array destructuring (but use judiciously)
++const [text, setText] = useState('');
++const [first, second] = tuple;
+ 
+-// ❌ AVOID destructuring (unless absolutely necessary)
++// ❌ AVOID object destructuring for variables used 1-2 times
+ const { client, httpUrl } = ctx;
++
++// ❌ AVOID sparse array destructuring
++const [first, , , fourth] = someArray; // Don't skip unless needed
++
++// ❌ NEVER destructure in function parameters
++function createClient({ url, transformer }: ClientOptions) {
++  // Don't do this
++}
+ ```
+ 
+ ### Function Parameters
+diff --git a/.cursor/rules/pnpm.mdc b/.cursor/rules/pnpm.mdc
+new file mode 100644
+index 00000000000..6b9c0586911
+--- /dev/null
++++ b/.cursor/rules/pnpm.mdc
+@@ -0,0 +1,7 @@
++---
++alwaysApply: true
++---
++
++# Use pnpm
++
++Always use pnpm as a package manager instead of yarn, bun, or npm.
+diff --git a/.cursor/rules/test-running.mdc b/.cursor/rules/test-running.mdc
+new file mode 100644
+index 00000000000..ff64068fbb6
+--- /dev/null
++++ b/.cursor/rules/test-running.mdc
+@@ -0,0 +1,16 @@
++---
++alwaysApply: true
++---
++
++# Test without watch
++
++When running tests, use the `--watch false` flag to avoid watch mode:
++
++We're using Vitest workspaces for testing.
++
++Examples:
++
++- `pnpm test -- --watch false`
++- `pnpm test -- --watch false <test-file>`
++
++Tests are always run from the root of the project, even if you're in a subdirectory.
+diff --git a/examples/express-server/src/server.ts b/examples/express-server/src/server.ts
+index 2dfcecfdbb7..f0268f12817 100644
+--- a/examples/express-server/src/server.ts
++++ b/examples/express-server/src/server.ts
+@@ -85,16 +85,16 @@ const appRouter = router({
+   post: postRouter,
+   message: messageRouter,
+   // or individual procedures
+-  hello: publicProcedure.input(z.string().nullish()).query(({ input, ctx }) => {
+-    return `hello ${input ?? ctx.user?.name ?? 'world'}`;
++  hello: publicProcedure.input(z.string().nullish()).query((opts) => {
++    return `hello ${opts.input ?? opts.ctx.user?.name ?? 'world'}`;
+   }),
+   // or inline a router
+   admin: router({
+-    secret: publicProcedure.query(({ ctx }) => {
+-      if (!ctx.user) {
++    secret: publicProcedure.query((opts) => {
++      if (!opts.ctx.user) {
+         throw new TRPCError({ code: 'UNAUTHORIZED' });
+       }
+-      if (ctx.user?.name !== 'alex') {
++      if (opts.ctx.user?.name !== 'alex') {
+         throw new TRPCError({ code: 'FORBIDDEN' });
+       }
+       return {
+diff --git a/examples/fastify-server/src/server/router/context.ts b/examples/fastify-server/src/server/router/context.ts
+index 673ef6a8465..dbe64e68a66 100644
+--- a/examples/fastify-server/src/server/router/context.ts
++++ b/examples/fastify-server/src/server/router/context.ts
+@@ -4,10 +4,10 @@ export interface User {
+   name: string[] | string;
+ }
+ 
+-export function createContext({ req, res }: CreateFastifyContextOptions) {
+-  const user: User = { name: req.headers.username ?? 'anonymous' };
++export function createContext(opts: CreateFastifyContextOptions) {
++  const user: User = { name: opts.req.headers.username ?? 'anonymous' };
+ 
+-  return { req, res, user };
++  return { req: opts.req, res: opts.res, user };
+ }
+ 
+ export type Context = Awaited<ReturnType<typeof createContext>>;
+diff --git a/examples/lambda-api-gateway/src/server.ts b/examples/lambda-api-gateway/src/server.ts
+index cc47c2e700d..fd218facc5e 100644
+--- a/examples/lambda-api-gateway/src/server.ts
++++ b/examples/lambda-api-gateway/src/server.ts
+@@ -22,11 +22,9 @@ const publicProcedure = t.procedure;
+ const router = t.router;
+ 
+ const appRouter = router({
+-  greet: publicProcedure
+-    .input(z.object({ name: z.string() }))
+-    .query(({ input, ctx }) => {
+-      return `Greetings, ${input.name}. x-user?: ${ctx.user}.`;
+-    }),
++  greet: publicProcedure.input(z.object({ name: z.string() })).query((opts) => {
++    return `Greetings, ${opts.input.name}. x-user?: ${opts.ctx.user}.`;
++  }),
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/examples/lambda-url/src/server.ts b/examples/lambda-url/src/server.ts
+index 6499b5d198f..68e6e7eac2b 100644
+--- a/examples/lambda-url/src/server.ts
++++ b/examples/lambda-url/src/server.ts
+@@ -23,11 +23,9 @@ const publicProcedure = t.procedure;
+ const router = t.router;
+ 
+ const appRouter = router({
+-  greet: publicProcedure
+-    .input(z.object({ name: z.string() }))
+-    .query(({ input, ctx }) => {
+-      return `Greetings, ${input.name}. x-user?: ${ctx.user}.`;
+-    }),
++  greet: publicProcedure.input(z.object({ name: z.string() })).query((opts) => {
++    return `Greetings, ${opts.input.name}. x-user?: ${opts.ctx.user}.`;
++  }),
+   iterable: publicProcedure.query(async function* () {
+     for (let i = 0; i < 10; i++) {
+       await new Promise((resolve) => setTimeout(resolve, 500));
+diff --git a/examples/next-prisma-starter/src/utils/trpc.ts b/examples/next-prisma-starter/src/utils/trpc.ts
+index ace435bde78..570af311401 100644
+--- a/examples/next-prisma-starter/src/utils/trpc.ts
++++ b/examples/next-prisma-starter/src/utils/trpc.ts
+@@ -46,7 +46,7 @@ export interface SSRContext extends NextPageContext {
+  * @see https://trpc.io/docs/v11/react#3-create-trpc-hooks
+  */
+ export const trpc = createTRPCNext<AppRouter, SSRContext>({
+-  config({ ctx }) {
++  config(config) {
+     /**
+      * If you want to use SSR, you need to use the server's full URL
+      * @see https://trpc.io/docs/v11/ssr
+@@ -69,7 +69,7 @@ export const trpc = createTRPCNext<AppRouter, SSRContext>({
+            * @see https://trpc.io/docs/v11/ssr
+            */
+           headers() {
+-            if (!ctx?.req?.headers) {
++            if (!config.ctx?.req?.headers) {
+               return {};
+             }
+             // To use SSR properly, you need to forward the client's headers to the server
+@@ -79,7 +79,7 @@ export const trpc = createTRPCNext<AppRouter, SSRContext>({
+               // If you're using Node 18 before 18.15.0, omit the "connection" header
+               connection: _connection,
+               ...headers
+-            } = ctx.req.headers;
++            } = config.ctx.req.headers;
+             return headers;
+           },
+           /**
+diff --git a/examples/next-prisma-websockets-starter/next-env.d.ts b/examples/next-prisma-websockets-starter/next-env.d.ts
+index a4a7b3f5cfa..52e831b4342 100644
+--- a/examples/next-prisma-websockets-starter/next-env.d.ts
++++ b/examples/next-prisma-websockets-starter/next-env.d.ts
+@@ -2,4 +2,4 @@
+ /// <reference types="next/image-types/global" />
+ 
+ // NOTE: This file should not be edited
+-// see https://nextjs.org/docs/pages/building-your-application/configuring/typescript for more information.
++// see https://nextjs.org/docs/pages/api-reference/config/typescript for more information.
+diff --git a/examples/next-prisma-websockets-starter/src/server/routers/post.ts b/examples/next-prisma-websockets-starter/src/server/routers/post.ts
+index caea922f03b..8f8b4d19a76 100644
+--- a/examples/next-prisma-websockets-starter/src/server/routers/post.ts
++++ b/examples/next-prisma-websockets-starter/src/server/routers/post.ts
+@@ -58,7 +58,8 @@ export const postRouter = router({
+         text: z.string().min(1),
+       }),
+     )
+-    .mutation(async ({ input, ctx }) => {
++    .mutation(async (opts) => {
++      const { input, ctx } = opts;
+       const { name } = ctx.user;
+       const post = await prisma.post.create({
+         data: {
+@@ -75,7 +76,8 @@ export const postRouter = router({
+ 
+   isTyping: authedProcedure
+     .input(z.object({ typing: z.boolean() }))
+-    .mutation(({ input, ctx }) => {
++    .mutation((opts) => {
++      const { input, ctx } = opts;
+       const { name } = ctx.user;
+       if (!input.typing) {
+         delete currentlyTyping[name];
+@@ -94,7 +96,8 @@ export const postRouter = router({
+         take: z.number().min(1).max(50).nullish(),
+       }),
+     )
+-    .query(async ({ input }) => {
++    .query(async (opts) => {
++      const { input } = opts;
+       const take = input.take ?? 10;
+       const cursor = input.cursor;
+ 
+diff --git a/examples/next-prisma-websockets-starter/src/utils/trpc.ts b/examples/next-prisma-websockets-starter/src/utils/trpc.ts
+index a0701ceb087..57014cf40d0 100644
+--- a/examples/next-prisma-websockets-starter/src/utils/trpc.ts
++++ b/examples/next-prisma-websockets-starter/src/utils/trpc.ts
+@@ -62,7 +62,7 @@ export const trpc = createTRPCNext<AppRouter>({
+    */
+   ssr: true,
+   ssrPrepass,
+-  config({ ctx }) {
++  config(config) {
+     /**
+      * If you want to use SSR, you need to use the server's full URL
+      * @see https://trpc.io/docs/v11/ssr
+@@ -80,7 +80,7 @@ export const trpc = createTRPCNext<AppRouter>({
+               typeof window !== 'undefined') ||
+             (opts.direction === 'down' && opts.result instanceof Error),
+         }),
+-        getEndingLink(ctx),
++        getEndingLink(config.ctx),
+       ],
+       /**
+        * @see https://tanstack.com/query/v5/docs/reference/QueryClient
+diff --git a/examples/next-sse-chat/src/server/routers/channel.ts b/examples/next-sse-chat/src/server/routers/channel.ts
+index 93a517b13ce..41ef60aee94 100644
+--- a/examples/next-sse-chat/src/server/routers/channel.ts
++++ b/examples/next-sse-chat/src/server/routers/channel.ts
+@@ -53,11 +53,11 @@ export const channelRouter = {
+ 
+   create: authedProcedure
+     .input(z.object({ name: z.string().trim().min(2) }))
+-    .mutation(async ({ ctx, input }) => {
++    .mutation(async (opts) => {
+       const [channel] = await db
+         .insert(Channel)
+         .values({
+-          name: input.name,
++          name: opts.input.name,
+         })
+         .returning();
+ 
+diff --git a/packages/client/src/links/httpLink.ts b/packages/client/src/links/httpLink.ts
+index c9b89810538..49573e6aec4 100644
+--- a/packages/client/src/links/httpLink.ts
++++ b/packages/client/src/links/httpLink.ts
+@@ -77,7 +77,8 @@ export function httpLink<TRouter extends AnyRouter = AnyRouter>(
+ ): TRPCLink<TRouter> {
+   const resolvedOpts = resolveHTTPLinkOptions(opts);
+   return () => {
+-    return ({ op }) => {
++    return (operationOpts) => {
++      const { op } = operationOpts;
+       return observable((observer) => {
+         const { path, input, type } = op;
+         /* istanbul ignore if -- @preserve */
+diff --git a/packages/react-query/test/useMutation.test.tsx b/packages/react-query/test/useMutation.test.tsx
+index 9e634c82a3e..cceba6c0929 100644
+--- a/packages/react-query/test/useMutation.test.tsx
++++ b/packages/react-query/test/useMutation.test.tsx
+@@ -34,11 +34,14 @@ const ctx = konn()
+               text: z.string(),
+             }),
+           )
+-          .mutation(({ input }) => ({
+-            id: 1,
+-            text: input.text,
+-            date: new Date(),
+-          })),
++          .mutation((opts) => {
++            const { input } = opts;
++            return {
++              id: 1,
++              text: input.text,
++              date: new Date(),
++            };
++          }),
+       }),
+     });
+ 
+diff --git a/packages/react-query/test/useQuery.test.tsx b/packages/react-query/test/useQuery.test.tsx
+index fad14c162da..c1270de50e3 100644
+--- a/packages/react-query/test/useQuery.test.tsx
++++ b/packages/react-query/test/useQuery.test.tsx
+@@ -44,7 +44,8 @@ const ctx = konn()
+               cursor: z.number().default(0),
+             }),
+           )
+-          .query(({ input }) => {
++          .query((opts) => {
++            const { input } = opts;
+             return {
+               items: fixtureData.slice(input.cursor, input.cursor + 1),
+               next:
+diff --git a/packages/server/src/unstable-core-do-not-import/router.ts b/packages/server/src/unstable-core-do-not-import/router.ts
+index 4af5920530c..c7414c745e3 100644
+--- a/packages/server/src/unstable-core-do-not-import/router.ts
++++ b/packages/server/src/unstable-core-do-not-import/router.ts
+@@ -449,7 +449,8 @@ export function createCallerFactory<
+ 
+     return function createCaller(ctxOrCallback, opts) {
+       return createRecursiveProxy<ReturnType<RouterCaller<any, any>>>(
+-        async ({ path, args }) => {
++        async (innerOpts) => {
++          const { path, args } = innerOpts;
+           const fullPath = path.join('.');
+ 
+           if (path.length === 1 && path[0] === '_def') {
+diff --git a/packages/tests/server/adapters/awsLambda.test.tsx b/packages/tests/server/adapters/awsLambda.test.tsx
+index dc11358e875..893507c1a3c 100644
+--- a/packages/tests/server/adapters/awsLambda.test.tsx
++++ b/packages/tests/server/adapters/awsLambda.test.tsx
+@@ -50,8 +50,8 @@ const router = t.router({
+         })
+         .nullish(),
+     )
+-    .query(({ input, ctx }) => ({
+-      text: `hello ${input?.who ?? ctx?.user ?? 'world'}`,
++    .query((opts) => ({
++      text: `hello ${opts.input?.who ?? opts.ctx?.user ?? 'world'}`,
+     })),
+   echo: t.procedure
+     .input(
+@@ -75,7 +75,7 @@ const router = t.router({
+       };
+     }),
+   request: t.router({
+-    info: t.procedure.query(({ ctx }) => ctx.info),
++    info: t.procedure.query((opts) => opts.ctx.info),
+   }),
+   iterable: t.procedure.query(async function* () {
+     for (let i = 0; i < 3; i++) {
+diff --git a/packages/tests/server/adapters/express.test.tsx b/packages/tests/server/adapters/express.test.tsx
+index 40abea4575e..789b6057c50 100644
+--- a/packages/tests/server/adapters/express.test.tsx
++++ b/packages/tests/server/adapters/express.test.tsx
+@@ -31,17 +31,17 @@ export const router = t.router({
+         })
+         .nullish(),
+     )
+-    .query(({ input, ctx }) => ({
+-      text: `hello ${input?.who ?? ctx.user?.name ?? 'world'}`,
++    .query((opts) => ({
++      text: `hello ${opts.input?.who ?? opts.ctx.user?.name ?? 'world'}`,
+     })),
+   helloMutation: t.procedure
+     .input(z.string())
+-    .mutation(({ input }) => `hello ${input}`),
++    .mutation((opts) => `hello ${opts.input}`),
+   request: t.router({
+-    info: t.procedure.query(({ ctx }) => {
++    info: t.procedure.query((opts) => {
+       return {
+-        ...ctx.info,
+-        url: ctx.info.url?.href ?? null,
++        ...opts.ctx.info,
++        url: opts.ctx.info.url?.href ?? null,
+       };
+     }),
+   }),
+diff --git a/packages/tests/server/adapters/fastify.test.ts b/packages/tests/server/adapters/fastify.test.ts
+index 7ecfd6cfe98..29fdcbc70f8 100644
+--- a/packages/tests/server/adapters/fastify.test.ts
++++ b/packages/tests/server/adapters/fastify.test.ts
+@@ -52,8 +52,8 @@ function createAppRouter() {
+     ping: publicProcedure.query(() => {
+       return 'pong';
+     }),
+-    echo: publicProcedure.input(z.string()).query(({ input }) => {
+-      return input;
++    echo: publicProcedure.input(z.string()).query((opts) => {
++      return opts.input;
+     }),
+     hello: publicProcedure
+       .input(
+@@ -63,12 +63,12 @@ function createAppRouter() {
+           })
+           .nullish(),
+       )
+-      .query(({ input, ctx }) => ({
+-        text: `hello ${input?.username ?? ctx.user?.name ?? 'world'}`,
++      .query((opts) => ({
++        text: `hello ${opts.input?.username ?? opts.ctx.user?.name ?? 'world'}`,
+       })),
+     helloMutation: publicProcedure
+       .input(z.string())
+-      .mutation(({ input }) => `hello ${input}`),
++      .mutation((opts) => `hello ${opts.input}`),
+     editPost: publicProcedure
+       .input(
+         z.object({
+@@ -79,11 +79,11 @@ function createAppRouter() {
+           }),
+         }),
+       )
+-      .mutation(async ({ input, ctx }) => {
+-        if (ctx.user.name === 'anonymous') {
++      .mutation(async (opts) => {
++        if (opts.ctx.user.name === 'anonymous') {
+           return { error: 'Unauthorized user' };
+         }
+-        const { id, data } = input;
++        const { id, data } = opts.input;
+         return { id, ...data };
+       }),
+     onMessage: publicProcedure.input(z.string()).subscription(() => {
+@@ -102,10 +102,10 @@ function createAppRouter() {
+       return sub;
+     }),
+     request: router({
+-      info: publicProcedure.query(({ ctx }) => {
++      info: publicProcedure.query((opts) => {
+         return {
+-          ...ctx.info,
+-          url: ctx.info.url?.href ?? null,
++          ...opts.ctx.info,
++          url: opts.ctx.info.url?.href ?? null,
+         };
+       }),
+     }),
+diff --git a/packages/tests/server/adapters/fetch.test.ts b/packages/tests/server/adapters/fetch.test.ts
+index 683a96b2f96..81e6d9feebf 100644
+--- a/packages/tests/server/adapters/fetch.test.ts
++++ b/packages/tests/server/adapters/fetch.test.ts
+@@ -43,11 +43,11 @@ function createAppRouter() {
+           })
+           .nullish(),
+       )
+-      .query(({ input, ctx }) => ({
+-        text: `hello ${input?.who ?? ctx.user?.name ?? 'world'}`,
++      .query((opts) => ({
++        text: `hello ${opts.input?.who ?? opts.ctx.user?.name ?? 'world'}`,
+       })),
+-    foo: publicProcedure.query(({ ctx }) => {
+-      ctx.resHeaders.set('x-foo', 'bar');
++    foo: publicProcedure.query((opts) => {
++      opts.ctx.resHeaders.set('x-foo', 'bar');
+       return 'foo';
+     }),
+     deferred: publicProcedure
+diff --git a/packages/tests/server/createCaller.test.ts b/packages/tests/server/createCaller.test.ts
+index 68ced021fda..f2aa49a1a1b 100644
+--- a/packages/tests/server/createCaller.test.ts
++++ b/packages/tests/server/createCaller.test.ts
+@@ -222,7 +222,7 @@ test('context with middleware', async () => {
+   const protectedProcedure = t.procedure.use(isAuthed);
+ 
+   const router = t.router({
+-    secret: protectedProcedure.query(({ ctx }) => ctx.foo),
++    secret: protectedProcedure.query((opts) => opts.ctx.foo),
+   });
+ 
+   const caller = router.createCaller({});
+diff --git a/packages/tests/server/errors.test.ts b/packages/tests/server/errors.test.ts
+index 7f455877113..a9b7c2f7bf2 100644
+--- a/packages/tests/server/errors.test.ts
++++ b/packages/tests/server/errors.test.ts
+@@ -267,8 +267,8 @@ Object {
+     const TEAPOT_ERROR_CODE = 418;
+     const onError = vi.fn();
+     const t = initTRPC.context<CreateHTTPContextOptions>().create({});
+-    const middleware = t.middleware(({ ctx }) => {
+-      ctx.res.statusCode = TEAPOT_ERROR_CODE;
++    const middleware = t.middleware((opts) => {
++      opts.ctx.res.statusCode = TEAPOT_ERROR_CODE;
+       throw new Error('Some error');
+     });
+ 
+diff --git a/packages/tests/server/headers.test.tsx b/packages/tests/server/headers.test.tsx
+index f004b9375fb..dfa7e82b09c 100644
+--- a/packages/tests/server/headers.test.tsx
++++ b/packages/tests/server/headers.test.tsx
+@@ -11,9 +11,9 @@ describe('pass headers', () => {
+   const t = initTRPC.context<Context>().create();
+ 
+   const appRouter = t.router({
+-    hello: t.procedure.query(({ ctx }) => {
++    hello: t.procedure.query((opts) => {
+       return {
+-        'x-special': ctx.headers['x-special'],
++        'x-special': opts.ctx.headers['x-special'],
+       };
+     }),
+   });
+diff --git a/packages/tests/server/index.test.ts b/packages/tests/server/index.test.ts
+index 55e8943962a..578c397cf41 100644
+--- a/packages/tests/server/index.test.ts
++++ b/packages/tests/server/index.test.ts
+@@ -56,7 +56,8 @@ test('merge', async () => {
+ 
+   const posts = t.router({
+     list: t.procedure.query(() => [{ text: 'initial' }]),
+-    create: t.procedure.input(z.string()).mutation(({ input }) => {
++    create: t.procedure.input(z.string()).mutation((opts) => {
++      const { input } = opts;
+       return { text: input };
+     }),
+   });
+@@ -79,7 +80,8 @@ describe('integration tests', () => {
+     const router = t.router({
+       hello: t.procedure
+         .input(z.object({ who: z.string() }).nullish())
+-        .query(({ input }) => {
++        .query((opts) => {
++          const { input } = opts;
+           return {
+             text: `hello ${input?.who ?? 'world'}`,
+           };
+@@ -107,7 +109,8 @@ describe('integration tests', () => {
+     const router = t.router({
+       hello: t.procedure
+         .input(z.object({ who: z.string() }).nullish())
+-        .query(({ input }) => {
++        .query((opts) => {
++          const { input } = opts;
+           expectTypeOf(input).toMatchTypeOf<Maybe<{ who: string }>>();
+           return {
+             text: `hello ${input?.who ?? 'world'}`,
+@@ -142,11 +145,13 @@ describe('integration tests', () => {
+ 
+     const snap = vi.fn();
+     const router = t.router({
+-      q: t.procedure.query(({ input }) => {
++      q: t.procedure.query((opts) => {
++        const { input } = opts;
+         snap(input);
+         return { text: 'hello' };
+       }),
+-      m: t.procedure.mutation(({ input }) => {
++      m: t.procedure.mutation((opts) => {
++        const { input } = opts;
+         snap(input);
+         return { text: 'hello' };
+       }),
+@@ -178,7 +183,8 @@ describe('integration tests', () => {
+       const router = t.router({
+         hello: t.procedure
+           .input(z.object({ who: z.string() }))
+-          .query(({ input }) => {
++          .query((opts) => {
++            const { input } = opts;
+             expectTypeOf(input).not.toBeAny();
+             expectTypeOf(input).toMatchTypeOf<{ who: string }>();
+ 
+@@ -204,7 +210,8 @@ describe('integration tests', () => {
+       const t = initTRPC.create();
+ 
+       const router = t.router({
+-        postById: t.procedure.input(z.number()).query(({ input }) => {
++        postById: t.procedure.input(z.number()).query((opts) => {
++          const { input } = opts;
+           if (input === 1) {
+             return {
+               id: 1,
+@@ -253,7 +260,8 @@ describe('integration tests', () => {
+       const t = initTRPC.context<Context>().create();
+ 
+       const router = t.router({
+-        whoami: t.procedure.query(({ ctx }) => {
++        whoami: t.procedure.query((opts) => {
++          const { ctx } = opts;
+           if (!ctx.user) {
+             throw new TRPCError({ code: 'UNAUTHORIZED' });
+           }
+@@ -303,7 +311,8 @@ describe('integration tests', () => {
+       const router = t.router({
+         hello: t.procedure
+           .input(z.object({ who: z.string() }).nullish())
+-          .query(({ input }) => {
++          .query((opts) => {
++            const { input } = opts;
+             expectTypeOf(input).not.toBeAny();
+             expectTypeOf(input).toMatchTypeOf<Input>();
+ 
+@@ -342,7 +351,8 @@ describe('integration tests', () => {
+               })
+               .nullish(),
+           )
+-          .mutation(({ input }) => {
++          .mutation((opts) => {
++            const { input } = opts;
+             expectTypeOf(input).not.toBeAny();
+             expectTypeOf(input).toMatchTypeOf<Input>();
+ 
+@@ -368,13 +378,16 @@ describe('createCaller()', () => {
+   const t = initTRPC.context<Context>().create();
+ 
+   const router = t.router({
+-    q: t.procedure.input(z.number()).query(({ input }) => {
++    q: t.procedure.input(z.number()).query((opts) => {
++      const { input } = opts;
+       return { input };
+     }),
+-    m: t.procedure.input(z.number()).mutation(({ input }) => {
++    m: t.procedure.input(z.number()).mutation((opts) => {
++      const { input } = opts;
+       return { input };
+     }),
+-    sub: t.procedure.input(z.number()).subscription(({ input }) => {
++    sub: t.procedure.input(z.number()).subscription((opts) => {
++      const { input } = opts;
+       return observable<{ input: typeof input }>((emit) => {
+         emit.next({ input });
+         return () => {
+@@ -413,13 +426,16 @@ describe('createCaller()', () => {
+   const t = initTRPC.context<Context>().create();
+ 
+   const router = t.router({
+-    q: t.procedure.input(z.number()).query(({ input }) => {
++    q: t.procedure.input(z.number()).query((opts) => {
++      const { input } = opts;
+       return { input };
+     }),
+-    m: t.procedure.input(z.number()).mutation(({ input }) => {
++    m: t.procedure.input(z.number()).mutation((opts) => {
++      const { input } = opts;
+       return { input };
+     }),
+-    sub: t.procedure.input(z.number()).subscription(({ input }) => {
++    sub: t.procedure.input(z.number()).subscription((opts) => {
++      const { input } = opts;
+       return observable<{ input: typeof input }>((emit) => {
+         emit.next({ input });
+         return () => {
+@@ -556,7 +572,8 @@ test('regression: JSON.stringify([undefined]) gives [null] causes wrong type to
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    q: t.procedure.input(z.string().optional()).query(({ input }) => {
++    q: t.procedure.input(z.string().optional()).query((opts) => {
++      const { input } = opts;
+       return { input };
+     }),
+   });
+@@ -593,9 +610,10 @@ describe('apply()', () => {
+   test('query with input', async () => {
+     const t = initTRPC.create();
+     const router = t.router({
+-      helloinput: t.procedure
+-        .input(z.string())
+-        .query(({ input }) => `hello ${input}`),
++      helloinput: t.procedure.input(z.string()).query((opts) => {
++        const { input } = opts;
++        return `hello ${input}`;
++      }),
+     });
+     const { close, client } = routerToServerAndClientNew(router);
+     expect(await client.helloinput.query.apply(undefined, ['world'])).toBe(
+@@ -619,9 +637,10 @@ describe('call()', () => {
+   test('query with input', async () => {
+     const t = initTRPC.create();
+     const router = t.router({
+-      helloinput: t.procedure
+-        .input(z.string())
+-        .query(({ input }) => `hello ${input}`),
++      helloinput: t.procedure.input(z.string()).query((opts) => {
++        const { input } = opts;
++        return `hello ${input}`;
++      }),
+     });
+     const { close, client } = routerToServerAndClientNew(router);
+     expect(await client.helloinput.query.call(this, 'world')).toBe(
+@@ -635,7 +654,10 @@ describe('call()', () => {
+     const router = t.router({
+       helloinput: t.procedure
+         .input(z.object({ text: z.string() }))
+-        .query(({ input }) => `hello ${input.text}`),
++        .query((opts) => {
++          const { input } = opts;
++          return `hello ${input.text}`;
++        }),
+     });
+     const { close, client } = routerToServerAndClientNew(router);
+     expect(await client.helloinput.query.call(this, { text: 'world' })).toBe(
+@@ -647,9 +669,10 @@ describe('call()', () => {
+   test('query with array input', async () => {
+     const t = initTRPC.create();
+     const router = t.router({
+-      helloinput: t.procedure
+-        .input(z.string().array())
+-        .query(({ input }) => `hello ${input.join(' ')}`),
++      helloinput: t.procedure.input(z.string().array()).query((opts) => {
++        const { input } = opts;
++        return `hello ${input.join(' ')}`;
++      }),
+     });
+     const { close, client } = routerToServerAndClientNew(router);
+     expect(await client.helloinput.query.call(this, ['world'])).toBe(
+diff --git a/packages/tests/server/middlewares.test.ts b/packages/tests/server/middlewares.test.ts
+index d4027bc83c0..610c9633c18 100644
+--- a/packages/tests/server/middlewares.test.ts
++++ b/packages/tests/server/middlewares.test.ts
+@@ -58,8 +58,8 @@ test('decorate independently', () => {
+     });
+   });
+ 
+-  t.procedure.use(bazMiddleware).query(({ ctx }) => {
+-    expectTypeOf(ctx).toEqualTypeOf<{
++  t.procedure.use(bazMiddleware).query((opts) => {
++    expectTypeOf(opts.ctx).toEqualTypeOf<{
+       user: User;
+       foo: 'foo';
+       bar: 'bar';
+@@ -244,7 +244,8 @@ test('pipe middlewares - inlined', async () => {
+ 
+   const testProcedure = t.procedure.use(bazMiddleware);
+   const router = t.router({
+-    test: testProcedure.query(({ ctx }) => {
++    test: testProcedure.query((opts) => {
++      const { ctx } = opts;
+       expect(ctx).toEqual({
+         init: 'init',
+         foo: 'foo',
+@@ -315,7 +316,8 @@ test('pipe middlewares - standalone', async () => {
+ 
+   const testProcedure = t.procedure.use(bazMiddleware);
+   const router = t.router({
+-    test: testProcedure.query(({ ctx }) => {
++    test: testProcedure.query((opts) => {
++      const { ctx } = opts;
+       expect(ctx).toEqual({
+         init: 'init',
+         foo: 'foo',
+@@ -389,8 +391,8 @@ test('pipe middlewares - failure', async () => {
+   const bazMiddleware = fooMiddleware.unstable_pipe(barMiddleware);
+ 
+   const testProcedure = t.procedure.use(bazMiddleware);
+-  testProcedure.query(({ ctx }) => {
+-    expectTypeOf(ctx).toEqualTypeOf<{
++  testProcedure.query((opts) => {
++    expectTypeOf(opts.ctx).toEqualTypeOf<{
+       init: { a: 'a' };
+       foo: 'foo';
+       bar: 'bar';
+@@ -432,7 +434,8 @@ test('pipe middlewares - override', async () => {
+ 
+   const testProcedure = t.procedure.use(barMiddleware);
+   const router = t.router({
+-    test: testProcedure.query(({ ctx }) => {
++    test: testProcedure.query((opts) => {
++      const { ctx } = opts;
+       expect(ctx).toEqual({
+         init: 'override',
+         foo: 'foo',
+@@ -496,7 +499,8 @@ test('pipe middlewares - failure', async () => {
+ 
+   const testProcedure = t.procedure.use(barMiddleware);
+   const router = t.router({
+-    test: testProcedure.query(({ ctx }) => {
++    test: testProcedure.query((opts) => {
++      const { ctx } = opts;
+       expect(ctx).toEqual({
+         init: 'override',
+         foo: 'foo',
+diff --git a/packages/tests/server/regression/issue-4321-context-union-inference.test.ts b/packages/tests/server/regression/issue-4321-context-union-inference.test.ts
+index 2564f503f1b..fdf0065518b 100644
+--- a/packages/tests/server/regression/issue-4321-context-union-inference.test.ts
++++ b/packages/tests/server/regression/issue-4321-context-union-inference.test.ts
+@@ -20,37 +20,37 @@ test('context union type is inferred correctly', async () => {
+     // This line was causing the union to be simplified away
+     // Bug was due to Overwrite mapping away the union
+     // Resolved by "distributing over the union members": https://stackoverflow.com/a/51691257
+-    .use(async ({ ctx, next }) => {
+-      expectTypeOf<ContextUnion>(ctx);
++    .use(async (opts) => {
++      expectTypeOf<ContextUnion>(opts.ctx);
+ 
+-      return await next();
++      return await opts.next();
+     });
+ 
+-  const protectedProcedure = baseProcedure.use(({ next, ctx }) => {
+-    expectTypeOf<ContextUnion>(ctx);
++  const protectedProcedure = baseProcedure.use((opts) => {
++    expectTypeOf<ContextUnion>(opts.ctx);
+ 
+     // we narrow the type of `user` and `session` by throwing when either are null
+-    if (!ctx.user || !ctx.session) {
+-      expectTypeOf<UnsetContext>(ctx);
++    if (!opts.ctx.user || !opts.ctx.session) {
++      expectTypeOf<UnsetContext>(opts.ctx);
+ 
+       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'not signed in' });
+     }
+ 
+-    expectTypeOf<SetContext>(ctx);
++    expectTypeOf<SetContext>(opts.ctx);
+ 
+-    return next({ ctx });
++    return opts.next({ ctx: opts.ctx });
+   });
+ 
+-  protectedProcedure.use(async ({ next, ctx }) => {
++  protectedProcedure.use(async (opts) => {
+     // Should be definitely defined
+-    ctx.user.id;
+-    ctx.session.id;
++    opts.ctx.user.id;
++    opts.ctx.session.id;
+ 
+-    expectTypeOf<SetContext>(ctx);
++    expectTypeOf<SetContext>(opts.ctx);
+ 
+-    return next({
++    return opts.next({
+       ctx: {
+-        ...ctx,
++        ...opts.ctx,
+       },
+     });
+   });
+diff --git a/packages/tests/server/regression/issue-4527-nested-middleware-root-context.test.ts b/packages/tests/server/regression/issue-4527-nested-middleware-root-context.test.ts
+index 2a79865b34d..5a612148b84 100644
+--- a/packages/tests/server/regression/issue-4527-nested-middleware-root-context.test.ts
++++ b/packages/tests/server/regression/issue-4527-nested-middleware-root-context.test.ts
+@@ -9,16 +9,16 @@ test('root context override on nested middlewares', () => {
+     }>()
+     .create();
+ 
+-  const enforceApiKey = t.middleware(async ({ ctx, next }) => {
+-    if (!ctx.apiKey) {
++  const enforceApiKey = t.middleware(async (opts) => {
++    if (!opts.ctx.apiKey) {
+       throw new TRPCError({ code: 'UNAUTHORIZED' });
+     }
+ 
+-    return next({ ctx: { apiKey: ctx.apiKey } });
++    return opts.next({ ctx: { apiKey: opts.ctx.apiKey } });
+   });
+ 
+-  const formDataMiddleware = t.middleware(async ({ next }) => {
+-    return next({ getRawInput: async () => new FormData() });
++  const formDataMiddleware = t.middleware(async (opts) => {
++    return opts.next({ getRawInput: async () => new FormData() });
+   });
+ 
+   // root context -> enforceApiKey -> formDataMiddleware
+diff --git a/packages/tests/server/regression/issue-5037-context-inference.test.ts b/packages/tests/server/regression/issue-5037-context-inference.test.ts
+index 0ecceb97d02..df2f96c465d 100644
+--- a/packages/tests/server/regression/issue-5037-context-inference.test.ts
++++ b/packages/tests/server/regression/issue-5037-context-inference.test.ts
+@@ -53,7 +53,7 @@ describe('context inference w/ middlewares', () => {
+     const bazQuxProcedure = baseProcedure.use(someMiddleware);
+ 
+     const appRouter = t.router({
+-      foo: bazQuxProcedure.input(z.string()).query(({ ctx }) => ctx),
++      foo: bazQuxProcedure.input(z.string()).query((opts) => opts.ctx),
+     });
+     type Output = inferRouterOutputs<typeof appRouter>['foo'];
+ 
+@@ -146,15 +146,15 @@ describe('context inference w/ middlewares', () => {
+     }
+ 
+     const t = makeTRPC<{ mything: string }>();
+-    t.publicProcedure.query(({ ctx }) => {
+-      expectTypeOf(ctx).toEqualTypeOf<{
++    t.publicProcedure.query((opts) => {
++      expectTypeOf(opts.ctx).toEqualTypeOf<{
+         mything: string;
+         req: any;
+         res: any;
+       }>();
+     });
+-    t.createProtectedProcedure().query(({ ctx }) => {
+-      expectTypeOf(ctx).toEqualTypeOf<{
++    t.createProtectedProcedure().query((opts) => {
++      expectTypeOf(opts.ctx).toEqualTypeOf<{
+         mything: string;
+         auth: {
+           stuff: string;
+diff --git a/packages/tests/server/regression/issue-5056-input-parser-standalone-mw-inference.test.ts b/packages/tests/server/regression/issue-5056-input-parser-standalone-mw-inference.test.ts
+index bbd6d0b8a28..4f880dbd916 100644
+--- a/packages/tests/server/regression/issue-5056-input-parser-standalone-mw-inference.test.ts
++++ b/packages/tests/server/regression/issue-5056-input-parser-standalone-mw-inference.test.ts
+@@ -43,8 +43,8 @@ describe('input/context proper narrowing in procedure chain', () => {
+     });
+ 
+     t.router({
+-      createProject: t.procedure.use(organizationCtx).mutation(({ ctx }) => {
+-        expectTypeOf(ctx).toEqualTypeOf<{ organizationId: string }>();
++      createProject: t.procedure.use(organizationCtx).mutation((opts) => {
++        expectTypeOf(opts.ctx).toEqualTypeOf<{ organizationId: string }>();
+       }),
+     });
+   });
+diff --git a/packages/tests/server/smoke.test.ts b/packages/tests/server/smoke.test.ts
+index 6f8df22f17d..35653d2db89 100644
+--- a/packages/tests/server/smoke.test.ts
++++ b/packages/tests/server/smoke.test.ts
+@@ -154,7 +154,7 @@ test('middleware', async () => {
+           },
+         });
+       })
+-      .query(({ ctx }) => `${ctx.prefix} ${ctx.user}`),
++      .query((opts) => `${opts.ctx.prefix} ${opts.ctx.user}`),
+   });
+   await using ctx = testServerAndClientResource(router);
+   expect(await ctx.client.greeting.query()).toBe('hello KATT');
+diff --git a/packages/tests/server/validators.test.ts b/packages/tests/server/validators.test.ts
+index a8a99bda838..fdf2101a06d 100644
+--- a/packages/tests/server/validators.test.ts
++++ b/packages/tests/server/validators.test.ts
+@@ -26,8 +26,8 @@ test('no validator', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    hello: t.procedure.query(({ input }) => {
+-      expectTypeOf(input).toBeUndefined();
++    hello: t.procedure.query((opts) => {
++      expectTypeOf(opts.input).toBeUndefined();
+       return 'test';
+     }),
+   });
+@@ -42,7 +42,8 @@ test('zod v3', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(zod3.number()).query(({ input }) => {
++    num: t.procedure.input(zod3.number()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -73,7 +74,8 @@ test('zod v3 async', async () => {
+   const input = zod3.string().refine(async (value) => value === 'foo');
+ 
+   const router = t.router({
+-    q: t.procedure.input(input).query(({ input }) => {
++    q: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeString();
+       return {
+         input,
+@@ -108,7 +110,8 @@ test('zod v4 transform mixed input/output', async () => {
+   });
+ 
+   const router = t.router({
+-    num: t.procedure.input(input).query(({ input }) => {
++    num: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input.length).toBeNumber();
+       return {
+         input,
+@@ -150,7 +153,8 @@ test('zod v4', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(zod4.number()).query(({ input }) => {
++    num: t.procedure.input(zod4.number()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -180,7 +184,8 @@ test('zod v4 async', async () => {
+   const input = zod4.string().refine(async (value) => value === 'foo');
+ 
+   const router = t.router({
+-    q: t.procedure.input(input).query(({ input }) => {
++    q: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeString();
+       return {
+         input,
+@@ -215,7 +220,8 @@ test('zod v4 transform mixed input/output', async () => {
+   });
+ 
+   const router = t.router({
+-    num: t.procedure.input(input).query(({ input }) => {
++    num: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input.length).toBeNumber();
+       return {
+         input,
+@@ -257,7 +263,8 @@ test('valibot v0', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(v0.parser(v0.number())).query(({ input }) => {
++    num: t.procedure.input(v0.parser(v0.number())).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -285,7 +292,8 @@ test('valibot v0 async', async () => {
+   );
+ 
+   const router = t.router({
+-    q: t.procedure.input(input).query(({ input }) => {
++    q: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeString();
+       return {
+         input,
+@@ -319,7 +327,8 @@ test('valibot v0 transform mixed input/output', async () => {
+   );
+ 
+   const router = t.router({
+-    num: t.procedure.input(input).query(({ input }) => {
++    num: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input.length).toBeNumber();
+       return {
+         input,
+@@ -352,7 +361,8 @@ test('valibot v1', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(v1.number()).query(({ input }) => {
++    num: t.procedure.input(v1.number()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -377,7 +387,8 @@ test('valibot v1 error type', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(v1.number()).query(({ input }) => {
++    num: t.procedure.input(v1.number()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -426,7 +437,8 @@ test('valibot v1 async', async () => {
+   );
+ 
+   const router = t.router({
+-    q: t.procedure.input(input).query(({ input }) => {
++    q: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeString();
+       return {
+         input,
+@@ -458,7 +470,8 @@ test('valibot v1 transform mixed input/output', async () => {
+   });
+ 
+   const router = t.router({
+-    num: t.procedure.input(input).query(({ input }) => {
++    num: t.procedure.input(input).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input.length).toBeNumber();
+       return {
+         input,
+@@ -491,7 +504,8 @@ test('superstruct', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(st.number()).query(({ input }) => {
++    num: t.procedure.input(st.number()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -514,7 +528,8 @@ test('yup', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(yup.number().required()).query(({ input }) => {
++    num: t.procedure.input(yup.number().required()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toMatchTypeOf<number>();
+       return {
+         input,
+@@ -537,7 +552,8 @@ test('scale', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input($.i8).query(({ input }) => {
++    num: t.procedure.input($.i8).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toMatchTypeOf<number>();
+       return {
+         input,
+@@ -560,7 +576,8 @@ test('myzod', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(myzod.number()).query(({ input }) => {
++    num: t.procedure.input(myzod.number()).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toMatchTypeOf<number>();
+       return {
+         input,
+@@ -581,14 +598,13 @@ test('arktype v2 schema', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure
+-      .input(arktype.type({ text: 'string' }))
+-      .query(({ input }) => {
+-        expectTypeOf(input).toEqualTypeOf<{ text: string }>();
+-        return {
+-          input,
+-        };
+-      }),
++    num: t.procedure.input(arktype.type({ text: 'string' })).query((opts) => {
++      const { input } = opts;
++      expectTypeOf(input).toEqualTypeOf<{ text: string }>();
++      return {
++        input,
++      };
++    }),
+   });
+ 
+   const { close, client } = routerToServerAndClientNew(router);
+@@ -608,7 +624,8 @@ test('effect schema', async () => {
+   const router = t.router({
+     num: t.procedure
+       .input(Schema.standardSchemaV1(Schema.Struct({ text: Schema.String })))
+-      .query(({ input }) => {
++      .query((opts) => {
++        const { input } = opts;
+         expectTypeOf(input).toEqualTypeOf<{ readonly text: string }>();
+         return {
+           input,
+@@ -631,7 +648,8 @@ test('runtypes', async () => {
+   const t = initTRPC.create();
+ 
+   const router = t.router({
+-    num: t.procedure.input(T.Object({ text: T.String })).query(({ input }) => {
++    num: t.procedure.input(T.Object({ text: T.String })).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toMatchTypeOf<{ text: string }>();
+       return {
+         input,
+@@ -661,7 +679,8 @@ test('validator fn', async () => {
+   };
+ 
+   const router = t.router({
+-    num: t.procedure.input(numParser).query(({ input }) => {
++    num: t.procedure.input(numParser).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+@@ -688,7 +707,8 @@ test('async validator fn', async () => {
+   }
+ 
+   const router = t.router({
+-    num: t.procedure.input(numParser).query(({ input }) => {
++    num: t.procedure.input(numParser).query((opts) => {
++      const { input } = opts;
+       expectTypeOf(input).toBeNumber();
+       return {
+         input,
+diff --git a/packages/tests/showcase/dataloader.test.ts b/packages/tests/showcase/dataloader.test.ts
+index d05038bb566..275a3b9ac87 100644
+--- a/packages/tests/showcase/dataloader.test.ts
++++ b/packages/tests/showcase/dataloader.test.ts
+@@ -37,7 +37,7 @@ const ctx = konn()
+               id: z.number(),
+             }),
+           )
+-          .query(({ input, ctx }) => ctx.postLoader.load(input.id)),
++          .query((opts) => opts.ctx.postLoader.load(opts.input.id)),
+       }),
+     });
+     return routerToServerAndClientNew(appRouter, {
+diff --git a/www/blog/2024-05-23-trpc-actions.mdx b/www/blog/2024-05-23-trpc-actions.mdx
+index 13a50fe3fa9..3e5d31063b7 100644
+--- a/www/blog/2024-05-23-trpc-actions.mdx
++++ b/www/blog/2024-05-23-trpc-actions.mdx
+@@ -174,7 +174,7 @@ export const createPost = protectedAction
+       title: z.string(),
+     }),
+   )
+-  .mutation(async ({ ctx, input }) => {
++  .mutation(async (opts) => {
+     // Do something with the input
+   });
+ 
+@@ -247,7 +247,7 @@ You can use `@baselime/node-opentelemtry`'s trpc plugin to add observability in
+         title: z.string(),
+       }),
+     )
+-    .mutation(async ({ ctx, input }) => {
++    .mutation(async (opts) => {
+       // Do something with the input
+     });
+ ```
+@@ -311,9 +311,9 @@ export const commentOnPost = rateLimitedAction
+       content: z.string(),
+     }),
+   )
+-  .mutation(async ({ ctx, input }) => {
++  .mutation(async (opts) => {
+     console.log(
+-      `${ctx.user.name} commented on ${input.postId} saying ${input.content}`,
++      `${opts.ctx.user.name} commented on ${opts.input.postId} saying ${opts.input.content}`,
+     );
+   });
+ ```
+diff --git a/www/docs/client/headers.md b/www/docs/client/headers.md
+index 17a4772f342..a25c698c19e 100644
+--- a/www/docs/client/headers.md
++++ b/www/docs/client/headers.md
+@@ -26,7 +26,7 @@ export function setToken(newToken: string) {
+ }
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     return {
+       links: [
+         httpBatchLink({
+diff --git a/www/docs/client/nextjs/setup.mdx b/www/docs/client/nextjs/setup.mdx
+index 7c122475cfa..9fd8d23a493 100644
+--- a/www/docs/client/nextjs/setup.mdx
++++ b/www/docs/client/nextjs/setup.mdx
+@@ -162,7 +162,7 @@ function getBaseUrl() {
+ }
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     return {
+       links: [
+         httpBatchLink({
+@@ -264,7 +264,7 @@ import { createTRPCNext } from '@trpc/next';
+ import type { AppRouter } from '../pages/api/trpc/[trpc]';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     /* [...] */
+   },
+ });
+diff --git a/www/docs/client/nextjs/ssg.md b/www/docs/client/nextjs/ssg.md
+index 43fae9d7e7e..f438aa89d64 100644
+--- a/www/docs/client/nextjs/ssg.md
++++ b/www/docs/client/nextjs/ssg.md
+@@ -115,7 +115,7 @@ import { createTRPCNext } from '@trpc/next';
+ import superjson from 'superjson';
+ import type { AppRouter } from './api/trpc/[trpc]';
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     return {
+       links: [
+         httpBatchLink({
+diff --git a/www/docs/client/nextjs/ssr.md b/www/docs/client/nextjs/ssr.md
+index 2d819c50cdf..b56e8551a3f 100644
+--- a/www/docs/client/nextjs/ssr.md
++++ b/www/docs/client/nextjs/ssr.md
+@@ -28,7 +28,7 @@ import type { AppRouter } from './api/trpc/[trpc]';
+ export const trpc = createTRPCNext<AppRouter>({
+   ssr: true,
+   ssrPrepass,
+-  config(opts) {
++  config(config) {
+     const { ctx } = opts;
+     if (typeof window !== 'undefined') {
+       // during client requests
+@@ -76,7 +76,7 @@ import superjson from 'superjson';
+ import type { AppRouter } from './api/trpc/[trpc]';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     const { ctx } = opts;
+     if (typeof window !== 'undefined') {
+       // during client requests
+diff --git a/www/docs/server/caching.md b/www/docs/server/caching.md
+index ed7db3522a8..f19c215f65d 100644
+--- a/www/docs/server/caching.md
++++ b/www/docs/server/caching.md
+@@ -29,7 +29,7 @@ import { createTRPCNext } from '@trpc/next';
+ import type { AppRouter } from '../server/routers/_app';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     if (typeof window !== 'undefined') {
+       return {
+         links: [
+diff --git a/www/docs/server/middlewares.md b/www/docs/server/middlewares.md
+index b7a20aaf22f..7dd9e1f49ee 100644
+--- a/www/docs/server/middlewares.md
++++ b/www/docs/server/middlewares.md
+@@ -152,8 +152,11 @@ const protectedProcedure = publicProcedure.use(async function isAuthed(opts) {
+   });
+ });
+ 
+-protectedProcedure.query(({ ctx }) => ctx.user);
+-//                                        ^?
++protectedProcedure.query((opts) => {
++  const { ctx } = opts;
++  return ctx.user;
++  //     ^?
++});
+ ```
+ 
+ ## Using `.concat()` to create reusable middlewares and plugins {#concat}
+@@ -283,8 +286,11 @@ const barMiddleware = fooMiddleware.unstable_pipe((opts) => {
+ });
+ 
+ const barProcedure = publicProcedure.use(barMiddleware);
+-barProcedure.query(({ ctx }) => ctx.bar);
+-//                              ^?
++barProcedure.query((opts) => {
++  const { ctx } = opts;
++  return ctx.bar;
++  //     ^?
++});
+ ```
+ 
+ Beware that the order in which you pipe your middlewares matter and that the context must overlap. An example of a forbidden pipe is shown below. Here, the `fooMiddleware` overrides the `ctx.a` while `barMiddleware` still expects the root context from the initialization in `initTRPC` - so piping `fooMiddleware` with `barMiddleware` would not work, while piping `barMiddleware` with `fooMiddleware` does work.
+diff --git a/www/docs/server/validators.md b/www/docs/server/validators.md
+index 8431471e091..a34bc330d0b 100644
+--- a/www/docs/server/validators.md
++++ b/www/docs/server/validators.md
+@@ -321,7 +321,7 @@ export type AppRouter = typeof appRouter;
+ 
+ ### With [ArkType](https://github.com/arktypeio/arktype#trpc)
+ 
+-```ts twoslash
++```ts
+ import { initTRPC } from '@trpc/server';
+ import { type } from 'arktype';
+ 
+@@ -330,10 +330,9 @@ export const t = initTRPC.create();
+ const publicProcedure = t.procedure;
+ 
+ export const appRouter = t.router({
+-  hello: publicProcedure.input(type({ name: 'string' })).query(({ input }) => {
+-    //                                                            ^?
++  hello: publicProcedure.input(type({ name: 'string' })).query((opts) => {
+     return {
+-      greeting: `hello ${input.name}`,
++      greeting: `hello ${opts.input.name}`,
+     };
+   }),
+ });
+diff --git a/www/versioned_docs/version-10.x/client/headers.md b/www/versioned_docs/version-10.x/client/headers.md
+index 17a4772f342..a25c698c19e 100644
+--- a/www/versioned_docs/version-10.x/client/headers.md
++++ b/www/versioned_docs/version-10.x/client/headers.md
+@@ -26,7 +26,7 @@ export function setToken(newToken: string) {
+ }
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     return {
+       links: [
+         httpBatchLink({
+diff --git a/www/versioned_docs/version-10.x/client/nextjs/setup.mdx b/www/versioned_docs/version-10.x/client/nextjs/setup.mdx
+index e5d1f0baad9..c778be1bac9 100644
+--- a/www/versioned_docs/version-10.x/client/nextjs/setup.mdx
++++ b/www/versioned_docs/version-10.x/client/nextjs/setup.mdx
+@@ -188,7 +188,7 @@ function getBaseUrl() {
+ }
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     return {
+       links: [
+         httpBatchLink({
+@@ -290,7 +290,7 @@ import { createTRPCNext } from '@trpc/next';
+ import type { AppRouter } from '../pages/api/trpc/[trpc]';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     /* [...] */
+   },
+   ssr: true,
+diff --git a/www/versioned_docs/version-10.x/client/nextjs/ssg.md b/www/versioned_docs/version-10.x/client/nextjs/ssg.md
+index 3fd03fef8a5..e53b400f5f1 100644
+--- a/www/versioned_docs/version-10.x/client/nextjs/ssg.md
++++ b/www/versioned_docs/version-10.x/client/nextjs/ssg.md
+@@ -115,7 +115,7 @@ import { createTRPCNext } from '@trpc/next';
+ import superjson from 'superjson';
+ import type { AppRouter } from './api/trpc/[trpc]';
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     return {
+       transformer: superjson,
+       links: [
+diff --git a/www/versioned_docs/version-10.x/client/nextjs/ssr.md b/www/versioned_docs/version-10.x/client/nextjs/ssr.md
+index 2d4efcb9b3b..1673e979779 100644
+--- a/www/versioned_docs/version-10.x/client/nextjs/ssr.md
++++ b/www/versioned_docs/version-10.x/client/nextjs/ssr.md
+@@ -25,7 +25,7 @@ import superjson from 'superjson';
+ import type { AppRouter } from './api/trpc/[trpc]';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     const { ctx } = opts;
+     if (typeof window !== 'undefined') {
+       // during client requests
+@@ -76,7 +76,7 @@ import superjson from 'superjson';
+ import type { AppRouter } from './api/trpc/[trpc]';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     const { ctx } = opts;
+     if (typeof window !== 'undefined') {
+       // during client requests
+diff --git a/www/versioned_docs/version-10.x/server/caching.md b/www/versioned_docs/version-10.x/server/caching.md
+index 67337322766..79806c6a01f 100644
+--- a/www/versioned_docs/version-10.x/server/caching.md
++++ b/www/versioned_docs/version-10.x/server/caching.md
+@@ -29,7 +29,7 @@ import { createTRPCNext } from '@trpc/next';
+ import type { AppRouter } from '../server/routers/_app';
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config(opts) {
++  config(config) {
+     if (typeof window !== 'undefined') {
+       return {
+         links: [
+diff --git a/www/versioned_docs/version-10.x/server/data-transformers.md b/www/versioned_docs/version-10.x/server/data-transformers.md
+index 520369bbd4d..00b25f8a15c 100644
+--- a/www/versioned_docs/version-10.x/server/data-transformers.md
++++ b/www/versioned_docs/version-10.x/server/data-transformers.md
+@@ -51,7 +51,7 @@ import superjson from 'superjson';
+ // [...]
+ 
+ export const trpc = createTRPCNext<AppRouter>({
+-  config({ ctx }) {
++  config(config) {
+     return {
+       transformer: superjson, // <--
+     };
+diff --git a/www/versioned_docs/version-9.x/client/header.md b/www/versioned_docs/version-9.x/client/header.md
+index 9965c1e5943..11add32eb5d 100644
+--- a/www/versioned_docs/version-9.x/client/header.md
++++ b/www/versioned_docs/version-9.x/client/header.md
+@@ -21,7 +21,7 @@ const MyApp: AppType = ({ Component, pageProps }) => {
+ };
+ 
+ export default withTRPC<AppRouter>({
+-  config({ ctx }) {
++  config(config) {
+     return {
+       links: [
+         httpBatchLink({
+diff --git a/www/versioned_docs/version-9.x/nextjs/introduction.md b/www/versioned_docs/version-9.x/nextjs/introduction.md
+index 25d2eeef2cb..6291f02b562 100644
+--- a/www/versioned_docs/version-9.x/nextjs/introduction.md
++++ b/www/versioned_docs/version-9.x/nextjs/introduction.md
+@@ -142,7 +142,7 @@ const MyApp: AppType = ({ Component, pageProps }) => {
+ };
+ 
+ export default withTRPC<AppRouter>({
+-  config({ ctx }) {
++  config(config) {
+     /**
+      * If you want to use SSR, you need to use the server's full URL
+      * @see https://trpc.io/docs/ssr
+@@ -214,7 +214,7 @@ Ability to set request headers and HTTP status when server-side rendering.
+ 
+ ```tsx title='pages/_app.tsx'
+ export default withTRPC<AppRouter>({
+-  config({ ctx }) {
++  config(config) {
+     /* [...] */
+   },
+   ssr: true,
+diff --git a/www/versioned_docs/version-9.x/nextjs/ssr.md b/www/versioned_docs/version-9.x/nextjs/ssr.md
+index e7c56e4945c..27498c629e4 100644
+--- a/www/versioned_docs/version-9.x/nextjs/ssr.md
++++ b/www/versioned_docs/version-9.x/nextjs/ssr.md
+@@ -21,7 +21,7 @@ const MyApp: AppType = ({ Component, pageProps }) => {
+ };
+ 
+ export default withTRPC<AppRouter>({
+-  config({ ctx }) {
++  config(config) {
+     if (typeof window !== 'undefined') {
+       // during client requests
+       return {
+diff --git a/www/versioned_docs/version-9.x/server/authorization.md b/www/versioned_docs/version-9.x/server/authorization.md
+index e83d1f1a561..1501d3a58f2 100644
+--- a/www/versioned_docs/version-9.x/server/authorization.md
++++ b/www/versioned_docs/version-9.x/server/authorization.md
+@@ -54,14 +54,14 @@ export const appRouter = createRouter()
+   // open for anyone
+   .query('hello', {
+     input: z.string().nullish(),
+-    resolve: ({ input, ctx }) => {
+-      return `hello ${input ?? ctx.user?.name ?? 'world'}`;
++    resolve: (opts) => {
++      return `hello ${opts.input ?? opts.ctx.user?.name ?? 'world'}`;
+     },
+   })
+   // checked in resolver
+   .query('secret', {
+-    resolve: ({ ctx }) => {
+-      if (!ctx.user) {
++    resolve: (opts) => {
++      if (!opts.ctx.user) {
+         throw new TRPCError({ code: 'UNAUTHORIZED' });
+       }
+       return {
+@@ -82,8 +82,8 @@ export const appRouter = createRouter()
+   // this is accessible for everyone
+   .query('hello', {
+     input: z.string().nullish(),
+-    resolve: ({ input, ctx }) => {
+-      return `hello ${input ?? ctx.user?.name ?? 'world'}`;
++    resolve: (opts) => {
++      return `hello ${opts.input ?? opts.ctx.user?.name ?? 'world'}`;
+     },
+   })
+   .merge(
+@@ -97,7 +97,7 @@ export const appRouter = createRouter()
+         return next();
+       })
+       .query('secret', {
+-        resolve: ({ ctx }) => {
++        resolve: (opts) => {
+           return {
+             secret: 'sauce',
+           };
+diff --git a/www/versioned_docs/version-9.x/server/caching.md b/www/versioned_docs/version-9.x/server/caching.md
+index 744602be842..f559625c82c 100644
+--- a/www/versioned_docs/version-9.x/server/caching.md
++++ b/www/versioned_docs/version-9.x/server/caching.md
+@@ -23,7 +23,7 @@ If you turn on SSR in your app you might discover that your app loads slow on fo
+ 
+ ```tsx title='pages/_app.tsx'
+ export default withTRPC({
+-  config({ ctx }) {
++  config(config) {
+     if (typeof window !== 'undefined') {
+       return {
+         url: '/api/trpc',
+@@ -39,11 +39,11 @@ export default withTRPC({
+     };
+   },
+   ssr: true,
+-  responseMeta({ ctx, clientErrors }) {
+-    if (clientErrors.length) {
++  responseMeta(config) {
++    if (config.clientErrors.length) {
+       // propagate http first error from API calls
+       return {
+-        status: clientErrors[0].data?.httpStatus ?? 500,
++        status: config.clientErrors[0].data?.httpStatus ?? 500,
+       };
+     }
+ 
+diff --git a/www/versioned_docs/version-9.x/server/data-transformers.md b/www/versioned_docs/version-9.x/server/data-transformers.md
+index 0a6c67038d3..4e65ba700ce 100644
+--- a/www/versioned_docs/version-9.x/server/data-transformers.md
++++ b/www/versioned_docs/version-9.x/server/data-transformers.md
+@@ -38,7 +38,7 @@ import superjson from 'superjson';
+ // [...]
+ 
+ export default withTRPC<AppRouter>({
+-  config({ ctx }) {
++  config(config) {
+     return {
+       // [...]
+       transformer: superjson,
+diff --git a/www/versioned_docs/version-9.x/server/middlewares.md b/www/versioned_docs/version-9.x/server/middlewares.md
+index d49faa5e629..961ba6a5ff5 100644
+--- a/www/versioned_docs/version-9.x/server/middlewares.md
++++ b/www/versioned_docs/version-9.x/server/middlewares.md
+@@ -23,11 +23,11 @@ trpc
+     'admin.',
+     trpc
+       .router<Context>()
+-      .middleware(async ({ ctx, next }) => {
+-        if (!ctx.user?.isAdmin) {
++      .middleware(async (opts) => {
++        if (!opts.ctx.user?.isAdmin) {
+           throw new TRPCError({ code: 'UNAUTHORIZED' });
+         }
+-        return next();
++        return opts.next();
+       })
+       .query('secretPlace', {
+         resolve() {
+@@ -84,15 +84,15 @@ interface Context {
+ 
+ trpc
+   .router<Context>()
+-  .middleware(({ ctx, next }) => {
+-    if (!ctx.user) {
++  .middleware((opts) => {
++    if (!opts.ctx.user) {
+       throw new TRPCError({ code: 'UNAUTHORIZED' });
+     }
+ 
+-    return next({
++    return opts.next({
+       ctx: {
+-        ...ctx,
+-        user: ctx.user, // user value is known to be non-null now
++        ...opts.ctx,
++        user: opts.ctx.user, // user value is known to be non-null now
+       },
+     });
+   })
+@@ -112,15 +112,15 @@ import * as trpc from '@trpc/server';
+ import { Context } from './context';
+ 
+ export function createProtectedRouter() {
+-  return trpc.router<Context>().middleware(({ ctx, next }) => {
+-    if (!ctx.user) {
++  return trpc.router<Context>().middleware((opts) => {
++    if (!opts.ctx.user) {
+       throw new trpc.TRPCError({ code: 'UNAUTHORIZED' });
+     }
+-    return next({
++    return opts.next({
+       ctx: {
+-        ...ctx,
++        ...opts.ctx,
+         // infers that `user` is non-nullable to downstream procedures
+-        user: ctx.user,
++        user: opts.ctx.user,
+       },
+     });
+   });

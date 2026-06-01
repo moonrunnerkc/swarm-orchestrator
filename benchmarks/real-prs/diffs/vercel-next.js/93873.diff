@@ -1,0 +1,718 @@
+diff --git a/packages/next/errors.json b/packages/next/errors.json
+index 35c6a675304d..27294cad10a1 100644
+--- a/packages/next/errors.json
++++ b/packages/next/errors.json
+@@ -1277,5 +1277,6 @@
+   "1276": "Compilation failed but no issues were recorded",
+   "1277": "no route matched for path \"%s\"",
+   "1278": "compileRoute: either routeSpecifier or path is required",
+-  "1279": "\\`experimental.appShells\\` requires the following to also be enabled: %s. Please update your %s accordingly."
++  "1279": "\\`experimental.appShells\\` requires the following to also be enabled: %s. Please update your %s accordingly.",
++  "1280": "Invariant: expected static metadata route to have a prerender pathname (%s)"
+ }
+diff --git a/packages/next/src/build/adapter/build-complete.ts b/packages/next/src/build/adapter/build-complete.ts
+index cbd3ce28b81d..34f88bb22681 100644
+--- a/packages/next/src/build/adapter/build-complete.ts
++++ b/packages/next/src/build/adapter/build-complete.ts
+@@ -43,6 +43,7 @@ import {
+ } from '../../lib/constants'
+ 
+ import { normalizeLocalePath } from '../../shared/lib/i18n/normalize-locale-path'
++import { getStaticMetadataPrerenderPathname } from '../../lib/metadata/get-metadata-route'
+ import { isStaticMetadataFile } from '../../lib/metadata/is-metadata-route'
+ import { addPathPrefix } from '../../shared/lib/router/utils/add-path-prefix'
+ import { getRedirectStatus, modifyRouteRegex } from '../../lib/redirect-status'
+@@ -988,19 +989,17 @@ export async function handleBuildComplete({
+           // Dynamic metadata routes (e.g. robots/sitemap using connection())
+           // should remain app routes in adapter outputs.
+           const isStaticMetadataRoute = isStaticMetadataFile(normalizedPage)
++          const staticMetadataPrerenderPathname =
++            getStaticMetadataPrerenderPathname(normalizedPage) ?? normalizedPage
+           const isPrerenderedMetadataRoute =
+-            prerenderManifest.routes[normalizedPage] ||
+-            prerenderManifest.dynamicRoutes[normalizedPage] ||
++            prerenderManifest.routes[staticMetadataPrerenderPathname] ||
+             config.i18n?.locales?.some((locale) => {
+               const localePathname = path.posix.join(
+                 '/',
+                 locale,
+-                normalizedPage.slice(1)
+-              )
+-              return (
+-                prerenderManifest.routes[localePathname] ||
+-                prerenderManifest.dynamicRoutes[localePathname]
++                staticMetadataPrerenderPathname.slice(1)
+               )
++              return prerenderManifest.routes[localePathname]
+             })
+ 
+           if (isStaticMetadataRoute && isPrerenderedMetadataRoute) {
+@@ -1522,6 +1521,10 @@ export async function handleBuildComplete({
+       }
+ 
+       for (const dynamicRoute in prerenderManifest.dynamicRoutes) {
++        if (isStaticMetadataFile(dynamicRoute)) {
++          continue
++        }
++
+         const {
+           fallback,
+           fallbackExpire,
+diff --git a/packages/next/src/build/index.ts b/packages/next/src/build/index.ts
+index f4f190650766..2b0ef8b01534 100644
+--- a/packages/next/src/build/index.ts
++++ b/packages/next/src/build/index.ts
+@@ -165,6 +165,8 @@ import { webpackBuild } from './webpack-build'
+ import { NextBuildContext } from './build-context'
+ import { normalizePathSep } from '../shared/lib/page-path/normalize-path-sep'
+ import { isAppRouteRoute } from '../lib/is-app-route-route'
++import { getStaticMetadataPrerenderPathname } from '../lib/metadata/get-metadata-route'
++import { isStaticMetadataFile } from '../lib/metadata/is-metadata-route'
+ import { createClientRouterFilter } from '../lib/create-client-router-filter'
+ import { startTypeChecking } from './type-check'
+ import { generateInterceptionRoutesRewrites } from '../lib/generate-interception-routes-rewrites'
+@@ -3184,13 +3186,39 @@ export default async function build(
+             const unsortedUnknownPrerenderRoutes: PrerenderedRoute[] = []
+             const unsortedKnownPrerenderRoutes: PrerenderedRoute[] = []
+             for (const prerenderedRoute of prerenderedRoutes) {
++              let route = prerenderedRoute
++              // Static metadata files under dynamic segments (e.g.
++              // `/[id]/apple-icon.png`) produce the same bytes regardless of
++              // params, so they prerender once to a canonical pathname with
++              // dynamic segments replaced by `-` (e.g. `/-/apple-icon.png`).
++              // Rewriting here ensures they land in `prerenderManifest.routes`
++              // as known static entries rather than in `dynamicRoutes` with
++              // fallback params, which they don't actually need.
++              const staticMetadataPrerenderPathname =
++                getStaticMetadataPrerenderPathname(prerenderedRoute.pathname)
++
+               if (
+-                prerenderedRoute.fallbackRouteParams &&
+-                prerenderedRoute.fallbackRouteParams.length > 0
++                staticMetadataPrerenderPathname &&
++                staticMetadataPrerenderPathname !== prerenderedRoute.pathname
+               ) {
+-                unsortedUnknownPrerenderRoutes.push(prerenderedRoute)
++                route = {
++                  params: prerenderedRoute.params,
++                  pathname: staticMetadataPrerenderPathname,
++                  encodedPathname: staticMetadataPrerenderPathname,
++                  fallbackRouteParams: undefined,
++                  fallbackMode: prerenderedRoute.fallbackMode,
++                  fallbackRootParams: undefined,
++                  throwOnEmptyStaticShell: undefined,
++                }
++              }
++
++              if (
++                route.fallbackRouteParams &&
++                route.fallbackRouteParams.length > 0
++              ) {
++                unsortedUnknownPrerenderRoutes.push(route)
+               } else {
+-                unsortedKnownPrerenderRoutes.push(prerenderedRoute)
++                unsortedKnownPrerenderRoutes.push(route)
+               }
+             }
+ 
+@@ -3367,6 +3395,16 @@ export default async function build(
+               }
+ 
+               for (const route of dynamicPrerenderedRoutes) {
++                // Static metadata files are rewritten above into the known
++                // static bucket under their `-`-placeholder pathname, so any
++                // entry that slips through here (e.g. an unexpected fallback
++                // shape) must not generate a dynamic PRERENDER manifest entry
++                // — the route handler shipped with the dynamic route still
++                // serves these at runtime.
++                if (isStaticMetadataFile(route.pathname)) {
++                  continue
++                }
++
+                 const normalizedRoute = normalizePagePath(route.pathname)
+                 const parentPageInfo = pageInfos.get(page) as PageInfo
+ 
+@@ -4073,6 +4111,20 @@ export default async function build(
+         NextBuildContext.allowedRevalidateHeaderKeys =
+           config.experimental.allowedRevalidateHeaderKeys
+ 
++        // Defensive sweep: static metadata files should never end up in
++        // `dynamicRoutes` because they are rewritten to the `-`-placeholder
++        // pathname and added to `routes` above. If anything upstream
++        // (e.g. a code path that calls `addDynamicRoute` directly) still
++        // registers a bracketed entry like `/[id]/apple-icon.png` here, the
++        // adapter would later look for a parent app output that doesn't
++        // exist and throw an invariant error. Strip those entries before the
++        // manifest is written.
++        for (const route of Object.keys(prerenderManifest.dynamicRoutes)) {
++          if (isStaticMetadataFile(route)) {
++            delete prerenderManifest.dynamicRoutes[route]
++          }
++        }
++
+         await writePrerenderManifest(distDir, prerenderManifest)
+         await writeManifest(
+           path.join(distDir, SERVER_DIRECTORY, PREFETCH_HINTS),
+diff --git a/packages/next/src/build/utils.ts b/packages/next/src/build/utils.ts
+index 0b9f7ffd525c..0e9389224c38 100644
+--- a/packages/next/src/build/utils.ts
++++ b/packages/next/src/build/utils.ts
+@@ -81,13 +81,9 @@ import type {
+ import type { FunctionsConfigManifest, ManifestRoute } from './index'
+ import { getNamedRouteRegex } from '../shared/lib/router/utils/route-regex'
+ import { parseNormalizedAppRoute } from '../shared/lib/router/routes/app'
+-import { fillStaticMetadataSegment } from '../lib/metadata/get-metadata-route'
+-import { STATIC_METADATA_IMAGES } from '../lib/metadata/is-metadata-route'
+-
+-// Build a set of static metadata image filenames for quick lookup
+-const staticMetadataImageFilenames = new Set<string>(
+-  Object.values(STATIC_METADATA_IMAGES).map((meta) => meta.filename)
+-)
++import { getStaticMetadataPrerenderPathname } from '../lib/metadata/get-metadata-route'
++import { isStaticMetadataFile } from '../lib/metadata/is-metadata-route'
++import { normalizeAppPath } from '../shared/lib/router/utils/app-paths'
+ 
+ /**
+  * Get the display path for build output. For static metadata files under
+@@ -95,26 +91,42 @@ const staticMetadataImageFilenames = new Set<string>(
+  * e.g., /dynamic/[id]/icon.png -> /dynamic/-/icon.png
+  */
+ function getTreeViewDisplayPath(pagePath: string): string {
+-  // Check if the path contains dynamic segments
+-  if (!isDynamicRoute(pagePath)) {
+-    return pagePath
+-  }
++  const prerenderPathname = getStaticMetadataPrerenderPathname(
++    pagePath.startsWith('/') ? pagePath : `/${pagePath}`
++  )
++  return prerenderPathname ?? pagePath
++}
+ 
+-  // Check if the filename is a static metadata image
+-  const lastSlash = pagePath.lastIndexOf('/')
+-  const filename = pagePath.slice(lastSlash + 1)
+-  const dotIndex = filename.lastIndexOf('.')
+-  const baseName = dotIndex > 0 ? filename.slice(0, dotIndex) : filename
++function buildStaticMetadataStaticPaths(page: string): {
++  fallbackMode: FallbackMode | undefined
++  prerenderedRoutes: PrerenderedRoute[]
++} {
++  let pathname = normalizeAppPath(page)
++  if (pathname.endsWith('/route')) {
++    pathname = pathname.slice(0, -'/route'.length)
++  }
+ 
+-  // Check against known static metadata image filenames (e.g., icon, apple-icon, opengraph-image)
+-  if (!staticMetadataImageFilenames.has(baseName)) {
+-    return pagePath
++  const prerenderPathname = getStaticMetadataPrerenderPathname(pathname)
++  if (!prerenderPathname) {
++    throw new Error(
++      `Invariant: expected static metadata route to have a prerender pathname (${page})`
++    )
+   }
+ 
+-  // Transform using the static metadata resolver so dynamic segments use "-"
+-  const segment = pagePath.slice(0, lastSlash)
+-  const lastSegment = filename
+-  return fillStaticMetadataSegment(segment, lastSegment)
++  return {
++    fallbackMode: undefined,
++    prerenderedRoutes: [
++      {
++        params: {},
++        pathname: prerenderPathname,
++        encodedPathname: prerenderPathname,
++        fallbackRouteParams: undefined,
++        fallbackMode: undefined,
++        fallbackRootParams: undefined,
++        throwOnEmptyStaticShell: undefined,
++      },
++    ],
++  }
+ }
+ 
+ export type ROUTER_TYPE = 'pages' | 'app'
+@@ -871,29 +883,42 @@ export async function isPageStatic({
+         // build the static paths. The edge runtime doesn't support static
+         // paths.
+         if (route.dynamicSegments.length > 0 && !pathIsEdgeRuntime) {
+-          ;({ prerenderedRoutes, fallbackMode: prerenderFallbackMode } =
+-            await buildAppStaticPaths({
+-              dir,
+-              page,
+-              route,
+-              cacheComponents,
+-              authInterrupts,
+-              useCacheTimeout,
+-              staticPageGenerationTimeout,
+-              segments,
+-              distDir,
+-              requestHeaders: {},
+-              isrFlushToDisk,
+-              cacheMaxMemorySize,
+-              cacheHandler,
+-              cacheLifeProfiles,
+-              ComponentMod,
+-              nextConfigOutput,
+-              isRoutePPREnabled,
+-              buildId,
+-              deploymentId,
+-              rootParamKeys,
+-            }))
++          let pathname = normalizeAppPath(page)
++          if (pathname.endsWith('/route')) {
++            pathname = pathname.slice(0, -'/route'.length)
++          }
++
++          if (
++            routeModule.definition.kind === RouteKind.APP_ROUTE &&
++            isStaticMetadataFile(pathname)
++          ) {
++            ;({ prerenderedRoutes, fallbackMode: prerenderFallbackMode } =
++              buildStaticMetadataStaticPaths(page))
++          } else {
++            ;({ prerenderedRoutes, fallbackMode: prerenderFallbackMode } =
++              await buildAppStaticPaths({
++                dir,
++                page,
++                route,
++                cacheComponents,
++                authInterrupts,
++                useCacheTimeout,
++                staticPageGenerationTimeout,
++                segments,
++                distDir,
++                requestHeaders: {},
++                isrFlushToDisk,
++                cacheMaxMemorySize,
++                cacheHandler,
++                cacheLifeProfiles,
++                ComponentMod,
++                nextConfigOutput,
++                isRoutePPREnabled,
++                buildId,
++                deploymentId,
++                rootParamKeys,
++              }))
++          }
+         }
+       } else {
+         if (!Comp || !isValidElementType(Comp) || typeof Comp === 'string') {
+diff --git a/packages/next/src/lib/metadata/get-metadata-route.test.ts b/packages/next/src/lib/metadata/get-metadata-route.test.ts
+index 5085dd84d8ee..ba7df45d18b9 100644
+--- a/packages/next/src/lib/metadata/get-metadata-route.test.ts
++++ b/packages/next/src/lib/metadata/get-metadata-route.test.ts
+@@ -1,6 +1,7 @@
+ import {
+   fillMetadataSegment,
+   fillStaticMetadataSegment,
++  getStaticMetadataPrerenderPathname,
+   normalizeMetadataRoute,
+ } from './get-metadata-route'
+ 
+@@ -33,6 +34,57 @@ describe('fillStaticMetadataSegment', () => {
+   })
+ })
+ 
++describe('getStaticMetadataPrerenderPathname', () => {
++  it('should return null for non-metadata routes', () => {
++    expect(getStaticMetadataPrerenderPathname('/dynamic/[id]/page')).toBeNull()
++  })
++
++  it('should normalize static metadata under dynamic segments', () => {
++    expect(
++      getStaticMetadataPrerenderPathname('/dynamic/[id]/apple-icon.png')
++    ).toBe('/dynamic/-/apple-icon.png')
++    expect(
++      getStaticMetadataPrerenderPathname('/dynamic/[id]/sitemap.xml')
++    ).toBe('/dynamic/-/sitemap.xml')
++  })
++
++  it('should preserve static metadata routes without dynamic segments', () => {
++    expect(getStaticMetadataPrerenderPathname('/static/apple-icon.png')).toBe(
++      '/static/apple-icon.png'
++    )
++  })
++
++  it('should collapse catchall segments to a single placeholder', () => {
++    expect(
++      getStaticMetadataPrerenderPathname('/[...slug]/apple-icon.png')
++    ).toBe('/-/apple-icon.png')
++  })
++
++  it('should collapse optional catchall segments to a single placeholder', () => {
++    expect(
++      getStaticMetadataPrerenderPathname('/[[...slug]]/apple-icon.png')
++    ).toBe('/-/apple-icon.png')
++  })
++
++  it('should replace each dynamic segment independently', () => {
++    expect(getStaticMetadataPrerenderPathname('/[a]/[b]/apple-icon.png')).toBe(
++      '/-/-/apple-icon.png'
++    )
++  })
++
++  it('should preserve literal segments between dynamic ones', () => {
++    expect(
++      getStaticMetadataPrerenderPathname('/[lang]/posts/[slug]/apple-icon.png')
++    ).toBe('/-/posts/-/apple-icon.png')
++  })
++
++  it('should normalize mixed dynamic and catchall segments', () => {
++    expect(
++      getStaticMetadataPrerenderPathname('/[lang]/[...rest]/apple-icon.png')
++    ).toBe('/-/-/apple-icon.png')
++  })
++})
++
+ describe('fillMetadataSegment', () => {
+   it('should continue to interpolate dynamic metadata routes from params', () => {
+     expect(
+diff --git a/packages/next/src/lib/metadata/get-metadata-route.ts b/packages/next/src/lib/metadata/get-metadata-route.ts
+index 2f8654500d98..7adb167f4c99 100644
+--- a/packages/next/src/lib/metadata/get-metadata-route.ts
++++ b/packages/next/src/lib/metadata/get-metadata-route.ts
+@@ -5,7 +5,9 @@ import { getNamedRouteRegex } from '../../shared/lib/router/utils/route-regex'
+ import { PARAMETER_PATTERN } from '../../shared/lib/router/utils/get-dynamic-param'
+ import { djb2Hash } from '../../shared/lib/hash'
+ import { normalizeAppPath } from '../../shared/lib/router/utils/app-paths'
++import { isDynamicRoute } from '../../shared/lib/router/utils'
+ import { normalizePathSep } from '../../shared/lib/page-path/normalize-path-sep'
++import { isMetadataRouteFile } from './is-metadata-route'
+ import {
+   isGroupSegment,
+   isParallelRouteSegment,
+@@ -98,6 +100,32 @@ export function fillStaticMetadataSegment(
+   )
+ }
+ 
++/**
++ * Returns the pathname used when prerendering static metadata files. Dynamic
++ * segments are replaced with "-" placeholders so the file is exported once.
++ */
++export function getStaticMetadataPrerenderPathname(
++  pathname: string
++): string | null {
++  const normalized = pathname.startsWith('/') ? pathname : `/${pathname}`
++  if (!isMetadataRouteFile(normalized, [], true)) {
++    return null
++  }
++
++  if (!isDynamicRoute(normalized)) {
++    return normalized
++  }
++
++  const lastSlash = normalized.lastIndexOf('/')
++  if (lastSlash === -1) {
++    return normalized
++  }
++
++  const segment = normalized.slice(0, lastSlash) || '/'
++  const lastSegment = normalized.slice(lastSlash + 1)
++  return fillStaticMetadataSegment(segment, lastSegment)
++}
++
+ /**
+  * Fill the dynamic segment in the metadata route
+  *
+diff --git a/test/e2e/app-dir/metadata-static-file/metadata-static-file-dynamic-route.test.ts b/test/e2e/app-dir/metadata-static-file/metadata-static-file-dynamic-route.test.ts
+index 1ef66e9c1d40..cc5849d91973 100644
+--- a/test/e2e/app-dir/metadata-static-file/metadata-static-file-dynamic-route.test.ts
++++ b/test/e2e/app-dir/metadata-static-file/metadata-static-file-dynamic-route.test.ts
+@@ -1,5 +1,9 @@
+ import { nextTestSetup, isNextStart } from 'e2e-utils'
+-import { getCommonMetadataHeadTags } from './utils'
++import {
++  getCommonMetadataHeadTags,
++  readFixtureBuffer,
++  readFixtureText,
++} from './utils'
+ 
+ describe('metadata-files-static-output-dynamic-route', () => {
+   if (process.env.__NEXT_CACHE_COMPONENTS) {
+@@ -26,7 +30,6 @@ describe('metadata-files-static-output-dynamic-route', () => {
+ 
+   const { next, skipped } = nextTestSetup({
+     files: __dirname,
+-    skipDeployment: true,
+   })
+ 
+   if (skipped) {
+@@ -121,11 +124,11 @@ describe('metadata-files-static-output-dynamic-route', () => {
+       actualTwitterImage,
+       actualSitemap,
+     ] = await Promise.all([
+-      next.readFileBuffer('app/dynamic/[id]/apple-icon.png'),
+-      next.readFileBuffer('app/dynamic/[id]/icon.png'),
+-      next.readFileBuffer('app/dynamic/[id]/opengraph-image.png'),
+-      next.readFileBuffer('app/dynamic/[id]/twitter-image.png'),
+-      next.readFile('app/dynamic/[id]/sitemap.xml'),
++      readFixtureBuffer('app/dynamic/[id]/apple-icon.png'),
++      readFixtureBuffer('app/dynamic/[id]/icon.png'),
++      readFixtureBuffer('app/dynamic/[id]/opengraph-image.png'),
++      readFixtureBuffer('app/dynamic/[id]/twitter-image.png'),
++      readFixtureText('app/dynamic/[id]/sitemap.xml'),
+     ])
+ 
+     expect({
+diff --git a/test/e2e/app-dir/metadata-static-file/metadata-static-file-group-route.test.ts b/test/e2e/app-dir/metadata-static-file/metadata-static-file-group-route.test.ts
+index 43ba4e6e9b3c..9899c8303d66 100644
+--- a/test/e2e/app-dir/metadata-static-file/metadata-static-file-group-route.test.ts
++++ b/test/e2e/app-dir/metadata-static-file/metadata-static-file-group-route.test.ts
+@@ -1,32 +1,13 @@
+ import { nextTestSetup } from 'e2e-utils'
+-import { getCommonMetadataHeadTags } from './utils'
++import {
++  getCommonMetadataHeadTags,
++  readFixtureBuffer,
++  readFixtureText,
++} from './utils'
+ 
+ describe('metadata-files-static-output-group-route', () => {
+-  if (process.env.__NEXT_CACHE_COMPONENTS) {
+-    // Cache Components build fails when metadata files are inside a dynamic route.
+-    //
+-    // Route "/dynamic/[id]": Next.js encountered uncached or runtime data in `generateMetadata()`.
+-    //
+-    // This prevents the page from being prerendered, leading to a slower user experience.
+-    //
+-    // Ways to fix this:
+-    //   - Use a static metadata export instead of `generateMetadata()`
+-    //   - Cache the metadata with `"use cache"` in `generateMetadata()`
+-    //   - Add a dynamic data access (e.g. `await connection()`) to the page to render it at request time
+-    //   - Set `export const instant = false` to allow a blocking route
+-    //
+-    // Learn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata
+-    // Error occurred prerendering page "/dynamic/[id]". Read more: https://nextjs.org/docs/messages/prerender-error
+-    // Export encountered an error on /dynamic/[id]/page: /dynamic/[id], exiting the build.
+-    //
+-    // TODO: Remove this skip when metadata files are supported in dynamic routes for Cache Components.
+-    it.skip('should skip test for Cache Components', () => {})
+-    return
+-  }
+-
+   const { next, skipped } = nextTestSetup({
+     files: __dirname,
+-    skipDeployment: true,
+   })
+ 
+   if (skipped) {
+@@ -118,11 +99,11 @@ describe('metadata-files-static-output-group-route', () => {
+       actualTwitterImage,
+       actualSitemap,
+     ] = await Promise.all([
+-      next.readFileBuffer('app/(group)/group/apple-icon.png'),
+-      next.readFileBuffer('app/(group)/group/icon.png'),
+-      next.readFileBuffer('app/(group)/group/opengraph-image.png'),
+-      next.readFileBuffer('app/(group)/group/twitter-image.png'),
+-      next.readFile('app/(group)/group/sitemap.xml'),
++      readFixtureBuffer('app/(group)/group/apple-icon.png'),
++      readFixtureBuffer('app/(group)/group/icon.png'),
++      readFixtureBuffer('app/(group)/group/opengraph-image.png'),
++      readFixtureBuffer('app/(group)/group/twitter-image.png'),
++      readFixtureText('app/(group)/group/sitemap.xml'),
+     ])
+ 
+     expect({
+diff --git a/test/e2e/app-dir/metadata-static-file/metadata-static-file-intercepting-route.test.ts b/test/e2e/app-dir/metadata-static-file/metadata-static-file-intercepting-route.test.ts
+index 2b0e97190f0c..4226da0d6dd7 100644
+--- a/test/e2e/app-dir/metadata-static-file/metadata-static-file-intercepting-route.test.ts
++++ b/test/e2e/app-dir/metadata-static-file/metadata-static-file-intercepting-route.test.ts
+@@ -1,5 +1,9 @@
+ import { nextTestSetup } from 'e2e-utils'
+-import { getCommonMetadataHeadTags } from './utils'
++import {
++  getCommonMetadataHeadTags,
++  readFixtureBuffer,
++  readFixtureText,
++} from './utils'
+ 
+ describe('metadata-files-static-output-intercepting-route', () => {
+   if (process.env.__NEXT_CACHE_COMPONENTS) {
+@@ -26,7 +30,6 @@ describe('metadata-files-static-output-intercepting-route', () => {
+ 
+   const { next, skipped } = nextTestSetup({
+     files: __dirname,
+-    skipDeployment: true,
+   })
+ 
+   if (skipped) {
+@@ -124,15 +127,13 @@ describe('metadata-files-static-output-intercepting-route', () => {
+       actualTwitterImage,
+       actualSitemap,
+     ] = await Promise.all([
+-      next.readFileBuffer('app/intercepting/(..)intercept-me/apple-icon.png'),
+-      next.readFileBuffer('app/intercepting/(..)intercept-me/icon.png'),
+-      next.readFileBuffer(
++      readFixtureBuffer('app/intercepting/(..)intercept-me/apple-icon.png'),
++      readFixtureBuffer('app/intercepting/(..)intercept-me/icon.png'),
++      readFixtureBuffer(
+         'app/intercepting/(..)intercept-me/opengraph-image.png'
+       ),
+-      next.readFileBuffer(
+-        'app/intercepting/(..)intercept-me/twitter-image.png'
+-      ),
+-      next.readFile('app/intercepting/(..)intercept-me/sitemap.xml'),
++      readFixtureBuffer('app/intercepting/(..)intercept-me/twitter-image.png'),
++      readFixtureText('app/intercepting/(..)intercept-me/sitemap.xml'),
+     ])
+ 
+     expect({
+diff --git a/test/e2e/app-dir/metadata-static-file/metadata-static-file-parallel-route.test.ts b/test/e2e/app-dir/metadata-static-file/metadata-static-file-parallel-route.test.ts
+index 98cce40ed59f..56b039d4556e 100644
+--- a/test/e2e/app-dir/metadata-static-file/metadata-static-file-parallel-route.test.ts
++++ b/test/e2e/app-dir/metadata-static-file/metadata-static-file-parallel-route.test.ts
+@@ -1,5 +1,9 @@
+ import { nextTestSetup } from 'e2e-utils'
+-import { getCommonMetadataHeadTags } from './utils'
++import {
++  getCommonMetadataHeadTags,
++  readFixtureBuffer,
++  readFixtureText,
++} from './utils'
+ 
+ describe('metadata-files-static-output-parallel-route', () => {
+   if (process.env.__NEXT_CACHE_COMPONENTS) {
+@@ -26,7 +30,6 @@ describe('metadata-files-static-output-parallel-route', () => {
+ 
+   const { next, skipped } = nextTestSetup({
+     files: __dirname,
+-    skipDeployment: true,
+   })
+ 
+   if (skipped) {
+@@ -118,11 +121,11 @@ describe('metadata-files-static-output-parallel-route', () => {
+       actualTwitterImage,
+       actualSitemap,
+     ] = await Promise.all([
+-      next.readFileBuffer('app/parallel/@parallel/apple-icon.png'),
+-      next.readFileBuffer('app/parallel/@parallel/icon.png'),
+-      next.readFileBuffer('app/parallel/@parallel/opengraph-image.png'),
+-      next.readFileBuffer('app/parallel/@parallel/twitter-image.png'),
+-      next.readFile('app/parallel/@parallel/sitemap.xml'),
++      readFixtureBuffer('app/parallel/@parallel/apple-icon.png'),
++      readFixtureBuffer('app/parallel/@parallel/icon.png'),
++      readFixtureBuffer('app/parallel/@parallel/opengraph-image.png'),
++      readFixtureBuffer('app/parallel/@parallel/twitter-image.png'),
++      readFixtureText('app/parallel/@parallel/sitemap.xml'),
+     ])
+ 
+     expect({
+diff --git a/test/e2e/app-dir/metadata-static-file/metadata-static-file-root-route.test.ts b/test/e2e/app-dir/metadata-static-file/metadata-static-file-root-route.test.ts
+index bba93eafb416..886c8b02d662 100644
+--- a/test/e2e/app-dir/metadata-static-file/metadata-static-file-root-route.test.ts
++++ b/test/e2e/app-dir/metadata-static-file/metadata-static-file-root-route.test.ts
+@@ -1,5 +1,9 @@
+ import { nextTestSetup } from 'e2e-utils'
+-import { getCommonMetadataHeadTags } from './utils'
++import {
++  getCommonMetadataHeadTags,
++  readFixtureBuffer,
++  readFixtureText,
++} from './utils'
+ 
+ describe('metadata-files-static-output-root-route', () => {
+   if (process.env.__NEXT_CACHE_COMPONENTS) {
+@@ -26,7 +30,6 @@ describe('metadata-files-static-output-root-route', () => {
+ 
+   const { next, skipped } = nextTestSetup({
+     files: __dirname,
+-    skipDeployment: true,
+   })
+ 
+   if (skipped) {
+@@ -69,10 +72,10 @@ describe('metadata-files-static-output-root-route', () => {
+     // Compare response content with actual files
+     const [actualFavicon, actualManifest, actualRobots, actualSitemap] =
+       await Promise.all([
+-        next.readFileBuffer('app/favicon.ico'),
+-        next.readFile('app/manifest.json'),
+-        next.readFile('app/robots.txt'),
+-        next.readFile('app/sitemap.xml'),
++        readFixtureBuffer('app/favicon.ico'),
++        readFixtureText('app/manifest.json'),
++        readFixtureText('app/robots.txt'),
++        readFixtureText('app/sitemap.xml'),
+       ])
+ 
+     expect({
+diff --git a/test/e2e/app-dir/metadata-static-file/metadata-static-file-static-route.test.ts b/test/e2e/app-dir/metadata-static-file/metadata-static-file-static-route.test.ts
+index d94eceb23b25..85a47ef758fc 100644
+--- a/test/e2e/app-dir/metadata-static-file/metadata-static-file-static-route.test.ts
++++ b/test/e2e/app-dir/metadata-static-file/metadata-static-file-static-route.test.ts
+@@ -1,5 +1,9 @@
+ import { nextTestSetup } from 'e2e-utils'
+-import { getCommonMetadataHeadTags } from './utils'
++import {
++  getCommonMetadataHeadTags,
++  readFixtureBuffer,
++  readFixtureText,
++} from './utils'
+ 
+ describe('metadata-files-static-output-static-route', () => {
+   if (process.env.__NEXT_CACHE_COMPONENTS) {
+@@ -26,7 +30,6 @@ describe('metadata-files-static-output-static-route', () => {
+ 
+   const { next, skipped } = nextTestSetup({
+     files: __dirname,
+-    skipDeployment: true,
+   })
+ 
+   if (skipped) {
+@@ -118,11 +121,11 @@ describe('metadata-files-static-output-static-route', () => {
+       actualTwitterImage,
+       actualSitemap,
+     ] = await Promise.all([
+-      next.readFileBuffer('app/static/apple-icon.png'),
+-      next.readFileBuffer('app/static/icon.png'),
+-      next.readFileBuffer('app/static/opengraph-image.png'),
+-      next.readFileBuffer('app/static/twitter-image.png'),
+-      next.readFile('app/static/sitemap.xml'),
++      readFixtureBuffer('app/static/apple-icon.png'),
++      readFixtureBuffer('app/static/icon.png'),
++      readFixtureBuffer('app/static/opengraph-image.png'),
++      readFixtureBuffer('app/static/twitter-image.png'),
++      readFixtureText('app/static/sitemap.xml'),
+     ])
+ 
+     expect({
+diff --git a/test/e2e/app-dir/metadata-static-file/utils.ts b/test/e2e/app-dir/metadata-static-file/utils.ts
+index 535cd05d04ae..9b00b9df1a8d 100644
+--- a/test/e2e/app-dir/metadata-static-file/utils.ts
++++ b/test/e2e/app-dir/metadata-static-file/utils.ts
+@@ -1,6 +1,19 @@
+ // @ts-nocheck - On isolated test, this will be a type error.
++import { promises as fs } from 'fs'
++import path from 'path'
+ import type { Playwright } from 'e2e-utils'
+ 
++// Fixture files live in this directory (`test/e2e/app-dir/metadata-static-file`),
++// so we read them from the repo on the test runner. Using `next.readFile` would
++// hit the deployed filesystem, which is not available in deploy test mode.
++export function readFixtureBuffer(relativePath: string) {
++  return fs.readFile(path.join(__dirname, relativePath))
++}
++
++export function readFixtureText(relativePath: string) {
++  return fs.readFile(path.join(__dirname, relativePath), 'utf8')
++}
++
+ async function getMetadataLinks(browser: Playwright) {
+   const links = await browser.locator('link').evaluateAll((elements: any[]) => {
+     return elements
+diff --git a/test/lib/next-modes/next-deploy.ts b/test/lib/next-modes/next-deploy.ts
+index de7bdc3ce390..89b8ff158213 100644
+--- a/test/lib/next-modes/next-deploy.ts
++++ b/test/lib/next-modes/next-deploy.ts
+@@ -552,4 +552,10 @@ export class NextDeployInstance extends NextInstance {
+   ): Promise<void> {
+     throw new Error('renameFile is not available in deploy test mode')
+   }
++  public async readFileBuffer(filename: string): Promise<Buffer> {
++    throw new Error('readFileBuffer is not available in deploy test mode')
++  }
++  public async writeFileBuffer(filename: string, data: Buffer): Promise<void> {
++    throw new Error('writeFileBuffer is not available in deploy test mode')
++  }
+ }

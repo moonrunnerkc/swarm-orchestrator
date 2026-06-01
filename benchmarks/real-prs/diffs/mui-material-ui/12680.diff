@@ -1,0 +1,535 @@
+diff --git a/.size-limit.js b/.size-limit.js
+index 7bad9f0723960b..7e716d5a80809b 100644
+--- a/.size-limit.js
++++ b/.size-limit.js
+@@ -22,7 +22,7 @@ module.exports = [
+     name: 'The size of all the modules of material-ui.',
+     webpack: true,
+     path: 'packages/material-ui/build/index.js',
+-    limit: '89.7 KB',
++    limit: '89.9 KB',
+   },
+   {
+     name: 'The main bundle of the docs',
+diff --git a/docs/src/pages/demos/chips/Chips.js b/docs/src/pages/demos/chips/Chips.js
+index dbbd2c8c09313a..0f79b01758ff5d 100644
+--- a/docs/src/pages/demos/chips/Chips.js
++++ b/docs/src/pages/demos/chips/Chips.js
+@@ -69,7 +69,7 @@ function Chips(props) {
+       />
+       <Chip
+         avatar={<Avatar>MB</Avatar>}
+-        label="Clickable Link Chip"
++        label="Primary Clickable Chip"
+         clickable
+         className={classes.chip}
+         color="primary"
+@@ -77,7 +77,7 @@ function Chips(props) {
+         deleteIcon={<DoneIcon />}
+       />
+       <Chip
+-        label="Clickable Link Chip"
++        label="Deletable Primary Chip"
+         onDelete={handleDelete}
+         className={classes.chip}
+         color="primary"
+@@ -88,7 +88,7 @@ function Chips(props) {
+             <FaceIcon />
+           </Avatar>
+         }
+-        label="Clickable Link Chip"
++        label="Deletable Secondary Chip"
+         onDelete={handleDelete}
+         className={classes.chip}
+         color="secondary"
+diff --git a/docs/src/pages/demos/chips/ChipsPlayground.js b/docs/src/pages/demos/chips/ChipsPlayground.js
+index 349f9c30f57d7e..540c0eeaee2697 100644
+--- a/docs/src/pages/demos/chips/ChipsPlayground.js
++++ b/docs/src/pages/demos/chips/ChipsPlayground.js
+@@ -31,6 +31,7 @@ class ChipsPlayground extends React.Component {
+     color: 'default',
+     onDelete: 'none',
+     avatar: 'none',
++    variant: 'default',
+   };
+ 
+   handleChange = key => (event, value) => {
+@@ -45,9 +46,10 @@ class ChipsPlayground extends React.Component {
+ 
+   render() {
+     const { classes } = this.props;
+-    const { color, onDelete, avatar } = this.state;
++    const { color, onDelete, avatar, variant } = this.state;
+ 
+     const colorToCode = color !== 'default' ? `color="${color}" ` : '';
++    const variantToCode = variant !== 'default' ? `variant="${variant}" ` : '';
+ 
+     let onDeleteToCode;
+     switch (onDelete) {
+@@ -88,7 +90,7 @@ class ChipsPlayground extends React.Component {
+ 
+     const code = `
+ \`\`\`jsx
+-<Chip ${colorToCode}${onDeleteToCode}${avatarToCode}/>
++<Chip ${colorToCode}${onDeleteToCode}${avatarToCode}${variantToCode}/>
+ \`\`\`
+ `;
+ 
+@@ -100,9 +102,10 @@ class ChipsPlayground extends React.Component {
+               <Chip
+                 label="Awesome Chip Component"
+                 color={color}
+-                deleteIcon={onDelete === 'custom' && <DoneIcon />}
+-                onDelete={onDelete !== 'none' && this.handleDeleteExample}
++                deleteIcon={onDelete === 'custom' ? <DoneIcon /> : undefined}
++                onDelete={onDelete !== 'none' ? this.handleDeleteExample : undefined}
+                 avatar={avatarToPlayground}
++                variant={variant}
+               />
+             </Grid>
+           </Grid>
+@@ -159,6 +162,21 @@ class ChipsPlayground extends React.Component {
+                   </RadioGroup>
+                 </FormControl>
+               </Grid>
++              <Grid item xs={12}>
++                <FormControl component="fieldset">
++                  <FormLabel>variant</FormLabel>
++                  <RadioGroup
++                    row
++                    name="variant"
++                    aria-label="variant"
++                    value={variant}
++                    onChange={this.handleChange('variant')}
++                  >
++                    <FormControlLabel value="default" control={<Radio />} label="default" />
++                    <FormControlLabel value="outlined" control={<Radio />} label="outlined" />
++                  </RadioGroup>
++                </FormControl>
++              </Grid>
+             </Grid>
+           </Paper>
+         </Grid>
+diff --git a/docs/src/pages/demos/chips/OutlinedChips.js b/docs/src/pages/demos/chips/OutlinedChips.js
+new file mode 100644
+index 00000000000000..7770786d328837
+--- /dev/null
++++ b/docs/src/pages/demos/chips/OutlinedChips.js
+@@ -0,0 +1,112 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from '@material-ui/core/styles';
++import Avatar from '@material-ui/core/Avatar';
++import Chip from '@material-ui/core/Chip';
++import FaceIcon from '@material-ui/icons/Face';
++import DoneIcon from '@material-ui/icons/Done';
++
++const styles = theme => ({
++  root: {
++    display: 'flex',
++    justifyContent: 'center',
++    flexWrap: 'wrap',
++  },
++  chip: {
++    margin: theme.spacing.unit,
++  },
++});
++
++function handleDelete() {
++  alert('You clicked the delete icon.'); // eslint-disable-line no-alert
++}
++
++function handleClick() {
++  alert('You clicked the Chip.'); // eslint-disable-line no-alert
++}
++
++function OutlinedChips(props) {
++  const { classes } = props;
++  return (
++    <div className={classes.root}>
++      <Chip label="Basic Chip" className={classes.chip} variant="outlined" />
++      <Chip
++        avatar={<Avatar>MB</Avatar>}
++        label="Clickable Chip"
++        onClick={handleClick}
++        className={classes.chip}
++        variant="outlined"
++      />
++      <Chip
++        avatar={<Avatar src="/static/images/uxceo-128.jpg" />}
++        label="Deletable Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        variant="outlined"
++      />
++      <Chip
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++        variant="outlined"
++      />
++      <Chip
++        label="Custom delete icon Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++        deleteIcon={<DoneIcon />}
++        variant="outlined"
++      />
++      <Chip
++        label="Clickable Link Chip"
++        className={classes.chip}
++        component="a"
++        href="#chip"
++        clickable
++        variant="outlined"
++      />
++      <Chip
++        avatar={<Avatar>MB</Avatar>}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++        variant="outlined"
++      />
++      <Chip
++        label="Deletable Primary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="primary"
++        variant="outlined"
++      />
++      <Chip
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++        variant="outlined"
++      />
++    </div>
++  );
++}
++
++OutlinedChips.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(OutlinedChips);
+diff --git a/docs/src/pages/demos/chips/chips.md b/docs/src/pages/demos/chips/chips.md
+index a716d7f9d6e33b..d5938d9f6c6a9d 100644
+--- a/docs/src/pages/demos/chips/chips.md
++++ b/docs/src/pages/demos/chips/chips.md
+@@ -25,6 +25,12 @@ and (string) Avatar.
+ 
+ {{"demo": "pages/demos/chips/Chips.js"}}
+ 
++### Outlined Chips
++
++Outlined chips offer an alternative style.
++
++{{"demo": "pages/demos/chips/OutlinedChips.js"}}
++
+ ## Chip Playground
+ 
+ {{"demo": "pages/demos/chips/ChipsPlayground.js"}}
+diff --git a/packages/material-ui/src/Chip/Chip.d.ts b/packages/material-ui/src/Chip/Chip.d.ts
+index f5bf36135b060d..c092dd6688a775 100644
+--- a/packages/material-ui/src/Chip/Chip.d.ts
++++ b/packages/material-ui/src/Chip/Chip.d.ts
+@@ -10,6 +10,7 @@ export interface ChipProps
+   deleteIcon?: React.ReactElement<any>;
+   label?: React.ReactNode;
+   onDelete?: React.EventHandler<any>;
++  variant?: 'default' | 'outlined';
+ }
+ 
+ export type ChipClassKey =
+@@ -22,6 +23,9 @@ export type ChipClassKey =
+   | 'deletable'
+   | 'deletablePrimary'
+   | 'deletableSecondary'
++  | 'outlined'
++  | 'outlinedPrimary'
++  | 'outlinedSecondary'
+   | 'avatar'
+   | 'avatarPrimary'
+   | 'avatarSecondary'
+@@ -29,7 +33,9 @@ export type ChipClassKey =
+   | 'label'
+   | 'deleteIcon'
+   | 'deleteIconPrimary'
+-  | 'deleteIconSecondary';
++  | 'deleteIconSecondary'
++  | 'deleteIconOutlinedColorPrimary'
++  | 'deleteIconOutlinedColorSecondary';
+ 
+ declare const Chip: React.ComponentType<ChipProps>;
+ 
+diff --git a/packages/material-ui/src/Chip/Chip.js b/packages/material-ui/src/Chip/Chip.js
+index cf3417bc432308..a5fac4881a3c7d 100644
+--- a/packages/material-ui/src/Chip/Chip.js
++++ b/packages/material-ui/src/Chip/Chip.js
+@@ -101,6 +101,34 @@ export const styles = theme => {
+         backgroundColor: emphasize(theme.palette.secondary.main, 0.2),
+       },
+     },
++    /* Styles applied to the root element if `variant="outlined"`. */
++    outlined: {
++      backgroundColor: 'transparent',
++      border: `1px solid ${
++        theme.palette.type === 'light' ? 'rgba(0, 0, 0, 0.23)' : 'rgba(255, 255, 255, 0.23)'
++      }`,
++      '$clickable&:hover, $clickable&:focus, $deletable&:focus': {
++        backgroundColor: fade(theme.palette.text.primary, theme.palette.action.hoverOpacity),
++      },
++    },
++    /* Styles applied to the root element if `variant="outlined"` and `color="primary"`. */
++    outlinedPrimary: {
++      color: theme.palette.primary.main,
++      border: `1px solid ${fade(theme.palette.primary.main, 0.5)}`,
++      '$clickable&:hover, $clickable&:focus, $deletable&:focus': {
++        backgroundColor: fade(theme.palette.primary.main, theme.palette.action.hoverOpacity),
++        border: `1px solid ${theme.palette.primary.main}`,
++      },
++    },
++    /* Styles applied to the root element if `variant="outlined"` and `color="secondary"`. */
++    outlinedSecondary: {
++      color: theme.palette.secondary.main,
++      border: `1px solid ${fade(theme.palette.secondary.main, 0.5)}`,
++      '$clickable&:hover, $clickable&:focus, $deletable&:focus': {
++        backgroundColor: fade(theme.palette.secondary.main, theme.palette.action.hoverOpacity),
++        border: `1px solid ${theme.palette.secondary.main}`,
++      },
++    },
+     /* Styles applied to the `avatar` element. */
+     avatar: {
+       marginRight: -4,
+@@ -146,20 +174,34 @@ export const styles = theme => {
+         color: fade(deleteIconColor, 0.4),
+       },
+     },
+-    /* Styles applied to the deleteIcon element if `color="primary"`. */
++    /* Styles applied to the deleteIcon element if `color="primary"` and `variant="default"`. */
+     deleteIconColorPrimary: {
+       color: fade(theme.palette.primary.contrastText, 0.65),
+       '&:hover, &:active': {
+         color: theme.palette.primary.contrastText,
+       },
+     },
+-    /* Styles applied to the deleteIcon element if `color="secondary"`. */
++    /* Styles applied to the deleteIcon element if `color="secondary"` and `variant="default"`. */
+     deleteIconColorSecondary: {
+       color: fade(theme.palette.primary.contrastText, 0.65),
+       '&:hover, &:active': {
+         color: theme.palette.primary.contrastText,
+       },
+     },
++    /* Styles applied to the deleteIcon element if `color="primary"` and `variant="outlined"`. */
++    deleteIconOutlinedColorPrimary: {
++      color: fade(theme.palette.primary.main, 0.65),
++      '&:hover, &:active': {
++        color: theme.palette.primary.main,
++      },
++    },
++    /* Styles applied to the deleteIcon element if `color="secondary"` and `variant="outlined"`. */
++    deleteIconOutlinedColorSecondary: {
++      color: fade(theme.palette.secondary.main, 0.65),
++      '&:hover, &:active': {
++        color: theme.palette.secondary.main,
++      },
++    },
+   };
+ };
+ 
+@@ -233,19 +275,23 @@ class Chip extends React.Component {
+       onKeyDown,
+       onKeyUp,
+       tabIndex: tabIndexProp,
++      variant,
+       ...other
+     } = this.props;
+ 
+     const className = classNames(
+       classes.root,
+-      { [classes[`color${capitalize(color)}`]]: color !== 'default' },
+-      { [classes.clickable]: onClick || clickable },
+       {
++        [classes[`color${capitalize(color)}`]]: color !== 'default',
++        [classes.clickable]: onClick || clickable,
+         [classes[`clickableColor${capitalize(color)}`]]:
+           (onClick || clickable) && color !== 'default',
++        [classes.deletable]: onDelete,
++        [classes[`deletableColor${capitalize(color)}`]]: onDelete && color !== 'default',
++        [classes.outlined]: variant === 'outlined',
++        [classes.outlinedPrimary]: variant === 'outlined' && color === 'primary',
++        [classes.outlinedSecondary]: variant === 'outlined' && color === 'secondary',
+       },
+-      { [classes.deletable]: onDelete },
+-      { [classes[`deletableColor${capitalize(color)}`]]: onDelete && color !== 'default' },
+       classNameProp,
+     );
+ 
+@@ -255,14 +301,20 @@ class Chip extends React.Component {
+         deleteIconProp && React.isValidElement(deleteIconProp) ? (
+           React.cloneElement(deleteIconProp, {
+             className: classNames(deleteIconProp.props.className, classes.deleteIcon, {
+-              [classes[`deleteIconColor${capitalize(color)}`]]: color !== 'default',
++              [classes[`deleteIconColor${capitalize(color)}`]]:
++                color !== 'default' && variant !== 'outlined',
++              [classes[`deleteIconOutlinedColor${capitalize(color)}`]]:
++                color !== 'default' && variant === 'outlined',
+             }),
+             onClick: this.handleDeleteIconClick,
+           })
+         ) : (
+           <CancelIcon
+             className={classNames(classes.deleteIcon, {
+-              [classes[`deleteIconColor${capitalize(color)}`]]: color !== 'default',
++              [classes[`deleteIconColor${capitalize(color)}`]]:
++                color !== 'default' && variant !== 'outlined',
++              [classes[`deleteIconOutlinedColor${capitalize(color)}`]]:
++                color !== 'default' && variant === 'outlined',
+             })}
+             onClick={this.handleDeleteIconClick}
+           />
+@@ -369,12 +421,17 @@ Chip.propTypes = {
+    * @ignore
+    */
+   tabIndex: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
++  /**
++   * The variant to use.
++   */
++  variant: PropTypes.oneOf(['default', 'outlined']),
+ };
+ 
+ Chip.defaultProps = {
+   clickable: false,
+   component: 'div',
+   color: 'default',
++  variant: 'default',
+ };
+ 
+ export default withStyles(styles, { name: 'MuiChip' })(Chip);
+diff --git a/packages/material-ui/src/Chip/Chip.test.js b/packages/material-ui/src/Chip/Chip.test.js
+index eb8e263ab95d8a..ac99549ab7b000 100644
+--- a/packages/material-ui/src/Chip/Chip.test.js
++++ b/packages/material-ui/src/Chip/Chip.test.js
+@@ -110,6 +110,25 @@ describe('<Chip />', () => {
+       assert.strictEqual(wrapper.hasClass(classes.clickableColorPrimary), true);
+     });
+ 
++    it('should render with the root and outlined clickable primary class', () => {
++      wrapper = shallow(
++        <Chip
++          className="my-Chip"
++          data-my-prop="woofChip"
++          onClick={handleClick}
++          color="primary"
++          variant="outlined"
++        />,
++      );
++
++      assert.strictEqual(wrapper.hasClass(classes.root), true);
++      assert.strictEqual(wrapper.hasClass(classes.colorPrimary), true);
++      assert.strictEqual(wrapper.hasClass(classes.clickable), true);
++      assert.strictEqual(wrapper.hasClass(classes.clickableColorPrimary), true);
++      assert.strictEqual(wrapper.hasClass(classes.outlined), true);
++      assert.strictEqual(wrapper.hasClass(classes.outlinedPrimary), true);
++    });
++
+     it('should render with the root and clickable secondary class', () => {
+       wrapper = shallow(
+         <Chip
+@@ -265,6 +284,27 @@ describe('<Chip />', () => {
+       assert.strictEqual(wrapper.find(CancelIcon).length, 1);
+     });
+ 
++    it(
++      'should render a default icon with the root, deletable, deleteIcon' +
++        ' and deleteIconOutlinedColorSecondary classes',
++      () => {
++        const wrapper = shallow(
++          <Chip
++            label="Custom delete icon Chip"
++            onDelete={() => {}}
++            variant="outlined"
++            color="secondary"
++          />,
++        );
++        assert.strictEqual(wrapper.hasClass(classes.root), true);
++        assert.strictEqual(wrapper.hasClass(classes.deletable), true);
++
++        const iconWrapper = wrapper.find(CancelIcon);
++        assert.strictEqual(iconWrapper.hasClass(classes.deleteIcon), true);
++        assert.strictEqual(iconWrapper.hasClass(classes.deleteIconOutlinedColorSecondary), true);
++      },
++    );
++
+     it('should render a default icon with the root, deletable and deleteIcon classes', () => {
+       const wrapper = shallow(<Chip label="Custom delete icon Chip" onDelete={() => {}} />);
+       assert.strictEqual(wrapper.hasClass(classes.root), true);
+diff --git a/pages/api/chip.md b/pages/api/chip.md
+index eb812552670737..08d8a8ab4b6a0b 100644
+--- a/pages/api/chip.md
++++ b/pages/api/chip.md
+@@ -24,6 +24,7 @@ Chips represent complex entities in small blocks, such as a contact.
+ | <span class="prop-name">deleteIcon</span> | <span class="prop-type">element |   | Override the default delete icon element. Shown only if `onDelete` is set. |
+ | <span class="prop-name">label</span> | <span class="prop-type">node |   | The content of the label. |
+ | <span class="prop-name">onDelete</span> | <span class="prop-type">func |   | Callback function fired when the delete icon is clicked. If set, the delete icon will be shown. |
++| <span class="prop-name">variant</span> | <span class="prop-type">enum:&nbsp;'default'&nbsp;&#124;<br>&nbsp;'outlined'<br> | <span class="prop-default">'default'</span> | The variant to use. |
+ 
+ Any other properties supplied will be spread to the root element (native element).
+ 
+@@ -44,14 +45,19 @@ This property accepts the following keys:
+ | <span class="prop-name">deletable</span> | Styles applied to the root element if `onDelete` is defined.
+ | <span class="prop-name">deletableColorPrimary</span> | Styles applied to the root element if `onDelete` and `color="primary"` is defined.
+ | <span class="prop-name">deletableColorSecondary</span> | Styles applied to the root element if `onDelete` and `color="secondary"` is defined.
++| <span class="prop-name">outlined</span> | Styles applied to the root element if `variant="outlined"`.
++| <span class="prop-name">outlinedPrimary</span> | Styles applied to the root element if `variant="outlined"` and `color="primary"`.
++| <span class="prop-name">outlinedSecondary</span> | Styles applied to the root element if `variant="outlined"` and `color="secondary"`.
+ | <span class="prop-name">avatar</span> | Styles applied to the `avatar` element.
+ | <span class="prop-name">avatarColorPrimary</span> | Styles applied to the `avatar` element if `checked={true}` and `color="primary"`
+ | <span class="prop-name">avatarColorSecondary</span> | Styles applied to the `avatar` element if `checked={true}` and `color="secondary"`
+ | <span class="prop-name">avatarChildren</span> | Styles applied to the `avatar` elements children.
+ | <span class="prop-name">label</span> | Styles applied to the label `span` element`.
+ | <span class="prop-name">deleteIcon</span> | Styles applied to the `deleteIcon` element.
+-| <span class="prop-name">deleteIconColorPrimary</span> | Styles applied to the deleteIcon element if `color="primary"`.
+-| <span class="prop-name">deleteIconColorSecondary</span> | Styles applied to the deleteIcon element if `color="secondary"`.
++| <span class="prop-name">deleteIconColorPrimary</span> | Styles applied to the deleteIcon element if `color="primary"` and `variant="default"`.
++| <span class="prop-name">deleteIconColorSecondary</span> | Styles applied to the deleteIcon element if `color="secondary"` and `variant="default"`.
++| <span class="prop-name">deleteIconOutlinedColorPrimary</span> | Styles applied to the deleteIcon element if `color="primary"` and `variant="outlined"`.
++| <span class="prop-name">deleteIconOutlinedColorSecondary</span> | Styles applied to the deleteIcon element if `color="secondary"` and `variant="outlined"`.
+ 
+ Have a look at [overriding with classes](/customization/overrides#overriding-with-classes) section
+ and the [implementation of the component](https://github.com/mui-org/material-ui/tree/master/packages/material-ui/src/Chip/Chip.js)
+diff --git a/pages/demos/chips.js b/pages/demos/chips.js
+index 454798df0af69f..ef8ab668e50371 100644
+--- a/pages/demos/chips.js
++++ b/pages/demos/chips.js
+@@ -13,6 +13,13 @@ function Page() {
+           raw: preval`
+ module.exports = require('fs')
+   .readFileSync(require.resolve('docs/src/pages/demos/chips/Chips'), 'utf8')
++`,
++        },
++        'pages/demos/chips/OutlinedChips.js': {
++          js: require('docs/src/pages/demos/chips/OutlinedChips').default,
++          raw: preval`
++module.exports = require('fs')
++  .readFileSync(require.resolve('docs/src/pages/demos/chips/OutlinedChips'), 'utf8')
+ `,
+         },
+         'pages/demos/chips/ChipsPlayground.js': {

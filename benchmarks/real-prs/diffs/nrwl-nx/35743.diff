@@ -1,0 +1,3084 @@
+diff --git a/.claude/skills/dist-build-migration/SKILL.md b/.claude/skills/dist-build-migration/SKILL.md
+index 948c445666a..8567eec5019 100644
+--- a/.claude/skills/dist-build-migration/SKILL.md
++++ b/.claude/skills/dist-build-migration/SKILL.md
+@@ -433,13 +433,15 @@ The three load-bearing patterns to verify:
+ 
+ - Hard-code the public symbol set (the recursively-expanded `export`s of `src/index.ts`) in the migration.
+ - For a **named** `import`/`export` declaration, partition the named bindings: public symbols go to `@nx/<name>`, the rest to `@nx/<name>/internal`. Classify an `orig as alias` binding by `orig`. If both groups are non-empty, replace the single declaration with two — one per target — preserving any `import type` / `export type` modifier.
+-- A **namespace** import (`import * as ns`), a **default** import, `export *`, and every **call expression** (`require`, dynamic `import`, `jest.mock` family) reference the module as a whole and can't be symbol-split — route them to `@nx/<name>/internal`.
++- A **namespace** import (`import * as ns`), a **default** import, `export *`, every **call expression** (`require`, dynamic `import`, `jest.mock` family), and `typeof import('...')` **type queries** (`ImportTypeNode`) reference the module as a whole and can't be symbol-split — route them to `@nx/<name>/internal`.
+ 
+-Skip the preserved subpaths from step 2 (e.g. `@nx/<name>/src/release/version-actions`). Use `ts.createSourceFile` for AST-based detection so you don't rewrite literals inside comments, template strings, or `typeof import('...')` type queries.
++Skip the preserved subpaths from step 2 (e.g. `@nx/<name>/src/release/version-actions`). Use `ts.createSourceFile` for AST-based detection so you don't rewrite literals inside comments or template strings.
++
++**Don't forget `typeof import('...')`.** It parses as an `ImportTypeNode`, not a `CallExpression`, so it's a separate AST branch from the `require`/dynamic-`import` handling. Real-world consumers use the idiom `const m = require('@nx/<name>/src/x') as typeof import('@nx/<name>/src/x')` to get a typed runtime `require` — if the codemod only rewrites the runtime arg, the type arg stays pointing at the now-removed `./src/*` wildcard and the consumer fails to type-check. Handle it explicitly: walk `ImportTypeNode`s and rewrite `node.argument.literal` when the string starts with `@nx/<name>/src/`.
+ 
+ Register in `packages/<name>/migrations.json` with `version: <current beta>`. The description should state the routing rule: named public-symbol imports/exports go to `@nx/<name>`, everything else to `@nx/<name>/internal`.
+ 
+-Add a spec covering: public-symbol import (→ `@nx/<name>`), internal-symbol import (→ `@nx/<name>/internal`), mixed import split into two, aliased bindings classified by original name, type-only split, `export { ... } from` (public / internal / mixed), `export *`, namespace import, single-quoted, double-quoted, deep subpath, `.js` extension, `require()`, dynamic `import()`, jest mock family, vi mock family, a non-mock `jest.*` call left alone, an import + `jest.mock` in the same file, preserved subpaths, non-`@nx/<name>` imports, `typeof import()` type queries, unrelated string literals inside comments.
++Add a spec covering: public-symbol import (→ `@nx/<name>`), internal-symbol import (→ `@nx/<name>/internal`), mixed import split into two, aliased bindings classified by original name, type-only split, `export { ... } from` (public / internal / mixed), `export *`, namespace import, **default import**, single-quoted, double-quoted, deep subpath, `.js` extension, `require()`, dynamic `import()`, **`typeof import()` type queries (→ `/internal`)**, **a `<typeof import()>require()` cast in tandem** (catches the regression where the runtime arg gets rewritten but the type arg doesn't), the **full** jest mock family (`it.each` over `MOCK_HELPER_METHODS`), the **full** vi mock family, **`jest.mock('...', factory)` with a factory argument**, a non-mock `jest.*` call left alone, an import + `jest.mock` in the same file, preserved subpaths, non-`@nx/<name>` imports, unrelated string literals inside comments. Make sure every entry in `PUBLIC_SYMBOLS` and every entry in `MOCK_HELPER_METHODS` is exercised at least once — drift from hardcoded sets is the most likely silent regression.
+ 
+ **9. Watch for the published-version-mismatch gotcha in example/test builds.**
+ 
+@@ -526,6 +528,34 @@ Reference implementations:
+ 
+ This was the source of the workspace-migration e2e regressions (PR #35643) and is one of the most-failure-prone steps to forget. Audit aggressively.
+ 
++### 15b. Audit `ensurePackage` + `await import(...)` pairs
++
++Search for `ensurePackage\(['"]@nx/` inside `packages/<name>/src/`. For every match, look at the next 5–20 lines for a `await import('@nx/<other>/...')` pulling from the same package. This pattern is **broken** under `nodenext`:
++
++- Before migration: `module: commonjs` made TypeScript downlevel `await import('@nx/<other>')` to `Promise.resolve(require('@nx/<other>'))`. The synchronous `require()` honors `Module._initPaths`, which is exactly where `ensurePackage` registers the on-demand temp install. Resolution succeeds.
++- After migration: `module: nodenext` preserves `import()` as a true ESM dynamic import. ESM resolution **ignores** `Module._initPaths` — it walks up `node_modules` from the importing file's location only. The temp install lives in a different temp dir, so the import fails with `Cannot find package '@nx/<other>'`.
++
++**Fix**: replace the dynamic import with a synchronous `require()`. The `ensurePackage` side effect makes it findable via `_initPaths`, and `require()` honors that:
++
++```ts
++// Before
++ensurePackage('@nx/eslint', nxVersion);
++const { foo, bar } = await import('@nx/eslint/internal');
++
++// After
++ensurePackage('@nx/eslint', nxVersion);
++// `require()` honors Module._initPaths (which ensurePackage updates); ESM
++// dynamic `import()` doesn't, so it can't see the temp install.
++const {
++  foo,
++  bar,
++}: typeof import('@nx/eslint/internal') = require('@nx/eslint/internal');
++```
++
++Collapse multiple successive `await import()`s of the same module into one `require()` destructuring while you're at it.
++
++This was the source of the M2 e2e regressions (Playwright/Web/React generators crashed at `Cannot find package '@nx/eslint'` from `ignore-vite-temp-files.js` and `ignore-vitest-temp-files.js`). One-line failure mode, but it can sit hidden in any code path that the unit-test suite doesn't exercise — only the published-then-installed flow exposes it. Audit every `ensurePackage` callsite.
++
+ ### 16. Preserve `add-extra-dependencies` if the package has one
+ 
+ `scripts/add-dependency-to-build.js` is a release-time hack that injects an extra dep into the **published** `package.json` (e.g., it adds `nx` to `@nx/workspace`'s `dependencies`). It is **not dead code** — without it the transitive resolution chain breaks for downstream consumers.
+diff --git a/.gitignore b/.gitignore
+index d30fdc108e0..920cf76939e 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -140,6 +140,10 @@ packages/js/README.md
+ packages/jest/README.md
+ packages/eslint/README.md
+ packages/eslint-plugin/README.md
++packages/vitest/README.md
++packages/cypress/README.md
++packages/playwright/README.md
++packages/vite/README.md
+ 
+ test-output
+ test-results
+diff --git a/e2e/nx-build/src/nx-build.test.ts b/e2e/nx-build/src/nx-build.test.ts
+index d886abf76be..a717dc77333 100644
+--- a/e2e/nx-build/src/nx-build.test.ts
++++ b/e2e/nx-build/src/nx-build.test.ts
+@@ -30,7 +30,22 @@ const packagesToVerify = [
+   {
+     name: 'playwright',
+     sourceFile: 'index.ts',
+-    outputFile: 'dist/packages/playwright/index.js',
++    outputFile: 'packages/playwright/dist/index.js',
++  },
++  {
++    name: 'cypress',
++    sourceFile: 'index.ts',
++    outputFile: 'packages/cypress/dist/index.js',
++  },
++  {
++    name: 'vite',
++    sourceFile: 'index.ts',
++    outputFile: 'packages/vite/dist/index.js',
++  },
++  {
++    name: 'vitest',
++    sourceFile: 'index.ts',
++    outputFile: 'packages/vitest/dist/index.js',
+   },
+   {
+     name: 'create-nx-workspace',
+diff --git a/packages/angular/plugins/component-testing.ts b/packages/angular/plugins/component-testing.ts
+index 311188926d4..bf19463f789 100644
+--- a/packages/angular/plugins/component-testing.ts
++++ b/packages/angular/plugins/component-testing.ts
+@@ -7,7 +7,7 @@ import {
+   getProjectConfigByPath,
+   getTempTailwindPath,
+   isCtProjectUsingBuildProject,
+-} from '@nx/cypress/src/utils/ct-helpers';
++} from '@nx/cypress/internal';
+ import {
+   ExecutorContext,
+   joinPathFragments,
+diff --git a/packages/angular/src/generators/application/application.spec.ts b/packages/angular/src/generators/application/application.spec.ts
+index e39544dd7ab..09564759e77 100644
+--- a/packages/angular/src/generators/application/application.spec.ts
++++ b/packages/angular/src/generators/application/application.spec.ts
+@@ -1,4 +1,4 @@
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import * as devkit from '@nx/devkit';
+ import {
+   NxJsonConfiguration,
+@@ -20,8 +20,8 @@ import { generateTestApplication } from '../utils/testing';
+ import type { Schema } from './schema';
+ 
+ // need to mock cypress otherwise it'll use installed version in this repo's package.json
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ jest.mock('enquirer');
+diff --git a/packages/angular/src/generators/component-test/component-test.spec.ts b/packages/angular/src/generators/component-test/component-test.spec.ts
+index 16fa20a01ae..f768e801950 100644
+--- a/packages/angular/src/generators/component-test/component-test.spec.ts
++++ b/packages/angular/src/generators/component-test/component-test.spec.ts
+@@ -1,6 +1,6 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { assertMinimumCypressVersion } from '@nx/cypress/src/utils/versions';
++import { assertMinimumCypressVersion } from '@nx/cypress/internal';
+ import { Tree } from '@nx/devkit';
+ import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+ import { UnitTestRunner } from '../../utils/test-runners';
+@@ -9,7 +9,7 @@ import { generateTestLibrary } from '../utils/testing';
+ import { componentTestGenerator } from './component-test';
+ import { EOL } from 'node:os';
+ 
+-jest.mock('@nx/cypress/src/utils/versions');
++jest.mock('@nx/cypress/internal');
+ 
+ describe('Angular Cypress Component Test Generator', () => {
+   let tree: Tree;
+diff --git a/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts b/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+index dda50be43d0..72cc412b876 100644
+--- a/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
++++ b/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+@@ -1,4 +1,4 @@
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   DependencyType,
+   joinPathFragments,
+@@ -24,8 +24,8 @@ import { librarySecondaryEntryPointGenerator } from '../library-secondary-entry-
+ import { generateTestApplication, generateTestLibrary } from '../utils/testing';
+ import { cypressComponentConfiguration } from './cypress-component-configuration';
+ 
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ // nested code imports graph from the repo, which might have innacurate graph version
+diff --git a/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.ts b/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.ts
+index a1283f468da..3a26478e545 100644
+--- a/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.ts
++++ b/packages/angular/src/generators/cypress-component-configuration/cypress-component-configuration.ts
+@@ -1,5 +1,5 @@
+ import type { NxComponentTestingOptions } from '@nx/cypress/plugins/cypress-preset';
+-import type { FoundTarget } from '@nx/cypress/src/utils/find-target-options';
++import type { FoundTarget } from '@nx/cypress/internal';
+ import {
+   ensurePackage,
+   formatFiles,
+@@ -65,9 +65,7 @@ export async function cypressComponentConfiguration(
+   }
+ 
+   if (isZoneless) {
+-    const { getInstalledCypressVersion } = await import(
+-      '@nx/cypress/src/utils/versions'
+-    );
++    const { getInstalledCypressVersion } = await import('@nx/cypress/internal');
+     const installedCypressVersion = getInstalledCypressVersion(tree);
+     // Zoneless support was introduced in Cypress 15.8.0
+     // If Cypress is not yet installed, we'll install the latest version, which will have zoneless support
+@@ -117,9 +115,9 @@ async function addFiles(
+     'support',
+     'component.ts'
+   );
+-  const { addMountDefinition } = <
+-    typeof import('@nx/cypress/src/utils/config')
+-  >require('@nx/cypress/src/utils/config');
++  const { addMountDefinition } = <typeof import('@nx/cypress/internal')>(
++    require('@nx/cypress/internal')
++  );
+   const updatedCmpContents = await addMountDefinition(
+     tree.read(componentFile, 'utf-8')
+   );
+@@ -180,9 +178,9 @@ async function configureCypressCT(
+   let found: FoundTarget = { target: options.buildTarget, config: undefined };
+ 
+   if (!options.buildTarget) {
+-    const { findBuildConfig } = <
+-      typeof import('@nx/cypress/src/utils/find-target-options')
+-    >require('@nx/cypress/src/utils/find-target-options');
++    const { findBuildConfig } = <typeof import('@nx/cypress/internal')>(
++      require('@nx/cypress/internal')
++    );
+     found = await findBuildConfig(tree, {
+       project: options.project,
+       buildTarget: options.buildTarget,
+@@ -235,8 +233,8 @@ async function configureCypressCT(
+   }
+ 
+   const { addDefaultCTConfig, getProjectCypressConfigPath } = <
+-    typeof import('@nx/cypress/src/utils/config')
+-  >require('@nx/cypress/src/utils/config');
++    typeof import('@nx/cypress/internal')
++  >require('@nx/cypress/internal');
+   const cypressConfigPath = getProjectCypressConfigPath(
+     tree,
+     projectConfig.root
+diff --git a/packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.spec.ts b/packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.spec.ts
+index d544d9ecc05..1edf1482a57 100644
+--- a/packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.spec.ts
++++ b/packages/angular/src/generators/ng-add/migrators/projects/e2e.migrator.spec.ts
+@@ -1,8 +1,8 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+ // mock so we can test multiple versions
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual<any>('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual<any>('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ // mock bc the nxE2EPreset uses fs for path normalization
+@@ -15,7 +15,7 @@ jest.mock('fs', () => {
+   };
+ });
+ 
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import { formatFiles, ProjectConfiguration, Tree } from '@nx/devkit';
+ import {
+   joinPathFragments,
+diff --git a/packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts b/packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts
+index c7b96cffddf..98330ec2043 100644
+--- a/packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts
++++ b/packages/angular/src/generators/setup-mf/lib/add-cypress-workaround.ts
+@@ -37,7 +37,7 @@ export function addCypressOnErrorWorkaround(tree: Tree, schema: Schema) {
+       // don't ensure package is installed, if it's not installed, we don't need to add the workaround
+       const {
+         CYPRESS_CONFIG_FILE_NAME_PATTERN,
+-      } = require('@nx/cypress/src/utils/config');
++      } = require('@nx/cypress/internal');
+       if (
+         !glob(tree, [`${e2eProject.root}/${CYPRESS_CONFIG_FILE_NAME_PATTERN}`])
+           .length
+diff --git a/packages/cypress/assets.json b/packages/cypress/assets.json
+index c0cec1820fa..bf786672705 100644
+--- a/packages/cypress/assets.json
++++ b/packages/cypress/assets.json
+@@ -1,8 +1,7 @@
+ {
+-  "outDir": "dist/packages/cypress",
++  "outDir": "packages/cypress/dist",
+   "assets": [
+     { "glob": "**/files/**" },
+-    { "glob": "@(package|executors|generators|migrations).json" },
+     { "glob": "src/**/schema.json" },
+     { "glob": "src/**/schema.d.ts" },
+     { "glob": "PLUGIN.md" },
+diff --git a/packages/cypress/eslint.config.mjs b/packages/cypress/eslint.config.mjs
+index d9893aace48..6a0b04a9830 100644
+--- a/packages/cypress/eslint.config.mjs
++++ b/packages/cypress/eslint.config.mjs
+@@ -3,6 +3,9 @@ import * as jsoncEslintParser from 'jsonc-eslint-parser';
+ 
+ export default [
+   ...baseConfig,
++  {
++    ignores: ['dist'],
++  },
+   {
+     files: ['**/*.ts'],
+     rules: {
+@@ -31,7 +34,16 @@ export default [
+         'error',
+         {
+           buildTargets: ['build-base'],
+-          ignoredDependencies: ['nx', 'typescript', 'eslint', 'rollup', 'vite'],
++          ignoredDependencies: [
++            'nx',
++            // Self-reference: resolves the package's own package.json at
++            // runtime (see src/utils/versions.ts).
++            '@nx/cypress',
++            'typescript',
++            'eslint',
++            'rollup',
++            'vite',
++          ],
+         },
+       ],
+     },
+diff --git a/packages/cypress/executors.json b/packages/cypress/executors.json
+index fb6d6b7008a..72ed2983775 100644
+--- a/packages/cypress/executors.json
++++ b/packages/cypress/executors.json
+@@ -1,8 +1,8 @@
+ {
+   "executors": {
+     "cypress": {
+-      "implementation": "./src/executors/cypress/cypress.impl",
+-      "schema": "./src/executors/cypress/schema.json",
++      "implementation": "./dist/src/executors/cypress/cypress.impl",
++      "schema": "./dist/src/executors/cypress/schema.json",
+       "description": "Run Cypress E2E tests."
+     }
+   }
+diff --git a/packages/cypress/generators.json b/packages/cypress/generators.json
+index 498f3c3a3ff..23daebdad27 100644
+--- a/packages/cypress/generators.json
++++ b/packages/cypress/generators.json
+@@ -3,33 +3,33 @@
+   "version": "0.1",
+   "generators": {
+     "init": {
+-      "factory": "./src/generators/init/init#cypressInitGeneratorInternal",
+-      "schema": "./src/generators/init/schema.json",
++      "factory": "./dist/src/generators/init/init#cypressInitGeneratorInternal",
++      "schema": "./dist/src/generators/init/schema.json",
+       "description": "Initialize the `@nx/cypress` plugin.",
+       "aliases": ["ng-add"],
+       "hidden": true
+     },
+     "configuration": {
+       "aliases": ["cypress-e2e-configuration", "e2e", "e2e-config"],
+-      "factory": "./src/generators/configuration/configuration#configurationGeneratorInternal",
+-      "schema": "./src/generators/configuration/schema.json",
++      "factory": "./dist/src/generators/configuration/configuration#configurationGeneratorInternal",
++      "schema": "./dist/src/generators/configuration/schema.json",
+       "description": "Add a Cypress E2E Configuration to an existing project."
+     },
+     "component-configuration": {
+       "aliases": ["cypress-component-configuration"],
+-      "factory": "./src/generators/component-configuration/component-configuration#componentConfigurationGeneratorInternal",
+-      "schema": "./src/generators/component-configuration/schema.json",
++      "factory": "./dist/src/generators/component-configuration/component-configuration#componentConfigurationGeneratorInternal",
++      "schema": "./dist/src/generators/component-configuration/schema.json",
+       "description": "Set up Cypress Component Test for a project",
+       "hidden": true
+     },
+     "migrate-to-cypress-11": {
+-      "factory": "./src/generators/migrate-to-cypress-11/migrate-to-cypress-11#migrateCypressProject",
+-      "schema": "./src/generators/migrate-to-cypress-11/schema.json",
++      "factory": "./dist/src/generators/migrate-to-cypress-11/migrate-to-cypress-11#migrateCypressProject",
++      "schema": "./dist/src/generators/migrate-to-cypress-11/schema.json",
+       "description": "Migrate existing Cypress e2e projects to Cypress v11"
+     },
+     "convert-to-inferred": {
+-      "factory": "./src/generators/convert-to-inferred/convert-to-inferred",
+-      "schema": "./src/generators/convert-to-inferred/schema.json",
++      "factory": "./dist/src/generators/convert-to-inferred/convert-to-inferred",
++      "schema": "./dist/src/generators/convert-to-inferred/schema.json",
+       "description": "Convert existing Cypress project(s) using `@nx/cypress:cypress` executor to use `@nx/cypress/plugin`."
+     }
+   }
+diff --git a/packages/cypress/internal.ts b/packages/cypress/internal.ts
+new file mode 100644
+index 00000000000..9dfca1fa851
+--- /dev/null
++++ b/packages/cypress/internal.ts
+@@ -0,0 +1,15 @@
++// Semi-private surface for first-party Nx packages.
++//
++// External plugins should NOT import from here — this entry is curated for
++// internal consumers and may change without semver protection. Mirrors
++// `@nx/devkit/internal`.
++
++export * from './src/utils/versions';
++
++export * from './src/utils/ct-helpers';
++
++export * from './src/utils/find-target-options';
++
++export * from './src/utils/config';
++
++export type { CypressExecutorOptions } from './src/executors/cypress/cypress.impl';
+diff --git a/packages/cypress/migrations.json b/packages/cypress/migrations.json
+index bac11439e55..5111b26c84e 100644
+--- a/packages/cypress/migrations.json
++++ b/packages/cypress/migrations.json
+@@ -7,7 +7,7 @@
+         "cypress": ">=14.0.0"
+       },
+       "description": "Replaces the `experimentalSkipDomainInjection` configuration option with the new `injectDocumentDomain` configuration option.",
+-      "implementation": "./src/migrations/update-20-8-0/set-inject-document-domain"
++      "implementation": "./dist/src/migrations/update-20-8-0/set-inject-document-domain"
+     },
+     "remove-experimental-fetch-polyfill": {
+       "cli": "nx",
+@@ -16,7 +16,7 @@
+         "cypress": ">=14.0.0"
+       },
+       "description": "Removes the `experimentalFetchPolyfill` configuration option.",
+-      "implementation": "./src/migrations/update-20-8-0/remove-experimental-fetch-polyfill"
++      "implementation": "./dist/src/migrations/update-20-8-0/remove-experimental-fetch-polyfill"
+     },
+     "replace-experimental-just-in-time-compile": {
+       "cli": "nx",
+@@ -25,7 +25,7 @@
+         "cypress": ">=14.0.0"
+       },
+       "description": "Replaces the `experimentalJustInTimeCompile` configuration option with the new `justInTimeCompile` configuration option.",
+-      "implementation": "./src/migrations/update-20-8-0/replace-experimental-just-in-time-compile"
++      "implementation": "./dist/src/migrations/update-20-8-0/replace-experimental-just-in-time-compile"
+     },
+     "update-component-testing-mount-imports": {
+       "cli": "nx",
+@@ -34,12 +34,12 @@
+         "cypress": ">=14.0.0"
+       },
+       "description": "Updates the module specifier for the Component Testing `mount` function.",
+-      "implementation": "./src/migrations/update-20-8-0/update-component-testing-mount-imports"
++      "implementation": "./dist/src/migrations/update-20-8-0/update-component-testing-mount-imports"
+     },
+     "remove-tsconfig-and-copy-files-options-from-cypress-executor": {
+       "version": "21.0.0-beta.10",
+       "description": "Removes the `tsConfig` and `copyFiles` options from the `@nx/cypress:cypress` executor.",
+-      "implementation": "./src/migrations/update-21-0-0/remove-tsconfig-and-copy-files-options-from-cypress-executor"
++      "implementation": "./dist/src/migrations/update-21-0-0/remove-tsconfig-and-copy-files-options-from-cypress-executor"
+     },
+     "rename-cy-exec-code-property": {
+       "version": "22.1.0-beta.6",
+@@ -47,7 +47,7 @@
+         "cypress": ">=15.0.0"
+       },
+       "description": "Renames `cy.exec().its('code')` usages to the new `exitCode` property introduced in Cypress v15.",
+-      "implementation": "./src/migrations/update-22-1-0/rename-cy-exec-code-property"
++      "implementation": "./dist/src/migrations/update-22-1-0/rename-cy-exec-code-property"
+     },
+     "update-selector-playground-api": {
+       "version": "22.1.0-beta.6",
+@@ -55,7 +55,7 @@
+         "cypress": ">=15.0.0"
+       },
+       "description": "Updates the deprecated `Cypress.SelectorPlayground` API to `Cypress.ElementSelector` and removes the unsupported `onElement` option.",
+-      "implementation": "./src/migrations/update-22-1-0/update-selector-playground-api"
++      "implementation": "./dist/src/migrations/update-22-1-0/update-selector-playground-api"
+     },
+     "update-angular-component-testing-support": {
+       "version": "22.1.0-beta.6",
+@@ -63,7 +63,7 @@
+         "cypress": ">=15.0.0"
+       },
+       "description": "For Angular component testing projects below v18, switches to the fallback `@cypress/angular` harness required by Cypress v15.",
+-      "implementation": "./src/migrations/update-22-1-0/update-angular-component-testing-support"
++      "implementation": "./dist/src/migrations/update-22-1-0/update-angular-component-testing-support"
+     },
+     "remove-experimental-prompt-command": {
+       "version": "23.0.0-beta.10",
+@@ -71,7 +71,12 @@
+         "cypress": ">=15.13.0"
+       },
+       "description": "Removes the `experimentalPromptCommand` flag from `cypress.config.{ts,js,mjs,cjs}`. The flag was removed in Cypress 15.13.0; `cy.prompt` is now in beta without configuration.",
+-      "implementation": "./src/migrations/update-23-0-0/remove-experimental-prompt-command"
++      "implementation": "./dist/src/migrations/update-23-0-0/remove-experimental-prompt-command"
++    },
++    "rewrite-internal-subpath-imports": {
++      "version": "23.0.0-beta.19",
++      "description": "Rewrites imports from `@nx/cypress/src/*` to either the public `@nx/cypress` entry (for re-exported symbols) or `@nx/cypress/internal` (for everything else). The `./src/*` wildcard was removed from the package's exports map.",
++      "implementation": "./dist/src/migrations/update-23-0-0/rewrite-internal-subpath-imports"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/cypress/package.json b/packages/cypress/package.json
+index 3661249aa02..5ee2f094559 100644
+--- a/packages/cypress/package.json
++++ b/packages/cypress/package.json
+@@ -2,6 +2,15 @@
+   "name": "@nx/cypress",
+   "version": "0.0.1",
+   "private": false,
++  "type": "commonjs",
++  "files": [
++    "dist",
++    "!dist/tsconfig.tsbuildinfo",
++    "!dist/spec",
++    "migrations.json",
++    "executors.json",
++    "generators.json"
++  ],
+   "description": "The Nx Plugin for Cypress contains executors and generators allowing your workspace to use the powerful Cypress integration testing capabilities.",
+   "repository": {
+     "type": "git",
+@@ -21,46 +30,45 @@
+     "Front-end",
+     "Testing"
+   ],
+-  "main": "./index.js",
+-  "type": "commonjs",
+-  "types": "./index.d.ts",
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "typesVersions": {
++    "*": {
++      "plugin": [
++        "dist/plugin.d.ts"
++      ],
++      "plugins/cypress-preset": [
++        "dist/plugins/cypress-preset.d.ts"
++      ],
++      "internal": [
++        "dist/internal.d.ts"
++      ]
++    }
++  },
+   "exports": {
+     ".": {
+-      "types": "./index.d.ts",
+-      "default": "./index.js"
++      "@nx/nx-source": "./index.ts",
++      "types": "./dist/index.d.ts",
++      "default": "./dist/index.js"
+     },
+     "./package.json": "./package.json",
+-    "./package": "./package.json",
++    "./migrations.json": "./migrations.json",
+     "./generators.json": "./generators.json",
+     "./executors.json": "./executors.json",
+-    "./migrations.json": "./migrations.json",
+-    "./generators": "./generators.json",
+-    "./executors": "./executors.json",
+-    "./migrations": "./migrations.json",
+     "./plugin": {
+-      "types": "./plugin.d.ts",
+-      "default": "./plugin.js"
+-    },
+-    "./plugin.js": {
+-      "types": "./plugin.d.ts",
+-      "default": "./plugin.js"
+-    },
+-    "./plugins/*": {
+-      "types": "./plugins/*.d.ts",
+-      "default": "./plugins/*.js"
+-    },
+-    "./plugins/*.js": {
+-      "types": "./plugins/*.d.ts",
+-      "default": "./plugins/*.js"
++      "@nx/nx-source": "./plugin.ts",
++      "types": "./dist/plugin.d.ts",
++      "default": "./dist/plugin.js"
+     },
+-    "./src/*/schema.json": "./src/*/schema.json",
+-    "./src/*": {
+-      "types": "./src/*.d.ts",
+-      "default": "./src/*.js"
++    "./plugins/cypress-preset": {
++      "@nx/nx-source": "./plugins/cypress-preset.ts",
++      "types": "./dist/plugins/cypress-preset.d.ts",
++      "default": "./dist/plugins/cypress-preset.js"
+     },
+-    "./src/*.js": {
+-      "types": "./src/*.d.ts",
+-      "default": "./src/*.js"
++    "./internal": {
++      "@nx/nx-source": "./internal.ts",
++      "types": "./dist/internal.d.ts",
++      "default": "./dist/internal.js"
+     }
+   },
+   "author": "Victor Savkin",
+diff --git a/packages/cypress/project.json b/packages/cypress/project.json
+index e165c907d3d..74f083bb89c 100644
+--- a/packages/cypress/project.json
++++ b/packages/cypress/project.json
+@@ -3,11 +3,24 @@
+   "$schema": "../../node_modules/nx/schemas/project-schema.json",
+   "sourceRoot": "packages/cypress",
+   "projectType": "library",
++  "release": {
++    "version": {
++      "generator": "@nx/js:release-version",
++      "preserveLocalDependencyProtocols": true,
++      "manifestRootsToUpdate": ["packages/{projectName}"]
++    }
++  },
+   "targets": {
++    "nx-release-publish": {
++      "options": {
++        "packageRoot": "packages/{projectName}"
++      }
++    },
+     "build": {
+-      "outputs": ["{workspaceRoot}/dist/packages/cypress/README.md"],
+-      "command": "node ./scripts/copy-readme.js cypress",
+-      "inputs": ["copyReadme"]
++      "outputs": ["{projectRoot}/README.md"],
++      "command": "node ./scripts/copy-readme.js cypress packages/cypress/readme-template.md packages/cypress/README.md",
++      "inputs": ["copyReadme"],
++      "dependsOn": ["^build", "build-base"]
+     }
+   }
+ }
+diff --git a/packages/cypress/README.md b/packages/cypress/readme-template.md
+similarity index 100%
+rename from packages/cypress/README.md
+rename to packages/cypress/readme-template.md
+diff --git a/packages/cypress/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts b/packages/cypress/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+new file mode 100644
+index 00000000000..82d119f7ff9
+--- /dev/null
++++ b/packages/cypress/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+@@ -0,0 +1,230 @@
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import type { Tree } from '@nx/devkit';
++import update, {
++  rewriteSubpathImports,
++} from './rewrite-internal-subpath-imports';
++
++describe('rewrite-internal-subpath-imports migration', () => {
++  let tree: Tree;
++
++  beforeEach(() => {
++    tree = createTreeWithEmptyWorkspace();
++  });
++
++  describe('rewriteSubpathImports (pure)', () => {
++    it('routes an internal-symbol import to @nx/cypress/internal', () => {
++      const source = `import { createExecutorContext } from '@nx/cypress/src/utils/ct-helpers';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import { createExecutorContext } from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it('routes a public-symbol import to @nx/cypress', () => {
++      const source = `import { configurationGenerator } from '@nx/cypress/src/generators/configuration/configuration';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import { configurationGenerator } from '@nx/cypress';\n`
++      );
++    });
++
++    it('splits a mixed public/internal import into two declarations', () => {
++      const source = `import { configurationGenerator, createExecutorContext } from '@nx/cypress/src/utils/ct-helpers';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        [
++          `import { configurationGenerator } from '@nx/cypress';`,
++          `import { createExecutorContext } from '@nx/cypress/internal';`,
++          ``,
++        ].join('\n')
++      );
++    });
++
++    it('classifies aliased imports by their original name', () => {
++      const source = `import { cypressInitGenerator as init, createExecutorContext as ctx } from '@nx/cypress/src/generators/init/init';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        [
++          `import { cypressInitGenerator as init } from '@nx/cypress';`,
++          `import { createExecutorContext as ctx } from '@nx/cypress/internal';`,
++          ``,
++        ].join('\n')
++      );
++    });
++
++    it('preserves a type-only modifier when splitting', () => {
++      const source = `import type { CypressExecutorOptions } from '@nx/cypress/src/executors/cypress/cypress.impl';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import type { CypressExecutorOptions } from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it('rewrites a double-quoted import', () => {
++      const source = `import { createExecutorContext } from "@nx/cypress/src/utils/ct-helpers";\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import { createExecutorContext } from "@nx/cypress/internal";\n`
++      );
++    });
++
++    it('routes a namespace import to @nx/cypress/internal', () => {
++      const source = `import * as ctHelpers from '@nx/cypress/src/utils/ct-helpers';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import * as ctHelpers from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it('rewrites a public-symbol export-from to @nx/cypress', () => {
++      const source = `export { migrateCypressProject } from '@nx/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `export { migrateCypressProject } from '@nx/cypress';\n`
++      );
++    });
++
++    it('routes export * to @nx/cypress/internal', () => {
++      const source = `export * from '@nx/cypress/src/utils/ct-helpers';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `export * from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it('rewrites a CommonJS require() to the internal entry', () => {
++      const source = `const { createExecutorContext } = require('@nx/cypress/src/utils/ct-helpers');\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `const { createExecutorContext } = require('@nx/cypress/internal');\n`
++      );
++    });
++
++    it('rewrites a dynamic import() to the internal entry', () => {
++      const source = `const mod = await import('@nx/cypress/src/utils/ct-helpers');\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `const mod = await import('@nx/cypress/internal');\n`
++      );
++    });
++
++    it('rewrites a .js-extension subpath', () => {
++      const source = `import { createExecutorContext } from '@nx/cypress/src/utils/ct-helpers.js';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import { createExecutorContext } from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it('rewrites jest mock helpers to the internal entry', () => {
++      const source = [
++        `jest.doMock('@nx/cypress/src/utils/ct-helpers');`,
++        `vi.importActual('@nx/cypress/src/executors/cypress/cypress.impl');`,
++        ``,
++      ].join('\n');
++      expect(rewriteSubpathImports(source)).toBe(
++        [
++          `jest.doMock('@nx/cypress/internal');`,
++          `vi.importActual('@nx/cypress/internal');`,
++          ``,
++        ].join('\n')
++      );
++    });
++
++    it('leaves the top-level @nx/cypress entry and @nx/cypress/plugin alone', () => {
++      const source = [
++        `import { configurationGenerator } from '@nx/cypress';`,
++        `import { createNodesV2 } from '@nx/cypress/plugin';`,
++        ``,
++      ].join('\n');
++      expect(rewriteSubpathImports(source)).toBe(source);
++    });
++
++    it('leaves unrelated string literals and comments alone', () => {
++      const source = [
++        `const docs = 'see @nx/cypress/src/utils/ct-helpers for details';`,
++        `// import { createExecutorContext } from '@nx/cypress/src/utils/ct-helpers';`,
++        `import { joinPathFragments } from '@nx/devkit';`,
++        ``,
++      ].join('\n');
++      expect(rewriteSubpathImports(source)).toBe(source);
++    });
++
++    it('rewrites typeof import() type queries to the internal entry', () => {
++      const source = `type X = typeof import('@nx/cypress/src/utils/ct-helpers');\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `type X = typeof import('@nx/cypress/internal');\n`
++      );
++    });
++
++    it('rewrites a <typeof import()>require() cast in tandem', () => {
++      const source = `const m = (require('@nx/cypress/src/utils/ct-helpers') as typeof import('@nx/cypress/src/utils/ct-helpers'));\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `const m = (require('@nx/cypress/internal') as typeof import('@nx/cypress/internal'));\n`
++      );
++    });
++
++    it('routes componentConfigurationGenerator to the public entry', () => {
++      const source = `import { componentConfigurationGenerator } from '@nx/cypress/src/generators/component-configuration/component-configuration';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import { componentConfigurationGenerator } from '@nx/cypress';\n`
++      );
++    });
++
++    it('routes a default import to the internal entry', () => {
++      const source = `import ctHelpers from '@nx/cypress/src/utils/ct-helpers';\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `import ctHelpers from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it('routes a default-plus-named import to the internal entry', () => {
++      const source = `import ctHelpers, { createExecutorContext } from '@nx/cypress/src/utils/ct-helpers';\n`;
++      // A default + named clause can't be symbol-split (default binds to the
++      // whole module), so the whole import goes to /internal.
++      expect(rewriteSubpathImports(source)).toBe(
++        `import ctHelpers, { createExecutorContext } from '@nx/cypress/internal';\n`
++      );
++    });
++
++    it.each(['mock', 'unmock', 'doMock', 'dontMock'])(
++      'rewrites jest.%s(...) to the internal entry',
++      (method) => {
++        const source = `jest.${method}('@nx/cypress/src/utils/ct-helpers');\n`;
++        expect(rewriteSubpathImports(source)).toBe(
++          `jest.${method}('@nx/cypress/internal');\n`
++        );
++      }
++    );
++
++    it.each(['mock', 'unmock', 'importActual', 'importMock'])(
++      'rewrites vi.%s(...) to the internal entry',
++      (method) => {
++        const source = `vi.${method}('@nx/cypress/src/utils/ct-helpers');\n`;
++        expect(rewriteSubpathImports(source)).toBe(
++          `vi.${method}('@nx/cypress/internal');\n`
++        );
++      }
++    );
++
++    it('rewrites jest.mock with a factory argument', () => {
++      const source = `jest.mock('@nx/cypress/src/utils/ct-helpers', () => ({ x: 1 }));\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `jest.mock('@nx/cypress/internal', () => ({ x: 1 }));\n`
++      );
++    });
++
++    it('returns the source unchanged when there are no matches', () => {
++      const source = `import { something } from '@nx/devkit';\n`;
++      expect(rewriteSubpathImports(source)).toBe(source);
++    });
++  });
++
++  describe('default export (Tree)', () => {
++    it('rewrites imports across .ts files', async () => {
++      tree.write(
++        'apps/my-app/src/main.ts',
++        `import { createExecutorContext } from '@nx/cypress/src/utils/ct-helpers';\n`
++      );
++      await update(tree);
++      const updated = tree.read('apps/my-app/src/main.ts', 'utf-8');
++      expect(updated).toContain('@nx/cypress/internal');
++      expect(updated).not.toContain('@nx/cypress/src/utils/ct-helpers');
++    });
++
++    it('is a no-op for files that do not reference @nx/cypress/src/', async () => {
++      const original = `import { joinPathFragments } from '@nx/devkit';\n`;
++      tree.write('apps/my-app/src/main.ts', original);
++      await update(tree);
++      expect(tree.read('apps/my-app/src/main.ts', 'utf-8')).toBe(original);
++    });
++  });
++});
+diff --git a/packages/cypress/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts b/packages/cypress/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+new file mode 100644
+index 00000000000..4cb8b6e34a3
+--- /dev/null
++++ b/packages/cypress/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+@@ -0,0 +1,309 @@
++import {
++  applyChangesToString,
++  ChangeType,
++  ensurePackage,
++  formatFiles,
++  logger,
++  type StringChange,
++  type Tree,
++  visitNotIgnoredFiles,
++} from '@nx/devkit';
++import type {
++  CallExpression,
++  ExportDeclaration,
++  ExportSpecifier,
++  ImportDeclaration,
++  ImportSpecifier,
++  ImportTypeNode,
++  LiteralTypeNode,
++  Node,
++  SourceFile,
++  StringLiteral,
++} from 'typescript';
++
++const TS_EXTENSIONS = ['.ts', '.tsx', '.cts', '.mts'] as const;
++const FROM_PREFIX = '@nx/cypress/src/';
++const TO_PUBLIC = '@nx/cypress';
++const TO_INTERNAL = '@nx/cypress/internal';
++
++// Symbols exported from `@nx/cypress`'s public entry (packages/cypress/index.ts).
++// A named import/export of one of these from `@nx/cypress/src/*` is routed to
++// the public `@nx/cypress` entry; everything else goes to `@nx/cypress/internal`.
++const PUBLIC_SYMBOLS: ReadonlySet<string> = new Set([
++  'configurationGenerator',
++  'componentConfigurationGenerator',
++  'cypressInitGenerator',
++  'migrateCypressProject',
++]);
++
++// Methods on `jest` and `vi` that take a module specifier as their first arg.
++const MOCK_HELPER_METHODS: ReadonlySet<string> = new Set([
++  'mock',
++  'unmock',
++  'doMock',
++  'dontMock',
++  'requireActual',
++  'requireMock',
++  'importActual',
++  'importMock',
++]);
++
++let ts: typeof import('typescript') | undefined;
++
++export default async function rewriteInternalSubpathImports(
++  tree: Tree
++): Promise<void> {
++  let touchedCount = 0;
++
++  visitNotIgnoredFiles(tree, '.', (filePath) => {
++    if (!TS_EXTENSIONS.some((ext) => filePath.endsWith(ext))) {
++      return;
++    }
++    const original = tree.read(filePath, 'utf-8');
++    if (!original || !original.includes(FROM_PREFIX)) {
++      return;
++    }
++    const updated = rewriteSubpathImports(original);
++    if (updated !== original) {
++      tree.write(filePath, updated);
++      touchedCount += 1;
++    }
++  });
++
++  if (touchedCount > 0) {
++    logger.info(
++      `Rewrote @nx/cypress/src/* imports in ${touchedCount} file(s) ` +
++        `(public symbols to @nx/cypress, internals to @nx/cypress/internal).`
++    );
++  }
++
++  await formatFiles(tree);
++}
++
++export function rewriteSubpathImports(source: string): string {
++  ts ??= ensurePackage<typeof import('typescript')>('typescript', '*');
++  const sourceFile = ts.createSourceFile(
++    'tmp.ts',
++    source,
++    ts.ScriptTarget.Latest,
++    /* setParentNodes */ true,
++    ts.ScriptKind.TSX
++  );
++
++  const changes: StringChange[] = [];
++  for (const stmt of sourceFile.statements) {
++    if (ts.isImportDeclaration(stmt)) {
++      collectImportRewrite(sourceFile, stmt, changes);
++    } else if (ts.isExportDeclaration(stmt)) {
++      collectExportRewrite(sourceFile, stmt, changes);
++    }
++  }
++  collectCallExpressionRewrites(sourceFile, changes);
++
++  return changes.length > 0 ? applyChangesToString(source, changes) : source;
++}
++
++function isSubpathSpecifier(node: Node): node is StringLiteral {
++  return ts!.isStringLiteral(node) && node.text.startsWith(FROM_PREFIX);
++}
++
++function collectImportRewrite(
++  sourceFile: SourceFile,
++  stmt: ImportDeclaration,
++  changes: StringChange[]
++): void {
++  if (!isSubpathSpecifier(stmt.moduleSpecifier)) {
++    return;
++  }
++  const clause = stmt.importClause;
++  // Pure named imports (`import { a, b } from '...'`) can be split by symbol.
++  // A default or namespace import grabs the whole module, so it can't be
++  // split — route it wholesale to the internal entry.
++  if (
++    clause &&
++    !clause.name &&
++    clause.namedBindings &&
++    ts!.isNamedImports(clause.namedBindings)
++  ) {
++    rewriteNamedDeclaration(
++      sourceFile,
++      stmt,
++      stmt.moduleSpecifier,
++      clause.isTypeOnly,
++      clause.namedBindings.elements,
++      'import',
++      changes
++    );
++    return;
++  }
++  replaceSpecifier(sourceFile, stmt.moduleSpecifier, TO_INTERNAL, changes);
++}
++
++function collectExportRewrite(
++  sourceFile: SourceFile,
++  stmt: ExportDeclaration,
++  changes: StringChange[]
++): void {
++  if (!stmt.moduleSpecifier || !isSubpathSpecifier(stmt.moduleSpecifier)) {
++    return;
++  }
++  // `export { a, b } from '...'` can be split; `export * from '...'` cannot.
++  if (stmt.exportClause && ts!.isNamedExports(stmt.exportClause)) {
++    rewriteNamedDeclaration(
++      sourceFile,
++      stmt,
++      stmt.moduleSpecifier,
++      stmt.isTypeOnly,
++      stmt.exportClause.elements,
++      'export',
++      changes
++    );
++    return;
++  }
++  replaceSpecifier(sourceFile, stmt.moduleSpecifier, TO_INTERNAL, changes);
++}
++
++/**
++ * Partition the named bindings of an import/export declaration into the ones
++ * that resolve to `@nx/cypress`'s public entry and the ones that don't. If both
++ * groups are non-empty, the single declaration is split into two.
++ */
++function rewriteNamedDeclaration(
++  sourceFile: SourceFile,
++  decl: ImportDeclaration | ExportDeclaration,
++  specifier: StringLiteral,
++  isTypeOnly: boolean,
++  elements: readonly (ImportSpecifier | ExportSpecifier)[],
++  keyword: 'import' | 'export',
++  changes: StringChange[]
++): void {
++  const publicEls: (ImportSpecifier | ExportSpecifier)[] = [];
++  const internalEls: (ImportSpecifier | ExportSpecifier)[] = [];
++  for (const el of elements) {
++    // `propertyName` is the original name in `orig as alias`; fall back to
++    // `name` for the plain `orig` form.
++    const importedName = (el.propertyName ?? el.name).text;
++    (PUBLIC_SYMBOLS.has(importedName) ? publicEls : internalEls).push(el);
++  }
++
++  if (publicEls.length === 0) {
++    replaceSpecifier(sourceFile, specifier, TO_INTERNAL, changes);
++    return;
++  }
++  if (internalEls.length === 0) {
++    replaceSpecifier(sourceFile, specifier, TO_PUBLIC, changes);
++    return;
++  }
++
++  // Mixed — replace the whole declaration with one statement per target.
++  const quote = sourceFile.text.charAt(specifier.getStart(sourceFile));
++  const start = decl.getStart(sourceFile);
++  const end = decl.getEnd();
++  const semicolon = sourceFile.text.charAt(end - 1) === ';' ? ';' : '';
++  const prefix = isTypeOnly ? `${keyword} type` : keyword;
++  const render = (
++    els: (ImportSpecifier | ExportSpecifier)[],
++    target: string
++  ): string =>
++    `${prefix} { ${els
++      .map((el) => el.getText(sourceFile))
++      .join(', ')} } from ${quote}${target}${quote}${semicolon}`;
++
++  changes.push(
++    { type: ChangeType.Delete, start, length: end - start },
++    {
++      type: ChangeType.Insert,
++      index: start,
++      text: `${render(publicEls, TO_PUBLIC)}\n${render(
++        internalEls,
++        TO_INTERNAL
++      )}`,
++    }
++  );
++}
++
++function collectCallExpressionRewrites(
++  sourceFile: SourceFile,
++  changes: StringChange[]
++): void {
++  const visit = (node: Node): void => {
++    if (
++      ts!.isCallExpression(node) &&
++      shouldRewriteCallExpression(node) &&
++      node.arguments.length >= 1 &&
++      isSubpathSpecifier(node.arguments[0])
++    ) {
++      // `require(...)`, dynamic `import(...)` and `jest.mock(...)` reference
++      // the module as a whole and can't be symbol-split, so they go to the
++      // internal entry.
++      replaceSpecifier(
++        sourceFile,
++        node.arguments[0] as StringLiteral,
++        TO_INTERNAL,
++        changes
++      );
++    } else if (ts!.isImportTypeNode(node)) {
++      // `typeof import('...')` parses as an `ImportTypeNode`, not a
++      // CallExpression — its argument is `LiteralTypeNode<StringLiteral>`.
++      // The whole module is referenced, so it can't be symbol-split.
++      const literal = getImportTypeStringLiteral(node);
++      if (literal && literal.text.startsWith(FROM_PREFIX)) {
++        replaceSpecifier(sourceFile, literal, TO_INTERNAL, changes);
++      }
++    }
++    ts!.forEachChild(node, visit);
++  };
++  visit(sourceFile);
++}
++
++function getImportTypeStringLiteral(
++  node: ImportTypeNode
++): StringLiteral | undefined {
++  const arg = node.argument;
++  if (arg && ts!.isLiteralTypeNode(arg) && ts!.isStringLiteral(arg.literal)) {
++    return arg.literal;
++  }
++  return undefined;
++}
++
++function shouldRewriteCallExpression(call: CallExpression): boolean {
++  const callee = call.expression;
++  // `require('...')`
++  if (ts!.isIdentifier(callee) && callee.text === 'require') return true;
++  // dynamic `import('...')` (runtime form parses as a CallExpression whose
++  // callee is the `import` keyword). The type-position form
++  // (`typeof import('...')`) is an `ImportTypeNode`, not a CallExpression, so
++  // we don't touch it.
++  if (callee.kind === ts!.SyntaxKind.ImportKeyword) return true;
++  // `jest.mock(...)` / `vi.mock(...)` and friends.
++  if (ts!.isPropertyAccessExpression(callee)) {
++    const obj = callee.expression;
++    if (
++      ts!.isIdentifier(obj) &&
++      (obj.text === 'jest' || obj.text === 'vi') &&
++      MOCK_HELPER_METHODS.has(callee.name.text)
++    ) {
++      return true;
++    }
++  }
++  return false;
++}
++
++function replaceSpecifier(
++  sourceFile: SourceFile,
++  literal: StringLiteral,
++  target: string,
++  changes: StringChange[]
++): void {
++  const start = literal.getStart(sourceFile);
++  const end = literal.getEnd();
++  const quote = sourceFile.text.charAt(start);
++  changes.push(
++    { type: ChangeType.Delete, start, length: end - start },
++    {
++      type: ChangeType.Insert,
++      index: start,
++      text: `${quote}${target}${quote}`,
++    }
++  );
++}
+diff --git a/packages/cypress/src/utils/cypress-version.ts b/packages/cypress/src/utils/cypress-version.ts
+deleted file mode 100644
+index 5eb552aa423..00000000000
+--- a/packages/cypress/src/utils/cypress-version.ts
++++ /dev/null
+@@ -1,38 +0,0 @@
+-let cypressPackageJson;
+-let loadedCypress = false;
+-
+-/**
+- * @deprecated use the `getInstalledCypressMajorVersion` exported from
+- * `@nx/cypress/src/utils/versions` instead. It will be removed in v23.
+- */
+-export function installedCypressVersion() {
+-  if (!loadedCypress) {
+-    try {
+-      cypressPackageJson = require('cypress/package.json');
+-    } catch {}
+-  }
+-
+-  if (!cypressPackageJson) {
+-    return null;
+-  }
+-  const cypressPackageVersion = cypressPackageJson.version;
+-  const majorVersion = cypressPackageVersion.split('.')[0];
+-  if (!majorVersion) {
+-    return 0;
+-  }
+-  return +majorVersion;
+-}
+-
+-/**
+- * will not throw if cypress is not installed
+- * @deprecated use the `assertMinimumCypressVersion` exported from
+- * `@nx/cypress/src/utils/versions` instead. It will be removed in v23.
+- */
+-export function assertMinimumCypressVersion(minVersion: number) {
+-  const version = installedCypressVersion();
+-  if (version && version < minVersion) {
+-    throw new Error(
+-      `Cypress version of ${minVersion} or higher is not installed. Expected Cypress v${minVersion}+, found Cypress v${version} instead.`
+-    );
+-  }
+-}
+diff --git a/packages/cypress/src/utils/versions.ts b/packages/cypress/src/utils/versions.ts
+index 2751689d3c9..b49b88dcae0 100644
+--- a/packages/cypress/src/utils/versions.ts
++++ b/packages/cypress/src/utils/versions.ts
+@@ -3,9 +3,10 @@ import {
+   getDeclaredPackageVersion,
+   getInstalledPackageVersion,
+ } from '@nx/devkit/internal';
++import { join } from 'path';
+ import { major } from 'semver';
+ 
+-export const nxVersion = require('../../package.json').version;
++export const nxVersion = require(join('@nx/cypress', 'package.json')).version;
+ export const minSupportedCypressVersion = '13.0.0';
+ export const eslintPluginCypressVersion = '^3.5.0';
+ export const typesNodeVersion = '^22.0.0';
+diff --git a/packages/cypress/tsconfig.lib.json b/packages/cypress/tsconfig.lib.json
+index 528bfebfc3a..0761963d10b 100644
+--- a/packages/cypress/tsconfig.lib.json
++++ b/packages/cypress/tsconfig.lib.json
+@@ -1,13 +1,27 @@
+ {
+   "extends": "../../tsconfig.base.json",
+   "compilerOptions": {
+-    "module": "commonjs",
+-    "outDir": "../../dist/packages/cypress",
++    "outDir": "dist",
++    "rootDir": ".",
++    "declarationDir": "dist",
++    "declarationMap": false,
++    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+     "types": ["node"],
+-    "tsBuildInfoFile": "../../dist/packages/cypress/tsconfig.tsbuildinfo"
++    "composite": true,
++    "module": "nodenext",
++    "moduleResolution": "nodenext",
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true
+   },
+-  "exclude": ["**/*.spec.ts", "**/*.test.ts", "jest.config.ts"],
+-  "include": ["**/*.ts"],
++  "exclude": [
++    "node_modules",
++    "dist",
++    "**/*.spec.ts",
++    "**/*.test.ts",
++    "jest.config.ts",
++    ".eslintrc.json"
++  ],
++  "include": ["*.ts", "src/**/*.ts", "plugins/**/*.ts"],
+   "references": [
+     {
+       "path": "../nx/tsconfig.lib.json"
+diff --git a/packages/cypress/tsconfig.spec.json b/packages/cypress/tsconfig.spec.json
+index 0c9185076fb..6b4b08873df 100644
+--- a/packages/cypress/tsconfig.spec.json
++++ b/packages/cypress/tsconfig.spec.json
+@@ -1,7 +1,7 @@
+ {
+   "extends": "./tsconfig.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/cypress/spec",
++    "outDir": "dist/spec",
+     "module": "commonjs",
+     "types": ["jest", "node"],
+     "skipLibCheck": true,
+diff --git a/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts b/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+index 6ea0a400e38..b2a30e5cbb4 100644
+--- a/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
++++ b/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+@@ -142,9 +142,18 @@ describe('rewrite-internal-subpath-imports migration', () => {
+       expect(rewriteSubpathImports(source)).toBe(source);
+     });
+ 
+-    it('leaves typeof import() type queries alone', () => {
++    it('rewrites typeof import() type queries to the internal entry', () => {
+       const source = `type X = typeof import('@nx/eslint/src/utils/flat-config');\n`;
+-      expect(rewriteSubpathImports(source)).toBe(source);
++      expect(rewriteSubpathImports(source)).toBe(
++        `type X = typeof import('@nx/eslint/internal');\n`
++      );
++    });
++
++    it('rewrites a <typeof import()>require() cast in tandem', () => {
++      const source = `const m = (require('@nx/eslint/src/utils/flat-config') as typeof import('@nx/eslint/src/utils/flat-config'));\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `const m = (require('@nx/eslint/internal') as typeof import('@nx/eslint/internal'));\n`
++      );
+     });
+ 
+     it('returns the source unchanged when there are no matches', () => {
+diff --git a/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts b/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+index 369235b1d9e..68c3322d03f 100644
+--- a/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
++++ b/packages/eslint/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+@@ -14,6 +14,7 @@ import type {
+   ExportSpecifier,
+   ImportDeclaration,
+   ImportSpecifier,
++  ImportTypeNode,
+   Node,
+   SourceFile,
+   StringLiteral,
+@@ -240,20 +241,37 @@ function collectCallExpressionRewrites(
+         TO_INTERNAL,
+         changes
+       );
++    } else if (ts!.isImportTypeNode(node)) {
++      // `typeof import('...')` parses as an `ImportTypeNode`, not a
++      // CallExpression — its argument is `LiteralTypeNode<StringLiteral>`.
++      // The whole module is referenced, so it can't be symbol-split.
++      const literal = getImportTypeStringLiteral(node);
++      if (literal && literal.text.startsWith(FROM_PREFIX)) {
++        replaceSpecifier(sourceFile, literal, TO_INTERNAL, changes);
++      }
+     }
+     ts!.forEachChild(node, visit);
+   };
+   visit(sourceFile);
+ }
+ 
++function getImportTypeStringLiteral(
++  node: ImportTypeNode
++): StringLiteral | undefined {
++  const arg = node.argument;
++  if (arg && ts!.isLiteralTypeNode(arg) && ts!.isStringLiteral(arg.literal)) {
++    return arg.literal;
++  }
++  return undefined;
++}
++
+ function shouldRewriteCallExpression(call: CallExpression): boolean {
+   const callee = call.expression;
+   // `require('...')`
+   if (ts!.isIdentifier(callee) && callee.text === 'require') return true;
+   // dynamic `import('...')` (runtime form parses as a CallExpression whose
+-  // callee is the `import` keyword). The type-position form
+-  // (`typeof import('...')`) is an `ImportTypeNode`, not a CallExpression, so
+-  // we don't touch it.
++  // callee is the `import` keyword). The `typeof import('...')` type-position
++  // form is an `ImportTypeNode` (handled in `collectCallExpressionRewrites`).
+   if (callee.kind === ts!.SyntaxKind.ImportKeyword) return true;
+   // `jest.mock(...)` / `vi.mock(...)` and friends.
+   if (ts!.isPropertyAccessExpression(callee)) {
+diff --git a/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts b/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+index 05cecb3e23d..43f9d043d13 100644
+--- a/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
++++ b/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+@@ -201,9 +201,18 @@ describe('rewrite-internal-subpath-imports migration', () => {
+       expect(rewriteSubpathImports(source)).toBe(source);
+     });
+ 
+-    it('leaves typeof import() type queries alone', () => {
++    it('rewrites typeof import() type queries to the internal entry', () => {
+       const source = `type X = typeof import('@nx/jest/src/utils/versions');\n`;
+-      expect(rewriteSubpathImports(source)).toBe(source);
++      expect(rewriteSubpathImports(source)).toBe(
++        `type X = typeof import('@nx/jest/internal');\n`
++      );
++    });
++
++    it('rewrites a <typeof import()>require() cast in tandem', () => {
++      const source = `const m = (require('@nx/jest/src/utils/versions') as typeof import('@nx/jest/src/utils/versions'));\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `const m = (require('@nx/jest/internal') as typeof import('@nx/jest/internal'));\n`
++      );
+     });
+ 
+     it('returns the source unchanged when there are no matches', () => {
+diff --git a/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts b/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+index d153decddca..1360fb6f88d 100644
+--- a/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
++++ b/packages/jest/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+@@ -14,6 +14,7 @@ import type {
+   ExportSpecifier,
+   ImportDeclaration,
+   ImportSpecifier,
++  ImportTypeNode,
+   Node,
+   SourceFile,
+   StringLiteral,
+@@ -243,20 +244,37 @@ function collectCallExpressionRewrites(
+         TO_INTERNAL,
+         changes
+       );
++    } else if (ts!.isImportTypeNode(node)) {
++      // `typeof import('...')` parses as an `ImportTypeNode`, not a
++      // CallExpression — its argument is `LiteralTypeNode<StringLiteral>`.
++      // The whole module is referenced, so it can't be symbol-split.
++      const literal = getImportTypeStringLiteral(node);
++      if (literal && literal.text.startsWith(FROM_PREFIX)) {
++        replaceSpecifier(sourceFile, literal, TO_INTERNAL, changes);
++      }
+     }
+     ts!.forEachChild(node, visit);
+   };
+   visit(sourceFile);
+ }
+ 
++function getImportTypeStringLiteral(
++  node: ImportTypeNode
++): StringLiteral | undefined {
++  const arg = node.argument;
++  if (arg && ts!.isLiteralTypeNode(arg) && ts!.isStringLiteral(arg.literal)) {
++    return arg.literal;
++  }
++  return undefined;
++}
++
+ function shouldRewriteCallExpression(call: CallExpression): boolean {
+   const callee = call.expression;
+   // `require('...')`
+   if (ts!.isIdentifier(callee) && callee.text === 'require') return true;
+   // dynamic `import('...')` (runtime form parses as a CallExpression whose
+-  // callee is the `import` keyword). The type-position form
+-  // (`typeof import('...')`) is an `ImportTypeNode`, not a CallExpression, so
+-  // we don't touch it.
++  // callee is the `import` keyword). The `typeof import('...')` type-position
++  // form is an `ImportTypeNode` (handled in `collectCallExpressionRewrites`).
+   if (callee.kind === ts!.SyntaxKind.ImportKeyword) return true;
+   // `jest.mock(...)` / `vi.mock(...)` and friends.
+   if (ts!.isPropertyAccessExpression(callee)) {
+diff --git a/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts b/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+index d4c91a84dd0..369595b7e81 100644
+--- a/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
++++ b/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.spec.ts
+@@ -123,9 +123,18 @@ describe('rewrite-internal-subpath-imports migration', () => {
+       expect(rewriteSubpathImports(source)).toBe(source);
+     });
+ 
+-    it('leaves typeof import() type queries alone', () => {
++    it('rewrites typeof import() type queries to the internal entry', () => {
+       const source = `type X = typeof import('@nx/js/src/utils/typescript/ts-config');\n`;
+-      expect(rewriteSubpathImports(source)).toBe(source);
++      expect(rewriteSubpathImports(source)).toBe(
++        `type X = typeof import('@nx/js/internal');\n`
++      );
++    });
++
++    it('rewrites a <typeof import()>require() cast in tandem', () => {
++      const source = `const m = (require('@nx/js/src/utils/typescript/ts-config') as typeof import('@nx/js/src/utils/typescript/ts-config'));\n`;
++      expect(rewriteSubpathImports(source)).toBe(
++        `const m = (require('@nx/js/internal') as typeof import('@nx/js/internal'));\n`
++      );
+     });
+ 
+     it('returns the source unchanged when there are no matches', () => {
+diff --git a/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts b/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+index 5f54b87f296..2bb03328a6b 100644
+--- a/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
++++ b/packages/js/src/migrations/update-23-0-0/rewrite-internal-subpath-imports.ts
+@@ -8,7 +8,13 @@ import {
+   type Tree,
+   visitNotIgnoredFiles,
+ } from '@nx/devkit';
+-import type { CallExpression, Node, SourceFile } from 'typescript';
++import type {
++  CallExpression,
++  ImportTypeNode,
++  Node,
++  SourceFile,
++  StringLiteral,
++} from 'typescript';
+ 
+ const TS_EXTENSIONS = ['.ts', '.tsx', '.cts', '.mts'] as const;
+ const FROM_PREFIX = '@nx/js/src/';
+@@ -122,20 +128,37 @@ function collectCallExpressionRewrites(
+       shouldRewriteSpecifier(node.arguments[0].text)
+     ) {
+       replaceSpecifier(sourceFile, node.arguments[0], changes);
++    } else if (ts!.isImportTypeNode(node)) {
++      // `typeof import('...')` parses as an `ImportTypeNode`, not a
++      // CallExpression — its argument is `LiteralTypeNode<StringLiteral>`.
++      // The whole module is referenced, so it can't be symbol-split.
++      const literal = getImportTypeStringLiteral(node);
++      if (literal && shouldRewriteSpecifier(literal.text)) {
++        replaceSpecifier(sourceFile, literal, changes);
++      }
+     }
+     ts!.forEachChild(node, visit);
+   };
+   visit(sourceFile);
+ }
+ 
++function getImportTypeStringLiteral(
++  node: ImportTypeNode
++): StringLiteral | undefined {
++  const arg = node.argument;
++  if (arg && ts!.isLiteralTypeNode(arg) && ts!.isStringLiteral(arg.literal)) {
++    return arg.literal;
++  }
++  return undefined;
++}
++
+ function shouldRewriteCallExpression(call: CallExpression): boolean {
+   const callee = call.expression;
+   // `require('...')`
+   if (ts!.isIdentifier(callee) && callee.text === 'require') return true;
+   // dynamic `import('...')` (runtime form parses as a CallExpression whose
+-  // callee is the `import` keyword). The type-position form
+-  // (`typeof import('...')`) is an `ImportTypeNode`, not a CallExpression, so
+-  // we don't touch it.
++  // callee is the `import` keyword). The `typeof import('...')` type-position
++  // form is an `ImportTypeNode` (handled in `collectCallExpressionRewrites`).
+   if (callee.kind === ts!.SyntaxKind.ImportKeyword) return true;
+   // `jest.mock(...)` / `vi.mock(...)` and friends.
+   if (ts!.isPropertyAccessExpression(callee)) {
+@@ -153,7 +176,7 @@ function shouldRewriteCallExpression(call: CallExpression): boolean {
+ 
+ function replaceSpecifier(
+   sourceFile: SourceFile,
+-  literal: import('typescript').StringLiteral,
++  literal: StringLiteral,
+   changes: StringChange[]
+ ): void {
+   const start = literal.getStart(sourceFile);
+diff --git a/packages/next/plugins/component-testing.ts b/packages/next/plugins/component-testing.ts
+index 4285c1c6b2e..a7877295547 100644
+--- a/packages/next/plugins/component-testing.ts
++++ b/packages/next/plugins/component-testing.ts
+@@ -2,11 +2,11 @@ import {
+   nxBaseCypressPreset,
+   NxComponentTestingOptions,
+ } from '@nx/cypress/plugins/cypress-preset';
+-import { CypressExecutorOptions } from '@nx/cypress/src/executors/cypress/cypress.impl';
+ import {
+   createExecutorContext,
++  type CypressExecutorOptions,
+   getProjectConfigByPath,
+-} from '@nx/cypress/src/utils/ct-helpers';
++} from '@nx/cypress/internal';
+ import {
+   ExecutorContext,
+   parseTargetString,
+diff --git a/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts b/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+index d277884739f..e2a4e5b8ee1 100644
+--- a/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
++++ b/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+@@ -1,12 +1,12 @@
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import { readJson, readProjectConfiguration, Tree } from '@nx/devkit';
+ import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+ import { applicationGenerator } from '../application/application';
+ import { libraryGenerator } from '../library/library';
+ import { cypressComponentConfiguration } from './cypress-component-configuration';
+ 
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual<any>('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual<any>('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ 
+diff --git a/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.ts b/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.ts
+index c6465fd717f..ba090aa04f9 100644
+--- a/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.ts
++++ b/packages/next/src/generators/cypress-component-configuration/cypress-component-configuration.ts
+@@ -90,10 +90,10 @@ async function addFiles(
+   opts: CypressComponentConfigurationGeneratorSchema
+ ) {
+   const { addMountDefinition, addDefaultCTConfig } = await import(
+-    '@nx/cypress/src/utils/config'
++    '@nx/cypress/internal'
+   );
+   const { getInstalledCypressMajorVersion } = await import(
+-    '@nx/cypress/src/utils/versions'
++    '@nx/cypress/internal'
+   );
+   const installedCypressMajorVersion = getInstalledCypressMajorVersion(tree);
+ 
+diff --git a/packages/next/src/generators/library/library.spec.ts b/packages/next/src/generators/library/library.spec.ts
+index 7574a51c374..f65654c92f5 100644
+--- a/packages/next/src/generators/library/library.spec.ts
++++ b/packages/next/src/generators/library/library.spec.ts
+@@ -1,4 +1,4 @@
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   readJson,
+   readProjectConfiguration,
+@@ -12,8 +12,8 @@ import { Schema } from './schema';
+ 
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ 
+diff --git a/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts b/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts
+index 112f7d3613b..1681358f77e 100644
+--- a/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts
++++ b/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts
+@@ -35,8 +35,12 @@ export function assertGeneratorsEnforceVersionFloor(options: {
+ 
+   for (const [name, def] of entries) {
+     it(`\`${name}\` throws on sub-floor ${packageName}`, async () => {
++      // generators.json is the published shape — factory paths point at the
++      // built `./dist/src/.../foo`. The spec runs against the source tree, so
++      // map the published path back to its source location.
+       const [factoryRelative, exportName] = def.factory
+         .replace(/^\.\//, '')
++        .replace(/^dist\//, '')
+         .split('#');
+       // Local-dist plugins point factories at `./dist/src/...`; Jest loads from `./src/...`.
+       const sourceRelative = factoryRelative.replace(/^dist\//, '');
+diff --git a/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts b/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts
+index a7ea0a946c5..574feef3515 100644
+--- a/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts
++++ b/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts
+@@ -52,6 +52,10 @@ function validateMigration(m: MigrationsJsonEntry, root: string) {
+     }
+   }
+   if (m.prompt) {
+-    expect(fs.existsSync(path.join(root, m.prompt))).toBe(true);
++    // migrations.json is the published shape — prompt paths point at the
++    // built `./dist/src/.../foo.md`. The spec runs against the source tree,
++    // so map the published path back to its source location.
++    const promptSourcePath = m.prompt.replace(/^\.?\/?dist\//, '');
++    expect(fs.existsSync(path.join(root, promptSourcePath))).toBe(true);
+   }
+ }
+diff --git a/packages/playwright/assets.json b/packages/playwright/assets.json
+index 1d803cf7f2d..4adf2e1cb79 100644
+--- a/packages/playwright/assets.json
++++ b/packages/playwright/assets.json
+@@ -1,8 +1,7 @@
+ {
+-  "outDir": "dist/packages/playwright",
++  "outDir": "packages/playwright/dist",
+   "assets": [
+     { "glob": "**/files/**" },
+-    { "glob": "@(package|executors|generators|migrations).json" },
+     { "glob": "src/**/schema.json" },
+     { "glob": "src/**/schema.d.ts" },
+     { "glob": "PLUGIN.md" },
+diff --git a/packages/playwright/eslint.config.mjs b/packages/playwright/eslint.config.mjs
+index d640258cba0..1ede891a7e6 100644
+--- a/packages/playwright/eslint.config.mjs
++++ b/packages/playwright/eslint.config.mjs
+@@ -3,6 +3,9 @@ import * as jsoncEslintParser from 'jsonc-eslint-parser';
+ 
+ export default [
+   ...baseConfig,
++  {
++    ignores: ['dist'],
++  },
+   {
+     files: ['./package.json', './executors.json', './generators.json'],
+     rules: {
+@@ -21,6 +24,9 @@ export default [
+           buildTargets: ['build-base'],
+           ignoredDependencies: [
+             'nx',
++            // Self-reference: resolves the package's own package.json at
++            // runtime (see src/utils/versions.ts).
++            '@nx/playwright',
+             'typescript',
+             '@playwright/test',
+             '@nx/webpack',
+diff --git a/packages/playwright/executors.json b/packages/playwright/executors.json
+index ef614761ee1..dc184666f89 100644
+--- a/packages/playwright/executors.json
++++ b/packages/playwright/executors.json
+@@ -1,13 +1,13 @@
+ {
+   "executors": {
+     "playwright": {
+-      "implementation": "./src/executors/playwright/playwright.impl",
+-      "schema": "./src/executors/playwright/schema.json",
++      "implementation": "./dist/src/executors/playwright/playwright.impl",
++      "schema": "./dist/src/executors/playwright/schema.json",
+       "description": "Run Playwright tests."
+     },
+     "merge-reports": {
+-      "implementation": "./src/executors/merge-reports/merge-reports.impl",
+-      "schema": "./src/executors/merge-reports/schema.json",
++      "implementation": "./dist/src/executors/merge-reports/merge-reports.impl",
++      "schema": "./dist/src/executors/merge-reports/schema.json",
+       "description": "Merge Playwright blob reports to produce unified reports for the configured reporters (excluding the `blob` reporter).",
+       "hidden": true
+     }
+diff --git a/packages/playwright/generators.json b/packages/playwright/generators.json
+index 5e3fa40a67c..9cf3b0a3659 100644
+--- a/packages/playwright/generators.json
++++ b/packages/playwright/generators.json
+@@ -3,19 +3,19 @@
+   "version": "0.1",
+   "generators": {
+     "configuration": {
+-      "factory": "./src/generators/configuration/configuration#configurationGeneratorInternal",
+-      "schema": "./src/generators/configuration/schema.json",
++      "factory": "./dist/src/generators/configuration/configuration#configurationGeneratorInternal",
++      "schema": "./dist/src/generators/configuration/schema.json",
+       "description": "Add Nx Playwright configuration to your project"
+     },
+     "init": {
+-      "factory": "./src/generators/init/init#initGeneratorInternal",
+-      "schema": "./src/generators/init/schema.json",
++      "factory": "./dist/src/generators/init/init#initGeneratorInternal",
++      "schema": "./dist/src/generators/init/schema.json",
+       "description": "Initializes a Playwright project in the current workspace",
+       "hidden": true
+     },
+     "convert-to-inferred": {
+-      "factory": "./src/generators/convert-to-inferred/convert-to-inferred",
+-      "schema": "./src/generators/convert-to-inferred/schema.json",
++      "factory": "./dist/src/generators/convert-to-inferred/convert-to-inferred",
++      "schema": "./dist/src/generators/convert-to-inferred/schema.json",
+       "description": "Convert existing Playwright project(s) using `@nx/playwright:playwright` executor to use `@nx/playwright/plugin`."
+     }
+   }
+diff --git a/packages/playwright/package.json b/packages/playwright/package.json
+index 8e2ec2ea812..ff82a7aea72 100644
+--- a/packages/playwright/package.json
++++ b/packages/playwright/package.json
+@@ -1,13 +1,22 @@
+ {
+   "name": "@nx/playwright",
+   "version": "0.0.1",
+-  "type": "commonjs",
+-  "homepage": "https://nx.dev",
+   "private": false,
+-  "publishConfig": {
+-    "access": "public"
+-  },
++  "type": "commonjs",
++  "files": [
++    "dist",
++    "!dist/tsconfig.tsbuildinfo",
++    "!dist/spec",
++    "migrations.json",
++    "executors.json",
++    "generators.json"
++  ],
+   "description": "The Nx Plugin for Playwright contains executors and generators allowing your workspace to use the powerful Playwright integration testing capabilities.",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/nrwl/nx.git",
++    "directory": "packages/playwright"
++  },
+   "keywords": [
+     "Monorepo",
+     "Angular",
+@@ -21,17 +30,49 @@
+     "Testing",
+     "Front-end"
+   ],
+-  "main": "./index.js",
+-  "types": "./index.d.ts",
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "typesVersions": {
++    "*": {
++      "plugin": [
++        "dist/plugin.d.ts"
++      ],
++      "preset": [
++        "dist/preset.d.ts"
++      ]
++    }
++  },
++  "exports": {
++    ".": {
++      "@nx/nx-source": "./index.ts",
++      "types": "./dist/index.d.ts",
++      "default": "./dist/index.js"
++    },
++    "./package.json": "./package.json",
++    "./migrations.json": "./migrations.json",
++    "./generators.json": "./generators.json",
++    "./executors.json": "./executors.json",
++    "./plugin": {
++      "@nx/nx-source": "./plugin.ts",
++      "types": "./dist/plugin.d.ts",
++      "default": "./dist/plugin.js"
++    },
++    "./preset": {
++      "@nx/nx-source": "./preset.ts",
++      "types": "./dist/preset.d.ts",
++      "default": "./dist/preset.js"
++    }
++  },
+   "author": "Victor Savkin",
+   "license": "MIT",
+   "bugs": {
+     "url": "https://github.com/nrwl/nx/issues"
+   },
+-  "repository": {
+-    "type": "git",
+-    "url": "https://github.com/nrwl/nx.git",
+-    "directory": "packages/playwright"
++  "homepage": "https://nx.dev",
++  "executors": "./executors.json",
++  "generators": "./generators.json",
++  "nx-migrations": {
++    "migrations": "./migrations.json"
+   },
+   "dependencies": {
+     "@nx/devkit": "workspace:*",
+@@ -52,22 +93,7 @@
+       "optional": true
+     }
+   },
+-  "executors": "./executors.json",
+-  "generators": "./generators.json",
+-  "exports": {
+-    ".": "./index.js",
+-    "./package.json": "./package.json",
+-    "./migrations.json": "./migrations.json",
+-    "./generators.json": "./generators.json",
+-    "./generators/*/schema.json": "./src/generators/*/schema.json",
+-    "./generators/*/schema": "./src/generators/*/schema.d.ts",
+-    "./executors.json": "./executors.json",
+-    "./executors/*/schema.json": "./src/executors/*/schema.json",
+-    "./executors/*/schema": "./src/executors/*/schema.d.ts",
+-    "./plugin": "./plugin.js",
+-    "./preset": "./src/utils/preset.js"
+-  },
+-  "nx-migrations": {
+-    "migrations": "./migrations.json"
++  "publishConfig": {
++    "access": "public"
+   }
+ }
+diff --git a/packages/playwright/project.json b/packages/playwright/project.json
+index 8ec7ddb3894..be17e399fba 100644
+--- a/packages/playwright/project.json
++++ b/packages/playwright/project.json
+@@ -3,10 +3,24 @@
+   "$schema": "../../node_modules/nx/schemas/project-schema.json",
+   "sourceRoot": "packages/playwright",
+   "projectType": "library",
++  "release": {
++    "version": {
++      "generator": "@nx/js:release-version",
++      "preserveLocalDependencyProtocols": true,
++      "manifestRootsToUpdate": ["packages/{projectName}"]
++    }
++  },
+   "targets": {
++    "nx-release-publish": {
++      "options": {
++        "packageRoot": "packages/{projectName}"
++      }
++    },
+     "build": {
+-      "outputs": ["{workspaceRoot}/dist/packages/playwright/README.md"],
+-      "commands": ["node ./scripts/copy-readme.js playwright"],
++      "outputs": ["{projectRoot}/README.md"],
++      "commands": [
++        "node ./scripts/copy-readme.js playwright packages/playwright/readme-template.md packages/playwright/README.md"
++      ],
+       "inputs": ["copyReadme"]
+     }
+   },
+diff --git a/packages/playwright/README.md b/packages/playwright/readme-template.md
+similarity index 100%
+rename from packages/playwright/README.md
+rename to packages/playwright/readme-template.md
+diff --git a/packages/playwright/src/utils/versions.ts b/packages/playwright/src/utils/versions.ts
+index f575d0ce042..b9af5193b4b 100644
+--- a/packages/playwright/src/utils/versions.ts
++++ b/packages/playwright/src/utils/versions.ts
+@@ -1,4 +1,8 @@
+-export const nxVersion = require('../../package.json').version;
++import { join } from 'path';
++
++export const nxVersion = require(
++  join('@nx/playwright', 'package.json')
++).version;
+ export const minSupportedPlaywrightVersion = '1.36.0';
+ export const minPlaywrightVersionForBlobReports = '1.37.0';
+ export const playwrightVersion = '^1.37.0';
+diff --git a/packages/playwright/tsconfig.lib.json b/packages/playwright/tsconfig.lib.json
+index 9cace73eb0f..6a3d0d6b01f 100644
+--- a/packages/playwright/tsconfig.lib.json
++++ b/packages/playwright/tsconfig.lib.json
+@@ -1,12 +1,27 @@
+ {
+   "extends": "../../tsconfig.base.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/playwright",
++    "outDir": "dist",
++    "rootDir": ".",
++    "declarationDir": "dist",
++    "declarationMap": false,
++    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+     "types": ["node"],
+-    "tsBuildInfoFile": "../../dist/packages/playwright/tsconfig.tsbuildinfo"
++    "composite": true,
++    "module": "nodenext",
++    "moduleResolution": "nodenext",
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true
+   },
+-  "include": ["**/*.ts"],
+-  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"],
++  "include": ["*.ts", "src/**/*.ts"],
++  "exclude": [
++    "node_modules",
++    "dist",
++    "jest.config.cts",
++    "src/**/*.spec.ts",
++    "src/**/*.test.ts",
++    ".eslintrc.json"
++  ],
+   "references": [
+     {
+       "path": "../js/tsconfig.lib.json"
+diff --git a/packages/playwright/tsconfig.spec.json b/packages/playwright/tsconfig.spec.json
+index c965801e621..5bc5d8ff724 100644
+--- a/packages/playwright/tsconfig.spec.json
++++ b/packages/playwright/tsconfig.spec.json
+@@ -1,7 +1,7 @@
+ {
+   "extends": "./tsconfig.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/playwright/spec",
++    "outDir": "dist/spec",
+     "module": "commonjs",
+     "types": ["jest", "node"],
+     "composite": true
+diff --git a/packages/react/plugins/component-testing/index.ts b/packages/react/plugins/component-testing/index.ts
+index 1a54e5f8939..7683c1d7fba 100644
+--- a/packages/react/plugins/component-testing/index.ts
++++ b/packages/react/plugins/component-testing/index.ts
+@@ -2,11 +2,11 @@ import {
+   nxBaseCypressPreset,
+   NxComponentTestingOptions,
+ } from '@nx/cypress/plugins/cypress-preset';
+-import type { CypressExecutorOptions } from '@nx/cypress/src/executors/cypress/cypress.impl';
+ import {
+   createExecutorContext,
++  type CypressExecutorOptions,
+   getProjectConfigByPath,
+-} from '@nx/cypress/src/utils/ct-helpers';
++} from '@nx/cypress/internal';
+ import {
+   ExecutorContext,
+   joinPathFragments,
+diff --git a/packages/react/src/generators/application/application.legacy.spec.ts b/packages/react/src/generators/application/application.legacy.spec.ts
+index 5a4307df1f5..1ebdf449061 100644
+--- a/packages/react/src/generators/application/application.legacy.spec.ts
++++ b/packages/react/src/generators/application/application.legacy.spec.ts
+@@ -1,14 +1,14 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import { readProjectConfiguration, Tree } from '@nx/devkit';
+ import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+ import { applicationGenerator } from './application';
+ import { Schema } from './schema';
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ describe('react app generator (legacy)', () => {
+diff --git a/packages/react/src/generators/application/application.spec.ts b/packages/react/src/generators/application/application.spec.ts
+index 1e3ec648920..f4d80dfd078 100644
+--- a/packages/react/src/generators/application/application.spec.ts
++++ b/packages/react/src/generators/application/application.spec.ts
+@@ -1,4 +1,4 @@
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   detectPackageManager,
+   getPackageManagerCommand,
+@@ -19,8 +19,8 @@ import { Schema } from './schema';
+ const { load } = require('@zkochan/js-yaml');
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ 
+diff --git a/packages/react/src/generators/component-test/component-test.spec.ts b/packages/react/src/generators/component-test/component-test.spec.ts
+index fd83000449d..f99c5b1f19a 100644
+--- a/packages/react/src/generators/component-test/component-test.spec.ts
++++ b/packages/react/src/generators/component-test/component-test.spec.ts
+@@ -1,12 +1,12 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { assertMinimumCypressVersion } from '@nx/cypress/src/utils/versions';
++import { assertMinimumCypressVersion } from '@nx/cypress/internal';
+ import { Tree } from '@nx/devkit';
+ import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+ import libraryGenerator from '../library/library';
+ import { componentTestGenerator } from './component-test';
+ 
+-jest.mock('@nx/cypress/src/utils/versions');
++jest.mock('@nx/cypress/internal');
+ describe(componentTestGenerator.name, () => {
+   let tree: Tree;
+   let mockedAssertMinimumCypressVersion: jest.Mock<
+diff --git a/packages/react/src/generators/component/component.spec.ts b/packages/react/src/generators/component/component.spec.ts
+index 1aca42ffe3b..45d1b25aef1 100644
+--- a/packages/react/src/generators/component/component.spec.ts
++++ b/packages/react/src/generators/component/component.spec.ts
+@@ -1,6 +1,6 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   logger,
+   readJson,
+@@ -14,8 +14,8 @@ import { componentGenerator } from './component';
+ 
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ 
+diff --git a/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts b/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+index 19384941e9c..d62ba00476f 100644
+--- a/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
++++ b/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+@@ -1,4 +1,4 @@
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   DependencyType,
+   ProjectGraph,
+@@ -21,8 +21,8 @@ jest.mock('@nx/devkit', () => ({
+     .fn()
+     .mockImplementation(async () => projectGraph),
+ }));
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual<any>('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual<any>('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ // nested code imports graph from the repo, which might have innacurate graph version
+diff --git a/packages/react/src/generators/cypress-component-configuration/lib/add-files.ts b/packages/react/src/generators/cypress-component-configuration/lib/add-files.ts
+index 482ba1f5000..eec2b72ae45 100644
+--- a/packages/react/src/generators/cypress-component-configuration/lib/add-files.ts
++++ b/packages/react/src/generators/cypress-component-configuration/lib/add-files.ts
+@@ -1,4 +1,4 @@
+-import type { FoundTarget } from '@nx/cypress/src/utils/find-target-options';
++import type { FoundTarget } from '@nx/cypress/internal';
+ import {
+   addDependenciesToPackageJson,
+   joinPathFragments,
+@@ -21,9 +21,9 @@ export async function addFiles(
+ ) {
+   // must dynamicaly import to prevent packages not using cypress from erroring out
+   // when importing react
+-  const { addMountDefinition } = await import('@nx/cypress/src/utils/config');
++  const { addMountDefinition } = await import('@nx/cypress/internal');
+   const { getInstalledCypressMajorVersion } = await import(
+-    '@nx/cypress/src/utils/versions'
++    '@nx/cypress/internal'
+   );
+   const installedCypressMajorVersion = getInstalledCypressMajorVersion(tree);
+ 
+diff --git a/packages/react/src/generators/library/library.spec.ts b/packages/react/src/generators/library/library.spec.ts
+index 240c84465f4..0f770823b06 100644
+--- a/packages/react/src/generators/library/library.spec.ts
++++ b/packages/react/src/generators/library/library.spec.ts
+@@ -1,6 +1,6 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   getProjects,
+   readJson,
+@@ -17,8 +17,8 @@ import { Schema } from './schema';
+ const { load } = require('@zkochan/js-yaml');
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ describe('lib', () => {
+diff --git a/packages/react/src/utils/ct-utils.ts b/packages/react/src/utils/ct-utils.ts
+index 5d1f70076ce..918b71f17fe 100644
+--- a/packages/react/src/utils/ct-utils.ts
++++ b/packages/react/src/utils/ct-utils.ts
+@@ -7,7 +7,7 @@ import {
+ } from '@nx/devkit';
+ import { ensureTypescript } from '@nx/js/internal';
+ import { getComponentNode } from './ast-utils';
+-import { type FoundTarget } from '@nx/cypress/src/utils/find-target-options';
++import { type FoundTarget } from '@nx/cypress/internal';
+ import type { NxComponentTestingOptions } from '@nx/cypress/plugins/cypress-preset';
+ 
+ let tsModule: typeof import('typescript');
+@@ -29,9 +29,7 @@ export async function configureCypressCT(
+   const projectConfig = readProjectConfiguration(tree, options.project);
+   // Specifically undefined as a workaround for Remix to pass an empty string as the buildTarget
+   if (options.buildTarget === undefined) {
+-    const { findBuildConfig } = await import(
+-      '@nx/cypress/src/utils/find-target-options'
+-    );
++    const { findBuildConfig } = await import('@nx/cypress/internal');
+ 
+     found = await findBuildConfig(tree, {
+       project: options.project,
+@@ -58,7 +56,7 @@ export async function configureCypressCT(
+   }
+ 
+   const { addDefaultCTConfig, getProjectCypressConfigPath } = await import(
+-    '@nx/cypress/src/utils/config'
++    '@nx/cypress/internal'
+   );
+ 
+   const ctConfigOptions: NxComponentTestingOptions = {
+diff --git a/packages/vite/assets.json b/packages/vite/assets.json
+index 9328d5e65f2..e02e2f5cb75 100644
+--- a/packages/vite/assets.json
++++ b/packages/vite/assets.json
+@@ -1,10 +1,12 @@
+ {
+-  "outDir": "dist/packages/vite",
++  "outDir": "packages/vite/dist",
+   "assets": [
+     { "glob": "**/files/**" },
+     { "glob": "**/files/**/.gitkeep" },
+-    { "glob": "@(package|executors|generators|migrations).json" },
++    { "glob": "src/**/schema.json" },
+     { "glob": "src/**/schema.d.ts" },
++    { "glob": "src/migrations/**/*.md" },
++    { "glob": "PLUGIN.md" },
+     "LICENSE"
+   ]
+ }
+diff --git a/packages/vite/eslint.config.mjs b/packages/vite/eslint.config.mjs
+index 84001b948eb..5db04c4f636 100644
+--- a/packages/vite/eslint.config.mjs
++++ b/packages/vite/eslint.config.mjs
+@@ -3,6 +3,9 @@ import * as jsoncEslintParser from 'jsonc-eslint-parser';
+ 
+ export default [
+   ...baseConfig,
++  {
++    ignores: ['dist'],
++  },
+   {
+     files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
+     rules: {
+@@ -38,6 +41,9 @@ export default [
+           buildTargets: ['build-base'],
+           ignoredDependencies: [
+             'nx',
++            // Self-reference: resolves the package's own package.json at
++            // runtime (see src/utils/versions.ts).
++            '@nx/vite',
+             'typescript',
+             'vite',
+             'eslint',
+diff --git a/packages/vite/executors.json b/packages/vite/executors.json
+index 16e1439a8b8..437a6bf09fb 100644
+--- a/packages/vite/executors.json
++++ b/packages/vite/executors.json
+@@ -1,35 +1,35 @@
+ {
+   "builders": {
+     "dev-server": {
+-      "implementation": "./src/executors/dev-server/compat",
+-      "schema": "./src/executors/dev-server/schema.json",
++      "implementation": "./dist/src/executors/dev-server/compat",
++      "schema": "./dist/src/executors/dev-server/schema.json",
+       "description": "Vite dev server."
+     },
+     "build": {
+-      "implementation": "./src/executors/build/compat",
+-      "schema": "./src/executors/build/schema.json",
++      "implementation": "./dist/src/executors/build/compat",
++      "schema": "./dist/src/executors/build/schema.json",
+       "description": "Build with Vite."
+     },
+     "preview-server": {
+-      "implementation": "./src/executors/preview-server/compat",
+-      "schema": "./src/executors/preview-server/schema.json",
++      "implementation": "./dist/src/executors/preview-server/compat",
++      "schema": "./dist/src/executors/preview-server/schema.json",
+       "description": "Vite preview server"
+     }
+   },
+   "executors": {
+     "dev-server": {
+-      "implementation": "./src/executors/dev-server/dev-server.impl",
+-      "schema": "./src/executors/dev-server/schema.json",
++      "implementation": "./dist/src/executors/dev-server/dev-server.impl",
++      "schema": "./dist/src/executors/dev-server/schema.json",
+       "description": "Vite dev server."
+     },
+     "build": {
+-      "implementation": "./src/executors/build/build.impl",
+-      "schema": "./src/executors/build/schema.json",
++      "implementation": "./dist/src/executors/build/build.impl",
++      "schema": "./dist/src/executors/build/schema.json",
+       "description": "Build with Vite."
+     },
+     "preview-server": {
+-      "implementation": "./src/executors/preview-server/preview-server.impl",
+-      "schema": "./src/executors/preview-server/schema.json",
++      "implementation": "./dist/src/executors/preview-server/preview-server.impl",
++      "schema": "./dist/src/executors/preview-server/schema.json",
+       "description": "Vite preview server"
+     }
+   }
+diff --git a/packages/vite/generators.json b/packages/vite/generators.json
+index ed99d38cd19..6f1865b9c1b 100644
+--- a/packages/vite/generators.json
++++ b/packages/vite/generators.json
+@@ -3,27 +3,27 @@
+   "version": "0.1",
+   "generators": {
+     "init": {
+-      "factory": "./src/generators/init/init#initGeneratorInternal",
+-      "schema": "./src/generators/init/schema.json",
++      "factory": "./dist/src/generators/init/init#initGeneratorInternal",
++      "schema": "./dist/src/generators/init/schema.json",
+       "description": "Initialize Vite in the workspace.",
+       "aliases": ["ng-add"],
+       "hidden": true
+     },
+     "configuration": {
+-      "factory": "./src/generators/configuration/configuration#viteConfigurationGeneratorInternal",
+-      "schema": "./src/generators/configuration/schema.json",
++      "factory": "./dist/src/generators/configuration/configuration#viteConfigurationGeneratorInternal",
++      "schema": "./dist/src/generators/configuration/schema.json",
+       "description": "Add Vite configuration to an application.",
+       "aliases": ["config"],
+       "hidden": false
+     },
+     "setup-paths-plugin": {
+-      "factory": "./src/generators/setup-paths-plugin/setup-paths-plugin",
+-      "schema": "./src/generators/setup-paths-plugin/schema.json",
++      "factory": "./dist/src/generators/setup-paths-plugin/setup-paths-plugin",
++      "schema": "./dist/src/generators/setup-paths-plugin/schema.json",
+       "description": "Sets up the nxViteTsPaths plugin to enable support for workspace libraries."
+     },
+     "convert-to-inferred": {
+-      "factory": "./src/generators/convert-to-inferred/convert-to-inferred",
+-      "schema": "./src/generators/convert-to-inferred/schema.json",
++      "factory": "./dist/src/generators/convert-to-inferred/convert-to-inferred",
++      "schema": "./dist/src/generators/convert-to-inferred/schema.json",
+       "description": "Convert existing Vite project(s) using `@nx/vite:*` executors to use `@nx/vite/plugin`. Defaults to migrating all projects. Pass '--project' to migrate only one target."
+     }
+   }
+diff --git a/packages/vite/migrations.json b/packages/vite/migrations.json
+index c17daf7420e..819bf0336da 100644
+--- a/packages/vite/migrations.json
++++ b/packages/vite/migrations.json
+@@ -3,27 +3,27 @@
+     "update-20-0-4": {
+       "version": "20.0.4-beta.0",
+       "description": "Add gitignore entry for temporary vite config files.",
+-      "implementation": "./src/migrations/update-20-0-4/add-vite-temp-files-to-git-ignore"
++      "implementation": "./dist/src/migrations/update-20-0-4/add-vite-temp-files-to-git-ignore"
+     },
+     "update-20-0-6": {
+       "version": "20.0.6-beta.0",
+       "description": "Add gitignore entry for temporary vite config files and remove previous incorrect glob.",
+-      "implementation": "./src/migrations/update-20-0-4/add-vite-temp-files-to-git-ignore"
++      "implementation": "./dist/src/migrations/update-20-0-4/add-vite-temp-files-to-git-ignore"
+     },
+     "update-20-5-0-install-jiti": {
+       "version": "20.5.0-beta.2",
+       "description": "Install jiti as a devDependency to allow vite to parse TS postcss files.",
+-      "implementation": "./src/migrations/update-20-5-0/install-jiti"
++      "implementation": "./dist/src/migrations/update-20-5-0/install-jiti"
+     },
+     "update-20-5-0-update-resolve-conditions": {
+       "version": "20.5.0-beta.3",
+       "description": "Update resolve.conditions to include defaults that are no longer provided by Vite.",
+-      "implementation": "./src/migrations/update-20-5-0/update-resolve-conditions"
++      "implementation": "./dist/src/migrations/update-20-5-0/update-resolve-conditions"
+     },
+     "eslint-ignore-vite-temp-files": {
+       "version": "20.5.0-beta.3",
+       "description": "Add vite config temporary files to the ESLint configuration ignore patterns if ESLint is used.",
+-      "implementation": "./src/migrations/update-20-5-0/eslint-ignore-vite-temp-files"
++      "implementation": "./dist/src/migrations/update-20-5-0/eslint-ignore-vite-temp-files"
+     },
+     "update-22-2-0": {
+       "version": "22.2.0-beta.1",
+@@ -31,17 +31,17 @@
+         "vitest": ">=4.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vitest 4.",
+-      "prompt": "./src/migrations/update-22-2-0/ai-instructions-for-vitest-4.md"
++      "prompt": "./dist/src/migrations/update-22-2-0/ai-instructions-for-vitest-4.md"
+     },
+     "migrate-vitest-to-vitest-package": {
+       "version": "22.2.0-beta.2",
+       "description": "Migrate Vitest usage from @nx/vite to @nx/vitest package.",
+-      "implementation": "./src/migrations/update-22-2-0/migrate-vitest-to-vitest-package"
++      "implementation": "./dist/src/migrations/update-22-2-0/migrate-vitest-to-vitest-package"
+     },
+     "ensure-vitest-package-migration-23": {
+       "version": "23.0.0-beta.10",
+       "description": "Safety net: ensure any remaining @nx/vite:test executor usages are swapped to @nx/vitest:test and @nx/vitest is installed.",
+-      "implementation": "./src/migrations/update-23-0-0/ensure-vitest-package-migration"
++      "implementation": "./dist/src/migrations/update-23-0-0/ensure-vitest-package-migration"
+     },
+     "rename-rollup-options-to-rolldown-options": {
+       "version": "23.0.0-beta.10",
+@@ -49,7 +49,7 @@
+         "vite": ">=8.0.0"
+       },
+       "description": "Rename `rollupOptions` to `rolldownOptions` in vite config files (top-level and inside `environments`). Vite 8 replaced Rollup with Rolldown.",
+-      "implementation": "./src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options"
++      "implementation": "./dist/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options"
+     },
+     "create-ai-instructions-for-vite-8": {
+       "version": "23.0.0-beta.10",
+@@ -57,7 +57,7 @@
+         "vite": ">=8.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vite 8.",
+-      "prompt": "./src/migrations/update-23-0-0/ai-instructions-for-vite-8.md"
++      "prompt": "./dist/src/migrations/update-23-0-0/ai-instructions-for-vite-8.md"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/vite/package.json b/packages/vite/package.json
+index 628a9330935..ba028f7a60a 100644
+--- a/packages/vite/package.json
++++ b/packages/vite/package.json
+@@ -2,6 +2,15 @@
+   "name": "@nx/vite",
+   "version": "0.0.1",
+   "private": false,
++  "type": "commonjs",
++  "files": [
++    "dist",
++    "!dist/tsconfig.tsbuildinfo",
++    "!dist/spec",
++    "migrations.json",
++    "executors.json",
++    "generators.json"
++  ],
+   "description": "The Nx Plugin for building and testing applications using Vite",
+   "repository": {
+     "type": "git",
+@@ -15,9 +24,63 @@
+     "CLI",
+     "Front-end"
+   ],
+-  "main": "./index.js",
+-  "type": "commonjs",
+-  "types": "./index.d.ts",
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "typesVersions": {
++    "*": {
++      "plugin": [
++        "dist/plugin.d.ts"
++      ],
++      "executors": [
++        "dist/executors.d.ts"
++      ],
++      "plugins/nx-copy-assets.plugin": [
++        "dist/plugins/nx-copy-assets.plugin.d.ts"
++      ],
++      "plugins/nx-tsconfig-paths.plugin": [
++        "dist/plugins/nx-tsconfig-paths.plugin.d.ts"
++      ],
++      "plugins/rollup-replace-files.plugin": [
++        "dist/plugins/rollup-replace-files.plugin.d.ts"
++      ]
++    }
++  },
++  "exports": {
++    ".": {
++      "@nx/nx-source": "./index.ts",
++      "types": "./dist/index.d.ts",
++      "default": "./dist/index.js"
++    },
++    "./package.json": "./package.json",
++    "./migrations.json": "./migrations.json",
++    "./generators.json": "./generators.json",
++    "./executors.json": "./executors.json",
++    "./plugin": {
++      "@nx/nx-source": "./plugin.ts",
++      "types": "./dist/plugin.d.ts",
++      "default": "./dist/plugin.js"
++    },
++    "./executors": {
++      "@nx/nx-source": "./executors.ts",
++      "types": "./dist/executors.d.ts",
++      "default": "./dist/executors.js"
++    },
++    "./plugins/nx-copy-assets.plugin": {
++      "@nx/nx-source": "./plugins/nx-copy-assets.plugin.ts",
++      "types": "./dist/plugins/nx-copy-assets.plugin.d.ts",
++      "default": "./dist/plugins/nx-copy-assets.plugin.js"
++    },
++    "./plugins/nx-tsconfig-paths.plugin": {
++      "@nx/nx-source": "./plugins/nx-tsconfig-paths.plugin.ts",
++      "types": "./dist/plugins/nx-tsconfig-paths.plugin.d.ts",
++      "default": "./dist/plugins/nx-tsconfig-paths.plugin.js"
++    },
++    "./plugins/rollup-replace-files.plugin": {
++      "@nx/nx-source": "./plugins/rollup-replace-files.plugin.ts",
++      "types": "./dist/plugins/rollup-replace-files.plugin.d.ts",
++      "default": "./dist/plugins/rollup-replace-files.plugin.js"
++    }
++  },
+   "author": "Victor Savkin",
+   "license": "MIT",
+   "bugs": {
+@@ -51,23 +114,5 @@
+   },
+   "publishConfig": {
+     "access": "public"
+-  },
+-  "exports": {
+-    ".": "./index.js",
+-    "./plugin": "./plugin.js",
+-    "./package.json": "./package.json",
+-    "./migrations.json": "./migrations.json",
+-    "./generators.json": "./generators.json",
+-    "./executors.json": "./executors.json",
+-    "./executors": "./executors.js",
+-    "./src/executors/*/schema.json": "./src/executors/*/schema.json",
+-    "./src/executors/*.impl": "./src/executors/*.impl.js",
+-    "./src/executors/*/schema": "./src/executors/*/schema.d.ts",
+-    "./src/executors/*/compat": "./src/executors/*/compat.js",
+-    "./src/generators/*/schema.json": "./src/generators/*/schema.json",
+-    "./src/generators/*/schema": "./src/generators/*/schema.d.ts",
+-    "./plugins/nx-copy-assets.plugin": "./plugins/nx-copy-assets.plugin.js",
+-    "./plugins/nx-tsconfig-paths.plugin": "./plugins/nx-tsconfig-paths.plugin.js",
+-    "./plugins/rollup-replace-files.plugin": "./plugins/rollup-replace-files.plugin.js"
+   }
+ }
+diff --git a/packages/vite/project.json b/packages/vite/project.json
+index 600dd4118c8..be9afe0ae4d 100644
+--- a/packages/vite/project.json
++++ b/packages/vite/project.json
+@@ -3,10 +3,22 @@
+   "$schema": "../../node_modules/nx/schemas/project-schema.json",
+   "sourceRoot": "packages/vite",
+   "projectType": "library",
++  "release": {
++    "version": {
++      "generator": "@nx/js:release-version",
++      "preserveLocalDependencyProtocols": true,
++      "manifestRootsToUpdate": ["packages/{projectName}"]
++    }
++  },
+   "targets": {
++    "nx-release-publish": {
++      "options": {
++        "packageRoot": "packages/{projectName}"
++      }
++    },
+     "build": {
+-      "outputs": ["{workspaceRoot}/dist/packages/vite/README.md"],
+-      "command": "node ./scripts/copy-readme.js vite",
++      "outputs": ["{projectRoot}/README.md"],
++      "command": "node ./scripts/copy-readme.js vite packages/vite/readme-template.md packages/vite/README.md",
+       "inputs": ["copyReadme"]
+     }
+   },
+diff --git a/packages/vite/README.md b/packages/vite/readme-template.md
+similarity index 100%
+rename from packages/vite/README.md
+rename to packages/vite/readme-template.md
+diff --git a/packages/vite/src/executors/build/build.impl.ts b/packages/vite/src/executors/build/build.impl.ts
+index cfb9eaf2889..e506e3a3e03 100644
+--- a/packages/vite/src/executors/build/build.impl.ts
++++ b/packages/vite/src/executors/build/build.impl.ts
+@@ -16,6 +16,7 @@ import {
+   normalizeViteConfigFilePath,
+ } from '../../utils/options-utils';
+ import { ViteBuildExecutorOptions } from './schema';
++import schema from './schema.json';
+ import {
+   copyAssets,
+   createLockFile,
+@@ -257,7 +258,6 @@ export async function getBuildExtraArgs(
+   otherOptions: Record<string, any>;
+ }> {
+   // support passing extra args to vite cli
+-  const schema = await import('./schema.json');
+   const extraArgs = {};
+   for (const key of Object.keys(options)) {
+     if (!schema.properties[key]) {
+diff --git a/packages/vite/src/executors/dev-server/dev-server.impl.ts b/packages/vite/src/executors/dev-server/dev-server.impl.ts
+index 3a0f2c4d90e..f4bd0f56212 100644
+--- a/packages/vite/src/executors/dev-server/dev-server.impl.ts
++++ b/packages/vite/src/executors/dev-server/dev-server.impl.ts
+@@ -9,6 +9,7 @@ import {
+   normalizeViteConfigFilePath,
+ } from '../../utils/options-utils';
+ import { ViteDevServerExecutorOptions } from './schema';
++import schema from './schema.json';
+ import { ViteBuildExecutorOptions } from '../build/schema';
+ import {
+   createBuildableTsConfig,
+@@ -143,7 +144,6 @@ async function getServerExtraArgs(
+   otherOptions: Record<string, any>;
+ }> {
+   // support passing extra args to vite cli
+-  const schema = await import('./schema.json');
+   const extraArgs = {};
+   for (const key of Object.keys(options)) {
+     if (!schema.properties[key]) {
+diff --git a/packages/vite/src/executors/preview-server/preview-server.impl.ts b/packages/vite/src/executors/preview-server/preview-server.impl.ts
+index 338538e2015..efce1c08c33 100644
+--- a/packages/vite/src/executors/preview-server/preview-server.impl.ts
++++ b/packages/vite/src/executors/preview-server/preview-server.impl.ts
+@@ -12,6 +12,7 @@ import {
+ } from '../../utils/options-utils';
+ import { ViteBuildExecutorOptions } from '../build/schema';
+ import { VitePreviewServerExecutorOptions } from './schema';
++import schema from './schema.json';
+ import { relative } from 'path';
+ import { getBuildExtraArgs } from '../build/build.impl';
+ import { loadViteDynamicImport } from '../../utils/executor-utils';
+@@ -219,7 +220,6 @@ async function getExtraArgs(
+   otherOptions: Record<string, any>;
+ }> {
+   // support passing extra args to vite cli
+-  const schema = await import('./schema.json');
+   const extraArgs = {};
+   for (const key of Object.keys(options)) {
+     if (!schema.properties[key]) {
+diff --git a/packages/vite/src/generators/configuration/configuration.ts b/packages/vite/src/generators/configuration/configuration.ts
+index 4ad11c1262b..d6ca8162513 100644
+--- a/packages/vite/src/generators/configuration/configuration.ts
++++ b/packages/vite/src/generators/configuration/configuration.ts
+@@ -182,8 +182,11 @@ export async function viteConfigurationGeneratorInternal(
+ 
+   if (schema.includeVitest) {
+     ensurePackage('@nx/vitest', nxVersion);
+-    const { configurationGenerator: vitestConfigurationGenerator } =
+-      await import('@nx/vitest/generators');
++    // CommonJS `require` instead of dynamic ESM `import` — `ensurePackage`
++    // exposes the temp install via `Module._initPaths`, which ESM ignores.
++    const {
++      configurationGenerator: vitestConfigurationGenerator,
++    }: typeof import('@nx/vitest/generators') = require('@nx/vitest/generators');
+     const vitestTask = await vitestConfigurationGenerator(tree, {
+       project: schema.project,
+       uiFramework: schema.uiFramework,
+diff --git a/packages/vite/src/migrations/update-20-5-0/eslint-ignore-vite-temp-files.ts b/packages/vite/src/migrations/update-20-5-0/eslint-ignore-vite-temp-files.ts
+index 458262ece25..99fbdbcd7f1 100644
+--- a/packages/vite/src/migrations/update-20-5-0/eslint-ignore-vite-temp-files.ts
++++ b/packages/vite/src/migrations/update-20-5-0/eslint-ignore-vite-temp-files.ts
+@@ -14,14 +14,17 @@ export default async function (tree: Tree) {
+   }
+ 
+   ensurePackage('@nx/eslint', nxVersion);
+-  const { addIgnoresToLintConfig, isEslintConfigSupported } = await import(
+-    '@nx/eslint/internal'
+-  );
++  // CommonJS `require` instead of dynamic ESM `import` — `ensurePackage`
++  // exposes the temp install via `Module._initPaths`, which ESM ignores.
++  const {
++    addIgnoresToLintConfig,
++    isEslintConfigSupported,
++    useFlatConfig,
++  }: typeof import('@nx/eslint/internal') = require('@nx/eslint/internal');
+   if (!isEslintConfigSupported(tree)) {
+     return;
+   }
+ 
+-  const { useFlatConfig } = await import('@nx/eslint/internal');
+   const isUsingFlatConfig = useFlatConfig(tree);
+ 
+   if (isUsingFlatConfig) {
+diff --git a/packages/vite/src/utils/ignore-vite-temp-files.ts b/packages/vite/src/utils/ignore-vite-temp-files.ts
+index 6f7c16b3cf3..fdc0053fb3a 100644
+--- a/packages/vite/src/utils/ignore-vite-temp-files.ts
++++ b/packages/vite/src/utils/ignore-vite-temp-files.ts
+@@ -31,14 +31,21 @@ async function ignoreViteTempFilesInEslintConfig(
+   }
+ 
+   ensurePackage('@nx/eslint', nxVersion);
+-  const { addIgnoresToLintConfig, isEslintConfigSupported } = await import(
+-    '@nx/eslint/internal'
+-  );
++  // Use CommonJS `require` rather than a dynamic ESM `import`: `ensurePackage`
++  // makes the on-demand-installed package available via `Module._initPaths`,
++  // which `require()` honors but ESM resolution does not. Under nodenext, a
++  // dynamic `import()` is preserved as a true ESM dynamic import, so it can't
++  // see the temp install — generators that go down this path crash with
++  // `Cannot find package '@nx/eslint'`.
++  const {
++    addIgnoresToLintConfig,
++    isEslintConfigSupported,
++    useFlatConfig,
++  }: typeof import('@nx/eslint/internal') = require('@nx/eslint/internal');
+   if (!isEslintConfigSupported(tree)) {
+     return;
+   }
+ 
+-  const { useFlatConfig } = await import('@nx/eslint/internal');
+   const isUsingFlatConfig = useFlatConfig(tree);
+   if (!projectRoot && !isUsingFlatConfig) {
+     // root eslintrc files ignore all files and the root eslintrc files add
+diff --git a/packages/vite/src/utils/versions.ts b/packages/vite/src/utils/versions.ts
+index e700226abaf..6c1cac95de0 100644
+--- a/packages/vite/src/utils/versions.ts
++++ b/packages/vite/src/utils/versions.ts
+@@ -1,4 +1,6 @@
+-export const nxVersion = require('../../package.json').version;
++import { join } from 'path';
++
++export const nxVersion = require(join('@nx/vite', 'package.json')).version;
+ // Also update @nx/remix/utils/versions when changing vite version
+ export const viteVersion = '^8.0.0';
+ export const viteV7Version = '^7.0.0';
+diff --git a/packages/vite/tsconfig.lib.json b/packages/vite/tsconfig.lib.json
+index 5420d805eab..af46fecb7e2 100644
+--- a/packages/vite/tsconfig.lib.json
++++ b/packages/vite/tsconfig.lib.json
+@@ -1,16 +1,27 @@
+ {
+   "extends": "../../tsconfig.base.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/vite",
++    "outDir": "dist",
++    "rootDir": ".",
++    "declarationDir": "dist",
++    "declarationMap": false,
++    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+     "types": ["node"],
+-    "tsBuildInfoFile": "../../dist/packages/vite/tsconfig.tsbuildinfo"
++    "composite": true,
++    "module": "nodenext",
++    "moduleResolution": "nodenext",
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true
+   },
+-  "include": ["**/*.ts", "src/**/schema.json"],
++  "include": ["*.ts", "src/**/*.ts", "plugins/**/*.ts", "src/**/schema.json"],
+   "exclude": [
+-    "jest.config.ts",
++    "node_modules",
++    "dist",
++    "jest.config.cts",
+     "**/*.spec.ts",
+     "**/*.test.ts",
+-    "src/utils/test-utils.ts"
++    "src/utils/test-utils.ts",
++    ".eslintrc.json"
+   ],
+   "references": [
+     {
+diff --git a/packages/vite/tsconfig.spec.json b/packages/vite/tsconfig.spec.json
+index 9f309a57446..2fbd19eff6b 100644
+--- a/packages/vite/tsconfig.spec.json
++++ b/packages/vite/tsconfig.spec.json
+@@ -1,7 +1,7 @@
+ {
+   "extends": "./tsconfig.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/vite/spec",
++    "outDir": "dist/spec",
+     "module": "commonjs",
+     "types": ["jest", "node"],
+     "composite": true
+diff --git a/packages/vitest/assets.json b/packages/vitest/assets.json
+index eda1fa8e25a..dba2479a96e 100644
+--- a/packages/vitest/assets.json
++++ b/packages/vitest/assets.json
+@@ -1,10 +1,10 @@
+ {
+-  "outDir": "dist/packages/vitest",
++  "outDir": "packages/vitest/dist",
+   "assets": [
+     { "glob": "**/files/**" },
+-    { "glob": "@(package|executors|generators|migrations).json" },
+     { "glob": "src/**/schema.json" },
+     { "glob": "src/**/schema.d.ts" },
++    { "glob": "src/migrations/**/*.md" },
+     { "glob": "PLUGIN.md" },
+     "LICENSE"
+   ]
+diff --git a/packages/vitest/eslint.config.mjs b/packages/vitest/eslint.config.mjs
+index dbd10571e32..f4088bf5954 100644
+--- a/packages/vitest/eslint.config.mjs
++++ b/packages/vitest/eslint.config.mjs
+@@ -3,6 +3,9 @@ import * as jsoncEslintParser from 'jsonc-eslint-parser';
+ 
+ export default [
+   ...baseConfig,
++  {
++    ignores: ['dist'],
++  },
+   {
+     files: [
+       './package.json',
+@@ -26,6 +29,9 @@ export default [
+           buildTargets: ['build-base'],
+           ignoredDependencies: [
+             'nx',
++            // Self-reference: resolves the package's own package.json at
++            // runtime (see src/utils/versions.ts).
++            '@nx/vitest',
+             'eslint',
+             'typescript',
+             '@nx/eslint',
+diff --git a/packages/vitest/executors.json b/packages/vitest/executors.json
+index ae15085137e..28073d7c387 100644
+--- a/packages/vitest/executors.json
++++ b/packages/vitest/executors.json
+@@ -2,8 +2,8 @@
+   "$schema": "https://json-schema.org/schema",
+   "executors": {
+     "test": {
+-      "implementation": "./src/executors/test/vitest.impl",
+-      "schema": "./src/executors/test/schema.json",
++      "implementation": "./dist/src/executors/test/vitest.impl",
++      "schema": "./dist/src/executors/test/schema.json",
+       "description": "Test using Vitest"
+     }
+   }
+diff --git a/packages/vitest/generators.json b/packages/vitest/generators.json
+index 1be7a3408a9..630f0e99ba6 100644
+--- a/packages/vitest/generators.json
++++ b/packages/vitest/generators.json
+@@ -3,20 +3,20 @@
+   "version": "0.1",
+   "generators": {
+     "init": {
+-      "factory": "./src/generators/init/init",
+-      "schema": "./src/generators/init/schema.json",
++      "factory": "./dist/src/generators/init/init",
++      "schema": "./dist/src/generators/init/schema.json",
+       "description": "Initialize the `@nx/vitest` plugin.",
+       "aliases": ["ng-add"],
+       "hidden": true
+     },
+     "configuration": {
+-      "factory": "./src/generators/configuration/configuration",
+-      "schema": "./src/generators/configuration/schema.json",
++      "factory": "./dist/src/generators/configuration/configuration",
++      "schema": "./dist/src/generators/configuration/schema.json",
+       "description": "Add Vitest configuration to a project."
+     },
+     "convert-to-inferred": {
+-      "factory": "./src/generators/convert-to-inferred/convert-to-inferred",
+-      "schema": "./src/generators/convert-to-inferred/schema.json",
++      "factory": "./dist/src/generators/convert-to-inferred/convert-to-inferred",
++      "schema": "./dist/src/generators/convert-to-inferred/schema.json",
+       "description": "Convert a project to use the `@nx/vitest` inferred plugin."
+     }
+   }
+diff --git a/packages/vitest/migrations.json b/packages/vitest/migrations.json
+index d3eb4706387..5fe664065c3 100644
+--- a/packages/vitest/migrations.json
++++ b/packages/vitest/migrations.json
+@@ -3,12 +3,12 @@
+     "update-20-3-0": {
+       "version": "20.3.0-beta.2",
+       "description": "Add gitignore entry for temporary vitest config files.",
+-      "implementation": "./src/migrations/update-20-3-0/add-vitest-temp-files-to-git-ignore"
++      "implementation": "./dist/src/migrations/update-20-3-0/add-vitest-temp-files-to-git-ignore"
+     },
+     "update-22-1-0": {
+       "version": "22.1.0-beta.8",
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vitest 4.",
+-      "prompt": "./src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md"
++      "prompt": "./dist/src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md"
+     },
+     "update-22-3-2": {
+       "version": "22.3.2-beta.0",
+@@ -16,12 +16,12 @@
+         "@angular/build": ">=21.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vitest 4.",
+-      "prompt": "./src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md"
++      "prompt": "./dist/src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md"
+     },
+     "update-22-6-0-prefix-reports-directory": {
+       "version": "22.6.0-beta.11",
+       "description": "Prefix reportsDirectory with {projectRoot} to maintain correct resolution after workspace-root-relative behavior change.",
+-      "implementation": "./src/migrations/update-22-6-0/prefix-reports-directory-with-project-root"
++      "implementation": "./dist/src/migrations/update-22-6-0/prefix-reports-directory-with-project-root"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/vitest/package.json b/packages/vitest/package.json
+index f4cbaad4dfc..81f4d229bcd 100644
+--- a/packages/vitest/package.json
++++ b/packages/vitest/package.json
+@@ -3,6 +3,14 @@
+   "description": "The Nx Plugin for Vitest to enable fast unit testing with Vitest.",
+   "version": "0.0.1",
+   "type": "commonjs",
++  "files": [
++    "dist",
++    "!dist/tsconfig.tsbuildinfo",
++    "!dist/spec",
++    "migrations.json",
++    "executors.json",
++    "generators.json"
++  ],
+   "publishConfig": {
+     "access": "public"
+   },
+@@ -23,28 +31,38 @@
+   "author": "Victor Savkin",
+   "license": "MIT",
+   "homepage": "https://nx.dev",
+-  "main": "index.js",
++  "main": "./dist/index.js",
++  "types": "./dist/index.d.ts",
++  "typesVersions": {
++    "*": {
++      "generators": [
++        "dist/generators.d.ts"
++      ],
++      "executors": [
++        "dist/executors.d.ts"
++      ]
++    }
++  },
+   "exports": {
+     ".": {
+-      "types": "./index.d.ts",
+-      "default": "./index.js"
+-    },
+-    "./executors/*/schema.json": "./src/executors/*/schema.json",
+-    "./executors/*/schema": "./src/executors/*/schema.d.ts",
+-    "./generators/*/schema.json": "./src/generators/*/schema.json",
+-    "./generators/*/schema": "./src/generators/*/schema.d.ts",
+-    "./generators": {
+-      "types": "./generators.d.ts",
+-      "default": "./generators.js"
+-    },
+-    "./executors": {
+-      "types": "./executors.d.ts",
+-      "default": "./executors.js"
++      "@nx/nx-source": "./index.ts",
++      "types": "./dist/index.d.ts",
++      "default": "./dist/index.js"
+     },
+     "./package.json": "./package.json",
++    "./migrations.json": "./migrations.json",
+     "./generators.json": "./generators.json",
+     "./executors.json": "./executors.json",
+-    "./migrations.json": "./migrations.json"
++    "./generators": {
++      "@nx/nx-source": "./generators.ts",
++      "types": "./dist/generators.d.ts",
++      "default": "./dist/generators.js"
++    },
++    "./executors": {
++      "@nx/nx-source": "./executors.ts",
++      "types": "./dist/executors.d.ts",
++      "default": "./dist/executors.js"
++    }
+   },
+   "nx-migrations": {
+     "migrations": "./migrations.json"
+diff --git a/packages/vitest/project.json b/packages/vitest/project.json
+index df94e454251..ed5356c50e1 100644
+--- a/packages/vitest/project.json
++++ b/packages/vitest/project.json
+@@ -3,11 +3,24 @@
+   "$schema": "../../node_modules/nx/schemas/project-schema.json",
+   "sourceRoot": "packages/vitest",
+   "projectType": "library",
++  "release": {
++    "version": {
++      "generator": "@nx/js:release-version",
++      "preserveLocalDependencyProtocols": true,
++      "manifestRootsToUpdate": ["packages/{projectName}"]
++    }
++  },
+   "targets": {
++    "nx-release-publish": {
++      "options": {
++        "packageRoot": "packages/{projectName}"
++      }
++    },
+     "build": {
+-      "command": "node ./scripts/copy-readme.js vitest",
++      "command": "node ./scripts/copy-readme.js vitest packages/vitest/readme-template.md packages/vitest/README.md",
+       "inputs": ["copyReadme"],
+-      "outputs": ["{workspaceRoot}/dist/packages/vitest/README.md"]
++      "outputs": ["{projectRoot}/README.md"],
++      "dependsOn": ["^build", "build-base"]
+     }
+   }
+ }
+diff --git a/packages/vitest/README.md b/packages/vitest/readme-template.md
+similarity index 100%
+rename from packages/vitest/README.md
+rename to packages/vitest/readme-template.md
+diff --git a/packages/vitest/src/utils/ignore-vitest-temp-files.ts b/packages/vitest/src/utils/ignore-vitest-temp-files.ts
+index 3c0bd7e7a2f..1841004355a 100644
+--- a/packages/vitest/src/utils/ignore-vitest-temp-files.ts
++++ b/packages/vitest/src/utils/ignore-vitest-temp-files.ts
+@@ -30,14 +30,21 @@ async function ignoreVitestTempFilesInEslintConfig(
+   }
+ 
+   ensurePackage('@nx/eslint', nxVersion);
+-  const { addIgnoresToLintConfig, isEslintConfigSupported } = await import(
+-    '@nx/eslint/internal'
+-  );
++  // Use CommonJS `require` rather than a dynamic ESM `import`: `ensurePackage`
++  // makes the on-demand-installed package available via `Module._initPaths`,
++  // which `require()` honors but ESM resolution does not. Under nodenext, a
++  // dynamic `import()` is preserved as a true ESM dynamic import, so it can't
++  // see the temp install — generators that go down this path crash with
++  // `Cannot find package '@nx/eslint'`.
++  const {
++    addIgnoresToLintConfig,
++    isEslintConfigSupported,
++    useFlatConfig,
++  }: typeof import('@nx/eslint/internal') = require('@nx/eslint/internal');
+   if (!isEslintConfigSupported(tree)) {
+     return;
+   }
+ 
+-  const { useFlatConfig } = await import('@nx/eslint/internal');
+   const isUsingFlatConfig = useFlatConfig(tree);
+   if (!projectRoot && !isUsingFlatConfig) {
+     // root eslintrc files ignore all files and the root eslintrc files add
+diff --git a/packages/vitest/src/utils/versions.ts b/packages/vitest/src/utils/versions.ts
+index b63e8ccbbcf..c02d9e00d03 100644
+--- a/packages/vitest/src/utils/versions.ts
++++ b/packages/vitest/src/utils/versions.ts
+@@ -1,4 +1,6 @@
+-export const nxVersion = require('../../package.json').version;
++import { join } from 'path';
++
++export const nxVersion = require(join('@nx/vitest', 'package.json')).version;
+ 
+ export const viteVersion = '^8.0.0';
+ export const viteV7Version = '^7.0.0';
+diff --git a/packages/vitest/tsconfig.lib.json b/packages/vitest/tsconfig.lib.json
+index 1ae7a4e17b2..b1948c4a73f 100644
+--- a/packages/vitest/tsconfig.lib.json
++++ b/packages/vitest/tsconfig.lib.json
+@@ -1,11 +1,27 @@
+ {
+   "extends": "../../tsconfig.base.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/vitest",
+-    "types": ["node"]
++    "outDir": "dist",
++    "rootDir": ".",
++    "declarationDir": "dist",
++    "declarationMap": false,
++    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
++    "types": ["node"],
++    "composite": true,
++    "module": "nodenext",
++    "moduleResolution": "nodenext",
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true
+   },
+-  "include": ["**/*.ts"],
+-  "exclude": ["jest.config.ts", "**/*.spec.ts", "**/*.test.ts"],
++  "exclude": [
++    "node_modules",
++    "dist",
++    "**/*.spec.ts",
++    "**/*.test.ts",
++    "jest.config.ts",
++    ".eslintrc.json"
++  ],
++  "include": ["*.ts", "src/**/*.ts"],
+   "references": [
+     {
+       "path": "../js/tsconfig.lib.json"
+diff --git a/packages/vitest/tsconfig.spec.json b/packages/vitest/tsconfig.spec.json
+index 45bf360392c..1a2558ff416 100644
+--- a/packages/vitest/tsconfig.spec.json
++++ b/packages/vitest/tsconfig.spec.json
+@@ -1,7 +1,7 @@
+ {
+   "extends": "./tsconfig.json",
+   "compilerOptions": {
+-    "outDir": "../../dist/packages/vitest/spec",
++    "outDir": "dist/spec",
+     "module": "commonjs",
+     "types": ["jest", "node"],
+     "composite": true
+diff --git a/packages/web/src/generators/application/application.legacy.spec.ts b/packages/web/src/generators/application/application.legacy.spec.ts
+index e899533079a..af960da14cd 100644
+--- a/packages/web/src/generators/application/application.legacy.spec.ts
++++ b/packages/web/src/generators/application/application.legacy.spec.ts
+@@ -1,14 +1,14 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import { getProjects, readProjectConfiguration, Tree } from '@nx/devkit';
+ import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+ 
+ import { applicationGenerator } from './application';
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ describe('web app generator (legacy)', () => {
+diff --git a/packages/web/src/generators/application/application.spec.ts b/packages/web/src/generators/application/application.spec.ts
+index 7795b8b6e20..8cdb8a42b39 100644
+--- a/packages/web/src/generators/application/application.spec.ts
++++ b/packages/web/src/generators/application/application.spec.ts
+@@ -1,6 +1,6 @@
+ import 'nx/src/internal-testing-utils/mock-project-graph';
+ 
+-import { getInstalledCypressMajorVersion } from '@nx/cypress/src/utils/versions';
++import { getInstalledCypressMajorVersion } from '@nx/cypress/internal';
+ import {
+   readNxJson,
+   readProjectConfiguration,
+@@ -18,8 +18,8 @@ import { Schema } from './schema';
+ import { PackageManagerCommands } from 'nx/src/utils/package-manager';
+ // need to mock cypress otherwise it'll use the nx installed version from package.json
+ //  which is v9 while we are testing for the new v10 version
+-jest.mock('@nx/cypress/src/utils/versions', () => ({
+-  ...jest.requireActual('@nx/cypress/src/utils/versions'),
++jest.mock('@nx/cypress/internal', () => ({
++  ...jest.requireActual('@nx/cypress/internal'),
+   getInstalledCypressMajorVersion: jest.fn(),
+ }));
+ 
+diff --git a/scripts/nx-release.ts b/scripts/nx-release.ts
+index 0a6577287c6..962bf67cf49 100644
+--- a/scripts/nx-release.ts
++++ b/scripts/nx-release.ts
+@@ -78,12 +78,16 @@ const VALID_AUTHORS_FOR_LATEST = [
+     'packages/angular-rspack-compiler',
+     'packages/devkit',
+     'packages/dotnet',
++    'packages/cypress',
+     'packages/eslint',
+     'packages/eslint-plugin',
+     'packages/jest',
+     'packages/js',
+     'packages/maven',
+     'packages/nx',
++    'packages/playwright',
++    'packages/vite',
++    'packages/vitest',
+     'packages/workspace',
+   ];
+ 

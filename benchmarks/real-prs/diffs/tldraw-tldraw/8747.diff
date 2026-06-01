@@ -1,0 +1,509 @@
+diff --git a/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/README.md b/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/README.md
+new file mode 100644
+index 000000000000..f12e3bfbc57a
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/README.md
+@@ -0,0 +1,19 @@
++---
++title: Shape with onDoubleClickEdge
++component: ./ShapeWithOnDoubleClickEdgeExample.tsx
++category: shapes/tools
++priority: 1
++keywords: [onDoubleClickEdge, custom shape, resize, edge, double click]
++---
++
++A custom shape that uses `ShapeUtil.onDoubleClickEdge` to toggle between two preset sizes.
++
++---
++
++You can handle double-clicks on a shape's resize edges by implementing the `onDoubleClickEdge`
++method on your shape util. The editor calls this handler when the user double-clicks one of
++the four edge resize handles (top, right, bottom, left) of a selected shape. Return a shape
++partial to update the shape, or `void` to do nothing.
++
++In this example the handler toggles the shape between 400×320 and 200×200 every time an
++edge is double-clicked.
+diff --git a/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/ResizableShapeUtil.tsx b/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/ResizableShapeUtil.tsx
+new file mode 100644
+index 000000000000..d8d92a0bdf79
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/ResizableShapeUtil.tsx
+@@ -0,0 +1,95 @@
++import {
++	BaseBoxShapeUtil,
++	HTMLContainer,
++	RecordProps,
++	T,
++	TLBaseBoxShape,
++	TLShapePartial,
++} from 'tldraw'
++
++// There's a guide at the bottom of this file!
++
++const RESIZABLE_SHAPE_TYPE = 'resizable'
++
++// [1]
++declare module 'tldraw' {
++	export interface TLGlobalShapePropsMap {
++		[RESIZABLE_SHAPE_TYPE]: { w: number; h: number }
++	}
++}
++
++type ResizableShape = TLBaseBoxShape & {
++	type: typeof RESIZABLE_SHAPE_TYPE
++}
++
++export class ResizableShapeUtil extends BaseBoxShapeUtil<ResizableShape> {
++	static override type = RESIZABLE_SHAPE_TYPE
++	static override props: RecordProps<ResizableShape> = {
++		w: T.number,
++		h: T.number,
++	}
++
++	getDefaultProps(): ResizableShape['props'] {
++		return {
++			w: 400,
++			h: 320,
++		}
++	}
++
++	override canEdit() {
++		return false
++	}
++
++	// [2]
++	override onDoubleClickEdge(shape: ResizableShape): TLShapePartial<ResizableShape> | void {
++		const isAtSmallSize = shape.props.w === 200 && shape.props.h === 200
++		return {
++			id: shape.id,
++			type: shape.type,
++			props: isAtSmallSize ? { w: 400, h: 320 } : { w: 200, h: 200 },
++		}
++	}
++
++	component(shape: ResizableShape) {
++		return (
++			<HTMLContainer
++				style={{
++					backgroundColor: '#e6f0ff',
++					border: '2px solid #3b82f6',
++					display: 'flex',
++					alignItems: 'center',
++					justifyContent: 'center',
++					fontSize: 16,
++					fontWeight: 'bold',
++					color: '#1e3a8a',
++					textAlign: 'center',
++					padding: 8,
++				}}
++			>
++				{shape.props.w} × {shape.props.h}
++			</HTMLContainer>
++		)
++	}
++
++	getIndicatorPath(shape: ResizableShape) {
++		const path = new Path2D()
++		path.rect(0, 0, shape.props.w, shape.props.h)
++		return path
++	}
++}
++
++/*
++This example shows how to use ShapeUtil.onDoubleClickEdge to handle double-clicks
++on a shape's resize edge.
++
++[1]
++Extend TLGlobalShapePropsMap to register the shape's props. We just need width
++and height for this example.
++
++[2]
++The onDoubleClickEdge handler runs when the user double-clicks one of the
++shape's resize edges (top, right, bottom, left). We return a shape partial that
++toggles the shape between two preset sizes: if the shape is currently 200×200
++we expand it to 400×320, otherwise we reset it to 200×200. The editor applies
++the returned partial automatically.
++*/
+diff --git a/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/ShapeWithOnDoubleClickEdgeExample.tsx b/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/ShapeWithOnDoubleClickEdgeExample.tsx
+new file mode 100644
+index 000000000000..03999867f93e
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/shape-with-onDoubleClickEdge/ShapeWithOnDoubleClickEdgeExample.tsx
+@@ -0,0 +1,38 @@
++import { Tldraw } from 'tldraw'
++import 'tldraw/tldraw.css'
++import { ResizableShapeUtil } from './ResizableShapeUtil'
++
++// [1]
++const customShapeUtils = [ResizableShapeUtil]
++
++// [2]
++export default function ShapeWithOnDoubleClickEdgeExample() {
++	return (
++		<div className="tldraw__editor">
++			<Tldraw
++				shapeUtils={customShapeUtils}
++				onMount={(editor) => {
++					editor.createShape({
++						type: 'resizable',
++						x: 200,
++						y: 200,
++					})
++				}}
++			/>
++		</div>
++	)
++}
++
++/*
++[1]
++We define the custom shape utils array outside of the component so it doesn't get
++recreated on every render.
++
++[2]
++We pass our custom shape util to the Tldraw component and create an initial shape
++on mount so there's something to interact with right away.
++
++Try it:
++- Select the shape, then double-click one of its edge resize handles
++- The shape toggles between 400×320 and 200×200
++*/
+diff --git a/package.json b/package.json
+index 73e92f3b277f..58141058df8c 100644
+--- a/package.json
++++ b/package.json
+@@ -83,7 +83,11 @@
+ 	},
+ 	"packageManager": "yarn@4.12.0",
+ 	"lint-staged": {
+-		"*.{js,jsx,ts,tsx,cjs,mjs,css,md,mdx,html,yml,yaml}": [
++		"*.{js,jsx,ts,tsx,cjs,mjs}": [
++			"oxfmt --no-error-on-unmatched-pattern",
++			"oxlint"
++		],
++		"*.{css,md,mdx,html,yml,yaml}": [
+ 			"oxfmt --no-error-on-unmatched-pattern"
+ 		]
+ 	},
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 83b97362e512..dfc1aec5204a 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -27,8 +27,6 @@ import { LegacyMigrations } from '@tldraw/store';
+ import { MigrationSequence } from '@tldraw/store';
+ import { Node as Node_2 } from '@tiptap/pm/model';
+ import { PerformanceTracker } from '@tldraw/utils';
+-import { PointerEvent as PointerEvent_2 } from 'react';
+-import { PointerEventHandler } from 'react';
+ import * as React_2 from 'react';
+ import { default as React_3 } from 'react';
+ import { ReactElement } from 'react';
+@@ -5129,13 +5127,6 @@ export class UserPreferencesManager {
+ // @public (undocumented)
+ export const userTypeValidator: T.Validator<TLUserPreferences>;
+ 
+-// @public (undocumented)
+-export function useSelectionEvents(handle: TLSelectionHandle): {
+-    onPointerDown: PointerEventHandler<Element>;
+-    onPointerMove: (e: PointerEvent_2<Element>) => void;
+-    onPointerUp: PointerEventHandler<Element>;
+-};
+-
+ // @internal (undocumented)
+ export function useShallowArrayIdentity<T extends null | readonly any[] | undefined>(arr: T): T;
+ 
+diff --git a/packages/editor/src/index.ts b/packages/editor/src/index.ts
+index b5b9bd4ab6ae..c83e37f549e0 100644
+--- a/packages/editor/src/index.ts
++++ b/packages/editor/src/index.ts
+@@ -324,7 +324,6 @@ export {
+ 	useUniqueSafeId,
+ 	type SafeId,
+ } from './lib/hooks/useSafeId'
+-export { useSelectionEvents } from './lib/hooks/useSelectionEvents'
+ export { useTLSchemaFromUtils, useTLStore } from './lib/hooks/useTLStore'
+ export { useTransform } from './lib/hooks/useTransform'
+ export { useViewportHeight } from './lib/hooks/useViewportHeight'
+diff --git a/packages/editor/src/lib/hooks/useSelectionEvents.ts b/packages/editor/src/lib/hooks/useSelectionEvents.ts
+deleted file mode 100644
+index ee7666c8d71a..000000000000
+--- a/packages/editor/src/lib/hooks/useSelectionEvents.ts
++++ /dev/null
+@@ -1,97 +0,0 @@
+-import { useMemo } from 'react'
+-import { RIGHT_MOUSE_BUTTON } from '../constants'
+-import { TLSelectionHandle } from '../editor/types/selection-types'
+-import { loopToHtmlElement, releasePointerCapture, setPointerCapture } from '../utils/dom'
+-import { getPointerInfo } from '../utils/getPointerInfo'
+-import { useEditor } from './useEditor'
+-
+-/** @public */
+-export function useSelectionEvents(handle: TLSelectionHandle) {
+-	const editor = useEditor()
+-
+-	const events = useMemo(
+-		function selectionEvents() {
+-			const onPointerDown: React.PointerEventHandler = (e) => {
+-				if (editor.wasEventAlreadyHandled(e)) return
+-
+-				if (e.button === RIGHT_MOUSE_BUTTON) {
+-					editor.dispatch({
+-						type: 'pointer',
+-						target: 'selection',
+-						handle,
+-						name: 'right_click',
+-						...getPointerInfo(editor, e),
+-					})
+-					return
+-				}
+-
+-				if (e.button !== 0) return
+-
+-				// Because the events are probably set on SVG elements,
+-				// we need to instead place pointer capture on the first HTML
+-				// element above the event's target; and set a listener to
+-				// remove pointer capture when the pointer is released.
+-
+-				const elm = loopToHtmlElement(e.currentTarget)
+-
+-				function releaseCapture() {
+-					elm.removeEventListener('pointerup', releaseCapture)
+-					releasePointerCapture(elm, e)
+-				}
+-
+-				setPointerCapture(elm, e)
+-				elm.addEventListener('pointerup', releaseCapture)
+-
+-				editor.dispatch({
+-					name: 'pointer_down',
+-					type: 'pointer',
+-					target: 'selection',
+-					handle,
+-					...getPointerInfo(editor, e),
+-				})
+-				editor.markEventAsHandled(e)
+-			}
+-
+-			// Track the last screen point
+-			let lastX: number, lastY: number
+-
+-			function onPointerMove(e: React.PointerEvent) {
+-				if (editor.wasEventAlreadyHandled(e)) return
+-				if (e.button !== 0) return
+-				if (e.clientX === lastX && e.clientY === lastY) return
+-				lastX = e.clientX
+-				lastY = e.clientY
+-
+-				editor.dispatch({
+-					name: 'pointer_move',
+-					type: 'pointer',
+-					target: 'selection',
+-					handle,
+-					...getPointerInfo(editor, e),
+-				})
+-			}
+-
+-			const onPointerUp: React.PointerEventHandler = (e) => {
+-				if (editor.wasEventAlreadyHandled(e)) return
+-				if (e.button !== 0) return
+-
+-				editor.dispatch({
+-					name: 'pointer_up',
+-					type: 'pointer',
+-					target: 'selection',
+-					handle,
+-					...getPointerInfo(editor, e),
+-				})
+-			}
+-
+-			return {
+-				onPointerDown,
+-				onPointerMove,
+-				onPointerUp,
+-			}
+-		},
+-		[editor, handle]
+-	)
+-
+-	return events
+-}
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/childStates/Crop/children/Idle.ts b/packages/tldraw/src/lib/tools/SelectTool/childStates/Crop/children/Idle.ts
+index 0953e5dd5582..4aa9f8916b86 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/childStates/Crop/children/Idle.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/childStates/Crop/children/Idle.ts
+@@ -151,6 +151,31 @@ export class Idle extends StateNode {
+ 		const util = this.editor.getShapeUtil(shape)
+ 		if (!util) return
+ 
++		// Check overlays first — if we hit a resize/rotate handle, re-dispatch
++		// as a selection event so onDoubleClickEdge fires.
++		if (info.target === 'canvas') {
++			const currentPagePoint = this.editor.inputs.getCurrentPagePoint()
++			const hitOverlay = this.editor.overlays.getOverlayAtPoint(
++				currentPagePoint,
++				this.editor.options.hitTestMargin / this.editor.getZoomLevel()
++			)
++			if (hitOverlay) {
++				const overlayType = hitOverlay.props.overlayType as string | undefined
++				if (
++					overlayType === 'resize_handle' ||
++					overlayType === 'rotate_handle' ||
++					overlayType === 'mobile_rotate'
++				) {
++					this.onDoubleClick({
++						...info,
++						target: 'selection',
++						handle: hitOverlay.props.handle as any,
++					})
++					return
++				}
++			}
++		}
++
+ 		if (info.target === 'selection') {
+ 			util.onDoubleClickEdge?.(shape, info)
+ 			return
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/childStates/Idle.ts b/packages/tldraw/src/lib/tools/SelectTool/childStates/Idle.ts
+index 6dd1b5bbe7aa..80c59350825b 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/childStates/Idle.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/childStates/Idle.ts
+@@ -268,6 +268,30 @@ export class Idle extends StateNode {
+ 
+ 		switch (info.target) {
+ 			case 'canvas': {
++				const currentPagePoint = this.editor.inputs.getCurrentPagePoint()
++
++				// Check overlays first — if we hit a resize/rotate handle, re-dispatch
++				// as a selection event so onDoubleClickEdge / onDoubleClickCorner fire.
++				const hitOverlay = this.editor.overlays.getOverlayAtPoint(
++					currentPagePoint,
++					this.editor.options.hitTestMargin / this.editor.getZoomLevel()
++				)
++				if (hitOverlay) {
++					const overlayType = hitOverlay.props.overlayType as string | undefined
++					if (
++						overlayType === 'resize_handle' ||
++						overlayType === 'rotate_handle' ||
++						overlayType === 'mobile_rotate'
++					) {
++						this.onDoubleClick({
++							...info,
++							target: 'selection',
++							handle: hitOverlay.props.handle as any,
++						})
++						return
++					}
++				}
++
+ 				const hoveredShape = this.editor.getHoveredShape()
+ 
+ 				// todo
+@@ -277,7 +301,6 @@ export class Idle extends StateNode {
+ 				// of the shape yet because that also creates text shapes, and can produce
+ 				// unexpected results when working "inside of" a hollow shape.
+ 
+-				const currentPagePoint = this.editor.inputs.getCurrentPagePoint()
+ 				const hitShape =
+ 					hoveredShape && !this.editor.isShapeOfType(hoveredShape, 'group')
+ 						? hoveredShape
+@@ -287,8 +310,6 @@ export class Idle extends StateNode {
+ 								hitInside: false,
+ 							}))
+ 
+-				const focusedGroupId = this.editor.getFocusedGroupId()
+-
+ 				if (hitShape) {
+ 					if (this.editor.isShapeOfType(hitShape, 'group')) {
+ 						// Probably select the shape
+@@ -298,13 +319,14 @@ export class Idle extends StateNode {
+ 						const parent = this.editor.getShape(hitShape.parentId)
+ 						if (parent && this.editor.isShapeOfType(parent, 'group')) {
+ 							// The shape is the direct child of a group. If the group is
+-							// selected, then we can select the shape. If the group is the
+-							// focus layer id, then we can double click into it as usual.
++							// selected, then we can select the shape.
++							const focusedGroupId = this.editor.getFocusedGroupId()
+ 							if (focusedGroupId && parent.id === focusedGroupId) {
+-								// noop, double click on the shape as normal below
++								// If the group is the focus layer id, then we can double click into it as usual.
++								// So here's a noop, double click on the shape as normal below
+ 							} else {
+ 								// The shape is the child of some group other than our current
+-								// focus layer. We should probably select the group instead.
++								// focus layer (ie the canvas or some other group). We should probably select the group instead.
+ 								selectOnCanvasPointerUp(this.editor, info)
+ 								return
+ 							}
+@@ -323,6 +345,7 @@ export class Idle extends StateNode {
+ 					return
+ 				}
+ 
++				// No hit shape, so double click on the canvas instead
+ 				if (!this.editor.inputs.getShiftKey()) {
+ 					this.handleDoubleClickOnCanvas(info)
+ 				}
+diff --git a/packages/tldraw/src/test/SelectTool.test.ts b/packages/tldraw/src/test/SelectTool.test.ts
+index 6b299d071d07..54b19aca0700 100644
+--- a/packages/tldraw/src/test/SelectTool.test.ts
++++ b/packages/tldraw/src/test/SelectTool.test.ts
+@@ -1,5 +1,6 @@
+-import { IndexKey, createShapeId, toRichText } from '@tldraw/editor'
++import { IndexKey, ShapeUtil, TLFrameShape, createShapeId, toRichText } from '@tldraw/editor'
+ import { vi } from 'vitest'
++import { defaultOverlayUtils } from '../lib/defaultOverlayUtils'
+ import { TestEditor } from './TestEditor'
+ 
+ let editor: TestEditor
+@@ -463,6 +464,52 @@ describe('When double clicking the selection edge', () => {
+ 	})
+ })
+ 
++describe('When double clicking a selection handle that registers as a canvas event', () => {
++	let overlayEditor: TestEditor
++	beforeEach(() => {
++		overlayEditor = new TestEditor({ overlayUtils: defaultOverlayUtils })
++	})
++
++	it('Routes a canvas-targeted double-click on a resize edge handle to onDoubleClickEdge', () => {
++		const id = createShapeId()
++		overlayEditor
++			.createShapes([{ id, type: 'frame', x: 100, y: 100, props: { w: 200, h: 200 } }])
++			.select(id)
++
++		const spy = vi.spyOn(
++			overlayEditor.getShapeUtil('frame') as Required<ShapeUtil<TLFrameShape>>,
++			'onDoubleClickEdge'
++		)
++		const bounds = overlayEditor.getSelectionPageBounds()!
++
++		// Double-click on the right edge handle without specifying target — defaults
++		// to target: 'canvas', the same payload a real DOM double-click produces when
++		// the press lands on the overlay layer rather than a shape.
++		overlayEditor.doubleClick(bounds.maxX, bounds.midY)
++
++		expect(spy).toHaveBeenCalledTimes(1)
++		expect(spy.mock.calls[0][1]).toMatchObject({ target: 'selection', handle: 'right' })
++	})
++
++	it('Routes a canvas-targeted double-click on a resize corner handle to onDoubleClickCorner', () => {
++		const id = createShapeId()
++		overlayEditor
++			.createShapes([{ id, type: 'frame', x: 100, y: 100, props: { w: 200, h: 200 } }])
++			.select(id)
++
++		const spy = vi.spyOn(
++			overlayEditor.getShapeUtil('frame') as Required<ShapeUtil<TLFrameShape>>,
++			'onDoubleClickCorner'
++		)
++		const bounds = overlayEditor.getSelectionPageBounds()!
++
++		overlayEditor.doubleClick(bounds.maxX, bounds.maxY)
++
++		expect(spy).toHaveBeenCalledTimes(1)
++		expect(spy.mock.calls[0][1]).toMatchObject({ target: 'selection', handle: 'bottom_right' })
++	})
++})
++
+ describe('When editing shapes', () => {
+ 	let ids: any
+ 

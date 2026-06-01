@@ -1,0 +1,450 @@
+diff --git a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+index 27b7d77bd76a..22693d48cff1 100644
+--- a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+@@ -3,7 +3,6 @@
+ import {
+ 	BaseBoxShapeUtil,
+ 	HTMLContainer,
+-	Rectangle2d,
+ 	TLEmbedShape,
+ 	TLEmbedShapeProps,
+ 	TLResizeInfo,
+@@ -24,8 +23,7 @@ import {
+ 	embedShapePermissionDefaults,
+ } from '../../defaultEmbedDefinitions'
+ import { TLEmbedResult, getEmbedInfo } from '../../utils/embeds/embeds'
+-import { BOOKMARK_JUST_URL_HEIGHT, BOOKMARK_WIDTH } from '../bookmark/bookmarks'
+-import { BookmarkIndicatorComponent, BookmarkShapeComponent } from '../bookmark/BookmarkShapeUtil'
++import { BookmarkShapeComponent } from '../bookmark/BookmarkShapeUtil'
+ import { getRotatedBoxShadow } from '../shared/rotated-box-shadow'
+ 
+ const getSandboxPermissions = (permissions: TLEmbedShapePermissions) => {
+@@ -92,7 +90,7 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 		return true
+ 	}
+ 	override canResize(shape: TLEmbedShape) {
+-		return !!this.getEmbedDefinition(shape.props.url)?.definition?.doesResize
++		return this.getEmbedDefinition(shape.props.url)?.definition?.doesResize ?? true
+ 	}
+ 	override canEditInReadonly() {
+ 		return true
+@@ -107,14 +105,6 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 	}
+ 
+ 	override getGeometry(shape: TLEmbedShape) {
+-		const embedInfo = this.getEmbedDefinition(shape.props.url)
+-		if (!embedInfo?.definition) {
+-			return new Rectangle2d({
+-				width: BOOKMARK_WIDTH,
+-				height: BOOKMARK_JUST_URL_HEIGHT,
+-				isFilled: true,
+-			})
+-		}
+ 		return super.getGeometry(shape)
+ 	}
+ 
+@@ -215,16 +205,18 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 
+ 		const sandbox = getSandboxPermissions({
+ 			...embedShapePermissionDefaults,
+-			...(embedInfo?.definition.overridePermissions ?? {}),
++			...(embedInfo?.definition?.overridePermissions ?? {}),
+ 		})
+ 
++		const iframeSrc = embedInfo?.embedUrl ?? url
++
+ 		return (
+ 			<HTMLContainer className="tl-embed-container" id={shape.id}>
+-				{embedInfo?.definition ? (
++				{iframeSrc ? (
+ 					<iframe
+ 						className="tl-embed"
+ 						sandbox={sandbox}
+-						src={embedInfo.embedUrl}
++						src={iframeSrc}
+ 						width={toDomPrecision(w)}
+ 						height={toDomPrecision(h)}
+ 						draggable={false}
+@@ -239,8 +231,8 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 							// Fix for safari <https://stackoverflow.com/a/49150908>
+ 							zIndex: isInteractive ? '' : '-1',
+ 							boxShadow: getRotatedBoxShadow(pageRotation),
+-							borderRadius: embedInfo?.definition.overrideOutlineRadius ?? 8,
+-							background: embedInfo?.definition.backgroundColor,
++							borderRadius: embedInfo?.definition?.overrideOutlineRadius ?? 8,
++							background: embedInfo?.definition?.backgroundColor,
+ 						}}
+ 					/>
+ 				) : (
+@@ -258,16 +250,15 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 
+ 	override indicator(shape: TLEmbedShape) {
+ 		const embedInfo = this.getEmbedDefinition(shape.props.url)
++		const radius = embedInfo?.definition?.overrideOutlineRadius ?? 8
+ 
+-		return embedInfo?.definition ? (
++		return (
+ 			<rect
+ 				width={toDomPrecision(shape.props.w)}
+ 				height={toDomPrecision(shape.props.h)}
+-				rx={embedInfo?.definition.overrideOutlineRadius ?? 8}
+-				ry={embedInfo?.definition.overrideOutlineRadius ?? 8}
++				rx={radius}
++				ry={radius}
+ 			/>
+-		) : (
+-			<BookmarkIndicatorComponent w={BOOKMARK_WIDTH} h={BOOKMARK_JUST_URL_HEIGHT} />
+ 		)
+ 	}
+ 
+@@ -278,14 +269,8 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 	override getIndicatorPath(shape: TLEmbedShape): Path2D {
+ 		const path = new Path2D()
+ 		const embedInfo = this.getEmbedDefinition(shape.props.url)
+-
+-		if (embedInfo?.definition) {
+-			const radius = embedInfo.definition.overrideOutlineRadius ?? 8
+-			path.roundRect(0, 0, shape.props.w, shape.props.h, radius)
+-		} else {
+-			// Fallback to bookmark indicator
+-			path.roundRect(0, 0, BOOKMARK_WIDTH, BOOKMARK_JUST_URL_HEIGHT, 6)
+-		}
++		const radius = embedInfo?.definition?.overrideOutlineRadius ?? 8
++		path.roundRect(0, 0, shape.props.w, shape.props.h, radius)
+ 		return path
+ 	}
+ 
+diff --git a/packages/tldraw/src/lib/ui/hooks/useClipboardEvents.ts b/packages/tldraw/src/lib/ui/hooks/useClipboardEvents.ts
+index 2871260d2dae..c796bda8fb61 100644
+--- a/packages/tldraw/src/lib/ui/hooks/useClipboardEvents.ts
++++ b/packages/tldraw/src/lib/ui/hooks/useClipboardEvents.ts
+@@ -46,6 +46,41 @@ function stripHtml(html: string) {
+ 	return doc.body.textContent || doc.body.innerText || ''
+ }
+ 
++/**
++ * Extract iframe src and dimensions from an HTML string containing an iframe element.
++ * Tries width/height HTML attributes first, then falls back to pixel values in the
++ * style attribute, then to sensible defaults.
++ * Returns null if no valid iframe is found.
++ * @internal
++ */
++export function extractIframeFromHtml(
++	html: string
++): { src: string; width: number; height: number } | null {
++	if (!html.includes('<iframe')) return null
++	const doc = new DOMParser().parseFromString(html, 'text/html')
++	const iframe = doc.querySelector('iframe')
++	if (!iframe) return null
++	const src = iframe.getAttribute('src')
++	if (!src || !isValidHttpURL(src)) return null
++
++	const attrWidth = parseInt(iframe.getAttribute('width') || '', 10)
++	const attrHeight = parseInt(iframe.getAttribute('height') || '', 10)
++
++	let styleWidth = NaN
++	let styleHeight = NaN
++	const style = iframe.getAttribute('style')
++	if (style) {
++		const wMatch = style.match(/\bwidth:\s*(\d+)px/)
++		const hMatch = style.match(/\bheight:\s*(\d+)px/)
++		if (wMatch) styleWidth = parseInt(wMatch[1], 10)
++		if (hMatch) styleHeight = parseInt(hMatch[1], 10)
++	}
++
++	const width = attrWidth || styleWidth || 425
++	const height = attrHeight || styleHeight || 350
++	return { src, width, height }
++}
++
+ /** @public */
+ export const isValidHttpURL = (url: string) => {
+ 	try {
+@@ -516,10 +551,28 @@ async function handleClipboardThings(
+ 	// Try to paste html content
+ 	for (const result of results) {
+ 		if (result.type === 'text' && result.subtype === 'html') {
+-			// try to find a link
+ 			const rootNode = new DOMParser().parseFromString(result.data, 'text/html')
+ 			const bodyNode = rootNode.querySelector('body')
+ 
++			// Check for iframe embeds in HTML before stripping content
++			const iframeInfo = extractIframeFromHtml(result.data)
++			if (iframeInfo) {
++				editor.markHistoryStoppingPoint('paste')
++				editor.putExternalContent({
++					type: 'embed',
++					url: iframeInfo.src,
++					point,
++					embed: {
++						width: iframeInfo.width,
++						height: iframeInfo.height,
++						doesResize: true,
++					},
++				})
++				return
++			}
++
++			// try to find a link
++
+ 			// Edge on Windows 11 home appears to paste a link as a single <a/> in
+ 			// the HTML document. If we're pasting a single like tag we'll just
+ 			// assume the user meant to paste the URL.
+@@ -567,23 +620,22 @@ async function handleClipboardThings(
+ 			}
+ 		}
+ 
+-		// Allow you to paste YouTube or Google Maps embeds, for example.
+-		if (result.type === 'text' && result.subtype === 'text' && result.data.startsWith('<iframe ')) {
+-			// try to find an iframe
+-			const rootNode = new DOMParser().parseFromString(result.data, 'text/html')
+-			const bodyNode = rootNode.querySelector('body')
+-
+-			const isSingleIframe =
+-				bodyNode &&
+-				Array.from(bodyNode.children).filter((el) => el.nodeType === 1).length === 1 &&
+-				bodyNode.firstElementChild &&
+-				bodyNode.firstElementChild.tagName === 'IFRAME' &&
+-				bodyNode.firstElementChild.hasAttribute('src') &&
+-				bodyNode.firstElementChild.getAttribute('src') !== ''
+-
+-			if (isSingleIframe) {
+-				const src = bodyNode.firstElementChild.getAttribute('src')!
+-				handleText(editor, src, point, results, clipboardPasteSource)
++		// Allow pasting any <iframe> embed code onto the canvas.
++		// Extracts the iframe src and dimensions, then creates an embed shape.
++		if (result.type === 'text' && result.subtype === 'text') {
++			const iframeInfo = extractIframeFromHtml(result.data)
++			if (iframeInfo) {
++				editor.markHistoryStoppingPoint('paste')
++				editor.putExternalContent({
++					type: 'embed',
++					url: iframeInfo.src,
++					point,
++					embed: {
++						width: iframeInfo.width,
++						height: iframeInfo.height,
++						doesResize: true,
++					},
++				})
+ 				return
+ 			}
+ 		}
+diff --git a/packages/tldraw/src/test/embed-iframe-paste.test.ts b/packages/tldraw/src/test/embed-iframe-paste.test.ts
+new file mode 100644
+index 000000000000..16b7a182e19e
+--- /dev/null
++++ b/packages/tldraw/src/test/embed-iframe-paste.test.ts
+@@ -0,0 +1,211 @@
++import { TLEmbedShape } from '@tldraw/editor'
++import { defaultHandleExternalEmbedContent } from '../lib/defaultExternalContentHandlers'
++import { extractIframeFromHtml } from '../lib/ui/hooks/useClipboardEvents'
++import { TestEditor } from './TestEditor'
++
++let editor: TestEditor
++
++beforeEach(() => {
++	editor = new TestEditor()
++	editor.selectAll().deleteShapes(editor.getSelectedShapeIds())
++})
++
++afterEach(() => {
++	editor?.dispose()
++})
++
++describe('extractIframeFromHtml', () => {
++	it('extracts iframe with width and height attributes', () => {
++		const result = extractIframeFromHtml(
++			'<iframe width="425" height="350" src="https://www.openstreetmap.org/export/embed.html?bbox=-0.1258" style="border: 1px solid black"></iframe>'
++		)
++		expect(result).toEqual({
++			src: 'https://www.openstreetmap.org/export/embed.html?bbox=-0.1258',
++			width: 425,
++			height: 350,
++		})
++	})
++
++	it('extracts iframe with surrounding HTML content', () => {
++		const result = extractIframeFromHtml(
++			'<iframe width="425" height="350" src="https://www.openstreetmap.org/export/embed.html"></iframe><br/><small><a href="https://www.openstreetmap.org">View Larger Map</a></small>'
++		)
++		expect(result).not.toBeNull()
++		expect(result!.src).toBe('https://www.openstreetmap.org/export/embed.html')
++		expect(result!.width).toBe(425)
++		expect(result!.height).toBe(350)
++	})
++
++	it('extracts iframe with style-only dimensions (percentage-based falls back to defaults)', () => {
++		const result = extractIframeFromHtml(
++			'<iframe src="https://w.soundcloud.com/player/?visual=true&url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F2184622839&show_artwork=true" style="top: 0; left: 0; width: 100%; height: 100%; position: absolute; border: 0;" allowfullscreen></iframe>'
++		)
++		expect(result).not.toBeNull()
++		expect(result!.src).toContain('w.soundcloud.com/player')
++		expect(result!.width).toBe(425)
++		expect(result!.height).toBe(350)
++	})
++
++	it('extracts pixel dimensions from style attribute', () => {
++		const result = extractIframeFromHtml(
++			'<iframe src="https://example.com/embed" style="width: 600px; height: 400px;"></iframe>'
++		)
++		expect(result).toEqual({
++			src: 'https://example.com/embed',
++			width: 600,
++			height: 400,
++		})
++	})
++
++	it('prefers HTML attributes over style dimensions', () => {
++		const result = extractIframeFromHtml(
++			'<iframe width="800" height="600" src="https://example.com/embed" style="width: 400px; height: 300px;"></iframe>'
++		)
++		expect(result).toEqual({
++			src: 'https://example.com/embed',
++			width: 800,
++			height: 600,
++		})
++	})
++
++	it('returns null for non-HTTP src', () => {
++		const result = extractIframeFromHtml(
++			'<iframe src="javascript:alert(1)" width="100" height="100"></iframe>'
++		)
++		expect(result).toBeNull()
++	})
++
++	it('returns null for missing src', () => {
++		const result = extractIframeFromHtml('<iframe width="100" height="100"></iframe>')
++		expect(result).toBeNull()
++	})
++
++	it('returns null for non-iframe HTML', () => {
++		const result = extractIframeFromHtml('<div>Hello world</div>')
++		expect(result).toBeNull()
++	})
++
++	it('returns null for empty string', () => {
++		const result = extractIframeFromHtml('')
++		expect(result).toBeNull()
++	})
++})
++
++describe('Pasting arbitrary iframe embeds', () => {
++	it('creates an embed shape from an arbitrary iframe URL', () => {
++		defaultHandleExternalEmbedContent(editor, {
++			url: 'https://www.openstreetmap.org/export/embed.html?bbox=-0.1258',
++			embed: { width: 425, height: 350 },
++		})
++
++		const shapes = editor.getCurrentPageShapes()
++		const embedShape = shapes.find((s) => s.type === 'embed') as TLEmbedShape | undefined
++		expect(embedShape).toBeDefined()
++		expect(embedShape!.props.url).toBe(
++			'https://www.openstreetmap.org/export/embed.html?bbox=-0.1258'
++		)
++		expect(embedShape!.props.w).toBe(425)
++		expect(embedShape!.props.h).toBe(350)
++	})
++
++	it('creates an embed from a SoundCloud iframe', () => {
++		defaultHandleExternalEmbedContent(editor, {
++			url: 'https://w.soundcloud.com/player/?visual=true&url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F2184622839&show_artwork=true',
++			embed: { width: 425, height: 350 },
++		})
++
++		const embedShape = editor.getOnlySelectedShape() as TLEmbedShape
++		expect(embedShape).not.toBeNull()
++		expect(embedShape.type).toBe('embed')
++		expect(embedShape.props.url).toContain('w.soundcloud.com/player')
++	})
++
++	it('selects the created embed shape', () => {
++		defaultHandleExternalEmbedContent(editor, {
++			url: 'https://example.com/widget',
++			embed: { width: 600, height: 400 },
++		})
++
++		const selected = editor.getOnlySelectedShape()
++		expect(selected).not.toBeNull()
++		expect(selected!.type).toBe('embed')
++	})
++
++	it('places the embed at the specified point', () => {
++		defaultHandleExternalEmbedContent(editor, {
++			url: 'https://example.com/widget',
++			point: { x: 500, y: 500 },
++			embed: { width: 200, height: 200 },
++		})
++
++		const embedShape = editor.getOnlySelectedShape() as TLEmbedShape
++		expect(embedShape).not.toBeNull()
++		expect(embedShape.x).toBeCloseTo(400, 0)
++		expect(embedShape.y).toBeCloseTo(400, 0)
++	})
++})
++
++describe('EmbedShapeUtil with unknown URLs', () => {
++	it('allows resizing of embed shapes with unknown URLs', () => {
++		editor.createShapes([
++			{
++				type: 'embed',
++				x: 0,
++				y: 0,
++				props: {
++					url: 'https://unknown-service.example.com/embed',
++					w: 400,
++					h: 300,
++				},
++			},
++		])
++
++		const shape = editor.getCurrentPageShapes().find((s) => s.type === 'embed') as TLEmbedShape
++		const util = editor.getShapeUtil('embed')
++		expect(util.canResize(shape)).toBe(true)
++	})
++
++	it('uses the shape dimensions for geometry of unknown embeds', () => {
++		editor.createShapes([
++			{
++				type: 'embed',
++				x: 0,
++				y: 0,
++				props: {
++					url: 'https://unknown-service.example.com/embed',
++					w: 500,
++					h: 400,
++				},
++			},
++		])
++
++		const shape = editor.getCurrentPageShapes().find((s) => s.type === 'embed') as TLEmbedShape
++		const bounds = editor.getShapeGeometry(shape).bounds
++		expect(bounds.w).toBe(500)
++		expect(bounds.h).toBe(400)
++	})
++
++	it('preserves behavior for known embed definitions', () => {
++		editor.createShapes([
++			{
++				type: 'embed',
++				x: 0,
++				y: 0,
++				props: {
++					url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
++					w: 720,
++					h: 500,
++				},
++			},
++		])
++
++		const shape = editor.getCurrentPageShapes().find((s) => s.type === 'embed') as TLEmbedShape
++		const util = editor.getShapeUtil('embed')
++		// YouTube embeds have doesResize: true in the definition
++		expect(util.canResize(shape)).toBe(true)
++		// Geometry should use the shape's own dimensions
++		const bounds = editor.getShapeGeometry(shape).bounds
++		expect(bounds.w).toBe(720)
++		expect(bounds.h).toBe(500)
++	})
++})

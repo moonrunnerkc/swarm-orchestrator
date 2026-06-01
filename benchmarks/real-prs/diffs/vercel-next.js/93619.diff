@@ -1,0 +1,1158 @@
+diff --git a/packages/next/src/client/components/segment-cache/optimistic-routes.ts b/packages/next/src/client/components/segment-cache/optimistic-routes.ts
+index 40dfcc421942..97b2505bba4d 100644
+--- a/packages/next/src/client/components/segment-cache/optimistic-routes.ts
++++ b/packages/next/src/client/components/segment-cache/optimistic-routes.ts
+@@ -209,8 +209,6 @@ export function discoverKnownRoute(
+   const tree = routeTree
+ 
+   const pathnameParts = pathname.split('/').filter((p) => p !== '')
+-  const firstPart = pathnameParts.length > 0 ? pathnameParts[0] : null
+-  const remainingParts = pathnameParts.length > 0 ? pathnameParts.slice(1) : []
+ 
+   if (pendingEntry !== null) {
+     // Fulfill the pending entry first
+@@ -232,8 +230,8 @@ export function discoverKnownRoute(
+     discoverKnownRoutePart(
+       knownRouteTreeRoot,
+       tree,
+-      firstPart,
+-      remainingParts,
++      pathnameParts,
++      0,
+       fulfilledEntry,
+       now,
+       pathname,
+@@ -253,8 +251,8 @@ export function discoverKnownRoute(
+   return discoverKnownRoutePart(
+     knownRouteTreeRoot,
+     tree,
+-    firstPart,
+-    remainingParts,
++    pathnameParts,
++    0,
+     null,
+     now,
+     pathname,
+@@ -268,6 +266,38 @@ export function discoverKnownRoute(
+   )
+ }
+ 
++/**
++ * Bail out of populating the known route tree when discovery detects that the
++ * URL doesn't match the route structure (a rewrite). The route entry is still
++ * inserted into the cache for direct lookup — we just don't store it as a
++ * pattern, since the URL and the tree describe different shapes.
++ */
++function handleMismatchDueToRewrite(
++  existingEntry: FulfilledRouteCacheEntry | null,
++  now: number,
++  pathname: string,
++  nextUrl: string | null,
++  fullTree: RouteTree,
++  metadataVaryPath: PageVaryPath,
++  couldBeIntercepted: boolean,
++  canonicalUrl: string,
++  supportsPerSegmentPrefetching: boolean
++): FulfilledRouteCacheEntry {
++  if (existingEntry !== null) {
++    return existingEntry
++  }
++  return writeRouteIntoCache(
++    now,
++    pathname as NormalizedPathname,
++    nextUrl,
++    fullTree,
++    metadataVaryPath,
++    couldBeIntercepted,
++    canonicalUrl,
++    supportsPerSegmentPrefetching
++  )
++}
++
+ /**
+  * Gets or creates the dynamic child node for a KnownRoutePart.
+  * A node can have at most one dynamic child (you can't have both [slug] and
+@@ -308,8 +338,8 @@ function discoverDynamicChild(
+ function discoverKnownRoutePart(
+   parentKnownRoutePart: KnownRoutePart,
+   routeTree: RouteTree,
+-  urlPart: string | null,
+-  remainingParts: string[],
++  pathnameParts: readonly string[],
++  partIndex: number,
+   existingEntry: FulfilledRouteCacheEntry | null,
+   // These are passed through unchanged for entry creation at the leaf
+   now: number,
+@@ -323,38 +353,82 @@ function discoverKnownRoutePart(
+   hasDynamicRewrite: boolean
+ ): FulfilledRouteCacheEntry {
+   const segment = routeTree.segment
++  const urlPart =
++    partIndex < pathnameParts.length ? pathnameParts[partIndex] : null
+ 
+-  let segmentAppearsInURL: boolean
+-  let paramName: string | null = null
+-  let paramType: DynamicParamTypesShort | null = null
+-  let staticSiblings: readonly string[] | null = null
++  let knownRoutePart: KnownRoutePart = parentKnownRoutePart
++  let nextPartIndex = partIndex
+ 
+   if (typeof segment === 'string') {
+-    segmentAppearsInURL = doesStaticSegmentAppearInURL(segment)
++    if (doesStaticSegmentAppearInURL(segment)) {
++      // A visible static segment must consume exactly one URL part that
++      // equals the segment. If the URL is exhausted or the URL part doesn't
++      // match, the URL doesn't fit the route shape — the response was
++      // rewrite-affected. Bail out.
++      if (urlPart === null || urlPart !== segment) {
++        return handleMismatchDueToRewrite(
++          existingEntry,
++          now,
++          pathname,
++          nextUrl,
++          fullTree,
++          metadataVaryPath,
++          couldBeIntercepted,
++          canonicalUrl,
++          supportsPerSegmentPrefetching
++        )
++      }
++
++      if (parentKnownRoutePart.staticChildren === null) {
++        parentKnownRoutePart.staticChildren = new Map()
++      }
++      let existingChild = parentKnownRoutePart.staticChildren.get(urlPart)
++      if (existingChild === undefined) {
++        existingChild = createEmptyPart()
++        parentKnownRoutePart.staticChildren.set(urlPart, existingChild)
++      }
++      knownRoutePart = existingChild
++
++      // Advance to next URL part.
++      nextPartIndex = partIndex + 1
++    }
++    // else: Transparent segment (route group, __PAGE__, etc.)
++    // Stay at the same known route part, don't advance URL parts
+   } else {
+     // Dynamic segment tuple: [paramName, paramCacheKey, paramType, staticSiblings]
+-    paramName = segment[0]
+-    paramType = segment[2]
+-    staticSiblings = segment[3]
+-    segmentAppearsInURL = true
+-  }
++    const paramName: string = segment[0]
++    const paramType: DynamicParamTypesShort = segment[2]
++    const staticSiblings: readonly string[] | null = segment[3]
++
++    if (paramType !== 'oc' && urlPart === null) {
++      // Every dynamic segment except the optional catch-all (`[[...param]]`)
++      // must consume at least one URL part at runtime. If discovery reached
++      // this segment with no URL parts left to consume, the URL doesn't fit
++      // the route shape — the response was rewrite-affected. Bail out.
++      return handleMismatchDueToRewrite(
++        existingEntry,
++        now,
++        pathname,
++        nextUrl,
++        fullTree,
++        metadataVaryPath,
++        couldBeIntercepted,
++        canonicalUrl,
++        supportsPerSegmentPrefetching
++      )
++    }
+ 
+-  let knownRoutePart: KnownRoutePart = parentKnownRoutePart
+-  let nextUrlPart: string | null = urlPart
+-  let nextRemainingParts: string[] = remainingParts
+-
+-  if (segmentAppearsInURL) {
+-    // Check for mismatch: if this is a static segment, the URL part must match
+-    if (paramName === null && urlPart !== segment) {
+-      // URL doesn't match route structure (likely a rewrite).
+-      // Don't populate the known route tree, just write the route into the
+-      // cache and return immediately.
+-      if (existingEntry !== null) {
+-        return existingEntry
+-      }
+-      return writeRouteIntoCache(
++    if (
++      staticSiblings !== null &&
++      urlPart !== null &&
++      staticSiblings.includes(urlPart)
++    ) {
++      // The route tree says this is a dynamic sibling, but the canonical URL
++      // is a known static sibling. This is a mismatch.
++      return handleMismatchDueToRewrite(
++        existingEntry,
+         now,
+-        pathname as NormalizedPathname,
++        pathname,
+         nextUrl,
+         fullTree,
+         metadataVaryPath,
+@@ -365,51 +439,39 @@ function discoverKnownRoutePart(
+     }
+ 
+     // URL matches route structure. Build the known route tree.
+-    if (paramName !== null && paramType !== null) {
+-      // Dynamic segment
+-      knownRoutePart = discoverDynamicChild(
+-        parentKnownRoutePart,
+-        paramName,
+-        paramType
+-      )
++    knownRoutePart = discoverDynamicChild(
++      parentKnownRoutePart,
++      paramName,
++      paramType
++    )
+ 
+-      // Record static siblings as placeholder parts.
+-      // IMPORTANT: We use the null vs Map distinction to track whether
+-      // siblings are known at this level:
+-      // - staticChildren: null = siblings unknown (can't safely match dynamic)
+-      // - staticChildren: Map = siblings known (even if empty)
+-      // This matters in dev mode where webpack may not know all siblings yet.
+-      if (staticSiblings !== null) {
+-        // Siblings are known - ensure we have a Map (even if empty)
+-        if (parentKnownRoutePart.staticChildren === null) {
+-          parentKnownRoutePart.staticChildren = new Map()
+-        }
+-        for (const sibling of staticSiblings) {
+-          if (!parentKnownRoutePart.staticChildren.has(sibling)) {
+-            parentKnownRoutePart.staticChildren.set(sibling, createEmptyPart())
+-          }
+-        }
+-      }
+-    } else {
+-      // Static segment
++    // Record static siblings as placeholder parts.
++    // IMPORTANT: We use the null vs Map distinction to track whether
++    // siblings are known at this level:
++    // - staticChildren: null = siblings unknown (can't safely match dynamic)
++    // - staticChildren: Map = siblings known (even if empty)
++    // This matters in dev mode where webpack may not know all siblings yet.
++    if (staticSiblings !== null) {
++      // Siblings are known - ensure we have a Map (even if empty)
+       if (parentKnownRoutePart.staticChildren === null) {
+         parentKnownRoutePart.staticChildren = new Map()
+       }
+-      let existingChild = parentKnownRoutePart.staticChildren.get(urlPart!)
+-      if (existingChild === undefined) {
+-        existingChild = createEmptyPart()
+-        parentKnownRoutePart.staticChildren.set(urlPart!, existingChild)
++      for (const sibling of staticSiblings) {
++        if (!parentKnownRoutePart.staticChildren.has(sibling)) {
++          parentKnownRoutePart.staticChildren.set(sibling, createEmptyPart())
++        }
+       }
+-      knownRoutePart = existingChild
+     }
+ 
+-    // Advance to next URL part
+-    nextUrlPart = remainingParts.length > 0 ? remainingParts[0] : null
+-    nextRemainingParts =
+-      remainingParts.length > 0 ? remainingParts.slice(1) : []
++    // Advance to next URL part. Catch-all segments (`[...param]` and
++    // `[[...param]]`) absorb every remaining URL part at runtime (see
++    // `matchKnownRoutePart`, which slices the rest of `pathnameParts`).
++    if (paramType === 'c' || paramType === 'oc') {
++      nextPartIndex = pathnameParts.length
++    } else {
++      nextPartIndex = partIndex + 1
++    }
+   }
+-  // else: Transparent segment (route group, __PAGE__, etc.)
+-  // Stay at the same known route part, don't advance URL parts
+ 
+   // Recurse into child routes. A route tree can have multiple parallel routes
+   // (e.g., @modal alongside children). Each parallel route is a separate
+@@ -429,8 +491,8 @@ function discoverKnownRoutePart(
+       const result = discoverKnownRoutePart(
+         knownRoutePart,
+         childRouteTree,
+-        nextUrlPart,
+-        nextRemainingParts,
++        pathnameParts,
++        nextPartIndex,
+         existingEntry,
+         now,
+         pathname,
+@@ -451,12 +513,27 @@ function discoverKnownRoutePart(
+     }
+     // Defensive fallback: no children returned a result. This shouldn't happen
+     // for valid route trees, but handle it gracefully.
+-    if (existingEntry !== null) {
+-      return existingEntry
+-    }
+-    return writeRouteIntoCache(
++    return handleMismatchDueToRewrite(
++      existingEntry,
+       now,
+-      pathname as NormalizedPathname,
++      pathname,
++      nextUrl,
++      fullTree,
++      metadataVaryPath,
++      couldBeIntercepted,
++      canonicalUrl,
++      supportsPerSegmentPrefetching
++    )
++  }
++
++  // Reached a page node (`__PAGE__` leaf). If there are still URL parts
++  // left to consume, the route tree is shorter than the URL, which means
++  // the URL doesn't match the route structure (likely a rewrite).
++  if (nextPartIndex < pathnameParts.length) {
++    return handleMismatchDueToRewrite(
++      existingEntry,
++      now,
++      pathname,
+       nextUrl,
+       fullTree,
+       metadataVaryPath,
+diff --git a/test/e2e/app-dir/optimistic-routing/app/actual/[slug]/page.tsx b/test/e2e/app-dir/optimistic-routing/app/actual/[slug]/page.tsx
+index eb32492a9de8..9fb45f27d843 100644
+--- a/test/e2e/app-dir/optimistic-routing/app/actual/[slug]/page.tsx
++++ b/test/e2e/app-dir/optimistic-routing/app/actual/[slug]/page.tsx
+@@ -1,4 +1,5 @@
+ import { connection } from 'next/server'
++import { LinkAccordion } from '../../../components/link-accordion'
+ 
+ export default async function ActualPage({
+   params,
+@@ -12,6 +13,7 @@ export default async function ActualPage({
+     <div id="actual-page">
+       <h1>Actual page</h1>
+       <p data-slug={slug}>Slug: {slug}</p>
++      <LinkAccordion href="/hub">Hub</LinkAccordion>
+     </div>
+   )
+ }
+diff --git a/test/e2e/app-dir/optimistic-routing/app/hub/page.tsx b/test/e2e/app-dir/optimistic-routing/app/hub/page.tsx
+new file mode 100644
+index 000000000000..dd0726343deb
+--- /dev/null
++++ b/test/e2e/app-dir/optimistic-routing/app/hub/page.tsx
+@@ -0,0 +1,34 @@
++import { Suspense } from 'react'
++import { connection } from 'next/server'
++import { LinkAccordion } from '../../components/link-accordion'
++
++async function HubContent() {
++  await connection()
++  return <div id="hub-content">Hub</div>
++}
++
++// Hub page used by rewrite-detection tests as a navigation target instead of
++// `browser.back()`. Each visit lands on a fresh page where all accordions
++// start closed, so previously-revealed Links can't be re-mounted by BFCache
++// and trigger uncontrolled prefetches outside any `act` scope.
++export default function HubPage() {
++  return (
++    <div>
++      <Suspense fallback="Loading hub...">
++        <HubContent />
++      </Suspense>
++      <ul>
++        <li>
++          <LinkAccordion href="/rewritten/second" prefetch={false}>
++            Rewritten Second
++          </LinkAccordion>
++        </li>
++        <li>
++          <LinkAccordion href="/search-rewrite?v=beta" prefetch={false}>
++            Search Rewrite Beta (v=beta → content=beta)
++          </LinkAccordion>
++        </li>
++      </ul>
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/optimistic-routing/app/rewrite-alpha/page.tsx b/test/e2e/app-dir/optimistic-routing/app/rewrite-alpha/page.tsx
+index 9e4b20f24d3e..00fe6cb6f599 100644
+--- a/test/e2e/app-dir/optimistic-routing/app/rewrite-alpha/page.tsx
++++ b/test/e2e/app-dir/optimistic-routing/app/rewrite-alpha/page.tsx
+@@ -1,3 +1,5 @@
++import { LinkAccordion } from '../../components/link-accordion'
++
+ // Fully static page - no dynamic data access
+ export default function RewriteAlphaPage() {
+   return (
+@@ -6,6 +8,7 @@ export default function RewriteAlphaPage() {
+       <p id="rewrite-content" data-content="alpha">
+         Content: alpha
+       </p>
++      <LinkAccordion href="/hub">Hub</LinkAccordion>
+     </div>
+   )
+ }
+diff --git a/test/e2e/app-dir/optimistic-routing/app/rewrite-beta/page.tsx b/test/e2e/app-dir/optimistic-routing/app/rewrite-beta/page.tsx
+index 872f77ca9bae..920d1adc70b0 100644
+--- a/test/e2e/app-dir/optimistic-routing/app/rewrite-beta/page.tsx
++++ b/test/e2e/app-dir/optimistic-routing/app/rewrite-beta/page.tsx
+@@ -1,3 +1,5 @@
++import { LinkAccordion } from '../../components/link-accordion'
++
+ // Fully static page - no dynamic data access
+ export default function RewriteBetaPage() {
+   return (
+@@ -6,6 +8,7 @@ export default function RewriteBetaPage() {
+       <p id="rewrite-content" data-content="beta">
+         Content: beta
+       </p>
++      <LinkAccordion href="/hub">Hub</LinkAccordion>
+     </div>
+   )
+ }
+diff --git a/test/e2e/app-dir/optimistic-routing/optimistic-routing.test.ts b/test/e2e/app-dir/optimistic-routing/optimistic-routing.test.ts
+index 99cb970bfcb4..bdd1235b08bd 100644
+--- a/test/e2e/app-dir/optimistic-routing/optimistic-routing.test.ts
++++ b/test/e2e/app-dir/optimistic-routing/optimistic-routing.test.ts
+@@ -346,14 +346,26 @@ describe('optimistic-routing', () => {
+     // Wait for navigation to complete
+     await browser.elementById('actual-page')
+ 
+-    // Step 2: Navigate back to home using browser back button
+-    await browser.back()
+-    await browser.elementById('rendered-route-history')
+-
+-    // Step 3: Navigate to /rewritten/second.
+-    // This link has prefetch={false}. Even though we've "learned" the route
+-    // from step 1, the route should be marked as having a dynamic rewrite,
+-    // so we should NOT use the cached pattern.
++    // Step 2: Navigate forward to /hub. We use a hub page rather than
++    // browser.back() so that the previously-revealed /rewritten/first
++    // accordion can't be re-mounted from BFCache and trigger an
++    // uncontrolled prefetch outside any `act` scope. See
++    // .claude/skills/router-act/SKILL.md.
++    await act(async () => {
++      const revealHub = await browser.elementByCss(
++        'input[data-link-accordion="/hub"]'
++      )
++      await revealHub.click()
++      const linkHub = await browser.elementByCss('a[href="/hub"]')
++      await linkHub.click()
++    })
++    await browser.elementById('hub-content')
++
++    // Step 3: From /hub, reveal /rewritten/second. This link has
++    // prefetch={false}. Even though /rewritten/first was visited in
++    // step 1, that response was marked as a dynamic rewrite, so the
++    // router must not reuse it as a prediction for /rewritten/second —
++    // meaning no prefetch should fire on reveal.
+     await act(async () => {
+       const revealSecond = await browser.elementByCss(
+         'input[data-link-accordion="/rewritten/second"]'
+@@ -370,13 +382,12 @@ describe('optimistic-routing', () => {
+     await browser.elementById('actual-page')
+ 
+     // Verify using rendered route history that no wrong params were rendered.
+-    // If route prediction incorrectly used a cached pattern, we'd see "first"
+-    // briefly flash before "second".
++    // If the router had reused step 1's response as a prediction, we'd see
++    // "first" briefly flash before "second".
+     expect(await getRenderedRouteHistory(browser)).toEqual([
+       { url: '/', params: {} },
+       { url: '/rewritten/first', params: { slug: 'first' } },
+-      // Back to home
+-      { url: '/', params: {} },
++      { url: '/hub', params: {} },
+       // Should go directly to "second" with no intermediate wrong params
+       { url: '/rewritten/second', params: { slug: 'second' } },
+     ])
+@@ -408,14 +419,23 @@ describe('optimistic-routing', () => {
+     const contentAlpha = await browser.elementById('rewrite-content')
+     expect(await contentAlpha.getAttribute('data-content')).toBe('alpha')
+ 
+-    // Step 2: Go back to home
+-    await browser.back()
+-    await browser.elementById('rendered-route-history')
++    // Step 2: Navigate forward to /hub instead of using browser.back() to
++    // avoid BFCache restoring previously-opened accordions and triggering
++    // uncontrolled prefetches. See .claude/skills/router-act/SKILL.md.
++    await act(async () => {
++      const revealHub = await browser.elementByCss(
++        'input[data-link-accordion="/hub"]'
++      )
++      await revealHub.click()
++      const linkHub = await browser.elementByCss('a[href="/hub"]')
++      await linkHub.click()
++    })
++    await browser.elementById('hub-content')
+ 
+-    // Step 3: Navigate to /search-rewrite?v=beta.
+-    // This link has prefetch={false} - if the route was incorrectly cached as
+-    // predictable, we'd see "alpha" instead of "beta" because the static page
+-    // would be served from cache.
++    // Step 3: From /hub, reveal /search-rewrite?v=beta.
++    // This link has prefetch={false} - if the router had reused step 1's
++    // response as a prediction, we'd see "alpha" instead of "beta" because
++    // the static page would be served from cache.
+     await act(async () => {
+       const revealBeta = await browser.elementByCss(
+         'input[data-link-accordion="/search-rewrite?v=beta"]'
+@@ -430,8 +450,9 @@ describe('optimistic-routing', () => {
+       await linkBeta.click()
+     })
+ 
+-    // Verify we see "beta", not "alpha"
+-    // If this shows "alpha", the route was incorrectly using a cached pattern.
++    // Verify we see "beta", not "alpha".
++    // If this shows "alpha", the router incorrectly reused step 1's
++    // response as a prediction for /search-rewrite?v=beta.
+     const contentBeta = await browser.elementById('rewrite-content')
+     expect(await contentBeta.getAttribute('data-content')).toBe('beta')
+   })
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/@actions/[...catchAll]/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/@actions/[...catchAll]/page.tsx
+new file mode 100644
+index 000000000000..58c486f2391d
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/@actions/[...catchAll]/page.tsx
+@@ -0,0 +1,3 @@
++export default function ActionsSlot() {
++  return <div>ACTIONS SLOT</div>
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/[project]/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/[project]/page.tsx
+new file mode 100644
+index 000000000000..8b268cb8178d
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/[project]/page.tsx
+@@ -0,0 +1,17 @@
++import { Suspense } from 'react'
++import { connection } from 'next/server'
++
++async function DynamicProject() {
++  await connection()
++  return <h1>PROJECT PAGE</h1>
++}
++
++export default function ProjectPage() {
++  return (
++    <main>
++      <Suspense fallback={<div id="project-loading">Loading project...</div>}>
++        <DynamicProject />
++      </Suspense>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/layout.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/layout.tsx
+new file mode 100644
+index 000000000000..be4729b2432d
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/layout.tsx
+@@ -0,0 +1,16 @@
++import { ReactNode } from 'react'
++
++export default function TeamLayout({
++  children,
++  actions,
++}: {
++  children: ReactNode
++  actions: ReactNode
++}) {
++  return (
++    <>
++      <div>{children}</div>
++      <div>{actions}</div>
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/overview/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/overview/page.tsx
+new file mode 100644
+index 000000000000..52790660a051
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/[teamSlug]/overview/page.tsx
+@@ -0,0 +1,36 @@
++import { Suspense } from 'react'
++import { connection } from 'next/server'
++import { LinkAccordion } from '../../../components/link-accordion'
++
++async function DynamicOverview({
++  params,
++}: {
++  params: Promise<{ teamSlug: string }>
++}) {
++  await connection()
++  const { teamSlug } = await params
++  return (
++    <>
++      <h1>TEAM OVERVIEW</h1>
++      <ul>
++        <li>
++          <LinkAccordion href={`/${teamSlug}/myproject`}>Project</LinkAccordion>
++        </li>
++      </ul>
++    </>
++  )
++}
++
++export default function OverviewPage({
++  params,
++}: {
++  params: Promise<{ teamSlug: string }>
++}) {
++  return (
++    <main>
++      <Suspense fallback={<div id="overview-loading">Loading overview...</div>}>
++        <DynamicOverview params={params} />
++      </Suspense>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/layout.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/layout.tsx
+new file mode 100644
+index 000000000000..7758e801dc83
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/layout.tsx
+@@ -0,0 +1,9 @@
++import { ReactNode } from 'react'
++
++export default function RootLayout({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/page.tsx
+new file mode 100644
+index 000000000000..684a61bc380f
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/app/page.tsx
+@@ -0,0 +1,14 @@
++import { LinkAccordion } from '../components/link-accordion'
++
++export default function Home() {
++  return (
++    <main>
++      <h1>HOME</h1>
++      <ul>
++        <li>
++          <LinkAccordion href="/myteam">Team</LinkAccordion>
++        </li>
++      </ul>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/components/link-accordion.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/components/link-accordion.tsx
+new file mode 100644
+index 000000000000..ce6f03da464a
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/components/link-accordion.tsx
+@@ -0,0 +1,33 @@
++'use client'
++
++import Link, { type LinkProps } from 'next/link'
++import { useState } from 'react'
++
++export function LinkAccordion({
++  href,
++  children,
++  prefetch,
++}: {
++  href: LinkProps['href']
++  children: React.ReactNode
++  prefetch?: LinkProps['prefetch']
++}) {
++  const [isVisible, setIsVisible] = useState(false)
++  return (
++    <>
++      <input
++        type="checkbox"
++        checked={isVisible}
++        onChange={() => setIsVisible(!isVisible)}
++        data-link-accordion={href}
++      />
++      {isVisible ? (
++        <Link href={href} prefetch={prefetch}>
++          {children}
++        </Link>
++      ) : (
++        `${children} (link is hidden)`
++      )}
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/next.config.js b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/next.config.js
+new file mode 100644
+index 000000000000..a5f331843e1c
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/next.config.js
+@@ -0,0 +1,26 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {
++  cacheComponents: true,
++  experimental: {
++    optimisticRouting: true,
++  },
++  // The bug being regressed requires the response for /[teamSlug] to
++  // exercise its `@actions/[...catchAll]` parallel slot even though the
++  // canonical URL has no parts left to feed the catch-all. The simplest
++  // reproducer is a rewrite that maps the single-segment URL into a
++  // longer destination: the response describes a route shape that
++  // includes the catch-all slot, but the canonical URL is short enough
++  // that no parts reach the catch-all under normal routing.
++  async rewrites() {
++    return [
++      {
++        source: '/:teamSlug',
++        destination: '/:teamSlug/overview',
++      },
++    ]
++  },
++}
++
++module.exports = nextConfig
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/optimistic-routing-parallel-slot-catchall-regression.test.ts b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/optimistic-routing-parallel-slot-catchall-regression.test.ts
+new file mode 100644
+index 000000000000..403b1817758b
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-parallel-slot-catchall-regression/optimistic-routing-parallel-slot-catchall-regression.test.ts
+@@ -0,0 +1,77 @@
++import { nextTestSetup } from 'e2e-utils'
++import { createRouterAct } from 'router-act'
++
++describe('optimistic routing - parallel slot catch-all regression', () => {
++  const { next, isNextDev } = nextTestSetup({
++    files: __dirname,
++  })
++
++  if (isNextDev) {
++    // Optimistic routing is a production-build feature; in dev mode the
++    // router does not have complete information about which routes
++    // exist, so prediction is disabled.
++    test('skipped in dev mode', () => {})
++    return
++  }
++
++  // Regression test: a route with a parallel slot whose route is a
++  // required catch-all (e.g., /[teamSlug] with an
++  // `@actions/[...catchAll]` slot) used to poison route prediction.
++  // After visiting /myteam, navigating to a longer sibling URL like
++  // /myteam/myproject would reuse a prediction derived from the
++  // @actions slot's catch-all, resolving the URL to the team-page
++  // content even though /myteam/myproject is a separate route. The
++  // router skipped the server fetch entirely under the (incorrect)
++  // assumption that the URL was already known.
++  //
++  // Detection: visit /myteam (which would teach the bad prediction).
++  // Then click /myteam/myproject and wait for a response containing
++  // "PROJECT PAGE". With the bug, no server fetch happens, so "PROJECT
++  // PAGE" never arrives and the `act` waiter rejects. With the fix, no
++  // prediction matches /myteam/myproject and a real server fetch
++  // delivers the project page.
++  it('does not match a parallel-slot catch-all for an unrelated sibling URL', async () => {
++    let act: ReturnType<typeof createRouterAct>
++    const browser = await next.browser('/', {
++      beforePageLoad(page) {
++        act = createRouterAct(page)
++      },
++    })
++
++    // Reveal + click /myteam (a /[teamSlug] route). Its layout
++    // includes an `@actions/[...catchAll]` parallel slot. Visiting
++    // /myteam would, under the bug, teach the router a prediction
++    // that wrongly matches longer sibling URLs.
++    await act(
++      async () => {
++        const toggle = await browser.elementByCss(
++          'input[data-link-accordion="/myteam"]'
++        )
++        await toggle.click()
++        const link = await browser.elementByCss('a[href="/myteam"]')
++        await link.click()
++      },
++      { includes: 'TEAM OVERVIEW' }
++    )
++    expect(await browser.elementByCss('h1').text()).toBe('TEAM OVERVIEW')
++
++    // Reveal + click /myteam/myproject — a sibling URL whose data is
++    // not already cached. Without the fix, the router uses the
++    // incorrect prediction taught by the previous step and skips the
++    // server fetch; "PROJECT PAGE" never arrives and `act` rejects.
++    // With the fix, no prediction matches /myteam/myproject and a
++    // real server fetch delivers the project page.
++    await act(
++      async () => {
++        const toggle = await browser.elementByCss(
++          'input[data-link-accordion="/myteam/myproject"]'
++        )
++        await toggle.click()
++        const link = await browser.elementByCss('a[href="/myteam/myproject"]')
++        await link.click()
++      },
++      { includes: 'PROJECT PAGE' }
++    )
++    expect(await browser.elementByCss('h1').text()).toBe('PROJECT PAGE')
++  })
++})
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/[teamSlug]/overview/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/[teamSlug]/overview/page.tsx
+new file mode 100644
+index 000000000000..5901cdb4bad1
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/[teamSlug]/overview/page.tsx
+@@ -0,0 +1,33 @@
++import { Suspense } from 'react'
++import { connection } from 'next/server'
++
++async function DynamicOverview({
++  params,
++}: {
++  params: Promise<{ teamSlug: string }>
++}) {
++  await connection()
++  const { teamSlug } = await params
++  return (
++    <h1 id="overview-page" data-slug={teamSlug}>
++      Overview: {teamSlug}
++    </h1>
++  )
++}
++
++// Static visible deeper segment. Used by the static-visible-null test:
++// the rewrite /team-shorter → /team-shorter/overview produces a response
++// that walks through this segment with no URL part to feed it.
++export default function OverviewPage({
++  params,
++}: {
++  params: Promise<{ teamSlug: string }>
++}) {
++  return (
++    <main>
++      <Suspense fallback={<div id="team-loading">Loading team...</div>}>
++        <DynamicOverview params={params} />
++      </Suspense>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/[teamSlug]/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/[teamSlug]/page.tsx
+new file mode 100644
+index 000000000000..740753ceeca5
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/[teamSlug]/page.tsx
+@@ -0,0 +1,30 @@
++import { Suspense } from 'react'
++import { connection } from 'next/server'
++
++async function DynamicTeam({
++  params,
++}: {
++  params: Promise<{ teamSlug: string }>
++}) {
++  await connection()
++  const { teamSlug } = await params
++  return (
++    <h1 id="team-page" data-slug={teamSlug}>
++      Team: {teamSlug}
++    </h1>
++  )
++}
++
++export default function TeamPage({
++  params,
++}: {
++  params: Promise<{ teamSlug: string }>
++}) {
++  return (
++    <main>
++      <Suspense fallback={<div id="team-loading">Loading team...</div>}>
++        <DynamicTeam params={params} />
++      </Suspense>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/featured/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/featured/page.tsx
+new file mode 100644
+index 000000000000..3731205230c4
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/featured/page.tsx
+@@ -0,0 +1,13 @@
++// The real /featured static page. At runtime the `beforeFiles` rewrite
++// hijacks /featured requests and sends them through /[teamSlug], so this
++// page is never actually served — but its presence on the filesystem
++// matters: it makes /featured a static sibling of /[teamSlug], which is
++// what makes the rewrite case observable to the router (a request for
++// /featured could not have arrived at /[teamSlug] under normal routing).
++export default function FeaturedPage() {
++  return (
++    <main>
++      <h1 id="featured-page">FEATURED</h1>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/layout.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/layout.tsx
+new file mode 100644
+index 000000000000..7758e801dc83
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/layout.tsx
+@@ -0,0 +1,9 @@
++import { ReactNode } from 'react'
++
++export default function RootLayout({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/page.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/page.tsx
+new file mode 100644
+index 000000000000..f5e2bb6962b5
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/app/page.tsx
+@@ -0,0 +1,39 @@
++import { LinkAccordion } from '../components/link-accordion'
++
++export default function Home() {
++  return (
++    <main>
++      <h1>HOME</h1>
++      <ul>
++        {/* The four prefetch URLs below each arrive via a rewrite that
++            produces a route shape the URL would not naturally route to.
++            Each test reveals one of them (default prefetch=true) to
++            populate the router's prediction state, then clicks one of
++            the click-targets below to check that no incorrect prediction
++            was learned. */}
++        <li>
++          <LinkAccordion href="/myteam/garbage">Tree-shorter</LinkAccordion>
++        </li>
++        <li>
++          <LinkAccordion href="/featured">Static-sibling</LinkAccordion>
++        </li>
++        <li>
++          <LinkAccordion href="/team-shorter">
++            Static-visible-null
++          </LinkAccordion>
++        </li>
++
++        {/* Click target — prefetch={false} so revealing it fires no
++            request. Inside an act scope, the test clicks this and
++            asserts that no /[teamSlug] loading boundary appears
++            instantly (which would only happen if the router had a
++            cached prediction for it). */}
++        <li>
++          <LinkAccordion href="/yourteam" prefetch={false}>
++            Your team
++          </LinkAccordion>
++        </li>
++      </ul>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/components/link-accordion.tsx b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/components/link-accordion.tsx
+new file mode 100644
+index 000000000000..ce6f03da464a
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/components/link-accordion.tsx
+@@ -0,0 +1,33 @@
++'use client'
++
++import Link, { type LinkProps } from 'next/link'
++import { useState } from 'react'
++
++export function LinkAccordion({
++  href,
++  children,
++  prefetch,
++}: {
++  href: LinkProps['href']
++  children: React.ReactNode
++  prefetch?: LinkProps['prefetch']
++}) {
++  const [isVisible, setIsVisible] = useState(false)
++  return (
++    <>
++      <input
++        type="checkbox"
++        checked={isVisible}
++        onChange={() => setIsVisible(!isVisible)}
++        data-link-accordion={href}
++      />
++      {isVisible ? (
++        <Link href={href} prefetch={prefetch}>
++          {children}
++        </Link>
++      ) : (
++        `${children} (link is hidden)`
++      )}
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/next.config.js b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/next.config.js
+new file mode 100644
+index 000000000000..66d413cb3105
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/next.config.js
+@@ -0,0 +1,32 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {
++  cacheComponents: true,
++  experimental: {
++    optimisticRouting: true,
++    varyParams: true,
++  },
++  // Each rewrite below crafts one of the rewrite-affected response shapes
++  // we want to verify. They live in `beforeFiles` so they take precedence
++  // over the filesystem dynamic route — otherwise a 1-part URL like
++  // /featured would route directly to the filesystem (matched by the
++  // dynamic /[teamSlug]) without going through the rewrite, and we'd
++  // never observe the rewrite-affected response shape under test.
++  async rewrites() {
++    return {
++      beforeFiles: [
++        // Case "static-sibling": URL matches a known static sibling, but
++        // the rewrite sends it through the dynamic /[teamSlug] route.
++        { source: '/featured', destination: '/some-team' },
++        // Case "static-visible-null": URL is shorter than the response,
++        // and the deeper segment is a visible static segment.
++        { source: '/team-shorter', destination: '/team-shorter/overview' },
++        // Case "tree-shorter-than-url": URL is longer than the response.
++        { source: '/:teamSlug/garbage', destination: '/:teamSlug' },
++      ],
++    }
++  },
++}
++
++module.exports = nextConfig
+diff --git a/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/optimistic-routing-rewrite-detection-regression.test.ts b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/optimistic-routing-rewrite-detection-regression.test.ts
+new file mode 100644
+index 000000000000..26d318a20c69
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/optimistic-routing-rewrite-detection-regression/optimistic-routing-rewrite-detection-regression.test.ts
+@@ -0,0 +1,129 @@
++import { nextTestSetup } from 'e2e-utils'
++import { createRouterAct } from 'router-act'
++
++describe('optimistic routing - rewrite detection regression', () => {
++  const { next, isNextDev } = nextTestSetup({
++    files: __dirname,
++  })
++
++  if (isNextDev) {
++    // Optimistic routing is a production-build feature; in dev mode the
++    // router does not have complete information about which routes
++    // exist, so prediction is disabled.
++    test('skipped in dev mode', () => {})
++    return
++  }
++
++  // The shape of every test below is the same:
++  //
++  // 1. Reveal a "prefetch" link whose URL arrives via a rewrite. The
++  //    response describes a route shape the URL would not naturally
++  //    route to. The router must not learn from this response as a
++  //    prediction template — otherwise future navigations to other
++  //    URLs of the same dynamic shape would receive an incorrect
++  //    "free" prediction and could render a stale loading state
++  //    instantly.
++  // 2. Reveal one of the click-target links (prefetch={false}).
++  // 3. Click it inside an act scope. With the bug, the router uses the
++  //    rewrite-affected response as a prediction and the cached
++  //    /[teamSlug] loading boundary appears synchronously. With the
++  //    fix, no prediction is available and the loading boundary only
++  //    appears once the server responds.
++
++  async function setupBrowser() {
++    let act: ReturnType<typeof createRouterAct>
++    const browser = await next.browser('/', {
++      beforePageLoad(page) {
++        act = createRouterAct(page)
++      },
++    })
++    return { browser, act: act! }
++  }
++
++  async function revealPrefetch(
++    browser: Awaited<ReturnType<typeof next.browser>>,
++    act: ReturnType<typeof createRouterAct>,
++    href: string
++  ) {
++    await act(
++      async () => {
++        const toggle = await browser.elementByCss(
++          `input[data-link-accordion="${href}"]`
++        )
++        await toggle.click()
++      },
++      // Wait for the prefetch to complete by matching the loading
++      // boundary text in the response.
++      { includes: 'Loading team' }
++    )
++  }
++
++  async function revealAndClick(
++    browser: Awaited<ReturnType<typeof next.browser>>,
++    act: ReturnType<typeof createRouterAct>,
++    href: string
++  ) {
++    await act(async () => {
++      const toggle = await browser.elementByCss(
++        `input[data-link-accordion="${href}"]`
++      )
++      await toggle.click()
++    }, 'no-requests')
++
++    const link = await browser.elementByCss(`a[href="${href}"]`)
++    await act(async () => {
++      await link.click()
++      const teamLoading = await browser
++        .elementById('team-loading')
++        .catch(() => null)
++      expect(teamLoading).toBeNull()
++    })
++  }
++
++  it('does not predict from a rewrite that shortens the URL', async () => {
++    // The rewrite /myteam/garbage → /myteam produces a response whose
++    // route shape is one part shorter than the canonical URL.
++    const { browser, act } = await setupBrowser()
++    await revealPrefetch(browser, act, '/myteam/garbage')
++    await revealAndClick(browser, act, '/yourteam')
++    expect(
++      await (await browser.elementById('team-page')).getAttribute('data-slug')
++    ).toBe('yourteam')
++  })
++
++  it('does not predict from a rewrite to a static-sibling URL', async () => {
++    // The rewrite /featured → /some-team produces a response that
++    // resolves through /[teamSlug] for a URL that, under normal
++    // routing, would have matched the static /featured page (a known
++    // sibling of /[teamSlug]).
++    const { browser, act } = await setupBrowser()
++    await revealPrefetch(browser, act, '/featured')
++    await revealAndClick(browser, act, '/yourteam')
++    expect(
++      await (await browser.elementById('team-page')).getAttribute('data-slug')
++    ).toBe('yourteam')
++  })
++
++  it('does not predict when the rewrite hides a deeper static segment', async () => {
++    // The rewrite /team-shorter → /team-shorter/overview produces a
++    // response whose deeper visible-static segment (`overview`) has no
++    // URL part to match against under the canonical URL `/team-shorter`.
++    const { browser, act } = await setupBrowser()
++    await revealPrefetch(browser, act, '/team-shorter')
++    await revealAndClick(browser, act, '/yourteam')
++    expect(
++      await (await browser.elementById('team-page')).getAttribute('data-slug')
++    ).toBe('yourteam')
++  })
++
++  // Note: a fourth case where the deeper segment is a regular dynamic
++  // (e.g. /team-dyn → /team-dyn/proj-1, response for /[teamSlug]/[project])
++  // does not have a regression test here. The pattern would land at the
++  // [project] trie node, which is only reachable via a 2-part click URL,
++  // and the cached page shell at that depth is rendered for the click
++  // regardless of whether the prediction was stored — so the loading
++  // boundary visible / not visible signal does not distinguish with-fix
++  // from without-fix at the UI level. The bailout for this case is still
++  // covered defensively by the same `paramType !== 'oc' && urlPart === null`
++  // check as case 2.
++})

@@ -1,0 +1,646 @@
+diff --git a/.changeset/anonymous-deploy-preview-account.md b/.changeset/anonymous-deploy-preview-account.md
+index b586a3159d..818a23a45a 100644
+--- a/.changeset/anonymous-deploy-preview-account.md
++++ b/.changeset/anonymous-deploy-preview-account.md
+@@ -2,6 +2,6 @@
+ "wrangler": minor
+ ---
+ 
+-Add `--allow-anonymous` to `wrangler deploy`, `wrangler versions upload`, and Pages commands
++Add `--temporary` to `wrangler deploy`, `wrangler versions upload`, and Pages commands
+ 
+-`--allow-anonymous` can now create a temporary preview account when you are not already authenticated, instead of starting the OAuth login flow. It applies to any command that requires authentication non-interactively — including `wrangler deploy`, `wrangler versions upload`, and the Pages commands. Wrangler deploys with the short-lived account token and prints a claim URL so the account can be claimed later. The cached anonymous preview account is cleared on successful OAuth login or logout so a stale account is not reused after switching back to authenticated usage.
++`--temporary` can now create a temporary preview account when you are not already authenticated, instead of starting the OAuth login flow. It applies to any command that requires authentication non-interactively — including `wrangler deploy`, `wrangler versions upload`, and the Pages commands. Wrangler deploys with the short-lived account token and prints a claim URL so the account can be claimed before it expires. The cached temporary preview account is cleared on successful OAuth login or logout so a stale account is not reused after switching back to authenticated usage.
+diff --git a/.changeset/anonymous-terms-acceptance.md b/.changeset/anonymous-terms-acceptance.md
+new file mode 100644
+index 0000000000..fd2d4a7133
+--- /dev/null
++++ b/.changeset/anonymous-terms-acceptance.md
+@@ -0,0 +1,7 @@
++---
++"wrangler": patch
++---
++
++Require explicit Terms of Service acceptance for `--temporary`
++
++Wrangler now prompts users to type `yes` before continuing with `--temporary`, including in non-interactive environments. The prompt links to Cloudflare's Terms of Service and Privacy Policy, explains that anything deployed with `--temporary` may expire unless it is claimed before expiry, and the flag uses a temporary preview account in interactive terminals instead of starting OAuth.
+diff --git a/packages/wrangler/src/__tests__/d1/execute.test.ts b/packages/wrangler/src/__tests__/d1/execute.test.ts
+index 6b03405624..8e69d08297 100644
+--- a/packages/wrangler/src/__tests__/d1/execute.test.ts
++++ b/packages/wrangler/src/__tests__/d1/execute.test.ts
+@@ -35,7 +35,7 @@ describe("execute", () => {
+ 		).rejects.toThrowError(
+ 			`In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN environment variable for wrangler to work. Please go to https://developers.cloudflare.com/fundamentals/api/get-started/create-token/ for instructions on how to create an api token, and assign its value to CLOUDFLARE_API_TOKEN.
+ 
+-To continue without logging in, rerun this command with \`--allow-anonymous\`. Wrangler will use a temporary account and print a claim URL.`
++To continue without logging in, rerun this command with \`--temporary\`. Wrangler will use a temporary account and print a claim URL.`
+ 		);
+ 	});
+ 
+diff --git a/packages/wrangler/src/__tests__/deploy/core.test.ts b/packages/wrangler/src/__tests__/deploy/core.test.ts
+index fff13e25f3..0ca8c907cf 100644
+--- a/packages/wrangler/src/__tests__/deploy/core.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/core.test.ts
+@@ -17,6 +17,7 @@ import { runAutoConfig } from "../../autoconfig/run";
+ import { clearOutputFilePath } from "../../output";
+ import { NpmPackageManager } from "../../package-manager";
+ import { writeAuthConfigFile } from "../../user";
++import { ANONYMOUS_TERMS_PROMPT } from "../../user/anonymous-terms";
+ import { fetchSecrets } from "../../utils/fetch-secrets";
+ import { mockAccountId, mockApiToken } from "../helpers/mock-account-id";
+ import { mockAuthDomain } from "../helpers/mock-auth-domain";
+@@ -95,6 +96,9 @@ describe("deploy", () => {
+ 	} = mockOAuthFlow();
+ 	const anonymousPreviewAccountUrl =
+ 		"https://api.cloudflare.com/client/v4/provisioning/previews";
++	const mockAnonymousTermsAcceptance = (result = "yes") => {
++		mockPrompt({ text: ANONYMOUS_TERMS_PROMPT, result });
++	};
+ 
+ 	beforeEach(() => {
+ 		vi.stubGlobal("setTimeout", (fn: () => void) => {
+@@ -777,7 +781,7 @@ describe("deploy", () => {
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+ 		});
+ 
+-		it("still starts OAuth in interactive mode when --allow-anonymous is passed", async ({
++		it("still starts OAuth in interactive mode when --temporary is passed", async ({
+ 			expect,
+ 		}) => {
+ 			setIsTTY(true);
+@@ -814,7 +818,7 @@ describe("deploy", () => {
+ 			);
+ 
+ 			await expect(
+-				runWrangler("deploy index.js --allow-anonymous")
++				runWrangler("deploy index.js --temporary")
+ 			).resolves.toBeUndefined();
+ 
+ 			expect(previewAccountRequests).toBe(0);
+@@ -931,7 +935,7 @@ describe("deploy", () => {
+ 			);
+ 
+ 			await expect(
+-				runWrangler("deploy index.js --allow-anonymous")
++				runWrangler("deploy index.js --temporary")
+ 			).resolves.toBeUndefined();
+ 
+ 			expect(previewAccountRequests).toBe(0);
+@@ -939,10 +943,11 @@ describe("deploy", () => {
+ 		});
+ 
+ 		describe("non-TTY", () => {
+-			it("creates an anonymous preview account in non-TTY when --allow-anonymous is passed", async ({
++			it("creates an anonymous preview account in non-TTY when --temporary is passed", async ({
+ 				expect,
+ 			}) => {
+ 				setIsTTY(false);
++				mockAnonymousTermsAcceptance();
+ 				writeWranglerConfig();
+ 				writeWorkerSource();
+ 				mockSubDomainRequest("test-sub-domain", true, false);
+@@ -992,7 +997,7 @@ describe("deploy", () => {
+ 				);
+ 
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).resolves.toBeUndefined();
+ 
+ 				const globalAnonymousAccountPath = path.join(
+@@ -1037,6 +1042,7 @@ describe("deploy", () => {
+ 				expect,
+ 			}) => {
+ 				setIsTTY(false);
++				mockAnonymousTermsAcceptance();
+ 				// A stale stored OAuth token whose refresh fails must not hijack the
+ 				// anonymous override and abort the deploy with "Not logged in".
+ 				writeAuthConfigFile({
+@@ -1090,18 +1096,44 @@ describe("deploy", () => {
+ 				);
+ 
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).resolves.toBeUndefined();
+ 
+ 				expect(std.out).toContain("Temporary account ready:");
+ 				expect(std.err).not.toContain("Not logged in");
+ 			});
+ 
++			it("requires explicit terms acceptance before using --temporary", async ({
++				expect,
++			}) => {
++				setIsTTY(false);
++				mockAnonymousTermsAcceptance("no");
++				writeWranglerConfig();
++				writeWorkerSource();
++
++				let previewAccountRequests = 0;
++				msw.use(
++					http.post(anonymousPreviewAccountUrl, async () => {
++						previewAccountRequests += 1;
++						return HttpResponse.json({});
++					})
++				);
++
++				await expect(
++					runWrangler("deploy index.js --temporary")
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: You must accept Cloudflare's Terms of Service and Privacy Policy to use --temporary.]`
++				);
++
++				expect(previewAccountRequests).toBe(0);
++			});
++
+ 			it("provisions the preview account against the staging API and caches it per-environment", async ({
+ 				expect,
+ 			}) => {
+ 				vi.stubEnv("WRANGLER_API_ENVIRONMENT", "staging");
+ 				setIsTTY(false);
++				mockAnonymousTermsAcceptance();
+ 				writeWranglerConfig();
+ 				writeWorkerSource();
+ 				mockSubDomainRequest("test-sub-domain", true, false);
+@@ -1153,7 +1185,7 @@ describe("deploy", () => {
+ 				);
+ 
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).resolves.toBeUndefined();
+ 
+ 				const stagingAnonymousAccountPath = path.join(
+@@ -1177,6 +1209,7 @@ describe("deploy", () => {
+ 				expect,
+ 			}) => {
+ 				setIsTTY(false);
++				mockAnonymousTermsAcceptance();
+ 				writeWranglerConfig();
+ 				writeWorkerSource();
+ 				mockSubDomainRequest("test-sub-domain", true, false);
+@@ -1241,10 +1274,10 @@ describe("deploy", () => {
+ 				);
+ 
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).resolves.toBeUndefined();
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).resolves.toBeUndefined();
+ 
+ 				expect(previewAccountRequests).toBe(1);
+@@ -1256,6 +1289,7 @@ describe("deploy", () => {
+ 				expect,
+ 			}) => {
+ 				setIsTTY(false);
++				mockAnonymousTermsAcceptance();
+ 				writeWranglerConfig();
+ 				writeWorkerSource();
+ 				mockSubDomainRequest("test-sub-domain", true, false);
+@@ -1312,7 +1346,7 @@ describe("deploy", () => {
+ 				);
+ 
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).resolves.toBeUndefined();
+ 
+ 				expect(previewAccountRequests).toBe(1);
+@@ -1474,13 +1508,14 @@ describe("deploy", () => {
+ 				expect(std.err).toContain(
+ 					"To continue without logging in, rerun this command with"
+ 				);
+-				expect(std.err).toContain("--allow-anonymous");
++				expect(std.err).toContain("--temporary");
+ 			});
+ 
+ 			it("should fail clearly if the anonymous preview account request fails", async ({
+ 				expect,
+ 			}) => {
+ 				setIsTTY(false);
++				mockAnonymousTermsAcceptance();
+ 				writeWranglerConfig();
+ 				writeWorkerSource();
+ 
+@@ -1494,7 +1529,7 @@ describe("deploy", () => {
+ 				);
+ 
+ 				await expect(
+-					runWrangler("deploy index.js --allow-anonymous")
++					runWrangler("deploy index.js --temporary")
+ 				).rejects.toThrowErrorMatchingInlineSnapshot(
+ 					`[Error: Failed to create an anonymous preview account (500 Internal Server Error).]`
+ 				);
+diff --git a/packages/wrangler/src/__tests__/experimental-commands-api.test.ts b/packages/wrangler/src/__tests__/experimental-commands-api.test.ts
+index c2bf4fa018..7deb6394cc 100644
+--- a/packages/wrangler/src/__tests__/experimental-commands-api.test.ts
++++ b/packages/wrangler/src/__tests__/experimental-commands-api.test.ts
+@@ -7,12 +7,6 @@ describe("experimental_getWranglerCommands", () => {
+ 
+ 		expect(commandTree).toMatchInlineSnapshot(`
+ 			{
+-			  "allow-anonymous": {
+-			    "default": false,
+-			    "describe": "Create a temporary preview account when a command needs authentication in non-interactive mode",
+-			    "hidden": true,
+-			    "type": "boolean",
+-			  },
+ 			  "config": {
+ 			    "alias": "c",
+ 			    "describe": "Path to Wrangler configuration file",
+@@ -57,6 +51,12 @@ describe("experimental_getWranglerCommands", () => {
+ 			    "describe": "Install Cloudflare agents skills, if not already present, without asking the user for confirmation",
+ 			    "type": "boolean",
+ 			  },
++			  "temporary": {
++			    "default": false,
++			    "describe": "Create a temporary preview account when a command needs authentication in non-interactive mode",
++			    "hidden": true,
++			    "type": "boolean",
++			  },
+ 			  "v": {
+ 			    "alias": "version",
+ 			    "describe": "Show version number",
+diff --git a/packages/wrangler/src/__tests__/index.test.ts b/packages/wrangler/src/__tests__/index.test.ts
+index 84569b5f1c..9662f18646 100644
+--- a/packages/wrangler/src/__tests__/index.test.ts
++++ b/packages/wrangler/src/__tests__/index.test.ts
+@@ -2,12 +2,13 @@ import {
+ 	runInTempDir,
+ 	writeWranglerConfig,
+ } from "@cloudflare/workers-utils/test-helpers";
+-import { beforeEach, describe, it, vi } from "vitest";
++import { afterEach, beforeEach, describe, it, vi } from "vitest";
+ import { getPackageManager } from "../package-manager";
+ import { updateCheck } from "../update-check";
+ import { logPossibleBugMessage } from "../utils/logPossibleBugMessage";
+ import { endEventLoop } from "./helpers/end-event-loop";
+ import { mockConsoleMethods } from "./helpers/mock-console";
++import { clearDialogs } from "./helpers/mock-dialogs";
+ import { runWrangler } from "./helpers/run-wrangler";
+ import { writeWorkerSource } from "./helpers/write-worker-source";
+ import type { PackageManager } from "../package-manager";
+@@ -28,6 +29,10 @@ describe("wrangler", () => {
+ 		(getPackageManager as Mock).mockResolvedValue(mockPackageManager);
+ 	});
+ 
++	afterEach(() => {
++		clearDialogs();
++	});
++
+ 	const std = mockConsoleMethods();
+ 
+ 	describe("no command", () => {
+@@ -104,6 +109,16 @@ describe("wrangler", () => {
+ 
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+ 		});
++
++		it("should not require anonymous terms acceptance before root help", async ({
++			expect,
++		}) => {
++			await runWrangler("--help --temporary");
++
++			expect(std.out).toContain("wrangler");
++			expect(std.out).toContain("COMMANDS");
++			expect(std.err).toMatchInlineSnapshot(`""`);
++		});
+ 	});
+ 
+ 	describe("invalid command", () => {
+diff --git a/packages/wrangler/src/__tests__/user.test.ts b/packages/wrangler/src/__tests__/user.test.ts
+index 809fb073b7..ce5c7359e5 100644
+--- a/packages/wrangler/src/__tests__/user.test.ts
++++ b/packages/wrangler/src/__tests__/user.test.ts
+@@ -353,7 +353,7 @@ describe("User", () => {
+ 		).rejects.toThrowErrorMatchingInlineSnapshot(
+ 			`[Error: In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN environment variable for wrangler to work. Please go to https://developers.cloudflare.com/fundamentals/api/get-started/create-token/ for instructions on how to create an api token, and assign its value to CLOUDFLARE_API_TOKEN.
+ 
+-To continue without logging in, rerun this command with \`--allow-anonymous\`. Wrangler will use a temporary account and print a claim URL.]`
++To continue without logging in, rerun this command with \`--temporary\`. Wrangler will use a temporary account and print a claim URL.]`
+ 		);
+ 	});
+ 
+diff --git a/packages/wrangler/src/__tests__/versions/versions.upload.test.ts b/packages/wrangler/src/__tests__/versions/versions.upload.test.ts
+index ac5d13996c..b7146f645d 100644
+--- a/packages/wrangler/src/__tests__/versions/versions.upload.test.ts
++++ b/packages/wrangler/src/__tests__/versions/versions.upload.test.ts
+@@ -10,13 +10,14 @@ import { http, HttpResponse } from "msw";
+  * TODO: remove this `expect` import
+  */
+ import { assert, beforeEach, describe, expect, it, test, vi } from "vitest";
++import { ANONYMOUS_TERMS_PROMPT } from "../../user/anonymous-terms";
+ import { dedent } from "../../utils/dedent";
+ import { generatePreviewAlias } from "../../versions/upload";
+ import { makeApiRequestAsserter } from "../helpers/assert-request";
+ import { captureRequestsFrom } from "../helpers/capture-requests-from";
+ import { mockAccountId, mockApiToken } from "../helpers/mock-account-id";
+ import { mockConsoleMethods } from "../helpers/mock-console";
+-import { mockConfirm } from "../helpers/mock-dialogs";
++import { mockConfirm, mockPrompt } from "../helpers/mock-dialogs";
+ import { useMockIsTTY } from "../helpers/mock-istty";
+ import {
+ 	mockGetWorkerSubdomain,
+@@ -134,13 +135,15 @@ describe("versions upload", () => {
+ 		) as WorkerMetadata;
+ 	}
+ 
+-	describe("with --allow-anonymous", () => {
++	describe("with --temporary", () => {
+ 		mockAccountId({ accountId: null });
+ 		mockApiToken({ apiToken: null });
+ 
+ 		test("should create a temporary account for non-interactive uploads", async ({
+ 			expect,
+ 		}) => {
++			mockPrompt({ text: ANONYMOUS_TERMS_PROMPT, result: "yes" });
++
+ 			let previewAccountRequests = 0;
+ 			msw.use(
+ 				http.post(anonymousPreviewAccountUrl, async () => {
+@@ -173,7 +176,7 @@ describe("versions upload", () => {
+ 			setIsTTY(false);
+ 
+ 			await expect(
+-				runWrangler("versions upload --allow-anonymous")
++				runWrangler("versions upload --temporary")
+ 			).resolves.toBeUndefined();
+ 
+ 			expect(previewAccountRequests).toBe(1);
+diff --git a/packages/wrangler/src/deploy/anonymous-account.ts b/packages/wrangler/src/deploy/anonymous-account.ts
+index 86cda630ca..726179fa43 100644
+--- a/packages/wrangler/src/deploy/anonymous-account.ts
++++ b/packages/wrangler/src/deploy/anonymous-account.ts
+@@ -192,7 +192,9 @@ export async function createAnonymousPreviewAccount(): Promise<AnonymousPreviewA
+ 	};
+ }
+ 
+-export async function getOrCreateAnonymousPreviewAccount(): Promise<{
++export async function getOrCreateAnonymousPreviewAccount(options?: {
++	beforeCreate?: () => Promise<void>;
++}): Promise<{
+ 	account: AnonymousPreviewAccount;
+ 	cached: boolean;
+ }> {
+@@ -201,6 +203,8 @@ export async function getOrCreateAnonymousPreviewAccount(): Promise<{
+ 		return { account: cachedPreviewAccount, cached: true };
+ 	}
+ 
++	await options?.beforeCreate?.();
++
+ 	const anonymousPreviewAccount = await createAnonymousPreviewAccount();
+ 	cacheAnonymousPreviewAccount(anonymousPreviewAccount);
+ 
+diff --git a/packages/wrangler/src/dialogs.ts b/packages/wrangler/src/dialogs.ts
+index 6c9142bbed..259911cd83 100644
+--- a/packages/wrangler/src/dialogs.ts
++++ b/packages/wrangler/src/dialogs.ts
+@@ -95,6 +95,37 @@ export async function prompt(
+ 	return value;
+ }
+ 
++export async function promptForExplicitYes(text: string): Promise<boolean> {
++	let cleanupStdinListeners = () => {};
++	const stdinClosed = new Promise<{ value: undefined }>((resolve) => {
++		const onClosed = () => resolve({ value: undefined });
++		process.stdin.once("close", onClosed);
++		process.stdin.once("end", onClosed);
++		cleanupStdinListeners = () => {
++			process.stdin.off("close", onClosed);
++			process.stdin.off("end", onClosed);
++		};
++	});
++
++	const { value } = await Promise.race([
++		prompts({
++			type: "text",
++			name: "value",
++			message: text,
++			onState: (state) => {
++				if (state.aborted) {
++					process.nextTick(() => {
++						process.exit(1);
++					});
++				}
++			},
++		}),
++		stdinClosed,
++	]).finally(cleanupStdinListeners);
++
++	return typeof value === "string" && value.trim().toLowerCase() === "yes";
++}
++
+ interface SelectOptions<Values> {
+ 	choices: SelectOption<Values>[];
+ 	defaultOption?: number;
+diff --git a/packages/wrangler/src/index.ts b/packages/wrangler/src/index.ts
+index 242af9e4e1..a8d4ce9755 100644
+--- a/packages/wrangler/src/index.ts
++++ b/packages/wrangler/src/index.ts
+@@ -534,7 +534,7 @@ export function createCLIParser(argv: string[]) {
+ 			array: true,
+ 			requiresArg: true,
+ 		},
+-		"allow-anonymous": {
++		temporary: {
+ 			describe:
+ 				"Create a temporary preview account when a command needs authentication in non-interactive mode",
+ 			type: "boolean",
+@@ -2360,25 +2360,6 @@ export async function main(argv: string[]): Promise<void> {
+ 
+ 	const { wrangler, registry, showHelpWithCategories } = createCLIParser(argv);
+ 
+-	if (isRootHelpRequest) {
+-		await showHelpWithCategories();
+-		return;
+-	}
+-
+-	// Check for unknown command with a `--help` flag
+-	const [subCommand] = nonFlagArgs;
+-	if (hasHelpFlag && subCommand) {
+-		const knownCommands = registry.topLevelCommands;
+-		if (!knownCommands.has(subCommand)) {
+-			logger.info("");
+-			logger.error(`Unknown argument: ${subCommand}`);
+-			await showHelpWithCategories();
+-			throw new CommandLineArgsError(`Unknown argument: ${subCommand}`, {
+-				telemetryMessage: "cli help unknown argument",
+-			});
+-		}
+-	}
+-
+ 	const startTime = Date.now();
+ 	let configArgs: ReadConfigCommandArgs = {};
+ 	let dispatcher: ReturnType<typeof getMetricsDispatcher> | undefined;
+@@ -2389,7 +2370,7 @@ export async function main(argv: string[]): Promise<void> {
+ 		if (Object.keys(LOGGER_LEVELS).includes(args.logLevel as string)) {
+ 			logger.loggerLevel = args.logLevel as LoggerLevel;
+ 		}
+-		setAllowAnonymous(args.allowAnonymous ?? false);
++		setAllowAnonymous(args.temporary ?? false);
+ 		// Also set the CLI package log level to match
+ 		setLogLevel(logger.loggerLevel);
+ 
+@@ -2412,6 +2393,25 @@ export async function main(argv: string[]): Promise<void> {
+ 
+ 	let cliHandlerThrew = false;
+ 	try {
++		if (isRootHelpRequest) {
++			await showHelpWithCategories();
++			return;
++		}
++
++		// Check for unknown command with a `--help` flag
++		const [subCommand] = nonFlagArgs;
++		if (hasHelpFlag && subCommand) {
++			const knownCommands = registry.topLevelCommands;
++			if (!knownCommands.has(subCommand)) {
++				logger.info("");
++				logger.error(`Unknown argument: ${subCommand}`);
++				await showHelpWithCategories();
++				throw new CommandLineArgsError(`Unknown argument: ${subCommand}`, {
++					telemetryMessage: "cli help unknown argument",
++				});
++			}
++		}
++
+ 		await runWithAuthContext(async () => {
+ 			await wrangler.parse();
+ 		});
+diff --git a/packages/wrangler/src/user/anonymous-terms.ts b/packages/wrangler/src/user/anonymous-terms.ts
+new file mode 100644
+index 0000000000..8d5ed8698c
+--- /dev/null
++++ b/packages/wrangler/src/user/anonymous-terms.ts
+@@ -0,0 +1,16 @@
++import { UserError } from "@cloudflare/workers-utils";
++import { promptForExplicitYes } from "../dialogs";
++
++export const ANONYMOUS_TERMS_PROMPT =
++	'Before continuing with --temporary, you must accept Cloudflare\'s Terms of Service (https://www.cloudflare.com/website-terms/) and Privacy Policy (https://www.cloudflare.com/privacypolicy/). Anything you deploy with --temporary is temporary and may expire unless you claim it before it expires. By typing "yes", you agree to these terms. Type "yes" to continue.';
++
++export async function ensureAnonymousTermsAccepted(): Promise<void> {
++	if (await promptForExplicitYes(ANONYMOUS_TERMS_PROMPT)) {
++		return;
++	}
++
++	throw new UserError(
++		"You must accept Cloudflare's Terms of Service and Privacy Policy to use --temporary.",
++		{ telemetryMessage: "user anonymous terms not accepted" }
++	);
++}
+diff --git a/packages/wrangler/src/user/user.ts b/packages/wrangler/src/user/user.ts
+index e3caed1c02..c9242f1346 100644
+--- a/packages/wrangler/src/user/user.ts
++++ b/packages/wrangler/src/user/user.ts
+@@ -241,6 +241,7 @@ import { isNonInteractiveOrCI } from "../is-interactive";
+ import { logger } from "../logger";
+ import openInBrowser from "../open-in-browser";
+ import { domainUsesAccess } from "./access";
++import { ensureAnonymousTermsAccepted } from "./anonymous-terms";
+ import {
+ 	getAuthDomainFromEnv,
+ 	getAuthUrlFromEnv,
+@@ -1032,14 +1033,19 @@ type LoginProps = {
+ 
+ export async function loginOrRefreshIfRequired(
+ 	complianceConfig: ComplianceConfig,
+-	props?: LoginProps
++	props?: LoginProps,
++	{ allowLogin = true }: { allowLogin?: boolean } = {}
+ ): Promise<boolean> {
+ 	// TODO: if there already is a token, then try refreshing
+ 	// TODO: ask permission before opening browser
+ 	if (!getAPIToken()) {
+ 		// Not logged in.
+ 		// If we are not interactive, we cannot ask the user to login
+-		return !isNonInteractiveOrCI() && (await login(complianceConfig, props));
++		return (
++			allowLogin &&
++			!isNonInteractiveOrCI() &&
++			(await login(complianceConfig, props))
++		);
+ 	} else if (isRefreshNeeded()) {
+ 		// We're logged in, but the refresh token seems to have expired,
+ 		// so let's try to refresh it
+@@ -1049,7 +1055,11 @@ export async function loginOrRefreshIfRequired(
+ 			return true;
+ 		} else {
+ 			// If the refresh token isn't valid, then we ask the user to login again
+-			return !isNonInteractiveOrCI() && (await login(complianceConfig, props));
++			return (
++				allowLogin &&
++				!isNonInteractiveOrCI() &&
++				(await login(complianceConfig, props))
++			);
+ 		}
+ 	} else {
+ 		return true;
+@@ -1362,6 +1372,7 @@ export async function logout(): Promise<void> {
+ 	});
+ 	await response.text(); // blank text? would be nice if it was something meaningful
+ 	rmSync(getAuthConfigFilePath());
++	clearCachedAnonymousPreviewAccount();
+ 	logger.log(`Successfully logged out.`);
+ }
+ 
+@@ -1486,24 +1497,29 @@ export async function requireAuth(
+ 		account_id?: string;
+ 	}
+ ): Promise<string> {
+-	const loggedIn = await loginOrRefreshIfRequired(config);
++	const allowAnonymous = shouldAllowAnonymous() && isNonInteractiveOrCI();
++	const loggedIn = await loginOrRefreshIfRequired(config, undefined, {
++		allowLogin: !allowAnonymous,
++	});
+ 	if (!loggedIn) {
+-		if (isNonInteractiveOrCI()) {
+-			if (shouldAllowAnonymous()) {
+-				const { account: anonymousPreviewAccount, cached } =
+-					await getOrCreateAnonymousPreviewAccount();
+-				setAuthOverride({
+-					accountId: anonymousPreviewAccount.account.id,
+-					apiToken: {
+-						apiToken: anonymousPreviewAccount.account.apiToken,
+-					},
++		if (allowAnonymous) {
++			const { account: anonymousPreviewAccount, cached } =
++				await getOrCreateAnonymousPreviewAccount({
++					beforeCreate: ensureAnonymousTermsAccepted,
+ 				});
+-				logAnonymousPreviewAccount(anonymousPreviewAccount, cached);
+-				return anonymousPreviewAccount.account.id;
+-			}
++			setAuthOverride({
++				accountId: anonymousPreviewAccount.account.id,
++				apiToken: {
++					apiToken: anonymousPreviewAccount.account.apiToken,
++				},
++			});
++			logAnonymousPreviewAccount(anonymousPreviewAccount, cached);
++			return anonymousPreviewAccount.account.id;
++		}
+ 
++		if (isNonInteractiveOrCI()) {
+ 			throw new UserError(
+-				"In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN environment variable for wrangler to work. Please go to https://developers.cloudflare.com/fundamentals/api/get-started/create-token/ for instructions on how to create an api token, and assign its value to CLOUDFLARE_API_TOKEN.\n\nTo continue without logging in, rerun this command with `--allow-anonymous`. Wrangler will use a temporary account and print a claim URL.",
++				"In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN environment variable for wrangler to work. Please go to https://developers.cloudflare.com/fundamentals/api/get-started/create-token/ for instructions on how to create an api token, and assign its value to CLOUDFLARE_API_TOKEN.\n\nTo continue without logging in, rerun this command with `--temporary`. Wrangler will use a temporary account and print a claim URL.",
+ 				{ telemetryMessage: "user auth missing api token non interactive" }
+ 			);
+ 		} else {
+diff --git a/packages/wrangler/src/yargs-types.ts b/packages/wrangler/src/yargs-types.ts
+index 4917803360..040459cf1d 100644
+--- a/packages/wrangler/src/yargs-types.ts
++++ b/packages/wrangler/src/yargs-types.ts
+@@ -10,7 +10,7 @@ export interface CommonYargsOptions {
+ 	config: string | undefined;
+ 	env: string | undefined;
+ 	"env-file": string[] | undefined;
+-	"allow-anonymous"?: boolean;
++	temporary?: boolean;
+ 	"experimental-provision": boolean | undefined;
+ 	"experimental-auto-create": boolean;
+ 	"install-skills": boolean;

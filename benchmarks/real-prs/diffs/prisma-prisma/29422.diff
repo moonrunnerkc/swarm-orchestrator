@@ -1,0 +1,1817 @@
+diff --git a/packages/client-common/src/QueryCompiler.ts b/packages/client-common/src/QueryCompiler.ts
+index 7f4058d3b5b8..e8a5f57a9254 100644
+--- a/packages/client-common/src/QueryCompiler.ts
++++ b/packages/client-common/src/QueryCompiler.ts
+@@ -1,8 +1,8 @@
+-import type { BatchResponse } from '@prisma/client-engine-runtime'
++import type { BatchResponse, QueryPlanNode } from '@prisma/client-engine-runtime'
+ import { ConnectionInfo, Provider } from '@prisma/driver-adapter-utils'
+ 
+ export type QueryCompiler = {
+-  compile(request: string): {}
++  compile(request: string): QueryPlanNode
+   compileBatch(batchRequest: string): BatchResponse
+   free(): void
+ }
+diff --git a/packages/client-engine-runtime/package.json b/packages/client-engine-runtime/package.json
+index eb64d78cd1cc..259a1a1ef6f1 100644
+--- a/packages/client-engine-runtime/package.json
++++ b/packages/client-engine-runtime/package.json
+@@ -31,12 +31,16 @@
+     "@prisma/debug": "workspace:*",
+     "@prisma/driver-adapter-utils": "workspace:*",
+     "@prisma/sqlcommenter": "workspace:*",
++    "@prisma/param-graph": "workspace:*",
++    "@prisma/json-protocol": "workspace:*",
+     "klona": "2.0.6",
+     "nanoid": "5.1.5",
+     "ulid": "3.0.0",
+     "uuid": "11.1.0"
+   },
+   "devDependencies": {
++    "@prisma/get-dmmf": "workspace:*",
++    "@prisma/param-graph-builder": "workspace:*",
+     "@codspeed/benchmark.js-plugin": "4.0.0",
+     "@types/benchmark": "2.1.5",
+     "@types/node": "~20.19.24",
+diff --git a/packages/client-engine-runtime/src/index.ts b/packages/client-engine-runtime/src/index.ts
+index c84ce2f31f57..0cb9f1699372 100644
+--- a/packages/client-engine-runtime/src/index.ts
++++ b/packages/client-engine-runtime/src/index.ts
+@@ -8,6 +8,7 @@ export {
+   type QueryInterpreterTransactionManager,
+ } from './interpreter/query-interpreter'
+ export * from './json-protocol'
++export { parameterizeBatch, parameterizeQuery } from './parameterization/parameterize'
+ export * from './query-plan'
+ export * from './raw-json-protocol'
+ export type { SchemaProvider } from './schema'
+diff --git a/packages/client-engine-runtime/src/interpreter/render-query.test.ts b/packages/client-engine-runtime/src/interpreter/render-query.test.ts
+index b7f8a5fb0535..f4b55e7ad463 100644
+--- a/packages/client-engine-runtime/src/interpreter/render-query.test.ts
++++ b/packages/client-engine-runtime/src/interpreter/render-query.test.ts
+@@ -498,7 +498,7 @@ test('chunking a SELECT..IN with multiple parameterTuples', () => {
+ })
+ 
+ test('a SELECT..IN with a large parameterTuple that is not chunkable', () => {
+-  expect(
++  expect(() =>
+     renderQuery(
+       {
+         type: 'templateSql',
+@@ -526,19 +526,9 @@ test('a SELECT..IN with a large parameterTuple that is not chunkable', () => {
+       {},
+       TEST_MAX_CHUNK_SIZE,
+     ),
+-  ).toMatchObject([
+-    {
+-      sql: expect.stringMatching(
+-        /^SELECT FROM "public"\."User" WHERE "banned" = \$1 AND "id" IN \((\$[0-9]+,?){3000}\) AND "name" = \$3002$/,
+-      ),
+-      args: [false, ...Array.from({ length: 3000 }, (_, i) => i + 1), 'John Doe'],
+-      argTypes: [
+-        { arity: 'scalar', scalarType: 'boolean' },
+-        ...Array.from({ length: 3000 }, () => ({ arity: 'scalar', scalarType: 'int' })),
+-        { arity: 'scalar', scalarType: 'string' },
+-      ],
+-    },
+-  ])
++  ).toThrowErrorMatchingInlineSnapshot(`
++    [UserFacingError: The query parameter limit supported by your database is exceeded.]
++  `)
+ })
+ 
+ test('executes a generator', () => {
+diff --git a/packages/client-engine-runtime/src/interpreter/render-query.ts b/packages/client-engine-runtime/src/interpreter/render-query.ts
+index 88a43a3173d2..101bfd40af0f 100644
+--- a/packages/client-engine-runtime/src/interpreter/render-query.ts
++++ b/packages/client-engine-runtime/src/interpreter/render-query.ts
+@@ -29,11 +29,11 @@ export function renderQuery(
+     case 'templateSql': {
+       const chunks = dbQuery.chunkable ? chunkParams(dbQuery.fragments, args, maxChunkSize) : [args]
+       return chunks.map((params) => {
+-        if (maxChunkSize !== undefined && params.length > maxChunkSize) {
++        const rendered = renderTemplateSql(dbQuery.fragments, dbQuery.placeholderFormat, params, dbQuery.argTypes)
++        if (maxChunkSize !== undefined && rendered.args.length > maxChunkSize) {
+           throw new UserFacingError('The query parameter limit supported by your database is exceeded.', 'P2029')
+         }
+-
+-        return renderTemplateSql(dbQuery.fragments, dbQuery.placeholderFormat, params, dbQuery.argTypes)
++        return rendered
+       })
+     }
+     default:
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/classify.test.ts b/packages/client-engine-runtime/src/parameterization/classify.test.ts
+similarity index 99%
+rename from packages/client/src/runtime/core/engines/client/parameterization/classify.test.ts
+rename to packages/client-engine-runtime/src/parameterization/classify.test.ts
+index d264f27f8dca..0cb67d7f037d 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/classify.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/classify.test.ts
+@@ -1,3 +1,5 @@
++import { describe, expect, it } from 'vitest'
++
+ import { classifyValue, isPlainObject, isTaggedValue } from './classify'
+ 
+ describe('classifyValue', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/classify.ts b/packages/client-engine-runtime/src/parameterization/classify.ts
+similarity index 100%
+rename from packages/client/src/runtime/core/engines/client/parameterization/classify.ts
+rename to packages/client-engine-runtime/src/parameterization/classify.ts
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/batch.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/batch.test.ts
+similarity index 98%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/batch.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/batch.test.ts
+index f0d3711327d4..ca0b3e033d73 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/batch.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/batch.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonBatchQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeBatch } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeBatch', () => {
+   it('parameterizes all queries in a batch with unique placeholder names', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/cache-key.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/cache-key.test.ts
+similarity index 96%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/cache-key.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/cache-key.test.ts
+index dc2cf302773e..fe8234b11272 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/cache-key.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/cache-key.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery cache key consistency', () => {
+   it('generates same cache key for same query structure', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/filter-operators.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/filter-operators.test.ts
+similarity index 97%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/filter-operators.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/filter-operators.test.ts
+index 1b065717574c..a4f0f56d662d 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/filter-operators.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/filter-operators.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery filter operators', () => {
+   it('parameterizes equals filter', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/nested-queries.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/nested-queries.test.ts
+similarity index 95%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/nested-queries.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/nested-queries.test.ts
+index 7bc4974cc895..e6805b201f64 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/nested-queries.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/nested-queries.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery nested queries', () => {
+   it('parameterizes relation filter values', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/placeholder-naming.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/placeholder-naming.test.ts
+similarity index 96%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/placeholder-naming.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/placeholder-naming.test.ts
+index 5e453245e386..fab6e974f23d 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/placeholder-naming.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/placeholder-naming.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery placeholder naming', () => {
+   it('generates deterministic names for same structure', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/placeholder-reuse.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/placeholder-reuse.test.ts
+similarity index 98%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/placeholder-reuse.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/placeholder-reuse.test.ts
+index 7cfed2a6b3e2..03dc5ac5c3b4 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/placeholder-reuse.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/placeholder-reuse.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery placeholder reuse', () => {
+   it('reuses placeholder for identical string values at different paths', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/scalar-values.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/scalar-values.test.ts
+similarity index 96%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/scalar-values.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/scalar-values.test.ts
+index 6b64baf9775a..b98b34b2a45b 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/scalar-values.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/scalar-values.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery scalar values', () => {
+   it('parameterizes string values', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/structural-values.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/structural-values.test.ts
+similarity index 97%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/structural-values.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/structural-values.test.ts
+index 0474f30d3ed1..956010411d6a 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/structural-values.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/structural-values.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery structural values', () => {
+   describe('top-level structural keys', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/tagged-values.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/tagged-values.test.ts
+similarity index 94%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/tagged-values.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/tagged-values.test.ts
+index 69d8aba7f0ae..613b4de44ac3 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/tagged-values.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/tagged-values.test.ts
+@@ -1,14 +1,10 @@
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraph } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeQuery } from '../parameterize'
+ import { getParamGraph } from './test-fixtures'
+ 
+-let paramGraph: ParamGraph
+-
+-beforeAll(async () => {
+-  paramGraph = await getParamGraph()
+-})
++const paramGraph = getParamGraph()
+ 
+ describe('parameterizeQuery tagged values', () => {
+   it('parameterizes DateTime tagged values', () => {
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/test-fixtures.ts b/packages/client-engine-runtime/src/parameterization/parameterize-tests/test-fixtures.ts
+similarity index 82%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/test-fixtures.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize-tests/test-fixtures.ts
+index 71db50042983..eadee441629d 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize-tests/test-fixtures.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize-tests/test-fixtures.ts
+@@ -1,5 +1,4 @@
+-import type { RuntimeDataModel } from '@prisma/client-common'
+-import { getDMMF } from '@prisma/client-generator-js'
++import { getInternalDMMF } from '@prisma/get-dmmf'
+ import { ParamGraph } from '@prisma/param-graph'
+ import { buildAndSerializeParamGraph } from '@prisma/param-graph-builder'
+ 
+@@ -56,7 +55,7 @@ const testSchema = /* prisma */ `
+   }
+ `
+ 
+-export const testRuntimeDataModel: RuntimeDataModel = {
++export const testRuntimeDataModel = {
+   models: {},
+   enums: {
+     Status: {
+@@ -75,16 +74,24 @@ let cached: ParamGraph | undefined
+ /**
+  * Returns the ParamGraph for the test schema, building it on first call.
+  */
+-export async function getParamGraph(): Promise<ParamGraph> {
++export function getParamGraph(): ParamGraph {
+   if (cached) {
+     return cached
+   }
+ 
+-  const dmmf = await getDMMF({ datamodel: testSchema })
++  const dmmf = getInternalDMMF({ datamodel: testSchema })
++  if ('error' in dmmf) {
++    throw dmmf.error
++  }
++
+   const serialized = buildAndSerializeParamGraph(dmmf)
+   cached = ParamGraph.deserialize(serialized, (enumName) => {
+     const enumDef = testRuntimeDataModel.enums[enumName]
+-    return enumDef?.values.map((v) => v.name)
++    const mapping: Record<string, string> = {}
++    for (const value of enumDef?.values ?? []) {
++      mapping[value.name] = value.dbName ?? value.name
++    }
++    return mapping
+   })
+   return cached
+ }
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.test.ts b/packages/client-engine-runtime/src/parameterization/parameterize.test.ts
+similarity index 94%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize.test.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize.test.ts
+index 88ee997a549a..4d0df8f8781f 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.test.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize.test.ts
+@@ -1,14 +1,20 @@
+-import type { RuntimeDataModel } from '@prisma/client-common'
+ import type { JsonQuery } from '@prisma/json-protocol'
+-import type { ParamGraphData } from '@prisma/param-graph'
++import type { EnumLookup, ParamGraphData } from '@prisma/param-graph'
+ import { EdgeFlag, ParamGraph, ScalarMask } from '@prisma/param-graph'
++import { describe, expect, it } from 'vitest'
+ 
+ import { parameterizeBatch, parameterizeQuery } from './parameterize'
+ 
+-function createEnumLookup(runtimeDataModel: RuntimeDataModel) {
+-  return (enumName: string): readonly string[] | undefined => {
++function createEnumLookup(runtimeDataModel: {
++  enums: Record<string, { values: { name: string; dbName: string | null }[] }>
++}): EnumLookup {
++  return (enumName: string) => {
+     const enumDef = runtimeDataModel.enums[enumName]
+-    return enumDef?.values.map((v) => v.name)
++    const mapping: Record<string, string> = {}
++    for (const value of enumDef?.values ?? []) {
++      mapping[value.name] = value.dbName ?? value.name
++    }
++    return mapping
+   }
+ }
+ 
+@@ -88,13 +94,14 @@ describe('parameterizeQuery', () => {
+     },
+   }
+ 
+-  const sampleRuntimeDataModel: RuntimeDataModel = {
++  const sampleRuntimeDataModel = {
+     models: {},
+     enums: {
+       Status: {
+         values: [
+           { name: 'ACTIVE', dbName: null },
+           { name: 'INACTIVE', dbName: null },
++          { name: 'UNSPECIFIED', dbName: 'N/A' },
+         ],
+         dbName: null,
+       },
+@@ -277,7 +284,7 @@ describe('parameterizeQuery', () => {
+     })
+   })
+ 
+-  describe('enum membership validation', () => {
++  describe('enum handling', () => {
+     it('parameterizes valid enum values', () => {
+       const query: JsonQuery = {
+         modelName: 'User',
+@@ -295,6 +302,23 @@ describe('parameterizeQuery', () => {
+       })
+     })
+ 
++    it('parameterizes an enum value with a mapped name', () => {
++      const query: JsonQuery = {
++        modelName: 'User',
++        action: 'findMany',
++        query: {
++          arguments: { where: { status: 'UNSPECIFIED' } },
++          selection: { $scalars: true },
++        },
++      }
++
++      const result = parameterizeQuery(query, paramGraph)
++
++      expect(result.placeholderValues).toEqual({
++        '%1': 'N/A', // dbName mapping applied
++      })
++    })
++
+     it('does not parameterize invalid enum values', () => {
+       const query: JsonQuery = {
+         modelName: 'User',
+@@ -512,7 +536,7 @@ describe('parameterizeBatch', () => {
+     },
+   }
+ 
+-  const sampleRuntimeDataModel: RuntimeDataModel = {
++  const sampleRuntimeDataModel = {
+     models: {},
+     enums: {},
+     types: {},
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts b/packages/client-engine-runtime/src/parameterization/parameterize.ts
+similarity index 98%
+rename from packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+rename to packages/client-engine-runtime/src/parameterization/parameterize.ts
+index 3edb3402b18a..c464ddce2f64 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
++++ b/packages/client-engine-runtime/src/parameterization/parameterize.ts
+@@ -6,7 +6,6 @@
+  * both schema rules and runtime value types agree.
+  */
+ 
+-import { deserializeJsonObject, safeJsonStringify } from '@prisma/client-engine-runtime'
+ import type {
+   JsonArgumentValue,
+   JsonBatchQuery,
+@@ -20,6 +19,8 @@ import { PlaceholderType } from '@prisma/json-protocol'
+ import type { InputEdge, InputNode } from '@prisma/param-graph'
+ import { EdgeFlag, getScalarMask, hasFlag, ParamGraph, ScalarMask } from '@prisma/param-graph'
+ 
++import { deserializeJsonObject } from '../json-protocol'
++import { safeJsonStringify } from '../utils'
+ import { classifyValue, isPlainObject, isTaggedValue, ValueClass } from './classify'
+ 
+ /**
+@@ -222,9 +223,9 @@ class Parameterizer {
+   #handlePrimitive(value: string | number | boolean, edge: InputEdge): JsonArgumentValue {
+     if (hasFlag(edge, EdgeFlag.ParamEnum) && edge.enumNameIndex !== undefined && typeof value === 'string') {
+       const enumValues = this.#view.enumValues(edge)
+-      if (enumValues?.includes(value)) {
++      if (enumValues && Object.hasOwn(enumValues, value)) {
+         const type: PlaceholderType = { type: 'Enum' }
+-        return this.#getOrCreatePlaceholder(value, type)
++        return this.#getOrCreatePlaceholder(enumValues[value], type)
+       }
+     }
+ 
+@@ -280,7 +281,7 @@ class Parameterizer {
+ 
+     if (hasFlag(edge, EdgeFlag.ParamEnum)) {
+       const enumValues = this.#view.enumValues(edge)
+-      if (enumValues && items.every((item) => typeof item === 'string' && enumValues.includes(item))) {
++      if (enumValues && items.every((item) => typeof item === 'string' && Object.hasOwn(enumValues, item))) {
+         const type: PlaceholderType = { type: 'List', inner: { type: 'Enum' } }
+         return this.#getOrCreatePlaceholder(items, type)
+       }
+diff --git a/packages/client-generator-js/src/externalToInternalDmmf.ts b/packages/client-generator-js/src/externalToInternalDmmf.ts
+deleted file mode 100644
+index f77e523e7a5c..000000000000
+--- a/packages/client-generator-js/src/externalToInternalDmmf.ts
++++ /dev/null
+@@ -1,57 +0,0 @@
+-import { capitalize, uncapitalize } from '@prisma/client-common'
+-import * as DMMF from '@prisma/dmmf'
+-import pluralize from 'pluralize'
+-
+-export function getCountAggregateOutputName(modelName: string): string {
+-  return `${capitalize(modelName)}CountAggregateOutputType`
+-}
+-
+-/**
+- * Turns type: string into type: string[] for all args in order to support union input types
+- * @param document
+- */
+-export function externalToInternalDmmf(document: DMMF.Document): DMMF.Document {
+-  return {
+-    ...document,
+-    mappings: getMappings(document.mappings, document.datamodel),
+-  }
+-}
+-
+-function getMappings(mappings: DMMF.Mappings, datamodel: DMMF.Datamodel): DMMF.Mappings {
+-  const modelOperations = mappings.modelOperations
+-    .filter((mapping) => {
+-      const model = datamodel.models.find((m) => m.name === mapping.model)
+-      if (!model) {
+-        throw new Error(`Mapping without model ${mapping.model}`)
+-      }
+-      return model.fields.some((f) => f.kind !== 'object')
+-    })
+-    // TODO most of this is probably not needed anymore
+-    .map((mapping: any) => ({
+-      model: mapping.model,
+-      plural: pluralize(uncapitalize(mapping.model)), // TODO not needed anymore
+-      findUnique: mapping.findUnique || mapping.findSingle,
+-      findUniqueOrThrow: mapping.findUniqueOrThrow,
+-      findFirst: mapping.findFirst,
+-      findFirstOrThrow: mapping.findFirstOrThrow,
+-      findMany: mapping.findMany,
+-      create: mapping.createOne || mapping.createSingle || mapping.create,
+-      createMany: mapping.createMany,
+-      createManyAndReturn: mapping.createManyAndReturn,
+-      delete: mapping.deleteOne || mapping.deleteSingle || mapping.delete,
+-      update: mapping.updateOne || mapping.updateSingle || mapping.update,
+-      deleteMany: mapping.deleteMany,
+-      updateMany: mapping.updateMany,
+-      updateManyAndReturn: mapping.updateManyAndReturn,
+-      upsert: mapping.upsertOne || mapping.upsertSingle || mapping.upsert,
+-      aggregate: mapping.aggregate,
+-      groupBy: mapping.groupBy,
+-      findRaw: mapping.findRaw,
+-      aggregateRaw: mapping.aggregateRaw,
+-    }))
+-
+-  return {
+-    modelOperations,
+-    otherOperations: mappings.otherOperations,
+-  }
+-}
+diff --git a/packages/client-generator-js/src/getDMMF.ts b/packages/client-generator-js/src/getDMMF.ts
+index 86bb583810a5..285df13193fd 100644
+--- a/packages/client-generator-js/src/getDMMF.ts
++++ b/packages/client-generator-js/src/getDMMF.ts
+@@ -1,15 +1 @@
+-import type * as DMMF from '@prisma/dmmf'
+-import type { GetDMMFOptions } from '@prisma/internals'
+-import { getDMMF as getRawDMMF } from '@prisma/internals'
+-
+-import { externalToInternalDmmf } from './externalToInternalDmmf'
+-
+-export function getPrismaClientDMMF(dmmf: DMMF.Document): DMMF.Document {
+-  return externalToInternalDmmf(dmmf)
+-}
+-
+-// Mostly used for tests
+-export async function getDMMF(options: GetDMMFOptions): Promise<DMMF.Document> {
+-  const dmmf = await getRawDMMF(options)
+-  return getPrismaClientDMMF(dmmf)
+-}
++export { getInternalDMMF as getDMMF, externalToInternalDmmf as getPrismaClientDMMF } from '@prisma/internals'
+diff --git a/packages/client-generator-js/src/index.ts b/packages/client-generator-js/src/index.ts
+index eb90294ac26a..fed19f781291 100644
+--- a/packages/client-generator-js/src/index.ts
++++ b/packages/client-generator-js/src/index.ts
+@@ -1,4 +1,3 @@
+-export { externalToInternalDmmf } from './externalToInternalDmmf'
+ export { generateClient, type GenerateClientOptions } from './generateClient'
+ export { PrismaClientJsGenerator } from './generator'
+ export { getDMMF } from './getDMMF'
+diff --git a/packages/client-generator-ts/src/externalToInternalDmmf.ts b/packages/client-generator-ts/src/externalToInternalDmmf.ts
+deleted file mode 100644
+index f77e523e7a5c..000000000000
+--- a/packages/client-generator-ts/src/externalToInternalDmmf.ts
++++ /dev/null
+@@ -1,57 +0,0 @@
+-import { capitalize, uncapitalize } from '@prisma/client-common'
+-import * as DMMF from '@prisma/dmmf'
+-import pluralize from 'pluralize'
+-
+-export function getCountAggregateOutputName(modelName: string): string {
+-  return `${capitalize(modelName)}CountAggregateOutputType`
+-}
+-
+-/**
+- * Turns type: string into type: string[] for all args in order to support union input types
+- * @param document
+- */
+-export function externalToInternalDmmf(document: DMMF.Document): DMMF.Document {
+-  return {
+-    ...document,
+-    mappings: getMappings(document.mappings, document.datamodel),
+-  }
+-}
+-
+-function getMappings(mappings: DMMF.Mappings, datamodel: DMMF.Datamodel): DMMF.Mappings {
+-  const modelOperations = mappings.modelOperations
+-    .filter((mapping) => {
+-      const model = datamodel.models.find((m) => m.name === mapping.model)
+-      if (!model) {
+-        throw new Error(`Mapping without model ${mapping.model}`)
+-      }
+-      return model.fields.some((f) => f.kind !== 'object')
+-    })
+-    // TODO most of this is probably not needed anymore
+-    .map((mapping: any) => ({
+-      model: mapping.model,
+-      plural: pluralize(uncapitalize(mapping.model)), // TODO not needed anymore
+-      findUnique: mapping.findUnique || mapping.findSingle,
+-      findUniqueOrThrow: mapping.findUniqueOrThrow,
+-      findFirst: mapping.findFirst,
+-      findFirstOrThrow: mapping.findFirstOrThrow,
+-      findMany: mapping.findMany,
+-      create: mapping.createOne || mapping.createSingle || mapping.create,
+-      createMany: mapping.createMany,
+-      createManyAndReturn: mapping.createManyAndReturn,
+-      delete: mapping.deleteOne || mapping.deleteSingle || mapping.delete,
+-      update: mapping.updateOne || mapping.updateSingle || mapping.update,
+-      deleteMany: mapping.deleteMany,
+-      updateMany: mapping.updateMany,
+-      updateManyAndReturn: mapping.updateManyAndReturn,
+-      upsert: mapping.upsertOne || mapping.upsertSingle || mapping.upsert,
+-      aggregate: mapping.aggregate,
+-      groupBy: mapping.groupBy,
+-      findRaw: mapping.findRaw,
+-      aggregateRaw: mapping.aggregateRaw,
+-    }))
+-
+-  return {
+-    modelOperations,
+-    otherOperations: mappings.otherOperations,
+-  }
+-}
+diff --git a/packages/client-generator-ts/src/getDMMF.ts b/packages/client-generator-ts/src/getDMMF.ts
+index 86bb583810a5..285df13193fd 100644
+--- a/packages/client-generator-ts/src/getDMMF.ts
++++ b/packages/client-generator-ts/src/getDMMF.ts
+@@ -1,15 +1 @@
+-import type * as DMMF from '@prisma/dmmf'
+-import type { GetDMMFOptions } from '@prisma/internals'
+-import { getDMMF as getRawDMMF } from '@prisma/internals'
+-
+-import { externalToInternalDmmf } from './externalToInternalDmmf'
+-
+-export function getPrismaClientDMMF(dmmf: DMMF.Document): DMMF.Document {
+-  return externalToInternalDmmf(dmmf)
+-}
+-
+-// Mostly used for tests
+-export async function getDMMF(options: GetDMMFOptions): Promise<DMMF.Document> {
+-  const dmmf = await getRawDMMF(options)
+-  return getPrismaClientDMMF(dmmf)
+-}
++export { getInternalDMMF as getDMMF, externalToInternalDmmf as getPrismaClientDMMF } from '@prisma/internals'
+diff --git a/packages/client-generator-ts/src/index.ts b/packages/client-generator-ts/src/index.ts
+index 8e0de6580545..172365fab5fd 100644
+--- a/packages/client-generator-ts/src/index.ts
++++ b/packages/client-generator-ts/src/index.ts
+@@ -1,4 +1,3 @@
+-export { externalToInternalDmmf } from './externalToInternalDmmf'
+ export { generateClient, type GenerateClientOptions } from './generateClient'
+ export { PrismaClientTsGenerator } from './generator'
+ export { getDMMF } from './getDMMF'
+diff --git a/packages/client/src/__tests__/benchmarks/query-performance/caching.bench.ts b/packages/client/src/__tests__/benchmarks/query-performance/caching.bench.ts
+index 947ce5e5d2f7..879edd49e8cd 100644
+--- a/packages/client/src/__tests__/benchmarks/query-performance/caching.bench.ts
++++ b/packages/client/src/__tests__/benchmarks/query-performance/caching.bench.ts
+@@ -3,13 +3,13 @@ import path from 'node:path'
+ 
+ import { withCodSpeed } from '@codspeed/benchmark.js-plugin'
+ import { dmmfToRuntimeDataModel, type QueryCompiler, type QueryCompilerConstructor } from '@prisma/client-common'
++import { parameterizeQuery } from '@prisma/client-engine-runtime'
+ import { getDMMF } from '@prisma/client-generator-js'
+ import type { JsonQuery } from '@prisma/json-protocol'
+ import { ParamGraph } from '@prisma/param-graph'
+ import { buildParamGraph } from '@prisma/param-graph-builder'
+ import Benchmark from 'benchmark'
+ 
+-import { parameterizeQuery } from '../../../runtime/core/engines/client/parameterization/parameterize'
+ import { loadQueryCompiler } from './qc-loader'
+ 
+ let QueryCompilerClass: QueryCompilerConstructor
+@@ -127,7 +127,11 @@ async function setup(): Promise<void> {
+ 
+   paramGraph = ParamGraph.fromData(paramGraphData, (enumName) => {
+     const enumDef = runtimeDataModel.enums[enumName]
+-    return enumDef?.values.map((v) => v.name)
++    const mapping: Record<string, string> = {}
++    for (const value of enumDef?.values ?? []) {
++      mapping[value.name] = value.dbName ?? value.name
++    }
++    return mapping
+   })
+ }
+ 
+diff --git a/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema-mongo/dmmf-types.test.ts b/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema-mongo/dmmf-types.test.ts
+index 1c4ec8b6dcf7..c8e7ee09a5d1 100644
+--- a/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema-mongo/dmmf-types.test.ts
++++ b/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema-mongo/dmmf-types.test.ts
+@@ -15,9 +15,7 @@ if (isMacOrWindowsCI) {
+  */
+ test('dmmf-types', async () => {
+   const datamodel = fs.readFileSync(path.join(__dirname, 'schema.prisma'), 'utf-8')
+-  const dmmf = await getDMMF({
+-    datamodel,
+-  })
++  const dmmf = await getDMMF({ datamodel })
+   const dmmfFile = path.join(__dirname, 'generated-dmmf.ts')
+ 
+   fs.writeFileSync(
+diff --git a/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema/dmmf-types.test.ts b/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema/dmmf-types.test.ts
+index 1c4ec8b6dcf7..c8e7ee09a5d1 100644
+--- a/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema/dmmf-types.test.ts
++++ b/packages/client/src/__tests__/integration/happy/not-so-exhaustive-schema/dmmf-types.test.ts
+@@ -15,9 +15,7 @@ if (isMacOrWindowsCI) {
+  */
+ test('dmmf-types', async () => {
+   const datamodel = fs.readFileSync(path.join(__dirname, 'schema.prisma'), 'utf-8')
+-  const dmmf = await getDMMF({
+-    datamodel,
+-  })
++  const dmmf = await getDMMF({ datamodel })
+   const dmmfFile = path.join(__dirname, 'generated-dmmf.ts')
+ 
+   fs.writeFileSync(
+diff --git a/packages/client/src/generation/generator.ts b/packages/client/src/generation/generator.ts
+index 1814c3d2ed8d..a42068e7c3b2 100644
+--- a/packages/client/src/generation/generator.ts
++++ b/packages/client/src/generation/generator.ts
+@@ -6,10 +6,11 @@
+ 
+ import path from 'node:path'
+ 
+-import { dmmfToTypes, externalToInternalDmmf, PrismaClientJsGenerator } from '@prisma/client-generator-js'
++import { PrismaClientJsGenerator } from '@prisma/client-generator-js'
+ import { generatorHandler } from '@prisma/generator-helper'
+ 
+-export { dmmfToTypes, externalToInternalDmmf }
++export { dmmfToTypes } from '@prisma/client-generator-js'
++export { externalToInternalDmmf } from '@prisma/internals'
+ 
+ if (process.argv[1] === __filename) {
+   const generator = new PrismaClientJsGenerator({
+diff --git a/packages/client/src/runtime/core/engines/client/ClientEngine.ts b/packages/client/src/runtime/core/engines/client/ClientEngine.ts
+index d5834cd16830..8498695989bd 100644
+--- a/packages/client/src/runtime/core/engines/client/ClientEngine.ts
++++ b/packages/client/src/runtime/core/engines/client/ClientEngine.ts
+@@ -2,6 +2,8 @@ import { QueryCompiler, QueryCompilerConstructor, QueryEngineLogLevel } from '@p
+ import {
+   BatchResponse,
+   convertCompactedRows,
++  parameterizeBatch,
++  parameterizeQuery,
+   QueryEvent,
+   QueryPlanNode,
+   safeJsonStringify,
+@@ -34,7 +36,6 @@ import { getBatchRequestPayload } from '../common/utils/getBatchRequestPayload'
+ import { getErrorMessageWithLink as genericGetErrorMessageWithLink } from '../common/utils/getErrorMessageWithLink'
+ import type { Executor } from './Executor'
+ import { LocalExecutor } from './LocalExecutor'
+-import { parameterizeBatch, parameterizeQuery } from './parameterization/parameterize'
+ import { QueryPlanCache } from './query-plan-cache'
+ import { RemoteExecutor } from './RemoteExecutor'
+ import { QueryCompilerLoader } from './types/QueryCompiler'
+@@ -145,7 +146,11 @@ export class ClientEngine implements Engine {
+       if (!Object.hasOwn(config.runtimeDataModel.enums, enumName)) {
+         return undefined
+       }
+-      return config.runtimeDataModel.enums[enumName].values.map((v) => v.name)
++      const mapping: Record<string, string> = {}
++      for (const value of config.runtimeDataModel.enums[enumName].values) {
++        mapping[value.name] = value.dbName ?? value.name
++      }
++      return mapping
+     })
+ 
+     if (config.enableDebugLogs) {
+@@ -671,7 +676,7 @@ export class ClientEngine implements Engine {
+       return this.#withLocalPanicHandler(() =>
+         this.#withCompileSpan({
+           queries: [query],
+-          execute: () => compiler.compile(request) as QueryPlanNode,
++          execute: () => compiler.compile(request),
+         }),
+       )
+     } catch (error) {
+diff --git a/packages/client/src/utils/generateInFolder.ts b/packages/client/src/utils/generateInFolder.ts
+index bd86545bd2b4..bf0dbe6cb263 100644
+--- a/packages/client/src/utils/generateInFolder.ts
++++ b/packages/client/src/utils/generateInFolder.ts
+@@ -4,7 +4,7 @@ import path from 'node:path'
+ import { generateClient } from '@prisma/client-generator-js'
+ import Debug from '@prisma/debug'
+ import { type GetSchemaResult, getSchemaWithPath, mergeSchemas } from '@prisma/internals'
+-import { extractPreviewFeatures, getConfig, getDMMF, getPackedPackage } from '@prisma/internals'
++import { getConfig, getDMMF, getPackedPackage } from '@prisma/internals'
+ import copy from '@timsuchanek/copy'
+ import { performance } from 'perf_hooks'
+ 
+@@ -40,7 +40,6 @@ export async function generateInFolder({ projectDir, packageSource }: GenerateIn
+   const { schemas, schemaPath } = schemaPathResult
+ 
+   const config = await getConfig({ datamodel: schemas })
+-  const previewFeatures = extractPreviewFeatures(config.generators)
+ 
+   const outputDir = path.join(projectDir, 'node_modules/@prisma/client')
+ 
+@@ -59,10 +58,7 @@ export async function generateInFolder({ projectDir, packageSource }: GenerateIn
+   }
+ 
+   // TODO: use engine.getDmmf()
+-  const dmmf = await getDMMF({
+-    datamodel: schemas,
+-    previewFeatures,
+-  })
++  const dmmf = await getDMMF({ datamodel: schemas })
+ 
+   const schema = mergeSchemas({ schemas })
+ 
+diff --git a/packages/client/src/utils/getTestClient.ts b/packages/client/src/utils/getTestClient.ts
+index 0be6a8ef8608..eff82393107a 100644
+--- a/packages/client/src/utils/getTestClient.ts
++++ b/packages/client/src/utils/getTestClient.ts
+@@ -1,13 +1,6 @@
+ import { dmmfToRuntimeDataModel, GetPrismaClientConfig } from '@prisma/client-common'
+ import { getDMMF } from '@prisma/client-generator-js'
+-import {
+-  BuiltInProvider,
+-  extractPreviewFeatures,
+-  getConfig,
+-  getSchemaWithPath,
+-  parseEnvValue,
+-  printConfigWarnings,
+-} from '@prisma/internals'
++import { BuiltInProvider, getConfig, getSchemaWithPath, parseEnvValue, printConfigWarnings } from '@prisma/internals'
+ import { buildAndSerializeParamGraph } from '@prisma/param-graph-builder'
+ import path from 'path'
+ import { parse } from 'stacktrace-parser'
+@@ -36,13 +29,9 @@ export async function getTestClient(schemaDir?: string, printWarnings?: boolean)
+   }
+ 
+   const generator = config.generators.find((g) => parseEnvValue(g.provider) === BuiltInProvider.PrismaClientJs)
+-  const previewFeatures = extractPreviewFeatures(config.generators)
+   ;(global as any).TARGET_BUILD_TYPE = 'client'
+ 
+-  const document = await getDMMF({
+-    datamodel,
+-    previewFeatures,
+-  })
++  const document = await getDMMF({ datamodel })
+   const activeProvider = config.datasources[0].activeProvider
+   const options: GetPrismaClientConfig = {
+     runtimeDataModel: dmmfToRuntimeDataModel(document.datamodel),
+diff --git a/packages/client/tests/functional/_utils/setupTestSuiteClient.ts b/packages/client/tests/functional/_utils/setupTestSuiteClient.ts
+index 13df6fd58bac..3c589dcb1285 100644
+--- a/packages/client/tests/functional/_utils/setupTestSuiteClient.ts
++++ b/packages/client/tests/functional/_utils/setupTestSuiteClient.ts
+@@ -18,7 +18,6 @@ import { buildPrismaConfig } from './config-builder'
+ import type { NamedTestSuiteConfig, TestSuiteMeta } from './getTestSuiteInfo'
+ import {
+   getTestSuiteFolderPath,
+-  getTestSuitePreviewFeatures,
+   getTestSuiteSchema,
+   getTestSuiteSchemaPath,
+   testSuiteHasTypedSql,
+@@ -59,8 +58,7 @@ export async function setupTestSuiteClient({
+   const suiteFolderPath = getTestSuiteFolderPath({ suiteMeta, suiteConfig })
+   const schemaPath = getTestSuiteSchemaPath({ suiteMeta, suiteConfig })
+   const schema = getTestSuiteSchema({ cliMeta, suiteMeta, matrixOptions: suiteConfig.matrixOptions })
+-  const previewFeatures = getTestSuitePreviewFeatures(schema)
+-  const dmmf = await getDMMF({ datamodel: [[schemaPath, schema]], previewFeatures })
++  const dmmf = await getDMMF({ datamodel: [[schemaPath, schema]] })
+   const schemaContext = await processSchemaResult({
+     schemaResult: { schemas: [[schemaPath, schema]], schemaPath, schemaRootDir: path.dirname(schemaPath) },
+   })
+diff --git a/packages/client/tests/functional/chunking-query/tests.ts b/packages/client/tests/functional/chunking-query/tests.ts
+index 1781751705b7..7e949937b105 100644
+--- a/packages/client/tests/functional/chunking-query/tests.ts
++++ b/packages/client/tests/functional/chunking-query/tests.ts
+@@ -161,7 +161,9 @@ testMatrix.setupTestSuite(
+       }
+ 
+       test('Selecting MAX ids at once in two inclusive disjunct filters succeeds', async () => {
+-        const ids = generatedIds(MAX_BIND_VALUES)
++        // subtract 1 to account for the OFFSET parameters and divide by 2 to account for the
++        // two IN filters
++        const ids = generatedIds((MAX_BIND_VALUES - 1) / 2)
+         await expect(selectWith2InFilters(ids)).resolves.toMatchInlineSnapshot(`[]`)
+       })
+ 
+@@ -171,8 +173,7 @@ testMatrix.setupTestSuite(
+         if (usingRelationJoins) {
+           if (driverAdapter === 'js_pg' || driverAdapter === 'js_pg_cockroachdb') {
+             await expect(selectWith2InFilters(ids)).rejects.toThrow(
+-              // TODO: the error returned by the driver looks weird although the query looks correct
+-              /bind message has \d+ parameter formats but \d+ parameters|placeholder index must be between \d+ and \d+/,
++              'The query parameter limit supported by your database is exceeded',
+             )
+           } else {
+             await expect(selectWith2InFilters(ids)).rejects.toThrow(RELATION_JOINS_NO_CHUNKING_ERROR_MSG)
+diff --git a/packages/dmmf/helpers/build.ts b/packages/dmmf/helpers/build.ts
+index 5350df5ceb8e..fffcc16a7e38 100644
+--- a/packages/dmmf/helpers/build.ts
++++ b/packages/dmmf/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { unbundledConfig } from '../../../helpers/compile/configs'
++import { adapterConfig } from '../../../helpers/compile/configs'
+ 
+-void build(unbundledConfig)
++void build(adapterConfig)
+diff --git a/packages/get-dmmf/README.md b/packages/get-dmmf/README.md
+new file mode 100644
+index 000000000000..d612caad58e2
+--- /dev/null
++++ b/packages/get-dmmf/README.md
+@@ -0,0 +1,3 @@
++# @prisma/get-dmmf
++
++This package provides a function to get the DMMF (Data Model Meta Format) from a Prisma schema. The DMMF is a JSON representation of the Prisma schema, which can be used for various purposes such as generating code or creating custom tools.
+diff --git a/packages/get-dmmf/helpers/build.ts b/packages/get-dmmf/helpers/build.ts
+new file mode 100644
+index 000000000000..fffcc16a7e38
+--- /dev/null
++++ b/packages/get-dmmf/helpers/build.ts
+@@ -0,0 +1,4 @@
++import { build } from '../../../helpers/compile/build'
++import { adapterConfig } from '../../../helpers/compile/configs'
++
++void build(adapterConfig)
+diff --git a/packages/get-dmmf/package.json b/packages/get-dmmf/package.json
+new file mode 100644
+index 000000000000..cb895926f71a
+--- /dev/null
++++ b/packages/get-dmmf/package.json
+@@ -0,0 +1,47 @@
++{
++  "name": "@prisma/get-dmmf",
++  "version": "0.0.0",
++  "description": "Get DMMF for Prisma",
++  "main": "dist/index.js",
++  "module": "dist/index.mjs",
++  "types": "dist/index.d.ts",
++  "exports": {
++    ".": {
++      "require": {
++        "types": "./dist/index.d.ts",
++        "default": "./dist/index.js"
++      },
++      "import": {
++        "types": "./dist/index.d.mts",
++        "default": "./dist/index.mjs"
++      }
++    }
++  },
++  "license": "Apache-2.0",
++  "homepage": "https://www.prisma.io",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/prisma/prisma.git",
++    "directory": "packages/get-dmmf"
++  },
++  "bugs": "https://github.com/prisma/prisma/issues",
++  "scripts": {
++    "dev": "DEV=true tsx helpers/build.ts",
++    "build": "tsx helpers/build.ts",
++    "prepublishOnly": "pnpm run build"
++  },
++  "files": [
++    "dist"
++  ],
++  "dependencies": {
++    "@prisma/debug": "workspace:*",
++    "@prisma/dmmf": "workspace:*",
++    "@prisma/prisma-schema-wasm": "7.6.0-1.75cbdc1eb7150937890ad5465d861175c6624711",
++    "@streamparser/json": "0.0.22",
++    "pluralize": "8.0.0"
++  },
++  "devDependencies": {
++    "@types/pluralize": "0.0.33"
++  },
++  "sideEffects": false
++}
+diff --git a/packages/get-dmmf/src/index.ts b/packages/get-dmmf/src/index.ts
+new file mode 100644
+index 000000000000..95805028df06
+--- /dev/null
++++ b/packages/get-dmmf/src/index.ts
+@@ -0,0 +1,217 @@
++import { Debug } from '@prisma/debug'
++import type * as DMMF from '@prisma/dmmf'
++import prismaSchemaWasm from '@prisma/prisma-schema-wasm'
++import { JSONParser } from '@streamparser/json'
++import pluralize from 'pluralize'
++
++const debug = Debug('prisma:getDMMF')
++
++export type SingleSchema = string
++export type MultipleSchemaTuple = [filename: string, content: string]
++export type MultipleSchemas = Array<MultipleSchemaTuple>
++export type SchemaFileInput = SingleSchema | MultipleSchemas
++
++export type GetDMMFOptions = {
++  datamodel: SchemaFileInput
++}
++
++export type GetDMMFError = {
++  type: 'wasm-error' | 'parse-json'
++  reason: string
++  error: Error
++}
++
++/**
++ * Wasm'd version of `getDMMF`.
++ */
++export function getDMMF(options: GetDMMFOptions): DMMF.Document | GetDMMFError {
++  debug(`Using getDmmf Wasm`)
++
++  const params = JSON.stringify({
++    prismaSchema: options.datamodel,
++    noColor: Boolean(process.env.NO_COLOR),
++  })
++
++  let data: string
++  try {
++    if (process.env.FORCE_PANIC_GET_DMMF) {
++      debug('Triggering a Rust panic...')
++      prismaSchemaWasm.debug_panic()
++    }
++
++    data = prismaSchemaWasm.get_dmmf(params)
++  } catch (getDMMFErr) {
++    if (isV8StringLimitError(getDMMFErr)) {
++      debug('V8 string limit hit, falling back to buffered DMMF API')
++
++      try {
++        const data = getDMMFBuffered(params)
++        debug('dmmf data retrieved via buffered API')
++        return data
++      } catch (getDMMFBufferedErr) {
++        return {
++          type: 'wasm-error',
++          reason: '(get-dmmf buffered wasm)',
++          error: getDMMFBufferedErr as Error,
++        }
++      }
++    }
++
++    return {
++      type: 'wasm-error' as const,
++      reason: '(get-dmmf wasm)',
++      error: getDMMFErr as Error,
++    }
++  }
++
++  try {
++    const document = JSON.parse(data) as DMMF.Document
++    debug('dmmf data retrieved without errors in getDmmf Wasm')
++    return document
++  } catch (err) {
++    return {
++      type: 'parse-json' as const,
++      reason: 'Unable to parse JSON',
++      error: err as Error,
++    }
++  }
++}
++
++export function getInternalDMMF(options: GetDMMFOptions): DMMF.Document | GetDMMFError {
++  const result = getDMMF(options)
++  if ('error' in result) {
++    return result
++  }
++  return externalToInternalDmmf(result)
++}
++
++/**
++ * Turns type: string into type: string[] for all args in order to support union input types
++ * @param document
++ */
++export function externalToInternalDmmf(document: DMMF.Document): DMMF.Document {
++  return {
++    ...document,
++    mappings: getMappings(document.mappings, document.datamodel),
++  }
++}
++
++/**
++ * Read DMMF from the handle-based buffered WASM API in chunks and parse via
++ * chunked string decoding. This bypasses V8's string length limit by reading
++ * the DMMF as Uint8Array chunks from a caller-owned DmmfBuffer handle.
++ *
++ * Requires `get_dmmf_buffered()` (returns a `DmmfBuffer` handle) from
++ * `@prisma/prisma-schema-wasm`. The handle exposes `.len()`, `.read_chunk()`,
++ * and `.free()` — no implicit global state.
++ *
++ * See: https://github.com/prisma/prisma/issues/29111
++ */
++function getDMMFBuffered(params: string): DMMF.Document | GetDMMFError {
++  const CHUNK_SIZE = 16 * 1024 * 1024 // 16MB chunks — well under V8 string limit
++
++  if (typeof prismaSchemaWasm.get_dmmf_buffered !== 'function') {
++    return {
++      type: 'wasm-error' as const,
++      reason: '(get-dmmf-buffered wasm)',
++      error: new Error(
++        "Buffered DMMF API not available. It's required for schemas that do not fit within the default V8 memory limit. Ensure you are using latest @prisma/prisma-schema-wasm.",
++      ),
++    }
++  }
++
++  const buffer = prismaSchemaWasm.get_dmmf_buffered(params)
++
++  try {
++    const totalBytes = buffer.len()
++    debug(`DMMF buffered: ${totalBytes} bytes (${(totalBytes / 1024 / 1024).toFixed(1)}MB)`)
++
++    // Use a streaming JSON parser that processes Uint8Array chunks directly,
++    // never creating a single large string.
++    const parser = new JSONParser()
++    let result: DMMF.Document | undefined
++
++    parser.onValue = ({ value, stack }) => {
++      if (stack.length === 0 && value !== undefined) {
++        result = value as unknown as DMMF.Document
++      }
++    }
++
++    let offset = 0
++    while (offset < totalBytes) {
++      const len = Math.min(CHUNK_SIZE, totalBytes - offset)
++      const chunk = buffer.read_chunk(offset, len)
++      parser.write(chunk)
++      offset += len
++    }
++
++    if (result === undefined) {
++      return {
++        type: 'parse-json' as const,
++        reason: '(get-dmmf-buffered parse)',
++        error: new Error('Streaming JSON parse produced no result'),
++      }
++    }
++
++    debug(`DMMF parsed via streaming parser (${(totalBytes / 1024 / 1024).toFixed(1)}MB)`)
++    return result
++  } finally {
++    buffer.free()
++  }
++}
++
++/**
++ * Check if an error is the V8 string length limit.
++ * V8 has a hard-coded limit of 0x1fffffe8 characters (~536MB) for strings.
++ * No Node.js flags can change this.
++ * See: https://github.com/prisma/prisma/issues/29111
++ */
++function isV8StringLimitError(error: unknown): error is Error & { code: 'ERR_STRING_TOO_LONG' } {
++  return error instanceof Error && 'code' in error && error.code === 'ERR_STRING_TOO_LONG'
++}
++
++function getMappings(mappings: DMMF.Mappings, datamodel: DMMF.Datamodel): DMMF.Mappings {
++  const modelOperations = mappings.modelOperations
++    .filter((mapping) => {
++      const model = datamodel.models.find((m) => m.name === mapping.model)
++      if (!model) {
++        throw new Error(`Mapping without model ${mapping.model}`)
++      }
++      return model.fields.some((f) => f.kind !== 'object')
++    })
++    // TODO most of this is probably not needed anymore
++    .map((mapping: any) => ({
++      model: mapping.model,
++      plural: pluralize(uncapitalize(mapping.model)),
++      findUnique: mapping.findUnique || mapping.findSingle,
++      findUniqueOrThrow: mapping.findUniqueOrThrow,
++      findFirst: mapping.findFirst,
++      findFirstOrThrow: mapping.findFirstOrThrow,
++      findMany: mapping.findMany,
++      create: mapping.createOne || mapping.createSingle || mapping.create,
++      createMany: mapping.createMany,
++      createManyAndReturn: mapping.createManyAndReturn,
++      delete: mapping.deleteOne || mapping.deleteSingle || mapping.delete,
++      update: mapping.updateOne || mapping.updateSingle || mapping.update,
++      deleteMany: mapping.deleteMany,
++      updateMany: mapping.updateMany,
++      updateManyAndReturn: mapping.updateManyAndReturn,
++      upsert: mapping.upsertOne || mapping.upsertSingle || mapping.upsert,
++      aggregate: mapping.aggregate,
++      groupBy: mapping.groupBy,
++      findRaw: mapping.findRaw,
++      aggregateRaw: mapping.aggregateRaw,
++    }))
++
++  return {
++    modelOperations,
++    otherOperations: mappings.otherOperations,
++  }
++}
++
++/**
++ * Converts the first character of a word to lower case.
++ */
++export function uncapitalize<T extends string>(self: T): Uncapitalize<T> {
++  return (self.substring(0, 1).toLowerCase() + self.substring(1)) as Uncapitalize<T>
++}
+diff --git a/packages/get-dmmf/tsconfig.build.json b/packages/get-dmmf/tsconfig.build.json
+new file mode 100644
+index 000000000000..1eae4ca25256
+--- /dev/null
++++ b/packages/get-dmmf/tsconfig.build.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "../../tsconfig.build.regular.json",
++  "compilerOptions": {
++    "outDir": "dist"
++  },
++  "include": ["src"]
++}
+diff --git a/packages/get-dmmf/tsconfig.json b/packages/get-dmmf/tsconfig.json
+new file mode 100644
+index 000000000000..27f4352213f8
+--- /dev/null
++++ b/packages/get-dmmf/tsconfig.json
+@@ -0,0 +1,5 @@
++{
++  "extends": "../../tsconfig.json",
++  "include": ["src", "helpers"],
++  "exclude": ["dist", "node_modules"]
++}
+diff --git a/packages/internals/package.json b/packages/internals/package.json
+index 3eaf24860e35..9914419de1b5 100644
+--- a/packages/internals/package.json
++++ b/packages/internals/package.json
+@@ -73,6 +73,7 @@
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/generator-helper": "workspace:*",
++    "@prisma/get-dmmf": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+     "@prisma/prisma-schema-wasm": "7.6.0-1.75cbdc1eb7150937890ad5465d861175c6624711",
+     "@prisma/schema-engine-wasm": "7.6.0-1.75cbdc1eb7150937890ad5465d861175c6624711",
+diff --git a/packages/internals/src/cli/getSchema.ts b/packages/internals/src/cli/getSchema.ts
+index 781346559a0a..a5228de160a4 100644
+--- a/packages/internals/src/cli/getSchema.ts
++++ b/packages/internals/src/cli/getSchema.ts
+@@ -1,4 +1,5 @@
+ import { Debug } from '@prisma/debug'
++import { MultipleSchemaTuple } from '@prisma/get-dmmf'
+ import type {
+   GetSchemaResult,
+   LookupResult,
+@@ -11,8 +12,6 @@ import { dim, green } from 'kleur/colors'
+ import path from 'path'
+ import { promisify } from 'util'
+ 
+-import type { MultipleSchemaTuple } from '../utils/schemaFileInput'
+-
+ const readFile = promisify(fs.readFile)
+ const stat = promisify(fs.stat)
+ 
+diff --git a/packages/internals/src/engine-commands/formatSchema.ts b/packages/internals/src/engine-commands/formatSchema.ts
+index 49cfce499b95..fa542abbcb49 100644
+--- a/packages/internals/src/engine-commands/formatSchema.ts
++++ b/packages/internals/src/engine-commands/formatSchema.ts
+@@ -1,8 +1,8 @@
+ import Debug from '@prisma/debug'
++import type { MultipleSchemas } from '@prisma/get-dmmf'
+ 
+ import { logger } from '..'
+ import { ErrorArea, getWasmError, RustPanic, WasmPanic } from '../panic'
+-import { type MultipleSchemas } from '../utils/schemaFileInput'
+ import { prismaSchemaWasm } from '../wasm'
+ import { getLintWarningsAsText, lintSchema } from './lintSchema'
+ 
+diff --git a/packages/internals/src/engine-commands/getConfig.ts b/packages/internals/src/engine-commands/getConfig.ts
+index 69b4870f88a8..892f960eab81 100644
+--- a/packages/internals/src/engine-commands/getConfig.ts
++++ b/packages/internals/src/engine-commands/getConfig.ts
+@@ -1,5 +1,6 @@
+ import Debug from '@prisma/debug'
+ import type { DataSource, GeneratorConfig } from '@prisma/generator'
++import { SchemaFileInput } from '@prisma/get-dmmf'
+ import { getBinaryTargetForCurrentPlatform } from '@prisma/get-platform'
+ import * as E from 'fp-ts/Either'
+ import { pipe } from 'fp-ts/lib/function'
+@@ -7,7 +8,6 @@ import { bold, red } from 'kleur/colors'
+ import { match } from 'ts-pattern'
+ 
+ import { ErrorArea, getWasmError, isWasmPanic, RustPanic, WasmPanic } from '../panic'
+-import { type SchemaFileInput } from '../utils/schemaFileInput'
+ import { prismaSchemaWasm } from '../wasm'
+ import { addVersionDetailsToErrorMessage } from './errorHelpers'
+ import {
+diff --git a/packages/internals/src/engine-commands/getDmmf.ts b/packages/internals/src/engine-commands/getDmmf.ts
+index b9113744d09e..68351d69e87a 100644
+--- a/packages/internals/src/engine-commands/getDmmf.ts
++++ b/packages/internals/src/engine-commands/getDmmf.ts
+@@ -1,19 +1,17 @@
+ import Debug from '@prisma/debug'
+ import type * as DMMF from '@prisma/dmmf'
+ import type { DataSource, GeneratorConfig } from '@prisma/generator'
+-import { JSONParser } from '@streamparser/json'
+-import * as E from 'fp-ts/Either'
+-import { pipe } from 'fp-ts/lib/function'
+-import * as TE from 'fp-ts/TaskEither'
++import { getDMMF as getDMMFRaw, getInternalDMMF as getInternalDMMFRaw, type SchemaFileInput } from '@prisma/get-dmmf'
+ import { bold, red } from 'kleur/colors'
+ import { match } from 'ts-pattern'
+ 
+ import { ErrorArea, getWasmError, isWasmPanic, RustPanic, WasmPanic } from '../panic'
+-import { type SchemaFileInput } from '../utils/schemaFileInput'
+-import { prismaSchemaWasm } from '../wasm'
++import { assertNever } from '../utils/assertNever'
+ import { addVersionDetailsToErrorMessage } from './errorHelpers'
+ import { createDebugErrorType, parseQueryEngineError, QueryEngineErrorInit } from './queryEngineCommons'
+ 
++export { externalToInternalDmmf } from '@prisma/get-dmmf'
++
+ const debug = Debug('prisma:getDMMF')
+ const debugErrorType = createDebugErrorType(debug, 'getDmmfWasm')
+ 
+@@ -25,7 +23,6 @@ export interface ConfigMetaFormat {
+ 
+ export type GetDMMFOptions = {
+   datamodel: SchemaFileInput
+-  previewFeatures?: string[]
+ }
+ 
+ export class GetDmmfError extends Error {
+@@ -51,167 +48,31 @@ ${detailsHeader} ${message}`
+   }
+ }
+ 
+-/**
+- * Check if an error is the V8 string length limit.
+- * V8 has a hard-coded limit of 0x1fffffe8 characters (~536MB) for strings.
+- * No Node.js flags can change this.
+- * See: https://github.com/prisma/prisma/issues/29111
+- */
+-function isV8StringLimitError(error: unknown): error is Error & { code: 'ERR_STRING_TOO_LONG' } {
+-  return error instanceof Error && 'code' in error && error.code === 'ERR_STRING_TOO_LONG'
+-}
+-
+-/**
+- * Read DMMF from the handle-based buffered WASM API in chunks and parse via
+- * chunked string decoding. This bypasses V8's string length limit by reading
+- * the DMMF as Uint8Array chunks from a caller-owned DmmfBuffer handle.
+- *
+- * Requires `get_dmmf_buffered()` (returns a `DmmfBuffer` handle) from
+- * `@prisma/prisma-schema-wasm`. The handle exposes `.len()`, `.read_chunk()`,
+- * and `.free()` — no implicit global state.
+- *
+- * See: https://github.com/prisma/prisma/issues/29111
+- */
+-function getDMMFBuffered(params: string): DMMF.Document {
+-  const CHUNK_SIZE = 16 * 1024 * 1024 // 16MB chunks — well under V8 string limit
+-
+-  if (typeof prismaSchemaWasm.get_dmmf_buffered !== 'function') {
+-    throw new Error(
+-      "Buffered DMMF API not available. It's required for schemas that do not fit within the default V8 memory limit. Ensure you are using latest @prisma/prisma-schema-wasm.",
+-    )
+-  }
+-
+-  const buffer = prismaSchemaWasm.get_dmmf_buffered(params)
+-
+-  try {
+-    const totalBytes = buffer.len()
+-    debug(`DMMF buffered: ${totalBytes} bytes (${(totalBytes / 1024 / 1024).toFixed(1)}MB)`)
+-
+-    // Use a streaming JSON parser that processes Uint8Array chunks directly,
+-    // never creating a single large string.
+-    const parser = new JSONParser()
+-    let result: DMMF.Document | undefined
+-
+-    parser.onValue = ({ value, stack }) => {
+-      if (stack.length === 0 && value !== undefined) {
+-        result = value as unknown as DMMF.Document
+-      }
+-    }
+-
+-    let offset = 0
+-    while (offset < totalBytes) {
+-      const len = Math.min(CHUNK_SIZE, totalBytes - offset)
+-      const chunk = buffer.read_chunk(offset, len)
+-      parser.write(chunk)
+-      offset += len
+-    }
+-
+-    if (result === undefined) {
+-      throw new Error('Streaming JSON parse produced no result')
+-    }
+-
+-    debug(`DMMF parsed via streaming parser (${(totalBytes / 1024 / 1024).toFixed(1)}MB)`)
+-    return result
+-  } finally {
+-    buffer.free()
+-  }
+-}
+-
+ /**
+  * Wasm'd version of `getDMMF`.
+  */
+ export async function getDMMF(options: GetDMMFOptions): Promise<DMMF.Document> {
+-  debug(`Using getDmmf Wasm`)
+-
+-  const params = JSON.stringify({
+-    prismaSchema: options.datamodel,
+-    noColor: Boolean(process.env.NO_COLOR),
+-  })
+-
+-  const dmmfPipeline = pipe(
+-    E.tryCatch(
+-      () => {
+-        if (process.env.FORCE_PANIC_GET_DMMF) {
+-          debug('Triggering a Rust panic...')
+-          prismaSchemaWasm.debug_panic()
+-        }
+-
+-        const data = prismaSchemaWasm.get_dmmf(params)
+-        return data
+-      },
+-      (e) =>
+-        ({
+-          type: 'wasm-error' as const,
+-          reason: '(get-dmmf wasm)',
+-          error: e as Error | WasmPanic,
+-        }) as const,
+-    ),
+-    E.map((result) => ({ result })),
+-    E.chainW(({ result }) =>
+-      // NOTE: this should never fail, as we expect returned values to be valid JSON-serializable strings
+-      E.tryCatch(
+-        () => JSON.parse(result) as DMMF.Document,
+-        (e) => ({
+-          type: 'parse-json' as const,
+-          reason: 'Unable to parse JSON',
+-          error: e as Error,
+-        }),
+-      ),
+-    ),
+-    TE.fromEither,
+-  )
+-
+-  const dmmfEither = await dmmfPipeline()
+-
+-  if (E.isRight(dmmfEither)) {
+-    debug('dmmf data retrieved without errors in getDmmf Wasm')
+-    const { right: data } = dmmfEither
+-    return Promise.resolve(data)
+-  }
+-
+-  /**
+-   * If the error is a V8 string length limit, fall back to the buffered DMMF API.
+-   * This bypasses the limit by reading DMMF as chunked Uint8Array data instead of
+-   * a single JS string.
+-   * See: https://github.com/prisma/prisma/issues/29111
+-   */
+-  const leftError = dmmfEither.left
+-  if (leftError.type === 'wasm-error' && isV8StringLimitError(leftError.error)) {
+-    debug('V8 string limit hit, falling back to buffered DMMF API')
++  return Promise.resolve(handleGetDmmfResult(getDMMFRaw(options)))
++}
+ 
+-    try {
+-      const data = getDMMFBuffered(params)
+-      debug('dmmf data retrieved via buffered API')
+-      return data
+-    } catch (error) {
+-      if (error instanceof Error) {
+-        debugErrorType({ type: 'wasm-error' as const, reason: '(get-dmmf-buffered wasm)', error })
+-        throw mapWasmPanicToGetDmmfError(error, '(get-dmmf-buffered wasm)')
+-      }
++export async function getInternalDMMF(options: GetDMMFOptions): Promise<DMMF.Document> {
++  return Promise.resolve(handleGetDmmfResult(getInternalDMMFRaw(options)))
++}
+ 
+-      throw new GetDmmfError({
+-        _tag: 'unparsed',
+-        message: `Unknown error during buffered DMMF retrieval: ${error}`,
+-        reason: '(get-dmmf-buffered wasm)',
+-      })
++function handleGetDmmfResult(result: ReturnType<typeof getDMMFRaw>): DMMF.Document {
++  if ('error' in result) {
++    debugErrorType(result)
++    switch (result.type) {
++      case 'wasm-error':
++        throw mapWasmPanicToGetDmmfError(result.error, result.reason)
++      case 'parse-json':
++        throw new GetDmmfError({ _tag: 'unparsed', message: result.error.message, reason: result.reason })
++      default:
++        assertNever(result.type, 'Unknown getDmmf error type')
+     }
++  } else {
++    return result
+   }
+-
+-  /**
+-   * Check which error to throw.
+-   */
+-  const error = match(dmmfEither.left)
+-    .with({ type: 'wasm-error' }, (e) => {
+-      debugErrorType(e)
+-      return mapWasmPanicToGetDmmfError(e.error, e.reason)
+-    })
+-    .with({ type: 'parse-json' }, (e) => {
+-      debugErrorType(e)
+-      return new GetDmmfError({ _tag: 'unparsed', message: e.error.message, reason: e.reason })
+-    })
+-    .exhaustive()
+-
+-  throw error
+ }
+ 
+ function mapWasmPanicToGetDmmfError(error: Error | WasmPanic, reason: string): GetDmmfError {
+diff --git a/packages/internals/src/engine-commands/index.ts b/packages/internals/src/engine-commands/index.ts
+index e6ef5df3bc02..a67f77fd6038 100644
+--- a/packages/internals/src/engine-commands/index.ts
++++ b/packages/internals/src/engine-commands/index.ts
+@@ -2,7 +2,7 @@ export { formatSchema } from './formatSchema'
+ export type { ConfigMetaFormat } from './getConfig'
+ export { getConfig } from './getConfig'
+ export type { GetDMMFOptions } from './getDmmf'
+-export { getDMMF } from './getDmmf'
++export { externalToInternalDmmf, getDMMF, getInternalDMMF } from './getDmmf'
+ export { getEnginesInfo, resolveEngine } from './getEnginesInfo'
+ export { getEngineVersion } from './getEngineVersion'
+ export { getLintWarningsAsText, handleLintPanic, lintSchema } from './lintSchema'
+diff --git a/packages/internals/src/engine-commands/lintSchema.ts b/packages/internals/src/engine-commands/lintSchema.ts
+index a87f5e9062af..96029204a4f8 100644
+--- a/packages/internals/src/engine-commands/lintSchema.ts
++++ b/packages/internals/src/engine-commands/lintSchema.ts
+@@ -1,7 +1,7 @@
++import type { MultipleSchemas } from '@prisma/get-dmmf'
+ import { yellow } from 'kleur/colors'
+ 
+ import { ErrorArea, getWasmError, RustPanic, WasmPanic } from '../panic'
+-import { type MultipleSchemas } from '../utils/schemaFileInput'
+ import { prismaSchemaWasm } from '../wasm'
+ 
+ type LintSchemaParams = { schemas: MultipleSchemas }
+diff --git a/packages/internals/src/engine-commands/mergeSchemas.ts b/packages/internals/src/engine-commands/mergeSchemas.ts
+index 3ab336e9d827..c4fd84346b8b 100644
+--- a/packages/internals/src/engine-commands/mergeSchemas.ts
++++ b/packages/internals/src/engine-commands/mergeSchemas.ts
+@@ -1,11 +1,11 @@
+ import Debug from '@prisma/debug'
++import type { MultipleSchemas } from '@prisma/get-dmmf'
+ import * as E from 'fp-ts/Either'
+ import { pipe } from 'fp-ts/lib/function'
+ import { bold, red } from 'kleur/colors'
+ import { match } from 'ts-pattern'
+ 
+ import { ErrorArea, getWasmError, isWasmPanic, RustPanic, WasmPanic } from '../panic'
+-import { type MultipleSchemas } from '../utils/schemaFileInput'
+ import { prismaSchemaWasm } from '../wasm'
+ import { addVersionDetailsToErrorMessage } from './errorHelpers'
+ import { createDebugErrorType, parseQueryEngineError, QueryEngineErrorInit } from './queryEngineCommons'
+diff --git a/packages/internals/src/engine-commands/validate.ts b/packages/internals/src/engine-commands/validate.ts
+index 76714136ee74..ee66e054f7ed 100644
+--- a/packages/internals/src/engine-commands/validate.ts
++++ b/packages/internals/src/engine-commands/validate.ts
+@@ -1,11 +1,11 @@
+ import Debug from '@prisma/debug'
++import type { MultipleSchemas } from '@prisma/get-dmmf'
+ import * as E from 'fp-ts/Either'
+ import { pipe } from 'fp-ts/lib/function'
+ import { bold, red } from 'kleur/colors'
+ import { match } from 'ts-pattern'
+ 
+ import { ErrorArea, getWasmError, isWasmPanic, RustPanic, WasmPanic } from '../panic'
+-import { type MultipleSchemas } from '../utils/schemaFileInput'
+ import { prismaSchemaWasm } from '../wasm'
+ import { addVersionDetailsToErrorMessage } from './errorHelpers'
+ import { createDebugErrorType, parseQueryEngineError, QueryEngineErrorInit } from './queryEngineCommons'
+diff --git a/packages/internals/src/get-generators/getGenerators.ts b/packages/internals/src/get-generators/getGenerators.ts
+index 53094f36e504..baf3956a1e4e 100644
+--- a/packages/internals/src/get-generators/getGenerators.ts
++++ b/packages/internals/src/get-generators/getGenerators.ts
+@@ -19,7 +19,6 @@ import { loadSchemaContext, SchemaContext } from '../cli/schemaContext'
+ import { getDMMF, mergeSchemas } from '../engine-commands'
+ import { Generator, InProcessGenerator, JsonRpcGenerator } from '../Generator'
+ import { resolveOutput } from '../resolveOutput'
+-import { extractPreviewFeatures } from '../utils/extractPreviewFeatures'
+ import { missingDatasource } from '../utils/missingDatasource'
+ import { missingModelMessage, missingModelMessageMongoDB } from '../utils/missingGeneratorMessage'
+ import { parseBinaryTargetsEnvValue, parseEnvValue } from '../utils/parseEnvValue'
+@@ -125,12 +124,7 @@ export async function getGenerators(options: GetGeneratorOptions): Promise<Gener
+ 
+   printConfigWarnings(schemaContext.warnings)
+ 
+-  const previewFeatures = extractPreviewFeatures(schemaContext.generators)
+-
+-  const dmmf = await getDMMF({
+-    datamodel: schemaContext.schemaFiles,
+-    previewFeatures,
+-  })
++  const dmmf = await getDMMF({ datamodel: schemaContext.schemaFiles })
+ 
+   if (dmmf.datamodel.models.length === 0 && !allowNoModels) {
+     // MongoDB needs extras for @id: @map("_id") @db.ObjectId
+diff --git a/packages/internals/src/index.ts b/packages/internals/src/index.ts
+index 5ff294386fcf..8553790f10ca 100644
+--- a/packages/internals/src/index.ts
++++ b/packages/internals/src/index.ts
+@@ -97,8 +97,7 @@ export {
+   PRISMA_POSTGRES_PROTOCOL,
+   PRISMA_POSTGRES_PROVIDER,
+ } from './utils/prismaPostgres'
+-export { extractSchemaContent, type SchemaFileInput } from './utils/schemaFileInput'
+-export { type MultipleSchemas } from './utils/schemaFileInput'
++export { extractSchemaContent } from './utils/schemaFileInput'
+ export { setClassName } from './utils/setClassName'
+ export { toSchemasContainer, toSchemasWithConfigDir } from './utils/toSchemasContainer'
+ export {
+@@ -109,6 +108,7 @@ export { vercelPkgPathRegex } from './utils/vercelPkgPathRegex'
+ export { warnOnce } from './warnOnce'
+ export * as wasm from './wasm'
+ export { wasmSchemaEngineLoader } from './WasmSchemaEngineLoader'
++export { type MultipleSchemas, type SchemaFileInput } from '@prisma/get-dmmf'
+ export type { BinaryTarget } from '@prisma/get-platform'
+ export { getBinaryTargetForCurrentPlatform } from '@prisma/get-platform'
+ export type { GetSchemaResult } from '@prisma/schema-files-loader'
+diff --git a/packages/internals/src/utils/schemaFileInput.ts b/packages/internals/src/utils/schemaFileInput.ts
+index 8b3294df3b65..d87116771a5d 100644
+--- a/packages/internals/src/utils/schemaFileInput.ts
++++ b/packages/internals/src/utils/schemaFileInput.ts
+@@ -1,7 +1,4 @@
+-export type SingleSchema = string
+-export type MultipleSchemaTuple = [filename: string, content: string]
+-export type MultipleSchemas = Array<MultipleSchemaTuple>
+-export type SchemaFileInput = SingleSchema | MultipleSchemas
++import type { MultipleSchemas } from '@prisma/get-dmmf'
+ 
+ export function extractSchemaContent(multipleSchemas: MultipleSchemas): string[] {
+   return multipleSchemas.map(([, content]) => content)
+diff --git a/packages/internals/src/utils/toSchemasContainer.ts b/packages/internals/src/utils/toSchemasContainer.ts
+index 77ab514bf70b..21a1bbee19cb 100644
+--- a/packages/internals/src/utils/toSchemasContainer.ts
++++ b/packages/internals/src/utils/toSchemasContainer.ts
+@@ -1,6 +1,7 @@
++import type { MultipleSchemas } from '@prisma/get-dmmf'
++
+ import { SchemaContext } from '../cli/schemaContext'
+ import { MigrateTypes } from '../migrateTypes'
+-import { MultipleSchemas } from './schemaFileInput'
+ 
+ export function toSchemasContainer(schemas: MultipleSchemas): MigrateTypes.SchemasContainer {
+   return {
+diff --git a/packages/param-graph-builder/helpers/build.ts b/packages/param-graph-builder/helpers/build.ts
+index 5350df5ceb8e..fffcc16a7e38 100644
+--- a/packages/param-graph-builder/helpers/build.ts
++++ b/packages/param-graph-builder/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { unbundledConfig } from '../../../helpers/compile/configs'
++import { adapterConfig } from '../../../helpers/compile/configs'
+ 
+-void build(unbundledConfig)
++void build(adapterConfig)
+diff --git a/packages/param-graph/helpers/build.ts b/packages/param-graph/helpers/build.ts
+index 5350df5ceb8e..fffcc16a7e38 100644
+--- a/packages/param-graph/helpers/build.ts
++++ b/packages/param-graph/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { unbundledConfig } from '../../../helpers/compile/configs'
++import { adapterConfig } from '../../../helpers/compile/configs'
+ 
+-void build(unbundledConfig)
++void build(adapterConfig)
+diff --git a/packages/param-graph/src/param-graph.ts b/packages/param-graph/src/param-graph.ts
+index 61617a37674a..5a69fb635d14 100644
+--- a/packages/param-graph/src/param-graph.ts
++++ b/packages/param-graph/src/param-graph.ts
+@@ -17,11 +17,16 @@ import type {
+   RootEntryData,
+ } from './types'
+ 
++/**
++ * Map of enum names to their respective values.
++ */
++export type EnumNameToValueMap = Record<string, string>
++
+ /**
+  * Function type for looking up enum values by name.
+  * This allows ParamGraph to remain decoupled from RuntimeDataModel.
+  */
+-export type EnumLookup = (enumName: string) => readonly string[] | undefined
++export type EnumLookup = (enumName: string) => Readonly<EnumNameToValueMap> | undefined
+ 
+ /**
+  * Readable view of root entry.
+@@ -198,7 +203,7 @@ export class ParamGraph {
+    * Get enum values for an edge that references a user enum.
+    * Returns undefined if the edge doesn't reference an enum.
+    */
+-  enumValues(edge: InputEdge | undefined): readonly string[] | undefined {
++  enumValues(edge: InputEdge | undefined): Readonly<EnumNameToValueMap> | undefined {
+     if (edge?.enumNameIndex === undefined) {
+       return undefined
+     }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index c057c2ffa091..c870dcd29534 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -974,6 +974,12 @@ importers:
+       '@prisma/driver-adapter-utils':
+         specifier: workspace:*
+         version: link:../driver-adapter-utils
++      '@prisma/json-protocol':
++        specifier: workspace:*
++        version: link:../json-protocol
++      '@prisma/param-graph':
++        specifier: workspace:*
++        version: link:../param-graph
+       '@prisma/sqlcommenter':
+         specifier: workspace:*
+         version: link:../sqlcommenter
+@@ -993,6 +999,12 @@ importers:
+       '@codspeed/benchmark.js-plugin':
+         specifier: 4.0.0
+         version: 4.0.0(benchmark@2.1.4)
++      '@prisma/get-dmmf':
++        specifier: workspace:*
++        version: link:../get-dmmf
++      '@prisma/param-graph-builder':
++        specifier: workspace:*
++        version: link:../param-graph-builder
+       '@types/benchmark':
+         specifier: 2.1.5
+         version: 2.1.5
+@@ -1342,6 +1354,28 @@ importers:
+         specifier: 5.4.5
+         version: 5.4.5
+ 
++  packages/get-dmmf:
++    dependencies:
++      '@prisma/debug':
++        specifier: workspace:*
++        version: link:../debug
++      '@prisma/dmmf':
++        specifier: workspace:*
++        version: link:../dmmf
++      '@prisma/prisma-schema-wasm':
++        specifier: 7.6.0-1.75cbdc1eb7150937890ad5465d861175c6624711
++        version: 7.6.0-1.75cbdc1eb7150937890ad5465d861175c6624711
++      '@streamparser/json':
++        specifier: 0.0.22
++        version: 0.0.22
++      pluralize:
++        specifier: 8.0.0
++        version: 8.0.0
++    devDependencies:
++      '@types/pluralize':
++        specifier: 0.0.33
++        version: 0.0.33
++
+   packages/get-platform:
+     dependencies:
+       '@prisma/debug':
+@@ -1505,6 +1539,9 @@ importers:
+       '@prisma/generator-helper':
+         specifier: workspace:*
+         version: link:../generator-helper
++      '@prisma/get-dmmf':
++        specifier: workspace:*
++        version: link:../get-dmmf
+       '@prisma/get-platform':
+         specifier: workspace:*
+         version: link:../get-platform

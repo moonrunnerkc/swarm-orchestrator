@@ -1,0 +1,922 @@
+diff --git a/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/instrument-with-datacollection-no-userinfo.mjs b/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/instrument-with-datacollection-no-userinfo.mjs
+new file mode 100644
+index 000000000000..0ae53602ff0c
+--- /dev/null
++++ b/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/instrument-with-datacollection-no-userinfo.mjs
+@@ -0,0 +1,13 @@
++import * as Sentry from '@sentry/node';
++import { loggingTransport } from '@sentry-internal/node-integration-tests';
++
++Sentry.init({
++  dsn: 'https://public@dsn.ingest.sentry.io/1337',
++  release: '1.0',
++  tracesSampleRate: 1.0,
++  transport: loggingTransport,
++  traceLifecycle: 'stream',
++  dataCollection: {
++    userInfo: false,
++  },
++});
+diff --git a/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/instrument-with-datacollection.mjs b/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/instrument-with-datacollection.mjs
+new file mode 100644
+index 000000000000..4c306a353512
+--- /dev/null
++++ b/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/instrument-with-datacollection.mjs
+@@ -0,0 +1,13 @@
++import * as Sentry from '@sentry/node';
++import { loggingTransport } from '@sentry-internal/node-integration-tests';
++
++Sentry.init({
++  dsn: 'https://public@dsn.ingest.sentry.io/1337',
++  release: '1.0',
++  tracesSampleRate: 1.0,
++  transport: loggingTransport,
++  traceLifecycle: 'stream',
++  dataCollection: {
++    userInfo: true,
++  },
++});
+diff --git a/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/test.ts b/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/test.ts
+index c5657cef6c3a..36e15927c52d 100644
+--- a/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/test.ts
++++ b/dev-packages/node-integration-tests/suites/tracing/requestData-streamed/test.ts
+@@ -49,6 +49,79 @@ describe('requestData-streamed', () => {
+     });
+   });
+ 
++  createEsmAndCjsTests(__dirname, 'server.mjs', 'instrument-with-datacollection.mjs', (createRunner, test) => {
++    test('applies request data attributes when using dataCollection config', async () => {
++      const runner = createRunner()
++        .expect({
++          span: container => {
++            const serverSpan = container.items.find(item => item.is_segment);
++
++            expect(serverSpan).toBeDefined();
++
++            expect(serverSpan?.attributes?.['url.full']).toEqual({
++              type: 'string',
++              value: expect.stringContaining('/test?foo=bar'),
++            });
++
++            expect(serverSpan?.attributes?.['http.request.method']).toEqual({
++              type: 'string',
++              value: 'GET',
++            });
++
++            expect(serverSpan?.attributes?.['url.query']).toEqual({
++              type: 'string',
++              value: 'foo=bar',
++            });
++
++            expect(serverSpan?.attributes?.['http.request.header.host']).toEqual({
++              type: 'string',
++              value: expect.any(String),
++            });
++
++            expect(serverSpan?.attributes?.['user.ip_address']).toEqual({
++              type: 'string',
++              value: expect.any(String),
++            });
++          },
++        })
++        .start();
++
++      await runner.makeRequest('get', '/test?foo=bar');
++
++      await runner.completed();
++    });
++  });
++
++  createEsmAndCjsTests(
++    __dirname,
++    'server.mjs',
++    'instrument-with-datacollection-no-userinfo.mjs',
++    (createRunner, test) => {
++      test('does not include user.ip_address when dataCollection.userInfo is false', async () => {
++        const runner = createRunner()
++          .expect({
++            span: container => {
++              const serverSpan = container.items.find(item => item.is_segment);
++
++              expect(serverSpan).toBeDefined();
++
++              expect(serverSpan?.attributes?.['http.request.header.host']).toEqual({
++                type: 'string',
++                value: expect.any(String),
++              });
++
++              expect(serverSpan?.attributes?.['user.ip_address']).toBeUndefined();
++            },
++          })
++          .start();
++
++        await runner.makeRequest('get', '/test?foo=bar');
++
++        await runner.completed();
++      });
++    },
++  );
++
+   createEsmAndCjsTests(__dirname, 'server.mjs', 'instrument-without-request-data.mjs', (createRunner, test) => {
+     test('does not apply request data attributes when requestDataIntegration is removed', async () => {
+       const runner = createRunner()
+diff --git a/packages/core/src/integrations/http/server-subscription.ts b/packages/core/src/integrations/http/server-subscription.ts
+index 6d2aa67d01ef..e5b37d3d04b2 100644
+--- a/packages/core/src/integrations/http/server-subscription.ts
++++ b/packages/core/src/integrations/http/server-subscription.ts
+@@ -309,10 +309,7 @@ function buildServerSpanWrap(
+             'http.flavor': httpVersion,
+             'net.transport': httpVersion?.toUpperCase() === 'QUIC' ? 'ip_udp' : 'ip_tcp',
+             ...getRequestContentLengthAttribute(request),
+-            ...httpHeadersToSpanAttributes(
+-              normalizedRequest.headers || {},
+-              client.getOptions().sendDefaultPii ?? false,
+-            ),
++            ...httpHeadersToSpanAttributes(normalizedRequest.headers || {}, client.getDataCollectionOptions()),
+           },
+         },
+         span => {
+@@ -334,7 +331,7 @@ function buildServerSpanWrap(
+               'http.status_code': response.statusCode,
+               ...httpHeadersToSpanAttributes(
+                 headersToDict(response.headers),
+-                client?.getOptions().sendDefaultPii ?? false,
++                client?.getDataCollectionOptions() ?? false,
+                 'response',
+               ),
+             });
+diff --git a/packages/core/src/integrations/requestdata.ts b/packages/core/src/integrations/requestdata.ts
+index c155f03600d0..08b499478a84 100644
+--- a/packages/core/src/integrations/requestdata.ts
++++ b/packages/core/src/integrations/requestdata.ts
+@@ -1,6 +1,8 @@
++import type { Client } from '../client';
+ import { getIsolationScope } from '../currentScopes';
+ import { defineIntegration } from '../integration';
+ import { SEMANTIC_ATTRIBUTE_USER_IP_ADDRESS } from '../semanticAttributes';
++import type { ResolvedDataCollection } from '../types/datacollection';
+ import type { Event } from '../types/event';
+ import type { IntegrationFn } from '../types/integration';
+ import type { QueryParams, RequestEventData } from '../types/request';
+@@ -26,22 +28,41 @@ type RequestDataIntegrationOptions = {
+   include?: RequestDataIncludeOptions;
+ };
+ 
+-// TODO(v11): Change defaults based on `sendDefaultPii`
+-const DEFAULT_INCLUDE: RequestDataIncludeOptions = {
+-  cookies: true,
+-  data: true,
+-  headers: true,
+-  query_string: true,
+-  url: true,
+-};
+-
+ const INTEGRATION_NAME = 'RequestData';
+ 
+ const _requestDataIntegration = ((options: RequestDataIntegrationOptions = {}) => {
+-  const include = {
+-    ...DEFAULT_INCLUDE,
+-    ...options.include,
+-  };
++  // Per spec, integration-level options override global dataCollection.
++  // When include overrides a category back on that dataCollection turned off,
++  // we flip the dataCollection behavior to true (default denylist filtering).
++  function resolveIncludeAndDataCollection(client: Client): {
++    include: RequestDataIncludeOptions;
++    dataCollection: ResolvedDataCollection;
++  } {
++    const dc = client.getDataCollectionOptions();
++    const dataCollection: ResolvedDataCollection = {
++      ...dc,
++      ...(options.include?.cookies === true && dc.cookies === false && { cookies: true as const }),
++      ...(options.include?.headers === true &&
++        dc.httpHeaders.request === false && {
++          httpHeaders: { ...dc.httpHeaders, request: true as const },
++        }),
++    };
++
++    return {
++      dataCollection,
++      include: {
++        cookies: dataCollection.cookies !== false,
++        // Always attach body data that's already on the scope — dataCollection.httpBodies gates write-time, not read-time
++        data: true,
++        headers: dataCollection.httpHeaders.request !== false,
++        ip: dataCollection.userInfo,
++        query_string: dataCollection.queryParams !== false,
++        // No dataCollection equivalent — URL is always included
++        url: true,
++        ...options.include,
++      },
++    };
++  }
+ 
+   return {
+     name: INTEGRATION_NAME,
+@@ -49,13 +70,10 @@ const _requestDataIntegration = ((options: RequestDataIntegrationOptions = {}) =
+       const { sdkProcessingMetadata = {} } = event;
+       const { normalizedRequest, ipAddress } = sdkProcessingMetadata;
+ 
+-      const includeWithDefaultPiiApplied: RequestDataIncludeOptions = {
+-        ...include,
+-        ip: include.ip ?? client.getOptions().sendDefaultPii,
+-      };
++      const { include } = resolveIncludeAndDataCollection(client);
+ 
+       if (normalizedRequest) {
+-        addNormalizedRequestDataToEvent(event, normalizedRequest, { ipAddress }, includeWithDefaultPiiApplied);
++        addNormalizedRequestDataToEvent(event, normalizedRequest, { ipAddress }, include);
+       }
+ 
+       return event;
+@@ -68,13 +86,9 @@ const _requestDataIntegration = ((options: RequestDataIntegrationOptions = {}) =
+         return;
+       }
+ 
+-      const { sendDefaultPii } = client.getOptions();
+-      const includeWithDefaultPiiApplied: RequestDataIncludeOptions = {
+-        ...include,
+-        ip: include.ip ?? sendDefaultPii,
+-      };
++      const { include, dataCollection } = resolveIncludeAndDataCollection(client);
+ 
+-      addNormalizedRequestDataToSpan(span, normalizedRequest, ipAddress, includeWithDefaultPiiApplied, sendDefaultPii);
++      addNormalizedRequestDataToSpan(span, normalizedRequest, ipAddress, include, dataCollection);
+     },
+   };
+ }) satisfies IntegrationFn;
+@@ -117,7 +131,7 @@ function addNormalizedRequestDataToSpan(
+   normalizedRequest: RequestEventData,
+   ipAddress: string | undefined,
+   include: RequestDataIncludeOptions,
+-  sendDefaultPii: boolean | undefined,
++  dataCollection: ResolvedDataCollection,
+ ): void {
+   const requestData = extractNormalizedRequestData(normalizedRequest, include);
+   const attributes: Record<string, unknown> = {};
+@@ -142,12 +156,12 @@ function addNormalizedRequestDataToSpan(
+     const cookieString = Object.entries(requestData.cookies)
+       .map(([name, value]) => `${name}=${value}`)
+       .join('; ');
+-    const cookieAttributes = httpHeadersToSpanAttributes({ cookie: cookieString }, sendDefaultPii ?? false, 'request');
++    const cookieAttributes = httpHeadersToSpanAttributes({ cookie: cookieString }, dataCollection, 'request');
+     safeSetSpanJSONAttributes(span, cookieAttributes);
+   }
+ 
+   if (requestData.headers) {
+-    const headerAttributes = httpHeadersToSpanAttributes(requestData.headers, sendDefaultPii ?? false, 'request');
++    const headerAttributes = httpHeadersToSpanAttributes(requestData.headers, dataCollection, 'request');
+     safeSetSpanJSONAttributes(span, headerAttributes);
+   }
+ 
+diff --git a/packages/core/src/utils/request.ts b/packages/core/src/utils/request.ts
+index dac15d40b556..4dd709c17748 100644
+--- a/packages/core/src/utils/request.ts
++++ b/packages/core/src/utils/request.ts
+@@ -1,16 +1,15 @@
+ /* eslint-disable max-lines-per-function */
+ import { DEBUG_BUILD } from '../debug-build';
+ import type { Scope } from '../scope';
++import type { ResolvedDataCollection } from '../types/datacollection';
+ import type { PolymorphicRequest } from '../types/polymorphics';
+ import type { RequestEventData } from '../types/request';
+ import type { WebFetchHeaders, WebFetchRequest } from '../types/webfetchapi';
+ import { debug } from './debug-logger';
++import { defaultPiiToCollectionOptions } from './data-collection/defaultPiiToCollectionOptions';
++import { FILTERED_VALUE, SENSITIVE_COOKIE_NAME_SNIPPETS } from './data-collection/filtering-snippets';
++import { filterKeyValueData } from './data-collection/filterKeyValueData';
+ import { safeUnref } from './timer';
+-import {
+-  PII_HEADER_SNIPPETS,
+-  SENSITIVE_COOKIE_NAME_SNIPPETS,
+-  SENSITIVE_KEY_SNIPPETS,
+-} from '../utils/data-collection/filtering-snippets';
+ 
+ /**
+  * Maximum size of incoming HTTP request bodies attached to events.
+@@ -278,55 +277,66 @@ function getAbsoluteUrl({
+  */
+ export function httpHeadersToSpanAttributes(
+   headers: Record<string, string | string[] | undefined>,
+-  sendDefaultPii: boolean = false,
++  // TODO(v11): Remove boolean support once sendDefaultPii is fully removed.
++  // Internally, always pass ResolvedDataCollection from client.getDataCollectionOptions().
++  dataCollection: ResolvedDataCollection | boolean = false,
+   lifecycle: 'request' | 'response' = 'request',
+ ): Record<string, string> {
++  const resolvedDataCollection =
++    typeof dataCollection === 'boolean' ? defaultPiiToCollectionOptions(dataCollection) : dataCollection;
++
++  const headerBehavior =
++    lifecycle === 'request' ? resolvedDataCollection.httpHeaders.request : resolvedDataCollection.httpHeaders.response;
++  const cookieBehavior = resolvedDataCollection.cookies;
++  const prefix = `http.${lifecycle}.header.`;
++
+   const spanAttributes: Record<string, string> = {};
+ 
+   try {
+-    Object.entries(headers).forEach(([key, value]) => {
++    const regularHeaders: Record<string, string> = {};
++
++    for (const [key, value] of Object.entries(headers)) {
+       if (value == null) {
+-        return;
++        continue;
+       }
+ 
+-      const lowerCasedHeaderKey = key.toLowerCase();
+-      const isCookieHeader = lowerCasedHeaderKey === 'cookie' || lowerCasedHeaderKey === 'set-cookie';
+-
+-      if (isCookieHeader && typeof value === 'string' && value !== '') {
+-        // Set-Cookie: single cookie with attributes ("name=value; HttpOnly; Secure")
+-        // Cookie: multiple cookies separated by "; " ("cookie1=value1; cookie2=value2")
+-        const isSetCookie = lowerCasedHeaderKey === 'set-cookie';
+-        const semicolonIndex = value.indexOf(';');
+-        const cookieString = isSetCookie && semicolonIndex !== -1 ? value.substring(0, semicolonIndex) : value;
+-        const cookies = isSetCookie ? [cookieString] : cookieString.split('; ');
+-
+-        for (const cookie of cookies) {
+-          // Split only at the first '=' to preserve '=' characters in cookie values
+-          const equalSignIndex = cookie.indexOf('=');
+-          const cookieKey = equalSignIndex !== -1 ? cookie.substring(0, equalSignIndex) : cookie;
+-          const cookieValue = equalSignIndex !== -1 ? cookie.substring(equalSignIndex + 1) : '';
+-
+-          const lowerCasedCookieKey = cookieKey.toLowerCase();
+-
+-          addSpanAttribute({
+-            spanAttributes,
+-            headerKey: lowerCasedHeaderKey,
+-            cookieKey: lowerCasedCookieKey,
+-            value: cookieValue,
+-            sendDefaultPii,
+-            lifecycle,
+-          });
++      const lowerKey = key.toLowerCase();
++      const isCookieHeader = lowerKey === 'cookie' || lowerKey === 'set-cookie';
++
++      if (isCookieHeader) {
++        if (cookieBehavior === false) {
++          continue;
++        }
++
++        if (typeof value === 'string' && value !== '') {
++          const parsed = parseCookieHeader(value, lowerKey === 'set-cookie');
++          const filtered = filterKeyValueData(parsed, cookieBehavior, SENSITIVE_COOKIE_NAME_SNIPPETS);
++          for (const [cookieKey, cookieValue] of Object.entries(filtered)) {
++            spanAttributes[`${prefix}${normalizeAttributeKey(lowerKey)}.${normalizeAttributeKey(cookieKey)}`] =
++              cookieValue;
++          }
++        } else {
++          spanAttributes[`${prefix}${normalizeAttributeKey(lowerKey)}`] = FILTERED_VALUE;
+         }
+       } else {
+-        addSpanAttribute({
+-          spanAttributes,
+-          headerKey: lowerCasedHeaderKey,
+-          value,
+-          sendDefaultPii,
+-          lifecycle,
+-        });
++        if (headerBehavior === false) {
++          continue;
++        }
++
++        if (Array.isArray(value)) {
++          regularHeaders[lowerKey] = value.map(v => (v != null ? String(v) : v)).join(';');
++        } else if (typeof value === 'string') {
++          regularHeaders[lowerKey] = value;
++        }
+       }
+-    });
++    }
++
++    if (headerBehavior !== false) {
++      const filtered = filterKeyValueData(regularHeaders, headerBehavior);
++      for (const [headerKey, headerValue] of Object.entries(filtered)) {
++        spanAttributes[`${prefix}${normalizeAttributeKey(headerKey)}`] = headerValue;
++      }
++    }
+   } catch {
+     // Return empty object if there's an error
+   }
+@@ -338,62 +348,21 @@ function normalizeAttributeKey(key: string): string {
+   return key.replace(/-/g, '_');
+ }
+ 
+-type AddSpanAttributeOptions = {
+-  spanAttributes: Record<string, string>;
+-  /** Lowercased HTTP header name (e.g. `cookie`, `set-cookie`, `accept`). */
+-  headerKey: string;
+-  /**
+-   * Lowercased cookie name when this attribute comes from a parsed `Cookie` / `Set-Cookie` value.
+-   * Omit for non-cookie headers; when present and non-empty, cookie-specific sensitivity rules apply.
+-   */
+-  cookieKey?: string;
+-  value: string | string[] | undefined;
+-  sendDefaultPii: boolean;
+-  lifecycle: 'request' | 'response';
+-};
+-
+-function addSpanAttribute({
+-  spanAttributes,
+-  headerKey,
+-  cookieKey,
+-  value,
+-  sendDefaultPii,
+-  lifecycle,
+-}: AddSpanAttributeOptions): void {
+-  const isCookieSubKey = Boolean(cookieKey);
+-  const nameForSensitivity = cookieKey || headerKey;
+-  const headerValue = handleHttpHeader(nameForSensitivity, value, sendDefaultPii, isCookieSubKey);
+-  if (headerValue == null) {
+-    return;
++function parseCookieHeader(value: string, isSetCookie: boolean): Record<string, string> {
++  // Set-Cookie: single cookie with attributes ("name=value; HttpOnly; Secure")
++  // Cookie: multiple cookies separated by "; " ("cookie1=value1; cookie2=value2")
++  const semicolonIndex = value.indexOf(';');
++  const cookieString = isSetCookie && semicolonIndex !== -1 ? value.substring(0, semicolonIndex) : value;
++  const cookies = isSetCookie ? [cookieString] : cookieString.split('; ');
++
++  const result: Record<string, string> = {};
++  for (const cookie of cookies) {
++    const equalSignIndex = cookie.indexOf('=');
++    const cookieKey = (equalSignIndex !== -1 ? cookie.substring(0, equalSignIndex) : cookie).toLowerCase();
++    const cookieValue = equalSignIndex !== -1 ? cookie.substring(equalSignIndex + 1) : '';
++    result[cookieKey] = cookieValue;
+   }
+-
+-  const normalizedKey = `http.${lifecycle}.header.${normalizeAttributeKey(headerKey)}${cookieKey ? `.${normalizeAttributeKey(cookieKey)}` : ''}`;
+-  spanAttributes[normalizedKey] = headerValue;
+-}
+-
+-function handleHttpHeader(
+-  lowerCasedKey: string,
+-  value: string | string[] | undefined,
+-  sendPii: boolean,
+-  isCookieSubKey: boolean = false,
+-): string | undefined {
+-  const snippetsForSensitivity = isCookieSubKey
+-    ? [...SENSITIVE_KEY_SNIPPETS, ...SENSITIVE_COOKIE_NAME_SNIPPETS]
+-    : SENSITIVE_KEY_SNIPPETS;
+-
+-  const isSensitive = sendPii
+-    ? snippetsForSensitivity.some(snippet => lowerCasedKey.includes(snippet))
+-    : [...PII_HEADER_SNIPPETS, ...snippetsForSensitivity].some(snippet => lowerCasedKey.includes(snippet));
+-
+-  if (isSensitive) {
+-    return '[Filtered]';
+-  } else if (Array.isArray(value)) {
+-    return value.map(v => (v != null ? String(v) : v)).join(';');
+-  } else if (typeof value === 'string') {
+-    return value;
+-  }
+-
+-  return undefined;
++  return result;
+ }
+ 
+ /** Extract the query params from an URL. */
+diff --git a/packages/core/test/lib/integrations/requestdata.test.ts b/packages/core/test/lib/integrations/requestdata.test.ts
+index 6130350d9740..10f12c3c3c66 100644
+--- a/packages/core/test/lib/integrations/requestdata.test.ts
++++ b/packages/core/test/lib/integrations/requestdata.test.ts
+@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import type { Client } from '../../../src/client';
+ import * as currentScopes from '../../../src/currentScopes';
+ import { requestDataIntegration } from '../../../src/integrations/requestdata';
++import type { DataCollection } from '../../../src/types/datacollection';
+ import type { Event } from '../../../src/types/event';
+ import type { StreamedSpanJSON } from '../../../src/types/span';
++import { resolveDataCollectionOptions } from '../../../src/utils/data-collection/resolveDataCollectionOptions';
+ import { ipHeaderNames } from '../../../src/vendor/getIpAddress';
+ 
+-function mockClient(sendDefaultPii: boolean | undefined): Client {
++function mockClient(sendDefaultPii: boolean | undefined, dataCollection?: DataCollection): Client {
+   return {
+     getOptions: () => ({ sendDefaultPii: sendDefaultPii as boolean | undefined }),
++    getDataCollectionOptions: () => resolveDataCollectionOptions({ sendDefaultPii, dataCollection }),
+   } as unknown as Client;
+ }
+ 
+@@ -47,7 +50,7 @@ function richNormalizedRequest() {
+ 
+ describe('requestDataIntegration', () => {
+   describe('IP-related headers on event.request', () => {
+-    it('removes known IP headers from event.request.headers when sendDefaultPii is false', () => {
++    it('removes known IP headers from event.request.headers when userInfo is false', () => {
+       const integration = requestDataIntegration();
+       const event = baseEvent();
+ 
+@@ -58,7 +61,7 @@ describe('requestDataIntegration', () => {
+       });
+     });
+ 
+-    it('removes every ipHeaderNames entry when sendDefaultPii is false', () => {
++    it('removes every ipHeaderNames entry when userInfo is false', () => {
+       const integration = requestDataIntegration();
+       const headers: Record<string, string> = { Host: 'example.com', 'X-Other': 'keep-me' };
+       for (const name of ipHeaderNames) {
+@@ -82,7 +85,7 @@ describe('requestDataIntegration', () => {
+       });
+     });
+ 
+-    it('keeps IP headers on event.request.headers when sendDefaultPii is true', () => {
++    it('keeps IP headers on event.request.headers when userInfo is true', () => {
+       const integration = requestDataIntegration();
+       const event = baseEvent();
+ 
+@@ -95,7 +98,7 @@ describe('requestDataIntegration', () => {
+       });
+     });
+ 
+-    it('keeps IP headers when include.ip is true even if sendDefaultPii is false', () => {
++    it('keeps IP headers when include.ip is true even if userInfo is false', () => {
+       const integration = requestDataIntegration({ include: { ip: true } });
+       const event = baseEvent();
+ 
+@@ -104,7 +107,7 @@ describe('requestDataIntegration', () => {
+       expect(event.request?.headers?.['X-Forwarded-For']).toBe('192.168.1.1');
+     });
+ 
+-    it('strips IP headers when include.ip is false even if sendDefaultPii is true', () => {
++    it('strips IP headers when include.ip is false even if userInfo is true', () => {
+       const integration = requestDataIntegration({ include: { ip: false } });
+       const event = baseEvent();
+ 
+@@ -113,7 +116,7 @@ describe('requestDataIntegration', () => {
+       expect(event.request?.headers).toEqual({ Host: 'example.com' });
+     });
+ 
+-    it('removes every ipHeaderNames entry when keys use lowercase spelling and sendDefaultPii is false', () => {
++    it('removes every ipHeaderNames entry when keys use lowercase spelling and userInfo is false', () => {
+       const integration = requestDataIntegration();
+       const headers: Record<string, string> = { host: 'example.com', 'x-other': 'keep-me' };
+       for (const name of ipHeaderNames) {
+@@ -137,7 +140,7 @@ describe('requestDataIntegration', () => {
+       });
+     });
+ 
+-    it('keeps lowercase IP headers on event.request.headers when sendDefaultPii is true', () => {
++    it('keeps lowercase IP headers on event.request.headers when userInfo is true', () => {
+       const integration = requestDataIntegration();
+       const event: Event = {
+         sdkProcessingMetadata: {
+@@ -164,7 +167,7 @@ describe('requestDataIntegration', () => {
+   });
+ 
+   describe('user.ip_address', () => {
+-    it('does not set user.ip_address when sendDefaultPii is false', () => {
++    it('does not set user.ip_address when userInfo is false', () => {
+       const integration = requestDataIntegration();
+       const event = baseEvent();
+ 
+@@ -173,7 +176,7 @@ describe('requestDataIntegration', () => {
+       expect(event.user?.ip_address).toBeUndefined();
+     });
+ 
+-    it('sets user.ip_address from request headers when sendDefaultPii is true', () => {
++    it('sets user.ip_address from request headers when userInfo is true', () => {
+       const integration = requestDataIntegration();
+       const event = baseEvent();
+ 
+@@ -182,7 +185,7 @@ describe('requestDataIntegration', () => {
+       expect(event.user?.ip_address).toBe('192.168.1.1');
+     });
+ 
+-    it('sets user.ip_address from lowercase IP headers when sendDefaultPii is true', () => {
++    it('sets user.ip_address from lowercase IP headers when userInfo is true', () => {
+       const integration = requestDataIntegration();
+       const event: Event = {
+         sdkProcessingMetadata: {
+@@ -220,7 +223,7 @@ describe('requestDataIntegration', () => {
+       expect(event.user?.ip_address).toBe('198.51.100.7');
+     });
+ 
+-    it('does not set user.ip_address from sdkProcessingMetadata when sendDefaultPii is false', () => {
++    it('does not set user.ip_address from sdkProcessingMetadata when userInfo is false', () => {
+       const integration = requestDataIntegration();
+       const event: Event = {
+         sdkProcessingMetadata: {
+@@ -273,7 +276,7 @@ describe('requestDataIntegration', () => {
+       expect(event.request?.cookies).toEqual({ id: '42' });
+     });
+ 
+-    it('with include.headers false, still sets user.ip_address from original headers when sendDefaultPii is true', () => {
++    it('with include.headers false, still sets user.ip_address from original headers when userInfo is true', () => {
+       const integration = requestDataIntegration({ include: { headers: false } });
+       const event: Event = {
+         sdkProcessingMetadata: {
+@@ -452,7 +455,7 @@ describe('requestDataIntegration', () => {
+   });
+ 
+   describe('defaults and combined include options', () => {
+-    it('with default include and sendDefaultPii true, copies method, url, query_string, data, headers, cookies, and user IP', () => {
++    it('with default include and userInfo true, copies method, url, query_string, data, headers, cookies, and user IP', () => {
+       const integration = requestDataIntegration();
+       const event: Event = {
+         sdkProcessingMetadata: { normalizedRequest: richNormalizedRequest() },
+@@ -476,7 +479,7 @@ describe('requestDataIntegration', () => {
+       expect(event.user?.ip_address).toBe('192.168.1.1');
+     });
+ 
+-    it('with default include and sendDefaultPii false, keeps non-IP fields and strips IP from headers and user', () => {
++    it('with default include and userInfo false, keeps non-IP fields and strips IP from headers and user', () => {
+       const integration = requestDataIntegration();
+       const event: Event = {
+         sdkProcessingMetadata: { normalizedRequest: richNormalizedRequest() },
+@@ -668,7 +671,7 @@ describe('requestDataIntegration processSegmentSpan', () => {
+     expect(span.attributes).toEqual({});
+   });
+ 
+-  it('sets user.ip_address from headers when sendDefaultPii is true', () => {
++  it('sets user.ip_address from headers when userInfo is true', () => {
+     const integration = requestDataIntegration();
+     const span = makeSpan();
+ 
+@@ -697,7 +700,7 @@ describe('requestDataIntegration processSegmentSpan', () => {
+     });
+   });
+ 
+-  it('does not set user.ip_address when sendDefaultPii is false', () => {
++  it('does not set user.ip_address when userInfo is false', () => {
+     const integration = requestDataIntegration();
+     const span = makeSpan();
+ 
+@@ -867,5 +870,93 @@ describe('requestDataIntegration processSegmentSpan', () => {
+ 
+       expect(span.attributes).not.toHaveProperty('url.query');
+     });
++
++    it('include.headers overrides dataCollection.httpHeaders.request=false on spans', () => {
++      const integration = requestDataIntegration({ include: { headers: true } });
++      const span = makeSpan();
++
++      mockIsolationScope({
++        headers: { 'content-type': 'application/json', accept: 'text/html' },
++      });
++
++      integration.processSegmentSpan!(span, mockClient(false, { httpHeaders: { request: false, response: false } }));
++
++      expect(span.attributes).toMatchObject({
++        'http.request.header.content_type': 'application/json',
++        'http.request.header.accept': 'text/html',
++      });
++    });
++
++    it('include.cookies overrides dataCollection.cookies=false on spans', () => {
++      const integration = requestDataIntegration({ include: { cookies: true } });
++      const span = makeSpan();
++
++      mockIsolationScope({
++        cookies: { theme: 'dark', locale: 'en' },
++      });
++
++      integration.processSegmentSpan!(span, mockClient(false, { cookies: false }));
++
++      expect(span.attributes).toMatchObject({
++        'http.request.header.cookie.theme': 'dark',
++        'http.request.header.cookie.locale': 'en',
++      });
++    });
++  });
++});
++
++describe('requestDataIntegration legacy sendDefaultPii bridge', () => {
++  afterEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  function makeSpan(overrides: Partial<StreamedSpanJSON> = {}): StreamedSpanJSON {
++    return {
++      name: 'GET /test',
++      span_id: 'abc123',
++      trace_id: 'def456',
++      start_timestamp: 0,
++      end_timestamp: 1,
++      status: 'ok',
++      is_segment: true,
++      attributes: {},
++      ...overrides,
++    };
++  }
++
++  function mockIsolationScope(normalizedRequest: Record<string, unknown>, ipAddress?: string): void {
++    vi.spyOn(currentScopes, 'getIsolationScope').mockReturnValue({
++      getScopeData: () => ({
++        sdkProcessingMetadata: { normalizedRequest, ipAddress },
++      }),
++    } as ReturnType<typeof currentScopes.getIsolationScope>);
++  }
++
++  it('sendDefaultPii: true bridges to userInfo: true and includes IP on events', () => {
++    const integration = requestDataIntegration();
++    const event = baseEvent();
++
++    integration.processEvent?.(event, {}, mockClient(true));
++
++    expect(event.user?.ip_address).toBe('192.168.1.1');
++    expect(event.request?.headers?.['X-Forwarded-For']).toBe('192.168.1.1');
++  });
++
++  it('sendDefaultPii: true bridges to userInfo: true and includes IP on spans', () => {
++    const integration = requestDataIntegration();
++    const span = makeSpan();
++
++    mockIsolationScope({
++      url: 'https://example.com',
++      headers: { 'x-forwarded-for': '203.0.113.50', 'content-type': 'application/json' },
++    });
++
++    integration.processSegmentSpan!(span, mockClient(true));
++
++    expect(span.attributes).toMatchObject({
++      'user.ip_address': '203.0.113.50',
++      'http.request.header.content_type': 'application/json',
++      'http.request.header.x_forwarded_for': '203.0.113.50',
++    });
+   });
+ });
+diff --git a/packages/core/test/lib/utils/request.test.ts b/packages/core/test/lib/utils/request.test.ts
+index f4644052b3ce..609dde8a05ab 100644
+--- a/packages/core/test/lib/utils/request.test.ts
++++ b/packages/core/test/lib/utils/request.test.ts
+@@ -8,6 +8,7 @@ import {
+   winterCGHeadersToDict,
+   winterCGRequestToRequestData,
+ } from '../../../src/utils/request';
++import type { ResolvedDataCollection } from '../../../src/types/datacollection';
+ import type { Scope } from '../../../src/scope';
+ 
+ describe('request utils', () => {
+@@ -865,6 +866,171 @@ describe('request utils', () => {
+         });
+       });
+     });
++
++    describe('with ResolvedDataCollection', () => {
++      const defaultDataCollection: ResolvedDataCollection = {
++        userInfo: false,
++        cookies: true,
++        httpHeaders: { request: true, response: true },
++        httpBodies: [],
++        queryParams: true,
++        genAI: { inputs: true, outputs: true },
++        stackFrameVariables: true,
++        frameContextLines: 5,
++      };
++
++      it('filters headers with allowList mode', () => {
++        const headers = {
++          'Content-Type': 'application/json',
++          'X-Request-Id': 'abc-123',
++          'X-Trace-Id': 'trace-456',
++          'User-Agent': 'test-agent',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          httpHeaders: {
++            request: { allow: ['x-request-id', 'content-type'] },
++            response: true,
++          },
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc);
++
++        expect(result).toEqual({
++          'http.request.header.content_type': 'application/json',
++          'http.request.header.x_request_id': 'abc-123',
++          'http.request.header.x_trace_id': '[Filtered]',
++          'http.request.header.user_agent': '[Filtered]',
++        });
++      });
++
++      it('filters headers with custom denyList terms', () => {
++        const headers = {
++          'Content-Type': 'application/json',
++          'X-Custom-Secret': 'secret-value',
++          'X-Forwarded-For': '192.168.1.1',
++          Accept: 'text/html',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          httpHeaders: {
++            request: { deny: ['x-custom'] },
++            response: true,
++          },
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc);
++
++        expect(result).toEqual({
++          'http.request.header.content_type': 'application/json',
++          'http.request.header.x_custom_secret': '[Filtered]',
++          'http.request.header.x_forwarded_for': '192.168.1.1',
++          'http.request.header.accept': 'text/html',
++        });
++      });
++
++      it('skips all headers when httpHeaders behavior is off', () => {
++        const headers = {
++          'Content-Type': 'application/json',
++          Cookie: 'theme=dark',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          httpHeaders: { request: false, response: true },
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc);
++
++        expect(result).toEqual({
++          'http.request.header.cookie.theme': 'dark',
++        });
++      });
++
++      it('skips all cookies when cookies behavior is off', () => {
++        const headers = {
++          'Content-Type': 'application/json',
++          Cookie: 'session=abc123; theme=dark',
++          'Set-Cookie': 'pref=1; HttpOnly',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          cookies: false,
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc);
++
++        expect(result).toEqual({
++          'http.request.header.content_type': 'application/json',
++        });
++      });
++
++      it('filters cookies with allowList mode', () => {
++        const headers = {
++          Cookie: 'theme=dark; locale=en; session=secret',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          cookies: { allow: ['theme', 'locale'] },
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc);
++
++        expect(result).toEqual({
++          'http.request.header.cookie.theme': 'dark',
++          'http.request.header.cookie.locale': 'en',
++          'http.request.header.cookie.session': '[Filtered]',
++        });
++      });
++
++      it('uses response behavior when lifecycle is response', () => {
++        const headers = {
++          'Content-Type': 'application/json',
++          'X-Custom': 'value',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          httpHeaders: {
++            request: true,
++            response: { allow: ['content-type'] },
++          },
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc, 'response');
++
++        expect(result).toEqual({
++          'http.response.header.content_type': 'application/json',
++          'http.response.header.x_custom': '[Filtered]',
++        });
++      });
++
++      it('still filters sensitive keys even in allowList mode', () => {
++        const headers = {
++          Authorization: 'Bearer token',
++          'X-Request-Id': 'abc-123',
++        };
++
++        const dc: ResolvedDataCollection = {
++          ...defaultDataCollection,
++          httpHeaders: {
++            request: { allow: ['authorization', 'x-request-id'] },
++            response: true,
++          },
++        };
++
++        const result = httpHeadersToSpanAttributes(headers, dc);
++
++        expect(result).toEqual({
++          'http.request.header.authorization': '[Filtered]',
++          'http.request.header.x_request_id': 'abc-123',
++        });
++      });
++    });
+   });
+ 
+   describe('captureBodyFromWinterCGRequest', () => {

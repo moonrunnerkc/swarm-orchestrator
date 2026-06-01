@@ -1,0 +1,510 @@
+diff --git a/packages/mui-styled-engine-sc/package.json b/packages/mui-styled-engine-sc/package.json
+index 6e252e9d49556a..d1fee1695a8683 100644
+--- a/packages/mui-styled-engine-sc/package.json
++++ b/packages/mui-styled-engine-sc/package.json
+@@ -24,7 +24,7 @@
+     "url": "https://opencollective.com/mui-org"
+   },
+   "scripts": {
+-    "build": "code-infra build --flat --skipTsc",
++    "build": "code-infra build --flat",
+     "release": "pnpm build && pnpm publish",
+     "test": "pnpm --workspace-root test:unit --project \"*:@mui/styled-engine-sc\"",
+     "typescript": "tsc -p tsconfig.json"
+@@ -38,6 +38,7 @@
+   },
+   "devDependencies": {
+     "@types/chai": "5.2.3",
++    "@types/prop-types": "15.7.15",
+     "@types/react": "19.2.14",
+     "chai": "6.2.2",
+     "react": "19.2.6",
+@@ -55,7 +56,7 @@
+     "node": ">=14.0.0"
+   },
+   "exports": {
+-    ".": "./src/index.js",
+-    "./*": "./src/*/index.js"
++    ".": "./src/index.ts",
++    "./*": "./src/*/index.ts"
+   }
+ }
+diff --git a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.d.ts b/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.d.ts
+deleted file mode 100644
+index fff4ba7ebb2522..00000000000000
+--- a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.d.ts
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import * as React from 'react';
+-import { CSSObject, StyleFunction } from 'styled-components';
+-
+-export interface GlobalStylesProps<Theme extends object = {}> {
+-  defaultTheme?: object | undefined;
+-  styles: string | CSSObject | StyleFunction<Theme>;
+-}
+-
+-export default function Global<Theme extends object = {}>(
+-  props: GlobalStylesProps<Theme>,
+-): React.JSX.Element;
+diff --git a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.js b/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.js
+deleted file mode 100644
+index 3426bff89a4fd0..00000000000000
+--- a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.js
++++ /dev/null
+@@ -1,28 +0,0 @@
+-import PropTypes from 'prop-types';
+-import { createGlobalStyle } from 'styled-components';
+-
+-function isEmpty(obj) {
+-  return obj === undefined || obj === null || Object.keys(obj).length === 0;
+-}
+-
+-const GlobalStyles = createGlobalStyle((props) => {
+-  const { styles, defaultTheme = {} } = props;
+-
+-  if (typeof styles === 'function') {
+-    return styles(isEmpty(props.theme) ? defaultTheme : props.theme);
+-  }
+-
+-  return styles;
+-});
+-
+-export default GlobalStyles;
+-
+-GlobalStyles.propTypes = {
+-  defaultTheme: PropTypes.object,
+-  styles: PropTypes.oneOfType([
+-    PropTypes.array,
+-    PropTypes.string,
+-    PropTypes.object,
+-    PropTypes.func,
+-  ]),
+-};
+diff --git a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.test.js b/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.test.tsx
+similarity index 94%
+rename from packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.test.js
+rename to packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.test.tsx
+index 88ee5a9c7362e6..4f8d376877adac 100644
+--- a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.test.js
++++ b/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.test.tsx
+@@ -36,7 +36,7 @@ describe('GlobalStyles', () => {
+   it.skipIf(isJsdom())('should add global styles using function', function test() {
+     const { container } = render(
+       <ThemeProvider theme={{ color: 'rgb(0, 0, 255)' }}>
+-        <GlobalStyles styles={(theme) => ({ span: { color: theme.color } })} />
++        <GlobalStyles styles={(theme: any) => ({ span: { color: theme.color } })} />
+         <span>Blue text</span>
+       </ThemeProvider>,
+     );
+@@ -51,7 +51,7 @@ describe('GlobalStyles', () => {
+       render(
+         <GlobalStyles
+           defaultTheme={{ color: 'rgb(0, 0, 255)' }}
+-          styles={(theme) => ({ span: { color: theme.color } })}
++          styles={(theme: any) => ({ span: { color: theme.color } })}
+         />,
+       ),
+     ).not.to.throw();
+diff --git a/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.ts b/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.ts
+new file mode 100644
+index 00000000000000..6f282f22769e25
+--- /dev/null
++++ b/packages/mui-styled-engine-sc/src/GlobalStyles/GlobalStyles.ts
+@@ -0,0 +1,34 @@
++import type * as React from 'react';
++import PropTypes from 'prop-types';
++import { createGlobalStyle, type CSSObject, type StyleFunction } from 'styled-components';
++
++export interface GlobalStylesProps<Theme extends object = {}> {
++  defaultTheme?: object | undefined;
++  styles: string | CSSObject | StyleFunction<Theme>;
++}
++
++function isEmpty(obj: object | null | undefined) {
++  return obj === undefined || obj === null || Object.keys(obj).length === 0;
++}
++
++const GlobalStyles = createGlobalStyle((props: any) => {
++  const { styles, defaultTheme = {} } = props;
++
++  if (typeof styles === 'function') {
++    return styles(isEmpty(props.theme) ? defaultTheme : props.theme);
++  }
++
++  return styles;
++}) as unknown as <Theme extends object = {}>(props: GlobalStylesProps<Theme>) => React.JSX.Element;
++
++export default GlobalStyles;
++
++(GlobalStyles as any).propTypes /* remove-proptypes */ = {
++  defaultTheme: PropTypes.object,
++  styles: PropTypes.oneOfType([
++    PropTypes.array,
++    PropTypes.string,
++    PropTypes.object,
++    PropTypes.func,
++  ]),
++};
+diff --git a/packages/mui-styled-engine-sc/src/GlobalStyles/index.d.ts b/packages/mui-styled-engine-sc/src/GlobalStyles/index.d.ts
+deleted file mode 100644
+index a815f5c4a572b2..00000000000000
+--- a/packages/mui-styled-engine-sc/src/GlobalStyles/index.d.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export { default } from './GlobalStyles';
+-export * from './GlobalStyles';
+diff --git a/packages/mui-styled-engine-sc/src/GlobalStyles/index.js b/packages/mui-styled-engine-sc/src/GlobalStyles/index.ts
+similarity index 53%
+rename from packages/mui-styled-engine-sc/src/GlobalStyles/index.js
+rename to packages/mui-styled-engine-sc/src/GlobalStyles/index.ts
+index 48e20189092434..ce5e5f82dff052 100644
+--- a/packages/mui-styled-engine-sc/src/GlobalStyles/index.js
++++ b/packages/mui-styled-engine-sc/src/GlobalStyles/index.ts
+@@ -1 +1,2 @@
+ export { default } from './GlobalStyles';
++export type * from './GlobalStyles';
+diff --git a/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.d.ts b/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.d.ts
+deleted file mode 100644
+index f62068b3bc0ab7..00000000000000
+--- a/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.d.ts
++++ /dev/null
+@@ -1,8 +0,0 @@
+-import * as React from 'react';
+-
+-export interface StyledEngineProviderProps {
+-  children?: React.ReactNode;
+-  injectFirst?: boolean | undefined;
+-}
+-
+-export default function StyledEngineProvider(props: StyledEngineProviderProps): React.JSX.Element;
+diff --git a/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.js b/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.ts
+similarity index 67%
+rename from packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.js
+rename to packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.ts
+index 6c84a3053f18a8..b696de4d6ccb00 100644
+--- a/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.js
++++ b/packages/mui-styled-engine-sc/src/StyledEngineProvider/StyledEngineProvider.ts
+@@ -1,6 +1,12 @@
++import type * as React from 'react';
+ import PropTypes from 'prop-types';
+ 
+-export default function StyledEngineProvider(props) {
++export interface StyledEngineProviderProps {
++  children?: React.ReactNode;
++  injectFirst?: boolean | undefined;
++}
++
++export default function StyledEngineProvider(props: StyledEngineProviderProps): React.JSX.Element {
+   const { injectFirst, children } = props;
+ 
+   if (injectFirst && typeof window !== 'undefined') {
+@@ -12,10 +18,10 @@ export default function StyledEngineProvider(props) {
+     }
+   }
+ 
+-  return children;
++  return children as React.JSX.Element;
+ }
+ 
+-StyledEngineProvider.propTypes = {
++(StyledEngineProvider as any).propTypes /* remove-proptypes */ = {
+   /**
+    * Your component tree.
+    */
+diff --git a/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.js b/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.js
+deleted file mode 100644
+index 30cd6986a545fa..00000000000000
+--- a/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.js
++++ /dev/null
+@@ -1 +0,0 @@
+-export { default } from './StyledEngineProvider';
+diff --git a/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.d.ts b/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.ts
+similarity index 52%
+rename from packages/mui-styled-engine-sc/src/StyledEngineProvider/index.d.ts
+rename to packages/mui-styled-engine-sc/src/StyledEngineProvider/index.ts
+index 7fdd272b28e6ca..99ecbcdd5854ac 100644
+--- a/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.d.ts
++++ b/packages/mui-styled-engine-sc/src/StyledEngineProvider/index.ts
+@@ -1,2 +1,2 @@
+ export { default } from './StyledEngineProvider';
+-export * from './StyledEngineProvider';
++export type * from './StyledEngineProvider';
+diff --git a/packages/mui-styled-engine-sc/src/index.js b/packages/mui-styled-engine-sc/src/index.js
+deleted file mode 100644
+index e6cea619d889a0..00000000000000
+--- a/packages/mui-styled-engine-sc/src/index.js
++++ /dev/null
+@@ -1,65 +0,0 @@
+-import { styled as scStyled } from 'styled-components';
+-
+-export default function styled(tag, options) {
+-  let stylesFactory;
+-
+-  if (options) {
+-    stylesFactory = scStyled(tag).withConfig({
+-      displayName: options.label,
+-      shouldForwardProp: options.shouldForwardProp,
+-    });
+-  } else {
+-    stylesFactory = scStyled(tag);
+-  }
+-
+-  if (process.env.NODE_ENV !== 'production') {
+-    const fn = (...styles) => {
+-      const component = typeof tag === 'string' ? `"${tag}"` : 'component';
+-      if (styles.length === 0) {
+-        console.error(
+-          [
+-            `MUI: Seems like you called \`styled(${component})()\` without a \`style\` argument.`,
+-            'You must provide a `styles` argument: `styled("div")(styleYouForgotToPass)`.',
+-          ].join('\n'),
+-        );
+-      } else if (styles.some((style) => style === undefined)) {
+-        console.error(
+-          `MUI: the styled(${component})(...args) API requires all its args to be defined.`,
+-        );
+-      }
+-      return stylesFactory(...styles);
+-    };
+-    fn.withConfig = stylesFactory.withConfig;
+-    return fn;
+-  }
+-
+-  return stylesFactory;
+-}
+-
+-// eslint-disable-next-line @typescript-eslint/naming-convention
+-export function internal_mutateStyles(tag, processor) {
+-  // Styled-components attaches an instance to `componentStyle`.
+-  // https://github.com/styled-components/styled-components/blob/da8151762dcf72735ffba358173d4c097f6d5888/packages/styled-components/src/models/StyledComponent.ts#L257
+-  //
+-  // The instance contains `rules` (the styles)
+-  // https://github.com/styled-components/styled-components/blob/da8151762dcf72735ffba358173d4c097f6d5888/packages/styled-components/src/models/ComponentStyle.ts#L23
+-  if (tag.componentStyle) {
+-    tag.componentStyle.rules = processor(tag.componentStyle.rules);
+-  }
+-}
+-
+-// Not needed anymore, but fixes https://github.com/mui/material-ui/issues/44112
+-// TODO: Remove it in v7
+-// eslint-disable-next-line @typescript-eslint/naming-convention
+-export function internal_processStyles(tag, processor) {
+-  return internal_mutateStyles(tag, processor);
+-}
+-
+-// eslint-disable-next-line @typescript-eslint/naming-convention
+-export function internal_serializeStyles(styles) {
+-  return styles;
+-}
+-
+-export { ThemeContext, keyframes, css } from 'styled-components';
+-export { default as StyledEngineProvider } from './StyledEngineProvider';
+-export { default as GlobalStyles } from './GlobalStyles';
+diff --git a/packages/mui-styled-engine-sc/src/index.d.ts b/packages/mui-styled-engine-sc/src/index.ts
+similarity index 84%
+rename from packages/mui-styled-engine-sc/src/index.d.ts
+rename to packages/mui-styled-engine-sc/src/index.ts
+index a21a141c9ca28b..8a523f1ff21524 100644
+--- a/packages/mui-styled-engine-sc/src/index.d.ts
++++ b/packages/mui-styled-engine-sc/src/index.ts
+@@ -1,6 +1,15 @@
+-import * as React from 'react';
+-import * as CSS from 'csstype';
+-import * as hoistNonReactStatics from 'hoist-non-react-statics';
++/* eslint-disable @typescript-eslint/naming-convention */
++import { styled as scStyled } from 'styled-components';
++import type * as React from 'react';
++import type * as CSS from 'csstype';
++import type * as hoistNonReactStatics from 'hoist-non-react-statics';
++
++// Re-export the full `styled-components` *type* surface, matching the
++// hand-written `.d.ts` that this conversion replaces. Type-only: emits
++// nothing at runtime. Local declarations below intentionally shadow some
++// styled-components names (`Keyframes`, `Interpolation`, `StyledComponent`,
++// `CSSObject`, …) — local declarations win over re-exports.
++export type * from 'styled-components';
+ 
+ type WithOptionalTheme<P extends { theme?: T | undefined }, T> = OmitU<P, 'theme'> & {
+   theme?: T | undefined;
+@@ -64,33 +73,78 @@ export interface Keyframes {
+   getName(): string;
+ }
+ 
+-export * from 'styled-components';
+-export { default } from 'styled-components';
++function styled(tag: any, options?: any): any {
++  let stylesFactory: any;
++
++  if (options) {
++    stylesFactory = scStyled(tag).withConfig({
++      displayName: options.label,
++      shouldForwardProp: options.shouldForwardProp,
++    });
++  } else {
++    stylesFactory = scStyled(tag);
++  }
++
++  if (process.env.NODE_ENV !== 'production') {
++    const fn = (...styles: any[]) => {
++      const component = typeof tag === 'string' ? `"${tag}"` : 'component';
++      if (styles.length === 0) {
++        console.error(
++          [
++            `MUI: Seems like you called \`styled(${component})()\` without a \`style\` argument.`,
++            'You must provide a `styles` argument: `styled("div")(styleYouForgotToPass)`.',
++          ].join('\n'),
++        );
++      } else if (styles.some((style) => style === undefined)) {
++        console.error(
++          `MUI: the styled(${component})(...args) API requires all its args to be defined.`,
++        );
++      }
++      return stylesFactory(...styles);
++    };
++    fn.withConfig = stylesFactory.withConfig;
++    return fn;
++  }
++
++  return stylesFactory;
++}
+ 
+-export { default as StyledEngineProvider } from './StyledEngineProvider';
+-
+-export { default as GlobalStyles } from './GlobalStyles';
+-export * from './GlobalStyles';
++export default styled as unknown as typeof scStyled;
+ 
+ /**
+  * For internal usage in `@mui/system` package
+  */
+-// eslint-disable-next-line @typescript-eslint/naming-convention
+ export function internal_mutateStyles(
+   tag: React.ElementType,
+   processor: (styles: any) => any,
+-): void;
++): void {
++  // Styled-components attaches an instance to `componentStyle`.
++  // https://github.com/styled-components/styled-components/blob/da8151762dcf72735ffba358173d4c097f6d5888/packages/styled-components/src/models/StyledComponent.ts#L257
++  //
++  // The instance contains `rules` (the styles)
++  // https://github.com/styled-components/styled-components/blob/da8151762dcf72735ffba358173d4c097f6d5888/packages/styled-components/src/models/ComponentStyle.ts#L23
++  if ((tag as any).componentStyle) {
++    (tag as any).componentStyle.rules = processor((tag as any).componentStyle.rules);
++  }
++}
+ 
+ // Not needed anymore, but fixes https://github.com/mui/material-ui/issues/44112
+ // TODO: Remove it in v7
+-// eslint-disable-next-line @typescript-eslint/naming-convention
+ export function internal_processStyles(
+   tag: React.ElementType,
+   processor: (styles: any) => any,
+-): void;
++): void {
++  return internal_mutateStyles(tag, processor);
++}
++
++export function internal_serializeStyles<P>(styles: Interpolation<P>): object {
++  return styles as object;
++}
+ 
+-// eslint-disable-next-line @typescript-eslint/naming-convention
+-export function internal_serializeStyles<P>(styles: Interpolation<P>): object;
++export { ThemeContext, keyframes, css } from 'styled-components';
++export { default as StyledEngineProvider } from './StyledEngineProvider';
++export { default as GlobalStyles } from './GlobalStyles';
++export type { GlobalStylesProps } from './GlobalStyles';
+ 
+ // These are the same as the ones in @mui/styled-engine
+ // CSS.PropertiesFallback are necessary so that we support spreading of the mixins. For example:
+diff --git a/packages/mui-styled-engine-sc/src/styled.test.js b/packages/mui-styled-engine-sc/src/styled.test.tsx
+similarity index 85%
+rename from packages/mui-styled-engine-sc/src/styled.test.js
+rename to packages/mui-styled-engine-sc/src/styled.test.tsx
+index 73a33d5cc5c2bb..1fb5b16ff018f2 100644
+--- a/packages/mui-styled-engine-sc/src/styled.test.js
++++ b/packages/mui-styled-engine-sc/src/styled.test.tsx
+@@ -8,7 +8,7 @@ describe('styled', () => {
+   it('should help debug wrong args', () => {
+     expect(() => {
+       expect(() => {
+-        styled('span')();
++        (styled('span') as any)();
+         // Error message changes between browsers.
+         // It's not relevant to the test anyway.
+       }).to.throw();
+@@ -16,7 +16,7 @@ describe('styled', () => {
+ 
+     expect(() => {
+       expect(() => {
+-        styled('span')(undefined, { color: 'red' });
++        (styled('span') as any)(undefined, { color: 'red' });
+         // Error message changes between browsers.
+         // It's not relevant to the test anyway.
+       }).to.throw();
+@@ -24,10 +24,10 @@ describe('styled', () => {
+   });
+ 
+   it('should respect the options', () => {
+-    const StyledComponent = styled('div', {
+-      shouldForwardProp: (prop) => prop !== 'color',
++    const StyledComponent = (styled as any)('div', {
++      shouldForwardProp: (prop: PropertyKey) => prop !== 'color',
+       label: 'TestComponent',
+-    })({ color: 'red' });
++    })({ color: 'red' }) as any;
+ 
+     render(<StyledComponent data-testid="component" color="blue" />);
+ 
+diff --git a/packages/mui-styled-engine-sc/tsconfig.build.json b/packages/mui-styled-engine-sc/tsconfig.build.json
+new file mode 100644
+index 00000000000000..fb7bbbba3f40ca
+--- /dev/null
++++ b/packages/mui-styled-engine-sc/tsconfig.build.json
+@@ -0,0 +1,17 @@
++// This config is for emitting declarations (.d.ts) only
++// Actual .ts source files are transpiled via babel
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "composite": true,
++    "declaration": true,
++    "noEmit": false,
++    "emitDeclarationOnly": true,
++    "outDir": "build",
++    "rootDir": "./src",
++    "stripInternal": true,
++    "types": ["@mui/internal-code-infra/build-env", "react"]
++  },
++  "include": ["src/**/*.ts", "src/**/*.tsx"],
++  "exclude": ["src/**/*.test.ts*", "src/**/*.spec.ts*"]
++}
+diff --git a/packages/mui-styled-engine-sc/tsconfig.json b/packages/mui-styled-engine-sc/tsconfig.json
+index cf1e0996590193..fc9e91137dd7f5 100644
+--- a/packages/mui-styled-engine-sc/tsconfig.json
++++ b/packages/mui-styled-engine-sc/tsconfig.json
+@@ -1,7 +1,9 @@
+ {
+   "extends": "../../tsconfig.json",
+   "compilerOptions": {
+-    "skipLibCheck": true
++    "allowJs": false,
++    "skipLibCheck": true,
++    "types": ["react", "vitest/globals", "@mui/internal-code-infra/build-env"]
+   },
+   "include": ["src/**/*"]
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 1a1983924fe0be..b10879f5d822d4 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1352,6 +1352,9 @@ importers:
+       '@types/chai':
+         specifier: 5.2.3
+         version: 5.2.3
++      '@types/prop-types':
++        specifier: 15.7.15
++        version: 15.7.15
+       '@types/react':
+         specifier: 19.2.14
+         version: 19.2.14

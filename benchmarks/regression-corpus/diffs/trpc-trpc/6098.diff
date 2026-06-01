@@ -1,0 +1,800 @@
+diff --git a/examples/next-formdata/src/pages/api/trpc/[trpc].ts b/examples/next-formdata/src/pages/api/trpc/[trpc].ts
+index 3c27420a031..8d29bfa5c52 100644
+--- a/examples/next-formdata/src/pages/api/trpc/[trpc].ts
++++ b/examples/next-formdata/src/pages/api/trpc/[trpc].ts
+@@ -15,16 +15,12 @@ const appRouter = router({
+ // None of the actual implementation is exposed to the client
+ export type AppRouter = typeof appRouter;
+ 
+-const handler = trpcNext.createNextApiHandler({
++// export API handler
++export default trpcNext.createNextApiHandler({
+   router: appRouter,
+   createContext,
+ });
+ 
+-// export API handler
+-export default async (req: NextApiRequest, res: NextApiResponse) => {
+-  await handler(req, res);
+-};
+-
+ export const config = {
+   api: {
+     bodyParser: false,
+diff --git a/packages/server/src/adapters/express.ts b/packages/server/src/adapters/express.ts
+index 2db67dd1a27..9830aa3648b 100644
+--- a/packages/server/src/adapters/express.ts
++++ b/packages/server/src/adapters/express.ts
+@@ -23,14 +23,14 @@ export type CreateExpressContextOptions = NodeHTTPCreateContextFnOptions<
+ export function createExpressMiddleware<TRouter extends AnyRouter>(
+   opts: NodeHTTPHandlerOptions<TRouter, express.Request, express.Response>,
+ ): express.Handler {
+-  return async (req, res) => {
+-    const endpoint = req.path.slice(1);
++  return (req, res) => {
++    const path = req.path.slice(1);
+ 
+-    await nodeHTTPRequestHandler({
++    nodeHTTPRequestHandler({
+       ...(opts as any),
+       req,
+       res,
+-      path: endpoint,
++      path,
+     });
+   };
+ }
+diff --git a/packages/server/src/adapters/next.ts b/packages/server/src/adapters/next.ts
+index 27adadcbf90..3c34cbb440e 100644
+--- a/packages/server/src/adapters/next.ts
++++ b/packages/server/src/adapters/next.ts
+@@ -11,12 +11,14 @@ import type { NextApiHandler, NextApiRequest, NextApiResponse } from 'next';
+ // @trpc/server
+ import type { AnyRouter } from '../@trpc/server';
+ // @trpc/server
+-import { getErrorShape, TRPCError } from '../@trpc/server';
++import { TRPCError } from '../@trpc/server';
++// eslint-disable-next-line no-restricted-imports
++import { run } from '../unstable-core-do-not-import';
+ import type {
+   NodeHTTPCreateContextFnOptions,
+   NodeHTTPHandlerOptions,
+ } from './node-http';
+-import { nodeHTTPRequestHandler } from './node-http';
++import { internal_exceptionHandler, nodeHTTPRequestHandler } from './node-http';
+ 
+ export type CreateNextContextOptions = NodeHTTPCreateContextFnOptions<
+   NextApiRequest,
+@@ -28,47 +30,43 @@ export type CreateNextContextOptions = NodeHTTPCreateContextFnOptions<
+  */
+ export type { NextApiHandler, NextApiRequest, NextApiResponse } from 'next';
+ 
++type SyncNextApiHandler = (req: NextApiRequest, res: NextApiResponse) => void;
++
+ export function createNextApiHandler<TRouter extends AnyRouter>(
+   opts: NodeHTTPHandlerOptions<TRouter, NextApiRequest, NextApiResponse>,
+ ): NextApiHandler {
+-  return async (req, res) => {
+-    function getPath(): string | null {
+-      if (typeof req.query['trpc'] === 'string') {
+-        return req.query['trpc'];
+-      }
+-      if (Array.isArray(req.query['trpc'])) {
+-        return req.query['trpc'].join('/');
+-      }
+-      return null;
+-    }
+-    const path = getPath();
+-
+-    if (path === null) {
+-      const error = getErrorShape({
+-        config: opts.router._def._config,
+-        error: new TRPCError({
++  let path = '';
++  const handler: SyncNextApiHandler = (req, res) => {
++    try {
++      path = run(() => {
++        if (typeof req.query['trpc'] === 'string') {
++          return req.query['trpc'];
++        }
++        if (Array.isArray(req.query['trpc'])) {
++          return req.query['trpc'].join('/');
++        }
++        throw new TRPCError({
+           message:
+             'Query "trpc" not found - is the file named `[trpc]`.ts or `[...trpc].ts`?',
+           code: 'INTERNAL_SERVER_ERROR',
+-        }),
+-        type: 'unknown',
+-        ctx: undefined,
+-        path: undefined,
+-        input: undefined,
++        });
+       });
+-      res.statusCode = 500;
+-      res.json({
+-        id: -1,
+-        error,
++
++      nodeHTTPRequestHandler({
++        ...(opts as any),
++        req,
++        res,
++        path,
+       });
+-      return;
++    } catch (cause) {
++      internal_exceptionHandler({
++        req,
++        res,
++        path,
++        ...opts,
++      })(cause);
+     }
+-
+-    await nodeHTTPRequestHandler({
+-      ...(opts as any),
+-      req,
+-      res,
+-      path,
+-    });
+   };
++
++  return handler;
+ }
+diff --git a/packages/server/src/adapters/node-http/incomingMessageToRequest.ts b/packages/server/src/adapters/node-http/incomingMessageToRequest.ts
+index 5e3ad211cc0..fc516a0dc09 100644
+--- a/packages/server/src/adapters/node-http/incomingMessageToRequest.ts
++++ b/packages/server/src/adapters/node-http/incomingMessageToRequest.ts
+@@ -1,5 +1,6 @@
+ import type * as http from 'http';
+ import { TRPCError } from '../../@trpc/server';
++import { toURL } from '../../http';
+ 
+ export interface IncomingMessageWithBody extends http.IncomingMessage {
+   /**
+@@ -67,7 +68,7 @@ export function incomingMessageToRequest(
+ ): Request {
+   const ac = new AbortController();
+   const headers = new Headers(req.headers as any);
+-  const url = `http://${headers.get('host')}${req.url}`;
++  const url = toURL(`http://${headers.get('host')}${req.url}`);
+   req.once('aborted', () => {
+     ac.abort();
+   });
+diff --git a/packages/server/src/adapters/node-http/nodeHTTPRequestHandler.ts b/packages/server/src/adapters/node-http/nodeHTTPRequestHandler.ts
+index 3c9d31cf81d..746af65a37d 100644
+--- a/packages/server/src/adapters/node-http/nodeHTTPRequestHandler.ts
++++ b/packages/server/src/adapters/node-http/nodeHTTPRequestHandler.ts
+@@ -10,9 +10,15 @@
+ 
+ // @trpc/server
+ 
+-import { getTRPCErrorFromUnknown, type AnyRouter } from '../../@trpc/server';
++import {
++  getTRPCErrorFromUnknown,
++  transformTRPCResponse,
++  type AnyRouter,
++} from '../../@trpc/server';
+ import type { ResolveHTTPRequestOptionsContextFn } from '../../@trpc/server/http';
+ import { resolveResponse } from '../../@trpc/server/http';
++// eslint-disable-next-line no-restricted-imports
++import { getErrorShape, run } from '../../unstable-core-do-not-import';
+ import { incomingMessageToRequest } from './incomingMessageToRequest';
+ import type {
+   NodeHTTPRequest,
+@@ -20,84 +26,125 @@ import type {
+   NodeHTTPResponse,
+ } from './types';
+ 
+-export async function nodeHTTPRequestHandler<
++/**
++ * @internal
++ */
++export function internal_exceptionHandler<
+   TRouter extends AnyRouter,
+   TRequest extends NodeHTTPRequest,
+   TResponse extends NodeHTTPResponse,
+ >(opts: NodeHTTPRequestHandlerOptions<TRouter, TRequest, TResponse>) {
+-  const handleViaMiddleware = opts.middleware ?? ((_req, _res, next) => next());
++  return (cause: unknown) => {
++    const { res, req } = opts;
++    const error = getTRPCErrorFromUnknown(cause);
+ 
+-  return handleViaMiddleware(opts.req, opts.res, async (err) => {
+-    const req = incomingMessageToRequest(opts.req, {
+-      maxBodySize: opts.maxBodySize ?? null,
++    const shape = getErrorShape({
++      config: opts.router._def._config,
++      error,
++      type: 'unknown',
++      path: undefined,
++      input: undefined,
++      ctx: undefined,
+     });
+ 
+-    // Build tRPC dependencies
+-    const createContext: ResolveHTTPRequestOptionsContextFn<TRouter> = async (
+-      innerOpts,
+-    ) => {
+-      return await opts.createContext?.({
+-        ...opts,
+-        ...innerOpts,
+-      });
+-    };
+-
+-    const response = await resolveResponse({
+-      ...opts,
++    opts.onError?.({
+       req,
+-      error: err ? getTRPCErrorFromUnknown(err) : null,
+-      createContext,
+-      onError(o) {
+-        opts?.onError?.({
+-          ...o,
+-          req: opts.req,
+-        });
+-      },
++      error,
++      type: 'unknown',
++      path: undefined,
++      input: undefined,
++      ctx: undefined,
++    });
++
++    const transformed = transformTRPCResponse(opts.router._def._config, {
++      error: shape,
+     });
+ 
+-    const { res } = opts;
+-    if (res.statusCode === 200) {
+-      // if the status code is set, we assume that it's been manually overridden
+-      res.statusCode = response.status;
+-    }
+-    for (const [key, value] of response.headers) {
+-      res.setHeader(key, value);
+-    }
+-    if (response.body) {
+-      const reader = response.body.getReader();
+-      const onAbort = () => {
+-        // cancelling the reader will cause the whole stream to be cancelled
+-        reader.cancel().catch(() => {
+-          // console.error('reader.cancel() error', err);
++    res.statusCode = shape.data.httpStatus;
++    res.end(JSON.stringify(transformed));
++  };
++}
++
++export function nodeHTTPRequestHandler<
++  TRouter extends AnyRouter,
++  TRequest extends NodeHTTPRequest,
++  TResponse extends NodeHTTPResponse,
++>(opts: NodeHTTPRequestHandlerOptions<TRouter, TRequest, TResponse>) {
++  const handleViaMiddleware = opts.middleware ?? ((_req, _res, next) => next());
++
++  return handleViaMiddleware(opts.req, opts.res, (err: unknown) => {
++    run(async () => {
++      const req = incomingMessageToRequest(opts.req, {
++        maxBodySize: opts.maxBodySize ?? null,
++      });
++
++      // Build tRPC dependencies
++      const createContext: ResolveHTTPRequestOptionsContextFn<TRouter> = async (
++        innerOpts,
++      ) => {
++        return await opts.createContext?.({
++          ...opts,
++          ...innerOpts,
+         });
+       };
+-      req.signal.addEventListener('abort', onAbort, {
+-        once: true,
+-      });
+ 
+-      while (true) {
+-        const { done, value } = await reader.read();
++      const response = await resolveResponse({
++        ...opts,
++        req,
++        error: err ? getTRPCErrorFromUnknown(err) : null,
++        createContext,
++        onError(o) {
++          opts?.onError?.({
++            ...o,
++            req: opts.req,
++          });
++        },
++      });
+ 
+-        if (done) {
+-          break;
+-        }
+-        if (!res.writable) {
+-          break;
+-        }
+-        if (res.write(value) === false) {
+-          await new Promise<void>((resolve) => {
+-            res.once('drain', resolve);
++      const { res } = opts;
++      if (res.statusCode === 200) {
++        // if the status code is set, we assume that it's been manually overridden
++        res.statusCode = response.status;
++      }
++      for (const [key, value] of response.headers) {
++        res.setHeader(key, value);
++      }
++      if (response.body) {
++        const reader = response.body.getReader();
++        const onAbort = () => {
++          // cancelling the reader will cause the whole stream to be cancelled
++          reader.cancel().catch(() => {
++            // console.error('reader.cancel() error', err);
+           });
+-        }
++        };
++        req.signal.addEventListener('abort', onAbort, {
++          once: true,
++        });
++
++        while (true) {
++          const { done, value } = await reader.read();
+ 
+-        // useful for debugging chunked responses:
+-        // console.log('wrote', Buffer.from(value).toString());
++          if (done) {
++            break;
++          }
++          if (!res.writable) {
++            break;
++          }
++          if (res.write(value) === false) {
++            await new Promise<void>((resolve) => {
++              res.once('drain', resolve);
++            });
++          }
+ 
+-        // IMPORTANT - flush the response buffer, otherwise the client will not receive the data until `.end()`
+-        res.flush?.();
++          // useful for debugging chunked responses:
++          // console.log('wrote', Buffer.from(value).toString());
++
++          // IMPORTANT - flush the response buffer, otherwise the client will not receive the data until `.end()`
++          res.flush?.();
++        }
++        req.signal.removeEventListener('abort', onAbort);
+       }
+-      req.signal.removeEventListener('abort', onAbort);
+-    }
+-    res.end();
++      res.end();
++    }).catch(internal_exceptionHandler(opts));
+   });
+ }
+diff --git a/packages/server/src/adapters/standalone.ts b/packages/server/src/adapters/standalone.ts
+index 19b70a25287..432beb90ef3 100644
+--- a/packages/server/src/adapters/standalone.ts
++++ b/packages/server/src/adapters/standalone.ts
+@@ -10,13 +10,13 @@
+ /* eslint-disable @typescript-eslint/no-non-null-assertion */
+ import http from 'http';
+ // @trpc/server
+-import type { AnyRouter } from '../@trpc/server';
++import { type AnyRouter } from '../@trpc/server';
+ import { toURL } from '../@trpc/server/http';
+ import type {
+   NodeHTTPCreateContextFnOptions,
+   NodeHTTPHandlerOptions,
+ } from './node-http';
+-import { nodeHTTPRequestHandler } from './node-http';
++import { internal_exceptionHandler, nodeHTTPRequestHandler } from './node-http';
+ 
+ export type CreateHTTPHandlerOptions<TRouter extends AnyRouter> =
+   NodeHTTPHandlerOptions<TRouter, http.IncomingMessage, http.ServerResponse>;
+@@ -26,28 +26,44 @@ export type CreateHTTPContextOptions = NodeHTTPCreateContextFnOptions<
+   http.ServerResponse
+ >;
+ 
++/**
++ * @internal
++ */
+ export function createHTTPHandler<TRouter extends AnyRouter>(
+   opts: CreateHTTPHandlerOptions<TRouter>,
+-) {
+-  return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+-    const url = toURL(req.url!);
++): http.RequestListener {
++  return (req, res) => {
++    let path = '';
++    try {
++      const url = toURL(req.url!);
+ 
+-    // get procedure path and remove the leading slash
+-    // /procedure -> procedure
+-    const path = url.pathname.slice(1);
++      // get procedure path and remove the leading slash
++      // /procedure -> procedure
++      path = url.pathname.slice(1);
+ 
+-    await nodeHTTPRequestHandler({
+-      ...(opts as any),
+-      req,
+-      res,
+-      path,
+-    });
++      nodeHTTPRequestHandler({
++        ...(opts as any),
++        req,
++        res,
++        path,
++      });
++    } catch (cause) {
++      internal_exceptionHandler<
++        TRouter,
++        http.IncomingMessage,
++        http.ServerResponse
++      >({
++        req,
++        res,
++        path,
++        ...opts,
++      })(cause);
++    }
+   };
+ }
+ 
+ export function createHTTPServer<TRouter extends AnyRouter>(
+   opts: CreateHTTPHandlerOptions<TRouter>,
+ ) {
+-  const handler = createHTTPHandler(opts);
+-  return http.createServer(handler);
++  return http.createServer(createHTTPHandler(opts));
+ }
+diff --git a/packages/server/src/unstable-core-do-not-import/http/toURL.ts b/packages/server/src/unstable-core-do-not-import/http/toURL.ts
+index 2f047486941..e227074b9ee 100644
+--- a/packages/server/src/unstable-core-do-not-import/http/toURL.ts
++++ b/packages/server/src/unstable-core-do-not-import/http/toURL.ts
+@@ -1,7 +1,17 @@
++import { TRPCError } from '../error/TRPCError';
++
+ export function toURL(urlOrPathname: string): URL {
+-  const url = urlOrPathname.startsWith('/')
+-    ? `http://127.0.0.1${urlOrPathname}`
+-    : urlOrPathname;
++  try {
++    const url = urlOrPathname.startsWith('/')
++      ? `http://127.0.0.1${urlOrPathname}`
++      : urlOrPathname;
+ 
+-  return new URL(url);
++    return new URL(url);
++  } catch (cause) {
++    throw new TRPCError({
++      code: 'BAD_REQUEST',
++      message: 'Invalid URL',
++      cause,
++    });
++  }
+ }
+diff --git a/packages/tests/server/adapters/express.test.tsx b/packages/tests/server/adapters/express.test.tsx
+index 6d4718a827e..64249116662 100644
+--- a/packages/tests/server/adapters/express.test.tsx
++++ b/packages/tests/server/adapters/express.test.tsx
+@@ -3,11 +3,18 @@ import { waitError } from '../___testHelpers';
+ import type { Context } from './__router';
+ import { router } from './__router';
+ import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
++import type { AnyRouter } from '@trpc/server';
+ import * as trpcExpress from '@trpc/server/adapters/express';
++import type { NodeHTTPHandlerOptions } from '@trpc/server/adapters/node-http';
+ import express from 'express';
+ import fetch from 'node-fetch';
+ 
+-async function startServer(maxBodySize?: number) {
++type CreateExpressContextOptions<TRouter extends AnyRouter> =
++  NodeHTTPHandlerOptions<TRouter, express.Request, express.Response>;
++
++async function startServer(
++  opts?: Partial<CreateExpressContextOptions<typeof router>>,
++) {
+   const createContext = (
+     _opts: trpcExpress.CreateExpressContextOptions,
+   ): Context => {
+@@ -30,13 +37,24 @@ async function startServer(maxBodySize?: number) {
+   const app = express();
+ 
+   app.use(
+-    '/trpc',
++    '/',
+     trpcExpress.createExpressMiddleware({
+       router,
+-      maxBodySize: maxBodySize ?? Infinity,
+       createContext,
++      ...opts,
+     }),
+   );
++  // not found middleware
++  app.use((_req, res, _next) => {
++    res.status(404).send({ error: 'Not found' });
++  });
++  // error middleware
++  // eslint-disable-next-line max-params
++  const errHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
++    res.status(500).send({ error: err.message });
++  };
++  app.use(errHandler);
++
+   const { server, port } = await new Promise<{
+     server: http.Server;
+     port: number;
+@@ -49,10 +67,11 @@ async function startServer(maxBodySize?: number) {
+     });
+   });
+ 
++  const url = `http://localhost:${port}`;
+   const client = createTRPCClient<typeof router>({
+     links: [
+       httpBatchLink({
+-        url: `http://localhost:${port}/trpc`,
++        url,
+         fetch: fetch as any,
+       }),
+     ],
+@@ -65,9 +84,9 @@ async function startServer(maxBodySize?: number) {
+           err ? reject(err) : resolve();
+         }),
+       ),
+-    port,
+     router,
+     client,
++    url,
+   };
+ }
+ 
+@@ -146,7 +165,9 @@ test('error query', async () => {
+ });
+ 
+ test('payload too large', async () => {
+-  const t = await startServer(100);
++  const t = await startServer({
++    maxBodySize: 100,
++  });
+ 
+   const err = await waitError(
+     () => t.client.exampleMutation.mutate({ payload: 'a'.repeat(101) }),
+@@ -160,3 +181,45 @@ test('payload too large', async () => {
+ 
+   t.close();
+ });
++
++test('bad url does not crash server', async () => {
++  const t = await startServer({
++    router,
++  });
++
++  const res = await fetch(`${t.url}`, {
++    method: 'GET',
++    headers: {
++      // use faux host header
++      Host: 'hotmail-com.olc.protection.outlook.com%3A25',
++    },
++  });
++  expect(res.ok).toBe(false);
++
++  const json: any = await res.json();
++
++  if (json.error.data.stack) {
++    json.error.data.stack = '[redacted]';
++  }
++  expect(json).toMatchInlineSnapshot(`
++    Object {
++      "error": Object {
++        "code": -32600,
++        "data": Object {
++          "code": "BAD_REQUEST",
++          "httpStatus": 400,
++          "stack": "[redacted]",
++        },
++        "message": "Invalid URL",
++      },
++    }
++  `);
++
++  expect(res.status).toBe(400);
++
++  expect(await t.client.hello.query()).toMatchInlineSnapshot(`
++    Object {
++      "text": "hello world",
++    }
++  `);
++});
+diff --git a/packages/tests/server/adapters/next.test.ts b/packages/tests/server/adapters/next.test.ts
+index 7bde6f8aba5..b2ea4b97b56 100644
+--- a/packages/tests/server/adapters/next.test.ts
++++ b/packages/tests/server/adapters/next.test.ts
+@@ -1,6 +1,9 @@
+ import { EventEmitter } from 'events';
+ import { initTRPC } from '@trpc/server';
+ import * as trpcNext from '@trpc/server/adapters/next';
++import type { TRPCResponse } from '@trpc/server/rpc';
++import type { DefaultErrorShape } from '@trpc/server/unstable-core-do-not-import';
++import { createDeferred } from '@trpc/server/unstable-core-do-not-import';
+ // @ts-expect-error - no types
+ import _request from 'supertest';
+ 
+@@ -50,21 +53,31 @@ function mockReq({
+ function mockRes() {
+   const res = new EventEmitter() as any;
+ 
+-  const json = vi.fn(() => res);
++  type ResponseShape = TRPCResponse<unknown, DefaultErrorShape>;
++  const waitResponse = createDeferred<ResponseShape | null>();
++
+   const setHeader = vi.fn(() => res);
+-  const end = vi.fn(() => res);
++  const end = vi.fn((data) => {
++    if (!data) {
++      waitResponse.resolve(null);
++      return res;
++    }
++    const json = JSON.parse(data) as ResponseShape;
++    if ('error' in json && json.error?.data.stack) {
++      json.error.data.stack = '[redacted]';
++    }
++    waitResponse.resolve(json);
++    return res;
++  });
+   const write = vi.fn(() => res);
+   res.setHeader = setHeader;
+   res.end = end;
+   res.write = write;
+-  res.json = json;
+   res.statusCode = 200;
+ 
+   return {
+     res,
+-    json,
+     setHeader,
+-    end,
+     text: () => {
+       return res.write.mock.calls
+         .map((args: any) => {
+@@ -72,6 +85,7 @@ function mockRes() {
+         })
+         .join('');
+     },
++    waitResponse: waitResponse.promise,
+   };
+ }
+ test('bad setup', async () => {
+@@ -86,16 +100,18 @@ test('bad setup', async () => {
+   });
+ 
+   const { req } = mockReq({ query: {} });
+-  const { res, json } = mockRes();
++  const { res, waitResponse } = mockRes();
++
++  handler(req, res);
+ 
+-  await handler(req, res);
++  const json = (await waitResponse)!;
+ 
+-  const responseJson: any = (json.mock.calls[0] as any)[0];
+-  expect(responseJson.ok).toMatchInlineSnapshot(`undefined`);
+-  expect(responseJson.error.message).toMatchInlineSnapshot(
++  assert('error' in json);
++
++  expect(json.error.message).toMatchInlineSnapshot(
+     `"Query "trpc" not found - is the file named \`[trpc]\`.ts or \`[...trpc].ts\`?"`,
+   );
+-  expect(responseJson.statusCode).toMatchInlineSnapshot(`undefined`);
++  expect(json.error?.data?.httpStatus).toMatchInlineSnapshot(`500`);
+ });
+ 
+ describe('ok request', () => {
+@@ -185,9 +201,10 @@ test('HEAD request', async () => {
+     },
+     method: 'HEAD',
+   });
+-  const { res } = mockRes();
++  const { res, waitResponse } = mockRes();
+ 
+-  await handler(req, res);
++  handler(req, res);
++  await waitResponse;
+ 
+   expect(res.statusCode).toBe(204);
+ });
+@@ -209,9 +226,11 @@ test('PUT request (fails)', async () => {
+     },
+     method: 'PUT',
+   });
+-  const { res } = mockRes();
++  const { res, waitResponse } = mockRes();
++
++  handler(req, res);
+ 
+-  await handler(req, res);
++  await waitResponse;
+ 
+   expect(res.statusCode).toBe(405);
+ });
+@@ -238,9 +257,11 @@ test('middleware intercepts request', async () => {
+     },
+     method: 'PUT',
+   });
+-  const { res } = mockRes();
++  const { res, waitResponse } = mockRes();
+ 
+-  await handler(req, res);
++  handler(req, res);
++
++  await waitResponse;
+ 
+   expect(res.statusCode).toBe(419);
+ });
+@@ -265,9 +286,11 @@ test('middleware passes the request', async () => {
+     },
+     method: 'PUT',
+   });
+-  const { res } = mockRes();
++  const { res, waitResponse } = mockRes();
++
++  handler(req, res);
+ 
+-  await handler(req, res);
++  await waitResponse;
+ 
+   expect(res.statusCode).toBe(404);
+ });
+diff --git a/packages/tests/server/adapters/standalone.test.ts b/packages/tests/server/adapters/standalone.test.ts
+index 502b9a12578..bb812a29b12 100644
+--- a/packages/tests/server/adapters/standalone.test.ts
++++ b/packages/tests/server/adapters/standalone.test.ts
+@@ -227,3 +227,47 @@ test('force content-type on mutations', async () => {
+     `);
+   }
+ });
++
++test('bad url does not crash server', async () => {
++  const { port, address } = await startServer({
++    router,
++  });
++
++  const res = await fetch(`http://${address}:${port}`, {
++    method: 'GET',
++    headers: {
++      // use faux host header
++      Host: 'hotmail-com.olc.protection.outlook.com%3A25',
++    },
++  });
++  expect(res.ok).toBe(false);
++
++  const json: any = await res.json();
++
++  if (json.error.data.stack) {
++    json.error.data.stack = '[redacted]';
++  }
++  expect(json).toMatchInlineSnapshot(`
++    Object {
++      "error": Object {
++        "code": -32600,
++        "data": Object {
++          "code": "BAD_REQUEST",
++          "httpStatus": 400,
++          "stack": "[redacted]",
++        },
++        "message": "Invalid URL",
++      },
++    }
++  `);
++
++  expect(res.status).toBe(400);
++
++  const client = createClient(port, address);
++
++  expect(await client.hello.query({ who: 'test' })).toMatchInlineSnapshot(`
++    Object {
++      "text": "hello test",
++    }
++  `);
++});

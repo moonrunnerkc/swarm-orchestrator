@@ -1,0 +1,338 @@
+diff --git a/.changeset/three-pillows-enter.md b/.changeset/three-pillows-enter.md
+new file mode 100644
+index 00000000000..cdf3e693d80
+--- /dev/null
++++ b/.changeset/three-pillows-enter.md
+@@ -0,0 +1,5 @@
++---
++'@tanstack/vue-query': patch
++---
++
++fix(vue-query): fix type of queryOptions to allow plain properies or getters
+diff --git a/packages/vue-query/src/__tests__/queryOptions.test-d.ts b/packages/vue-query/src/__tests__/queryOptions.test-d.ts
+index 3c98c30296b..d7509080eba 100644
+--- a/packages/vue-query/src/__tests__/queryOptions.test-d.ts
++++ b/packages/vue-query/src/__tests__/queryOptions.test-d.ts
+@@ -11,9 +11,9 @@ describe('queryOptions', () => {
+     const key = queryKey()
+     assertType(
+       queryOptions({
++        // @ts-expect-error this is a good error, because stallTime does not exist!
+         queryKey: key,
+         queryFn: () => Promise.resolve(5),
+-        // @ts-expect-error this is a good error, because stallTime does not exist!
+         stallTime: 1000,
+       }),
+     )
+@@ -119,11 +119,13 @@ describe('queryOptions', () => {
+ 
+     expectTypeOf(data).toEqualTypeOf<number | undefined>()
+   })
+-  it('should allow to be passed to QueryClient methods while containing ref in queryKey', () => {
+-    const options = queryOptions({
+-      queryKey: ['key', ref(1), { nested: ref(2) }],
++  it('should allow to be passed to QueryClient methods while containing getter', () => {
++    const ref1 = ref(1)
++    const ref2 = ref(2)
++    const options = queryOptions(() => ({
++      queryKey: ['key', ref1.value, { nested: ref2.value }],
+       queryFn: () => Promise.resolve(5),
+-    })
++    }))
+ 
+     const queryClient = new QueryClient()
+ 
+@@ -228,4 +230,27 @@ describe('queryOptions', () => {
+ 
+     expectTypeOf(data).toEqualTypeOf<number>()
+   })
++
++  it('should allow accessing queryFn and other properties on the returned options object', () => {
++    const options = queryOptions({
++      queryKey: ['groups'],
++      queryFn: () => Promise.resolve([]),
++    })
++
++    expectTypeOf(options.queryFn).not.toBeUndefined()
++    expectTypeOf(options.queryKey).not.toBeUndefined()
++    expectTypeOf(options.staleTime).not.toBeUndefined()
++  })
++
++  it('should allow accessing queryFn and other properties on the returned options when used with getter', () => {
++    const options = queryOptions(() => ({
++      queryKey: ['groups'],
++      queryFn: () => Promise.resolve([]),
++    }))
++
++    const resolvedGetter = options()
++
++    expectTypeOf(resolvedGetter.queryFn).not.toBeUndefined()
++    expectTypeOf(resolvedGetter.queryKey).not.toBeUndefined()
++  })
+ })
+diff --git a/packages/vue-query/src/__tests__/queryOptions.test.ts b/packages/vue-query/src/__tests__/queryOptions.test.ts
+index 93be949ebce..4f5eb2963c1 100644
+--- a/packages/vue-query/src/__tests__/queryOptions.test.ts
++++ b/packages/vue-query/src/__tests__/queryOptions.test.ts
+@@ -1,14 +1,15 @@
+ import { describe, expect, it } from 'vitest'
+ import { queryOptions } from '../queryOptions'
+-import type { UseQueryOptions } from '../useQuery'
++import type { QueryOptions } from '../queryOptions'
+ 
+ describe('queryOptions', () => {
+   it('should return the object received as a parameter without any modification.', () => {
+-    const object: UseQueryOptions = {
++    const object: QueryOptions = {
+       queryKey: ['key'],
+       queryFn: () => Promise.resolve(5),
+     } as const
+ 
+-    expect(queryOptions(object)).toBe(object)
++    const options = queryOptions(object)
++    expect(options).toBe(object)
+   })
+ })
+diff --git a/packages/vue-query/src/__tests__/useQueries.test-d.ts b/packages/vue-query/src/__tests__/useQueries.test-d.ts
+index 7e6783d422f..09feb97e371 100644
+--- a/packages/vue-query/src/__tests__/useQueries.test-d.ts
++++ b/packages/vue-query/src/__tests__/useQueries.test-d.ts
+@@ -263,4 +263,27 @@ describe('UseQueries config object overload', () => {
+       number | boolean | undefined
+     >()
+   })
++
++  it('should infer correct data type from queryOptions without initialData in useQueries', () => {
++    const options = queryOptions({
++      queryKey: ['key'],
++      queryFn: () => Promise.resolve(5),
++    })
++
++    const { value: queriesState } = useQueries({ queries: [options] })
++
++    expectTypeOf(queriesState[0].data).toEqualTypeOf<number | undefined>()
++  })
++
++  it('should infer correct data type from queryOptions with select in useQueries', () => {
++    const options = queryOptions({
++      queryKey: ['key'],
++      queryFn: () => Promise.resolve(5),
++      select: (data) => data.toString(),
++    })
++
++    const { value: queriesState } = useQueries({ queries: [options] })
++
++    expectTypeOf(queriesState[0].data).toEqualTypeOf<string | undefined>()
++  })
+ })
+diff --git a/packages/vue-query/src/index.ts b/packages/vue-query/src/index.ts
+index 61eb3c4452e..5fc85eadd34 100644
+--- a/packages/vue-query/src/index.ts
++++ b/packages/vue-query/src/index.ts
+@@ -6,6 +6,7 @@ export { VueQueryPlugin } from './vueQueryPlugin'
+ export { QueryClient } from './queryClient'
+ export { QueryCache } from './queryCache'
+ export { queryOptions } from './queryOptions'
++export { type QueryOptions } from './queryOptions'
+ export { infiniteQueryOptions } from './infiniteQueryOptions'
+ export type {
+   DefinedInitialDataInfiniteOptions,
+diff --git a/packages/vue-query/src/queryClient.ts b/packages/vue-query/src/queryClient.ts
+index 7f9a0894bfe..2568d83f26a 100644
+--- a/packages/vue-query/src/queryClient.ts
++++ b/packages/vue-query/src/queryClient.ts
+@@ -202,15 +202,23 @@ export class QueryClient extends QC {
+     TInferredQueryFnData = InferDataFromTag<TQueryFnData, TTaggedQueryKey>,
+     TInferredError = InferErrorFromTag<TError, TTaggedQueryKey>,
+   >(
+-    filters?: InvalidateQueryFilters<TTaggedQueryKey>,
++    filters?:
++      | InvalidateQueryFilters<TTaggedQueryKey>
++      | (() => InvalidateQueryFilters<TTaggedQueryKey>),
+     options?: MaybeRefDeep<InvalidateOptions>,
+   ): Promise<void>
+   invalidateQueries<TTaggedQueryKey extends QueryKey = QueryKey>(
+-    filters: MaybeRefDeep<InvalidateQueryFilters<TTaggedQueryKey>> = {},
+-    options: MaybeRefDeep<InvalidateOptions> = {},
++    filters:
++      | MaybeRefDeep<InvalidateQueryFilters<TTaggedQueryKey>>
++      | (() => InvalidateQueryFilters<TTaggedQueryKey>) = {},
++    options: MaybeRefDeep<InvalidateOptions> | (() => InvalidateOptions) = {},
+   ): Promise<void> {
+-    const filtersCloned = cloneDeepUnref(filters)
+-    const optionsCloned = cloneDeepUnref(options)
++    const filtersCloned = cloneDeepUnref(
++      filters as MaybeRefDeep<InvalidateQueryFilters<TTaggedQueryKey>>,
++    )
++    const optionsCloned = cloneDeepUnref(
++      options as MaybeRefDeep<InvalidateOptions>,
++    )
+ 
+     super.invalidateQueries(
+       { ...filtersCloned, refetchType: 'none' },
+@@ -275,9 +283,17 @@ export class QueryClient extends QC {
+     TQueryKey extends QueryKey = QueryKey,
+     TPageParam = never,
+   >(
+-    options: MaybeRefDeep<
+-      FetchQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+-    >,
++    options:
++      | MaybeRefDeep<
++          FetchQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
++        >
++      | (() => FetchQueryOptions<
++          TQueryFnData,
++          TError,
++          TData,
++          TQueryKey,
++          TPageParam
++        >),
+   ): Promise<TData>
+   fetchQuery<
+     TQueryFnData,
+diff --git a/packages/vue-query/src/queryOptions.ts b/packages/vue-query/src/queryOptions.ts
+index 4681080f8ca..38132b85bab 100644
+--- a/packages/vue-query/src/queryOptions.ts
++++ b/packages/vue-query/src/queryOptions.ts
+@@ -1,8 +1,60 @@
+-import type { DataTag, DefaultError, QueryKey } from '@tanstack/query-core'
++import type { DeepUnwrapRef, ShallowOption } from './types'
+ import type {
+-  DefinedInitialQueryOptions,
+-  UndefinedInitialQueryOptions,
+-} from './useQuery'
++  DataTag,
++  DefaultError,
++  Enabled,
++  InitialDataFunction,
++  NonUndefinedGuard,
++  QueryKey,
++  QueryObserverOptions,
++} from '@tanstack/query-core'
++
++export type QueryOptions<
++  TQueryFnData = unknown,
++  TError = DefaultError,
++  TData = TQueryFnData,
++  TQueryData = TQueryFnData,
++  TQueryKey extends QueryKey = QueryKey,
++> = {
++  [Property in keyof QueryObserverOptions<
++    TQueryFnData,
++    TError,
++    TData,
++    TQueryData,
++    TQueryKey
++  >]: Property extends 'enabled'
++    ? () => Enabled<TQueryFnData, TError, TQueryData, DeepUnwrapRef<TQueryKey>>
++    : QueryObserverOptions<
++        TQueryFnData,
++        TError,
++        TData,
++        TQueryData,
++        DeepUnwrapRef<TQueryKey>
++      >[Property]
++} & ShallowOption
++
++export type UndefinedInitialQueryOptions<
++  TQueryFnData = unknown,
++  TError = DefaultError,
++  TData = TQueryFnData,
++  TQueryKey extends QueryKey = QueryKey,
++> = QueryOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey> & {
++  initialData?:
++    | undefined
++    | InitialDataFunction<NonUndefinedGuard<TQueryFnData>>
++    | NonUndefinedGuard<TQueryFnData>
++}
++
++export type DefinedInitialQueryOptions<
++  TQueryFnData = unknown,
++  TError = DefaultError,
++  TData = TQueryFnData,
++  TQueryKey extends QueryKey = QueryKey,
++> = QueryOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey> & {
++  initialData:
++    | NonUndefinedGuard<TQueryFnData>
++    | (() => NonUndefinedGuard<TQueryFnData>)
++}
+ 
+ export function queryOptions<
+   TQueryFnData = unknown,
+@@ -15,6 +67,22 @@ export function queryOptions<
+   queryKey: DataTag<TQueryKey, TQueryFnData, TError>
+ }
+ 
++export function queryOptions<
++  TQueryFnData = unknown,
++  TError = DefaultError,
++  TData = TQueryFnData,
++  TQueryKey extends QueryKey = QueryKey,
++>(
++  options: () => DefinedInitialQueryOptions<
++    TQueryFnData,
++    TError,
++    TData,
++    TQueryKey
++  >,
++): () => DefinedInitialQueryOptions<TQueryFnData, TError, TData, TQueryKey> & {
++  queryKey: DataTag<TQueryKey, TQueryFnData, TError>
++}
++
+ export function queryOptions<
+   TQueryFnData = unknown,
+   TError = DefaultError,
+@@ -26,6 +94,27 @@ export function queryOptions<
+   queryKey: DataTag<TQueryKey, TQueryFnData, TError>
+ }
+ 
++export function queryOptions<
++  TQueryFnData = unknown,
++  TError = DefaultError,
++  TData = TQueryFnData,
++  TQueryKey extends QueryKey = QueryKey,
++>(
++  options: () => UndefinedInitialQueryOptions<
++    TQueryFnData,
++    TError,
++    TData,
++    TQueryKey
++  >,
++): () => UndefinedInitialQueryOptions<
++  TQueryFnData,
++  TError,
++  TData,
++  TQueryKey
++> & {
++  queryKey: DataTag<TQueryKey, TQueryFnData, TError>
++}
++
+ export function queryOptions(options: unknown) {
+   return options
+ }
+diff --git a/packages/vue-query/src/types.ts b/packages/vue-query/src/types.ts
+index eb793c811eb..979a966a2be 100644
+--- a/packages/vue-query/src/types.ts
++++ b/packages/vue-query/src/types.ts
+@@ -22,6 +22,8 @@ type UnwrapLeaf =
+   | Set<any>
+   | WeakSet<any>
+ 
++export type MaybeGetter<T> = T | (() => T)
++
+ export type MaybeRef<T> = Ref<T> | ComputedRef<T> | T
+ 
+ export type MaybeRefOrGetter<T> = MaybeRef<T> | (() => T)
+diff --git a/packages/vue-query/src/utils.ts b/packages/vue-query/src/utils.ts
+index 6072298ee2f..8d644f224ea 100644
+--- a/packages/vue-query/src/utils.ts
++++ b/packages/vue-query/src/utils.ts
+@@ -109,3 +109,7 @@ function isPlainObject(value: unknown): value is Object {
+ function isFunction(value: unknown): value is Function {
+   return typeof value === 'function'
+ }
++
++export function toValueDeep<T>(source: (() => T) | MaybeRefDeep<T>): T {
++  return isFunction(source) ? source() : cloneDeepUnref(source)
++}

@@ -1,0 +1,1588 @@
+diff --git a/dev-packages/browser-integration-tests/suites/public-api/setContext/non_serializable_context/test.ts b/dev-packages/browser-integration-tests/suites/public-api/setContext/non_serializable_context/test.ts
+index a622dacbbe5d..87bc8e128475 100644
+--- a/dev-packages/browser-integration-tests/suites/public-api/setContext/non_serializable_context/test.ts
++++ b/dev-packages/browser-integration-tests/suites/public-api/setContext/non_serializable_context/test.ts
+@@ -8,6 +8,6 @@ sentryTest('should normalize non-serializable context', async ({ getLocalTestUrl
+ 
+   const eventData = await getFirstSentryEnvelopeRequest<Event>(page, url);
+ 
+-  expect(eventData.contexts?.non_serializable).toEqual('[HTMLElement: HTMLBodyElement]');
++  expect(eventData.contexts?.non_serializable).toEqual('[HTMLElement: body]');
+   expect(eventData.message).toBe('non_serializable');
+ });
+diff --git a/dev-packages/browser-integration-tests/suites/replay/captureConsoleLog/test.ts b/dev-packages/browser-integration-tests/suites/replay/captureConsoleLog/test.ts
+index 90612770360b..a03cae493326 100644
+--- a/dev-packages/browser-integration-tests/suites/replay/captureConsoleLog/test.ts
++++ b/dev-packages/browser-integration-tests/suites/replay/captureConsoleLog/test.ts
+@@ -37,9 +37,9 @@ sentryTest('should capture console messages in replay', async ({ getLocalTestUrl
+         timestamp: expect.any(Number),
+         type: 'default',
+         category: 'console',
+-        data: { arguments: ['Test log', '[HTMLElement: HTMLBodyElement]'], logger: 'console' },
++        data: { arguments: ['Test log', '[HTMLElement: body]'], logger: 'console' },
+         level: 'log',
+-        message: 'Test log [object HTMLBodyElement]',
++        message: 'Test log [HTMLElement: body]',
+       },
+     ]),
+   );
+diff --git a/packages/browser-utils/src/htmlTreeAsString.ts b/packages/browser-utils/src/htmlTreeAsString.ts
+new file mode 100644
+index 000000000000..0eca02e60985
+--- /dev/null
++++ b/packages/browser-utils/src/htmlTreeAsString.ts
+@@ -0,0 +1,124 @@
++import { isString } from '@sentry/core';
++
++const DEFAULT_MAX_STRING_LENGTH = 80;
++
++type SimpleNode = {
++  parentNode: SimpleNode;
++} | null;
++
++/**
++ * Given a child DOM element, returns a query-selector statement describing that
++ * and its ancestors
++ * e.g. [HTMLElement] => body > div > input#foo.btn[name=baz]
++ * @returns generated DOM path
++ */
++export function htmlTreeAsString(
++  elem: unknown,
++  options: string[] | { keyAttrs?: string[]; maxStringLength?: number } = {},
++): string {
++  if (!elem) {
++    return '<unknown>';
++  }
++
++  // try/catch both:
++  // - accessing event.target (see getsentry/raven-js#838, #768)
++  // - `htmlTreeAsString` because it's complex, and just accessing the DOM incorrectly
++  // - can throw an exception in some circumstances.
++  try {
++    let currentElem = elem as SimpleNode;
++    const MAX_TRAVERSE_HEIGHT = 5;
++    const out = [];
++    let height = 0;
++    let len = 0;
++    const separator = ' > ';
++    const sepLength = separator.length;
++    let nextStr;
++    const keyAttrs = Array.isArray(options) ? options : options.keyAttrs;
++    const maxStringLength = (!Array.isArray(options) && options.maxStringLength) || DEFAULT_MAX_STRING_LENGTH;
++
++    while (currentElem && height++ < MAX_TRAVERSE_HEIGHT) {
++      nextStr = _htmlElementAsString(currentElem, keyAttrs);
++      // bail out if
++      // - nextStr is the 'html' element
++      // - the length of the string that would be created exceeds maxStringLength
++      //   (ignore this limit if we are on the first iteration)
++      if (nextStr === 'html' || (height > 1 && len + out.length * sepLength + nextStr.length >= maxStringLength)) {
++        break;
++      }
++
++      out.push(nextStr);
++
++      len += nextStr.length;
++      currentElem = currentElem.parentNode;
++    }
++
++    return out.reverse().join(separator);
++  } catch {
++    return '<unknown>';
++  }
++}
++
++/**
++ * Returns a simple, query-selector representation of a DOM element
++ * e.g. [HTMLElement] => input#foo.btn[name=baz]
++ * @returns generated DOM path
++ */
++function _htmlElementAsString(el: unknown, keyAttrs?: string[]): string {
++  const elem = el as {
++    tagName?: string;
++    id?: string;
++    className?: string;
++    getAttribute(key: string): string;
++  };
++
++  const out = [];
++
++  if (!elem?.tagName) {
++    return '';
++  }
++
++  if (typeof HTMLElement !== 'undefined') {
++    // If using the component name annotation plugin, this value may be available on the DOM node
++    if (elem instanceof HTMLElement && elem.dataset) {
++      if (elem.dataset['sentryComponent']) {
++        return elem.dataset['sentryComponent'];
++      }
++      if (elem.dataset['sentryElement']) {
++        return elem.dataset['sentryElement'];
++      }
++    }
++  }
++
++  out.push(elem.tagName.toLowerCase());
++
++  // Pairs of attribute keys defined in `serializeAttribute` and their values on element.
++  const keyAttrPairs = keyAttrs?.length
++    ? keyAttrs.filter(keyAttr => elem.getAttribute(keyAttr)).map(keyAttr => [keyAttr, elem.getAttribute(keyAttr)])
++    : null;
++
++  if (keyAttrPairs?.length) {
++    keyAttrPairs.forEach(keyAttrPair => {
++      out.push(`[${keyAttrPair[0]}="${keyAttrPair[1]}"]`);
++    });
++  } else {
++    if (elem.id) {
++      out.push(`#${elem.id}`);
++    }
++
++    const className = elem.className;
++    if (className && isString(className)) {
++      const classes = className.split(/\s+/);
++      for (const c of classes) {
++        out.push(`.${c}`);
++      }
++    }
++  }
++  for (const k of ['aria-label', 'type', 'name', 'title', 'alt']) {
++    const attr = elem.getAttribute(k);
++    if (attr) {
++      out.push(`[${k}="${attr}"]`);
++    }
++  }
++
++  return out.join('');
++}
+diff --git a/packages/browser-utils/src/index.ts b/packages/browser-utils/src/index.ts
+index 888524ed7c21..d960109c42c8 100644
+--- a/packages/browser-utils/src/index.ts
++++ b/packages/browser-utils/src/index.ts
+@@ -34,4 +34,8 @@ export { getBodyString, getFetchRequestArgBody, serializeFormData, parseXhrRespo
+ 
+ export { resourceTimingToSpanAttributes } from './metrics/resourceTiming';
+ 
++export { htmlTreeAsString } from './htmlTreeAsString';
++
++export { isElement } from './is';
++
+ export type { FetchHint, NetworkMetaWarning, XhrHint } from './types';
+diff --git a/packages/browser-utils/src/is.ts b/packages/browser-utils/src/is.ts
+new file mode 100644
+index 000000000000..38c25b72c83e
+--- /dev/null
++++ b/packages/browser-utils/src/is.ts
+@@ -0,0 +1,15 @@
++/**
++ * Checks whether given value's type is an Element instance.
++ *
++ * Returns false if `Element` is not available in the current runtime.
++ */
++export function isElement(wat: unknown): boolean {
++  if (typeof Element === 'undefined') {
++    return false;
++  }
++  try {
++    return wat instanceof Element;
++  } catch {
++    return false;
++  }
++}
+diff --git a/packages/browser-utils/src/metrics/browserMetrics.ts b/packages/browser-utils/src/metrics/browserMetrics.ts
+index 76e853eef5d3..7fa40ee101cb 100644
+--- a/packages/browser-utils/src/metrics/browserMetrics.ts
++++ b/packages/browser-utils/src/metrics/browserMetrics.ts
+@@ -5,7 +5,6 @@ import {
+   debug,
+   getActiveSpan,
+   getComponentName,
+-  htmlTreeAsString,
+   isPrimitive,
+   parseUrl,
+   SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN,
+@@ -13,6 +12,7 @@ import {
+   spanToJSON,
+   stringMatchesSomePattern,
+ } from '@sentry/core';
++import { htmlTreeAsString } from '../htmlTreeAsString';
+ import { WINDOW } from '../types';
+ import { trackClsAsStandaloneSpan } from './cls';
+ import {
+diff --git a/packages/browser-utils/src/metrics/cls.ts b/packages/browser-utils/src/metrics/cls.ts
+index d836ff315c06..4c09dde19c74 100644
+--- a/packages/browser-utils/src/metrics/cls.ts
++++ b/packages/browser-utils/src/metrics/cls.ts
+@@ -3,7 +3,6 @@ import {
+   browserPerformanceTimeOrigin,
+   debug,
+   getCurrentScope,
+-  htmlTreeAsString,
+   SEMANTIC_ATTRIBUTE_EXCLUSIVE_TIME,
+   SEMANTIC_ATTRIBUTE_SENTRY_MEASUREMENT_UNIT,
+   SEMANTIC_ATTRIBUTE_SENTRY_MEASUREMENT_VALUE,
+@@ -12,6 +11,7 @@ import {
+   timestampInSeconds,
+ } from '@sentry/core';
+ import { DEBUG_BUILD } from '../debug-build';
++import { htmlTreeAsString } from '../htmlTreeAsString';
+ import { addClsInstrumentationHandler } from './instrument';
+ import type { WebVitalReportEvent } from './utils';
+ import { listenForWebVitalReportEvents, msToSec, startStandaloneWebVitalSpan, supportsWebVital } from './utils';
+diff --git a/packages/browser-utils/src/metrics/inp.ts b/packages/browser-utils/src/metrics/inp.ts
+index 3eb0b2920a75..158d4b4212c2 100644
+--- a/packages/browser-utils/src/metrics/inp.ts
++++ b/packages/browser-utils/src/metrics/inp.ts
+@@ -4,7 +4,6 @@ import {
+   getActiveSpan,
+   getCurrentScope,
+   getRootSpan,
+-  htmlTreeAsString,
+   isBrowser,
+   SEMANTIC_ATTRIBUTE_EXCLUSIVE_TIME,
+   SEMANTIC_ATTRIBUTE_SENTRY_MEASUREMENT_UNIT,
+@@ -13,6 +12,7 @@ import {
+   SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN,
+   spanToJSON,
+ } from '@sentry/core';
++import { htmlTreeAsString } from '../htmlTreeAsString';
+ import { WINDOW } from '../types';
+ import type { InstrumentationHandlerCallback } from './instrument';
+ import {
+diff --git a/packages/browser-utils/src/metrics/lcp.ts b/packages/browser-utils/src/metrics/lcp.ts
+index c11f6bd63cbc..bcd065e94cf0 100644
+--- a/packages/browser-utils/src/metrics/lcp.ts
++++ b/packages/browser-utils/src/metrics/lcp.ts
+@@ -3,7 +3,6 @@ import {
+   browserPerformanceTimeOrigin,
+   debug,
+   getCurrentScope,
+-  htmlTreeAsString,
+   SEMANTIC_ATTRIBUTE_EXCLUSIVE_TIME,
+   SEMANTIC_ATTRIBUTE_SENTRY_MEASUREMENT_UNIT,
+   SEMANTIC_ATTRIBUTE_SENTRY_MEASUREMENT_VALUE,
+@@ -11,6 +10,7 @@ import {
+   SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN,
+ } from '@sentry/core';
+ import { DEBUG_BUILD } from '../debug-build';
++import { htmlTreeAsString } from '../htmlTreeAsString';
+ import { addLcpInstrumentationHandler } from './instrument';
+ import type { WebVitalReportEvent } from './utils';
+ import { listenForWebVitalReportEvents, msToSec, startStandaloneWebVitalSpan, supportsWebVital } from './utils';
+diff --git a/packages/browser-utils/src/metrics/webVitalSpans.ts b/packages/browser-utils/src/metrics/webVitalSpans.ts
+index 6f6d8de3901e..1cb4854a3c18 100644
+--- a/packages/browser-utils/src/metrics/webVitalSpans.ts
++++ b/packages/browser-utils/src/metrics/webVitalSpans.ts
+@@ -5,7 +5,6 @@ import {
+   getActiveSpan,
+   getCurrentScope,
+   getRootSpan,
+-  htmlTreeAsString,
+   SEMANTIC_ATTRIBUTE_EXCLUSIVE_TIME,
+   SEMANTIC_ATTRIBUTE_SENTRY_OP,
+   SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN,
+@@ -14,6 +13,7 @@ import {
+   timestampInSeconds,
+ } from '@sentry/core';
+ import { DEBUG_BUILD } from '../debug-build';
++import { htmlTreeAsString } from '../htmlTreeAsString';
+ import { WINDOW } from '../types';
+ import { getCachedInteractionContext, INP_ENTRY_MAP, MAX_PLAUSIBLE_INP_DURATION } from './inp';
+ import type { InstrumentationHandlerCallback } from './instrument';
+diff --git a/packages/browser-utils/test/metrics/cls.test.ts b/packages/browser-utils/test/metrics/cls.test.ts
+index 55550d02f546..9a2c94da04d2 100644
+--- a/packages/browser-utils/test/metrics/cls.test.ts
++++ b/packages/browser-utils/test/metrics/cls.test.ts
+@@ -1,5 +1,6 @@
+ import * as SentryCore from '@sentry/core';
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { htmlTreeAsString } from '../../src/htmlTreeAsString';
+ import { _sendStandaloneClsSpan } from '../../src/metrics/cls';
+ import * as WebVitalUtils from '../../src/metrics/utils';
+ 
+@@ -11,10 +12,13 @@ vi.mock('@sentry/core', async () => {
+     browserPerformanceTimeOrigin: vi.fn(),
+     timestampInSeconds: vi.fn(),
+     getCurrentScope: vi.fn(),
+-    htmlTreeAsString: vi.fn(),
+   };
+ });
+ 
++vi.mock('../../src/htmlTreeAsString', () => ({
++  htmlTreeAsString: vi.fn(),
++}));
++
+ describe('_sendStandaloneClsSpan', () => {
+   const mockSpan = {
+     addEvent: vi.fn(),
+@@ -35,7 +39,7 @@ describe('_sendStandaloneClsSpan', () => {
+     vi.mocked(SentryCore.getCurrentScope).mockReturnValue(mockScope as any);
+     vi.mocked(SentryCore.browserPerformanceTimeOrigin).mockReturnValue(1000);
+     vi.mocked(SentryCore.timestampInSeconds).mockReturnValue(1.5);
+-    vi.mocked(SentryCore.htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
++    vi.mocked(htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
+     vi.spyOn(WebVitalUtils, 'startStandaloneWebVitalSpan').mockReturnValue(mockSpan as any);
+   });
+ 
+@@ -136,14 +140,14 @@ describe('_sendStandaloneClsSpan', () => {
+     };
+     const pageloadSpanId = '789';
+ 
+-    vi.mocked(SentryCore.htmlTreeAsString)
++    vi.mocked(htmlTreeAsString)
+       .mockReturnValueOnce('<div>') // for the name
+       .mockReturnValueOnce('<div>') // for source 1
+       .mockReturnValueOnce('<span>'); // for source 2
+ 
+     _sendStandaloneClsSpan(clsValue, mockEntry, pageloadSpanId, 'navigation');
+ 
+-    expect(SentryCore.htmlTreeAsString).toHaveBeenCalledTimes(3);
++    expect(htmlTreeAsString).toHaveBeenCalledTimes(3);
+     expect(WebVitalUtils.startStandaloneWebVitalSpan).toHaveBeenCalledWith({
+       name: '<div>',
+       transaction: 'test-transaction',
+diff --git a/packages/browser-utils/test/metrics/lcp.test.ts b/packages/browser-utils/test/metrics/lcp.test.ts
+index 634b9652f816..baa7cd5de052 100644
+--- a/packages/browser-utils/test/metrics/lcp.test.ts
++++ b/packages/browser-utils/test/metrics/lcp.test.ts
+@@ -1,5 +1,6 @@
+ import * as SentryCore from '@sentry/core';
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { htmlTreeAsString } from '../../src/htmlTreeAsString';
+ import { _sendStandaloneLcpSpan, isValidLcpMetric, MAX_PLAUSIBLE_LCP_DURATION } from '../../src/metrics/lcp';
+ import * as WebVitalUtils from '../../src/metrics/utils';
+ 
+@@ -9,10 +10,13 @@ vi.mock('@sentry/core', async () => {
+     ...actual,
+     browserPerformanceTimeOrigin: vi.fn(),
+     getCurrentScope: vi.fn(),
+-    htmlTreeAsString: vi.fn(),
+   };
+ });
+ 
++vi.mock('../../src/htmlTreeAsString', () => ({
++  htmlTreeAsString: vi.fn(),
++}));
++
+ describe('isValidLcpMetric', () => {
+   it('returns true for plausible lcp values', () => {
+     expect(isValidLcpMetric(1)).toBe(true);
+@@ -43,7 +47,7 @@ describe('_sendStandaloneLcpSpan', () => {
+   beforeEach(() => {
+     vi.mocked(SentryCore.getCurrentScope).mockReturnValue(mockScope as any);
+     vi.mocked(SentryCore.browserPerformanceTimeOrigin).mockReturnValue(1000);
+-    vi.mocked(SentryCore.htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
++    vi.mocked(htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
+     vi.spyOn(WebVitalUtils, 'startStandaloneWebVitalSpan').mockReturnValue(mockSpan as any);
+   });
+ 
+diff --git a/packages/browser-utils/test/metrics/webVitalSpans.test.ts b/packages/browser-utils/test/metrics/webVitalSpans.test.ts
+index 8b9325895e85..640a2ee95f71 100644
+--- a/packages/browser-utils/test/metrics/webVitalSpans.test.ts
++++ b/packages/browser-utils/test/metrics/webVitalSpans.test.ts
+@@ -1,5 +1,6 @@
+ import * as SentryCore from '@sentry/core';
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { htmlTreeAsString } from '../../src/htmlTreeAsString';
+ import * as inpModule from '../../src/metrics/inp';
+ import { MAX_PLAUSIBLE_LCP_DURATION } from '../../src/metrics/lcp';
+ import { _emitWebVitalSpan, _sendClsSpan, _sendInpSpan, _sendLcpSpan } from '../../src/metrics/webVitalSpans';
+@@ -11,7 +12,6 @@ vi.mock('@sentry/core', async () => {
+     browserPerformanceTimeOrigin: vi.fn(),
+     timestampInSeconds: vi.fn(),
+     getCurrentScope: vi.fn(),
+-    htmlTreeAsString: vi.fn(),
+     startInactiveSpan: vi.fn(),
+     getActiveSpan: vi.fn(),
+     getRootSpan: vi.fn(),
+@@ -20,6 +20,10 @@ vi.mock('@sentry/core', async () => {
+   };
+ });
+ 
++vi.mock('../../src/htmlTreeAsString', () => ({
++  htmlTreeAsString: vi.fn(),
++}));
++
+ // Mock WINDOW
+ vi.mock('../../src/types', () => ({
+   WINDOW: {
+@@ -210,7 +214,7 @@ describe('_sendLcpSpan', () => {
+   beforeEach(() => {
+     vi.mocked(SentryCore.getCurrentScope).mockReturnValue(mockScope as any);
+     vi.mocked(SentryCore.browserPerformanceTimeOrigin).mockReturnValue(1000);
+-    vi.mocked(SentryCore.htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
++    vi.mocked(htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
+     vi.mocked(SentryCore.startInactiveSpan).mockReturnValue(mockSpan as any);
+     vi.mocked(SentryCore.spanToStreamedSpanJSON).mockReturnValue({
+       attributes: { 'sentry.op': 'pageload' },
+@@ -296,7 +300,7 @@ describe('_sendClsSpan', () => {
+     vi.mocked(SentryCore.getCurrentScope).mockReturnValue(mockScope as any);
+     vi.mocked(SentryCore.browserPerformanceTimeOrigin).mockReturnValue(1000);
+     vi.mocked(SentryCore.timestampInSeconds).mockReturnValue(1.5);
+-    vi.mocked(SentryCore.htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
++    vi.mocked(htmlTreeAsString).mockImplementation((node: any) => `<${node?.tagName || 'div'}>`);
+     vi.mocked(SentryCore.startInactiveSpan).mockReturnValue(mockSpan as any);
+     vi.mocked(SentryCore.spanToStreamedSpanJSON).mockReturnValue({
+       attributes: { 'sentry.op': 'pageload' },
+@@ -324,7 +328,7 @@ describe('_sendClsSpan', () => {
+       toJSON: vi.fn(),
+     };
+ 
+-    vi.mocked(SentryCore.htmlTreeAsString)
++    vi.mocked(htmlTreeAsString)
+       .mockReturnValueOnce('<div>') // for the name
+       .mockReturnValueOnce('<div>') // for source 1
+       .mockReturnValueOnce('<span>'); // for source 2
+@@ -377,7 +381,7 @@ describe('_sendInpSpan', () => {
+   beforeEach(() => {
+     vi.mocked(SentryCore.getCurrentScope).mockReturnValue(mockScope as any);
+     vi.mocked(SentryCore.browserPerformanceTimeOrigin).mockReturnValue(1000);
+-    vi.mocked(SentryCore.htmlTreeAsString).mockReturnValue('<button>');
++    vi.mocked(htmlTreeAsString).mockReturnValue('<button>');
+     vi.mocked(SentryCore.startInactiveSpan).mockReturnValue(mockSpan as any);
+     vi.mocked(SentryCore.getActiveSpan).mockReturnValue(undefined);
+     vi.mocked(SentryCore.spanToStreamedSpanJSON).mockReturnValue({ attributes: {} } as any);
+diff --git a/packages/browser/src/index.ts b/packages/browser/src/index.ts
+index adc57e7d4659..e206a7a012fc 100644
+--- a/packages/browser/src/index.ts
++++ b/packages/browser/src/index.ts
+@@ -42,6 +42,7 @@ export {
+   startBrowserTracingPageLoadSpan,
+ } from './tracing/browserTracingIntegration';
+ export { elementTimingIntegration } from '@sentry-internal/browser-utils';
++export { normalizeStringifyValue } from './normalizeStringifyValue';
+ export { reportPageLoaded } from './tracing/reportPageLoaded';
+ export { setActiveSpanInBrowser } from './tracing/setActiveSpan';
+ export { spanStreamingIntegration } from './integrations/spanstreaming';
+diff --git a/packages/browser/src/integrations/breadcrumbs.ts b/packages/browser/src/integrations/breadcrumbs.ts
+index 7378ffc7c377..e8488d8b83c7 100644
+--- a/packages/browser/src/integrations/breadcrumbs.ts
++++ b/packages/browser/src/integrations/breadcrumbs.ts
+@@ -25,7 +25,6 @@ import {
+   getClient,
+   getComponentName,
+   getEventDescription,
+-  htmlTreeAsString,
+   parseUrl,
+   safeJoin,
+   severityLevelFromString,
+@@ -35,6 +34,7 @@ import {
+   addClickKeypressInstrumentationHandler,
+   addHistoryInstrumentationHandler,
+   addXhrInstrumentationHandler,
++  htmlTreeAsString,
+   SENTRY_XHR_DATA_KEY,
+ } from '@sentry-internal/browser-utils';
+ import { DEBUG_BUILD } from '../debug-build';
+diff --git a/packages/browser/src/normalizeStringifyValue.ts b/packages/browser/src/normalizeStringifyValue.ts
+new file mode 100644
+index 000000000000..c4eb12038270
+--- /dev/null
++++ b/packages/browser/src/normalizeStringifyValue.ts
+@@ -0,0 +1,44 @@
++import { htmlTreeAsString, isElement } from '@sentry-internal/browser-utils';
++
++type Prototype = { constructor?: (...args: unknown[]) => unknown };
++
++const HTML_ELEMENT_CONSTRUCTOR_NAME_REGEX = /^HTML(\w*)Element$/;
++
++/**
++ * Browser-specific contributions to `normalize()`'s `stringifyValue`. Plug into
++ * `setNormalizeStringifier` from the browser SDK so DOM values get a useful string
++ * representation without forcing core to carry the DOM-specific code.
++ *
++ * Handles:
++ * - `window` → `[Window]`
++ * - `document` → `[Document]`
++ * - `HTMLElement` subclasses → `[HTMLElement: <css-selector-path>]` (via `htmlTreeAsString`)
++ *
++ * Vue ViewModels and React SyntheticEvents are not handled here — the Vue and React
++ * SDKs wrap this function in their `init` and add their own checks on top.
++ */
++export function normalizeStringifyValue(value: Exclude<unknown, string | number | boolean | null>): string | undefined {
++  // oxlint-disable-next-line no-restricted-globals
++  if (typeof window !== 'undefined' && value === window) {
++    return '[Window]';
++  }
++  // oxlint-disable-next-line no-restricted-globals
++  if (typeof document !== 'undefined' && value === document) {
++    return '[Document]';
++  }
++
++  if (isElement(value)) {
++    const objName = getConstructorName(value);
++    if (HTML_ELEMENT_CONSTRUCTOR_NAME_REGEX.test(objName)) {
++      return `[HTMLElement: ${htmlTreeAsString(value)}]`;
++    }
++  }
++
++  return undefined;
++}
++
++function getConstructorName(value: unknown): string {
++  const prototype: Prototype | null = Object.getPrototypeOf(value);
++
++  return prototype?.constructor ? prototype.constructor.name : 'null prototype';
++}
+diff --git a/packages/browser/src/sdk.ts b/packages/browser/src/sdk.ts
+index dc1be3382664..5ca208ca0466 100644
+--- a/packages/browser/src/sdk.ts
++++ b/packages/browser/src/sdk.ts
+@@ -6,6 +6,7 @@ import {
+   getIntegrationsToSetup,
+   inboundFiltersIntegration,
+   initAndBind,
++  setNormalizeStringifier,
+   stackParserFromStackParserOptions,
+ } from '@sentry/core/browser';
+ import type { BrowserClientOptions, BrowserOptions } from './client';
+@@ -20,6 +21,7 @@ import { linkedErrorsIntegration } from './integrations/linkederrors';
+ import { spotlightBrowserIntegration } from './integrations/spotlight';
+ import { defaultStackParser } from './stack-parsers';
+ import { makeFetchTransport } from './transports/fetch';
++import { normalizeStringifyValue } from './normalizeStringifyValue';
+ import { checkAndWarnIfIsEmbeddedBrowserExtension } from './utils/detectBrowserExtension';
+ 
+ /** Get the default integrations for the browser SDK. */
+@@ -118,6 +120,9 @@ export function init(options: BrowserOptions = {}): Client | undefined {
+     }),
+     transport: options.transport || makeFetchTransport,
+   };
++
++  setNormalizeStringifier(normalizeStringifyValue);
++
+   return initAndBind(BrowserClient, clientOptions);
+ }
+ 
+diff --git a/packages/browser/test/eventbuilder.test.ts b/packages/browser/test/eventbuilder.test.ts
+index 7b5df4fb1c19..bdf5127243b2 100644
+--- a/packages/browser/test/eventbuilder.test.ts
++++ b/packages/browser/test/eventbuilder.test.ts
+@@ -82,9 +82,9 @@ describe('eventFromUnknownInput', () => {
+       'Event',
+       new Event('custom'),
+       {
+-        currentTarget: '[object Null]',
++        currentTarget: null,
+         isTrusted: false,
+-        target: '[object Null]',
++        target: null,
+         type: 'custom',
+       },
+       'Event `Event` (type=custom) captured as exception',
+@@ -93,9 +93,9 @@ describe('eventFromUnknownInput', () => {
+       'MouseEvent',
+       new MouseEvent('click'),
+       {
+-        currentTarget: '[object Null]',
++        currentTarget: null,
+         isTrusted: false,
+-        target: '[object Null]',
++        target: null,
+         type: 'click',
+       },
+       'Event `MouseEvent` (type=click) captured as exception',
+diff --git a/packages/browser/test/normalizeStringifyValue.test.ts b/packages/browser/test/normalizeStringifyValue.test.ts
+new file mode 100644
+index 000000000000..2d4951ea1b16
+--- /dev/null
++++ b/packages/browser/test/normalizeStringifyValue.test.ts
+@@ -0,0 +1,77 @@
++/**
++ * @vitest-environment jsdom
++ */
++import { normalize, setNormalizeStringifier } from '@sentry/core';
++import { afterEach, beforeEach, describe, expect, test } from 'vitest';
++import { normalizeStringifyValue } from '../src/normalizeStringifyValue';
++
++// Each test installs the browser stringifier via `setNormalizeStringifier` and tears
++// it down afterwards so unrelated tests don't see a leftover hook.
++describe('normalizeStringifyValue (registered via setNormalizeStringifier)', () => {
++  beforeEach(() => {
++    setNormalizeStringifier(normalizeStringifyValue);
++  });
++
++  afterEach(() => {
++    setNormalizeStringifier(undefined);
++  });
++
++  test('collapses `window` to `[Window]` (called directly)', () => {
++    // In a real browser `window` and `global` are distinct; in jsdom they're aliased,
++    // so an integration test through `normalize` would hit core's `[Global]` branch
++    // first. Calling the stringifier directly verifies the browser-specific check in
++    // isolation.
++    // eslint-disable-next-line no-restricted-globals
++    expect(normalizeStringifyValue(window)).toBe('[Window]');
++  });
++
++  test('collapses `document` to `[Document]`', () => {
++    expect(normalize({ d: document })).toEqual({ d: '[Document]' });
++  });
++
++  test('renders HTMLDivElement with selector-style path via htmlTreeAsString', () => {
++    const div = document.createElement('div');
++    div.setAttribute('data-test-id', 'd2');
++    div.classList.add('container');
++    expect(normalize({ div: document.createElement('div'), div2: div })).toEqual({
++      div: '[HTMLElement: div]',
++      div2: '[HTMLElement: div.container]',
++    });
++  });
++
++  test('renders input/select elements with their tag names', () => {
++    expect(
++      normalize({
++        input: document.createElement('input'),
++        select: document.createElement('select'),
++      }),
++    ).toEqual({
++      input: '[HTMLElement: input]',
++      select: '[HTMLElement: select]',
++    });
++  });
++
++  test('falls through to default normalization for non-DOM values', () => {
++    // Strings/numbers/regular objects must not be intercepted by the browser stringifier.
++    expect(normalize({ a: 'string', b: 42, c: { nested: true } })).toEqual({
++      a: 'string',
++      b: 42,
++      c: { nested: true },
++    });
++  });
++
++  test('does not handle Vue or React framework values (those belong to vue/react SDKs)', () => {
++    // A Vue-like object passes through unchanged; only Vue SDK's wrap would collapse it.
++    expect(normalize({ vm: { _isVue: true, foo: 'bar' } })).toEqual({
++      vm: { _isVue: true, foo: 'bar' },
++    });
++    // A SyntheticEvent-like plain object likewise; only React SDK's wrap would collapse it.
++    expect(
++      normalize({
++        e: { nativeEvent: 'x', preventDefault: 'fn', stopPropagation: 'fn' },
++      }),
++    ).toEqual({
++      e: { nativeEvent: 'x', preventDefault: 'fn', stopPropagation: 'fn' },
++    });
++  });
++});
+diff --git a/packages/core/src/browser-exports.ts b/packages/core/src/browser-exports.ts
+index 42cf373a125a..4b013834edec 100644
+--- a/packages/core/src/browser-exports.ts
++++ b/packages/core/src/browser-exports.ts
+@@ -3,7 +3,12 @@
+  *
+  * @module
+  */
+-export { getComponentName, getLocationHref, htmlTreeAsString } from './utils/browser';
++export {
++  getComponentName,
++  getLocationHref,
++  // eslint-disable-next-line deprecation/deprecation
++  htmlTreeAsString,
++} from './utils/browser';
+ export { supportsDOMError, supportsHistory, supportsNativeFetch, supportsReportingObserver } from './utils/supports';
+ export type { XhrBreadcrumbData, XhrBreadcrumbHint } from './types/breadcrumb';
+ export type {
+diff --git a/packages/core/src/shared-exports.ts b/packages/core/src/shared-exports.ts
+index 7d36db3dd168..87908812ca85 100644
+--- a/packages/core/src/shared-exports.ts
++++ b/packages/core/src/shared-exports.ts
+@@ -220,6 +220,7 @@ export { addHandler, maybeInstrument, resetInstrumentationHandlers, triggerHandl
+ export {
+   isDOMError,
+   isDOMException,
++  // eslint-disable-next-line deprecation/deprecation
+   isElement,
+   isError,
+   isErrorEvent,
+@@ -230,8 +231,10 @@ export {
+   isPrimitive,
+   isRegExp,
+   isString,
++  // eslint-disable-next-line deprecation/deprecation
+   isSyntheticEvent,
+   isThenable,
++  // eslint-disable-next-line deprecation/deprecation
+   isVueViewModel,
+ } from './utils/is';
+ export { isBrowser } from './utils/isBrowser';
+@@ -247,7 +250,7 @@ export {
+   parseSemver,
+   uuid4,
+ } from './utils/misc';
+-export { normalize, normalizeToSize, normalizeUrlToBase } from './utils/normalize';
++export { normalize, normalizeToSize, normalizeUrlToBase, setNormalizeStringifier } from './utils/normalize';
+ export { setNormalizationDepthOverrideHint, setSkipNormalizationHint } from './utils/normalizationHints';
+ export {
+   addNonEnumerableProperty,
+diff --git a/packages/core/src/utils/browser.ts b/packages/core/src/utils/browser.ts
+index 9237af237ba2..e3d88c0393f4 100644
+--- a/packages/core/src/utils/browser.ts
++++ b/packages/core/src/utils/browser.ts
+@@ -14,6 +14,8 @@ type SimpleNode = {
+  * and its ancestors
+  * e.g. [HTMLElement] => body > div > input#foo.btn[name=baz]
+  * @returns generated DOM path
++ * @deprecated This is browser-specific and will be removed from `@sentry/core` in a future major version.
++ * Import `htmlTreeAsString` from `@sentry-internal/browser-utils` instead.
+  */
+ export function htmlTreeAsString(
+   elem: unknown,
+diff --git a/packages/core/src/utils/is.ts b/packages/core/src/utils/is.ts
+index 326a2006bc4e..98000b309ab3 100644
+--- a/packages/core/src/utils/is.ts
++++ b/packages/core/src/utils/is.ts
+@@ -136,6 +136,8 @@ export function isEvent(wat: unknown): wat is PolymorphicEvent {
+  *
+  * @param wat A value to be checked.
+  * @returns A boolean representing the result.
++ * @deprecated This is browser-specific and will be removed from `@sentry/core` in a future major version.
++ * Import `isElement` from `@sentry-internal/browser-utils` instead.
+  */
+ export function isElement(wat: unknown): boolean {
+   return typeof Element !== 'undefined' && isInstanceOf(wat, Element);
+@@ -162,11 +164,13 @@ export function isThenable(wat: any): wat is PromiseLike<any> {
+ }
+ 
+ /**
+- * Checks whether given value's type is a SyntheticEvent
++ * Checks whether given value's type is a React SyntheticEvent
+  * {@link isSyntheticEvent}.
+  *
+  * @param wat A value to be checked.
+  * @returns A boolean representing the result.
++ * @deprecated This is React-specific and will be removed from `@sentry/core` in a future major version.
++ * Use the equivalent helper that ships with `@sentry/react` instead.
+  */
+ export function isSyntheticEvent(wat: unknown): boolean {
+   return isPlainObject(wat) && 'nativeEvent' in wat && 'preventDefault' in wat && 'stopPropagation' in wat;
+@@ -195,6 +199,8 @@ export function isInstanceOf<T>(wat: any, base: any): wat is T {
+  *
+  * @param wat A value to be checked.
+  * @returns A boolean representing the result.
++ * @deprecated This is Vue-specific and will be removed from `@sentry/core` in a future major version.
++ * Use the equivalent helper that ships with `@sentry/vue` instead.
+  */
+ export function isVueViewModel(wat: unknown): wat is VueViewModel | VNode {
+   // Not using Object.prototype.toString because in Vue 3 it would read the instance's Symbol(Symbol.toStringTag) property.
+diff --git a/packages/core/src/utils/normalize.ts b/packages/core/src/utils/normalize.ts
+index 853afc7df753..0a31a0c53885 100644
+--- a/packages/core/src/utils/normalize.ts
++++ b/packages/core/src/utils/normalize.ts
+@@ -1,8 +1,22 @@
+ import type { Primitive } from '../types/misc';
+-import { isSyntheticEvent, isVueViewModel } from './is';
+ import { getNormalizationDepthOverrideHint, hasSkipNormalizationHint } from './normalizationHints';
+ import { convertToPlainObject } from './object';
+-import { getFunctionName, getVueInternalName } from './stacktrace';
++import { getFunctionName } from './stacktrace';
++
++type Stringifier = (value: Exclude<unknown, string | number | boolean | null>) => string | undefined;
++
++// We store a custom stringifier in module scope, which is not bullet proof
++// however, we currently only really use this for browser-specific values, where this should work just fine, generally.
++let stringifier: Stringifier | undefined;
++
++/**
++ * Set a custom stringifier for the normalize function.
++ * If this returns a non-empty string, it will be used instead of the default stringification.
++ * Return undefined to fall back to the generic behavior.
++ */
++export function setNormalizeStringifier(newStringifier: Stringifier | undefined): void {
++  stringifier = newStringifier;
++}
+ 
+ type Prototype = { constructor?: (...args: unknown[]) => unknown };
+ // This is a hack to placate TS, relying on the fact that technically, arrays are objects with integer keys. Normally we
+@@ -180,39 +194,27 @@ function visit(
+  * @param value The value to stringify
+  * @returns A stringified representation of the given value
+  */
+-function stringifyValue(
++export function stringifyValue(
+   key: unknown,
+   // this type is a tiny bit of a cheat, since this function does handle NaN (which is technically a number), but for
+   // our internal use, it'll do
+   value: Exclude<unknown, string | number | boolean | null>,
+ ): string {
+   try {
+-    // It's safe to use `global`, `window`, and `document` here in this manner, as we are asserting using `typeof` first
+-    // which won't throw if they are not present.
++    // Runtime-specific stringifications (browser, framework integrations) are registered on the
++    // async-context strategy. Consult them before the universal fallbacks below.
++    if (stringifier) {
++      const stringified = stringifier(value);
++      // Safe to ignore empty strings here as well, we wont stringify to this
++      if (stringified) {
++        return stringified;
++      }
++    }
+ 
+     if (typeof global !== 'undefined' && value === global) {
+       return '[Global]';
+     }
+ 
+-    // eslint-disable-next-line no-restricted-globals
+-    if (typeof window !== 'undefined' && value === window) {
+-      return '[Window]';
+-    }
+-
+-    // eslint-disable-next-line no-restricted-globals
+-    if (typeof document !== 'undefined' && value === document) {
+-      return '[Document]';
+-    }
+-
+-    if (isVueViewModel(value)) {
+-      return getVueInternalName(value);
+-    }
+-
+-    // React's SyntheticEvent thingy
+-    if (isSyntheticEvent(value)) {
+-      return '[SyntheticEvent]';
+-    }
+-
+     if (typeof value === 'number' && !Number.isFinite(value)) {
+       return `[${value}]`;
+     }
+@@ -236,11 +238,6 @@ function stringifyValue(
+     // we can make sure that only plain objects come out that way.
+     const objName = getConstructorName(value);
+ 
+-    // Handle HTML Elements
+-    if (/^HTML(\w*)Element$/.test(objName)) {
+-      return `[HTMLElement: ${objName}]`;
+-    }
+-
+     return `[object ${objName}]`;
+   } catch (err) {
+     return `**non-serializable** (${err})`;
+diff --git a/packages/core/src/utils/object.ts b/packages/core/src/utils/object.ts
+index e20a9d07818b..2f324097ac57 100644
+--- a/packages/core/src/utils/object.ts
++++ b/packages/core/src/utils/object.ts
+@@ -1,9 +1,8 @@
+ /* eslint-disable @typescript-eslint/no-explicit-any */
+ import { DEBUG_BUILD } from '../debug-build';
+ import type { WrappedFunction } from '../types/wrappedfunction';
+-import { htmlTreeAsString } from './browser';
+ import { debug } from './debug-logger';
+-import { isElement, isError, isEvent, isInstanceOf, isPrimitive } from './is';
++import { isError, isEvent, isPrimitive } from './is';
+ 
+ /**
+  * Replace a method in an object with a wrapped version of itself.
+@@ -132,21 +131,7 @@ export function getOriginalFunction<T extends Function>(func: WrappedFunction<T>
+  * @returns An Event or Error turned into an object - or the value argument itself, when value is neither an Event nor
+  *  an Error.
+  */
+-export function convertToPlainObject<V>(value: V):
+-  | {
+-      [ownProps: string]: unknown;
+-      type: string;
+-      target: string;
+-      currentTarget: string;
+-      detail?: unknown;
+-    }
+-  | {
+-      [ownProps: string]: unknown;
+-      message: string;
+-      name: string;
+-      stack?: string;
+-    }
+-  | V {
++export function convertToPlainObject<V>(value: V): Record<string, unknown> | V {
+   if (isError(value)) {
+     return {
+       message: value.message,
+@@ -154,37 +139,21 @@ export function convertToPlainObject<V>(value: V):
+       stack: value.stack,
+       ...getOwnProperties(value),
+     };
+-  } else if (isEvent(value)) {
+-    const newObj: {
+-      [ownProps: string]: unknown;
+-      type: string;
+-      target: string;
+-      currentTarget: string;
+-      detail?: unknown;
+-    } = {
+-      type: value.type,
+-      target: serializeEventTarget(value.target),
+-      currentTarget: serializeEventTarget(value.currentTarget),
++  }
++
++  // This handles browser events specifically, where certain properties are non-enumerable and need to be unpacked.
++  if (isEvent(value)) {
++    const { type, target, currentTarget, detail } = value;
++    return {
++      type,
++      target,
++      currentTarget,
++      ...(detail ? { detail } : {}),
+       ...getOwnProperties(value),
+     };
+-
+-    if (typeof CustomEvent !== 'undefined' && isInstanceOf(value, CustomEvent)) {
+-      newObj.detail = value.detail;
+-    }
+-
+-    return newObj;
+-  } else {
+-    return value;
+   }
+-}
+ 
+-/** Creates a string representation of the target of an `Event` object */
+-function serializeEventTarget(target: unknown): string {
+-  try {
+-    return isElement(target) ? htmlTreeAsString(target) : Object.prototype.toString.call(target);
+-  } catch {
+-    return '<unknown>';
+-  }
++  return value;
+ }
+ 
+ /** Filters out all but an object's own properties */
+diff --git a/packages/core/src/utils/stacktrace.ts b/packages/core/src/utils/stacktrace.ts
+index 6522dadfd4c8..567fa2de70a3 100644
+--- a/packages/core/src/utils/stacktrace.ts
++++ b/packages/core/src/utils/stacktrace.ts
+@@ -172,6 +172,8 @@ export function getFramesFromEvent(event: Event): StackFrame[] | undefined {
+  * Get the internal name of an internal Vue value, to represent it in a stacktrace.
+  *
+  * @param value The value to get the internal name of.
++ * @deprecated This is Vue-specific and will be removed from `@sentry/core` in a future major version.
++ * The `@sentry/vue` SDK inlines its own equivalent — there's no replacement export from core.
+  */
+ export function getVueInternalName(value: VueViewModel | VNode): string {
+   // Check if it's a VNode (has __v_isVNode) or a component instance (has _isVue/__isVue)
+diff --git a/packages/core/src/utils/string.ts b/packages/core/src/utils/string.ts
+index 77e295b4237d..949a1bf4c6df 100644
+--- a/packages/core/src/utils/string.ts
++++ b/packages/core/src/utils/string.ts
+@@ -1,5 +1,5 @@
+-import { isRegExp, isString, isVueViewModel } from './is';
+-import { getVueInternalName } from './stacktrace';
++import { isPrimitive, isRegExp, isString } from './is';
++import { stringifyValue } from './normalize';
+ 
+ export { escapeStringForRegex } from '../vendor/escapeStringForRegex';
+ 
+@@ -75,19 +75,14 @@ export function safeJoin(input: unknown[], delimiter?: string): string {
+   // eslint-disable-next-line typescript/prefer-for-of
+   for (let i = 0; i < input.length; i++) {
+     const value = input[i];
+-    try {
+-      // This is a hack to fix a Vue3-specific bug that causes an infinite loop of
+-      // console warnings. This happens when a Vue template is rendered with
+-      // an undeclared variable, which we try to stringify, ultimately causing
+-      // Vue to issue another warning which repeats indefinitely.
+-      // see: https://github.com/getsentry/sentry-javascript/pull/8981
+-      if (isVueViewModel(value)) {
+-        output.push(getVueInternalName(value));
+-      } else {
+-        output.push(String(value));
+-      }
+-    } catch {
+-      output.push('[value cannot be serialized]');
++    if (isPrimitive(value)) {
++      output.push(String(value));
++    } else if (value instanceof Error) {
++      // While stringifyValue does not special-case errors, because we later handle them specifically based on the [object XXX] fallback,
++      // in this method we want to render them more nicely
++      output.push(value.message ? `${value.name}: ${value.message}` : value.name);
++    } else {
++      output.push(stringifyValue(undefined, value));
+     }
+   }
+ 
+diff --git a/packages/core/test/lib/utils/normalize.test.ts b/packages/core/test/lib/utils/normalize.test.ts
+index b296a8766f4f..772abec88525 100644
+--- a/packages/core/test/lib/utils/normalize.test.ts
++++ b/packages/core/test/lib/utils/normalize.test.ts
+@@ -3,7 +3,12 @@
+  */
+ 
+ import { describe, expect, test, vi } from 'vitest';
+-import { normalize, setNormalizationDepthOverrideHint, setSkipNormalizationHint } from '../../../src';
++import {
++  normalize,
++  setNormalizationDepthOverrideHint,
++  setNormalizeStringifier,
++  setSkipNormalizationHint,
++} from '../../../src';
+ import * as isModule from '../../../src/utils/is';
+ import * as stacktraceModule from '../../../src/utils/stacktrace';
+ 
+@@ -63,10 +68,24 @@ describe('normalize()', () => {
+       Object.defineProperty(chaseEvent, 'wagging', { value: true, enumerable: false });
+ 
+       expect(normalize(chaseEvent)).toEqual({
+-        currentTarget: 'park',
+-        isTrusted: false,
+-        target: 'park > tree > squirrel',
+         type: 'chase',
++        target: {
++          tagName: 'SQUIRREL',
++          parentNode: {
++            tagName: 'TREE',
++            parentNode: {
++              tagName: 'PARK',
++              getAttribute: '[Function: getAttribute]',
++            },
++            getAttribute: '[Function: getAttribute]',
++          },
++          getAttribute: '[Function: getAttribute]',
++        },
++        currentTarget: {
++          tagName: 'PARK',
++          getAttribute: '[Function: getAttribute]',
++        },
++        isTrusted: false,
+         // notice that `wagging` isn't included because it's not enumerable and not one of the ones we specifically extract
+       });
+ 
+@@ -321,31 +340,9 @@ describe('normalize()', () => {
+     });
+   });
+ 
+-  describe('handles HTML elements', () => {
+-    test('HTMLDivElement', () => {
+-      expect(
+-        normalize({
+-          div: document.createElement('div'),
+-          div2: document.createElement('div'),
+-        }),
+-      ).toEqual({
+-        div: '[HTMLElement: HTMLDivElement]',
+-        div2: '[HTMLElement: HTMLDivElement]',
+-      });
+-    });
+-
+-    test('input elements', () => {
+-      expect(
+-        normalize({
+-          input: document.createElement('input'),
+-          select: document.createElement('select'),
+-        }),
+-      ).toEqual({
+-        input: '[HTMLElement: HTMLInputElement]',
+-        select: '[HTMLElement: HTMLSelectElement]',
+-      });
+-    });
+-  });
++  // HTMLElement / SyntheticEvent / VueViewModel rendering is now contributed by SDKs (browser-utils,
++  // react, vue) via `setNormalizeStringifier` — those cases are covered in those packages' tests.
++  // Here we just verify the hook plumbing.
+ 
+   describe('calls toJSON if implemented', () => {
+     test('primitive values', () => {
+@@ -461,30 +458,6 @@ describe('normalize()', () => {
+       });
+     });
+ 
+-    test("known classes like React's `SyntheticEvent`", () => {
+-      const obj = {
+-        foo: {
+-          nativeEvent: 'wat',
+-          preventDefault: 'wat',
+-          stopPropagation: 'wat',
+-        },
+-      };
+-      expect(normalize(obj)).toEqual({
+-        foo: '[SyntheticEvent]',
+-      });
+-    });
+-
+-    test('known classes like `VueViewModel`', () => {
+-      const obj = {
+-        foo: {
+-          _isVue: true,
+-        },
+-      };
+-      expect(normalize(obj)).toEqual({
+-        foo: '[VueViewModel]',
+-      });
+-    });
+-
+     test('null prototype', () => {
+       const obj = Object.create(null);
+       expect(normalize(obj, 0)).toEqual('[null prototype]');
+@@ -617,42 +590,57 @@ describe('normalize()', () => {
+     });
+   });
+ 
+-  test("normalizes value on every iteration of decycle and takes care of things like React's `SyntheticEvent`", () => {
+-    const obj = {
+-      foo: {
+-        nativeEvent: 'wat',
+-        preventDefault: 'wat',
+-        stopPropagation: 'wat',
+-      },
+-      baz: NaN,
+-      qux: function qux(): void {
+-        /* no-empty */
+-      },
+-    };
+-    const result = normalize(obj);
+-    expect(result).toEqual({
+-      foo: '[SyntheticEvent]',
+-      baz: '[NaN]',
+-      qux: '[Function: qux]',
++  test('runs registered stringifier for each visited value', () => {
++    // Plug a stub stringifier in via `setNormalizeStringifier` and verify normalize
++    // consults it on every visited object — including iterating through decycle.
++    const stub = vi.fn((value: unknown): string | undefined => {
++      if (typeof value === 'object' && value !== null && (value as { foo?: unknown }).foo === 'mark-me') {
++        return '[StubMarker]';
++      }
++      return undefined;
+     });
++    setNormalizeStringifier(stub);
++    try {
++      const obj = {
++        marker: { foo: 'mark-me' },
++        nested: { inner: { foo: 'mark-me' } },
++        baz: NaN,
++        qux: function qux(): void {
++          /* no-empty */
++        },
++      };
++      const result = normalize(obj);
++      expect(result).toEqual({
++        marker: '[StubMarker]',
++        nested: { inner: '[StubMarker]' },
++        baz: '[NaN]',
++        qux: '[Function: qux]',
++      });
++      // Stub is consulted on every non-primitive value visited.
++      expect(stub).toHaveBeenCalled();
++    } finally {
++      setNormalizeStringifier(undefined);
++    }
+   });
+ 
+-  test('normalizes value on every iteration of decycle and takes care of things like `VueViewModel`', () => {
+-    const obj = {
+-      foo: {
+-        _isVue: true,
+-      },
+-      baz: NaN,
+-      qux: function qux(): void {
+-        /* no-empty */
+-      },
+-    };
+-    const result = normalize(obj);
+-    expect(result).toEqual({
+-      foo: '[VueViewModel]',
+-      baz: '[NaN]',
+-      qux: '[Function: qux]',
+-    });
++  test('falls back to default representation when the registered stringifier returns undefined', () => {
++    const stub = vi.fn(() => undefined);
++    setNormalizeStringifier(stub);
++    try {
++      expect(normalize({ a: 1, b: NaN })).toEqual({ a: 1, b: '[NaN]' });
++      expect(stub).toHaveBeenCalled();
++    } finally {
++      setNormalizeStringifier(undefined);
++    }
++  });
++
++  test('works without any registered stringifier (default ACS)', () => {
++    // Sanity: with no ACS hook configured, runtime-specific objects are walked as plain
++    // objects rather than collapsed to a runtime-specific string. The browser SDK
++    // installs a stringifier that turns `HTMLDivElement` into `[HTMLElement: div]`;
++    // here in core, with no stringifier installed, we just get the element's enumerable
++    // own properties (typically none).
++    expect(normalize({ d: document.createElement('div') })).toEqual({ d: {} });
+   });
+ 
+   describe('regression: JSON cannot spoof skip-normalization via string keys', () => {
+diff --git a/packages/core/test/lib/utils/string.test.ts b/packages/core/test/lib/utils/string.test.ts
+index b566bd62116f..ea1d46d2bef7 100644
+--- a/packages/core/test/lib/utils/string.test.ts
++++ b/packages/core/test/lib/utils/string.test.ts
+@@ -1,5 +1,6 @@
+-import { describe, expect, test, vi } from 'vitest';
+-import { isMatchingPattern, stringMatchesSomePattern, truncate } from '../../../src/utils/string';
++import { afterEach, describe, expect, test, vi } from 'vitest';
++import { setNormalizeStringifier } from '../../../src';
++import { isMatchingPattern, safeJoin, stringMatchesSomePattern, truncate } from '../../../src/utils/string';
+ 
+ describe('truncate()', () => {
+   test('it works as expected', () => {
+@@ -118,3 +119,79 @@ describe('stringMatchesSomePattern()', () => {
+     expect(stringMatchesSomePattern([] as any, ['foo', 'nope'])).toEqual(false);
+   });
+ });
++
++describe('safeJoin()', () => {
++  afterEach(() => {
++    // Some tests register a stringifier via `setNormalizeStringifier`; reset so we don't
++    // leak into unrelated tests sharing this module's global state.
++    setNormalizeStringifier(undefined);
++  });
++
++  test('joins primitive values with the given delimiter', () => {
++    expect(safeJoin(['a', 'b', 'c'], '-')).toEqual('a-b-c');
++    expect(safeJoin([1, 2, 3], '+')).toEqual('1+2+3');
++  });
++
++  test('defaults to comma-joining when no delimiter is provided', () => {
++    expect(safeJoin(['a', 'b', 'c'])).toEqual('a,b,c');
++  });
++
++  test('returns an empty string for an empty array', () => {
++    expect(safeJoin([], '-')).toEqual('');
++    expect(safeJoin([])).toEqual('');
++  });
++
++  test('returns an empty string when input is not an array', () => {
++    expect(safeJoin(null as any)).toEqual('');
++    expect(safeJoin(undefined as any)).toEqual('');
++    expect(safeJoin('not-an-array' as any)).toEqual('');
++    expect(safeJoin(42 as any)).toEqual('');
++    expect(safeJoin({} as any)).toEqual('');
++  });
++
++  test('stringifies primitive non-string values via `String(...)`', () => {
++    // `null` / `undefined` / `true` / `false` / `NaN` go through the primitive branch
++    // and are coerced with `String(...)` — which is different from what `normalize`
++    // would render (e.g. `'NaN'` here vs. `'[NaN]'` in normalized output).
++    expect(safeJoin([null, undefined, true, false, NaN], '|')).toEqual('null|undefined|true|false|NaN');
++  });
++
++  test('stringifies symbols and bigints via `String(...)`', () => {
++    expect(safeJoin([Symbol('foo'), BigInt(42)], '|')).toEqual('Symbol(foo)|42');
++  });
++
++  test('routes non-primitive values through `stringifyValue`', () => {
++    // Functions → `[Function: <name>]`. Plain objects → `[object Object]`.
++    function namedFn(): void {
++      /* no-empty */
++    }
++    expect(safeJoin([{ a: 1 }, namedFn], ' / ')).toEqual('[object Object] / [Function: namedFn]');
++  });
++
++  test('renders Errors via their constructor name & message', () => {
++    // Errors take the non-primitive branch and end up in `stringifyValue`'s
++    // `[object <ConstructorName>]` fallback.
++    expect(safeJoin([new Error('Boom'), new TypeError('Bad arg')], ' | ')).toEqual('Error: Boom | TypeError: Bad arg');
++  });
++
++  test('mixes primitives and objects in the same join', () => {
++    expect(safeJoin(['count:', 3, { ok: true }], ' ')).toEqual('count: 3 [object Object]');
++  });
++
++  test('honors a custom stringifier registered via `setNormalizeStringifier`', () => {
++    const stub = vi.fn((value: unknown): string | undefined => {
++      if (typeof value === 'object' && value !== null && (value as { mark?: unknown }).mark === true) {
++        return '[Marked]';
++      }
++      return undefined;
++    });
++    setNormalizeStringifier(stub);
++
++    expect(safeJoin([{ mark: true }, 'tail', { plain: 1 }], '/')).toEqual('[Marked]/tail/[object Object]');
++    expect(stub).toHaveBeenCalled();
++  });
++
++  test('supports an empty delimiter', () => {
++    expect(safeJoin(['a', 'b', 'c'], '')).toEqual('abc');
++  });
++});
+diff --git a/packages/react/src/isSyntheticEvent.ts b/packages/react/src/isSyntheticEvent.ts
+new file mode 100644
+index 000000000000..1241844a065f
+--- /dev/null
++++ b/packages/react/src/isSyntheticEvent.ts
+@@ -0,0 +1,13 @@
++import { isPlainObject } from '@sentry/core';
++
++/**
++ * Checks whether given value's type is a React `SyntheticEvent`.
++ *
++ * The check is structural: SyntheticEvent doesn't expose a stable constructor we can
++ * use across React versions / module duplicates, so we look for the small surface
++ * (`nativeEvent`, `preventDefault`, `stopPropagation`) that every SyntheticEvent has
++ * and that's unusual for plain objects to all have at once.
++ */
++export function isSyntheticEvent(wat: unknown): boolean {
++  return isPlainObject(wat) && 'nativeEvent' in wat && 'preventDefault' in wat && 'stopPropagation' in wat;
++}
+diff --git a/packages/react/src/sdk.ts b/packages/react/src/sdk.ts
+index 03981effc147..fdba3538c921 100644
+--- a/packages/react/src/sdk.ts
++++ b/packages/react/src/sdk.ts
+@@ -1,8 +1,13 @@
+ import type { BrowserOptions } from '@sentry/browser';
+-import { init as browserInit, setContext } from '@sentry/browser';
++import {
++  init as browserInit,
++  normalizeStringifyValue as browserNormalizeStringifyValue,
++  setContext,
++} from '@sentry/browser';
+ import type { Client } from '@sentry/core/browser';
+-import { applySdkMetadata } from '@sentry/core/browser';
++import { applySdkMetadata, setNormalizeStringifier } from '@sentry/core/browser';
+ import { version } from 'react';
++import { isSyntheticEvent } from './isSyntheticEvent';
+ 
+ /**
+  * Inits the React SDK
+@@ -14,5 +19,17 @@ export function init(options: BrowserOptions): Client | undefined {
+ 
+   applySdkMetadata(opts, 'react');
+   setContext('react', { version });
+-  return browserInit(opts);
++  const client = browserInit(opts);
++
++  // Add react-specific stringification
++  setNormalizeStringifier(normalizeStringifyValue);
++
++  return client;
++}
++
++function normalizeStringifyValue(value: Exclude<unknown, string | number | boolean | null>): string | undefined {
++  if (isSyntheticEvent(value)) {
++    return '[SyntheticEvent]';
++  }
++  return browserNormalizeStringifyValue(value);
+ }
+diff --git a/packages/react/test/normalize.test.ts b/packages/react/test/normalize.test.ts
+new file mode 100644
+index 000000000000..994b6da96919
+--- /dev/null
++++ b/packages/react/test/normalize.test.ts
+@@ -0,0 +1,61 @@
++/**
++ * @vitest-environment jsdom
++ */
++
++import { normalize, setNormalizeStringifier } from '@sentry/core';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { init } from '../src/sdk';
++
++const PUBLIC_DSN = 'https://username@domain/123';
++
++// The React SDK's `init()` wraps the browser-side `normalizeStringifyValue` (registered
++// via `setNormalizeStringifier`) with a SyntheticEvent check on top. These tests exercise
++// the composition end-to-end via `normalize()` (React-shaped values are collapsed here;
++// non-React values fall through to the browser variant and finally to core).
++describe('@sentry/react init() normalize stringifier', () => {
++  beforeEach(() => {
++    init({
++      dsn: PUBLIC_DSN,
++      defaultIntegrations: false,
++      integrations: [],
++    });
++  });
++
++  afterEach(() => {
++    setNormalizeStringifier(undefined);
++  });
++
++  it("collapses React SyntheticEvent-like objects to '[SyntheticEvent]'", () => {
++    const synthetic = {
++      nativeEvent: 'wat',
++      preventDefault: 'wat',
++      stopPropagation: 'wat',
++    };
++    expect(normalize({ e: synthetic })).toEqual({ e: '[SyntheticEvent]' });
++  });
++
++  it('still delegates HTMLElement rendering to the browser stringifier underneath', () => {
++    const button = document.createElement('button');
++    button.id = 'submit';
++    expect(normalize({ el: button })).toEqual({ el: '[HTMLElement: button#submit]' });
++  });
++
++  it('still delegates `document` to the browser stringifier underneath', () => {
++    expect(normalize({ d: document })).toEqual({ d: '[Document]' });
++  });
++
++  it('does not collapse plain objects that lack the SyntheticEvent shape', () => {
++    expect(normalize({ o: { nativeEvent: 'x' } })).toEqual({ o: { nativeEvent: 'x' } });
++    expect(normalize({ o: { preventDefault: 'fn', stopPropagation: 'fn' } })).toEqual({
++      o: { preventDefault: 'fn', stopPropagation: 'fn' },
++    });
++  });
++
++  it('does not intercept primitives or regular objects', () => {
++    expect(normalize({ s: 'string', n: 42, o: { foo: 'bar' } })).toEqual({
++      s: 'string',
++      n: 42,
++      o: { foo: 'bar' },
++    });
++  });
++});
+diff --git a/packages/replay-internal/src/coreHandlers/handleDom.ts b/packages/replay-internal/src/coreHandlers/handleDom.ts
+index ffe5dbc9096f..d4db934c3df5 100644
+--- a/packages/replay-internal/src/coreHandlers/handleDom.ts
++++ b/packages/replay-internal/src/coreHandlers/handleDom.ts
+@@ -1,5 +1,5 @@
++import { htmlTreeAsString } from '@sentry-internal/browser-utils';
+ import type { Breadcrumb, HandlerDataDom } from '@sentry/core';
+-import { htmlTreeAsString } from '@sentry/core';
+ import { record } from '@sentry-internal/rrweb';
+ import type { serializedElementNodeWithId, serializedNodeWithId } from '@sentry-internal/rrweb-snapshot';
+ import { NodeType } from '@sentry-internal/rrweb-snapshot';
+diff --git a/packages/replay-internal/src/coreHandlers/handleKeyboardEvent.ts b/packages/replay-internal/src/coreHandlers/handleKeyboardEvent.ts
+index d2969b10a333..ab053645108d 100644
+--- a/packages/replay-internal/src/coreHandlers/handleKeyboardEvent.ts
++++ b/packages/replay-internal/src/coreHandlers/handleKeyboardEvent.ts
+@@ -1,5 +1,5 @@
++import { htmlTreeAsString } from '@sentry-internal/browser-utils';
+ import type { Breadcrumb } from '@sentry/core';
+-import { htmlTreeAsString } from '@sentry/core';
+ import type { ReplayContainer } from '../types';
+ import { createBreadcrumb } from '../util/createBreadcrumb';
+ import { getBaseDomBreadcrumb } from './handleDom';
+diff --git a/packages/vue/src/normalizeStringifyValue.ts b/packages/vue/src/normalizeStringifyValue.ts
+new file mode 100644
+index 000000000000..d82233ddcdc0
+--- /dev/null
++++ b/packages/vue/src/normalizeStringifyValue.ts
+@@ -0,0 +1,47 @@
++import { normalizeStringifyValue as browserNormalizeStringifyValue } from '@sentry/browser';
++
++interface VueViewModel {
++  // Vue3
++  __isVue?: boolean;
++  // Vue2
++  _isVue?: boolean;
++}
++
++interface VNode {
++  // Vue3 — https://github.com/vuejs/core/blob/main/packages/runtime-core/src/vnode.ts
++  __v_isVNode?: boolean;
++}
++
++/**
++ * Checks whether the given value is a Vue ViewModel (Vue 2 / Vue 3 component
++ * instance) or a Vue 3 `VNode`.
++ *
++ * The check is structural (not `instanceof`) because in Vue 3 the toString tag
++ * would read a custom `Symbol.toStringTag`, and we want a cheap, runtime-safe
++ * probe that works on either Vue version.
++ */
++function isVueViewModel(wat: unknown): wat is VueViewModel {
++  return !!(typeof wat === 'object' && wat && ((wat as VueViewModel).__isVue || (wat as VueViewModel)._isVue));
++}
++
++/**
++ * Checks whether the given value is a Vue ViewModel (Vue 2 / Vue 3 component
++ * instance) or a Vue 3 `VNode`.
++ *
++ * The check is structural (not `instanceof`) because in Vue 3 the toString tag
++ * would read a custom `Symbol.toStringTag`, and we want a cheap, runtime-safe
++ * probe that works on either Vue version.
++ */
++function isVNode(wat: unknown): wat is VNode {
++  return !!(typeof wat === 'object' && (wat as VNode | null)?.__v_isVNode);
++}
++
++export function normalizeStringifyValue(value: Exclude<unknown, string | number | boolean | null>): string | undefined {
++  if (isVueViewModel(value)) {
++    return '[VueViewModel]';
++  }
++  if (isVNode(value)) {
++    return '[VueVNode]';
++  }
++  return browserNormalizeStringifyValue(value);
++}
+diff --git a/packages/vue/src/sdk.ts b/packages/vue/src/sdk.ts
+index 689a17dacbc4..6fd44baf5266 100644
+--- a/packages/vue/src/sdk.ts
++++ b/packages/vue/src/sdk.ts
+@@ -1,8 +1,10 @@
+ import { getDefaultIntegrations, init as browserInit } from '@sentry/browser';
+ import type { Client } from '@sentry/core';
+-import { applySdkMetadata } from '@sentry/core';
++import { applySdkMetadata, setNormalizeStringifier } from '@sentry/core/browser';
++
+ import { vueIntegration } from './integration';
+ import type { Options } from './types';
++import { normalizeStringifyValue } from './normalizeStringifyValue';
+ 
+ /**
+  * Inits the Vue SDK
+@@ -15,5 +17,10 @@ export function init(options: Partial<Omit<Options, 'tracingOptions'>> = {}): Cl
+ 
+   applySdkMetadata(opts, 'vue');
+ 
+-  return browserInit(opts);
++  const client = browserInit(opts);
++
++  // Add vue-specific stringification
++  setNormalizeStringifier(normalizeStringifyValue);
++
++  return client;
+ }
+diff --git a/packages/vue/test/integration/normalize.test.ts b/packages/vue/test/integration/normalize.test.ts
+new file mode 100644
+index 000000000000..8f0fe3c3438e
+--- /dev/null
++++ b/packages/vue/test/integration/normalize.test.ts
+@@ -0,0 +1,59 @@
++/**
++ * @vitest-environment jsdom
++ */
++
++import { normalize, setNormalizeStringifier } from '@sentry/core';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import * as Sentry from '../../src';
++
++const PUBLIC_DSN = 'https://username@domain/123';
++
++// The Vue SDK's `init()` wraps the browser-side `normalizeStringifyValue` (registered
++// via `setNormalizeStringifier`) with a Vue check on top. These tests exercise the
++// wrapped stringifier end-to-end through `normalize()` so we catch any breakage in the
++// composition (Vue value handled here; non-Vue values fall through to the browser
++// variant; non-DOM/non-Vue values fall through to core's defaults).
++describe('@sentry/vue init() normalize stringifier', () => {
++  beforeEach(() => {
++    Sentry.init({
++      dsn: PUBLIC_DSN,
++      defaultIntegrations: false,
++      integrations: [],
++    });
++  });
++
++  afterEach(() => {
++    // Reset the registered stringifier so subsequent test files start clean.
++    setNormalizeStringifier(undefined);
++  });
++
++  it("collapses Vue 3 component instances (`__isVue`) to '[VueViewModel]'", () => {
++    expect(normalize({ vm: { __isVue: true, $el: {}, $data: {} } })).toEqual({ vm: '[VueViewModel]' });
++  });
++
++  it("collapses Vue 2 component instances (`_isVue`) to '[VueViewModel]'", () => {
++    expect(normalize({ vm: { _isVue: true, $el: {}, $data: {} } })).toEqual({ vm: '[VueViewModel]' });
++  });
++
++  it("collapses Vue 3 VNodes (`__v_isVNode`) to '[VueVNode]'", () => {
++    expect(normalize({ node: { __v_isVNode: true, type: {}, props: {} } })).toEqual({ node: '[VueVNode]' });
++  });
++
++  it('still delegates HTMLElement rendering to the browser stringifier underneath', () => {
++    const div = document.createElement('div');
++    div.classList.add('content');
++    expect(normalize({ el: div })).toEqual({ el: '[HTMLElement: div.content]' });
++  });
++
++  it('still delegates `document` to the browser stringifier underneath', () => {
++    expect(normalize({ d: document })).toEqual({ d: '[Document]' });
++  });
++
++  it('does not intercept plain objects or primitives', () => {
++    expect(normalize({ s: 'string', n: 42, o: { foo: 'bar' } })).toEqual({
++      s: 'string',
++      n: 42,
++      o: { foo: 'bar' },
++    });
++  });
++});

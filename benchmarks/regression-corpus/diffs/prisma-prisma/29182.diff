@@ -1,0 +1,365 @@
+diff --git a/packages/client-engine-runtime/src/batch.ts b/packages/client-engine-runtime/src/batch.ts
+index 0566afc08fb0..cd5a405f0a78 100644
+--- a/packages/client-engine-runtime/src/batch.ts
++++ b/packages/client-engine-runtime/src/batch.ts
+@@ -1,4 +1,4 @@
+-import { deserializeJsonResponse } from './json-protocol'
++import { deserializeJsonObject } from './json-protocol'
+ import { QueryPlanNode } from './query-plan'
+ import { UserFacingError } from './user-facing-error'
+ import { doKeysMatch } from './utils'
+@@ -77,7 +77,7 @@ export function convertCompactedRows(
+   // a list of objects that contain the keys of every row
+   const keysPerRow = rows.map((item) =>
+     compiledBatch.keys.reduce((acc, key) => {
+-      acc[key] = deserializeJsonResponse(item[key])
++      acc[key] = deserializeJsonObject(item[key])
+       return acc
+     }, {}),
+   )
+diff --git a/packages/client-engine-runtime/src/json-protocol.test.ts b/packages/client-engine-runtime/src/json-protocol.test.ts
+index 0553d3610f02..abd505e592db 100644
+--- a/packages/client-engine-runtime/src/json-protocol.test.ts
++++ b/packages/client-engine-runtime/src/json-protocol.test.ts
+@@ -1,46 +1,46 @@
+ import { Decimal } from '@prisma/client-runtime-utils'
+ 
+-import { deserializeJsonResponse } from './json-protocol'
++import { deserializeJsonObject } from './json-protocol'
+ 
+-describe('deserializeJsonResponse', () => {
++describe('deserializeJsonObject', () => {
+   test('primitives', () => {
+-    expect(deserializeJsonResponse(1)).toBe(1)
+-    expect(deserializeJsonResponse('foo')).toBe('foo')
+-    expect(deserializeJsonResponse(null)).toBe(null)
+-    expect(deserializeJsonResponse(false)).toBe(false)
++    expect(deserializeJsonObject(1)).toBe(1)
++    expect(deserializeJsonObject('foo')).toBe('foo')
++    expect(deserializeJsonObject(null)).toBe(null)
++    expect(deserializeJsonObject(false)).toBe(false)
+   })
+ 
+   test('Date', () => {
+-    const value = deserializeJsonResponse({ $type: 'DateTime', value: '1980-01-02T00:00:00.000Z' })
++    const value = deserializeJsonObject({ $type: 'DateTime', value: '1980-01-02T00:00:00.000Z' })
+     expect(value).toBeInstanceOf(Date)
+     expect(value).toEqual(new Date('1980-01-02T00:00:00.000Z'))
+   })
+ 
+   test('BigInt', () => {
+-    const value = deserializeJsonResponse({ $type: 'BigInt', value: '123' })
++    const value = deserializeJsonObject({ $type: 'BigInt', value: '123' })
+     expect(value).toBe(123n)
+   })
+ 
+   test('Bytes', () => {
+-    const value = deserializeJsonResponse({ $type: 'Bytes', value: 'aGVsbG8gd29ybGQ=' })
++    const value = deserializeJsonObject({ $type: 'Bytes', value: 'aGVsbG8gd29ybGQ=' })
+     expect(value).toBeInstanceOf(Uint8Array)
+     expect(value).toEqual(new Uint8Array(Buffer.from('hello world')))
+   })
+ 
+   test('Decimal', () => {
+-    const value = deserializeJsonResponse({ $type: 'Decimal', value: '123.45' })
++    const value = deserializeJsonObject({ $type: 'Decimal', value: '123.45' })
+     expect(value).toBeInstanceOf(Decimal)
+     expect(value).toEqual(new Decimal('123.45'))
+   })
+ 
+   test('Json', () => {
+-    const value = deserializeJsonResponse({ $type: 'Json', value: '{"foo":123}' })
++    const value = deserializeJsonObject({ $type: 'Json', value: '{"foo":123}' })
+     expect(value).toEqual({ foo: 123 })
+   })
+ 
+   test('object', () => {
+     expect(
+-      deserializeJsonResponse({
++      deserializeJsonObject({
+         name: 'John',
+         height: 173.45,
+         money: { $type: 'Decimal', value: '123.45' },
+@@ -59,6 +59,6 @@ describe('deserializeJsonResponse', () => {
+   })
+ 
+   test('array', () => {
+-    expect(deserializeJsonResponse(['foo', 123, { $type: 'BigInt', value: '123' }])).toEqual(['foo', 123, 123n])
++    expect(deserializeJsonObject(['foo', 123, { $type: 'BigInt', value: '123' }])).toEqual(['foo', 123, 123n])
+   })
+ })
+diff --git a/packages/client-engine-runtime/src/json-protocol.ts b/packages/client-engine-runtime/src/json-protocol.ts
+index fc4a10a1b25d..82c9664b363b 100644
+--- a/packages/client-engine-runtime/src/json-protocol.ts
++++ b/packages/client-engine-runtime/src/json-protocol.ts
+@@ -9,6 +9,7 @@ export type BigIntTaggedValue = { $type: 'BigInt'; value: string }
+ export type FieldRefTaggedValue = { $type: 'FieldRef'; value: { _ref: string } }
+ export type EnumTaggedValue = { $type: 'Enum'; value: string }
+ export type JsonTaggedValue = { $type: 'Json'; value: string }
++export type RawTaggedValue = { $type: 'Raw'; value: unknown }
+ 
+ export type JsonInputTaggedValue =
+   | DateTaggedValue
+@@ -18,6 +19,7 @@ export type JsonInputTaggedValue =
+   | FieldRefTaggedValue
+   | JsonTaggedValue
+   | EnumTaggedValue
++  | RawTaggedValue
+ 
+ export type JsonOutputTaggedValue =
+   | DateTaggedValue
+@@ -83,7 +85,10 @@ function isTaggedValue(value: unknown): value is JsonOutputTaggedValue {
+  * patch and normalize them here to ensure they are consistent with the snapshots
+  * in the query engine tests.
+  */
+-function normalizeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsonOutputTaggedValue {
++function normalizeTaggedValue({
++  $type,
++  value,
++}: JsonInputTaggedValue | JsonOutputTaggedValue): JsonInputTaggedValue | JsonOutputTaggedValue {
+   switch ($type) {
+     case 'BigInt':
+       return { $type, value: String(value) }
+@@ -95,6 +100,12 @@ function normalizeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsonOutp
+       return { $type, value: String(new Decimal(value)) }
+     case 'Json':
+       return { $type, value: JSON.stringify(JSON.parse(value)) }
++    case 'Raw':
++      return { $type, value }
++    case 'FieldRef':
++      return { $type, value }
++    case 'Enum':
++      return { $type, value }
+     default:
+       assertNever(value, 'Unknown tagged value')
+   }
+@@ -113,13 +124,13 @@ function mapObjectValues<K extends PropertyKey, T, U>(
+   return result
+ }
+ 
+-export function deserializeJsonResponse(result: unknown): unknown {
++export function deserializeJsonObject(result: unknown): unknown {
+   if (result === null) {
+     return result
+   }
+ 
+   if (Array.isArray(result)) {
+-    return result.map(deserializeJsonResponse)
++    return result.map(deserializeJsonObject)
+   }
+ 
+   if (typeof result === 'object') {
+@@ -132,13 +143,13 @@ export function deserializeJsonResponse(result: unknown): unknown {
+       return result
+     }
+ 
+-    return mapObjectValues(result, deserializeJsonResponse)
++    return mapObjectValues(result, deserializeJsonObject)
+   }
+ 
+   return result
+ }
+ 
+-function deserializeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsOutputValue {
++function deserializeTaggedValue({ $type, value }: JsonInputTaggedValue | JsonOutputTaggedValue): JsOutputValue {
+   switch ($type) {
+     case 'BigInt':
+       return BigInt(value)
+@@ -152,6 +163,12 @@ function deserializeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsOutp
+       return new Decimal(value)
+     case 'Json':
+       return JSON.parse(value)
++    case 'Raw':
++      return value as JsOutputValue
++    case 'FieldRef':
++      throw new Error('FieldRef tagged values cannot be deserialized to JavaScript values')
++    case 'Enum':
++      return value
+     default:
+       assertNever(value, 'Unknown tagged value')
+   }
+diff --git a/packages/client/src/runtime/RequestHandler.ts b/packages/client/src/runtime/RequestHandler.ts
+index 9a697a39c557..eea611ce7589 100644
+--- a/packages/client/src/runtime/RequestHandler.ts
++++ b/packages/client/src/runtime/RequestHandler.ts
+@@ -1,5 +1,5 @@
+ import { Context } from '@opentelemetry/api'
+-import { deserializeJsonResponse } from '@prisma/client-engine-runtime'
++import { deserializeJsonObject } from '@prisma/client-engine-runtime'
+ import { hasBatchIndex } from '@prisma/client-runtime-utils'
+ import { Debug } from '@prisma/debug'
+ import { assertNever } from '@prisma/internals'
+@@ -274,7 +274,7 @@ export class RequestHandler {
+     const deserializedResponse =
+       operation === 'queryRaw'
+         ? deserializeRawResult(extractedResponse as RawResponse)
+-        : (deserializeJsonResponse(extractedResponse) as unknown)
++        : (deserializeJsonObject(extractedResponse) as unknown)
+ 
+     return unpacker ? unpacker(deserializedResponse) : deserializedResponse
+   }
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+index 96ac25c79e4c..9619b487ce0b 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
++++ b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+@@ -6,6 +6,7 @@
+  * both schema rules and runtime value types agree.
+  */
+ 
++import { deserializeJsonObject } from '@prisma/client-engine-runtime'
+ import type {
+   JsonArgumentValue,
+   JsonBatchQuery,
+@@ -272,7 +273,7 @@ class Parameterizer {
+    */
+   #handleArray(items: unknown[], originalValue: unknown, edge: InputEdge): unknown {
+     if (hasFlag(edge, EdgeFlag.ParamScalar) && getScalarMask(edge) & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(items)
++      const jsonValue = JSON.stringify(deserializeJsonObject(items))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+@@ -323,7 +324,7 @@ class Parameterizer {
+ 
+     const mask = getScalarMask(edge)
+     if (mask & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(obj)
++      const jsonValue = JSON.stringify(deserializeJsonObject(obj))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+diff --git a/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts b/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts
+index 498e4c16fbf0..443ecc13d783 100644
+--- a/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts
++++ b/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts
+@@ -500,7 +500,7 @@ class SerializeContext {
+   }
+ 
+   shouldWrapRawValues(): boolean {
+-    return this.params.wrapRawValues ?? false
++    return this.params.wrapRawValues ?? true
+   }
+ 
+   getComputedFields() {
+diff --git a/packages/client/src/runtime/index.ts b/packages/client/src/runtime/index.ts
+index fe02daf2d0c4..8c4dbcd8d95c 100644
+--- a/packages/client/src/runtime/index.ts
++++ b/packages/client/src/runtime/index.ts
+@@ -26,7 +26,7 @@ export {
+   type Operation,
+   type RuntimeDataModel,
+ } from '@prisma/client-common'
+-export { deserializeJsonResponse } from '@prisma/client-engine-runtime'
++export { deserializeJsonObject } from '@prisma/client-engine-runtime'
+ export type { RawValue, Value } from '@prisma/client-runtime-utils'
+ export type { AnyNullClass, DbNullClass, JsonNullClass } from '@prisma/client-runtime-utils'
+ export {
+diff --git a/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/_matrix.ts b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/_matrix.ts
+new file mode 100644
+index 000000000000..169663a76317
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders, Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [allProviders.filter(({ provider }) => provider !== Providers.SQLSERVER)])
+diff --git a/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/prisma/_schema.ts b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/prisma/_schema.ts
+new file mode 100644
+index 000000000000..888f6d8d37bd
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/prisma/_schema.ts
+@@ -0,0 +1,19 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model User {
++      id ${idForProvider(provider)}
++      properties Json
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/tests.ts b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/tests.ts
+new file mode 100644
+index 000000000000..286a150f5212
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/tests.ts
+@@ -0,0 +1,68 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    test('correctly deserializes Date objects in JSON fields', async () => {
++      const user = await prisma.user.create({
++        data: {
++          properties: {
++            dateField: new Date(),
++          },
++        },
++      })
++
++      expect(user).toMatchObject({
++        properties: {
++          dateField: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++        },
++      })
++    })
++
++    test('correctly deserializes Date array objects in JSON fields', async () => {
++      const user = await prisma.user.create({
++        data: {
++          properties: {
++            dateArrayField: [new Date(), new Date()],
++          },
++        },
++      })
++
++      expect(user).toMatchObject({
++        properties: {
++          dateArrayField: [
++            expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++            expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++          ],
++        },
++      })
++    })
++
++    test('correctly deserializes Date objects in JSON fields with $type', async () => {
++      const user = await prisma.user.create({
++        data: {
++          properties: {
++            $type: 'Json',
++            dateField: new Date(),
++          },
++        },
++      })
++
++      expect(user).toMatchObject({
++        properties: {
++          $type: 'Json',
++          dateField: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++        },
++      })
++    })
++  },
++  {
++    optOut: {
++      from: ['sqlserver'],
++      reason: 'SQL server does not support JSON fields',
++    },
++  },
++)

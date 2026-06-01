@@ -1,0 +1,372 @@
+diff --git a/packages/expo-media-library/CHANGELOG.md b/packages/expo-media-library/CHANGELOG.md
+index cc8e646123fc94..184de42339fcc9 100644
+--- a/packages/expo-media-library/CHANGELOG.md
++++ b/packages/expo-media-library/CHANGELOG.md
+@@ -8,6 +8,7 @@
+ 
+ ### 🎉 New features
+ 
++- [next] Add `presentPermissionsPicker` ([#44432](https://github.com/expo/expo/pull/44432) by [@Wenszel](https://github.com/Wenszel))
+ - [next][iOS] Add `asset.getMediaSubtypes()`, `asset.getLivePhotoVideoUri()`, `asset.getIsInCloud()`, and `asset.getOrientation()` ([#44568](https://github.com/expo/expo/pull/44568) by [@Wenszel](https://github.com/Wenszel))
+ - [next] Add `asset.getAlbums()` ([#44604](https://github.com/expo/expo/pull/44604) by [@Wenszel](https://github.com/Wenszel))
+ - [next] Add `Album.getAll()` ([#44446](https://github.com/expo/expo/pull/44446) by [@Wenszel](https://github.com/Wenszel))
+diff --git a/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/MediaLibraryNextModule.kt b/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/MediaLibraryNextModule.kt
+index b3fdc4e09b27de..7db5a351e90935 100644
+--- a/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/MediaLibraryNextModule.kt
++++ b/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/MediaLibraryNextModule.kt
+@@ -261,6 +261,10 @@ class MediaLibraryNextModule : Module() {
+       systemPermissionsDelegate.getPermissions(writeOnly ?: false, permissions, promise)
+     }
+ 
++    AsyncFunction("presentPermissionsPicker") { permissions: List<GranularPermission>?, promise: Promise ->
++      systemPermissionsDelegate.presentPermissionsPicker(permissions, promise)
++    }
++
+     RegisterActivityContracts {
+       with(mediaStorePermissionsDelegate) {
+         registerMediaStoreContracts(this@MediaLibraryNextModule)
+diff --git a/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/permissions/SystemPermissionsDelegate.kt b/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/permissions/SystemPermissionsDelegate.kt
+index e45301956f0fb1..45e618cd21a071 100644
+--- a/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/permissions/SystemPermissionsDelegate.kt
++++ b/packages/expo-media-library/android/src/main/java/expo/modules/medialibrary/next/permissions/SystemPermissionsDelegate.kt
+@@ -43,6 +43,14 @@ class SystemPermissionsDelegate(private val appContext: AppContext) {
+     )
+   }
+ 
++  fun presentPermissionsPicker(permissions: List<GranularPermission>?, promise: Promise) {
++    if (Build.VERSION.SDK_INT < 34) {
++      throw PermissionException("presentPermissionsPicker is only available on Android 14+")
++    }
++    val pickerPermissions = permissions ?: listOf(GranularPermission.PHOTO, GranularPermission.VIDEO)
++    requestPermissions(writeOnly = false, permissions = pickerPermissions, promise = promise)
++  }
++
+   fun requireReadPermissions() {
+     val granted = appContext.permissions?.hasGrantedPermissions(READ_EXTERNAL_STORAGE)
+     if (granted != true) {
+diff --git a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts
+index 6646e68c583d0a..55b373536a8f3d 100644
+--- a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts
++++ b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts
+@@ -1,15 +1,17 @@
+ import type { PermissionResponse } from 'expo-modules-core';
+ import { NativeModule } from 'expo-modules-core';
+ import type { GranularPermission } from './MediaLibraryNext.types';
+-import type { Album } from './types/Album';
+-import type { Asset } from './types/Asset';
+-import type { Query } from './types/Query';
++import { Album } from './types/Album';
++import { Asset } from './types/Asset';
++import type { MediaTypeFilter } from './types/MediaTypeFilter';
++import { Query } from './types/Query';
+ declare class ExpoMediaLibraryNextModule extends NativeModule {
+     Asset: typeof Asset;
+     Album: typeof Album;
+     Query: typeof Query;
+     getPermissionsAsync(writeOnly?: boolean, granularPermissions?: GranularPermission[]): Promise<PermissionResponse>;
+     requestPermissionsAsync(writeOnly?: boolean, granularPermissions?: GranularPermission[]): Promise<PermissionResponse>;
++    presentPermissionsPicker(mediaTypes?: MediaTypeFilter[]): Promise<void>;
+ }
+ declare const _default: ExpoMediaLibraryNextModule;
+ export default _default;
+diff --git a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts.map b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts.map
+index 324c2f4b9a49dd..9cda494de64262 100644
+--- a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts.map
++++ b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"ExpoMediaLibraryNext.d.ts","sourceRoot":"","sources":["../../src/next/ExpoMediaLibraryNext.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,mBAAmB,CAAC;AAC5D,OAAO,EAAE,YAAY,EAAuB,MAAM,mBAAmB,CAAC;AAEtE,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,0BAA0B,CAAC;AACnE,OAAO,KAAK,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AAC3C,OAAO,KAAK,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AAC3C,OAAO,KAAK,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AAE3C,OAAO,OAAO,0BAA2B,SAAQ,YAAY;IAC3D,KAAK,EAAE,OAAO,KAAK,CAAC;IACpB,KAAK,EAAE,OAAO,KAAK,CAAC;IACpB,KAAK,EAAE,OAAO,KAAK,CAAC;IAEpB,mBAAmB,CACjB,SAAS,CAAC,EAAE,OAAO,EACnB,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC;IAC9B,uBAAuB,CACrB,SAAS,CAAC,EAAE,OAAO,EACnB,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC;CAC/B;;AAED,wBAAuF"}
+\ No newline at end of file
++{"version":3,"file":"ExpoMediaLibraryNext.d.ts","sourceRoot":"","sources":["../../src/next/ExpoMediaLibraryNext.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,mBAAmB,CAAC;AAC5D,OAAO,EAAE,YAAY,EAAuB,MAAM,mBAAmB,CAAC;AAEtE,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,0BAA0B,CAAC;AACnE,OAAO,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AACtC,OAAO,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AACtC,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,yBAAyB,CAAC;AAC/D,OAAO,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AAEtC,OAAO,OAAO,0BAA2B,SAAQ,YAAY;IAC3D,KAAK,EAAE,OAAO,KAAK,CAAC;IACpB,KAAK,EAAE,OAAO,KAAK,CAAC;IACpB,KAAK,EAAE,OAAO,KAAK,CAAC;IAEpB,mBAAmB,CACjB,SAAS,CAAC,EAAE,OAAO,EACnB,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC;IAC9B,uBAAuB,CACrB,SAAS,CAAC,EAAE,OAAO,EACnB,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC;IAC9B,wBAAwB,CAAC,UAAU,CAAC,EAAE,eAAe,EAAE,GAAG,OAAO,CAAC,IAAI,CAAC;CACxE;;AAED,wBAAuF"}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js
+index c30b1329a91534..f3aec015bd2932 100644
+--- a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js
++++ b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js
+@@ -1,3 +1,6 @@
+ import { NativeModule, requireNativeModule } from 'expo-modules-core';
++import { Album } from './types/Album';
++import { Asset } from './types/Asset';
++import { Query } from './types/Query';
+ export default requireNativeModule('ExpoMediaLibraryNext');
+ //# sourceMappingURL=ExpoMediaLibraryNext.js.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js.map b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js.map
+index 40cc46e01148f7..582edcc014c839 100644
+--- a/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js.map
++++ b/packages/expo-media-library/build/next/ExpoMediaLibraryNext.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"ExpoMediaLibraryNext.js","sourceRoot":"","sources":["../../src/next/ExpoMediaLibraryNext.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,YAAY,EAAE,mBAAmB,EAAE,MAAM,mBAAmB,CAAC;AAsBtE,eAAe,mBAAmB,CAA6B,sBAAsB,CAAC,CAAC","sourcesContent":["import type { PermissionResponse } from 'expo-modules-core';\nimport { NativeModule, requireNativeModule } from 'expo-modules-core';\n\nimport type { GranularPermission } from './MediaLibraryNext.types';\nimport type { Album } from './types/Album';\nimport type { Asset } from './types/Asset';\nimport type { Query } from './types/Query';\n\ndeclare class ExpoMediaLibraryNextModule extends NativeModule {\n  Asset: typeof Asset;\n  Album: typeof Album;\n  Query: typeof Query;\n\n  getPermissionsAsync(\n    writeOnly?: boolean,\n    granularPermissions?: GranularPermission[]\n  ): Promise<PermissionResponse>;\n  requestPermissionsAsync(\n    writeOnly?: boolean,\n    granularPermissions?: GranularPermission[]\n  ): Promise<PermissionResponse>;\n}\n\nexport default requireNativeModule<ExpoMediaLibraryNextModule>('ExpoMediaLibraryNext');\n"]}
+\ No newline at end of file
++{"version":3,"file":"ExpoMediaLibraryNext.js","sourceRoot":"","sources":["../../src/next/ExpoMediaLibraryNext.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,YAAY,EAAE,mBAAmB,EAAE,MAAM,mBAAmB,CAAC;AAGtE,OAAO,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AACtC,OAAO,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AAEtC,OAAO,EAAE,KAAK,EAAE,MAAM,eAAe,CAAC;AAkBtC,eAAe,mBAAmB,CAA6B,sBAAsB,CAAC,CAAC","sourcesContent":["import type { PermissionResponse } from 'expo-modules-core';\nimport { NativeModule, requireNativeModule } from 'expo-modules-core';\n\nimport type { GranularPermission } from './MediaLibraryNext.types';\nimport { Album } from './types/Album';\nimport { Asset } from './types/Asset';\nimport type { MediaTypeFilter } from './types/MediaTypeFilter';\nimport { Query } from './types/Query';\n\ndeclare class ExpoMediaLibraryNextModule extends NativeModule {\n  Asset: typeof Asset;\n  Album: typeof Album;\n  Query: typeof Query;\n\n  getPermissionsAsync(\n    writeOnly?: boolean,\n    granularPermissions?: GranularPermission[]\n  ): Promise<PermissionResponse>;\n  requestPermissionsAsync(\n    writeOnly?: boolean,\n    granularPermissions?: GranularPermission[]\n  ): Promise<PermissionResponse>;\n  presentPermissionsPicker(mediaTypes?: MediaTypeFilter[]): Promise<void>;\n}\n\nexport default requireNativeModule<ExpoMediaLibraryNextModule>('ExpoMediaLibraryNext');\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts b/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts
+index 1a9c4c3d9132f6..fe5490839f6c56 100644
+--- a/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts
++++ b/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts
+@@ -2,6 +2,7 @@ export * from './types/SortDescriptor';
+ export * from './types/AssetField';
+ export * from './types/MediaSubtype';
+ export * from './types/MediaType';
++export * from './types/MediaTypeFilter';
+ export * from './types/GranularPermission';
+ export * from './types/AssetInfo';
+ //# sourceMappingURL=MediaLibraryNext.types.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts.map b/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts.map
+index f6fa5eb44752d7..85fb9b6ac7a69d 100644
+--- a/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts.map
++++ b/packages/expo-media-library/build/next/MediaLibraryNext.types.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"MediaLibraryNext.types.d.ts","sourceRoot":"","sources":["../../src/next/MediaLibraryNext.types.ts"],"names":[],"mappings":"AAAA,cAAc,wBAAwB,CAAC;AACvC,cAAc,oBAAoB,CAAC;AACnC,cAAc,sBAAsB,CAAC;AACrC,cAAc,mBAAmB,CAAC;AAClC,cAAc,4BAA4B,CAAC;AAC3C,cAAc,mBAAmB,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"MediaLibraryNext.types.d.ts","sourceRoot":"","sources":["../../src/next/MediaLibraryNext.types.ts"],"names":[],"mappings":"AAAA,cAAc,wBAAwB,CAAC;AACvC,cAAc,oBAAoB,CAAC;AACnC,cAAc,sBAAsB,CAAC;AACrC,cAAc,mBAAmB,CAAC;AAClC,cAAc,yBAAyB,CAAC;AACxC,cAAc,4BAA4B,CAAC;AAC3C,cAAc,mBAAmB,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/MediaLibraryNext.types.js b/packages/expo-media-library/build/next/MediaLibraryNext.types.js
+index 4fb2fa467b4d04..853aa7d8760cb6 100644
+--- a/packages/expo-media-library/build/next/MediaLibraryNext.types.js
++++ b/packages/expo-media-library/build/next/MediaLibraryNext.types.js
+@@ -2,6 +2,7 @@ export * from './types/SortDescriptor';
+ export * from './types/AssetField';
+ export * from './types/MediaSubtype';
+ export * from './types/MediaType';
++export * from './types/MediaTypeFilter';
+ export * from './types/GranularPermission';
+ export * from './types/AssetInfo';
+ //# sourceMappingURL=MediaLibraryNext.types.js.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/MediaLibraryNext.types.js.map b/packages/expo-media-library/build/next/MediaLibraryNext.types.js.map
+index b2a8e06bf35ae5..319773ed1b8f3c 100644
+--- a/packages/expo-media-library/build/next/MediaLibraryNext.types.js.map
++++ b/packages/expo-media-library/build/next/MediaLibraryNext.types.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"MediaLibraryNext.types.js","sourceRoot":"","sources":["../../src/next/MediaLibraryNext.types.ts"],"names":[],"mappings":"AAAA,cAAc,wBAAwB,CAAC;AACvC,cAAc,oBAAoB,CAAC;AACnC,cAAc,sBAAsB,CAAC;AACrC,cAAc,mBAAmB,CAAC;AAClC,cAAc,4BAA4B,CAAC;AAC3C,cAAc,mBAAmB,CAAC","sourcesContent":["export * from './types/SortDescriptor';\nexport * from './types/AssetField';\nexport * from './types/MediaSubtype';\nexport * from './types/MediaType';\nexport * from './types/GranularPermission';\nexport * from './types/AssetInfo';\n"]}
+\ No newline at end of file
++{"version":3,"file":"MediaLibraryNext.types.js","sourceRoot":"","sources":["../../src/next/MediaLibraryNext.types.ts"],"names":[],"mappings":"AAAA,cAAc,wBAAwB,CAAC;AACvC,cAAc,oBAAoB,CAAC;AACnC,cAAc,sBAAsB,CAAC;AACrC,cAAc,mBAAmB,CAAC;AAClC,cAAc,yBAAyB,CAAC;AACxC,cAAc,4BAA4B,CAAC;AAC3C,cAAc,mBAAmB,CAAC","sourcesContent":["export * from './types/SortDescriptor';\nexport * from './types/AssetField';\nexport * from './types/MediaSubtype';\nexport * from './types/MediaType';\nexport * from './types/MediaTypeFilter';\nexport * from './types/GranularPermission';\nexport * from './types/AssetInfo';\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/index.d.ts b/packages/expo-media-library/build/next/index.d.ts
+index a8bcf92578938b..cde20a68ce13b6 100644
+--- a/packages/expo-media-library/build/next/index.d.ts
++++ b/packages/expo-media-library/build/next/index.d.ts
+@@ -1,7 +1,8 @@
+ import type { PermissionHookOptions, PermissionResponse } from 'expo-modules-core';
+ import ExpoMediaLibraryNext from './ExpoMediaLibraryNext';
+ import type { GranularPermission } from './types/GranularPermission';
+-import type { MediaSubtype } from './types/MediaSubtype';
++import { MediaSubtype } from './types/MediaSubtype';
++import type { MediaTypeFilter } from './types/MediaTypeFilter';
+ export * from './MediaLibraryNext.types';
+ export declare class Query extends ExpoMediaLibraryNext.Query {
+ }
+@@ -50,4 +51,19 @@ export declare const usePermissions: (options?: PermissionHookOptions<{
+     granularPermissions?: GranularPermission[];
+ }> | undefined) => [PermissionResponse | null, () => Promise<PermissionResponse>, () => Promise<PermissionResponse>];
+ export type { PermissionHookOptions };
++/**
++ * Allows the user to update the assets that your app has access to.
++ * The system modal is only displayed if the user originally allowed only `limited` access to their
++ * media library, otherwise this method is a no-op.
++ * @param mediaTypes Limits the type(s) of media that the user will be granting access to. By default, a list that shows both photos and videos is presented.
++ *
++ * @return A promise that either rejects if the method is unavailable, or resolves to `void`.
++ * > __Note:__ This method doesn't inform you if the user changes which assets your app has access to.
++ * That information is only exposed by iOS, and to obtain it, you need to subscribe for updates to the user's media library using [`addListener()`](#medialibraryaddlistenerlistener).
++ * If `hasIncrementalChanges` is `false`, the user changed their permissions.
++ *
++ * @platform android 14+
++ * @platform ios
++ */
++export declare function presentPermissionsPicker(mediaTypes?: MediaTypeFilter[]): Promise<void>;
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/index.d.ts.map b/packages/expo-media-library/build/next/index.d.ts.map
+index 3eabb2143c2b6d..09c50bd252e66f 100644
+--- a/packages/expo-media-library/build/next/index.d.ts.map
++++ b/packages/expo-media-library/build/next/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/next/index.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,qBAAqB,EAAE,kBAAkB,EAAE,MAAM,mBAAmB,CAAC;AAInF,OAAO,oBAAoB,MAAM,wBAAwB,CAAC;AAC1D,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,4BAA4B,CAAC;AACrE,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,sBAAsB,CAAC;AAEzD,cAAc,0BAA0B,CAAC;AAEzC,qBAAa,KAAM,SAAQ,oBAAoB,CAAC,KAAK;CAAG;AAExD,qBAAa,KAAM,SAAQ,oBAAoB,CAAC,KAAK;IAEnD,WAAW,IAAI,OAAO,CAAC,OAAO,CAAC;IAQ/B,WAAW,CAAC,UAAU,EAAE,OAAO,GAAG,OAAO,CAAC,IAAI,CAAC;IAQ/C,gBAAgB,IAAI,OAAO,CAAC,YAAY,EAAE,CAAC;IAQ3C,oBAAoB,IAAI,OAAO,CAAC,MAAM,GAAG,IAAI,CAAC;IAW9C,YAAY,IAAI,OAAO,CAAC,OAAO,CAAC;IAQhC,cAAc,IAAI,OAAO,CAAC,MAAM,GAAG,IAAI,CAAC;CAMzC;AAED,qBAAa,KAAM,SAAQ,oBAAoB,CAAC,KAAK;CAAG;AAExD;;;;;;;;GAQG;AACH,wBAAsB,uBAAuB,CAC3C,SAAS,GAAE,OAAe,EAC1B,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC,CAQ7B;AAED;;;;;;GAMG;AACH,wBAAsB,mBAAmB,CACvC,SAAS,GAAE,OAAe,EAC1B,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC,CAQ7B;AAED;;;;;;;;;;;GAWG;AACH,eAAO,MAAM,cAAc;gBAEX,OAAO;0BAAwB,kBAAkB,EAAE;oHAKjE,CAAC;AAEH,YAAY,EAAE,qBAAqB,EAAE,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/next/index.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,qBAAqB,EAAE,kBAAkB,EAAE,MAAM,mBAAmB,CAAC;AAInF,OAAO,oBAAoB,MAAM,wBAAwB,CAAC;AAC1D,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,4BAA4B,CAAC;AACrE,OAAO,EAAE,YAAY,EAAE,MAAM,sBAAsB,CAAC;AACpD,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,yBAAyB,CAAC;AAE/D,cAAc,0BAA0B,CAAC;AAEzC,qBAAa,KAAM,SAAQ,oBAAoB,CAAC,KAAK;CAAG;AAExD,qBAAa,KAAM,SAAQ,oBAAoB,CAAC,KAAK;IAEnD,WAAW,IAAI,OAAO,CAAC,OAAO,CAAC;IAQ/B,WAAW,CAAC,UAAU,EAAE,OAAO,GAAG,OAAO,CAAC,IAAI,CAAC;IAQ/C,gBAAgB,IAAI,OAAO,CAAC,YAAY,EAAE,CAAC;IAQ3C,oBAAoB,IAAI,OAAO,CAAC,MAAM,GAAG,IAAI,CAAC;IAW9C,YAAY,IAAI,OAAO,CAAC,OAAO,CAAC;IAQhC,cAAc,IAAI,OAAO,CAAC,MAAM,GAAG,IAAI,CAAC;CAMzC;AAED,qBAAa,KAAM,SAAQ,oBAAoB,CAAC,KAAK;CAAG;AAExD;;;;;;;;GAQG;AACH,wBAAsB,uBAAuB,CAC3C,SAAS,GAAE,OAAe,EAC1B,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC,CAQ7B;AAED;;;;;;GAMG;AACH,wBAAsB,mBAAmB,CACvC,SAAS,GAAE,OAAe,EAC1B,mBAAmB,CAAC,EAAE,kBAAkB,EAAE,GACzC,OAAO,CAAC,kBAAkB,CAAC,CAQ7B;AAED;;;;;;;;;;;GAWG;AACH,eAAO,MAAM,cAAc;gBAEX,OAAO;0BAAwB,kBAAkB,EAAE;oHAKjE,CAAC;AAEH,YAAY,EAAE,qBAAqB,EAAE,CAAC;AAEtC;;;;;;;;;;;;;GAaG;AACH,wBAAsB,wBAAwB,CAAC,UAAU,CAAC,EAAE,eAAe,EAAE,GAAG,OAAO,CAAC,IAAI,CAAC,CAE5F"}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/index.js b/packages/expo-media-library/build/next/index.js
+index 4d09e395b3fada..96e25fc34e60be 100644
+--- a/packages/expo-media-library/build/next/index.js
++++ b/packages/expo-media-library/build/next/index.js
+@@ -1,6 +1,7 @@
+ import { createPermissionHook, UnavailabilityError } from 'expo-modules-core';
+ import { Platform } from 'react-native';
+ import ExpoMediaLibraryNext from './ExpoMediaLibraryNext';
++import { MediaSubtype } from './types/MediaSubtype';
+ export * from './MediaLibraryNext.types';
+ export class Query extends ExpoMediaLibraryNext.Query {
+ }
+@@ -100,4 +101,21 @@ export const usePermissions = createPermissionHook({
+     getMethod: (options) => getPermissionsAsync(options?.writeOnly, options?.granularPermissions),
+     requestMethod: (options) => requestPermissionsAsync(options?.writeOnly, options?.granularPermissions),
+ });
++/**
++ * Allows the user to update the assets that your app has access to.
++ * The system modal is only displayed if the user originally allowed only `limited` access to their
++ * media library, otherwise this method is a no-op.
++ * @param mediaTypes Limits the type(s) of media that the user will be granting access to. By default, a list that shows both photos and videos is presented.
++ *
++ * @return A promise that either rejects if the method is unavailable, or resolves to `void`.
++ * > __Note:__ This method doesn't inform you if the user changes which assets your app has access to.
++ * That information is only exposed by iOS, and to obtain it, you need to subscribe for updates to the user's media library using [`addListener()`](#medialibraryaddlistenerlistener).
++ * If `hasIncrementalChanges` is `false`, the user changed their permissions.
++ *
++ * @platform android 14+
++ * @platform ios
++ */
++export async function presentPermissionsPicker(mediaTypes) {
++    return await ExpoMediaLibraryNext.presentPermissionsPicker(mediaTypes);
++}
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/index.js.map b/packages/expo-media-library/build/next/index.js.map
+index 030400ec6d9c52..d8abaabd2c82a2 100644
+--- a/packages/expo-media-library/build/next/index.js.map
++++ b/packages/expo-media-library/build/next/index.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.js","sourceRoot":"","sources":["../../src/next/index.ts"],"names":[],"mappings":"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","sourcesContent":["import type { PermissionHookOptions, PermissionResponse } from 'expo-modules-core';\nimport { createPermissionHook, UnavailabilityError } from 'expo-modules-core';\nimport { Platform } from 'react-native';\n\nimport ExpoMediaLibraryNext from './ExpoMediaLibraryNext';\nimport type { GranularPermission } from './types/GranularPermission';\nimport type { MediaSubtype } from './types/MediaSubtype';\n\nexport * from './MediaLibraryNext.types';\n\nexport class Query extends ExpoMediaLibraryNext.Query {}\n\nexport class Asset extends ExpoMediaLibraryNext.Asset {\n  // @hidden\n  getFavorite(): Promise<boolean> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getFavorite is only available on iOS');\n    }\n    return super.getFavorite();\n  }\n\n  // @hidden\n  setFavorite(isFavorite: boolean): Promise<void> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'setFavorite is only available on iOS');\n    }\n    return super.setFavorite(isFavorite);\n  }\n\n  // @hidden\n  getMediaSubtypes(): Promise<MediaSubtype[]> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getMediaSubtypes is only available on iOS');\n    }\n    return super.getMediaSubtypes();\n  }\n\n  // @hidden\n  getLivePhotoVideoUri(): Promise<string | null> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError(\n        'MediaLibrary',\n        'getLivePhotoVideoUri is only available on iOS'\n      );\n    }\n    return super.getLivePhotoVideoUri();\n  }\n\n  // @hidden\n  getIsInCloud(): Promise<boolean> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getIsInCloud is only available on iOS');\n    }\n    return super.getIsInCloud();\n  }\n\n  // @hidden\n  getOrientation(): Promise<number | null> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getOrientation is only available on iOS');\n    }\n    return super.getOrientation();\n  }\n}\n\nexport class Album extends ExpoMediaLibraryNext.Album {}\n\n/**\n * Asks the user to grant permissions for accessing media in user's media library.\n * @param writeOnly - Whether to request write-only access without read permissions. Defaults to `false`.\n * @param granularPermissions - A list of [`GranularPermission`](#granularpermission) values. This parameter has an\n * effect only on Android 13 and newer. By default, `expo-media-library` will ask for all possible permissions.\n *\n * > When using granular permissions with a custom config plugin configuration, make sure that all the requested permissions are included in the plugin.\n * @return A promise that fulfils with [`PermissionResponse`](#permissionresponse) object.\n */\nexport async function requestPermissionsAsync(\n  writeOnly: boolean = false,\n  granularPermissions?: GranularPermission[]\n): Promise<PermissionResponse> {\n  if (!ExpoMediaLibraryNext.requestPermissionsAsync) {\n    throw new UnavailabilityError('MediaLibrary', 'requestPermissionsAsync');\n  }\n  if (Platform.OS === 'android') {\n    return await ExpoMediaLibraryNext.requestPermissionsAsync(writeOnly, granularPermissions);\n  }\n  return await ExpoMediaLibraryNext.requestPermissionsAsync(writeOnly);\n}\n\n/**\n * Checks user's permissions for accessing media library.\n * @param writeOnly - Whether to check write-only access without read permissions. Defaults to `false`.\n * @param granularPermissions - A list of [`GranularPermission`](#granularpermission) values. This parameter has\n * an effect only on Android 13 and newer. By default, `expo-media-library` will ask for all possible permissions.\n * @return A promise that fulfils with [`PermissionResponse`](#permissionresponse) object.\n */\nexport async function getPermissionsAsync(\n  writeOnly: boolean = false,\n  granularPermissions?: GranularPermission[]\n): Promise<PermissionResponse> {\n  if (!ExpoMediaLibraryNext.getPermissionsAsync) {\n    throw new UnavailabilityError('MediaLibrary', 'getPermissionsAsync');\n  }\n  if (Platform.OS === 'android') {\n    return await ExpoMediaLibraryNext.getPermissionsAsync(writeOnly, granularPermissions);\n  }\n  return await ExpoMediaLibraryNext.getPermissionsAsync(writeOnly);\n}\n\n/**\n * Check or request permissions to access the media library.\n * This uses both `requestPermissionsAsync` and `getPermissionsAsync` to interact with the permissions.\n *\n * @example\n * ```ts\n * const [permissionResponse, requestPermission] = MediaLibrary.usePermissions({\n *   writeOnly: true,\n *   granularPermissions: ['photo'],\n * });\n * ```\n */\nexport const usePermissions = createPermissionHook<\n  PermissionResponse,\n  { writeOnly?: boolean; granularPermissions?: GranularPermission[] }\n>({\n  getMethod: (options) => getPermissionsAsync(options?.writeOnly, options?.granularPermissions),\n  requestMethod: (options) =>\n    requestPermissionsAsync(options?.writeOnly, options?.granularPermissions),\n});\n\nexport type { PermissionHookOptions };\n"]}
+\ No newline at end of file
++{"version":3,"file":"index.js","sourceRoot":"","sources":["../../src/next/index.ts"],"names":[],"mappings":"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","sourcesContent":["import type { PermissionHookOptions, PermissionResponse } from 'expo-modules-core';\nimport { createPermissionHook, UnavailabilityError } from 'expo-modules-core';\nimport { Platform } from 'react-native';\n\nimport ExpoMediaLibraryNext from './ExpoMediaLibraryNext';\nimport type { GranularPermission } from './types/GranularPermission';\nimport { MediaSubtype } from './types/MediaSubtype';\nimport type { MediaTypeFilter } from './types/MediaTypeFilter';\n\nexport * from './MediaLibraryNext.types';\n\nexport class Query extends ExpoMediaLibraryNext.Query {}\n\nexport class Asset extends ExpoMediaLibraryNext.Asset {\n  // @hidden\n  getFavorite(): Promise<boolean> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getFavorite is only available on iOS');\n    }\n    return super.getFavorite();\n  }\n\n  // @hidden\n  setFavorite(isFavorite: boolean): Promise<void> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'setFavorite is only available on iOS');\n    }\n    return super.setFavorite(isFavorite);\n  }\n\n  // @hidden\n  getMediaSubtypes(): Promise<MediaSubtype[]> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getMediaSubtypes is only available on iOS');\n    }\n    return super.getMediaSubtypes();\n  }\n\n  // @hidden\n  getLivePhotoVideoUri(): Promise<string | null> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError(\n        'MediaLibrary',\n        'getLivePhotoVideoUri is only available on iOS'\n      );\n    }\n    return super.getLivePhotoVideoUri();\n  }\n\n  // @hidden\n  getIsInCloud(): Promise<boolean> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getIsInCloud is only available on iOS');\n    }\n    return super.getIsInCloud();\n  }\n\n  // @hidden\n  getOrientation(): Promise<number | null> {\n    if (Platform.OS !== 'ios') {\n      throw new UnavailabilityError('MediaLibrary', 'getOrientation is only available on iOS');\n    }\n    return super.getOrientation();\n  }\n}\n\nexport class Album extends ExpoMediaLibraryNext.Album {}\n\n/**\n * Asks the user to grant permissions for accessing media in user's media library.\n * @param writeOnly - Whether to request write-only access without read permissions. Defaults to `false`.\n * @param granularPermissions - A list of [`GranularPermission`](#granularpermission) values. This parameter has an\n * effect only on Android 13 and newer. By default, `expo-media-library` will ask for all possible permissions.\n *\n * > When using granular permissions with a custom config plugin configuration, make sure that all the requested permissions are included in the plugin.\n * @return A promise that fulfils with [`PermissionResponse`](#permissionresponse) object.\n */\nexport async function requestPermissionsAsync(\n  writeOnly: boolean = false,\n  granularPermissions?: GranularPermission[]\n): Promise<PermissionResponse> {\n  if (!ExpoMediaLibraryNext.requestPermissionsAsync) {\n    throw new UnavailabilityError('MediaLibrary', 'requestPermissionsAsync');\n  }\n  if (Platform.OS === 'android') {\n    return await ExpoMediaLibraryNext.requestPermissionsAsync(writeOnly, granularPermissions);\n  }\n  return await ExpoMediaLibraryNext.requestPermissionsAsync(writeOnly);\n}\n\n/**\n * Checks user's permissions for accessing media library.\n * @param writeOnly - Whether to check write-only access without read permissions. Defaults to `false`.\n * @param granularPermissions - A list of [`GranularPermission`](#granularpermission) values. This parameter has\n * an effect only on Android 13 and newer. By default, `expo-media-library` will ask for all possible permissions.\n * @return A promise that fulfils with [`PermissionResponse`](#permissionresponse) object.\n */\nexport async function getPermissionsAsync(\n  writeOnly: boolean = false,\n  granularPermissions?: GranularPermission[]\n): Promise<PermissionResponse> {\n  if (!ExpoMediaLibraryNext.getPermissionsAsync) {\n    throw new UnavailabilityError('MediaLibrary', 'getPermissionsAsync');\n  }\n  if (Platform.OS === 'android') {\n    return await ExpoMediaLibraryNext.getPermissionsAsync(writeOnly, granularPermissions);\n  }\n  return await ExpoMediaLibraryNext.getPermissionsAsync(writeOnly);\n}\n\n/**\n * Check or request permissions to access the media library.\n * This uses both `requestPermissionsAsync` and `getPermissionsAsync` to interact with the permissions.\n *\n * @example\n * ```ts\n * const [permissionResponse, requestPermission] = MediaLibrary.usePermissions({\n *   writeOnly: true,\n *   granularPermissions: ['photo'],\n * });\n * ```\n */\nexport const usePermissions = createPermissionHook<\n  PermissionResponse,\n  { writeOnly?: boolean; granularPermissions?: GranularPermission[] }\n>({\n  getMethod: (options) => getPermissionsAsync(options?.writeOnly, options?.granularPermissions),\n  requestMethod: (options) =>\n    requestPermissionsAsync(options?.writeOnly, options?.granularPermissions),\n});\n\nexport type { PermissionHookOptions };\n\n/**\n * Allows the user to update the assets that your app has access to.\n * The system modal is only displayed if the user originally allowed only `limited` access to their\n * media library, otherwise this method is a no-op.\n * @param mediaTypes Limits the type(s) of media that the user will be granting access to. By default, a list that shows both photos and videos is presented.\n *\n * @return A promise that either rejects if the method is unavailable, or resolves to `void`.\n * > __Note:__ This method doesn't inform you if the user changes which assets your app has access to.\n * That information is only exposed by iOS, and to obtain it, you need to subscribe for updates to the user's media library using [`addListener()`](#medialibraryaddlistenerlistener).\n * If `hasIncrementalChanges` is `false`, the user changed their permissions.\n *\n * @platform android 14+\n * @platform ios\n */\nexport async function presentPermissionsPicker(mediaTypes?: MediaTypeFilter[]): Promise<void> {\n  return await ExpoMediaLibraryNext.presentPermissionsPicker(mediaTypes);\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/types/MediaTypeFilter.d.ts b/packages/expo-media-library/build/next/types/MediaTypeFilter.d.ts
+new file mode 100644
+index 00000000000000..a247fed7a40caf
+--- /dev/null
++++ b/packages/expo-media-library/build/next/types/MediaTypeFilter.d.ts
+@@ -0,0 +1,2 @@
++export type MediaTypeFilter = 'photo' | 'video';
++//# sourceMappingURL=MediaTypeFilter.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/types/MediaTypeFilter.d.ts.map b/packages/expo-media-library/build/next/types/MediaTypeFilter.d.ts.map
+new file mode 100644
+index 00000000000000..7984d304966754
+--- /dev/null
++++ b/packages/expo-media-library/build/next/types/MediaTypeFilter.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"MediaTypeFilter.d.ts","sourceRoot":"","sources":["../../../src/next/types/MediaTypeFilter.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,eAAe,GAAG,OAAO,GAAG,OAAO,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/types/MediaTypeFilter.js b/packages/expo-media-library/build/next/types/MediaTypeFilter.js
+new file mode 100644
+index 00000000000000..9e884d97e586bc
+--- /dev/null
++++ b/packages/expo-media-library/build/next/types/MediaTypeFilter.js
+@@ -0,0 +1,2 @@
++export {};
++//# sourceMappingURL=MediaTypeFilter.js.map
+\ No newline at end of file
+diff --git a/packages/expo-media-library/build/next/types/MediaTypeFilter.js.map b/packages/expo-media-library/build/next/types/MediaTypeFilter.js.map
+new file mode 100644
+index 00000000000000..11221ce436a599
+--- /dev/null
++++ b/packages/expo-media-library/build/next/types/MediaTypeFilter.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"MediaTypeFilter.js","sourceRoot":"","sources":["../../../src/next/types/MediaTypeFilter.ts"],"names":[],"mappings":"","sourcesContent":["export type MediaTypeFilter = 'photo' | 'video';\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift b/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift
+index df5e40ff54c96f..e553b2268d1fe4 100644
+--- a/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift
++++ b/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift
+@@ -1,5 +1,6 @@
+ import ExpoModulesCore
+ import Photos
++import PhotosUI
+ 
+ public final class MediaLibraryNextModule: Module {
+   public func definition() -> ModuleDefinition {
+@@ -247,6 +248,13 @@ public final class MediaLibraryNextModule: Module {
+           reject: promise.legacyRejecter
+         )
+     }
++
++    AsyncFunction("presentPermissionsPicker") { (_ mediaTypes: [String]?) in
++      guard let vc = appContext?.utilities?.currentViewController() else {
++        return
++      }
++      PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: vc)
++    }.runOnQueue(.main)
+   }
+ 
+   private func getAssetIdsFromAssetRefs(from assetRefs: Either<[Asset], [URL]>) async throws -> [String] {
+diff --git a/packages/expo-media-library/src/next/ExpoMediaLibraryNext.ts b/packages/expo-media-library/src/next/ExpoMediaLibraryNext.ts
+index 5f0ceba78e581a..cb6e5ae2ece113 100644
+--- a/packages/expo-media-library/src/next/ExpoMediaLibraryNext.ts
++++ b/packages/expo-media-library/src/next/ExpoMediaLibraryNext.ts
+@@ -2,9 +2,10 @@ import type { PermissionResponse } from 'expo-modules-core';
+ import { NativeModule, requireNativeModule } from 'expo-modules-core';
+ 
+ import type { GranularPermission } from './MediaLibraryNext.types';
+-import type { Album } from './types/Album';
+-import type { Asset } from './types/Asset';
+-import type { Query } from './types/Query';
++import { Album } from './types/Album';
++import { Asset } from './types/Asset';
++import type { MediaTypeFilter } from './types/MediaTypeFilter';
++import { Query } from './types/Query';
+ 
+ declare class ExpoMediaLibraryNextModule extends NativeModule {
+   Asset: typeof Asset;
+@@ -19,6 +20,7 @@ declare class ExpoMediaLibraryNextModule extends NativeModule {
+     writeOnly?: boolean,
+     granularPermissions?: GranularPermission[]
+   ): Promise<PermissionResponse>;
++  presentPermissionsPicker(mediaTypes?: MediaTypeFilter[]): Promise<void>;
+ }
+ 
+ export default requireNativeModule<ExpoMediaLibraryNextModule>('ExpoMediaLibraryNext');
+diff --git a/packages/expo-media-library/src/next/MediaLibraryNext.types.ts b/packages/expo-media-library/src/next/MediaLibraryNext.types.ts
+index 9755eddebaf4d9..e6123e97d6d1c7 100644
+--- a/packages/expo-media-library/src/next/MediaLibraryNext.types.ts
++++ b/packages/expo-media-library/src/next/MediaLibraryNext.types.ts
+@@ -2,5 +2,6 @@ export * from './types/SortDescriptor';
+ export * from './types/AssetField';
+ export * from './types/MediaSubtype';
+ export * from './types/MediaType';
++export * from './types/MediaTypeFilter';
+ export * from './types/GranularPermission';
+ export * from './types/AssetInfo';
+diff --git a/packages/expo-media-library/src/next/index.ts b/packages/expo-media-library/src/next/index.ts
+index d77bb1fb12010c..d4d5ca9318f058 100644
+--- a/packages/expo-media-library/src/next/index.ts
++++ b/packages/expo-media-library/src/next/index.ts
+@@ -4,7 +4,8 @@ import { Platform } from 'react-native';
+ 
+ import ExpoMediaLibraryNext from './ExpoMediaLibraryNext';
+ import type { GranularPermission } from './types/GranularPermission';
+-import type { MediaSubtype } from './types/MediaSubtype';
++import { MediaSubtype } from './types/MediaSubtype';
++import type { MediaTypeFilter } from './types/MediaTypeFilter';
+ 
+ export * from './MediaLibraryNext.types';
+ 
+@@ -129,3 +130,21 @@ export const usePermissions = createPermissionHook<
+ });
+ 
+ export type { PermissionHookOptions };
++
++/**
++ * Allows the user to update the assets that your app has access to.
++ * The system modal is only displayed if the user originally allowed only `limited` access to their
++ * media library, otherwise this method is a no-op.
++ * @param mediaTypes Limits the type(s) of media that the user will be granting access to. By default, a list that shows both photos and videos is presented.
++ *
++ * @return A promise that either rejects if the method is unavailable, or resolves to `void`.
++ * > __Note:__ This method doesn't inform you if the user changes which assets your app has access to.
++ * That information is only exposed by iOS, and to obtain it, you need to subscribe for updates to the user's media library using [`addListener()`](#medialibraryaddlistenerlistener).
++ * If `hasIncrementalChanges` is `false`, the user changed their permissions.
++ *
++ * @platform android 14+
++ * @platform ios
++ */
++export async function presentPermissionsPicker(mediaTypes?: MediaTypeFilter[]): Promise<void> {
++  return await ExpoMediaLibraryNext.presentPermissionsPicker(mediaTypes);
++}
+diff --git a/packages/expo-media-library/src/next/types/MediaTypeFilter.ts b/packages/expo-media-library/src/next/types/MediaTypeFilter.ts
+new file mode 100644
+index 00000000000000..bd9b00f1071a8c
+--- /dev/null
++++ b/packages/expo-media-library/src/next/types/MediaTypeFilter.ts
+@@ -0,0 +1 @@
++export type MediaTypeFilter = 'photo' | 'video';

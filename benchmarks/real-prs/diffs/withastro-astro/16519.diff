@@ -1,0 +1,682 @@
+diff --git a/.changeset/khaki-keys-guess.md b/.changeset/khaki-keys-guess.md
+new file mode 100644
+index 000000000000..9efe85b3fdcb
+--- /dev/null
++++ b/.changeset/khaki-keys-guess.md
+@@ -0,0 +1,38 @@
++---
++'@astrojs/cloudflare': minor
++'astro': minor
++---
++
++Adds support for redirecting URLs in remote image optimization.
++
++Previously, when a remote image URL meant to be optimized by Astro led to a redirect, Astro would fail silently and ignore the redirect. Now, Astro tracks up to 10 redirects for these images. If any of the redirects are not covered by a pattern in `image.remotePatterns` or a domain in `image.domains`, Astro will fail with a helpful error message.
++
++In the following example, the first image would be loaded successfully, while the second would lead to Astro throwing an error:
++
++```mjs
++export default defineConfig({
++  image: {
++    domains: ["example.com", "cdn.example.com"]
++  }
++});
++```
++
++```tsx
++{/* Redirects to https://cdn.example.com/assets/image.png: */}
++<Image src="https://example.com/assets/image.png" width="1920" height="1080" alt="An example image." />
++
++{/* Redirects to https://malicious.com/image.png: */}
++<Image src="https://example.com/bad-image.png" width="1920" height="1080" alt="An example image." />
++```
++
++In cases where all redirects to HTTPS hosts should be trusted, the following configuration for `image.remotePatterns` can be used:
++
++```mjs
++export default defineConfig({
++  image: {
++    remotePatterns: [{
++      protocol: 'https'
++    }]
++  }
++});
++```
+diff --git a/packages/astro/src/assets/build/generate.ts b/packages/astro/src/assets/build/generate.ts
+index 262469d69e3c..16386c249ae2 100644
+--- a/packages/astro/src/assets/build/generate.ts
++++ b/packages/astro/src/assets/build/generate.ts
+@@ -355,7 +355,7 @@ export function getStaticImageList(): AssetsGlobalStaticImagesList {
+ 
+ async function loadImage(path: string, env: AssetEnv): Promise<ImageData> {
+ 	if (isRemotePath(path)) {
+-		return await loadRemoteImage(path);
++		return await loadRemoteImage(path, undefined, env.imageConfig);
+ 	}
+ 
+ 	return {
+diff --git a/packages/astro/src/assets/build/remote.ts b/packages/astro/src/assets/build/remote.ts
+index eae8e85f3a3b..990e04165bb1 100644
+--- a/packages/astro/src/assets/build/remote.ts
++++ b/packages/astro/src/assets/build/remote.ts
+@@ -1,4 +1,5 @@
+ import CachePolicy from 'http-cache-semantics';
++import { fetchWithRedirects, type RemoteImageConfig } from '../utils/redirectValidation.js';
+ 
+ export type RemoteCacheEntry = {
+ 	data?: string;
+@@ -7,13 +8,16 @@ export type RemoteCacheEntry = {
+ 	lastModified?: string;
+ };
+ 
+-export async function loadRemoteImage(src: string, fetchFn: typeof fetch = globalThis.fetch) {
+-	const req = new Request(src);
+-	const res = await fetchFn(req, { redirect: 'manual' });
+-
+-	if (res.status >= 300 && res.status < 400) {
+-		throw new Error(`Failed to load remote image ${src}. The request was redirected.`);
+-	}
++export async function loadRemoteImage(
++	src: string,
++	fetchFn: typeof fetch = globalThis.fetch,
++	imageConfig: RemoteImageConfig = { remotePatterns: [], domains: [] },
++) {
++	const res = await fetchWithRedirects({
++		url: src,
++		fetchFn,
++		imageConfig,
++	});
+ 
+ 	if (!res.ok) {
+ 		throw new Error(
+@@ -22,6 +26,7 @@ export async function loadRemoteImage(src: string, fetchFn: typeof fetch = globa
+ 	}
+ 
+ 	// calculate an expiration date based on the response's TTL
++	const req = new Request(src);
+ 	const policy = new CachePolicy(webToCachePolicyRequest(req), webToCachePolicyResponse(res));
+ 	const expires = policy.storable() ? policy.timeToLive() : 0;
+ 
+@@ -46,13 +51,19 @@ export async function revalidateRemoteImage(
+ 	src: string,
+ 	revalidationData: { etag?: string; lastModified?: string },
+ 	fetchFn: typeof fetch = globalThis.fetch,
++	imageConfig: RemoteImageConfig = { remotePatterns: [], domains: [] },
+ ) {
+ 	const headers = {
+ 		...(revalidationData.etag && { 'If-None-Match': revalidationData.etag }),
+ 		...(revalidationData.lastModified && { 'If-Modified-Since': revalidationData.lastModified }),
+ 	};
+ 	const req = new Request(src, { headers, cache: 'no-cache' });
+-	const res = await fetchFn(req, { redirect: 'manual' });
++	const res = await fetchWithRedirects({
++		url: src,
++		headers: new Headers(headers),
++		imageConfig,
++		fetchFn,
++	});
+ 
+ 	// Allow 304 Not Modified: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/304
+ 	if (!res.ok && res.status !== 304) {
+@@ -70,7 +81,7 @@ export async function revalidateRemoteImage(
+ 
+ 	if (res.ok && !data.length) {
+ 		// Server did not include body but indicated cache was stale
+-		return await loadRemoteImage(src, fetchFn);
++		return await loadRemoteImage(src, fetchFn, imageConfig);
+ 	}
+ 
+ 	// calculate an expiration date based on the response's TTL
+diff --git a/packages/astro/src/assets/endpoint/generic.ts b/packages/astro/src/assets/endpoint/generic.ts
+index 4ed678a93741..05ef9dd73271 100644
+--- a/packages/astro/src/assets/endpoint/generic.ts
++++ b/packages/astro/src/assets/endpoint/generic.ts
+@@ -6,16 +6,14 @@ import * as mime from 'mrmime';
+ import type { APIRoute } from '../../types/public/common.js';
+ import { getConfiguredImageService } from '../internal.js';
+ import { etag } from '../utils/etag.js';
++import { fetchWithRedirects } from '../utils/redirectValidation.js';
+ 
+ async function loadRemoteImage(src: URL, headers: Headers) {
+ 	try {
+-		const res = await fetch(src, {
+-			// Forward all headers from the original request
+-			headers,
+-			redirect: 'manual',
+-		});
++		const res = await fetchWithRedirects({ url: src, headers, imageConfig });
+ 
+-		if (res.status >= 300 && res.status < 400) {
++		// Validate that the final URL (after redirects) is allowed
++		if (!isRemoteAllowed(res.url, imageConfig)) {
+ 			return undefined;
+ 		}
+ 
+diff --git a/packages/astro/src/assets/endpoint/shared.ts b/packages/astro/src/assets/endpoint/shared.ts
+index 3ee2a328ceab..8d628b39d770 100644
+--- a/packages/astro/src/assets/endpoint/shared.ts
++++ b/packages/astro/src/assets/endpoint/shared.ts
+@@ -6,12 +6,19 @@ import * as mime from 'mrmime';
+ import { getConfiguredImageService } from '../internal.js';
+ import { etag } from '../utils/etag.js';
+ import { inferSourceFormat } from '../utils/inferSourceFormat.js';
++import { fetchWithRedirects } from '../utils/redirectValidation.js';
++
++const isLocal = (url: string) => {
++	const hostname = new URL(url).hostname;
++	return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
++};
+ 
+ export async function loadRemoteImage(src: URL): Promise<Buffer | undefined> {
+ 	try {
+-		const res = await fetch(src, { redirect: 'manual' });
++		const res = await fetchWithRedirects({ url: src, imageConfig });
+ 
+-		if (res.status >= 300 && res.status < 400) {
++		// Local URLs are allowed by default
++		if (!isRemoteAllowed(res.url, imageConfig) && !isLocal(res.url)) {
+ 			return undefined;
+ 		}
+ 
+diff --git a/packages/astro/src/assets/index.ts b/packages/astro/src/assets/index.ts
+index e87d03499a1d..39e373984f43 100644
+--- a/packages/astro/src/assets/index.ts
++++ b/packages/astro/src/assets/index.ts
+@@ -2,3 +2,4 @@ export { getConfiguredImageService, getImage, verifyOptions } from './internal.j
+ export { baseService, isLocalService } from './services/service.js';
+ export { hashTransform, propsToFilename } from './utils/hash.js';
+ export type { LocalImageProps, RemoteImageProps } from './types.js';
++export { fetchWithRedirects } from './utils/redirectValidation.js';
+diff --git a/packages/astro/src/assets/utils/index.ts b/packages/astro/src/assets/utils/index.ts
+index dce2b0362b91..dd5045a2125a 100644
+--- a/packages/astro/src/assets/utils/index.ts
++++ b/packages/astro/src/assets/utils/index.ts
+@@ -15,3 +15,4 @@ export { isESMImportedImage, isRemoteImage, resolveSrc } from './imageKind.js';
+ export { imageMetadata } from './metadata.js';
+ export { getOrigQueryParams } from './queryParams.js';
+ export { inferRemoteSize } from './remoteProbe.js';
++export { fetchWithRedirects } from './redirectValidation.js';
+diff --git a/packages/astro/src/assets/utils/redirectValidation.ts b/packages/astro/src/assets/utils/redirectValidation.ts
+new file mode 100644
+index 000000000000..ab0d9cd816da
+--- /dev/null
++++ b/packages/astro/src/assets/utils/redirectValidation.ts
+@@ -0,0 +1,118 @@
++/**
++ * Utilities for handling HTTP redirects with validation
++ */
++
++import type { AstroConfig } from '../../types/public/config.js';
++import { isRemoteAllowed } from '@astrojs/internal-helpers/remote';
++
++export type RemoteImageConfig = Pick<AstroConfig['image'], 'remotePatterns' | 'domains'>;
++
++export type FetchRedirectOptions = {
++	/**
++	 * URL to fetch (either string or URL object)
++	 */
++	url: string | URL;
++
++	/**
++	 * Headers to include in the request (optional)
++	 */
++	headers?: Headers;
++
++	/**
++	 * Image config for validating redirect destinations (optional)
++	 */
++	imageConfig: RemoteImageConfig;
++
++	/**
++	 * Fetch function to use (default: globalThis.fetch)
++	 */
++	fetchFn?: typeof fetch;
++
++	/**
++	 * Maximum number of redirects to follow (default: 10)
++	 */
++	redirectLimit?: number;
++
++	/**
++	 * Error handler for redirect depth exceeded (default: generic Error)
++	 */
++	onMaxRedirectsExceeded?: (url: string) => Error;
++
++	/**
++	 * Error handler for missing Location header (default: generic Error)
++	 */
++	onMissingLocationHeader?: (status: number, url: string) => Error;
++
++	/**
++	 * Error handler for disallowed redirect (default: generic Error)
++	 */
++	onDisallowedRedirect?: (currentUrl: string, targetUrl: string) => Error;
++};
++
++/**
++ * Recursively follows HTTP redirects with validation according to the image configuration.
++ *
++ * If any of the domains in the redirect chain are not allowed by either `image.remotePatterns`
++ * or `image.domains`, this function will throw an error for a disallowed redirect.
++ *
++ * @param options The options for this fetch call.
++ */
++export async function fetchWithRedirects(options: FetchRedirectOptions): Promise<Response> {
++	const {
++		url,
++		headers,
++		imageConfig,
++		fetchFn = globalThis.fetch,
++		redirectLimit = 10,
++		onMaxRedirectsExceeded = (_u) => new Error('Maximum redirect depth exceeded'),
++		onMissingLocationHeader = (_s, _u) =>
++			new Error(`Redirect response ${_s} missing Location header`),
++		onDisallowedRedirect = (_current, _target) =>
++			new Error(
++				`The image at ${_current} redirected to ${_target}, which is not an allowed remote location.`,
++			),
++	} = options;
++
++	if (redirectLimit <= 0) {
++		throw onMaxRedirectsExceeded(typeof url === 'string' ? url : url.toString());
++	}
++
++	const urlString = typeof url === 'string' ? url : url.toString();
++	const req = new Request(url, { headers });
++	const res = await fetchFn(req, { redirect: 'manual' });
++
++	// Handle redirects (301, 302, 303, 307, 308 are actual redirects, not 304 Not Modified)
++	if ([301, 302, 303, 307, 308].includes(res.status)) {
++		const location = res.headers.get('Location');
++		if (!location) {
++			throw onMissingLocationHeader(res.status, urlString);
++		}
++
++		// Resolve the redirect URL relative to the current URL
++		const redirectUrl = new URL(location, urlString).toString();
++
++		// Validate that the redirect target matches allowed patterns
++		if (
++			!isRemoteAllowed(redirectUrl, {
++				domains: imageConfig.domains ?? [],
++				remotePatterns: imageConfig.remotePatterns ?? [],
++			})
++		) {
++			throw onDisallowedRedirect(urlString, redirectUrl);
++		}
++
++		// Recursively follow the redirect
++		return fetchWithRedirects({
++			url: redirectUrl,
++			headers,
++			imageConfig,
++			fetchFn,
++			redirectLimit: redirectLimit - 1,
++			onMaxRedirectsExceeded,
++			onMissingLocationHeader,
++			onDisallowedRedirect,
++		});
++	}
++
++	return res;
++}
+diff --git a/packages/astro/src/assets/utils/remoteProbe.ts b/packages/astro/src/assets/utils/remoteProbe.ts
+index 2feeab2dc0a4..1fb6057e57f3 100644
+--- a/packages/astro/src/assets/utils/remoteProbe.ts
++++ b/packages/astro/src/assets/utils/remoteProbe.ts
+@@ -3,6 +3,7 @@ import { AstroError, AstroErrorData } from '../../core/errors/index.js';
+ import type { AstroConfig } from '../../types/public/config.js';
+ import type { ImageMetadata } from '../types.js';
+ import { imageMetadata } from './metadata.js';
++import { fetchWithRedirects } from './redirectValidation.js';
+ 
+ type RemoteImageConfig = Pick<AstroConfig['image'], 'domains' | 'remotePatterns'>;
+ 
+@@ -49,16 +50,41 @@ export async function inferRemoteSize(
+ 		});
+ 	}
+ 
+-	// Start fetching the image
+-	const response = await fetch(url, { redirect: 'manual' });
+-
+-	if (response.status >= 300 && response.status < 400) {
++	// Start fetching the image with redirect validation
++	let response: Response;
++	try {
++		response = await fetchWithRedirects({
++			url,
++			onMaxRedirectsExceeded: (u) =>
++				new AstroError({
++					...AstroErrorData.FailedToFetchRemoteImageDimensions,
++					message: AstroErrorData.FailedToFetchRemoteImageDimensions.message(u),
++				}),
++			onMissingLocationHeader: (_status, u) =>
++				new AstroError({
++					...AstroErrorData.FailedToFetchRemoteImageDimensions,
++					message: AstroErrorData.FailedToFetchRemoteImageDimensions.message(u),
++				}),
++			imageConfig: imageConfig ?? {
++				remotePatterns: [],
++				domains: [],
++			},
++		});
++	} catch (_err) {
+ 		throw new AstroError({
+ 			...AstroErrorData.FailedToFetchRemoteImageDimensions,
+ 			message: AstroErrorData.FailedToFetchRemoteImageDimensions.message(url),
+ 		});
+ 	}
+ 
++	// Validate that the final URL (after redirects) is allowed
++	if (allowlistConfig && !isRemoteAllowed(response.url, allowlistConfig)) {
++		throw new AstroError({
++			...AstroErrorData.RemoteImageNotAllowed,
++			message: AstroErrorData.RemoteImageNotAllowed.message(url),
++		});
++	}
++
+ 	if (!response.body || !response.ok) {
+ 		throw new AstroError({
+ 			...AstroErrorData.FailedToFetchRemoteImageDimensions,
+diff --git a/packages/astro/src/types/public/config.ts b/packages/astro/src/types/public/config.ts
+index 17414659494d..a29d4371e078 100644
+--- a/packages/astro/src/types/public/config.ts
++++ b/packages/astro/src/types/public/config.ts
+@@ -1865,6 +1865,8 @@ export interface AstroUserConfig<
+ 		 * `pathname` patterns:
+ 		 *   - End with `/**` to allow all sub-routes (like `startsWith`).
+ 		 *   - End with `/*` to allow only one level of sub-route.
++		 * 
++		 * HTTP redirects are also followed when an image URL matches a remote pattern. The final destination URL must be among the allowed remote patterns to be loaded.
+ 
+ 		 */
+ 		remotePatterns?: Partial<RemotePattern>[];
+diff --git a/packages/astro/test/units/assets/remote.test.ts b/packages/astro/test/units/assets/remote.test.ts
+index 2d3169559f6a..53c932f76e4d 100644
+--- a/packages/astro/test/units/assets/remote.test.ts
++++ b/packages/astro/test/units/assets/remote.test.ts
+@@ -1,11 +1,12 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+-import { revalidateRemoteImage } from '../../../dist/assets/build/remote.js';
++import { loadRemoteImage, revalidateRemoteImage } from '../../../dist/assets/build/remote.js';
+ 
+ function makeFetchMock(
+ 	status: number,
+ 	headerInit: Record<string, string> = {},
+ 	body: ArrayBuffer = new ArrayBuffer(0),
++	url = 'https://example.com/img.jpg',
+ ): () => Promise<Response> {
+ 	const headers = new Headers(headerInit);
+ 	return async () =>
+@@ -13,6 +14,7 @@ function makeFetchMock(
+ 			status,
+ 			ok: status >= 200 && status < 300,
+ 			headers,
++			url,
+ 			arrayBuffer: async () => body,
+ 		}) as unknown as Response;
+ }
+@@ -57,23 +59,188 @@ describe('revalidateRemoteImage', () => {
+ 		assert.equal(result.etag, '"newetag"');
+ 	});
+ 
+-	it('throws on redirect responses (e.g. 301)', async () => {
++	it('throws on server error responses (e.g. 500)', async () => {
++		await assert.rejects(
++			() =>
++				revalidateRemoteImage('https://example.com/img.jpg', { etag: '"abc"' }, makeFetchMock(500)),
++			/500/,
++		);
++	});
++});
++
++describe('loadRemoteImage', () => {
++	it('successfully loads remote image from allowed domain', async () => {
++		const imageBytes = new Uint8Array([1, 2, 3, 4, 5]).buffer;
++		const result = await loadRemoteImage(
++			'https://example.com/img.jpg',
++			makeFetchMock(200, { 'Cache-Control': 'max-age=3600', Etag: '"test"' }, imageBytes),
++			{ domains: ['example.com'], remotePatterns: [] },
++		);
++
++		assert.ok(result.data !== null);
++		assert.equal(result.data.length, 5);
++		assert.equal(result.etag, '"test"');
++	});
++
++	it('follows 301 redirect to allowed domain', async () => {
++		const imageBytes = new Uint8Array([1, 2, 3, 4, 5]).buffer;
++
++		let fetchCallCount = 0;
++		const mockFetch = async (req: Request | string) => {
++			fetchCallCount++;
++			const requestUrl = typeof req === 'string' ? req : req.url;
++
++			// First request: return 301 redirect
++			if (fetchCallCount === 1) {
++				return {
++					status: 301,
++					ok: false,
++					headers: new Headers({ Location: 'https://cdn.example.com/img.jpg' }),
++					url: requestUrl,
++					arrayBuffer: async () => new ArrayBuffer(0),
++				} as unknown as Response;
++			}
++
++			// Second request: return the actual image
++			return {
++				status: 200,
++				ok: true,
++				headers: new Headers({ 'Cache-Control': 'max-age=3600' }),
++				url: 'https://cdn.example.com/img.jpg',
++				arrayBuffer: async () => imageBytes,
++			} as unknown as Response;
++		};
++
++		const result = await loadRemoteImage('https://example.com/img.jpg', mockFetch as any, {
++			domains: ['example.com', 'cdn.example.com'],
++			remotePatterns: [],
++		});
++
++		assert.equal(fetchCallCount, 2);
++		assert.ok(result.data !== null);
++		assert.equal(result.data.length, 5);
++	});
++
++	it('rejects redirect to disallowed domain', async () => {
++		let fetchCallCount = 0;
++		const mockFetch = async (_req: Request | string) => {
++			fetchCallCount++;
++
++			// First request: return 302 redirect to disallowed domain
++			if (fetchCallCount === 1) {
++				return {
++					status: 302,
++					ok: false,
++					headers: new Headers({ Location: 'https://evil.com/img.jpg' }),
++					url: 'https://example.com/img.jpg',
++					arrayBuffer: async () => new ArrayBuffer(0),
++				} as unknown as Response;
++			}
++		};
++
+ 		await assert.rejects(
+ 			() =>
+-				revalidateRemoteImage(
++				loadRemoteImage(
+ 					'https://example.com/img.jpg',
+-					{ etag: '"abc"' },
+-					makeFetchMock(301, { Location: 'https://example.com/new.jpg' }),
++					mockFetch as any,
++					{ domains: ['example.com'], remotePatterns: [] }, // evil.com is not allowed
+ 				),
+-			/redirected/,
++			/not an allowed remote location/,
+ 		);
++
++		assert.equal(fetchCallCount, 1);
+ 	});
+ 
+-	it('throws on server error responses (e.g. 500)', async () => {
++	it('follows chain of redirects with all destinations allowed', async () => {
++		const imageBytes = new Uint8Array([1, 2, 3]).buffer;
++
++		let fetchCallCount = 0;
++		const mockFetch: typeof fetch = async () => {
++			fetchCallCount++;
++
++			if (fetchCallCount === 1) {
++				return {
++					status: 301,
++					ok: false,
++					headers: new Headers({ Location: 'https://cdn1.example.com/img.jpg' }),
++					url: 'https://example.com/img.jpg',
++					arrayBuffer: async () => new ArrayBuffer(0),
++				} as unknown as Response;
++			}
++
++			if (fetchCallCount === 2) {
++				return {
++					status: 302,
++					ok: false,
++					headers: new Headers({ Location: 'https://cdn2.example.com/img.jpg' }),
++					url: 'https://cdn1.example.com/img.jpg',
++					arrayBuffer: async () => new ArrayBuffer(0),
++				} as unknown as Response;
++			}
++
++			// Final destination
++			return {
++				status: 200,
++				ok: true,
++				headers: new Headers({ 'Cache-Control': 'max-age=3600' }),
++				url: 'https://cdn2.example.com/img.jpg',
++				arrayBuffer: async () => imageBytes,
++			} as unknown as Response;
++		};
++
++		const result = await loadRemoteImage('https://example.com/img.jpg', mockFetch, {
++			domains: ['example.com', 'cdn1.example.com', 'cdn2.example.com'],
++			remotePatterns: [],
++		});
++
++		assert.equal(fetchCallCount, 3);
++		assert.ok(result.data !== null);
++		assert.equal(result.data.length, 3);
++	});
++
++	it('throws on redirect with missing Location header', async () => {
++		const mockFetch = async () =>
++			({
++				status: 301,
++				ok: false,
++				headers: new Headers({}),
++				url: 'https://example.com/img.jpg',
++				arrayBuffer: async () => new ArrayBuffer(0),
++			}) as unknown as Response;
++
+ 		await assert.rejects(
+ 			() =>
+-				revalidateRemoteImage('https://example.com/img.jpg', { etag: '"abc"' }, makeFetchMock(500)),
+-			/500/,
++				loadRemoteImage('https://example.com/img.jpg', mockFetch as any, {
++					domains: ['example.com'],
++					remotePatterns: [],
++				}),
++			/missing Location header/,
+ 		);
+ 	});
++
++	it('throws on excessive redirects', async () => {
++		let fetchCallCount = 0;
++		const mockFetch = async () => {
++			fetchCallCount++;
++			return {
++				status: 301,
++				ok: false,
++				headers: new Headers({ Location: `https://example.com/redirect-${fetchCallCount}` }),
++				url: 'https://example.com/img.jpg',
++				arrayBuffer: async () => new ArrayBuffer(0),
++			} as unknown as Response;
++		};
++
++		await assert.rejects(
++			() =>
++				loadRemoteImage('https://example.com/img.jpg', mockFetch as any, {
++					domains: ['example.com'],
++					remotePatterns: [],
++				}),
++			/Maximum redirect depth exceeded/,
++		);
++
++		// Should have hit the redirect limit (10 by default)
++		assert.ok(fetchCallCount >= 10);
++	});
+ });
+diff --git a/packages/integrations/cloudflare/src/entrypoints/image-passthrough-endpoint.ts b/packages/integrations/cloudflare/src/entrypoints/image-passthrough-endpoint.ts
+index a925b5b32ae5..01ed2ea0d9f5 100644
+--- a/packages/integrations/cloudflare/src/entrypoints/image-passthrough-endpoint.ts
++++ b/packages/integrations/cloudflare/src/entrypoints/image-passthrough-endpoint.ts
+@@ -3,6 +3,7 @@ import { isRemotePath } from '@astrojs/internal-helpers/path';
+ import { isRemoteAllowed } from '@astrojs/internal-helpers/remote';
+ import type { APIRoute } from 'astro';
+ import { env } from 'cloudflare:workers';
++import { fetchWithRedirects } from 'astro/assets';
+ 
+ export const prerender = false;
+ 
+@@ -20,7 +21,10 @@ export const GET: APIRoute = async ({ request }) => {
+ 			if (!isRemoteAllowed(href, imageConfig)) {
+ 				return new Response('Forbidden', { status: 403 });
+ 			}
+-			response = await fetch(href, { redirect: 'manual' });
++			response = await fetchWithRedirects({
++				url: href,
++				imageConfig,
++			});
+ 		} else {
+ 			const sourceUrl = new URL(href, url.origin);
+ 			if (sourceUrl.origin !== url.origin) {
+diff --git a/packages/integrations/cloudflare/src/utils/image-binding-transform.ts b/packages/integrations/cloudflare/src/utils/image-binding-transform.ts
+index d4f3311afbea..05c19a69c510 100644
+--- a/packages/integrations/cloudflare/src/utils/image-binding-transform.ts
++++ b/packages/integrations/cloudflare/src/utils/image-binding-transform.ts
+@@ -3,6 +3,7 @@ import { isRemotePath } from '@astrojs/internal-helpers/path';
+ import { isRemoteAllowed } from '@astrojs/internal-helpers/remote';
+ import type { ImageOutputOptions, ImageTransform } from '@cloudflare/workers-types';
+ import type { ImageQualityPreset } from 'astro';
++import { fetchWithRedirects } from 'astro/assets';
+ 
+ const qualityTable: Record<ImageQualityPreset, number> = {
+ 	low: 25,
+@@ -25,12 +26,24 @@ export async function transform(
+ 	}
+ 
+ 	const imageSrc = new URL(href, url.origin);
+-	const content = await (isRemotePath(href)
+-		? fetch(imageSrc, { redirect: 'manual' })
+-		: assets.fetch(imageSrc));
++	let content: Response;
+ 
+-	if (content.status >= 300 && content.status < 400) {
+-		return new Response('Not Found', { status: 404 });
++	if (isRemotePath(href)) {
++		try {
++			content = await fetchWithRedirects({
++				url: imageSrc,
++				imageConfig,
++			});
++
++			// Validate that the final URL (after redirects) is allowed
++			if (!isRemoteAllowed(content.url, imageConfig)) {
++				return new Response('Forbidden', { status: 403 });
++			}
++		} catch {
++			return new Response('Not Found', { status: 404 });
++		}
++	} else {
++		content = await assets.fetch(imageSrc);
+ 	}
+ 
+ 	if (!content.body) {

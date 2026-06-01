@@ -1,0 +1,1559 @@
+diff --git a/packages/vite/src/node/server/middlewares/transform.ts b/packages/vite/src/node/server/middlewares/transform.ts
+index 345771162b6bcc..ce5a39105ee670 100644
+--- a/packages/vite/src/node/server/middlewares/transform.ts
++++ b/packages/vite/src/node/server/middlewares/transform.ts
+@@ -62,7 +62,10 @@ export function isServerAccessDeniedForTransform(
+   id: string,
+ ): boolean {
+   if (rawRE.test(id) || urlRE.test(id) || inlineRE.test(id) || svgRE.test(id)) {
+-    return checkLoadingAccess(config, id) !== 'allowed'
++    return (
++      checkLoadingAccess(config, cleanUrl(id)) !== 'allowed' ||
++      checkLoadingAccess(config, id) !== 'allowed'
++    )
+   }
+   return false
+ }
+@@ -319,7 +322,13 @@ export function transformMiddleware(
+       }
+       if (e?.code === ERR_DENIED_ID) {
+         const id: string = e.id
+-        const servingAccessResult = checkLoadingAccess(server.config, id)
++        let servingAccessResult = checkLoadingAccess(
++          server.config,
++          cleanUrl(id),
++        )
++        if (servingAccessResult === 'allowed') {
++          servingAccessResult = checkLoadingAccess(server.config, id)
++        }
+         if (servingAccessResult === 'denied') {
+           respondWithAccessDenied(id, server, res)
+           return true
+diff --git a/playground/fs-serve/__tests__/commonTests.ts b/playground/fs-serve/__tests__/commonTests.ts
+index cbc8d84925c256..06c58fae6de370 100644
+--- a/playground/fs-serve/__tests__/commonTests.ts
++++ b/playground/fs-serve/__tests__/commonTests.ts
+@@ -1,5 +1,6 @@
+ import http from 'node:http'
+ import path from 'node:path'
++import fs from 'node:fs'
+ import { pathToFileURL } from 'node:url'
+ import { setTimeout } from 'node:timers/promises'
+ import {
+@@ -21,13 +22,17 @@ const getViteTestIndexHtmlUrl = () => {
+   return viteTestUrl + srcPrefix + 'src/'
+ }
+ 
++const safeJsonContent = fs.readFileSync(
++  path.resolve(import.meta.dirname, '../safe.json'),
++  'utf-8',
++)
+ const stringified = JSON.stringify(testJSON)
+ 
+-describe.runIf(isServe)('main', () => {
+-  beforeAll(async () => {
+-    await page.goto(getViteTestIndexHtmlUrl())
+-  })
++beforeAll(async () => {
++  await page.goto(getViteTestIndexHtmlUrl())
++})
+ 
++describe.runIf(isServe)('normal', () => {
+   test('default import', async () => {
+     await expect.poll(() => page.textContent('.full')).toBe(stringified)
+   })
+@@ -36,208 +41,264 @@ describe.runIf(isServe)('main', () => {
+     await expect.poll(() => page.textContent('.named')).toBe(testJSON.msg)
+   })
+ 
+-  test('virtual svg module', async () => {
+-    await expect.poll(() => page.textContent('.virtual-svg')).toMatch('<svg')
+-  })
+-
+-  test('safe fetch', async () => {
+-    await expect.poll(() => page.textContent('.safe-fetch')).toMatch('KEY=safe')
+-    await expect.poll(() => page.textContent('.safe-fetch-status')).toBe('200')
+-  })
+-
+-  test('safe fetch with query', async () => {
+-    await expect
+-      .poll(() => page.textContent('.safe-fetch-query'))
+-      .toMatch('KEY=safe')
+-    await expect
+-      .poll(() => page.textContent('.safe-fetch-query-status'))
+-      .toBe('200')
+-  })
+-
+-  test('safe fetch with special characters', async () => {
+-    await expect
+-      .poll(() => page.textContent('.safe-fetch-subdir-special-characters'))
+-      .toMatch('KEY=safe')
+-    await expect
+-      .poll(() =>
+-        page.textContent('.safe-fetch-subdir-special-characters-status'),
+-      )
+-      .toBe('200')
+-  })
+-
+-  test('unsafe fetch', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch'))
+-      .toMatch('403 Restricted')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe HTML fetch', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-html'))
+-      .toMatch('403 Restricted')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-html-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fetch with special characters (#8498)', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-fetch-8498')).toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-8498-status'))
+-      .toBe('404')
+-  })
+-
+-  test('unsafe fetch with special characters 2 (#8498)', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-fetch-8498-2')).toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-8498-2-status'))
+-      .toBe('404')
+-  })
+-
+-  test('unsafe fetch import inline', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-import-inline-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fetch raw query import', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-raw-query-import-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fetch ?.svg?import', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-query-dot-svg-import-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fetch .svg?import', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fetch-svg-status'))
+-      .toBe('403')
+-  })
+-
+-  test('safe fs fetch', async () => {
+-    await expect
+-      .poll(() => page.textContent('.safe-fs-fetch'))
+-      .toBe(stringified)
+-    await expect
+-      .poll(() => page.textContent('.safe-fs-fetch-status'))
+-      .toBe('200')
+-  })
+-
+-  test('safe fs fetch', async () => {
+-    await expect
+-      .poll(() => page.textContent('.safe-fs-fetch-query'))
+-      .toBe(stringified)
+-    await expect
+-      .poll(() => page.textContent('.safe-fs-fetch-query-status'))
+-      .toBe('200')
+-  })
+-
+-  test('safe fs fetch with special characters', async () => {
+-    await expect
+-      .poll(() => page.textContent('.safe-fs-fetch-special-characters'))
+-      .toBe(stringified)
+-    await expect
+-      .poll(() => page.textContent('.safe-fs-fetch-special-characters-status'))
+-      .toBe('200')
+-  })
+-
+-  test('unsafe fs fetch', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-fs-fetch')).toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fs fetch', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-fs-fetch-raw')).toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-raw-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fs fetch query 1', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-raw-query1'))
+-      .toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-raw-query1-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fs fetch query 2', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-raw-query2'))
+-      .toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-raw-query2-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fs fetch with special characters (#8498)', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-fs-fetch-8498')).toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-8498-status'))
+-      .toBe('404')
+-  })
+-
+-  test('unsafe fs fetch with special characters 2 (#8498)', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-8498-2'))
+-      .toBe('')
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-8498-2-status'))
+-      .toBe('404')
+-  })
+-
+-  test('unsafe fs fetch import inline', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-fs-fetch-import-inline-status'))
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fs fetch import inline wasm init', async () => {
+-    await expect
+-      .poll(() =>
+-        page.textContent('.unsafe-fs-fetch-import-inline-wasm-init-status'),
+-      )
+-      .toBe('403')
+-  })
+-
+-  test('unsafe fs fetch with relative path after query status', async () => {
+-    await expect
+-      .poll(() =>
+-        page.textContent('.unsafe-fs-fetch-relative-path-after-query-status'),
+-      )
+-      .toBe('404')
+-  })
+-
+   test('nested entry', async () => {
+     await expect.poll(() => page.textContent('.nested-entry')).toBe('foobar')
+   })
+ 
+-  test('denied', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-dotenv')).toBe('403')
++  test('virtual svg module', async () => {
++    await expect.poll(() => page.textContent('.virtual-svg')).toMatch('<svg')
+   })
++})
+ 
+-  test('denied EnV casing', async () => {
++describe.runIf(isServe)('matrix', () => {
++  const variants = [
++    { variantId: '', variantName: 'normal' },
++    { variantId: '-fs', variantName: '/@fs/' },
++  ] as const
++  type VariantId = (typeof variants)[number]['variantId']
++  const cases: Array<{
++    name: string
++    testId: string
++    content: string | RegExp
++    status: string | string[]
++    skipVariants?: VariantId[]
++    isSPAFallback?: boolean
++  }> = [
++    {
++      name: 'safe fetch',
++      testId: 'safe',
++      content: /KEY=safe/,
++      status: '200',
++    },
++    {
++      name: 'safe fetch with query',
++      testId: 'safe-query',
++      content: /KEY=safe/,
++      status: '200',
++    },
++    {
++      name: 'safe fetch in subdir',
++      testId: 'safe-subdir',
++      content: /KEY=safe/,
++      status: '200',
++    },
++    {
++      name: 'safe fetch with special characters',
++      testId: 'safe-subdir-special-characters',
++      content: /KEY=safe/,
++      status: '200',
++    },
++    {
++      name: 'safe fetch with special characters 2',
++      testId: 'safe-subdir-special-characters2',
++      content: safeJsonContent,
++      status: '200',
++    },
++    {
++      name: 'safe fetch imported',
++      testId: 'safe-imported',
++      content: safeJsonContent,
++      status: '200',
++      skipVariants: [''],
++    },
++    {
++      name: 'safe fetch imported with query',
++      testId: 'safe-imported-query',
++      content: safeJsonContent,
++      status: '200',
++      skipVariants: [''],
++    },
++
++    {
++      name: 'unsafe fetch',
++      testId: 'unsafe',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe JSON fetch',
++      testId: 'unsafe-json',
++      content: /403 Restricted/,
++      status: '403',
++      skipVariants: [''],
++    },
++    {
++      name: 'unsafe HTML fetch',
++      testId: 'unsafe-html',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe HTML fetch outside root',
++      testId: 'unsafe-html-outside-root',
++      content: /403 Restricted/,
++      status: '403',
++      skipVariants: [''],
++    },
++    {
++      name: 'unsafe fetch with special characters (#8498)',
++      testId: 'unsafe-8498',
++      content: '',
++      status: '404',
++    },
++    {
++      name: 'unsafe fetch with special characters 2 (#8498)',
++      testId: 'unsafe-8498-2',
++      content: '',
++      status: '404',
++    },
++    {
++      name: 'unsafe fetch import inline',
++      testId: 'unsafe-import-inline',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe fetch raw query import',
++      testId: 'unsafe-raw-query-import',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe fetch raw import raw outside root',
++      testId: 'unsafe-raw-import-raw-outside-root',
++      content: /403 Restricted/,
++      status: '403',
++      skipVariants: [''],
++    },
++    {
++      name: 'unsafe fetch raw import raw outside root 1',
++      testId: 'unsafe-raw-import-raw-outside-root1',
++      content: /403 Restricted/,
++      status: '403',
++      skipVariants: [''],
++    },
++    {
++      name: 'unsafe fetch raw import raw outside root 2',
++      testId: 'unsafe-raw-import-raw-outside-root2',
++      content: /403 Restricted/,
++      status: '403',
++      skipVariants: [''],
++    },
++    {
++      name: 'unsafe fetch with ?url query',
++      testId: 'unsafe-url',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe fetch ?.svg?import',
++      testId: 'unsafe-query-dot-svg-import',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe fetch .svg?import',
++      testId: 'unsafe-svg',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'unsafe fetch import inline wasm init',
++      testId: 'unsafe-import-inline-wasm-init',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    // It is 404 in `fs-serve/base` test, 403 in `fs-serve` test
++    {
++      name: 'unsafe fetch with relative path after query',
++      testId: 'unsafe-relative-path-after-query',
++      content: /403 Restricted|^$/,
++      status: ['403', '404'],
++      isSPAFallback: true,
++    },
++    {
++      name: 'denied .env',
++      testId: 'unsafe-dotenv',
++      content: /403 Restricted/,
++      status: '403',
++    },
+     // It is 403 in case insensitive system, 404 in others
+-    await expect
+-      .poll(() => page.textContent('.unsafe-dotEnV-casing'))
+-      .toStrictEqual(expect.toBeOneOf(['403', '404']))
+-  })
++    {
++      name: 'denied env casing',
++      testId: 'unsafe-dotenv-casing',
++      content: /403 Restricted|^$/,
++      status: ['403', '404'],
++    },
++    {
++      name: 'denied .env with raw query',
++      testId: 'unsafe-dotenv-raw',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'denied .env with url query',
++      testId: 'unsafe-dotenv-url',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'denied .env with inline query',
++      testId: 'unsafe-dotenv-inline',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'denied env with ?.svg?.wasm?init',
++      testId: 'unsafe-dotenv-query-dot-svg-wasm-init',
++      content: /403 Restricted/,
++      status: '403',
++    },
++    {
++      name: 'denied .env with import and raw query',
++      testId: 'unsafe-dotenv-import-raw',
++      content: /403 Restricted/,
++      status: '403',
++    },
++  ]
++
++  for (const {
++    name,
++    testId,
++    content,
++    status,
++    skipVariants,
++    isSPAFallback,
++  } of cases) {
++    for (const { variantId, variantName } of variants) {
++      if (skipVariants?.includes(variantId)) {
++        continue
++      }
+ 
+-  test('denied env with ?.svg?.wasm?init', async () => {
+-    await expect
+-      .poll(() => page.textContent('.unsafe-dotenv-query-dot-svg-wasm-init'))
+-      .toBe('403')
+-  })
++      test.concurrent(`${name} (${variantName})`, async ({ expect }) => {
++        const baseSelector = `.fetch${variantId}-${testId}`
++        const actualStatus = expect.poll(() =>
++          page.textContent(`${baseSelector}-status`),
++        )
++        const actualContent = expect.poll(() =>
++          page.textContent(`${baseSelector}-content`),
++        )
++
++        if (variantName === 'normal' && isSPAFallback) {
++          await actualStatus.toBe('200')
++          await actualContent.toContain('<h1>FS Serve Matrix Test Summary</h1>')
++          return
++        }
++
++        if (typeof status === 'string') {
++          await actualStatus.toBe(status)
++        } else {
++          await actualStatus.toBeOneOf(status)
++        }
++
++        if (typeof content === 'string') {
++          await actualContent.toBe(content)
++        } else {
++          await actualContent.toMatch(content)
++        }
++      })
++    }
++  }
+ })
+ 
+ describe('fetch', () => {
+@@ -530,10 +591,12 @@ describe.runIf(isServe)('fetchModule via WebSocket', () => {
+ 
+ describe.runIf(!isServe)('preview HTML', () => {
+   test('unsafe HTML fetch', async () => {
+-    await expect.poll(() => page.textContent('.unsafe-fetch-html')).toBe('')
+     await expect
+-      .poll(() => page.textContent('.unsafe-fetch-html-status'))
++      .poll(() => page.textContent('.fetch-unsafe-html-status'))
+       .toBe('404')
++    await expect
++      .poll(() => page.textContent('.fetch-unsafe-html-content'))
++      .toBe('')
+   })
+ })
+ 
+diff --git a/playground/fs-serve/__tests__/deny/fs-serve-deny.spec.ts b/playground/fs-serve/__tests__/deny/fs-serve-deny.spec.ts
+index fb60922e86e1ae..0beb709566691b 100644
+--- a/playground/fs-serve/__tests__/deny/fs-serve-deny.spec.ts
++++ b/playground/fs-serve/__tests__/deny/fs-serve-deny.spec.ts
+@@ -2,16 +2,23 @@ import { describe, expect, test } from 'vitest'
+ import { isServe, page, viteTestUrl } from '~utils'
+ 
+ describe.runIf(isServe)('main', () => {
+-  test('**/deny/** should deny src/deny/deny.txt', async () => {
+-    const res = await page.request.fetch(
+-      new URL('/src/deny/deny.txt', viteTestUrl).href,
+-    )
+-    expect(res.status()).toBe(403)
+-  })
+-  test('**/deny/** should deny src/deny/.deny', async () => {
+-    const res = await page.request.fetch(
+-      new URL('/src/deny/.deny', viteTestUrl).href,
+-    )
+-    expect(res.status()).toBe(403)
+-  })
++  for (const { name, urlPath } of [
++    { name: 'src/deny/deny.txt', urlPath: '/src/deny/deny.txt' },
++    { name: 'src/deny/.deny', urlPath: '/src/deny/.deny' },
++    { name: 'src/deny/deny.txt?raw', urlPath: '/src/deny/deny.txt?raw' },
++    { name: 'src/deny/deny.txt?url', urlPath: '/src/deny/deny.txt?url' },
++    {
++      name: 'src/deny/deny.txt?import&raw',
++      urlPath: '/src/deny/deny.txt?import&raw',
++    },
++    {
++      name: 'src/deny/.deny?.svg?import',
++      urlPath: '/src/deny/.deny?.svg?import',
++    },
++  ]) {
++    test(`**/deny/** should deny ${name}`, async () => {
++      const res = await page.request.fetch(new URL(urlPath, viteTestUrl).href)
++      expect(res.status()).toBe(403)
++    })
++  }
+ })
+diff --git a/playground/fs-serve/__tests__/fs-serve.spec.ts b/playground/fs-serve/__tests__/fs-serve.spec.ts
+index 0b145e35dc58f6..fc17b6e60280c7 100644
+--- a/playground/fs-serve/__tests__/fs-serve.spec.ts
++++ b/playground/fs-serve/__tests__/fs-serve.spec.ts
+@@ -40,71 +40,69 @@ describe.runIf(isServe)('invalid request', () => {
+   const root = path
+     .resolve(import.meta.dirname.replace('playground', 'playground-temp'), '..')
+     .replace(/\\/g, '/')
+-
+-  test('request with sendRawRequest should work', async () => {
+-    const response = await sendRawRequest(viteTestUrl, '/src/safe.txt')
+-    expect(response).toContain('HTTP/1.1 200 OK')
+-    expect(response).toContain('KEY=safe')
+-  })
+-
+-  test('request with sendRawRequest should work with /@fs/', async () => {
+-    const response = await sendRawRequest(
+-      viteTestUrl,
+-      path.posix.join('/@fs/', root, 'root/src/safe.txt'),
+-    )
+-    expect(response).toContain('HTTP/1.1 200 OK')
+-    expect(response).toContain('KEY=safe')
+-  })
+-
+-  test('should reject request that has # in request-target', async () => {
+-    const response = await sendRawRequest(
+-      viteTestUrl,
+-      '/src/safe.txt#/../../unsafe.txt',
+-    )
+-    expect(response).toContain('HTTP/1.1 400 Bad Request')
+-  })
+-
+-  test('should reject request that has # in request-target with /@fs/', async () => {
+-    const response = await sendRawRequest(
+-      viteTestUrl,
+-      path.posix.join('/@fs/', root, 'root/src/safe.txt') +
++  const testCases: Array<{
++    name: string
++    target: string
++    status: string
++    content?: string
++  }> = [
++    {
++      name: 'basic request',
++      target: '/src/safe.txt',
++      status: 'HTTP/1.1 200 OK',
++      content: 'KEY=safe',
++    },
++    {
++      name: 'request with /@fs/',
++      target: path.posix.join('/@fs/', root, 'root/src/safe.txt'),
++      status: 'HTTP/1.1 200 OK',
++      content: 'KEY=safe',
++    },
++    {
++      name: '# in request-target',
++      target: '/src/safe.txt#/../../unsafe.txt',
++      status: 'HTTP/1.1 400 Bad Request',
++    },
++    {
++      name: '# in request-target with /@fs/',
++      target:
++        path.posix.join('/@fs/', root, 'root/src/safe.txt') +
+         '#/../../unsafe.txt',
+-    )
+-    expect(response).toContain('HTTP/1.1 400 Bad Request')
+-  })
+-
+-  test('should deny request to denied file when a request has /.', async () => {
+-    const response = await sendRawRequest(viteTestUrl, '/src/dummy.crt/.')
+-    expect(response).toContain('HTTP/1.1 403 Forbidden')
+-  })
+-
+-  test('should deny request to denied file when a request ends with \\', async () => {
+-    const response = await sendRawRequest(viteTestUrl, '/src/.env\\')
+-    expect(response).toContain(
+-      isWindows ? 'HTTP/1.1 403 Forbidden' : 'HTTP/1.1 404 Not Found',
+-    )
+-  })
+-
+-  test('should deny request to denied file when a request ends with \\ with /@fs/', async () => {
+-    const response = await sendRawRequest(
+-      viteTestUrl,
+-      path.posix.join('/@fs/', root, 'root/src/.env') + '\\',
+-    )
+-    expect(response).toContain(
+-      isWindows ? 'HTTP/1.1 403 Forbidden' : 'HTTP/1.1 404 Not Found',
+-    )
+-  })
+-
+-  test('should deny request with /@fs/ to denied file when a request has /.', async () => {
+-    const response = await sendRawRequest(
+-      viteTestUrl,
+-      path.posix.join('/@fs/', root, 'root/src/dummy.crt/') + '.',
+-    )
+-    expect(response).toContain('HTTP/1.1 403 Forbidden')
+-  })
+-
+-  test('should deny request to HTML file outside root by default with relative path', async () => {
+-    const response = await sendRawRequest(viteTestUrl, '/../unsafe.html')
+-    expect(response).toContain('HTTP/1.1 403 Forbidden')
+-  })
++      status: 'HTTP/1.1 400 Bad Request',
++    },
++    {
++      name: 'denied file with /.',
++      target: '/src/dummy.crt/.',
++      status: 'HTTP/1.1 403 Forbidden',
++    },
++    {
++      name: 'denied file ending with \\',
++      target: '/src/.env\\',
++      status: isWindows ? 'HTTP/1.1 403 Forbidden' : 'HTTP/1.1 404 Not Found',
++    },
++    {
++      name: 'denied file ending with \\ with /@fs/',
++      target: path.posix.join('/@fs/', root, 'root/src/.env') + '\\',
++      status: isWindows ? 'HTTP/1.1 403 Forbidden' : 'HTTP/1.1 404 Not Found',
++    },
++    {
++      name: 'denied file with /. with /@fs/',
++      target: path.posix.join('/@fs/', root, 'root/src/dummy.crt/') + '.',
++      status: 'HTTP/1.1 403 Forbidden',
++    },
++    {
++      name: 'HTML outside root with relative path',
++      target: '/../unsafe.html',
++      status: 'HTTP/1.1 403 Forbidden',
++    },
++  ]
++  for (const { name, target, status, content } of testCases) {
++    test(name, async () => {
++      const response = await sendRawRequest(viteTestUrl, target)
++      expect(response).toContain(status)
++      if (content !== undefined) {
++        expect(response).toContain(content)
++      }
++    })
++  }
+ })
+diff --git a/playground/fs-serve/package.json b/playground/fs-serve/package.json
+index ed11de77da1029..c2c48e5b0bad83 100644
+--- a/playground/fs-serve/package.json
++++ b/playground/fs-serve/package.json
+@@ -16,6 +16,8 @@
+     "preview:deny": "vite preview root --config ./root/vite.config-deny.js"
+   },
+   "devDependencies": {
++    "@types/escape-html": "^1.0.4",
++    "escape-html": "^1.0.3",
+     "ws": "^8.20.0"
+   }
+ }
+diff --git a/playground/fs-serve/root/matrixTestResultPlugin.ts b/playground/fs-serve/root/matrixTestResultPlugin.ts
+new file mode 100644
+index 00000000000000..43665a33c282d5
+--- /dev/null
++++ b/playground/fs-serve/root/matrixTestResultPlugin.ts
+@@ -0,0 +1,144 @@
++import type { Plugin } from 'vite'
++import escapeHtml from 'escape-html'
++
++const testIds = [
++  'safe',
++  'safe-query',
++  'safe-subdir',
++  'safe-subdir-special-characters',
++  'safe-subdir-special-characters2',
++  'safe-imported',
++  'safe-imported-query',
++  'unsafe',
++  'unsafe-json',
++  'unsafe-html',
++  'unsafe-html-outside-root',
++  'unsafe-8498',
++  'unsafe-8498-2',
++  'unsafe-import-inline',
++  'unsafe-raw-query-import',
++  'unsafe-raw-import-raw-outside-root',
++  'unsafe-raw-import-raw-outside-root1',
++  'unsafe-raw-import-raw-outside-root2',
++  'unsafe-url',
++  'unsafe-query-dot-svg-import',
++  'unsafe-svg',
++  'unsafe-import-inline-wasm-init',
++  'unsafe-relative-path-after-query',
++  'unsafe-dotenv',
++  'unsafe-dotenv-casing',
++  'unsafe-dotenv-raw',
++  'unsafe-dotenv-url',
++  'unsafe-dotenv-inline',
++  'unsafe-dotenv-query-dot-svg-wasm-init',
++  'unsafe-dotenv-import-raw',
++]
++
++export default function matrixTestResultPlugin(): Plugin {
++  return {
++    name: 'matrix-test-result',
++    transformIndexHtml(html) {
++      const summary = `
++<h1>FS Serve Matrix Test Summary</h1>
++<div>
++  <table id="matrix-summary">
++    <thead>
++      <tr>
++        <th>Name</th>
++        <th>Normal</th>
++        <th>/@fs/</th>
++      </tr>
++    </thead>
++    <tbody>
++      ${testIds
++        .map(
++          (id) =>
++            `
++              <tr>
++                <td>${escapeHtml(id)}</td>
++                ${['', '-fs']
++                  .map((variant) =>
++                    `
++                      <td>
++                        <code class="fetch${variant}-${escapeHtml(id)}-path"></code>
++                        <div>
++                          <p class="fetch${variant}-${escapeHtml(id)}-status"></p>
++                          <a href="#fetch${variant}-${escapeHtml(id)}-content">#</a>
++                        </div>
++                      </td>
++                    `.trim(),
++                  )
++                  .join('\n')}
++              </tr>
++            `,
++        )
++        .join('\n')}
++    </tbody>
++  </table>
++</div>
++      `.trim()
++
++      const contents = `
++<h1>FS Serve Test Contents</h1>
++<div id="matrix-contents">
++  ${['', '-fs']
++    .map((variant) =>
++      testIds
++        .map((id) =>
++          `
++        <div>
++          <h2 id="fetch${variant}-${escapeHtml(id)}-content">${escapeHtml(id)}</h2>
++          <pre class="fetch${variant}-${escapeHtml(id)}-content"></pre>
++        </div>
++      `.trim(),
++        )
++        .join('\n'),
++    )
++    .join('\n')}
++</div>
++      `.trim()
++
++      const style = `
++<style>
++#matrix-summary {
++  tr td > div {
++    display: flex;
++    align-items: baseline;
++    gap: 0.3em;
++  }
++  tr:nth-child(even) {
++    background-color: #eeeeee;
++  }
++  th {
++    background-color: #6b1eb9;
++    color: white;
++  }
++  th, td {
++    padding: 0.2em;
++  }
++  td {
++    max-width: 20vw;
++  }
++  p {
++    margin: 0;
++  }
++  code {
++    word-break: break-all;
++  }
++}
++#matrix-contents {
++  h2 {
++    font-size: 1.2rem;
++    font-weight: bold;
++  }
++}
++</style>
++      `.trim()
++
++      return html.replace(
++        '<!-- REPLACE WITH MATRIX TEST RESULT -->',
++        `\n${summary}\n${contents}\n${style}\n`,
++      )
++    },
++  }
++}
+diff --git a/playground/fs-serve/root/src/index.html b/playground/fs-serve/root/src/index.html
+index 399dc319107272..d0dd2c7dc6c960 100644
+--- a/playground/fs-serve/root/src/index.html
++++ b/playground/fs-serve/root/src/index.html
+@@ -1,72 +1,15 @@
+ <link rel="icon" href="/src/favicon.ico" />
+ 
+-<h2>Normal Import</h2>
+-<pre class="full"></pre>
+-<pre class="named"></pre>
++<h1>FS Serve Normal Tests</h1>
++<div>
++  <h2>Normal Import</h2>
++  <pre class="full"></pre>
++  <pre class="named"></pre>
++  <pre class="nested-entry"></pre>
++  <pre class="virtual-svg"></pre>
++</div>
+ 
+-<h2>Safe Fetch</h2>
+-<pre class="safe-fetch-status"></pre>
+-<pre class="safe-fetch"></pre>
+-<pre class="safe-fetch-query-status"></pre>
+-<pre class="safe-fetch-query"></pre>
+-
+-<h2>Safe Fetch Subdirectory</h2>
+-<pre class="safe-fetch-subdir-status"></pre>
+-<pre class="safe-fetch-subdir"></pre>
+-<pre class="safe-fetch-subdir-special-characters-status"></pre>
+-<pre class="safe-fetch-subdir-special-characters"></pre>
+-
+-<h2>Unsafe Fetch</h2>
+-<pre class="unsafe-fetch-status"></pre>
+-<pre class="unsafe-fetch"></pre>
+-<pre class="unsafe-fetch-html-status"></pre>
+-<pre class="unsafe-fetch-html"></pre>
+-<pre class="unsafe-fetch-8498-status"></pre>
+-<pre class="unsafe-fetch-8498"></pre>
+-<pre class="unsafe-fetch-8498-2-status"></pre>
+-<pre class="unsafe-fetch-8498-2"></pre>
+-<pre class="unsafe-fetch-import-inline-status"></pre>
+-<pre class="unsafe-fetch-raw-query-import-status"></pre>
+-<pre class="unsafe-fetch-query-dot-svg-import-status"></pre>
+-<pre class="unsafe-fetch-svg-status"></pre>
+-
+-<h2>Safe /@fs/ Fetch</h2>
+-<pre class="safe-fs-fetch-status"></pre>
+-<pre class="safe-fs-fetch"></pre>
+-<pre class="safe-fs-fetch-query-status"></pre>
+-<pre class="safe-fs-fetch-query"></pre>
+-<pre class="safe-fs-fetch-special-characters-status"></pre>
+-<pre class="safe-fs-fetch-special-characters"></pre>
+-
+-<h2>Unsafe /@fs/ Fetch</h2>
+-<pre class="unsafe-fs-fetch-status"></pre>
+-<pre class="unsafe-fs-fetch"></pre>
+-<pre class="unsafe-fs-fetch-html-status"></pre>
+-<pre class="unsafe-fs-fetch-html"></pre>
+-<pre class="unsafe-fs-fetch-raw-status"></pre>
+-<pre class="unsafe-fs-fetch-raw"></pre>
+-<pre class="unsafe-fs-fetch-raw-query1-status"></pre>
+-<pre class="unsafe-fs-fetch-raw-query1"></pre>
+-<pre class="unsafe-fs-fetch-raw-query2-status"></pre>
+-<pre class="unsafe-fs-fetch-raw-query2"></pre>
+-<pre class="unsafe-fs-fetch-8498-status"></pre>
+-<pre class="unsafe-fs-fetch-8498"></pre>
+-<pre class="unsafe-fs-fetch-8498-2-status"></pre>
+-<pre class="unsafe-fs-fetch-8498-2"></pre>
+-<pre class="unsafe-fs-fetch-import-inline-status"></pre>
+-<pre class="unsafe-fs-fetch-import-inline-wasm-init-status"></pre>
+-<pre class="unsafe-fs-fetch-relative-path-after-query-status"></pre>
+-
+-<h2>Nested Entry</h2>
+-<pre class="nested-entry"></pre>
+-
+-<h2>Denied</h2>
+-<pre class="unsafe-dotenv"></pre>
+-<pre class="unsafe-dotEnV-casing"></pre>
+-<pre class="unsafe-dotenv-query-dot-svg-wasm-init"></pre>
+-
+-<d2>Virtual SVG module</d2>
+-<pre class="virtual-svg"></pre>
++<!-- REPLACE WITH MATRIX TEST RESULT -->
+ 
+ <script type="module">
+   import '../../entry'
+@@ -76,6 +19,21 @@ <h2>Denied</h2>
+   // Check virtual svg module still works
+   import fooSvg from 'virtual:foo.svg'
+ 
++  text('.full', JSON.stringify(json))
++  text('.named', msg)
++  text('.virtual-svg', fooSvg)
++
++  function text(sel, text) {
++    document.querySelector(sel).textContent = text
++  }
++</script>
++
++<script type="module">
++  // matrix tests
++
++  const base = typeof BASE !== 'undefined' ? BASE : ''
++  const fsBase = joinUrlSegments('/@fs/', ROOT)
++
+   function joinUrlSegments(a, b) {
+     if (!a || !b) {
+       return a || b || ''
+@@ -89,372 +47,149 @@ <h2>Denied</h2>
+     return a + b
+   }
+ 
+-  text('.full', JSON.stringify(json))
+-  text('.named', msg)
+-  text('.virtual-svg', fooSvg)
+-
+-  const base = typeof BASE !== 'undefined' ? BASE : ''
+-
+-  // inside allowed dir, safe fetch
+-  fetch(joinUrlSegments(base, '/src/safe.txt'))
+-    .then((r) => {
+-      text('.safe-fetch-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.safe-fetch', JSON.stringify(data))
+-    })
+-
+-  // inside allowed dir with query, safe fetch
+-  fetch(joinUrlSegments(base, '/src/safe.txt?query'))
+-    .then((r) => {
+-      text('.safe-fetch-query-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.safe-fetch-query', JSON.stringify(data))
+-    })
+-
+-  // inside allowed dir, safe fetch
+-  fetch(joinUrlSegments(base, '/src/subdir/safe.txt'))
+-    .then((r) => {
+-      text('.safe-fetch-subdir-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.safe-fetch-subdir', JSON.stringify(data))
+-    })
+-
+-  // inside allowed dir, with special characters, safe fetch
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      '/src/special%20characters%20%C3%A5%C3%A4%C3%B6/safe.txt',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.safe-fetch-subdir-special-characters-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.safe-fetch-subdir-special-characters', JSON.stringify(data))
+-    })
+-
+-  // outside of allowed dir, treated as unsafe
+-  fetch(joinUrlSegments(base, '/unsafe.txt'))
+-    .then((r) => {
+-      text('.unsafe-fetch-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fetch', data)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of allowed dir, treated as unsafe
+-  fetch(joinUrlSegments(base, '/unsafe.html'))
+-    .then((r) => {
+-      text('.unsafe-fetch-html-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fetch-html', data)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of allowed dir with special characters #8498
+-  fetch(joinUrlSegments(base, '/src/%2e%2e%2funsafe%2etxt'))
+-    .then((r) => {
+-      text('.unsafe-fetch-8498-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fetch-8498', data)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of allowed dir with special characters 2 #8498
+-  fetch(joinUrlSegments(base, '/src/%252e%252e%252funsafe%252etxt'))
+-    .then((r) => {
+-      text('.unsafe-fetch-8498-2-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fetch-8498-2', data)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of allowed dir with import inline
+-  fetch(joinUrlSegments(base, '/unsafe.txt?import&inline'))
+-    .then((r) => {
+-      text('.unsafe-fetch-import-inline-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of allowed dir with raw query import
+-  fetch(joinUrlSegments(base, '/unsafe.txt?raw?import'))
+-    .then((r) => {
+-      text('.unsafe-fetch-raw-query-import-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of allowed dir with .svg query import
+-  fetch(joinUrlSegments(base, '/unsafe.txt?.svg?import'))
+-    .then((r) => {
+-      text('.unsafe-fetch-query-dot-svg-import-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // svg outside of allowed dir, treated as unsafe
+-  fetch(joinUrlSegments(base, '/unsafe.svg?import'))
+-    .then((r) => {
+-      text('.unsafe-fetch-svg-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // imported before, should be treated as safe
+-  fetch(joinUrlSegments(base, joinUrlSegments('/@fs/', ROOT) + '/safe.json'))
+-    .then((r) => {
+-      text('.safe-fs-fetch-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.safe-fs-fetch', JSON.stringify(data))
+-    })
+-
+-  // imported before with query, should be treated as safe
+-  fetch(
+-    joinUrlSegments(base, joinUrlSegments('/@fs/', ROOT) + '/safe.json?query'),
+-  )
+-    .then((r) => {
+-      text('.safe-fs-fetch-query-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.safe-fs-fetch-query', JSON.stringify(data))
+-    })
+-
+-  // not imported before, outside of root, treated as unsafe
+-  fetch(joinUrlSegments(base, joinUrlSegments('/@fs/', ROOT) + '/unsafe.json'))
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch', JSON.stringify(data))
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // not imported before, outside of root, treated as unsafe
+-  fetch(joinUrlSegments(base, joinUrlSegments('/@fs/', ROOT) + '/unsafe.html'))
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-html-status', r.status)
+-      return r.text()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch-html', data)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // not imported before, outside of root, treated as unsafe
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) + '/unsafe.json?import&raw',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-raw-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch-raw', JSON.stringify(data))
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) + '/unsafe.json?import&raw??',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-raw-query1-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch-raw-query1', JSON.stringify(data))
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) + '/unsafe.json?import&raw?&',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-raw-query2-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch-raw-query2', JSON.stringify(data))
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of root inline
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) + '/root/unsafe.txt?import&inline',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-import-inline-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of root inline, faux wasm?init
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) +
+-        '/root/unsafe.txt?import&?inline=1.wasm?init',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-import-inline-wasm-init-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside of root with relative path after query
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) +
+-        '/root/src/?/../../unsafe.txt?import&raw',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-relative-path-after-query-status', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // outside root with special characters #8498
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) +
+-        '/root/src/%2e%2e%2f%2e%2e%2funsafe%2ejson',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-8498-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch-8498', JSON.stringify(data))
+-    })
+-
+-  // outside root with special characters 2 #8498
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) +
+-        '/root/src/%252e%252e%252f%252e%252e%252funsafe%252ejson',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-fs-fetch-8498-2-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.unsafe-fs-fetch-8498-2', JSON.stringify(data))
+-    })
+-
+-  // not imported before, inside root with special characters, treated as safe
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) +
+-        '/root/src/special%20characters%20%C3%A5%C3%A4%C3%B6/safe.json',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.safe-fs-fetch-special-characters-status', r.status)
+-      return r.json()
+-    })
+-    .then((data) => {
+-      text('.safe-fs-fetch-special-characters', JSON.stringify(data))
+-    })
+-
+-  // .env, denied by default
+-  fetch(
+-    joinUrlSegments(base, joinUrlSegments('/@fs/', ROOT) + '/root/src/.env'),
+-  )
+-    .then((r) => {
+-      text('.unsafe-dotenv', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
+-
+-  // .env, for case insensitive file systems
+-  fetch(
+-    joinUrlSegments(base, joinUrlSegments('/@fs/', ROOT) + '/root/src/.EnV'),
+-  )
+-    .then((r) => {
+-      text('.unsafe-dotEnV-casing', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
++  const paths = [
++    // inside allowed dir
++    { testId: 'safe', path: '/root/src/safe.txt' },
++    // inside allowed dir with query
++    { testId: 'safe-query', path: '/root/src/safe.txt?query' },
++    // inside allowed dir
++    { testId: 'safe-subdir', path: '/root/src/subdir/safe.txt' },
++    // inside allowed dir with special characters
++    {
++      testId: 'safe-subdir-special-characters',
++      path: '/root/src/special%20characters%20%C3%A5%C3%A4%C3%B6/safe.txt',
++    },
++    // not imported before but inside allowed dir with special characters
++    {
++      testId: 'safe-subdir-special-characters2',
++      path: '/root/src/special%20characters%20%C3%A5%C3%A4%C3%B6/safe.json',
++    },
++    // imported before
++    { testId: 'safe-imported', path: '/safe.json' },
++    // imported before with query
++    { testId: 'safe-imported-query', path: '/safe.json?query' },
++
++    // outside of allowed dir
++    { testId: 'unsafe', path: '/root/unsafe.txt' },
++    // outside of allowed dir and root
++    { testId: 'unsafe-json', path: '/unsafe.json' },
++    // outside of allowed dir
++    { testId: 'unsafe-html', path: '/root/unsafe.html' },
++    // outside of allowed dir and root
++    { testId: 'unsafe-html-outside-root', path: '/unsafe.html' },
++    // outside of allowed dir with special characters #8498
++    { testId: 'unsafe-8498', path: '/root/src/%2e%2e%2funsafe%2etxt' },
++    // outside of allowed dir with special characters 2 #8498
++    {
++      testId: 'unsafe-8498-2',
++      path: '/root/src/%252e%252e%252funsafe%252etxt',
++    },
++    // outside of allowed dir with import inline
++    {
++      testId: 'unsafe-import-inline',
++      path: '/root/unsafe.txt?import&inline',
++    },
++    // outside of allowed dir with raw query import
++    {
++      testId: 'unsafe-raw-query-import',
++      path: '/root/unsafe.txt?raw?import',
++    },
++    {
++      testId: 'unsafe-raw-import-raw-outside-root',
++      path: '/unsafe.json?import&raw',
++    },
++    {
++      testId: 'unsafe-raw-import-raw-outside-root1',
++      path: '/unsafe.json?import&raw??',
++    },
++    {
++      testId: 'unsafe-raw-import-raw-outside-root2',
++      path: '/unsafe.json?import&raw?&',
++    },
++    // outside of allowed dir with ?url
++    { testId: 'unsafe-url', path: '/root/unsafe.txt?import&url' },
++    // outside of allowed dir with .svg query import
++    {
++      testId: 'unsafe-query-dot-svg-import',
++      path: '/root/unsafe.txt?.svg?import',
++    },
++    // outside of allowed dir, svg
++    {
++      testId: 'unsafe-svg',
++      path: '/root/unsafe.svg?import',
++    },
++    // outside of allowed dir, inline faux wasm?init
++    {
++      testId: 'unsafe-import-inline-wasm-init',
++      path: '/root/unsafe.txt?import&?inline=1.wasm?init',
++    },
++    // outside of allowed dir, relative path after query
++    {
++      testId: 'unsafe-relative-path-after-query',
++      path: '/root/src/?/../../unsafe.txt?import&raw',
++    },
++    // .env, denied by default
++    {
++      testId: 'unsafe-dotenv',
++      path: '/root/src/.env',
++    },
++    // .env, for case insensitive file systems
++    {
++      testId: 'unsafe-dotenv-casing',
++      path: '/root/src/.EnV',
++    },
++    // .env, with raw query
++    {
++      testId: 'unsafe-dotenv-raw',
++      path: '/root/src/.env?raw',
++    },
++    // .env, with url query
++    { testId: 'unsafe-dotenv-url', path: '/root/src/.env?url' },
++    // .env with inline query
++    { testId: 'unsafe-dotenv-inline', path: '/root/src/.env?inline' },
++    // .env with .svg?.wasm?init
++    {
++      testId: 'unsafe-dotenv-query-dot-svg-wasm-init',
++      path: '/root/src/.env?.svg?.wasm?init',
++    },
++    // .env with ?import&raw
++    { testId: 'unsafe-dotenv-import-raw', path: '/root/src/.env?import&raw' },
++  ]
++  const variants = {
++    '': (path) =>
++      path.startsWith('/root/')
++        ? joinUrlSegments(base, path.replace(/^\/root/, ''))
++        : false,
++    '-fs': (path) => joinUrlSegments(base, fsBase + path),
++  }
+ 
+-  // .env with .svg?.wasm?init
+-  fetch(
+-    joinUrlSegments(
+-      base,
+-      joinUrlSegments('/@fs/', ROOT) + '/root/src/.env?.svg?.wasm?init',
+-    ),
+-  )
+-    .then((r) => {
+-      text('.unsafe-dotenv-query-dot-svg-wasm-init', r.status)
+-    })
+-    .catch((e) => {
+-      console.error(e)
+-    })
++  for (const { testId, path } of paths) {
++    for (const [variantName, transformPath] of Object.entries(variants)) {
++      const baseSelector = `.fetch${variantName}-${testId}`
++      const resolvedPath = transformPath(path)
++      if (resolvedPath === false) {
++        text(`${baseSelector}-path`, '--')
++        document.querySelector(
++          `a[href="#${baseSelector.slice(1)}-content"]`,
++        ).textContent = ''
++        text(`${baseSelector}-content`, '--')
++        continue
++      }
++
++      text(`${baseSelector}-path`, resolvedPath)
++      fetch(resolvedPath)
++        .then((r) => {
++          text(`${baseSelector}-status`, r.status)
++          return r.text()
++        })
++        .then((data) => {
++          text(`${baseSelector}-content`, data)
++        })
++        .catch((e) => {
++          console.error(e)
++        })
++    }
++  }
+ 
+   function text(sel, text) {
+     document.querySelector(sel).textContent = text
+diff --git a/playground/fs-serve/root/vite.config-base.js b/playground/fs-serve/root/vite.config-base.js
+index 7528b7325c29b7..7883b87e1ac327 100644
+--- a/playground/fs-serve/root/vite.config-base.js
++++ b/playground/fs-serve/root/vite.config-base.js
+@@ -1,6 +1,7 @@
+ import path from 'node:path'
+ import { defineConfig } from 'vite'
+ import svgVirtualModulePlugin from './svgVirtualModulePlugin'
++import matrixTestResultPlugin from './matrixTestResultPlugin'
+ 
+ const BASE = '/base/'
+ 
+@@ -35,5 +36,5 @@ export default defineConfig({
+     ROOT: JSON.stringify(path.dirname(import.meta.dirname).replace(/\\/g, '/')),
+     BASE: JSON.stringify(BASE),
+   },
+-  plugins: [svgVirtualModulePlugin()],
++  plugins: [svgVirtualModulePlugin(), matrixTestResultPlugin()],
+ })
+diff --git a/playground/fs-serve/root/vite.config.js b/playground/fs-serve/root/vite.config.js
+index 13fe2a7cc24bd2..44a1bf2d9b3771 100644
+--- a/playground/fs-serve/root/vite.config.js
++++ b/playground/fs-serve/root/vite.config.js
+@@ -1,6 +1,7 @@
+ import path from 'node:path'
+ import { defineConfig } from 'vite'
+ import svgVirtualModulePlugin from './svgVirtualModulePlugin'
++import matrixTestResultPlugin from './matrixTestResultPlugin'
+ 
+ export default defineConfig({
+   build: {
+@@ -31,5 +32,5 @@ export default defineConfig({
+   define: {
+     ROOT: JSON.stringify(path.dirname(import.meta.dirname).replace(/\\/g, '/')),
+   },
+-  plugins: [svgVirtualModulePlugin()],
++  plugins: [svgVirtualModulePlugin(), matrixTestResultPlugin()],
+ })
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 9f698952871344..8fd990722cd458 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -849,6 +849,12 @@ importers:
+ 
+   playground/fs-serve:
+     devDependencies:
++      '@types/escape-html':
++        specifier: ^1.0.4
++        version: 1.0.4
++      escape-html:
++        specifier: ^1.0.3
++        version: 1.0.3
+       ws:
+         specifier: ^8.20.0
+         version: 8.20.0

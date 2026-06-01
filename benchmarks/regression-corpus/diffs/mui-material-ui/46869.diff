@@ -1,0 +1,169 @@
+diff --git a/docs/next-env.d.ts b/docs/next-env.d.ts
+index 254b73c165d902..c8a9ef9acc46b1 100644
+--- a/docs/next-env.d.ts
++++ b/docs/next-env.d.ts
+@@ -1,6 +1,6 @@
+ /// <reference types="next" />
+ /// <reference types="next/image-types/global" />
+-/// <reference path="./.next/types/routes.d.ts" />
++/// <reference path="./export/types/routes.d.ts" />
+ 
+ // NOTE: This file should not be edited
+ // see https://nextjs.org/docs/pages/api-reference/config/typescript for more information.
+diff --git a/packages/mui-material/src/Tabs/Tabs.js b/packages/mui-material/src/Tabs/Tabs.js
+index 86cedda11e4153..dc438a798452e9 100644
+--- a/packages/mui-material/src/Tabs/Tabs.js
++++ b/packages/mui-material/src/Tabs/Tabs.js
+@@ -745,6 +745,12 @@ const Tabs = React.forwardRef(function Tabs(inProps, ref) {
+     return undefined;
+   }, [scrollable, scrollButtons, updateScrollObserver, childrenProp?.length]);
+ 
++  React.useEffect(() => {
++    if (scrollable && scrollButtons === 'auto' && (displayEndScroll || displayStartScroll)) {
++      scrollSelectedIntoView(true);
++    }
++  }, [displayEndScroll, displayStartScroll, scrollable, scrollButtons, scrollSelectedIntoView]);
++
+   React.useEffect(() => {
+     setMounted(true);
+   }, []);
+diff --git a/test/regressions/fixtures/Tabs/LTRHorizontalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/LTRHorizontalTabsAutoScrollable.js
+new file mode 100644
+index 00000000000000..0b41b06b893d50
+--- /dev/null
++++ b/test/regressions/fixtures/Tabs/LTRHorizontalTabsAutoScrollable.js
+@@ -0,0 +1,20 @@
++import * as React from 'react';
++import Box from '@mui/material/Box';
++import Tabs from '@mui/material/Tabs';
++import Tab from '@mui/material/Tab';
++
++export default function LTRHorizontalTabsAutoScrollable() {
++  return (
++    <Box sx={{ width: 300, display: 'flex' }}>
++      <Tabs value={4} variant="scrollable" scrollButtons="auto" orientation="horizontal">
++        <Tab label="Tab A" />
++        <Tab label="Tab B" />
++        <Tab label="Tab C" />
++        <Tab label="Tab D" />
++        <Tab label="Tab E" />
++        <Tab label="Tab F" />
++        <Tab label="Tab G" />
++      </Tabs>
++    </Box>
++  );
++}
+diff --git a/test/regressions/fixtures/Tabs/LTRVerticalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/LTRVerticalTabsAutoScrollable.js
+new file mode 100644
+index 00000000000000..0d9fd0d7ff028f
+--- /dev/null
++++ b/test/regressions/fixtures/Tabs/LTRVerticalTabsAutoScrollable.js
+@@ -0,0 +1,20 @@
++import * as React from 'react';
++import Box from '@mui/material/Box';
++import Tabs from '@mui/material/Tabs';
++import Tab from '@mui/material/Tab';
++
++export default function LTRVerticalTabsAutoScrollable() {
++  return (
++    <Box sx={{ height: 200, display: 'flex' }}>
++      <Tabs value={4} variant="scrollable" scrollButtons="auto" orientation="vertical">
++        <Tab label="Tab A" />
++        <Tab label="Tab B" />
++        <Tab label="Tab C" />
++        <Tab label="Tab D" />
++        <Tab label="Tab E" />
++        <Tab label="Tab F" />
++        <Tab label="Tab G" />
++      </Tabs>
++    </Box>
++  );
++}
+diff --git a/test/regressions/fixtures/Tabs/RTLHorizontalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/RTLHorizontalTabsAutoScrollable.js
+new file mode 100644
+index 00000000000000..e94f642b0020c4
+--- /dev/null
++++ b/test/regressions/fixtures/Tabs/RTLHorizontalTabsAutoScrollable.js
+@@ -0,0 +1,38 @@
++import * as React from 'react';
++import { prefixer } from 'stylis';
++import rtlPlugin from '@mui/stylis-plugin-rtl';
++import { CacheProvider } from '@emotion/react';
++import createCache from '@emotion/cache';
++import { StyleSheetManager } from 'styled-components';
++import { ThemeProvider, createTheme } from '@mui/material/styles';
++import Box from '@mui/material/Box';
++import Tabs from '@mui/material/Tabs';
++import Tab from '@mui/material/Tab';
++
++// Create rtl cache
++const cacheRtl = createCache({
++  key: 'muirtl',
++  stylisPlugins: [prefixer, rtlPlugin],
++});
++
++export default function RTLHorizontalTabsAutoScrollable() {
++  return (
++    <StyleSheetManager stylisPlugins={[rtlPlugin]}>
++      <CacheProvider value={cacheRtl}>
++        <ThemeProvider theme={createTheme({ direction: 'rtl' })}>
++          <Box dir="rtl" sx={{ width: 300, display: 'flex' }}>
++            <Tabs value={2} variant="scrollable" scrollButtons="auto" orientation="horizontal">
++              <Tab label="Tab A" />
++              <Tab label="Tab B" />
++              <Tab label="Tab C" />
++              <Tab label="Tab D" />
++              <Tab label="Tab E" />
++              <Tab label="Tab F" />
++              <Tab label="Tab G" />
++            </Tabs>
++          </Box>
++        </ThemeProvider>
++      </CacheProvider>
++    </StyleSheetManager>
++  );
++}
+diff --git a/test/regressions/fixtures/Tabs/RTLVerticalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/RTLVerticalTabsAutoScrollable.js
+new file mode 100644
+index 00000000000000..c93e3197c0db3a
+--- /dev/null
++++ b/test/regressions/fixtures/Tabs/RTLVerticalTabsAutoScrollable.js
+@@ -0,0 +1,38 @@
++import * as React from 'react';
++import { prefixer } from 'stylis';
++import rtlPlugin from '@mui/stylis-plugin-rtl';
++import { CacheProvider } from '@emotion/react';
++import createCache from '@emotion/cache';
++import { StyleSheetManager } from 'styled-components';
++import { ThemeProvider, createTheme } from '@mui/material/styles';
++import Box from '@mui/material/Box';
++import Tabs from '@mui/material/Tabs';
++import Tab from '@mui/material/Tab';
++
++// Create rtl cache
++const cacheRtl = createCache({
++  key: 'muirtl',
++  stylisPlugins: [prefixer, rtlPlugin],
++});
++
++export default function RTLVerticalTabs() {
++  return (
++    <StyleSheetManager stylisPlugins={[rtlPlugin]}>
++      <CacheProvider value={cacheRtl}>
++        <ThemeProvider theme={createTheme({ direction: 'rtl' })}>
++          <Box dir="rtl" sx={{ height: 200, display: 'flex' }}>
++            <Tabs value={2} variant="scrollable" scrollButtons="auto" orientation="vertical">
++              <Tab label="Tab A" />
++              <Tab label="Tab B" />
++              <Tab label="Tab C" />
++              <Tab label="Tab D" />
++              <Tab label="Tab E" />
++              <Tab label="Tab F" />
++              <Tab label="Tab G" />
++            </Tabs>
++          </Box>
++        </ThemeProvider>
++      </CacheProvider>
++    </StyleSheetManager>
++  );
++}

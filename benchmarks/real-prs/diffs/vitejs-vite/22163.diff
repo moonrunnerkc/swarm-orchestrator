@@ -1,0 +1,533 @@
+diff --git a/docs/guide/api-environment-runtimes.md b/docs/guide/api-environment-runtimes.md
+index 851175ce3bf6d5..e9b9a9a122fe4f 100644
+--- a/docs/guide/api-environment-runtimes.md
++++ b/docs/guide/api-environment-runtimes.md
+@@ -304,6 +304,8 @@ function createWorkerEnvironment(name, config, context) {
+   const handlerToWorkerListener = new WeakMap()
+ 
+   const workerHotChannel = {
++    // Worker threads post messages are not exposed over the network, skip server.fs checks
++    skipFsCheck: true,
+     send: (data) => worker.postMessage(data),
+     on: (event, handler) => {
+       if (event === 'connection') return
+diff --git a/packages/vite/src/node/config.ts b/packages/vite/src/node/config.ts
+index a676474e667c92..0cba941e4e54d8 100644
+--- a/packages/vite/src/node/config.ts
++++ b/packages/vite/src/node/config.ts
+@@ -219,6 +219,7 @@ function defaultCreateClientDevEnvironment(
+   return new DevEnvironment(name, config, {
+     hot: true,
+     transport: context.ws,
++    disableFetchModule: true,
+   })
+ }
+ 
+diff --git a/packages/vite/src/node/server/environment.ts b/packages/vite/src/node/server/environment.ts
+index 3ce3311e60a501..973e118daf9d38 100644
+--- a/packages/vite/src/node/server/environment.ts
++++ b/packages/vite/src/node/server/environment.ts
+@@ -1,6 +1,6 @@
+-import type { FetchFunctionOptions, FetchResult } from 'vite/module-runner'
+ import type { FSWatcher } from 'dep-types/chokidar'
+ import colors from 'picocolors'
++import type { FetchFunctionOptions, FetchResult } from 'vite/module-runner'
+ import {
+   BaseEnvironment,
+   getDefaultResolvedEnvironmentOptions,
+@@ -45,6 +45,8 @@ export interface DevEnvironmentContext {
+     inlineSourceMap?: boolean
+   }
+   depsOptimizer?: DepsOptimizer
++  /** @internal used for client environment */
++  disableFetchModule?: boolean
+ }
+ 
+ export class DevEnvironment extends BaseEnvironment {
+@@ -56,6 +58,10 @@ export class DevEnvironment extends BaseEnvironment {
+    * @internal
+    */
+   _remoteRunnerOptions: DevEnvironmentContext['remoteRunner']
++  /**
++   * @internal
++   */
++  _skipFsCheck: boolean
+ 
+   get pluginContainer(): EnvironmentPluginContainer {
+     if (!this._pluginContainer)
+@@ -121,6 +127,11 @@ export class DevEnvironment extends BaseEnvironment {
+     this._crawlEndFinder = setupOnCrawlEnd()
+ 
+     this._remoteRunnerOptions = context.remoteRunner ?? {}
++    this._skipFsCheck = !!(
++      context.transport &&
++      !(isWebSocketServer in context.transport) &&
++      context.transport.skipFsCheck
++    )
+ 
+     this.hot = context.transport
+       ? isWebSocketServer in context.transport
+@@ -130,6 +141,9 @@ export class DevEnvironment extends BaseEnvironment {
+ 
+     this.hot.setInvokeHandler({
+       fetchModule: (id, importer, options) => {
++        if (context.disableFetchModule) {
++          throw new Error('fetchModule is disabled in this environment')
++        }
+         return this.fetchModule(id, importer, options)
+       },
+     })
+@@ -210,12 +224,12 @@ export class DevEnvironment extends BaseEnvironment {
+   }
+ 
+   transformRequest(url: string): Promise<TransformResult | null> {
+-    return transformRequest(this, url)
++    return transformRequest(this, url, { skipFsCheck: this._skipFsCheck })
+   }
+ 
+   async warmupRequest(url: string): Promise<void> {
+     try {
+-      await this.transformRequest(url)
++      await transformRequest(this, url, { skipFsCheck: true })
+     } catch (e) {
+       if (
+         e?.code === ERR_OUTDATED_OPTIMIZED_DEP ||
+diff --git a/packages/vite/src/node/server/hmr.ts b/packages/vite/src/node/server/hmr.ts
+index 2c98a259f7bdde..d6ad9f4db8b383 100644
+--- a/packages/vite/src/node/server/hmr.ts
++++ b/packages/vite/src/node/server/hmr.ts
+@@ -87,6 +87,11 @@ export type HotChannelListener<T extends string = string> = (
+ ) => void
+ 
+ export interface HotChannel<Api = any> {
++  /**
++   * When true, the fs access check is skipped in fetchModule.
++   * Set this for transports that is not exposed over the network.
++   */
++  skipFsCheck?: boolean
+   /**
+    * Broadcast events to all clients
+    */
+@@ -1132,6 +1137,7 @@ export function createServerHotChannel(): ServerHotChannel {
+   const outsideEmitter = new EventEmitter()
+ 
+   return {
++    skipFsCheck: true,
+     send(payload: HotPayload) {
+       outsideEmitter.emit('send', payload)
+     },
+diff --git a/packages/vite/src/node/server/middlewares/transform.ts b/packages/vite/src/node/server/middlewares/transform.ts
+index 8bdb124584d8e0..7f11f09fe7b49a 100644
+--- a/packages/vite/src/node/server/middlewares/transform.ts
++++ b/packages/vite/src/node/server/middlewares/transform.ts
+@@ -41,7 +41,12 @@ import {
+   ERR_OUTDATED_OPTIMIZED_DEP,
+   NULL_BYTE_PLACEHOLDER,
+ } from '../../../shared/constants'
+-import { checkServingAccess, respondWithAccessDenied } from './static'
++import type { ResolvedConfig } from '../../config'
++import {
++  checkLoadingAccess,
++  checkServingAccess,
++  respondWithAccessDenied,
++} from './static'
+ 
+ const debugCache = createDebugger('vite:cache')
+ 
+@@ -80,6 +85,16 @@ function deniedServingAccessForTransform(
+   return false
+ }
+ 
++export function isServerAccessDeniedForTransform(
++  config: ResolvedConfig,
++  id: string,
++): boolean {
++  if (rawRE.test(id) || urlRE.test(id) || inlineRE.test(id) || svgRE.test(id)) {
++    return checkLoadingAccess(config, id) !== 'allowed'
++  }
++  return false
++}
++
+ /**
+  * A middleware that short-circuits the middleware chain to serve cached transformed modules
+  */
+@@ -266,9 +281,7 @@ export function transformMiddleware(
+         // resolve, load and transform using the plugin container
+         const result = await transformRequest(environment, url, {
+           html: req.headers.accept?.includes('text/html'),
+-          allowId(id) {
+-            return !deniedServingAccessForTransform(id, server, res, next)
+-          },
++          skipFsCheck: environment._skipFsCheck,
+         })
+         if (result) {
+           const depsOptimizer = environment.depsOptimizer
+@@ -340,8 +353,24 @@ export function transformMiddleware(
+         return next()
+       }
+       if (e?.code === ERR_DENIED_ID) {
+-        // next() is called in ensureServingAccess
+-        return
++        const id: string = e.id
++        let servingAccessResult = checkLoadingAccess(
++          server.config,
++          cleanUrl(id),
++        )
++        if (servingAccessResult === 'allowed') {
++          servingAccessResult = checkLoadingAccess(server.config, id)
++        }
++        if (servingAccessResult === 'denied') {
++          respondWithAccessDenied(id, server, res)
++          return true
++        }
++        if (servingAccessResult === 'fallback') {
++          next()
++          return true
++        }
++        servingAccessResult satisfies 'allowed'
++        throw new Error(`Unexpected access result for id ${id}`)
+       }
+       return next(e)
+     }
+diff --git a/packages/vite/src/node/server/transformRequest.ts b/packages/vite/src/node/server/transformRequest.ts
+index 898d64146fc55c..ad9ed316a8467d 100644
+--- a/packages/vite/src/node/server/transformRequest.ts
++++ b/packages/vite/src/node/server/transformRequest.ts
+@@ -20,7 +20,7 @@ import {
+ } from '../utils'
+ import { ssrTransform } from '../ssr/ssrTransform'
+ import { checkPublicFile } from '../publicDir'
+-import { cleanUrl, unwrapId } from '../../shared/utils'
++import { cleanUrl, slash, unwrapId } from '../../shared/utils'
+ import {
+   applySourcemapIgnoreList,
+   extractSourcemapFromFile,
+@@ -29,6 +29,7 @@ import {
+ import { isFileLoadingAllowed } from './middlewares/static'
+ import { throwClosedServerError } from './pluginContainer'
+ import type { DevEnvironment } from './environment'
++import { isServerAccessDeniedForTransform } from './middlewares/transform'
+ 
+ export const ERR_LOAD_URL = 'ERR_LOAD_URL'
+ export const ERR_LOAD_PUBLIC_URL = 'ERR_LOAD_PUBLIC_URL'
+@@ -57,9 +58,10 @@ export interface TransformOptions {
+    */
+   html?: boolean
+   /**
++   * Whether to skip the `server.fs` check.
+    * @internal
+    */
+-  allowId?: (id: string) => boolean
++  skipFsCheck?: boolean
+ }
+ 
+ // TODO: This function could be moved to the DevEnvironment class.
+@@ -253,8 +255,13 @@ async function loadAndTransform(
+ 
+   const moduleGraph = environment.moduleGraph
+ 
+-  if (options.allowId && !options.allowId(id)) {
++  if (
++    !options.skipFsCheck &&
++    id[0] !== '\0' &&
++    isServerAccessDeniedForTransform(config, id)
++  ) {
+     const err: any = new Error(`Denied ID ${id}`)
++    err.id = id
+     err.code = ERR_DENIED_ID
+     throw err
+   }
+@@ -280,8 +287,8 @@ async function loadAndTransform(
+     // only try the fallback if access is allowed, skip for out of root url
+     // like /service-worker.js or /api/users
+     if (
+-      environment.config.consumer === 'server' ||
+-      isFileLoadingAllowed(environment.getTopLevelConfig(), file)
++      options.skipFsCheck ||
++      isFileLoadingAllowed(environment.getTopLevelConfig(), slash(file))
+     ) {
+       try {
+         code = await fsp.readFile(file, 'utf-8')
+diff --git a/packages/vite/src/node/ssr/__tests__/fixtures/basic/file.js b/packages/vite/src/node/ssr/__tests__/fixtures/basic/file.js
+new file mode 100644
+index 00000000000000..60c71f346d9a3e
+--- /dev/null
++++ b/packages/vite/src/node/ssr/__tests__/fixtures/basic/file.js
+@@ -0,0 +1 @@
++export default 'ok'
+diff --git a/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts b/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts
+index d878ed09a7e6a6..0bbbba59cca772 100644
+--- a/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts
++++ b/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts
+@@ -376,3 +376,26 @@ test('buildStart before transform', async () => {
+     ]
+   `)
+ })
++
++test('server.fs check is not applied to ssrLoadModule', async () => {
++  const server = await createServer({
++    configFile: false,
++    root,
++    logLevel: 'silent',
++    optimizeDeps: {
++      noDiscovery: true,
++    },
++    server: {
++      fs: {
++        allow: [
++          path.resolve(import.meta.dirname, './fixtures/named-overwrite-all'),
++        ],
++      },
++    },
++  })
++  onTestFinished(() => server.close())
++  await server.environments.ssr.pluginContainer.buildStart({})
++
++  const mod = await server.ssrLoadModule('/fixtures/basic/file.js')
++  expect(mod.default).toBe('ok')
++})
+diff --git a/packages/vite/src/node/ssr/runtime/__tests__/fixture-outside.js b/packages/vite/src/node/ssr/runtime/__tests__/fixture-outside.js
+new file mode 100644
+index 00000000000000..b0c2b6333f05d9
+--- /dev/null
++++ b/packages/vite/src/node/ssr/runtime/__tests__/fixture-outside.js
+@@ -0,0 +1 @@
++export default 'error'
+diff --git a/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts b/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts
+index 2942856f780ea8..75e7c31af08ddb 100644
+--- a/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts
++++ b/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts
+@@ -1,5 +1,5 @@
+ import { existsSync, readdirSync } from 'node:fs'
+-import { posix, win32 } from 'node:path'
++import { posix, resolve, win32 } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ import { describe, expect, vi } from 'vitest'
+ import { isWindows } from '../../../../shared/utils'
+@@ -481,3 +481,18 @@ describe('virtual module hmr', async () => {
+     })
+   })
+ })
++
++describe('server.fs check', async () => {
++  const it = await createModuleRunnerTester({
++    server: {
++      fs: {
++        allow: [resolve(import.meta.dirname, './fixtures/circular')],
++      },
++    },
++  })
++
++  it('it is not applied to the server module runner', async ({ runner }) => {
++    const mod = await runner.import('/fixtures/basic.js')
++    expect(mod.name).toBe('basic')
++  })
++})
+diff --git a/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts b/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts
+index cdca15c695afc6..6a649bbeb520d8 100644
+--- a/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts
++++ b/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.invoke.spec.ts
+@@ -1,4 +1,5 @@
+ import { BroadcastChannel, Worker } from 'node:worker_threads'
++import path from 'node:path'
+ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+ import type { BirpcReturn } from 'birpc'
+ import { createBirpc } from 'birpc'
+@@ -34,6 +35,9 @@ describe('running module runner inside a worker and using the ModuleRunnerTransp
+         hmr: {
+           port: 9610,
+         },
++        fs: {
++          allow: [path.resolve(import.meta.dirname, './fixtures')],
++        },
+       },
+       environments: {
+         worker: {
+@@ -99,4 +103,13 @@ describe('running module runner inside a worker and using the ModuleRunnerTransp
+     expect(output).not.toHaveProperty('result')
+     expect(output.error).toContain('Error: Unknown invoke error')
+   })
++
++  it('server.fs check is applied to the custom transport by default', async () => {
++    handleInvoke = (data: any) =>
++      server.environments.worker.hot.handleInvoke(data)
++
++    const output = await run('./fixture-outside.js')
++    expect(output).toHaveProperty('error')
++    expect(output.error).toContain('Failed to load url')
++  })
+ })
+diff --git a/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts b/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts
+index 4af2fcb18b9c15..458e0718ff1757 100644
+--- a/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts
++++ b/packages/vite/src/node/ssr/runtime/__tests__/server-worker-runner.spec.ts
+@@ -1,4 +1,5 @@
+ import { BroadcastChannel, Worker } from 'node:worker_threads'
++import path from 'node:path'
+ import { describe, expect, it, onTestFinished } from 'vitest'
+ import type { HotChannel, HotChannelListener, HotPayload } from 'vite'
+ import { DevEnvironment } from '../../..'
+@@ -95,4 +96,48 @@ describe('running module runner inside a worker', () => {
+       channel.postMessage({ id: './fixtures/default-string.ts' })
+     })
+   })
++
++  it('server.fs check is applied to the custom transport by default', async () => {
++    const worker = new Worker(
++      new URL('./fixtures/worker.mjs', import.meta.url),
++      { stdout: true },
++    )
++    await new Promise<void>((resolve, reject) => {
++      worker.on('message', () => resolve())
++      worker.on('error', reject)
++    })
++    const server = await createServer({
++      root: import.meta.dirname,
++      logLevel: 'error',
++      server: {
++        middlewareMode: true,
++        watch: null,
++        hmr: {
++          port: 9609,
++        },
++        fs: {
++          allow: [path.resolve(import.meta.dirname, './fixtures')],
++        },
++      },
++      environments: {
++        worker: {
++          dev: {
++            createEnvironment: (name, config) => {
++              return new DevEnvironment(name, config, {
++                hot: false,
++                transport: createWorkerTransport(worker),
++              })
++            },
++          },
++        },
++      },
++    })
++    onTestFinished(async () => {
++      await Promise.allSettled([server.close(), worker.terminate()])
++    })
++
++    await expect(
++      server.environments.worker.transformRequest('./fixture-outside.js'),
++    ).rejects.toThrow('Failed to load url')
++  })
+ })
+diff --git a/packages/vite/src/node/ssr/runtime/serverModuleRunner.ts b/packages/vite/src/node/ssr/runtime/serverModuleRunner.ts
+index 59d7bc2050521f..a2b16fbdf7b4d7 100644
+--- a/packages/vite/src/node/ssr/runtime/serverModuleRunner.ts
++++ b/packages/vite/src/node/ssr/runtime/serverModuleRunner.ts
+@@ -1,11 +1,11 @@
+ import { existsSync, readFileSync } from 'node:fs'
+-import { ModuleRunner } from 'vite/module-runner'
++import type { HotPayload } from 'types/hmrPayload'
+ import type {
+   ModuleEvaluator,
+   ModuleRunnerHmr,
+   ModuleRunnerOptions,
+ } from 'vite/module-runner'
+-import type { HotPayload } from 'types/hmrPayload'
++import { ModuleRunner } from 'vite/module-runner'
+ import type { DevEnvironment } from '../../server/environment'
+ import type {
+   HotChannelClient,
+diff --git a/packages/vite/src/node/ssr/ssrModuleLoader.ts b/packages/vite/src/node/ssr/ssrModuleLoader.ts
+index 6d431704446053..8153944f904a03 100644
+--- a/packages/vite/src/node/ssr/ssrModuleLoader.ts
++++ b/packages/vite/src/node/ssr/ssrModuleLoader.ts
+@@ -1,6 +1,6 @@
+ import colors from 'picocolors'
+-import type { EvaluatedModuleNode } from 'vite/module-runner'
+ import { ESModulesEvaluator, ModuleRunner } from 'vite/module-runner'
++import type { EvaluatedModuleNode } from 'vite/module-runner'
+ import type { ViteDevServer } from '../server'
+ import { unwrapId } from '../../shared/utils'
+ import type { DevEnvironment } from '../server/environment'
+diff --git a/playground/fs-serve/__tests__/commonTests.ts b/playground/fs-serve/__tests__/commonTests.ts
+index 5e401401a3060e..1493aac0271b15 100644
+--- a/playground/fs-serve/__tests__/commonTests.ts
++++ b/playground/fs-serve/__tests__/commonTests.ts
+@@ -1,4 +1,7 @@
+ import http from 'node:http'
++import path from 'node:path'
++import { pathToFileURL } from 'node:url'
++import { setTimeout } from 'node:timers/promises'
+ import {
+   afterEach,
+   beforeAll,
+@@ -462,6 +465,72 @@ describe('cross origin', () => {
+   })
+ })
+ 
++describe.runIf(isServe)('fetchModule via WebSocket', () => {
++  const root = path.resolve(
++    import.meta.dirname.replace('playground', 'playground-temp'),
++    '..',
++  )
++
++  const fetchModuleViaWebSocket = async (filePath: string) => {
++    const resolvedPath = path.resolve(root, filePath)
++    const token = viteServer.config.webSocketToken
++    const wsUrl = viteTestUrl.replace('http', 'ws')
++    const ws = new WebSocket(`${wsUrl}?token=${token}`, ['vite-hmr'])
++
++    try {
++      return await Promise.race([
++        new Promise<any>((resolve, reject) => {
++          ws.on('open', () => {
++            ws.send(
++              JSON.stringify({
++                type: 'custom',
++                event: 'vite:invoke',
++                data: {
++                  name: 'fetchModule',
++                  id: 'send:1',
++                  data: [pathToFileURL(resolvedPath).href],
++                },
++              }),
++            )
++          })
++
++          ws.on('message', (raw: Buffer) => {
++            const parsed = JSON.parse(raw.toString())
++            if (
++              parsed.type === 'custom' &&
++              parsed.event === 'vite:invoke' &&
++              parsed.data?.id === 'response:1'
++            ) {
++              resolve(parsed.data.data)
++            }
++          })
++
++          ws.on('error', (err) => {
++            reject(err)
++          })
++        }),
++        setTimeout(10_000).then(() =>
++          Promise.reject(new Error('WebSocket response timed out')),
++        ),
++      ])
++    } finally {
++      ws.close()
++    }
++  }
++
++  test('should not read files inside allowed directories as fetchModule is disabled', async () => {
++    const result = await fetchModuleViaWebSocket('root/src/safe.txt?raw')
++    expect(result.result).toBeUndefined()
++    expect(result.error).toBeTruthy()
++  })
++
++  test('should not read files outside allowed directories', async () => {
++    const result = await fetchModuleViaWebSocket('root/unsafe.txt?raw')
++    expect(result.result).toBeUndefined()
++    expect(result.error).toBeTruthy()
++  })
++})
++
+ describe.runIf(!isServe)('preview HTML', () => {
+   test('unsafe HTML fetch', async () => {
+     await expect.poll(() => page.textContent('.unsafe-fetch-html')).toBe('')

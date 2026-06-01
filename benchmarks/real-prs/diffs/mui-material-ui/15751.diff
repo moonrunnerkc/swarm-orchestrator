@@ -1,0 +1,1024 @@
+diff --git a/docs/src/pages/components/chips/ChipsPlayground.js b/docs/src/pages/components/chips/ChipsPlayground.js
+index b0411e999c1d87..8429eacae1ca8a 100644
+--- a/docs/src/pages/components/chips/ChipsPlayground.js
++++ b/docs/src/pages/components/chips/ChipsPlayground.js
+@@ -22,7 +22,8 @@ const styles = theme => ({
+     padding: theme.spacing(2),
+   },
+   chipWrapper: {
+-    marginBottom: theme.spacing(5),
++    height: theme.spacing(8),
++    marginBottom: theme.spacing(4),
+   },
+ });
+ 
+@@ -33,6 +34,7 @@ class ChipsPlayground extends React.Component {
+     avatar: 'none',
+     icon: 'none',
+     variant: 'default',
++    size: 'medium',
+   };
+ 
+   handleChange = key => (event, value) => {
+@@ -47,9 +49,10 @@ class ChipsPlayground extends React.Component {
+ 
+   render() {
+     const { classes } = this.props;
+-    const { color, onDelete, avatar, icon, variant } = this.state;
++    const { color, onDelete, avatar, icon, variant, size } = this.state;
+ 
+     const colorToCode = color !== 'default' ? `color="${color}" ` : '';
++    const sizeToCode = size === 'small' ? `size="small" ` : '';
+     const variantToCode = variant !== 'default' ? `variant="${variant}" ` : '';
+ 
+     let onDeleteToCode;
+@@ -108,7 +111,7 @@ class ChipsPlayground extends React.Component {
+ 
+     const code = `
+ \`\`\`jsx
+-<Chip ${colorToCode}${onDeleteToCode}${avatarToCode}${iconToCode}${variantToCode}/>
++<Chip ${variantToCode}${colorToCode}${sizeToCode}${onDeleteToCode}${avatarToCode}${iconToCode}/>
+ \`\`\`
+ `;
+ 
+@@ -118,13 +121,14 @@ class ChipsPlayground extends React.Component {
+           <Grid container justify="center" alignItems="center" spacing={5}>
+             <Grid item className={classes.chipWrapper}>
+               <Chip
+-                label="Awesome Chip Component"
++                label="Chip Component"
+                 color={color}
+                 deleteIcon={onDelete === 'custom' ? <DoneIcon /> : undefined}
+                 onDelete={onDelete !== 'none' ? this.handleDeleteExample : undefined}
+                 avatar={avatarToPlayground}
+                 icon={iconToPlayground}
+                 variant={variant}
++                size={size}
+               />
+             </Grid>
+           </Grid>
+@@ -132,6 +136,21 @@ class ChipsPlayground extends React.Component {
+         <Grid item xs={12}>
+           <Paper className={classes.control}>
+             <Grid container spacing={3}>
++              <Grid item xs={12}>
++                <FormControl component="fieldset">
++                  <FormLabel>variant</FormLabel>
++                  <RadioGroup
++                    row
++                    name="variant"
++                    aria-label="variant"
++                    value={variant}
++                    onChange={this.handleChange('variant')}
++                  >
++                    <FormControlLabel value="default" control={<Radio />} label="default" />
++                    <FormControlLabel value="outlined" control={<Radio />} label="outlined" />
++                  </RadioGroup>
++                </FormControl>
++              </Grid>
+               <Grid item xs={12}>
+                 <FormControl component="fieldset">
+                   <FormLabel>color</FormLabel>
+@@ -150,17 +169,16 @@ class ChipsPlayground extends React.Component {
+               </Grid>
+               <Grid item xs={12}>
+                 <FormControl component="fieldset">
+-                  <FormLabel>onDelete</FormLabel>
++                  <FormLabel>size</FormLabel>
+                   <RadioGroup
+                     row
+-                    name="onDelete"
+-                    aria-label="onDelete"
+-                    value={onDelete}
+-                    onChange={this.handleChange('onDelete')}
++                    name="sizet"
++                    aria-label="size"
++                    value={size}
++                    onChange={this.handleChange('size')}
+                   >
+-                    <FormControlLabel value="none" control={<Radio />} label="none" />
+-                    <FormControlLabel value="default" control={<Radio />} label="default" />
+-                    <FormControlLabel value="custom" control={<Radio />} label="custom" />
++                    <FormControlLabel value="medium" control={<Radio />} label="medium" />
++                    <FormControlLabel value="small" control={<Radio />} label="small" />
+                   </RadioGroup>
+                 </FormControl>
+               </Grid>
+@@ -198,16 +216,17 @@ class ChipsPlayground extends React.Component {
+               </Grid>
+               <Grid item xs={12}>
+                 <FormControl component="fieldset">
+-                  <FormLabel>variant</FormLabel>
++                  <FormLabel>onDelete</FormLabel>
+                   <RadioGroup
+                     row
+-                    name="variant"
+-                    aria-label="variant"
+-                    value={variant}
+-                    onChange={this.handleChange('variant')}
++                    name="onDelete"
++                    aria-label="onDelete"
++                    value={onDelete}
++                    onChange={this.handleChange('onDelete')}
+                   >
++                    <FormControlLabel value="none" control={<Radio />} label="none" />
+                     <FormControlLabel value="default" control={<Radio />} label="default" />
+-                    <FormControlLabel value="outlined" control={<Radio />} label="outlined" />
++                    <FormControlLabel value="custom" control={<Radio />} label="custom" />
+                   </RadioGroup>
+                 </FormControl>
+               </Grid>
+diff --git a/docs/src/pages/components/chips/SmallChips.js b/docs/src/pages/components/chips/SmallChips.js
+new file mode 100644
+index 00000000000000..598ea68ee87218
+--- /dev/null
++++ b/docs/src/pages/components/chips/SmallChips.js
+@@ -0,0 +1,134 @@
++import React from 'react';
++import { makeStyles } from '@material-ui/core/styles';
++import Avatar from '@material-ui/core/Avatar';
++import Chip from '@material-ui/core/Chip';
++import FaceIcon from '@material-ui/icons/Face';
++import DoneIcon from '@material-ui/icons/Done';
++
++const useStyles = makeStyles(theme => ({
++  root: {
++    display: 'flex',
++    justifyContent: 'center',
++    flexWrap: 'wrap',
++  },
++  chip: {
++    margin: theme.spacing(1),
++  },
++}));
++
++function SmallChips() {
++  const classes = useStyles();
++
++  function handleDelete() {
++    alert('You clicked the delete icon.');
++  }
++
++  function handleClick() {
++    alert('You clicked the Chip.');
++  }
++
++  return (
++    <div className={classes.root}>
++      <Chip size="small" label="Basic Chip" className={classes.chip} />
++      <Chip
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Clickable Chip"
++        onClick={handleClick}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        avatar={<Avatar alt="Natacha" src="/static/images/avatar/1.jpg" />}
++        label="Deletable Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        icon={<FaceIcon />}
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        label="Custom delete icon Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        size="small"
++        label="Clickable Link Chip"
++        className={classes.chip}
++        component="a"
++        href="#chip"
++        clickable
++      />
++      <Chip
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        size="small"
++        icon={<FaceIcon />}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        size="small"
++        label="Deletable Primary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="primary"
++      />
++      <Chip
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++      <Chip
++        size="small"
++        icon={<FaceIcon />}
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++    </div>
++  );
++}
++
++export default SmallChips;
+diff --git a/docs/src/pages/components/chips/SmallChips.tsx b/docs/src/pages/components/chips/SmallChips.tsx
+new file mode 100644
+index 00000000000000..a2d63bf635d8b9
+--- /dev/null
++++ b/docs/src/pages/components/chips/SmallChips.tsx
+@@ -0,0 +1,136 @@
++import React from 'react';
++import { createStyles, Theme, makeStyles } from '@material-ui/core/styles';
++import Avatar from '@material-ui/core/Avatar';
++import Chip from '@material-ui/core/Chip';
++import FaceIcon from '@material-ui/icons/Face';
++import DoneIcon from '@material-ui/icons/Done';
++
++const useStyles = makeStyles((theme: Theme) =>
++  createStyles({
++    root: {
++      display: 'flex',
++      justifyContent: 'center',
++      flexWrap: 'wrap',
++    },
++    chip: {
++      margin: theme.spacing(1),
++    },
++  }),
++);
++
++function SmallChips() {
++  const classes = useStyles();
++
++  function handleDelete() {
++    alert('You clicked the delete icon.');
++  }
++
++  function handleClick() {
++    alert('You clicked the Chip.');
++  }
++
++  return (
++    <div className={classes.root}>
++      <Chip size="small" label="Basic Chip" className={classes.chip} />
++      <Chip
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Clickable Chip"
++        onClick={handleClick}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        avatar={<Avatar alt="Natacha" src="/static/images/avatar/1.jpg" />}
++        label="Deletable Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        icon={<FaceIcon />}
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        label="Custom delete icon Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        size="small"
++        label="Clickable Link Chip"
++        className={classes.chip}
++        component="a"
++        href="#chip"
++        clickable
++      />
++      <Chip
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        size="small"
++        icon={<FaceIcon />}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        size="small"
++        label="Deletable Primary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="primary"
++      />
++      <Chip
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++      <Chip
++        size="small"
++        icon={<FaceIcon />}
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++    </div>
++  );
++}
++
++export default SmallChips;
+diff --git a/docs/src/pages/components/chips/SmallOutlinedChips.js b/docs/src/pages/components/chips/SmallOutlinedChips.js
+new file mode 100644
+index 00000000000000..175750861dbbe4
+--- /dev/null
++++ b/docs/src/pages/components/chips/SmallOutlinedChips.js
+@@ -0,0 +1,144 @@
++import React from 'react';
++import { makeStyles } from '@material-ui/core/styles';
++import Avatar from '@material-ui/core/Avatar';
++import Chip from '@material-ui/core/Chip';
++import FaceIcon from '@material-ui/icons/Face';
++import DoneIcon from '@material-ui/icons/Done';
++
++const useStyles = makeStyles(theme => ({
++  root: {
++    display: 'flex',
++    justifyContent: 'center',
++    flexWrap: 'wrap',
++  },
++  chip: {
++    margin: theme.spacing(1),
++  },
++}));
++
++function SmallOutlinedChips() {
++  const classes = useStyles();
++
++  function handleDelete() {
++    alert('You clicked the delete icon.');
++  }
++
++  function handleClick() {
++    alert('You clicked the Chip.');
++  }
++
++  return (
++    <div className={classes.root}>
++      <Chip variant="outlined" size="small" label="Basic Chip" className={classes.chip} />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Clickable Chip"
++        onClick={handleClick}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        avatar={<Avatar alt="Natacha" src="/static/images/avatar/1.jpg" />}
++        label="Deletable Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        icon={<FaceIcon />}
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        label="Custom delete icon Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        label="Clickable Link Chip"
++        className={classes.chip}
++        component="a"
++        href="#chip"
++        clickable
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        icon={<FaceIcon />}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        label="Deletable Primary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="primary"
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        icon={<FaceIcon />}
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++    </div>
++  );
++}
++
++export default SmallOutlinedChips;
+diff --git a/docs/src/pages/components/chips/SmallOutlinedChips.tsx b/docs/src/pages/components/chips/SmallOutlinedChips.tsx
+new file mode 100644
+index 00000000000000..dbc2e603ed3be6
+--- /dev/null
++++ b/docs/src/pages/components/chips/SmallOutlinedChips.tsx
+@@ -0,0 +1,146 @@
++import React from 'react';
++import { createStyles, Theme, makeStyles } from '@material-ui/core/styles';
++import Avatar from '@material-ui/core/Avatar';
++import Chip from '@material-ui/core/Chip';
++import FaceIcon from '@material-ui/icons/Face';
++import DoneIcon from '@material-ui/icons/Done';
++
++const useStyles = makeStyles((theme: Theme) =>
++  createStyles({
++    root: {
++      display: 'flex',
++      justifyContent: 'center',
++      flexWrap: 'wrap',
++    },
++    chip: {
++      margin: theme.spacing(1),
++    },
++  }),
++);
++
++function SmallOutlinedChips() {
++  const classes = useStyles();
++
++  function handleDelete() {
++    alert('You clicked the delete icon.');
++  }
++
++  function handleClick() {
++    alert('You clicked the Chip.');
++  }
++
++  return (
++    <div className={classes.root}>
++      <Chip variant="outlined" size="small" label="Basic Chip" className={classes.chip} />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Clickable Chip"
++        onClick={handleClick}
++        className={classes.chip}
++      />
++      <Chip
++        size="small"
++        avatar={<Avatar alt="Natacha" src="/static/images/avatar/1.jpg" />}
++        label="Deletable Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        icon={<FaceIcon />}
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        label="Custom delete icon Chip"
++        onClick={handleClick}
++        onDelete={handleDelete}
++        className={classes.chip}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        label="Clickable Link Chip"
++        className={classes.chip}
++        component="a"
++        href="#chip"
++        clickable
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={<Avatar>MB</Avatar>}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        icon={<FaceIcon />}
++        label="Primary Clickable Chip"
++        clickable
++        className={classes.chip}
++        color="primary"
++        onDelete={handleDelete}
++        deleteIcon={<DoneIcon />}
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        label="Deletable Primary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="primary"
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        avatar={
++          <Avatar>
++            <FaceIcon />
++          </Avatar>
++        }
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++      <Chip
++        variant="outlined"
++        size="small"
++        icon={<FaceIcon />}
++        label="Deletable Secondary Chip"
++        onDelete={handleDelete}
++        className={classes.chip}
++        color="secondary"
++      />
++    </div>
++  );
++}
++
++export default SmallOutlinedChips;
+diff --git a/docs/src/pages/components/chips/chips.md b/docs/src/pages/components/chips/chips.md
+index cd9308fb74e7dd..90d7b1cbfcc71a 100644
+--- a/docs/src/pages/components/chips/chips.md
++++ b/docs/src/pages/components/chips/chips.md
+@@ -40,6 +40,18 @@ gain depth while clicked or touched.
+ 
+ {{"demo": "pages/components/chips/ChipsArray.js"}}
+ 
++## Small Chip
++
++You can use the `size` prop to define a small Chip. 
++
++### Default variant
++
++{{"demo": "pages/components/chips/SmallChips.js"}}
++
++### Outlined variant
++
++{{"demo": "pages/components/chips/SmallOutlinedChips.js"}}
++
+ ## Chip Playground
+ 
+ {{"demo": "pages/components/chips/ChipsPlayground.js", "hideHeader": true}}
+diff --git a/packages/material-ui/src/Chip/Chip.d.ts b/packages/material-ui/src/Chip/Chip.d.ts
+index 0de3463d3128f1..62aa77960336d0 100644
+--- a/packages/material-ui/src/Chip/Chip.d.ts
++++ b/packages/material-ui/src/Chip/Chip.d.ts
+@@ -11,6 +11,7 @@ declare const Chip: OverridableComponent<{
+     icon?: React.ReactElement;
+     label?: React.ReactNode;
+     onDelete?: React.EventHandler<any>;
++    size?: 'small' | 'medium';
+     variant?: 'default' | 'outlined';
+   };
+   defaultComponent: 'div';
+@@ -19,6 +20,7 @@ declare const Chip: OverridableComponent<{
+ 
+ export type ChipClassKey =
+   | 'root'
++  | 'sizeSmall'
+   | 'colorPrimary'
+   | 'colorSecondary'
+   | 'clickable'
+@@ -31,14 +33,18 @@ export type ChipClassKey =
+   | 'outlinedPrimary'
+   | 'outlinedSecondary'
+   | 'avatar'
++  | 'avatarSmall'
+   | 'avatarColorPrimary'
+   | 'avatarColorSecondary'
+   | 'avatarChildren'
+   | 'icon'
++  | 'iconSmall'
+   | 'iconColorPrimary'
+   | 'iconColorSecondary'
+   | 'label'
++  | 'labelSmall'
+   | 'deleteIcon'
++  | 'deleteIconSmall'
+   | 'deleteIconColorPrimary'
+   | 'deleteIconColorSecondary'
+   | 'deleteIconOutlinedColorPrimary'
+diff --git a/packages/material-ui/src/Chip/Chip.js b/packages/material-ui/src/Chip/Chip.js
+index b45d2b0b84ff52..08ae064eb9293b 100644
+--- a/packages/material-ui/src/Chip/Chip.js
++++ b/packages/material-ui/src/Chip/Chip.js
+@@ -12,6 +12,7 @@ import '../Avatar/Avatar'; // So we don't have any override priority issue.
+ 
+ export const styles = theme => {
+   const height = 32;
++  const smallHeight = 24;
+   const backgroundColor =
+     theme.palette.type === 'light' ? theme.palette.grey[300] : theme.palette.grey[700];
+   const deleteIconColor = fade(theme.palette.text.primary, 0.26);
+@@ -40,6 +41,10 @@ export const styles = theme => {
+       verticalAlign: 'middle',
+       boxSizing: 'border-box',
+     },
++    /* Styles applied to the root element if `size="small"`. */
++    sizeSmall: {
++      height: smallHeight,
++    },
+     /* Styles applied to the root element if `color="primary"`. */
+     colorPrimary: {
+       backgroundColor: theme.palette.primary.main,
+@@ -135,6 +140,11 @@ export const styles = theme => {
+       color: theme.palette.type === 'light' ? theme.palette.grey[700] : theme.palette.grey[300],
+       fontSize: theme.typography.pxToRem(16),
+     },
++    avatarSmall: {
++      width: smallHeight,
++      height: smallHeight,
++      fontSize: theme.typography.pxToRem(12),
++    },
+     /* Styles applied to the `avatar` element if `color="primary"`. */
+     avatarColorPrimary: {
+       color: theme.palette.primary.contrastText,
+@@ -147,15 +157,18 @@ export const styles = theme => {
+     },
+     /* Styles applied to the `avatar` elements children. */
+     avatarChildren: {
+-      width: 19,
+-      height: 19,
++      height: 18,
+     },
+     /* Styles applied to the `icon` element. */
+     icon: {
+       color: theme.palette.type === 'light' ? theme.palette.grey[700] : theme.palette.grey[300],
+-      marginLeft: 4,
++      marginLeft: 5,
+       marginRight: -8,
+     },
++    iconSmall: {
++      width: 16,
++      marginRight: -5,
++    },
+     /* Styles applied to the `icon` element if `color="primary"`. */
+     iconColorPrimary: {
+       color: 'inherit',
+@@ -174,6 +187,10 @@ export const styles = theme => {
+       whiteSpace: 'nowrap',
+       cursor: 'inherit',
+     },
++    labelSmall: {
++      paddingLeft: 8,
++      paddingRight: 8,
++    },
+     /* Styles applied to the `deleteIcon` element. */
+     deleteIcon: {
+       // Remove grey highlight
+@@ -181,11 +198,15 @@ export const styles = theme => {
+       color: deleteIconColor,
+       cursor: 'pointer',
+       height: 'auto',
+-      margin: '0 4px 0 -8px',
++      margin: '0 5px 0 -8px',
+       '&:hover': {
+         color: fade(deleteIconColor, 0.4),
+       },
+     },
++    deleteIconSmall: {
++      height: 16,
++      margin: '0 1px 0 -9px',
++    },
+     /* Styles applied to the deleteIcon element if `color="primary"` and `variant="default"`. */
+     deleteIconColorPrimary: {
+       color: fade(theme.palette.primary.contrastText, 0.7),
+@@ -235,6 +256,7 @@ const Chip = React.forwardRef(function Chip(props, ref) {
+     onDelete,
+     onKeyDown,
+     onKeyUp,
++    size = 'medium',
+     variant = 'default',
+     ...other
+   } = props;
+@@ -292,10 +314,12 @@ const Chip = React.forwardRef(function Chip(props, ref) {
+   };
+ 
+   const clickable = clickableProp !== false && onClick ? true : clickableProp;
++  const small = size === 'small';
+ 
+   const className = clsx(
+     classes.root,
+     {
++      [classes.sizeSmall]: small,
+       [classes[`color${capitalize(color)}`]]: color !== 'default',
+       [classes.clickable]: clickable,
+       [classes[`clickableColor${capitalize(color)}`]]: clickable && color !== 'default',
+@@ -311,6 +335,7 @@ const Chip = React.forwardRef(function Chip(props, ref) {
+   let deleteIcon = null;
+   if (onDelete) {
+     const customClasses = clsx({
++      [classes.deleteIconSmall]: small,
+       [classes[`deleteIconColor${capitalize(color)}`]]:
+         color !== 'default' && variant !== 'outlined',
+       [classes[`deleteIconOutlinedColor${capitalize(color)}`]]:
+@@ -335,6 +360,7 @@ const Chip = React.forwardRef(function Chip(props, ref) {
+   if (avatarProp && React.isValidElement(avatarProp)) {
+     avatar = React.cloneElement(avatarProp, {
+       className: clsx(classes.avatar, avatarProp.props.className, {
++        [classes.avatarSmall]: small,
+         [classes[`avatarColor${capitalize(color)}`]]: color !== 'default',
+       }),
+       childrenClassName: clsx(classes.avatarChildren, avatarProp.props.childrenClassName),
+@@ -345,6 +371,7 @@ const Chip = React.forwardRef(function Chip(props, ref) {
+   if (iconProp && React.isValidElement(iconProp)) {
+     icon = React.cloneElement(iconProp, {
+       className: clsx(classes.icon, iconProp.props.className, {
++        [classes.iconSmall]: small,
+         [classes[`iconColor${capitalize(color)}`]]: color !== 'default',
+       }),
+     });
+@@ -370,7 +397,13 @@ const Chip = React.forwardRef(function Chip(props, ref) {
+       {...other}
+     >
+       {avatar || icon}
+-      <span className={classes.label}>{label}</span>
++      <span
++        className={clsx(classes.label, {
++          [classes.labelSmall]: small,
++        })}
++      >
++        {label}
++      </span>
+       {deleteIcon}
+     </Component>
+   );
+@@ -441,6 +474,10 @@ Chip.propTypes = {
+    * @ignore
+    */
+   onKeyUp: PropTypes.func,
++  /**
++   * The size of the chip.
++   */
++  size: PropTypes.oneOf(['small', 'medium']),
+   /**
+    * The variant to use.
+    */
+diff --git a/packages/material-ui/src/Chip/Chip.test.js b/packages/material-ui/src/Chip/Chip.test.js
+index 30d2aaf03404c6..4498f6b545ca3e 100644
+--- a/packages/material-ui/src/Chip/Chip.test.js
++++ b/packages/material-ui/src/Chip/Chip.test.js
+@@ -563,4 +563,48 @@ describe('<Chip />', () => {
+       assert.strictEqual(wrapper.find('span#test-icon').hasClass(classes.icon), true);
+     });
+   });
++
++  describe('prop: size', () => {
++    it('should render with the sizeSmall class', () => {
++      const wrapper = mount(<Chip size="small" />);
++      const chip = wrapper.find(`.${classes.root}`).hostNodes();
++
++      assert.strictEqual(chip.hasClass(classes.sizeSmall), true);
++    });
++
++    it('should render the label with the labelSmall class', () => {
++      const wrapper = mount(<Chip size="small" />);
++      const chip = wrapper.find(`.${classes.root}`).hostNodes();
++      const label = chip.find(`.${classes.label}`).hostNodes();
++
++      assert.strictEqual(label.hasClass(classes.labelSmall), true);
++    });
++
++    it('should render an avatar with the avatarSmall class', () => {
++      const wrapper = mount(
++        <Chip size="small" avatar={<Avatar className="my-Avatar">MB</Avatar>} />,
++      );
++      const chip = wrapper.find(`.${classes.root}`).hostNodes();
++      const avatar = chip.find('.my-Avatar').hostNodes();
++
++      assert.strictEqual(avatar.hasClass(classes.avatar), true);
++      assert.strictEqual(avatar.hasClass(classes.avatarSmall), true);
++    });
++
++    it('should render an icon with the icon and iconSmall classes', () => {
++      const wrapper = mount(<Chip size="small" icon={<span id="test-icon" />} />);
++      const icon = wrapper.find('span#test-icon');
++
++      assert.strictEqual(icon.hasClass(classes.icon), true);
++      assert.strictEqual(icon.hasClass(classes.iconSmall), true);
++    });
++
++    it('should render the delete icon with the deleteIcon and deleteIconSmall classes', () => {
++      const wrapper = mount(<Chip size="small" onDelete={() => {}} />);
++      const iconWrapper = wrapper.find('svg[data-mui-test="CancelIcon"]');
++
++      assert.strictEqual(iconWrapper.hasClass(classes.deleteIcon), true);
++      assert.strictEqual(iconWrapper.hasClass(classes.deleteIconSmall), true);
++    });
++  });
+ });
+diff --git a/pages/api/chip.md b/pages/api/chip.md
+index 93d9924345e1dd..8ced00ef6e4312 100644
+--- a/pages/api/chip.md
++++ b/pages/api/chip.md
+@@ -28,6 +28,7 @@ Chips represent complex entities in small blocks, such as a contact.
+ | <span class="prop-name">icon</span> | <span class="prop-type">element</span> |  | Icon element. |
+ | <span class="prop-name">label</span> | <span class="prop-type">node</span> |  | The content of the label. |
+ | <span class="prop-name">onDelete</span> | <span class="prop-type">func</span> |  | Callback function fired when the delete icon is clicked. If set, the delete icon will be shown. |
++| <span class="prop-name">size</span> | <span class="prop-type">enum:&nbsp;'small'&nbsp;&#124;<br>&nbsp;'medium'<br></span> | <span class="prop-default">'medium'</span> | The size of the chip. |
+ | <span class="prop-name">variant</span> | <span class="prop-type">enum:&nbsp;'default'&nbsp;&#124;<br>&nbsp;'outlined'<br></span> | <span class="prop-default">'default'</span> | The variant to use. |
+ 
+ The `ref` is forwarded to the root element.
+@@ -43,6 +44,7 @@ This property accepts the following keys:
+ | Name | Description |
+ |:-----|:------------|
+ | <span class="prop-name">root</span> | Styles applied to the root element.
++| <span class="prop-name">sizeSmall</span> | Styles applied to the root element if `size="small"`.
+ | <span class="prop-name">colorPrimary</span> | Styles applied to the root element if `color="primary"`.
+ | <span class="prop-name">colorSecondary</span> | Styles applied to the root element if `color="secondary"`.
+ | <span class="prop-name">clickable</span> | Styles applied to the root element if `onClick` is defined or `clickable={true}`.
+@@ -55,14 +57,18 @@ This property accepts the following keys:
+ | <span class="prop-name">outlinedPrimary</span> | Styles applied to the root element if `variant="outlined"` and `color="primary"`.
+ | <span class="prop-name">outlinedSecondary</span> | Styles applied to the root element if `variant="outlined"` and `color="secondary"`.
+ | <span class="prop-name">avatar</span> | Styles applied to the `avatar` element.
++| <span class="prop-name">avatarSmall</span> | 
+ | <span class="prop-name">avatarColorPrimary</span> | Styles applied to the `avatar` element if `color="primary"`.
+ | <span class="prop-name">avatarColorSecondary</span> | Styles applied to the `avatar` element if `color="secondary"`.
+ | <span class="prop-name">avatarChildren</span> | Styles applied to the `avatar` elements children.
+ | <span class="prop-name">icon</span> | Styles applied to the `icon` element.
++| <span class="prop-name">iconSmall</span> | 
+ | <span class="prop-name">iconColorPrimary</span> | Styles applied to the `icon` element if `color="primary"`.
+ | <span class="prop-name">iconColorSecondary</span> | Styles applied to the `icon` element if `color="secondary"`.
+ | <span class="prop-name">label</span> | Styles applied to the label `span` element`.
++| <span class="prop-name">labelSmall</span> | 
+ | <span class="prop-name">deleteIcon</span> | Styles applied to the `deleteIcon` element.
++| <span class="prop-name">deleteIconSmall</span> | 
+ | <span class="prop-name">deleteIconColorPrimary</span> | Styles applied to the deleteIcon element if `color="primary"` and `variant="default"`.
+ | <span class="prop-name">deleteIconColorSecondary</span> | Styles applied to the deleteIcon element if `color="secondary"` and `variant="default"`.
+ | <span class="prop-name">deleteIconOutlinedColorPrimary</span> | Styles applied to the deleteIcon element if `color="primary"` and `variant="outlined"`.

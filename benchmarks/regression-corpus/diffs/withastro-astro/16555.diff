@@ -1,0 +1,81 @@
+diff --git a/packages/integrations/cloudflare/src/wrangler.ts b/packages/integrations/cloudflare/src/wrangler.ts
+index 36746724ea00..7a8adedce100 100644
+--- a/packages/integrations/cloudflare/src/wrangler.ts
++++ b/packages/integrations/cloudflare/src/wrangler.ts
+@@ -17,6 +17,17 @@ interface CloudflareConfigOptions {
+ 	imagesBindingName?: string | false | undefined;
+ }
+ 
++type KVNamespace = NonNullable<WorkerConfig['kv_namespaces']>[number];
++
++function withSessionKVBinding(
++	existing: KVNamespace[] | undefined,
++	sessionBinding: string,
++): KVNamespace[] {
++	const namespaces: KVNamespace[] = existing ? [...existing] : [];
++	namespaces.push({ binding: sessionBinding });
++	return namespaces;
++}
++
+ /**
+  * Returns a config customizer that sets up the Astro Cloudflare defaults.
+  * Sets the main entrypoint and adds bindings for auto-provisioning.
+@@ -36,7 +47,7 @@ export function cloudflareConfigCustomizer(
+ 			nonInheritableConfig: WorkerConfig['previews'],
+ 		): WorkerConfig['previews'] => {
+ 			const hasSessionBinding = nonInheritableConfig?.kv_namespaces?.some(
+-				(kv) => kv.binding === sessionKVBindingName,
++				(kv: KVNamespace) => kv.binding === sessionKVBindingName,
+ 			);
+ 			const hasImagesBinding = nonInheritableConfig?.images?.binding !== undefined;
+ 
+@@ -44,11 +55,7 @@ export function cloudflareConfigCustomizer(
+ 				kv_namespaces:
+ 					!needsSessionKVBinding || hasSessionBinding
+ 						? undefined
+-						: [
+-								{
+-									binding: sessionKVBindingName,
+-								},
+-							],
++						: withSessionKVBinding(nonInheritableConfig?.kv_namespaces, sessionKVBindingName),
+ 				images:
+ 					hasImagesBinding || !imagesBindingName
+ 						? undefined
+diff --git a/packages/integrations/cloudflare/test/wrangler.test.ts b/packages/integrations/cloudflare/test/wrangler.test.ts
+index 39fcbc1d216d..32bec0277ca5 100644
+--- a/packages/integrations/cloudflare/test/wrangler.test.ts
++++ b/packages/integrations/cloudflare/test/wrangler.test.ts
+@@ -63,7 +63,10 @@ describe('cloudflareConfigCustomizer', () => {
+ 				kv_namespaces: [{ binding: 'OTHER_KV', id: 'other-id' }],
+ 			});
+ 
+-			assert.deepEqual(result.kv_namespaces, [{ binding: DEFAULT_SESSION_KV_BINDING_NAME }]);
++			assert.deepEqual(result.kv_namespaces, [
++				{ binding: 'OTHER_KV', id: 'other-id' },
++				{ binding: DEFAULT_SESSION_KV_BINDING_NAME },
++			]);
+ 		});
+ 
+ 		it('does not add SESSION binding when session KV binding is disabled', () => {
+@@ -157,6 +160,20 @@ describe('cloudflareConfigCustomizer', () => {
+ 			assert.equal(result.previews?.images, undefined);
+ 		});
+ 
++		it('preserves existing previews KV bindings when adding SESSION binding', () => {
++			const customizer = cloudflareConfigCustomizer();
++			const result = customizer({
++				previews: {
++					kv_namespaces: [{ binding: 'OTHER_KV', id: 'other-id' }],
++				},
++			});
++
++			assert.deepEqual(result.previews?.kv_namespaces, [
++				{ binding: 'OTHER_KV', id: 'other-id' },
++				{ binding: DEFAULT_SESSION_KV_BINDING_NAME },
++			]);
++		});
++
+ 		it('adds SESSION binding to previews even when top-level has it', () => {
+ 			const customizer = cloudflareConfigCustomizer();
+ 			const result = customizer({

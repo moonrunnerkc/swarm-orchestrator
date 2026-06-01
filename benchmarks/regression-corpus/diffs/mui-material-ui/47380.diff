@@ -1,0 +1,182 @@
+diff --git a/packages/mui-material/src/MenuList/MenuList.js b/packages/mui-material/src/MenuList/MenuList.js
+index 6774b003ad9f00..f3ccf670ac6cc3 100644
+--- a/packages/mui-material/src/MenuList/MenuList.js
++++ b/packages/mui-material/src/MenuList/MenuList.js
+@@ -4,6 +4,7 @@ import { isFragment } from 'react-is';
+ import PropTypes from 'prop-types';
+ import ownerDocument from '../utils/ownerDocument';
+ import List from '../List';
++import getActiveElement from '../utils/getActiveElement';
+ import getScrollbarSize from '../utils/getScrollbarSize';
+ import useForkRef from '../utils/useForkRef';
+ import useEnhancedEffect from '../utils/useEnhancedEffect';
+@@ -161,7 +162,7 @@ const MenuList = React.forwardRef(function MenuList(props, ref) {
+      * or document.body or document.documentElement. Only the first case will
+      * trigger this specific handler.
+      */
+-    const currentFocus = ownerDocument(list).activeElement;
++    const currentFocus = getActiveElement(ownerDocument(list));
+ 
+     if (key === 'ArrowDown') {
+       // Prevent scroll of the page
+diff --git a/packages/mui-material/src/Select/Select.test.js b/packages/mui-material/src/Select/Select.test.js
+index cfd898bf28e555..ccc0fa2a8342af 100644
+--- a/packages/mui-material/src/Select/Select.test.js
++++ b/packages/mui-material/src/Select/Select.test.js
+@@ -1910,4 +1910,58 @@ describe('<Select />', () => {
+     const event = handleMouseDown.firstCall.args[0];
+     expect(event.button).to.equal(0);
+   });
++
++  describe('keyboard navigation in shadow DOM', () => {
++    it('should navigate between options using arrow keys', async function test() {
++      // reset fake timers
++      clock.restore();
++
++      if (window.navigator.userAgent.includes('jsdom')) {
++        this.skip();
++      }
++
++      // Create a shadow container
++      const shadowHost = document.createElement('div');
++      document.body.appendChild(shadowHost);
++      const shadowContainer = shadowHost.attachShadow({ mode: 'open' });
++
++      // Render directly into shadow container
++      const shadowRoot = document.createElement('div');
++      shadowContainer.appendChild(shadowRoot);
++
++      const { unmount, user } = render(
++        <Select value="" MenuProps={{ container: shadowRoot }}>
++          <MenuItem value={10}>Ten</MenuItem>
++          <MenuItem value={20}>Twenty</MenuItem>
++          <MenuItem value={30}>Thirty</MenuItem>
++        </Select>,
++        { container: shadowRoot },
++      );
++
++      const trigger = shadowRoot.querySelector('[role="combobox"]');
++      expect(trigger).not.to.equal(null);
++
++      // Open Select
++      await user.click(trigger);
++
++      const options = shadowRoot.querySelectorAll('[role="option"]');
++      expect(options.length).to.equal(3);
++
++      expect(shadowContainer.activeElement).to.equal(options[0]);
++
++      await user.keyboard('{ArrowDown}');
++
++      expect(shadowContainer.activeElement).to.equal(options[1]);
++
++      await user.keyboard('{ArrowUp}');
++
++      expect(shadowContainer.activeElement).to.equal(options[0]);
++
++      // Cleanup
++      unmount();
++      if (shadowHost.parentNode) {
++        document.body.removeChild(shadowHost);
++      }
++    });
++  });
+ });
+diff --git a/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx b/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx
+index 62f11b1325b292..70790d64e317af 100644
+--- a/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx
++++ b/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx
+@@ -7,6 +7,7 @@ import ownerDocument from '@mui/utils/ownerDocument';
+ import getReactElementRef from '@mui/utils/getReactElementRef';
+ import exactProp from '@mui/utils/exactProp';
+ import elementAcceptingRef from '@mui/utils/elementAcceptingRef';
++import getActiveElement from '../utils/getActiveElement';
+ import { FocusTrapProps } from './FocusTrap.types';
+ 
+ // Inspired by https://github.com/focus-trap/tabbable
+@@ -162,8 +163,9 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+     }
+ 
+     const doc = ownerDocument(rootRef.current);
++    const activeElement = getActiveElement(doc);
+ 
+-    if (!rootRef.current.contains(doc.activeElement)) {
++    if (!rootRef.current.contains(activeElement)) {
+       if (!rootRef.current.hasAttribute('tabIndex')) {
+         if (process.env.NODE_ENV !== 'production') {
+           console.error(
+@@ -209,6 +211,7 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+     }
+ 
+     const doc = ownerDocument(rootRef.current);
++    const activeElement = getActiveElement(doc);
+ 
+     const loopFocus = (nativeEvent: KeyboardEvent) => {
+       lastKeydown.current = nativeEvent;
+@@ -218,8 +221,8 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+       }
+ 
+       // Make sure the next tab starts from the right place.
+-      // doc.activeElement refers to the origin.
+-      if (doc.activeElement === rootRef.current && nativeEvent.shiftKey) {
++      // activeElement refers to the origin.
++      if (activeElement === rootRef.current && nativeEvent.shiftKey) {
+         // We need to ignore the next contain as
+         // it will try to move the focus back to the rootRef element.
+         ignoreNextEnforceFocus.current = true;
+@@ -238,27 +241,29 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+         return;
+       }
+ 
++      const activeEl = getActiveElement(doc);
++
+       if (!doc.hasFocus() || !isEnabled() || ignoreNextEnforceFocus.current) {
+         ignoreNextEnforceFocus.current = false;
+         return;
+       }
+ 
+       // The focus is already inside
+-      if (rootElement.contains(doc.activeElement)) {
++      if (rootElement.contains(activeEl)) {
+         return;
+       }
+ 
+       // The disableEnforceFocus is set and the focus is outside of the focus trap (and sentinel nodes)
+       if (
+         disableEnforceFocus &&
+-        doc.activeElement !== sentinelStart.current &&
+-        doc.activeElement !== sentinelEnd.current
++        activeEl !== sentinelStart.current &&
++        activeEl !== sentinelEnd.current
+       ) {
+         return;
+       }
+ 
+       // if the focus event is not coming from inside the children's react tree, reset the refs
+-      if (doc.activeElement !== reactFocusEventTarget.current) {
++      if (activeEl !== reactFocusEventTarget.current) {
+         reactFocusEventTarget.current = null;
+       } else if (reactFocusEventTarget.current !== null) {
+         return;
+@@ -269,10 +274,7 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+       }
+ 
+       let tabbable: ReadonlyArray<HTMLElement> = [];
+-      if (
+-        doc.activeElement === sentinelStart.current ||
+-        doc.activeElement === sentinelEnd.current
+-      ) {
++      if (activeEl === sentinelStart.current || activeEl === sentinelEnd.current) {
+         tabbable = getTabbable(rootRef.current!);
+       }
+ 
+@@ -309,7 +311,8 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+     // The whatwg spec defines how the browser should behave but does not explicitly mention any events:
+     // https://html.spec.whatwg.org/multipage/interaction.html#focus-fixup-rule.
+     const interval = setInterval(() => {
+-      if (doc.activeElement && doc.activeElement.tagName === 'BODY') {
++      const activeEl = getActiveElement(doc);
++      if (activeEl && activeEl.tagName === 'BODY') {
+         contain();
+       }
+     }, 50);

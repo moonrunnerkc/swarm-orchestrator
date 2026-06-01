@@ -1,0 +1,614 @@
+diff --git a/packages/js/migrations.json b/packages/js/migrations.json
+index 35949877bc4..5ca1827cf20 100644
+--- a/packages/js/migrations.json
++++ b/packages/js/migrations.json
+@@ -59,6 +59,9 @@
+     },
+     "20.7.1-beta.0": {
+       "version": "20.7.1-beta.0",
++      "requires": {
++        "@swc/cli": ">=0.3.0 <0.6.0"
++      },
+       "packages": {
+         "@swc/cli": {
+           "version": "~0.6.0",
+@@ -99,10 +102,6 @@
+           "version": "^1.15.5",
+           "alwaysAddToPackageJson": false
+         },
+-        "@swc/cli": {
+-          "version": "^0.7.10",
+-          "alwaysAddToPackageJson": false
+-        },
+         "@swc/helpers": {
+           "version": "^0.5.18",
+           "alwaysAddToPackageJson": false
+@@ -113,6 +112,18 @@
+         }
+       }
+     },
++    "22.5.0-swc-cli": {
++      "version": "22.5.0-beta.1",
++      "requires": {
++        "@swc/cli": ">=0.6.0 <0.7.0"
++      },
++      "packages": {
++        "@swc/cli": {
++          "version": "^0.7.10",
++          "alwaysAddToPackageJson": false
++        }
++      }
++    },
+     "22.6.4": {
+       "version": "22.6.4",
+       "packages": {
+@@ -121,6 +132,18 @@
+           "alwaysAddToPackageJson": false
+         }
+       }
++    },
++    "23.0.0-swc-cli": {
++      "version": "23.0.0-beta.17",
++      "requires": {
++        "@swc/cli": ">=0.7.0 <0.8.0"
++      },
++      "packages": {
++        "@swc/cli": {
++          "version": "~0.8.0",
++          "alwaysAddToPackageJson": false
++        }
++      }
+     }
+   }
+ }
+diff --git a/packages/js/package.json b/packages/js/package.json
+index 41f123f4793..75d59f52993 100644
+--- a/packages/js/package.json
++++ b/packages/js/package.json
+@@ -143,9 +143,13 @@
+     "nx": "workspace:*"
+   },
+   "peerDependencies": {
++    "@swc/cli": ">=0.6.0 <0.9.0",
+     "verdaccio": "^6.0.5"
+   },
+   "peerDependenciesMeta": {
++    "@swc/cli": {
++      "optional": true
++    },
+     "verdaccio": {
+       "optional": true
+     }
+diff --git a/packages/js/src/generators/convert-to-swc/convert-to-swc.ts b/packages/js/src/generators/convert-to-swc/convert-to-swc.ts
+index 624db7aa2ae..e51015ad658 100644
+--- a/packages/js/src/generators/convert-to-swc/convert-to-swc.ts
++++ b/packages/js/src/generators/convert-to-swc/convert-to-swc.ts
+@@ -8,6 +8,7 @@ import {
+   updateProjectConfiguration,
+ } from '@nx/devkit';
+ import { join } from 'path';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ import { addSwcConfig } from '../../utils/swc/add-swc-config';
+ import { addSwcDependencies } from '../../utils/swc/add-swc-dependencies';
+ import { swcHelpersVersion } from '../../utils/versions';
+@@ -17,6 +18,8 @@ export async function convertToSwcGenerator(
+   tree: Tree,
+   schema: ConvertToSwcGeneratorSchema
+ ) {
++  assertSupportedTypescriptVersion(tree);
++
+   const options = normalizeOptions(schema);
+   const projectConfiguration = readProjectConfiguration(tree, options.project);
+ 
+@@ -99,7 +102,8 @@ function checkSwcDependencies(
+       tree,
+       { '@swc/helpers': swcHelpersVersion },
+       {},
+-      projectPackageJsonPath
++      projectPackageJsonPath,
++      true
+     );
+   }
+ 
+diff --git a/packages/js/src/generators/init/init.spec.ts b/packages/js/src/generators/init/init.spec.ts
+index 0a3917040ee..9725ffc034e 100644
+--- a/packages/js/src/generators/init/init.spec.ts
++++ b/packages/js/src/generators/init/init.spec.ts
+@@ -94,16 +94,15 @@ describe('js init generator', () => {
+     expect(packageJson.devDependencies['typescript']).toBeDefined();
+   });
+ 
+-  it('should overwrite installed typescript version when is not a supported version', async () => {
++  it('should throw when the installed typescript version is below the supported floor', async () => {
+     updateJson(tree, 'package.json', (json) => {
+       json.devDependencies = { ...json.devDependencies, typescript: '~4.5.0' };
+       return json;
+     });
+ 
+-    await init(tree, {});
+-
+-    const packageJson = readJson(tree, 'package.json');
+-    expect(packageJson.devDependencies['typescript']).toBe(typescriptVersion);
++    await expect(init(tree, {})).rejects.toThrow(
++      'Unsupported version of `typescript` detected'
++    );
+   });
+ 
+   it('should not overwrite installed typescript version when is a supported version', async () => {
+diff --git a/packages/js/src/generators/init/init.ts b/packages/js/src/generators/init/init.ts
+index 41de5fc0995..c027e68b2d4 100644
+--- a/packages/js/src/generators/init/init.ts
++++ b/packages/js/src/generators/init/init.ts
+@@ -1,4 +1,4 @@
+-import { addPlugin, checkAndCleanWithSemver } from '@nx/devkit/internal';
++import { addPlugin } from '@nx/devkit/internal';
+ import {
+   addDependenciesToPackageJson,
+   createProjectGraphAsync,
+@@ -6,16 +6,14 @@ import {
+   formatFiles,
+   generateFiles,
+   GeneratorCallback,
+-  getDependencyVersionFromPackageJson,
+   readJson,
+   readNxJson,
+   runTasksInSerial,
+   Tree,
+ } from '@nx/devkit';
+-import { readModulePackageJson } from 'nx/src/utils/package-json';
+ import { join } from 'path';
+-import { satisfies, valid } from 'semver';
+ import { createNodesV2 } from '../../plugins/typescript/plugin';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ import { generatePrettierSetup } from '../../utils/prettier';
+ import { getRootTsConfigFileName } from '../../utils/typescript/ts-config';
+ import {
+@@ -25,51 +23,12 @@ import {
+ import {
+   nxVersion,
+   prettierVersion,
+-  supportedTypescriptVersions,
+   swcHelpersVersion,
+   tsLibVersion,
+   typescriptVersion,
+ } from '../../utils/versions';
+ import { InitSchema } from './schema';
+ 
+-async function getInstalledTypescriptVersion(
+-  tree: Tree
+-): Promise<string | null> {
+-  const tsVersionInRootPackageJson = getDependencyVersionFromPackageJson(
+-    tree,
+-    'typescript'
+-  );
+-
+-  if (!tsVersionInRootPackageJson) {
+-    return null;
+-  }
+-  if (valid(tsVersionInRootPackageJson)) {
+-    // it's a pinned version, return it
+-    return tsVersionInRootPackageJson;
+-  }
+-
+-  // it's a version range, check whether the installed version matches it
+-  try {
+-    const tsPackageJson = readModulePackageJson('typescript').packageJson;
+-    const installedTsVersion =
+-      tsPackageJson.devDependencies?.['typescript'] ??
+-      tsPackageJson.dependencies?.['typescript'];
+-    // the installed version matches the package.json version range
+-    if (
+-      installedTsVersion &&
+-      satisfies(installedTsVersion, tsVersionInRootPackageJson)
+-    ) {
+-      return installedTsVersion;
+-    }
+-  } finally {
+-    return checkAndCleanWithSemver(
+-      tree,
+-      'typescript',
+-      tsVersionInRootPackageJson
+-    );
+-  }
+-}
+-
+ export async function initGenerator(
+   tree: Tree,
+   schema: InitSchema
+@@ -88,6 +47,8 @@ export async function initGeneratorInternal(
+   tree: Tree,
+   schema: InitSchema
+ ): Promise<GeneratorCallback> {
++  assertSupportedTypescriptVersion(tree);
++
+   const tasks: GeneratorCallback[] = [];
+ 
+   const nxJson = readNxJson(tree);
+@@ -162,17 +123,8 @@ export async function initGeneratorInternal(
+   // with --experimental-strip-types). loadTsFile registers swc/ts-node lazily
+   // when a config uses syntax native strip can't handle.
+ 
+-  if (!schema.js && !schema.keepExistingVersions) {
+-    const installedTsVersion = await getInstalledTypescriptVersion(tree);
+-
+-    if (
+-      !installedTsVersion ||
+-      !satisfies(installedTsVersion, supportedTypescriptVersions, {
+-        includePrerelease: true,
+-      })
+-    ) {
+-      devDependencies['typescript'] = typescriptVersion;
+-    }
++  if (!schema.js) {
++    devDependencies['typescript'] = typescriptVersion;
+   }
+ 
+   if (schema.formatter === 'prettier') {
+@@ -198,7 +150,7 @@ export async function initGeneratorInternal(
+         {},
+         devDependencies,
+         undefined,
+-        schema.keepExistingVersions
++        schema.keepExistingVersions ?? true
+       )
+     : () => {};
+   tasks.push(installTask);
+diff --git a/packages/js/src/generators/init/schema.json b/packages/js/src/generators/init/schema.json
+index a7bfbfab8fa..844eacf0c8c 100644
+--- a/packages/js/src/generators/init/schema.json
++++ b/packages/js/src/generators/init/schema.json
+@@ -31,7 +31,7 @@
+       "type": "boolean",
+       "x-priority": "internal",
+       "description": "Keep existing dependencies versions",
+-      "default": false
++      "default": true
+     },
+     "addTsConfigBase": {
+       "type": "boolean",
+diff --git a/packages/js/src/generators/library/library.ts b/packages/js/src/generators/library/library.ts
+index b752e0942a8..8a0037873cd 100644
+--- a/packages/js/src/generators/library/library.ts
++++ b/packages/js/src/generators/library/library.ts
+@@ -31,6 +31,7 @@ import {
+ import { type PackageJson } from 'nx/src/utils/package-json';
+ import { join } from 'path';
+ import type { CompilerOptions } from 'typescript';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ import { normalizeLinterOption } from '../../utils/generator-prompts';
+ import { sortPackageJsonFields } from '../../utils/package-json/sort-fields';
+ import { getUpdatedPackageJsonContent } from '../../utils/package-json/update-package-json';
+@@ -89,6 +90,8 @@ export async function libraryGeneratorInternal(
+   tree: Tree,
+   schema: LibraryGeneratorSchema
+ ) {
++  assertSupportedTypescriptVersion(tree);
++
+   const tasks: GeneratorCallback[] = [];
+ 
+   const addTsPlugin = shouldConfigureTsSolutionSetup(tree, schema.addPlugin);
+@@ -934,7 +937,9 @@ function addProjectDependencies(
+         esbuild:
+           getDependencyVersionFromPackageJson(tree, 'esbuild') ??
+           esbuildVersion,
+-      }
++      },
++      undefined,
++      true
+     );
+   } else if (options.bundler == 'rollup') {
+     const { dependencies, devDependencies } = getSwcDependencies();
+@@ -945,26 +950,34 @@ function addProjectDependencies(
+         ...devDependencies,
+         '@nx/rollup': nxVersion,
+         '@types/node': typesNodeVersion,
+-      }
++      },
++      undefined,
++      true
+     );
+   } else if (options.bundler === 'tsc') {
+     return addDependenciesToPackageJson(
+       tree,
+       {},
+-      { tslib: tsLibVersion, '@types/node': typesNodeVersion }
++      { tslib: tsLibVersion, '@types/node': typesNodeVersion },
++      undefined,
++      true
+     );
+   } else if (options.bundler === 'swc') {
+     const { dependencies, devDependencies } = getSwcDependencies();
+     return addDependenciesToPackageJson(
+       tree,
+       { ...dependencies },
+-      { ...devDependencies, '@types/node': typesNodeVersion }
++      { ...devDependencies, '@types/node': typesNodeVersion },
++      undefined,
++      true
+     );
+   } else {
+     return addDependenciesToPackageJson(
+       tree,
+       {},
+-      { '@types/node': typesNodeVersion }
++      { '@types/node': typesNodeVersion },
++      undefined,
++      true
+     );
+   }
+ 
+diff --git a/packages/js/src/generators/setup-build/generator.ts b/packages/js/src/generators/setup-build/generator.ts
+index 151104684f9..f8f685aac5e 100644
+--- a/packages/js/src/generators/setup-build/generator.ts
++++ b/packages/js/src/generators/setup-build/generator.ts
+@@ -20,6 +20,7 @@ import {
+ import { basename, dirname, join } from 'node:path/posix';
+ import { mergeTargetConfigurations } from 'nx/src/devkit-internals';
+ import type { PackageJson } from 'nx/src/utils/package-json';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ import { getImportPath } from '../../utils/get-import-path';
+ import {
+   getUpdatedPackageJsonContent,
+@@ -44,6 +45,8 @@ export async function setupBuildGenerator(
+   tree: Tree,
+   options: SetupBuildGeneratorSchema
+ ): Promise<GeneratorCallback> {
++  assertSupportedTypescriptVersion(tree);
++
+   const tasks: GeneratorCallback[] = [];
+   const project = readProjectConfiguration(tree, options.project);
+   options.buildTarget ??= 'build';
+diff --git a/packages/js/src/generators/setup-prettier/generator.ts b/packages/js/src/generators/setup-prettier/generator.ts
+index 53535d36fa5..bd1c11bfb9b 100644
+--- a/packages/js/src/generators/setup-prettier/generator.ts
++++ b/packages/js/src/generators/setup-prettier/generator.ts
+@@ -4,6 +4,7 @@ import {
+   type GeneratorCallback,
+   type Tree,
+ } from '@nx/devkit';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ import { generatePrettierSetup } from '../../utils/prettier';
+ import { prettierVersion } from '../../utils/versions';
+ import type { GeneratorOptions } from './schema';
+@@ -12,6 +13,8 @@ export async function setupPrettierGenerator(
+   tree: Tree,
+   options: GeneratorOptions
+ ): Promise<GeneratorCallback> {
++  assertSupportedTypescriptVersion(tree);
++
+   const prettierTask = generatePrettierSetup(tree, {
+     skipPackageJson: options.skipPackageJson,
+   });
+diff --git a/packages/js/src/generators/setup-verdaccio/generator.ts b/packages/js/src/generators/setup-verdaccio/generator.ts
+index 6c2a39d99a6..64c93adbbdc 100644
+--- a/packages/js/src/generators/setup-verdaccio/generator.ts
++++ b/packages/js/src/generators/setup-verdaccio/generator.ts
+@@ -11,6 +11,7 @@ import {
+ } from '@nx/devkit';
+ import * as path from 'path';
+ import { SetupVerdaccioGeneratorSchema } from './schema';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ import { isUsingTsSolutionSetup } from '../../utils/typescript/ts-solution-setup';
+ import { verdaccioVersion } from '../../utils/versions';
+ import { getNpmRegistry } from '../../utils/npm-config';
+@@ -19,6 +20,8 @@ export async function setupVerdaccio(
+   tree: Tree,
+   options: SetupVerdaccioGeneratorSchema
+ ) {
++  assertSupportedTypescriptVersion(tree);
++
+   if (!tree.exists('.verdaccio/config.yml')) {
+     generateFiles(tree, path.join(__dirname, 'files'), '.verdaccio', {
+       npmUplinkRegistry:
+@@ -73,7 +76,9 @@ export async function setupVerdaccio(
+   return addDependenciesToPackageJson(
+     tree,
+     {},
+-    { verdaccio: verdaccioVersion }
++    { verdaccio: verdaccioVersion },
++    undefined,
++    true
+   );
+ }
+ 
+diff --git a/packages/js/src/generators/typescript-sync/typescript-sync.ts b/packages/js/src/generators/typescript-sync/typescript-sync.ts
+index 99ff506b15a..8bf3e9e5503 100644
+--- a/packages/js/src/generators/typescript-sync/typescript-sync.ts
++++ b/packages/js/src/generators/typescript-sync/typescript-sync.ts
+@@ -17,6 +17,7 @@ import {
+   type SyncGeneratorResult,
+ } from 'nx/src/utils/sync-generators';
+ import * as ts from 'typescript';
++import { assertSupportedTypescriptVersion } from '../../utils/assert-supported-typescript-version';
+ 
+ interface Tsconfig {
+   references?: Array<{ path: string }>;
+@@ -60,6 +61,8 @@ type ChangedFileDetails = {
+ type ChangeType = keyof ChangedFileDetails;
+ 
+ export async function syncGenerator(tree: Tree): Promise<SyncGeneratorResult> {
++  assertSupportedTypescriptVersion(tree);
++
+   // Ensure that the plugin has been wired up in nx.json
+   const nxJson = readNxJson(tree);
+ 
+diff --git a/packages/js/src/utils/all-generators-enforce-floor.spec.ts b/packages/js/src/utils/all-generators-enforce-floor.spec.ts
+new file mode 100644
+index 00000000000..1da95ef03d0
+--- /dev/null
++++ b/packages/js/src/utils/all-generators-enforce-floor.spec.ts
+@@ -0,0 +1,10 @@
++import { assertGeneratorsEnforceVersionFloor } from '@nx/devkit/internal-testing-utils';
++import { join } from 'node:path';
++
++describe('@nx/js generators enforce supported version floor', () => {
++  assertGeneratorsEnforceVersionFloor({
++    packageRoot: join(__dirname, '..', '..'),
++    packageName: 'typescript',
++    subFloorVersion: '~5.3.0',
++  });
++});
+diff --git a/packages/js/src/utils/assert-supported-typescript-version.spec.ts b/packages/js/src/utils/assert-supported-typescript-version.spec.ts
+new file mode 100644
+index 00000000000..48e94003b46
+--- /dev/null
++++ b/packages/js/src/utils/assert-supported-typescript-version.spec.ts
+@@ -0,0 +1,52 @@
++import { updateJson } from '@nx/devkit';
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import { assertSupportedTypescriptVersion } from './assert-supported-typescript-version';
++
++describe('assertSupportedTypescriptVersion', () => {
++  it('throws when typescript is below the supported floor', () => {
++    const tree = createTreeWithEmptyWorkspace();
++    updateJson(tree, 'package.json', (json) => ({
++      ...json,
++      devDependencies: { typescript: '~5.3.0' },
++    }));
++
++    expect(() => assertSupportedTypescriptVersion(tree)).toThrow(
++      'Unsupported version of `typescript` detected'
++    );
++  });
++
++  it('does not throw when typescript is not installed (fresh-install path)', () => {
++    const tree = createTreeWithEmptyWorkspace();
++    expect(() => assertSupportedTypescriptVersion(tree)).not.toThrow();
++  });
++
++  it('does not throw when typescript is `latest`', () => {
++    const tree = createTreeWithEmptyWorkspace();
++    updateJson(tree, 'package.json', (json) => ({
++      ...json,
++      devDependencies: { typescript: 'latest' },
++    }));
++
++    expect(() => assertSupportedTypescriptVersion(tree)).not.toThrow();
++  });
++
++  it('does not throw when typescript is `next`', () => {
++    const tree = createTreeWithEmptyWorkspace();
++    updateJson(tree, 'package.json', (json) => ({
++      ...json,
++      devDependencies: { typescript: 'next' },
++    }));
++
++    expect(() => assertSupportedTypescriptVersion(tree)).not.toThrow();
++  });
++
++  it('does not throw when typescript is within the supported window', () => {
++    const tree = createTreeWithEmptyWorkspace();
++    updateJson(tree, 'package.json', (json) => ({
++      ...json,
++      devDependencies: { typescript: '~5.9.2' },
++    }));
++
++    expect(() => assertSupportedTypescriptVersion(tree)).not.toThrow();
++  });
++});
+diff --git a/packages/js/src/utils/assert-supported-typescript-version.ts b/packages/js/src/utils/assert-supported-typescript-version.ts
+new file mode 100644
+index 00000000000..2a17048918d
+--- /dev/null
++++ b/packages/js/src/utils/assert-supported-typescript-version.ts
+@@ -0,0 +1,11 @@
++import { type Tree } from '@nx/devkit';
++import { assertSupportedPackageVersion } from '@nx/devkit/internal';
++import { minSupportedTypescriptVersion } from './versions';
++
++export function assertSupportedTypescriptVersion(tree: Tree): void {
++  assertSupportedPackageVersion(
++    tree,
++    'typescript',
++    minSupportedTypescriptVersion
++  );
++}
+diff --git a/packages/js/src/utils/swc/add-swc-dependencies.ts b/packages/js/src/utils/swc/add-swc-dependencies.ts
+index 3bb9abb10f9..f054cd54ce9 100644
+--- a/packages/js/src/utils/swc/add-swc-dependencies.ts
++++ b/packages/js/src/utils/swc/add-swc-dependencies.ts
+@@ -24,13 +24,21 @@ export function getSwcDependencies(): {
+ export function addSwcDependencies(tree: Tree) {
+   const { dependencies, devDependencies } = getSwcDependencies();
+ 
+-  return addDependenciesToPackageJson(tree, dependencies, devDependencies);
++  return addDependenciesToPackageJson(
++    tree,
++    dependencies,
++    devDependencies,
++    undefined,
++    true
++  );
+ }
+ 
+ export function addSwcRegisterDependencies(tree: Tree) {
+   return addDependenciesToPackageJson(
+     tree,
+     {},
+-    { '@swc-node/register': swcNodeVersion, '@swc/core': swcCoreVersion }
++    { '@swc-node/register': swcNodeVersion, '@swc/core': swcCoreVersion },
++    undefined,
++    true
+   );
+ }
+diff --git a/packages/js/src/utils/versions.ts b/packages/js/src/utils/versions.ts
+index 5b476db8d4b..89daab8ff09 100644
+--- a/packages/js/src/utils/versions.ts
++++ b/packages/js/src/utils/versions.ts
+@@ -19,4 +19,4 @@ export const typescriptVersion = '~5.9.2';
+  * that's supported by the lowest Angular supported version, e.g.
+  * `npm view @angular/compiler-cli@18.0.0 peerDependencies.typescript`
+  */
+-export const supportedTypescriptVersions = '>=5.4.0';
++export const minSupportedTypescriptVersion = '5.4.0';
+diff --git a/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts b/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts
+index 9d6a1a0a3b9..112f7d3613b 100644
+--- a/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts
++++ b/packages/nx/src/internal-testing-utils/assert-generators-enforce-version-floor.ts
+@@ -38,7 +38,9 @@ export function assertGeneratorsEnforceVersionFloor(options: {
+       const [factoryRelative, exportName] = def.factory
+         .replace(/^\.\//, '')
+         .split('#');
+-      const factoryModule = require(join(packageRoot, factoryRelative));
++      // Local-dist plugins point factories at `./dist/src/...`; Jest loads from `./src/...`.
++      const sourceRelative = factoryRelative.replace(/^dist\//, '');
++      const factoryModule = require(join(packageRoot, sourceRelative));
+       const factory = exportName
+         ? factoryModule[exportName]
+         : (factoryModule.default ?? factoryModule);
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 588c94d6fe2..0888cf4aad3 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -2989,6 +2989,9 @@ importers:
+       '@nx/workspace':
+         specifier: workspace:*
+         version: link:../workspace
++      '@swc/cli':
++        specifier: '>=0.6.0 <0.9.0'
++        version: 0.8.0(@swc/core@1.15.10(@swc/helpers@0.5.18))(chokidar@5.0.0)
+       '@zkochan/js-yaml':
+         specifier: 'catalog:'
+         version: 0.0.7
+@@ -34511,6 +34514,21 @@ snapshots:
+     optionalDependencies:
+       chokidar: 3.6.0
+ 
++  '@swc/cli@0.8.0(@swc/core@1.15.10(@swc/helpers@0.5.18))(chokidar@5.0.0)':
++    dependencies:
++      '@swc/core': 1.15.10(@swc/helpers@0.5.18)
++      '@swc/counter': 0.1.3
++      '@xhmikosr/bin-wrapper': 13.0.5
++      commander: 8.3.0
++      minimatch: 9.0.9
++      piscina: 4.9.2
++      semver: 7.7.4
++      slash: 3.0.0
++      source-map: 0.7.6
++      tinyglobby: 0.2.15
++    optionalDependencies:
++      chokidar: 5.0.0
++
+   '@swc/core-darwin-arm64@1.15.10':
+     optional: true
+ 

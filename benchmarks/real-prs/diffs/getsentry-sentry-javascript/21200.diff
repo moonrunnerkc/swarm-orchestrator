@@ -1,0 +1,468 @@
+diff --git a/.craft.yml b/.craft.yml
+index eb42b5cc5de4..f2d6b03894d0 100644
+--- a/.craft.yml
++++ b/.craft.yml
+@@ -16,6 +16,9 @@ targets:
+   - name: npm
+     id: '@sentry/node-core'
+     includeNames: /^sentry-node-core-\d.*\.tgz$/
++  - name: npm
++    id: '@sentry-internal/server-utils'
++    includeNames: /^sentry-internal-server-utils-\d.*\.tgz$/
+   ## 1.3 Browser Utils package
+   - name: npm
+     id: '@sentry-internal/browser-utils'
+diff --git a/dev-packages/e2e-tests/test-applications/aws-serverless/src/stack.ts b/dev-packages/e2e-tests/test-applications/aws-serverless/src/stack.ts
+index 63ab8a533e70..b06bfc360cb9 100644
+--- a/dev-packages/e2e-tests/test-applications/aws-serverless/src/stack.ts
++++ b/dev-packages/e2e-tests/test-applications/aws-serverless/src/stack.ts
+@@ -55,19 +55,28 @@ export class LocalLambdaStack extends Stack {
+       const packageLockPath = path.join(lambdaPath, 'package-lock.json');
+       const nodeModulesPath = path.join(lambdaPath, 'node_modules');
+ 
+-      const packagesToLink = ['aws-serverless', 'node', 'core', 'node-core', 'opentelemetry'];
++      // `dir` is the package directory under `packages/`; `name` is the published
++      // npm name (most are `@sentry/<dir>`, but `server-utils` is `@sentry-internal`).
++      const packagesToLink: Array<{ dir: string; name: string }> = [
++        { dir: 'aws-serverless', name: '@sentry/aws-serverless' },
++        { dir: 'node', name: '@sentry/node' },
++        { dir: 'core', name: '@sentry/core' },
++        { dir: 'node-core', name: '@sentry/node-core' },
++        { dir: 'opentelemetry', name: '@sentry/opentelemetry' },
++        { dir: 'server-utils', name: '@sentry-internal/server-utils' },
++      ];
+       const dependencies: Record<string, string> = {};
+ 
+       const packagesDir = resolvePackagesDir();
+-      for (const pkgName of packagesToLink) {
+-        const pkgDir = path.join(packagesDir, pkgName);
++      for (const { dir, name } of packagesToLink) {
++        const pkgDir = path.join(packagesDir, dir);
+         if (!fs.existsSync(pkgDir)) {
+           throw new Error(
+-            `[LocalLambdaStack] Workspace package ${pkgName} not found at ${pkgDir}. Did you run the build?`,
++            `[LocalLambdaStack] Workspace package ${name} not found at ${pkgDir}. Did you run the build?`,
+           );
+         }
+         const relativePath = path.relative(lambdaPath, pkgDir);
+-        dependencies[`@sentry/${pkgName}`] = `file:${relativePath.replace(/\\/g, '/')}`;
++        dependencies[name] = `file:${relativePath.replace(/\\/g, '/')}`;
+       }
+ 
+       console.log(`[LocalLambdaStack] Install dependencies for ${functionName}`);
+diff --git a/package.json b/package.json
+index 21457ec324a3..44ac0d95b9a3 100644
+--- a/package.json
++++ b/package.json
+@@ -87,6 +87,7 @@
+     "packages/replay-internal",
+     "packages/replay-canvas",
+     "packages/replay-worker",
++    "packages/server-utils",
+     "packages/solid",
+     "packages/solidstart",
+     "packages/svelte",
+diff --git a/packages/core/src/server-exports.ts b/packages/core/src/server-exports.ts
+index ad35985649d3..1a19fa2902cc 100644
+--- a/packages/core/src/server-exports.ts
++++ b/packages/core/src/server-exports.ts
+@@ -24,26 +24,6 @@ export type {
+ } from './integrations/express/types';
+ export { instrumentPostgresJsSql } from './integrations/postgresjs';
+ 
+-export {
+-  IOREDIS_DC_CHANNEL_COMMAND,
+-  IOREDIS_DC_CHANNEL_CONNECT,
+-  REDIS_DC_CHANNEL_BATCH,
+-  REDIS_DC_CHANNEL_COMMAND,
+-  REDIS_DC_CHANNEL_CONNECT,
+-  subscribeRedisDiagnosticChannels,
+-} from './integrations/redis/redis-dc-subscriber';
+-export type {
+-  IORedisCommandData,
+-  RedisBatchData,
+-  RedisCommandData,
+-  RedisConnectData,
+-  RedisDiagnosticChannelResponseHook,
+-  RedisTracingChannel,
+-  RedisTracingChannelContextWithSpan,
+-  RedisTracingChannelFactory,
+-  RedisTracingChannelSubscribers,
+-} from './integrations/redis/redis-dc-subscriber';
+-
+ export { patchHttpModuleClient } from './integrations/http/client-patch';
+ export { getHttpClientSubscriptions } from './integrations/http/client-subscriptions';
+ export { getHttpServerSubscriptions, isStaticAssetRequest } from './integrations/http/server-subscription';
+diff --git a/packages/deno/package.json b/packages/deno/package.json
+index 1751eb597695..bd7ef6bef35a 100644
+--- a/packages/deno/package.json
++++ b/packages/deno/package.json
+@@ -25,6 +25,7 @@
+   ],
+   "dependencies": {
+     "@opentelemetry/api": "^1.9.1",
++    "@sentry-internal/server-utils": "10.55.0",
+     "@sentry/core": "10.55.0"
+   },
+   "scripts": {
+diff --git a/packages/deno/src/integrations/redis.ts b/packages/deno/src/integrations/redis.ts
+index 7bd57b5eaaf2..c29eefd3bdd1 100644
+--- a/packages/deno/src/integrations/redis.ts
++++ b/packages/deno/src/integrations/redis.ts
+@@ -3,15 +3,14 @@
+ // On older runtimes the integration becomes a no-op.
+ import * as dc from 'node:diagnostics_channel';
+ import type {
+-  Integration,
+-  IntegrationFn,
+   RedisDiagnosticChannelResponseHook,
+   RedisTracingChannel,
+   RedisTracingChannelFactory,
+   RedisTracingChannelSubscribers,
+-  Span,
+-} from '@sentry/core';
+-import { defineIntegration, subscribeRedisDiagnosticChannels } from '@sentry/core';
++} from '@sentry-internal/server-utils';
++import { subscribeRedisDiagnosticChannels } from '@sentry-internal/server-utils';
++import type { Integration, IntegrationFn, Span } from '@sentry/core';
++import { defineIntegration } from '@sentry/core';
+ import { setAsyncLocalStorageAsyncContextStrategy } from '../async';
+ 
+ const INTEGRATION_NAME = 'DenoRedis';
+diff --git a/packages/node/package.json b/packages/node/package.json
+index dda4a4879adc..5ec5bd4c9054 100644
+--- a/packages/node/package.json
++++ b/packages/node/package.json
+@@ -70,6 +70,7 @@
+     "@opentelemetry/instrumentation": "^0.214.0",
+     "@opentelemetry/sdk-trace-base": "^2.6.1",
+     "@opentelemetry/semantic-conventions": "^1.40.0",
++    "@sentry-internal/server-utils": "10.55.0",
+     "@sentry/core": "10.55.0",
+     "@sentry/node-core": "10.55.0",
+     "@sentry/opentelemetry": "10.55.0",
+diff --git a/packages/node/src/integrations/tracing/redis/index.ts b/packages/node/src/integrations/tracing/redis/index.ts
+index 5abf5f3feb78..bcc81a04f887 100644
+--- a/packages/node/src/integrations/tracing/redis/index.ts
++++ b/packages/node/src/integrations/tracing/redis/index.ts
+@@ -9,7 +9,7 @@ import {
+   spanToJSON,
+   truncate,
+ } from '@sentry/core';
+-import { subscribeRedisDiagnosticChannels } from '@sentry/core/server';
++import { subscribeRedisDiagnosticChannels } from '@sentry-internal/server-utils';
+ import { generateInstrumentOnce } from '@sentry/node-core';
+ import { tracingChannel as otelTracingChannel } from '@sentry/opentelemetry/tracing-channel';
+ import type { IORedisCommandArgs } from '../../../utils/redisCache';
+diff --git a/packages/server-utils/.oxlintrc.json b/packages/server-utils/.oxlintrc.json
+new file mode 100644
+index 000000000000..7828795e480e
+--- /dev/null
++++ b/packages/server-utils/.oxlintrc.json
+@@ -0,0 +1,30 @@
++{
++  "$schema": "../../node_modules/oxlint/configuration_schema.json",
++  "extends": ["../../.oxlintrc.base.json"],
++  "jsPlugins": [
++    {
++      "name": "sdk",
++      "specifier": "@sentry-internal/eslint-plugin-sdk"
++    }
++  ],
++  "env": {
++    "node": true
++  },
++  "rules": {
++    "sdk/no-unsafe-random-apis": "error"
++  },
++  "overrides": [
++    {
++      "files": ["**/src/**"],
++      "rules": {
++        "sdk/no-class-field-initializers": "off"
++      }
++    },
++    {
++      "files": ["test/**/*.ts", "test/**/*.tsx"],
++      "rules": {
++        "sdk/no-unsafe-random-apis": "off"
++      }
++    }
++  ]
++}
+diff --git a/packages/server-utils/README.md b/packages/server-utils/README.md
+new file mode 100644
+index 000000000000..4b79c2811d2e
+--- /dev/null
++++ b/packages/server-utils/README.md
+@@ -0,0 +1,23 @@
++<p align="center">
++  <a href="https://sentry.io/?utm_source=github&utm_medium=logo" target="_blank">
++    <img src="https://sentry-brand.storage.googleapis.com/sentry-wordmark-dark-280x84.png" alt="Sentry" width="280" height="84">
++  </a>
++</p>
++
++# Sentry JavaScript SDK Server Utilities
++
++[![npm version](https://img.shields.io/npm/v/@sentry-internal/server-utils.svg)](https://www.npmjs.com/package/@sentry-internal/server-utils)
++[![npm dm](https://img.shields.io/npm/dm/@sentry-internal/server-utils.svg)](https://www.npmjs.com/package/@sentry-internal/server-utils)
++[![npm dt](https://img.shields.io/npm/dt/@sentry-internal/server-utils.svg)](https://www.npmjs.com/package/@sentry-internal/server-utils)
++
++## Links
++
++- [Official SDK Docs](https://docs.sentry.io/quickstart/)
++
++## General
++
++Common server-only utilities used by the Sentry JavaScript server SDKs (node, node-core, bun, deno, cloudflare,
++aws-serverless, google-cloud-serverless, vercel-edge).
++
++Note: This package is only meant to be used internally, and as such is not part of our public API contract and does not
++follow semver.
+diff --git a/packages/server-utils/package.json b/packages/server-utils/package.json
+new file mode 100644
+index 000000000000..fd2e1ff9a469
+--- /dev/null
++++ b/packages/server-utils/package.json
+@@ -0,0 +1,68 @@
++{
++  "name": "@sentry-internal/server-utils",
++  "version": "10.55.0",
++  "description": "Server Utilities for all Sentry JavaScript SDKs",
++  "repository": "git://github.com/getsentry/sentry-javascript.git",
++  "homepage": "https://github.com/getsentry/sentry-javascript/tree/master/packages/server-utils",
++  "author": "Sentry",
++  "license": "MIT",
++  "engines": {
++    "node": ">=18"
++  },
++  "files": [
++    "/build"
++  ],
++  "main": "build/cjs/index.js",
++  "module": "build/esm/index.js",
++  "types": "build/types/index.d.ts",
++  "exports": {
++    "./package.json": "./package.json",
++    ".": {
++      "import": {
++        "types": "./build/types/index.d.ts",
++        "default": "./build/esm/index.js"
++      },
++      "require": {
++        "types": "./build/types/index.d.ts",
++        "default": "./build/cjs/index.js"
++      }
++    }
++  },
++  "typesVersions": {
++    "<5.0": {
++      "build/types/index.d.ts": [
++        "build/types-ts3.8/index.d.ts"
++      ]
++    }
++  },
++  "publishConfig": {
++    "access": "public"
++  },
++  "dependencies": {
++    "@sentry/core": "10.55.0"
++  },
++  "scripts": {
++    "build": "run-p build:transpile build:types",
++    "build:dev": "yarn build",
++    "build:transpile": "rollup -c rollup.npm.config.mjs",
++    "build:types": "run-s build:types:core build:types:downlevel",
++    "build:types:core": "tsc -p tsconfig.types.json",
++    "build:types:downlevel": "yarn downlevel-dts build/types build/types-ts3.8 --to ts3.8",
++    "build:watch": "run-p build:transpile:watch",
++    "build:dev:watch": "run-p build:transpile:watch",
++    "build:transpile:watch": "rollup -c rollup.npm.config.mjs --watch",
++    "build:tarball": "npm pack",
++    "clean": "rimraf build coverage sentry-internal-server-utils-*.tgz",
++    "lint:fix": "OXLINT_TSGOLINT_DANGEROUSLY_SUPPRESS_PROGRAM_DIAGNOSTICS=true oxlint . --fix --type-aware",
++    "lint": "OXLINT_TSGOLINT_DANGEROUSLY_SUPPRESS_PROGRAM_DIAGNOSTICS=true oxlint . --type-aware",
++    "lint:es-compatibility": "es-check es2020 ./build/cjs/*.js && es-check es2020 ./build/esm/*.js --module",
++    "test:unit": "vitest run",
++    "test": "vitest run",
++    "test:watch": "vitest --watch",
++    "yalc:publish": "yalc publish --push --sig"
++  },
++  "volta": {
++    "extends": "../../package.json"
++  },
++  "sideEffects": false
++}
+diff --git a/packages/server-utils/rollup.npm.config.mjs b/packages/server-utils/rollup.npm.config.mjs
+new file mode 100644
+index 000000000000..d28a7a6f54a0
+--- /dev/null
++++ b/packages/server-utils/rollup.npm.config.mjs
+@@ -0,0 +1,17 @@
++import { makeBaseNPMConfig, makeNPMConfigVariants } from '@sentry-internal/rollup-utils';
++
++export default makeNPMConfigVariants(
++  makeBaseNPMConfig({
++    packageSpecificConfig: {
++      output: {
++        // set exports to 'named' or 'auto' so that rollup doesn't warn
++        exports: 'named',
++        // set preserveModules to true because we don't want to bundle everything into one file.
++        preserveModules:
++          process.env.SENTRY_BUILD_PRESERVE_MODULES === undefined
++            ? true
++            : Boolean(process.env.SENTRY_BUILD_PRESERVE_MODULES),
++      },
++    },
++  }),
++);
+diff --git a/packages/server-utils/src/debug-build.ts b/packages/server-utils/src/debug-build.ts
+new file mode 100644
+index 000000000000..60aa50940582
+--- /dev/null
++++ b/packages/server-utils/src/debug-build.ts
+@@ -0,0 +1,8 @@
++declare const __DEBUG_BUILD__: boolean;
++
++/**
++ * This serves as a build time flag that will be true by default, but false in non-debug builds or if users replace `__SENTRY_DEBUG__` in their generated code.
++ *
++ * ATTENTION: This constant must never cross package boundaries (i.e. be exported) to guarantee that it can be used for tree shaking.
++ */
++export const DEBUG_BUILD = __DEBUG_BUILD__;
+diff --git a/packages/server-utils/src/index.ts b/packages/server-utils/src/index.ts
+new file mode 100644
+index 000000000000..43918e600a28
+--- /dev/null
++++ b/packages/server-utils/src/index.ts
+@@ -0,0 +1,25 @@
++/**
++ * Server-only utilities shared across Sentry server SDKs.
++ *
++ * @module
++ */
++
++export {
++  IOREDIS_DC_CHANNEL_COMMAND,
++  IOREDIS_DC_CHANNEL_CONNECT,
++  REDIS_DC_CHANNEL_BATCH,
++  REDIS_DC_CHANNEL_COMMAND,
++  REDIS_DC_CHANNEL_CONNECT,
++  subscribeRedisDiagnosticChannels,
++} from './redis/redis-dc-subscriber';
++export type {
++  IORedisCommandData,
++  RedisBatchData,
++  RedisCommandData,
++  RedisConnectData,
++  RedisDiagnosticChannelResponseHook,
++  RedisTracingChannel,
++  RedisTracingChannelContextWithSpan,
++  RedisTracingChannelFactory,
++  RedisTracingChannelSubscribers,
++} from './redis/redis-dc-subscriber';
+diff --git a/packages/core/src/integrations/redis/redis-dc-subscriber.ts b/packages/server-utils/src/redis/redis-dc-subscriber.ts
+similarity index 96%
+rename from packages/core/src/integrations/redis/redis-dc-subscriber.ts
+rename to packages/server-utils/src/redis/redis-dc-subscriber.ts
+index 2719857d297f..3dbc79c67f90 100644
+--- a/packages/core/src/integrations/redis/redis-dc-subscriber.ts
++++ b/packages/server-utils/src/redis/redis-dc-subscriber.ts
+@@ -1,9 +1,12 @@
+-import { DEBUG_BUILD } from '../../debug-build';
+-import { SEMANTIC_ATTRIBUTE_SENTRY_OP, SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN } from '../../semanticAttributes';
+-import { SPAN_STATUS_ERROR } from '../../tracing/spanstatus';
+-import { startSpanManual } from '../../tracing/trace';
+-import type { Span } from '../../types/span';
+-import { debug } from '../../utils/debug-logger';
++import type { Span } from '@sentry/core';
++import {
++  debug,
++  SEMANTIC_ATTRIBUTE_SENTRY_OP,
++  SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN,
++  SPAN_STATUS_ERROR,
++  startSpanManual,
++} from '@sentry/core';
++import { DEBUG_BUILD } from '../debug-build';
+ 
+ // Channel names published by node-redis >= 5.12.0 and ioredis >= 5.11.0.
+ // Hardcoded so the subscriber does not have to import either library — the
+diff --git a/packages/core/test/lib/integrations/redis/redis-dc-subscriber.test.ts b/packages/server-utils/test/redis/redis-dc-subscriber.test.ts
+similarity index 98%
+rename from packages/core/test/lib/integrations/redis/redis-dc-subscriber.test.ts
+rename to packages/server-utils/test/redis/redis-dc-subscriber.test.ts
+index 82a736caed23..39af399549e7 100644
+--- a/packages/core/test/lib/integrations/redis/redis-dc-subscriber.test.ts
++++ b/packages/server-utils/test/redis/redis-dc-subscriber.test.ts
+@@ -10,8 +10,8 @@ import {
+   type RedisTracingChannel,
+   type RedisTracingChannelFactory,
+   type RedisTracingChannelSubscribers,
+-} from '../../../../src/integrations/redis/redis-dc-subscriber';
+-import { SPAN_STATUS_ERROR } from '../../../../src/tracing/spanstatus';
++} from '../../src/redis/redis-dc-subscriber';
++import { SPAN_STATUS_ERROR } from '@sentry/core';
+ 
+ interface RecordedChannel {
+   subs: Partial<RedisTracingChannelSubscribers<unknown>>;
+diff --git a/packages/server-utils/tsconfig.json b/packages/server-utils/tsconfig.json
+new file mode 100644
+index 000000000000..eaeff42ce731
+--- /dev/null
++++ b/packages/server-utils/tsconfig.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../tsconfig.json",
++
++  "include": ["src/**/*"],
++
++  "compilerOptions": {
++    "lib": ["ES2020"]
++  }
++}
+diff --git a/packages/server-utils/tsconfig.test.json b/packages/server-utils/tsconfig.test.json
+new file mode 100644
+index 000000000000..851f2a16b733
+--- /dev/null
++++ b/packages/server-utils/tsconfig.test.json
+@@ -0,0 +1,10 @@
++{
++  "extends": "./tsconfig.json",
++
++  "include": ["test/**/*", "vite.config.ts"],
++
++  "compilerOptions": {
++    // should include all types from `./tsconfig.json` plus types for all test frameworks used
++    "types": ["node", "vitest"]
++  }
++}
+diff --git a/packages/server-utils/tsconfig.types.json b/packages/server-utils/tsconfig.types.json
+new file mode 100644
+index 000000000000..b1a51db073c2
+--- /dev/null
++++ b/packages/server-utils/tsconfig.types.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "declaration": true,
++    "declarationMap": true,
++    "emitDeclarationOnly": true,
++    "outDir": "build/types"
++  }
++}
+diff --git a/packages/server-utils/vite.config.ts b/packages/server-utils/vite.config.ts
+new file mode 100644
+index 000000000000..841ff483d7c4
+--- /dev/null
++++ b/packages/server-utils/vite.config.ts
+@@ -0,0 +1,9 @@
++import { defineConfig } from 'vitest/config';
++import baseConfig from '../../vite/vite.config';
++
++export default defineConfig({
++  ...baseConfig,
++  test: {
++    ...baseConfig.test,
++  },
++});

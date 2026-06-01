@@ -1,0 +1,1637 @@
+diff --git a/.changeset/pin-non-bundled-dependencies.md b/.changeset/pin-non-bundled-dependencies.md
+new file mode 100644
+index 0000000000..ad16714373
+--- /dev/null
++++ b/.changeset/pin-non-bundled-dependencies.md
+@@ -0,0 +1,11 @@
++---
++"wrangler": patch
++"miniflare": patch
++"@cloudflare/vitest-pool-workers": patch
++"@cloudflare/workers-editor-shared": patch
++"@cloudflare/cli-shared-helpers": patch
++---
++
++Pin non-bundled runtime dependencies to exact versions
++
++Dependencies that are not bundled into a package's published output are installed directly into consumers' dependency trees, so they are now pinned to exact versions instead of semver ranges. This closes a supply-chain gap where an unpinned external dependency could resolve to a compromised upstream release on a fresh install. A new `pnpm check:pinned-deps` lint enforces this for all published packages (and for the shared pnpm catalog) going forward.
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 23f19e80ce..cf4145d354 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -457,6 +457,17 @@ export const EXTERNAL_DEPENDENCIES = [
+ - **Runtime resolution**: Packages like `esbuild` or `unenv` that need to be resolved when bundling user code
+ - **Peer dependencies**: Packages the user is expected to provide (e.g., `react`, `vite`)
+ 
++### Pinning External Dependencies
++
++Because external dependencies are installed into downstream users' dependency trees rather than bundled, their versions must be **pinned to an exact version** (e.g. `1.2.3`, not `^1.2.3`). This closes the supply-chain hole above: an unpinned external dependency could resolve to a compromised upstream release without us vetting it.
++
++This is enforced by `pnpm check:pinned-deps`, which requires:
++
++- Every `dependencies` and `optionalDependencies` entry of a published package to be an exact version, or a `workspace:`/`catalog:` reference.
++- Every entry in the pnpm `catalog:` (in `pnpm-workspace.yaml`) to be an exact version, so that any `catalog:default` reference is also pinned. Deliberate exceptions live in `CATALOG_PIN_EXCEPTIONS` in `tools/deployments/validate-pinned-dependencies.ts` (currently only `@cloudflare/workers-types`, which is consumed as a peer dependency).
++
++`peerDependencies` are exempt — ranges there are intentional, since they describe the set of consumer-provided versions a package is compatible with.
++
+ ## Changesets
+ 
+ Every non-trivial change to the project - those that should appear in the changelog - must be captured in a "changeset".
+diff --git a/package.json b/package.json
+index 521a540eb4..26bc18e468 100644
+--- a/package.json
++++ b/package.json
+@@ -11,13 +11,14 @@
+ 	"author": "wrangler@cloudflare.com",
+ 	"scripts": {
+ 		"build": "dotenv -- turbo build",
+-		"check": "pnpm check:fixtures && pnpm check:private-packages && pnpm check:package-deps && pnpm check:catalog && pnpm check:deployments && pnpm check:workflows && node lint-turbo.mjs && dotenv -- turbo check:lint check:type check:format type:tests",
++		"check": "pnpm check:fixtures && pnpm check:private-packages && pnpm check:package-deps && pnpm check:catalog && pnpm check:pinned-deps && pnpm check:deployments && pnpm check:workflows && node lint-turbo.mjs && dotenv -- turbo check:lint check:type check:format type:tests",
+ 		"check:catalog": "node -r esbuild-register tools/deployments/validate-catalog-usage.ts",
+ 		"check:deployments": "node -r esbuild-register tools/deployments/deploy-non-npm-packages.ts check",
+ 		"check:fixtures": "node -r esbuild-register tools/deployments/validate-fixtures.ts",
+ 		"check:format": "oxfmt --check",
+ 		"check:lint": "oxlint --deny-warnings --type-aware",
+ 		"check:package-deps": "pnpm build && node -r esbuild-register tools/deployments/validate-package-dependencies.ts",
++		"check:pinned-deps": "node -r esbuild-register tools/deployments/validate-pinned-dependencies.ts",
+ 		"check:private-packages": "node -r esbuild-register tools/deployments/validate-private-packages.ts",
+ 		"check:type": "dotenv -- turbo check:type type:tests",
+ 		"check:workflows": "node -r esbuild-register tools/github-workflow-helpers/validate-action-pinning.ts",
+diff --git a/packages/cli/package.json b/packages/cli/package.json
+index c6d720f51c..60afad5992 100644
+--- a/packages/cli/package.json
++++ b/packages/cli/package.json
+@@ -68,12 +68,12 @@
+ 		"test:ci": "vitest run"
+ 	},
+ 	"dependencies": {
+-		"@clack/core": "^1.2.0",
++		"@clack/core": "1.2.0",
+ 		"@cloudflare/workers-utils": "workspace:*",
+-		"chalk": "^5.2.0",
++		"chalk": "5.3.0",
+ 		"ci-info": "catalog:default",
+-		"cross-spawn": "^7.0.3",
+-		"log-update": "^5.0.1"
++		"cross-spawn": "7.0.6",
++		"log-update": "5.0.1"
+ 	},
+ 	"devDependencies": {
+ 		"@cloudflare/workers-tsconfig": "workspace:*",
+diff --git a/packages/miniflare/package.json b/packages/miniflare/package.json
+index b38a45aab4..c0412fe3cf 100644
+--- a/packages/miniflare/package.json
++++ b/packages/miniflare/package.json
+@@ -50,7 +50,7 @@
+ 	},
+ 	"dependencies": {
+ 		"@cspotcode/source-map-support": "0.8.1",
+-		"sharp": "^0.34.5",
++		"sharp": "0.34.5",
+ 		"undici": "catalog:default",
+ 		"workerd": "1.20260529.1",
+ 		"ws": "catalog:default",
+diff --git a/packages/vitest-pool-workers/package.json b/packages/vitest-pool-workers/package.json
+index 841d11180b..b1f89800f1 100644
+--- a/packages/vitest-pool-workers/package.json
++++ b/packages/vitest-pool-workers/package.json
+@@ -53,11 +53,11 @@
+ 		"test:ci": "vitest run"
+ 	},
+ 	"dependencies": {
+-		"cjs-module-lexer": "^1.2.3",
++		"cjs-module-lexer": "1.2.3",
+ 		"esbuild": "catalog:default",
+ 		"miniflare": "workspace:*",
+ 		"wrangler": "workspace:*",
+-		"zod": "^3.25.76"
++		"zod": "3.25.76"
+ 	},
+ 	"devDependencies": {
+ 		"@cloudflare/mock-npm-registry": "workspace:*",
+diff --git a/packages/workers-editor-shared/package.json b/packages/workers-editor-shared/package.json
+index 30947ebdcc..2b257b32e4 100644
+--- a/packages/workers-editor-shared/package.json
++++ b/packages/workers-editor-shared/package.json
+@@ -27,7 +27,7 @@
+ 		"dev": "vite"
+ 	},
+ 	"dependencies": {
+-		"react-split-pane": "^0.1.92"
++		"react-split-pane": "0.1.92"
+ 	},
+ 	"devDependencies": {
+ 		"@cloudflare/style-const": "^5.7.2",
+diff --git a/packages/wrangler/package.json b/packages/wrangler/package.json
+index 11a35e8460..e4ac0a93c9 100644
+--- a/packages/wrangler/package.json
++++ b/packages/wrangler/package.json
+@@ -179,7 +179,7 @@
+ 		}
+ 	},
+ 	"optionalDependencies": {
+-		"fsevents": "~2.3.2"
++		"fsevents": "2.3.3"
+ 	},
+ 	"engines": {
+ 		"node": ">=22.0.0"
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 0762fa3f24..d6d74c7526 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -7,13 +7,13 @@ settings:
+ catalogs:
+   default:
+     '@cloudflare/vitest-pool-workers':
+-      specifier: ^0.13.0
++      specifier: 0.13.3
+       version: 0.13.3
+     '@cloudflare/workers-types':
+       specifier: ^4.20260529.1
+       version: 4.20260529.1
+     '@hey-api/openapi-ts':
+-      specifier: ^0.94.0
++      specifier: 0.94.0
+       version: 0.94.0
+     '@vitest/runner':
+       specifier: 4.1.0
+@@ -25,49 +25,49 @@ catalogs:
+       specifier: 4.1.0
+       version: 4.1.0
+     capnp-es:
+-      specifier: ^0.0.14
++      specifier: 0.0.14
+       version: 0.0.14
+     capnweb:
+-      specifier: ^0.5.0
++      specifier: 0.5.0
+       version: 0.5.0
+     ci-info:
+-      specifier: ^4.4.0
++      specifier: 4.4.0
+       version: 4.4.0
+     esbuild:
+       specifier: 0.27.3
+       version: 0.27.3
+     jsonc-parser:
+-      specifier: ^3.2.0
++      specifier: 3.2.0
+       version: 3.2.0
+     msw:
+       specifier: 2.12.4
+       version: 2.12.4
+     open:
+-      specifier: ^11.0.0
++      specifier: 11.0.0
+       version: 11.0.0
+     playwright-chromium:
+-      specifier: ^1.60.0
++      specifier: 1.60.0
+       version: 1.60.0
+     signal-exit:
+-      specifier: ^3.0.7
++      specifier: 3.0.7
+       version: 3.0.7
+     smol-toml:
+-      specifier: ^1.5.2
++      specifier: 1.5.2
+       version: 1.5.2
+     tinyglobby:
+-      specifier: ^0.2.12
++      specifier: 0.2.16
+       version: 0.2.16
+     tree-kill:
+-      specifier: ^1.2.2
++      specifier: 1.2.2
+       version: 1.2.2
+     typescript:
+-      specifier: ~5.8.3
++      specifier: 5.8.3
+       version: 5.8.3
+     undici:
+       specifier: 7.24.8
+       version: 7.24.8
+     vite:
+-      specifier: ^8.0.12
++      specifier: 8.0.13
+       version: 8.0.13
+     vitest:
+       specifier: 4.1.0
+@@ -81,7 +81,7 @@ overrides:
+   '@types/react-tabs>@types/react': ^18
+   '@types/react-transition-group>@types/react': ^18
+   '@cloudflare/elements>@types/react': ^18
+-  '@types/node': ^22.10.1
++  '@types/node': 22.15.17
+   '@types/node>undici-types': 7.24.8
+ 
+ patchedDependencies:
+@@ -121,7 +121,7 @@ importers:
+         specifier: ^0.23.0
+         version: 0.23.0
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@vue/compiler-sfc':
+         specifier: ^3.3.4
+@@ -202,7 +202,7 @@ importers:
+         specifier: workspace:*
+         version: link:../../packages/vitest-pool-workers
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       typescript:
+         specifier: catalog:default
+@@ -554,7 +554,7 @@ importers:
+         specifier: catalog:default
+         version: 4.20260529.1
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/react':
+         specifier: ^18.3.3
+@@ -1150,7 +1150,7 @@ importers:
+         specifier: ^3.0.1
+         version: 3.0.1
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/nunjucks':
+         specifier: ^3.2.6
+@@ -1456,7 +1456,7 @@ importers:
+         specifier: ^6.4.0
+         version: 6.4.0
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       jest-image-snapshot:
+         specifier: ^6.5.1
+@@ -1486,7 +1486,7 @@ importers:
+         specifier: catalog:default
+         version: 4.20260529.1
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       playwright-chromium:
+         specifier: catalog:default
+@@ -1552,22 +1552,22 @@ importers:
+   packages/cli:
+     dependencies:
+       '@clack/core':
+-        specifier: ^1.2.0
++        specifier: 1.2.0
+         version: 1.2.0
+       '@cloudflare/workers-utils':
+         specifier: workspace:*
+         version: link:../workers-utils
+       chalk:
+-        specifier: ^5.2.0
++        specifier: 5.3.0
+         version: 5.3.0
+       ci-info:
+         specifier: catalog:default
+         version: 4.4.0
+       cross-spawn:
+-        specifier: ^7.0.3
++        specifier: 7.0.6
+         version: 7.0.6
+       log-update:
+-        specifier: ^5.0.1
++        specifier: 5.0.1
+         version: 5.0.1
+     devDependencies:
+       '@cloudflare/workers-tsconfig':
+@@ -1589,7 +1589,7 @@ importers:
+         specifier: ^4.0.3
+         version: 4.0.3
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@vitest/ui':
+         specifier: catalog:default
+@@ -1622,7 +1622,7 @@ importers:
+         specifier: workspace:*
+         version: link:../workers-utils
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       typescript:
+         specifier: catalog:default
+@@ -1682,7 +1682,7 @@ importers:
+         specifier: ^4.0.3
+         version: 4.0.3
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/semver':
+         specifier: ^7.5.1
+@@ -1799,7 +1799,7 @@ importers:
+         specifier: workspace:*
+         version: link:../workers-utils
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       concurrently:
+         specifier: ^8.2.2
+@@ -1901,7 +1901,7 @@ importers:
+         specifier: ^3.0.4
+         version: 3.0.4
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       mime:
+         specifier: ^3.0.0
+@@ -2040,7 +2040,7 @@ importers:
+         specifier: 0.8.1
+         version: 0.8.1
+       sharp:
+-        specifier: ^0.34.5
++        specifier: 0.34.5
+         version: 0.34.5
+       undici:
+         specifier: catalog:default
+@@ -2104,7 +2104,7 @@ importers:
+         specifier: ^3.0.4
+         version: 3.0.4
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/stoppable':
+         specifier: ^1.1.1
+@@ -2209,7 +2209,7 @@ importers:
+         specifier: workspace:*
+         version: link:../workers-utils
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@verdaccio/types':
+         specifier: ^10.8.0
+@@ -2311,7 +2311,7 @@ importers:
+         specifier: catalog:default
+         version: 4.20260529.1
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       concurrently:
+         specifier: ^8.2.2
+@@ -2421,7 +2421,7 @@ importers:
+         specifier: ^0.8.0
+         version: 0.8.0
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/semver':
+         specifier: ^7.5.1
+@@ -3129,7 +3129,7 @@ importers:
+         specifier: ^4.1.12
+         version: 4.1.12
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/pg':
+         specifier: ^8.15.4
+@@ -3586,7 +3586,7 @@ importers:
+   packages/vitest-pool-workers:
+     dependencies:
+       cjs-module-lexer:
+-        specifier: ^1.2.3
++        specifier: 1.2.3
+         version: 1.2.3
+       esbuild:
+         specifier: catalog:default
+@@ -3598,7 +3598,7 @@ importers:
+         specifier: workspace:*
+         version: link:../wrangler
+       zod:
+-        specifier: ^3.25.76
++        specifier: 3.25.76
+         version: 3.25.76
+     devDependencies:
+       '@cloudflare/mock-npm-registry':
+@@ -3620,7 +3620,7 @@ importers:
+         specifier: ^17.3.0
+         version: 17.3.0
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/semver':
+         specifier: ^7.5.1
+@@ -3671,7 +3671,7 @@ importers:
+   packages/workers-editor-shared:
+     dependencies:
+       react-split-pane:
+-        specifier: ^0.1.92
++        specifier: 0.1.92
+         version: 0.1.92(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+     devDependencies:
+       '@cloudflare/style-const':
+@@ -3880,7 +3880,7 @@ importers:
+         specifier: ^1.2.0
+         version: 1.2.0
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/signal-exit':
+         specifier: ^3.0.1
+@@ -4071,7 +4071,7 @@ importers:
+         specifier: ^5.1.2
+         version: 5.1.2
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       '@types/node-forge':
+         specifier: ^1.3.11
+@@ -4279,7 +4279,7 @@ importers:
+         version: 17.7.2
+     optionalDependencies:
+       fsevents:
+-        specifier: ~2.3.2
++        specifier: 2.3.3
+         version: 2.3.3
+ 
+   packages/wrangler-bundler:
+@@ -4295,7 +4295,7 @@ importers:
+         specifier: workspace:*
+         version: link:../workers-tsconfig
+       '@types/node':
+-        specifier: ^22.10.1
++        specifier: 22.15.17
+         version: 22.15.17
+       tsdown:
+         specifier: 0.16.3
+@@ -5385,21 +5385,9 @@ packages:
+   '@emnapi/core@1.10.0':
+     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
+ 
+-  '@emnapi/core@1.9.1':
+-    resolution: {integrity: sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA==}
+-
+   '@emnapi/runtime@1.10.0':
+     resolution: {integrity: sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA==}
+ 
+-  '@emnapi/runtime@1.7.0':
+-    resolution: {integrity: sha512-oAYoQnCYaQZKVS53Fq23ceWMRxq5EhQsE0x0RdQ55jT7wagMu5k+fS39v1fiSLrtrLQlXwVINenqhLMtTrV/1Q==}
+-
+-  '@emnapi/runtime@1.9.1':
+-    resolution: {integrity: sha512-VYi5+ZVLhpgK4hQ0TAjiQiZ6ol0oe4mBx7mVv7IflsiEp0OWoVsp/+f9Vc1hOhE0TtkORVrI1GvzyreqpgWtkA==}
+-
+-  '@emnapi/wasi-threads@1.2.0':
+-    resolution: {integrity: sha512-N10dEJNSsUx41Z6pZsXU8FjPjpBEplgH24sfkmITrBED1/U2Esum9F3lfLrMjKHHjmi557zQn7kR9R+XWXu5Rg==}
+-
+   '@emnapi/wasi-threads@1.2.1':
+     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
+ 
+@@ -6448,7 +6436,7 @@ packages:
+     resolution: {integrity: sha512-KR8edRkIsUayMXV+o3Gv+q4jlhENF9nMYUZs9PA2HzrXeHI8M5uDag70U7RJn9yyiMZSbtF5/UexBtAVtZGSbQ==}
+     engines: {node: '>=18'}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -6457,7 +6445,7 @@ packages:
+     resolution: {integrity: sha512-43RTuEbfP8MbKzedNqBrlhhNKVwoK//vUFNW3Q3vZ88BLcrs4kYpGg+B2mm5p2K/HfygoCxuKwJJiv8PbGmE0A==}
+     engines: {node: '>=18'}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -6466,7 +6454,7 @@ packages:
+     resolution: {integrity: sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA==}
+     engines: {node: '>=18'}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -6479,7 +6467,7 @@ packages:
+     resolution: {integrity: sha512-BvziSRxfz5Ov8ch0z/n3oijRSEcEsHnhggm4xFZe93DHcUCTlutlq9Ox4SVENAfcRD22UQq7T/atg9Wr3k09eA==}
+     engines: {node: '>=18'}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -8050,7 +8038,7 @@ packages:
+   '@rushstack/node-core-library@5.13.1':
+     resolution: {integrity: sha512-5yXhzPFGEkVc9Fu92wsNJ9jlvdwz4RNb2bMso+/+TH0nMm1jDDDsOIf4l8GAkPxGuwPw5DH24RliWVfSPhlW/Q==}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -8058,7 +8046,7 @@ packages:
+   '@rushstack/node-core-library@5.5.1':
+     resolution: {integrity: sha512-ZutW56qIzH8xIOlfyaLQJFx+8IBqdbVCZdnj+XT1MorQ1JqqxHse8vbCpEM+2MjsrqcbxcgDIbfggB1ZSQ2A3g==}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -8069,7 +8057,7 @@ packages:
+   '@rushstack/terminal@0.13.3':
+     resolution: {integrity: sha512-fc3zjXOw8E0pXS5t9vTiIPx9gHA0fIdTXsu9mT4WbH+P3mYvnrX0iAQ5a6NvyK1+CqYWBTw/wVNx7SDJkI+WYQ==}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -8077,7 +8065,7 @@ packages:
+   '@rushstack/terminal@0.15.3':
+     resolution: {integrity: sha512-DGJ0B2Vm69468kZCJkPj3AH5nN+nR9SPmC0rFHtzsS4lBQ7/dgOwtwVxYP7W9JPDMuRBkJ4KHmWKr036eJsj9g==}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -13085,10 +13073,6 @@ packages:
+     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
+     engines: {node: ^10 || ^12 || >=14}
+ 
+-  postcss@8.5.8:
+-    resolution: {integrity: sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg==}
+-    engines: {node: ^10 || ^12 || >=14}
+-
+   postgres-array@2.0.0:
+     resolution: {integrity: sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA==}
+     engines: {node: '>=4'}
+@@ -14079,7 +14063,7 @@ packages:
+     resolution: {integrity: sha512-axCguHItc8Sxt0HC6aSkdVRPffjYPV7EQqZRb2GkIa8FzWDycE7nHJM19C6xAIynH1Qp1/BHiopSi96jGBxT0w==}
+     engines: {node: '>=16'}
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+     peerDependenciesMeta:
+       '@types/node':
+         optional: true
+@@ -14787,7 +14771,7 @@ packages:
+     engines: {node: ^20.19.0 || >=22.12.0}
+     hasBin: true
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+       jiti: '>=1.21.0'
+       less: ^4.0.0
+       lightningcss: ^1.21.0
+@@ -14827,7 +14811,7 @@ packages:
+     engines: {node: ^20.19.0 || >=22.12.0}
+     hasBin: true
+     peerDependencies:
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+       '@vitejs/devtools': ^0.1.18
+       esbuild: ^0.27.0 || ^0.28.0
+       jiti: '>=1.21.0'
+@@ -14877,7 +14861,7 @@ packages:
+     peerDependencies:
+       '@edge-runtime/vm': '*'
+       '@opentelemetry/api': ^1.9.0
+-      '@types/node': ^22.10.1
++      '@types/node': 22.15.17
+       '@vitest/browser-playwright': 4.1.0
+       '@vitest/browser-preview': 4.1.0
+       '@vitest/browser-webdriverio': 4.1.0
+@@ -16842,32 +16826,11 @@ snapshots:
+       tslib: 2.8.1
+     optional: true
+ 
+-  '@emnapi/core@1.9.1':
+-    dependencies:
+-      '@emnapi/wasi-threads': 1.2.0
+-      tslib: 2.8.1
+-    optional: true
+-
+   '@emnapi/runtime@1.10.0':
+     dependencies:
+       tslib: 2.8.1
+     optional: true
+ 
+-  '@emnapi/runtime@1.7.0':
+-    dependencies:
+-      tslib: 2.8.1
+-    optional: true
+-
+-  '@emnapi/runtime@1.9.1':
+-    dependencies:
+-      tslib: 2.8.1
+-    optional: true
+-
+-  '@emnapi/wasi-threads@1.2.0':
+-    dependencies:
+-      tslib: 2.8.1
+-    optional: true
+-
+   '@emnapi/wasi-threads@1.2.1':
+     dependencies:
+       tslib: 2.8.1
+@@ -17500,7 +17463,7 @@ snapshots:
+ 
+   '@img/sharp-wasm32@0.34.5':
+     dependencies:
+-      '@emnapi/runtime': 1.7.0
++      '@emnapi/runtime': 1.10.0
+     optional: true
+ 
+   '@img/sharp-win32-arm64@0.34.5':
+@@ -17753,8 +17716,8 @@ snapshots:
+ 
+   '@napi-rs/wasm-runtime@1.1.1':
+     dependencies:
+-      '@emnapi/core': 1.9.1
+-      '@emnapi/runtime': 1.9.1
++      '@emnapi/core': 1.10.0
++      '@emnapi/runtime': 1.10.0
+       '@tybys/wasm-util': 0.10.1
+     optional: true
+ 
+@@ -18592,7 +18555,7 @@ snapshots:
+     dependencies:
+       '@types/estree': 1.0.8
+       estree-walker: 2.0.2
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+     optionalDependencies:
+       rollup: 4.57.1
+ 
+@@ -20466,14 +20429,14 @@ snapshots:
+ 
+   atomic-sleep@1.0.0: {}
+ 
+-  autoprefixer@10.4.20(postcss@8.5.8):
++  autoprefixer@10.4.20(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+       caniuse-lite: 1.0.30001669
+       fraction.js: 4.3.7
+       normalize-range: 0.1.2
+       picocolors: 1.1.1
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+   available-typed-arrays@1.0.7:
+@@ -21062,9 +21025,9 @@ snapshots:
+       shebang-command: 2.0.0
+       which: 2.0.2
+ 
+-  css-declaration-sorter@7.2.0(postcss@8.5.8):
++  css-declaration-sorter@7.2.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+   css-in-js-utils@2.0.1:
+     dependencies:
+@@ -21104,49 +21067,49 @@ snapshots:
+       clone: 2.1.2
+       parserlib: 1.1.1
+ 
+-  cssnano-preset-default@7.0.6(postcss@8.5.8):
++  cssnano-preset-default@7.0.6(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+-      css-declaration-sorter: 7.2.0(postcss@8.5.8)
+-      cssnano-utils: 5.0.0(postcss@8.5.8)
+-      postcss: 8.5.8
+-      postcss-calc: 10.1.0(postcss@8.5.8)
+-      postcss-colormin: 7.0.2(postcss@8.5.8)
+-      postcss-convert-values: 7.0.4(postcss@8.5.8)
+-      postcss-discard-comments: 7.0.3(postcss@8.5.8)
+-      postcss-discard-duplicates: 7.0.1(postcss@8.5.8)
+-      postcss-discard-empty: 7.0.0(postcss@8.5.8)
+-      postcss-discard-overridden: 7.0.0(postcss@8.5.8)
+-      postcss-merge-longhand: 7.0.4(postcss@8.5.8)
+-      postcss-merge-rules: 7.0.4(postcss@8.5.8)
+-      postcss-minify-font-values: 7.0.0(postcss@8.5.8)
+-      postcss-minify-gradients: 7.0.0(postcss@8.5.8)
+-      postcss-minify-params: 7.0.2(postcss@8.5.8)
+-      postcss-minify-selectors: 7.0.4(postcss@8.5.8)
+-      postcss-normalize-charset: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-display-values: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-positions: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-repeat-style: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-string: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-timing-functions: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-unicode: 7.0.2(postcss@8.5.8)
+-      postcss-normalize-url: 7.0.0(postcss@8.5.8)
+-      postcss-normalize-whitespace: 7.0.0(postcss@8.5.8)
+-      postcss-ordered-values: 7.0.1(postcss@8.5.8)
+-      postcss-reduce-initial: 7.0.2(postcss@8.5.8)
+-      postcss-reduce-transforms: 7.0.0(postcss@8.5.8)
+-      postcss-svgo: 7.0.1(postcss@8.5.8)
+-      postcss-unique-selectors: 7.0.3(postcss@8.5.8)
+-
+-  cssnano-utils@5.0.0(postcss@8.5.8):
+-    dependencies:
+-      postcss: 8.5.8
+-
+-  cssnano@7.0.6(postcss@8.5.8):
+-    dependencies:
+-      cssnano-preset-default: 7.0.6(postcss@8.5.8)
++      css-declaration-sorter: 7.2.0(postcss@8.5.14)
++      cssnano-utils: 5.0.0(postcss@8.5.14)
++      postcss: 8.5.14
++      postcss-calc: 10.1.0(postcss@8.5.14)
++      postcss-colormin: 7.0.2(postcss@8.5.14)
++      postcss-convert-values: 7.0.4(postcss@8.5.14)
++      postcss-discard-comments: 7.0.3(postcss@8.5.14)
++      postcss-discard-duplicates: 7.0.1(postcss@8.5.14)
++      postcss-discard-empty: 7.0.0(postcss@8.5.14)
++      postcss-discard-overridden: 7.0.0(postcss@8.5.14)
++      postcss-merge-longhand: 7.0.4(postcss@8.5.14)
++      postcss-merge-rules: 7.0.4(postcss@8.5.14)
++      postcss-minify-font-values: 7.0.0(postcss@8.5.14)
++      postcss-minify-gradients: 7.0.0(postcss@8.5.14)
++      postcss-minify-params: 7.0.2(postcss@8.5.14)
++      postcss-minify-selectors: 7.0.4(postcss@8.5.14)
++      postcss-normalize-charset: 7.0.0(postcss@8.5.14)
++      postcss-normalize-display-values: 7.0.0(postcss@8.5.14)
++      postcss-normalize-positions: 7.0.0(postcss@8.5.14)
++      postcss-normalize-repeat-style: 7.0.0(postcss@8.5.14)
++      postcss-normalize-string: 7.0.0(postcss@8.5.14)
++      postcss-normalize-timing-functions: 7.0.0(postcss@8.5.14)
++      postcss-normalize-unicode: 7.0.2(postcss@8.5.14)
++      postcss-normalize-url: 7.0.0(postcss@8.5.14)
++      postcss-normalize-whitespace: 7.0.0(postcss@8.5.14)
++      postcss-ordered-values: 7.0.1(postcss@8.5.14)
++      postcss-reduce-initial: 7.0.2(postcss@8.5.14)
++      postcss-reduce-transforms: 7.0.0(postcss@8.5.14)
++      postcss-svgo: 7.0.1(postcss@8.5.14)
++      postcss-unique-selectors: 7.0.3(postcss@8.5.14)
++
++  cssnano-utils@5.0.0(postcss@8.5.14):
++    dependencies:
++      postcss: 8.5.14
++
++  cssnano@7.0.6(postcss@8.5.14):
++    dependencies:
++      cssnano-preset-default: 7.0.6(postcss@8.5.14)
+       lilconfig: 3.1.3
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+   csso@5.0.5:
+     dependencies:
+@@ -23336,17 +23299,17 @@ snapshots:
+ 
+   mkdist@2.2.0(typescript@5.8.3)(vue-tsc@2.0.29(typescript@5.8.3)):
+     dependencies:
+-      autoprefixer: 10.4.20(postcss@8.5.8)
++      autoprefixer: 10.4.20(postcss@8.5.14)
+       citty: 0.1.6
+-      cssnano: 7.0.6(postcss@8.5.8)
++      cssnano: 7.0.6(postcss@8.5.14)
+       defu: 6.1.4
+       esbuild: 0.24.2
+       jiti: 1.21.7
+       mlly: 1.7.4
+       pathe: 1.1.2
+       pkg-types: 1.3.1
+-      postcss: 8.5.8
+-      postcss-nested: 7.0.2(postcss@8.5.8)
++      postcss: 8.5.14
++      postcss-nested: 7.0.2(postcss@8.5.14)
+       semver: 7.7.3
+       tinyglobby: 0.2.16
+     optionalDependencies:
+@@ -24019,42 +23982,42 @@ snapshots:
+ 
+   postal-mime@2.4.4(patch_hash=44bc62560d3d339b5c0836c18991f42b3b998db144f5ee7101d6758bbe74d3f2): {}
+ 
+-  postcss-calc@10.1.0(postcss@8.5.8):
++  postcss-calc@10.1.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-selector-parser: 7.0.0
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-colormin@7.0.2(postcss@8.5.8):
++  postcss-colormin@7.0.2(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+       caniuse-api: 3.0.0
+       colord: 2.9.3
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-convert-values@7.0.4(postcss@8.5.8):
++  postcss-convert-values@7.0.4(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-discard-comments@7.0.3(postcss@8.5.8):
++  postcss-discard-comments@7.0.3(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-selector-parser: 6.1.2
+ 
+-  postcss-discard-duplicates@7.0.1(postcss@8.5.8):
++  postcss-discard-duplicates@7.0.1(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+-  postcss-discard-empty@7.0.0(postcss@8.5.8):
++  postcss-discard-empty@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+-  postcss-discard-overridden@7.0.0(postcss@8.5.8):
++  postcss-discard-overridden@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+   postcss-load-config@6.0.1(jiti@2.6.1)(postcss@8.5.14)(tsx@3.12.10)(yaml@2.8.1):
+     dependencies:
+@@ -24074,110 +24037,110 @@ snapshots:
+       tsx: 4.21.0
+       yaml: 2.8.1
+ 
+-  postcss-merge-longhand@7.0.4(postcss@8.5.8):
++  postcss-merge-longhand@7.0.4(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+-      stylehacks: 7.0.4(postcss@8.5.8)
++      stylehacks: 7.0.4(postcss@8.5.14)
+ 
+-  postcss-merge-rules@7.0.4(postcss@8.5.8):
++  postcss-merge-rules@7.0.4(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+       caniuse-api: 3.0.0
+-      cssnano-utils: 5.0.0(postcss@8.5.8)
+-      postcss: 8.5.8
++      cssnano-utils: 5.0.0(postcss@8.5.14)
++      postcss: 8.5.14
+       postcss-selector-parser: 6.1.2
+ 
+-  postcss-minify-font-values@7.0.0(postcss@8.5.8):
++  postcss-minify-font-values@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-minify-gradients@7.0.0(postcss@8.5.8):
++  postcss-minify-gradients@7.0.0(postcss@8.5.14):
+     dependencies:
+       colord: 2.9.3
+-      cssnano-utils: 5.0.0(postcss@8.5.8)
+-      postcss: 8.5.8
++      cssnano-utils: 5.0.0(postcss@8.5.14)
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-minify-params@7.0.2(postcss@8.5.8):
++  postcss-minify-params@7.0.2(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+-      cssnano-utils: 5.0.0(postcss@8.5.8)
+-      postcss: 8.5.8
++      cssnano-utils: 5.0.0(postcss@8.5.14)
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-minify-selectors@7.0.4(postcss@8.5.8):
++  postcss-minify-selectors@7.0.4(postcss@8.5.14):
+     dependencies:
+       cssesc: 3.0.0
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-selector-parser: 6.1.2
+ 
+-  postcss-nested@7.0.2(postcss@8.5.8):
++  postcss-nested@7.0.2(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-selector-parser: 7.0.0
+ 
+-  postcss-normalize-charset@7.0.0(postcss@8.5.8):
++  postcss-normalize-charset@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+-  postcss-normalize-display-values@7.0.0(postcss@8.5.8):
++  postcss-normalize-display-values@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-positions@7.0.0(postcss@8.5.8):
++  postcss-normalize-positions@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-repeat-style@7.0.0(postcss@8.5.8):
++  postcss-normalize-repeat-style@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-string@7.0.0(postcss@8.5.8):
++  postcss-normalize-string@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-timing-functions@7.0.0(postcss@8.5.8):
++  postcss-normalize-timing-functions@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-unicode@7.0.2(postcss@8.5.8):
++  postcss-normalize-unicode@7.0.2(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-url@7.0.0(postcss@8.5.8):
++  postcss-normalize-url@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-normalize-whitespace@7.0.0(postcss@8.5.8):
++  postcss-normalize-whitespace@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-ordered-values@7.0.1(postcss@8.5.8):
++  postcss-ordered-values@7.0.1(postcss@8.5.14):
+     dependencies:
+-      cssnano-utils: 5.0.0(postcss@8.5.8)
+-      postcss: 8.5.8
++      cssnano-utils: 5.0.0(postcss@8.5.14)
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+-  postcss-reduce-initial@7.0.2(postcss@8.5.8):
++  postcss-reduce-initial@7.0.2(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+       caniuse-api: 3.0.0
+-      postcss: 8.5.8
++      postcss: 8.5.14
+ 
+-  postcss-reduce-transforms@7.0.0(postcss@8.5.8):
++  postcss-reduce-transforms@7.0.0(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+ 
+   postcss-selector-parser@6.1.2:
+@@ -24190,15 +24153,15 @@ snapshots:
+       cssesc: 3.0.0
+       util-deprecate: 1.0.2
+ 
+-  postcss-svgo@7.0.1(postcss@8.5.8):
++  postcss-svgo@7.0.1(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-value-parser: 4.2.0
+       svgo: 3.3.2
+ 
+-  postcss-unique-selectors@7.0.3(postcss@8.5.8):
++  postcss-unique-selectors@7.0.3(postcss@8.5.14):
+     dependencies:
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-selector-parser: 6.1.2
+ 
+   postcss-value-parser@4.2.0: {}
+@@ -24221,12 +24184,6 @@ snapshots:
+       picocolors: 1.1.1
+       source-map-js: 1.2.1
+ 
+-  postcss@8.5.8:
+-    dependencies:
+-      nanoid: 3.3.11
+-      picocolors: 1.1.1
+-      source-map-js: 1.2.1
+-
+   postgres-array@2.0.0: {}
+ 
+   postgres-array@3.0.2: {}
+@@ -25494,10 +25451,10 @@ snapshots:
+       '@styled-system/variant': 5.1.5
+       object-assign: 4.1.1
+ 
+-  stylehacks@7.0.4(postcss@8.5.8):
++  stylehacks@7.0.4(postcss@8.5.14):
+     dependencies:
+       browserslist: 4.24.2
+-      postcss: 8.5.8
++      postcss: 8.5.14
+       postcss-selector-parser: 6.1.2
+ 
+   stylis@4.3.0: {}
+@@ -25635,8 +25592,8 @@ snapshots:
+ 
+   tinyglobby@0.2.15:
+     dependencies:
+-      fdir: 6.5.0(picomatch@4.0.3)
+-      picomatch: 4.0.3
++      fdir: 6.5.0(picomatch@4.0.4)
++      picomatch: 4.0.4
+ 
+   tinyglobby@0.2.16:
+     dependencies:
+@@ -26154,7 +26111,7 @@ snapshots:
+     dependencies:
+       '@jridgewell/remapping': 2.3.5
+       acorn: 8.16.0
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+       webpack-virtual-modules: 0.6.2
+ 
+   unrun@0.2.8(synckit@0.11.12):
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index d3daafb72e..50b70c3bba 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -99,35 +99,35 @@ patchedDependencies:
+ # ──────────────────────────────────────────────────────────────────────────────
+ 
+ catalog:
+-  "@hey-api/openapi-ts": "^0.94.0"
+-  "@types/node": "^22.10.1"
++  "@hey-api/openapi-ts": "0.94.0"
++  "@types/node": "22.15.17"
+ 
+   "@vitest/runner": 4.1.0
+   "@vitest/snapshot": 4.1.0
+   "@vitest/ui": 4.1.0
+-  typescript: "~5.8.3"
++  typescript: "5.8.3"
+   undici: "7.24.8"
+   # Override undici-types from @types/node so that the Cloudflare SDK typings match our installed
+   # version of Undici
+   undici-types: "7.24.8"
+   vitest: "4.1.0"
+-  vite: "^8.0.12"
++  vite: "8.0.13"
+   "ws": "8.20.1"
+   esbuild: "0.27.3"
+-  playwright-chromium: "^1.60.0"
++  playwright-chromium: "1.60.0"
+   "@cloudflare/workers-types": "^4.20260529.1"
+   workerd: "1.20260529.1"
+-  jsonc-parser: "^3.2.0"
+-  smol-toml: "^1.5.2"
++  jsonc-parser: "3.2.0"
++  smol-toml: "1.5.2"
+   msw: 2.12.4
+-  tinyglobby: "^0.2.12"
+-  "tree-kill": "^1.2.2"
+-  "capnp-es": "^0.0.14"
+-  "capnweb": "^0.5.0"
+-  "ci-info": "^4.4.0"
+-  "open": "^11.0.0"
+-  "signal-exit": "^3.0.7"
++  tinyglobby: "0.2.16"
++  "tree-kill": "1.2.2"
++  "capnp-es": "0.0.14"
++  "capnweb": "0.5.0"
++  "ci-info": "4.4.0"
++  "open": "11.0.0"
++  "signal-exit": "3.0.7"
+   # CAUTION: Most usage of @cloudflare/vitest-pool-workers in this monorepo should use workspace:* instead of this catalog version
+   # However, some packages (pages-shared, workers-shared, etc...) need to be tested using vitest-pool-workers but are themselves
+   # ultimately included in vitest-pool-workers (through Wrangler), causing a circular dependency.
+-  "@cloudflare/vitest-pool-workers": "^0.13.0"
++  "@cloudflare/vitest-pool-workers": "0.13.3"
+diff --git a/tools/README.md b/tools/README.md
+index 2b6657d152..cdd89ad161 100644
+--- a/tools/README.md
++++ b/tools/README.md
+@@ -11,6 +11,9 @@ Tools for helping with CI
+ - `deployments/validate-changesets.ts` - Validate that changesets are formatted correctly.
+   Used by the changesets.yml and test-and-check.yml GitHub Action workflows.
+ 
++- `deployments/validate-pinned-dependencies.ts` - Ensures all non-bundled dependencies of published packages (and all pnpm catalog entries) are pinned to exact versions.
++  Used by the test-and-check.yml GitHub Action workflow, as part of the `check` npm script (`pnpm check:pinned-deps`).
++
+ - `dependabot/generate-dependabot-pr-changesets.ts` - Generates and commits a changeset for a Dependabot PR.
+   Used by the c3-dependabot-versioning-prs.yml and miniflare-dependabot-versioning-prs.yml GitHub Action workflows.
+ 
+diff --git a/tools/deployments/__tests__/validate-pinned-dependencies.test.ts b/tools/deployments/__tests__/validate-pinned-dependencies.test.ts
+new file mode 100644
+index 0000000000..03fc035945
+--- /dev/null
++++ b/tools/deployments/__tests__/validate-pinned-dependencies.test.ts
+@@ -0,0 +1,198 @@
++import { describe, it } from "vitest";
++import { parseCatalog } from "../validate-catalog-usage";
++import {
++	isPinnedVersion,
++	validateCatalogPins,
++	validatePackagePins,
++} from "../validate-pinned-dependencies";
++
++describe("isPinnedVersion()", () => {
++	it("should accept exact versions", ({ expect }) => {
++		expect(isPinnedVersion("1.2.3")).toBe(true);
++		expect(isPinnedVersion("0.0.14")).toBe(true);
++		expect(isPinnedVersion("1.20260529.1")).toBe(true);
++	});
++
++	it("should accept exact prerelease and build versions", ({ expect }) => {
++		expect(isPinnedVersion("4.1.0-beta.10")).toBe(true);
++		expect(isPinnedVersion("2.0.0-rc.24")).toBe(true);
++		expect(isPinnedVersion("1.2.3+build.5")).toBe(true);
++	});
++
++	it("should reject caret and tilde ranges", ({ expect }) => {
++		expect(isPinnedVersion("^1.2.3")).toBe(false);
++		expect(isPinnedVersion("~5.8.3")).toBe(false);
++	});
++
++	it("should reject comparator ranges", ({ expect }) => {
++		expect(isPinnedVersion(">1.20260305.0 <2.0.0-0")).toBe(false);
++		expect(isPinnedVersion(">=1.0.0")).toBe(false);
++		expect(isPinnedVersion("^6.1.0 || ^7.0.0 || ^8.0.0")).toBe(false);
++	});
++
++	it("should reject wildcards and partial versions", ({ expect }) => {
++		expect(isPinnedVersion("*")).toBe(false);
++		expect(isPinnedVersion("1.x")).toBe(false);
++		expect(isPinnedVersion("1.2")).toBe(false);
++		expect(isPinnedVersion("1")).toBe(false);
++	});
++
++	it("should reject non-version specifiers", ({ expect }) => {
++		expect(isPinnedVersion("")).toBe(false);
++		expect(isPinnedVersion("latest")).toBe(false);
++		expect(isPinnedVersion("workspace:*")).toBe(false);
++		expect(isPinnedVersion("catalog:default")).toBe(false);
++	});
++});
++
++describe("validateCatalogPins()", () => {
++	it("should pass when all entries are pinned", ({ expect }) => {
++		const errors = validateCatalogPins(
++			new Map([
++				["undici", "7.24.8"],
++				["esbuild", "0.27.3"],
++				["youch", "4.1.0-beta.10"],
++			])
++		);
++		expect(errors).toEqual([]);
++	});
++
++	it("should flag ranged entries", ({ expect }) => {
++		const errors = validateCatalogPins(
++			new Map([
++				["undici", "7.24.8"],
++				["ci-info", "^4.4.0"],
++				["typescript", "~5.8.3"],
++			])
++		);
++		expect(errors).toHaveLength(2);
++		expect(errors[0]).toContain('"ci-info"');
++		expect(errors[0]).toContain('"^4.4.0"');
++		expect(errors[1]).toContain('"typescript"');
++	});
++
++	it("should skip entries in the exceptions allowlist", ({ expect }) => {
++		const errors = validateCatalogPins(
++			new Map([["@cloudflare/workers-types", "^4.20260529.1"]]),
++			new Set(["@cloudflare/workers-types"])
++		);
++		expect(errors).toEqual([]);
++	});
++
++	it("should still flag non-excepted ranged entries", ({ expect }) => {
++		const errors = validateCatalogPins(
++			new Map([
++				["@cloudflare/workers-types", "^4.20260529.1"],
++				["vite", "^8.0.12"],
++			]),
++			new Set(["@cloudflare/workers-types"])
++		);
++		expect(errors).toHaveLength(1);
++		expect(errors[0]).toContain('"vite"');
++	});
++
++	it("should use the default exceptions allowlist", ({ expect }) => {
++		const errors = validateCatalogPins(
++			new Map([["@cloudflare/workers-types", "^4.20260529.1"]])
++		);
++		expect(errors).toEqual([]);
++	});
++});
++
++describe("validatePackagePins()", () => {
++	it("should pass when all dependencies are pinned", ({ expect }) => {
++		const errors = validatePackagePins("test-package", "test-package", {
++			name: "test-package",
++			dependencies: { "blake3-wasm": "2.1.5", "path-to-regexp": "6.3.0" },
++		});
++		expect(errors).toEqual([]);
++	});
++
++	it("should flag ranged dependencies", ({ expect }) => {
++		const errors = validatePackagePins("test-package", "test-package", {
++			name: "test-package",
++			dependencies: { sharp: "^0.34.5" },
++		});
++		expect(errors).toHaveLength(1);
++		expect(errors[0]).toContain('"sharp"');
++		expect(errors[0]).toContain('"^0.34.5"');
++		expect(errors[0]).toContain("dependencies");
++	});
++
++	it("should flag ranged optionalDependencies", ({ expect }) => {
++		const errors = validatePackagePins("test-package", "test-package", {
++			name: "test-package",
++			optionalDependencies: { fsevents: "~2.3.2" },
++		});
++		expect(errors).toHaveLength(1);
++		expect(errors[0]).toContain('"fsevents"');
++		expect(errors[0]).toContain("optionalDependencies");
++	});
++
++	it("should skip workspace, catalog, npm, link and file specifiers", ({
++		expect,
++	}) => {
++		const errors = validatePackagePins("test-package", "test-package", {
++			name: "test-package",
++			dependencies: {
++				miniflare: "workspace:*",
++				"@cloudflare/kv-asset-handler": "workspace:^",
++				esbuild: "catalog:default",
++				aliased: "npm:other@1.2.3",
++				linked: "link:../other",
++				filed: "file:../other",
++			},
++		});
++		expect(errors).toEqual([]);
++	});
++
++	it("should ignore peerDependencies and devDependencies", ({ expect }) => {
++		const errors = validatePackagePins("test-package", "test-package", {
++			name: "test-package",
++			peerDependencies: { vitest: "^4.1.0", react: "^17.0.2 || ^18.2.21" },
++			devDependencies: { typescript: "^5.0.0", esbuild: "^0.20.0" },
++		});
++		expect(errors).toEqual([]);
++	});
++
++	it("should report multiple violations across sections", ({ expect }) => {
++		const errors = validatePackagePins("test-package", "test-package", {
++			name: "test-package",
++			dependencies: { zod: "^3.25.76", "blake3-wasm": "2.1.5" },
++			optionalDependencies: { fsevents: "~2.3.2" },
++		});
++		expect(errors).toHaveLength(2);
++		expect(errors[0]).toContain('"zod"');
++		expect(errors[1]).toContain('"fsevents"');
++	});
++});
++
++describe("parseCatalog()", () => {
++	it("should parse quoted and unquoted entries", ({ expect }) => {
++		const catalog = parseCatalog(
++			[
++				"packages:",
++				"  - packages/*",
++				"",
++				"minimumReleaseAge: 1440",
++				"",
++				"catalog:",
++				"  # a comment",
++				'  "@cloudflare/workers-types": "^4.20260529.1"',
++				'  undici: "7.24.8"',
++				"  '@vitest/runner': 4.1.0",
++				'  typescript: "~5.8.3"',
++				"",
++				"overrides:",
++				'  "@types/node": "$@types/node"',
++			].join("\n")
++		);
++
++		expect(catalog.get("@cloudflare/workers-types")).toBe("^4.20260529.1");
++		expect(catalog.get("undici")).toBe("7.24.8");
++		expect(catalog.get("@vitest/runner")).toBe("4.1.0");
++		expect(catalog.get("typescript")).toBe("~5.8.3");
++		// Should stop at the next top-level key.
++		expect(catalog.has("@types/node")).toBe(false);
++	});
++});
+diff --git a/tools/deployments/validate-catalog-usage.ts b/tools/deployments/validate-catalog-usage.ts
+index 54c01d378f..11f7540353 100644
+--- a/tools/deployments/validate-catalog-usage.ts
++++ b/tools/deployments/validate-catalog-usage.ts
+@@ -14,12 +14,15 @@ const ROOT = resolve(__dirname, "../..");
+ // bumped in coordinated PRs with its own automation).
+ const IGNORED_DEPS = new Set(["workerd"]);
+ 
+-function loadCatalogDeps(): Set<string> {
+-	const content = readFileSync(resolve(ROOT, "pnpm-workspace.yaml"), "utf-8");
+-	const deps = new Set<string>();
++/**
++ * Parses the `catalog:` block of a pnpm-workspace.yaml into a map of
++ * dependency name -> version specifier.
++ */
++export function parseCatalog(workspaceYaml: string): Map<string, string> {
++	const catalog = new Map<string, string>();
+ 	let inCatalog = false;
+ 
+-	for (const line of content.split("\n")) {
++	for (const line of workspaceYaml.split("\n")) {
+ 		if (line.startsWith("catalog:")) {
+ 			inCatalog = true;
+ 			continue;
+@@ -36,13 +39,27 @@ function loadCatalogDeps(): Set<string> {
+ 			continue;
+ 		}
+ 
+-		const match = trimmed.match(/^["']?(@?[^"':]+)["']?\s*:/);
++		const match = trimmed.match(
++			/^["']?(@?[^"':]+)["']?\s*:\s*["']?([^"'#\s]+)["']?/
++		);
+ 		if (match) {
+-			deps.add(match[1]);
++			catalog.set(match[1].trim(), match[2]);
+ 		}
+ 	}
+ 
+-	return deps;
++	return catalog;
++}
++
++/**
++ * Loads the pnpm catalog as a map of dependency name -> version specifier.
++ */
++export function loadCatalog(): Map<string, string> {
++	const content = readFileSync(resolve(ROOT, "pnpm-workspace.yaml"), "utf-8");
++	return parseCatalog(content);
++}
++
++function loadCatalogDeps(): Set<string> {
++	return new Set(loadCatalog().keys());
+ }
+ 
+ async function main(): Promise<void> {
+@@ -105,8 +122,10 @@ async function main(): Promise<void> {
+ 	process.exit(errors.length > 0 ? 1 : 0);
+ }
+ 
+-main().catch((error) => {
+-	console.log("::endgroup::");
+-	console.error("An unexpected error occurred", error);
+-	process.exit(1);
+-});
++if (require.main === module) {
++	main().catch((error) => {
++		console.log("::endgroup::");
++		console.error("An unexpected error occurred", error);
++		process.exit(1);
++	});
++}
+diff --git a/tools/deployments/validate-package-dependencies.ts b/tools/deployments/validate-package-dependencies.ts
+index 47f3b4b21f..ae216a2ee3 100644
+--- a/tools/deployments/validate-package-dependencies.ts
++++ b/tools/deployments/validate-package-dependencies.ts
+@@ -37,6 +37,7 @@ export interface PackageJSON {
+ 	dependencies?: Record<string, string>;
+ 	devDependencies?: Record<string, string>;
+ 	peerDependencies?: Record<string, string>;
++	optionalDependencies?: Record<string, string>;
+ }
+ 
+ export interface PackageInfo {
+diff --git a/tools/deployments/validate-pinned-dependencies.ts b/tools/deployments/validate-pinned-dependencies.ts
+new file mode 100644
+index 0000000000..278b7957ce
+--- /dev/null
++++ b/tools/deployments/validate-pinned-dependencies.ts
+@@ -0,0 +1,174 @@
++/**
++ * Validates that all non-bundled dependencies of published packages are pinned
++ * to exact versions.
++ *
++ * Anything a published package does not bundle is installed into the consumer's
++ * dependency tree at install time. If those specifiers are ranges, a malicious
++ * or broken upstream release can be pulled into users' installs without us
++ * having a chance to vet it. Pinning to exact versions locks down exactly what
++ * ships. (devDependencies are intentionally NOT checked: npm never installs a
++ * published package's devDependencies into a consumer's tree, so their
++ * specifiers cannot affect users.)
++ *
++ * The check has two halves:
++ *
++ *   1. Catalog pinning — every entry in the `catalog:` block of
++ *      pnpm-workspace.yaml must be an exact version. Because the catalog is
++ *      guaranteed pinned, any `catalog:` reference elsewhere is trusted and
++ *      doesn't need to be resolved per-package.
++ *
++ *   2. Package pinning — in every published (non-private) package, every
++ *      `dependencies` and `optionalDependencies` entry must be an exact
++ *      version. Specifiers using `workspace:`, `catalog:`, `npm:`, `link:` or
++ *      `file:` are skipped (the catalog ones are covered by half 1; workspace
++ *      ones are released atomically with the monorepo). `peerDependencies` are
++ *      excluded because ranges there are intentional and generally necessary.
++ */
++
++import { loadCatalog } from "./validate-catalog-usage";
++import {
++	getPublicPackages,
++	type PackageJSON,
++} from "./validate-package-dependencies";
++
++/**
++ * Matches an exact semantic version: MAJOR.MINOR.PATCH with optional
++ * `-prerelease` and `+build` metadata (e.g. "1.2.3", "4.1.0-beta.10",
++ * "2.0.0-rc.24"). Rejects ranges (^, ~, >, <, ||, hyphen ranges), wildcards
++ * (*, x), and partial versions.
++ */
++const PINNED_VERSION_RE =
++	/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
++
++/**
++ * Specifier prefixes that are not literal version pins. These are validated
++ * elsewhere (catalog entries by `validateCatalogPins`) or are released
++ * atomically with the monorepo (workspace), so they are skipped here.
++ */
++const NON_LITERAL_PREFIXES = [
++	"workspace:",
++	"catalog:",
++	"npm:",
++	"link:",
++	"file:",
++];
++
++/**
++ * Catalog entries that are deliberately left as ranges.
++ *
++ * `@cloudflare/workers-types` is consumed as an (optional) peerDependency via
++ * `catalog:default`. A range is intentional there so consumers aren't forced
++ * onto a single exact version of the types package.
++ */
++export const CATALOG_PIN_EXCEPTIONS = new Set(["@cloudflare/workers-types"]);
++
++export function isPinnedVersion(version: string): boolean {
++	return PINNED_VERSION_RE.test(version);
++}
++
++function isNonLiteralSpecifier(version: string): boolean {
++	return NON_LITERAL_PREFIXES.some((prefix) => version.startsWith(prefix));
++}
++
++/**
++ * Validates that every catalog entry is pinned to an exact version (except
++ * deliberately-ranged entries in the exceptions allowlist).
++ */
++export function validateCatalogPins(
++	catalog: Map<string, string>,
++	exceptions: Set<string> = CATALOG_PIN_EXCEPTIONS
++): string[] {
++	const errors: string[] = [];
++
++	for (const [name, version] of catalog) {
++		if (exceptions.has(name)) {
++			continue;
++		}
++		if (!isPinnedVersion(version)) {
++			errors.push(
++				`Catalog entry "${name}" uses "${version}" but must be pinned to an exact ` +
++					`version in pnpm-workspace.yaml (e.g. "1.2.3", not a range). Catalog entries ` +
++					`can be consumed as non-bundled dependencies, so their versions must be locked down.`
++			);
++		}
++	}
++
++	return errors;
++}
++
++/**
++ * Validates that a single package's non-bundled dependencies are pinned.
++ * Returns an array of error messages (empty if valid).
++ */
++export function validatePackagePins(
++	packageName: string,
++	relativePath: string,
++	packageJson: PackageJSON
++): string[] {
++	const errors: string[] = [];
++	const sections = ["dependencies", "optionalDependencies"] as const;
++
++	for (const section of sections) {
++		const deps = packageJson[section];
++		if (!deps) {
++			continue;
++		}
++		for (const [name, version] of Object.entries(deps)) {
++			if (isNonLiteralSpecifier(version)) {
++				continue;
++			}
++			if (!isPinnedVersion(version)) {
++				errors.push(
++					`Package "${packageName}" has ${section} "${name}" set to "${version}" ` +
++						`(packages/${relativePath}/package.json), but non-bundled dependencies must be ` +
++						`pinned to an exact version (e.g. "1.2.3", not a range). If it should be ` +
++						`sourced from the pnpm catalog, use "catalog:default" instead.`
++				);
++			}
++		}
++	}
++
++	return errors;
++}
++
++/**
++ * Validates that all catalog entries and all published packages' non-bundled
++ * dependencies are pinned to exact versions.
++ */
++export async function checkPinnedDependencies(): Promise<string[]> {
++	const errors: string[] = [];
++
++	console.log("- catalog (pnpm-workspace.yaml)");
++	errors.push(...validateCatalogPins(loadCatalog()));
++
++	const packages = await getPublicPackages();
++	for (const { dir, packageJson } of packages) {
++		const relativePath = dir.split("/packages/")[1];
++		console.log(`- ${packageJson.name}`);
++		errors.push(
++			...validatePackagePins(packageJson.name, relativePath, packageJson)
++		);
++	}
++
++	return errors;
++}
++
++if (require.main === module) {
++	console.log("::group::Checking dependency version pinning");
++	checkPinnedDependencies()
++		.then((errors) => {
++			if (errors.length > 0) {
++				console.error(
++					"::error::Dependency pinning checks:" +
++						errors.map((e) => `\n- ${e}`).join("")
++				);
++			}
++			console.log("::endgroup::");
++			process.exit(errors.length > 0 ? 1 : 0);
++		})
++		.catch((error) => {
++			console.log("::endgroup::");
++			console.error("An unexpected error occurred", error);
++			process.exit(1);
++		});
++}

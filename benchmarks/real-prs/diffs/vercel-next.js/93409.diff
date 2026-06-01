@@ -1,0 +1,578 @@
+diff --git a/packages/next/src/build/index.ts b/packages/next/src/build/index.ts
+index f4f190650766..7e59c396997c 100644
+--- a/packages/next/src/build/index.ts
++++ b/packages/next/src/build/index.ts
+@@ -2997,10 +2997,8 @@ export default async function build(
+                     }
+                   }
+ 
+-                  if (isSsg) {
+-                    // remove non-locale prefixed variant from defaultMap
+-                    delete defaultMap[page]
+-                  }
++                  // remove non-locale prefixed variant from defaultMap
++                  delete defaultMap[page]
+                 }
+               }
+ 
+@@ -3571,126 +3569,62 @@ export default async function build(
+             }
+           })
+ 
+-          const moveExportedPage = async (
+-            originPage: string,
++          // Update pages manifest entries for exported pages.
++          // The export worker writes pages directly to .next/server/pages/,
++          // so no file moving is needed — only the manifest must be updated.
++          const updatePagesManifestForExportedPage = (
+             page: string,
+-            file: string,
+-            isSsg: boolean,
+-            ext: 'html' | 'json',
+-            additionalSsgFile = false
++            isSsg: boolean
+           ) => {
+-            return staticGenerationSpan
+-              .traceChild('move-exported-page')
+-              .traceAsyncFn(async () => {
+-                file = `${file}.${ext}`
+-                const orig = path.join(outdir, file)
+-                const pagePath = getPagePath(
+-                  originPage,
+-                  distDir,
+-                  undefined,
+-                  false
+-                )
+-
+-                const relativeDest = path
+-                  .relative(
+-                    path.join(distDir, SERVER_DIRECTORY),
+-                    path.join(
+-                      path.join(
+-                        pagePath,
+-                        // strip leading / and then recurse number of nested dirs
+-                        // to place from base folder
+-                        originPage
+-                          .slice(1)
+-                          .split('/')
+-                          .map(() => '..')
+-                          .join('/')
+-                      ),
+-                      file
+-                    )
+-                  )
+-                  .replace(/\\/g, '/')
+-
+-                if (
+-                  !isSsg &&
+-                  !(
+-                    // don't add static status page to manifest if it's
+-                    // the default generated version e.g. no pages/500
+-                    (
+-                      STATIC_STATUS_PAGES.includes(page) &&
+-                      !usedStaticStatusPages.includes(page)
+-                    )
+-                  )
+-                ) {
+-                  pagesManifest[page] = relativeDest
+-                }
+-
+-                const dest = path.join(distDir, SERVER_DIRECTORY, relativeDest)
+-                const isNotFound =
+-                  prerenderManifest.notFoundRoutes.includes(page)
+-
+-                // for SSG files with i18n the non-prerendered variants are
+-                // output with the locale prefixed so don't attempt moving
+-                // without the prefix
+-                if ((!i18n || additionalSsgFile) && !isNotFound) {
+-                  await fs.mkdir(path.dirname(dest), { recursive: true })
+-                  await fs.rename(orig, dest)
+-                } else if (i18n && !isSsg) {
+-                  // this will be updated with the locale prefixed variant
+-                  // since all files are output with the locale prefix
+-                  delete pagesManifest[page]
+-                }
+-
+-                if (i18n) {
+-                  if (additionalSsgFile) return
+-
+-                  const localeExt = page === '/' ? path.extname(file) : ''
+-                  const relativeDestNoPages = relativeDest.slice(
+-                    'pages/'.length
+-                  )
+-
+-                  for (const locale of i18n.locales) {
+-                    const curPath = `/${locale}${page === '/' ? '' : page}`
+-
+-                    if (
+-                      isSsg &&
+-                      prerenderManifest.notFoundRoutes.includes(curPath)
+-                    ) {
+-                      continue
+-                    }
+-
+-                    const updatedRelativeDest = path
+-                      .join(
+-                        'pages',
+-                        locale + localeExt,
+-                        // if it's the top-most index page we want it to be locale.EXT
+-                        // instead of locale/index.html
+-                        page === '/' ? '' : relativeDestNoPages
+-                      )
+-                      .replace(/\\/g, '/')
+-
+-                    const updatedOrig = path.join(
+-                      outdir,
+-                      locale + localeExt,
+-                      page === '/' ? '' : file
+-                    )
+-                    const updatedDest = path.join(
+-                      distDir,
+-                      SERVER_DIRECTORY,
+-                      updatedRelativeDest
+-                    )
+-
+-                    if (!isSsg) {
+-                      pagesManifest[curPath] = updatedRelativeDest
+-                    }
+-                    await fs.mkdir(path.dirname(updatedDest), {
+-                      recursive: true,
+-                    })
+-                    await fs.rename(updatedOrig, updatedDest)
+-                  }
+-                }
+-              })
++            const isUnusedStaticStatusPage =
++              STATIC_STATUS_PAGES.includes(page) &&
++              !usedStaticStatusPages.includes(page)
++
++            // SSG pages don't get manifest entries
++            if (isSsg) return
++
++            if (i18n) {
++              // Replace non-locale entry with per-locale entries
++              delete pagesManifest[page]
++              for (const locale of i18n.locales) {
++                const curPath = `/${locale}${page === '/' ? '' : page}`
++                if (prerenderManifest.notFoundRoutes.includes(curPath)) continue
++                const relativeDest =
++                  page === '/'
++                    ? `pages/${locale}.html`
++                    : `pages${normalizePagePath(curPath)}.html`
++                pagesManifest[curPath] = relativeDest
++              }
++            } else if (!isUnusedStaticStatusPage) {
++              const file = normalizePagePath(page)
++              pagesManifest[page] = `pages${file}.html`
++            }
+           }
+ 
++          // The export worker writes files directly to server/pages/,
++          // so we must delete files for notFound routes that shouldn't be served.
++          const deleteNotFoundPageFiles = (normalizedPath: string) =>
++            Promise.all([
++              fs.rm(
++                path.join(
++                  distDir,
++                  SERVER_DIRECTORY,
++                  'pages',
++                  `${normalizedPath}.html`
++                ),
++                { force: true }
++              ),
++              fs.rm(
++                path.join(
++                  distDir,
++                  SERVER_DIRECTORY,
++                  'pages',
++                  `${normalizedPath}.json`
++                ),
++                { force: true }
++              ),
++            ])
++
+           async function moveExportedAppNotFoundTo404() {
+             return staticGenerationSpan
+               .traceChild('move-exported-app-not-found-')
+@@ -3775,19 +3709,19 @@ export default async function build(
+           if (hasStaticApp404) {
+             await moveExportedAppNotFoundTo404()
+           } else {
+-            // Only move /404 to /404 when there is no custom 404 as in that case we don't know about the 404 page
++            // Update manifest for default 404 page
+             if (
+               !hasPages404 &&
+               !hasApp404 &&
+               useStaticPages404 &&
+               !appDirOnly
+             ) {
+-              await moveExportedPage('/_error', '/404', '/404', false, 'html')
++              updatePagesManifestForExportedPage('/404', false)
+             }
+           }
+ 
+           if (useDefaultStatic500 && !appDirOnly) {
+-            await moveExportedPage('/_error', '/500', '/500', false, 'html')
++            updatePagesManifestForExportedPage('/500', false)
+           }
+ 
+           // If there's app router and no pages router, use app router built-in 500.html
+@@ -3830,20 +3764,22 @@ export default async function build(
+             const hasHtmlOutput = !(isSsg && isDynamic && !isStaticSsgFallback)
+ 
+             if (hasHtmlOutput) {
+-              await moveExportedPage(page, page, file, isSsg, 'html')
++              updatePagesManifestForExportedPage(page, isSsg)
+             }
+ 
+             if (isSsg) {
+-              // For a non-dynamic SSG page, we must copy its data file
+-              // from export, we already moved the HTML file above
+               if (!isDynamic) {
+-                await moveExportedPage(page, page, file, isSsg, 'json')
+-
+                 if (i18n) {
+                   // TODO: do we want to show all locale variants in build output
+                   for (const locale of i18n.locales) {
+                     const localePage = `/${locale}${page === '/' ? '' : page}`
+ 
++                    if (prerenderManifest.notFoundRoutes.includes(localePage)) {
++                      await deleteNotFoundPageFiles(
++                        normalizePagePath(localePage)
++                      )
++                    }
++
+                     const cacheControl = getCacheControl(localePage)
+ 
+                     prerenderManifest.routes[localePage] = {
+@@ -3862,6 +3798,10 @@ export default async function build(
+                     }
+                   }
+                 } else {
++                  if (prerenderManifest.notFoundRoutes.includes(page)) {
++                    await deleteNotFoundPageFiles(file)
++                  }
++
+                   const cacheControl = getCacheControl(page)
+ 
+                   prerenderManifest.routes[page] = {
+@@ -3884,28 +3824,17 @@ export default async function build(
+                   pageInfo.initialCacheControl = getCacheControl(page)
+                 }
+               } else {
+-                // For a dynamic SSG page, we did not copy its data exports and only
+-                // copy the fallback HTML file (if present).
+-                // We must also copy specific versions of this page as defined by
+-                // `getStaticPaths` (additionalSsgPaths).
++                // For a dynamic SSG page, the export worker already wrote
++                // the HTML/JSON files directly to their final location.
++                // We only need to update the prerender manifest.
+                 for (const route of additionalPaths.get(page) ?? []) {
+-                  const pageFile = normalizePagePath(route.pathname)
+-                  await moveExportedPage(
+-                    page,
+-                    route.pathname,
+-                    pageFile,
+-                    isSsg,
+-                    'html',
+-                    true
+-                  )
+-                  await moveExportedPage(
+-                    page,
+-                    route.pathname,
+-                    pageFile,
+-                    isSsg,
+-                    'json',
+-                    true
+-                  )
++                  if (
++                    prerenderManifest.notFoundRoutes.includes(route.pathname)
++                  ) {
++                    await deleteNotFoundPageFiles(
++                      normalizePagePath(route.pathname)
++                    )
++                  }
+ 
+                   const cacheControl = getCacheControl(route.pathname)
+ 
+@@ -3933,8 +3862,6 @@ export default async function build(
+             }
+           }
+ 
+-          // remove temporary export folder
+-          await fs.rm(outdir, { recursive: true, force: true })
+           await writeManifest(pagesManifestPath, pagesManifest)
+         })
+ 
+diff --git a/packages/next/src/export/index.ts b/packages/next/src/export/index.ts
+index c0e6ae40481a..b8986944043a 100644
+--- a/packages/next/src/export/index.ts
++++ b/packages/next/src/export/index.ts
+@@ -345,8 +345,10 @@ async function exportAppImpl(
+     )
+   }
+ 
+-  await fs.rm(outDir, { recursive: true, force: true })
+-  await fs.mkdir(join(outDir, '_next', buildId), { recursive: true })
++  if (!options.buildExport) {
++    await fs.rm(outDir, { recursive: true, force: true })
++    await fs.mkdir(join(outDir, '_next', buildId), { recursive: true })
++  }
+ 
+   await fs.writeFile(
+     join(distDir, EXPORT_DETAIL),
+@@ -653,7 +655,7 @@ async function exportAppImpl(
+   }
+ 
+   const pagesDataDir = options.buildExport
+-    ? outDir
++    ? join(distDir, 'server', 'pages')
+     : join(outDir, '_next/data', buildId)
+ 
+   const publicDir = join(dir, CLIENT_PUBLIC_FILES_PATH)
+@@ -720,7 +722,9 @@ async function exportAppImpl(
+             options,
+             dir,
+             distDir,
+-            outDir,
++            outDir: options.buildExport
++              ? join(distDir, 'server', 'pages')
++              : outDir,
+             nextConfig,
+             cacheHandler: nextConfig.cacheHandler,
+             cacheMaxMemorySize: nextConfig.cacheMaxMemorySize,
+@@ -937,19 +941,25 @@ async function exportAppImpl(
+         // realizing the implications.
+         const route = normalizePagePath(unnormalizedRoute)
+ 
+-        const pagePath = getPagePath(pageName, distDir, undefined, isAppPath)
+-        const distPagesDir = join(
+-          pagePath,
+-          // strip leading / and then recurse number of nested dirs
+-          // to place from base folder
+-          pageName
+-            .slice(1)
+-            .split('/')
+-            .map(() => '..')
+-            .join('/')
+-        )
+-
+-        const orig = join(distPagesDir, route)
++        let orig: string
++        if (isAppPath) {
++          const pagePath = getPagePath(pageName, distDir, undefined, isAppPath)
++          const distPagesDir = join(
++            pagePath,
++            // strip leading / and then recurse number of nested dirs
++            // to place from base folder
++            pageName
++              .slice(1)
++              .split('/')
++              .map(() => '..')
++              .join('/')
++          )
++          orig = join(distPagesDir, route)
++        } else {
++          // Pages router files are written directly to server/pages/
++          // by the export worker during build, so read from there.
++          orig = join(distDir, 'server', 'pages', route)
++        }
+         const handlerSrc = `${orig}.body`
+         const handlerDest = join(outDir, route)
+ 
+diff --git a/packages/next/src/export/routes/pages.ts b/packages/next/src/export/routes/pages.ts
+index 0c3c1d0d0720..34e8ff426ce0 100644
+--- a/packages/next/src/export/routes/pages.ts
++++ b/packages/next/src/export/routes/pages.ts
+@@ -113,7 +113,7 @@ export async function exportPagesPage(
+     renderResult && !renderResult.isNull ? renderResult.toUnchunkedString() : ''
+ 
+   const metadata = renderResult?.metadata || {}
+-  if (metadata.pageData) {
++  if (metadata.pageData && !ssgNotFound) {
+     const dataFile = join(
+       pagesDataDir,
+       htmlFilename.replace(/\.html$/, NEXT_DATA_SUFFIX)
+diff --git a/test/e2e/dynamic-routing/shared.ts b/test/e2e/dynamic-routing/shared.ts
+index f0a22997679d..5f26b018cbaf 100644
+--- a/test/e2e/dynamic-routing/shared.ts
++++ b/test/e2e/dynamic-routing/shared.ts
+@@ -1635,7 +1635,7 @@ export function runTests(ctx: {
+            "/catchall-dash/[...hello-world]": "pages/catchall-dash/[...hello-world].html",
+            "/d/[id]": "pages/d/[id].html",
+            "/dash/[hello-world]": "pages/dash/[hello-world].html",
+-           "/index/[...slug]": "pages/index/index/[...slug].html",
++           "/index/[...slug]": "pages/index/[...slug].html",
+            "/on-mount/[post]": "pages/on-mount/[post].html",
+            "/p1/p2/all-ssg/[...rest]": "pages/p1/p2/all-ssg/[...rest].js",
+            "/p1/p2/all-ssr/[...rest]": "pages/p1/p2/all-ssr/[...rest].js",
+diff --git a/test/e2e/i18n-beforefiles-rewrite/i18n-beforefiles-rewrite.test.ts b/test/e2e/i18n-beforefiles-rewrite/i18n-beforefiles-rewrite.test.ts
+new file mode 100644
+index 000000000000..22a2a8157851
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/i18n-beforefiles-rewrite.test.ts
+@@ -0,0 +1,41 @@
++import { nextTestSetup, isNextDev } from 'e2e-utils'
++;(isNextDev ? describe.skip : describe)('i18n-beforefiles-rewrite', () => {
++  const { next } = nextTestSetup({
++    files: __dirname,
++  })
++
++  const locales = ['en', 'fr']
++
++  const autoStaticRoutes = [
++    { pathname: '', content: 'index' },
++    { pathname: '/home/a', content: 'Home A' },
++    { pathname: '/home/b', content: 'Home B' },
++    { pathname: '/dynamic/static', content: 'static route' },
++    { pathname: '/dynamic/first', content: 'dynamic route' },
++    { pathname: '/team/slug', content: '/[teamId]/[slug]' },
++  ]
++
++  it('should serve locale-prefixed auto-static pages', async () => {
++    for (const { pathname, content } of autoStaticRoutes) {
++      for (const locale of locales) {
++        const url = `/${locale}${pathname}`
++        const res = await next.fetch(url)
++        const html = await res.text()
++
++        expect({ url, status: res.status }).toEqual({ url, status: 200 })
++        expect(html).toContain(content)
++      }
++    }
++  })
++
++  it.each(['', '/en', '/fr'])(
++    'should 404 for %s/rewrite-before-files',
++    async (localePrefix) => {
++      // beforeFiles rewrites /rewrite-before-files to /somewhere.
++      // /somewhere does not match any page, so this should 404.
++      // Before the fix, orphan dynamic HTML output could incorrectly match.
++      const res = await next.fetch(`${localePrefix}/rewrite-before-files`)
++      expect(res.status).toBe(404)
++    }
++  )
++})
+diff --git a/test/e2e/i18n-beforefiles-rewrite/middleware.js b/test/e2e/i18n-beforefiles-rewrite/middleware.js
+new file mode 100644
+index 000000000000..4cd1d149a993
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/middleware.js
+@@ -0,0 +1,5 @@
++import { NextResponse } from 'next/server'
++
++export function middleware(request) {
++  return NextResponse.next()
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/next.config.js b/test/e2e/i18n-beforefiles-rewrite/next.config.js
+new file mode 100644
+index 000000000000..e5b53f5c3bb3
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/next.config.js
+@@ -0,0 +1,17 @@
++module.exports = {
++  i18n: {
++    locales: ['en', 'fr'],
++    defaultLocale: 'en',
++  },
++  rewrites() {
++    return {
++      beforeFiles: [
++        {
++          source: '/rewrite-before-files',
++          destination: '/somewhere',
++        },
++      ],
++      afterFiles: [],
++    }
++  },
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/pages/[teamId]/[slug].tsx b/test/e2e/i18n-beforefiles-rewrite/pages/[teamId]/[slug].tsx
+new file mode 100644
+index 000000000000..8cd9f20140ee
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/pages/[teamId]/[slug].tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>/[teamId]/[slug]</p>
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/pages/dynamic/[id].tsx b/test/e2e/i18n-beforefiles-rewrite/pages/dynamic/[id].tsx
+new file mode 100644
+index 000000000000..2532340da9df
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/pages/dynamic/[id].tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>dynamic route</p>
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/pages/dynamic/static.tsx b/test/e2e/i18n-beforefiles-rewrite/pages/dynamic/static.tsx
+new file mode 100644
+index 000000000000..37cb1d5d0a5c
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/pages/dynamic/static.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>static route</p>
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/pages/home/a.tsx b/test/e2e/i18n-beforefiles-rewrite/pages/home/a.tsx
+new file mode 100644
+index 000000000000..b0fab3be30a4
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/pages/home/a.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>Home A</p>
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/pages/home/b.tsx b/test/e2e/i18n-beforefiles-rewrite/pages/home/b.tsx
+new file mode 100644
+index 000000000000..99892e1038df
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/pages/home/b.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>Home B</p>
++}
+diff --git a/test/e2e/i18n-beforefiles-rewrite/pages/index.tsx b/test/e2e/i18n-beforefiles-rewrite/pages/index.tsx
+new file mode 100644
+index 000000000000..4c4c38c60f29
+--- /dev/null
++++ b/test/e2e/i18n-beforefiles-rewrite/pages/index.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>index</p>
++}
+diff --git a/test/e2e/i18n-support/i18n-support.test.ts b/test/e2e/i18n-support/i18n-support.test.ts
+index 2efc873ffac8..e4d2099498e7 100644
+--- a/test/e2e/i18n-support/i18n-support.test.ts
++++ b/test/e2e/i18n-support/i18n-support.test.ts
+@@ -77,6 +77,30 @@ describe('i18n Support', () => {
+         expect(content).toMatch(/Internal Server Error/i)
+       }
+     })
++
++    it('should have locale-prefixed pages-manifest entries for default 500', async () => {
++      const manifest = await fs.readJSON(
++        join(next.testDir, '.next/server/pages-manifest.json')
++      )
++      for (const locale of locales) {
++        expect(manifest[`/${locale}/500`]).toBe(`pages/${locale}/500.html`)
++      }
++    })
++
++    it('should not have non-locale-prefixed HTML files for auto-static pages', async () => {
++      const pagesDir = join(next.testDir, '.next/server/pages')
++      // auto-export is a non-SSG auto-static page; only locale-prefixed
++      // variants should exist in server/pages/ (e.g. en-US/auto-export.html).
++      // A bare auto-export.html would be an orphan that can interfere with routing.
++      expect(await fs.pathExists(join(pagesDir, 'auto-export.html'))).toBe(
++        false
++      )
++      for (const locale of locales) {
++        expect(
++          await fs.pathExists(join(pagesDir, locale, 'auto-export.html'))
++        ).toBe(true)
++      }
++    })
+   }
+ 
+   describe('with localeDetection disabled', () => {

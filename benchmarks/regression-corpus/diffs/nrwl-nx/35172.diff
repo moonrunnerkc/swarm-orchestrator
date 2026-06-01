@@ -1,0 +1,2824 @@
+diff --git a/.gitignore b/.gitignore
+index 0312763e399..6152975b28e 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -83,6 +83,7 @@ storybook-static
+ .kotlin
+ 
+ .claude/settings.local.json
++.claude/scheduled_tasks.lock
+ CLAUDE.local.md
+ 
+ .cursor/mcp.json
+diff --git a/benchmarks/goals.json b/benchmarks/goals.json
+index 4e53ddb4255..8f7c0feb9c9 100644
+--- a/benchmarks/goals.json
++++ b/benchmarks/goals.json
+@@ -10,5 +10,8 @@
+   },
+   "copy-warm": {
+     "max": 1.0
++  },
++  "build-warm": {
++    "max": 5.0
+   }
+ }
+diff --git a/benchmarks/package.json b/benchmarks/package.json
+index 08e59b4ae57..e64899ecf54 100644
+--- a/benchmarks/package.json
++++ b/benchmarks/package.json
+@@ -7,11 +7,11 @@
+   },
+   "scripts": {
+     "run": "tsx run-benchmarks.ts",
+-    "bench:version": "NX_NO_CLOUD=true hyperfine --show-output --setup 'nx reset' --warmup 1 --min-runs 10 --export-json results-version.json 'nx --version'",
+-    "bench:show-projects": "NX_NO_CLOUD=true hyperfine --show-output --setup 'nx reset' --warmup 1 --min-runs 5 --export-json results-show-projects.json 'nx show projects --tui=false'",
+-    "bench:cat-warm": "NX_NO_CLOUD=true hyperfine --show-output --setup 'nx reset' --warmup 1 --min-runs 5 --export-json results-cat-warm.json 'nx run-many -t cat --tui=false'",
+-    "bench:copy-warm": "NX_NO_CLOUD=true hyperfine --show-output --setup 'nx reset' --warmup 1 --min-runs 5 --export-json results-copy-warm.json 'nx run-many -t copy --tui=false'",
+-    "disabled:bench:build-warm": "NX_NO_CLOUD=true hyperfine --show-output --setup 'nx reset' --warmup 1 --min-runs 5 --export-json results-build-warm.json 'nx run-many -t build --tui=true --tui-auto-exit'"
++    "bench:version": "NX_NO_CLOUD=true hyperfine --show-output --setup 'pnpm exec nx reset' --warmup 1 --min-runs 10 --export-json results-version.json 'pnpm exec nx --version'",
++    "bench:show-projects": "NX_NO_CLOUD=true hyperfine --show-output --setup 'pnpm exec nx reset' --warmup 1 --min-runs 5 --export-json results-show-projects.json 'pnpm exec nx show projects --tui=false'",
++    "bench:cat-warm": "NX_NO_CLOUD=true hyperfine --show-output --setup 'pnpm exec nx reset' --warmup 1 --min-runs 5 --export-json results-cat-warm.json 'pnpm exec nx run-many -t cat --tui=false'",
++    "bench:copy-warm": "NX_NO_CLOUD=true hyperfine --show-output --setup 'pnpm exec nx reset' --warmup 1 --min-runs 5 --export-json results-copy-warm.json 'pnpm exec nx run-many -t copy --tui=false'",
++    "bench:build-warm": "NX_NO_CLOUD=true hyperfine --setup 'pnpm exec nx reset' --warmup 1 --min-runs 5 --export-json results-build-warm.json 'pnpm exec nx run-many -t build --tui=true --tui-auto-exit'"
+   },
+   "nx": {
+     "targets": {
+@@ -20,7 +20,8 @@
+           "bench:version",
+           "bench:show-projects",
+           "bench:cat-warm",
+-          "bench:copy-warm"
++          "bench:copy-warm",
++          "bench:build-warm"
+         ]
+       },
+       "bench:version": {
+@@ -47,7 +48,7 @@
+         ],
+         "parallelism": false
+       },
+-      "disabled:bench:build-warm": {
++      "bench:build-warm": {
+         "dependsOn": [
+           "^build"
+         ],
+diff --git a/packages/nx/src/command-line/graph/graph.ts b/packages/nx/src/command-line/graph/graph.ts
+index 1ad84a69549..2b0d86398cb 100644
+--- a/packages/nx/src/command-line/graph/graph.ts
++++ b/packages/nx/src/command-line/graph/graph.ts
+@@ -57,6 +57,7 @@ import { ConfigurationSourceMaps } from '../../project-graph/utils/project-confi
+ import { findMatchingProjects } from '../../utils/find-matching-projects';
+ 
+ import { createTaskHasher } from '../../hasher/create-task-hasher';
++import { getTaskSpecificEnv } from '../../tasks-runner/task-env';
+ import { ProjectGraphError } from '../../project-graph/error-types';
+ import { isNxCloudUsed } from '../../utils/nx-cloud-utils';
+ 
+@@ -1489,7 +1490,13 @@ async function createJsonOutput(
+ 
+     const hasher = createTaskHasher(rawGraph, readNxJson());
+     let tasks = Object.values(taskGraph.tasks);
+-    const hashes = await hasher.hashTasks(tasks, taskGraph);
++    // Match the runtime path: each task is hashed against its own env so
++    // the graph-view hash matches the hash used when the task actually runs.
++    const perTaskEnvs: Record<string, NodeJS.ProcessEnv> = {};
++    for (const task of tasks) {
++      perTaskEnvs[task.id] = getTaskSpecificEnv(task, rawGraph);
++    }
++    const hashes = await hasher.hashTasks(tasks, taskGraph, perTaskEnvs);
+     response.tasks = taskGraph;
+     response.taskPlans = tasks.reduce((acc, task, index) => {
+       acc[task.id] = Object.keys(hashes[index].details.nodes).sort();
+diff --git a/packages/nx/src/command-line/show/show-target/utils.ts b/packages/nx/src/command-line/show/show-target/utils.ts
+index 92d1dbc20ba..1f706bee327 100644
+--- a/packages/nx/src/command-line/show/show-target/utils.ts
++++ b/packages/nx/src/command-line/show/show-target/utils.ts
+@@ -205,15 +205,16 @@ export function hasCustomHasher(
+   targetName: string,
+   graph: ProjectGraph
+ ): boolean {
++  // Lazy require avoids a circular dependency with tasks-runner/utils.
++  const { getExecutorForTask } = require('../../../tasks-runner/utils');
+   try {
+-    const { getExecutorForTask } = require('../../../tasks-runner/utils');
++    const { projects } = readProjectsConfigurationFromProjectGraph(graph);
+     const task = {
+       id: `${projectName}:${targetName}`,
+       target: { project: projectName, target: targetName },
+       overrides: {},
+     };
+-    const executorConfig = getExecutorForTask(task, graph);
+-    return !!executorConfig.hasherFactory;
++    return !!getExecutorForTask(task, projects).hasherFactory;
+   } catch {
+     return false;
+   }
+diff --git a/packages/nx/src/daemon/client/client.ts b/packages/nx/src/daemon/client/client.ts
+index 35f02339a2e..3fd7682ee07 100644
+--- a/packages/nx/src/daemon/client/client.ts
++++ b/packages/nx/src/daemon/client/client.ts
+@@ -341,17 +341,14 @@ export class DaemonClient {
+     runnerOptions: any,
+     tasks: Task[],
+     taskGraph: TaskGraph,
+-    env: NodeJS.ProcessEnv,
++    perTaskEnvs: Record<string, NodeJS.ProcessEnv>,
+     cwd: string,
+     collectInputs?: boolean
+   ): Promise<Hash[]> {
+     return this.sendToDaemonViaQueue({
+       type: 'HASH_TASKS',
+       runnerOptions,
+-      env:
+-        process.env.NX_USE_V8_SERIALIZER !== 'false'
+-          ? structuredClone(process.env)
+-          : env,
++      perTaskEnvs,
+       tasks,
+       taskGraph,
+       cwd,
+@@ -777,23 +774,21 @@ export class DaemonClient {
+     );
+   }
+ 
+-  recordOutputsHash(outputs: string[], hash: string): Promise<any> {
++  recordOutputsHashBatch(
++    entries: { outputs: string[]; hash: string }[]
++  ): Promise<any> {
+     return this.sendToDaemonViaQueue({
+-      type: 'RECORD_OUTPUTS_HASH',
+-      data: {
+-        outputs,
+-        hash,
+-      },
++      type: 'RECORD_OUTPUTS_HASH_BATCH',
++      data: entries,
+     });
+   }
+ 
+-  outputsHashesMatch(outputs: string[], hash: string): Promise<any> {
++  outputsHashesMatchBatch(
++    entries: { outputs: string[]; hash: string }[]
++  ): Promise<boolean[]> {
+     return this.sendToDaemonViaQueue({
+-      type: 'OUTPUTS_HASHES_MATCH',
+-      data: {
+-        outputs,
+-        hash,
+-      },
++      type: 'OUTPUTS_HASHES_MATCH_BATCH',
++      data: entries,
+     });
+   }
+ 
+diff --git a/packages/nx/src/daemon/server/handle-hash-tasks.ts b/packages/nx/src/daemon/server/handle-hash-tasks.ts
+index 2201de15a13..6ea46730053 100644
+--- a/packages/nx/src/daemon/server/handle-hash-tasks.ts
++++ b/packages/nx/src/daemon/server/handle-hash-tasks.ts
+@@ -12,9 +12,9 @@ let storedHasher: InProcessTaskHasher | null = null;
+ 
+ export async function handleHashTasks(payload: {
+   runnerOptions: any;
+-  env: any;
+   tasks: Task[];
+   taskGraph: TaskGraph;
++  perTaskEnvs: Record<string, NodeJS.ProcessEnv>;
+   cwd: string;
+   collectInputs?: boolean;
+ }) {
+@@ -39,7 +39,7 @@ export async function handleHashTasks(payload: {
+   const response = await storedHasher.hashTasks(
+     payload.tasks,
+     payload.taskGraph,
+-    payload.env,
++    payload.perTaskEnvs,
+     payload.cwd,
+     payload.collectInputs
+   );
+diff --git a/packages/nx/src/daemon/server/handle-outputs-tracking.ts b/packages/nx/src/daemon/server/handle-outputs-tracking.ts
+index 63a3da9bbf0..4ae9b566041 100644
+--- a/packages/nx/src/daemon/server/handle-outputs-tracking.ts
++++ b/packages/nx/src/daemon/server/handle-outputs-tracking.ts
+@@ -1,19 +1,22 @@
+ import { HandlerResult } from './server';
+-import { outputsHashesMatch, recordOutputsHash } from './outputs-tracking';
++import {
++  outputsHashesMatchBatch,
++  recordOutputsHashBatch,
++} from './outputs-tracking';
+ 
+-export async function handleRecordOutputsHash(payload: {
++export async function handleRecordOutputsHashBatch(payload: {
+   type: string;
+-  data: { outputs: string[]; hash: string };
++  data: { outputs: string[]; hash: string }[];
+ }): Promise<HandlerResult> {
+   try {
+-    await recordOutputsHash(payload.data.outputs, payload.data.hash);
++    recordOutputsHashBatch(payload.data);
+     return {
+-      description: 'recordOutputsHash',
++      description: 'recordOutputsHashBatch',
+       response: '{}',
+     };
+   } catch (e) {
+     return {
+-      description: 'recordOutputsHash failed',
++      description: 'recordOutputsHashBatch failed',
+       error: new Error(
+         `Critical error when recording metadata about outputs: '${e.message}'.`
+       ),
+@@ -21,22 +24,19 @@ export async function handleRecordOutputsHash(payload: {
+   }
+ }
+ 
+-export async function handleOutputsHashesMatch(payload: {
++export async function handleOutputsHashesMatchBatch(payload: {
+   type: string;
+-  data: { outputs: string[]; hash: string };
++  data: { outputs: string[]; hash: string }[];
+ }): Promise<HandlerResult> {
+   try {
+-    const res = await outputsHashesMatch(
+-      payload.data.outputs,
+-      payload.data.hash
+-    );
++    const results = outputsHashesMatchBatch(payload.data);
+     return {
+-      response: res,
+-      description: 'outputsHashesMatch',
++      response: results,
++      description: 'outputsHashesMatchBatch',
+     };
+   } catch (e) {
+     return {
+-      description: 'outputsHashesMatch failed',
++      description: 'outputsHashesMatchBatch failed',
+       error: new Error(
+         `Critical error when verifying the contents of the outputs haven't changed: '${e.message}'.`
+       ),
+diff --git a/packages/nx/src/daemon/server/outputs-tracking.spec.ts b/packages/nx/src/daemon/server/outputs-tracking.spec.ts
+index 3854e512bd6..c5a44eb41fd 100644
+--- a/packages/nx/src/daemon/server/outputs-tracking.spec.ts
++++ b/packages/nx/src/daemon/server/outputs-tracking.spec.ts
+@@ -3,7 +3,6 @@ import {
+   _outputsHashesMatch,
+   _recordOutputsHash,
+   processFileChangesInOutputs,
+-  recordedHash,
+ } from './outputs-tracking';
+ 
+ describe('outputs tracking', () => {
+@@ -23,7 +22,7 @@ describe('outputs tracking', () => {
+       [{ path: 'dist/app/app1', type: EventType.update }],
+       now
+     );
+-    expect(recordedHash('dist/app/app1')).toBeUndefined();
++    expect(_outputsHashesMatch(['dist/app/app1'], '123')).toBe(false);
+   });
+ 
+   it('should invalidate output when it is a child', () => {
+@@ -32,7 +31,7 @@ describe('outputs tracking', () => {
+       [{ path: 'dist/app/app1/child', type: EventType.update }],
+       now
+     );
+-    expect(recordedHash('dist/app/app1')).toBeUndefined();
++    expect(_outputsHashesMatch(['dist/app/app1'], '123')).toBe(false);
+   });
+ 
+   it('should invalidate output when it is a parent', () => {
+@@ -41,7 +40,7 @@ describe('outputs tracking', () => {
+       [{ path: 'dist/app', type: EventType.update }],
+       now
+     );
+-    expect(recordedHash('dist/app/app1')).toBeUndefined();
++    expect(_outputsHashesMatch(['dist/app/app1'], '123')).toBe(false);
+   });
+ 
+   it('should not invalidate anything when no match', () => {
+@@ -50,6 +49,6 @@ describe('outputs tracking', () => {
+       [{ path: 'dist/app2', type: EventType.update }],
+       now
+     );
+-    expect(recordedHash('dist/app/app1')).toEqual('123');
++    expect(_outputsHashesMatch(['dist/app/app1'], '123')).toBe(true);
+   });
+ });
+diff --git a/packages/nx/src/daemon/server/outputs-tracking.ts b/packages/nx/src/daemon/server/outputs-tracking.ts
+index c0a91af22e1..9d2e400fdf4 100644
+--- a/packages/nx/src/daemon/server/outputs-tracking.ts
++++ b/packages/nx/src/daemon/server/outputs-tracking.ts
+@@ -1,5 +1,5 @@
+ import { dirname } from 'path';
+-import { WatchEvent, getFilesForOutputs } from '../../native';
++import { WatchEvent, getFilesForOutputsBatch } from '../../native';
+ import { collapseExpandedOutputs } from '../../utils/collapse-expanded-outputs';
+ import { workspaceRoot } from '../../utils/workspace-root';
+ 
+@@ -40,29 +40,6 @@ export function _outputsHashesMatch(outputs: string[], hash: string) {
+   return true;
+ }
+ 
+-export function recordedHash(output: string) {
+-  return recordedHashes[output];
+-}
+-
+-export async function recordOutputsHash(_outputs: string[], hash: string) {
+-  const outputs = await normalizeOutputs(_outputs);
+-  if (disabled) return;
+-  _recordOutputsHash(outputs, hash);
+-}
+-
+-export async function outputsHashesMatch(_outputs: string[], hash: string) {
+-  const outputs = await normalizeOutputs(_outputs);
+-  if (disabled) return false;
+-  return _outputsHashesMatch(outputs, hash);
+-}
+-
+-async function normalizeOutputs(outputs: string[]) {
+-  let expandedOutputs = collapseExpandedOutputs(
+-    getFilesForOutputs(workspaceRoot, outputs)
+-  );
+-  return expandedOutputs;
+-}
+-
+ export function processFileChangesInOutputs(
+   changeEvents: WatchEvent[],
+   now: number = undefined
+@@ -94,6 +71,65 @@ export function processFileChangesInOutputs(
+   }
+ }
+ 
++/**
++ * Check whether the on-disk outputs of each entry still match the hash
++ * the daemon recorded for them. Uses Rayon-parallel filesystem scanning
++ * for uncached entries.
++ */
++export function outputsHashesMatchBatch(
++  entries: { outputs: string[]; hash: string }[]
++): boolean[] {
++  if (disabled) return entries.map(() => false);
++
++  // Fast path: skip filesystem scan for entries with no recorded hash.
++  // _outputsHashesMatch will return false immediately if the hash isn't
++  // in numberOfExpandedOutputs, so scanning the filesystem is wasted work.
++  const needsScan: number[] = [];
++  const results: boolean[] = new Array(entries.length);
++  for (let i = 0; i < entries.length; i++) {
++    if (numberOfExpandedOutputs[entries[i].hash] === undefined) {
++      results[i] = false;
++    } else {
++      needsScan.push(i);
++    }
++  }
++
++  if (needsScan.length > 0) {
++    // Only scan outputs for entries that have recorded hashes
++    const outputsBatch = needsScan.map((i) => entries[i].outputs);
++    const expandedBatch = getFilesForOutputsBatch(workspaceRoot, outputsBatch);
++
++    for (let j = 0; j < needsScan.length; j++) {
++      const expanded = collapseExpandedOutputs(expandedBatch[j]);
++      results[needsScan[j]] = _outputsHashesMatch(
++        expanded,
++        entries[needsScan[j]].hash
++      );
++    }
++  }
++
++  return results;
++}
++
++/**
++ * Record the hash of each entry's on-disk outputs so future
++ * outputsHashesMatchBatch calls can skip redundant cache copies.
++ * Uses Rayon-parallel filesystem scanning.
++ */
++export function recordOutputsHashBatch(
++  entries: { outputs: string[]; hash: string }[]
++) {
++  if (disabled) return;
++
++  const outputsBatch = entries.map((e) => e.outputs);
++  const expandedBatch = getFilesForOutputsBatch(workspaceRoot, outputsBatch);
++
++  for (let i = 0; i < entries.length; i++) {
++    const expanded = collapseExpandedOutputs(expandedBatch[i]);
++    _recordOutputsHash(expanded, entries[i].hash);
++  }
++}
++
+ export function disableOutputsTracking() {
+   disabled = true;
+ }
+diff --git a/packages/nx/src/daemon/server/server.ts b/packages/nx/src/daemon/server/server.ts
+index b9ce7b2c07c..ef15b16f998 100644
+--- a/packages/nx/src/daemon/server/server.ts
++++ b/packages/nx/src/daemon/server/server.ts
+@@ -118,8 +118,8 @@ import {
+ } from './handle-nx-console';
+ import { handleNxWorkspaceFiles } from './handle-nx-workspace-files';
+ import {
+-  handleOutputsHashesMatch,
+-  handleRecordOutputsHash,
++  handleOutputsHashesMatchBatch,
++  handleRecordOutputsHashBatch,
+ } from './handle-outputs-tracking';
+ import { handleProcessInBackground } from './handle-process-in-background';
+ import { handleRequestProjectGraph } from './handle-request-project-graph';
+@@ -299,18 +299,18 @@ async function handleMessage(socket: Socket, data: string) {
+       () => handleProcessInBackground(payload),
+       mode
+     );
+-  } else if (payload.type === 'RECORD_OUTPUTS_HASH') {
++  } else if (payload.type === 'RECORD_OUTPUTS_HASH_BATCH') {
+     await handleResult(
+       socket,
+-      'RECORD_OUTPUTS_HASH',
+-      () => handleRecordOutputsHash(payload),
++      'RECORD_OUTPUTS_HASH_BATCH',
++      () => handleRecordOutputsHashBatch(payload),
+       mode
+     );
+-  } else if (payload.type === 'OUTPUTS_HASHES_MATCH') {
++  } else if (payload.type === 'OUTPUTS_HASHES_MATCH_BATCH') {
+     await handleResult(
+       socket,
+-      'OUTPUTS_HASHES_MATCH',
+-      () => handleOutputsHashesMatch(payload),
++      'OUTPUTS_HASHES_MATCH_BATCH',
++      () => handleOutputsHashesMatchBatch(payload),
+       mode
+     );
+   } else if (payload.type === 'REQUEST_SHUTDOWN') {
+diff --git a/packages/nx/src/hasher/hash-task.ts b/packages/nx/src/hasher/hash-task.ts
+index d3269f9ad3a..0ce1b33b531 100644
+--- a/packages/nx/src/hasher/hash-task.ts
++++ b/packages/nx/src/hasher/hash-task.ts
+@@ -4,6 +4,7 @@ import { Task, TaskGraph } from '../config/task-graph';
+ import { IS_WASM, TaskDetails } from '../native';
+ import { readProjectsConfigurationFromProjectGraph } from '../project-graph/project-graph';
+ import { getTaskIOService } from '../tasks-runner/task-io-service';
++import { getTaskSpecificEnv } from '../tasks-runner/task-env';
+ import { getCustomHasher } from '../tasks-runner/utils';
+ import { getDbConnection } from '../utils/db-connection';
+ import { getInputs, TaskHasher } from './task-hasher';
+@@ -30,10 +31,12 @@ export async function hashTasksThatDoNotDependOnOutputsOfOtherTasks(
+ ) {
+   performance.mark('hashMultipleTasks:start');
+ 
++  const projects =
++    readProjectsConfigurationFromProjectGraph(projectGraph).projects;
+   const tasks = Object.values(taskGraph.tasks);
+   const tasksWithHashers = await Promise.all(
+     tasks.map(async (task) => {
+-      const customHasher = getCustomHasher(task, projectGraph);
++      const customHasher = getCustomHasher(task, projects);
+       return { task, customHasher };
+     })
+   );
+@@ -52,7 +55,11 @@ export async function hashTasksThatDoNotDependOnOutputsOfOtherTasks(
+     })
+     .map((t) => t.task);
+ 
+-  const hashes = await hasher.hashTasks(tasksToHash, taskGraph, process.env);
++  const perTaskEnvs: Record<string, NodeJS.ProcessEnv> = {};
++  for (const task of tasksToHash) {
++    perTaskEnvs[task.id] = getTaskSpecificEnv(task, projectGraph);
++  }
++  const hashes = await hasher.hashTasks(tasksToHash, taskGraph, perTaskEnvs);
+   const ioService = getTaskIOService();
+   const hasInputSubscribers = ioService.hasTaskInputSubscribers();
+   for (let i = 0; i < tasksToHash.length; i++) {
+@@ -93,9 +100,9 @@ export async function hashTask(
+ ) {
+   performance.mark('hashSingleTask:start');
+ 
+-  const customHasher = getCustomHasher(task, projectGraph);
+   const projectsConfigurations =
+     readProjectsConfigurationFromProjectGraph(projectGraph);
++  const customHasher = getCustomHasher(task, projectsConfigurations.projects);
+ 
+   const { value, details, inputs } = await (customHasher
+     ? customHasher(task, {
+@@ -136,11 +143,19 @@ export async function hashTask(
+   );
+ }
+ 
++/**
++ * Batch-hash `tasks`. `perTaskEnvs` must contain an entry keyed by
++ * `task.id` for every task — the per-task env is what each task's
++ * custom hasher sees and what the built-in hasher reads
++ * `HashInstruction::Environment` inputs against. Callers that
++ * genuinely want to hash against a single shared env should build
++ * `{ [task.id]: env }` for every task.
++ */
+ export async function hashTasks(
+   hasher: TaskHasher,
+   projectGraph: ProjectGraph,
+   taskGraph: TaskGraph,
+-  env: NodeJS.ProcessEnv,
++  perTaskEnvs: Record<string, NodeJS.ProcessEnv>,
+   taskDetails: TaskDetails | null,
+   tasksToHashOverride?: Task[]
+ ) {
+@@ -159,7 +174,7 @@ export async function hashTasks(
+   const tasksWithoutCustomHashers: Task[] = [];
+ 
+   for (const task of tasks) {
+-    const customHasher = getCustomHasher(task, projectGraph);
++    const customHasher = getCustomHasher(task, projectsConfigurations.projects);
+     if (customHasher) {
+       tasksWithCustomHashers.push(task);
+     } else {
+@@ -171,7 +186,7 @@ export async function hashTasks(
+   const ioService = getTaskIOService();
+   const hasInputSubscribers = ioService.hasTaskInputSubscribers();
+   const customHasherPromises = tasksWithCustomHashers.map(async (task) => {
+-    const customHasher = getCustomHasher(task, projectGraph);
++    const customHasher = getCustomHasher(task, projectsConfigurations.projects);
+     const { value, details, inputs } = await customHasher(task, {
+       hasher,
+       projectGraph,
+@@ -179,7 +194,7 @@ export async function hashTasks(
+       workspaceConfig: projectsConfigurations,
+       projectsConfigurations,
+       nxJsonConfiguration: nxJson,
+-      env,
++      env: perTaskEnvs[task.id],
+     } as any);
+     task.hash = value;
+     task.hashDetails = details;
+@@ -194,7 +209,7 @@ export async function hashTasks(
+   let batchHashPromise: Promise<void> = Promise.resolve();
+   if (tasksWithoutCustomHashers.length > 0) {
+     batchHashPromise = hasher
+-      .hashTasks(tasksWithoutCustomHashers, taskGraph, env)
++      .hashTasks(tasksWithoutCustomHashers, taskGraph, perTaskEnvs)
+       .then((hashes) => {
+         for (let i = 0; i < tasksWithoutCustomHashers.length; i++) {
+           tasksWithoutCustomHashers[i].hash = hashes[i].value;
+@@ -214,14 +229,26 @@ export async function hashTasks(
+   await Promise.all([...customHasherPromises, batchHashPromise]);
+ 
+   if (taskDetails?.recordTaskDetails) {
+-    taskDetails.recordTaskDetails(
+-      tasks.map((task) => ({
+-        hash: task.hash,
+-        project: task.target.project,
+-        target: task.target.target,
+-        configuration: task.target.configuration,
+-      }))
+-    );
++    // Guard against a custom hasher resolving with a falsy value —
++    // the built-in batch hasher always produces a hash, but user-written
++    // custom hashers are untrusted and an empty/undefined hash would
++    // violate the task_details schema downstream.
++    const hashedTasks = [];
++    for (const t of tasks) {
++      if (!t.hash) {
++        continue;
++      }
++
++      hashedTasks.push({
++        hash: t.hash,
++        project: t.target.project,
++        target: t.target.target,
++        configuration: t.target.configuration,
++      });
++    }
++    if (hashedTasks.length > 0) {
++      taskDetails.recordTaskDetails(hashedTasks);
++    }
+   }
+ 
+   performance.mark('hashMultipleTasks:end');
+diff --git a/packages/nx/src/hasher/native-task-hasher-impl.spec.ts b/packages/nx/src/hasher/native-task-hasher-impl.spec.ts
+index 483bdc23375..71bb43fcbfa 100644
+--- a/packages/nx/src/hasher/native-task-hasher-impl.spec.ts
++++ b/packages/nx/src/hasher/native-task-hasher-impl.spec.ts
+@@ -167,9 +167,13 @@ describe('native task hasher', () => {
+       projectGraph,
+       workspaceFiles.rustReferences,
+       { selectivelyHashTsConfig: false }
+-    ).hashTasks(Object.values(taskGraph.tasks), taskGraph, {
+-      TESTENV: 'test',
+-    });
++    ).hashTasks(
++      Object.values(taskGraph.tasks),
++      taskGraph,
++      Object.fromEntries(
++        Object.values(taskGraph.tasks).map((t) => [t.id, { TESTENV: 'test' }])
++      )
++    );
+ 
+     expect(sortHashInputs(hash)).toMatchInlineSnapshot(`
+       [
+@@ -716,7 +720,11 @@ describe('native task hasher', () => {
+       projectGraph,
+       workspaceFiles.rustReferences,
+       { selectivelyHashTsConfig: false }
+-    ).hashTasks(Object.values(taskGraph.tasks), taskGraph, {});
++    ).hashTasks(
++      Object.values(taskGraph.tasks),
++      taskGraph,
++      Object.fromEntries(Object.values(taskGraph.tasks).map((t) => [t.id, {}]))
++    );
+ 
+     expect(sortHashInputs(hash)).toMatchInlineSnapshot(`
+       [
+@@ -846,9 +854,16 @@ describe('native task hasher', () => {
+       projectGraph,
+       workspaceFiles.rustReferences,
+       { selectivelyHashTsConfig: false }
+-    ).hashTasks(Object.values(taskGraph.tasks), taskGraph, {
+-      MY_TEST_HASH_ENV: 'MY_TEST_HASH_ENV_VALUE',
+-    });
++    ).hashTasks(
++      Object.values(taskGraph.tasks),
++      taskGraph,
++      Object.fromEntries(
++        Object.values(taskGraph.tasks).map((t) => [
++          t.id,
++          { MY_TEST_HASH_ENV: 'MY_TEST_HASH_ENV_VALUE' },
++        ])
++      )
++    );
+ 
+     expect(sortHashInputs(hash)).toMatchInlineSnapshot(`
+       [
+diff --git a/packages/nx/src/hasher/native-task-hasher-impl.ts b/packages/nx/src/hasher/native-task-hasher-impl.ts
+index e4181d30989..2b8495868e7 100644
+--- a/packages/nx/src/hasher/native-task-hasher-impl.ts
++++ b/packages/nx/src/hasher/native-task-hasher-impl.ts
+@@ -71,23 +71,20 @@ export class NativeTaskHasherImpl implements TaskHasherImpl {
+     cwd?: string,
+     collectInputs?: boolean
+   ): Promise<PartialHash> {
+-    const plans = this.planner.getPlansReference([task.id], taskGraph);
+-    const shouldCollectInputs =
+-      collectInputs ?? getTaskIOService().hasTaskInputSubscribers();
+-    const hashes = this.hasher.hashPlans(
+-      plans,
+-      env,
+-      cwd ?? process.cwd(),
+-      shouldCollectInputs
++    const hashes = await this.hashTasks(
++      [task],
++      taskGraph,
++      { [task.id]: env },
++      cwd,
++      collectInputs
+     );
+-
+-    return hashes[task.id];
++    return hashes[0];
+   }
+ 
+   async hashTasks(
+     tasks: Task[],
+     taskGraph: TaskGraph,
+-    env: NodeJS.ProcessEnv,
++    perTaskEnvs: Record<string, NodeJS.ProcessEnv>,
+     cwd?: string,
+     collectInputs?: boolean
+   ): Promise<PartialHash[]> {
+@@ -99,7 +96,7 @@ export class NativeTaskHasherImpl implements TaskHasherImpl {
+       collectInputs ?? getTaskIOService().hasTaskInputSubscribers();
+     const hashes = this.hasher.hashPlans(
+       plans,
+-      env,
++      perTaskEnvs as Record<string, Record<string, string>>,
+       cwd ?? process.cwd(),
+       shouldCollectInputs
+     );
+diff --git a/packages/nx/src/hasher/task-hasher.ts b/packages/nx/src/hasher/task-hasher.ts
+index 6655420c81e..0d9802984bc 100644
+--- a/packages/nx/src/hasher/task-hasher.ts
++++ b/packages/nx/src/hasher/task-hasher.ts
+@@ -62,29 +62,44 @@ export interface TaskHasher {
+   ): Promise<Hash>;
+ 
+   /**
+-   *  @deprecated use hashTasks(tasks:Task[], taskGraph: TaskGraph, env: NodeJS.ProcessEnv) instead. This will be removed in v20
+-   * @param tasks
++   * @deprecated pass `perTaskEnvs` keyed by `task.id` instead — hashing
++   * every task against one shared env produces the wrong cache key when
++   * tasks have per-project/target `.env` files or custom hashers that
++   * read env. Will be removed in v22.
+    */
+-  hashTasks(tasks: Task[]): Promise<Hash[]>;
++  hashTasks(
++    tasks: Task[],
++    taskGraph: TaskGraph,
++    env: NodeJS.ProcessEnv,
++    cwd?: string
++  ): Promise<Hash[]>;
+ 
+   /**
+-   * @deprecated use hashTasks(tasks:Task[], taskGraph: TaskGraph, env: NodeJS.ProcessEnv) instead. This will be removed in v20
++   * Hash `tasks`. `perTaskEnvs` must contain an entry keyed by `task.id`
++   * for every task in `tasks` — task-specific env (per-project/target
++   * `.env` files, custom-hasher env reads) participates in the hash, so
++   * a shared env across tasks would compute the wrong cache key when
++   * tasks actually differ.
+    */
+-  hashTasks(tasks: Task[], taskGraph: TaskGraph): Promise<Hash[]>;
+-
+   hashTasks(
+     tasks: Task[],
+     taskGraph: TaskGraph,
+-    env: NodeJS.ProcessEnv,
++    perTaskEnvs: Record<string, NodeJS.ProcessEnv>,
+     cwd?: string
+   ): Promise<Hash[]>;
+ }
+ 
+ export interface TaskHasherImpl {
++  /**
++   * Hash `tasks` where each task is keyed in `perTaskEnvs` by `task.id`.
++   * Every task must have an entry — callers who want to hash against a
++   * single shared env should construct `{ [task.id]: env }` for every
++   * task.
++   */
+   hashTasks(
+     tasks: Task[],
+     taskGraph: TaskGraph,
+-    env: NodeJS.ProcessEnv,
++    perTaskEnvs: Record<string, NodeJS.ProcessEnv>,
+     cwd?: string,
+     collectInputs?: boolean
+   ): Promise<PartialHash[]>;
+@@ -100,6 +115,35 @@ export interface TaskHasherImpl {
+ 
+ export type Hasher = TaskHasher;
+ 
++/**
++ * Normalize the legacy single-env `hashTasks(tasks, taskGraph, env)`
++ * signature to the per-task-env shape. External plugins still call the
++ * legacy shape, so `InProcessTaskHasher` and `DaemonBasedTaskHasher`
++ * detect at runtime and broadcast the shared env across every task.
++ *
++ * Detection is by value shape: `NodeJS.ProcessEnv` values are strings
++ * (or undefined), `perTaskEnvs` values are objects.
++ */
++function normalizePerTaskEnvs(
++  tasks: Task[],
++  arg: NodeJS.ProcessEnv | Record<string, NodeJS.ProcessEnv>
++): Record<string, NodeJS.ProcessEnv> {
++  for (const value of Object.values(arg)) {
++    if (value === undefined) continue;
++    if (typeof value === 'object') {
++      return arg as Record<string, NodeJS.ProcessEnv>;
++    }
++    // First defined value is a string — legacy env; broadcast it.
++    const env = arg as NodeJS.ProcessEnv;
++    const perTaskEnvs: Record<string, NodeJS.ProcessEnv> = {};
++    for (const task of tasks) perTaskEnvs[task.id] = env;
++    return perTaskEnvs;
++  }
++  // Empty or all-undefined: treat as perTaskEnvs — safe because the
++  // Rust-side check will surface a clear error if entries are missing.
++  return arg as Record<string, NodeJS.ProcessEnv>;
++}
++
+ export class DaemonBasedTaskHasher implements TaskHasher {
+   constructor(
+     private readonly daemonClient: DaemonClient,
+@@ -108,15 +152,15 @@ export class DaemonBasedTaskHasher implements TaskHasher {
+ 
+   async hashTasks(
+     tasks: Task[],
+-    taskGraph?: TaskGraph,
+-    env?: NodeJS.ProcessEnv
++    taskGraph: TaskGraph,
++    envOrPerTaskEnvs: NodeJS.ProcessEnv | Record<string, NodeJS.ProcessEnv>
+   ): Promise<Hash[]> {
+     const collectInputs = getTaskIOService().hasTaskInputSubscribers();
+     return this.daemonClient.hashTasks(
+       this.runnerOptions,
+       tasks,
+       taskGraph,
+-      env ?? process.env,
++      normalizePerTaskEnvs(tasks, envOrPerTaskEnvs),
+       process.cwd(),
+       collectInputs
+     );
+@@ -127,16 +171,10 @@ export class DaemonBasedTaskHasher implements TaskHasher {
+     taskGraph?: TaskGraph,
+     env?: NodeJS.ProcessEnv
+   ): Promise<Hash> {
+-    const collectInputs = getTaskIOService().hasTaskInputSubscribers();
+     return (
+-      await this.daemonClient.hashTasks(
+-        this.runnerOptions,
+-        [task],
+-        taskGraph,
+-        env ?? process.env,
+-        process.cwd(),
+-        collectInputs
+-      )
++      await this.hashTasks([task], taskGraph!, {
++        [task.id]: env ?? process.env,
++      })
+     )[0];
+   }
+ }
+@@ -163,15 +201,15 @@ export class InProcessTaskHasher implements TaskHasher {
+ 
+   async hashTasks(
+     tasks: Task[],
+-    taskGraph?: TaskGraph,
+-    env?: NodeJS.ProcessEnv,
++    taskGraph: TaskGraph,
++    envOrPerTaskEnvs: NodeJS.ProcessEnv | Record<string, NodeJS.ProcessEnv>,
+     cwd?: string,
+     collectInputs?: boolean
+   ): Promise<Hash[]> {
+     const hashes = await this.taskHasher.hashTasks(
+       tasks,
+       taskGraph,
+-      env ?? process.env,
++      normalizePerTaskEnvs(tasks, envOrPerTaskEnvs),
+       cwd ?? process.cwd(),
+       collectInputs
+     );
+@@ -189,7 +227,7 @@ export class InProcessTaskHasher implements TaskHasher {
+   ): Promise<Hash> {
+     const res = await this.taskHasher.hashTask(
+       task,
+-      taskGraph,
++      taskGraph!,
+       env ?? process.env,
+       cwd ?? process.cwd(),
+       collectInputs
+diff --git a/packages/nx/src/native/cache/cache.rs b/packages/nx/src/native/cache/cache.rs
+index 9446cc48009..f48da91077a 100644
+--- a/packages/nx/src/native/cache/cache.rs
++++ b/packages/nx/src/native/cache/cache.rs
+@@ -1,11 +1,13 @@
+ use std::fs::{create_dir_all, read_to_string, write};
+ use std::path::{Path, PathBuf};
++use std::rc::Rc;
+ use std::time::Instant;
+ use tracing::{debug, trace};
+ 
+ use fs_extra::remove_items;
++use rayon::prelude::*;
+ use regex::Regex;
+-use rusqlite::params;
++use rusqlite::{params, types::Value};
+ use sysinfo::Disks;
+ 
+ use crate::native::cache::expand_outputs::_expand_outputs;
+@@ -102,11 +104,10 @@ impl NxCache {
+     pub fn get(&mut self, hash: String) -> anyhow::Result<Option<CachedResult>> {
+         let start = Instant::now();
+         trace!("GET {}", &hash);
+-        let task_dir = self.cache_path.join(&hash);
+-
+-        let terminal_output_path = self.get_task_outputs_path_internal(&hash);
+ 
+-        let r = self
++        // Direct primary-key lookup — cheaper per call than routing through
++        // fetch_cache_rows() + rarray for a single hash.
++        let row_data: Option<(i16, i64)> = self
+             .db
+             .lock()
+             .unwrap()
+@@ -116,26 +117,99 @@ impl NxCache {
+                     WHERE hash = ?1
+                     RETURNING code, size",
+                 params![hash],
+-                |row| {
+-                    let code: i16 = row.get(0)?;
+-                    let size: i64 = row.get(1)?;
+-
+-                    let start = Instant::now();
+-                    let terminal_output =
+-                        read_to_string(terminal_output_path).unwrap_or(String::from(""));
+-                    trace!("TIME reading terminal outputs {:?}", start.elapsed());
+-
+-                    Ok(CachedResult {
+-                        code,
+-                        terminal_output: Some(terminal_output),
+-                        outputs_path: task_dir.to_normalized_string(),
+-                        size: Some(size),
+-                    })
+-                },
++                |row| Ok((row.get::<_, i16>(0)?, row.get::<_, i64>(1)?)),
+             )
+             .map_err(|e| anyhow::anyhow!("Unable to get {}: {:?}", &hash, e))?;
++
++        // Terminal output file read happens AFTER the lock is released.
++        let result = row_data.map(|(code, size)| self.build_cached_result(&hash, code, size));
++
+         trace!("GET {} {:?}", &hash, start.elapsed());
+-        Ok(r)
++        Ok(result)
++    }
++
++    #[napi]
++    /// Batch version of get() that fetches multiple cache entries in a single
++    /// SQL query and reads terminal output files in parallel via Rayon.
++    pub fn get_batch(&mut self, hashes: Vec<String>) -> anyhow::Result<Vec<Option<CachedResult>>> {
++        let start = Instant::now();
++        if hashes.is_empty() {
++            return Ok(vec![]);
++        }
++
++        // 1. One SQL round-trip: look up every hash and bump accessed_at.
++        let rows = self.fetch_cache_rows(&hashes)?;
++
++        // 2. For each requested hash, read its terminal output file in
++        //    parallel. Misses stay as None so callers can correlate by index.
++        let results = hashes
++            .par_iter()
++            .map(|hash| {
++                rows.get(hash)
++                    .map(|&(code, size)| self.build_cached_result(hash, code, size))
++            })
++            .collect();
++
++        trace!("GET_BATCH {} hashes {:?}", hashes.len(), start.elapsed());
++        Ok(results)
++    }
++
++    /// Runs one `UPDATE ... RETURNING` across every requested hash and
++    /// returns the matching rows keyed by hash.
++    ///
++    /// Uses `rarray` to bind the whole Vec as a single parameter so the SQL
++    /// text is constant regardless of batch size — the prepared-statement
++    /// cache hits forever and we sidestep SQLite's per-statement parameter
++    /// cap.
++    fn fetch_cache_rows(
++        &self,
++        hashes: &[String],
++    ) -> anyhow::Result<std::collections::HashMap<String, (i16, i64)>> {
++        let values = Rc::new(
++            hashes
++                .iter()
++                .map(|h| Value::from(h.clone()))
++                .collect::<Vec<Value>>(),
++        );
++
++        // Route through NxDbConnection::query_map so the whole prepare +
++        // query is wrapped in the busy-retry logic, matching the
++        // single-task cache.get() path. Otherwise a brief SQLite write
++        // lock from another Nx process would surface DatabaseBusy and
++        // fail the whole run.
++        let rows = self
++            .db
++            .lock()
++            .unwrap()
++            .query_map(
++                "UPDATE cache_outputs SET accessed_at = CURRENT_TIMESTAMP
++                 WHERE hash IN rarray(?1)
++                 RETURNING hash, code, size",
++                [values],
++                |row| {
++                    let hash: String = row.get(0)?;
++                    let code: i16 = row.get(1)?;
++                    let size: i64 = row.get(2)?;
++                    Ok((hash, (code, size)))
++                },
++            )?
++            .into_iter()
++            .collect();
++        Ok(rows)
++    }
++
++    /// Assemble a `CachedResult` for a confirmed hit by reading its
++    /// terminal output file. Safe to call concurrently — Rayon invokes
++    /// this from multiple threads during `get_batch`.
++    fn build_cached_result(&self, hash: &str, code: i16, size: i64) -> CachedResult {
++        let terminal_output =
++            read_to_string(self.get_task_outputs_path_internal(hash)).unwrap_or_default();
++        CachedResult {
++            code,
++            terminal_output: Some(terminal_output),
++            outputs_path: self.cache_path.join(hash).to_normalized_string(),
++            size: Some(size),
++        }
+     }
+ 
+     #[napi]
+diff --git a/packages/nx/src/native/cache/expand_outputs.rs b/packages/nx/src/native/cache/expand_outputs.rs
+index 25289c861cd..a2a214946c9 100644
+--- a/packages/nx/src/native/cache/expand_outputs.rs
++++ b/packages/nx/src/native/cache/expand_outputs.rs
+@@ -1,4 +1,5 @@
+ use hashbrown::HashMap;
++use rayon::prelude::*;
+ use std::path::{Path, PathBuf};
+ use tracing::{debug, trace};
+ 
+@@ -123,17 +124,13 @@ fn partition_globs_into_map(globs: Vec<String>) -> anyhow::Result<HashMap<String
+         )
+ }
+ 
+-#[napi]
+ /// Expands the given outputs into a list of existing files.
+-/// This is used when hashing outputs
++/// This is used when hashing outputs. Takes a borrowed directory so batch
++/// callers don't pay a String clone per task.
+ pub fn get_files_for_outputs(
+-    directory: String,
++    directory: &Path,
+     entries: Vec<String>,
+ ) -> anyhow::Result<Vec<String>> {
+-    enable_logger();
+-
+-    let directory: PathBuf = directory.into();
+-
+     let mut globs: Vec<String> = vec![];
+     let mut files: Vec<String> = vec![];
+     let mut directories: Vec<String> = vec![];
+@@ -200,6 +197,22 @@ pub fn get_files_for_outputs(
+     Ok(files)
+ }
+ 
++#[napi]
++/// Batch version of get_files_for_outputs that processes multiple output
++/// entries in parallel using Rayon. Each entry is a list of output paths
++/// for a single task.
++pub fn get_files_for_outputs_batch(
++    directory: String,
++    entries_batch: Vec<Vec<String>>,
++) -> anyhow::Result<Vec<Vec<String>>> {
++    enable_logger();
++    let directory = Path::new(&directory);
++    entries_batch
++        .into_par_iter()
++        .map(|entries| get_files_for_outputs(directory, entries))
++        .collect()
++}
++
+ #[cfg(test)]
+ mod test {
+     use super::*;
+@@ -300,7 +313,7 @@ mod test {
+             "folder/nested-folder".to_string(),
+             "test.txt".to_string(),
+         ];
+-        let mut result = get_files_for_outputs(temp.display().to_string(), entries).unwrap();
++        let mut result = get_files_for_outputs(temp.path(), entries).unwrap();
+         result.sort();
+         assert_eq!(
+             result,
+@@ -469,7 +482,7 @@ mod test {
+         temp.child("out/visible.txt").write_str("content").unwrap();
+ 
+         let entries = vec!["out".to_string()];
+-        let mut result = get_files_for_outputs(temp.display().to_string(), entries).unwrap();
++        let mut result = get_files_for_outputs(temp.path(), entries).unwrap();
+         result.sort();
+ 
+         assert!(result.contains(&"out/visible.txt".to_string()));
+@@ -536,7 +549,7 @@ mod test {
+ 
+             // Test both functions
+             let _result1 = expand_outputs(temp.display().to_string(), entries.clone());
+-            let _result2 = get_files_for_outputs(temp.display().to_string(), entries);
++            let _result2 = get_files_for_outputs(temp.path(), entries);
+ 
+             drop(temp);
+         }
+diff --git a/packages/nx/src/native/db/connection.rs b/packages/nx/src/native/db/connection.rs
+index b870d0c3f3f..b239ac77572 100644
+--- a/packages/nx/src/native/db/connection.rs
++++ b/packages/nx/src/native/db/connection.rs
+@@ -115,6 +115,28 @@ impl NxDbConnection {
+         }
+     }
+ 
++    /// Run a query and collect every row, retrying the whole prepare+query
++    /// when SQLite reports DatabaseBusy. Use this instead of calling
++    /// `prepare` + `query_map` directly — those bypass the retry wrapper
++    /// and will surface DatabaseBusy to callers when another process
++    /// briefly holds the write lock.
++    pub fn query_map<T, P, F>(&self, sql: &str, params: P, f: F) -> Result<Vec<T>>
++    where
++        P: Params + Clone,
++        F: FnMut(&Row<'_>) -> rusqlite::Result<T> + Clone,
++    {
++        if let Some(conn) = &self.conn {
++            retry_db_operation_when_busy!({
++                let mut stmt = conn.prepare(sql)?;
++                stmt.query_map(params.clone(), f.clone())?
++                    .collect::<rusqlite::Result<Vec<T>>>()
++            })
++            .map_err(|e| anyhow::anyhow!("DB query_map error: \"{}\", {:?}", sql, e))
++        } else {
++            anyhow::bail!("No database connection available")
++        }
++    }
++
+     pub fn close(self) -> Result<()> {
+         trace!("Closing database connection");
+         if let Some(conn) = self.conn {
+diff --git a/packages/nx/src/native/index.d.ts b/packages/nx/src/native/index.d.ts
+index 3d49e2e4cb6..c7705ddb651 100644
+--- a/packages/nx/src/native/index.d.ts
++++ b/packages/nx/src/native/index.d.ts
+@@ -85,6 +85,11 @@ export declare class NxCache {
+   cacheDirectory: string
+   constructor(workspaceRoot: string, cachePath: string, dbConnection: ExternalObject<NxDbConnection>, linkTaskDetails?: boolean | undefined | null, maxCacheSize?: number | undefined | null)
+   get(hash: string): CachedResult | null
++  /**
++   * Batch version of get() that fetches multiple cache entries in a single
++   * SQL query and reads terminal output files in parallel via Rayon.
++   */
++  getBatch(hashes: Array<string>): Array<CachedResult | undefined | null>
+   put(hash: string, terminalOutput: string, outputs: Array<string>, code: number): Array<string>
+   applyRemoteCacheResults(hash: string, result: CachedResult, outputs?: Array<string> | undefined | null): void
+   getTaskOutputsPath(hash: string): string
+@@ -170,7 +175,15 @@ export declare class TaskDetails {
+ 
+ export declare class TaskHasher {
+   constructor(workspaceRoot: string, projectGraph: ExternalObject<ProjectGraph>, projectFileMap: ExternalObject<ProjectFiles>, allWorkspaceFiles: ExternalObject<Array<FileData>>, tsConfig: Buffer, tsConfigPaths: Record<string, Array<string>>, rootTsconfigPath?: string | undefined | null, options?: HasherOptions | undefined | null)
+-  hashPlans(hashPlans: ExternalObject<Record<string, Array<HashInstruction>>>, jsEnv: Record<string, string>, cwd: string, collectTaskInputs?: boolean | undefined | null): NapiDashMap<string, HashDetails>
++  /**
++   * Hash each task's instructions using the env map keyed by `task.id`.
++   * Every task in `hash_plans` must have an entry in `per_task_envs` —
++   * a missing id surfaces as an error rather than silently hashing
++   * against an empty env. Callers that want to hash all tasks against
++   * the same env should build `per_task_envs` by keying that env under
++   * every task id.
++   */
++  hashPlans(hashPlans: ExternalObject<Record<string, Array<HashInstruction>>>, perTaskEnvs: Record<string, Record<string, string>>, cwd: string, collectTaskInputs?: boolean | undefined | null): NapiDashMap<string, HashDetails>
+ }
+ 
+ export declare class Watcher {
+@@ -313,10 +326,11 @@ export declare function getDefaultMaxCacheSize(cachePath: string): number
+ export declare function getEventDimensions(): EventDimensions
+ 
+ /**
+- * Expands the given outputs into a list of existing files.
+- * This is used when hashing outputs
++ * Batch version of get_files_for_outputs that processes multiple output
++ * entries in parallel using Rayon. Each entry is a list of output paths
++ * for a single task.
+  */
+-export declare function getFilesForOutputs(directory: string, entries: Array<string>): Array<string>
++export declare function getFilesForOutputsBatch(directory: string, entriesBatch: Array<Array<string>>): Array<Array<string>>
+ 
+ /**
+  * If `workspace_root` is inside a git worktree, returns the main repo root.
+diff --git a/packages/nx/src/native/native-bindings.js b/packages/nx/src/native/native-bindings.js
+index ee74bc2264f..2505a90ca8f 100644
+--- a/packages/nx/src/native/native-bindings.js
++++ b/packages/nx/src/native/native-bindings.js
+@@ -607,7 +607,7 @@ module.exports.flushTelemetry = nativeBinding.flushTelemetry
+ module.exports.getBinaryTarget = nativeBinding.getBinaryTarget
+ module.exports.getDefaultMaxCacheSize = nativeBinding.getDefaultMaxCacheSize
+ module.exports.getEventDimensions = nativeBinding.getEventDimensions
+-module.exports.getFilesForOutputs = nativeBinding.getFilesForOutputs
++module.exports.getFilesForOutputsBatch = nativeBinding.getFilesForOutputsBatch
+ module.exports.getMainWorktreeRoot = nativeBinding.getMainWorktreeRoot
+ module.exports.getTransformableOutputs = nativeBinding.getTransformableOutputs
+ module.exports.GroupType = nativeBinding.GroupType
+diff --git a/packages/nx/src/native/nx.wasi-browser.js b/packages/nx/src/native/nx.wasi-browser.js
+index ab0641bfec6..25da3dc1667 100644
+--- a/packages/nx/src/native/nx.wasi-browser.js
++++ b/packages/nx/src/native/nx.wasi-browser.js
+@@ -117,7 +117,6 @@ export const copy = __napiModule.exports.copy
+ export const expandOutputs = __napiModule.exports.expandOutputs
+ export const findImports = __napiModule.exports.findImports
+ export const getBinaryTarget = __napiModule.exports.getBinaryTarget
+-export const getFilesForOutputs = __napiModule.exports.getFilesForOutputs
+ export const getTransformableOutputs = __napiModule.exports.getTransformableOutputs
+ export const hashArray = __napiModule.exports.hashArray
+ export const hashFile = __napiModule.exports.hashFile
+diff --git a/packages/nx/src/native/nx.wasi.cjs b/packages/nx/src/native/nx.wasi.cjs
+index d5331a30bed..3db8f8f8c35 100644
+--- a/packages/nx/src/native/nx.wasi.cjs
++++ b/packages/nx/src/native/nx.wasi.cjs
+@@ -148,7 +148,6 @@ module.exports.copy = __napiModule.exports.copy
+ module.exports.expandOutputs = __napiModule.exports.expandOutputs
+ module.exports.findImports = __napiModule.exports.findImports
+ module.exports.getBinaryTarget = __napiModule.exports.getBinaryTarget
+-module.exports.getFilesForOutputs = __napiModule.exports.getFilesForOutputs
+ module.exports.getTransformableOutputs = __napiModule.exports.getTransformableOutputs
+ module.exports.hashArray = __napiModule.exports.hashArray
+ module.exports.hashFile = __napiModule.exports.hashFile
+diff --git a/packages/nx/src/native/tasks/hashers/hash_task_output.rs b/packages/nx/src/native/tasks/hashers/hash_task_output.rs
+index 76b30fc6682..0ec9f7b6124 100644
+--- a/packages/nx/src/native/tasks/hashers/hash_task_output.rs
++++ b/packages/nx/src/native/tasks/hashers/hash_task_output.rs
+@@ -27,7 +27,7 @@ pub fn resolve_task_output_files(
+     glob: &str,
+     outputs: &[String],
+ ) -> Result<Vec<String>> {
+-    let output_files = get_files_for_outputs(workspace_root.to_string(), outputs.to_vec())?;
++    let output_files = get_files_for_outputs(Path::new(workspace_root), outputs.to_vec())?;
+     let glob_set = build_glob_set(&[glob])?;
+     Ok(output_files
+         .into_iter()
+@@ -55,7 +55,7 @@ pub fn hash_task_output(
+ 
+     trace!("TaskOutput cache MISS for {}", cache_key);
+     let now = std::time::Instant::now();
+-    let output_files = get_files_for_outputs(workspace_root.to_string(), outputs.to_vec())?;
++    let output_files = get_files_for_outputs(Path::new(workspace_root), outputs.to_vec())?;
+     trace!("get_files_for_outputs: {:?}", now.elapsed());
+     let glob = build_glob_set(&[glob])?;
+ 
+diff --git a/packages/nx/src/native/tasks/task_hasher.rs b/packages/nx/src/native/tasks/task_hasher.rs
+index ba981f0bb5f..58e175078ff 100644
+--- a/packages/nx/src/native/tasks/task_hasher.rs
++++ b/packages/nx/src/native/tasks/task_hasher.rs
+@@ -190,14 +190,42 @@ impl TaskHasher {
+         }
+     }
+ 
++    /// Hash each task's instructions using the env map keyed by `task.id`.
++    /// Every task in `hash_plans` must have an entry in `per_task_envs` —
++    /// a missing id surfaces as an error rather than silently hashing
++    /// against an empty env. Callers that want to hash all tasks against
++    /// the same env should build `per_task_envs` by keying that env under
++    /// every task id.
+     #[napi]
+     pub fn hash_plans(
+         &self,
+         hash_plans: &External<HashMap<String, Vec<HashInstruction>>>,
+-        js_env: HashMap<String, String>,
++        per_task_envs: HashMap<String, HashMap<String, String>>,
+         cwd: String,
+         collect_task_inputs: Option<bool>,
+     ) -> anyhow::Result<NapiDashMap<String, HashDetails>> {
++        for task_id in hash_plans.keys() {
++            if !per_task_envs.contains_key(task_id) {
++                anyhow::bail!("hash_plans: missing env entry for task {}", task_id);
++            }
++        }
++        self.hash_plans_impl(hash_plans, cwd, collect_task_inputs, |task_id| {
++            per_task_envs
++                .get(task_id)
++                .expect("per-task env presence verified above")
++        })
++    }
++
++    fn hash_plans_impl<'a, F>(
++        &self,
++        hash_plans: &External<HashMap<String, Vec<HashInstruction>>>,
++        cwd: String,
++        collect_task_inputs: Option<bool>,
++        resolve_env: F,
++    ) -> anyhow::Result<NapiDashMap<String, HashDetails>>
++    where
++        F: Fn(&str) -> &'a HashMap<String, String> + Sync,
++    {
+         // Create fresh caches for this invocation.
+         // This ensures no stale caches across multiple CLI commands when the daemon holds
+         // the TaskHasher instance.
+@@ -255,7 +283,7 @@ impl TaskHasher {
+                     task_id,
+                     instruction,
+                     HashInstructionArgs {
+-                        js_env: &js_env,
++                        js_env: resolve_env(task_id),
+                         ts_config_hash: &ts_config_hash,
+                         project_root_mappings: &project_root_mappings,
+                         sorted_externals: &sorted_externals,
+diff --git a/packages/nx/src/tasks-runner/cache.ts b/packages/nx/src/tasks-runner/cache.ts
+index 258b9470584..0ab574eccc2 100644
+--- a/packages/nx/src/tasks-runner/cache.ts
++++ b/packages/nx/src/tasks-runner/cache.ts
+@@ -138,6 +138,64 @@ export class DbCache {
+     }
+   }
+ 
++  async getBatch(
++    tasks: Task[]
++  ): Promise<Map<string, CachedResult & { remote: boolean }>> {
++    const results = new Map<string, CachedResult & { remote: boolean }>();
++    if (tasks.length === 0) return results;
++
++    // Single-task fast path: direct primary-key lookup beats rarray
++    // vtable overhead when there's nothing to amortize over.
++    if (tasks.length === 1) {
++      const res = await this.get(tasks[0]);
++      if (res) results.set(tasks[0].hash, res);
++      return results;
++    }
++
++    const hashes = tasks.map((t) => t.hash);
++
++    // 1. Local: one rarray SQL query + parallel terminal output reads.
++    //    batchResults is index-aligned with tasks, so we walk in lockstep.
++    const batchResults = this.cache.getBatch(hashes);
++    const remoteMisses: Task[] = [];
++    for (const [i, task] of tasks.entries()) {
++      const res = batchResults[i];
++      if (res) {
++        results.set(task.hash, {
++          ...res,
++          terminalOutput: res.terminalOutput ?? '',
++          remote: false,
++        });
++      } else if (this.remoteCache) {
++        remoteMisses.push(task);
++      }
++    }
++
++    // 2. Remote: parallel HTTP retrievals for anything the local SQL missed.
++    //    The RemoteCache interface has no batch endpoint, so this is just
++    //    Promise.all over individual retrieve() calls.
++    if (remoteMisses.length > 0) {
++      await Promise.all(
++        remoteMisses.map(async (task) => {
++          const res = await this.remoteCache.retrieve(
++            task.hash,
++            this.cache.cacheDirectory
++          );
++          if (res) {
++            this.applyRemoteCacheResults(task.hash, res, task.outputs);
++            results.set(task.hash, {
++              ...res,
++              terminalOutput: res.terminalOutput ?? '',
++              remote: true,
++            });
++          }
++        })
++      );
++    }
++
++    return results;
++  }
++
+   getUsedCacheSpace() {
+     return this.cache.getCacheSize();
+   }
+@@ -386,6 +444,20 @@ export class Cache {
+     }
+   }
+ 
++  async getBatch(
++    tasks: Task[]
++  ): Promise<Map<string, CachedResult & { remote: boolean }>> {
++    // Legacy file-based cache has no native batch support — loop in parallel.
++    const results = new Map<string, CachedResult & { remote: boolean }>();
++    const entries = await Promise.all(
++      tasks.map(async (t) => ({ task: t, res: await this.get(t) }))
++    );
++    for (const { task, res } of entries) {
++      if (res) results.set(task.hash, res);
++    }
++    return results;
++  }
++
+   async put(
+     task: Task,
+     terminalOutput: string | null,
+diff --git a/packages/nx/src/tasks-runner/init-tasks-runner.ts b/packages/nx/src/tasks-runner/init-tasks-runner.ts
+index c91241e9cf9..d3ff40bf2c4 100644
+--- a/packages/nx/src/tasks-runner/init-tasks-runner.ts
++++ b/packages/nx/src/tasks-runner/init-tasks-runner.ts
+@@ -179,7 +179,7 @@ export async function runDiscreteTasks(
+ 
+   let groupId = 0;
+   let nextBatch = orchestrator.nextBatch();
+-  let batchResults: Array<Promise<TaskResult[]>> = [];
++  const batchResults: Array<Promise<TaskResult[]>> = [];
+   /**
+    * Set of task ids that were part of batches
+    */
+@@ -196,14 +196,25 @@ export async function runDiscreteTasks(
+     nextBatch = orchestrator.nextBatch();
+   }
+ 
+-  const taskResults = tasks
+-    // Filter out tasks which were not part of batches
+-    .filter((task) => !batchTasks.has(task.id))
+-    .map((task) =>
+-      orchestrator
+-        .applyFromCacheOrRunTask(true, task, groupId++)
+-        .then((r) => [r])
+-    );
++  const discreteTasks = tasks.filter((task) => !batchTasks.has(task.id));
++
++  // Bulk-resolve every discrete task's cache state in one shot —
++  // single SQL call plus parallel remote retrievals. Batches kicked
++  // off above continue running concurrently while we await this.
++  const cacheHits = await orchestrator.resolveCachedTasks(
++    true,
++    discreteTasks,
++    groupId++
++  );
++  const cacheHitsById = new Map(cacheHits.map((h) => [h.task.id, h]));
++
++  const taskResults: Array<Promise<TaskResult[]>> = discreteTasks.map(
++    async (task) => {
++      const hit = cacheHitsById.get(task.id);
++      if (hit) return [hit];
++      return [await orchestrator.runTaskDirectly(true, task, groupId++)];
++    }
++  );
+ 
+   return [...batchResults, ...taskResults];
+ }
+diff --git a/packages/nx/src/tasks-runner/run-command.spec.ts b/packages/nx/src/tasks-runner/run-command.spec.ts
+index 3e1e2cf1240..45b8653a183 100644
+--- a/packages/nx/src/tasks-runner/run-command.spec.ts
++++ b/packages/nx/src/tasks-runner/run-command.spec.ts
+@@ -84,6 +84,17 @@ describe('getRunner', () => {
+     expect(tasksRunner).toEqual(nxCloudTasksRunnerShell);
+   });
+ 
++  it('does not use cloud runner when NX_NO_CLOUD=true, even if a cloud token is set in env', () => {
++    const { tasksRunner } = withEnvironmentVariables(
++      {
++        NX_CLOUD_AUTH_TOKEN: 'xxx-xx-xxx',
++        NX_NO_CLOUD: 'true',
++      },
++      () => getRunner({}, {})
++    );
++    expect(tasksRunner).not.toEqual(nxCloudTasksRunnerShell);
++  });
++
+   it('reads options from base properties if no runner options provided', () => {
+     jest.mock(join(__dirname, './default-tasks-runner.ts'), () => mockRunner);
+ 
+diff --git a/packages/nx/src/tasks-runner/run-command.ts b/packages/nx/src/tasks-runner/run-command.ts
+index 54e9212837f..51e3467bd75 100644
+--- a/packages/nx/src/tasks-runner/run-command.ts
++++ b/packages/nx/src/tasks-runner/run-command.ts
+@@ -27,7 +27,7 @@ import { createProjectGraphAsync } from '../project-graph/project-graph';
+ import { NxArgs } from '../utils/command-line-utils';
+ import { handleErrors } from '../utils/handle-errors';
+ import { isCI } from '../utils/is-ci';
+-import { isNxCloudUsed } from '../utils/nx-cloud-utils';
++import { isNxCloudDisabled, isNxCloudUsed } from '../utils/nx-cloud-utils';
+ import { printNxKey } from '../utils/nx-key';
+ import { output } from '../utils/output';
+ import {
+@@ -1019,9 +1019,11 @@ export async function invokeTasksRunner({
+           return hasher.hashTask(task, taskGraph_, env);
+         },
+         hashTasks(
+-          task: Task[],
++          tasks: Task[],
+           taskGraph_?: TaskGraph,
+-          env?: NodeJS.ProcessEnv
++          envOrPerTaskEnvs?:
++            | NodeJS.ProcessEnv
++            | Record<string, NodeJS.ProcessEnv>
+         ) {
+           if (!taskGraph_) {
+             output.warn({
+@@ -1033,7 +1035,7 @@ export async function invokeTasksRunner({
+             });
+             taskGraph_ = taskGraph;
+           }
+-          if (!env) {
++          if (!envOrPerTaskEnvs) {
+             output.warn({
+               title: `The environment variables are now required as an argument to hashTasks`,
+               bodyLines: [
+@@ -1041,10 +1043,15 @@ export async function invokeTasksRunner({
+                 'This will result in an error in Nx 20',
+               ],
+             });
+-            env = process.env;
++            envOrPerTaskEnvs = process.env;
+           }
+-
+-          return hasher.hashTasks(task, taskGraph_, env);
++          // hasher.hashTasks accepts either legacy single-env or the new
++          // per-task-env shape and normalizes internally.
++          return hasher.hashTasks(
++            tasks,
++            taskGraph_,
++            envOrPerTaskEnvs as NodeJS.ProcessEnv
++          );
+         },
+       },
+       daemon: daemonClient,
+@@ -1211,7 +1218,13 @@ function getTasksRunnerPath(
+     // Nx Cloud ID specified in nxJson
+     nxJson.nxCloudId;
+ 
+-  return isCloudRunner ? 'nx-cloud' : defaultTasksRunnerPath;
++  // NX_NO_CLOUD / neverConnectToCloud wins over any ambient token — otherwise
++  // a surrounding CI env variable would still route through the cloud shell,
++  // which resolves the default tasks runner via its own require bridge and
++  // can pull in a different Nx version than the workspace's own.
++  return isCloudRunner && !isNxCloudDisabled(nxJson)
++    ? 'nx-cloud'
++    : defaultTasksRunnerPath;
+ }
+ 
+ export function getRunnerOptions(
+diff --git a/packages/nx/src/tasks-runner/task-env.ts b/packages/nx/src/tasks-runner/task-env.ts
+index 7c51208f040..13004e21383 100644
+--- a/packages/nx/src/tasks-runner/task-env.ts
++++ b/packages/nx/src/tasks-runner/task-env.ts
+@@ -22,13 +22,31 @@ export function getEnvVariablesForBatchProcess(
+   };
+ }
+ 
++// The orchestrator now calls this eagerly during the coordinator pre-hash
++// in addition to processTask (and again in hashBatchTasks), so the same
++// task hits this function multiple times per run. Each call reads 3+ .env
++// files from disk — memoize by task.id to skip the repeat work.
++//
++// Cache lifetime is the current Nx invocation: the function is only called
++// from CLI/orchestrator code (not the long-lived daemon), so the map is
++// scoped to a single run. Callers must not mutate the returned env — they
++// already spread it into new objects before adding task-specific overrides
++// (see getEnvVariablesForTask).
++const taskSpecificEnvCache = new Map<string, NodeJS.ProcessEnv>();
++
+ export function getTaskSpecificEnv(task: Task, graph: ProjectGraph) {
++  const cached = taskSpecificEnvCache.get(task.id);
++  if (cached) return cached;
++
+   // Unload any dot env files at the root of the workspace that were loaded on init of Nx.
+   const taskEnv = unloadDotEnvFiles({ ...process.env });
+-  return process.env.NX_LOAD_DOT_ENV_FILES === 'true'
+-    ? loadDotEnvFilesForTask(task, graph, taskEnv)
+-    : // If not loading dot env files, ensure env vars created by system are still loaded
+-      taskEnv;
++  const env =
++    process.env.NX_LOAD_DOT_ENV_FILES === 'true'
++      ? loadDotEnvFilesForTask(task, graph, taskEnv)
++      : // If not loading dot env files, ensure env vars created by system are still loaded
++        taskEnv;
++  taskSpecificEnvCache.set(task.id, env);
++  return env;
+ }
+ 
+ export function getEnvVariablesForTask(
+diff --git a/packages/nx/src/tasks-runner/task-orchestrator.ts b/packages/nx/src/tasks-runner/task-orchestrator.ts
+index f327f88a050..2c180ece508 100644
+--- a/packages/nx/src/tasks-runner/task-orchestrator.ts
++++ b/packages/nx/src/tasks-runner/task-orchestrator.ts
+@@ -5,6 +5,7 @@ import { relative } from 'path';
+ import { performance } from 'perf_hooks';
+ import { NxJsonConfiguration } from '../config/nx-json';
+ import { ProjectGraph } from '../config/project-graph';
++import { readProjectsConfigurationFromProjectGraph } from '../project-graph/project-graph';
+ import { Task, TaskGraph } from '../config/task-graph';
+ import { DaemonClient } from '../daemon/client/client';
+ import { runCommands } from '../executors/run-commands/run-commands.impl';
+@@ -28,7 +29,13 @@ import {
+   EXPECTED_TERMINATION_SIGNALS,
+   signalToCode,
+ } from '../utils/exit-codes';
+-import { Cache, DbCache, dbCacheEnabled, getCache } from './cache';
++import {
++  Cache,
++  CachedResult,
++  DbCache,
++  dbCacheEnabled,
++  getCache,
++} from './cache';
+ import { DefaultTasksRunnerOptions } from './default-tasks-runner';
+ import { ForkedProcessTaskRunner } from './forked-process-task-runner';
+ import { isTuiEnabled } from './is-tui-enabled';
+@@ -55,10 +62,20 @@ import {
+ } from './utils';
+ import { SharedRunningTask } from './running-tasks/shared-running-task';
+ 
++type CacheHit = {
++  task: Task;
++  cachedResult: CachedResult & { remote: boolean };
++};
++
+ export class TaskOrchestrator {
+   private taskDetails: TaskDetails | null = getTaskDetails();
+   private cache: DbCache | Cache = getCache(this.options);
+   private readonly tuiEnabled = isTuiEnabled();
++  // Derived from projectGraph once — passed to getExecutorForTask /
++  // getCustomHasher so they don't have to re-walk the graph per call.
++  private readonly projects = readProjectsConfigurationFromProjectGraph(
++    this.projectGraph
++  ).projects;
+   private forkedProcessTaskRunner = new ForkedProcessTaskRunner(
+     this.options,
+     this.tuiEnabled
+@@ -69,6 +86,7 @@ export class TaskOrchestrator {
+     : null;
+   private tasksSchedule = new TasksSchedule(
+     this.projectGraph,
++    this.projects,
+     this.taskGraph,
+     this.options
+   );
+@@ -84,12 +102,11 @@ export class TaskOrchestrator {
+ 
+   private processedTasks = new Map<string, Promise<NodeJS.ProcessEnv>>();
+ 
+-  private completedTasks: {
+-    [id: string]: TaskStatus;
+-  } = {};
++  private completedTasks = new Map<string, TaskStatus>();
+   private waitingForTasks: Function[] = [];
++  private pendingDiscreteWorkers = new Set<Promise<TaskResult | void>>();
+ 
+-  private groups = [];
++  private groups: boolean[] = [];
+   private continuousTasksStarted = 0;
+ 
+   private bailed = false;
+@@ -113,7 +130,6 @@ export class TaskOrchestrator {
+   private discreteTaskExitHandled = new Map<string, Promise<void>>();
+   private continuousTaskExitHandled = new Map<string, Promise<void>>();
+   private cleanupPromise: Promise<void> | null = null;
+-
+   // endregion internal state
+ 
+   constructor(
+@@ -159,37 +175,40 @@ export class TaskOrchestrator {
+       this.taskGraph
+     );
+ 
+-    const threads = [];
+-
+     process.stdout.setMaxListeners(total + defaultMaxListeners);
+     process.stderr.setMaxListeners(total + defaultMaxListeners);
+     process.setMaxListeners(total + defaultMaxListeners);
+ 
+-    // initial seeding of the queue
+-    for (let i = 0; i < discrete; ++i) {
+-      threads.push(this.executeDiscreteTaskLoop());
+-    }
++    const doNotSkipCache =
++      this.options.skipNxCache === false ||
++      this.options.skipNxCache === undefined;
++
++    // Start continuous task loops (these run independently)
++    const continuousLoops = [];
+     for (let i = 0; i < continuous; ++i) {
+-      threads.push(this.executeContinuousTaskLoop(continuous));
++      continuousLoops.push(this.executeContinuousTaskLoop(continuous));
+     }
+ 
++    // Set up forced shutdown handler
++    const shutdownPromise = this.tuiEnabled
++      ? new Promise((resolve) => {
++          this.options.lifeCycle.registerForcedShutdownCallback(() => {
++            this.stopRequested = true;
++            resolve(undefined);
++          });
++        })
++      : new Promise<void>((resolve) => {
++          this.resolveStopPromise = resolve;
++        });
++
++    const coordinatorLoop = this.executeCoordinatorLoop(
++      doNotSkipCache,
++      discrete
++    );
++
+     await Promise.race([
+-      Promise.all(threads),
+-      ...(this.tuiEnabled
+-        ? [
+-            new Promise((resolve) => {
+-              this.options.lifeCycle.registerForcedShutdownCallback(() => {
+-                // The user force quit the TUI with ctrl+c, so proceed onto cleanup
+-                this.stopRequested = true;
+-                resolve(undefined);
+-              });
+-            }),
+-          ]
+-        : [
+-            new Promise<void>((resolve) => {
+-              this.resolveStopPromise = resolve;
+-            }),
+-          ]),
++      Promise.all([coordinatorLoop, ...continuousLoops]),
++      shutdownPromise,
+     ]);
+ 
+     performance.mark('task-execution:end');
+@@ -203,26 +222,76 @@ export class TaskOrchestrator {
+     }
+     await this.cleanup();
+ 
+-    return this.completedTasks;
++    // Public API (defaultTasksRunner) returns a plain object keyed by
++    // task id. Internal state is a Map for faster lookup.
++    return Object.fromEntries(this.completedTasks);
+   }
+ 
+   public nextBatch() {
+     return this.tasksSchedule.nextBatch();
+   }
+ 
+-  private async executeDiscreteTaskLoop() {
+-    const doNotSkipCache =
+-      this.options.skipNxCache === false ||
+-      this.options.skipNxCache === undefined;
+-
++  /**
++   * Coordinator loop. All batch operations (hashing, cache resolution)
++   * happen on this single thread — no races. Cache misses are dispatched
++   * as fire-and-forget workers. Workers signal completion via
++   * scheduleNextTasksAndReleaseThreads which wakes all waiting loops.
++   *
++   * Safety: the dispatch phase (step 5) is fully synchronous — no
++   * worker can run during it. So all tasks picked up by nextTask()
++   * are guaranteed to be in processedTasks from step 1.
++   */
++  private async executeCoordinatorLoop(
++    doNotSkipCache: boolean,
++    parallelism: number
++  ) {
+     while (true) {
+-      // completed all the tasks
+-      if (!this.tasksSchedule.hasTasks() || this.bailed || this.stopRequested) {
+-        return null;
++      if (this.bailed || this.stopRequested) break;
++
++      // 1. Hash BEFORE processAll so processTask sees hashes set, and so
++      //    resolveCachedTasksBulk can look them up in the cache. Each task
++      //    is hashed with its own task-specific env (project/target .env
++      //    files, custom hasher env reads) — the shared batchEnv would
++      //    compute a different cache key than the single-task path and
++      //    risk stale cache reuse after env changes.
++      {
++        const { scheduledTasks } = this.tasksSchedule.getAllScheduledTasks();
++        const unhashed = scheduledTasks
++          .map((id) => this.taskGraph.tasks[id])
++          .filter(
++            (t) =>
++              !t.hash &&
++              this.taskGraph.dependencies[t.id].every((depId) =>
++                this.completedTasks.has(depId)
++              )
++          );
++        if (unhashed.length > 1) {
++          const perTaskEnvs: Record<string, NodeJS.ProcessEnv> = {};
++          for (const task of unhashed) {
++            perTaskEnvs[task.id] = getTaskSpecificEnv(task, this.projectGraph);
++          }
++          await hashTasks(
++            this.hasher,
++            this.projectGraph,
++            this.taskGraphForHashing,
++            perTaskEnvs,
++            this.taskDetails,
++            unhashed
++          );
++        }
++      }
++
++      // 2. Bulk-resolve cache hits before processTask — avoids N
++      //    lifecycle calls for tasks that will be resolved from cache.
++      if (doNotSkipCache) {
++        const resolved = await this.resolveCachedTasksBulk();
++        if (resolved) continue;
+       }
+ 
++      // 3. Process remaining scheduled tasks (cache misses + non-cacheable).
+       this.processAllScheduledTasks();
+ 
++      // 4. Handle batch executors
+       const batch = this.nextBatch();
+       if (batch) {
+         const groupId = this.closeGroup();
+@@ -231,15 +300,23 @@ export class TaskOrchestrator {
+         continue;
+       }
+ 
+-      const task = this.tasksSchedule.nextTask((t) => !t.continuous);
+-      if (task) {
++      // 5. Dispatch cache misses as individual workers
++      while (this.pendingDiscreteWorkers.size < parallelism) {
++        const task = this.tasksSchedule.nextTask((t) => !t.continuous);
++        if (!task) break;
+         const groupId = this.closeGroup();
+-        await this.applyFromCacheOrRunTask(doNotSkipCache, task, groupId);
+-        this.openGroup(groupId);
+-        continue;
++        this.dispatchDiscreteWorker(doNotSkipCache, task, groupId);
+       }
+ 
+-      // block until some other task completes, then try again
++      // 6. Nothing left to dispatch and nothing in flight — done.
++      if (
++        !this.tasksSchedule.hasTasks() &&
++        this.pendingDiscreteWorkers.size === 0
++      ) {
++        break;
++      }
++
++      // 7. Wait for a worker to finish (woken by scheduleNextTasksAndReleaseThreads)
+       await new Promise((res) => this.waitingForTasks.push(res));
+     }
+   }
+@@ -281,15 +358,6 @@ export class TaskOrchestrator {
+     }
+   }
+ 
+-  private processTasks(taskIds: string[]) {
+-    for (const taskId of taskIds) {
+-      // Task is already handled or being handled
+-      if (!this.processedTasks.has(taskId)) {
+-        this.processedTasks.set(taskId, this.processTask(taskId));
+-      }
+-    }
+-  }
+-
+   // region Processing Scheduled Tasks
+   private async processTask(taskId: string): Promise<NodeJS.ProcessEnv> {
+     const task = this.taskGraph.tasks[taskId];
+@@ -313,57 +381,149 @@ export class TaskOrchestrator {
+ 
+   public processAllScheduledTasks() {
+     const { scheduledTasks } = this.tasksSchedule.getAllScheduledTasks();
+-
+-    this.processTasks(scheduledTasks);
++    for (const taskId of scheduledTasks) {
++      // Task is already handled or being handled
++      if (!this.processedTasks.has(taskId)) {
++        this.processedTasks.set(taskId, this.processTask(taskId));
++      }
++    }
+   }
+ 
+   // endregion Processing Scheduled Tasks
+ 
+   // region Applying Cache
++
+   private async applyCachedResults(tasks: Task[]): Promise<TaskResult[]> {
+     const cacheableTasks = tasks.filter((t) =>
+       isCacheableTask(t, this.options)
+     );
+-    const res = await Promise.all(
+-      cacheableTasks.map((t) => this.applyCachedResult(t))
+-    );
+-    return res.filter((r) => r !== null);
++    if (cacheableTasks.length === 0) return [];
++
++    const cacheHits = await this.fetchCacheHits(cacheableTasks);
++    if (cacheHits.length === 0) return [];
++
++    return this.finalizeCacheHits(cacheHits);
+   }
+ 
+-  private async applyCachedResult(task: Task): Promise<{
+-    task: Task;
+-    code: number;
+-    status: 'local-cache' | 'local-cache-kept-existing' | 'remote-cache';
+-  }> {
+-    const cachedResult = await this.cache.get(task);
+-    if (!cachedResult || cachedResult.code !== 0) return null;
+-
+-    const outputs = task.outputs;
+-    const shouldCopyOutputsFromCache =
+-      // No output files to restore
+-      !!outputs.length &&
+-      // Remote caches are restored to output dirs when applied and using db cache
+-      (!cachedResult.remote || !dbCacheEnabled()) &&
+-      // Output files have not been touched since last run
+-      (await this.shouldCopyOutputsFromCache(outputs, task.hash));
+-    if (shouldCopyOutputsFromCache) {
+-      await this.cache.copyFilesFromCache(task.hash, cachedResult, outputs);
++  /**
++   * Batch cache lookup + filter to successful entries. Handles both
++   * local (one rarray SQL call) and remote (parallel HTTP retrievals)
++   * inside DbCache.getBatch.
++   */
++  private async fetchCacheHits(tasks: Task[]): Promise<CacheHit[]> {
++    const batchResults = await this.cache.getBatch(tasks);
++    const cacheHits: CacheHit[] = [];
++    for (const task of tasks) {
++      const cachedResult = batchResults.get(task.hash);
++      if (cachedResult && cachedResult.code === 0) {
++        cacheHits.push({ task, cachedResult });
++      }
+     }
+-    const status = cachedResult.remote
+-      ? 'remote-cache'
+-      : shouldCopyOutputsFromCache
+-        ? 'local-cache'
+-        : 'local-cache-kept-existing';
+-    this.options.lifeCycle.printTaskTerminalOutput(
+-      task,
+-      status,
+-      cachedResult.terminalOutput
++    return cacheHits;
++  }
++
++  /**
++   * For each confirmed cache hit: decide whether to copy outputs from
++   * the cache (skipping if the on-disk outputs already match the
++   * recorded hash), copy in parallel, derive the task status, print
++   * terminal output, and return the assembled results.
++   */
++  private async finalizeCacheHits(
++    cacheHits: CacheHit[]
++  ): Promise<TaskResult[]> {
++    // Batch-check which tasks need outputs copied from cache. Remote
++    // cache entries come pre-restored to their output dirs when the
++    // db cache is on, so we only check ones that aren't.
++    const usingDbCache = dbCacheEnabled();
++    const tasksNeedingOutputCheck = cacheHits.filter(
++      ({ task, cachedResult }) =>
++        task.outputs.length > 0 && (!cachedResult.remote || !usingDbCache)
+     );
+-    return {
+-      code: cachedResult.code,
+-      task,
+-      status,
+-    };
++    const shouldCopyMap = await this.shouldCopyOutputsFromCacheBatch(
++      tasksNeedingOutputCheck.map(({ task }) => ({
++        outputs: task.outputs,
++        hash: task.hash,
++      }))
++    );
++
++    // Copy outputs in parallel for tasks that need it.
++    await Promise.all(
++      cacheHits.map(async ({ task, cachedResult }) => {
++        if (shouldCopyMap.get(task.hash)) {
++          await this.cache.copyFilesFromCache(
++            task.hash,
++            cachedResult,
++            task.outputs
++          );
++        }
++      })
++    );
++
++    // Derive status, print terminal output, build results.
++    const results: TaskResult[] = [];
++    for (const { task, cachedResult } of cacheHits) {
++      const shouldCopy = shouldCopyMap.get(task.hash) ?? false;
++      const status: TaskStatus = cachedResult.remote
++        ? 'remote-cache'
++        : shouldCopy
++          ? 'local-cache'
++          : 'local-cache-kept-existing';
++
++      this.options.lifeCycle.printTaskTerminalOutput(
++        task,
++        status,
++        cachedResult.terminalOutput
++      );
++
++      results.push({
++        task,
++        code: cachedResult.code,
++        status,
++        terminalOutput: cachedResult.terminalOutput,
++      });
++    }
++
++    return results;
++  }
++
++  /**
++   * Coordinator wrapper around {@link resolveCachedTasks}: peeks at
++   * scheduledTasks (without removing anything from the schedule),
++   * filters to cacheable hashed discrete candidates, and delegates the
++   * cache fetch + lifecycle to the public method. Returns true if any
++   * tasks were resolved.
++   *
++   * The coordinator relies on this running unconditionally (when cache
++   * is enabled): tasks dispatched in step 5 via runTaskDirectly skip
++   * their own cache lookup on the assumption that this has already
++   * confirmed them as misses. Don't add length-based bails.
++   */
++  private async resolveCachedTasksBulk(): Promise<boolean> {
++    const { scheduledTasks } = this.tasksSchedule.getAllScheduledTasks();
++
++    const candidates: Task[] = [];
++    for (const id of scheduledTasks) {
++      const task = this.taskGraph.tasks[id];
++      if (
++        task.hash &&
++        !task.continuous &&
++        isCacheableTask(task, this.options)
++      ) {
++        candidates.push(task);
++      }
++    }
++    if (candidates.length === 0) return false;
++
++    // postRunSteps → complete() → tasksSchedule.complete() will filter
++    // resolved hits out of scheduledTasks before we return, so there's
++    // no need to mutate the schedule here.
++    const groupId = this.closeGroup();
++    try {
++      const results = await this.resolveCachedTasks(true, candidates, groupId);
++      return results.length > 0;
++    } finally {
++      this.openGroup(groupId);
++    }
+   }
+ 
+   // endregion Applying Cache
+@@ -444,11 +604,19 @@ export class TaskOrchestrator {
+   }
+ 
+   private async hashBatchTasks(tasks: Task[]): Promise<void> {
++    // Batch executors run every task in the same forked process, but
++    // each task still has its own .env files / custom-hasher env — use
++    // task-specific env for hashing so the cache key matches the
++    // single-task path.
++    const perTaskEnvs: Record<string, NodeJS.ProcessEnv> = {};
++    for (const task of tasks) {
++      perTaskEnvs[task.id] = getTaskSpecificEnv(task, this.projectGraph);
++    }
+     await hashTasks(
+       this.hasher,
+       this.projectGraph,
+       this.taskGraphForHashing,
+-      this.batchEnv,
++      perTaskEnvs,
+       this.taskDetails,
+       tasks
+     );
+@@ -520,7 +688,7 @@ export class TaskOrchestrator {
+ 
+     // Update batch status based on all task results
+     const hasFailures = taskEntries.some(([taskId]) => {
+-      const status = this.completedTasks[taskId];
++      const status = this.completedTasks.get(taskId);
+       return status === 'failure' || status === 'skipped';
+     });
+     this.options.lifeCycle.setBatchStatus?.(
+@@ -530,8 +698,8 @@ export class TaskOrchestrator {
+ 
+     this.forkedProcessTaskRunner.cleanUpBatchProcesses();
+ 
+-    const tasksCompleted = taskEntries.filter(
+-      ([taskId]) => this.completedTasks[taskId]
++    const tasksCompleted = taskEntries.filter(([taskId]) =>
++      this.completedTasks.has(taskId)
+     );
+ 
+     // Batch is still not done, run it again
+@@ -656,7 +824,113 @@ export class TaskOrchestrator {
+   // endregion Batch
+ 
+   // region Single Task
+-  async applyFromCacheOrRunTask(
++
++  /**
++   * Bulk-resolve cache hits for a set of tasks: fetch cached entries,
++   * copy outputs as needed, fire lifecycle, and return the TaskResults
++   * for the hits. Tasks that aren't in the cache (or aren't cacheable)
++   * are silently omitted from the return value — callers are responsible
++   * for running those via {@link runTaskDirectly}.
++   *
++   * Fires scheduleTask lifecycle for hits that haven't been through
++   * processAllScheduledTasks yet. That's a coordinator gap-filler and
++   * a no-op for callers that pre-process the schedule.
++   *
++   * The caller provides `groupId` — cache hits share one slot since they
++   * don't actually compete for parallelism.
++   */
++  async resolveCachedTasks(
++    doNotSkipCache: boolean,
++    tasks: Task[],
++    groupId: number
++  ): Promise<TaskResult[]> {
++    if (!doNotSkipCache || tasks.length === 0) return [];
++
++    const cacheableTasks = tasks.filter((t) =>
++      isCacheableTask(t, this.options)
++    );
++    if (cacheableTasks.length === 0) return [];
++
++    const cacheHits = await this.fetchCacheHits(cacheableTasks);
++    if (cacheHits.length === 0) return [];
++
++    // scheduleTask lifecycle for hits the coordinator resolved before
++    // processAllScheduledTasks could fire it. No-op for callers that
++    // already ran processAllScheduledTasks (every hit is in processedTasks).
++    await Promise.all(
++      cacheHits
++        .filter(({ task }) => !this.processedTasks.has(task.id))
++        .map(({ task }) => this.options.lifeCycle.scheduleTask(task))
++    );
++
++    const hitTasks = cacheHits.map((h) => h.task);
++    await this.preRunSteps(hitTasks, { groupId });
++    const results = await this.finalizeCacheHits(cacheHits);
++    await this.postRunSteps(results, doNotSkipCache, { groupId });
++    return results;
++  }
++
++  /**
++   * Fire a discrete-task worker and track it in pendingDiscreteWorkers until
++   * it settles. Uses runTaskDirectly (not applyFromCacheOrRun*) because
++   * resolveCachedTasksBulk already confirmed this task is a cache miss —
++   * another lookup would re-query the DB and (for Nx Cloud users) repeat
++   * the remote HTTP retrieval.
++   */
++  private dispatchDiscreteWorker(
++    doNotSkipCache: boolean,
++    task: Task,
++    groupId: number
++  ): void {
++    const worker = this.runTaskDirectly(doNotSkipCache, task, groupId)
++      .catch((e) =>
++        this.handleDiscreteWorkerFailure(doNotSkipCache, task, groupId, e)
++      )
++      .finally(() => {
++        this.openGroup(groupId);
++        this.pendingDiscreteWorkers.delete(worker);
++        // Wake coordinator — the delete above may satisfy the exit condition
++        // (pendingDiscreteWorkers.size === 0) that was missed when
++        // scheduleNextTasksAndReleaseThreads fired earlier.
++        this.waitingForTasks.forEach((f) => f(null));
++        this.waitingForTasks.length = 0;
++      });
++    this.pendingDiscreteWorkers.add(worker);
++  }
++
++  /**
++   * Route a worker rejection (e.g. remote cache errors) through the normal
++   * failure path instead of letting it become an unhandled promise. Guard
++   * against double-finalize: completeTasks() populates `completedTasks`,
++   * so a rejection arriving after postRunSteps has already finalized the
++   * task must not run postRunSteps again.
++   */
++  private async handleDiscreteWorkerFailure(
++    doNotSkipCache: boolean,
++    task: Task,
++    groupId: number,
++    e: any
++  ): Promise<void> {
++    if (this.completedTasks.has(task.id)) return;
++    const terminalOutput = e?.message ?? '';
++    this.options.lifeCycle.printTaskTerminalOutput(
++      task,
++      'failure',
++      terminalOutput
++    );
++    await this.postRunSteps(
++      [{ task, status: 'failure', terminalOutput }],
++      doNotSkipCache,
++      { groupId }
++    );
++  }
++
++  /**
++   * Spawn and wait on a task's child process, unconditionally — no cache
++   * lookup. Callers must have already confirmed the task is a cache miss
++   * (or disabled caching entirely).
++   */
++  async runTaskDirectly(
+     doNotSkipCache: boolean,
+     task: Task,
+     groupId: number
+@@ -667,14 +941,13 @@ export class TaskOrchestrator {
+     await this.preRunSteps([task], { groupId });
+ 
+     const pipeOutput = await this.pipeOutputCapture(task);
+-    // obtain metadata
+     const temporaryOutputPath = this.cache.temporaryOutputPath(task);
+     const streamOutput =
+       this.outputStyle === 'static'
+         ? false
+         : shouldStreamOutput(task, this.initiatingProject);
+ 
+-    let env = pipeOutput
++    const env = pipeOutput
+       ? getEnvVariablesForTask(
+           task,
+           taskSpecificEnv,
+@@ -696,53 +969,43 @@ export class TaskOrchestrator {
+           streamOutput
+         );
+ 
+-    let results: {
+-      task: Task;
+-      code: number;
+-      status: TaskStatus;
+-      terminalOutput?: string;
+-    }[] = doNotSkipCache ? await this.applyCachedResults([task]) : [];
++    let resolveDiscreteExit: () => void;
++    const discreteExitHandled = new Promise<void>(
++      (r) => (resolveDiscreteExit = r)
++    );
++    this.discreteTaskExitHandled.set(task.id, discreteExitHandled);
+ 
+-    // the task wasn't cached
+-    let resolveDiscreteExit: (() => void) | undefined;
+-    if (results.length === 0) {
+-      const discreteExitHandled = new Promise<void>(
+-        (r) => (resolveDiscreteExit = r)
+-      );
+-      this.discreteTaskExitHandled.set(task.id, discreteExitHandled);
++    const childProcess = await this.runTask(
++      task,
++      streamOutput,
++      env,
++      temporaryOutputPath,
++      pipeOutput
++    );
++    this.runningDiscreteTasks.set(task.id, {
++      runningTask: childProcess,
++      stopping: false,
++    });
+ 
+-      const childProcess = await this.runTask(
+-        task,
+-        streamOutput,
+-        env,
+-        temporaryOutputPath,
+-        pipeOutput
+-      );
+-      this.runningDiscreteTasks.set(task.id, {
+-        runningTask: childProcess,
+-        stopping: false,
+-      });
++    const { code, terminalOutput } = await childProcess.getResults();
++    const isStopping =
++      this.runningDiscreteTasks.get(task.id)?.stopping ?? false;
++    this.runningDiscreteTasks.delete(task.id);
++
++    const result: TaskResult = {
++      task,
++      code,
++      status: isStopping ? 'stopped' : code === 0 ? 'success' : 'failure',
++      terminalOutput,
++    };
+ 
+-      const { code, terminalOutput } = await childProcess.getResults();
+-      const isStopping =
+-        this.runningDiscreteTasks.get(task.id)?.stopping ?? false;
+-      this.runningDiscreteTasks.delete(task.id);
+-      results.push({
+-        task,
+-        code,
+-        status: isStopping ? 'stopped' : code === 0 ? 'success' : 'failure',
+-        terminalOutput,
+-      });
+-    }
+     try {
+-      await this.postRunSteps(results, doNotSkipCache, { groupId });
++      await this.postRunSteps([result], doNotSkipCache, { groupId });
+     } finally {
+-      if (resolveDiscreteExit) {
+-        this.discreteTaskExitHandled.delete(task.id);
+-        resolveDiscreteExit();
+-      }
++      this.discreteTaskExitHandled.delete(task.id);
++      resolveDiscreteExit!();
+     }
+-    return results[0];
++    return result;
+   }
+ 
+   private async runTask(
+@@ -765,7 +1028,7 @@ export class TaskOrchestrator {
+       targetConfiguration.executor === 'nx:run-commands'
+     ) {
+       try {
+-        const { schema } = getExecutorForTask(task, this.projectGraph);
++        const { schema } = getExecutorForTask(task, this.projects);
+         const combinedOptions = combineOptionsForExecutor(
+           task.overrides,
+           task.target.configuration ?? targetConfiguration.defaultConfiguration,
+@@ -1062,13 +1325,23 @@ export class TaskOrchestrator {
+     { groupId }: { groupId: number }
+   ) {
+     const now = Date.now();
+-    for (const { task } of results) {
++    const tasksToRecord: { outputs: string[]; hash: string }[] = [];
++    for (const { task, status } of results) {
+       // Only set endTime as fallback (batch provides timing via result.task)
+       task.endTime ??= now;
+-      if (!this.stopRequested) {
+-        await this.recordOutputsHash(task);
++      // Skip recording for tasks whose outputs already match the cache —
++      // the daemon already has the correct hash recorded.
++      if (
++        !this.stopRequested &&
++        task.outputs.length > 0 &&
++        status !== 'local-cache-kept-existing'
++      ) {
++        tasksToRecord.push({ outputs: task.outputs, hash: task.hash });
+       }
+     }
++    if (tasksToRecord.length > 0) {
++      await this.recordOutputsHashBatch(tasksToRecord);
++    }
+ 
+     if (doNotSkipCache && !this.stopRequested) {
+       // cache the results
+@@ -1162,7 +1435,7 @@ export class TaskOrchestrator {
+     for (const { task, status, terminalOutput } of results) {
+       taskIds.push(task.id);
+ 
+-      if (this.completedTasks[task.id] === undefined && status !== 'skipped') {
++      if (!this.completedTasks.has(task.id) && status !== 'skipped') {
+         tasksToReport.push({
+           task,
+           status,
+@@ -1188,9 +1461,9 @@ export class TaskOrchestrator {
+     // 3. Set completedTasks + update TUI + collect dependent tasks to skip
+     const dependentTasksToSkip: { task: Task; status: TaskStatus }[] = [];
+     for (const { task, status, displayStatus } of results) {
+-      if (this.completedTasks[task.id] !== undefined) continue;
++      if (this.completedTasks.has(task.id)) continue;
+ 
+-      this.completedTasks[task.id] = status;
++      this.completedTasks.set(task.id, status);
+ 
+       if (this.tuiEnabled) {
+         this.options.lifeCycle.setTaskStatus(
+@@ -1250,7 +1523,7 @@ export class TaskOrchestrator {
+         return true;
+       }
+ 
+-      const { schema } = getExecutorForTask(task, this.projectGraph);
++      const { schema } = getExecutorForTask(task, this.projects);
+ 
+       return (
+         schema.outputCapture === 'pipe' ||
+@@ -1281,17 +1554,31 @@ export class TaskOrchestrator {
+     this.groups[id] = false;
+   }
+ 
+-  private async shouldCopyOutputsFromCache(outputs: string[], hash: string) {
++  private async shouldCopyOutputsFromCacheBatch(
++    tasks: { outputs: string[]; hash: string }[]
++  ): Promise<Map<string, boolean>> {
++    const resultMap = new Map<string, boolean>();
++    if (tasks.length === 0) return resultMap;
++
+     if (this.daemon?.enabled()) {
+-      return !(await this.daemon.outputsHashesMatch(outputs, hash));
++      const matches = await this.daemon.outputsHashesMatchBatch(tasks);
++      for (let i = 0; i < tasks.length; i++) {
++        resultMap.set(tasks[i].hash, !matches[i]);
++      }
+     } else {
+-      return true;
++      // No daemon → can't verify on-disk outputs, always copy.
++      for (const task of tasks) {
++        resultMap.set(task.hash, true);
++      }
+     }
++    return resultMap;
+   }
+ 
+-  private async recordOutputsHash(task: Task) {
++  private async recordOutputsHashBatch(
++    entries: { outputs: string[]; hash: string }[]
++  ) {
+     if (this.daemon?.enabled()) {
+-      return this.daemon.recordOutputsHash(task.outputs, task.hash);
++      return this.daemon.recordOutputsHashBatch(entries);
+     }
+   }
+ 
+@@ -1304,7 +1591,7 @@ export class TaskOrchestrator {
+     ownsRunningTasksService: boolean
+   ) {
+     // If cleanup already completed this task, nothing left to do
+-    if (this.completedTasks[task.id] !== undefined) {
++    if (this.completedTasks.has(task.id)) {
+       return;
+     }
+ 
+@@ -1339,7 +1626,7 @@ export class TaskOrchestrator {
+     ownsRunningTasksService: boolean,
+     reason: 'fulfilled' | 'interrupted' | 'crashed'
+   ) {
+-    if (this.completedTasks[task.id] !== undefined) return;
++    if (this.completedTasks.has(task.id)) return;
+ 
+     this.runningContinuousTasks.delete(task.id);
+     if (ownsRunningTasksService) {
+diff --git a/packages/nx/src/tasks-runner/tasks-schedule.spec.ts b/packages/nx/src/tasks-runner/tasks-schedule.spec.ts
+index d4bd3c28d2b..766d1b9231b 100644
+--- a/packages/nx/src/tasks-runner/tasks-schedule.spec.ts
++++ b/packages/nx/src/tasks-runner/tasks-schedule.spec.ts
+@@ -2,6 +2,7 @@ import { TasksSchedule } from './tasks-schedule';
+ import { removeTasksFromTaskGraph } from './utils';
+ import { Task, TaskGraph } from '../config/task-graph';
+ import { DependencyType, ProjectGraph } from '../config/project-graph';
++import { readProjectsConfigurationFromProjectGraph } from '../project-graph/project-graph';
+ import * as nxJsonUtils from '../config/nx-json';
+ import * as executorUtils from '../command-line/run/executor-utils';
+ import * as taskHistoryUtils from '../utils/task-history';
+@@ -148,9 +149,14 @@ describe('TasksSchedule', () => {
+         version: '5',
+       };
+       taskHistory.getEstimatedTaskTimings.mockReturnValue({});
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+     });
+ 
+@@ -395,9 +401,14 @@ describe('TasksSchedule', () => {
+         externalNodes: {},
+         version: '5',
+       };
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          lifeCycle,
++        }
++      );
+     });
+ 
+     describe('Without Batch Mode', () => {
+@@ -651,9 +662,14 @@ describe('TasksSchedule', () => {
+           version: '5',
+         };
+         taskHistory.getEstimatedTaskTimings.mockReturnValue({});
+-        taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-          lifeCycle,
+-        });
++        taskSchedule = new TasksSchedule(
++          projectGraph,
++          readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++          taskGraph,
++          {
++            lifeCycle,
++          }
++        );
+         await taskSchedule.init();
+       });
+ 
+@@ -825,9 +841,14 @@ describe('TasksSchedule', () => {
+           version: '5',
+         };
+         taskHistory.getEstimatedTaskTimings.mockReturnValue({});
+-        taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-          lifeCycle,
+-        });
++        taskSchedule = new TasksSchedule(
++          projectGraph,
++          readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++          taskGraph,
++          {
++            lifeCycle,
++          }
++        );
+         await taskSchedule.init();
+       });
+ 
+@@ -1001,10 +1022,15 @@ describe('TasksSchedule', () => {
+       });
+ 
+       // Create schedule with batch: undefined (not specified)
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        batch: undefined,
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          batch: undefined,
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+       await taskSchedule.scheduleNextTasks();
+ 
+@@ -1027,10 +1053,15 @@ describe('TasksSchedule', () => {
+       });
+ 
+       // Create schedule with batch: false (explicit opt-out)
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        batch: false,
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          batch: false,
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+       await taskSchedule.scheduleNextTasks();
+ 
+@@ -1052,10 +1083,15 @@ describe('TasksSchedule', () => {
+       });
+ 
+       // Create schedule with batch: true (explicit opt-in)
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        batch: true,
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          batch: true,
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+       await taskSchedule.scheduleNextTasks();
+ 
+@@ -1078,10 +1114,15 @@ describe('TasksSchedule', () => {
+       });
+ 
+       // Create schedule with batch: undefined (not specified)
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        batch: undefined,
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          batch: undefined,
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+       await taskSchedule.scheduleNextTasks();
+ 
+@@ -1103,10 +1144,15 @@ describe('TasksSchedule', () => {
+       });
+ 
+       // Create schedule with batch: undefined (not specified)
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        batch: undefined,
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          batch: undefined,
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+       await taskSchedule.scheduleNextTasks();
+ 
+@@ -1222,9 +1268,14 @@ describe('TasksSchedule', () => {
+       };
+ 
+       taskHistory.getEstimatedTaskTimings.mockReturnValue({});
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+     });
+ 
+@@ -1326,9 +1377,14 @@ describe('TasksSchedule', () => {
+       };
+ 
+       taskHistory.getEstimatedTaskTimings.mockReturnValue({});
+-      taskSchedule = new TasksSchedule(projectGraph, taskGraph, {
+-        lifeCycle,
+-      });
++      taskSchedule = new TasksSchedule(
++        projectGraph,
++        readProjectsConfigurationFromProjectGraph(projectGraph).projects,
++        taskGraph,
++        {
++          lifeCycle,
++        }
++      );
+       await taskSchedule.init();
+ 
+       process.env['NX_BATCH_MODE'] = 'false';
+diff --git a/packages/nx/src/tasks-runner/tasks-schedule.ts b/packages/nx/src/tasks-runner/tasks-schedule.ts
+index 093b9bc3677..3eae8e3f2b9 100644
+--- a/packages/nx/src/tasks-runner/tasks-schedule.ts
++++ b/packages/nx/src/tasks-runner/tasks-schedule.ts
+@@ -7,6 +7,7 @@ import {
+ import { DefaultTasksRunnerOptions } from './default-tasks-runner';
+ import { Task, TaskGraph } from '../config/task-graph';
+ import { ProjectGraph } from '../config/project-graph';
++import { ProjectConfiguration } from '../config/workspace-json-project-json';
+ import { findAllProjectNodeDependencies } from '../utils/project-graph-utils';
+ import { reverse } from '../project-graph/operators';
+ import { TaskHistory, getTaskHistory } from '../utils/task-history';
+@@ -34,6 +35,7 @@ export class TasksSchedule {
+ 
+   constructor(
+     private readonly projectGraph: ProjectGraph,
++    private readonly projects: Record<string, ProjectConfiguration>,
+     private readonly taskGraph: TaskGraph,
+     private readonly options: DefaultTasksRunnerOptions
+   ) {}
+@@ -78,6 +80,9 @@ export class TasksSchedule {
+       delete this.reverseTaskDeps[taskId];
+     }
+     const removedSet = new Set(taskIds);
++    this.scheduledTasks = this.scheduledTasks.filter(
++      (id) => !removedSet.has(id)
++    );
+     for (const [key, deps] of Object.entries(this.reverseTaskDeps)) {
+       this.reverseTaskDeps[key] = deps.filter((d) => !removedSet.has(d));
+     }
+@@ -134,61 +139,72 @@ export class TasksSchedule {
+     if (this.options.batch !== false && process.env.NX_BATCH_MODE !== 'false') {
+       await this.scheduleBatches();
+     }
++    const toSchedule: string[] = [];
+     for (let root of this.notScheduledTaskGraph.roots) {
+       if (this.canBeScheduled(root)) {
+-        await this.scheduleTask(root);
++        toSchedule.push(root);
++        // Mark as running so canBeScheduled gates on parallelism for
++        // subsequent roots in this same scheduling pass.
++        this.runningTasks.add(root);
+       }
+     }
++    if (toSchedule.length > 0) {
++      this.scheduleTaskBatch(toSchedule);
++    }
+   }
+ 
+-  private async scheduleTask(taskId: string) {
++  private scheduleTaskBatch(taskIds: string[]) {
+     this.notScheduledTaskGraph = removeTasksFromTaskGraph(
+       this.notScheduledTaskGraph,
+-      [taskId]
++      taskIds
+     );
+-    this.scheduledTasks = this.scheduledTasks
+-      .concat(taskId)
+-      // NOTE: sort task by most dependent on first
+-      .sort((taskId1, taskId2) => {
+-        // First compare the length of task dependencies.
+-        const taskDifference =
+-          this.reverseTaskDeps[taskId2].length -
+-          this.reverseTaskDeps[taskId1].length;
+-
+-        if (taskDifference !== 0) {
+-          return taskDifference;
+-        }
+-
+-        // Tie-breaker for tasks with equal number of task dependencies.
+-        // Most likely tasks with no dependencies such as test
+-        const project1 = this.taskGraph.tasks[taskId1].target.project;
+-        const project2 = this.taskGraph.tasks[taskId2].target.project;
+-
+-        const project1NodeDependencies = this.projectDependencies[project1];
+-        const project2NodeDependencies = this.projectDependencies[project2];
+-
+-        const dependenciesDiff =
+-          project2NodeDependencies - project1NodeDependencies;
+-
+-        if (dependenciesDiff !== 0) {
+-          return dependenciesDiff;
+-        }
+-
+-        const task1Timing: number | undefined =
+-          this.estimatedTaskTimings[taskId1];
+-        if (!task1Timing) {
+-          // if no timing or 0, put task1 at beginning
+-          return -1;
+-        }
+-        const task2Timing: number | undefined =
+-          this.estimatedTaskTimings[taskId2];
+-        if (!task2Timing) {
+-          // if no timing or 0, put task2 at beginning
+-          return 1;
+-        }
+-        return task2Timing - task1Timing;
+-      });
+-    this.runningTasks.add(taskId);
++    for (const taskId of taskIds) {
++      this.scheduledTasks.push(taskId);
++      this.runningTasks.add(taskId);
++    }
++    this.sortScheduledTasks();
++  }
++
++  private sortScheduledTasks() {
++    // NOTE: sort task by most dependent on first
++    this.scheduledTasks.sort((taskId1, taskId2) => {
++      // First compare the length of task dependencies.
++      const taskDifference =
++        this.reverseTaskDeps[taskId2].length -
++        this.reverseTaskDeps[taskId1].length;
++
++      if (taskDifference !== 0) {
++        return taskDifference;
++      }
++
++      // Tie-breaker for tasks with equal number of task dependencies.
++      // Most likely tasks with no dependencies such as test
++      const project1 = this.taskGraph.tasks[taskId1].target.project;
++      const project2 = this.taskGraph.tasks[taskId2].target.project;
++
++      const project1NodeDependencies = this.projectDependencies[project1];
++      const project2NodeDependencies = this.projectDependencies[project2];
++
++      const dependenciesDiff =
++        project2NodeDependencies - project1NodeDependencies;
++
++      if (dependenciesDiff !== 0) {
++        return dependenciesDiff;
++      }
++
++      const task1Timing: number | undefined =
++        this.estimatedTaskTimings[taskId1];
++      const task2Timing: number | undefined =
++        this.estimatedTaskTimings[taskId2];
++
++      // Tasks with no historical timing run first (unknown duration = assume long)
++      const has1 = task1Timing != null && task1Timing !== 0;
++      const has2 = task2Timing != null && task2Timing !== 0;
++      if (!has1 && !has2) return 0;
++      if (!has1) return -1;
++      if (!has2) return 1;
++      return task2Timing - task1Timing;
++    });
+   }
+ 
+   private async scheduleBatches() {
+@@ -244,7 +260,7 @@ export class TasksSchedule {
+ 
+     const { batchImplementationFactory, preferBatch } = getExecutorForTask(
+       task,
+-      this.projectGraph
++      this.projects
+     );
+     const executorName = getExecutorNameForTask(task, this.projectGraph);
+     if (rootExecutorName !== executorName) {
+diff --git a/packages/nx/src/tasks-runner/utils.ts b/packages/nx/src/tasks-runner/utils.ts
+index 763bc6c4f65..4b0ce42db5c 100644
+--- a/packages/nx/src/tasks-runner/utils.ts
++++ b/packages/nx/src/tasks-runner/utils.ts
+@@ -9,6 +9,7 @@ import { CustomHasher, ExecutorConfig } from '../config/misc-interfaces';
+ import { ProjectGraph, ProjectGraphProjectNode } from '../config/project-graph';
+ import { Task, TaskGraph } from '../config/task-graph';
+ import {
++  ProjectConfiguration,
+   TargetConfiguration,
+   TargetDependencyConfig,
+ } from '../config/workspace-json-project-json';
+@@ -16,7 +17,6 @@ import {
+   getTransformableOutputs,
+   validateOutputs as nativeValidateOutputs,
+ } from '../native';
+-import { readProjectsConfigurationFromProjectGraph } from '../project-graph/project-graph';
+ import { isRelativePath } from '../utils/fileutils';
+ import { findMatchingProjects } from '../utils/find-matching-projects';
+ import { isGlobPattern } from '../utils/globs';
+@@ -438,24 +438,25 @@ export function getExecutorNameForTask(task: Task, projectGraph: ProjectGraph) {
+ 
+ export function getExecutorForTask(
+   task: Task,
+-  projectGraph: ProjectGraph
++  projects: Record<string, ProjectConfiguration>
+ ): ExecutorConfig & { isNgCompat: boolean; isNxExecutor: boolean } {
+-  const executor = getExecutorNameForTask(task, projectGraph);
++  const executor =
++    projects[task.target.project]?.targets?.[task.target.target]?.executor;
+   const [nodeModule, executorName] = parseExecutor(executor);
+ 
+   return getExecutorInformation(
+     nodeModule,
+     executorName,
+     workspaceRoot,
+-    readProjectsConfigurationFromProjectGraph(projectGraph).projects
++    projects
+   );
+ }
+ 
+ export function getCustomHasher(
+   task: Task,
+-  projectGraph: ProjectGraph
++  projects: Record<string, ProjectConfiguration>
+ ): CustomHasher | null {
+-  const factory = getExecutorForTask(task, projectGraph).hasherFactory;
++  const factory = getExecutorForTask(task, projects).hasherFactory;
+   return factory ? factory() : null;
+ }
+ 

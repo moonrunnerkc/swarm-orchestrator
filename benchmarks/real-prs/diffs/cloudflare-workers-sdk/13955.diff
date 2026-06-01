@@ -1,0 +1,994 @@
+diff --git a/.changeset/add-web-search-binding.md b/.changeset/add-web-search-binding.md
+new file mode 100644
+index 0000000000..0ed5773f85
+--- /dev/null
++++ b/.changeset/add-web-search-binding.md
+@@ -0,0 +1,29 @@
++---
++"miniflare": minor
++"wrangler": minor
++"@cloudflare/workers-utils": minor
++---
++
++Add support for the new `web_search` binding kind.
++
++Cloudflare Web Search is a managed, zero-setup web discovery primitive for agents and Workers. Declare the binding as a single object in `wrangler.jsonc`:
++
++```jsonc
++{
++	"web_search": { "binding": "WEBSEARCH" },
++}
++```
++
++There is exactly one shared web corpus, so there is no namespace, instance, or other field to specify -- only the variable name. The binding exposes a single `search()` method that returns URLs and catalog metadata for a query. Web Search is discovery-only -- to read a result's content the caller invokes the global `fetch()` API against the result's `url`.
++
++The binding is **always remote** in local development: Miniflare proxies to the production Web Search service via the remote-bindings transport. Adds the `websearch.run` OAuth scope to `wrangler login`.
++
++Also adds a `wrangler websearch search` command for running ad-hoc queries from the CLI:
++
++```sh
++npx wrangler websearch search "cloudflare workers"
++npx wrangler websearch search "cloudflare workers" --limit 5
++npx wrangler websearch search "cloudflare workers" --json
++```
++
++`--limit` is optional (defaults to 10, capped at 20). `--json` prints the raw response; without it the results render as a pretty table.
+diff --git a/packages/miniflare/src/plugins/index.ts b/packages/miniflare/src/plugins/index.ts
+index 7faa127c4f..b47d99eb25 100644
+--- a/packages/miniflare/src/plugins/index.ts
++++ b/packages/miniflare/src/plugins/index.ts
+@@ -40,6 +40,7 @@ import {
+ } from "./version-metadata";
+ import { VPC_NETWORKS_PLUGIN, VPC_NETWORKS_PLUGIN_NAME } from "./vpc-networks";
+ import { VPC_SERVICES_PLUGIN, VPC_SERVICES_PLUGIN_NAME } from "./vpc-services";
++import { WEB_SEARCH_PLUGIN, WEB_SEARCH_PLUGIN_NAME } from "./web-search";
+ import {
+ 	WORKER_LOADER_PLUGIN,
+ 	WORKER_LOADER_PLUGIN_NAME,
+@@ -67,6 +68,7 @@ export const PLUGINS = {
+ 	[ANALYTICS_ENGINE_PLUGIN_NAME]: ANALYTICS_ENGINE_PLUGIN,
+ 	[AI_PLUGIN_NAME]: AI_PLUGIN,
+ 	[AI_SEARCH_PLUGIN_NAME]: AI_SEARCH_PLUGIN,
++	[WEB_SEARCH_PLUGIN_NAME]: WEB_SEARCH_PLUGIN,
+ 	[BROWSER_RENDERING_PLUGIN_NAME]: BROWSER_RENDERING_PLUGIN,
+ 	[DISPATCH_NAMESPACE_PLUGIN_NAME]: DISPATCH_NAMESPACE_PLUGIN,
+ 	[IMAGES_PLUGIN_NAME]: IMAGES_PLUGIN,
+@@ -136,6 +138,7 @@ export type WorkerOptions = z.input<typeof CORE_PLUGIN.options> &
+ 	z.input<typeof ANALYTICS_ENGINE_PLUGIN.options> &
+ 	z.input<typeof AI_PLUGIN.options> &
+ 	z.input<typeof AI_SEARCH_PLUGIN.options> &
++	z.input<typeof WEB_SEARCH_PLUGIN.options> &
+ 	z.input<typeof BROWSER_RENDERING_PLUGIN.options> &
+ 	z.input<typeof DISPATCH_NAMESPACE_PLUGIN.options> &
+ 	z.input<typeof IMAGES_PLUGIN.options> &
+@@ -227,6 +230,7 @@ export * from "./email";
+ export * from "./analytics-engine";
+ export * from "./ai";
+ export * from "./ai-search";
++export * from "./web-search";
+ export * from "./browser-rendering";
+ export * from "./dispatch-namespace";
+ export * from "./images";
+diff --git a/packages/miniflare/src/plugins/web-search/index.ts b/packages/miniflare/src/plugins/web-search/index.ts
+new file mode 100644
+index 0000000000..150f50f935
+--- /dev/null
++++ b/packages/miniflare/src/plugins/web-search/index.ts
+@@ -0,0 +1,81 @@
++import { z } from "zod";
++import {
++	getUserBindingServiceName,
++	ProxyNodeBinding,
++	remoteProxyClientWorker,
++} from "../shared";
++import type { Plugin, RemoteProxyConnectionString } from "../shared";
++
++const WebSearchEntrySchema = z.object({
++	remoteProxyConnectionString: z
++		.custom<RemoteProxyConnectionString>()
++		.optional(),
++});
++
++export const WebSearchOptionsSchema = z.object({
++	webSearch: z.record(WebSearchEntrySchema).optional(),
++});
++
++export const WEB_SEARCH_PLUGIN_NAME = "web-search";
++
++const WEB_SEARCH_SCOPE = "web-search";
++
++export const WEB_SEARCH_PLUGIN: Plugin<typeof WebSearchOptionsSchema> = {
++	options: WebSearchOptionsSchema,
++	async getBindings(options) {
++		const bindings: {
++			name: string;
++			service: { name: string };
++		}[] = [];
++
++		for (const [bindingName, entry] of Object.entries(
++			options.webSearch ?? {}
++		)) {
++			bindings.push({
++				name: bindingName,
++				service: {
++					name: getUserBindingServiceName(
++						WEB_SEARCH_SCOPE,
++						bindingName,
++						entry.remoteProxyConnectionString
++					),
++				},
++			});
++		}
++
++		return bindings;
++	},
++	getNodeBindings(options: z.infer<typeof WebSearchOptionsSchema>) {
++		const nodeBindings: Record<string, ProxyNodeBinding> = {};
++
++		for (const bindingName of Object.keys(options.webSearch ?? {})) {
++			nodeBindings[bindingName] = new ProxyNodeBinding();
++		}
++
++		return nodeBindings;
++	},
++	async getServices({ options }) {
++		const services: {
++			name: string;
++			worker: ReturnType<typeof remoteProxyClientWorker>;
++		}[] = [];
++
++		for (const [bindingName, entry] of Object.entries(
++			options.webSearch ?? {}
++		)) {
++			services.push({
++				name: getUserBindingServiceName(
++					WEB_SEARCH_SCOPE,
++					bindingName,
++					entry.remoteProxyConnectionString
++				),
++				worker: remoteProxyClientWorker(
++					entry.remoteProxyConnectionString,
++					bindingName
++				),
++			});
++		}
++
++		return services;
++	},
++};
+diff --git a/packages/workers-utils/src/config/binding-local-support.ts b/packages/workers-utils/src/config/binding-local-support.ts
+index 6233a6707d..cfa24709ed 100644
+--- a/packages/workers-utils/src/config/binding-local-support.ts
++++ b/packages/workers-utils/src/config/binding-local-support.ts
+@@ -69,6 +69,7 @@ const BINDING_LOCAL_SUPPORT: Record<
+ 	flagship: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
+ 	vpc_service: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
+ 	vpc_network: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
++	web_search: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
+ };
+ 
+ export function getBindingLocalSupport(
+diff --git a/packages/workers-utils/src/config/config.ts b/packages/workers-utils/src/config/config.ts
+index 8402fd89aa..a230ffb213 100644
+--- a/packages/workers-utils/src/config/config.ts
++++ b/packages/workers-utils/src/config/config.ts
+@@ -336,6 +336,7 @@ export const defaultWranglerConfig: Config = {
+ 	vectorize: [],
+ 	ai_search_namespaces: [],
+ 	ai_search: [],
++	web_search: undefined,
+ 	hyperdrive: [],
+ 	workflows: [],
+ 	secrets_store_secrets: [],
+diff --git a/packages/workers-utils/src/config/environment.ts b/packages/workers-utils/src/config/environment.ts
+index b8f16229f9..372d47dc3e 100644
+--- a/packages/workers-utils/src/config/environment.ts
++++ b/packages/workers-utils/src/config/environment.ts
+@@ -1054,6 +1054,26 @@ export interface EnvironmentNonInheritable {
+ 		remote?: boolean;
+ 	}[];
+ 
++	/**
++	 * Cloudflare Web Search binding. There is exactly one shared web corpus, so the
++	 * binding is zero-config -- only the variable name is required, declared as a
++	 * single object (not an array).
++	 *
++	 * NOTE: This field is not automatically inherited from the top level environment,
++	 * and so must be specified in every named environment.
++	 *
++	 * @default {}
++	 * @nonInheritable
++	 */
++	web_search:
++		| {
++				/** The binding name used to refer to Web Search in the Worker. */
++				binding: string;
++				/** Whether the Web Search binding should be remote or not in local development */
++				remote?: boolean;
++		  }
++		| undefined;
++
+ 	/**
+ 	 * Specifies Hyperdrive configs that are bound to this Worker environment.
+ 	 *
+diff --git a/packages/workers-utils/src/config/validation.ts b/packages/workers-utils/src/config/validation.ts
+index 5b1108362b..ecf1d3babe 100644
+--- a/packages/workers-utils/src/config/validation.ts
++++ b/packages/workers-utils/src/config/validation.ts
+@@ -82,6 +82,7 @@ export type ConfigBindingFieldName =
+ 	| "vectorize"
+ 	| "ai_search_namespaces"
+ 	| "ai_search"
++	| "web_search"
+ 	| "hyperdrive"
+ 	| "r2_buckets"
+ 	| "logfwdr"
+@@ -124,6 +125,7 @@ export const friendlyBindingNames: Record<ConfigBindingFieldName, string> = {
+ 	vectorize: "Vectorize Index",
+ 	ai_search_namespaces: "AI Search Namespace",
+ 	ai_search: "AI Search Instance",
++	web_search: "Web Search",
+ 	hyperdrive: "Hyperdrive Config",
+ 	r2_buckets: "R2 Bucket",
+ 	logfwdr: "logfwdr",
+@@ -181,6 +183,7 @@ const bindingTypeFriendlyNames: Record<Binding["type"], string> = {
+ 	vectorize: "Vectorize Index",
+ 	ai_search_namespace: "AI Search Namespace",
+ 	ai_search: "AI Search Instance",
++	web_search: "Web Search",
+ 	hyperdrive: "Hyperdrive Config",
+ 	service: "Worker",
+ 	fetcher: "Service Binding",
+@@ -1756,6 +1759,16 @@ function normalizeAndValidateEnvironment(
+ 			validateBindingArray(envName, validateAISearchBinding),
+ 			[]
+ 		),
++		web_search: notInheritable(
++			diagnostics,
++			topLevelEnv,
++			rawConfig,
++			rawEnv,
++			envName,
++			"web_search",
++			validateNamedSimpleBinding(envName),
++			undefined
++		),
+ 		hyperdrive: notInheritable(
+ 			diagnostics,
+ 			topLevelEnv,
+@@ -3064,6 +3077,7 @@ const validateUnsafeBinding: ValidatorFn = (diagnostics, field, value) => {
+ 			"ai",
+ 			"ai_search_namespace",
+ 			"ai_search",
++			"web_search",
+ 			"kv_namespace",
+ 			"durable_object_namespace",
+ 			"d1_database",
+diff --git a/packages/workers-utils/src/map-worker-metadata-bindings.ts b/packages/workers-utils/src/map-worker-metadata-bindings.ts
+index 32fa7c3ed5..5fd2d6d609 100644
+--- a/packages/workers-utils/src/map-worker-metadata-bindings.ts
++++ b/packages/workers-utils/src/map-worker-metadata-bindings.ts
+@@ -299,6 +299,13 @@ export function mapWorkerMetadataBindings(
+ 							},
+ 						];
+ 						break;
++					case "web_search":
++						{
++							configObj.web_search = {
++								binding: binding.name,
++							};
++						}
++						break;
+ 					case "hyperdrive":
+ 						configObj.hyperdrive = [
+ 							...(configObj.hyperdrive ?? []),
+diff --git a/packages/workers-utils/src/types.ts b/packages/workers-utils/src/types.ts
+index 1920170fef..8272e851ce 100644
+--- a/packages/workers-utils/src/types.ts
++++ b/packages/workers-utils/src/types.ts
+@@ -40,6 +40,7 @@ import type {
+ 	CfVectorize,
+ 	CfVpcNetwork,
+ 	CfVpcService,
++	CfWebSearch,
+ 	CfWorkerLoader,
+ 	CfWorkflow,
+ 	CfScriptFormat,
+@@ -74,6 +75,7 @@ export type WorkerMetadataBinding =
+ 	| { type: "data_blob"; name: string; part: string }
+ 	| { type: "ai_search_namespace"; name: string; namespace: string }
+ 	| { type: "ai_search"; name: string; instance_name: string }
++	| { type: "web_search"; name: string }
+ 	| { type: "kv_namespace"; name: string; namespace_id: string; raw?: boolean }
+ 	| { type: "media"; name: string }
+ 	| {
+@@ -369,6 +371,7 @@ export type Binding =
+ 	| ({ type: "vectorize" } & BindingOmit<CfVectorize>)
+ 	| ({ type: "ai_search_namespace" } & BindingOmit<CfAISearchNamespace>)
+ 	| ({ type: "ai_search" } & BindingOmit<CfAISearch>)
++	| ({ type: "web_search" } & BindingOmit<CfWebSearch>)
+ 	| ({ type: "hyperdrive" } & BindingOmit<CfHyperdrive>)
+ 	| ({ type: "service" } & BindingOmit<CfService>)
+ 	| { type: "fetcher"; fetcher: ServiceFetch }
+diff --git a/packages/workers-utils/src/worker.ts b/packages/workers-utils/src/worker.ts
+index be00c23977..2f601c3b00 100644
+--- a/packages/workers-utils/src/worker.ts
++++ b/packages/workers-utils/src/worker.ts
+@@ -243,6 +243,11 @@ export interface CfAISearch {
+ 	remote?: boolean;
+ }
+ 
++export interface CfWebSearch {
++	binding: string;
++	remote?: boolean;
++}
++
+ export interface CfSecretsStoreSecrets {
+ 	binding: string;
+ 	store_id: string;
+diff --git a/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts b/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts
+index e904cdc2b7..1a35b44208 100644
+--- a/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts
++++ b/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts
+@@ -89,6 +89,7 @@ describe("normalizeAndValidateConfig()", () => {
+ 			text_blobs: undefined,
+ 			browser: undefined,
+ 			ai: undefined,
++			web_search: undefined,
+ 			version_metadata: undefined,
+ 			triggers: {
+ 				crons: undefined,
+@@ -2019,6 +2020,50 @@ describe("normalizeAndValidateConfig()", () => {
+ 			});
+ 		});
+ 
++		describe("[web_search]", () => {
++			it("should accept a valid web_search binding", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ web_search: { binding: "WEBSEARCH" } } as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasErrors()).toBe(false);
++				expect(diagnostics.hasWarnings()).toBe(false);
++			});
++
++			it("should error if web_search is an array", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ web_search: [] } as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - The field "web_search" should be an object but got []."
++				`);
++			});
++
++			it("should error if web_search has no binding name", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ web_search: {} } as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - binding should have a string "binding" field."
++				`);
++			});
++		});
++
+ 		// Vectorize
+ 		describe("[vectorize]", () => {
+ 			it("should error if vectorize is an object", ({ expect }) => {
+diff --git a/packages/wrangler/src/__tests__/deploy/core.test.ts b/packages/wrangler/src/__tests__/deploy/core.test.ts
+index 5e617c8d77..48ba3b67d0 100644
+--- a/packages/wrangler/src/__tests__/deploy/core.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/core.test.ts
+@@ -761,7 +761,7 @@ describe("deploy", () => {
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+ 				Attempting to login via OAuth...
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in.
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+@@ -807,7 +807,7 @@ describe("deploy", () => {
+ 					 ⛅️ wrangler x.x.x
+ 					──────────────────
+ 					Attempting to login via OAuth...
+-					Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++					Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 					Successfully logged in.
+ 					Total Upload: xx KiB / gzip: xx KiB
+ 					Worker Startup Time: 100 ms
+diff --git a/packages/wrangler/src/__tests__/index.test.ts b/packages/wrangler/src/__tests__/index.test.ts
+index 8536d4e174..b8a003bbc2 100644
+--- a/packages/wrangler/src/__tests__/index.test.ts
++++ b/packages/wrangler/src/__tests__/index.test.ts
+@@ -71,6 +71,7 @@ describe("wrangler", () => {
+ 				  wrangler types [path]           📝 Generate types from your Worker configuration
+ 				  wrangler versions               🫧 List, view, upload and deploy Versions of your Worker to Cloudflare
+ 				  wrangler vpc                    🌐 Manage VPC [open beta]
++				  wrangler websearch              🔎 Run queries against Cloudflare Web Search [experimental]
+ 				  wrangler workflows              🔁 Manage Workflows
+ 
+ 				STORAGE & DATABASES
+@@ -150,6 +151,7 @@ describe("wrangler", () => {
+ 				  wrangler types [path]           📝 Generate types from your Worker configuration
+ 				  wrangler versions               🫧 List, view, upload and deploy Versions of your Worker to Cloudflare
+ 				  wrangler vpc                    🌐 Manage VPC [open beta]
++				  wrangler websearch              🔎 Run queries against Cloudflare Web Search [experimental]
+ 				  wrangler workflows              🔁 Manage Workflows
+ 
+ 				STORAGE & DATABASES
+diff --git a/packages/wrangler/src/__tests__/type-generation.test.ts b/packages/wrangler/src/__tests__/type-generation.test.ts
+index 88b75ccd22..011379e22c 100644
+--- a/packages/wrangler/src/__tests__/type-generation.test.ts
++++ b/packages/wrangler/src/__tests__/type-generation.test.ts
+@@ -548,6 +548,7 @@ const bindingsConfigMock: Omit<
+ 		},
+ 	],
+ 	vpc_networks: [],
++	web_search: undefined,
+ };
+ 
+ describe("generate types - CLI", () => {
+diff --git a/packages/wrangler/src/__tests__/user.test.ts b/packages/wrangler/src/__tests__/user.test.ts
+index e6a41a167a..fdb401f615 100644
+--- a/packages/wrangler/src/__tests__/user.test.ts
++++ b/packages/wrangler/src/__tests__/user.test.ts
+@@ -85,7 +85,7 @@ describe("User", () => {
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+ 				Attempting to login via OAuth...
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -131,7 +131,7 @@ describe("User", () => {
+ 				Temporary login server listening on 0.0.0.0:8976
+ 				Note that the OAuth login page will always redirect to \`localhost:8976\`.
+ 				If you have changed the callback host or port because you are running in a container, then ensure that you have port forwarding set up correctly.
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -177,7 +177,7 @@ describe("User", () => {
+ 				Temporary login server listening on mylocalhost.local:8976
+ 				Note that the OAuth login page will always redirect to \`localhost:8976\`.
+ 				If you have changed the callback host or port because you are running in a container, then ensure that you have port forwarding set up correctly.
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -223,7 +223,7 @@ describe("User", () => {
+ 				Temporary login server listening on localhost:8787
+ 				Note that the OAuth login page will always redirect to \`localhost:8976\`.
+ 				If you have changed the callback host or port because you are running in a container, then ensure that you have port forwarding set up correctly.
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -265,7 +265,7 @@ describe("User", () => {
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+ 				Attempting to login via OAuth...
+-				Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=4b2ea6cc-9421-4761-874b-ce550e0e3def&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=4b2ea6cc-9421-4761-874b-ce550e0e3def&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 
+@@ -483,7 +483,7 @@ describe("User", () => {
+ 			 ⛅️ wrangler x.x.x
+ 			──────────────────
+ 			Attempting to login via OAuth...
+-			Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++			Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 			Successfully logged in."
+ 		`);
+ 		expect(std.warn).toMatchInlineSnapshot(`""`);
+diff --git a/packages/wrangler/src/__tests__/whoami.test.ts b/packages/wrangler/src/__tests__/whoami.test.ts
+index 80bc079cef..0f84adbd3e 100644
+--- a/packages/wrangler/src/__tests__/whoami.test.ts
++++ b/packages/wrangler/src/__tests__/whoami.test.ts
+@@ -348,6 +348,7 @@ describe("whoami", () => {
+ 			  - ai:write
+ 			  - ai-search:write
+ 			  - ai-search:run
++			  - websearch.run
+ 			  - queues:write
+ 			  - pipelines:write
+ 			  - secrets_store:write
+@@ -422,6 +423,7 @@ describe("whoami", () => {
+ 			  - ai:write
+ 			  - ai-search:write
+ 			  - ai-search:run
++			  - websearch.run
+ 			  - queues:write
+ 			  - pipelines:write
+ 			  - secrets_store:write
+@@ -538,6 +540,7 @@ describe("whoami", () => {
+ 			  - ai:write
+ 			  - ai-search:write
+ 			  - ai-search:run
++			  - websearch.run
+ 			  - queues:write
+ 			  - pipelines:write
+ 			  - secrets_store:write
+diff --git a/packages/wrangler/src/api/startDevWorker/utils.ts b/packages/wrangler/src/api/startDevWorker/utils.ts
+index da4e8f60ad..a9436db204 100644
+--- a/packages/wrangler/src/api/startDevWorker/utils.ts
++++ b/packages/wrangler/src/api/startDevWorker/utils.ts
+@@ -320,6 +320,11 @@ export function convertConfigToBindings(
+ 				}
+ 				break;
+ 			}
++			case "web_search": {
++				const { binding, ...x } = info;
++				output[binding] = { type: "web_search", ...x };
++				break;
++			}
+ 			case "unsafe": {
+ 				if (pages) {
+ 					break;
+@@ -722,6 +727,7 @@ export function convertWorkerMetadataBindingsToFlatBindings(
+ 			case "stream":
+ 			case "version_metadata":
+ 			case "media":
++			case "web_search":
+ 			case "inherit": {
+ 				// These have the same structure (just type and possibly some flags)
+ 				const { name: _name, ...rest } = binding;
+diff --git a/packages/wrangler/src/core/teams.d.ts b/packages/wrangler/src/core/teams.d.ts
+index 35874d2ce4..bd918b48cc 100644
+--- a/packages/wrangler/src/core/teams.d.ts
++++ b/packages/wrangler/src/core/teams.d.ts
+@@ -15,6 +15,7 @@ export type Teams =
+ 	| "Product: Queues"
+ 	| "Product: AI"
+ 	| "Product: AI Search"
++	| "Product: Web Search"
+ 	| "Product: Hyperdrive"
+ 	| "Product: Pipelines"
+ 	| "Product: Vectorize"
+diff --git a/packages/wrangler/src/deploy/check-remote-secrets-override.ts b/packages/wrangler/src/deploy/check-remote-secrets-override.ts
+index a3763de30f..fda7556489 100644
+--- a/packages/wrangler/src/deploy/check-remote-secrets-override.ts
++++ b/packages/wrangler/src/deploy/check-remote-secrets-override.ts
+@@ -123,7 +123,8 @@ function extractBindingNames(config: Config): string[] {
+ 				return (value ?? []).map((workflowBinding) => workflowBinding.binding);
+ 			}
+ 			case "browser":
+-			case "ai": {
++			case "ai":
++			case "web_search": {
+ 				const value: Config[typeof key] = untypedValue;
+ 				return value ? [value.binding] : [];
+ 			}
+diff --git a/packages/wrangler/src/deploy/config-diffs.ts b/packages/wrangler/src/deploy/config-diffs.ts
+index e7e4f32149..94a3849a2f 100644
+--- a/packages/wrangler/src/deploy/config-diffs.ts
++++ b/packages/wrangler/src/deploy/config-diffs.ts
+@@ -54,6 +54,7 @@ const reorderableBindings = {
+ 	images: false,
+ 	stream: false,
+ 	media: false,
++	web_search: false,
+ 	version_metadata: false,
+ 	unsafe: false,
+ 	assets: false,
+@@ -255,6 +256,7 @@ function removeRemoteConfigFieldFromBindings(normalizedConfig: Config): void {
+ 		"images",
+ 		"stream",
+ 		"media",
++		"web_search",
+ 	] as const;
+ 	for (const singleBindingField of singleBindingFields) {
+ 		if (
+diff --git a/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts b/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts
+index aaa7a33ac6..ffa797f1d6 100644
+--- a/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts
++++ b/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts
+@@ -131,6 +131,7 @@ export function createWorkerUploadForm(
+ 		bindings
+ 	);
+ 	const ai_search = extractBindingsOfType("ai_search", bindings);
++	const web_search = extractBindingsOfType("web_search", bindings)[0];
+ 	const hyperdrive = extractBindingsOfType("hyperdrive", bindings);
+ 	const secrets_store_secrets = extractBindingsOfType(
+ 		"secrets_store_secret",
+@@ -367,6 +368,13 @@ export function createWorkerUploadForm(
+ 		});
+ 	});
+ 
++	if (web_search !== undefined) {
++		metadataBindings.push({
++			name: web_search.binding,
++			type: "web_search",
++		});
++	}
++
+ 	hyperdrive.forEach(({ binding, id }) => {
+ 		metadataBindings.push({
+ 			name: binding,
+diff --git a/packages/wrangler/src/dev/miniflare/index.ts b/packages/wrangler/src/dev/miniflare/index.ts
+index e0f17e2a3e..debe157d36 100644
+--- a/packages/wrangler/src/dev/miniflare/index.ts
++++ b/packages/wrangler/src/dev/miniflare/index.ts
+@@ -423,6 +423,7 @@ type WorkerOptionsBindings = Pick<
+ 	| "ai"
+ 	| "aiSearchNamespaces"
+ 	| "aiSearchInstances"
++	| "webSearch"
+ 	| "textBlobBindings"
+ 	| "dataBlobBindings"
+ 	| "wasmBindings"
+@@ -543,6 +544,7 @@ export function buildMiniflareBindingOptions(
+ 		bindings
+ 	);
+ 	const aiSearchInstanceBindings = extractBindingsOfType("ai_search", bindings);
++	const webSearchBindings = extractBindingsOfType("web_search", bindings);
+ 	const imagesBindings = extractBindingsOfType("images", bindings);
+ 	const mediaBindings = extractBindingsOfType("media", bindings);
+ 	const browserBindings = extractBindingsOfType("browser", bindings);
+@@ -651,6 +653,10 @@ export function buildMiniflareBindingOptions(
+ 		warnOrError("ai_search", inst.remote);
+ 	}
+ 
++	for (const ws of webSearchBindings) {
++		warnOrError("web_search", ws.remote);
++	}
++
+ 	for (const media of mediaBindings) {
+ 		warnOrError("media", media.remote);
+ 	}
+@@ -773,6 +779,15 @@ export function buildMiniflareBindingOptions(
+ 			])
+ 		),
+ 
++		webSearch: Object.fromEntries(
++			webSearchBindings.map((ws) => [
++				ws.binding,
++				{
++					remoteProxyConnectionString,
++				},
++			])
++		),
++
+ 		kvNamespaces: Object.fromEntries(
+ 			kvNamespaces.map((kv) =>
+ 				kvNamespaceEntry(kv, remoteProxyConnectionString)
+diff --git a/packages/wrangler/src/index.ts b/packages/wrangler/src/index.ts
+index 72435178b6..208b6fbf6c 100644
+--- a/packages/wrangler/src/index.ts
++++ b/packages/wrangler/src/index.ts
+@@ -463,6 +463,8 @@ import { vpcServiceGetCommand } from "./vpc/get";
+ import { vpcNamespace, vpcServiceNamespace } from "./vpc/index";
+ import { vpcServiceListCommand } from "./vpc/list";
+ import { vpcServiceUpdateCommand } from "./vpc/update";
++import { webSearchNamespace } from "./websearch/index";
++import { webSearchSearchCommand } from "./websearch/search";
+ import { workflowsInstanceNamespace, workflowsNamespace } from "./workflows";
+ import { workflowsDeleteCommand } from "./workflows/commands/delete";
+ import { workflowsDescribeCommand } from "./workflows/commands/describe";
+@@ -1553,6 +1555,16 @@ export function createCLIParser(argv: string[]) {
+ 	]);
+ 	registry.registerNamespace("ai-search");
+ 
++	// websearch
++	registry.define([
++		{ command: "wrangler websearch", definition: webSearchNamespace },
++		{
++			command: "wrangler websearch search",
++			definition: webSearchSearchCommand,
++		},
++	]);
++	registry.registerNamespace("websearch");
++
+ 	// cert - includes mtls-certificates and CA cert management
+ 	registry.define([
+ 		{ command: "wrangler cert", definition: certNamespace },
+diff --git a/packages/wrangler/src/type-generation/index.ts b/packages/wrangler/src/type-generation/index.ts
+index de48af42bd..492df69273 100644
+--- a/packages/wrangler/src/type-generation/index.ts
++++ b/packages/wrangler/src/type-generation/index.ts
+@@ -2338,6 +2338,20 @@ function collectCoreBindings(
+ 			addBinding(aiSearch.binding, "AiSearchInstance", "ai_search", envName);
+ 		}
+ 
++		if (env.web_search) {
++			if (!env.web_search.binding) {
++				throwMissingBindingError({
++					binding: env.web_search,
++					bindingType: "web_search",
++					configPath: args.config,
++					envName,
++					fieldName: "binding",
++				});
++			} else {
++				addBinding(env.web_search.binding, "WebSearch", "web_search", envName);
++			}
++		}
++
+ 		// Pipelines handled separately for async schema fetching
+ 
+ 		if (env.logfwdr?.bindings?.length) {
+@@ -3482,6 +3496,24 @@ function collectCoreBindingsPerEnvironment(
+ 			});
+ 		}
+ 
++		if (env.web_search) {
++			if (!env.web_search.binding) {
++				throwMissingBindingError({
++					binding: env.web_search,
++					bindingType: "web_search",
++					configPath: args.config,
++					envName,
++					fieldName: "binding",
++				});
++			} else {
++				bindings.push({
++					bindingCategory: "web_search",
++					name: env.web_search.binding,
++					type: "WebSearch",
++				});
++			}
++		}
++
+ 		return bindings;
+ 	}
+ 
+diff --git a/packages/wrangler/src/user/user.ts b/packages/wrangler/src/user/user.ts
+index 1000da6d3e..c919c0f7c9 100644
+--- a/packages/wrangler/src/user/user.ts
++++ b/packages/wrangler/src/user/user.ts
+@@ -372,6 +372,7 @@ const DefaultScopes = {
+ 	"ai:write": "See and change Workers AI catalog and assets",
+ 	"ai-search:write": "See and change AI Search data",
+ 	"ai-search:run": "Run search queries on your AI Search instances",
++	"websearch.run": "Run search queries against Cloudflare Web Search",
+ 	"queues:write": "See and change Cloudflare Queues settings and data",
+ 	"pipelines:write":
+ 		"See and change Cloudflare Pipelines configurations and data",
+diff --git a/packages/wrangler/src/user/whoami.ts b/packages/wrangler/src/user/whoami.ts
+index 435c4670b0..aae22b1529 100644
+--- a/packages/wrangler/src/user/whoami.ts
++++ b/packages/wrangler/src/user/whoami.ts
+@@ -179,8 +179,11 @@ function printTokenPermissions(user: UserInfo) {
+ 	// This Set contains all the scopes we expect to see (that Wrangler requests by default)
+ 	const expectedScopes = new Set(DefaultScopeKeys);
+ 	for (const [scope, access] of permissions) {
+-		// We'll remove scopes from the set of scopes that we expect to see when we see them in the API response
+-		expectedScopes.delete(`${scope}:${access}` as Scope);
++		// We'll remove scopes from the set of scopes that we expect to see when we see them in the API response.
++		// Some scopes are dot-separated (e.g. "websearch.run") rather than colon-separated, in which case
++		// the split above yields a single element with `access === undefined`.
++		const key = (access === undefined ? scope : `${scope}:${access}`) as Scope;
++		expectedScopes.delete(key);
+ 		logger.log(`- ${scope} ${access ? `(${access})` : ``}`);
+ 	}
+ 
+diff --git a/packages/wrangler/src/utils/add-created-resource-config.ts b/packages/wrangler/src/utils/add-created-resource-config.ts
+index 7df058a26d..be86c359b3 100644
+--- a/packages/wrangler/src/utils/add-created-resource-config.ts
++++ b/packages/wrangler/src/utils/add-created-resource-config.ts
+@@ -20,6 +20,7 @@ type ValidKeys = Exclude<
+ 	ConfigBindingFieldName,
+ 	| "ai"
+ 	| "browser"
++	| "web_search"
+ 	| "vars"
+ 	| "wasm_modules"
+ 	| "text_blobs"
+diff --git a/packages/wrangler/src/utils/print-bindings.ts b/packages/wrangler/src/utils/print-bindings.ts
+index 7894a38bc5..134636f566 100644
+--- a/packages/wrangler/src/utils/print-bindings.ts
++++ b/packages/wrangler/src/utils/print-bindings.ts
+@@ -90,6 +90,7 @@ export function printBindings(
+ 		bindings
+ 	);
+ 	const ai_search = extractBindingsOfType("ai_search", bindings);
++	const web_search = extractBindingsOfType("web_search", bindings);
+ 	const hyperdrive = extractBindingsOfType("hyperdrive", bindings);
+ 	const r2_buckets = extractBindingsOfType("r2_bucket", bindings);
+ 	const logfwdr = extractBindingsOfType("logfwdr", bindings);
+@@ -355,6 +356,17 @@ export function printBindings(
+ 		);
+ 	}
+ 
++	if (web_search.length > 0) {
++		output.push(
++			...web_search.map(({ binding }) => ({
++				name: binding,
++				type: getBindingTypeFriendlyName("web_search"),
++				value: undefined,
++				mode: getMode({ isSimulatedLocally: false }),
++			}))
++		);
++	}
++
+ 	if (hyperdrive.length > 0) {
+ 		output.push(
+ 			...hyperdrive.map(({ binding, id }) => {
+diff --git a/packages/wrangler/src/websearch/client.ts b/packages/wrangler/src/websearch/client.ts
+new file mode 100644
+index 0000000000..e583ae331b
+--- /dev/null
++++ b/packages/wrangler/src/websearch/client.ts
+@@ -0,0 +1,22 @@
++import { fetchResult } from "../cfetch";
++import { requireAuth } from "../user";
++import type { WebSearchSearchResponse } from "./types";
++import type { Config } from "@cloudflare/workers-utils";
++
++const jsonContentType = "application/json; charset=utf-8";
++
++export async function search(
++	config: Config,
++	body: { query: string; limit?: number }
++): Promise<WebSearchSearchResponse> {
++	const accountId = await requireAuth(config);
++	return await fetchResult<WebSearchSearchResponse>(
++		config,
++		`/accounts/${accountId}/websearch/search`,
++		{
++			method: "POST",
++			headers: { "content-type": jsonContentType },
++			body: JSON.stringify(body),
++		}
++	);
++}
+diff --git a/packages/wrangler/src/websearch/index.ts b/packages/wrangler/src/websearch/index.ts
+new file mode 100644
+index 0000000000..c4deb78cc7
+--- /dev/null
++++ b/packages/wrangler/src/websearch/index.ts
+@@ -0,0 +1,10 @@
++import { createNamespace } from "../core/create-command";
++
++export const webSearchNamespace = createNamespace({
++	metadata: {
++		description: "🔎 Run queries against Cloudflare Web Search",
++		status: "experimental",
++		owner: "Product: Web Search",
++		category: "Compute & AI",
++	},
++});
+diff --git a/packages/wrangler/src/websearch/search.ts b/packages/wrangler/src/websearch/search.ts
+new file mode 100644
+index 0000000000..45360b4b33
+--- /dev/null
++++ b/packages/wrangler/src/websearch/search.ts
+@@ -0,0 +1,65 @@
++import { createCommand } from "../core/create-command";
++import { logger } from "../logger";
++import { search } from "./client";
++
++export const webSearchSearchCommand = createCommand({
++	metadata: {
++		description: "Run a query against Cloudflare Web Search",
++		status: "experimental",
++		owner: "Product: Web Search",
++	},
++	behaviour: {
++		printBanner: (args) => !args.json,
++	},
++	args: {
++		query: {
++			type: "string",
++			demandOption: true,
++			description: "The search query text.",
++		},
++		limit: {
++			type: "number",
++			description:
++				"Maximum number of results to return (defaults to 10, capped at 20).",
++		},
++		json: {
++			type: "boolean",
++			default: false,
++			description: "Return output as clean JSON",
++		},
++	},
++	positionalArgs: ["query"],
++	async handler(args, { config }) {
++		const body: { query: string; limit?: number } = { query: args.query };
++		if (args.limit !== undefined) {
++			body.limit = args.limit;
++		}
++
++		const result = await search(config, body);
++
++		if (args.json) {
++			logger.log(JSON.stringify(result, null, 2));
++			return;
++		}
++
++		logger.log(
++			`Search query: "${result.metadata.query}"  (${result.items.length} results, ${result.metadata.latency_ms}ms, request ${result.metadata.request_id})\n`
++		);
++
++		if (result.items.length === 0) {
++			logger.log("No results found.");
++			return;
++		}
++
++		// Compact table: just rank + title + url. Use --json for full fields
++		// (description, last_modified_date, image_url, favicon_url).
++		logger.table(
++			result.items.map((item, i) => ({
++				"#": String(i + 1),
++				title:
++					item.title.length > 60 ? item.title.slice(0, 60) + "..." : item.title,
++				url: item.url.length > 140 ? item.url.slice(0, 140) + "..." : item.url,
++			}))
++		);
++	},
++});
+diff --git a/packages/wrangler/src/websearch/types.ts b/packages/wrangler/src/websearch/types.ts
+new file mode 100644
+index 0000000000..c2d1c21554
+--- /dev/null
++++ b/packages/wrangler/src/websearch/types.ts
+@@ -0,0 +1,47 @@
++/**
++ * A single Web Search result returned by the REST API.
++ *
++ * Web Search is discovery-only -- results carry catalog metadata about a page
++ * but never the page body. To read a result's content, fetch the URL yourself.
++ *
++ * Field names mirror the public REST API (snake_case). The Worker binding
++ * (`env.WEBSEARCH.search()`) exposes the same data with camelCase keys.
++ */
++export interface WebSearchResult {
++	/** Canonical URL. */
++	url: string;
++	/** Page title. */
++	title: string;
++	/** Page-level description. May be absent. */
++	description?: string;
++	/**
++	 * Last-modified date for the page, when known. ISO-8601 datetime,
++	 * e.g. "2026-04-23T00:00:00.000Z".
++	 */
++	last_modified_date?: string;
++	/** Page meta image URL (typically og:image). May be absent. */
++	image_url?: string;
++	/** Optional favicon URL for UI hints. */
++	favicon_url?: string;
++}
++
++/**
++ * Per-response metadata for a Web Search query. Carries operational fields
++ * useful for support and debugging.
++ */
++export interface WebSearchResponseMetadata {
++	/** The query that was executed. */
++	query: string;
++	/** Opaque request identifier used for support and debugging. */
++	request_id: string;
++	/** End-to-end latency for this search request, in milliseconds. */
++	latency_ms: number;
++}
++
++/**
++ * Response from a Web Search query.
++ */
++export interface WebSearchSearchResponse {
++	items: WebSearchResult[];
++	metadata: WebSearchResponseMetadata;
++}

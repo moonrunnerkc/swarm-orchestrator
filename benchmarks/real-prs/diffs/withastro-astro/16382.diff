@@ -1,0 +1,4365 @@
+diff --git a/.gitignore b/.gitignore
+index 4d0275899e1e..fe331c16ad03 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -2,7 +2,6 @@ node_modules/
+ /triage/
+ /.compiler/
+ dist/
+-dist-**/
+ temp/
+ *.tsbuildinfo
+ .DS_Store
+diff --git a/packages/astro/package.json b/packages/astro/package.json
+index adb3ba4daa10..6e3672093ab6 100644
+--- a/packages/astro/package.json
++++ b/packages/astro/package.json
+@@ -124,9 +124,7 @@
+     "test:e2e:firefox": "playwright test --config playwright.firefox.config.js",
+     "test:types": "tsc --build test/types/tsconfig.json",
+     "test:unit": "astro-scripts test \"test/units/**/*.test.ts\" --strip-types --teardown ./test/units/teardown.ts",
+-    "test:integration": "pnpm run test:integration:js && pnpm run test:integration:ts",
+-    "test:integration:js": "astro-scripts test \"test/*.test.js\"",
+-    "test:integration:ts": "astro-scripts test \"test/*.test.ts\" --strip-types"
++    "test:integration": "astro-scripts test \"test/*.test.ts\" --parallel --strip-types"
+   },
+   "dependencies": {
+     "@astrojs/compiler": "^4.0.0",
+diff --git a/packages/astro/src/core/preview/static-preview-server.ts b/packages/astro/src/core/preview/static-preview-server.ts
+index 0c3191a1676f..e64d1ae94372 100644
+--- a/packages/astro/src/core/preview/static-preview-server.ts
++++ b/packages/astro/src/core/preview/static-preview-server.ts
+@@ -108,9 +108,15 @@ export default async function createStaticPreviewServer(
+ 		});
+ 	}
+ 
++	// Read the actual bound port from the HTTP server, not the configured port.
++	// This is important when port 0 is used (OS-assigned port).
++	const address = previewServer.httpServer.address();
++	const actualPort =
++		address && typeof address === 'object' ? address.port : settings.config.server.port;
++
+ 	return {
+ 		host: getResolvedHostForHttpServer(settings.config.server.host),
+-		port: settings.config.server.port,
++		port: actualPort,
+ 		closed,
+ 		server: previewServer.httpServer as http.Server,
+ 		stop: previewServer.close.bind(previewServer),
+diff --git a/packages/astro/test/0-css.test.ts b/packages/astro/test/0-css.test.ts
+index f51379256a42..78ef7f8f4b68 100644
+--- a/packages/astro/test/0-css.test.ts
++++ b/packages/astro/test/0-css.test.ts
+@@ -13,7 +13,8 @@ let fixture: Fixture;
+ 
+ describe('CSS', function () {
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/0-css/' });
++		fixture = await loadFixture({ root: './fixtures/0-css/',
++			outDir: './dist/0-css/', });
+ 	});
+ 
+ 	// test HTML and CSS contents for accuracy
+diff --git a/packages/astro/test/actions.test.ts b/packages/astro/test/actions.test.ts
+index 4a874e05c6f0..5f4f891ba7d3 100644
+--- a/packages/astro/test/actions.test.ts
++++ b/packages/astro/test/actions.test.ts
+@@ -28,6 +28,7 @@ describe('Astro Actions', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/actions/',
+ 			adapter: testAdapter(),
++			outDir: './dist/actions-astro-actions/',
+ 		});
+ 	});
+ 
+@@ -463,6 +464,7 @@ describe('Astro Actions in static mode with prerender = false routes', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/actions-static-prerender-false/',
++			outDir: './dist/actions-astro-actions-in-static-mode-with-preren/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -495,6 +497,7 @@ it('Works with adapter and all pages prerendered', async () => {
+ 		root: './fixtures/actions/',
+ 		output: 'static',
+ 		adapter: testAdapter(),
++		outDir: './dist/actions-astro-actions-in-static-mode-with-preren/',
+ 	});
+ 	const devServer = await fixture.startDevServer();
+ 	const res = await fixture.fetch('/_actions/subscribe', {
+@@ -514,6 +517,7 @@ it('Base path should be used', async () => {
+ 		root: './fixtures/actions/',
+ 		adapter: testAdapter(),
+ 		base: '/base',
++		outDir: './dist/actions-astro-actions-in-static-mode-with-preren/',
+ 	});
+ 	const devServer = await fixture.startDevServer();
+ 	const formData = new FormData();
+@@ -538,6 +542,7 @@ it('Should support trailing slash', async () => {
+ 		root: './fixtures/actions/',
+ 		adapter: testAdapter(),
+ 		trailingSlash: 'always',
++		outDir: './dist/actions-astro-actions-in-static-mode-with-preren/',
+ 	});
+ 	const devServer = await fixture.startDevServer();
+ 	const formData = new FormData();
+diff --git a/packages/astro/test/alias-path-alias-style.test.ts b/packages/astro/test/alias-path-alias-style.test.ts
+index 459a23b7f715..b5ce44be1dc6 100644
+--- a/packages/astro/test/alias-path-alias-style.test.ts
++++ b/packages/astro/test/alias-path-alias-style.test.ts
+@@ -12,6 +12,7 @@ describe('Style compilation with tsconfig path aliases', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/alias-path-alias-style/',
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/alias-path-alias-style/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/alias-tsconfig-no-baseurl.test.ts b/packages/astro/test/alias-tsconfig-no-baseurl.test.ts
+index 97d236899201..5067921768a7 100644
+--- a/packages/astro/test/alias-tsconfig-no-baseurl.test.ts
++++ b/packages/astro/test/alias-tsconfig-no-baseurl.test.ts
+@@ -9,6 +9,7 @@ describe('Aliases with tsconfig.json without baseUrl', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/alias-tsconfig-no-baseurl/',
++			outDir: './dist/alias-tsconfig-no-baseurl/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/alias-tsconfig.test.ts b/packages/astro/test/alias-tsconfig.test.ts
+index 9f2df382568c..881c80071c52 100644
+--- a/packages/astro/test/alias-tsconfig.test.ts
++++ b/packages/astro/test/alias-tsconfig.test.ts
+@@ -25,6 +25,7 @@ describe('Aliases with tsconfig.json', () => {
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
+ 			root: './fixtures/alias-tsconfig/',
++			outDir: './dist/alias-tsconfig/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/alias.test.ts b/packages/astro/test/alias.test.ts
+index 095d058bdc4f..0df089ad1d80 100644
+--- a/packages/astro/test/alias.test.ts
++++ b/packages/astro/test/alias.test.ts
+@@ -9,6 +9,7 @@ describe('Aliases', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/alias/',
++			outDir: './dist/alias/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/api-routes.test.ts b/packages/astro/test/api-routes.test.ts
+index 14c178555762..a732161837c9 100644
+--- a/packages/astro/test/api-routes.test.ts
++++ b/packages/astro/test/api-routes.test.ts
+@@ -6,7 +6,8 @@ describe('API routes', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/api-routes/' });
++		fixture = await loadFixture({ root: './fixtures/api-routes/',
++			outDir: './dist/api-routes/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/asset-query-params.test.ts b/packages/astro/test/asset-query-params.test.ts
+index c6149ac9f4eb..8a5ce7a7a050 100644
+--- a/packages/astro/test/asset-query-params.test.ts
++++ b/packages/astro/test/asset-query-params.test.ts
+@@ -26,6 +26,7 @@ describe('Asset Query Parameters (Adapter Client Config)', () => {
+ 					},
+ 				},
+ 			}),
++			outDir: './dist/asset-query-params-asset-query-parameters-adapter-client-co/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -77,6 +78,7 @@ describe('Asset Query Parameters with Fonts', () => {
+ 					},
+ 				},
+ 			}),
++			outDir: './dist/asset-query-params-asset-query-parameters-with-fonts/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -116,6 +118,7 @@ describe('Asset Query Parameters with Islands', () => {
+ 					},
+ 				},
+ 			}),
++			outDir: './dist/asset-query-params-asset-query-parameters-with-islands/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -158,6 +161,7 @@ describe('Asset Query Parameters in Inter-Chunk JS Imports', () => {
+ 					},
+ 				},
+ 			}),
++			outDir: './dist/asset-query-params-asset-query-parameters-in-inter-chunk-js/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -232,6 +236,7 @@ describe('Asset Query Parameters with Islands and assetsPrefix map', () => {
+ 			build: {
+ 				assetsPrefix: multiCdnAssetsPrefix,
+ 			},
++			outDir: './dist/asset-query-params-asset-query-parameters-with-islands-and-/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/asset-url-base.test.ts b/packages/astro/test/asset-url-base.test.ts
+index ae456ce03a50..559c62e9842a 100644
+--- a/packages/astro/test/asset-url-base.test.ts
++++ b/packages/astro/test/asset-url-base.test.ts
+@@ -14,6 +14,7 @@ describe('Asset URL resolution in build', () => {
+ 					site: 'http://example.com/sub/path/',
+ 					// test suite was authored when inlineStylesheets defaulted to never
+ 					build: { inlineStylesheets: 'never' },
++					outDir: './dist/asset-url-base-with-site/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -35,6 +36,7 @@ describe('Asset URL resolution in build', () => {
+ 					base: '/another/base/',
+ 					// test suite was authored when inlineStylesheets defaulted to never
+ 					build: { inlineStylesheets: 'never' },
++					outDir: './dist/asset-url-base-with-site-and-base/',
+ 				});
+ 				await fixture.build();
+ 			});
+diff --git a/packages/astro/test/astro-assets-dir.test.ts b/packages/astro/test/astro-assets-dir.test.ts
+index f624bb2e982c..ef1ce5e846e7 100644
+--- a/packages/astro/test/astro-assets-dir.test.ts
++++ b/packages/astro/test/astro-assets-dir.test.ts
+@@ -20,6 +20,7 @@ describe('assets dir takes the URL path inside the output directory', () => {
+ 					},
+ 				},
+ 			],
++			outDir: './dist/astro-assets-dir/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -28,7 +29,10 @@ describe('assets dir takes the URL path inside the output directory', () => {
+ 		assert.equal(
+ 			removeTrailingSlash(new URL('./custom_dir_1', checkDir).toString()),
+ 			removeTrailingSlash(
+-				new URL('./fixtures/astro-assets-dir/dist/custom_dir_1', import.meta.url).toString(),
++				new URL(
++					'./fixtures/astro-assets-dir/dist/astro-assets-dir/custom_dir_1',
++					import.meta.url,
++				).toString(),
+ 			),
+ 		);
+ 	});
+diff --git a/packages/astro/test/astro-assets-prefix-multi-cdn.test.ts b/packages/astro/test/astro-assets-prefix-multi-cdn.test.ts
+index 82b8352c162a..52c45422e8d5 100644
+--- a/packages/astro/test/astro-assets-prefix-multi-cdn.test.ts
++++ b/packages/astro/test/astro-assets-prefix-multi-cdn.test.ts
+@@ -23,6 +23,7 @@ describe('Assets Prefix Multiple CDN - Static', () => {
+ 			build: {
+ 				assetsPrefix,
+ 			},
++			outDir: './dist/astro-assets-prefix-multi-cdn-assets-prefix-multiple-cdn-static/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -90,6 +91,7 @@ describe('Assets Prefix Multiple CDN, server', () => {
+ 			build: {
+ 				assetsPrefix,
+ 			},
++			outDir: './dist/astro-assets-prefix-multi-cdn-assets-prefix-multiple-cdn-server/',
+ 		});
+ 		await fixture.build();
+ 		app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/astro-assets.test.ts b/packages/astro/test/astro-assets.test.ts
+index 0e18b1bc20a1..d415b2b8ea62 100644
+--- a/packages/astro/test/astro-assets.test.ts
++++ b/packages/astro/test/astro-assets.test.ts
+@@ -11,6 +11,7 @@ describe('Assets', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-assets/',
++			outDir: './dist/astro-assets/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-basic.test.ts b/packages/astro/test/astro-basic.test.ts
+index 4224a45b0425..f83e5a086283 100644
+--- a/packages/astro/test/astro-basic.test.ts
++++ b/packages/astro/test/astro-basic.test.ts
+@@ -12,6 +12,7 @@ describe('Astro basic build', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-basic/',
++			outDir: './dist/astro-basic-astro-basic-build/',
+ 		});
+ 		await fixture.build();
+ 		previewServer = await fixture.preview();
+@@ -108,6 +109,7 @@ describe('Astro basic development', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-basic/',
++			outDir: './dist/astro-basic-astro-basic-development/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -150,6 +152,7 @@ describe('Astro custom prerenderer', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-basic/',
+ 			integrations: [testPrerenderer.integration],
++			outDir: './dist/astro-basic-astro-custom-prerenderer/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-children.test.ts b/packages/astro/test/astro-children.test.ts
+index 671a4e209d10..3a55b8f4dbb2 100644
+--- a/packages/astro/test/astro-children.test.ts
++++ b/packages/astro/test/astro-children.test.ts
+@@ -7,7 +7,8 @@ describe('Component children', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-children/' });
++		fixture = await loadFixture({ root: './fixtures/astro-children/',
++			outDir: './dist/astro-children/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-client-only.test.ts b/packages/astro/test/astro-client-only.test.ts
+index 1903b50b9b0f..87b86b35d3b7 100644
+--- a/packages/astro/test/astro-client-only.test.ts
++++ b/packages/astro/test/astro-client-only.test.ts
+@@ -11,6 +11,7 @@ describe('Client only components', () => {
+ 			root: './fixtures/astro-client-only/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/astro-client-only-client-only-components/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -77,6 +78,7 @@ describe('Client only components subpath', () => {
+ 			root: './fixtures/astro-client-only/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/astro-client-only-client-only-components-subpath/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-component-bundling.test.ts b/packages/astro/test/astro-component-bundling.test.ts
+index 2d0395f13bb2..d37fd7b89ee5 100644
+--- a/packages/astro/test/astro-component-bundling.test.ts
++++ b/packages/astro/test/astro-component-bundling.test.ts
+@@ -6,7 +6,8 @@ describe('Component bundling', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-component-bundling/' });
++		fixture = await loadFixture({ root: './fixtures/astro-component-bundling/',
++			outDir: './dist/astro-component-bundling/', });
+ 	});
+ 
+ 	describe('dev', () => {
+diff --git a/packages/astro/test/astro-component-code.test.ts b/packages/astro/test/astro-component-code.test.ts
+index 26a2027d079e..9e008689c589 100644
+--- a/packages/astro/test/astro-component-code.test.ts
++++ b/packages/astro/test/astro-component-code.test.ts
+@@ -7,7 +7,8 @@ describe('<Code>', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-component-code/' });
++		fixture = await loadFixture({ root: './fixtures/astro-component-code/',
++			outDir: './dist/astro-component-code/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-cookies.test.ts b/packages/astro/test/astro-cookies.test.ts
+index 009c7acfd837..45076b700a86 100644
+--- a/packages/astro/test/astro-cookies.test.ts
++++ b/packages/astro/test/astro-cookies.test.ts
+@@ -12,6 +12,7 @@ describe('Astro.cookies', () => {
+ 			root: './fixtures/astro-cookies/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/astro-cookies/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/astro-css-bundling.test.ts b/packages/astro/test/astro-css-bundling.test.ts
+index 2be1e2397606..deca3211ed53 100644
+--- a/packages/astro/test/astro-css-bundling.test.ts
++++ b/packages/astro/test/astro-css-bundling.test.ts
+@@ -28,6 +28,7 @@ describe('CSS Bundling', function () {
+ 				root: './fixtures/astro-css-bundling/',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/astro-css-bundling-defaults/',
+ 			});
+ 			await fixture.build({ mode: 'production' });
+ 		});
+@@ -97,6 +98,7 @@ describe('CSS Bundling', function () {
+ 						},
+ 					},
+ 				},
++				outDir: './dist/astro-css-bundling-using-custom-assetfilenames-config/',
+ 			});
+ 			await fixture.build({ mode: 'production' });
+ 		});
+diff --git a/packages/astro/test/astro-dev-headers.test.ts b/packages/astro/test/astro-dev-headers.test.ts
+index d12c58c07cb4..f90d92517e67 100644
+--- a/packages/astro/test/astro-dev-headers.test.ts
++++ b/packages/astro/test/astro-dev-headers.test.ts
+@@ -16,6 +16,7 @@ describe('Astro dev headers', () => {
+ 			server: {
+ 				headers,
+ 			},
++			outDir: './dist/astro-dev-headers-astro-dev-headers/',
+ 		});
+ 		await fixture.build();
+ 		devServer = await fixture.startDevServer();
+@@ -56,6 +57,7 @@ describe('Astro dev with vite.base path', () => {
+ 			vite: {
+ 				base: '/hello',
+ 			},
++			outDir: './dist/astro-dev-headers-astro-dev-with-vite-base-path/',
+ 		});
+ 		await fixture.build();
+ 		devServer = await fixture.startDevServer();
+diff --git a/packages/astro/test/astro-dev-http2.test.ts b/packages/astro/test/astro-dev-http2.test.ts
+index 2f4839945ba6..a89f9706ccc4 100644
+--- a/packages/astro/test/astro-dev-http2.test.ts
++++ b/packages/astro/test/astro-dev-http2.test.ts
+@@ -10,6 +10,7 @@ describe('Astro HTTP/2 support', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-dev-http2/',
++			outDir: './dist/astro-dev-http2/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -29,7 +30,6 @@ describe('Astro HTTP/2 support', () => {
+ 			const url = new URL(urlString);
+ 			// Not asserting host because of all the ways localhost can be represented
+ 			assert.equal(url.protocol, 'https:');
+-			assert.equal(url.port, '4321');
+ 			assert.equal($('p').text(), '2.0');
+ 		});
+ 	});
+diff --git a/packages/astro/test/astro-directives.test.ts b/packages/astro/test/astro-directives.test.ts
+index 39ff27093a3e..9303be517c0c 100644
+--- a/packages/astro/test/astro-directives.test.ts
++++ b/packages/astro/test/astro-directives.test.ts
+@@ -11,6 +11,7 @@ describe('Directives', async () => {
+ 			root: './fixtures/astro-directives/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/astro-directives-directives/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -130,6 +131,7 @@ describe('set:html dev', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-directives/',
++			outDir: './dist/astro-directives-set-html-dev/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/astro-doctype.test.ts b/packages/astro/test/astro-doctype.test.ts
+index 6985b6acb3ae..c07d030b5695 100644
+--- a/packages/astro/test/astro-doctype.test.ts
++++ b/packages/astro/test/astro-doctype.test.ts
+@@ -7,7 +7,8 @@ describe('Doctype', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-doctype/' });
++		fixture = await loadFixture({ root: './fixtures/astro-doctype/',
++			outDir: './dist/astro-doctype/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-dynamic.test.ts b/packages/astro/test/astro-dynamic.test.ts
+index ff9b8233ac6f..8c8ed8ce34df 100644
+--- a/packages/astro/test/astro-dynamic.test.ts
++++ b/packages/astro/test/astro-dynamic.test.ts
+@@ -9,6 +9,7 @@ describe('Dynamic components', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-dynamic/',
++			outDir: './dist/astro-dynamic-dynamic-components/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -48,6 +49,7 @@ describe('Dynamic components subpath', () => {
+ 			site: 'https://site.com',
+ 			base: '/blog',
+ 			root: './fixtures/astro-dynamic/',
++			outDir: './dist/astro-dynamic-dynamic-components-subpath/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-envs.test.ts b/packages/astro/test/astro-envs.test.ts
+index f395e2b1f67e..8eadece19610 100644
+--- a/packages/astro/test/astro-envs.test.ts
++++ b/packages/astro/test/astro-envs.test.ts
+@@ -13,7 +13,8 @@ describe('Environment Variables', () => {
+ 		before(async () => {
+ 			process.env.BOOLEAN_VAR = 'true';
+ 			process.env.NUMBER_VAR = '1';
+-			fixture = await loadFixture({ root });
++			fixture = await loadFixture({ root,
++				outDir: './dist/astro-envs-build/', });
+ 			await fixture.build({});
+ 		});
+ 
+@@ -110,7 +111,8 @@ describe('Environment Variables', () => {
+ 		let devServer: DevServer;
+ 
+ 		before(async () => {
+-			fixture = await loadFixture({ root });
++			fixture = await loadFixture({ root,
++				outDir: './dist/astro-envs-development/', });
+ 			devServer = await fixture.startDevServer();
+ 		});
+ 		after(async () => {
+@@ -151,6 +153,7 @@ describe('Environment Variables', () => {
+ 				root,
+ 				output: 'server',
+ 				adapter: testAdapter(),
++				outDir: './dist/astro-envs-ssr/',
+ 			});
+ 			process.env.SECRET_PLACE = 'SECRET_PLACE_BUILD';
+ 			await fixture.build({});
+diff --git a/packages/astro/test/astro-expr.test.ts b/packages/astro/test/astro-expr.test.ts
+index 35820fd795ba..9bc4475bdc83 100644
+--- a/packages/astro/test/astro-expr.test.ts
++++ b/packages/astro/test/astro-expr.test.ts
+@@ -9,6 +9,7 @@ describe('Expressions', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-expr/',
++			outDir: './dist/astro-expr/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-get-static-paths.test.ts b/packages/astro/test/astro-get-static-paths.test.ts
+index 5bb912c54fc3..c590c38b3144 100644
+--- a/packages/astro/test/astro-get-static-paths.test.ts
++++ b/packages/astro/test/astro-get-static-paths.test.ts
+@@ -14,6 +14,7 @@ describe('getStaticPaths - build calls', () => {
+ 			site: 'https://mysite.dev/',
+ 			trailingSlash: 'never',
+ 			base: '/blog',
++			outDir: './dist/astro-get-static-paths-getstaticpaths-build-calls/',
+ 		});
+ 		await fixture.build({});
+ 	});
+@@ -34,6 +35,7 @@ describe('getStaticPaths - dev calls', () => {
+ 		fixture = await loadFixture({
+ 			root,
+ 			site: 'https://mysite.dev/',
++			outDir: './dist/astro-get-static-paths-getstaticpaths-dev-calls/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -145,6 +147,7 @@ describe('throws if an invalid Astro property is accessed', () => {
+ 		fixture = await loadFixture({
+ 			root,
+ 			site: 'https://mysite.dev/',
++			outDir: './dist/astro-get-static-paths-throws-if-an-invalid-astro-property-is-a/',
+ 		});
+ 		await fixture.editFile(
+ 			'/src/pages/food/[name].astro',
+diff --git a/packages/astro/test/astro-global.test.ts b/packages/astro/test/astro-global.test.ts
+index 4e9d8dd67fd6..554a5da78731 100644
+--- a/packages/astro/test/astro-global.test.ts
++++ b/packages/astro/test/astro-global.test.ts
+@@ -12,6 +12,7 @@ describe('Astro Global', () => {
+ 			root: './fixtures/astro-global/',
+ 			site: 'https://mysite.dev/subsite/',
+ 			base: '/blog',
++			outDir: './dist/astro-global-astro-global/',
+ 		});
+ 	});
+ 
+@@ -150,6 +151,7 @@ describe('Astro Global', () => {
+ 				base: '/new',
+ 				output: 'server',
+ 				adapter: testAdapter(),
++				outDir: './dist/astro-global-app/',
+ 			});
+ 			await fixture.build();
+ 			app = await fixture.loadTestAdapterApp();
+@@ -199,6 +201,7 @@ describe('Astro Global Defaults', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-global/',
++			outDir: './dist/astro-global-astro-global-defaults/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/astro-head.test.ts b/packages/astro/test/astro-head.test.ts
+index ff90a98a8916..a80db275df1f 100644
+--- a/packages/astro/test/astro-head.test.ts
++++ b/packages/astro/test/astro-head.test.ts
+@@ -13,6 +13,7 @@ describe('Head in its own component', () => {
+ 			base: '/blog',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/astro-head/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-markdown-frontmatter-injection.test.ts b/packages/astro/test/astro-markdown-frontmatter-injection.test.ts
+index 05ab45247347..976e77633fe3 100644
+--- a/packages/astro/test/astro-markdown-frontmatter-injection.test.ts
++++ b/packages/astro/test/astro-markdown-frontmatter-injection.test.ts
+@@ -25,6 +25,7 @@ describe('Astro Markdown - frontmatter injection', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: FIXTURE_ROOT,
++			outDir: './dist/astro-markdown-frontmatter-injection/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-markdown-plugins.test.ts b/packages/astro/test/astro-markdown-plugins.test.ts
+index 4902a27ea503..b00a95a45d14 100644
+--- a/packages/astro/test/astro-markdown-plugins.test.ts
++++ b/packages/astro/test/astro-markdown-plugins.test.ts
+@@ -43,6 +43,7 @@ describe('Astro Markdown plugins', () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-markdown-plugins/',
+ 				markdown: defaultMarkdownConfig,
++				outDir: './dist/astro-markdown-plugins-default-test-plugins/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -99,6 +100,7 @@ describe('Astro Markdown plugins', () => {
+ 		const fixture = await loadFixture({
+ 			root: './fixtures/astro-markdown-plugins/',
+ 			markdown: { ...defaultMarkdownConfig, gfm: false },
++			outDir: './dist/astro-markdown-plugins-default-test-plugins/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -115,6 +117,7 @@ describe('Astro Markdown plugins', () => {
+ 		const fixture = await loadFixture({
+ 			root: './fixtures/astro-markdown-plugins/',
+ 			markdown: { ...defaultMarkdownConfig, smartypants: false },
++			outDir: './dist/astro-markdown-plugins-default-test-plugins/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -132,6 +135,7 @@ describe('Astro Markdown plugins', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/content-layer-remark-plugins/',
++				outDir: './dist/astro-markdown-plugins-content-layer-plugins/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -161,6 +165,7 @@ describe('Astro Markdown plugins', () => {
+ 					...defaultMarkdownConfig,
+ 					smartypants: { dashes: 'oldschool' },
+ 				},
++				outDir: './dist/astro-markdown-plugins-advanced-smartypants-configurations/',
+ 			});
+ 			await fixture.build();
+ 
+@@ -178,6 +183,7 @@ describe('Astro Markdown plugins', () => {
+ 					...defaultMarkdownConfig,
+ 					smartypants: { ellipses: false },
+ 				},
++				outDir: './dist/astro-markdown-plugins-advanced-smartypants-configurations/',
+ 			});
+ 			await fixture.build();
+ 
+@@ -198,6 +204,7 @@ describe('Astro Markdown plugins', () => {
+ 						closingQuotes: { double: '»', single: '›' },
+ 					},
+ 				},
++				outDir: './dist/astro-markdown-plugins-advanced-smartypants-configurations/',
+ 			});
+ 			await fixture.build();
+ 
+@@ -215,6 +222,7 @@ describe('Astro Markdown plugins', () => {
+ 					...defaultMarkdownConfig,
+ 					smartypants: { backticks: 'all', quotes: false },
+ 				},
++				outDir: './dist/astro-markdown-plugins-advanced-smartypants-configurations/',
+ 			});
+ 			await fixture.build();
+ 
+diff --git a/packages/astro/test/astro-markdown-remarkRehype.test.ts b/packages/astro/test/astro-markdown-remarkRehype.test.ts
+index 996157963a32..387a4782bf08 100644
+--- a/packages/astro/test/astro-markdown-remarkRehype.test.ts
++++ b/packages/astro/test/astro-markdown-remarkRehype.test.ts
+@@ -9,6 +9,7 @@ describe('Astro Markdown without remark-rehype config', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-markdown-remarkRehype/',
++			outDir: './dist/astro-markdown-remarkRehype-astro-markdown-without-remark-rehype-con/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -32,6 +33,7 @@ describe('Astro Markdown with remark-rehype config', () => {
+ 					footnoteBackLabel: 'Kembali ke konten',
+ 				},
+ 			},
++			outDir: './dist/astro-markdown-remarkRehype-astro-markdown-with-remark-rehype-config/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-markdown-shiki.test.ts b/packages/astro/test/astro-markdown-shiki.test.ts
+index 7bd38048b015..680897b195c2 100644
+--- a/packages/astro/test/astro-markdown-shiki.test.ts
++++ b/packages/astro/test/astro-markdown-shiki.test.ts
+@@ -7,7 +7,8 @@ describe('Astro Markdown Shiki', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-markdown-shiki/langs/' });
++		fixture = await loadFixture({ root: './fixtures/astro-markdown-shiki/langs/',
++			outDir: './dist/astro-markdown-shiki/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-markdown.test.ts b/packages/astro/test/astro-markdown.test.ts
+index d86659511f4b..5bb0a4c8c540 100644
+--- a/packages/astro/test/astro-markdown.test.ts
++++ b/packages/astro/test/astro-markdown.test.ts
+@@ -21,6 +21,7 @@ describe('Astro Markdown', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: FIXTURE_ROOT,
++			outDir: './dist/astro-markdown-astro-markdown/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -66,6 +67,7 @@ describe('Astro Markdown', () => {
+ 				markdown: {
+ 					syntaxHighlight: 'prism',
+ 				},
++				outDir: './dist/astro-markdown-syntax-highlighting/',
+ 			});
+ 			await prismFixture.build();
+ 
+diff --git a/packages/astro/test/astro-mode.test.ts b/packages/astro/test/astro-mode.test.ts
+index efb25a1ef537..c47ca7293456 100644
+--- a/packages/astro/test/astro-mode.test.ts
++++ b/packages/astro/test/astro-mode.test.ts
+@@ -17,6 +17,7 @@ describe('--mode', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-mode/',
++			outDir: './dist/astro-mode/',
+ 		});
+ 		devDataStoreFile = new URL('./.astro/data-store.json', fixture.config.root);
+ 		prodDataStoreFile = new URL('./node_modules/.astro/data-store.json', fixture.config.root);
+diff --git a/packages/astro/test/astro-not-response.test.ts b/packages/astro/test/astro-not-response.test.ts
+index 8c659a8025bd..9e2e77368bd4 100644
+--- a/packages/astro/test/astro-not-response.test.ts
++++ b/packages/astro/test/astro-not-response.test.ts
+@@ -10,6 +10,7 @@ describe('Not returning responses', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-not-response/',
++			outDir: './dist/astro-not-response/',
+ 		});
+ 
+ 		devServer = await fixture.startDevServer();
+diff --git a/packages/astro/test/astro-pageDirectoryUrl.test.ts b/packages/astro/test/astro-pageDirectoryUrl.test.ts
+index 6f2d61349539..97d3bd8c81d3 100644
+--- a/packages/astro/test/astro-pageDirectoryUrl.test.ts
++++ b/packages/astro/test/astro-pageDirectoryUrl.test.ts
+@@ -12,6 +12,7 @@ describe('build format', () => {
+ 				build: {
+ 					format: 'file',
+ 				},
++				outDir: './dist/astro-pageDirectoryUrl-build-format-file/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -32,6 +33,7 @@ describe('build format', () => {
+ 				build: {
+ 					format: 'preserve',
+ 				},
++				outDir: './dist/astro-pageDirectoryUrl-build-format-preserve/',
+ 			});
+ 			await fixture.build();
+ 		});
+diff --git a/packages/astro/test/astro-pages.test.ts b/packages/astro/test/astro-pages.test.ts
+index ec8cd5388d17..c9d37068382b 100644
+--- a/packages/astro/test/astro-pages.test.ts
++++ b/packages/astro/test/astro-pages.test.ts
+@@ -7,7 +7,8 @@ describe('Pages', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro pages/' });
++		fixture = await loadFixture({ root: './fixtures/astro pages/',
++			outDir: './dist/astro-pages/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-partial-html.test.ts b/packages/astro/test/astro-partial-html.test.ts
+index 6158093804f8..4bccae4a3d68 100644
+--- a/packages/astro/test/astro-partial-html.test.ts
++++ b/packages/astro/test/astro-partial-html.test.ts
+@@ -10,6 +10,7 @@ describe('Partial HTML', async () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-partial-html/',
++			outDir: './dist/astro-partial-html/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/astro-preview-allowed-hosts.test.ts b/packages/astro/test/astro-preview-allowed-hosts.test.ts
+index 49f420bba93f..bf7697a122ca 100644
+--- a/packages/astro/test/astro-preview-allowed-hosts.test.ts
++++ b/packages/astro/test/astro-preview-allowed-hosts.test.ts
+@@ -53,6 +53,7 @@ describe('astro preview - allowedHosts via vite config', () => {
+ 					allowedHosts: ['example.com'],
+ 				},
+ 			},
++			outDir: './dist/astro-preview-allowed-hosts-astro-preview-allowedhosts-via-vite-conf/',
+ 		});
+ 		await fixture.build();
+ 		previewServer = await fixture.preview();
+@@ -81,7 +82,7 @@ describe('astro preview - allowedHosts true via vite config', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-preview-allowed-hosts/',
+-			outDir: './dist-allow-all/',
++			outDir: './dist/allow-all/',
+ 			// Set allowedHosts: true via the vite.preview path
+ 			vite: {
+ 				preview: {
+@@ -111,7 +112,7 @@ describe('astro preview - server.allowedHosts takes precedence over vite.preview
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-preview-allowed-hosts/',
+-			outDir: './dist-precedence/',
++			outDir: './dist/precedence/',
+ 			// Astro server.allowedHosts should win over vite.preview.allowedHosts
+ 			server: {
+ 				allowedHosts: ['astro-wins.com'],
+diff --git a/packages/astro/test/astro-preview-headers.test.ts b/packages/astro/test/astro-preview-headers.test.ts
+index 7c06e67aee91..3dcb8dfa498f 100644
+--- a/packages/astro/test/astro-preview-headers.test.ts
++++ b/packages/astro/test/astro-preview-headers.test.ts
+@@ -15,6 +15,7 @@ describe('Astro preview headers', () => {
+ 			server: {
+ 				headers,
+ 			},
++			outDir: './dist/astro-preview-headers/',
+ 		});
+ 		await fixture.build();
+ 		previewServer = await fixture.preview();
+diff --git a/packages/astro/test/astro-public.test.ts b/packages/astro/test/astro-public.test.ts
+index 3a57d5a78c20..c10bff7267b9 100644
+--- a/packages/astro/test/astro-public.test.ts
++++ b/packages/astro/test/astro-public.test.ts
+@@ -10,7 +10,8 @@ describe('Public', () => {
+ 	const buildLogs: AstroLoggerMessage[] = [];
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-public/' });
++		fixture = await loadFixture({ root: './fixtures/astro-public/',
++			outDir: './dist/astro-public-public/', });
+ 		const logger = new AstroLogger({
+ 			level: 'info',
+ 			destination: new Writable({
+@@ -70,7 +71,8 @@ describe('Public (dev)', () => {
+ 	let devServer: DevServer;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-public/' });
++		fixture = await loadFixture({ root: './fixtures/astro-public/',
++			outDir: './dist/astro-public-public-dev/', });
+ 		devServer = await fixture.startDevServer();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-script-template-dedup.test.ts b/packages/astro/test/astro-script-template-dedup.test.ts
+index 4a13eb12c4b6..fe731f6234ec 100644
+--- a/packages/astro/test/astro-script-template-dedup.test.ts
++++ b/packages/astro/test/astro-script-template-dedup.test.ts
+@@ -19,6 +19,7 @@ describe('Scripts inside template elements', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-script-template-dedup/',
++			outDir: './dist/astro-script-template-dedup/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/astro-scripts.test.ts b/packages/astro/test/astro-scripts.test.ts
+index 42c5d16f62b6..6a7aadb9de1a 100644
+--- a/packages/astro/test/astro-scripts.test.ts
++++ b/packages/astro/test/astro-scripts.test.ts
+@@ -14,6 +14,7 @@ describe('Scripts', () => {
+ 						assetsInlineLimit: 0,
+ 					},
+ 				},
++				outDir: './dist/astro-scripts-build/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -85,6 +86,7 @@ describe('Scripts', () => {
+ 			before(async () => {
+ 				fixture = await loadFixture({
+ 					root: './fixtures/astro-scripts/',
++					outDir: './dist/astro-scripts-inlining/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -126,6 +128,7 @@ describe('Scripts', () => {
+ 						assetsInlineLimit: 0,
+ 					},
+ 				},
++				outDir: './dist/astro-scripts-dev/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/astro-slots-nested.test.ts b/packages/astro/test/astro-slots-nested.test.ts
+index e41a592646f2..c0e2e4ce920b 100644
+--- a/packages/astro/test/astro-slots-nested.test.ts
++++ b/packages/astro/test/astro-slots-nested.test.ts
+@@ -7,7 +7,8 @@ describe('Nested Slots', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-slots-nested/' });
++		fixture = await loadFixture({ root: './fixtures/astro-slots-nested/',
++			outDir: './dist/astro-slots-nested/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-slots.test.ts b/packages/astro/test/astro-slots.test.ts
+index 2c140ae66804..5c268b2debe1 100644
+--- a/packages/astro/test/astro-slots.test.ts
++++ b/packages/astro/test/astro-slots.test.ts
+@@ -7,7 +7,8 @@ describe('Slots', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/astro-slots/' });
++		fixture = await loadFixture({ root: './fixtures/astro-slots/',
++			outDir: './dist/astro-slots/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/astro-sync.test.ts b/packages/astro/test/astro-sync.test.ts
+index 642bc94d2fef..0db0496912f9 100644
+--- a/packages/astro/test/astro-sync.test.ts
++++ b/packages/astro/test/astro-sync.test.ts
+@@ -16,7 +16,8 @@ const createFixture = () => {
+ 
+ 	return {
+ 		async load(root: string) {
+-			astroFixture = await loadFixture({ root });
++			astroFixture = await loadFixture({ root,
++				outDir: './dist/astro-sync-1/', });
+ 			return astroFixture.config;
+ 		},
+ 		clean() {
+@@ -255,7 +256,8 @@ describe('astro sync', () => {
+ 				},
+ 			});
+ 
+-			const astroFixture = await loadFixture({ root: './fixtures/astro-basic/' });
++			const astroFixture = await loadFixture({ root: './fixtures/astro-basic/',
++				outDir: './dist/astro-sync-no-content-config/', });
+ 			fs.rmSync(new URL('./.astro/', astroFixture.config.root), { force: true, recursive: true });
+ 
+ 			// @ts-ignore
+diff --git a/packages/astro/test/build-assets.test.ts b/packages/astro/test/build-assets.test.ts
+index 99351b348d6c..be338d865faa 100644
+--- a/packages/astro/test/build-assets.test.ts
++++ b/packages/astro/test/build-assets.test.ts
+@@ -15,6 +15,7 @@ describe('build assets (static)', () => {
+ 				integrations: [preact()],
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/build-assets-with-default-configuration/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -60,6 +61,7 @@ describe('build assets (static)', () => {
+ 					assets: 'custom-assets',
+ 					inlineStylesheets: 'never',
+ 				},
++				outDir: './dist/build-assets-with-custom-configuration/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -99,6 +101,7 @@ describe('build assets (server)', () => {
+ 				adapter: testAdapter({ extendAdapter: { adapterFeatures: { buildOutput: 'static' } } }),
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/build-assets-with-default-configuration/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -151,6 +154,7 @@ describe('build assets (server)', () => {
+ 						},
+ 					},
+ 				}),
++				outDir: './dist/build-assets-with-custom-configuration/',
+ 			});
+ 			await fixture.build();
+ 		});
+diff --git a/packages/astro/test/build-concurrency.test.ts b/packages/astro/test/build-concurrency.test.ts
+index 9bfa08060563..f475f735a026 100644
+--- a/packages/astro/test/build-concurrency.test.ts
++++ b/packages/astro/test/build-concurrency.test.ts
+@@ -11,6 +11,7 @@ describe('Building with concurrency > 1', () => {
+ 			build: {
+ 				concurrency: 2,
+ 			},
++			outDir: './dist/build-concurrency/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/build-readonly-file.test.ts b/packages/astro/test/build-readonly-file.test.ts
+index 026690cf0084..b7b63cbed8a2 100644
+--- a/packages/astro/test/build-readonly-file.test.ts
++++ b/packages/astro/test/build-readonly-file.test.ts
+@@ -11,6 +11,7 @@ describe('When a read-only file exists in /public (static)', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/build-readonly-file/',
++			outDir: './dist/build-readonly-file-when-a-read-only-file-exists-in-public-s/',
+ 		});
+ 
+ 		testFilePath = fileURLToPath(fixture.config.publicDir) + 'test.txt';
+@@ -35,6 +36,7 @@ describe('When a read-only file exists in /public (server)', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/build-readonly-file/',
+ 			adapter: testAdapter(),
++			outDir: './dist/build-readonly-file-when-a-read-only-file-exists-in-public-s/',
+ 		});
+ 
+ 		testFilePath = fileURLToPath(fixture.config.publicDir) + 'test.txt';
+diff --git a/packages/astro/test/cache-memory-query.test.ts b/packages/astro/test/cache-memory-query.test.ts
+index 7fe270967f7b..8b0a60499d35 100644
+--- a/packages/astro/test/cache-memory-query.test.ts
++++ b/packages/astro/test/cache-memory-query.test.ts
+@@ -12,6 +12,7 @@ describe('Memory cache provider — default query exclusions', () => {
+ 			root: './fixtures/cache-memory-query/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/cache-memory-query-memory-cache-provider-default-query-excl/',
+ 		});
+ 		await fixture.build({});
+ 		app = await fixture.loadTestAdapterApp();
+@@ -69,6 +70,7 @@ describe('Memory cache provider — query include', () => {
+ 			root: './fixtures/cache-memory-query-include/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/cache-memory-query-memory-cache-provider-query-include/',
+ 		});
+ 		await fixture.build({});
+ 		app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/cache-memory.test.ts b/packages/astro/test/cache-memory.test.ts
+index d8b8ecba372d..5c8a559524d6 100644
+--- a/packages/astro/test/cache-memory.test.ts
++++ b/packages/astro/test/cache-memory.test.ts
+@@ -12,6 +12,7 @@ describe('Memory cache provider', () => {
+ 			root: './fixtures/cache-memory/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/cache-memory/',
+ 		});
+ 		await fixture.build({});
+ 		app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/cache-route.test.ts b/packages/astro/test/cache-route.test.ts
+index 656831c63091..34006c5438c0 100644
+--- a/packages/astro/test/cache-route.test.ts
++++ b/packages/astro/test/cache-route.test.ts
+@@ -24,6 +24,7 @@ describe('context.cache', () => {
+ 							'/api': { maxAge: -1 },
+ 						},
+ 					},
++					outDir: './dist/cache-route-context-cache/',
+ 				}),
+ 			(err: Error) => {
+ 				assert.ok(err.message.includes('maxAge'));
+@@ -42,6 +43,7 @@ describe('context.cache', () => {
+ 					provider: { entrypoint: 'nonexistent-cache-provider-package' },
+ 				},
+ 			},
++			outDir: './dist/cache-route-context-cache/',
+ 		});
+ 		await assert.rejects(
+ 			() => fixture.build({}),
+@@ -76,6 +78,7 @@ describe('context.cache', () => {
+ 						'/config-route': { maxAge: 600, tags: ['config'] },
+ 					},
+ 				},
++				outDir: './dist/cache-route-production-cdn-style-provider/',
+ 			});
+ 			await fixture.build({});
+ 			app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/chrome-devtools-workspace.test.ts b/packages/astro/test/chrome-devtools-workspace.test.ts
+index 215d0650f9ff..d6964e9106d4 100644
+--- a/packages/astro/test/chrome-devtools-workspace.test.ts
++++ b/packages/astro/test/chrome-devtools-workspace.test.ts
+@@ -13,6 +13,7 @@ describe('Chrome DevTools workspace', () => {
+ 				experimental: {
+ 					chromeDevtoolsWorkspace: true,
+ 				},
++				outDir: './dist/chrome-devtools-workspace-with-experimental-flag-enabled/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -45,6 +46,7 @@ describe('Chrome DevTools workspace', () => {
+ 				experimental: {
+ 					chromeDevtoolsWorkspace: false,
+ 				},
++				outDir: './dist/chrome-devtools-workspace-with-experimental-flag-disabled/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/cli.test.ts b/packages/astro/test/cli.test.ts
+index 4569596597c2..f788fac26247 100644
+--- a/packages/astro/test/cli.test.ts
++++ b/packages/astro/test/cli.test.ts
+@@ -26,6 +26,7 @@ describe('astro cli', () => {
+ 
+ 		const fixture: Fixture = await loadFixture({
+ 			root: './fixtures/astro-check-watch/',
++			outDir: './dist/cli/',
+ 		});
+ 		const logs: LogEntry[] = [];
+ 
+diff --git a/packages/astro/test/client-address-node.test.ts b/packages/astro/test/client-address-node.test.ts
+index 44ef0bd9ddf3..0b5bddd6fe85 100644
+--- a/packages/astro/test/client-address-node.test.ts
++++ b/packages/astro/test/client-address-node.test.ts
+@@ -9,6 +9,7 @@ describe('NodeClientAddress', () => {
+ 		it('clientAddress is 1.1.1.1', async () => {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/client-address-node/',
++				outDir: './dist/client-address-node-single-value/',
+ 			});
+ 			await fixture.build();
+ 			const handle = await fixture.loadNodeAdapterHandler();
+@@ -31,6 +32,7 @@ describe('NodeClientAddress', () => {
+ 		it('clientAddress is 1.1.1.1', async () => {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/client-address-node/',
++				outDir: './dist/client-address-node-multiple-values/',
+ 			});
+ 			await fixture.build();
+ 			const handle = await fixture.loadNodeAdapterHandler();
+diff --git a/packages/astro/test/client-address.test.ts b/packages/astro/test/client-address.test.ts
+index a762dc7a7d7a..a19397506347 100644
+--- a/packages/astro/test/client-address.test.ts
++++ b/packages/astro/test/client-address.test.ts
+@@ -13,6 +13,7 @@ describe('Astro.clientAddress', () => {
+ 				root: './fixtures/client-address/',
+ 				output: 'server',
+ 				adapter: testAdapter(),
++				outDir: './dist/client-address-ssr/',
+ 			});
+ 		});
+ 
+@@ -73,6 +74,7 @@ describe('Astro.clientAddress', () => {
+ 				root: './fixtures/client-address/',
+ 				output: 'server',
+ 				adapter: testAdapter({ provideAddress: false }),
++				outDir: './dist/client-address-ssr-adapter-not-implemented/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -92,6 +94,7 @@ describe('Astro.clientAddress', () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/client-address/',
+ 				output: 'static',
++				outDir: './dist/client-address-ssg/',
+ 			});
+ 		});
+ 
+diff --git a/packages/astro/test/code-component.test.ts b/packages/astro/test/code-component.test.ts
+index 2a8c8a662358..8bedff53edf3 100644
+--- a/packages/astro/test/code-component.test.ts
++++ b/packages/astro/test/code-component.test.ts
+@@ -7,7 +7,8 @@ describe('Code component', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/code-component/' });
++		fixture = await loadFixture({ root: './fixtures/code-component/',
++			outDir: './dist/code-component/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/component-library.test.ts b/packages/astro/test/component-library.test.ts
+index ae8764501917..dc6cc9b8d2ec 100644
+--- a/packages/astro/test/component-library.test.ts
++++ b/packages/astro/test/component-library.test.ts
+@@ -15,6 +15,7 @@ describe('Component Libraries', () => {
+ 			root: './fixtures/component-library/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/component-library/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/config-format.test.ts b/packages/astro/test/config-format.test.ts
+index eec105176f8f..3c4fe083c6f6 100644
+--- a/packages/astro/test/config-format.test.ts
++++ b/packages/astro/test/config-format.test.ts
+@@ -10,6 +10,7 @@ describe('Astro config formats', () => {
+ 		// (meaning config loaded successfully).
+ 		const fixture = await loadFixture({
+ 			root: './fixtures/dev-render/',
++			outDir: './dist/config-format/',
+ 		});
+ 		const devServer = await fixture.startDevServer();
+ 		assert.ok(devServer, 'Dev server started, which means the config loaded.');
+diff --git a/packages/astro/test/config-mode.test.ts b/packages/astro/test/config-mode.test.ts
+index 25f70ec19130..81c642ab9110 100644
+--- a/packages/astro/test/config-mode.test.ts
++++ b/packages/astro/test/config-mode.test.ts
+@@ -14,6 +14,7 @@ describe('AstroConfig - config.output', () => {
+ 					root: './fixtures/astro-basic/',
+ 					adapter: testAdapter(),
+ 					output: 'server',
++					outDir: './dist/config-mode-deploy-config-provided/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -37,6 +38,7 @@ describe('AstroConfig - config.output', () => {
+ 					// This is just a random fixture to test, doesn't matter.
+ 					root: './fixtures/astro-basic/',
+ 					output: 'server',
++					outDir: './dist/config-mode-deploy-config-omitted/',
+ 				});
+ 			});
+ 
+@@ -64,6 +66,7 @@ describe('AstroConfig - config.output', () => {
+ 					// This is just a random fixture to test, doesn't matter.
+ 					root: './fixtures/astro-basic/',
+ 					output: 'static',
++					outDir: './dist/config-mode-output-config-omitted/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -88,6 +91,7 @@ describe('AstroConfig - config.output', () => {
+ 					root: './fixtures/astro-basic/',
+ 					adapter: testAdapter(),
+ 					output: 'server',
++					outDir: './dist/config-mode-output-config-omitted/',
+ 				});
+ 				await fixture.build();
+ 			});
+diff --git a/packages/astro/test/config-vite-css-target.test.ts b/packages/astro/test/config-vite-css-target.test.ts
+index 5c1379f4b88b..30cdcb66ba44 100644
+--- a/packages/astro/test/config-vite-css-target.test.ts
++++ b/packages/astro/test/config-vite-css-target.test.ts
+@@ -15,6 +15,7 @@ describe('CSS', function () {
+ 			root: './fixtures/config-vite-css-target/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/config-vite-css-target/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/config-vite.test.ts b/packages/astro/test/config-vite.test.ts
+index dd236849bf25..f42f25ac9d09 100644
+--- a/packages/astro/test/config-vite.test.ts
++++ b/packages/astro/test/config-vite.test.ts
+@@ -14,6 +14,7 @@ describe('Vite Config', async () => {
+ 			root: './fixtures/config-vite/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/config-vite/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/container.test.ts b/packages/astro/test/container.test.ts
+index 2070b0ced956..788d9bf34573 100644
+--- a/packages/astro/test/container.test.ts
++++ b/packages/astro/test/container.test.ts
+@@ -288,6 +288,7 @@ describe('Container with renderers', () => {
+ 			root: new URL('./fixtures/container-custom-renderers/', import.meta.url),
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/container/',
+ 		});
+ 		await fixture.build();
+ 		app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/content-collection-picture-render.test.ts b/packages/astro/test/content-collection-picture-render.test.ts
+index a5269d047c5e..d98a90081734 100644
+--- a/packages/astro/test/content-collection-picture-render.test.ts
++++ b/packages/astro/test/content-collection-picture-render.test.ts
+@@ -11,7 +11,8 @@ describe('Content collection with Picture component and render()', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/content-collection-picture-render/' });
++		fixture = await loadFixture({ root: './fixtures/content-collection-picture-render/',
++			outDir: './dist/content-collection-picture-render/', });
+ 	});
+ 
+ 	describe('Build', () => {
+diff --git a/packages/astro/test/content-collection-references.test.ts b/packages/astro/test/content-collection-references.test.ts
+index 0aee44640a04..aad72db34dac 100644
+--- a/packages/astro/test/content-collection-references.test.ts
++++ b/packages/astro/test/content-collection-references.test.ts
+@@ -50,7 +50,8 @@ describe('Content Collections - references', () => {
+ 	let fixture: Fixture;
+ 	let devServer: DevServer;
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/content-collection-references/' });
++		fixture = await loadFixture({ root: './fixtures/content-collection-references/',
++			outDir: './dist/content-collection-references/', });
+ 	});
+ 
+ 	const modes = ['dev', 'prod'];
+diff --git a/packages/astro/test/content-collection-tla-svg.test.ts b/packages/astro/test/content-collection-tla-svg.test.ts
+index 4425dbde9127..4a2819f8a30b 100644
+--- a/packages/astro/test/content-collection-tla-svg.test.ts
++++ b/packages/astro/test/content-collection-tla-svg.test.ts
+@@ -10,7 +10,8 @@ describe('Content collection with SVG image and TLA', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/content-collection-tla-svg/' });
++		fixture = await loadFixture({ root: './fixtures/content-collection-tla-svg/',
++			outDir: './dist/content-collection-tla-svg/', });
+ 	});
+ 
+ 	describe('Build', () => {
+diff --git a/packages/astro/test/content-collections-render.test.ts b/packages/astro/test/content-collections-render.test.ts
+index f3baaddaa7a0..5388bbce4ac9 100644
+--- a/packages/astro/test/content-collections-render.test.ts
++++ b/packages/astro/test/content-collections-render.test.ts
+@@ -13,6 +13,7 @@ describe('Content Collections - render()', () => {
+ 				root: './fixtures/content/',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/content-collections-render-build-ssg/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -74,6 +75,7 @@ describe('Content Collections - render()', () => {
+ 				adapter: testAdapter(),
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/content-collections-render-build-ssr/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -155,6 +157,7 @@ describe('Content Collections - render()', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/content/',
++				outDir: './dist/content-collections-render-dev-ssg/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/content-collections-type-inference.test.ts b/packages/astro/test/content-collections-type-inference.test.ts
+index 7239dfba3aaf..1335b6fb7a1c 100644
+--- a/packages/astro/test/content-collections-type-inference.test.ts
++++ b/packages/astro/test/content-collections-type-inference.test.ts
+@@ -12,6 +12,7 @@ describe('Content collection type inference', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/content-collections-type-inference/',
++			outDir: './dist/content-collections-type-inference/',
+ 		});
+ 		fixtureRoot = fileURLToPath(fixture.config.root);
+ 
+diff --git a/packages/astro/test/content-collections.test.ts b/packages/astro/test/content-collections.test.ts
+index 0f32d610945c..9e0a51a291e9 100644
+--- a/packages/astro/test/content-collections.test.ts
++++ b/packages/astro/test/content-collections.test.ts
+@@ -42,7 +42,8 @@ describe('Content Collections', () => {
+ 	describe('Query', () => {
+ 		let fixture: Fixture;
+ 		before(async () => {
+-			fixture = await loadFixture({ root: './fixtures/content-collections/' });
++			fixture = await loadFixture({ root: './fixtures/content-collections/',
++				outDir: './dist/content-collections-query/', });
+ 			await fixture.build({ force: true });
+ 		});
+ 
+@@ -204,7 +205,8 @@ describe('Content Collections', () => {
+ 		let fixture: Fixture;
+ 
+ 		before(async () => {
+-			fixture = await loadFixture({ root: './fixtures/content-static-paths-integration/' });
++			fixture = await loadFixture({ root: './fixtures/content-static-paths-integration/',
++				outDir: './dist/content-collections-static-paths/', });
+ 			await fixture.build({ force: true });
+ 		});
+ 
+@@ -236,7 +238,8 @@ describe('Content Collections', () => {
+ 
+ 	describe('With spaces in path', () => {
+ 		it('Does not throw', async () => {
+-			const fixture = await loadFixture({ root: './fixtures/content with spaces in folder name/' });
++			const fixture = await loadFixture({ root: './fixtures/content with spaces in folder name/',
++				outDir: './dist/content-collections-spaces-in-path/', });
+ 			let error: string | null = null;
+ 			try {
+ 				await fixture.build({ force: true });
+@@ -250,6 +253,7 @@ describe('Content Collections', () => {
+ 		it('Throws if legacy config file is found', async () => {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/content-collections-with-config-mjs/',
++				outDir: './dist/content-collections-legacy-config/',
+ 			});
+ 			let error: string | undefined;
+ 			try {
+@@ -265,6 +269,7 @@ describe('Content Collections', () => {
+ 		it('Throws the right error', async () => {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/content-collections-empty-md-file/',
++				outDir: './dist/content-collections-empty-md/',
+ 			});
+ 			let error: string | undefined;
+ 			try {
+@@ -280,6 +285,7 @@ describe('Content Collections', () => {
+ 		it('Throws the right error', async () => {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/content-collections-number-id/',
++				outDir: './dist/content-collections-number-id/',
+ 			});
+ 			let error: string | undefined;
+ 			try {
+@@ -295,6 +301,7 @@ describe('Content Collections', () => {
+ 		it('Handles the empty directory correctly', async () => {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/content-collections-empty-dir/',
++				outDir: './dist/content-collections-empty-dir/',
+ 			});
+ 			let error: string | undefined;
+ 			try {
+@@ -323,6 +330,7 @@ describe('Content Collections', () => {
+ 				vite: {
+ 					plugins: [preventNodeBuiltinDependencyPlugin()],
+ 				},
++				outDir: './dist/content-collections-ssr/',
+ 			});
+ 			await fixture.build({ force: true });
+ 			app = await fixture.loadTestAdapterApp();
+@@ -374,6 +382,7 @@ describe('Content Collections', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/content-collections-base/',
++				outDir: './dist/content-collections-base/',
+ 			});
+ 			await fixture.build({ force: true });
+ 		});
+@@ -397,6 +406,7 @@ describe('Content Collections', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/content-collections-mutation/',
++				outDir: './dist/content-collections-mutation/',
+ 			});
+ 			await fixture.build({ force: true });
+ 		});
+diff --git a/packages/astro/test/content-frontmatter.test.ts b/packages/astro/test/content-frontmatter.test.ts
+index cc179b10fea3..8bffe95d681c 100644
+--- a/packages/astro/test/content-frontmatter.test.ts
++++ b/packages/astro/test/content-frontmatter.test.ts
+@@ -14,6 +14,7 @@ describe('frontmatter (loadFixture)', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/content-frontmatter/',
++			outDir: './dist/content-frontmatter/',
+ 		});
+ 		blogPath = path.join(fileURLToPath(fixture.config.root), 'src/content/posts/blog.md');
+ 		originalContent = fs.readFileSync(blogPath, 'utf-8');
+diff --git a/packages/astro/test/content-intellisense.test.ts b/packages/astro/test/content-intellisense.test.ts
+index a8bbcb4978c2..74f7d8b970ce 100644
+--- a/packages/astro/test/content-intellisense.test.ts
++++ b/packages/astro/test/content-intellisense.test.ts
+@@ -22,11 +22,12 @@ describe('Content Intellisense', () => {
+ 	let collections: IntellisenseCollections;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/content-intellisense/' });
++		fixture = await loadFixture({ root: './fixtures/content-intellisense/',
++			outDir: './dist/content-intellisense/', });
+ 		await fixture.build();
+ 
+-		collectionsDir = await fixture.readdir('../.astro/collections');
+-		manifest = JSON.parse(await fixture.readFile('../.astro/collections/collections.json'));
++		collectionsDir = await fixture.readdir('../../.astro/collections');
++		manifest = JSON.parse(await fixture.readFile('../../.astro/collections/collections.json'));
+ 		collections = JSON.parse(await fixture.readFile('index.json'));
+ 	});
+ 
+@@ -47,7 +48,7 @@ describe('Content Intellisense', () => {
+ 	});
+ 
+ 	it('generates a record JSON schema for the file loader', async () => {
+-		const schema = JSON.parse(await fixture.readFile('../.astro/collections/data-cl.schema.json'));
++		const schema = JSON.parse(await fixture.readFile('../../.astro/collections/data-cl.schema.json'));
+ 		assert.equal(schema.type, 'object');
+ 		assert.equal(schema.additionalProperties.type, 'object');
+ 		assert.deepEqual(schema.additionalProperties.properties, {
+@@ -116,7 +117,7 @@ describe('Content Intellisense', () => {
+ 
+ 	it('uses the Zod input shape to generate the JSON schema', async () => {
+ 		const schema = JSON.parse(
+-			await fixture.readFile('../.astro/collections/io-differences.schema.json'),
++			await fixture.readFile('../../.astro/collections/io-differences.schema.json'),
+ 		);
+ 		assert.deepEqual(schema.properties.optionalWithDefault, {
+ 			type: 'string',
+diff --git a/packages/astro/test/core-image-fs-config.test.ts b/packages/astro/test/core-image-fs-config.test.ts
+index ab53c53b60ac..4697315ffcaa 100644
+--- a/packages/astro/test/core-image-fs-config.test.ts
++++ b/packages/astro/test/core-image-fs-config.test.ts
+@@ -26,6 +26,7 @@ describe('Image optimization with Vite fs config', () => {
+ 						},
+ 					},
+ 				},
++				outDir: './dist/core-image-fs-config-fs-allow-and-fs-deny/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -92,6 +93,7 @@ describe('Image optimization with Vite fs config', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/core-image-fs-config/',
++				outDir: './dist/core-image-fs-config-safemodulepaths/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/core-image-infersize.test.ts b/packages/astro/test/core-image-infersize.test.ts
+index f94d5400a61d..cdf8c608c69a 100644
+--- a/packages/astro/test/core-image-infersize.test.ts
++++ b/packages/astro/test/core-image-infersize.test.ts
+@@ -18,6 +18,7 @@ describe('astro:image:infersize', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/core-image-infersize/',
++				outDir: './dist/core-image-infersize-dev/',
+ 			});
+ 
+ 			const logger = new AstroLogger({
+@@ -103,6 +104,7 @@ describe('astro:image:infersize', () => {
+ 						transform: { path: remoteAvatarUrl, scale: 2 },
+ 					}),
+ 				},
++				outDir: './dist/core-image-infersize-dev-with-custom-image-service/',
+ 			});
+ 
+ 			customDevServer = await customFixture.startDevServer({});
+diff --git a/packages/astro/test/core-image-layout.test.ts b/packages/astro/test/core-image-layout.test.ts
+index 82a14708abc1..180d17c902fa 100755
+--- a/packages/astro/test/core-image-layout.test.ts
++++ b/packages/astro/test/core-image-layout.test.ts
+@@ -27,6 +27,7 @@ describe('astro:image:layout', () => {
+ 					}),
+ 					domains: ['avatars.githubusercontent.com', 'images.unsplash.com'],
+ 				},
++				outDir: './dist/core-image-layout-local-image-service/',
+ 			});
+ 
+ 			devServer = await fixture.startDevServer({});
+@@ -346,6 +347,7 @@ describe('astro:image:layout', () => {
+ 					service: testRemoteImageService({ foo: 'bar' }),
+ 					domains: ['images.unsplash.com'],
+ 				},
++				outDir: './dist/core-image-layout-remote-image-service/',
+ 			});
+ 
+ 			const logger = new AstroLogger({
+@@ -378,6 +380,7 @@ describe('astro:image:layout', () => {
+ 					service: testImageService({ foo: 'bar' }),
+ 					domains: ['avatars.githubusercontent.com', 'images.unsplash.com'],
+ 				},
++				outDir: './dist/core-image-layout-build/',
+ 			});
+ 
+ 			await fixture.build();
+@@ -490,6 +493,7 @@ describe('astro:image:layout', () => {
+ 						domains: ['avatars.githubusercontent.com', 'images.unsplash.com'],
+ 						responsiveStyles: false,
+ 					},
++					outDir: './dist/core-image-layout-disabling-global-styles/',
+ 				});
+ 				await fixtureWithoutStyles.build();
+ 				const html = await fixtureWithoutStyles.readFile('/index.html');
+diff --git a/packages/astro/test/core-image-picture-emit-file.test.ts b/packages/astro/test/core-image-picture-emit-file.test.ts
+index 75d9f81d811d..af2023f74306 100644
+--- a/packages/astro/test/core-image-picture-emit-file.test.ts
++++ b/packages/astro/test/core-image-picture-emit-file.test.ts
+@@ -15,6 +15,7 @@ describe('astro:image', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/core-image-picture-emit-file/',
++				outDir: './dist/core-image-picture-emit-file/',
+ 			});
+ 
+ 			await fixture.build();
+diff --git a/packages/astro/test/core-image-remark-imgattr.test.ts b/packages/astro/test/core-image-remark-imgattr.test.ts
+index 2900e5106561..bb3e908b7a6e 100644
+--- a/packages/astro/test/core-image-remark-imgattr.test.ts
++++ b/packages/astro/test/core-image-remark-imgattr.test.ts
+@@ -16,6 +16,7 @@ describe('astro:image', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/core-image-remark-imgattr/',
++				outDir: './dist/core-image-remark-imgattr/',
+ 			});
+ 
+ 			const logger = new AstroLogger({
+diff --git a/packages/astro/test/core-image-svg-in-island.test.ts b/packages/astro/test/core-image-svg-in-island.test.ts
+index 200ce67743fa..fc08d29799ce 100644
+--- a/packages/astro/test/core-image-svg-in-island.test.ts
++++ b/packages/astro/test/core-image-svg-in-island.test.ts
+@@ -9,6 +9,7 @@ describe('astro:assets - SVG Components in Astro Islands', async () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/core-image-svg-in-island/',
++			outDir: './dist/core-image-svg-in-island/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/core-image-svg.test.ts b/packages/astro/test/core-image-svg.test.ts
+index cec1f3215d9d..8b15ddb1922f 100644
+--- a/packages/astro/test/core-image-svg.test.ts
++++ b/packages/astro/test/core-image-svg.test.ts
+@@ -16,6 +16,7 @@ describe('astro:assets - SVG Components', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/core-image-svg/',
++				outDir: './dist/core-image-svg-dev/',
+ 			});
+ 
+ 			const logger = new AstroLogger({
+@@ -168,6 +169,7 @@ describe('astro:assets - SVG Components', () => {
+ 						],
+ 					}),
+ 				},
++				outDir: './dist/core-image-svg-svgo-optimization/',
+ 			});
+ 
+ 			optimizedDevServer = await optimizedFixture.startDevServer();
+diff --git a/packages/astro/test/core-image-unconventional-settings.test.ts b/packages/astro/test/core-image-unconventional-settings.test.ts
+index c65e29762041..4fb6574a2ca5 100644
+--- a/packages/astro/test/core-image-unconventional-settings.test.ts
++++ b/packages/astro/test/core-image-unconventional-settings.test.ts
+@@ -21,6 +21,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 			build: {
+ 				assetsPrefix: 'https://cdn.example.com/',
+ 			},
++			outDir: './dist/core-image-unconventional-assets-prefix/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -37,6 +38,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 		fixture = await loadFixture({
+ 			...defaultSettings,
+ 			base: '/subdir/',
++			outDir: './dist/core-image-unconventional-base/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -55,6 +57,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 			build: {
+ 				assetsPrefix: 'https://cdn.example.com/',
+ 			},
++			outDir: './dist/core-image-unconventional-assets-prefix-base/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -73,6 +76,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 			build: {
+ 				assets: 'assets',
+ 			},
++			outDir: './dist/core-image-unconventional-custom-assets/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -107,6 +111,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 					},
+ 				},
+ 			},
++			outDir: './dist/core-image-unconventional-rollup-asset-names/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -140,6 +145,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 					},
+ 				},
+ 			},
++			outDir: './dist/core-image-unconventional-complex-asset-names/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -175,6 +181,7 @@ describe('astro:assets - Support unconventional build settings properly', () =>
+ 				assets: 'images',
+ 				assetsPrefix: 'https://cdn.example.com/',
+ 			},
++			outDir: './dist/core-image-unconventional-rollup-with-prefix/',
+ 		});
+ 		await fixture.build();
+ 
+diff --git a/packages/astro/test/core-image.test.ts b/packages/astro/test/core-image.test.ts
+index 19502e58ce40..c60b264a7ca4 100644
+--- a/packages/astro/test/core-image.test.ts
++++ b/packages/astro/test/core-image.test.ts
+@@ -59,6 +59,7 @@ describe('astro:image', () => {
+ 							: []),
+ 					],
+ 				},
++				outDir: './dist/core-image-dev/',
+ 			});
+ 
+ 			const logger = new AstroLogger({
+@@ -767,6 +768,7 @@ describe('astro:image', () => {
+ 						service: testImageService({ foo: 'bar' }),
+ 						domains: ['avatars.githubusercontent.com'],
+ 					},
++					outDir: './dist/core-image-custom-endpoint/',
+ 				});
+ 
+ 				customEndpointDevServer = await customEndpointFixture.startDevServer({
+@@ -805,6 +807,7 @@ describe('astro:image', () => {
+ 				image: {
+ 					service: testImageService(),
+ 				},
++				outDir: './dist/core-image-proper-errors/',
+ 			});
+ 
+ 			const logger = new AstroLogger({
+@@ -891,6 +894,7 @@ describe('astro:image', () => {
+ 					],
+ 				},
+ 				base: '/blog',
++				outDir: './dist/core-image-support-base-option-correctly/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -996,6 +1000,7 @@ describe('astro:image', () => {
+ 						'kaleidoscopic-biscotti-6fe98c.netlify.app',
+ 					],
+ 				},
++				outDir: './dist/core-image-build-ssg/',
+ 			});
+ 			// Remove cache directory
+ 			removeDir(new URL('./fixtures/core-image-ssg/node_modules/.astro', import.meta.url));
+@@ -1173,7 +1178,7 @@ describe('astro:image', () => {
+ 			const generatedImages = (await fixture.glob('_astro/**/*.webp'))
+ 				.map((path) => basename(path))
+ 				.sort();
+-			const cachedImages = [...(await fixture.glob('../node_modules/.astro/assets/**/*.webp'))]
++			const cachedImages = [...(await fixture.glob('../../node_modules/.astro/assets/**/*.webp'))]
+ 				.map((path) => basename(path))
+ 				.sort();
+ 
+@@ -1214,7 +1219,7 @@ describe('astro:image', () => {
+ 			const html = await fixture.readFile('/remote/index.html');
+ 			const $ = cheerio.load(html);
+ 			const metaSrc =
+-				'../node_modules/.astro/assets/' + basename($('#remote img').attr('src')!) + '.json';
++				'../../node_modules/.astro/assets/' + basename($('#remote img').attr('src')!) + '.json';
+ 			const data = await fixture.readBuffer(metaSrc);
+ 			assert.equal(data instanceof Buffer, true);
+ 			const metadata = JSON.parse(data.toString());
+@@ -1565,6 +1570,7 @@ describe('astro:image', () => {
+ 					service: testImageService(),
+ 				},
+ 				trailingSlash: 'always',
++				outDir: './dist/core-image-trailing-slash-on-the-endpoint/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 
+@@ -1584,6 +1590,7 @@ describe('astro:image', () => {
+ 					service: testImageService(),
+ 				},
+ 				trailingSlash: 'never',
++				outDir: './dist/core-image-trailing-slash-on-the-endpoint/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 
+@@ -1599,6 +1606,7 @@ describe('astro:image', () => {
+ 		it("returns 403 for /_image when requesting a relative pattern image and the parameters aren't encoded", async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/core-image/',
++				outDir: './dist/core-image-trailing-slash-on-the-endpoint/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 			// we don't use `URLSearchParams` because the initial // will get encoded
+@@ -1623,6 +1631,7 @@ describe('astro:image', () => {
+ 						},
+ 					],
+ 				},
++				outDir: './dist/core-image-build-data-url/',
+ 			});
+ 
+ 			await fixture.build();
+diff --git a/packages/astro/test/csp-server-islands.test.ts b/packages/astro/test/csp-server-islands.test.ts
+index e1e2ef8a6023..ae55493fe314 100644
+--- a/packages/astro/test/csp-server-islands.test.ts
++++ b/packages/astro/test/csp-server-islands.test.ts
+@@ -47,6 +47,7 @@ describe('Server islands', () => {
+ 				security: {
+ 					csp: true,
+ 				},
++				outDir: './dist/csp-server-islands-ssr/',
+ 			});
+ 			process.env.ASTRO_KEY = 'eKBaVEuI7YjfanEXHuJe/pwZKKt3LkAHeMxvTU7aR0M=';
+ 			await fixture.build();
+@@ -98,6 +99,7 @@ describe('Server islands', () => {
+ 				security: {
+ 					csp: true,
+ 				},
++				outDir: './dist/csp-server-islands-hybrid/',
+ 			});
+ 		});
+ 
+diff --git a/packages/astro/test/csp.test.ts b/packages/astro/test/csp.test.ts
+index f4e4501d1aa9..3b6d8a12cc96 100644
+--- a/packages/astro/test/csp.test.ts
++++ b/packages/astro/test/csp.test.ts
+@@ -10,6 +10,7 @@ describe('CSP', () => {
+ 	it('should generate hashes for inline styles', async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/csp/',
++			outDir: './dist/csp-csp/',
+ 		});
+ 		await fixture.build();
+ 		const html = await fixture.readFile('/inline/index.html');
+@@ -28,6 +29,7 @@ describe('CSP', () => {
+ 	it('should generate hashes and directives for fonts', async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/csp-fonts/',
++			outDir: './dist/csp-csp/',
+ 		});
+ 		await fixture.build();
+ 		const html = await fixture.readFile('/index.html');
+diff --git a/packages/astro/test/css-assets.test.ts b/packages/astro/test/css-assets.test.ts
+index f7baa291f01b..4827cff5cdae 100644
+--- a/packages/astro/test/css-assets.test.ts
++++ b/packages/astro/test/css-assets.test.ts
+@@ -14,6 +14,7 @@ describe('Assets in CSS', () => {
+ 					assetsInlineLimit: 0,
+ 				},
+ 			},
++			outDir: './dist/css-assets/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/css-dangling-references.test.ts b/packages/astro/test/css-dangling-references.test.ts
+index 6867bf76d521..8035cfeb3b05 100644
+--- a/packages/astro/test/css-dangling-references.test.ts
++++ b/packages/astro/test/css-dangling-references.test.ts
+@@ -10,6 +10,7 @@ describe("When Vite's preloadModule polyfill is used", async () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/css-dangling-references/',
++			outDir: './dist/css-dangling-references/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/css-double-bundle.test.ts b/packages/astro/test/css-double-bundle.test.ts
+index a1a5fbefd7eb..a9cf999f5bb9 100644
+--- a/packages/astro/test/css-double-bundle.test.ts
++++ b/packages/astro/test/css-double-bundle.test.ts
+@@ -9,6 +9,7 @@ describe('CSS Double Bundling Prevention', function () {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/css-double-bundle/',
++			outDir: './dist/css-double-bundle/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/css-import-as-inline.test.ts b/packages/astro/test/css-import-as-inline.test.ts
+index 1dcf28a93b3c..ad40e1f8d7d2 100644
+--- a/packages/astro/test/css-import-as-inline.test.ts
++++ b/packages/astro/test/css-import-as-inline.test.ts
+@@ -10,6 +10,7 @@ describe('Importing raw/inlined CSS', () => {
+ 			root: './fixtures/css-import-as-inline/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/css-import-as-inline/',
+ 		});
+ 	});
+ 	describe('Build', () => {
+diff --git a/packages/astro/test/css-no-code-split.test.ts b/packages/astro/test/css-no-code-split.test.ts
+index b846c3130525..c0327f701970 100644
+--- a/packages/astro/test/css-no-code-split.test.ts
++++ b/packages/astro/test/css-no-code-split.test.ts
+@@ -11,6 +11,7 @@ describe('vite.build.cssCodeSplit: false', () => {
+ 			root: './fixtures/css-no-code-split/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/css-no-code-split/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/css-order-import.test.ts b/packages/astro/test/css-order-import.test.ts
+index 5f570ec4eec3..32576eb9749b 100644
+--- a/packages/astro/test/css-order-import.test.ts
++++ b/packages/astro/test/css-order-import.test.ts
+@@ -10,6 +10,7 @@ describe('CSS ordering - import order', () => {
+ 			root: './fixtures/css-order-import/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/css-order-import-css-ordering-import-order/',
+ 		});
+ 	});
+ 
+@@ -130,6 +131,7 @@ describe('CSS ordering - import order', () => {
+ 				root: './fixtures/css-order-dynamic-import/',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/css-order-import-dynamic-import/',
+ 			});
+ 			await fixture.build();
+ 		});
+diff --git a/packages/astro/test/css-order-layout.test.ts b/packages/astro/test/css-order-layout.test.ts
+index 257cf677d842..8cdc865bd433 100644
+--- a/packages/astro/test/css-order-layout.test.ts
++++ b/packages/astro/test/css-order-layout.test.ts
+@@ -10,6 +10,7 @@ describe('CSS ordering - import order with layouts', () => {
+ 			root: './fixtures/css-order-layout/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/css-order-layout/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/css-order.test.ts b/packages/astro/test/css-order.test.ts
+index 9224ba134957..f6b64d224e88 100644
+--- a/packages/astro/test/css-order.test.ts
++++ b/packages/astro/test/css-order.test.ts
+@@ -31,7 +31,8 @@ describe('CSS production ordering', () => {
+ 		});
+ 
+ 		before(async () => {
+-			let fixture = await loadFixture({ ...commonConfig });
++			let fixture = await loadFixture({ ...commonConfig,
++				outDir: './dist/css-order-ssg-and-ssr-parity/', });
+ 			await fixture.build();
+ 			staticHTML = await fixture.readFile('/one/index.html');
+ 			staticCSS = await Promise.all(
+@@ -42,6 +43,7 @@ describe('CSS production ordering', () => {
+ 				...commonConfig,
+ 				adapter: testAdapter(),
+ 				output: 'server',
++				outDir: './dist/css-order-ssg-and-ssr-parity/',
+ 			});
+ 			await fixture.build();
+ 
+@@ -72,6 +74,7 @@ describe('CSS production ordering', () => {
+ 				root: './fixtures/css-order/',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/css-order-page-vs-shared-css/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -112,6 +115,7 @@ describe('CSS production ordering', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/css-order-layout/',
++				outDir: './dist/css-order-changes-order-when-transparentscriptorde/',
+ 			});
+ 			await fixture.build();
+ 		});
+diff --git a/packages/astro/test/custom-404-html.test.ts b/packages/astro/test/custom-404-html.test.ts
+index 798437cc56c7..adb2d4e17fad 100644
+--- a/packages/astro/test/custom-404-html.test.ts
++++ b/packages/astro/test/custom-404-html.test.ts
+@@ -10,6 +10,7 @@ describe('Custom 404.html', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-404-html/',
+ 			site: 'http://example.com',
++			outDir: './dist/custom-404-html/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/custom-404-implicit-rerouting.test.ts b/packages/astro/test/custom-404-implicit-rerouting.test.ts
+index f02a0f555068..56b6e600d0b5 100644
+--- a/packages/astro/test/custom-404-implicit-rerouting.test.ts
++++ b/packages/astro/test/custom-404-implicit-rerouting.test.ts
+@@ -13,6 +13,7 @@ for (const caseNumber of [1, 2, 3, 4, 5]) {
+ 				root: `./fixtures/custom-404-loop-case-${caseNumber}/`,
+ 				site: 'http://example.com',
+ 				adapter: testAdapter(),
++				outDir: './dist/custom-404-implicit-rerouting/',
+ 			});
+ 		});
+ 
+diff --git a/packages/astro/test/custom-404-injected-from-dep.test.ts b/packages/astro/test/custom-404-injected-from-dep.test.ts
+index 418185015681..4535baad5b7d 100644
+--- a/packages/astro/test/custom-404-injected-from-dep.test.ts
++++ b/packages/astro/test/custom-404-injected-from-dep.test.ts
+@@ -10,6 +10,7 @@ describe('Custom 404 with injectRoute from dependency', () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/custom-404-injected-from-dep/',
+ 				site: 'http://example.com',
++				outDir: './dist/custom-404-injected-from-dep/',
+ 			});
+ 			await fixture.build();
+ 		});
+diff --git a/packages/astro/test/custom-404-injected.test.ts b/packages/astro/test/custom-404-injected.test.ts
+index 4dc5397e4c4e..61385da01b82 100644
+--- a/packages/astro/test/custom-404-injected.test.ts
++++ b/packages/astro/test/custom-404-injected.test.ts
+@@ -10,6 +10,7 @@ describe('Custom 404 with injectRoute', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-404-injected/',
+ 			site: 'http://example.com',
++			outDir: './dist/custom-404-injected/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/custom-404-locals.test.ts b/packages/astro/test/custom-404-locals.test.ts
+index 22e01aec5103..c86b4e2ca496 100644
+--- a/packages/astro/test/custom-404-locals.test.ts
++++ b/packages/astro/test/custom-404-locals.test.ts
+@@ -10,6 +10,7 @@ describe('Custom 404 locals', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-404-locals/',
+ 			site: 'http://example.com',
++			outDir: './dist/custom-404-locals/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/custom-404-md.test.ts b/packages/astro/test/custom-404-md.test.ts
+index fb348c65c4c1..f8cbecc1daba 100644
+--- a/packages/astro/test/custom-404-md.test.ts
++++ b/packages/astro/test/custom-404-md.test.ts
+@@ -9,6 +9,7 @@ describe('Custom 404 Markdown', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-404-md/',
++			outDir: './dist/custom-404-md/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/custom-404-static.test.ts b/packages/astro/test/custom-404-static.test.ts
+index 484c76461adb..64434cc5268c 100644
+--- a/packages/astro/test/custom-404-static.test.ts
++++ b/packages/astro/test/custom-404-static.test.ts
+@@ -10,6 +10,7 @@ describe('Custom 404 with Static', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-404-static/',
+ 			site: 'http://example.com',
++			outDir: './dist/custom-404-static/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/custom-500.test.ts b/packages/astro/test/custom-500.test.ts
+index ab39691c8c7a..9118bd5d8e6c 100644
+--- a/packages/astro/test/custom-500.test.ts
++++ b/packages/astro/test/custom-500.test.ts
+@@ -15,6 +15,7 @@ describe('Custom 500', () => {
+ 				root: './fixtures/custom-500/',
+ 				output: 'server',
+ 				adapter: testAdapter(),
++				outDir: './dist/custom-500-ssr/',
+ 			});
+ 			await fixture.build();
+ 			app = await fixture.loadTestAdapterApp();
+@@ -36,6 +37,7 @@ describe('Custom 500', () => {
+ 				root: './fixtures/custom-500-failing/',
+ 				output: 'server',
+ 				adapter: testAdapter(),
++				outDir: './dist/custom-500-ssr/',
+ 			});
+ 			await fixture.build();
+ 			app = await fixture.loadTestAdapterApp();
+@@ -53,6 +55,7 @@ describe('Custom 500', () => {
+ 				root: './fixtures/custom-500/',
+ 				output: 'server',
+ 				adapter: testAdapter(),
++				outDir: './dist/custom-500-ssr/',
+ 			});
+ 			await fixture.build();
+ 			app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/custom-assets-name.test.ts b/packages/astro/test/custom-assets-name.test.ts
+index 40a0075d16a7..5d8087b005e6 100644
+--- a/packages/astro/test/custom-assets-name.test.ts
++++ b/packages/astro/test/custom-assets-name.test.ts
+@@ -9,6 +9,7 @@ describe('custom the assets name function', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-assets-name/',
+ 			output: 'server',
++			outDir: './dist/custom-assets-name/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/custom-fetch-error-pages.test.ts b/packages/astro/test/custom-fetch-error-pages.test.ts
+index e8e97a50694c..9c220974d0ef 100644
+--- a/packages/astro/test/custom-fetch-error-pages.test.ts
++++ b/packages/astro/test/custom-fetch-error-pages.test.ts
+@@ -13,6 +13,7 @@ describe('Custom Fetch for Error Pages', () => {
+ 			output: 'server',
+ 			adapter: testAdapter(),
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/custom-fetch-error-pages/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/custom-renderer.test.ts b/packages/astro/test/custom-renderer.test.ts
+index 85b538c601ee..6834606f9ec2 100644
+--- a/packages/astro/test/custom-renderer.test.ts
++++ b/packages/astro/test/custom-renderer.test.ts
+@@ -9,6 +9,7 @@ describe('Custom Renderer - SSR', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/custom-renderer/',
++			outDir: './dist/custom-renderer/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/data-collections-schema.test.ts b/packages/astro/test/data-collections-schema.test.ts
+index faff2ef9ff32..4ecada0ebf7c 100644
+--- a/packages/astro/test/data-collections-schema.test.ts
++++ b/packages/astro/test/data-collections-schema.test.ts
+@@ -6,24 +6,25 @@ import { type Fixture, loadFixture } from './test-utils.ts';
+ describe('Content Collections - data collections', () => {
+ 	let fixture: Fixture;
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/data-collections-schema/' });
++		fixture = await loadFixture({ root: './fixtures/data-collections-schema/',
++			outDir: './dist/data-collections-schema/', });
+ 		removeDir(new URL('./fixtures/data-collections-schema/.astro', import.meta.url));
+ 		await fixture.build({});
+ 	});
+ 
+ 	describe('Translations Collection', () => {
+ 		it('Generates schema file', async () => {
+-			const schemaExists = await fixture.pathExists('../.astro/collections/i18n.schema.json');
++			const schemaExists = await fixture.pathExists('../../.astro/collections/i18n.schema.json');
+ 			assert.equal(schemaExists, true);
+ 		});
+ 
+ 		it('Generates schema file when the schema is a function', async () => {
+-			const schemaExists = await fixture.pathExists('../.astro/collections/func.schema.json');
++			const schemaExists = await fixture.pathExists('../../.astro/collections/func.schema.json');
+ 			assert.equal(schemaExists, true);
+ 		});
+ 
+ 		it('Generates valid schema file', async () => {
+-			const rawJson = await fixture.readFile('../.astro/collections/i18n.schema.json');
++			const rawJson = await fixture.readFile('../../.astro/collections/i18n.schema.json');
+ 			assert.deepEqual(
+ 				JSON.stringify({
+ 					$schema: 'https://json-schema.org/draft/2020-12/schema',
+@@ -54,18 +55,18 @@ describe('Content Collections - data collections', () => {
+ 		});
+ 
+ 		it('Preserves .meta() definitions in the generated JSON schema', async () => {
+-			const schema = JSON.parse(await fixture.readFile('../.astro/collections/i18n.schema.json'));
++			const schema = JSON.parse(await fixture.readFile('../../.astro/collections/i18n.schema.json'));
+ 			assert.equal(schema.title, 'Translations');
+ 			assert.equal(schema.description, 'Translation strings for the site');
+ 		});
+ 
+ 		it('Generates schema file when the schema uses the image function', async () => {
+-			const schemaExists = await fixture.pathExists('../.astro/collections/image.schema.json');
++			const schemaExists = await fixture.pathExists('../../.astro/collections/image.schema.json');
+ 			assert.equal(schemaExists, true);
+ 		});
+ 
+ 		it('Generates valid schema file for an image', async () => {
+-			const rawJson = await fixture.readFile('../.astro/collections/image.schema.json');
++			const rawJson = await fixture.readFile('../../.astro/collections/image.schema.json');
+ 			assert.deepEqual(
+ 				JSON.stringify({
+ 					$schema: 'https://json-schema.org/draft/2020-12/schema',
+diff --git a/packages/astro/test/data-collections.test.ts b/packages/astro/test/data-collections.test.ts
+index 36a0d90e70e2..5649397e3ee2 100644
+--- a/packages/astro/test/data-collections.test.ts
++++ b/packages/astro/test/data-collections.test.ts
+@@ -24,7 +24,8 @@ type TranslationEntry = {
+ describe('Content Collections - data collections', () => {
+ 	let fixture: Fixture;
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/data-collections/' });
++		fixture = await loadFixture({ root: './fixtures/data-collections/',
++			outDir: './dist/data-collections/', });
+ 		await fixture.build({ force: true });
+ 	});
+ 
+diff --git a/packages/astro/test/debug-component.test.ts b/packages/astro/test/debug-component.test.ts
+index e94b5d778499..b00f4a6601c7 100644
+--- a/packages/astro/test/debug-component.test.ts
++++ b/packages/astro/test/debug-component.test.ts
+@@ -9,7 +9,8 @@ if (!isMacOS) {
+ 		let devServer: DevServer;
+ 
+ 		before(async () => {
+-			fixture = await loadFixture({ root: './fixtures/debug-component/' });
++			fixture = await loadFixture({ root: './fixtures/debug-component/',
++				outDir: './dist/debug-component/', });
+ 			devServer = await fixture.startDevServer();
+ 		});
+ 
+diff --git a/packages/astro/test/dev-base.test.ts b/packages/astro/test/dev-base.test.ts
+index 800e016db4ad..ee3255b66b48 100644
+--- a/packages/astro/test/dev-base.test.ts
++++ b/packages/astro/test/dev-base.test.ts
+@@ -12,6 +12,7 @@ describe('base configuration', () => {
+ 				root: './fixtures/dev-render/',
+ 				base: '/docs',
+ 				trailingSlash: 'never',
++				outDir: './dist/dev-base/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/dev-container.test.ts b/packages/astro/test/dev-container.test.ts
+index fe316be8819c..b021b0b2a980 100644
+--- a/packages/astro/test/dev-container.test.ts
++++ b/packages/astro/test/dev-container.test.ts
+@@ -11,6 +11,7 @@ describe('dev container', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dev-container/',
++				outDir: './dist/dev-container-basic-rendering/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -49,6 +50,7 @@ describe('dev container', () => {
+ 						},
+ 					},
+ 				],
++				outDir: './dist/dev-container-injected-dynamic-routes/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -88,6 +90,7 @@ describe('dev container', () => {
+ 						},
+ 					},
+ 				],
++				outDir: './dist/dev-container-injected-404-route/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -125,6 +128,7 @@ describe('dev container', () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dev-container/',
+ 				base: '/sub/',
++				outDir: './dist/dev-container-public-with-base/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -151,6 +155,7 @@ describe('dev container', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dev-container/',
++				outDir: './dist/dev-container-public-without-base/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/dev-error-pages.test.ts b/packages/astro/test/dev-error-pages.test.ts
+index 83fa1a887c90..40a19c6c22c3 100644
+--- a/packages/astro/test/dev-error-pages.test.ts
++++ b/packages/astro/test/dev-error-pages.test.ts
+@@ -11,6 +11,7 @@ describe('Dev pipeline - error pages', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dev-error-pages/',
++				outDir: './dist/dev-error-pages-custom-404/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -50,6 +51,7 @@ describe('Dev pipeline - error pages', () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dev-error-pages/',
+ 				output: 'server',
++				outDir: './dist/dev-error-pages-custom-500/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/dev-render-chunk.test.ts b/packages/astro/test/dev-render-chunk.test.ts
+index 1b38ed0acb38..037987d2a78a 100644
+--- a/packages/astro/test/dev-render-chunk.test.ts
++++ b/packages/astro/test/dev-render-chunk.test.ts
+@@ -11,6 +11,7 @@ describe('core/render chunk', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/dev-render/',
+ 			logLevel: 'silent',
++			outDir: './dist/dev-render-chunk/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/dev-render-components.test.ts b/packages/astro/test/dev-render-components.test.ts
+index 4c289d81c28b..42fa72a0d3a1 100644
+--- a/packages/astro/test/dev-render-components.test.ts
++++ b/packages/astro/test/dev-render-components.test.ts
+@@ -11,6 +11,7 @@ describe('core/render components', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/dev-render/',
+ 			logLevel: 'silent',
++			outDir: './dist/dev-render-components/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/dev-request-url.test.ts b/packages/astro/test/dev-request-url.test.ts
+index 2af182d9d5b8..5db149b2ec00 100644
+--- a/packages/astro/test/dev-request-url.test.ts
++++ b/packages/astro/test/dev-request-url.test.ts
+@@ -11,6 +11,7 @@ describe('vite-plugin-astro-server', () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dev-request-url/',
+ 				output: 'server',
++				outDir: './dist/dev-request-url/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/dynamic-endpoint-collision.test.ts b/packages/astro/test/dynamic-endpoint-collision.test.ts
+index 82b3044cea74..82045d79f815 100644
+--- a/packages/astro/test/dynamic-endpoint-collision.test.ts
++++ b/packages/astro/test/dynamic-endpoint-collision.test.ts
+@@ -10,6 +10,7 @@ describe('Dynamic endpoint collision', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dynamic-endpoint-collision/',
++				outDir: './dist/dynamic-endpoint-collision-build/',
+ 			});
+ 			try {
+ 				await fixture.build();
+@@ -30,6 +31,7 @@ describe('Dynamic endpoint collision', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/dynamic-endpoint-collision/',
++				outDir: './dist/dynamic-endpoint-collision-dev/',
+ 			});
+ 
+ 			devServer = await fixture.startDevServer();
+diff --git a/packages/astro/test/dynamic-route-build-file.test.ts b/packages/astro/test/dynamic-route-build-file.test.ts
+index 403145525fa5..b531d6f82312 100644
+--- a/packages/astro/test/dynamic-route-build-file.test.ts
++++ b/packages/astro/test/dynamic-route-build-file.test.ts
+@@ -12,6 +12,7 @@ describe('build.format=file with dynamic routes', () => {
+ 			build: {
+ 				format: 'file',
+ 			},
++			outDir: './dist/dynamic-route-build-file/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/endpoint-response.test.ts b/packages/astro/test/endpoint-response.test.ts
+index b4499528b9f0..ba6bf833ea25 100644
+--- a/packages/astro/test/endpoint-response.test.ts
++++ b/packages/astro/test/endpoint-response.test.ts
+@@ -9,6 +9,7 @@ describe('endpoint responses', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/endpoint-routing/',
++			outDir: './dist/endpoint-response/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/endpoint-routing.test.ts b/packages/astro/test/endpoint-routing.test.ts
+index 22426b710ed2..b7a5781e8462 100644
+--- a/packages/astro/test/endpoint-routing.test.ts
++++ b/packages/astro/test/endpoint-routing.test.ts
+@@ -9,6 +9,7 @@ describe('endpoints', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/endpoint-routing/',
++			outDir: './dist/endpoint-routing/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/endpoint-runtime.test.ts b/packages/astro/test/endpoint-runtime.test.ts
+index 27f0a003668c..6bbc9667112f 100644
+--- a/packages/astro/test/endpoint-runtime.test.ts
++++ b/packages/astro/test/endpoint-runtime.test.ts
+@@ -9,6 +9,7 @@ describe('endpoints', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/endpoint-routing/',
++			outDir: './dist/endpoint-runtime/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/entry-file-names.test.ts b/packages/astro/test/entry-file-names.test.ts
+index b5f466fe04fc..57dd6eacd36c 100644
+--- a/packages/astro/test/entry-file-names.test.ts
++++ b/packages/astro/test/entry-file-names.test.ts
+@@ -9,6 +9,7 @@ describe('vite.build.rollupOptions.entryFileNames', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/entry-file-names',
++			outDir: './dist/entry-file-names/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/env-public.test.ts b/packages/astro/test/env-public.test.ts
+index bda075f1e33a..dcdae6b4d6ba 100644
+--- a/packages/astro/test/env-public.test.ts
++++ b/packages/astro/test/env-public.test.ts
+@@ -11,6 +11,7 @@ describe('astro:env public variables', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-env/',
++				outDir: './dist/env-public-client-variables/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -37,6 +38,7 @@ describe('astro:env public variables', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-env-server-fail/',
++				outDir: './dist/env-public-server-variables/',
+ 			});
+ 		});
+ 
+diff --git a/packages/astro/test/env-secret.test.ts b/packages/astro/test/env-secret.test.ts
+index d09d78cb490d..461ed05db345 100644
+--- a/packages/astro/test/env-secret.test.ts
++++ b/packages/astro/test/env-secret.test.ts
+@@ -20,6 +20,7 @@ describe('astro:env secret variables', () => {
+ 		process.env.KNOWN_SECRET = '5';
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-env-server-secret/',
++			outDir: './dist/env-secret-astro-env-secret-variables/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 		const response = await fixture.fetch('/');
+@@ -36,6 +37,7 @@ describe('astro:env secret variables', () => {
+ 					UNKNOWN_SECRET: 'abc',
+ 				},
+ 			}),
++			outDir: './dist/env-secret-astro-env-secret-variables/',
+ 		});
+ 		await fixture.build();
+ 		assert.equal(true, true);
+@@ -51,6 +53,7 @@ describe('astro:env secret variables', () => {
+ 					UNKNOWN_SECRET: 'abc',
+ 				},
+ 			}),
++			outDir: './dist/env-secret-astro-env-secret-variables/',
+ 		});
+ 		await fixture.build();
+ 		const app = await fixture.loadTestAdapterApp();
+@@ -73,6 +76,7 @@ describe('astro:env secret variables', () => {
+ 			env: {
+ 				validateSecrets: true,
+ 			},
++			outDir: './dist/env-secret-astro-env-secret-variables/',
+ 		});
+ 
+ 		try {
+diff --git a/packages/astro/test/error-bad-js.test.ts b/packages/astro/test/error-bad-js.test.ts
+index 0a850b974aa8..5e083dd48407 100644
+--- a/packages/astro/test/error-bad-js.test.ts
++++ b/packages/astro/test/error-bad-js.test.ts
+@@ -14,6 +14,7 @@ describe('Errors in JavaScript', () => {
+ 			vite: {
+ 				logLevel: 'silent',
+ 			},
++			outDir: './dist/error-bad-js/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/error-build-location.test.ts b/packages/astro/test/error-build-location.test.ts
+index 5585cd997832..5de2601356c4 100644
+--- a/packages/astro/test/error-build-location.test.ts
++++ b/packages/astro/test/error-build-location.test.ts
+@@ -8,6 +8,7 @@ describe('Errors information in build', () => {
+ 	it('includes the file where the error happened', async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/error-build-location',
++			outDir: './dist/error-build-location/',
+ 		});
+ 
+ 		let errorContent: any;
+diff --git a/packages/astro/test/error-non-error.test.ts b/packages/astro/test/error-non-error.test.ts
+index 9dd38cd7935d..bb3d7c13550a 100644
+--- a/packages/astro/test/error-non-error.test.ts
++++ b/packages/astro/test/error-non-error.test.ts
+@@ -10,6 +10,7 @@ describe('Can handle errors that are not instanceof Error', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/error-non-error',
++			outDir: './dist/error-non-error/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/extension-matching.test.ts b/packages/astro/test/extension-matching.test.ts
+index a626bccd0907..22693ec9509c 100644
+--- a/packages/astro/test/extension-matching.test.ts
++++ b/packages/astro/test/extension-matching.test.ts
+@@ -10,6 +10,7 @@ describe('Matching .astro modules', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/extension-matching/',
++			outDir: './dist/extension-matching/',
+ 		});
+ 		await fixture.build();
+ 		output = await fixture.readFile('./index.html');
+diff --git a/packages/astro/test/featuresSupport.test.ts b/packages/astro/test/featuresSupport.test.ts
+index d58bc782fbf2..b0380cf18a63 100644
+--- a/packages/astro/test/featuresSupport.test.ts
++++ b/packages/astro/test/featuresSupport.test.ts
+@@ -16,6 +16,7 @@ describe('Adapter', () => {
+ 						supportedAstroFeatures: {},
+ 					},
+ 				}),
++				outDir: './dist/featuresSupport-adapter/',
+ 			});
+ 			await fixture.build();
+ 		} catch (e) {
+@@ -38,6 +39,7 @@ describe('Adapter', () => {
+ 						supportedAstroFeatures: {},
+ 					},
+ 				}),
++				outDir: './dist/featuresSupport-adapter/',
+ 			});
+ 			await fixture.build();
+ 		} catch (e) {
+diff --git a/packages/astro/test/fetch.test.ts b/packages/astro/test/fetch.test.ts
+index 5f0d132dec41..462c13cd1ea8 100644
+--- a/packages/astro/test/fetch.test.ts
++++ b/packages/astro/test/fetch.test.ts
+@@ -7,7 +7,8 @@ describe('Global Fetch', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/fetch/' });
++		fixture = await loadFixture({ root: './fixtures/fetch/',
++			outDir: './dist/fetch/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/fonts.test.ts b/packages/astro/test/fonts.test.ts
+index 51755a1556a3..39cdbad47c8a 100644
+--- a/packages/astro/test/fonts.test.ts
++++ b/packages/astro/test/fonts.test.ts
+@@ -25,6 +25,7 @@ describe('astro fonts', () => {
+ 							weights: [400, 500],
+ 						},
+ 					],
++					outDir: './dist/fonts-shared/',
+ 				});
+ 				await fixture.clean();
+ 				devServer = await fixture.startDevServer();
+@@ -134,6 +135,7 @@ describe('astro fonts', () => {
+ 							weights: [400, 500],
+ 						},
+ 					],
++					outDir: './dist/fonts-respects-config-to-build-links/',
+ 				});
+ 				await fixture.clean();
+ 				devServer = await fixture.startDevServer();
+@@ -166,6 +168,7 @@ describe('astro fonts', () => {
+ 							weights: [400, 500],
+ 						},
+ 					],
++					outDir: './dist/fonts-shared/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -238,6 +241,7 @@ describe('astro fonts', () => {
+ 							weights: [400, 500],
+ 						},
+ 					],
++					outDir: './dist/fonts-respects-config-to-build-links/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -247,7 +251,7 @@ describe('astro fonts', () => {
+ 				const $ = cheerio.load(html);
+ 				const href = $('link[rel=preload][type=font/woff2]').attr('href');
+ 				assert.equal(href?.startsWith('https://cdn.example.com/my-base/_custom/fonts/'), true);
+-				const files = await readdir(new URL('./dist/_custom/fonts/', fixture.config.root));
++				const files = await readdir(new URL('./_custom/fonts/', fixture.config.outDir));
+ 				assert.equal(files.length > 0, true);
+ 			});
+ 
+@@ -279,6 +283,7 @@ describe('astro fonts', () => {
+ 						weights: [400, 500],
+ 					},
+ 				],
++				outDir: './dist/fonts-ssr/',
+ 			});
+ 			await fixture.build();
+ 			const app = await fixture.loadTestAdapterApp();
+diff --git a/packages/astro/test/fontsource.test.ts b/packages/astro/test/fontsource.test.ts
+index 5802caf93686..edab95ef967b 100644
+--- a/packages/astro/test/fontsource.test.ts
++++ b/packages/astro/test/fontsource.test.ts
+@@ -7,7 +7,8 @@ describe('@fontsource/* packages', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/fontsource-package/' });
++		fixture = await loadFixture({ root: './fixtures/fontsource-package/',
++			outDir: './dist/fontsource/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/get-static-paths-pages.test.ts b/packages/astro/test/get-static-paths-pages.test.ts
+index 6c9e3233dc15..c1de7d1e9982 100644
+--- a/packages/astro/test/get-static-paths-pages.test.ts
++++ b/packages/astro/test/get-static-paths-pages.test.ts
+@@ -10,6 +10,7 @@ describe('getStaticPaths with trailingSlash: ignore', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/get-static-paths-pages/',
+ 			site: 'https://mysite.dev/',
++			outDir: './dist/get-static-paths-pages/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/glob-pages-css.test.ts b/packages/astro/test/glob-pages-css.test.ts
+index 1f187209508a..12793f2c1092 100644
+--- a/packages/astro/test/glob-pages-css.test.ts
++++ b/packages/astro/test/glob-pages-css.test.ts
+@@ -11,6 +11,7 @@ describe('import.meta.glob on pages/ directory', () => {
+ 			root: './fixtures/glob-pages-css/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/glob-pages-css/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/head-propagation-prerender-env.test.ts b/packages/astro/test/head-propagation-prerender-env.test.ts
+index 7b2cca6a3d9d..1d97cddc9a89 100644
+--- a/packages/astro/test/head-propagation-prerender-env.test.ts
++++ b/packages/astro/test/head-propagation-prerender-env.test.ts
+@@ -25,6 +25,7 @@ describe('Head propagation across ssr and prerender envs in dev', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/head-propagation-prerender-env/',
++			outDir: './dist/head-propagation-prerender-env/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/hmr-markdown.test.ts b/packages/astro/test/hmr-markdown.test.ts
+index 2671e2b66030..463ffe33fb04 100644
+--- a/packages/astro/test/hmr-markdown.test.ts
++++ b/packages/astro/test/hmr-markdown.test.ts
+@@ -10,7 +10,8 @@ describe('HMR: Markdown updates', () => {
+ 	let markdownPath: string;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/hmr-markdown/' });
++		fixture = await loadFixture({ root: './fixtures/hmr-markdown/',
++			outDir: './dist/hmr-markdown/', });
+ 		devServer = await fixture.startDevServer();
+ 
+ 		markdownPath = '/src/content/blog/post.md';
+diff --git a/packages/astro/test/hmr-new-page.test.ts b/packages/astro/test/hmr-new-page.test.ts
+index b04930a123bc..c8b0acf5c6cd 100644
+--- a/packages/astro/test/hmr-new-page.test.ts
++++ b/packages/astro/test/hmr-new-page.test.ts
+@@ -19,7 +19,8 @@ describe('HMR: New page detection', () => {
+ 	let newPagePath: string;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/hmr-new-page/' });
++		fixture = await loadFixture({ root: './fixtures/hmr-new-page/',
++			outDir: './dist/hmr-new-page/', });
+ 		devServer = await fixture.startDevServer();
+ 
+ 		// Compute path for the new page we'll create during tests
+diff --git a/packages/astro/test/hmr-slots-render.test.ts b/packages/astro/test/hmr-slots-render.test.ts
+index 7ea54b335b09..8684be0e270c 100644
+--- a/packages/astro/test/hmr-slots-render.test.ts
++++ b/packages/astro/test/hmr-slots-render.test.ts
+@@ -8,7 +8,8 @@ describe('HMR: slots.render with callback args after style change', () => {
+ 	let devServer: DevServer;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/hmr-slots-render/' });
++		fixture = await loadFixture({ root: './fixtures/hmr-slots-render/',
++			outDir: './dist/hmr-slots-render/', });
+ 		devServer = await fixture.startDevServer();
+ 	});
+ 
+diff --git a/packages/astro/test/hoisted-imports.test.ts b/packages/astro/test/hoisted-imports.test.ts
+index 1f2ac94752d1..5699a1e99428 100644
+--- a/packages/astro/test/hoisted-imports.test.ts
++++ b/packages/astro/test/hoisted-imports.test.ts
+@@ -9,6 +9,7 @@ describe('Hoisted Imports', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/hoisted-imports/',
++			outDir: './dist/hoisted-imports/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/html-component.test.ts b/packages/astro/test/html-component.test.ts
+index 441e6e16073c..fb8415de9dce 100644
+--- a/packages/astro/test/html-component.test.ts
++++ b/packages/astro/test/html-component.test.ts
+@@ -9,6 +9,7 @@ describe('HTML Component', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/html-component/',
++			outDir: './dist/html-component/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/html-escape.test.ts b/packages/astro/test/html-escape.test.ts
+index 54305cc53131..652d059a4943 100644
+--- a/packages/astro/test/html-escape.test.ts
++++ b/packages/astro/test/html-escape.test.ts
+@@ -11,6 +11,7 @@ describe('HTML Escape', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/html-escape/',
++			outDir: './dist/html-escape/',
+ 		});
+ 	});
+ 
+@@ -18,7 +19,7 @@ describe('HTML Escape', () => {
+ 		before(async () => {
+ 			await fixture.build();
+ 			// For complex HTML test
+-			complexInput = await fixture.readFile('../src/pages/complex.html');
++			complexInput = await fixture.readFile('../../src/pages/complex.html');
+ 			complexOutput = await fixture.readFile('./complex/index.html');
+ 		});
+ 
+diff --git a/packages/astro/test/html-page.test.ts b/packages/astro/test/html-page.test.ts
+index 8f437a4bbd48..c028ab556af3 100644
+--- a/packages/astro/test/html-page.test.ts
++++ b/packages/astro/test/html-page.test.ts
+@@ -9,6 +9,7 @@ describe('HTML Page', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/html-page/',
++			outDir: './dist/html-page/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/html-slots.test.ts b/packages/astro/test/html-slots.test.ts
+index 6c28e17947d3..1bc14e50ca5e 100644
+--- a/packages/astro/test/html-slots.test.ts
++++ b/packages/astro/test/html-slots.test.ts
+@@ -9,6 +9,7 @@ describe('HTML Slots', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/html-slots/',
++			outDir: './dist/html-slots/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/hydration-race.test.ts b/packages/astro/test/hydration-race.test.ts
+index bdc6ff97c203..24a255fcd7a2 100644
+--- a/packages/astro/test/hydration-race.test.ts
++++ b/packages/astro/test/hydration-race.test.ts
+@@ -7,7 +7,8 @@ describe('Hydration script ordering', async () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/hydration-race' });
++		fixture = await loadFixture({ root: './fixtures/hydration-race',
++			outDir: './dist/hydration-race/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/i18n-css-leak.test.ts b/packages/astro/test/i18n-css-leak.test.ts
+index d739961ca862..39471831ab75 100644
+--- a/packages/astro/test/i18n-css-leak.test.ts
++++ b/packages/astro/test/i18n-css-leak.test.ts
+@@ -10,6 +10,7 @@ describe('CSS graph boundaries with astro:i18n', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/i18n-css-leak-basic/',
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/i18n-css-leak/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/image-deletion.test.ts b/packages/astro/test/image-deletion.test.ts
+index a8511d8376f0..2821efb6d9c8 100644
+--- a/packages/astro/test/image-deletion.test.ts
++++ b/packages/astro/test/image-deletion.test.ts
+@@ -14,6 +14,7 @@ describe('astro:assets - delete images that are unused', () => {
+ 				image: {
+ 					service: testImageService(),
+ 				},
++				outDir: './dist/image-deletion-build-ssg/',
+ 			});
+ 
+ 			await fixture.build();
+@@ -54,6 +55,7 @@ describe('astro:assets - delete images that are unused', () => {
+ 				image: {
+ 					service: testImageService(),
+ 				},
++				outDir: './dist/image-deletion-build-ssr/',
+ 			});
+ 
+ 			await fixture.build();
+diff --git a/packages/astro/test/import-ts-with-js.test.ts b/packages/astro/test/import-ts-with-js.test.ts
+index 44ecb7c37e9f..a75d312ccb4c 100644
+--- a/packages/astro/test/import-ts-with-js.test.ts
++++ b/packages/astro/test/import-ts-with-js.test.ts
+@@ -7,7 +7,8 @@ describe('Using .js extension on .ts file', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/import-ts-with-js/' });
++		fixture = await loadFixture({ root: './fixtures/import-ts-with-js/',
++			outDir: './dist/import-ts-with-js/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/impostor-mdx-file.test.ts b/packages/astro/test/impostor-mdx-file.test.ts
+index 61a39051cafc..eb7604d5efcf 100644
+--- a/packages/astro/test/impostor-mdx-file.test.ts
++++ b/packages/astro/test/impostor-mdx-file.test.ts
+@@ -8,6 +8,7 @@ describe('Impostor MDX File', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/impostor-mdx-file/',
++			outDir: './dist/impostor-mdx-file/',
+ 		});
+ 	});
+ 	if (isWindows) return;
+diff --git a/packages/astro/test/integration-add-page-extension.test.ts b/packages/astro/test/integration-add-page-extension.test.ts
+index fc03b911a4d5..2535be097c38 100644
+--- a/packages/astro/test/integration-add-page-extension.test.ts
++++ b/packages/astro/test/integration-add-page-extension.test.ts
+@@ -7,7 +7,8 @@ describe('Integration addPageExtension', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/integration-add-page-extension/' });
++		fixture = await loadFixture({ root: './fixtures/integration-add-page-extension/',
++			outDir: './dist/integration-add-page-extension/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/integration-route-setup-hook.test.ts b/packages/astro/test/integration-route-setup-hook.test.ts
+index 412587429520..f6e207a5e394 100644
+--- a/packages/astro/test/integration-route-setup-hook.test.ts
++++ b/packages/astro/test/integration-route-setup-hook.test.ts
+@@ -20,6 +20,7 @@ describe('Routes setup hook', () => {
+ 					},
+ 				},
+ 			],
++			outDir: './dist/integration-route-setup-hook/',
+ 		});
+ 		const devServer = await fixture.startDevServer();
+ 
+diff --git a/packages/astro/test/integration-server-setup.test.ts b/packages/astro/test/integration-server-setup.test.ts
+index b7fbf5ca462e..d3126be58643 100644
+--- a/packages/astro/test/integration-server-setup.test.ts
++++ b/packages/astro/test/integration-server-setup.test.ts
+@@ -7,7 +7,8 @@ describe('Integration server setup', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/integration-server-setup/' });
++		fixture = await loadFixture({ root: './fixtures/integration-server-setup/',
++			outDir: './dist/integration-server-setup/', });
+ 		devServer = await fixture.startDevServer();
+ 	});
+ 
+diff --git a/packages/astro/test/jsx.test.ts b/packages/astro/test/jsx.test.ts
+index afb055e20cdd..cb7561f4a6b4 100644
+--- a/packages/astro/test/jsx.test.ts
++++ b/packages/astro/test/jsx.test.ts
+@@ -9,6 +9,7 @@ describe('jsx-runtime', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/jsx/',
++			outDir: './dist/jsx/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/lazy-layout.test.ts b/packages/astro/test/lazy-layout.test.ts
+index aa36297513d9..e66d3ee58ea5 100644
+--- a/packages/astro/test/lazy-layout.test.ts
++++ b/packages/astro/test/lazy-layout.test.ts
+@@ -11,6 +11,7 @@ describe('Lazily imported layouts', () => {
+ 			root: './fixtures/lazy-layout/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/lazy-layout/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/legacy-collections-backwards-compat.test.ts b/packages/astro/test/legacy-collections-backwards-compat.test.ts
+index 402f2187a62b..e314f1d521e9 100644
+--- a/packages/astro/test/legacy-collections-backwards-compat.test.ts
++++ b/packages/astro/test/legacy-collections-backwards-compat.test.ts
+@@ -8,6 +8,7 @@ describe('Legacy Collections Backwards Compatibility', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/legacy-collections-backwards-compat/',
++			outDir: './dist/legacy-collections-backwards-compat/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/lightningcss-scoped-nesting.test.ts b/packages/astro/test/lightningcss-scoped-nesting.test.ts
+index 4f26144f6272..29033e72c336 100644
+--- a/packages/astro/test/lightningcss-scoped-nesting.test.ts
++++ b/packages/astro/test/lightningcss-scoped-nesting.test.ts
+@@ -24,6 +24,7 @@ describe('vite.css.transformer: lightningcss + scoped styles + nested `&`', () =
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/lightningcss-scoped-nesting/',
++			outDir: './dist/lightningcss-scoped-nesting/',
+ 		});
+ 		await fixture.build();
+ 
+diff --git a/packages/astro/test/live-loaders.test.ts b/packages/astro/test/live-loaders.test.ts
+index 1fc67057e9f1..4b427deea299 100644
+--- a/packages/astro/test/live-loaders.test.ts
++++ b/packages/astro/test/live-loaders.test.ts
+@@ -12,6 +12,7 @@ describe('Live content collections', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/live-loaders/',
+ 			adapter: testAdapter(),
++			outDir: './dist/live-loaders/',
+ 		});
+ 	});
+ 	describe('Dev', () => {
+diff --git a/packages/astro/test/markdown.test.ts b/packages/astro/test/markdown.test.ts
+index bceb54a0d72c..e1403862b899 100644
+--- a/packages/astro/test/markdown.test.ts
++++ b/packages/astro/test/markdown.test.ts
+@@ -9,6 +9,7 @@ describe('Markdown tests', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/markdown/',
++			outDir: './dist/markdown/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/middleware.test.ts b/packages/astro/test/middleware.test.ts
+index a2d7bc2177e0..e391938e03d1 100644
+--- a/packages/astro/test/middleware.test.ts
++++ b/packages/astro/test/middleware.test.ts
+@@ -13,6 +13,7 @@ describe('Middleware in DEV mode', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/middleware space/',
++			outDir: './dist/middleware-middleware-in-dev-mode/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -54,6 +55,7 @@ describe('Integration hooks with no user middleware', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/middleware-no-user-middleware/',
++			outDir: './dist/middleware-integration-hooks-with-no-user-middlewar/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -89,6 +91,7 @@ describe('Middleware should not be executed or imported during', () => {
+ 			root: './fixtures/middleware-full-ssr/',
+ 			output: 'server',
+ 			adapter: testAdapter({}),
++			outDir: './dist/middleware-middleware-should-not-be-executed-or-imp/',
+ 		});
+ 		await fixture.build();
+ 		assert.ok('Should build');
+@@ -105,6 +108,7 @@ describe('Middleware API in PROD mode, SSR', () => {
+ 			root: './fixtures/middleware space/',
+ 			output: 'server',
+ 			adapter: testAdapter({}),
++			outDir: './dist/middleware-middleware-api-in-prod-mode-ssr/',
+ 		});
+ 		await fixture.build();
+ 		app = await fixture.loadTestAdapterApp();
+@@ -156,6 +160,7 @@ describe('Middleware API in PROD mode, SSR', () => {
+ 					middlewarePath = middlewareEntryPoint;
+ 				},
+ 			}),
++			outDir: './dist/middleware-path-encoding-in-middleware/',
+ 		});
+ 		await fixture.build();
+ 		assert.ok(middlewarePath);
+@@ -176,6 +181,7 @@ describe('Middleware with tailwind', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/middleware-tailwind/',
++			outDir: './dist/middleware-middleware-with-tailwind/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -198,6 +204,7 @@ describe('Middleware sequence rewrites', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/middleware-sequence-rewrite/',
++			outDir: './dist/middleware-middleware-sequence-rewrites/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/minification-html.test.ts b/packages/astro/test/minification-html.test.ts
+index 795e32bd65bd..4779a7777966 100644
+--- a/packages/astro/test/minification-html.test.ts
++++ b/packages/astro/test/minification-html.test.ts
+@@ -29,6 +29,7 @@ describe('HTML minification', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/minification-html/',
++				outDir: './dist/minification-html-in-dev-environment/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -52,6 +53,7 @@ describe('HTML minification', () => {
+ 				root: './fixtures/minification-html/',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/minification-html-build-ssg/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -71,6 +73,7 @@ describe('HTML minification', () => {
+ 				adapter: testAdapter(),
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/minification-html-build-ssr/',
+ 			});
+ 			await fixture.build();
+ 		});
+diff --git a/packages/astro/test/multiple-jsx-renderers.test.ts b/packages/astro/test/multiple-jsx-renderers.test.ts
+index c12378378334..ef19765b2d7e 100644
+--- a/packages/astro/test/multiple-jsx-renderers.test.ts
++++ b/packages/astro/test/multiple-jsx-renderers.test.ts
+@@ -12,6 +12,7 @@ describe('With include option', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/multiple-jsx-renderers/',
+ 			integrations: [woof({ include: '**/*.woof.jsx' }), meow({ include: '**/*.meow.jsx' })],
++			outDir: './dist/multiple-jsx-renderers-with-include-option/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -88,6 +89,7 @@ describe('Without include option', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/multiple-jsx-renderers/',
+ 			integrations: [woof(), meow()],
++			outDir: './dist/multiple-jsx-renderers-without-include-option/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/multiple-renderers.test.ts b/packages/astro/test/multiple-renderers.test.ts
+index adff02c8ec84..f07692cdf0e7 100644
+--- a/packages/astro/test/multiple-renderers.test.ts
++++ b/packages/astro/test/multiple-renderers.test.ts
+@@ -9,6 +9,7 @@ describe('Multiple renderers', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/multiple-renderers/',
++			outDir: './dist/multiple-renderers/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/non-ascii-path.test.ts b/packages/astro/test/non-ascii-path.test.ts
+index a68da74a6498..33c8eee8a1a1 100644
+--- a/packages/astro/test/non-ascii-path.test.ts
++++ b/packages/astro/test/non-ascii-path.test.ts
+@@ -7,7 +7,8 @@ describe('Non-ASCII Path Test', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/non-ascii-path/测试/' });
++		fixture = await loadFixture({ root: './fixtures/non-ascii-path/测试/',
++			outDir: './dist/non-ascii-path/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/non-html-pages.test.ts b/packages/astro/test/non-html-pages.test.ts
+index af2da39d6576..1b99752ddc7c 100644
+--- a/packages/astro/test/non-html-pages.test.ts
++++ b/packages/astro/test/non-html-pages.test.ts
+@@ -6,7 +6,8 @@ describe('Non-HTML Pages', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/non-html-pages/' });
++		fixture = await loadFixture({ root: './fixtures/non-html-pages/',
++			outDir: './dist/non-html-pages/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/page-format.test.ts b/packages/astro/test/page-format.test.ts
+index 18dbc40ceddb..b67e0f4699f6 100644
+--- a/packages/astro/test/page-format.test.ts
++++ b/packages/astro/test/page-format.test.ts
+@@ -9,6 +9,7 @@ describe('build.format', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/page-format/',
++				outDir: './dist/page-format-directory/',
+ 			});
+ 		});
+ 
+@@ -33,6 +34,7 @@ describe('build.format', () => {
+ 				build: {
+ 					format: 'file',
+ 				},
++				outDir: './dist/page-format-file/',
+ 			});
+ 		});
+ 
+@@ -71,6 +73,7 @@ describe('build.format', () => {
+ 				build: {
+ 					format: 'preserve',
+ 				},
++				outDir: './dist/page-format-preserve-i18n/',
+ 			});
+ 		});
+ 
+@@ -105,6 +108,7 @@ describe('build.format', () => {
+ 						redirectToDefaultLocale: true,
+ 					},
+ 				},
++				outDir: './dist/page-format-preserve-i18n/',
+ 			});
+ 		});
+ 
+diff --git a/packages/astro/test/page-level-styles.test.ts b/packages/astro/test/page-level-styles.test.ts
+index e7683f2cb383..b5198924be36 100644
+--- a/packages/astro/test/page-level-styles.test.ts
++++ b/packages/astro/test/page-level-styles.test.ts
+@@ -12,6 +12,7 @@ describe('Page-level styles', () => {
+ 			root: './fixtures/page-level-styles/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/page-level-styles/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/parallel.test.ts b/packages/astro/test/parallel.test.ts
+index d18cc164d4e3..fd5b0ba725a6 100644
+--- a/packages/astro/test/parallel.test.ts
++++ b/packages/astro/test/parallel.test.ts
+@@ -9,6 +9,7 @@ describe('Component parallelization', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/parallel/',
++			outDir: './dist/parallel/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/partials.test.ts b/packages/astro/test/partials.test.ts
+index c20a53d7be2e..1acd7dfaded6 100644
+--- a/packages/astro/test/partials.test.ts
++++ b/packages/astro/test/partials.test.ts
+@@ -9,6 +9,7 @@ describe('Partials', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/partials/',
++			outDir: './dist/partials/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/passthrough-image-service.test.ts b/packages/astro/test/passthrough-image-service.test.ts
+index bd769f13c7f2..a47e8d4c1307 100644
+--- a/packages/astro/test/passthrough-image-service.test.ts
++++ b/packages/astro/test/passthrough-image-service.test.ts
+@@ -9,6 +9,7 @@ describe('passthroughImageService', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/passthrough-image-service/',
++			outDir: './dist/passthrough-image-service/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/postcss.test.ts b/packages/astro/test/postcss.test.ts
+index b32905d3c325..1b4462e8a74e 100644
+--- a/packages/astro/test/postcss.test.ts
++++ b/packages/astro/test/postcss.test.ts
+@@ -13,6 +13,7 @@ describe('PostCSS', () => {
+ 				root: './fixtures/postcss',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/postcss/',
+ 			});
+ 			await fixture.build();
+ 
+diff --git a/packages/astro/test/preact-compat-component.test.ts b/packages/astro/test/preact-compat-component.test.ts
+index 66c4935ce792..fafa4f4b10f4 100644
+--- a/packages/astro/test/preact-compat-component.test.ts
++++ b/packages/astro/test/preact-compat-component.test.ts
+@@ -9,6 +9,7 @@ describe('Preact compat component', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/preact-compat-component/',
++			outDir: './dist/preact-compat-component/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/preact-component.test.ts b/packages/astro/test/preact-component.test.ts
+index 33894789c360..1027a688172e 100644
+--- a/packages/astro/test/preact-component.test.ts
++++ b/packages/astro/test/preact-component.test.ts
+@@ -9,6 +9,7 @@ describe('Preact component', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/preact-component/',
++			outDir: './dist/preact-component/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/prerender-conflict.test.ts b/packages/astro/test/prerender-conflict.test.ts
+index 44a37fad5bfa..76c57da975b4 100644
+--- a/packages/astro/test/prerender-conflict.test.ts
++++ b/packages/astro/test/prerender-conflict.test.ts
+@@ -14,7 +14,8 @@ describe('Prerender conflicts', () => {
+ 		let fixture: Fixture;
+ 
+ 		before(async () => {
+-			fixture = await loadFixture({ root: './fixtures/prerender-conflict-dynamic-dynamic/' });
++			fixture = await loadFixture({ root: './fixtures/prerender-conflict-dynamic-dynamic/',
++				outDir: './dist/prerender-conflict-dynamic-vs-dynamic/', });
+ 		});
+ 
+ 		it('warns by default and succeeds', async () => {
+@@ -65,7 +66,8 @@ describe('Prerender conflicts', () => {
+ 		let fixture: Fixture;
+ 
+ 		before(async () => {
+-			fixture = await loadFixture({ root: './fixtures/prerender-conflict-static-dynamic/' });
++			fixture = await loadFixture({ root: './fixtures/prerender-conflict-static-dynamic/',
++				outDir: './dist/prerender-conflict-static-vs-dynamic/', });
+ 		});
+ 
+ 		it('warns by default and succeeds', async () => {
+diff --git a/packages/astro/test/public-base-404.test.ts b/packages/astro/test/public-base-404.test.ts
+index 9ea3faf26d35..9d98eec2fcbd 100644
+--- a/packages/astro/test/public-base-404.test.ts
++++ b/packages/astro/test/public-base-404.test.ts
+@@ -13,6 +13,7 @@ describe('Public dev with base', () => {
+ 			root: './fixtures/public-base-404/',
+ 			site: 'http://example.com/',
+ 			base: '/blog',
++			outDir: './dist/public-base-404/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/queue-rendering.test.ts b/packages/astro/test/queue-rendering.test.ts
+index c9c307fb68d4..b5cc7b080137 100644
+--- a/packages/astro/test/queue-rendering.test.ts
++++ b/packages/astro/test/queue-rendering.test.ts
+@@ -9,6 +9,7 @@ describe('Queue-based rendering - Static', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/queue-rendering/',
+ 			output: 'static',
++			outDir: './dist/queue-rendering-static/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -198,6 +199,7 @@ describe('Queue-based rendering - SSR', () => {
+ 			root: './fixtures/queue-rendering/',
+ 			output: 'server',
+ 			adapter: await import('./test-adapter.ts').then((mod) => mod.default()),
++			outDir: './dist/queue-rendering-ssr/',
+ 		});
+ 		await fixture.build();
+ 		app = await fixture.loadTestAdapterApp();
+@@ -266,6 +268,7 @@ describe('Queue-based rendering - Configuration', () => {
+ 					poolSize: 500,
+ 				},
+ 			},
++			outDir: './dist/queue-rendering-custom-pool/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -285,6 +288,7 @@ describe('Queue-based rendering - Configuration', () => {
+ 					enabled: true,
+ 				},
+ 			},
++			outDir: './dist/queue-rendering-object-config/',
+ 		});
+ 		await fixture.build();
+ 
+diff --git a/packages/astro/test/react-and-solid.test.ts b/packages/astro/test/react-and-solid.test.ts
+index f5a9b8a867c6..250db8b9b876 100644
+--- a/packages/astro/test/react-and-solid.test.ts
++++ b/packages/astro/test/react-and-solid.test.ts
+@@ -7,7 +7,8 @@ describe('Solid app with some React components', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/react-and-solid/' });
++		fixture = await loadFixture({ root: './fixtures/react-and-solid/',
++			outDir: './dist/react-and-solid/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/react-jsx-export.test.ts b/packages/astro/test/react-jsx-export.test.ts
+index ffcaac5b5c7e..27b4ef34ba04 100644
+--- a/packages/astro/test/react-jsx-export.test.ts
++++ b/packages/astro/test/react-jsx-export.test.ts
+@@ -37,6 +37,7 @@ describe('react-jsx-export', () => {
+ 		});
+ 		fixture = await loadFixture({
+ 			root: './fixtures/react-jsx-export/',
++			outDir: './dist/react-jsx-export/',
+ 		});
+ 		await fixture.build({
+ 			// @ts-expect-error: `logger` is @internal in AstroInlineConfig so it's stripped from dist types
+diff --git a/packages/astro/test/redirects.test.ts b/packages/astro/test/redirects.test.ts
+index 3c779485f5e5..3070bfdaf494 100644
+--- a/packages/astro/test/redirects.test.ts
++++ b/packages/astro/test/redirects.test.ts
+@@ -18,6 +18,7 @@ describe('Astro.redirect output: "static"', () => {
+ 					'/more/old/[dynamic]/[route]': '/more/[dynamic]/[route]',
+ 					'/more/old/[...spread]': '/more/new/[...spread]',
+ 				},
++				outDir: './dist/redirects/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/reexport-astro-containing-client-component.test.ts b/packages/astro/test/reexport-astro-containing-client-component.test.ts
+index 1b54b8714e5d..01e21a658929 100644
+--- a/packages/astro/test/reexport-astro-containing-client-component.test.ts
++++ b/packages/astro/test/reexport-astro-containing-client-component.test.ts
+@@ -7,7 +7,8 @@ describe('Re-exported astro components with client components', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/reexport-astro-containing-client-component/' });
++		fixture = await loadFixture({ root: './fixtures/reexport-astro-containing-client-component/',
++			outDir: './dist/reexport-astro-containing-client-component/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/remote-css.test.ts b/packages/astro/test/remote-css.test.ts
+index 91dc97f4df17..bba8d35ff387 100644
+--- a/packages/astro/test/remote-css.test.ts
++++ b/packages/astro/test/remote-css.test.ts
+@@ -11,6 +11,7 @@ describe('Remote CSS', () => {
+ 			root: './fixtures/remote-css/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/remote-css/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/request-signal.test.ts b/packages/astro/test/request-signal.test.ts
+index 8cb37d6f6ecd..9b61777d2366 100644
+--- a/packages/astro/test/request-signal.test.ts
++++ b/packages/astro/test/request-signal.test.ts
+@@ -65,6 +65,7 @@ describe('Node request abort integration', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/request-signal/',
++			outDir: './dist/request-signal/',
+ 		});
+ 		await fixture.build();
+ 		handle = await fixture.loadNodeAdapterHandler();
+diff --git a/packages/astro/test/reuse-injected-entrypoint.test.ts b/packages/astro/test/reuse-injected-entrypoint.test.ts
+index af4e67e7bf63..6e870067c047 100644
+--- a/packages/astro/test/reuse-injected-entrypoint.test.ts
++++ b/packages/astro/test/reuse-injected-entrypoint.test.ts
+@@ -74,6 +74,7 @@ describe('Reuse injected entrypoint', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/reuse-injected-entrypoint/',
++				outDir: './dist/reuse-injected-entrypoint-build/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -123,6 +124,7 @@ describe('Reuse injected entrypoint', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/reuse-injected-entrypoint/',
++				outDir: './dist/reuse-injected-entrypoint-dev/',
+ 			});
+ 
+ 			devServer = await fixture.startDevServer();
+diff --git a/packages/astro/test/rewrite.test.ts b/packages/astro/test/rewrite.test.ts
+index 21fe4c0e530e..a6e841a976f1 100644
+--- a/packages/astro/test/rewrite.test.ts
++++ b/packages/astro/test/rewrite.test.ts
+@@ -10,6 +10,7 @@ describe('Dev rewrite, trailing slash -> never', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/rewrite-trailing-slash-never/',
++			outDir: './dist/rewrite-dev-rewrite-trailing-slash-never/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -34,6 +35,7 @@ describe('Dev rewrite, trailing slash -> never, with base', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/rewrite-trailing-slash-never/',
+ 			base: 'base',
++			outDir: './dist/rewrite-dev-rewrite-trailing-slash-never-with-ba/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -67,6 +69,7 @@ describe('Dev rewrite, hybrid/server', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/rewrite-server/',
++			outDir: './dist/rewrite-dev-rewrite-hybrid-server/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -114,6 +117,7 @@ describe('Dev rewrite URL contains base and has no trailing slash', () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/rewrite-with-base/',
+ 			trailingSlash: 'never',
++			outDir: './dist/rewrite-dev-rewrite-url-contains-base-and-has-no/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -161,6 +165,7 @@ describe('SSR route', () => {
+ 		try {
+ 			const fixture = await loadFixture({
+ 				root: './fixtures/rewrite-404-invalid/',
++				outDir: './dist/rewrite-ssr-route/',
+ 			});
+ 			await fixture.build();
+ 			assert.fail('It should fail.');
+@@ -178,6 +183,7 @@ describe('Runtime error, default 500', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/rewrite-runtime-error/',
++			outDir: './dist/rewrite-runtime-error-default-500/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+@@ -201,6 +207,7 @@ describe('Runtime error in dev, custom 500', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/rewrite-runtime-error-custom500/',
++			outDir: './dist/rewrite-runtime-error-in-dev-custom-500/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/root-srcdir-css.test.ts b/packages/astro/test/root-srcdir-css.test.ts
+index 7c1c664ba15b..b337d8fdd9f7 100644
+--- a/packages/astro/test/root-srcdir-css.test.ts
++++ b/packages/astro/test/root-srcdir-css.test.ts
+@@ -11,6 +11,7 @@ describe('srcDir', () => {
+ 			root: './fixtures/root-srcdir-css/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/root-srcdir-css/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/route-guard.test.ts b/packages/astro/test/route-guard.test.ts
+index adfa8f60c158..5116aea5ec8e 100644
+--- a/packages/astro/test/route-guard.test.ts
++++ b/packages/astro/test/route-guard.test.ts
+@@ -7,7 +7,8 @@ describe('Route Guard - Dev Server', () => {
+ 	let devServer: DevServer;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/route-guard/' });
++		fixture = await loadFixture({ root: './fixtures/route-guard/',
++			outDir: './dist/route-guard/', });
+ 		devServer = await fixture.startDevServer();
+ 	});
+ 
+diff --git a/packages/astro/test/scoped-style-strategy.test.ts b/packages/astro/test/scoped-style-strategy.test.ts
+index 9eb70f9a33b7..829d8587ee0b 100644
+--- a/packages/astro/test/scoped-style-strategy.test.ts
++++ b/packages/astro/test/scoped-style-strategy.test.ts
+@@ -14,6 +14,7 @@ describe('scopedStyleStrategy', () => {
+ 				scopedStyleStrategy: 'where',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/scoped-style-strategy-scopedstylestrategy/',
+ 			});
+ 			await fixture.build();
+ 
+@@ -43,6 +44,7 @@ describe('scopedStyleStrategy', () => {
+ 				scopedStyleStrategy: 'class',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/scoped-style-strategy-scopedstylestrategy/',
+ 			});
+ 			await fixture.build();
+ 
+@@ -71,6 +73,7 @@ describe('scopedStyleStrategy', () => {
+ 				root: './fixtures/scoped-style-strategy/',
+ 				// test suite was authored when inlineStylesheets defaulted to never
+ 				build: { inlineStylesheets: 'never' },
++				outDir: './dist/scoped-style-strategy-default/',
+ 			});
+ 			await fixture.build();
+ 
+diff --git a/packages/astro/test/serializeManifest.test.ts b/packages/astro/test/serializeManifest.test.ts
+index 3509e2f2f161..6f6521902492 100644
+--- a/packages/astro/test/serializeManifest.test.ts
++++ b/packages/astro/test/serializeManifest.test.ts
+@@ -14,6 +14,7 @@ describe('astro:config/client', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-manifest/',
++				outDir: './dist/serializeManifest-in-dev/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -55,6 +56,7 @@ describe('astro:config/client', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-manifest/',
++				outDir: './dist/serializeManifest-when-the-experimental-flag-is-enabled-in/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -97,6 +99,7 @@ describe('astro:config/client in a client script', () => {
+ 				root: './fixtures/astro-manifest-client-script/',
+ 				adapter: testAdapter(),
+ 				output: 'server',
++				outDir: './dist/serializeManifest-when-build/',
+ 			});
+ 		});
+ 
+@@ -116,6 +119,7 @@ describe('astro:config/server', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-manifest-invalid/',
++				outDir: './dist/serializeManifest-when-build/',
+ 			});
+ 		});
+ 
+@@ -130,6 +134,7 @@ describe('astro:config/server', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-manifest/',
++				outDir: './dist/serializeManifest-in-dev/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+@@ -143,12 +148,12 @@ describe('astro:config/server', () => {
+ 			const html = await response.text();
+ 			const $ = cheerio.load(html);
+ 
+-			assert.ok($('#out-dir').text().endsWith('/dist/'));
++			assert.ok($('#out-dir').text().endsWith('/dist/serializeManifest-in-dev/'));
+ 			assert.ok($('#src-dir').text().endsWith('/src/'));
+ 			assert.ok($('#cache-dir').text().endsWith('/.astro/'));
+ 			assert.ok($('#root').text().endsWith('/'));
+-			assert.ok($('#build-client').text().endsWith('/dist/client/'));
+-			assert.ok($('#build-server').text().endsWith('/dist/server/'));
++			assert.ok($('#build-client').text().endsWith('/dist/serializeManifest-in-dev/client/'));
++			assert.ok($('#build-server').text().endsWith('/dist/serializeManifest-in-dev/server/'));
+ 			// URL
+ 			assert.equal($('#root-url').text(), 'true');
+ 		});
+@@ -158,6 +163,7 @@ describe('astro:config/server', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/astro-manifest/',
++				outDir: './dist/serializeManifest-when-the-experimental-flag-is-enabled-in/',
+ 			});
+ 			await fixture.build();
+ 		});
+@@ -165,12 +171,24 @@ describe('astro:config/server', () => {
+ 		it('should return the expected properties', async () => {
+ 			const html = await fixture.readFile('/server/index.html');
+ 			const $ = cheerio.load(html);
+-			assert.ok($('#out-dir').text().endsWith('/dist/'));
++			assert.ok(
++				$('#out-dir')
++					.text()
++					.endsWith('/dist/serializeManifest-when-the-experimental-flag-is-enabled-in/'),
++			);
+ 			assert.ok($('#src-dir').text().endsWith('/src/'));
+ 			assert.ok($('#cache-dir').text().endsWith('/.astro/'));
+ 			assert.ok($('#root').text().endsWith('/'));
+-			assert.ok($('#build-client').text().endsWith('/dist/client/'));
+-			assert.ok($('#build-server').text().endsWith('/dist/server/'));
++			assert.ok(
++				$('#build-client')
++					.text()
++					.endsWith('/dist/serializeManifest-when-the-experimental-flag-is-enabled-in/client/'),
++			);
++			assert.ok(
++				$('#build-server')
++					.text()
++					.endsWith('/dist/serializeManifest-when-the-experimental-flag-is-enabled-in/server/'),
++			);
+ 			// URL
+ 			assert.equal($('#root-url').text(), 'true');
+ 		});
+@@ -182,6 +200,7 @@ describe('astro:config/server', () => {
+ 				root: './fixtures/astro-manifest/',
+ 				adapter: testAdapter(),
+ 				output: 'server',
++				outDir: './dist/serializeManifest-when-the-experimental-flag-is-enabled-in-ssr/',
+ 			});
+ 
+ 			await fixture.build();
+@@ -194,12 +213,24 @@ describe('astro:config/server', () => {
+ 			const html = await response.text();
+ 			const $ = cheerio.load(html);
+ 
+-			assert.ok($('#out-dir').text().endsWith('/dist/'));
++			assert.ok(
++				$('#out-dir')
++					.text()
++					.endsWith('/dist/serializeManifest-when-the-experimental-flag-is-enabled-in-ssr/'),
++			);
+ 			assert.ok($('#src-dir').text().endsWith('/src/'));
+ 			assert.ok($('#cache-dir').text().endsWith('/.astro/'));
+ 			assert.ok($('#root').text().endsWith('/'));
+-			assert.ok($('#build-client').text().endsWith('/dist/client/'));
+-			assert.ok($('#build-server').text().endsWith('/dist/server/'));
++			assert.ok(
++				$('#build-client')
++					.text()
++					.endsWith('/dist/serializeManifest-when-the-experimental-flag-is-enabled-in-ssr/client/'),
++			);
++			assert.ok(
++				$('#build-server')
++					.text()
++					.endsWith('/dist/serializeManifest-when-the-experimental-flag-is-enabled-in-ssr/server/'),
++			);
+ 			// URL
+ 			assert.equal($('#root-url').text(), 'true');
+ 		});
+diff --git a/packages/astro/test/server-entry.test.ts b/packages/astro/test/server-entry.test.ts
+index 9865c6793561..39232d5597b6 100644
+--- a/packages/astro/test/server-entry.test.ts
++++ b/packages/astro/test/server-entry.test.ts
+@@ -30,6 +30,7 @@ describe('Server entry', () => {
+ 			build: {
+ 				serverEntry: 'custom.mjs',
+ 			},
++			outDir: './dist/server-entry-server-entry/',
+ 		});
+ 
+ 		await fixture.build();
+@@ -48,6 +49,7 @@ describe('Server entry', () => {
+ 			build: {
+ 				serverEntry: 'custom.mjs',
+ 			},
++			outDir: './dist/erver-entry-server-entry/',
+ 		});
+ 
+ 		await fixture.build();
+@@ -66,6 +68,7 @@ describe('Server entry', () => {
+ 			build: {
+ 				serverEntry: 'custom.mjs',
+ 			},
++			outDir: './dist/server-entry-server-entry/',
+ 		});
+ 
+ 		await fixture.build();
+@@ -81,6 +84,7 @@ describe('Server entry', () => {
+ 			build: {
+ 				serverEntry: 'custom.mjs',
+ 			},
++			outDir: './dist/server-entry-server-entry/',
+ 		});
+ 
+ 		await fixture.build();
+@@ -96,6 +100,7 @@ describe('Server entry', () => {
+ 			build: {
+ 				serverEntry: 'custom.mjs',
+ 			},
++			outDir: './dist/server-entry-server-entry/',
+ 		});
+ 
+ 		await fixture.build();
+@@ -111,6 +116,7 @@ describe('Server entry', () => {
+ 			build: {
+ 				serverEntry: 'custom.mjs',
+ 			},
++			outDir: './dist/server-entry-server-entry/',
+ 		});
+ 
+ 		await fixture.build();
+diff --git a/packages/astro/test/server-islands.test.ts b/packages/astro/test/server-islands.test.ts
+index 1218ddd0ccc4..52b7646f461d 100644
+--- a/packages/astro/test/server-islands.test.ts
++++ b/packages/astro/test/server-islands.test.ts
+@@ -49,6 +49,7 @@ describe('Server islands', () => {
+ 				security: {
+ 					checkOrigin: false,
+ 				},
++				outDir: './dist/server-islands-ssr/',
+ 			});
+ 		});
+ 
+@@ -392,6 +393,7 @@ describe('Server islands', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/server-islands/hybrid',
++				outDir: './dist/server-islands-hybrid-mode/',
+ 			});
+ 		});
+ 
+@@ -439,6 +441,7 @@ describe('Server islands', () => {
+ 						adapterFeatures: {},
+ 					},
+ 				}),
++				outDir: './dist/server-islands-build/',
+ 			});
+ 			const devServer = await devFixture.startDevServer();
+ 			try {
+diff --git a/packages/astro/test/sessions.test.ts b/packages/astro/test/sessions.test.ts
+index 1db93717583f..c9e10eec8f1e 100644
+--- a/packages/astro/test/sessions.test.ts
++++ b/packages/astro/test/sessions.test.ts
+@@ -19,6 +19,7 @@ describe('Astro.session', () => {
+ 					driver: 'fs',
+ 					ttl: 20,
+ 				},
++				outDir: './dist/sessions-production/',
+ 			});
+ 			await fixture.build({});
+ 			app = await fixture.loadTestAdapterApp();
+@@ -223,6 +224,7 @@ describe('Astro.session', () => {
+ 					driver: 'fs',
+ 					ttl: 20,
+ 				},
++				outDir: './dist/sessions-development/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/slots-preact.test.ts b/packages/astro/test/slots-preact.test.ts
+index 5f76627df814..6bcbbc5ad88d 100644
+--- a/packages/astro/test/slots-preact.test.ts
++++ b/packages/astro/test/slots-preact.test.ts
+@@ -7,7 +7,8 @@ describe('Slots: Preact', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/slots-preact/' });
++		fixture = await loadFixture({ root: './fixtures/slots-preact/',
++			outDir: './dist/slots-preact/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/slots-react.test.ts b/packages/astro/test/slots-react.test.ts
+index 3ab4138b18af..c6f5e09d4ed0 100644
+--- a/packages/astro/test/slots-react.test.ts
++++ b/packages/astro/test/slots-react.test.ts
+@@ -7,7 +7,8 @@ describe('Slots: React', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/slots-react/' });
++		fixture = await loadFixture({ root: './fixtures/slots-react/',
++			outDir: './dist/slots-react/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/slots-solid.test.ts b/packages/astro/test/slots-solid.test.ts
+index 9e750a22219d..c0febff3bb27 100644
+--- a/packages/astro/test/slots-solid.test.ts
++++ b/packages/astro/test/slots-solid.test.ts
+@@ -7,7 +7,8 @@ describe('Slots: Solid', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/slots-solid/' });
++		fixture = await loadFixture({ root: './fixtures/slots-solid/',
++			outDir: './dist/slots-solid/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/slots-svelte.test.ts b/packages/astro/test/slots-svelte.test.ts
+index 555e736d61d0..2838bb332ea2 100644
+--- a/packages/astro/test/slots-svelte.test.ts
++++ b/packages/astro/test/slots-svelte.test.ts
+@@ -7,7 +7,8 @@ describe('Slots: Svelte', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/slots-svelte/' });
++		fixture = await loadFixture({ root: './fixtures/slots-svelte/',
++			outDir: './dist/slots-svelte/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/slots-vue.test.ts b/packages/astro/test/slots-vue.test.ts
+index 4316bd5bcf33..fdb6d7d0f915 100644
+--- a/packages/astro/test/slots-vue.test.ts
++++ b/packages/astro/test/slots-vue.test.ts
+@@ -7,7 +7,8 @@ describe('Slots: Vue', () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/slots-vue/' });
++		fixture = await loadFixture({ root: './fixtures/slots-vue/',
++			outDir: './dist/slots-vue/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/solid-component.test.ts b/packages/astro/test/solid-component.test.ts
+index b59a3f28cb2a..d0e6f40bb001 100644
+--- a/packages/astro/test/solid-component.test.ts
++++ b/packages/astro/test/solid-component.test.ts
+@@ -8,6 +8,7 @@ describe.skip('Solid component build', { todo: 'Check why an error is thrown.' }
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/solid-component/',
++			outDir: './dist/solid-component-1/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -138,6 +139,7 @@ describe.skip('Solid component dev', { todo: 'Check why the test hangs.', skip:
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/solid-component/',
++			outDir: './dist/solid-component-2/',
+ 		});
+ 		devServer = await fixture.startDevServer();
+ 	});
+diff --git a/packages/astro/test/sourcemap.test.ts b/packages/astro/test/sourcemap.test.ts
+index 68af4fe1210f..337c300ef9d6 100644
+--- a/packages/astro/test/sourcemap.test.ts
++++ b/packages/astro/test/sourcemap.test.ts
+@@ -6,7 +6,8 @@ describe('Sourcemap', async () => {
+ 	let fixture: Fixture;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/sourcemap/' });
++		fixture = await loadFixture({ root: './fixtures/sourcemap/',
++			outDir: './dist/sourcemap/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/space-in-folder-name.test.ts b/packages/astro/test/space-in-folder-name.test.ts
+index 7fe607b47c83..d8fd0fca8462 100644
+--- a/packages/astro/test/space-in-folder-name.test.ts
++++ b/packages/astro/test/space-in-folder-name.test.ts
+@@ -9,6 +9,7 @@ describe('Projects with a space in the folder name', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/space in folder name/app/',
++			outDir: './dist/space-in-folder-name/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/special-chars-in-component-imports.test.ts b/packages/astro/test/special-chars-in-component-imports.test.ts
+index 35b53fff7f93..732c334b18dd 100644
+--- a/packages/astro/test/special-chars-in-component-imports.test.ts
++++ b/packages/astro/test/special-chars-in-component-imports.test.ts
+@@ -19,6 +19,7 @@ describe('Special chars in component import paths', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/special-chars-in-component-imports/',
++			outDir: './dist/special-chars-in-component-imports/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/ssr-adapter-build-config.test.ts b/packages/astro/test/ssr-adapter-build-config.test.ts
+index 319212546a6b..30898a57a58e 100644
+--- a/packages/astro/test/ssr-adapter-build-config.test.ts
++++ b/packages/astro/test/ssr-adapter-build-config.test.ts
+@@ -17,8 +17,8 @@ describe('Integration buildConfig hook', () => {
+ 					'astro:config:setup': ({ config, updateConfig }) => {
+ 						updateConfig({
+ 							build: {
+-								server: new URL('./dist/.root/server/', config.root),
+-								client: new URL('./dist/.root/client/', config.root),
++								server: new URL('./dist/ssr-adapter-build-config/.root/server/', config.root),
++								client: new URL('./dist/ssr-adapter-build-config/.root/client/', config.root),
+ 							},
+ 							vite: {
+ 								plugins: [
+@@ -58,6 +58,7 @@ describe('Integration buildConfig hook', () => {
+ 					},
+ 				},
+ 			},
++			outDir: './dist/ssr-adapter-build-config/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-api-route.test.ts b/packages/astro/test/ssr-api-route.test.ts
+index a8561ad3d72b..b4b366a6226f 100644
+--- a/packages/astro/test/ssr-api-route.test.ts
++++ b/packages/astro/test/ssr-api-route.test.ts
+@@ -24,6 +24,7 @@ describe('API routes in SSR', () => {
+ 		security: {
+ 			checkOrigin: false,
+ 		},
++		outDir: './dist/ssr-api-route/',
+ 	};
+ 
+ 	describe('Build', () => {
+@@ -196,11 +197,9 @@ describe('API routes in SSR', () => {
+ 			assert.ok(data.propsExist);
+ 			assert.deepEqual(data.params, { param: 'any' });
+ 			assert.match(data.generator, /^Astro v/);
+-			assert.ok(
+-				['http://[::1]:4321/blog/context/any', 'http://127.0.0.1:4321/blog/context/any'].includes(
+-					data.url,
+-				),
+-			);
++			const url = new URL(data.url);
++			assert.ok(['[::1]', '127.0.0.1'].includes(url.hostname));
++			assert.equal(url.pathname, '/blog/context/any');
+ 			assert.ok(['::1', '127.0.0.1'].includes(data.clientAddress));
+ 			assert.equal(data.site, 'https://mysite.dev/subsite/');
+ 		});
+diff --git a/packages/astro/test/ssr-assets.test.ts b/packages/astro/test/ssr-assets.test.ts
+index 0f2e07c9d409..fdd465e41417 100644
+--- a/packages/astro/test/ssr-assets.test.ts
++++ b/packages/astro/test/ssr-assets.test.ts
+@@ -13,6 +13,7 @@ describe('SSR Assets', () => {
+ 			adapter: testAdapter(),
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/ssr-assets/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-dynamic.test.ts b/packages/astro/test/ssr-dynamic.test.ts
+index 72adcdcc11c9..36de1f1069ea 100644
+--- a/packages/astro/test/ssr-dynamic.test.ts
++++ b/packages/astro/test/ssr-dynamic.test.ts
+@@ -42,6 +42,7 @@ describe('Dynamic pages in SSR', () => {
+ 			adapter: testAdapter(),
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/ssr-dynamic/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-large-array.test.ts b/packages/astro/test/ssr-large-array.test.ts
+index e4f6decb96a2..30aabd1b8bf4 100644
+--- a/packages/astro/test/ssr-large-array.test.ts
++++ b/packages/astro/test/ssr-large-array.test.ts
+@@ -12,6 +12,7 @@ describe('SSR with Large Array and client rendering', () => {
+ 			root: './fixtures/large-array/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/ssr-large-array/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-partytown.test.ts b/packages/astro/test/ssr-partytown.test.ts
+index 5567ecdca57d..fbcb44cff131 100644
+--- a/packages/astro/test/ssr-partytown.test.ts
++++ b/packages/astro/test/ssr-partytown.test.ts
+@@ -12,6 +12,7 @@ describe('Using the Partytown integration in SSR', () => {
+ 			root: './fixtures/ssr-partytown/',
+ 			adapter: testAdapter(),
+ 			output: 'server',
++			outDir: './dist/ssr-partytown/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-prerender-get-static-paths.test.ts b/packages/astro/test/ssr-prerender-get-static-paths.test.ts
+index e7af3cc32204..e089bddda89d 100644
+--- a/packages/astro/test/ssr-prerender-get-static-paths.test.ts
++++ b/packages/astro/test/ssr-prerender-get-static-paths.test.ts
+@@ -16,6 +16,7 @@ describe('Prerender', () => {
+ 					adapter: testAdapter(),
+ 					base: '/blog',
+ 					output: 'server',
++					outDir: './dist/ssr-prerender-get-static-paths-getstaticpaths-build-calls/',
+ 				});
+ 				await fixture.build();
+ 			});
+@@ -135,6 +136,7 @@ describe('Prerender', () => {
+ 					vite: {
+ 						plugins: [vitePluginRemovePrerenderExport()],
+ 					},
++					outDir: './dist/ssr-prerender-get-static-paths-getstaticpaths-build-calls/',
+ 				});
+ 				await fixture.build();
+ 			});
+diff --git a/packages/astro/test/ssr-preview.test.ts b/packages/astro/test/ssr-preview.test.ts
+index 46458915a7b5..36686797398a 100644
+--- a/packages/astro/test/ssr-preview.test.ts
++++ b/packages/astro/test/ssr-preview.test.ts
+@@ -10,6 +10,7 @@ describe('SSR Preview', () => {
+ 			root: './fixtures/ssr-preview/',
+ 			output: 'server',
+ 			adapter: testAdapter({ extendAdapter: { previewEntrypoint: './preview.mjs' } }),
++			outDir: './dist/ssr-preview/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-renderers-static-vue.test.ts b/packages/astro/test/ssr-renderers-static-vue.test.ts
+index f2b21dd4ca20..aa40588e2c89 100644
+--- a/packages/astro/test/ssr-renderers-static-vue.test.ts
++++ b/packages/astro/test/ssr-renderers-static-vue.test.ts
+@@ -11,6 +11,7 @@ describe('SSR renderers with static framework pages', () => {
+ 			root: './fixtures/ssr-renderers-static-vue/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/ssr-renderers-static-vue/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-request.test.ts b/packages/astro/test/ssr-request.test.ts
+index 1823647a9559..35491b46d482 100644
+--- a/packages/astro/test/ssr-request.test.ts
++++ b/packages/astro/test/ssr-request.test.ts
+@@ -28,6 +28,7 @@ describe('Using Astro.request in SSR', () => {
+ 					assetsInlineLimit: 0,
+ 				},
+ 			},
++			outDir: './dist/ssr-request/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/ssr-scripts.test.ts b/packages/astro/test/ssr-scripts.test.ts
+index b800863577ee..03fa5cb0ba66 100644
+--- a/packages/astro/test/ssr-scripts.test.ts
++++ b/packages/astro/test/ssr-scripts.test.ts
+@@ -12,6 +12,7 @@ describe('SSR Hydrated component scripts', () => {
+ 			root: './fixtures/ssr-scripts/',
+ 			output: 'server',
+ 			adapter: testAdapter(),
++			outDir: './dist/ssr-scripts/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/static-build-code-component.test.ts b/packages/astro/test/static-build-code-component.test.ts
+index 6f239db1feec..91f3e452830c 100644
+--- a/packages/astro/test/static-build-code-component.test.ts
++++ b/packages/astro/test/static-build-code-component.test.ts
+@@ -9,6 +9,7 @@ describe('Code component inside static build', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/static-build-code-component/',
++			outDir: './dist/static-build-code-component/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/static-build-dir.test.ts b/packages/astro/test/static-build-dir.test.ts
+index a34e3a2d5138..3fd14369a035 100644
+--- a/packages/astro/test/static-build-dir.test.ts
++++ b/packages/astro/test/static-build-dir.test.ts
+@@ -21,6 +21,7 @@ describe('Static build: dir takes the URL path to the output directory', () => {
+ 					},
+ 				},
+ 			],
++			outDir: './dist/static-build-dir/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -28,7 +29,9 @@ describe('Static build: dir takes the URL path to the output directory', () => {
+ 		const removeTrailingSlash = (str: string) => str.replace(/\/$/, '');
+ 		assert.equal(
+ 			removeTrailingSlash(checkDir.toString()),
+-			removeTrailingSlash(new URL('./fixtures/static-build-dir/dist', import.meta.url).toString()),
++			removeTrailingSlash(
++				new URL('./fixtures/static-build-dir/dist/static-build-dir', import.meta.url).toString(),
++			),
+ 		);
+ 		assert.equal(checkDir.toString(), checkGeneratedDir.toString());
+ 	});
+diff --git a/packages/astro/test/static-build-frameworks.test.ts b/packages/astro/test/static-build-frameworks.test.ts
+index e941b0f7ce4f..efa3ddf62a3d 100644
+--- a/packages/astro/test/static-build-frameworks.test.ts
++++ b/packages/astro/test/static-build-frameworks.test.ts
+@@ -13,6 +13,7 @@ describe('Static build - frameworks', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/static-build-frameworks/',
++			outDir: './dist/static-build-frameworks/',
+ 		});
+ 		try {
+ 			await fixture.build();
+diff --git a/packages/astro/test/static-build-page-dist-url.test.ts b/packages/astro/test/static-build-page-dist-url.test.ts
+index e9cdc10d2330..b5be420d8f47 100644
+--- a/packages/astro/test/static-build-page-dist-url.test.ts
++++ b/packages/astro/test/static-build-page-dist-url.test.ts
+@@ -17,6 +17,7 @@ describe('Static build: pages routes have distURL', () => {
+ 					},
+ 				},
+ 			],
++			outDir: './dist/static-build-page-dist-url/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/static-build-page-url-format.test.ts b/packages/astro/test/static-build-page-url-format.test.ts
+index d52fe4cf56e1..fa2ca5a769e2 100644
+--- a/packages/astro/test/static-build-page-url-format.test.ts
++++ b/packages/astro/test/static-build-page-url-format.test.ts
+@@ -8,6 +8,7 @@ describe("Static build - format: 'file'", () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/static-build-page-url-format/',
++			outDir: './dist/static-build-page-url-format/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/static-build-vite-plugins.test.ts b/packages/astro/test/static-build-vite-plugins.test.ts
+index 88ba3b7fde7a..8f16ce1c40a4 100644
+--- a/packages/astro/test/static-build-vite-plugins.test.ts
++++ b/packages/astro/test/static-build-vite-plugins.test.ts
+@@ -68,6 +68,7 @@ describe('Static build: vite plugins included when required', () => {
+ 					},
+ 				},
+ 			],
++			outDir: './dist/static-build-vite-plugins/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/static-build.test.ts b/packages/astro/test/static-build.test.ts
+index a02dc54cda7e..7e04a7c2986a 100644
+--- a/packages/astro/test/static-build.test.ts
++++ b/packages/astro/test/static-build.test.ts
+@@ -35,6 +35,7 @@ describe('Static build', () => {
+ 			root: './fixtures/static-build/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/static-build-static-build/',
+ 		});
+ 		await fixture.build({
+ 			// @ts-expect-error - logger is @intneral API
+@@ -198,6 +199,7 @@ describe('Static build SSR', () => {
+ 	it('Copies public files', async () => {
+ 		const fixture = await loadFixture({
+ 			root: './fixtures/static-build-ssr/',
++			outDir: './dist/static-build-static-build-ssr/',
+ 		});
+ 		await fixture.build();
+ 
+@@ -210,6 +212,7 @@ describe('Static build with configured redirects', () => {
+ 	it('Sets isPrerendered true in middleware', async () => {
+ 		const fixture = await loadFixture({
+ 			root: './fixtures/static-redirect/',
++			outDir: './dist/static-build-static-build-with-configured-redirects/',
+ 		});
+ 
+ 		await assert.doesNotReject(
+diff --git a/packages/astro/test/streaming.test.ts b/packages/astro/test/streaming.test.ts
+index 415a7c8b9b3d..f6e8aa66d6f9 100644
+--- a/packages/astro/test/streaming.test.ts
++++ b/packages/astro/test/streaming.test.ts
+@@ -14,6 +14,7 @@ describe('Streaming', () => {
+ 			root: './fixtures/streaming/',
+ 			adapter: testAdapter(),
+ 			output: 'server',
++			outDir: './dist/streaming-streaming/',
+ 		});
+ 	});
+ 
+@@ -122,6 +123,7 @@ describe('Streaming disabled', () => {
+ 				// However it seems that the streaming option is not currently used thus the `streaming: false` here is a no-op at runtime. Further investigation is needed.œ
+ 				streaming: false,
+ 			},
++			outDir: './dist/streaming-streaming-disabled/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/svelte-component.test.ts b/packages/astro/test/svelte-component.test.ts
+index 4bcfd134edb8..5f344cbae819 100644
+--- a/packages/astro/test/svelte-component.test.ts
++++ b/packages/astro/test/svelte-component.test.ts
+@@ -9,6 +9,7 @@ describe('Svelte component', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/svelte-component/',
++			outDir: './dist/svelte-component/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/svg-deduplication.test.ts b/packages/astro/test/svg-deduplication.test.ts
+index fd23a23ff5a1..bfce8e7d0f87 100644
+--- a/packages/astro/test/svg-deduplication.test.ts
++++ b/packages/astro/test/svg-deduplication.test.ts
+@@ -11,14 +11,14 @@ describe('SVG Deduplication', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/svg-deduplication/',
++				outDir: './dist/svg-deduplication-build/',
+ 			});
+ 			await fixture.build();
+ 		});
+ 
+ 		it('deduplicates identical SVG files in build output', async () => {
+ 			// Get all SVG files in the build output
+-			const distDir = new URL('./fixtures/svg-deduplication/dist/', import.meta.url);
+-			const assetsDir = new URL('./_astro/', distDir);
++			const assetsDir = new URL('./_astro/', fixture.config.outDir);
+ 
+ 			let svgFiles: string[] = [];
+ 			try {
+@@ -77,6 +77,7 @@ describe('SVG Deduplication', () => {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/svg-deduplication/',
++				outDir: './dist/svg-deduplication-dev/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/tailwindcss.test.ts b/packages/astro/test/tailwindcss.test.ts
+index d8301c37596a..a0ddb209e8fa 100644
+--- a/packages/astro/test/tailwindcss.test.ts
++++ b/packages/astro/test/tailwindcss.test.ts
+@@ -9,6 +9,7 @@ describe('Tailwind', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/tailwindcss/',
++			outDir: './dist/tailwindcss/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/third-party-astro.test.ts b/packages/astro/test/third-party-astro.test.ts
+index a1b6ababc548..d49b877501cd 100644
+--- a/packages/astro/test/third-party-astro.test.ts
++++ b/packages/astro/test/third-party-astro.test.ts
+@@ -9,6 +9,7 @@ describe('third-party .astro component', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/third-party-astro/',
++			outDir: './dist/third-party-astro/',
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/underscore-in-folder-name.test.ts b/packages/astro/test/underscore-in-folder-name.test.ts
+index 7ebbc86e2d68..329ea8eb4e27 100644
+--- a/packages/astro/test/underscore-in-folder-name.test.ts
++++ b/packages/astro/test/underscore-in-folder-name.test.ts
+@@ -11,6 +11,7 @@ describe('Projects with an underscore in the folder name', () => {
+ 			root: './fixtures/_underscore in folder name/',
+ 			output: 'static',
+ 			adapter: testAdapter(),
++			outDir: './dist/underscore-in-folder-name/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/url-import-suffix.test.ts b/packages/astro/test/url-import-suffix.test.ts
+index 1d51b5163e72..d181be1ca7d0 100644
+--- a/packages/astro/test/url-import-suffix.test.ts
++++ b/packages/astro/test/url-import-suffix.test.ts
+@@ -8,7 +8,8 @@ describe('imports using ?url suffix', () => {
+ 	const assetName = 'index.DqQksVyv.css';
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/url-import-suffix/' });
++		fixture = await loadFixture({ root: './fixtures/url-import-suffix/',
++			outDir: './dist/url-import-suffix-imports-using-url-suffix/', });
+ 		await fixture.build();
+ 	});
+ 
+@@ -31,7 +32,8 @@ describe('imports using ?url&no-inline suffix', () => {
+ 	const assetName = 'style.3WhucSPm.css';
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/url-import-suffix/' });
++		fixture = await loadFixture({ root: './fixtures/url-import-suffix/',
++			outDir: './dist/url-import-suffix-imports-using-url-no-inline-suffix/', });
+ 		await fixture.build();
+ 	});
+ 
+diff --git a/packages/astro/test/view-transitions.test.ts b/packages/astro/test/view-transitions.test.ts
+index 05e1a67312d8..072714e463c6 100644
+--- a/packages/astro/test/view-transitions.test.ts
++++ b/packages/astro/test/view-transitions.test.ts
+@@ -8,7 +8,8 @@ describe('View Transitions styles', () => {
+ 	let devServer: DevServer;
+ 
+ 	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/view-transitions/' });
++		fixture = await loadFixture({ root: './fixtures/view-transitions/',
++			outDir: './dist/view-transitions/', });
+ 		devServer = await fixture.startDevServer();
+ 	});
+ 
+diff --git a/packages/astro/test/virtual-astro-file.test.ts b/packages/astro/test/virtual-astro-file.test.ts
+index 2eaef889874e..32409c6d5d2b 100644
+--- a/packages/astro/test/virtual-astro-file.test.ts
++++ b/packages/astro/test/virtual-astro-file.test.ts
+@@ -11,6 +11,7 @@ describe('Loading virtual Astro files', () => {
+ 			root: './fixtures/virtual-astro-file/',
+ 			// test suite was authored when inlineStylesheets defaulted to never
+ 			build: { inlineStylesheets: 'never' },
++			outDir: './dist/virtual-astro-file/',
+ 		});
+ 		await fixture.build();
+ 	});
+diff --git a/packages/astro/test/vue-component.test.ts b/packages/astro/test/vue-component.test.ts
+index aae87dd79e0d..fe8a8e1b7cc1 100644
+--- a/packages/astro/test/vue-component.test.ts
++++ b/packages/astro/test/vue-component.test.ts
+@@ -9,6 +9,7 @@ describe.skip('Vue component build', { todo: 'This test currently times out, inv
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/vue-component/',
++			outDir: './dist/vue-component-1/',
+ 		});
+ 		await fixture.build();
+ 	});
+@@ -50,6 +51,7 @@ if (!isWindows) {
+ 		before(async () => {
+ 			fixture = await loadFixture({
+ 				root: './fixtures/vue-component/',
++				outDir: './dist/vue-component-2/',
+ 			});
+ 			devServer = await fixture.startDevServer();
+ 		});
+diff --git a/packages/astro/test/vue-with-multi-renderer.test.ts b/packages/astro/test/vue-with-multi-renderer.test.ts
+index 38f470000a7f..2884b20c96b2 100644
+--- a/packages/astro/test/vue-with-multi-renderer.test.ts
++++ b/packages/astro/test/vue-with-multi-renderer.test.ts
+@@ -8,6 +8,7 @@ describe('Vue with multi-renderer', () => {
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/vue-with-multi-renderer/',
++			outDir: './dist/vue-with-multi-renderer/',
+ 		});
+ 	});
+ 
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 1f70bfa71a07..406c92968890 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -912,6 +912,21 @@ importers:
+         specifier: ^3.5.30
+         version: 3.5.30(typescript@5.9.3)
+ 
++  packages/astro/e2e/fixtures/astro-island-hydration-error:
++    dependencies:
++      '@astrojs/react':
++        specifier: workspace:*
++        version: link:../../../../integrations/react
++      astro:
++        specifier: workspace:*
++        version: link:../../..
++      react:
++        specifier: ^18.3.1
++        version: 18.3.1
++      react-dom:
++        specifier: ^18.3.1
++        version: 18.3.1(react@18.3.1)
++
+   packages/astro/e2e/fixtures/client-idle-timeout:
+     dependencies:
+       react:
+@@ -1583,21 +1598,6 @@ importers:
+         specifier: ^18.3.1
+         version: 18.3.1(react@18.3.1)
+ 
+-  packages/astro/e2e/fixtures/astro-island-hydration-error:
+-    dependencies:
+-      '@astrojs/react':
+-        specifier: workspace:*
+-        version: link:../../../../integrations/react
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-      react:
+-        specifier: ^18.3.1
+-        version: 18.3.1
+-      react-dom:
+-        specifier: ^18.3.1
+-        version: 18.3.1(react@18.3.1)
+-
+   packages/astro/e2e/fixtures/react19-preact-hook-error:
+     dependencies:
+       preact:
+diff --git a/scripts/cmd/test.js b/scripts/cmd/test.js
+index 0b15eed844a3..5379cd955c5b 100644
+--- a/scripts/cmd/test.js
++++ b/scripts/cmd/test.js
+@@ -81,6 +81,12 @@ export default async function test() {
+ 		process.env.NODE_OPTIONS += ' --experimental-strip-types';
+ 	}
+ 
++	if (args.values.parallel) {
++		// Signal to test-utils that we're in parallel mode so it can use port 0
++		// (OS-assigned) to avoid port collisions across parallel worker processes.
++		process.env.ASTRO_TEST_PARALLEL = '1';
++	}
++
+ 	if (!args.values.parallel) {
+ 		// If not parallel, we create a temporary file that imports all the test files
+ 		// so that it all runs in a single process.

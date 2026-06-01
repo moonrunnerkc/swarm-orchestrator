@@ -1,0 +1,383 @@
+diff --git a/packages/devkit/src/utils/replace-package.spec.ts b/packages/devkit/src/utils/replace-package.spec.ts
+deleted file mode 100644
+index e212a96e395..00000000000
+--- a/packages/devkit/src/utils/replace-package.spec.ts
++++ /dev/null
+@@ -1,180 +0,0 @@
+-import { replaceNrwlPackageWithNxPackage } from './replace-package';
+-
+-import { Tree } from 'nx/src/generators/tree';
+-import { createTreeWithEmptyWorkspace } from 'nx/src/generators/testing-utils/create-tree-with-empty-workspace';
+-import {
+-  addProjectConfiguration,
+-  readNxJson,
+-  readProjectConfiguration,
+-  updateNxJson,
+-  writeJson,
+-  readJson,
+-} from 'nx/src/devkit-exports';
+-
+-describe('replaceNrwlPackageWithNxPackage', () => {
+-  let tree: Tree;
+-  beforeAll(() => {
+-    tree = createTreeWithEmptyWorkspace();
+-
+-    tree.write('README.txt', 'old-package');
+-
+-    writeJson(tree, 'package.json', {
+-      name: 'source-code',
+-      dependencies: {
+-        'old-package': '0.0.1',
+-      },
+-      devDependencies: {
+-        'old-package': '0.0.1',
+-      },
+-    });
+-
+-    writeJson(tree, 'packages/package1/package.json', {
+-      name: 'package1',
+-      dependencies: {
+-        'old-package': '0.0.1',
+-      },
+-      devDependencies: {
+-        'old-package': '0.0.1',
+-      },
+-      peerDependencies: {
+-        'old-package': '0.0.1',
+-      },
+-      optionalDependencies: {
+-        'old-package': '0.0.1',
+-      },
+-    });
+-
+-    addProjectConfiguration(tree, 'proj1', {
+-      name: 'proj1',
+-      root: 'proj1',
+-      targets: {
+-        build: {
+-          executor: 'old-package:build',
+-          options: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-      generators: {
+-        'old-package': {
+-          app: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-    });
+-
+-    addProjectConfiguration(tree, 'proj2', {
+-      name: 'proj2',
+-      root: 'proj2',
+-    });
+-
+-    updateNxJson(tree, {
+-      generators: {
+-        'old-package': {
+-          app: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-      targetDefaults: {
+-        build: {
+-          executor: 'old-package:build',
+-          options: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-    });
+-
+-    replaceNrwlPackageWithNxPackage(tree, 'old-package', 'new-package');
+-  });
+-
+-  it('should update targets in the project configuration', () => {
+-    expect(readProjectConfiguration(tree, 'proj1')).toEqual({
+-      $schema: '../node_modules/nx/schemas/project-schema.json',
+-      generators: {
+-        'new-package': {
+-          app: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-      name: 'proj1',
+-      root: 'proj1',
+-      targets: {
+-        build: {
+-          executor: 'new-package:build',
+-          options: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-    });
+-    expect(readProjectConfiguration(tree, 'proj2')).toEqual({
+-      $schema: '../node_modules/nx/schemas/project-schema.json',
+-      name: 'proj2',
+-      root: 'proj2',
+-    });
+-  });
+-
+-  it('should replace package in nx.json', () => {
+-    expect(readNxJson(tree)).toEqual({
+-      generators: {
+-        'new-package': {
+-          app: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-      targetDefaults: {
+-        build: {
+-          executor: 'new-package:build',
+-          options: {
+-            key: 'value',
+-          },
+-        },
+-      },
+-    });
+-  });
+-
+-  it('should replace package in package.json files', () => {
+-    expect(readJson(tree, 'package.json')).toEqual({
+-      name: 'source-code',
+-      dependencies: {
+-        'new-package': '0.0.1',
+-      },
+-      devDependencies: {
+-        'new-package': '0.0.1',
+-      },
+-    });
+-    expect(readJson(tree, 'packages/package1/package.json')).toEqual({
+-      name: 'package1',
+-      dependencies: {
+-        'new-package': '0.0.1',
+-      },
+-      devDependencies: {
+-        'new-package': '0.0.1',
+-      },
+-      peerDependencies: {
+-        'new-package': '0.0.1',
+-      },
+-      optionalDependencies: {
+-        'new-package': '0.0.1',
+-      },
+-    });
+-  });
+-
+-  it('should handle broken package.json files', () => {
+-    tree.write('package.json', '{ broken: "json ');
+-
+-    expect(() =>
+-      replaceNrwlPackageWithNxPackage(tree, 'old-package', 'new-package')
+-    ).not.toThrow();
+-  });
+-
+-  it('should replace any mentions in files', () => {
+-    expect(tree.read('README.txt').toString()).toContain('new-package');
+-    expect(tree.read('README.txt').toString()).not.toContain('old-package');
+-  });
+-});
+diff --git a/packages/devkit/src/utils/replace-package.ts b/packages/devkit/src/utils/replace-package.ts
+deleted file mode 100644
+index 9cad8c216a9..00000000000
+--- a/packages/devkit/src/utils/replace-package.ts
++++ /dev/null
+@@ -1,191 +0,0 @@
+-import {
+-  getProjects,
+-  logger,
+-  readNxJson,
+-  Tree,
+-  updateJson,
+-  updateNxJson,
+-  updateProjectConfiguration,
+-} from 'nx/src/devkit-exports';
+-import type { PackageJson } from 'nx/src/utils/package-json';
+-import { visitNotIgnoredFiles } from '../generators/visit-not-ignored-files';
+-import { basename } from 'path';
+-import { isBinaryPath } from './binary-extensions';
+-
+-export function replaceNrwlPackageWithNxPackage(
+-  tree: Tree,
+-  oldPackageName: string,
+-  newPackageName: string
+-): void {
+-  replacePackageInDependencies(tree, oldPackageName, newPackageName);
+-
+-  replacePackageInProjectConfigurations(tree, oldPackageName, newPackageName);
+-
+-  replacePackageInNxJson(tree, oldPackageName, newPackageName);
+-
+-  replaceMentions(tree, oldPackageName, newPackageName);
+-}
+-
+-function replacePackageInDependencies(
+-  tree: Tree,
+-  oldPackageName: string,
+-  newPackageName: string
+-) {
+-  visitNotIgnoredFiles(tree, '.', (path) => {
+-    if (basename(path) !== 'package.json') {
+-      return;
+-    }
+-
+-    try {
+-      updateJson<PackageJson>(tree, path, (packageJson) => {
+-        for (const deps of [
+-          packageJson.dependencies ?? {},
+-          packageJson.devDependencies ?? {},
+-          packageJson.peerDependencies ?? {},
+-          packageJson.optionalDependencies ?? {},
+-        ]) {
+-          if (oldPackageName in deps) {
+-            deps[newPackageName] = deps[oldPackageName];
+-            delete deps[oldPackageName];
+-          }
+-        }
+-        return packageJson;
+-      });
+-    } catch (e) {
+-      console.warn(
+-        `Could not replace ${oldPackageName} with ${newPackageName} in ${path}.`
+-      );
+-    }
+-  });
+-}
+-
+-function replacePackageInProjectConfigurations(
+-  tree: Tree,
+-  oldPackageName: string,
+-  newPackageName: string
+-) {
+-  const projects = getProjects(tree);
+-
+-  for (const [projectName, projectConfiguration] of projects) {
+-    let needsUpdate = false;
+-
+-    for (const [targetName, targetConfig] of Object.entries(
+-      projectConfiguration.targets ?? {}
+-    )) {
+-      if (!targetConfig.executor) {
+-        continue;
+-      }
+-
+-      const [pkg, executorName] = targetConfig.executor.split(':');
+-      if (pkg === oldPackageName) {
+-        needsUpdate = true;
+-
+-        projectConfiguration.targets[targetName].executor =
+-          newPackageName + ':' + executorName;
+-      }
+-    }
+-
+-    for (const [collection, collectionDefaults] of Object.entries(
+-      projectConfiguration.generators ?? {}
+-    )) {
+-      if (collection === oldPackageName) {
+-        needsUpdate = true;
+-
+-        projectConfiguration.generators[newPackageName] = collectionDefaults;
+-        delete projectConfiguration.generators[collection];
+-      }
+-    }
+-
+-    if (needsUpdate) {
+-      updateProjectConfiguration(tree, projectName, projectConfiguration);
+-    }
+-  }
+-}
+-
+-function replacePackageInNxJson(
+-  tree: Tree,
+-  oldPackageName: string,
+-  newPackageName: string
+-) {
+-  if (!tree.exists('nx.json')) {
+-    return;
+-  }
+-
+-  const nxJson = readNxJson(tree);
+-
+-  let needsUpdate = false;
+-
+-  for (const [targetName, targetConfig] of Object.entries(
+-    nxJson.targetDefaults ?? {}
+-  )) {
+-    if (!targetConfig.executor) {
+-      continue;
+-    }
+-
+-    const [pkg, executorName] = targetConfig.executor.split(':');
+-    if (pkg === oldPackageName) {
+-      needsUpdate = true;
+-
+-      nxJson.targetDefaults[targetName].executor =
+-        newPackageName + ':' + executorName;
+-    }
+-  }
+-
+-  for (const [collection, collectionDefaults] of Object.entries(
+-    nxJson.generators ?? {}
+-  )) {
+-    if (collection === oldPackageName) {
+-      needsUpdate = true;
+-
+-      nxJson.generators[newPackageName] = collectionDefaults;
+-      delete nxJson.generators[collection];
+-    }
+-  }
+-
+-  if (needsUpdate) {
+-    updateNxJson(tree, nxJson);
+-  }
+-}
+-
+-function replaceMentions(
+-  tree: Tree,
+-  oldPackageName: string,
+-  newPackageName: string
+-) {
+-  visitNotIgnoredFiles(tree, '.', (path) => {
+-    if (isBinaryPath(path)) {
+-      return;
+-    }
+-
+-    const ignoredFiles = [
+-      'yarn.lock',
+-      'package-lock.json',
+-      'pnpm-lock.yaml',
+-      'bun.lockb',
+-      'bun.lock',
+-      'CHANGELOG.md',
+-    ];
+-    if (ignoredFiles.includes(basename(path))) {
+-      return;
+-    }
+-
+-    try {
+-      const contents = tree.read(path).toString();
+-
+-      if (!contents.includes(oldPackageName)) {
+-        return;
+-      }
+-
+-      tree.write(
+-        path,
+-        contents.replace(new RegExp(oldPackageName, 'g'), newPackageName)
+-      );
+-    } catch {
+-      // Its **probably** ok, contents can be null if the file is too large or
+-      // there was an access exception.
+-      logger.warn(
+-        `An error was thrown when trying to update ${path}. If you believe the migration should have updated it, be sure to review the file and open an issue.`
+-      );
+-    }
+-  });
+-}

@@ -1,0 +1,155 @@
+diff --git a/.changeset/remote-proxy-session-errors.md b/.changeset/remote-proxy-session-errors.md
+new file mode 100644
+index 0000000000..feb479e006
+--- /dev/null
++++ b/.changeset/remote-proxy-session-errors.md
+@@ -0,0 +1,8 @@
++---
++"wrangler": patch
++---
++
++Surface remote proxy session errors
++
++When remote bindings fail to start, include the controller reason and root
++cause in the error message to make failures like missing `cloudflared` clearer.
+diff --git a/fixtures/get-platform-proxy-remote-bindings/tests/index.test.ts b/fixtures/get-platform-proxy-remote-bindings/tests/index.test.ts
+index cc5b7e0ab5..b519903fe7 100644
+--- a/fixtures/get-platform-proxy-remote-bindings/tests/index.test.ts
++++ b/fixtures/get-platform-proxy-remote-bindings/tests/index.test.ts
+@@ -246,8 +246,8 @@ if (auth) {
+ 					}>({
+ 						configPath: "./.tmp/config-with-invalid-account-id/wrangler.json",
+ 					})
+-				).rejects.toMatchInlineSnapshot(
+-					`[Error: Failed to start the remote proxy session. There is likely additional logging output above.]`
++				).rejects.toThrowError(
++					/Failed to start the remote proxy session\. Failed to create a preview token/
+ 				);
+ 
+ 				expect(errorSpy).toHaveBeenCalledOnce();
+diff --git a/packages/vite-plugin-cloudflare/e2e/remote-bindings.test.ts b/packages/vite-plugin-cloudflare/e2e/remote-bindings.test.ts
+index c6f88b7e8a..2a5e0bcfdc 100644
+--- a/packages/vite-plugin-cloudflare/e2e/remote-bindings.test.ts
++++ b/packages/vite-plugin-cloudflare/e2e/remote-bindings.test.ts
+@@ -185,8 +185,8 @@ if (isWindows) {
+ 				expect(proc.stderr).toContain(
+ 					"R2 bucket 'non-existent-r2-bucket' not found. Verify the bucket exists in your account and that the bucket_name in your configuration is correct. [code: 10085]"
+ 				);
+-				expect(proc.stderr).toContain(
+-					"Error: Failed to start the remote proxy session. There is likely additional logging output above."
++				expect(proc.stderr).toMatch(
++					/Error: Failed to start the remote proxy session\./
+ 				);
+ 			});
+ 		});
+diff --git a/packages/wrangler/e2e/remote-binding/remote-bindings-api.test.ts b/packages/wrangler/e2e/remote-binding/remote-bindings-api.test.ts
+index 42d74aa331..423e6f08f0 100644
+--- a/packages/wrangler/e2e/remote-binding/remote-bindings-api.test.ts
++++ b/packages/wrangler/e2e/remote-binding/remote-bindings-api.test.ts
+@@ -99,8 +99,8 @@ describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)(
+ 							},
+ 						}
+ 					)
+-				).rejects.toMatchInlineSnapshot(
+-					`[Error: Failed to start the remote proxy session. There is likely additional logging output above.]`
++				).rejects.toThrowError(
++					/Failed to start the remote proxy session\. Failed to create a preview token/
+ 				);
+ 			});
+ 		});
+@@ -156,8 +156,8 @@ describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)(
+ 							},
+ 						}
+ 					)
+-				).rejects.toMatchInlineSnapshot(
+-					`[Error: Failed to start the remote proxy session. There is likely additional logging output above.]`
++				).rejects.toThrowError(
++					/Failed to start the remote proxy session\. Failed to create a preview token/
+ 				);
+ 			});
+ 		});
+diff --git a/packages/wrangler/src/__tests__/dev/remote-bindings-errors.test.ts b/packages/wrangler/src/__tests__/dev/remote-bindings-errors.test.ts
+index 2bf547c447..9f90565c90 100644
+--- a/packages/wrangler/src/__tests__/dev/remote-bindings-errors.test.ts
++++ b/packages/wrangler/src/__tests__/dev/remote-bindings-errors.test.ts
+@@ -88,7 +88,7 @@ describe("errors during dev with remote bindings", () => {
+ 		assert(thrownError);
+ 
+ 		expect(thrownError).toMatchInlineSnapshot(
+-			`[Error: Failed to start the remote proxy session. There is likely additional logging output above.]`
++			`[Error: Failed to start the remote proxy session. Failed to obtain a preview token: The remote worker preview failed.]`
+ 		);
+ 
+ 		expect(thrownError.cause).toMatchInlineSnapshot(`
+diff --git a/packages/wrangler/src/api/remoteBindings/start-remote-proxy-session.ts b/packages/wrangler/src/api/remoteBindings/start-remote-proxy-session.ts
+index 1d14f2346c..392d45ff43 100644
+--- a/packages/wrangler/src/api/remoteBindings/start-remote-proxy-session.ts
++++ b/packages/wrangler/src/api/remoteBindings/start-remote-proxy-session.ts
+@@ -8,6 +8,7 @@ import { getBasePath } from "../../paths";
+ import { startWorker } from "../startDevWorker";
+ import type { LoggerLevel } from "../../logger";
+ import type { StartDevWorkerInput, Worker } from "../startDevWorker";
++import type { ErrorEvent } from "../startDevWorker/events";
+ import type { Config } from "@cloudflare/workers-utils";
+ import type { RemoteProxyConnectionString } from "miniflare";
+ 
+@@ -18,6 +19,46 @@ export type StartRemoteProxySessionOptions = {
+ 	complianceRegion?: Config["compliance_region"];
+ };
+ 
++function isErrorEvent(error: unknown): error is ErrorEvent {
++	return (
++		typeof error === "object" &&
++		error !== null &&
++		"type" in error &&
++		(error as { type?: string }).type === "error" &&
++		"reason" in error &&
++		"cause" in error
++	);
++}
++
++function getErrorMessage(error: unknown): string | undefined {
++	if (error instanceof Error) {
++		return getErrorMessage(error.cause) ?? error.message;
++	}
++
++	if (typeof error === "string") {
++		return error;
++	}
++
++	if (typeof error === "object" && error !== null) {
++		const maybeMessage = (error as { message?: unknown }).message;
++		if (typeof maybeMessage === "string") {
++			const maybeCause = (error as { cause?: unknown }).cause;
++			return getErrorMessage(maybeCause) ?? maybeMessage;
++		}
++	}
++
++	return undefined;
++}
++
++function formatRemoteProxySessionError(error: unknown): string | undefined {
++	if (isErrorEvent(error)) {
++		const causeMessage = getErrorMessage(error.cause);
++		return causeMessage ? `${error.reason}: ${causeMessage}` : error.reason;
++	}
++
++	return getErrorMessage(error);
++}
++
+ export async function startRemoteProxySession(
+ 	bindings: StartDevWorkerInput["bindings"],
+ 	options?: StartRemoteProxySessionOptions
+@@ -77,8 +118,11 @@ export async function startRemoteProxySession(
+ 	]);
+ 
+ 	if (maybeError && maybeError.error) {
++		const details = formatRemoteProxySessionError(maybeError.error);
+ 		throw new Error(
+-			"Failed to start the remote proxy session. There is likely additional logging output above.",
++			details
++				? `Failed to start the remote proxy session. ${details}`
++				: "Failed to start the remote proxy session. There is likely additional logging output above.",
+ 			{
+ 				cause: maybeError.error,
+ 			}

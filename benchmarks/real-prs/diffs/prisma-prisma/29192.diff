@@ -1,0 +1,271 @@
+diff --git a/.github/workflows/test-template.yml b/.github/workflows/test-template.yml
+index c440c044f91e..175426c7c17c 100644
+--- a/.github/workflows/test-template.yml
++++ b/.github/workflows/test-template.yml
+@@ -928,6 +928,10 @@ jobs:
+         name: 'adapter-neon'
+         working-directory: packages/adapter-neon
+ 
++      - run: pnpm run test
++        name: 'adapter-ppg'
++        working-directory: packages/adapter-ppg
++
+   #
+   # Query plan executor unit tests
+   #
+diff --git a/packages/adapter-ppg/src/conversion.test.ts b/packages/adapter-ppg/src/conversion.test.ts
+new file mode 100644
+index 000000000000..bd70dd2c764c
+--- /dev/null
++++ b/packages/adapter-ppg/src/conversion.test.ts
+@@ -0,0 +1,163 @@
++import { describe, expect, test } from 'vitest'
++
++import { ArrayColumnType, builtinParsers, ScalarColumnType } from './conversion'
++
++function getParser(oid: number) {
++  const entry = builtinParsers.find((p) => p.oid === oid)
++  if (!entry) {
++    throw new Error(`No parser registered for OID ${oid}`)
++  }
++  return entry.parse
++}
++
++describe('conversion', () => {
++  describe('null handling in type parsers', () => {
++    test('normalize_timestamp returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.TIMESTAMP)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_timestamptz returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.TIMESTAMPTZ)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_timez returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.TIMETZ)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_money returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.MONEY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_bool returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.BOOL)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('convertBytes returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.BYTEA)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++  })
++
++  describe('null handling in array type parsers', () => {
++    test('timestamp array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.TIMESTAMP_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('timestamptz array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.TIMESTAMPTZ_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('money array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.MONEY_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('bytea array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.BYTEA_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++  })
++
++  describe('normalize_timestamp', () => {
++    const parse = getParser(ScalarColumnType.TIMESTAMP)
++
++    test('converts space separator to T and appends UTC offset', () => {
++      expect(parse('1996-12-19 16:39:57')).toBe('1996-12-19T16:39:57+00:00')
++    })
++
++    test('preserves fractional seconds', () => {
++      expect(parse('2024-01-15 08:30:00.123456')).toBe('2024-01-15T08:30:00.123456+00:00')
++    })
++
++    test('supports arrays of timestamps', () => {
++      expect(getParser(ArrayColumnType.TIMESTAMP_ARRAY)('{1996-12-19 16:39:57,2024-01-15 08:30:00}')).toEqual([
++        '1996-12-19T16:39:57+00:00',
++        '2024-01-15T08:30:00+00:00',
++      ])
++    })
++  })
++
++  describe('normalize_timestamptz', () => {
++    const parse = getParser(ScalarColumnType.TIMESTAMPTZ)
++
++    test('normalizes positive offset to UTC', () => {
++      expect(parse('1996-12-19 16:39:57+05:30')).toBe('1996-12-19T16:39:57+00:00')
++    })
++
++    test('normalizes negative offset to UTC', () => {
++      expect(parse('2024-01-15 08:30:00-08:00')).toBe('2024-01-15T08:30:00+00:00')
++    })
++
++    test('normalizes short offset format', () => {
++      expect(parse('2024-01-15 08:30:00+05')).toBe('2024-01-15T08:30:00+00:00')
++    })
++
++    test('supports arrays of timestamptz', () => {
++      expect(
++        getParser(ArrayColumnType.TIMESTAMPTZ_ARRAY)('{1996-12-19 16:39:57+05:30,2024-01-15 08:30:00-08:00}'),
++      ).toEqual(['1996-12-19T16:39:57+00:00', '2024-01-15T08:30:00+00:00'])
++    })
++  })
++
++  describe('normalize_timez', () => {
++    const parse = getParser(ScalarColumnType.TIMETZ)
++
++    test('strips timezone offset', () => {
++      expect(parse('16:39:57+05:30')).toBe('16:39:57')
++    })
++
++    test('strips negative offset', () => {
++      expect(parse('08:30:00-08:00')).toBe('08:30:00')
++    })
++  })
++
++  describe('normalize_money', () => {
++    const parse = getParser(ScalarColumnType.MONEY)
++
++    test('strips leading currency symbol', () => {
++      expect(parse('$1234.56')).toBe('1234.56')
++    })
++
++    test('supports arrays of money', () => {
++      expect(getParser(ArrayColumnType.MONEY_ARRAY)('{$1234.56,$7890.12}')).toEqual(['1234.56', '7890.12'])
++    })
++  })
++
++  describe('normalize_bool', () => {
++    const parse = getParser(ScalarColumnType.BOOL)
++
++    test('converts f to false', () => {
++      expect(parse('f')).toBe('false')
++    })
++
++    test('converts t to true', () => {
++      expect(parse('t')).toBe('true')
++    })
++  })
++
++  describe('convertBytes', () => {
++    const parse = getParser(ScalarColumnType.BYTEA)
++
++    test('converts base64 string to Buffer', () => {
++      const result = parse('aGVsbG8=')
++      expect(Buffer.isBuffer(result)).toBe(true)
++      expect(result!.toString('utf8')).toBe('hello')
++    })
++
++    test('supports arrays of bytea', () => {
++      const result = getParser(ArrayColumnType.BYTEA_ARRAY)('{aGVsbG8=,NULL}')
++      expect(Array.isArray(result)).toBe(true)
++      expect(result!.length).toBe(2)
++      expect(Buffer.isBuffer(result![0])).toBe(true)
++      expect(result![0]!.toString()).toBe('aGVsbG8=')
++      expect(result![1]).toBeNull()
++    })
++  })
++})
+diff --git a/packages/adapter-ppg/src/conversion.ts b/packages/adapter-ppg/src/conversion.ts
+index 19edcce0984d..819520538990 100644
+--- a/packages/adapter-ppg/src/conversion.ts
++++ b/packages/adapter-ppg/src/conversion.ts
+@@ -149,7 +149,7 @@ export const ScalarColumnType = {
+  * See the semantics of each of this code in:
+  *   https://github.com/postgres/postgres/blob/master/src/include/catalog/pg_type.dat
+  */
+-const ArrayColumnType = {
++export const ArrayColumnType = {
+   BIT_ARRAY: 1561,
+   BOOL_ARRAY: 1000,
+   BYTEA_ARRAY: 1001,
+@@ -306,12 +306,17 @@ export const builtinParsers = Object.entries({
+   parse: v,
+ }))
+ 
+-function normalize_bool(x: string) {
++function normalize_bool(x: string | null) {
+   return x === null ? null : x === 'f' ? 'false' : 'true'
+ }
+ 
+-function normalize_array(element_normalizer: (x: string) => string): (str: string) => string[] {
+-  return (str) => parseArray(str, element_normalizer)
++function normalize_array(
++  element_normalizer: (x: string) => string | null,
++): (str: string | null) => (string | null)[] | null {
++  return (str) => {
++    if (str === null) return null
++    return parseArray(str, element_normalizer)
++  }
+ }
+ 
+ /****************************/
+@@ -339,11 +344,13 @@ function normalize_date(date: string): string {
+  * ex: 1996-12-19T16:39:57-08:00
+  */
+ 
+-function normalize_timestamp(time: string): string {
++function normalize_timestamp(time: string | null): string | null {
++  if (time === null) return null
+   return `${time.replace(' ', 'T')}+00:00`
+ }
+ 
+-function normalize_timestamptz(time: string): string {
++function normalize_timestamptz(time: string | null): string | null {
++  if (time === null) return null
+   return time.replace(' ', 'T').replace(/[+-]\d{2}(:\d{2})?$/, '+00:00')
+ }
+ 
+@@ -355,7 +362,8 @@ function normalize_time(time: string): string {
+   return time
+ }
+ 
+-function normalize_timez(time: string): string {
++function normalize_timez(time: string | null): string | null {
++  if (time === null) return null
+   // Although it might be controversial, UTC is assumed in consistency with the behavior of rust postgres driver
+   // in quaint. See quaint/src/connector/postgres/conversion.rs
+   return time.replace(/[+-]\d{2}(:\d{2})?$/, '')
+@@ -365,7 +373,8 @@ function normalize_timez(time: string): string {
+ /* Money handling */
+ /******************/
+ 
+-function normalize_money(money: string): string {
++function normalize_money(money: string | null): string | null {
++  if (money === null) return null
+   return money.slice(1)
+ }
+ 
+@@ -405,11 +414,13 @@ const builtInByteParser = getTypeParser(ScalarColumnType.BYTEA) as (_: string) =
+ /*
+  * BYTEA_ARRAY - arrays of arbitrary raw binary strings
+  */
+-function normalizeByteaArray(x: string) {
+-  return parseArray(x).map(builtInByteParser)
++function normalizeByteaArray(x: string | null): (Buffer | null)[] | null {
++  if (x === null) return null
++  return parseArray(x).map((elem) => (elem === null ? null : builtInByteParser(elem)))
+ }
+ 
+-function convertBytes(serializedBytes: string): Buffer {
++function convertBytes(serializedBytes: string | null): Buffer | null {
++  if (serializedBytes === null) return null
+   return parsePgBytes(serializedBytes)
+ }
+ 

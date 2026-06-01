@@ -1,0 +1,1725 @@
+diff --git a/docs/src/app/components/pages/components/Slider/ExampleAxis.js b/docs/src/app/components/pages/components/Slider/ExampleAxis.js
+index 94388c2ad14cb0..e19376b6ee2826 100644
+--- a/docs/src/app/components/pages/components/Slider/ExampleAxis.js
++++ b/docs/src/app/components/pages/components/Slider/ExampleAxis.js
+@@ -1,11 +1,20 @@
+ import React from 'react';
+ import Slider from 'material-ui/Slider';
+ 
++const styles = {
++  root: {
++    display: 'flex',
++    height: 124,
++    flexDirection: 'row',
++    justifyContent: 'space-around',
++  },
++};
++
+ /**
+  * The orientation of the slider can be reversed and rotated using the `axis` prop.
+  */
+ const SliderExampleAxis = () => (
+-  <div style={{display: 'flex', height: 124, flexDirection: 'row', justifyContent: 'space-around'}}>
++  <div style={styles.root}>
+     <Slider style={{height: 100}} axis="y" defaultValue={0.5} />
+     <Slider style={{width: 200}} axis="x-reverse" />
+     <Slider style={{height: 100}} axis="y-reverse" defaultValue={1} />
+diff --git a/docs/src/app/components/pages/components/Slider/ExampleControlled.js b/docs/src/app/components/pages/components/Slider/ExampleControlled.js
+index 60dabd404f74d7..4aef55a00c1c23 100644
+--- a/docs/src/app/components/pages/components/Slider/ExampleControlled.js
++++ b/docs/src/app/components/pages/components/Slider/ExampleControlled.js
+@@ -1,24 +1,23 @@
+-import React from 'react';
++import React, {Component} from 'react';
+ import Slider from 'material-ui/Slider';
+ 
+ /**
+  * The slider bar can have a set minimum and maximum, and the value can be
+  * obtained through the value parameter fired on an onChange event.
+  */
+-export default class SliderExampleControlled extends React.Component {
+-
++export default class SliderExampleControlled extends Component {
+   state = {
+     firstSlider: 0.5,
+     secondSlider: 50,
+-  }
++  };
+ 
+-  handleFirstSlider(event, value) {
++  handleFirstSlider = (event, value) => {
+     this.setState({firstSlider: value});
+-  }
++  };
+ 
+-  handleSecondSlider(event, value) {
++  handleSecondSlider = (event, value) => {
+     this.setState({secondSlider: value});
+-  }
++  };
+ 
+   render() {
+     return (
+@@ -26,7 +25,7 @@ export default class SliderExampleControlled extends React.Component {
+         <Slider
+           defaultValue={0.5}
+           value={this.state.firstSlider}
+-          onChange={this.handleFirstSlider.bind(this)}
++          onChange={this.handleFirstSlider}
+         />
+         <p>
+           <span>{'The value of this slider is: '}</span>
+@@ -39,7 +38,7 @@ export default class SliderExampleControlled extends React.Component {
+           step={1}
+           defaultValue={50}
+           value={this.state.secondSlider}
+-          onChange={this.handleSecondSlider.bind(this)}
++          onChange={this.handleSecondSlider}
+         />
+         <p>
+           <span>{'The value of this slider is: '}</span>
+@@ -49,5 +48,4 @@ export default class SliderExampleControlled extends React.Component {
+       </div>
+     );
+   }
+-
+ }
+diff --git a/docs/src/app/components/pages/components/Slider/ExampleSimple.js b/docs/src/app/components/pages/components/Slider/ExampleSimple.js
+index d4235ce88a1d7a..8c5978a3b84100 100644
+--- a/docs/src/app/components/pages/components/Slider/ExampleSimple.js
++++ b/docs/src/app/components/pages/components/Slider/ExampleSimple.js
+@@ -2,8 +2,8 @@ import React from 'react';
+ import Slider from 'material-ui/Slider';
+ 
+ /**
+- * The `defaultValue` property sets the initial position of the slider. The slider
+- * appearance changes when not at the starting position.
++ * The `defaultValue` property sets the initial position of the slider.
++ * The slider appearance changes when not at the starting position.
+  */
+ const SliderExampleSimple = () => (
+   <div>
+diff --git a/docs/src/app/components/pages/components/Slider/ExampleStep.js b/docs/src/app/components/pages/components/Slider/ExampleStep.js
+index 7046dcc7870816..2c7ba16d29fff4 100644
+--- a/docs/src/app/components/pages/components/Slider/ExampleStep.js
++++ b/docs/src/app/components/pages/components/Slider/ExampleStep.js
+@@ -2,10 +2,11 @@ import React from 'react';
+ import Slider from 'material-ui/Slider';
+ 
+ /**
+- * By default, the slider is continuous. The `step` property causes the slider to move in discrete increments.
++ * By default, the slider is continuous.
++ * The `step` property causes the slider to move in discrete increments.
+  */
+ const SliderExampleStep = () => (
+-  <Slider step={0.10} value={.5} />
++  <Slider step={0.10} value={0.5} />
+ );
+ 
+ export default SliderExampleStep;
+diff --git a/docs/src/app/components/pages/components/Slider/Page.js b/docs/src/app/components/pages/components/Slider/Page.js
+index 27a3286d43215b..558baf4c70cf64 100644
+--- a/docs/src/app/components/pages/components/Slider/Page.js
++++ b/docs/src/app/components/pages/components/Slider/Page.js
+@@ -46,14 +46,12 @@ const SliderPage = () => (
+     >
+       <SliderExampleControlled />
+     </CodeExample>
+-
+     <CodeExample
+       title="Alternative Axis Examples"
+       code={sliderExampleAxisCode}
+     >
+       <SliderExampleAxis />
+     </CodeExample>
+-
+     <PropTypeDescription code={sliderCode} />
+   </div>
+ );
+diff --git a/src/Slider/Slider.js b/src/Slider/Slider.js
+index b8203a0fcece69..4b87a233285e97 100644
+--- a/src/Slider/Slider.js
++++ b/src/Slider/Slider.js
+@@ -1,7 +1,9 @@
+ import React, {Component, PropTypes} from 'react';
+ import keycode from 'keycode';
++import warning from 'warning';
+ import transitions from '../styles/transitions';
+ import FocusRipple from '../internal/FocusRipple';
++import deprecated from '../utils/deprecatedPropType';
+ 
+ /**
+  * Verifies min/max range.
+@@ -12,7 +14,9 @@ import FocusRipple from '../internal/FocusRipple';
+  */
+ const minMaxPropType = (props, propName, componentName, ...rest) => {
+   const error = PropTypes.number(props, propName, componentName, ...rest);
+-  if (error !== null) return error;
++  if (error !== null) {
++    return error;
++  }
+ 
+   if (props.min >= props.max) {
+     const errorMsg = (propName === 'min') ? 'min should be less than max' : 'max should be greater than min';
+@@ -29,7 +33,9 @@ const minMaxPropType = (props, propName, componentName, ...rest) => {
+  */
+ const valueInRangePropType = (props, propName, componentName, ...rest) => {
+   const error = PropTypes.number(props, propName, componentName, ...rest);
+-  if (error !== null) return error;
++  if (error !== null) {
++    return error;
++  }
+ 
+   const value = props[propName];
+   if (value < props.min || props.max < value) {
+@@ -102,19 +108,49 @@ const reverseMainAxisOffsetProperty = {
+ 
+ const isMouseControlInverted = (axis) => axis === 'x-reverse' || axis === 'y';
+ 
++function getPercent(value, min, max) {
++  let percent = (value - min) / (max - min);
++  if (isNaN(percent)) {
++    percent = 0;
++  }
++
++  return percent;
++}
++
+ const getStyles = (props, context, state) => {
+-  const {slider} = context.muiTheme;
+-  const fillGutter = slider.handleSize / 2;
+-  const disabledGutter = slider.trackSize + slider.handleSizeDisabled / 2;
+-  const calcDisabledSpacing = props.disabled ? ` - ${disabledGutter}px` : '';
+-  const axis = props.axis;
++  const {
++    axis,
++    disabled,
++    max,
++    min,
++  } = props;
++
++  const {
++    slider: {
++      handleColorZero,
++      handleFillColor,
++      handleSize,
++      handleSizeDisabled,
++      handleSizeActive,
++      trackSize,
++      trackColor,
++      trackColorSelected,
++      rippleColor,
++      selectionColor,
++    },
++  } = context.muiTheme;
++
++  const fillGutter = handleSize / 2;
++  const disabledGutter = trackSize + handleSizeDisabled / 2;
++  const calcDisabledSpacing = disabled ? ` - ${disabledGutter}px` : '';
++  const percent = getPercent(state.value, min, max);
+ 
+   const styles = {
+     slider: {
+       touchCallout: 'none',
+       userSelect: 'none',
+       cursor: 'default',
+-      [crossAxisProperty[axis]]: slider.handleSizeActive,
++      [crossAxisProperty[axis]]: handleSizeActive,
+       [mainAxisProperty[axis]]: '100%',
+       position: 'relative',
+       marginTop: 24,
+@@ -122,10 +158,10 @@ const getStyles = (props, context, state) => {
+     },
+     track: {
+       position: 'absolute',
+-      [crossAxisOffsetProperty[axis]]: (slider.handleSizeActive - slider.trackSize) / 2,
++      [crossAxisOffsetProperty[axis]]: (handleSizeActive - trackSize) / 2,
+       [mainAxisOffsetProperty[axis]]: 0,
+       [mainAxisProperty[axis]]: '100%',
+-      [crossAxisProperty[axis]]: slider.trackSize,
++      [crossAxisProperty[axis]]: trackSize,
+     },
+     filledAndRemaining: {
+       position: 'absolute',
+@@ -139,17 +175,17 @@ const getStyles = (props, context, state) => {
+       cursor: 'pointer',
+       pointerEvents: 'inherit',
+       [crossAxisOffsetProperty[axis]]: 0,
+-      [mainAxisOffsetProperty[axis]]: state.percent === 0 ? '0%' : `${(state.percent * 100)}%`,
++      [mainAxisOffsetProperty[axis]]: percent === 0 ? '0%' : `${(percent * 100)}%`,
+       zIndex: 1,
+       margin: ({
+-        x: `${(slider.trackSize / 2)}px 0 0 0`,
+-        'x-reverse': `${(slider.trackSize / 2)}px 0 0 0`,
+-        y: `0 0 0 ${(slider.trackSize / 2)}px`,
+-        'y-reverse': `0 0 0 ${(slider.trackSize / 2)}px`,
+-      })[props.axis],
+-      width: slider.handleSize,
+-      height: slider.handleSize,
+-      backgroundColor: slider.selectionColor,
++        x: `${(trackSize / 2)}px 0 0 0`,
++        'x-reverse': `${(trackSize / 2)}px 0 0 0`,
++        y: `0 0 0 ${(trackSize / 2)}px`,
++        'y-reverse': `0 0 0 ${(trackSize / 2)}px`,
++      })[axis],
++      width: handleSize,
++      height: handleSize,
++      backgroundColor: selectionColor,
+       backgroundClip: 'padding-box',
+       border: '0px solid transparent',
+       borderRadius: '50%',
+@@ -158,7 +194,7 @@ const getStyles = (props, context, state) => {
+         'x-reverse': 'translate(50%, -50%)',
+         y: 'translate(-50%, 50%)',
+         'y-reverse': 'translate(-50%, -50%)',
+-      })[props.axis],
++      })[axis],
+       transition:
+         `${transitions.easeOut('450ms', 'background')}, ${
+         transitions.easeOut('450ms', 'border-color')}, ${
+@@ -170,59 +206,59 @@ const getStyles = (props, context, state) => {
+     handleWhenDisabled: {
+       boxSizing: 'content-box',
+       cursor: 'not-allowed',
+-      backgroundColor: slider.trackColor,
+-      width: slider.handleSizeDisabled,
+-      height: slider.handleSizeDisabled,
++      backgroundColor: trackColor,
++      width: handleSizeDisabled,
++      height: handleSizeDisabled,
+       border: 'none',
+     },
+     handleWhenPercentZero: {
+-      border: `${slider.trackSize}px solid ${slider.handleColorZero}`,
+-      backgroundColor: slider.handleFillColor,
++      border: `${trackSize}px solid ${handleColorZero}`,
++      backgroundColor: handleFillColor,
+       boxShadow: 'none',
+     },
+     handleWhenPercentZeroAndDisabled: {
+       cursor: 'not-allowed',
+-      width: slider.handleSizeDisabled,
+-      height: slider.handleSizeDisabled,
++      width: handleSizeDisabled,
++      height: handleSizeDisabled,
+     },
+     handleWhenPercentZeroAndFocused: {
+-      border: `${slider.trackSize}px solid ${slider.trackColorSelected}`,
++      border: `${trackSize}px solid ${trackColorSelected}`,
+     },
+     handleWhenActive: {
+-      width: slider.handleSizeActive,
+-      height: slider.handleSizeActive,
++      width: handleSizeActive,
++      height: handleSizeActive,
+     },
+     ripple: {
+-      height: slider.handleSize,
+-      width: slider.handleSize,
++      height: handleSize,
++      width: handleSize,
+       overflow: 'visible',
+     },
+     rippleWhenPercentZero: {
+-      top: -slider.trackSize,
+-      left: -slider.trackSize,
++      top: -trackSize,
++      left: -trackSize,
+     },
+     rippleInner: {
+       height: '300%',
+       width: '300%',
+-      top: -slider.handleSize,
+-      left: -slider.handleSize,
++      top: -handleSize,
++      left: -handleSize,
+     },
+     rippleColor: {
+-      fill: state.percent === 0 ? slider.handleColorZero : slider.rippleColor,
++      fill: percent === 0 ? handleColorZero : rippleColor,
+     },
+   };
+   styles.filled = Object.assign({}, styles.filledAndRemaining, {
+     [mainAxisOffsetProperty[axis]]: 0,
+-    backgroundColor: (props.disabled) ? slider.trackColor : slider.selectionColor,
++    backgroundColor: disabled ? trackColor : selectionColor,
+     [mainAxisMarginFromEnd[axis]]: fillGutter,
+-    [mainAxisProperty[axis]]: `calc(${(state.percent * 100)}%${calcDisabledSpacing})`,
++    [mainAxisProperty[axis]]: `calc(${(percent * 100)}%${calcDisabledSpacing})`,
+   });
+   styles.remaining = Object.assign({}, styles.filledAndRemaining, {
+     [reverseMainAxisOffsetProperty[axis]]: 0,
+     backgroundColor: (state.hovered || state.focused) &&
+-      !props.disabled ? slider.trackColorSelected : slider.trackColor,
++      !disabled ? trackColorSelected : trackColor,
+     [mainAxisMarginFromStart[axis]]: fillGutter,
+-    [mainAxisProperty[axis]]: `calc(${((1 - state.percent) * 100)}%${calcDisabledSpacing})`,
++    [mainAxisProperty[axis]]: `calc(${((1 - percent) * 100)}%${calcDisabledSpacing})`,
+   });
+ 
+   return styles;
+@@ -241,7 +277,7 @@ class Slider extends Component {
+     /**
+      * Describe the slider.
+      */
+-    description: PropTypes.string,
++    description: deprecated(PropTypes.node, 'Use a sibling node element instead. It will be removed with v0.17.0.'),
+     /**
+      * Disables focus ripple if set to true.
+      */
+@@ -253,7 +289,7 @@ class Slider extends Component {
+     /**
+      * An error message for the slider.
+      */
+-    error: PropTypes.string,
++    error: deprecated(PropTypes.node, 'Use a sibling node element instead. It will be removed with v0.17.0.'),
+     /**
+      * The maximum value the slider can slide to on
+      * a scale from 0 to 1 inclusive. Cannot be equal to min.
+@@ -327,61 +363,52 @@ class Slider extends Component {
+     dragging: false,
+     focused: false,
+     hovered: false,
+-    percent: 0,
+     value: 0,
+   };
+ 
+   componentWillMount() {
+-    let value = this.props.value;
++    const {
++      value: valueProp,
++      defaultValue,
++      min,
++      max,
++    } = this.props;
++
++    let value = valueProp;
+     if (value === undefined) {
+-      value = this.props.defaultValue !== undefined ? this.props.defaultValue : this.props.min;
++      value = defaultValue !== undefined ? defaultValue : min;
+     }
+-    let percent = (value - this.props.min) / (this.props.max - this.props.min);
+-    if (isNaN(percent)) {
+-      percent = 0;
++
++    if (value > max) {
++      value = max;
++    } else if (value < min) {
++      value = min;
+     }
+ 
+     this.setState({
+-      percent: percent,
+       value: value,
+     });
+   }
+ 
+   componentWillReceiveProps(nextProps) {
+     if (nextProps.value !== undefined && !this.state.dragging) {
+-      this.setValue(nextProps.value, nextProps.min, nextProps.max);
++      this.setState({
++        value: nextProps.value,
++      });
+     }
+   }
+ 
+-  onHandleTouchStart = (event) => {
+-    if (document) {
+-      document.addEventListener('touchmove', this.dragTouchHandler, false);
+-      document.addEventListener('touchup', this.dragTouchEndHandler, false);
+-      document.addEventListener('touchend', this.dragTouchEndHandler, false);
+-      document.addEventListener('touchcancel', this.dragTouchEndHandler, false);
+-    }
+-    this.onDragStart(event);
++  track = null;
++  handle = null;
+ 
+-    // Cancel scroll and context menu
+-    event.preventDefault();
+-  };
+-
+-  onHandleMouseDown = (event) => {
+-    if (document) {
+-      document.addEventListener('mousemove', this.dragHandler, false);
+-      document.addEventListener('mouseup', this.dragEndHandler, false);
+-
+-      // Cancel text selection
+-      event.preventDefault();
+-
+-      // Set focus manually since we called preventDefault()
+-      this.refs.handle.focus();
+-    }
+-    this.onDragStart(event);
+-  };
++  handleKeyDown = (event) => {
++    const {
++      axis,
++      min,
++      max,
++      step,
++    } = this.props;
+ 
+-  onHandleKeyDown = (event) => {
+-    const {axis, min, max, step} = this.props;
+     let action;
+ 
+     switch (keycode(event)) {
+@@ -416,164 +443,126 @@ class Slider extends Component {
+         }
+         break;
+       case 'home':
+-        action = 'home';
++        action = 'min';
+         break;
+       case 'end':
+-        action = 'end';
++        action = 'max';
+         break;
+     }
+ 
+     if (action) {
+       let newValue;
+-      let newPercent;
+ 
+       // Cancel scroll
+       event.preventDefault();
+ 
+-      // When pressing home or end the handle should be taken to the
+-      // beginning or end of the track respectively
+       switch (action) {
+         case 'decrease':
+-          newValue = Math.max(min, this.state.value - step);
+-          newPercent = (newValue - min) / (max - min);
++          newValue = this.state.value - step;
+           break;
+         case 'increase':
+-          newValue = Math.min(max, this.state.value + step);
+-          newPercent = (newValue - min) / (max - min);
++          newValue = this.state.value + step;
+           break;
+-        case 'home':
++        case 'min':
+           newValue = min;
+-          newPercent = 0;
+           break;
+-        case 'end':
++        case 'max':
+           newValue = max;
+-          newPercent = 1;
+           break;
+       }
+ 
+       // We need to use toFixed() because of float point errors.
+       // For example, 0.01 + 0.06 = 0.06999999999999999
++      newValue = parseFloat(newValue.toFixed(5));
++
++      if (newValue > max) {
++        newValue = max;
++      } else if (newValue < min) {
++        newValue = min;
++      }
++
+       if (this.state.value !== newValue) {
+         this.setState({
+-          percent: newPercent,
+-          value: parseFloat(newValue.toFixed(5)),
+-        }, () => {
+-          if (this.props.onChange) this.props.onChange(event, this.state.value);
++          value: newValue,
+         });
++
++        if (this.props.onChange) {
++          this.props.onChange(event, newValue);
++        }
+       }
+     }
+   };
+ 
+-  dragHandler = (event) => {
+-    if (this.dragRunning) {
+-      return;
+-    }
+-    this.dragRunning = true;
+-    requestAnimationFrame(() => {
+-      let pos;
+-      if (isMouseControlInverted(this.props.axis)) {
+-        pos = this.getTrackOffset() - event[mainAxisClientOffsetProperty[this.props.axis]];
+-      } else {
+-        pos = event[mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
+-      }
+-      this.onDragUpdate(event, pos);
+-      this.dragRunning = false;
+-    });
++  handleDragMouseMove = (event) => {
++    this.onDragUpdate(event, 'mouse');
+   };
+ 
+-  dragTouchHandler = (event) => {
+-    if (this.dragRunning) {
+-      return;
+-    }
+-    this.dragRunning = true;
+-    requestAnimationFrame(() => {
+-      let pos;
+-      if (isMouseControlInverted(this.props.axis)) {
+-        pos = this.getTrackOffset() - event.touches[0][mainAxisClientOffsetProperty[this.props.axis]];
+-      } else {
+-        pos = event.touches[0][mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
+-      }
+-      this.onDragUpdate(event, pos);
+-      this.dragRunning = false;
+-    });
++  handleTouchMove = (event) => {
++    this.onDragUpdate(event, 'touch');
+   };
+ 
+-  dragEndHandler = (event) => {
+-    if (document) {
+-      document.removeEventListener('mousemove', this.dragHandler, false);
+-      document.removeEventListener('mouseup', this.dragEndHandler, false);
+-    }
++  handleMouseEnd = (event) => {
++    document.removeEventListener('mousemove', this.handleDragMouseMove);
++    document.removeEventListener('mouseup', this.handleMouseEnd);
+ 
+     this.onDragStop(event);
+   };
+ 
+-  dragTouchEndHandler = (event) => {
+-    if (document) {
+-      document.removeEventListener('touchmove', this.dragTouchHandler, false);
+-      document.removeEventListener('touchup', this.dragTouchEndHandler, false);
+-      document.removeEventListener('touchend', this.dragTouchEndHandler, false);
+-      document.removeEventListener('touchcancel', this.dragTouchEndHandler, false);
+-    }
++  handleTouchEnd = (event) => {
++    document.removeEventListener('touchmove', this.handleTouchMove);
++    document.removeEventListener('touchup', this.handleTouchEnd);
++    document.removeEventListener('touchend', this.handleTouchEnd);
++    document.removeEventListener('touchcancel', this.handleTouchEnd);
+ 
+     this.onDragStop(event);
+   };
+ 
+   getValue() {
++    warning(false, `Material-UI Slider: getValue() method is deprecated.
++      Use the onChange callbacks instead.
++      It will be removed with v0.17.0.`);
++
+     return this.state.value;
+   }
+ 
+-  setValue(value, min, max) {
+-    // calculate percentage
+-    let percent = (value - min) / (max - min);
+-    if (isNaN(percent)) percent = 0;
+-    // update state
++  clearValue() {
++    warning(false, `Material-UI Slider: clearValue() method is deprecated.
++      Use the value property to control the component instead.
++      It will be removed with v0.17.0.`);
++
+     this.setState({
+-      value: value,
+-      percent: percent,
++      value: this.props.min,
+     });
+   }
+ 
+-  getPercent() {
+-    return this.state.percent;
+-  }
++  handleTouchStart = (event) => {
++    if (this.props.disabled) {
++      return;
++    }
+ 
+-  setPercent(percent, callback) {
+-    const value = this.alignValue(this.percentToValue(percent));
+-    const {min, max} = this.props;
+-    const alignedPercent = (value - min) / (max - min);
+-    if (this.state.value !== value) {
+-      this.setState({value: value, percent: alignedPercent}, callback);
++    let position;
++    if (isMouseControlInverted(this.props.axis)) {
++      position = this.getTrackOffset() - event.touches[0][mainAxisClientOffsetProperty[this.props.axis]];
++    } else {
++      position = event.touches[0][mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
+     }
+-  }
++    this.setValueFromPosition(event, position);
+ 
+-  clearValue() {
+-    this.setValue(this.props.min, this.props.min, this.props.max);
+-  }
++    document.addEventListener('touchmove', this.handleTouchMove);
++    document.addEventListener('touchup', this.handleTouchEnd);
++    document.addEventListener('touchend', this.handleTouchEnd);
++    document.addEventListener('touchcancel', this.handleTouchEnd);
+ 
+-  alignValue(val) {
+-    const {step, min} = this.props;
+-    const alignValue = Math.round((val - min) / step) * step + min;
+-    return parseFloat(alignValue.toFixed(5));
+-  }
+-
+-  handleTouchStart = (event) => {
+-    if (!this.props.disabled && !this.state.dragging) {
+-      let pos;
+-      if (isMouseControlInverted(this.props.axis)) {
+-        pos = this.getTrackOffset() - event.touches[0][mainAxisClientOffsetProperty[this.props.axis]];
+-      } else {
+-        pos = event.touches[0][mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
+-      }
+-      this.dragTo(event, pos);
++    this.onDragStart(event);
+ 
+-      // Since the touch event fired for the track and handle is child of
+-      // track, we need to manually propagate the event to the handle.
+-      this.onHandleTouchStart(event);
+-    }
++    // Cancel scroll and context menu
++    event.preventDefault();
+   };
+ 
+   handleFocus = (event) => {
+-    this.setState({focused: true});
++    this.setState({
++      focused: true,
++    });
+ 
+     if (this.props.onFocus) {
+       this.props.onFocus(event);
+@@ -592,37 +581,52 @@ class Slider extends Component {
+   };
+ 
+   handleMouseDown = (event) => {
+-    if (!this.props.disabled && !this.state.dragging) {
+-      let pos;
+-      if (isMouseControlInverted(this.props.axis)) {
+-        pos = this.getTrackOffset() - event[mainAxisClientOffsetProperty[this.props.axis]];
+-      } else {
+-        pos = event[mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
+-      }
+-      this.dragTo(event, pos);
++    if (this.props.disabled) {
++      return;
++    }
+ 
+-      // Since the click event fired for the track and handle is child of
+-      // track, we need to manually propagate the event to the handle.
+-      this.onHandleMouseDown(event);
++    let position;
++    if (isMouseControlInverted(this.props.axis)) {
++      position = this.getTrackOffset() - event[mainAxisClientOffsetProperty[this.props.axis]];
++    } else {
++      position = event[mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
+     }
++    this.setValueFromPosition(event, position);
++
++    document.addEventListener('mousemove', this.handleDragMouseMove);
++    document.addEventListener('mouseup', this.handleMouseEnd);
++
++    // Cancel text selection
++    event.preventDefault();
++
++    // Set focus manually since we called preventDefault()
++    this.handle.focus();
++
++    this.onDragStart(event);
+   };
+ 
+   handleMouseUp = () => {
+     if (!this.props.disabled) {
+-      this.setState({active: false});
++      this.setState({
++        active: false,
++      });
+     }
+   };
+ 
+   handleMouseEnter = () => {
+-    this.setState({hovered: true});
++    this.setState({
++      hovered: true,
++    });
+   };
+ 
+   handleMouseLeave = () => {
+-    this.setState({hovered: false});
++    this.setState({
++      hovered: false,
++    });
+   };
+ 
+   getTrackOffset() {
+-    return this.refs.track.getBoundingClientRect()[mainAxisOffsetProperty[this.props.axis]];
++    return this.track.getBoundingClientRect()[mainAxisOffsetProperty[this.props.axis]];
+   }
+ 
+   onDragStart(event) {
+@@ -636,6 +640,30 @@ class Slider extends Component {
+     }
+   }
+ 
++  onDragUpdate(event, type) {
++    if (this.dragRunning) {
++      return;
++    }
++    this.dragRunning = true;
++
++    requestAnimationFrame(() => {
++      this.dragRunning = false;
++
++      const source = type === 'touch' ? event.touches[0] : event;
++
++      let position;
++      if (isMouseControlInverted(this.props.axis)) {
++        position = this.getTrackOffset() - source[mainAxisClientOffsetProperty[this.props.axis]];
++      } else {
++        position = source[mainAxisClientOffsetProperty[this.props.axis]] - this.getTrackOffset();
++      }
++
++      if (!this.props.disabled) {
++        this.setValueFromPosition(event, position);
++      }
++    });
++  }
++
+   onDragStop(event) {
+     this.setState({
+       dragging: false,
+@@ -647,35 +675,40 @@ class Slider extends Component {
+     }
+   }
+ 
+-  onDragUpdate(event, pos) {
+-    if (!this.state.dragging) {
+-      return;
++  setValueFromPosition(event, position) {
++    const positionMax = this.track[mainAxisClientProperty[this.props.axis]];
++    if (position < 0) {
++      position = 0;
++    } else if (position > positionMax) {
++      position = positionMax;
+     }
+-    if (!this.props.disabled) {
+-      this.dragTo(event, pos);
+-    }
+-  }
+ 
+-  dragTo(event, pos) {
+-    const max = this.refs.track[mainAxisClientProperty[this.props.axis]];
+-    if (pos < 0) {
+-      pos = 0;
+-    } else if (pos > max) {
+-      pos = max;
++    const {
++      step,
++      min,
++      max,
++    } = this.props;
++
++    let value;
++    value = position / positionMax * (max - min);
++    value = Math.round(value / step) * step + min;
++    value = parseFloat(value.toFixed(5));
++
++    if (value > max) {
++      value = max;
++    } else if (value < min) {
++      value = min;
+     }
+-    this.updateWithChangeEvent(event, pos / max);
+-  }
+ 
+-  updateWithChangeEvent(event, percent) {
+-    this.setPercent(percent, () => {
++    if (this.state.value !== value) {
++      this.setState({
++        value: value,
++      });
++
+       if (this.props.onChange) {
+-        this.props.onChange(event, this.state.value);
++        this.props.onChange(event, value);
+       }
+-    });
+-  }
+-
+-  percentToValue(percent) {
+-    return percent * (this.props.max - this.props.min) + this.props.min;
++    }
+   }
+ 
+   render() {
+@@ -700,24 +733,25 @@ class Slider extends Component {
+       ...other,
+     } = this.props;
+ 
++    const {
++      active,
++      focused,
++      hovered,
++      value,
++    } = this.state;
++
+     const {prepareStyles} = this.context.muiTheme;
+     const styles = getStyles(this.props, this.context, this.state);
++    const percent = getPercent(value, min, max);
+ 
+     let handleStyles = {};
+-    let percent = this.state.percent;
+-    if (percent > 1) {
+-      percent = 1;
+-    } else if (percent < 0) {
+-      percent = 0;
+-    }
+-
+     if (percent === 0) {
+       handleStyles = Object.assign(
+         {},
+         styles.handle,
+         styles.handleWhenPercentZero,
+-        this.state.active && styles.handleWhenActive,
+-        (this.state.hovered || this.state.focused) && !disabled &&
++        active && styles.handleWhenActive,
++        (hovered || focused) && !disabled &&
+         styles.handleWhenPercentZeroAndFocused,
+         disabled && styles.handleWhenPercentZeroAndDisabled
+       );
+@@ -725,7 +759,7 @@ class Slider extends Component {
+       handleStyles = Object.assign(
+         {},
+         styles.handle,
+-        this.state.active && styles.handleWhenActive,
++        active && styles.handleWhenActive,
+         disabled && styles.handleWhenDisabled
+       );
+     }
+@@ -736,38 +770,12 @@ class Slider extends Component {
+       percent === 0 && styles.rippleWhenPercentZero
+     );
+ 
+-    const rippleShowCondition = (this.state.hovered || this.state.focused) && !this.state.active;
+-
+-    let focusRipple;
+-    if (!disabled && !disableFocusRipple) {
+-      focusRipple = (
+-        <FocusRipple
+-          ref="focusRipple"
+-          key="focusRipple"
+-          style={rippleStyle}
+-          innerStyle={styles.rippleInner}
+-          show={rippleShowCondition}
+-          muiTheme={this.context.muiTheme}
+-          color={styles.rippleColor.fill}
+-        />
+-      );
+-    }
+-
+-    let handleDragProps;
+-    if (!disabled) {
+-      handleDragProps = {
+-        onTouchStart: this.onHandleTouchStart,
+-        onMouseDown: this.onHandleMouseDown,
+-        onKeyDown: this.onHandleKeyDown,
+-      };
+-    }
+-
+     return (
+       <div {...other} style={prepareStyles(Object.assign({}, style))}>
+         <span>{description}</span>
+         <span>{error}</span>
+         <div
+-          style={prepareStyles(Object.assign(styles.slider, sliderStyle))}
++          style={prepareStyles(Object.assign({}, styles.slider, sliderStyle))}
+           onFocus={this.handleFocus}
+           onBlur={this.handleBlur}
+           onMouseDown={this.handleMouseDown}
+@@ -775,25 +783,31 @@ class Slider extends Component {
+           onMouseLeave={this.handleMouseLeave}
+           onMouseUp={this.handleMouseUp}
+           onTouchStart={this.handleTouchStart}
++          onKeyDown={!disabled && this.handleKeyDown}
+         >
+-          <div ref="track" style={prepareStyles(styles.track)}>
+-            <div style={prepareStyles(styles.filled)}></div>
+-            <div style={prepareStyles(styles.remaining)}></div>
++          <div ref={(node) => this.track = node} style={prepareStyles(styles.track)}>
++            <div style={prepareStyles(styles.filled)} />
++            <div style={prepareStyles(styles.remaining)} />
+             <div
+-              ref="handle"
++              ref={(node) => this.handle = node}
+               style={prepareStyles(handleStyles)}
+               tabIndex={0}
+-              {...handleDragProps}
+             >
+-              {focusRipple}
++              {!disabled && !disableFocusRipple && (
++                <FocusRipple
++                  style={rippleStyle}
++                  innerStyle={styles.rippleInner}
++                  show={(hovered || focused) && !active}
++                  color={styles.rippleColor.fill}
++                />
++              )}
+             </div>
+           </div>
+         </div>
+         <input
+-          ref="input"
+           type="hidden"
+           name={name}
+-          value={this.state.value}
++          value={value}
+           required={required}
+           min={min}
+           max={max}
+diff --git a/src/Slider/Slider.spec.js b/src/Slider/Slider.spec.js
+index 1d158456553bf6..ff5f53e1a93ecf 100644
+--- a/src/Slider/Slider.spec.js
++++ b/src/Slider/Slider.spec.js
+@@ -2,7 +2,7 @@
+ import React from 'react';
+ import {shallow} from 'enzyme';
+ import {assert} from 'chai';
+-import sinon from 'sinon';
++import {spy} from 'sinon';
+ import keycode from 'keycode';
+ import Slider from './Slider';
+ import getMuiTheme from '../styles/getMuiTheme';
+@@ -11,8 +11,6 @@ describe('<Slider />', () => {
+   const muiTheme = getMuiTheme();
+   const shallowWithContext = (node) => shallow(node, {context: {muiTheme}});
+ 
+-  sinon.assert.expose(assert, {prefix: ''});
+-
+   const getThumbElement = function(shallowWrapper) {
+     return shallowWrapper.children().at(2).children().at(0).children().at(2);
+   };
+@@ -34,8 +32,7 @@ describe('<Slider />', () => {
+       <Slider name="slider" value={0.5} />
+     );
+ 
+-    assert.strictEqual(wrapper.state().value, 0.5, 'state.value should be equal the specified property');
+-    assert.isAtLeast(wrapper.state().percent, wrapper.state().value);
++    assert.strictEqual(wrapper.state().value, 0.5, 'should use the value property for the value state');
+     assert.strictEqual(
+       wrapper.find('input[type="hidden"]').props().value,
+       wrapper.state().value,
+@@ -48,15 +45,17 @@ describe('<Slider />', () => {
+       <Slider name="slider" required={true} />
+     );
+ 
+-    assert.isTrue(wrapper.find('input[type="hidden"]').props().required);
++    assert.strictEqual(wrapper.find('input[type="hidden"]').props().required, true);
+   });
+ 
+   it('checks root node properties', () => {
+-    const rootStyle = {
+-      backgroundColor: 'red',
+-    };
+     const wrapper = shallowWithContext(
+-      <Slider name="slider" style={rootStyle} />
++      <Slider
++        name="slider"
++        style={{
++          backgroundColor: 'red',
++        }}
++      />
+     );
+ 
+     assert.strictEqual(wrapper.props().style.backgroundColor, 'red', 'root element should have the style object');
+@@ -67,71 +66,78 @@ describe('<Slider />', () => {
+       <Slider name="slider" />
+     );
+ 
+-    assert.isFalse(wrapper.state().active, 'state.active should be initially false');
+-    assert.isFalse(wrapper.state().dragging, 'state.dragging should be initially false');
+-    assert.isFalse(wrapper.state().focused, 'state.focused should be initially false');
+-    assert.isFalse(wrapper.state().hovered, 'state.hovered should be initially false');
++    assert.strictEqual(wrapper.state().active, false);
++    assert.strictEqual(wrapper.state().dragging, false);
++    assert.strictEqual(wrapper.state().focused, false);
++    assert.strictEqual(wrapper.state().hovered, false);
+   });
+ 
+   it('checks drag start state', () => {
+-    const handleDragStart = sinon.spy();
++    const handleDragStart = spy();
+     const wrapper = shallowWithContext(
+       <Slider name="slider" onDragStart={handleDragStart} />
+     );
+ 
+     wrapper.instance().onDragStart();
+-    assert.calledOnce(handleDragStart);
+-    assert.isTrue(wrapper.state().active);
+-    assert.isTrue(wrapper.state().dragging);
++    assert.strictEqual(handleDragStart.callCount, 1);
++    assert.strictEqual(wrapper.state().active, true);
++    assert.strictEqual(wrapper.state().dragging, true);
+   });
+ 
+   it('checks drag stop state', () => {
+-    const handleDragStop = sinon.spy();
++    const handleDragStop = spy();
+     const wrapper = shallowWithContext(
+       <Slider name="slider" onDragStop={handleDragStop} />
+     );
+ 
+     wrapper.instance().onDragStop();
+-    assert.calledOnce(handleDragStop);
+-    assert.isFalse(wrapper.state().active);
+-    assert.isFalse(wrapper.state().dragging);
++    assert.strictEqual(handleDragStop.callCount, 1);
++    assert.strictEqual(wrapper.state().active, false);
++    assert.strictEqual(wrapper.state().dragging, false);
+   });
+ 
+-  it('checks that percent and value are being updated correctly', () => {
+-    const wrapper = shallowWithContext(
+-      <Slider
+-        name="slider"
+-        step={0.5}
+-        min={1}
+-        max={5}
+-      />
+-    );
++  describe('percent', () => {
++    it('checks that percent and value are being updated correctly', () => {
++      const wrapper = shallowWithContext(
++        <Slider
++          name="slider"
++          step={0.5}
++          min={1}
++          max={5}
++        />
++      );
+ 
+-    wrapper.instance().setPercent(1);
+-    assert.strictEqual(wrapper.state().value, 5, 'state.value should be equal 1');
+-    assert.strictEqual(wrapper.state().percent, 1, 'state.percent should be equal 1');
+-  });
++      wrapper.setProps({
++        value: 1,
++      });
+ 
+-  it('checks that value and percent are updated correctly when max prop changes', () => {
+-    const wrapper = shallowWithContext(
+-      <Slider
+-        name="slider"
+-        value={2}
+-        min={0}
+-        max={10}
+-      />
+-    );
++      assert.strictEqual(wrapper.state().value, 1);
++      assert.strictEqual(getThumbElement(wrapper).props().style.left, '0%');
++    });
++
++    it('checks that value and percent are updated correctly when max prop changes', () => {
++      const wrapper = shallowWithContext(
++        <Slider
++          name="slider"
++          value={2}
++          min={0}
++          max={10}
++        />
++      );
++
++      assert.strictEqual(wrapper.state().value, 2);
++      assert.strictEqual(getThumbElement(wrapper).props().style.left, '20%');
+ 
+-    assert.strictEqual(wrapper.state().value, 2, 'state.value should be equal 2');
+-    assert.strictEqual(wrapper.state().percent, 0.20, 'state.percent should be equal 0.20');
+-    wrapper.setProps({max: 4});
+-    assert.strictEqual(wrapper.state().value, 2, 'state.value should be equal 2');
+-    assert.strictEqual(wrapper.state().percent, 0.50, 'state.percent should be equal 0.50');
++      wrapper.setProps({max: 4});
++
++      assert.strictEqual(wrapper.state().value, 2);
++      assert.strictEqual(getThumbElement(wrapper).props().style.left, '50%');
++    });
+   });
+ 
+   it('checks events do not fire on the handle when the slider is disabled', () => {
+-    const handleDragStart = sinon.spy();
+-    const handleChange = sinon.spy();
++    const handleDragStart = spy();
++    const handleChange = spy();
+     const wrapper = shallowWithContext(
+       <Slider
+         name="slider"
+@@ -140,37 +146,37 @@ describe('<Slider />', () => {
+         onChange={handleChange}
+       />
+     );
+-    const event = {
++    const trackContainer = getTrackContainer(wrapper);
++
++    trackContainer.simulate('keydown', {
+       keyCode: 33,
+-      preventDefault: function() {},
+-    };
+-    const thumbElem = getThumbElement(wrapper);
+-
+-    thumbElem.simulate('keydown', event);
+-    thumbElem.simulate('mousedown');
+-    thumbElem.simulate('touchstart');
+-    assert.notCalled(handleDragStart);
+-    assert.notCalled(handleChange);
++      preventDefault: () => {},
++    });
++    trackContainer.simulate('mousedown');
++    trackContainer.simulate('touchstart');
++
++    assert.strictEqual(handleDragStart.callCount, 0);
++    assert.strictEqual(handleChange.callCount, 0);
+   });
+ 
+   it('simulates focus event', () => {
+-    const handleFocus = sinon.spy();
++    const handleFocus = spy();
+     const wrapper = shallowWithContext(
+       <Slider name="slider" onFocus={handleFocus} />
+     );
+ 
+     getTrackContainer(wrapper).simulate('focus');
+-    assert.calledOnce(handleFocus);
++    assert.strictEqual(handleFocus.callCount, 1);
+   });
+ 
+   it('simulates blur event', () => {
+-    const handleBlur = sinon.spy();
++    const handleBlur = spy();
+     const wrapper = shallowWithContext(
+       <Slider name="slider" onBlur={handleBlur} />
+     );
+ 
+     getTrackContainer(wrapper).simulate('blur');
+-    assert.calledOnce(handleBlur);
++    assert.strictEqual(handleBlur.callCount, 1);
+   });
+ 
+   it('simulates onmouseenter event', () => {
+@@ -179,7 +185,7 @@ describe('<Slider />', () => {
+     );
+ 
+     getTrackContainer(wrapper).simulate('mouseenter');
+-    assert.isTrue(wrapper.state().hovered);
++    assert.strictEqual(wrapper.state().hovered, true);
+   });
+ 
+   it('simulates onmouseleave event', () => {
+@@ -188,337 +194,324 @@ describe('<Slider />', () => {
+     );
+ 
+     getTrackContainer(wrapper).simulate('mouseleave');
+-    assert.isFalse(wrapper.state().hovered);
++    assert.strictEqual(wrapper.state().hovered, false);
+   });
+ 
+   describe('keydown', () => {
+     it('simulates keydown event with a non tracked key', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" onChange={handleChange} />
+       );
+       const event = {
+         keyCode: keycode('enter'),
+-        preventDefault: sinon.spy(),
++        preventDefault: spy(),
+       };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(event.preventDefault);
++      getTrackContainer(wrapper).simulate('keydown', event);
++      assert.strictEqual(event.preventDefault.callCount, 0);
+     });
+ 
+     it('simulates the end key', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('end'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 1);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('end'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value, 1);
+     });
+ 
+     it('simulates the up arrow key', () => {
+-      const handleChange = sinon.spy();
+-      const wrapper = shallowWithContext(<Slider name="slider" onChange={handleChange} />);
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('up'),
+-        preventDefault: function() {},
+-      };
++      const handleChange = spy();
++      const wrapper = shallowWithContext(
++        <Slider name="slider" onChange={handleChange} />
++      );
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('up'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the up arrow key on an x-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
+-      const wrapper = shallowWithContext(<Slider name="slider" axis="x-reverse" onChange={handleChange} />);
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('up'),
+-        preventDefault: function() {},
+-      };
++      const handleChange = spy();
++      const wrapper = shallowWithContext(
++        <Slider name="slider" axis="x-reverse" onChange={handleChange} />
++      );
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('up'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the up arrow key on a y axis slider', () => {
+-      const handleChange = sinon.spy();
+-      const wrapper = shallowWithContext(<Slider name="slider" axis="y" onChange={handleChange} />);
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('up'),
+-        preventDefault: function() {},
+-      };
++      const handleChange = spy();
++      const wrapper = shallowWithContext(
++        <Slider name="slider" axis="y" onChange={handleChange} />
++      );
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('up'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the up arrow key on a y-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
+-      const wrapper = shallowWithContext(<Slider name="slider" axis="y-reverse" onChange={handleChange} />);
+-      const event = {
+-        keyCode: keycode('up'),
+-        preventDefault: function() {},
+-      };
++      const handleChange = spy();
++      const wrapper = shallowWithContext(
++        <Slider name="slider" axis="y-reverse" onChange={handleChange} />
++      );
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('up'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the right arrow key', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" onChange={handleChange} />
+       );
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('right'),
+-        preventDefault: function() {},
+-      };
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('right'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the right arrow key on an x-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="x-reverse" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('right'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('right'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the right arrow key on an y axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y" onChange={handleChange} />
+       );
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('right'),
+-        preventDefault: function() {},
+-      };
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('right'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the right arrow key on an y-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y-reverse" onChange={handleChange} />
+       );
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('right'),
+-        preventDefault: function() {},
+-      };
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('right'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the home key', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('home'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('home'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the home key on a x-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="x-reverse" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('home'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('home'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the home key on a y axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('home'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('home'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the home key on a y-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('home'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('home'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the down arrow key', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('down'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('down'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the down arrow key on a x-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="x-reverse" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('down'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('down'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the down arrow key on a y axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('down'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('down'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the down arrow key on a y-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y-reverse" onChange={handleChange} />
+       );
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('down'),
+-        preventDefault: function() {},
+-      };
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('down'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the left arrow key', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('left'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('left'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the left arrow key for an x-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="x-reverse" onChange={handleChange} />
+       );
+-      const previousPercent = wrapper.state().percent;
+-      const event = {
+-        keyCode: keycode('left'),
+-        preventDefault: function() {},
+-      };
++      const previousValue = wrapper.state().value;
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.calledOnce(handleChange);
+-      assert.isAbove(wrapper.state().percent, previousPercent);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('left'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 1);
++      assert.strictEqual(wrapper.state().value > previousValue, true);
+     });
+ 
+     it('simulates the left arrow key for a y axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('left'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('left'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+ 
+     it('simulates the left arrow key for a y-reverse axis slider', () => {
+-      const handleChange = sinon.spy();
++      const handleChange = spy();
+       const wrapper = shallowWithContext(
+         <Slider name="slider" axis="y-reverse" onChange={handleChange} />
+       );
+-      const event = {
+-        keyCode: keycode('left'),
+-        preventDefault: function() {},
+-      };
+ 
+-      getThumbElement(wrapper).simulate('keydown', event);
+-      assert.notCalled(handleChange);
+-      assert.strictEqual(wrapper.state().percent, 0);
++      getTrackContainer(wrapper).simulate('keydown', {
++        keyCode: keycode('left'),
++        preventDefault: () => {},
++      });
++      assert.strictEqual(handleChange.callCount, 0);
++      assert.strictEqual(wrapper.state().value, 0);
+     });
+   });
+ });

@@ -1,0 +1,550 @@
+diff --git a/packages/eslint/src/plugins/plugin.spec.ts b/packages/eslint/src/plugins/plugin.spec.ts
+index 08fa1f19521..fc3ee993d42 100644
+--- a/packages/eslint/src/plugins/plugin.spec.ts
++++ b/packages/eslint/src/plugins/plugin.spec.ts
+@@ -572,6 +572,40 @@ describe('@nx/eslint/plugin', () => {
+   });
+ 
+   describe('root eslint config and nested eslint configs', () => {
++    it('should insert projects in input order when one root config governs multiple nested projects', async () => {
++      // Regression coverage for the `Promise.all`-with-shared-mutation race
++      // in `internalCreateNodesV2`: pre-fix, `projects[projectRoot] = project`
++      // was assigned from inside `Promise.all`, so key insertion order
++      // tracked which async branch (`eslint.isPathIgnored`,
++      // `getProjectUsingESLintConfig`) finished first. The fix collects
++      // contributions and assembles `projects` in
++      // `projectRootsByEslintRoots.get(configDir)` order — i.e. input order.
++      //
++      // Inputs are presented in non-alphabetic order so the assertion
++      // proves the plugin preserves input order rather than coincidentally
++      // alphabetizing.
++      createFiles({
++        '.eslintrc.json': `{}`,
++        'libs/c-lib/project.json': `{}`,
++        'libs/c-lib/index.ts': `console.log('c')`,
++        'libs/a-lib/project.json': `{}`,
++        'libs/a-lib/index.ts': `console.log('a')`,
++        'libs/b-lib/project.json': `{}`,
++        'libs/b-lib/index.ts': `console.log('b')`,
++      });
++      const result = await invokeCreateNodesOnMatchingFiles(context, {
++        targetName: 'lint',
++      });
++      // configFiles is built from Object.keys(fileSys) in this test harness,
++      // so the input order seen by the plugin is c-lib, a-lib, b-lib. With
++      // the fix, that is the exact order the plugin emits.
++      expect(Object.keys(result.projects)).toEqual([
++        'libs/c-lib',
++        'libs/a-lib',
++        'libs/b-lib',
++      ]);
++    });
++
+     it('should create appropriate nodes for just a package.json and root level eslint config combined with nested eslint configs', async () => {
+       createFiles({
+         '.eslintrc.json': `{}`,
+diff --git a/packages/eslint/src/plugins/plugin.ts b/packages/eslint/src/plugins/plugin.ts
+index 7621766270c..d0e878479c2 100644
+--- a/packages/eslint/src/plugins/plugin.ts
++++ b/packages/eslint/src/plugins/plugin.ts
+@@ -84,16 +84,19 @@ const internalCreateNodesV2 = async (
+     return sharedEslint;
+   };
+ 
+-  const projects: CreateNodesResult['projects'] = {};
+-  await Promise.all(
+-    projectRootsByEslintRoots.get(configDir).map(async (projectRoot) => {
++  // Collect each project root's contribution in parallel, but write
++  // them into `projects` afterwards in input order so insertion order
++  // (and therefore downstream merge order) is deterministic. Mutating
++  // `projects` from inside `Promise.all` would order keys by which
++  // async branch resolves first.
++  const orderedProjectRoots = projectRootsByEslintRoots.get(configDir) ?? [];
++  const contributions = await Promise.all(
++    orderedProjectRoots.map(async (projectRoot) => {
+       const hash = hashByRoot.get(projectRoot);
+ 
+       const cached = projectsCache.get(hash);
+       if (cached) {
+-        // We can reuse the projects in the cache.
+-        Object.assign(projects, cached);
+-        return;
++        return cached;
+       }
+ 
+       let hasNonIgnoredLintableFiles = false;
+@@ -114,7 +117,7 @@ const internalCreateNodesV2 = async (
+       if (!hasNonIgnoredLintableFiles) {
+         // No lintable files in the project, store in the cache and skip further processing
+         projectsCache.set(hash, {});
+-        return;
++        return null;
+       }
+ 
+       const project = getProjectUsingESLintConfig(
+@@ -128,16 +131,25 @@ const internalCreateNodesV2 = async (
+       );
+ 
+       if (project) {
+-        projects[projectRoot] = project;
++        const entry = { [projectRoot]: project };
+         // Store project into the cache
+-        projectsCache.set(hash, { [projectRoot]: project });
+-      } else {
+-        // No project found, store in the cache
+-        projectsCache.set(hash, {});
++        projectsCache.set(hash, entry);
++        return entry;
+       }
++
++      // No project found, store in the cache
++      projectsCache.set(hash, {});
++      return null;
+     })
+   );
+ 
++  const projects: CreateNodesResult['projects'] = {};
++  for (const contribution of contributions) {
++    if (contribution) {
++      Object.assign(projects, contribution);
++    }
++  }
++
+   return {
+     projects,
+   };
+diff --git a/packages/jest/src/plugins/plugin.spec.ts b/packages/jest/src/plugins/plugin.spec.ts
+index c7d06452e30..4ceeb05c718 100644
+--- a/packages/jest/src/plugins/plugin.spec.ts
++++ b/packages/jest/src/plugins/plugin.spec.ts
+@@ -270,6 +270,57 @@ describe.each([true, false])('@nx/jest/plugin', (disableJestRuntime) => {
+     `);
+   });
+ 
++  it('should sort atomized test target names regardless of test discovery order', async () => {
++    // Cover both branches via the parameterized describe.each:
++    //  - disableJestRuntime=true: discovery via globWithWorkspaceContext (Rust
++    //    glob, already sorted).
++    //  - disableJestRuntime=false: discovery via jest.SearchSource which walks
++    //    through jest-haste-map's parallel workers; ordering is not guaranteed.
++    // Create spec files in non-alphabetic creation order to surface any
++    // creation-time-vs-name ordering quirks in the discovery layer.
++    mockJestConfig(
++      {
++        testMatch: ['**/*.spec.ts'],
++        testPathIgnorePatterns: ['ignore.spec.ts'],
++      },
++      context
++    );
++    await tempFs.createFiles({
++      'proj/src/c.spec.ts': '',
++      'proj/src/a.spec.ts': '',
++      'proj/src/b.spec.ts': '',
++    });
++
++    const results = await createNodesFunction(
++      ['proj/jest.config.js'],
++      { targetName: 'test', ciTargetName: 'test-ci', disableJestRuntime },
++      context
++    );
++
++    const targets = results[0][1].projects!['proj'].targets!;
++    const atomizedTargetNames = Object.keys(targets).filter((name) =>
++      name.startsWith('test-ci--')
++    );
++    expect(atomizedTargetNames).toEqual([
++      'test-ci--src/a.spec.ts',
++      'test-ci--src/b.spec.ts',
++      'test-ci--src/c.spec.ts',
++      'test-ci--src/unit.spec.ts',
++    ]);
++
++    // dependsOn and target group ordering must match insertion order so that
++    // `nx graph`, CI workflow generators, and snapshots stay reproducible.
++    const dependsOnTargets = (
++      targets['test-ci'].dependsOn as Array<{ target: string }>
++    ).map((d) => d.target);
++    expect(dependsOnTargets).toEqual([
++      'test-ci--src/a.spec.ts',
++      'test-ci--src/b.spec.ts',
++      'test-ci--src/c.spec.ts',
++      'test-ci--src/unit.spec.ts',
++    ]);
++  });
++
+   it('should add preset to the inputs', async () => {
+     mockJestConfig(
+       { coverageDirectory: '../coverage', preset: '../jest.preset.js' },
+diff --git a/packages/jest/src/plugins/plugin.ts b/packages/jest/src/plugins/plugin.ts
+index 18928699a90..dc7e9847d38 100644
+--- a/packages/jest/src/plugins/plugin.ts
++++ b/packages/jest/src/plugins/plugin.ts
+@@ -521,7 +521,10 @@ async function buildJestTargets(
+           : // @ts-expect-error Jest v29 doesn't have the projectConfig parameter
+             await source.getTestPaths(config.globalConfig);
+ 
+-      const testPaths = new Set(specs.tests.map(({ path }) => path));
++      // Sort to keep atomized target name insertion order stable.
++      // jest.SearchSource.getTestPaths walks via jest-haste-map's
++      // parallel workers, so its output order isn't guaranteed.
++      const testPaths = new Set(specs.tests.map(({ path }) => path).sort());
+ 
+       if (testPaths.size > 0) {
+         const targetGroup = [];
+diff --git a/packages/nx/src/native/glob/glob_files.rs b/packages/nx/src/native/glob/glob_files.rs
+index c069c9ad281..ed09c1dc5b3 100644
+--- a/packages/nx/src/native/glob/glob_files.rs
++++ b/packages/nx/src/native/glob/glob_files.rs
+@@ -36,3 +36,71 @@ pub fn glob_files(
+             .unwrap_or(is_match)
+     }))
+ }
++
++#[cfg(test)]
++mod test {
++    use super::*;
++
++    fn fd(file: &str) -> FileData {
++        FileData {
++            file: file.to_string(),
++            hash: "h".to_string(),
++        }
++    }
++
++    /// `glob_files` is documented to return matches in input order: the JS
++    /// pipeline (`createNodesFromFiles`, atomized target name insertion) and
++    /// every plugin's `for...of configFiles` loop relies on it. Internally
++    /// this is a `par_iter().filter().collect()` over an already-sorted
++    /// slice, which Rayon documents as order-preserving — locking in that
++    /// contract here so a future swap (e.g. `par_collect_into`) cannot
++    /// silently reorder results.
++    #[test]
++    fn should_preserve_input_order() {
++        let files = vec![
++            fd("a.ts"),
++            fd("b.ts"),
++            fd("c.ts"),
++            fd("d.ts"),
++            fd("e.ts"),
++            fd("f.ts"),
++            fd("g.ts"),
++            fd("h.ts"),
++        ];
++
++        let matched: Vec<&str> = glob_files(&files, vec!["**/*".into()], None)
++            .unwrap()
++            .map(|f| f.file.as_str())
++            .collect();
++
++        assert_eq!(
++            matched,
++            vec![
++                "a.ts", "b.ts", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts", "h.ts"
++            ]
++        );
++    }
++
++    /// Filtering must not reorder remaining matches.
++    #[test]
++    fn should_preserve_input_order_with_exclude() {
++        let files = vec![
++            fd("a.ts"),
++            fd("b.spec.ts"),
++            fd("c.ts"),
++            fd("d.spec.ts"),
++            fd("e.ts"),
++        ];
++
++        let matched: Vec<&str> = glob_files(
++            &files,
++            vec!["**/*.ts".into()],
++            Some(vec!["**/*.spec.ts".into()]),
++        )
++        .unwrap()
++        .map(|f| f.file.as_str())
++        .collect();
++
++        assert_eq!(matched, vec!["a.ts", "c.ts", "e.ts"]);
++    }
++}
+diff --git a/packages/nx/src/native/workspace/context.rs b/packages/nx/src/native/workspace/context.rs
+index 1e256caac55..9de40eed559 100644
+--- a/packages/nx/src/native/workspace/context.rs
++++ b/packages/nx/src/native/workspace/context.rs
+@@ -427,3 +427,56 @@ impl Drop for WorkspaceContext {
+         drop(fw);
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use assert_fs::TempDir;
++    use assert_fs::prelude::*;
++
++    /// Plugin createNodes pipelines (and therefore atomized target name
++    /// insertion order) depend on the JS-visible `WorkspaceContext.glob`
++    /// returning paths in sorted order. Internally that's `par_sort` after
++    /// hashing + a Rayon `par_iter().filter()` (order-preserving) — but the
++    /// guarantee is a public contract, so it's worth a smoke test that
++    /// exercises the full path through `WorkspaceContext::new`.
++    ///
++    /// Files are written in non-alphabetic order so the test cannot pass
++    /// just because file walking happens to be alphabetic on this OS.
++    #[test]
++    fn glob_should_return_sorted_results_regardless_of_creation_order() {
++        let temp = TempDir::new().unwrap();
++        // Deliberately non-alphabetic creation order across both depths so
++        // any creation-time-vs-name ordering quirks would surface.
++        for name in ["z.ts", "src/m.ts", "a.ts", "src/a.ts", "m.ts", "src/z.ts"] {
++            temp.child(name).write_str("x").unwrap();
++        }
++
++        let cache = TempDir::new().unwrap();
++        let ctx = WorkspaceContext::new(
++            temp.path().to_string_lossy().to_string(),
++            cache.path().to_string_lossy().to_string(),
++        );
++
++        let matched = ctx.glob(vec!["**/*.ts".into()], None).unwrap();
++        let mut expected = matched.clone();
++        expected.sort();
++        assert_eq!(
++            matched, expected,
++            "glob results must be sorted regardless of file creation order"
++        );
++
++        // multi_glob applies the same guarantee per-pattern.
++        let multi = ctx
++            .multi_glob(vec!["**/*.ts".into(), "src/**/*.ts".into()], None)
++            .unwrap();
++        for (i, group) in multi.iter().enumerate() {
++            let mut sorted = group.clone();
++            sorted.sort();
++            assert_eq!(
++                group, &sorted,
++                "multi_glob group {i} must be sorted regardless of file creation order"
++            );
++        }
++    }
++}
+diff --git a/packages/nx/src/project-graph/plugins/utils.spec.ts b/packages/nx/src/project-graph/plugins/utils.spec.ts
+index 1b09d420496..5c7787788e5 100644
+--- a/packages/nx/src/project-graph/plugins/utils.spec.ts
++++ b/packages/nx/src/project-graph/plugins/utils.spec.ts
+@@ -184,6 +184,84 @@ describe('createNodesFromFiles', () => {
+     }
+   });
+ 
++  it('should preserve input order when callbacks resolve out of order', async () => {
++    // Resolve later configFiles first to prove that ordering follows
++    // the input array, not the order in which promises settle.
++    const orderedConfigFiles = ['file1', 'file2', 'file3'] as const;
++    const delays: Record<string, number> = {
++      file1: 30,
++      file2: 0,
++      file3: 15,
++    };
++
++    const createNodes = [
++      '*/**/*',
++      async (file: string) => {
++        await new Promise((resolve) => setTimeout(resolve, delays[file]));
++        return {
++          projects: {
++            [file]: {
++              root: file,
++            },
++          },
++        };
++      },
++    ] as const;
++
++    const results = await createNodesFromFiles(
++      createNodes[1],
++      orderedConfigFiles,
++      {},
++      context
++    );
++
++    expect(results.map(([file]) => file)).toEqual(['file1', 'file2', 'file3']);
++  });
++
++  it('should preserve input order for partial errors when callbacks resolve out of order', async () => {
++    const orderedConfigFiles = ['file1', 'file2', 'file3', 'file4'] as const;
++    const delays: Record<string, number> = {
++      file1: 25,
++      file2: 0,
++      file3: 10,
++      file4: 5,
++    };
++
++    const createNodes = [
++      '*/**/*',
++      async (file: string) => {
++        await new Promise((resolve) => setTimeout(resolve, delays[file]));
++        if (file === 'file1' || file === 'file3') {
++          throw new Error(`Error ${file}`);
++        }
++        return {
++          projects: {
++            [file]: {
++              root: file,
++            },
++          },
++        };
++      },
++    ] as const;
++
++    let error;
++    await createNodesFromFiles(
++      createNodes[1],
++      orderedConfigFiles,
++      {},
++      context
++    ).catch((e) => (error = e));
++
++    expect(isAggregateCreateNodesError(error)).toBe(true);
++    if (isAggregateCreateNodesError(error)) {
++      expect(error.errors.map(([file]) => file)).toEqual(['file1', 'file3']);
++      expect(error.partialResults.map(([file]) => file)).toEqual([
++        'file2',
++        'file4',
++      ]);
++    }
++  });
++
+   it('should filter out null results', async () => {
+     const createNodes = [
+       '**/*',
+diff --git a/packages/nx/src/project-graph/plugins/utils.ts b/packages/nx/src/project-graph/plugins/utils.ts
+index 215fa91acc9..c402b9ba23d 100644
+--- a/packages/nx/src/project-graph/plugins/utils.ts
++++ b/packages/nx/src/project-graph/plugins/utils.ts
+@@ -11,11 +11,18 @@ export async function createNodesFromFiles<T = unknown>(
+   options: T,
+   context: CreateNodesContextV2
+ ) {
+-  const results: Array<[file: string, value: CreateNodesResult]> = [];
+-  const errors: Array<[file: string, error: Error]> = [];
++  // Settle each file in parallel but capture per-input outcomes so the
++  // returned arrays preserve `configFiles` order. Pushing into shared
++  // arrays from inside `Promise.all` would order results by resolution
++  // time, which makes downstream merging into the project graph
++  // non-deterministic when multiple files contribute to the same root.
++  type Settled =
++    | { kind: 'value'; file: string; value: CreateNodesResult }
++    | { kind: 'empty' }
++    | { kind: 'error'; file: string; error: Error };
+ 
+-  await Promise.all(
+-    configFiles.map(async (file, idx) => {
++  const settled: Settled[] = await Promise.all(
++    configFiles.map(async (file, idx): Promise<Settled> => {
+       try {
+         const value = await createNodes(
+           file,
+@@ -26,15 +33,23 @@ export async function createNodesFromFiles<T = unknown>(
+           },
+           idx
+         );
+-        if (value) {
+-          results.push([file, value] as const);
+-        }
++        return value ? { kind: 'value', file, value } : { kind: 'empty' };
+       } catch (e) {
+-        errors.push([file, e] as const);
++        return { kind: 'error', file, error: e };
+       }
+     })
+   );
+ 
++  const results: Array<[file: string, value: CreateNodesResult]> = [];
++  const errors: Array<[file: string, error: Error]> = [];
++  for (const entry of settled) {
++    if (entry.kind === 'value') {
++      results.push([entry.file, entry.value] as const);
++    } else if (entry.kind === 'error') {
++      errors.push([entry.file, entry.error] as const);
++    }
++  }
++
+   if (errors.length > 0) {
+     throw new AggregateCreateNodesError(errors, results);
+   }
+diff --git a/packages/vitest/src/plugins/plugin-vitest.spec.ts b/packages/vitest/src/plugins/plugin-vitest.spec.ts
+index 10a3690711d..d5ee7febeb1 100644
+--- a/packages/vitest/src/plugins/plugin-vitest.spec.ts
++++ b/packages/vitest/src/plugins/plugin-vitest.spec.ts
+@@ -128,6 +128,52 @@ describe('@nx/vitest', () => {
+ 
+       expect(nodes).toMatchSnapshot();
+     });
++
++    it('should sort atomized target names when test discovery returns shuffled paths', async () => {
++      // tinyglobby (which vitest uses for test discovery) does not sort its
++      // filesystem walk output. Simulate that by returning module IDs in
++      // non-alphabetic order; the plugin must sort them so atomized target
++      // insertion order is stable across runs.
++      // Dynamic import: jest.resetModules() in afterEach replaces the mock
++      // factory's `createVitest` between tests, so a top-level import would
++      // hold a stale reference.
++      const { createVitest } = await import('vitest/node');
++      (createVitest as jest.Mock).mockImplementationOnce(() => ({
++        getRelevantTestSpecifications: jest
++          .fn()
++          .mockResolvedValue([
++            { moduleId: 'src/c.test.ts' },
++            { moduleId: 'src/a.test.ts' },
++            { moduleId: 'src/b.test.ts' },
++          ]),
++      }));
++
++      const nodes = await createNodesFunction(
++        ['vitest.config.ts'],
++        { testTargetName: 'test', ciTargetName: 'test-ci' },
++        context
++      );
++
++      const targets = nodes[0][1].projects!['.'].targets!;
++      const atomizedTargetNames = Object.keys(targets).filter((name) =>
++        name.startsWith('test-ci--')
++      );
++      expect(atomizedTargetNames).toEqual([
++        'test-ci--src/a.test.ts',
++        'test-ci--src/b.test.ts',
++        'test-ci--src/c.test.ts',
++      ]);
++
++      // dependsOn and target group ordering must agree with insertion order.
++      const dependsOn = (targets['test-ci'].dependsOn as string[]).filter(
++        (d: string) => d.startsWith('test-ci--')
++      );
++      expect(dependsOn).toEqual([
++        'test-ci--src/a.test.ts',
++        'test-ci--src/b.test.ts',
++        'test-ci--src/c.test.ts',
++      ]);
++    });
+   });
+ 
+   describe('typecheck enabled', () => {
+diff --git a/packages/vitest/src/plugins/plugin.ts b/packages/vitest/src/plugins/plugin.ts
+index 50e20f78f0c..e5fe1840b4b 100644
+--- a/packages/vitest/src/plugins/plugin.ts
++++ b/packages/vitest/src/plugins/plugin.ts
+@@ -584,9 +584,13 @@ async function getTestPathsRelativeToProjectRoot(
+   });
+   const relevantTestSpecifications =
+     await vitest.getRelevantTestSpecifications();
++  // Sort to keep atomized target name insertion order stable.
++  // vitest.getRelevantTestSpecifications uses tinyglobby internally,
++  // which does not sort its filesystem traversal output.
+   return relevantTestSpecifications
+     .filter((ts) =>
+       fullProjectRoot === '.' ? true : ts.moduleId.startsWith(fullProjectRoot)
+     )
+-    .map((ts) => normalizePath(relative(projectRoot, ts.moduleId)));
++    .map((ts) => normalizePath(relative(projectRoot, ts.moduleId)))
++    .sort();
+ }

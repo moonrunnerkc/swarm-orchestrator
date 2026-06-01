@@ -1,0 +1,810 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f731e3c90cda..31eadb0cf731 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,23 @@
+   [Sentry TanStack Start SDK docs](https://docs.sentry.io/platforms/javascript/guides/tanstackstart-react/). Please reach out on
+   [GitHub](https://github.com/getsentry/sentry-javascript/issues/new/choose) if you have any feedback or concerns.
+ 
++- **feat(hono): Add `shouldHandleError` option to `sentry()` middleware**
++
++  The `sentry()` middleware now accepts a `shouldHandleError` callback to control which errors are captured and sent to Sentry. By default, 3xx/4xx HTTP errors are ignored and 5xx errors and plain `Error` objects are captured. Return `true` from the callback to capture an error, `false` to suppress it.
++
++  ```ts
++  app.use(
++    sentry(app, {
++      dsn: '__DSN__',
++      shouldHandleError(error) {
++        const status = (error as { status?: number })?.status;
++        // Capture 401/403 in addition to the default 5xx errors
++        return status === 401 || status === 403 || typeof status !== 'number' || status >= 500;
++      },
++    }),
++  );
++  ```
++
+ - **test(tanstackstart-react): Move initialization to client entry point ([#21161](https://github.com/getsentry/sentry-javascript/pull/21161))**
+ 
+   Change the recommended setup for the SDK to do `Sentry.init()` in the client entry file to capture telemetry that is emitted ahead of page hydration.
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts b/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts
+index 0ce4a186c621..fbe758c708a9 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts
+@@ -146,7 +146,7 @@ test.describe('middleware errors', () => {
+ 
+     const errorEvent = await errorPromise;
+     expect(errorEvent.exception?.values?.[0]?.value).toBe('Service Unavailable from middleware');
+-    expect(errorEvent.exception?.values?.[0]?.mechanism?.type).toBe('auto.middleware.hono');
++    expect(errorEvent.exception?.values?.[0]?.mechanism?.type).toBe('auto.http.hono.context_error');
+     expect(errorEvent.exception?.values?.[0]?.mechanism?.handled).toBe(false);
+     expect(errorEvent.transaction).toBe('GET /test-errors/middleware-http-exception');
+ 
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts b/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts
+index fffcf6a63f25..0ef039000c9a 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts
+@@ -113,7 +113,7 @@ for (const { name, prefix } of SCENARIOS) {
+       expect(errorEvent.exception?.values?.[0]?.mechanism).toEqual(
+         expect.objectContaining({
+           handled: false,
+-          type: 'auto.middleware.hono',
++          type: 'auto.http.hono.context_error',
+         }),
+       );
+ 
+diff --git a/packages/hono/README.md b/packages/hono/README.md
+index bf1ce203d8c5..d5953718c3e4 100644
+--- a/packages/hono/README.md
++++ b/packages/hono/README.md
+@@ -189,3 +189,24 @@ app.use(
+ 
+ serve(app);
+ ```
++
++## Filtering errors
++
++By default, `@sentry/hono` captures 5xx errors and plain `Error` objects, and ignores 3xx/4xx HTTP errors (redirects, not-found, bad request, etc.).
++
++Use `shouldHandleError` to override this on a per-error basis:
++
++```ts
++app.use(
++  sentry(app, {
++    dsn: '__DSN__',
++    shouldHandleError(error) {
++      const status = (error as { status?: number })?.status;
++      // Capture 401/403 in addition to the default 5xx errors
++      return status === 401 || status === 403 || typeof status !== 'number' || status >= 500;
++    },
++  }),
++);
++```
++
++Return `true` to capture the error, `false` to suppress it.
+diff --git a/packages/hono/src/bun/middleware.ts b/packages/hono/src/bun/middleware.ts
+index 739fb2c33ee9..5a91b262c552 100644
+--- a/packages/hono/src/bun/middleware.ts
++++ b/packages/hono/src/bun/middleware.ts
+@@ -3,16 +3,15 @@ import { init } from './sdk';
+ import type { Env, Hono, MiddlewareHandler } from 'hono';
+ import { requestHandler, responseHandler } from '../shared/middlewareHandlers';
+ import { applyPatches } from '../shared/applyPatches';
++import type { SentryHonoMiddlewareOptions } from '../shared/types';
+ 
+-export interface HonoBunOptions extends Options<BaseTransportOptions> {}
++export interface HonoBunOptions extends Options<BaseTransportOptions>, SentryHonoMiddlewareOptions {}
+ 
+ /**
+  * Sentry middleware for Hono running in a Bun runtime environment.
+  */
+ export const sentry = <E extends Env>(app: Hono<E>, options: HonoBunOptions): MiddlewareHandler => {
+-  const isDebug = options.debug;
+-
+-  isDebug && debug.log('Initialized Sentry Hono middleware (Bun)');
++  options.debug && debug.log('Initialized Sentry Hono middleware (Bun)');
+ 
+   init(options);
+ 
+@@ -23,6 +22,6 @@ export const sentry = <E extends Env>(app: Hono<E>, options: HonoBunOptions): Mi
+ 
+     await next(); // Handler runs in between Request above ⤴ and Response below ⤵
+ 
+-    responseHandler(context);
++    responseHandler(context, options.shouldHandleError);
+   };
+ };
+diff --git a/packages/hono/src/cloudflare/middleware.ts b/packages/hono/src/cloudflare/middleware.ts
+index 7a4f8a4d4139..549449e76b2e 100644
+--- a/packages/hono/src/cloudflare/middleware.ts
++++ b/packages/hono/src/cloudflare/middleware.ts
+@@ -4,8 +4,9 @@ import type { Env, Hono, MiddlewareHandler } from 'hono';
+ import { buildFilteredIntegrations } from '../shared/buildFilteredIntegrations';
+ import { requestHandler, responseHandler } from '../shared/middlewareHandlers';
+ import { applyPatches } from '../shared/applyPatches';
++import type { SentryHonoMiddlewareOptions } from '../shared/types';
+ 
+-export interface HonoCloudflareOptions extends Options<BaseTransportOptions> {}
++export interface HonoCloudflareOptions extends Options<BaseTransportOptions>, SentryHonoMiddlewareOptions {}
+ 
+ /**
+  * Sentry middleware for Hono on Cloudflare Workers.
+@@ -36,10 +37,15 @@ export function sentry<E extends Env>(
+   applyPatches(app);
+ 
+   return async (context, next) => {
++    const shouldHandleError =
++      typeof options === 'function'
++        ? options(context.env as E['Bindings']).shouldHandleError
++        : options.shouldHandleError;
++
+     requestHandler(context);
+ 
+     await next(); // Handler runs in between Request above ⤴ and Response below ⤵
+ 
+-    responseHandler(context);
++    responseHandler(context, shouldHandleError);
+   };
+ }
+diff --git a/packages/hono/src/node/middleware.ts b/packages/hono/src/node/middleware.ts
+index bd12d7ce82f8..625667f2e41d 100644
+--- a/packages/hono/src/node/middleware.ts
++++ b/packages/hono/src/node/middleware.ts
+@@ -2,6 +2,7 @@ import { type BaseTransportOptions, debug, type Options, getClient } from '@sent
+ import type { Env, Hono, MiddlewareHandler } from 'hono';
+ import { requestHandler, responseHandler } from '../shared/middlewareHandlers';
+ import { applyPatches } from '../shared/applyPatches';
++import type { SentryHonoMiddlewareOptions } from '../shared/types';
+ 
+ export interface HonoNodeOptions extends Options<BaseTransportOptions> {}
+ 
+@@ -13,7 +14,7 @@ export interface HonoNodeOptions extends Options<BaseTransportOptions> {}
+  *
+  * **Note:** You must initialize Sentry separately before using this middleware. Typically, this is done by calling `Sentry.init()` in an `instrument.ts` file and loading it via the Node `--import` flag.
+  */
+-export const sentry = <E extends Env>(app: Hono<E>): MiddlewareHandler => {
++export const sentry = <E extends Env>(app: Hono<E>, options?: SentryHonoMiddlewareOptions): MiddlewareHandler => {
+   const sentryClient = getClient();
+   if (sentryClient === undefined) {
+     debug.warn(
+@@ -31,6 +32,6 @@ export const sentry = <E extends Env>(app: Hono<E>): MiddlewareHandler => {
+ 
+     await next(); // Handler runs in between Request above ⤴ and Response below ⤵
+ 
+-    responseHandler(context);
++    responseHandler(context, options?.shouldHandleError);
+   };
+ };
+diff --git a/packages/hono/src/shared/defaultShouldHandleError.ts b/packages/hono/src/shared/defaultShouldHandleError.ts
+new file mode 100644
+index 000000000000..71eab3bbb3fd
+--- /dev/null
++++ b/packages/hono/src/shared/defaultShouldHandleError.ts
+@@ -0,0 +1,19 @@
++/**
++ * Default implementation of the `shouldHandleError` callback.
++ *
++ * Returns `true` (capture) for 5xx errors and any error without a `status` property
++ *
++ * Returns `false` (skip) for 3xx and 4xx errors (they still generate spans and transactions for tracing)
++ *
++ * Checks any error-like value that carries a numeric `status` property. This covers
++ * Hono's `HTTPException`, third-party middleware errors, and custom error subclasses.
++ */
++export function defaultShouldHandleError(error: unknown): boolean {
++  if (typeof error !== 'object' || error === null) {
++    return true;
++  }
++
++  const status = (error as { status?: unknown }).status;
++
++  return !(typeof status === 'number' && status >= 300 && status < 500);
++}
+diff --git a/packages/hono/src/shared/isExpectedError.ts b/packages/hono/src/shared/isExpectedError.ts
+deleted file mode 100644
+index f3014be0fb5e..000000000000
+--- a/packages/hono/src/shared/isExpectedError.ts
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/**
+- * 3xx and 4xx errors are expected (redirects, auth failures, not found, bad
+- * request) and should not be captured as Sentry error events.
+- *
+- * Checks any error-like value that carries a numeric `status` property — this
+- * covers Hono's `HTTPException`, third-party middleware errors, and custom
+- * error subclasses.
+- */
+-export function isExpectedError(error: unknown): boolean {
+-  if (typeof error !== 'object' || error === null) {
+-    return false;
+-  }
+-
+-  const status = (error as { status?: unknown }).status;
+-
+-  return typeof status === 'number' && status >= 300 && status < 500;
+-}
+diff --git a/packages/hono/src/shared/middlewareHandlers.ts b/packages/hono/src/shared/middlewareHandlers.ts
+index 7f961928df49..f0aa9a3c5b47 100644
+--- a/packages/hono/src/shared/middlewareHandlers.ts
++++ b/packages/hono/src/shared/middlewareHandlers.ts
+@@ -12,7 +12,8 @@ import {
+ import type { Context } from 'hono';
+ import { routePath } from 'hono/route';
+ import { hasFetchEvent } from '../utils/hono-context';
+-import { isExpectedError } from './isExpectedError';
++import { defaultShouldHandleError } from './defaultShouldHandleError';
++import { type SentryHonoMiddlewareOptions } from '../shared/types';
+ 
+ /**
+  * Request handler for Hono framework
+@@ -33,11 +34,16 @@ export function requestHandler(context: Context): void {
+ /**
+  * Response handler for Hono framework
+  */
+-export function responseHandler(context: Context): void {
+-  if (context.error && !isExpectedError(context.error)) {
+-    getClient()?.captureException(context.error, {
+-      mechanism: { handled: false, type: 'auto.http.hono.context_error' },
+-    });
++export function responseHandler(
++  context: Context,
++  shouldHandleError?: SentryHonoMiddlewareOptions['shouldHandleError'],
++): void {
++  if (context.error) {
++    if ((shouldHandleError ?? defaultShouldHandleError)(context.error)) {
++      getClient()?.captureException(context.error, {
++        mechanism: { handled: false, type: 'auto.http.hono.context_error' },
++      });
++    }
+   }
+ }
+ 
+diff --git a/packages/hono/src/shared/types.ts b/packages/hono/src/shared/types.ts
+new file mode 100644
+index 000000000000..708213e32277
+--- /dev/null
++++ b/packages/hono/src/shared/types.ts
+@@ -0,0 +1,24 @@
++/**
++ * Middleware-specific options shared across all Hono runtime adapters.
++ * These options are distinct from the SDK initialization options (DSN, sample rates, etc.).
++ */
++export interface SentryHonoMiddlewareOptions {
++  /**
++   * Determines whether a given Hono error thrown in the response should be captured and sent to Sentry.
++   *
++   * When not provided, the default behavior applies: 3xx and 4xx HTTP errors are
++   * considered expected and are not captured. All other errors are captured.
++   *
++   * @example
++   * // Capture everything, including 4xx errors:
++   * shouldHandleError: () => true
++   *
++   * @example
++   * // Capture only 5xx errors and suppress everything else:
++   * shouldHandleError: (err) => {
++   *   const status = (err as { status?: number })?.status;
++   *   return typeof status === 'number' ? status >= 500 : true;
++   * }
++   */
++  shouldHandleError?: (error: unknown) => boolean;
++}
+diff --git a/packages/hono/src/shared/wrapMiddlewareSpan.ts b/packages/hono/src/shared/wrapMiddlewareSpan.ts
+index 1a80501f5991..8c2e4787314b 100644
+--- a/packages/hono/src/shared/wrapMiddlewareSpan.ts
++++ b/packages/hono/src/shared/wrapMiddlewareSpan.ts
+@@ -1,5 +1,4 @@
+ import {
+-  captureException,
+   getActiveSpan,
+   getOriginalFunction,
+   getRootSpan,
+@@ -10,7 +9,7 @@ import {
+   type WrappedFunction,
+ } from '@sentry/core';
+ import { type MiddlewareHandler } from 'hono';
+-import { isExpectedError } from './isExpectedError';
++import { defaultShouldHandleError } from './defaultShouldHandleError';
+ 
+ const MIDDLEWARE_ORIGIN = 'auto.middleware.hono';
+ 
+@@ -44,13 +43,11 @@ export function wrapMiddlewareWithSpan(handler: MiddlewareHandler): MiddlewareHa
+       try {
+         return await handler(context, next);
+       } catch (error) {
+-        if (!isExpectedError(error)) {
++        // Error capture is handled by `responseHandler` via `context.error`, so this wrapper only sets
++        // span status (based on our default "error" conditions) and rethrows (no `captureException`).
++        if (defaultShouldHandleError(error)) {
+           span.setStatus({ code: SPAN_STATUS_ERROR, message: 'internal_error' });
+-          captureException(error, {
+-            mechanism: { handled: false, type: MIDDLEWARE_ORIGIN },
+-          });
+         }
+-
+         throw error;
+       } finally {
+         span.end();
+diff --git a/packages/hono/test/shared/defaultShouldHandleError.test.ts b/packages/hono/test/shared/defaultShouldHandleError.test.ts
+new file mode 100644
+index 000000000000..85a29493c752
+--- /dev/null
++++ b/packages/hono/test/shared/defaultShouldHandleError.test.ts
+@@ -0,0 +1,78 @@
++import { HTTPException } from 'hono/http-exception';
++import { describe, expect, it } from 'vitest';
++import { defaultShouldHandleError } from '../../src/shared/defaultShouldHandleError';
++
++describe('defaultShouldHandleError', () => {
++  describe('HTTPException', () => {
++    it('returns false for 4xx HTTPException (skip)', () => {
++      expect(defaultShouldHandleError(new HTTPException(400, { message: 'Bad Request' }))).toBe(false);
++      expect(defaultShouldHandleError(new HTTPException(401, { message: 'Unauthorized' }))).toBe(false);
++      expect(defaultShouldHandleError(new HTTPException(403, { message: 'Forbidden' }))).toBe(false);
++      expect(defaultShouldHandleError(new HTTPException(404, { message: 'Not Found' }))).toBe(false);
++      expect(defaultShouldHandleError(new HTTPException(422, { message: 'Unprocessable Entity' }))).toBe(false);
++      expect(defaultShouldHandleError(new HTTPException(499))).toBe(false);
++    });
++
++    it('returns true for 5xx HTTPException (capture)', () => {
++      expect(defaultShouldHandleError(new HTTPException(500, { message: 'Internal Server Error' }))).toBe(true);
++      expect(defaultShouldHandleError(new HTTPException(502, { message: 'Bad Gateway' }))).toBe(true);
++      expect(defaultShouldHandleError(new HTTPException(503, { message: 'Service Unavailable' }))).toBe(true);
++    });
++  });
++
++  describe('custom error classes with status property', () => {
++    it('returns false for custom Error subclass with 4xx status (skip)', () => {
++      class AuthError extends Error {
++        status = 401;
++      }
++      expect(defaultShouldHandleError(new AuthError('unauthorized'))).toBe(false);
++    });
++
++    it('returns true for custom Error subclass with 5xx status (capture)', () => {
++      class DbError extends Error {
++        status = 500;
++      }
++      expect(defaultShouldHandleError(new DbError('connection lost'))).toBe(true);
++    });
++
++    it('returns false for plain object with 4xx status (skip)', () => {
++      expect(defaultShouldHandleError({ status: 404, message: 'Not Found' })).toBe(false);
++      expect(defaultShouldHandleError({ status: 400 })).toBe(false);
++    });
++
++    it('returns true for plain object with 5xx status (capture)', () => {
++      expect(defaultShouldHandleError({ status: 500, message: 'Internal Server Error' })).toBe(true);
++    });
++  });
++
++  describe('non-HTTP errors', () => {
++    it('returns true for plain Error without status (capture)', () => {
++      expect(defaultShouldHandleError(new Error('something broke'))).toBe(true);
++    });
++
++    it('returns true for non-object values (capture)', () => {
++      expect(defaultShouldHandleError('string error')).toBe(true);
++      expect(defaultShouldHandleError(42)).toBe(true);
++      expect(defaultShouldHandleError(null)).toBe(true);
++      expect(defaultShouldHandleError(undefined)).toBe(true);
++      expect(defaultShouldHandleError(true)).toBe(true);
++    });
++
++    it('returns true when status is not a number (capture)', () => {
++      expect(defaultShouldHandleError({ status: '404' })).toBe(true);
++      expect(defaultShouldHandleError({ status: null })).toBe(true);
++      expect(defaultShouldHandleError({ status: undefined })).toBe(true);
++    });
++
++    it('returns false for 3xx status (skip)', () => {
++      expect(defaultShouldHandleError({ status: 301 })).toBe(false);
++      expect(defaultShouldHandleError({ status: 302 })).toBe(false);
++      expect(defaultShouldHandleError({ status: 399 })).toBe(false);
++    });
++
++    it('returns true for 2xx status (capture)', () => {
++      expect(defaultShouldHandleError({ status: 200 })).toBe(true);
++      expect(defaultShouldHandleError({ status: 299 })).toBe(true);
++    });
++  });
++});
+diff --git a/packages/hono/test/shared/isExpectedError.test.ts b/packages/hono/test/shared/isExpectedError.test.ts
+deleted file mode 100644
+index 235db79e1357..000000000000
+--- a/packages/hono/test/shared/isExpectedError.test.ts
++++ /dev/null
+@@ -1,78 +0,0 @@
+-import { HTTPException } from 'hono/http-exception';
+-import { describe, expect, it } from 'vitest';
+-import { isExpectedError } from '../../src/shared/isExpectedError';
+-
+-describe('isExpectedError', () => {
+-  describe('HTTPException', () => {
+-    it('returns true for 4xx HTTPException', () => {
+-      expect(isExpectedError(new HTTPException(400, { message: 'Bad Request' }))).toBe(true);
+-      expect(isExpectedError(new HTTPException(401, { message: 'Unauthorized' }))).toBe(true);
+-      expect(isExpectedError(new HTTPException(403, { message: 'Forbidden' }))).toBe(true);
+-      expect(isExpectedError(new HTTPException(404, { message: 'Not Found' }))).toBe(true);
+-      expect(isExpectedError(new HTTPException(422, { message: 'Unprocessable Entity' }))).toBe(true);
+-      expect(isExpectedError(new HTTPException(499))).toBe(true);
+-    });
+-
+-    it('returns false for 5xx HTTPException', () => {
+-      expect(isExpectedError(new HTTPException(500, { message: 'Internal Server Error' }))).toBe(false);
+-      expect(isExpectedError(new HTTPException(502, { message: 'Bad Gateway' }))).toBe(false);
+-      expect(isExpectedError(new HTTPException(503, { message: 'Service Unavailable' }))).toBe(false);
+-    });
+-  });
+-
+-  describe('custom error classes with status property', () => {
+-    it('returns true for custom Error subclass with 4xx status', () => {
+-      class AuthError extends Error {
+-        status = 401;
+-      }
+-      expect(isExpectedError(new AuthError('unauthorized'))).toBe(true);
+-    });
+-
+-    it('returns false for custom Error subclass with 5xx status', () => {
+-      class DbError extends Error {
+-        status = 500;
+-      }
+-      expect(isExpectedError(new DbError('connection lost'))).toBe(false);
+-    });
+-
+-    it('returns true for plain object with 4xx status', () => {
+-      expect(isExpectedError({ status: 404, message: 'Not Found' })).toBe(true);
+-      expect(isExpectedError({ status: 400 })).toBe(true);
+-    });
+-
+-    it('returns false for plain object with 5xx status', () => {
+-      expect(isExpectedError({ status: 500, message: 'Internal Server Error' })).toBe(false);
+-    });
+-  });
+-
+-  describe('non-expected errors', () => {
+-    it('returns false for plain Error without status', () => {
+-      expect(isExpectedError(new Error('something broke'))).toBe(false);
+-    });
+-
+-    it('returns false for non-object values', () => {
+-      expect(isExpectedError('string error')).toBe(false);
+-      expect(isExpectedError(42)).toBe(false);
+-      expect(isExpectedError(null)).toBe(false);
+-      expect(isExpectedError(undefined)).toBe(false);
+-      expect(isExpectedError(true)).toBe(false);
+-    });
+-
+-    it('returns false when status is not a number', () => {
+-      expect(isExpectedError({ status: '404' })).toBe(false);
+-      expect(isExpectedError({ status: null })).toBe(false);
+-      expect(isExpectedError({ status: undefined })).toBe(false);
+-    });
+-
+-    it('returns true for 3xx status', () => {
+-      expect(isExpectedError({ status: 301 })).toBe(true);
+-      expect(isExpectedError({ status: 302 })).toBe(true);
+-      expect(isExpectedError({ status: 399 })).toBe(true);
+-    });
+-
+-    it('returns false for 2xx status', () => {
+-      expect(isExpectedError({ status: 200 })).toBe(false);
+-      expect(isExpectedError({ status: 299 })).toBe(false);
+-    });
+-  });
+-});
+diff --git a/packages/hono/test/shared/middlewareHandlers.test.ts b/packages/hono/test/shared/middlewareHandlers.test.ts
+index accf5fe5f91a..3ea3b0ba692c 100644
+--- a/packages/hono/test/shared/middlewareHandlers.test.ts
++++ b/packages/hono/test/shared/middlewareHandlers.test.ts
+@@ -41,7 +41,7 @@ describe('responseHandler', () => {
+     vi.clearAllMocks();
+   });
+ 
+-  describe('error capture', () => {
++  describe('error capture — default behavior (no shouldHandleError)', () => {
+     it('captures error when context.error is set', () => {
+       const mockCaptureException = vi.fn();
+       getClientMock.mockReturnValue({
+@@ -57,13 +57,13 @@ describe('responseHandler', () => {
+       });
+     });
+ 
+-    it('captures 5xx HTTPException', () => {
++    it('captures plain Error with no status (not an HTTPException) regardless of response status', () => {
+       const mockCaptureException = vi.fn();
+       getClientMock.mockReturnValue({
+         captureException: mockCaptureException,
+       });
+ 
+-      const error = new Error('not found');
++      const error = new Error('plain error, no status property');
+       // oxlint-disable-next-line typescript/no-explicit-any
+       responseHandler(createMockContext(404, error) as any);
+ 
+@@ -107,6 +107,115 @@ describe('responseHandler', () => {
+         mechanism: { handled: false, type: 'auto.http.hono.context_error' },
+       });
+     });
++
++    it('does not capture 4xx HTTPException (status on error object)', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({
++        captureException: mockCaptureException,
++      });
++
++      const error = Object.assign(new Error('Not Found'), { status: 404 });
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(404, error) as any);
++
++      expect(mockCaptureException).not.toHaveBeenCalled();
++    });
++
++    it('does not capture 3xx HTTPException (status on error object)', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({
++        captureException: mockCaptureException,
++      });
++
++      const error = Object.assign(new Error('Redirect'), { status: 301 });
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(301, error) as any);
++
++      expect(mockCaptureException).not.toHaveBeenCalled();
++    });
++
++    it('captures 5xx HTTPException (status on error object)', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({
++        captureException: mockCaptureException,
++      });
++
++      const error = Object.assign(new Error('Service Unavailable'), { status: 503 });
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(503, error) as any);
++
++      expect(mockCaptureException).toHaveBeenCalledWith(error, {
++        mechanism: { handled: false, type: 'auto.http.hono.context_error' },
++      });
++    });
++  });
++
++  describe('error capture — custom shouldHandleError', () => {
++    it('calls shouldHandleError with the error and captures when it returns true', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({ captureException: mockCaptureException });
++
++      const shouldHandleError = vi.fn().mockReturnValue(true);
++      const error = Object.assign(new Error('Not Found'), { status: 404 });
++
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(404, error) as any, shouldHandleError);
++
++      expect(shouldHandleError).toHaveBeenCalledWith(error);
++      expect(mockCaptureException).toHaveBeenCalledWith(error, {
++        mechanism: { handled: false, type: 'auto.http.hono.context_error' },
++      });
++    });
++
++    it('does not capture when shouldHandleError returns false', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({ captureException: mockCaptureException });
++
++      const shouldHandleError = vi.fn().mockReturnValue(false);
++      const error = new Error('suppressed 500 error');
++
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(500, error) as any, shouldHandleError);
++
++      expect(shouldHandleError).toHaveBeenCalledWith(error);
++      expect(mockCaptureException).not.toHaveBeenCalled();
++    });
++
++    it('captures 4xx error that would normally be skipped when shouldHandleError returns true', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({ captureException: mockCaptureException });
++
++      const error = Object.assign(new Error('Unauthorized'), { status: 401 });
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(401, error) as any, () => true);
++
++      expect(mockCaptureException).toHaveBeenCalledWith(error, {
++        mechanism: { handled: false, type: 'auto.http.hono.context_error' },
++      });
++    });
++
++    it('suppresses 5xx error when shouldHandleError returns false', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({ captureException: mockCaptureException });
++
++      const error = Object.assign(new Error('Internal Server Error'), { status: 500 });
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(500, error) as any, () => false);
++
++      expect(mockCaptureException).not.toHaveBeenCalled();
++    });
++
++    it('does not invoke shouldHandleError when context.error is absent', () => {
++      const mockCaptureException = vi.fn();
++      getClientMock.mockReturnValue({ captureException: mockCaptureException });
++
++      const shouldHandleError = vi.fn().mockReturnValue(true);
++      // oxlint-disable-next-line typescript/no-explicit-any
++      responseHandler(createMockContext(200) as any, shouldHandleError);
++
++      expect(shouldHandleError).not.toHaveBeenCalled();
++      expect(mockCaptureException).not.toHaveBeenCalled();
++    });
+   });
+ 
+   describe('transaction name', () => {
+diff --git a/packages/hono/test/shared/patchAppUse.test.ts b/packages/hono/test/shared/patchAppUse.test.ts
+index f504612fc177..dca53be16040 100644
+--- a/packages/hono/test/shared/patchAppUse.test.ts
++++ b/packages/hono/test/shared/patchAppUse.test.ts
+@@ -11,12 +11,10 @@ vi.mock('@sentry/core', async () => {
+       setStatus: vi.fn(),
+       end: vi.fn(),
+     })),
+-    captureException: vi.fn(),
+   };
+ });
+ 
+ const startInactiveSpanMock = SentryCore.startInactiveSpan as ReturnType<typeof vi.fn>;
+-const captureExceptionMock = SentryCore.captureException as ReturnType<typeof vi.fn>;
+ 
+ describe('patchAppUse (middleware spans)', () => {
+   beforeEach(() => {
+@@ -94,7 +92,7 @@ describe('patchAppUse (middleware spans)', () => {
+     expect(startInactiveSpanMock).toHaveBeenCalled();
+   });
+ 
+-  it('calls captureException when middleware throws', async () => {
++  it('sets span error status when middleware throws a 5xx-like error', async () => {
+     const app = new Hono();
+     patchAppUse(app);
+ 
+@@ -106,9 +104,8 @@ describe('patchAppUse (middleware spans)', () => {
+     const res = await app.fetch(new Request('http://localhost/'));
+     expect(res.status).toBe(500);
+ 
+-    expect(captureExceptionMock).toHaveBeenCalledWith(err, {
+-      mechanism: { handled: false, type: 'auto.middleware.hono' },
+-    });
++    const spanFromCall = startInactiveSpanMock.mock.results[0]?.value;
++    expect(spanFromCall?.setStatus).toHaveBeenCalledWith({ code: expect.any(Number), message: 'internal_error' });
+   });
+ 
+   it('creates sibling spans for multiple middlewares (onion order, not parent-child)', async () => {
+diff --git a/packages/hono/test/shared/wrapMiddlewareSpan.test.ts b/packages/hono/test/shared/wrapMiddlewareSpan.test.ts
+new file mode 100644
+index 000000000000..edf778188552
+--- /dev/null
++++ b/packages/hono/test/shared/wrapMiddlewareSpan.test.ts
+@@ -0,0 +1,127 @@
++import * as SentryCore from '@sentry/core';
++import { SPAN_STATUS_ERROR } from '@sentry/core';
++import { type MiddlewareHandler } from 'hono';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { wrapMiddlewareWithSpan } from '../../src/shared/wrapMiddlewareSpan';
++
++const mockSpan = {
++  setStatus: vi.fn(),
++  end: vi.fn(),
++};
++
++vi.mock('@sentry/core', async () => {
++  const actual = await vi.importActual('@sentry/core');
++  return {
++    ...actual,
++    startInactiveSpan: vi.fn(() => mockSpan),
++    getActiveSpan: vi.fn(() => ({ spanId: 'root-span' })),
++    getRootSpan: vi.fn(span => span),
++    getOriginalFunction: vi.fn(() => undefined),
++  };
++});
++
++const startInactiveSpanMock = SentryCore.startInactiveSpan as ReturnType<typeof vi.fn>;
++
++function makeContext(): unknown {
++  return { req: { method: 'GET' }, res: { status: 200 } };
++}
++
++const noop: () => Promise<void> = async () => {};
++
++describe('wrapMiddlewareWithSpan', () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++    startInactiveSpanMock.mockReturnValue(mockSpan);
++  });
++
++  describe('span status', () => {
++    it('does not set span error status for a 4xx error', async () => {
++      const error = Object.assign(new Error('Not Found'), { status: 404 });
++      const handler: MiddlewareHandler = async () => {
++        throw error;
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await expect(wrapped(makeContext() as any, noop)).rejects.toThrow(error);
++
++      expect(mockSpan.setStatus).not.toHaveBeenCalled();
++    });
++
++    it('sets span status to error for a 5xx error', async () => {
++      const error = Object.assign(new Error('Server Error'), { status: 500 });
++      const handler: MiddlewareHandler = async () => {
++        throw error;
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await expect(wrapped(makeContext() as any, noop)).rejects.toThrow(error);
++
++      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: SPAN_STATUS_ERROR, message: 'internal_error' });
++    });
++
++    it('sets span status to error for a plain Error with no status', async () => {
++      const error = new Error('unexpected failure');
++      const handler: MiddlewareHandler = async () => {
++        throw error;
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await expect(wrapped(makeContext() as any, noop)).rejects.toThrow(error);
++
++      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: SPAN_STATUS_ERROR, message: 'internal_error' });
++    });
++
++    it('does not set span error status for a 3xx error', async () => {
++      const error = Object.assign(new Error('Redirect'), { status: 301 });
++      const handler: MiddlewareHandler = async () => {
++        throw error;
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await expect(wrapped(makeContext() as any, noop)).rejects.toThrow(error);
++
++      expect(mockSpan.setStatus).not.toHaveBeenCalled();
++    });
++  });
++
++  describe('span lifecycle', () => {
++    it('always rethrows the error', async () => {
++      const error = new Error('must propagate');
++      const handler: MiddlewareHandler = async () => {
++        throw error;
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await expect(wrapped(makeContext() as any, noop)).rejects.toThrow('must propagate');
++    });
++
++    it('ends the span even when the handler throws', async () => {
++      const handler: MiddlewareHandler = async () => {
++        throw new Error('boom');
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await expect(wrapped(makeContext() as any, noop)).rejects.toThrow();
++
++      expect(mockSpan.end).toHaveBeenCalledTimes(1);
++    });
++
++    it('ends the span when the handler succeeds', async () => {
++      const handler: MiddlewareHandler = async (_c, next) => {
++        await next();
++      };
++
++      const wrapped = wrapMiddlewareWithSpan(handler);
++
++      await wrapped(makeContext() as any, noop);
++
++      expect(mockSpan.end).toHaveBeenCalledTimes(1);
++    });
++  });
++});

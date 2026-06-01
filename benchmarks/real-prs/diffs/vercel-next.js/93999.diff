@@ -1,0 +1,1262 @@
+diff --git a/packages/next/src/client/components/router-reducer/fetch-server-response.ts b/packages/next/src/client/components/router-reducer/fetch-server-response.ts
+index 8f4861321f96..83e620acb31c 100644
+--- a/packages/next/src/client/components/router-reducer/fetch-server-response.ts
++++ b/packages/next/src/client/components/router-reducer/fetch-server-response.ts
+@@ -101,7 +101,7 @@ export type RequestHeaders = {
+   [RSC_HEADER]?: '1'
+   [NEXT_ROUTER_STATE_TREE_HEADER]?: string
+   [NEXT_URL]?: string
+-  [NEXT_ROUTER_PREFETCH_HEADER]?: '1' | '2'
++  [NEXT_ROUTER_PREFETCH_HEADER]?: '1' | '2' | '3'
+   [NEXT_ROUTER_SEGMENT_PREFETCH_HEADER]?: string
+   'x-deployment-id'?: string
+   [NEXT_HMR_REFRESH_HEADER]?: '1'
+diff --git a/packages/next/src/client/components/router-reducer/ppr-navigations.ts b/packages/next/src/client/components/router-reducer/ppr-navigations.ts
+index 3350ea1736fd..6bcef4cf969d 100644
+--- a/packages/next/src/client/components/router-reducer/ppr-navigations.ts
++++ b/packages/next/src/client/components/router-reducer/ppr-navigations.ts
+@@ -30,7 +30,7 @@ import {
+   type RefreshState,
+   type FulfilledRouteCacheEntry,
+   convertReusedFlightRouterStateToRouteTree,
+-  readSegmentCacheEntry,
++  readSegmentCacheEntryForNavigation,
+   waitForSegmentCacheEntry,
+   markRouteEntryAsDynamicRewrite,
+   invalidateRouteCacheEntries,
+@@ -1072,7 +1072,7 @@ function createCacheNodeForSegment(
+   let cachedRsc: React.ReactNode | null = null
+   let isCachedRscPartial: boolean = true
+ 
+-  const segmentEntry = readSegmentCacheEntry(now, tree.varyPath)
++  const segmentEntry = readSegmentCacheEntryForNavigation(now, tree.varyPath)
+   if (segmentEntry !== null) {
+     switch (segmentEntry.status) {
+       case EntryStatus.Fulfilled: {
+@@ -1175,7 +1175,10 @@ function createCacheNodeForSegment(
+     let cachedHead: HeadData | null = null
+     let isCachedHeadPartial: boolean = true
+     if (metadataVaryPath !== null) {
+-      const metadataEntry = readSegmentCacheEntry(now, metadataVaryPath)
++      const metadataEntry = readSegmentCacheEntryForNavigation(
++        now,
++        metadataVaryPath
++      )
+       if (metadataEntry !== null) {
+         switch (metadataEntry.status) {
+           case EntryStatus.Fulfilled: {
+diff --git a/packages/next/src/client/components/segment-cache/bfcache.ts b/packages/next/src/client/components/segment-cache/bfcache.ts
+index 5154f427deb5..d2def0b16b46 100644
+--- a/packages/next/src/client/components/segment-cache/bfcache.ts
++++ b/packages/next/src/client/components/segment-cache/bfcache.ts
+@@ -23,6 +23,7 @@ export function computeDynamicStaleAt(
+ import {
+   setInCacheMap,
+   getFromCacheMap,
++  EntryStatus,
+   type UnknownMapEntry,
+   type CacheMap,
+   createCacheMap,
+@@ -49,6 +50,10 @@ export type BFCacheEntry = {
+   navigatedAt: number
+   staleAt: number
+   version: number
++  // A BFCacheEntry always represents a completed navigation, so the status is
++  // always Fulfilled. The field exists so that BFCacheEntry conforms to the
++  // MapValue protocol.
++  status: EntryStatus.Fulfilled
+ }
+ 
+ const bfcacheMap: CacheMap<BFCacheEntry> = createCacheMap()
+@@ -102,6 +107,7 @@ export function writeToBFCache(
+     // is exported by a page.
+     staleAt: dynamicStaleAt,
+     version: currentBfCacheVersion,
++    status: EntryStatus.Fulfilled,
+   }
+   const isRevalidation = false
+   setInCacheMap(bfcacheMap, varyPath, entry, isRevalidation)
+@@ -148,7 +154,8 @@ export function updateBFCacheEntryStaleAt(
+     currentBfCacheVersion,
+     bfcacheMap,
+     varyPath,
+-    isRevalidation
++    isRevalidation,
++    false
+   )
+   if (entry !== null) {
+     entry.staleAt = newStaleAt
+@@ -170,7 +177,8 @@ export function readFromBFCache(
+     currentBfCacheVersion,
+     bfcacheMap,
+     varyPath,
+-    isRevalidation
++    isRevalidation,
++    false
+   )
+ }
+ 
+@@ -187,6 +195,7 @@ export function readFromBFCacheDuringRegularNavigation(
+     currentBfCacheVersion,
+     bfcacheMap,
+     varyPath,
+-    isRevalidation
++    isRevalidation,
++    false
+   )
+ }
+diff --git a/packages/next/src/client/components/segment-cache/cache-map.ts b/packages/next/src/client/components/segment-cache/cache-map.ts
+index 6993fba1a608..eebc1581aa04 100644
+--- a/packages/next/src/client/components/segment-cache/cache-map.ts
++++ b/packages/next/src/client/components/segment-cache/cache-map.ts
+@@ -65,15 +65,31 @@ import { lruPut, updateLruSize, deleteFromLru } from './lru'
+  * should prefer to put it in cache.ts.
+  */
+ 
+-// The protocol that values must implement. In practice, the only two types that
+-// we ever actually deal with in this module are RouteCacheEntry and
+-// SegmentCacheEntry; this is just to keep track of the coupling so we don't
+-// leak concerns between the modules unnecessarily.
++/**
++ * Tracks the status of a cache entry as it progresses from no data (Empty),
++ * waiting for server data (Pending), and finished (either Fulfilled or
++ * Rejected depending on the response from the server.
++ *
++ * This is defined here, rather than in cache.ts, because cache-map.ts needs to
++ * inspect the status when performing a `onlyMatchFulfilled` lookup.
++ */
++export const enum EntryStatus {
++  Empty = 0,
++  Pending = 1,
++  Fulfilled = 2,
++  Rejected = 3,
++}
++
++// The protocol that values must implement. In practice, the only types that
++// we ever actually deal with in this module are RouteCacheEntry,
++// SegmentCacheEntry, and BFCacheEntry; this is just to keep track of the
++// coupling so we don't leak concerns between the modules unnecessarily.
+ export interface MapValue {
+   ref: UnknownMapEntry | null
+   size: number
+   staleAt: number
+   version: number
++  status: EntryStatus
+ }
+ 
+ /**
+@@ -215,7 +231,14 @@ export function getFromCacheMap<V extends MapValue>(
+   currentCacheVersion: number,
+   rootEntry: CacheMap<V>,
+   keys: VaryPath,
+-  isRevalidation: boolean
++  isRevalidation: boolean,
++  // When true, terminal entries whose status is not Fulfilled are skipped, so
++  // the lookup falls through to a less-specific Fallback entry. Use this
++  // during a navigation to prefer a Fulfilled shell entry over a more-specific
++  // Pending entry that may still be in-flight. Callers that want to also
++  // accept non-Fulfilled entries should perform a second lookup with this set
++  // to false.
++  onlyMatchFulfilled: boolean
+ ): V | null {
+   const entry = getEntryWithFallbackImpl(
+     now,
+@@ -223,7 +246,8 @@ export function getFromCacheMap<V extends MapValue>(
+     rootEntry,
+     keys,
+     isRevalidation,
+-    0
++    0,
++    onlyMatchFulfilled
+   )
+   if (entry === null || entry.value === null) {
+     return null
+@@ -244,7 +268,8 @@ export function isValueExpired(
+ function lazilyEvictIfNeeded<V extends MapValue>(
+   now: number,
+   currentCacheVersion: number,
+-  entry: MapEntry<V>
++  entry: MapEntry<V>,
++  onlyMatchFulfilled: boolean
+ ) {
+   // We have a matching entry, but before we can return it, we need to check if
+   // it's still fresh. Otherwise it should be treated the same as a cache miss.
+@@ -262,6 +287,12 @@ function lazilyEvictIfNeeded<V extends MapValue>(
+     return null
+   }
+ 
++  if (onlyMatchFulfilled && value.status !== EntryStatus.Fulfilled) {
++    // The entry is fresh but is not Fulfilled. Treat as a non-match so the
++    // recursion can continue and try a Fallback entry.
++    return null
++  }
++
+   // The matched entry has not expired. Return it.
+   return entry
+ }
+@@ -272,7 +303,8 @@ function getEntryWithFallbackImpl<V extends MapValue>(
+   entry: MapEntry<V>,
+   keys: VaryPath | null,
+   isRevalidation: boolean,
+-  previousKey: unknown | null
++  previousKey: unknown | null,
++  onlyMatchFulfilled: boolean
+ ): MapEntry<V> | null {
+   // This is similar to getExactEntry, but if an exact match is not found for
+   // a key, it will return the fallback entry instead. This is recursive at
+@@ -280,6 +312,10 @@ function getEntryWithFallbackImpl<V extends MapValue>(
+   // valid match for [a, b, c, d].
+   //
+   // It will return the most specific match available.
++  //
++  // When `onlyMatchFulfilled` is true, terminal entries that aren't Fulfilled
++  // are treated as non-matches, so the recursion will continue searching for
++  // a Fallback match. See getFromCacheMap for the rationale.
+   let key
+   let remainingKeys: VaryPath | null
+   if (keys !== null) {
+@@ -292,14 +328,12 @@ function getEntryWithFallbackImpl<V extends MapValue>(
+     remainingKeys = null
+   } else {
+     // There are no more keys. This is the terminal entry.
+-
+-    // TODO: When performing a lookup during a navigation, as opposed to a
+-    // prefetch, we may want to skip entries that are Pending if there's also
+-    // a Fulfilled fallback entry. Tricky to say, though, since if it's
+-    // already pending, it's likely to stream in soon. Maybe we could do this
+-    // just on slow connections and offline mode.
+-
+-    return lazilyEvictIfNeeded(now, currentCacheVersion, entry)
++    return lazilyEvictIfNeeded(
++      now,
++      currentCacheVersion,
++      entry,
++      onlyMatchFulfilled
++    )
+   }
+   const map = entry.map
+   if (map !== null) {
+@@ -312,7 +346,8 @@ function getEntryWithFallbackImpl<V extends MapValue>(
+         existingEntry,
+         remainingKeys,
+         isRevalidation,
+-        key
++        key,
++        onlyMatchFulfilled
+       )
+       if (result !== null) {
+         return result
+@@ -328,7 +363,8 @@ function getEntryWithFallbackImpl<V extends MapValue>(
+         fallbackEntry,
+         remainingKeys,
+         isRevalidation,
+-        key
++        key,
++        onlyMatchFulfilled
+       )
+     }
+   }
+diff --git a/packages/next/src/client/components/segment-cache/cache.ts b/packages/next/src/client/components/segment-cache/cache.ts
+index 3430c3ac7ffc..afdcb4d76849 100644
+--- a/packages/next/src/client/components/segment-cache/cache.ts
++++ b/packages/next/src/client/components/segment-cache/cache.ts
+@@ -78,9 +78,11 @@ import {
+   setSizeInCacheMap,
+   deleteFromCacheMap,
+   isValueExpired,
++  EntryStatus,
+   type CacheMap,
+   type UnknownMapEntry,
+ } from './cache-map'
++export { EntryStatus } from './cache-map'
+ import {
+   appendSegmentRequestKeyPart,
+   convertSegmentPathToStaticExportFilename,
+@@ -183,18 +185,6 @@ type RouteCacheEntryShared = {
+   version: number
+ }
+ 
+-/**
+- * Tracks the status of a cache entry as it progresses from no data (Empty),
+- * waiting for server data (Pending), and finished (either Fulfilled or
+- * Rejected depending on the response from the server.
+- */
+-export const enum EntryStatus {
+-  Empty = 0,
+-  Pending = 1,
+-  Fulfilled = 2,
+-  Rejected = 3,
+-}
+-
+ export type PendingRouteCacheEntry = RouteCacheEntryShared & {
+   status: EntryStatus.Empty | EntryStatus.Pending
+   blockedTasks: Set<PrefetchTask> | null
+@@ -458,7 +448,8 @@ export function readRouteCacheEntry(
+     getCurrentRouteCacheVersion(),
+     routeCacheMap,
+     varyPath,
+-    isRevalidation
++    isRevalidation,
++    false
+   )
+   if (existingEntry !== null) {
+     return existingEntry
+@@ -483,7 +474,48 @@ export function readSegmentCacheEntry(
+     getCurrentSegmentCacheVersion(),
+     segmentCacheMap,
+     varyPath,
+-    isRevalidation
++    isRevalidation,
++    false
++  )
++}
++
++/**
++ * Like `readSegmentCacheEntry`, but prefers a Fulfilled entry over a
++ * more-specific Pending or Rejected entry. Use this during a navigation, where
++ * a less-specific shell entry (e.g. params -> Fallback) should be rendered
++ * immediately rather than blocking on a more-specific Pending entry that may
++ * still be in-flight.
++ *
++ * Performs up to two lookups:
++ *  1. An `onlyMatchFulfilled` lookup that walks past Pending/Rejected entries
++ *     at more-specific keypaths to find a Fulfilled fallback (e.g. a cached
++ *     shell).
++ *  2. If no Fulfilled entry is found, a regular lookup that returns the most
++ *     specific match regardless of status.
++ */
++export function readSegmentCacheEntryForNavigation(
++  now: number,
++  varyPath: SegmentVaryPath
++): SegmentCacheEntry | null {
++  const isRevalidation = false
++  const fulfilled = getFromCacheMap(
++    now,
++    getCurrentSegmentCacheVersion(),
++    segmentCacheMap,
++    varyPath,
++    isRevalidation,
++    true
++  )
++  if (fulfilled !== null) {
++    return fulfilled
++  }
++  return getFromCacheMap(
++    now,
++    getCurrentSegmentCacheVersion(),
++    segmentCacheMap,
++    varyPath,
++    isRevalidation,
++    false
+   )
+ }
+ 
+@@ -497,7 +529,8 @@ function readRevalidatingSegmentCacheEntry(
+     getCurrentSegmentCacheVersion(),
+     segmentCacheMap,
+     varyPath,
+-    isRevalidation
++    isRevalidation,
++    false
+   )
+ }
+ 
+@@ -2092,6 +2125,7 @@ export async function fetchSegmentPrefetchesUsingDynamicRequest(
+   fetchStrategy:
+     | FetchStrategy.LoadingBoundary
+     | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+     | FetchStrategy.Full,
+   dynamicRequestTree: FlightRouterState,
+   spawnedEntries: Map<SegmentRequestKey, PendingSegmentCacheEntry>
+@@ -2131,6 +2165,10 @@ export async function fetchSegmentPrefetchesUsingDynamicRequest(
+       headers[NEXT_ROUTER_PREFETCH_HEADER] = '2'
+       break
+     }
++    case FetchStrategy.RuntimeShell: {
++      headers[NEXT_ROUTER_PREFETCH_HEADER] = '3'
++      break
++    }
+     case FetchStrategy.LoadingBoundary: {
+       headers[NEXT_ROUTER_PREFETCH_HEADER] = '1'
+       break
+@@ -2221,11 +2259,15 @@ export async function fetchSegmentPrefetchesUsingDynamicRequest(
+ 
+     const now = Date.now()
+     const staleAt = await getStaleAt(now, serverData.s, response)
+-    // PPRRuntime prefetches are partial when the server marks the response
+-    // as '~' (Partial). Full/LoadingBoundary prefetches are always complete.
++    // PPRRuntime and RuntimeShell prefetches are partial when the server
++    // marks the response as '~' (Partial). RuntimeShell additionally omits
++    // every dynamic suspense boundary below the App Shell, so its segments
++    // are always partial regardless of what the server marker says.
++    // Full/LoadingBoundary prefetches are always complete.
+     const isResponsePartial =
+-      fetchStrategy === FetchStrategy.PPRRuntime &&
+-      (cacheData?.isResponsePartial ?? false)
++      fetchStrategy === FetchStrategy.RuntimeShell ||
++      (fetchStrategy === FetchStrategy.PPRRuntime &&
++        (cacheData?.isResponsePartial ?? false))
+ 
+     // Aside from writing the data into the cache, this function also returns
+     // the entries that were fulfilled, so we can streamingly update their sizes
+@@ -2411,6 +2453,7 @@ export function writeDynamicRenderResponseIntoCache(
+     | FetchStrategy.LoadingBoundary
+     | FetchStrategy.PPR
+     | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+     | FetchStrategy.Full,
+   flightDatas: NormalizedFlightData[],
+   buildId: string | undefined,
+@@ -2523,6 +2566,7 @@ function writeSeedDataIntoCache(
+     | FetchStrategy.LoadingBoundary
+     | FetchStrategy.PPR
+     | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+     | FetchStrategy.Full,
+   tree: RouteTree,
+   staleAt: number,
+@@ -2577,12 +2621,15 @@ function writeSeedDataIntoCache(
+   }
+ }
+ 
++const EMPTY_VARY_PARAMS: Set<string> = new Set()
++
+ function fulfillEntrySpawnedByRuntimePrefetch(
+   now: number,
+   fetchStrategy:
+     | FetchStrategy.LoadingBoundary
+     | FetchStrategy.PPR
+     | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+     | FetchStrategy.Full,
+   rsc: React.ReactNode,
+   isPartial: boolean,
+@@ -2605,11 +2652,28 @@ function fulfillEntrySpawnedByRuntimePrefetch(
+   // untrustworthy set could replace concrete params with Fallback and let
+   // unrelated URLs read each other's content from the cache.
+   //
++  // Override to an empty set for RuntimeShell prefetches. The shell is
++  // param-free by definition — that's the whole point of the strategy — so
++  // every param node in the vary path should be Fallback regardless of what
++  // the server reports.
++  // NOTE: It would be better not to override this value on the client. We
++  // should be able to trust the server. However, there's one known case where
++  // the server can over-report search params: the tracking proxy in
++  // `createVaryingSearchParams` registers `?` on any string property access,
++  // and `Promise.resolve(proxy)` reads `.then` during thenability detection,
++  // so just wrapping the proxy in a promise is enough to leak `?` into the
++  // accumulator. We also don't want to special case "then" access because it's
++  // perfectly valid to have a search param named "then". The plan to address
++  // this is to track each search param individually, rather than the entire
++  // query string as a whole.
++  //
+   // When non-null, this is the param set to re-key by; when null, the entry
+   // stays keyed by the request's concrete vary path.
+   const fulfilledVaryParams =
+     process.env.__NEXT_VARY_PARAMS && fetchStrategy !== FetchStrategy.Full
+-      ? segmentVaryParams
++      ? fetchStrategy === FetchStrategy.RuntimeShell
++        ? EMPTY_VARY_PARAMS
++        : segmentVaryParams
+       : null
+ 
+   // We should only write into cache entries that are owned by us. Or create
+diff --git a/packages/next/src/client/components/segment-cache/scheduler.ts b/packages/next/src/client/components/segment-cache/scheduler.ts
+index 433f06ae755c..5fdc570f109a 100644
+--- a/packages/next/src/client/components/segment-cache/scheduler.ts
++++ b/packages/next/src/client/components/segment-cache/scheduler.ts
+@@ -187,13 +187,23 @@ const enum PrefetchTaskExitStatus {
+ }
+ 
+ /**
+- * Prefetch tasks are processed in two phases: first the route tree is fetched,
+- * then the segments. We use this to priortize tasks that have not yet fetched
+- * the route tree.
++ * Prefetch tasks are processed in phases so that high-leverage work runs
++ * before per-link work:
++ *
++ * - RouteTree: fetch the route's tree structure.
++ * - Shell: fetch the route's reusable App Shell (param-free loading state),
++ *   if the route can produce one and the feature is enabled. Bounded by
++ *   filesystem-route count, not link count — so all Shell prefetches across
++ *   queued tasks complete before any Speculative prefetch runs, because
++ *   shell responses are shared across every navigation to the same route.
++ * - Speculative: fetch the route's concrete per-link segment data.
++ *
++ * Higher numbers run earlier (matches heap-sort convention).
+  */
+ const enum PrefetchPhase {
+-  RouteTree = 1,
+-  Segments = 0,
++  RouteTree = 2,
++  Shell = 1,
++  Speculative = 0,
+ }
+ 
+ export type PrefetchSubtaskResult<T> = {
+@@ -548,9 +558,18 @@ function processQueueInMicrotask() {
+         continue
+       case PrefetchTaskExitStatus.Done:
+         if (task.phase === PrefetchPhase.RouteTree) {
+-          // Finished prefetching the route tree. Proceed to prefetching
+-          // the segments.
+-          task.phase = PrefetchPhase.Segments
++          // Finished prefetching the route tree. If App Shells are enabled,
++          // run the Shell phase next; otherwise go straight to Speculative.
++          task.phase = process.env.__NEXT_APP_SHELLS
++            ? PrefetchPhase.Shell
++            : PrefetchPhase.Speculative
++          heapResift(taskHeap, task)
++        } else if (task.phase === PrefetchPhase.Shell) {
++          // Shell phase complete. Always advance to Speculative regardless
++          // of whether Shell-phase work fired — Speculative is responsible
++          // for the per-link concrete work and runs even on routes whose
++          // shell phase was a no-op.
++          task.phase = PrefetchPhase.Speculative
+           heapResift(taskHeap, task)
+         } else if (hasBackgroundWork) {
+           // The task spawned additional background work. Reschedule the task
+@@ -593,6 +612,11 @@ function processQueueInMicrotask() {
+  * if (background(task)) {
+  *   // Perform background-pri work
+  * }
++ *
++ * TODO: Model "background" as a phase (like Shell / Speculative) rather
++ * than as a priority. Conceptually it's the same pattern: defer work
++ * until a later pass over the task. The current priority-based encoding
++ * predates the phase model and could be unified.
+  */
+ function background(task: PrefetchTask): boolean {
+   if (task.priority === PrefetchPriority.Background) {
+@@ -705,8 +729,8 @@ function pingRootRouteTree(
+       return PrefetchTaskExitStatus.Done
+     }
+     case EntryStatus.Fulfilled: {
+-      if (task.phase !== PrefetchPhase.Segments) {
+-        // Do not prefetch segment data until we've entered the segment phase.
++      if (task.phase === PrefetchPhase.RouteTree) {
++        // Do not prefetch segment data during the route tree phase.
+         return PrefetchTaskExitStatus.Done
+       }
+       // Recursively fill in the segment tree.
+@@ -765,8 +789,13 @@ function pingRootRouteTree(
+             // Child yielded without finishing.
+             return PrefetchTaskExitStatus.InProgress
+           }
++
+           if (tree.prefetchHints & PrefetchHint.SubtreeHasRuntimePrefetch) {
+             // The route has segments that require a runtime prefetch.
++            const runtimeStrategy =
++              task.phase === PrefetchPhase.Shell
++                ? FetchStrategy.RuntimeShell
++                : FetchStrategy.PPRRuntime
+ 
+             // Always ping the runtime head — it may need to be fetched
+             // independently even if all runtime segments are already
+@@ -776,13 +805,7 @@ function pingRootRouteTree(
+               SegmentRequestKey,
+               PendingSegmentCacheEntry
+             >()
+-            pingRuntimeHead(
+-              now,
+-              task,
+-              route,
+-              spawnedEntries,
+-              FetchStrategy.PPRRuntime
+-            )
++            pingRuntimeHead(now, task, route, spawnedEntries, runtimeStrategy)
+ 
+             const spawnedRuntimePrefetches = task.spawnedRuntimePrefetches
+             if (spawnedRuntimePrefetches !== null) {
+@@ -792,14 +815,15 @@ function pingRootRouteTree(
+                 route,
+                 tree,
+                 spawnedRuntimePrefetches,
+-                spawnedEntries
++                spawnedEntries,
++                runtimeStrategy
+               )
+               if (spawnedEntries.size > 0) {
+                 spawnPrefetchSubtask(
+                   fetchSegmentPrefetchesUsingDynamicRequest(
+                     task,
+                     route,
+-                    FetchStrategy.PPRRuntime,
++                    runtimeStrategy,
+                     requestTree,
+                     spawnedEntries
+                   )
+@@ -818,7 +842,7 @@ function pingRootRouteTree(
+                   fetchSegmentPrefetchesUsingDynamicRequest(
+                     task,
+                     route,
+-                    FetchStrategy.PPRRuntime,
++                    runtimeStrategy,
+                     MetadataOnlyRequestTree,
+                     spawnedEntries
+                   )
+@@ -832,6 +856,12 @@ function pingRootRouteTree(
+         case FetchStrategy.Full:
+         case FetchStrategy.PPRRuntime:
+         case FetchStrategy.LoadingBoundary: {
++          if (task.phase === PrefetchPhase.Shell) {
++            // Shell phase only does work on routes that use the PPR strategy
++            // (Cache Components routes). Other strategies are Shell no-ops
++            // and fall through to Speculative.
++            return PrefetchTaskExitStatus.Done
++          }
+           // Prefetch multiple segments using a single dynamic request.
+           // TODO: We can consolidate this branch with previous one by modeling
+           // it as if the first segment in the new tree has runtime prefetching
+@@ -887,13 +917,17 @@ function pingStaticHead(
+   // The Head data for a page (metadata, viewport) is not really a route
+   // segment, in the sense that it doesn't appear in the route tree. But we
+   // store it in the cache as if it were, using a special key.
+-  //
+-  // If the head was inlined into a page's bundle (HeadOutlined is NOT set
+-  // on the root), skip the standalone fetch — the head data will arrive
+-  // as part of that page's response.
+   if (
+-    process.env.__NEXT_PREFETCH_INLINING &&
+-    !(route.tree.prefetchHints & PrefetchHint.HeadOutlined)
++    // TODO: Currently static App Shell extraction is not implemented for
++    // per-segment prefetch responses. Instead, shell prefetches are only
++    // supported via a runtime prefetch request. The head will be prefetched
++    // as part of that request, so it's fine that we skip it here.
++    task.phase === PrefetchPhase.Shell ||
++    // If the head was inlined into a page's bundle (HeadOutlined is NOT set
++    // on the root), skip the standalone fetch — the head data will arrive
++    // as part of that page's response.
++    (process.env.__NEXT_PREFETCH_INLINING &&
++      !(route.tree.prefetchHints & PrefetchHint.HeadOutlined))
+   ) {
+     return
+   }
+@@ -907,7 +941,7 @@ function pingStaticHead(
+     ),
+     parent: null,
+   }
+-  pingSegmentBundle(now, task, route, task.key, route.metadata, segments)
++  pingSegmentBundle(now, route, task.key, route.metadata, segments)
+ }
+ 
+ function pingRuntimeHead(
+@@ -918,6 +952,7 @@ function pingRuntimeHead(
+   fetchStrategy:
+     | FetchStrategy.Full
+     | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+     | FetchStrategy.LoadingBoundary
+ ): void {
+   pingRouteTreeAndIncludeDynamicData(
+@@ -1355,7 +1390,10 @@ function pingRouteTreeAndIncludeDynamicData(
+   tree: RouteTree,
+   isInsideRefetchingParent: boolean,
+   spawnedEntries: Map<SegmentRequestKey, PendingSegmentCacheEntry>,
+-  fetchStrategy: FetchStrategy.Full | FetchStrategy.PPRRuntime
++  fetchStrategy:
++    | FetchStrategy.Full
++    | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+ ): FlightRouterState {
+   // The tree we're constructing is the same shape as the tree we're navigating
+   // to. But even though this is a "new" tree, some of the individual segments
+@@ -1484,7 +1522,8 @@ function pingRuntimePrefetches(
+   route: FulfilledRouteCacheEntry,
+   tree: RouteTree,
+   spawnedRuntimePrefetches: Set<SegmentRequestKey>,
+-  spawnedEntries: Map<SegmentRequestKey, PendingSegmentCacheEntry>
++  spawnedEntries: Map<SegmentRequestKey, PendingSegmentCacheEntry>,
++  fetchStrategy: FetchStrategy.PPRRuntime | FetchStrategy.RuntimeShell
+ ): FlightRouterState {
+   // Construct a request tree (FlightRouterState) for a runtime prefetch. If
+   // a segment is part of the runtime prefetch, the tree is constructed by
+@@ -1501,7 +1540,7 @@ function pingRuntimePrefetches(
+       tree,
+       false,
+       spawnedEntries,
+-      FetchStrategy.PPRRuntime
++      fetchStrategy
+     )
+   }
+   let requestTreeChildren: Record<string, FlightRouterState> = {}
+@@ -1515,7 +1554,8 @@ function pingRuntimePrefetches(
+         route,
+         childTree,
+         spawnedRuntimePrefetches,
+-        spawnedEntries
++        spawnedEntries,
++        fetchStrategy
+       )
+     }
+   }
+@@ -1536,7 +1576,6 @@ function pingRuntimePrefetches(
+  */
+ function pingSegmentBundle(
+   now: number,
+-  task: PrefetchTask,
+   route: FulfilledRouteCacheEntry,
+   routeKey: RouteCacheKey,
+   tree: RouteTree,
+@@ -1559,62 +1598,79 @@ function pingSegmentBundle(
+         needsFetch = true
+         break
+       case EntryStatus.Pending:
+-        switch (nodeEntry.fetchStrategy) {
+-          case FetchStrategy.PPR:
+-          case FetchStrategy.PPRRuntime:
+-          case FetchStrategy.Full:
++        if (
++          canNewFetchStrategyProvideMoreContent(
++            nodeEntry.fetchStrategy,
++            FetchStrategy.PPR
++          )
++        ) {
++          const revalidatingEntry = readOrCreateRevalidatingSegmentEntry(
++            now,
++            FetchStrategy.PPR,
++            nodeTree
++          )
++          if (revalidatingEntry.status === EntryStatus.Empty) {
++            upgradeToPendingSegment(revalidatingEntry, FetchStrategy.PPR)
++            node.entry = revalidatingEntry
++            needsFetch = true
++          } else {
+             node.entry = null
+-            break
+-          case FetchStrategy.LoadingBoundary:
+-            if (background(task)) {
+-              const revalidatingEntry = readOrCreateRevalidatingSegmentEntry(
+-                now,
+-                FetchStrategy.PPR,
+-                nodeTree
+-              )
+-              if (revalidatingEntry.status === EntryStatus.Empty) {
+-                upgradeToPendingSegment(revalidatingEntry, FetchStrategy.PPR)
+-                node.entry = revalidatingEntry
+-                needsFetch = true
+-              } else {
+-                node.entry = null
+-              }
+-            } else {
+-              node.entry = null
+-            }
+-            break
+-          default:
+-            nodeEntry.fetchStrategy satisfies never
++          }
++        } else {
++          node.entry = null
+         }
+         break
+       case EntryStatus.Rejected:
+-        switch (nodeEntry.fetchStrategy) {
+-          case FetchStrategy.PPR:
+-          case FetchStrategy.PPRRuntime:
+-          case FetchStrategy.Full:
++        if (
++          canNewFetchStrategyProvideMoreContent(
++            nodeEntry.fetchStrategy,
++            FetchStrategy.PPR
++          )
++        ) {
++          const revalidatingEntry = readOrCreateRevalidatingSegmentEntry(
++            now,
++            FetchStrategy.PPR,
++            nodeTree
++          )
++          if (revalidatingEntry.status === EntryStatus.Empty) {
++            upgradeToPendingSegment(revalidatingEntry, FetchStrategy.PPR)
++            node.entry = revalidatingEntry
++            needsFetch = true
++          } else {
+             node.entry = null
+-            break
+-          case FetchStrategy.LoadingBoundary: {
+-            const revalidatingEntry = readOrCreateRevalidatingSegmentEntry(
+-              now,
+-              FetchStrategy.PPR,
+-              nodeTree
+-            )
+-            if (revalidatingEntry.status === EntryStatus.Empty) {
+-              upgradeToPendingSegment(revalidatingEntry, FetchStrategy.PPR)
+-              node.entry = revalidatingEntry
+-              needsFetch = true
+-            } else {
+-              node.entry = null
+-            }
+-            break
+           }
+-          default:
+-            nodeEntry.fetchStrategy satisfies never
++        } else {
++          node.entry = null
+         }
+         break
+       case EntryStatus.Fulfilled:
+-        node.entry = null
++        // For shell entries (less specific than PPR), upgrade during the
++        // Speculative phase itself — no background deferral, since the
++        // whole point of the Speculative phase is to bring the cache up
++        // to the per-link-concrete tier. `isPartial` ensures a complete
++        // entry isn't re-fetched.
++        if (
++          nodeEntry.isPartial &&
++          canNewFetchStrategyProvideMoreContent(
++            nodeEntry.fetchStrategy,
++            FetchStrategy.PPR
++          )
++        ) {
++          const revalidatingEntry = readOrCreateRevalidatingSegmentEntry(
++            now,
++            FetchStrategy.PPR,
++            nodeTree
++          )
++          if (revalidatingEntry.status === EntryStatus.Empty) {
++            upgradeToPendingSegment(revalidatingEntry, FetchStrategy.PPR)
++            node.entry = revalidatingEntry
++            needsFetch = true
++          } else {
++            node.entry = null
++          }
++        } else {
++          node.entry = null
++        }
+         break
+       default:
+         nodeEntry satisfies never
+@@ -1656,6 +1712,15 @@ function accumulateSegmentBundle(
+     }
+   }
+ 
++  if (task.phase === PrefetchPhase.Shell) {
++    // The static-bundle path is for per-segment static (PPR) prefetches.
++    // Shell phase issues a single combined RuntimeShell request via
++    // pingRoute's runtime gate block — it neither needs nor wants the
++    // static bundle entries (which would be Pending PPR at concrete
++    // keypaths, blocking the RuntimeShell request and missing the shell
++    // vary-path placement we need for Fallback reuse). Skip entirely.
++    return null
++  }
+   const segment = readOrCreateSegmentCacheEntry(now, task.fetchStrategy, tree)
+ 
+   if (
+@@ -1694,7 +1759,7 @@ function accumulateSegmentBundle(
+     parent: effectiveParent,
+   }
+ 
+-  pingSegmentBundle(now, task, route, task.key, tree, segments)
++  pingSegmentBundle(now, route, task.key, tree, segments)
+   return null
+ }
+ 
+@@ -1705,6 +1770,14 @@ function finishStaticBundleOnRuntimeBailout(
+   tree: RouteTree,
+   parentBundle: SegmentBundle
+ ): void {
++  if (task.phase === PrefetchPhase.Shell) {
++    // Same reason as the gate in accumulateSegmentBundle: no static-bundle
++    // work during Shell phase. (Should already be unreachable since
++    // accumulateSegmentBundle returns null during Shell, leaving every
++    // parentBundle null at the runtime-bailout call site — gating here
++    // as defense in depth.)
++    return
++  }
+   const bundle = accumulateSegmentBundle(now, task, route, tree, parentBundle)
+   if (bundle === null) {
+     return
+@@ -1723,7 +1796,10 @@ function finishStaticBundleOnRuntimeBailout(
+ function pingFullSegmentRevalidation(
+   now: number,
+   tree: RouteTree,
+-  fetchStrategy: FetchStrategy.Full | FetchStrategy.PPRRuntime
++  fetchStrategy:
++    | FetchStrategy.Full
++    | FetchStrategy.PPRRuntime
++    | FetchStrategy.RuntimeShell
+ ): PendingSegmentCacheEntry | null {
+   const revalidatingSegment = readOrCreateRevalidatingSegmentEntry(
+     now,
+diff --git a/packages/next/src/client/components/segment-cache/types.ts b/packages/next/src/client/components/segment-cache/types.ts
+index 09d00bf3d17a..58f51365e5ea 100644
+--- a/packages/next/src/client/components/segment-cache/types.ts
++++ b/packages/next/src/client/components/segment-cache/types.ts
+@@ -36,9 +36,10 @@ export const enum FetchStrategy {
+   // and determine if one segment is "more specific" than another
+   // (i.e. if it's likely that it contains more data)
+   LoadingBoundary = 0,
+-  PPR = 1,
+-  PPRRuntime = 2,
+-  Full = 3,
++  RuntimeShell = 1,
++  PPR = 2,
++  PPRRuntime = 3,
++  Full = 4,
+ }
+ 
+ /**
+diff --git a/packages/next/src/client/components/segment-cache/vary-path.ts b/packages/next/src/client/components/segment-cache/vary-path.ts
+index f80b1c077bd3..1d8854b0ef3e 100644
+--- a/packages/next/src/client/components/segment-cache/vary-path.ts
++++ b/packages/next/src/client/components/segment-cache/vary-path.ts
+@@ -269,6 +269,13 @@ export function getSegmentVaryPathForRequest(
+   // params that can be treated as Fallback. (Or perhaps the inverse.)
+   const originalVaryPath = tree.varyPath
+ 
++  if (fetchStrategy === FetchStrategy.RuntimeShell) {
++    // The Shell phase issues a runtime render with params omitted. The
++    // resulting entry is reusable across all concrete param values, so we
++    // key it at the shell vary path (every param substituted with Fallback).
++    return getShellSegmentVaryPath(originalVaryPath)
++  }
++
+   // Only page segments (and the special "metadata" segment, which is treated
+   // like a page segment for the purposes of caching) may contain search
+   // params. There's no reason to include them in the vary path otherwise.
+@@ -362,3 +369,28 @@ export function getFulfilledSegmentVaryPath(
+   }
+   return clone as SegmentVaryPath
+ }
++
++function getShellSegmentVaryPath(original: VaryPath): SegmentVaryPath {
++  // Re-keys a segment's vary path to identify the "App Shell" entry for this
++  // segment position — a reusable, param-free loading state that can be served
++  // for any concrete navigation to this segment. Every param node (path
++  // params, search params) is replaced with Fallback; only structural nodes
++  // (request keys, etc.) keep their concrete value.
++  //
++  // NOTE: For now, we treat root params the same as non-root params and
++  // forbid them from the shell. Root params change less frequently than
++  // other params, though, so caching the shell across root param values is
++  // a potential future optimization. One way to model that would be to
++  // evict the entire client cache whenever a root param change is detected.
++  // Then we would no longer need to include them in the cache key, which
++  // would be consistent with how we treat session-based data like cookies.
++  const clone: VaryPath = {
++    id: original.id,
++    value: original.id === null ? original.value : Fallback,
++    parent:
++      original.parent === null
++        ? null
++        : getShellSegmentVaryPath(original.parent),
++  }
++  return clone as SegmentVaryPath
++}
+diff --git a/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/layout.tsx b/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/layout.tsx
+new file mode 100644
+index 000000000000..7758e801dc83
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/layout.tsx
+@@ -0,0 +1,9 @@
++import { ReactNode } from 'react'
++
++export default function RootLayout({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/page.tsx b/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/page.tsx
+new file mode 100644
+index 000000000000..db2ad1e28564
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/page.tsx
+@@ -0,0 +1,38 @@
++import Link from 'next/link'
++import { LinkAccordion } from '../components/link-accordion'
++
++export default function Page() {
++  return (
++    <main>
++      <h1>Home</h1>
++
++      <h2>Dynamic posts</h2>
++      <p>
++        These posts read request-time data (cookies). Their App Shell is the
++        part of the page that doesn&apos;t depend on the URL params, so it can
++        be cached once and reused for any post.
++      </p>
++      <ul>
++        <li>
++          <LinkAccordion href="/posts/1">Post 1</LinkAccordion>
++        </li>
++        <li>
++          <LinkAccordion href="/posts/2">Post 2</LinkAccordion>
++        </li>
++        <li>
++          <LinkAccordion href="/posts/3">Post 3</LinkAccordion>
++        </li>
++        <li>
++          <Link href="/posts/124" prefetch={false}>
++            Unprefetched post
++          </Link>
++        </li>
++        <li>
++          <Link href="/posts/125?foo=bar" prefetch={false}>
++            Unprefetched post with search params
++          </Link>
++        </li>
++      </ul>
++    </main>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/posts/[id]/page.tsx b/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/posts/[id]/page.tsx
+new file mode 100644
+index 000000000000..5c22acde73d9
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/prefetch-app-shell/app/posts/[id]/page.tsx
+@@ -0,0 +1,52 @@
++import { Suspense } from 'react'
++import { cookies } from 'next/headers'
++import { connection } from 'next/server'
++
++type Params = { id: string }
++
++export const unstable_prefetch = 'force-runtime'
++
++export default function Page({ params }: { params: Promise<Params> }) {
++  return (
++    <main>
++      {/* Cookies are part of the request context, so they're available
++          when the App Shell is prerendered. The result is included in
++          the cached shell. */}
++      <Suspense fallback={<p id="cookie-loading">Loading cookie...</p>}>
++        <CookieDependent />
++      </Suspense>
++      {/* The fallback is the App Shell — the part of the page that
++          doesn't depend on params. */}
++      <Suspense fallback={<p id="shell">App shell for posts</p>}>
++        <ParamsDependent params={params} />
++      </Suspense>
++    </main>
++  )
++}
++
++async function CookieDependent() {
++  const cookieStore = await cookies()
++  const value = cookieStore.get('testCookie')?.value ?? 'none'
++  return <p id="cookie-value">{`Cookie: ${value}`}</p>
++}
++
++async function ParamsDependent({ params }: { params: Promise<Params> }) {
++  const { id } = await params
++  // The fallback shows while the dynamic content is loading, after the
++  // params have resolved.
++  return (
++    <>
++      <p id="param-value">{`Post ${id}`}</p>
++      <Suspense
++        fallback={<p id="dynamic-loading">Loading dynamic content...</p>}
++      >
++        <Dynamic id={id} />
++      </Suspense>
++    </>
++  )
++}
++
++async function Dynamic({ id }: { id: string }) {
++  await connection()
++  return <p id="dynamic-content">{`Post body for ${id}`}</p>
++}
+diff --git a/test/e2e/app-dir/segment-cache/prefetch-app-shell/components/link-accordion.tsx b/test/e2e/app-dir/segment-cache/prefetch-app-shell/components/link-accordion.tsx
+new file mode 100644
+index 000000000000..c6848d479aef
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/prefetch-app-shell/components/link-accordion.tsx
+@@ -0,0 +1,33 @@
++'use client'
++
++import Link, { type LinkProps } from 'next/link'
++import { useState } from 'react'
++
++export function LinkAccordion({
++  href,
++  children,
++  prefetch,
++}: {
++  href: string
++  children: React.ReactNode
++  prefetch?: LinkProps['prefetch']
++}) {
++  const [isVisible, setIsVisible] = useState(false)
++  return (
++    <>
++      <input
++        type="checkbox"
++        checked={isVisible}
++        onChange={() => setIsVisible(!isVisible)}
++        data-link-accordion={href}
++      />
++      {isVisible ? (
++        <Link href={href} prefetch={prefetch}>
++          {children}
++        </Link>
++      ) : (
++        <>{children} (link is hidden)</>
++      )}
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/prefetch-app-shell/next.config.ts b/test/e2e/app-dir/segment-cache/prefetch-app-shell/next.config.ts
+new file mode 100644
+index 000000000000..c19ce61a9988
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/prefetch-app-shell/next.config.ts
+@@ -0,0 +1,14 @@
++import type { NextConfig } from 'next'
++
++const nextConfig: NextConfig = {
++  cacheComponents: true,
++  experimental: {
++    prefetchInlining: true,
++    optimisticRouting: true,
++    cachedNavigations: true,
++    appShells: true,
++    varyParams: true,
++  },
++}
++
++export default nextConfig
+diff --git a/test/e2e/app-dir/segment-cache/prefetch-app-shell/prefetch-app-shell.test.ts b/test/e2e/app-dir/segment-cache/prefetch-app-shell/prefetch-app-shell.test.ts
+new file mode 100644
+index 000000000000..e3da4def642d
+--- /dev/null
++++ b/test/e2e/app-dir/segment-cache/prefetch-app-shell/prefetch-app-shell.test.ts
+@@ -0,0 +1,135 @@
++import { nextTestSetup } from 'e2e-utils'
++import type * as Playwright from 'playwright'
++import { createRouterAct } from 'router-act'
++
++describe('App Shell prefetching', () => {
++  const { next, isNextDev } = nextTestSetup({
++    files: __dirname,
++  })
++  if (isNextDev) {
++    it('is skipped', () => {})
++    return
++  }
++
++  it('reuses the app shell across different param values so navigation to an unprefetched route is instant', async () => {
++    let page: Playwright.Page
++    const browser = await next.browser('/', {
++      beforePageLoad(p: Playwright.Page) {
++        page = p
++      },
++    })
++    const act = createRouterAct(page)
++
++    // Reveal the LinkAccordion for /posts/1. This caches the App Shell
++    // for the route — the param-independent content of the page that's
++    // reusable for any /posts/[id].
++    //
++    // The "App shell for posts" substring appears in two responses: one
++    // for the App Shell itself and one for the per-link prefetch of
++    // /posts/1 (which, for a dynamic page, also includes the shell
++    // content above its inner Suspense fallback).
++    await act(async () => {
++      await browser
++        .elementByCss('input[data-link-accordion="/posts/1"]')
++        .click()
++    }, [
++      { includes: 'App shell for posts' },
++      { includes: 'App shell for posts' },
++    ])
++
++    await act(async () => {
++      // Click the link to /posts/124. This link is rendered with
++      // prefetch={false}, so it was never prefetched. The cached App
++      // Shell should render immediately, before any navigation response
++      // arrives.
++      await browser.elementByCss('a[href="/posts/124"]').click()
++
++      // While the navigation response is blocked (we're still in the
++      // `act` block), the cached App Shell should already be visible.
++      expect(await browser.elementById('shell').text()).toEqual(
++        'App shell for posts'
++      )
++      // Sesssion data (cookies) is not dependent on URL-data, so they are
++      // allowed to be accessed in the shell.
++      expect(await browser.elementById('cookie-value').text()).toEqual(
++        'Cookie: none'
++      )
++    })
++
++    // After the outer act unblocks the navigation, params resolve and the
++    // dynamic content streams in.
++    expect(await browser.elementById('param-value').text()).toEqual('Post 124')
++    expect(await browser.elementById('dynamic-content').text()).toEqual(
++      'Post body for 124'
++    )
++  })
++
++  it('reuses the app shell across different search param values', async () => {
++    let page: Playwright.Page
++    const browser = await next.browser('/', {
++      beforePageLoad(p: Playwright.Page) {
++        page = p
++      },
++    })
++    const act = createRouterAct(page)
++
++    // Reveal the LinkAccordion for /posts/1. This caches the App Shell.
++    // Because the App Shell does not depend on params or search params,
++    // it should be reusable across all combinations of either.
++    await act(async () => {
++      await browser
++        .elementByCss('input[data-link-accordion="/posts/1"]')
++        .click()
++    }, [
++      { includes: 'App shell for posts' },
++      { includes: 'App shell for posts' },
++    ])
++
++    // Navigate to /posts/125?foo=bar — a different param AND a different
++    // search-params value than what was prefetched. The cached App Shell
++    // should be reused since it doesn't vary on either.
++    await act(async () => {
++      await browser.elementByCss('a[href="/posts/125?foo=bar"]').click()
++
++      // While the navigation response is blocked, the cached App Shell
++      // should already be visible.
++      expect(await browser.elementById('shell').text()).toEqual(
++        'App shell for posts'
++      )
++    })
++  })
++
++  it('issues a concrete prefetch for a second link with a different param, even though the shell is already cached', async () => {
++    let page: Playwright.Page
++    const browser = await next.browser('/', {
++      beforePageLoad(p: Playwright.Page) {
++        page = p
++      },
++    })
++    const act = createRouterAct(page)
++
++    // Reveal the LinkAccordion for /posts/1. The "App shell for posts"
++    // substring appears in two responses: one for the App Shell itself
++    // and one for the per-link prefetch of /posts/1 (which, for a
++    // dynamic page, also includes the shell content above its inner
++    // Suspense fallback).
++    await act(async () => {
++      await browser
++        .elementByCss('input[data-link-accordion="/posts/1"]')
++        .click()
++    }, [
++      { includes: 'App shell for posts' },
++      { includes: 'App shell for posts' },
++    ])
++
++    // Reveal the LinkAccordion for /posts/2. The App Shell is already
++    // cached and reused, but a per-link prefetch should still fire for
++    // /posts/2 so that its param-specific content lands in the cache.
++    // We assert on that param-specific content to confirm.
++    await act(async () => {
++      await browser
++        .elementByCss('input[data-link-accordion="/posts/2"]')
++        .click()
++    }, [{ includes: 'Post 2' }])
++  })
++})

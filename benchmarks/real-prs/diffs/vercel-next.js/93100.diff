@@ -1,0 +1,2492 @@
+diff --git a/crates/next-api/src/operation.rs b/crates/next-api/src/operation.rs
+index 7273b1f1f874..bd40ea51c0b1 100644
+--- a/crates/next-api/src/operation.rs
++++ b/crates/next-api/src/operation.rs
+@@ -2,10 +2,10 @@ use anyhow::Result;
+ use bincode::{Decode, Encode};
+ use turbo_rcstr::RcStr;
+ use turbo_tasks::{
+-    CollectiblesSource, FxIndexMap, NonLocalValue, OperationValue, OperationVc, ResolvedVc,
+-    TaskInput, Vc, debug::ValueDebugFormat, take_effects, trace::TraceRawVcs,
++    FxIndexMap, NonLocalValue, OperationValue, OperationVc, ResolvedVc, TaskInput, Vc,
++    debug::ValueDebugFormat, take_effects, trace::TraceRawVcs,
+ };
+-use turbopack_core::{diagnostics::Diagnostic, issue::CollectibleIssuesExt};
++use turbopack_core::issue::CollectibleIssuesExt;
+ 
+ use crate::{
+     entrypoints::Entrypoints,
+@@ -31,14 +31,13 @@ pub struct EntrypointsOperation {
+     pub pages_error_endpoint: OperationVc<OptionEndpoint>,
+ }
+ 
+-/// Removes diagnostics, issues, and effects from the top-level `entrypoints` operation so that
+-/// they're not duplicated across many different individual entrypoints or routes.
++/// Removes issues and effects from the top-level `entrypoints` operation so that they're not
++/// duplicated across many different individual entrypoints or routes.
+ #[turbo_tasks::function(operation)]
+ async fn entrypoints_without_collectibles_operation(
+     entrypoints: OperationVc<Entrypoints>,
+ ) -> Result<Vc<Entrypoints>> {
+     let _ = entrypoints.resolve().strongly_consistent().await?;
+-    entrypoints.drop_collectibles::<Box<dyn Diagnostic>>();
+     entrypoints.drop_issues();
+     let _ = take_effects(entrypoints).await?;
+     Ok(entrypoints.connect())
+diff --git a/crates/next-api/src/project.rs b/crates/next-api/src/project.rs
+index e5e5fa9bfa03..30361b4d983c 100644
+--- a/crates/next-api/src/project.rs
++++ b/crates/next-api/src/project.rs
+@@ -24,7 +24,7 @@ use next_core::{
+         get_server_chunking_context_with_client_assets, get_server_compile_time_info,
+         get_server_module_options_context, get_server_resolve_options_context,
+     },
+-    next_telemetry::NextFeatureTelemetry,
++    next_telemetry::ProjectFeatureUsageSummary,
+     parse_segment_config_from_source,
+     segment_config::ParseSegmentMode,
+     util::{NextRuntime, OptionEnvMap},
+@@ -35,7 +35,7 @@ use tracing::{Instrument, field::Empty};
+ use turbo_rcstr::{RcStr, rcstr};
+ use turbo_tasks::{
+     Completion, Completions, FxIndexMap, NonLocalValue, OperationValue, OperationVc, ReadRef,
+-    ResolvedVc, State, TaskInput, TransientInstance, TryFlatJoinIterExt, Vc,
++    ResolvedVc, State, TaskInput, TransientInstance, TryFlatJoinIterExt, TryJoinIterExt, Vc,
+     debug::ValueDebugFormat, fxindexmap, trace::TraceRawVcs,
+ };
+ use turbo_tasks_env::{EnvMap, ProcessEnv};
+@@ -56,7 +56,6 @@ use turbopack_core::{
+     },
+     compile_time_info::CompileTimeInfo,
+     context::AssetContext,
+-    diagnostics::DiagnosticExt,
+     environment::NodeJsVersion,
+     file_source::FileSource,
+     ident::Layer,
+@@ -1690,81 +1689,184 @@ impl Project {
+         }
+     }
+ 
+-    /// Emit a telemetry event corresponding to [webpack configuration telemetry](https://github.com/vercel/next.js/blob/9da305fe320b89ee2f8c3cfb7ecbf48856368913/packages/next/src/build/webpack-config.ts#L2516)
+-    /// to detect which feature is enabled.
++    /// Computes the project's feature-usage telemetry summary.
++    ///
++    /// Includes:
++    /// - The SWC target triple (`swc/target/...`, always on).
++    /// - Boolean config and compiler-option flags, mirroring the webpack [`TelemetryPlugin`](https://github.com/vercel/next.js/blob/9da305fe320b89ee2f8c3cfb7ecbf48856368913/packages/next/src/build/webpack-config.ts#L2516)
++    ///   shape.
++    /// - Per-feature-module import counts (e.g. `next/image`, `next/font/google`) computed by
++    ///   walking the whole-app module graph and counting **unique importing modules** per feature.
++    ///   This replaces an earlier `before_resolve` plugin that emitted telemetry per resolve;
++    ///   because Turbopack caches resolves, the earlier approach under-counted to at most one per
++    ///   feature.
++    ///
++    /// Returns `bail!` if the project is not in build mode — `whole_app_module_graphs` drops
++    /// issues in development and the graph may not reflect the full project, so reporting
++    /// telemetry from dev would produce misleading counts.
++    ///
++    /// The returned summary is sorted by feature name for determinism.
+     #[turbo_tasks::function]
+-    async fn collect_project_feature_telemetry(self: Vc<Self>) -> Result<()> {
+-        let emit_event = |feature_name: &str, enabled: bool| {
+-            NextFeatureTelemetry::new(feature_name.into(), enabled)
+-                .resolved_cell()
+-                .emit();
+-        };
+-
+-        // First, emit an event for the binary target triple.
+-        // This is different to webpack-config; when this is being called,
+-        // it is always using SWC so we don't check swc here.
+-        emit_event(env!("VERGEN_CARGO_TARGET_TRIPLE"), true);
++    pub async fn project_feature_usage(
++        self: ResolvedVc<Self>,
++    ) -> Result<Vc<ProjectFeatureUsageSummary>> {
++        if !self.next_mode().await?.is_production() {
++            bail!("project_feature_usage() may only be called during `next build`");
++        }
+ 
+-        // Go over config and report enabled features.
+-        // [TODO]: useSwcLoader is not being reported as it is not directly corresponds (it checks babel config existence)
+-        // need to confirm what we'll do with turbopack.
++        // (public feature specifier, path suffix) pairs. The suffix identifies the resolved
++        // feature module; we match via `module.ident().path.path.ends_with(suffix)`. Mirrors
++        // the webpack `FEATURE_MODULE_MAP` + `FEATURE_MODULE_REGEXP_MAP` in
++        // `packages/next/src/build/webpack/plugins/telemetry-plugin/telemetry-plugin.ts`.
++        //
++        // Font specifiers (`next/font/*`, `@next/font/*`) are matched against the synthesized
++        // `target.css` virtual module produced by the Next.js font loader transform
++        // (`crates/next-custom-transforms/src/transforms/fonts`). That transform rewrites
++        // `import { Inter } from 'next/font/google'` into
++        // `import inter from 'next/font/google/target.css?{...}'` — the original specifier never
++        // appears in the module graph, but the synthesized `target.css` module's path suffix does.
++        // `ident.path.path` does not include the query string (that lives on `ident.query`), so
++        // `ends_with` is the correct matcher here.
++        static FEATURE_MODULE_PATH_SUFFIXES: &[(&str, &str)] = &[
++            ("next/image", "/next/image.js"),
++            ("next/future/image", "/next/future/image.js"),
++            ("next/legacy/image", "/next/legacy/image.js"),
++            ("next/script", "/next/script.js"),
++            ("next/dynamic", "/next/dynamic.js"),
++            ("next/font/google", "/next/font/google/target.css"),
++            ("next/font/local", "/next/font/local/target.css"),
++            ("@next/font/google", "/@next/font/google/target.css"),
++            ("@next/font/local", "/@next/font/local/target.css"),
++        ];
++
++        // TODO: useSwcLoader is not being reported as it is not directly corresponds (it checks
++        // babel config existence) — need to confirm what we'll do with turbopack.
+         let config = self.next_config();
+-
+-        emit_event(
+-            "skipProxyUrlNormalize",
+-            *config.skip_proxy_url_normalize().await?,
+-        );
+-
+-        emit_event(
+-            "skipTrailingSlashRedirect",
+-            *config.skip_trailing_slash_redirect().await?,
+-        );
+-        emit_event(
+-            "persistentCaching",
+-            *self.is_persistent_caching_enabled().await?,
+-        );
+-
+-        emit_event(
+-            "modularizeImports",
+-            !config.modularize_imports().await?.is_empty(),
+-        );
+-        emit_event(
+-            "transpilePackages",
+-            !config.transpile_packages().await?.is_empty(),
+-        );
+-        emit_event("turbotrace", false);
+-
+-        // compiler options
+         let compiler_options = config.compiler().await?;
+-        let swc_relay_enabled = compiler_options.relay.is_some();
+-        let styled_components_enabled = compiler_options
+-            .styled_components
+-            .as_ref()
+-            .map(|sc| sc.is_enabled())
+-            .unwrap_or_default();
+-        let react_remove_properties_enabled = compiler_options
+-            .react_remove_properties
+-            .as_ref()
+-            .map(|rc| rc.is_enabled())
+-            .unwrap_or_default();
+-        let remove_console_enabled = compiler_options
+-            .remove_console
+-            .as_ref()
+-            .map(|rc| rc.is_enabled())
+-            .unwrap_or_default();
+-        let emotion_enabled = compiler_options
+-            .emotion
+-            .as_ref()
+-            .map(|e| e.is_enabled())
+-            .unwrap_or_default();
++        let mut features: Vec<(RcStr, u32)> = vec![
++            // SWC target triple is prefixed with `swc/target/` to match the webpack
++            // `swc/target/${SWC_TARGET_TRIPLE}` variant in `EventBuildFeatureUsage`.
++            (
++                format!("swc/target/{}", env!("VERGEN_CARGO_TARGET_TRIPLE")).into(),
++                1,
++            ),
++            (
++                rcstr!("skipProxyUrlNormalize"),
++                (*config.skip_proxy_url_normalize().await?) as u32,
++            ),
++            (
++                rcstr!("skipTrailingSlashRedirect"),
++                (*config.skip_trailing_slash_redirect().await?) as u32,
++            ),
++            (
++                rcstr!("modularizeImports"),
++                !config.modularize_imports().await?.is_empty() as u32,
++            ),
++            (
++                rcstr!("transpilePackages"),
++                !config.transpile_packages().await?.is_empty() as u32,
++            ),
++            (rcstr!("swcRelay"), compiler_options.relay.is_some() as u32),
++            (
++                rcstr!("swcStyledComponents"),
++                compiler_options
++                    .styled_components
++                    .as_ref()
++                    .is_some_and(|sc| sc.is_enabled()) as u32,
++            ),
++            (
++                rcstr!("swcReactRemoveProperties"),
++                compiler_options
++                    .react_remove_properties
++                    .as_ref()
++                    .is_some_and(|rc| rc.is_enabled()) as u32,
++            ),
++            (
++                rcstr!("swcRemoveConsole"),
++                compiler_options
++                    .remove_console
++                    .as_ref()
++                    .is_some_and(|rc| rc.is_enabled()) as u32,
++            ),
++            (
++                rcstr!("swcEmotion"),
++                compiler_options
++                    .emotion
++                    .as_ref()
++                    .is_some_and(|e| e.is_enabled()) as u32,
++            ),
++        ];
++
++        // Module-usage counts: two passes over the module graph.
++        //  1. Iterate all nodes, classify each in parallel, keep only feature-module matches.
++        //  2. Walk edges, for each edge whose target is a classified feature module, add the parent
++        //     to that feature's unique-importer set.
++        let module_graph = self.whole_app_module_graphs().await?.full.await?;
++
++        let matching: FxHashMap<ResolvedVc<Box<dyn Module>>, &'static str> = module_graph
++            .iter_nodes()
++            .map(async |node| {
++                let ident = node.ident().await?;
++                let path = &ident.path.path;
++                for &(feature, suffix) in FEATURE_MODULE_PATH_SUFFIXES {
++                    if path.ends_with(suffix) {
++                        return Ok(Some((node, feature)));
++                    }
++                }
++                Ok(None)
++            })
++            .try_flat_join()
++            .await?
++            .into_iter()
++            .collect();
++
++        // Collect (feature, parent) pairs for every edge whose target is a feature module.
++        //
++        // We count every such edge regardless of whether the import is eventually tree-shaken.
++        // This matches webpack's `TelemetryPlugin`, which hooks `finishModules` (before DCE).
++        // We could filter via `BindingUsageInfo` to only count edges that survive tree-shaking,
++        // but staying parallel to webpack lets dashboards compare counts across the two bundlers
++        // directly.
++        let mut pairs: FxHashSet<(&'static str, ResolvedVc<Box<dyn Module>>)> =
++            FxHashSet::default();
++        module_graph.traverse_edges_unordered(|parent, node| {
++            if let Some((parent_node, _)) = parent
++                && let Some(&feature) = matching.get(&node)
++            {
++                pairs.insert((feature, parent_node));
++            }
++            Ok(())
++        })?;
+ 
+-        emit_event("swcRelay", swc_relay_enabled);
+-        emit_event("swcStyledComponents", styled_components_enabled);
+-        emit_event("swcReactRemoveProperties", react_remove_properties_enabled);
+-        emit_event("swcRemoveConsole", remove_console_enabled);
+-        emit_event("swcEmotion", emotion_enabled);
++        // Dedupe parents by their source location (path + query + fragment), ignoring
++        // `ident().layer` and other modifiers. In Turbopack the same user file often appears as
++        // separate modules per layer (e.g. SSR, client, edge), but webpack counts one "importer"
++        // per source file — this matches that semantics.
++        let parent_source_keys = pairs
++            .into_iter()
++            .map(async |(feature, parent)| {
++                let ident = parent.ident().await?;
++                let key = (
++                    ident.path.path.clone(),
++                    ident.query.clone(),
++                    ident.fragment.clone(),
++                );
++                Ok((feature, key))
++            })
++            .try_join()
++            .await?;
++
++        let mut importers: FxHashMap<&'static str, FxHashSet<(RcStr, RcStr, RcStr)>> =
++            FxHashMap::default();
++        for (feature, key) in parent_source_keys {
++            importers.entry(feature).or_default().insert(key);
++        }
++        for (feature, unique_sources) in importers {
++            features.push((RcStr::from(feature), unique_sources.len() as u32));
++        }
+ 
+-        Ok(())
++        features.sort_by(|a, b| a.0.cmp(&b.0));
++        Ok(ProjectFeatureUsageSummary { features }.cell())
+     }
+ 
+     /// Scans the app/pages directories for entry points files (matching the
+@@ -1779,8 +1881,6 @@ impl Project {
+         self: Vc<Self>,
+         app_route_filter: Option<Vec<RcStr>>,
+     ) -> Result<Vc<Entrypoints>> {
+-        self.collect_project_feature_telemetry().await?;
+-
+         let this = self.await?;
+         let mut routes = FxIndexMap::default();
+         let app_project = self.app_project();
+diff --git a/crates/next-core/src/next_client/context.rs b/crates/next-core/src/next_client/context.rs
+index bf728739cddd..764ddf9a9ddb 100644
+--- a/crates/next-core/src/next_client/context.rs
++++ b/crates/next-core/src/next_client/context.rs
+@@ -51,7 +51,7 @@ use crate::{
+         get_next_client_resolved_map,
+     },
+     next_shared::{
+-        resolve::{ModuleFeatureReportResolvePlugin, NextSharedRuntimeResolvePlugin},
++        resolve::NextSharedRuntimeResolvePlugin,
+         transforms::{
+             emotion::get_emotion_transform_rule,
+             react_remove_properties::get_react_remove_properties_transform_rule,
+@@ -180,18 +180,11 @@ pub async fn get_client_resolve_options_context(
+         resolved_map: Some(next_client_resolved_map),
+         browser: true,
+         module: true,
+-        before_resolve_plugins: vec![
+-            ResolvedVc::upcast(
+-                ModuleFeatureReportResolvePlugin::new(project_path.clone())
+-                    .to_resolved()
+-                    .await?,
+-            ),
+-            ResolvedVc::upcast(
+-                NextFontLocalResolvePlugin::new(project_path.clone())
+-                    .to_resolved()
+-                    .await?,
+-            ),
+-        ],
++        before_resolve_plugins: vec![ResolvedVc::upcast(
++            NextFontLocalResolvePlugin::new(project_path.clone())
++                .to_resolved()
++                .await?,
++        )],
+         after_resolve_plugins: vec![ResolvedVc::upcast(
+             NextSharedRuntimeResolvePlugin::new(project_path.clone())
+                 .to_resolved()
+diff --git a/crates/next-core/src/next_edge/context.rs b/crates/next-core/src/next_edge/context.rs
+index 83754b511fbf..d3e9874dbace 100644
+--- a/crates/next-core/src/next_edge/context.rs
++++ b/crates/next-core/src/next_edge/context.rs
+@@ -27,7 +27,7 @@ use crate::{
+     next_font::local::NextFontLocalResolvePlugin,
+     next_import_map::{get_next_edge_and_server_fallback_import_map, get_next_edge_import_map},
+     next_server::context::ServerContextType,
+-    next_shared::resolve::{ModuleFeatureReportResolvePlugin, NextSharedRuntimeResolvePlugin},
++    next_shared::resolve::NextSharedRuntimeResolvePlugin,
+     util::{
+         NextRuntime, OptionEnvMap, defines, foreign_code_context_condition,
+         free_var_references_with_vercel_system_env_warnings, worker_forwarded_globals,
+@@ -109,22 +109,19 @@ pub async fn get_edge_resolve_options_context(
+             .to_resolved()
+             .await?;
+ 
+-    let mut before_resolve_plugins = vec![ResolvedVc::upcast(
+-        ModuleFeatureReportResolvePlugin::new(project_path.clone())
+-            .to_resolved()
+-            .await?,
+-    )];
+-    if matches!(
++    let before_resolve_plugins = if matches!(
+         ty,
+         ServerContextType::Pages { .. }
+             | ServerContextType::AppSSR { .. }
+             | ServerContextType::AppRSC { .. }
+     ) {
+-        before_resolve_plugins.push(ResolvedVc::upcast(
++        vec![ResolvedVc::upcast(
+             NextFontLocalResolvePlugin::new(project_path.clone())
+                 .to_resolved()
+                 .await?,
+-        ));
++        )]
++    } else {
++        vec![]
+     };
+ 
+     let after_resolve_plugins = vec![ResolvedVc::upcast(
+diff --git a/crates/next-core/src/next_server/context.rs b/crates/next-core/src/next_server/context.rs
+index 72cf35ca32d2..2b93d916d887 100644
+--- a/crates/next-core/src/next_server/context.rs
++++ b/crates/next-core/src/next_server/context.rs
+@@ -52,10 +52,7 @@ use crate::{
+         transforms::{get_next_server_internal_transforms_rules, get_next_server_transforms_rules},
+     },
+     next_shared::{
+-        resolve::{
+-            ModuleFeatureReportResolvePlugin, NextExternalResolvePlugin,
+-            NextNodeSharedRuntimeResolvePlugin,
+-        },
++        resolve::{NextExternalResolvePlugin, NextNodeSharedRuntimeResolvePlugin},
+         transforms::{
+             EcmascriptTransformStage, emotion::get_emotion_transform_rule, get_ecma_transform_rule,
+             next_react_server_components::get_next_react_server_components_transform_rule,
+@@ -149,10 +146,6 @@ pub async fn get_server_resolve_options_context(
+     let foreign_code_context_condition =
+         foreign_code_context_condition(next_config, project_path.clone()).await?;
+     let root_dir = project_path.root().owned().await?;
+-    let module_feature_report_resolve_plugin =
+-        ModuleFeatureReportResolvePlugin::new(project_path.clone())
+-            .to_resolved()
+-            .await?;
+ 
+     // Always load these predefined packages as external.
+     let mut external_packages: Vec<RcStr> = load_next_js_jsonc_file(
+@@ -237,20 +230,17 @@ pub async fn get_server_resolve_options_context(
+         ServerContextType::Pages { .. }
+         | ServerContextType::AppSSR { .. }
+         | ServerContextType::AppRSC { .. } => {
+-            vec![
+-                ResolvedVc::upcast(
+-                    NextFontLocalResolvePlugin::new(project_path.clone())
+-                        .to_resolved()
+-                        .await?,
+-                ),
+-                ResolvedVc::upcast(module_feature_report_resolve_plugin),
+-            ]
++            vec![ResolvedVc::upcast(
++                NextFontLocalResolvePlugin::new(project_path.clone())
++                    .to_resolved()
++                    .await?,
++            )]
+         }
+         ServerContextType::PagesApi { .. }
+         | ServerContextType::AppRoute { .. }
+         | ServerContextType::Middleware { .. }
+         | ServerContextType::Instrumentation { .. } => {
+-            vec![ResolvedVc::upcast(module_feature_report_resolve_plugin)]
++            vec![]
+         }
+     };
+ 
+diff --git a/crates/next-core/src/next_shared/resolve.rs b/crates/next-core/src/next_shared/resolve.rs
+index 70cacf712c06..2e8320b949ef 100644
+--- a/crates/next-core/src/next_shared/resolve.rs
++++ b/crates/next-core/src/next_shared/resolve.rs
+@@ -1,6 +1,5 @@
+ use anyhow::Result;
+ use async_trait::async_trait;
+-use phf::phf_map;
+ use turbo_rcstr::{RcStr, rcstr};
+ use turbo_tasks::{ResolvedVc, Vc};
+ use turbo_tasks_fs::{
+@@ -8,37 +7,17 @@ use turbo_tasks_fs::{
+     glob::{Glob, GlobOptions},
+ };
+ use turbopack_core::{
+-    diagnostics::DiagnosticExt,
+     file_source::FileSource,
+     issue::{Issue, IssueSeverity, IssueStage, StyledString},
+     reference_type::ReferenceType,
+     resolve::{
+         ExternalTraced, ExternalType, ResolveResult, ResolveResultItem, ResolveResultOption,
+         parse::Request,
+-        pattern::Pattern,
+-        plugin::{
+-            AfterResolvePlugin, AfterResolvePluginCondition, BeforeResolvePlugin,
+-            BeforeResolvePluginCondition,
+-        },
++        plugin::{AfterResolvePlugin, AfterResolvePluginCondition},
+     },
+ };
+ 
+-use crate::{next_server::ServerContextType, next_telemetry::ModuleFeatureTelemetry};
+-
+-// Set of the features we want to track, following existing references in
+-// webpack/plugins/telemetry-plugin.
+-static FEATURE_MODULES: phf::Map<&'static str, &'static [&'static str]> = phf_map! {
+-    "next" => &[
+-        "/image",
+-        "/future/image",
+-        "/legacy/image",
+-        "/script",
+-        "/dynamic",
+-        "/font/google",
+-        "/font/local",
+-    ],
+-    "@next/font" => &["/google", "/local"],
+-};
++use crate::next_server::ServerContextType;
+ 
+ #[turbo_tasks::value(shared)]
+ pub struct InvalidImportModuleIssue {
+@@ -228,68 +207,6 @@ impl AfterResolvePlugin for NextNodeSharedRuntimeResolvePlugin {
+     }
+ }
+ 
+-/// A resolver plugin tracks the usage of certain import paths, emit
+-/// telemetry events if there is a match.
+-#[turbo_tasks::value]
+-pub(crate) struct ModuleFeatureReportResolvePlugin {
+-    condition: ResolvedVc<BeforeResolvePluginCondition>,
+-}
+-
+-#[turbo_tasks::value_impl]
+-impl ModuleFeatureReportResolvePlugin {
+-    #[turbo_tasks::function]
+-    pub async fn new(_root: FileSystemPath) -> Result<Vc<Self>> {
+-        let condition = BeforeResolvePluginCondition::from_modules(Vc::cell(
+-            FEATURE_MODULES
+-                .keys()
+-                .map(|k| (*k).into())
+-                .collect::<Vec<RcStr>>(),
+-        ))
+-        .to_resolved()
+-        .await?;
+-        Ok(ModuleFeatureReportResolvePlugin { condition }.cell())
+-    }
+-}
+-
+-#[turbo_tasks::value_impl]
+-impl BeforeResolvePlugin for ModuleFeatureReportResolvePlugin {
+-    fn before_resolve_condition(&self) -> Vc<BeforeResolvePluginCondition> {
+-        *self.condition
+-    }
+-
+-    #[turbo_tasks::function]
+-    async fn before_resolve(
+-        self: Vc<Self>,
+-        _lookup_path: FileSystemPath,
+-        _reference_type: ReferenceType,
+-        request: Vc<Request>,
+-    ) -> Result<Vc<ResolveResultOption>> {
+-        if let Request::Module {
+-            module: Pattern::Constant(module),
+-            path,
+-            query: _,
+-            fragment: _,
+-        } = &*request.await?
+-        {
+-            let feature_module = FEATURE_MODULES.get(module.as_str());
+-            if let Some(feature_module) = feature_module {
+-                let sub_path = feature_module
+-                    .iter()
+-                    .find(|sub_path| path.is_match(sub_path));
+-
+-                if let Some(sub_path) = sub_path {
+-                    // This is not accurate. we only emit one diagnostic per request not per import
+-                    ModuleFeatureTelemetry::new(format!("{module}{sub_path}").into(), 1)
+-                        .resolved_cell()
+-                        .emit();
+-                }
+-            }
+-        }
+-
+-        Ok(ResolveResultOption::none())
+-    }
+-}
+-
+ #[turbo_tasks::value]
+ pub(crate) struct NextSharedRuntimeResolvePlugin {
+     condition: ResolvedVc<AfterResolvePluginCondition>,
+diff --git a/crates/next-core/src/next_telemetry.rs b/crates/next-core/src/next_telemetry.rs
+index 872f031bc614..3ceda20c5e29 100644
+--- a/crates/next-core/src/next_telemetry.rs
++++ b/crates/next-core/src/next_telemetry.rs
+@@ -1,86 +1,15 @@
+-use turbo_rcstr::{RcStr, rcstr};
+-use turbo_tasks::{Vc, fxindexmap};
+-use turbopack_core::diagnostics::{Diagnostic, DiagnosticPayload};
++use turbo_rcstr::RcStr;
+ 
+-/// A structure that keeps track of whether a particular Next.js feature is
+-/// enabled for the telemetry.
++/// Summary of Next.js feature usage for a project, reported as telemetry.
+ ///
+-/// The original implementation code can be found
+-/// [here](https://github.com/vercel/next.js/blob/9da305fe320b89ee2f8c3cfb7ecbf48856368913/packages/next/src/build/webpack-config.ts#L2516).
+-#[turbo_tasks::value(shared)]
+-pub struct NextFeatureTelemetry {
+-    pub event_name: RcStr,
+-    pub feature_name: RcStr,
+-    pub enabled: bool,
+-}
+-
+-impl NextFeatureTelemetry {
+-    pub fn new(feature_name: RcStr, enabled: bool) -> Self {
+-        NextFeatureTelemetry {
+-            event_name: rcstr!("EVENT_BUILD_FEATURE_USAGE"),
+-            feature_name,
+-            enabled,
+-        }
+-    }
+-}
+-
+-#[turbo_tasks::value_impl]
+-impl Diagnostic for NextFeatureTelemetry {
+-    #[turbo_tasks::function]
+-    fn category(&self) -> Vc<RcStr> {
+-        Vc::cell(rcstr!("NextFeatureTelemetry_category_tbd"))
+-    }
+-
+-    #[turbo_tasks::function]
+-    fn name(&self) -> Vc<RcStr> {
+-        Vc::cell(self.event_name.clone())
+-    }
+-
+-    #[turbo_tasks::function]
+-    fn payload(&self) -> Vc<DiagnosticPayload> {
+-        Vc::cell(fxindexmap! {
+-            self.feature_name.clone() =>
+-            self.enabled.to_string().into(),
+-        })
+-    }
+-}
+-
+-/// A struct represent telemetry event for the feature usage,
+-/// referred as `importing` a certain module. (i.e importing @next/image)
++/// Produced by `next_api::project::Project::project_feature_usage`. Entries cover:
++/// - Boolean build/config flags (`1` if enabled, `0` if disabled), mirroring webpack's
++///   `TelemetryPlugin`.
++/// - Module imports (e.g. `next/image`, `next/font/google`): one count per unique importing module,
++///   computed by walking the whole-app module graph.
++///
++/// The vector is sorted by `feature_name` for determinism.
+ #[turbo_tasks::value(shared)]
+-pub struct ModuleFeatureTelemetry {
+-    pub event_name: RcStr,
+-    pub feature_name: RcStr,
+-    pub invocation_count: usize,
+-}
+-
+-impl ModuleFeatureTelemetry {
+-    pub fn new(feature_name: RcStr, invocation_count: usize) -> Self {
+-        ModuleFeatureTelemetry {
+-            event_name: rcstr!("EVENT_BUILD_FEATURE_USAGE"),
+-            feature_name,
+-            invocation_count,
+-        }
+-    }
+-}
+-
+-#[turbo_tasks::value_impl]
+-impl Diagnostic for ModuleFeatureTelemetry {
+-    #[turbo_tasks::function]
+-    fn category(&self) -> Vc<RcStr> {
+-        Vc::cell(rcstr!("ModuleFeatureTelemetry_category_tbd"))
+-    }
+-
+-    #[turbo_tasks::function]
+-    fn name(&self) -> Vc<RcStr> {
+-        Vc::cell(self.event_name.clone())
+-    }
+-
+-    #[turbo_tasks::function]
+-    fn payload(&self) -> Vc<DiagnosticPayload> {
+-        Vc::cell(fxindexmap! {
+-            self.feature_name.clone() =>
+-            self.invocation_count.to_string().into(),
+-        })
+-    }
++pub struct ProjectFeatureUsageSummary {
++    pub features: Vec<(RcStr, u32)>,
+ }
+diff --git a/crates/next-napi-bindings/src/next_api/analyze.rs b/crates/next-napi-bindings/src/next_api/analyze.rs
+index b9f5a42f4d50..9da6c0eca99c 100644
+--- a/crates/next-napi-bindings/src/next_api/analyze.rs
++++ b/crates/next-napi-bindings/src/next_api/analyze.rs
+@@ -8,7 +8,6 @@ use next_api::{
+ };
+ use turbo_tasks::{Effects, ReadRef, ResolvedVc, TryJoinIterExt, Vc};
+ use turbopack_core::{
+-    diagnostics::PlainDiagnostic,
+     issue::PlainIssue,
+     output::{OutputAsset, OutputAssets},
+ };
+@@ -18,7 +17,6 @@ use crate::next_api::utils::strongly_consistent_catch_collectables;
+ #[turbo_tasks::value(serialization = "skip")]
+ pub struct WriteAnalyzeResult {
+     pub issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    pub diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     pub effects: Arc<Effects>,
+ }
+ 
+@@ -30,15 +28,10 @@ pub async fn write_analyze_data_with_issues_operation(
+     let analyze_data_op = write_analyze_data_with_issues_operation_inner(project, app_dir_only);
+     let filter = project.project().issue_filter();
+ 
+-    let (_analyze_data, issues, diagnostics, effects) =
++    let (_analyze_data, issues, effects) =
+         strongly_consistent_catch_collectables(analyze_data_op, filter).await?;
+ 
+-    Ok(WriteAnalyzeResult {
+-        issues,
+-        diagnostics,
+-        effects,
+-    }
+-    .cell())
++    Ok(WriteAnalyzeResult { issues, effects }.cell())
+ }
+ 
+ #[turbo_tasks::function(operation)]
+diff --git a/crates/next-napi-bindings/src/next_api/endpoint.rs b/crates/next-napi-bindings/src/next_api/endpoint.rs
+index c9f618fd694c..2b328616a3c3 100644
+--- a/crates/next-napi-bindings/src/next_api/endpoint.rs
++++ b/crates/next-napi-bindings/src/next_api/endpoint.rs
+@@ -15,14 +15,11 @@ use next_api::{
+ use tracing::Instrument;
+ use turbo_rcstr::RcStr;
+ use turbo_tasks::{Completion, Effects, OperationVc, ReadRef, Vc};
+-use turbopack_core::{
+-    diagnostics::PlainDiagnostic,
+-    issue::{IssueFilter, PlainIssue},
+-};
++use turbopack_core::issue::{IssueFilter, PlainIssue};
+ 
+ use crate::next_api::utils::{
+-    DetachedVc, NapiDiagnostic, NapiIssue, RootTask, TurbopackResult,
+-    strongly_consistent_catch_collectables, subscribe,
++    DetachedVc, NapiIssue, RootTask, TurbopackResult, strongly_consistent_catch_collectables,
++    subscribe,
+ };
+ 
+ #[napi(object)]
+@@ -119,7 +116,6 @@ async fn issue_filter_from_endpoint(
+ struct WrittenEndpointWithIssues {
+     written: Option<ReadRef<EndpointOutputPaths>>,
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -129,12 +125,11 @@ async fn get_written_endpoint_with_issues_operation(
+ ) -> Result<Vc<WrittenEndpointWithIssues>> {
+     let write_to_disk_op = endpoint_write_to_disk_operation(endpoint_op);
+     let filter = issue_filter_from_endpoint(endpoint_op).await?;
+-    let (written, issues, diagnostics, effects) =
++    let (written, issues, effects) =
+         strongly_consistent_catch_collectables(write_to_disk_op, filter).await?;
+     Ok(WrittenEndpointWithIssues {
+         written,
+         issues,
+-        diagnostics,
+         effects,
+     }
+     .cell())
+@@ -147,7 +142,7 @@ pub async fn endpoint_write_to_disk(
+ ) -> napi::Result<TurbopackResult<NapiWrittenEndpoint>> {
+     let ctx = endpoint.turbopack_ctx();
+     let endpoint_op = ***endpoint;
+-    let (written, issues, diags) = endpoint
++    let (written, issues) = endpoint
+         .turbopack_ctx()
+         .turbo_tasks()
+         .run(async move {
+@@ -156,21 +151,19 @@ pub async fn endpoint_write_to_disk(
+             let WrittenEndpointWithIssues {
+                 written,
+                 issues,
+-                diagnostics,
+                 effects,
+             } = &*written_entrypoint_with_issues_op
+                 .read_strongly_consistent()
+                 .await?;
+             effects.apply().await?;
+ 
+-            Ok((written.clone(), issues.clone(), diagnostics.clone()))
++            Ok((written.clone(), issues.clone()))
+         })
+         .or_else(|e| ctx.throw_turbopack_internal_result(&e.into()))
+         .await?;
+     Ok(TurbopackResult {
+         result: NapiWrittenEndpoint::from(written.map(ReadRef::into_owned)),
+         issues: issues.iter().map(|i| NapiIssue::from(&**i)).collect(),
+-        diagnostics: diags.iter().map(|d| NapiDiagnostic::from(d)).collect(),
+     })
+ }
+ 
+@@ -199,17 +192,12 @@ pub fn endpoint_server_changed_subscribe(
+             let EndpointIssuesAndDiags {
+                 changed: _,
+                 issues,
+-                diagnostics,
+                 effects: _,
+             } = &*ctx.value;
+ 
+             Ok(vec![TurbopackResult {
+                 result: (),
+                 issues: issues.iter().map(|i| NapiIssue::from(&**i)).collect(),
+-                diagnostics: diagnostics
+-                    .iter()
+-                    .map(|d| NapiDiagnostic::from(d))
+-                    .collect(),
+             }])
+         },
+     )
+@@ -219,7 +207,6 @@ pub fn endpoint_server_changed_subscribe(
+ struct EndpointIssuesAndDiags {
+     changed: Option<ReadRef<Completion>>,
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -230,7 +217,6 @@ impl PartialEq for EndpointIssuesAndDiags {
+             (None, None) => true,
+             (None, Some(_)) | (Some(_), None) => false,
+         }) && self.issues == other.issues
+-            && self.diagnostics == other.diagnostics
+     }
+ }
+ 
+@@ -245,12 +231,11 @@ async fn subscribe_issues_and_diags_operation(
+ 
+     if should_include_issues {
+         let filter = issue_filter_from_endpoint(endpoint_op).await?;
+-        let (changed_value, issues, diagnostics, effects) =
++        let (changed_value, issues, effects) =
+             strongly_consistent_catch_collectables(changed_op, filter).await?;
+         Ok(EndpointIssuesAndDiags {
+             changed: changed_value,
+             issues,
+-            diagnostics,
+             effects,
+         }
+         .cell())
+@@ -259,7 +244,6 @@ async fn subscribe_issues_and_diags_operation(
+         Ok(EndpointIssuesAndDiags {
+             changed: Some(changed_value),
+             issues: Arc::new(vec![]),
+-            diagnostics: Arc::new(vec![]),
+             effects: Arc::new(Effects::default()),
+         }
+         .cell())
+@@ -295,7 +279,6 @@ pub fn endpoint_client_changed_subscribe(
+             Ok(vec![TurbopackResult {
+                 result: (),
+                 issues: vec![],
+-                diagnostics: vec![],
+             }])
+         },
+     )
+diff --git a/crates/next-napi-bindings/src/next_api/project.rs b/crates/next-napi-bindings/src/next_api/project.rs
+index 07c4f0c01a80..1ca989314069 100644
+--- a/crates/next-napi-bindings/src/next_api/project.rs
++++ b/crates/next-napi-bindings/src/next_api/project.rs
+@@ -34,6 +34,7 @@ use next_api::{
+ };
+ use next_core::{
+     app_structure::find_app_dir,
++    next_telemetry::ProjectFeatureUsageSummary,
+     tracing_presets::{
+         TRACING_NEXT_OVERVIEW_TARGETS, TRACING_NEXT_TARGETS, TRACING_NEXT_TURBO_TASKS_TARGETS,
+         TRACING_NEXT_TURBOPACK_TARGETS,
+@@ -61,7 +62,6 @@ use turbo_tasks_fs::{
+ use turbo_unix_path::{get_relative_path_to, sys_to_unix, unix_to_sys};
+ use turbopack_core::{
+     PROJECT_FILESYSTEM_NAME, SOURCE_URL_PROTOCOL,
+-    diagnostics::PlainDiagnostic,
+     issue::{IssueFilter, PlainIssue},
+     output::{OutputAsset, OutputAssets},
+     source_map::{SourceMap, Token},
+@@ -85,8 +85,8 @@ use crate::{
+             NextTurbopackContext, create_turbo_tasks,
+         },
+         utils::{
+-            DetachedVc, NapiDiagnostic, NapiIssue, RootTask, TurbopackResult, get_diagnostics,
+-            get_issues, strongly_consistent_catch_collectables, subscribe,
++            DetachedVc, NapiIssue, NapiUsedFeature, RootTask, TurbopackResult, get_issues,
++            strongly_consistent_catch_collectables, subscribe,
+         },
+     },
+     util::DhatProfilerGuard,
+@@ -992,7 +992,6 @@ impl NapiEntrypoints {
+ struct EntrypointsWithIssues {
+     entrypoints: Option<ReadRef<EntrypointsOperation>>,
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -1003,12 +1002,11 @@ async fn get_entrypoints_with_issues_operation(
+     let entrypoints_operation =
+         EntrypointsOperation::new(project_container_entrypoints_operation(container));
+     let filter = issue_filter_from_container(container);
+-    let (entrypoints, issues, diagnostics, effects) =
++    let (entrypoints, issues, effects) =
+         strongly_consistent_catch_collectables(entrypoints_operation, filter).await?;
+     Ok(EntrypointsWithIssues {
+         entrypoints,
+         issues,
+-        diagnostics,
+         effects,
+     }
+     .cell())
+@@ -1026,7 +1024,6 @@ fn project_container_entrypoints_operation(
+ #[turbo_tasks::value(serialization = "skip")]
+ struct OperationResult {
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -1034,7 +1031,6 @@ struct OperationResult {
+ struct AllWrittenEntrypointsWithIssues {
+     entrypoints: Option<ReadRef<EntrypointsOperation>>,
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -1420,7 +1416,7 @@ pub async fn project_write_all_entrypoints_to_disk(
+         EntrypointsWritePhase::All
+     };
+ 
+-    let (mut entrypoints, mut issues, mut diags) = tt
++    let (mut entrypoints, mut issues) = tt
+         .run(async move {
+             let entrypoints_with_issues_op = get_all_written_entrypoints_with_issues_operation(
+                 container,
+@@ -1432,7 +1428,6 @@ pub async fn project_write_all_entrypoints_to_disk(
+             let AllWrittenEntrypointsWithIssues {
+                 entrypoints,
+                 issues,
+-                diagnostics,
+                 effects,
+             } = &*entrypoints_with_issues_op
+                 .read_strongly_consistent()
+@@ -1444,7 +1439,6 @@ pub async fn project_write_all_entrypoints_to_disk(
+             Ok((
+                 entrypoints.clone(),
+                 issues.iter().cloned().collect::<Vec<_>>(),
+-                diagnostics.iter().cloned().collect::<Vec<_>>(),
+             ))
+         })
+         .or_else(|e| ctx.throw_turbopack_internal_result(&e.into()))
+@@ -1487,7 +1481,7 @@ pub async fn project_write_all_entrypoints_to_disk(
+             .await?;
+         }
+ 
+-        let (deferred_entrypoints, deferred_issues, deferred_diags) = tt
++        let (deferred_entrypoints, deferred_issues) = tt
+             .run(async move {
+                 let entrypoints_with_issues_op = get_all_written_entrypoints_with_issues_operation(
+                     container,
+@@ -1498,7 +1492,6 @@ pub async fn project_write_all_entrypoints_to_disk(
+                 let AllWrittenEntrypointsWithIssues {
+                     entrypoints,
+                     issues,
+-                    diagnostics,
+                     effects,
+                 } = &*entrypoints_with_issues_op
+                     .read_strongly_consistent()
+@@ -1510,7 +1503,6 @@ pub async fn project_write_all_entrypoints_to_disk(
+                 Ok((
+                     entrypoints.clone(),
+                     issues.iter().cloned().collect::<Vec<_>>(),
+-                    diagnostics.iter().cloned().collect::<Vec<_>>(),
+                 ))
+             })
+             .or_else(|e| ctx.throw_turbopack_internal_result(&e.into()))
+@@ -1520,34 +1512,26 @@ pub async fn project_write_all_entrypoints_to_disk(
+             entrypoints = deferred_entrypoints;
+         }
+         issues.extend(deferred_issues);
+-        diags.extend(deferred_diags);
+     }
+ 
+-    let (emit_issues, emit_diags) = tt
++    let emit_issues = tt
+         .run(async move {
+             let emit_result_op = emit_all_output_assets_once_with_issues_operation(
+                 container,
+                 app_dir_only,
+                 has_deferred_entrypoints,
+             );
+-            let OperationResult {
+-                issues,
+-                diagnostics,
+-                effects,
+-            } = &*emit_result_op.read_strongly_consistent().await?;
++            let OperationResult { issues, effects } =
++                &*emit_result_op.read_strongly_consistent().await?;
+ 
+             effects.apply().await?;
+ 
+-            Ok((
+-                issues.iter().cloned().collect::<Vec<_>>(),
+-                diagnostics.iter().cloned().collect::<Vec<_>>(),
+-            ))
++            Ok(issues.iter().cloned().collect::<Vec<_>>())
+         })
+         .or_else(|e| ctx.throw_turbopack_internal_result(&e.into()))
+         .await?;
+ 
+     issues.extend(emit_issues);
+-    diags.extend(emit_diags);
+ 
+     Ok(TurbopackResult {
+         result: if let Some(entrypoints) = entrypoints {
+@@ -1559,7 +1543,6 @@ pub async fn project_write_all_entrypoints_to_disk(
+             None
+         },
+         issues: issues.iter().map(|i| NapiIssue::from(&**i)).collect(),
+-        diagnostics: diags.iter().map(|d| NapiDiagnostic::from(d)).collect(),
+     })
+ }
+ 
+@@ -1575,12 +1558,11 @@ async fn get_all_written_entrypoints_with_issues_operation(
+         write_phase,
+     ));
+     let filter = issue_filter_from_container(container);
+-    let (entrypoints, issues, diagnostics, effects) =
++    let (entrypoints, issues, effects) =
+         strongly_consistent_catch_collectables(entrypoints_operation, filter).await?;
+     Ok(AllWrittenEntrypointsWithIssues {
+         entrypoints,
+         issues,
+-        diagnostics,
+         effects,
+     }
+     .cell())
+@@ -1659,15 +1641,10 @@ async fn emit_all_output_assets_once_with_issues_operation(
+         has_deferred_entrypoints,
+     ));
+     let filter = issue_filter_from_container(container);
+-    let (_, issues, diagnostics, effects) =
++    let (_, issues, effects) =
+         strongly_consistent_catch_collectables(entrypoints_operation, filter).await?;
+ 
+-    Ok(OperationResult {
+-        issues,
+-        diagnostics,
+-        effects,
+-    }
+-    .cell())
++    Ok(OperationResult { issues, effects }.cell())
+ }
+ 
+ #[turbo_tasks::function(operation)]
+@@ -1737,7 +1714,7 @@ pub async fn project_entrypoints(
+ ) -> napi::Result<TurbopackResult<Option<NapiEntrypoints>>> {
+     let container = project.container;
+ 
+-    let (entrypoints, issues, diags) = project
++    let (entrypoints, issues) = project
+         .turbopack_ctx
+         .turbo_tasks()
+         .run_once(async move {
+@@ -1747,13 +1724,12 @@ pub async fn project_entrypoints(
+             let EntrypointsWithIssues {
+                 entrypoints,
+                 issues,
+-                diagnostics,
+                 effects: _,
+             } = &*entrypoints_with_issues_op
+                 .read_strongly_consistent()
+                 .await?;
+ 
+-            Ok((entrypoints.clone(), issues.clone(), diagnostics.clone()))
++            Ok((entrypoints.clone(), issues.clone()))
+         })
+         .await
+         .map_err(|e| napi::Error::from_reason(PrettyPrintError(&e).to_string()))?;
+@@ -1769,7 +1745,6 @@ pub async fn project_entrypoints(
+     Ok(TurbopackResult {
+         result,
+         issues: issues.iter().map(|i| NapiIssue::from(&**i)).collect(),
+-        diagnostics: diags.iter().map(|d| NapiDiagnostic::from(d)).collect(),
+     })
+ }
+ 
+@@ -1790,19 +1765,18 @@ pub fn project_entrypoints_subscribe(
+                 let EntrypointsWithIssues {
+                     entrypoints,
+                     issues,
+-                    diagnostics,
+                     effects,
+                 } = &*entrypoints_with_issues_op
+                     .read_strongly_consistent()
+                     .await?;
+ 
+                 effects.apply().await?;
+-                Ok((entrypoints.clone(), issues.clone(), diagnostics.clone()))
++                Ok((entrypoints.clone(), issues.clone()))
+             }
+             .instrument(tracing::info_span!("entrypoints subscription"))
+         },
+         move |ctx| {
+-            let (entrypoints, issues, diags) = ctx.value;
++            let (entrypoints, issues) = ctx.value;
+             let result = match entrypoints {
+                 Some(entrypoints) => Some(NapiEntrypoints::from_entrypoints_op(
+                     &entrypoints,
+@@ -1817,7 +1791,6 @@ pub fn project_entrypoints_subscribe(
+                     .iter()
+                     .map(|issue| NapiIssue::from(&**issue))
+                     .collect(),
+-                diagnostics: diags.iter().map(|d| NapiDiagnostic::from(d)).collect(),
+             }])
+         },
+     )
+@@ -1827,7 +1800,6 @@ pub fn project_entrypoints_subscribe(
+ struct HmrUpdateWithIssues {
+     update: ReadRef<Update>,
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -1852,12 +1824,10 @@ async fn hmr_update_with_issues_operation(
+     let update = update_op.read_strongly_consistent().await?;
+     let filter = project.issue_filter();
+     let issues = get_issues(update_op, filter).await?;
+-    let diagnostics = get_diagnostics(update_op).await?;
+     let effects = Arc::new(take_effects(update_op).await?);
+     Ok(HmrUpdateWithIssues {
+         update,
+         issues,
+-        diagnostics,
+         effects,
+     }
+     .cell())
+@@ -1905,7 +1875,6 @@ pub fn project_hmr_events(
+                     let HmrUpdateWithIssues {
+                         update,
+                         issues,
+-                        diagnostics,
+                         effects,
+                     } = &*update;
+                     // HACK(bgw): Remove this mark call
+@@ -1922,12 +1891,12 @@ pub fn project_hmr_events(
+                             state.set(to.clone()).await?;
+                         }
+                     }
+-                    Ok((Some(update.clone()), issues.clone(), diagnostics.clone()))
++                    Ok((Some(update.clone()), issues.clone()))
+                 }
+             }
+         },
+         move |ctx| {
+-            let (update, issues, diags) = ctx.value;
++            let (update, issues) = ctx.value;
+ 
+             let napi_issues = issues
+                 .iter()
+@@ -1957,7 +1926,6 @@ pub fn project_hmr_events(
+             Ok(vec![TurbopackResult {
+                 result: ctx.env.to_js_value(&update)?,
+                 issues: napi_issues,
+-                diagnostics: diags.iter().map(|d| NapiDiagnostic::from(d)).collect(),
+             }])
+         },
+     )
+@@ -1972,7 +1940,6 @@ struct HmrChunkNames {
+ struct HmrChunkNamesWithIssues {
+     chunk_names: ReadRef<Vec<RcStr>>,
+     issues: Arc<Vec<ReadRef<PlainIssue>>>,
+-    diagnostics: Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     effects: Arc<Effects>,
+ }
+ 
+@@ -1993,12 +1960,10 @@ async fn get_hmr_chunk_names_with_issues_operation(
+     let hmr_chunk_names = hmr_chunk_names_op.read_strongly_consistent().await?;
+     let filter = issue_filter_from_container(container);
+     let issues = get_issues(hmr_chunk_names_op, filter).await?;
+-    let diagnostics = get_diagnostics(hmr_chunk_names_op).await?;
+     let effects = Arc::new(take_effects(hmr_chunk_names_op).await?);
+     Ok(HmrChunkNamesWithIssues {
+         chunk_names: hmr_chunk_names,
+         issues,
+-        diagnostics,
+         effects,
+     }
+     .cell())
+@@ -2025,17 +1990,16 @@ pub fn project_hmr_chunk_names_subscribe(
+             let HmrChunkNamesWithIssues {
+                 chunk_names,
+                 issues,
+-                diagnostics,
+                 effects,
+             } = &*hmr_chunk_names_with_issues_op
+                 .read_strongly_consistent()
+                 .await?;
+             effects.apply().await?;
+ 
+-            Ok((chunk_names.clone(), issues.clone(), diagnostics.clone()))
++            Ok((chunk_names.clone(), issues.clone()))
+         },
+         move |ctx| {
+-            let (chunk_names, issues, diagnostics) = ctx.value;
++            let (chunk_names, issues) = ctx.value;
+ 
+             Ok(vec![TurbopackResult {
+                 result: HmrChunkNames {
+@@ -2045,10 +2009,6 @@ pub fn project_hmr_chunk_names_subscribe(
+                     .iter()
+                     .map(|issue| NapiIssue::from(&**issue))
+                     .collect(),
+-                diagnostics: diagnostics
+-                    .iter()
+-                    .map(|d| NapiDiagnostic::from(d))
+-                    .collect(),
+             }])
+         },
+     )
+@@ -2499,20 +2459,17 @@ pub async fn project_write_analyze_data(
+     app_dir_only: bool,
+ ) -> napi::Result<TurbopackResult<()>> {
+     let container = project.container;
+-    let (issues, diagnostics) = project
++    let issues = project
+         .turbopack_ctx
+         .turbo_tasks()
+         .run_once(async move {
+             let analyze_data_op = write_analyze_data_with_issues_operation(container, app_dir_only);
+-            let WriteAnalyzeResult {
+-                issues,
+-                diagnostics,
+-                effects,
+-            } = &*analyze_data_op.read_strongly_consistent().await?;
++            let WriteAnalyzeResult { issues, effects } =
++                &*analyze_data_op.read_strongly_consistent().await?;
+ 
+             // Write the files to disk
+             effects.apply().await?;
+-            Ok((issues.clone(), diagnostics.clone()))
++            Ok(issues.clone())
+         })
+         .await
+         .map_err(|e| napi::Error::from_reason(PrettyPrintError(&e).to_string()))?;
+@@ -2520,10 +2477,6 @@ pub async fn project_write_analyze_data(
+     Ok(TurbopackResult {
+         result: (),
+         issues: issues.iter().map(|i| NapiIssue::from(&**i)).collect(),
+-        diagnostics: diagnostics
+-            .iter()
+-            .map(|d| NapiDiagnostic::from(d))
+-            .collect(),
+     })
+ }
+ 
+@@ -2550,14 +2503,44 @@ async fn get_all_compilation_issues_operation(
+ ) -> Result<Vc<OperationResult>> {
+     let inner_op = get_all_compilation_issues_inner_operation(container);
+     let filter = issue_filter_from_container(container);
+-    let (_, issues, diagnostics, effects) =
+-        strongly_consistent_catch_collectables(inner_op, filter).await?;
+-    Ok(OperationResult {
+-        issues,
+-        diagnostics,
+-        effects,
+-    }
+-    .cell())
++    let (_, issues, effects) = strongly_consistent_catch_collectables(inner_op, filter).await?;
++    Ok(OperationResult { issues, effects }.cell())
++}
++
++/// Returns the build-feature-usage telemetry summary for this project — the set of
++/// `(featureName, invocationCount)` pairs reported to the Next.js telemetry service.
++///
++/// Intended to be called once at the end of a build, after `writeAllEntrypointsToDisk`. The
++/// summary is computed by walking the whole-app module graph and is cached by turbo-tasks, so the
++/// call is cheap when the graph is already materialized.
++#[tracing::instrument(level = "info", name = "get project feature usage", skip_all)]
++#[napi]
++pub async fn project_feature_usage(
++    #[napi(ts_arg_type = "{ __napiType: \"Project\" }")] project: External<ProjectInstance>,
++) -> napi::Result<Vec<NapiUsedFeature>> {
++    let container = project.container;
++    let summary = project
++        .turbopack_ctx
++        .turbo_tasks()
++        .run_once(async move {
++            #[turbo_tasks::function(operation)]
++            async fn project_feature_usage_operation(
++                container: ResolvedVc<ProjectContainer>,
++            ) -> Result<Vc<ProjectFeatureUsageSummary>> {
++                Ok(container.project().project_feature_usage())
++            }
++            project_feature_usage_operation(container)
++                .read_strongly_consistent()
++                .await
++        })
++        .await
++        .map_err(|e| napi::Error::from_reason(PrettyPrintError(&e).to_string()))?;
++
++    Ok(summary
++        .features
++        .iter()
++        .map(|(name, count)| NapiUsedFeature::new(name.clone(), *count))
++        .collect())
+ }
+ 
+ #[tracing::instrument(level = "info", name = "get all compilation issues", skip_all)]
+@@ -2566,17 +2549,13 @@ pub async fn project_get_all_compilation_issues(
+     #[napi(ts_arg_type = "{ __napiType: \"Project\" }")] project: External<ProjectInstance>,
+ ) -> napi::Result<TurbopackResult<()>> {
+     let container = project.container;
+-    let (issues, diagnostics) = project
++    let issues = project
+         .turbopack_ctx
+         .turbo_tasks()
+         .run_once(async move {
+             let op = get_all_compilation_issues_operation(container);
+-            let OperationResult {
+-                issues,
+-                diagnostics,
+-                effects: _,
+-            } = &*op.read_strongly_consistent().await?;
+-            Ok((issues.clone(), diagnostics.clone()))
++            let OperationResult { issues, effects: _ } = &*op.read_strongly_consistent().await?;
++            Ok(issues.clone())
+         })
+         .await
+         .map_err(|e| napi::Error::from_reason(PrettyPrintError(&e).to_string()))?;
+@@ -2584,10 +2563,6 @@ pub async fn project_get_all_compilation_issues(
+     Ok(TurbopackResult {
+         result: (),
+         issues: issues.iter().map(|i| NapiIssue::from(&**i)).collect(),
+-        diagnostics: diagnostics
+-            .iter()
+-            .map(|d| NapiDiagnostic::from(d))
+-            .collect(),
+     })
+ }
+ 
+diff --git a/crates/next-napi-bindings/src/next_api/utils.rs b/crates/next-napi-bindings/src/next_api/utils.rs
+index e886181b815c..96f56976e0b7 100644
+--- a/crates/next-napi-bindings/src/next_api/utils.rs
++++ b/crates/next-napi-bindings/src/next_api/utils.rs
+@@ -17,12 +17,9 @@ use regex::Regex;
+ use rustc_hash::FxHashMap;
+ use serde::Serialize;
+ use turbo_rcstr::RcStr;
+-use turbo_tasks::{
+-    Effects, OperationVc, ReadRef, TaskId, TryJoinIterExt, Vc, VcValueType, take_effects,
+-};
++use turbo_tasks::{Effects, OperationVc, ReadRef, TaskId, Vc, VcValueType, take_effects};
+ use turbo_tasks_fs::FileContent;
+ use turbopack_core::{
+-    diagnostics::{Diagnostic, DiagnosticContextExt, PlainDiagnostic},
+     issue::{
+         CollectibleIssuesExt, IssueFilter, IssueSeverity, PlainIssue, PlainIssueSource,
+         PlainSource, StyledString,
+@@ -102,7 +99,7 @@ pub fn root_task_dispose(
+     Ok(())
+ }
+ 
+-/// [Peeks] at the [`Issue`] held by the given source and returns it as a [`PlainDiagnostic`].
++/// [Peeks] at the [`Issue`]s held by the given source and returns them as [`PlainIssue`]s.
+ /// It does not [consume] any [`Issue`]s held by the source.
+ ///
+ /// [Peeks]: turbo_tasks::CollectiblesSource::peek_collectibles
+@@ -117,27 +114,6 @@ pub async fn get_issues<T: Send>(
+     ))
+ }
+ 
+-/// [Peeks] at the [`Diagnostic`]s held by the given source and returns it as a [`PlainDiagnostic`].
+-/// It does not [consume] any [`Diagnostic`]s held by the source.
+-///
+-/// [Peeks]: turbo_tasks::CollectiblesSource::peek_collectibles
+-/// [consume]: turbo_tasks::CollectiblesSource::take_collectibles
+-pub async fn get_diagnostics<T: Send>(
+-    source: OperationVc<T>,
+-) -> Result<Arc<Vec<ReadRef<PlainDiagnostic>>>> {
+-    let captured_diags = source.peek_diagnostics().await?;
+-    let mut diags = captured_diags
+-        .diagnostics
+-        .iter()
+-        .map(|d| d.into_plain())
+-        .try_join()
+-        .await?;
+-
+-    diags.sort();
+-
+-    Ok(Arc::new(diags))
+-}
+-
+ /// Returns true if the file path refers to a Next.js/React internal file whose
+ /// source code frames would be unhelpful (e.g. large bundled vendored files).
+ ///
+@@ -386,23 +362,17 @@ impl From<SourcePos> for NapiSourcePos {
+ }
+ 
+ #[napi(object)]
+-pub struct NapiDiagnostic {
+-    pub category: RcStr,
+-    pub name: RcStr,
+-    #[napi(ts_type = "Record<string, string>")]
+-    pub payload: FxHashMap<RcStr, RcStr>,
++pub struct NapiUsedFeature {
++    pub feature_name: RcStr,
++    /// How many times it was used, typically this means how often it was imported.
++    pub invocation_count: u32,
+ }
+ 
+-impl NapiDiagnostic {
+-    pub fn from(diagnostic: &PlainDiagnostic) -> Self {
++impl NapiUsedFeature {
++    pub fn new(feature_name: RcStr, invocation_count: u32) -> Self {
+         Self {
+-            category: diagnostic.category.clone(),
+-            name: diagnostic.name.clone(),
+-            payload: diagnostic
+-                .payload
+-                .iter()
+-                .map(|(k, v)| (k.clone(), v.clone()))
+-                .collect(),
++            feature_name,
++            invocation_count,
+         }
+     }
+ }
+@@ -410,7 +380,6 @@ impl NapiDiagnostic {
+ pub struct TurbopackResult<T: ToNapiValue> {
+     pub result: T,
+     pub issues: Vec<NapiIssue>,
+-    pub diagnostics: Vec<NapiDiagnostic>,
+ }
+ 
+ impl<T: ToNapiValue> ToNapiValue for TurbopackResult<T> {
+@@ -435,7 +404,6 @@ impl<T: ToNapiValue> ToNapiValue for TurbopackResult<T> {
+         }
+ 
+         obj.set_named_property("issues", val.issues)?;
+-        obj.set_named_property("diagnostics", val.diagnostics)?;
+ 
+         Ok(unsafe { obj.raw() })
+     }
+@@ -483,12 +451,10 @@ pub async fn strongly_consistent_catch_collectables<R: VcValueType + Send>(
+ ) -> Result<(
+     Option<ReadRef<R>>,
+     Arc<Vec<ReadRef<PlainIssue>>>,
+-    Arc<Vec<ReadRef<PlainDiagnostic>>>,
+     Arc<Effects>,
+ )> {
+     let result = source_op.read_strongly_consistent().await;
+     let issues = get_issues(source_op, filter).await?;
+-    let diagnostics = get_diagnostics(source_op).await?;
+     let effects = Arc::new(take_effects(source_op).await?);
+ 
+     let result = if result.is_err() && issues.iter().any(|i| i.severity <= IssueSeverity::Error) {
+@@ -497,7 +463,7 @@ pub async fn strongly_consistent_catch_collectables<R: VcValueType + Send>(
+         Some(result?)
+     };
+ 
+-    Ok((result, issues, diagnostics, effects))
++    Ok((result, issues, effects))
+ }
+ 
+ #[napi]
+diff --git a/packages/next/src/build/index.ts b/packages/next/src/build/index.ts
+index 0c436dcf9908..397e0ba41762 100644
+--- a/packages/next/src/build/index.ts
++++ b/packages/next/src/build/index.ts
+@@ -1641,7 +1641,8 @@ export default async function build(
+             ...rest
+           } = await turbopackBuild(
+             process.env.NEXT_TURBOPACK_USE_WORKER === undefined ||
+-              process.env.NEXT_TURBOPACK_USE_WORKER !== '0'
++              process.env.NEXT_TURBOPACK_USE_WORKER !== '0',
++            telemetry
+           )
+           shutdownPromise = p
+           traceMemoryUsage('Finished build', nextBuildSpan)
+diff --git a/packages/next/src/build/swc/generated-native.d.ts b/packages/next/src/build/swc/generated-native.d.ts
+index 7df64a3ba0b5..c5d495219f1f 100644
+--- a/packages/next/src/build/swc/generated-native.d.ts
++++ b/packages/next/src/build/swc/generated-native.d.ts
+@@ -483,6 +483,17 @@ export declare function projectWriteAnalyzeData(
+   project: { __napiType: 'Project' },
+   appDirOnly: boolean
+ ): Promise<TurbopackResult>
++/**
++ * Returns the build-feature-usage telemetry summary for this project — the set of
++ * `(featureName, invocationCount)` pairs reported to the Next.js telemetry service.
++ *
++ * Intended to be called once at the end of a build, after `writeAllEntrypointsToDisk`. The
++ * summary is computed by walking the whole-app module graph and is cached by turbo-tasks, so the
++ * call is cheap when the graph is already materialized.
++ */
++export declare function projectFeatureUsage(project: {
++  __napiType: 'Project'
++}): Promise<Array<NapiUsedFeature>>
+ export declare function projectGetAllCompilationIssues(project: {
+   __napiType: 'Project'
+ }): Promise<TurbopackResult>
+@@ -564,10 +575,10 @@ export interface NapiSourcePos {
+   line: number
+   column: number
+ }
+-export interface NapiDiagnostic {
+-  category: RcStr
+-  name: RcStr
+-  payload: Record<string, string>
++export interface NapiUsedFeature {
++  featureName: RcStr
++  /** How many times it was used, typically this means how often it was imported. */
++  invocationCount: number
+ }
+ export declare function expandNextJsTemplate(
+   content: Buffer,
+diff --git a/packages/next/src/build/swc/index.ts b/packages/next/src/build/swc/index.ts
+index 1a0a719e2d15..d9ed34bc2155 100644
+--- a/packages/next/src/build/swc/index.ts
++++ b/packages/next/src/build/swc/index.ts
+@@ -22,6 +22,7 @@ import type {
+ } from './generated-native'
+ import type {
+   Binding,
++  BuildFeatureUsage,
+   CompilationEvent,
+   DefineEnv,
+   Endpoint,
+@@ -730,11 +731,16 @@ function bindingToApi(
+       } else {
+         return {
+           issues: napiEndpoints.issues,
+-          diagnostics: napiEndpoints.diagnostics,
+         }
+       }
+     }
+ 
++    async featureUsage(): Promise<BuildFeatureUsage[]> {
++      return (await binding.projectFeatureUsage(
++        this._nativeProject
++      )) as BuildFeatureUsage[]
++    }
++
+     entrypointsSubscribe() {
+       const subscription = subscribe<TurbopackResult<NapiEntrypoints | {}>>(
+         false,
+@@ -750,7 +756,6 @@ function bindingToApi(
+           } else {
+             yield {
+               issues: entrypoints.issues,
+-              diagnostics: entrypoints.diagnostics,
+             } as TurbopackResult<{}>
+           }
+         }
+@@ -1239,7 +1244,6 @@ function bindingToApi(
+       pagesAppEndpoint: new EndpointImpl(entrypoints.pagesAppEndpoint),
+       pagesErrorEndpoint: new EndpointImpl(entrypoints.pagesErrorEndpoint),
+       issues: entrypoints.issues,
+-      diagnostics: entrypoints.diagnostics,
+     }
+   }
+ 
+diff --git a/packages/next/src/build/swc/types.ts b/packages/next/src/build/swc/types.ts
+index cdaa1e5171f5..dcb352f3a7b3 100644
+--- a/packages/next/src/build/swc/types.ts
++++ b/packages/next/src/build/swc/types.ts
+@@ -167,15 +167,13 @@ export interface PlainTraceItem {
+   layer?: string
+ }
+ 
+-export interface Diagnostics {
+-  category: string
+-  name: string
+-  payload: unknown
++export interface BuildFeatureUsage {
++  featureName: string
++  invocationCount: number
+ }
+ 
+ export type TurbopackResult<T = {}> = T & {
+   issues: Issue[]
+-  diagnostics: Diagnostics[]
+ }
+ 
+ export interface Middleware {
+@@ -305,6 +303,17 @@ export interface Project {
+     appDirOnly: boolean
+   ): Promise<TurbopackResult<Partial<RawEntrypoints>>>
+ 
++  /**
++   * Returns the build-feature-usage telemetry summary — `(featureName,
++   * invocationCount)` pairs reported to the Next.js telemetry service.
++   *
++   * **Must only be called in a `next build` (production) context**, once at the
++   * end of the build, after `writeAllEntrypointsToDisk`. The Rust implementation
++   * walks the whole-app module graph and will error if invoked from a
++   * development project, because dev builds do not produce a complete graph.
++   */
++  featureUsage(): Promise<BuildFeatureUsage[]>
++
+   entrypointsSubscribe(): AsyncIterableIterator<
+     TurbopackResult<RawEntrypoints | {}>
+   >
+diff --git a/packages/next/src/build/turbopack-build/impl.ts b/packages/next/src/build/turbopack-build/impl.ts
+index 53c3f77212f7..b3678652bbc8 100644
+--- a/packages/next/src/build/turbopack-build/impl.ts
++++ b/packages/next/src/build/turbopack-build/impl.ts
+@@ -15,6 +15,7 @@ import { PHASE_PRODUCTION_BUILD } from '../../shared/lib/constants'
+ import loadConfig from '../../server/config'
+ import { hasCustomExportOutput } from '../../export/utils'
+ import { Telemetry } from '../../telemetry/storage'
++import { eventBuildFeatureUsageFromTurbopack } from '../../telemetry/events/build'
+ import {
+   setGlobal,
+   trace,
+@@ -34,7 +35,7 @@ import type {
+ } from '../swc/types'
+ import { Bundler } from '../../lib/bundler'
+ 
+-export async function turbopackBuild(): Promise<{
++export async function turbopackBuild(telemetry: Telemetry): Promise<{
+   duration: number
+   buildTraceContext: undefined
+   shutdownPromise: Promise<void>
+@@ -175,6 +176,20 @@ export async function turbopackBuild(): Promise<{
+     const entrypoints = await project.writeAllEntrypointsToDisk(appDirOnly)
+     printBuildErrors(entrypoints, dev)
+ 
++    // Skip when telemetry is fully off — featureUsage() isn't free.
++    if (telemetry.isEnabled || process.env.NEXT_TELEMETRY_DEBUG) {
++      try {
++        const featureUsage = await project.featureUsage()
++        const events = eventBuildFeatureUsageFromTurbopack(featureUsage)
++        if (events.length > 0) {
++          telemetry.record(events)
++        }
++      } catch (err) {
++        // Telemetry must never break a build.
++        console.warn('Failed to record Turbopack feature telemetry:', err)
++      }
++    }
++
+     const routes = entrypoints.routes
+     if (!routes) {
+       // This should never ever happen, there should be an error issue, or the bindings call should
+@@ -332,7 +347,7 @@ export async function workerMain(workerData: {
+       shutdownPromise: resultShutdownPromise,
+       buildTraceContext,
+       duration,
+-    } = await turbopackBuild()
++    } = await turbopackBuild(telemetry)
+     shutdownPromise = resultShutdownPromise
+     return {
+       buildTraceContext,
+diff --git a/packages/next/src/build/turbopack-build/index.ts b/packages/next/src/build/turbopack-build/index.ts
+index 1f26a9c41bd8..cdcacccaf979 100644
+--- a/packages/next/src/build/turbopack-build/index.ts
++++ b/packages/next/src/build/turbopack-build/index.ts
+@@ -3,6 +3,7 @@ import path from 'path'
+ import { Worker } from '../../lib/worker'
+ import { NextBuildContext } from '../build-context'
+ import { exportTraceState, recordTraceEvents } from '../../trace'
++import type { Telemetry } from '../../telemetry/storage'
+ 
+ async function turbopackBuildWithWorker(): ReturnType<
+   typeof import('./impl').turbopackBuild
+@@ -76,16 +77,18 @@ async function turbopackBuildWithWorker(): ReturnType<
+ }
+ 
+ export function turbopackBuild(
+-  withWorker: boolean
++  withWorker: boolean,
++  telemetry: Telemetry
+ ): ReturnType<typeof import('./impl').turbopackBuild> {
+   const nextBuildSpan = NextBuildContext.nextBuildSpan!
+   return nextBuildSpan.traceChild('run-turbopack').traceAsyncFn(async () => {
+     if (withWorker) {
++      // Worker creates its own Telemetry instance; no need to forward.
+       return await turbopackBuildWithWorker()
+     } else {
+       const build = (require('./impl') as typeof import('./impl'))
+         .turbopackBuild
+-      return await build()
++      return await build(telemetry)
+     }
+   })
+ }
+diff --git a/packages/next/src/build/webpack/plugins/telemetry-plugin/telemetry-plugin.ts b/packages/next/src/build/webpack/plugins/telemetry-plugin/telemetry-plugin.ts
+index 95584eb29e0a..b467fe60315b 100644
+--- a/packages/next/src/build/webpack/plugins/telemetry-plugin/telemetry-plugin.ts
++++ b/packages/next/src/build/webpack/plugins/telemetry-plugin/telemetry-plugin.ts
+@@ -70,10 +70,10 @@ const FEATURE_MODULE_MAP: ReadonlyMap<Feature, string> = new Map([
+   ['next/dynamic', '/next/dynamic.js'],
+ ])
+ const FEATURE_MODULE_REGEXP_MAP: ReadonlyMap<Feature, RegExp> = new Map([
+-  ['@next/font/google', /\/@next\/font\/google\/target.css?.+$/],
+-  ['@next/font/local', /\/@next\/font\/local\/target.css?.+$/],
+-  ['next/font/google', /\/next\/font\/google\/target.css?.+$/],
+-  ['next/font/local', /\/next\/font\/local\/target.css?.+$/],
++  ['@next/font/google', /\/@next\/font\/google\/target\.css\?.+$/],
++  ['@next/font/local', /\/@next\/font\/local\/target\.css\?.+$/],
++  ['next/font/google', /\/next\/font\/google\/target\.css\?.+$/],
++  ['next/font/local', /\/next\/font\/local\/target\.css\?.+$/],
+ ])
+ 
+ // List of build features used in webpack configuration
+diff --git a/packages/next/src/telemetry/events/build.test.ts b/packages/next/src/telemetry/events/build.test.ts
+new file mode 100644
+index 000000000000..40ea6682ed18
+--- /dev/null
++++ b/packages/next/src/telemetry/events/build.test.ts
+@@ -0,0 +1,51 @@
++import {
++  EVENT_BUILD_FEATURE_USAGE,
++  eventBuildFeatureUsageFromTurbopack,
++} from './build'
++
++describe('eventBuildFeatureUsageFromTurbopackDiagnostics', () => {
++  it('returns empty for empty input', () => {
++    expect(eventBuildFeatureUsageFromTurbopack([])).toEqual([])
++  })
++
++  it('maps a single diagnostic to one event', () => {
++    const events = eventBuildFeatureUsageFromTurbopack([
++      { featureName: 'next/image', invocationCount: 3 },
++    ])
++    expect(events).toEqual([
++      {
++        eventName: EVENT_BUILD_FEATURE_USAGE,
++        payload: { featureName: 'next/image', invocationCount: 3 },
++      },
++    ])
++  })
++
++  it('preserves invocationCount of 0 for disabled boolean flags', () => {
++    const events = eventBuildFeatureUsageFromTurbopack([
++      { featureName: 'swcRelay', invocationCount: 0 },
++    ])
++    expect(events).toEqual([
++      {
++        eventName: EVENT_BUILD_FEATURE_USAGE,
++        payload: { featureName: 'swcRelay', invocationCount: 0 },
++      },
++    ])
++  })
++
++  it('passes through multiple distinct diagnostics (already aggregated Rust-side)', () => {
++    const events = eventBuildFeatureUsageFromTurbopack([
++      { featureName: 'next/image', invocationCount: 2 },
++      { featureName: 'next/script', invocationCount: 1 },
++    ])
++    expect(events).toEqual([
++      {
++        eventName: EVENT_BUILD_FEATURE_USAGE,
++        payload: { featureName: 'next/image', invocationCount: 2 },
++      },
++      {
++        eventName: EVENT_BUILD_FEATURE_USAGE,
++        payload: { featureName: 'next/script', invocationCount: 1 },
++      },
++    ])
++  })
++})
+diff --git a/packages/next/src/telemetry/events/build.ts b/packages/next/src/telemetry/events/build.ts
+index ac5233a634a5..dbd2a63aea92 100644
+--- a/packages/next/src/telemetry/events/build.ts
++++ b/packages/next/src/telemetry/events/build.ts
+@@ -230,6 +230,26 @@ export function eventBuildFeatureUsage(
+   }))
+ }
+ 
++/**
++ * Converts aggregated Turbopack feature-usage diagnostics (emitted by the
++ * Rust side from `FeatureUsageTelemetry` and aggregated per-feature by
++ * `get_diagnostics`) into `EVENT_BUILD_FEATURE_USAGE` telemetry events.
++ */
++export function eventBuildFeatureUsageFromTurbopack(
++  diagnostics: ReadonlyArray<{
++    featureName: string
++    invocationCount: number
++  }>
++): Array<{ eventName: string; payload: EventBuildFeatureUsage }> {
++  return diagnostics.map(({ featureName, invocationCount }) => ({
++    eventName: EVENT_BUILD_FEATURE_USAGE,
++    payload: {
++      featureName: featureName as EventBuildFeatureUsage['featureName'],
++      invocationCount,
++    },
++  }))
++}
++
+ export const EVENT_NAME_PACKAGE_USED_IN_GET_SERVER_SIDE_PROPS =
+   'NEXT_PACKAGE_USED_IN_GET_SERVER_SIDE_PROPS'
+ 
+diff --git a/test/development/basic/__snapshots__/next-rs-api.test.ts.snap b/test/development/basic/__snapshots__/next-rs-api.test.ts.snap
+index 05988b1f69ff..1bd71db9b2c6 100644
+--- a/test/development/basic/__snapshots__/next-rs-api.test.ts.snap
++++ b/test/development/basic/__snapshots__/next-rs-api.test.ts.snap
+@@ -1,148 +1,31 @@
+ // Jest Snapshot v1, https://goo.gl/fbAQLP
+ 
+-exports[`next.rs api should allow to write app Node.js page to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write app Node.js page to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write app Node.js page to disk: rsc diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write app Node.js page to disk: rsc issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write app Node.js route to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write app Node.js route to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write app edge page to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write app edge page to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write app edge page to disk: rsc diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write app edge page to disk: rsc issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write app edge route to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write app edge route to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write pages Node.js api to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write pages Node.js api to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write pages Node.js page to disk: data diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write pages Node.js page to disk: data issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write pages Node.js page to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write pages Node.js page to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write pages edge api to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write pages edge api to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write pages edge page to disk: data diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write pages edge page to disk: data issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write pages edge page to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write pages edge page to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write root page to disk: data diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write root page to disk: data issues 1`] = `[]`;
+ 
+-exports[`next.rs api should allow to write root page to disk: diagnostics 1`] = `[]`;
+-
+ exports[`next.rs api should allow to write root page to disk: issues 1`] = `[]`;
+ 
+-exports[`next.rs api should detect the correct routes: diagnostics 1`] = `
+-[
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "modularizeImports": "true",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "persistentCaching": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "platform-triplet": "true",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "skipProxyUrlNormalize": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "skipTrailingSlashRedirect": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "swcEmotion": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "swcReactRemoveProperties": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "swcRelay": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "swcRemoveConsole": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "swcStyledComponents": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "transpilePackages": "false",
+-    },
+-  },
+-  {
+-    "category": "NextFeatureTelemetry_category_tbd",
+-    "name": "EVENT_BUILD_FEATURE_USAGE",
+-    "payload": {
+-      "turbotrace": "false",
+-    },
+-  },
+-]
+-`;
+-
+ exports[`next.rs api should detect the correct routes: issues 1`] = `[]`;
+diff --git a/test/development/basic/next-rs-api.test.ts b/test/development/basic/next-rs-api.test.ts
+index e6d03a633464..4303dd78e3d6 100644
+--- a/test/development/basic/next-rs-api.test.ts
++++ b/test/development/basic/next-rs-api.test.ts
+@@ -3,7 +3,6 @@ import { trace } from 'next/dist/trace'
+ import { PHASE_DEVELOPMENT_SERVER } from 'next/constants'
+ import { createDefineEnv, loadBindings, HmrTarget } from 'next/dist/build/swc'
+ import type {
+-  Diagnostics,
+   Issue,
+   Project,
+   RawEntrypoints,
+@@ -62,33 +61,6 @@ function normalizeIssues(issues: Issue[]) {
+     })
+ }
+ 
+-function normalizeDiagnostics(diagnostics: Diagnostics[]) {
+-  return diagnostics
+-    .map((diagnostic) => {
+-      if (diagnostic.name === 'EVENT_BUILD_FEATURE_USAGE') {
+-        diagnostic.payload = Object.fromEntries(
+-          Object.entries(diagnostic.payload).map(([key, value]) => {
+-            return [
+-              key.replace(
+-                /^(x86_64|i686|aarch64)-(apple-darwin|unknown-linux-(gnu|musl)|pc-windows-msvc)$/g,
+-                'platform-triplet'
+-              ),
+-              value,
+-            ]
+-          })
+-        )
+-      }
+-      return diagnostic
+-    })
+-    .sort((a, b) => {
+-      const a_ = JSON.stringify(a)
+-      const b_ = JSON.stringify(b)
+-      if (a_ < b_) return -1
+-      if (a_ > b_) return 1
+-      return 0
+-    })
+-}
+-
+ function raceIterators<T>(iterators: AsyncIterableIterator<T>[]) {
+   const nexts = iterators.map((iterator, i) =>
+     iterator.next().then((next) => ({ next, i }))
+@@ -149,9 +121,11 @@ export default () => <div>${text}<Client /></div>;`
+ }
+ 
+ describe('next.rs api writeToDisk multiple times', () => {
++  let next: NextInstance
++  afterEach(async () => {
++    await next?.destroy()
++  })
+   it('should allow to write to disk multiple times', async () => {
+-    let next: NextInstance
+-
+     next = await createNext({
+       skipStart: true,
+       files: {
+@@ -303,8 +277,6 @@ main()
+       }
+     )
+     expect(result.status).toBe(0)
+-
+-    await next.destroy()
+   })
+ })
+ 
+@@ -422,9 +394,6 @@ describe('next.rs api', () => {
+       '/route-nodejs',
+     ])
+     expect(normalizeIssues(entrypoints.value.issues)).toMatchSnapshot('issues')
+-    expect(normalizeDiagnostics(entrypoints.value.diagnostics)).toMatchSnapshot(
+-      'diagnostics'
+-    )
+     await entrypointsSubscription.return()
+   })
+ 
+@@ -516,9 +485,6 @@ describe('next.rs api', () => {
+           expect(result.type).toBe(runtime)
+           expect(result.config).toEqual(config)
+           expect(normalizeIssues(result.issues)).toMatchSnapshot('issues')
+-          expect(normalizeDiagnostics(result.diagnostics)).toMatchSnapshot(
+-            'diagnostics'
+-          )
+           break
+         }
+         case 'page': {
+@@ -526,17 +492,11 @@ describe('next.rs api', () => {
+           expect(result.type).toBe(runtime)
+           expect(result.config).toEqual(config)
+           expect(normalizeIssues(result.issues)).toMatchSnapshot('issues')
+-          expect(normalizeDiagnostics(result.diagnostics)).toMatchSnapshot(
+-            'diagnostics'
+-          )
+ 
+           const result2 = await route.dataEndpoint.writeToDisk()
+           expect(result2.type).toBe(runtime)
+           expect(result2.config).toEqual(config)
+           expect(normalizeIssues(result2.issues)).toMatchSnapshot('data issues')
+-          expect(normalizeDiagnostics(result2.diagnostics)).toMatchSnapshot(
+-            'data diagnostics'
+-          )
+           break
+         }
+         case 'app-page': {
+@@ -544,17 +504,11 @@ describe('next.rs api', () => {
+           expect(result.type).toBe(runtime)
+           expect(result.config).toEqual(config)
+           expect(normalizeIssues(result.issues)).toMatchSnapshot('issues')
+-          expect(normalizeDiagnostics(result.diagnostics)).toMatchSnapshot(
+-            'diagnostics'
+-          )
+ 
+           const result2 = await route.pages[0].rscEndpoint.writeToDisk()
+           expect(result2.type).toBe(runtime)
+           expect(result2.config).toEqual(config)
+           expect(normalizeIssues(result2.issues)).toMatchSnapshot('rsc issues')
+-          expect(normalizeDiagnostics(result2.diagnostics)).toMatchSnapshot(
+-            'rsc diagnostics'
+-          )
+ 
+           break
+         }
+@@ -686,10 +640,6 @@ describe('next.rs api', () => {
+             expect(result.value).toHaveProperty('resource', expect.toBeObject())
+             expect(result.value).toHaveProperty('type', 'issues')
+             expect(normalizeIssues(result.value.issues)).toEqual([])
+-            expect(result.value).toHaveProperty(
+-              'diagnostics',
+-              expect.toBeEmpty()
+-            )
+           })
+         )
+         console.log('waiting for events')
+@@ -733,13 +683,9 @@ describe('next.rs api', () => {
+               })(),
+               serverSideSubscription &&
+                 (async () => {
+-                  for await (const {
+-                    issues,
+-                    diagnostics,
+-                  } of serverSideSubscription) {
++                  for await (const { issues } of serverSideSubscription) {
+                     if (done) return
+                     expect(issues).toBeArray()
+-                    expect(diagnostics).toBeArray()
+                     foundServerSideChange = true
+                   }
+                 })(),
+@@ -812,7 +758,6 @@ describe('next.rs api', () => {
+         expect(result.done).toBe(false)
+         expect(result.value).toHaveProperty('resource', expect.toBeObject())
+         expect(result.value).toHaveProperty('type', 'issues')
+-        expect(result.value).toHaveProperty('diagnostics', expect.toBeEmpty())
+       })
+     )
+     const merged = raceIterators(subscriptions)
+diff --git a/test/integration/telemetry/test/config.test.ts b/test/integration/telemetry/test/config.test.ts
+index 71b7e318791c..7bb3f240287c 100644
+--- a/test/integration/telemetry/test/config.test.ts
++++ b/test/integration/telemetry/test/config.test.ts
+@@ -164,39 +164,34 @@ describe('config telemetry', () => {
+         }
+       })
+ 
+-      // Turbopack intentionally does not support these events
+-      ;(process.env.IS_TURBOPACK_TEST ? it.skip : it)(
+-        'emits telemery for usage of image, script & dynamic',
+-        async () => {
+-          const { stderr } = await nextBuild(appDir, [], {
+-            stderr: true,
+-            env: { NEXT_TELEMETRY_DEBUG: '1' },
+-          })
+-          const featureUsageEvents = findAllTelemetryEvents(
+-            stderr,
+-            'NEXT_BUILD_FEATURE_USAGE'
+-          )
++      it('emits telemery for usage of image, script & dynamic', async () => {
++        const { stderr } = await nextBuild(appDir, [], {
++          stderr: 'log',
++          env: { NEXT_TELEMETRY_DEBUG: '1' },
++        })
++        const featureUsageEvents = findAllTelemetryEvents(
++          stderr,
++          'NEXT_BUILD_FEATURE_USAGE'
++        )
+ 
+-          // eslint-disable-next-line jest/no-standalone-expect
+-          expect(featureUsageEvents).toEqual(
+-            expect.arrayContaining([
+-              {
+-                featureName: 'next/image',
+-                // FIXME: Should be +1 from App Router
+-                invocationCount: 2,
+-              },
+-              {
+-                featureName: 'next/script',
+-                invocationCount: 1,
+-              },
+-              {
+-                featureName: 'next/dynamic',
+-                invocationCount: 1,
+-              },
+-            ])
+-          )
+-        }
+-      )
++        expect(featureUsageEvents).toEqual(
++          expect.arrayContaining([
++            {
++              featureName: 'next/image',
++              // FIXME: Webpack is missing a reference, Should be +1 from App Router
++              invocationCount: process.env.IS_TURBOPACK_TEST ? 3 : 2,
++            },
++            {
++              featureName: 'next/script',
++              invocationCount: 1,
++            },
++            {
++              featureName: 'next/dynamic',
++              invocationCount: 1,
++            },
++          ])
++        )
++      })
+ 
+       // Turbopack intentionally does not support these events
+       ;(process.env.IS_TURBOPACK_TEST ? it.skip : it)(
+@@ -442,32 +437,26 @@ describe('config telemetry', () => {
+         ])
+       })
+ 
+-      // Turbopack intentionally does not support these events
+-      ;(process.env.IS_TURBOPACK_TEST ? it.skip : it)(
+-        'emits telemetry for usage of next/legacy/image',
+-        async () => {
+-          const { stderr } = await nextBuild(appDir, [], {
+-            stderr: true,
+-            env: { NEXT_TELEMETRY_DEBUG: '1' },
+-          })
+-          const featureUsageEvents = findAllTelemetryEvents(
+-            stderr,
+-            'NEXT_BUILD_FEATURE_USAGE'
+-          )
+-          // eslint-disable-next-line jest/no-standalone-expect
+-          expect(featureUsageEvents).toContainEqual({
+-            // FIXME: Should be +1 from App Router
+-            featureName: 'next/legacy/image',
+-            invocationCount: 2,
+-          })
+-          // eslint-disable-next-line jest/no-standalone-expect
+-          expect(featureUsageEvents).toContainEqual({
+-            featureName: 'next/image',
+-            // FIXME: Should be +1 from App Router
+-            invocationCount: 2,
+-          })
+-        }
+-      )
++      it('emits telemetry for usage of next/legacy/image', async () => {
++        const { stderr } = await nextBuild(appDir, [], {
++          stderr: true,
++          env: { NEXT_TELEMETRY_DEBUG: '1' },
++        })
++        const featureUsageEvents = findAllTelemetryEvents(
++          stderr,
++          'NEXT_BUILD_FEATURE_USAGE'
++        )
++        expect(featureUsageEvents).toContainEqual({
++          // FIXME: Should be +1 from App Router for webpack
++          featureName: 'next/legacy/image',
++          invocationCount: process.env.IS_TURBOPACK_TEST ? 3 : 2,
++        })
++        expect(featureUsageEvents).toContainEqual({
++          featureName: 'next/image',
++          // FIXME: Should be +1 from App Router for webpack
++          invocationCount: process.env.IS_TURBOPACK_TEST ? 3 : 2,
++        })
++      })
+ 
+       // Turbopack intentionally does not support these events
+       ;(process.env.IS_TURBOPACK_TEST ? it.skip : it)(
+@@ -490,72 +479,61 @@ describe('config telemetry', () => {
+         }
+       )
+ 
+-      // Turbopack intentionally does not support these events
+-      ;(process.env.IS_TURBOPACK_TEST ? it.skip : it)(
+-        'emits telemetry for transpilePackages',
+-        async () => {
+-          await fs.rename(
+-            path.join(appDir, 'next.config.transpile-packages'),
+-            path.join(appDir, 'next.config.js')
+-          )
++      it('emits telemetry for transpilePackages', async () => {
++        await fs.rename(
++          path.join(appDir, 'next.config.transpile-packages'),
++          path.join(appDir, 'next.config.js')
++        )
+ 
+-          const { stderr } = await nextBuild(appDir, [], {
+-            stderr: true,
+-            env: { NEXT_TELEMETRY_DEBUG: '1' },
+-          })
++        const { stderr } = await nextBuild(appDir, [], {
++          stderr: true,
++          env: { NEXT_TELEMETRY_DEBUG: '1' },
++        })
+ 
+-          await fs.rename(
+-            path.join(appDir, 'next.config.js'),
+-            path.join(appDir, 'next.config.transpile-packages')
+-          )
++        await fs.rename(
++          path.join(appDir, 'next.config.js'),
++          path.join(appDir, 'next.config.transpile-packages')
++        )
+ 
+-          const featureUsageEvents = findAllTelemetryEvents(
+-            stderr,
+-            'NEXT_BUILD_FEATURE_USAGE'
+-          )
+-          // eslint-disable-next-line jest/no-standalone-expect
+-          expect(featureUsageEvents).toContainEqual({
+-            featureName: 'transpilePackages',
+-            invocationCount: 1,
+-          })
+-        }
+-      )
++        const featureUsageEvents = findAllTelemetryEvents(
++          stderr,
++          'NEXT_BUILD_FEATURE_USAGE'
++        )
++        expect(featureUsageEvents).toContainEqual({
++          featureName: 'transpilePackages',
++          invocationCount: 1,
++        })
++      })
+ 
+-      // Turbopack intentionally does not support these events
+-      ;(process.env.IS_TURBOPACK_TEST ? it.skip : it)(
+-        'emits telemetry for middleware related options',
+-        async () => {
+-          await fs.rename(
+-            path.join(appDir, 'next.config.middleware-options'),
+-            path.join(appDir, 'next.config.js')
+-          )
++      it('emits telemetry for middleware related options', async () => {
++        await fs.rename(
++          path.join(appDir, 'next.config.middleware-options'),
++          path.join(appDir, 'next.config.js')
++        )
+ 
+-          const { stderr } = await nextBuild(appDir, [], {
+-            stderr: true,
+-            env: { NEXT_TELEMETRY_DEBUG: '1' },
+-          })
++        const { stderr } = await nextBuild(appDir, [], {
++          stderr: true,
++          env: { NEXT_TELEMETRY_DEBUG: '1' },
++        })
+ 
+-          await fs.rename(
+-            path.join(appDir, 'next.config.js'),
+-            path.join(appDir, 'next.config.middleware-options')
+-          )
++        await fs.rename(
++          path.join(appDir, 'next.config.js'),
++          path.join(appDir, 'next.config.middleware-options')
++        )
+ 
+-          const featureUsageEvents = findAllTelemetryEvents(
+-            stderr,
+-            'NEXT_BUILD_FEATURE_USAGE'
+-          )
+-          // eslint-disable-next-line jest/no-standalone-expect
+-          expect(featureUsageEvents).toContainEqual({
+-            featureName: 'skipProxyUrlNormalize',
+-            invocationCount: 1,
+-          })
+-          // eslint-disable-next-line jest/no-standalone-expect
+-          expect(featureUsageEvents).toContainEqual({
+-            featureName: 'skipTrailingSlashRedirect',
+-            invocationCount: 1,
+-          })
+-        }
+-      )
++        const featureUsageEvents = findAllTelemetryEvents(
++          stderr,
++          'NEXT_BUILD_FEATURE_USAGE'
++        )
++        expect(featureUsageEvents).toContainEqual({
++          featureName: 'skipProxyUrlNormalize',
++          invocationCount: 1,
++        })
++        expect(featureUsageEvents).toContainEqual({
++          featureName: 'skipTrailingSlashRedirect',
++          invocationCount: 1,
++        })
++      })
+ 
+       it('emits telemetry for default React Compiler options', async () => {
+         const { stderr } = await nextBuild(appDir, [], {
+diff --git a/turbopack/crates/turbopack-core/src/diagnostics/mod.rs b/turbopack/crates/turbopack-core/src/diagnostics/mod.rs
+deleted file mode 100644
+index 9f2a440aa76f..000000000000
+--- a/turbopack/crates/turbopack-core/src/diagnostics/mod.rs
++++ /dev/null
+@@ -1,118 +0,0 @@
+-use std::cmp::Ordering;
+-
+-use anyhow::Result;
+-use async_trait::async_trait;
+-use auto_hash_map::AutoSet;
+-use turbo_rcstr::RcStr;
+-use turbo_tasks::{CollectiblesSource, FxIndexMap, ResolvedVc, Upcast, Vc, emit};
+-
+-#[turbo_tasks::value(serialization = "skip")]
+-#[derive(Clone, Debug)]
+-pub struct PlainDiagnostic {
+-    pub category: RcStr,
+-    pub name: RcStr,
+-    pub payload: FxIndexMap<RcStr, RcStr>,
+-}
+-
+-impl Ord for PlainDiagnostic {
+-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+-        self.name
+-            .cmp(&other.name)
+-            .then_with(|| self.category.cmp(&other.category))
+-            .then_with(|| self.payload.len().cmp(&other.payload.len()))
+-            .then_with(|| {
+-                for ((a_key, a_value), (b_key, b_value)) in
+-                    self.payload.iter().zip(other.payload.iter())
+-                {
+-                    match a_key.cmp(b_key) {
+-                        Ordering::Equal => {}
+-                        other => return other,
+-                    }
+-                    match a_value.cmp(b_value) {
+-                        Ordering::Equal => {}
+-                        other => return other,
+-                    }
+-                }
+-                Ordering::Equal
+-            })
+-    }
+-}
+-
+-impl PartialOrd for PlainDiagnostic {
+-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+-        Some(self.cmp(other))
+-    }
+-}
+-
+-#[turbo_tasks::value(transparent)]
+-pub struct DiagnosticPayload(
+-    #[bincode(with = "turbo_bincode::indexmap")] pub FxIndexMap<RcStr, RcStr>,
+-);
+-
+-/// An arbitrary payload can be used to analyze, diagnose Turbopack's behavior.
+-#[turbo_tasks::value_trait]
+-pub trait Diagnostic {
+-    /// **NOTE:** Pseudo-reserved; this is not being used currently. The `type` of the diagnostics
+-    /// that can be used selectively filtered by consumers. For example, this could be `telemetry`,
+-    /// or `slow_perf_event`, or something else. This is not strongly typed though; since consumer
+-    /// or implementation may need to define own category.
+-    #[turbo_tasks::function]
+-    fn category(&self) -> Vc<RcStr>;
+-    /// Name of the specific diagnostic event.
+-    #[turbo_tasks::function]
+-    fn name(&self) -> Vc<RcStr>;
+-    /// Arbitrary payload included in the diagnostic event.
+-    #[turbo_tasks::function]
+-    fn payload(&self) -> Vc<DiagnosticPayload>;
+-
+-    #[turbo_tasks::function]
+-    async fn into_plain(self: Vc<Self>) -> Result<Vc<PlainDiagnostic>> {
+-        Ok(PlainDiagnostic {
+-            category: self.category().owned().await?,
+-            name: self.name().owned().await?,
+-            payload: self.payload().owned().await?,
+-        }
+-        .cell())
+-    }
+-}
+-
+-pub trait DiagnosticExt {
+-    fn emit(self);
+-}
+-
+-impl<T> DiagnosticExt for ResolvedVc<T>
+-where
+-    T: Upcast<Box<dyn Diagnostic>>,
+-{
+-    fn emit(self) {
+-        let diagnostic = ResolvedVc::upcast_non_strict::<Box<dyn Diagnostic>>(self);
+-        emit(diagnostic);
+-    }
+-}
+-
+-#[async_trait]
+-pub trait DiagnosticContextExt
+-where
+-    Self: Sized,
+-{
+-    async fn peek_diagnostics(self) -> Result<CapturedDiagnostics>;
+-}
+-
+-#[async_trait]
+-impl<T> DiagnosticContextExt for T
+-where
+-    T: CollectiblesSource + Copy + Send,
+-{
+-    async fn peek_diagnostics(self) -> Result<CapturedDiagnostics> {
+-        Ok(CapturedDiagnostics {
+-            diagnostics: self.peek_collectibles(),
+-        })
+-    }
+-}
+-
+-/// A list of diagnostics captured with [`DiagnosticContextExt::peek_diagnostics`] and
+-#[derive(Debug)]
+-#[turbo_tasks::value]
+-pub struct CapturedDiagnostics {
+-    pub diagnostics: AutoSet<ResolvedVc<Box<dyn Diagnostic>>>,
+-}
+diff --git a/turbopack/crates/turbopack-core/src/lib.rs b/turbopack/crates/turbopack-core/src/lib.rs
+index 5390b447e9ed..08149a6ab2c0 100644
+--- a/turbopack/crates/turbopack-core/src/lib.rs
++++ b/turbopack/crates/turbopack-core/src/lib.rs
+@@ -16,7 +16,6 @@ pub mod condition;
+ pub mod context;
+ pub mod data_uri_source;
+ pub mod debug_id;
+-pub mod diagnostics;
+ pub mod environment;
+ pub mod file_source;
+ pub mod generated_code_source;

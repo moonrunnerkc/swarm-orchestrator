@@ -1,0 +1,774 @@
+diff --git a/packages/cloudflare/src/client.ts b/packages/cloudflare/src/client.ts
+index 2de5147d3d5a..6da36cc1721c 100644
+--- a/packages/cloudflare/src/client.ts
++++ b/packages/cloudflare/src/client.ts
+@@ -1,7 +1,7 @@
+ import type { ClientOptions, Options, ServerRuntimeClientOptions } from '@sentry/core';
+ import { applySdkMetadata, ServerRuntimeClient } from '@sentry/core';
+-import type { makeFlushLock } from './flush';
+ import type { CloudflareTransportOptions } from './transport';
++import type { makeFlushLock } from './utils/flushLock';
+ 
+ /**
+  * The Sentry Cloudflare SDK Client.
+diff --git a/packages/cloudflare/src/durableobject.ts b/packages/cloudflare/src/durableobject.ts
+index bda7a9aa3538..5a9f14b06594 100644
+--- a/packages/cloudflare/src/durableobject.ts
++++ b/packages/cloudflare/src/durableobject.ts
+@@ -18,6 +18,7 @@ import { isInstrumented, markAsInstrumented } from './instrument';
+ import { getFinalOptions } from './options';
+ import { wrapRequestHandler } from './request';
+ import { init } from './sdk';
++import { copyExecutionContext } from './utils/copyExecutionContext';
+ 
+ type MethodWrapperOptions = {
+   spanName?: string;
+@@ -192,9 +193,11 @@ export function instrumentDurableObjectWithSentry<
+   C extends new (state: DurableObjectState, env: E) => T,
+ >(optionsCallback: (env: E) => CloudflareOptions, DurableObjectClass: C): C {
+   return new Proxy(DurableObjectClass, {
+-    construct(target, [context, env]) {
++    construct(target, [ctx, env]) {
+       setAsyncLocalStorageAsyncContextStrategy();
+ 
++      const context = copyExecutionContext(ctx);
++
+       const options = getFinalOptions(optionsCallback(env), env);
+ 
+       const obj = new target(context, env);
+diff --git a/packages/cloudflare/src/flush.ts b/packages/cloudflare/src/flush.ts
+deleted file mode 100644
+index f38c805d0f8b..000000000000
+--- a/packages/cloudflare/src/flush.ts
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import type { ExecutionContext } from '@cloudflare/workers-types';
+-
+-type FlushLock = {
+-  readonly ready: Promise<void>;
+-  readonly finalize: () => Promise<void>;
+-};
+-
+-/**
+- * Enhances the given execution context by wrapping its `waitUntil` method with a proxy
+- * to monitor pending tasks, and provides a flusher function to ensure all tasks
+- * have been completed before executing any subsequent logic.
+- *
+- * @param {ExecutionContext} context - The execution context to be enhanced. If no context is provided, the function returns undefined.
+- * @return {FlushLock} Returns a flusher function if a valid context is provided, otherwise undefined.
+- */
+-export function makeFlushLock(context: ExecutionContext): FlushLock {
+-  let resolveAllDone: () => void = () => undefined;
+-  const allDone = new Promise<void>(res => {
+-    resolveAllDone = res;
+-  });
+-  let pending = 0;
+-  const originalWaitUntil = context.waitUntil.bind(context) as typeof context.waitUntil;
+-  context.waitUntil = promise => {
+-    pending++;
+-    return originalWaitUntil(
+-      promise.finally(() => {
+-        if (--pending === 0) resolveAllDone();
+-      }),
+-    );
+-  };
+-  return Object.freeze({
+-    ready: allDone,
+-    finalize: () => {
+-      if (pending === 0) resolveAllDone();
+-      return allDone;
+-    },
+-  });
+-}
+diff --git a/packages/cloudflare/src/handler.ts b/packages/cloudflare/src/handler.ts
+index 354233154a0b..a032fbf135e1 100644
+--- a/packages/cloudflare/src/handler.ts
++++ b/packages/cloudflare/src/handler.ts
+@@ -14,6 +14,7 @@ import { getFinalOptions } from './options';
+ import { wrapRequestHandler } from './request';
+ import { addCloudResourceContext } from './scope-utils';
+ import { init } from './sdk';
++import { copyExecutionContext } from './utils/copyExecutionContext';
+ 
+ /**
+  * Wrapper for Cloudflare handlers.
+@@ -37,9 +38,11 @@ export function withSentry<Env = unknown, QueueHandlerMessage = unknown, CfHostM
+     if ('fetch' in handler && typeof handler.fetch === 'function' && !isInstrumented(handler.fetch)) {
+       handler.fetch = new Proxy(handler.fetch, {
+         apply(target, thisArg, args: Parameters<ExportedHandlerFetchHandler<Env, CfHostMetadata>>) {
+-          const [request, env, context] = args;
++          const [request, env, ctx] = args;
+ 
+           const options = getFinalOptions(optionsCallback(env), env);
++          const context = copyExecutionContext(ctx);
++          args[2] = context;
+ 
+           return wrapRequestHandler({ options, request, context }, () => target.apply(thisArg, args));
+         },
+@@ -71,7 +74,9 @@ export function withSentry<Env = unknown, QueueHandlerMessage = unknown, CfHostM
+     if ('scheduled' in handler && typeof handler.scheduled === 'function' && !isInstrumented(handler.scheduled)) {
+       handler.scheduled = new Proxy(handler.scheduled, {
+         apply(target, thisArg, args: Parameters<ExportedHandlerScheduledHandler<Env>>) {
+-          const [event, env, context] = args;
++          const [event, env, ctx] = args;
++          const context = copyExecutionContext(ctx);
++          args[2] = context;
+           return withIsolationScope(isolationScope => {
+             const options = getFinalOptions(optionsCallback(env), env);
+             const waitUntil = context.waitUntil.bind(context);
+@@ -114,7 +119,9 @@ export function withSentry<Env = unknown, QueueHandlerMessage = unknown, CfHostM
+     if ('email' in handler && typeof handler.email === 'function' && !isInstrumented(handler.email)) {
+       handler.email = new Proxy(handler.email, {
+         apply(target, thisArg, args: Parameters<EmailExportedHandler<Env>>) {
+-          const [emailMessage, env, context] = args;
++          const [emailMessage, env, ctx] = args;
++          const context = copyExecutionContext(ctx);
++          args[2] = context;
+           return withIsolationScope(isolationScope => {
+             const options = getFinalOptions(optionsCallback(env), env);
+             const waitUntil = context.waitUntil.bind(context);
+@@ -155,7 +162,9 @@ export function withSentry<Env = unknown, QueueHandlerMessage = unknown, CfHostM
+     if ('queue' in handler && typeof handler.queue === 'function' && !isInstrumented(handler.queue)) {
+       handler.queue = new Proxy(handler.queue, {
+         apply(target, thisArg, args: Parameters<ExportedHandlerQueueHandler<Env, QueueHandlerMessage>>) {
+-          const [batch, env, context] = args;
++          const [batch, env, ctx] = args;
++          const context = copyExecutionContext(ctx);
++          args[2] = context;
+ 
+           return withIsolationScope(isolationScope => {
+             const options = getFinalOptions(optionsCallback(env), env);
+@@ -205,7 +214,9 @@ export function withSentry<Env = unknown, QueueHandlerMessage = unknown, CfHostM
+     if ('tail' in handler && typeof handler.tail === 'function' && !isInstrumented(handler.tail)) {
+       handler.tail = new Proxy(handler.tail, {
+         apply(target, thisArg, args: Parameters<ExportedHandlerTailHandler<Env>>) {
+-          const [, env, context] = args;
++          const [, env, ctx] = args;
++          const context = copyExecutionContext(ctx);
++          args[2] = context;
+ 
+           return withIsolationScope(async isolationScope => {
+             const options = getFinalOptions(optionsCallback(env), env);
+diff --git a/packages/cloudflare/src/sdk.ts b/packages/cloudflare/src/sdk.ts
+index 9d4fb8d749ae..416ae47f312f 100644
+--- a/packages/cloudflare/src/sdk.ts
++++ b/packages/cloudflare/src/sdk.ts
+@@ -12,10 +12,10 @@ import {
+ } from '@sentry/core';
+ import type { CloudflareClientOptions, CloudflareOptions } from './client';
+ import { CloudflareClient } from './client';
+-import { makeFlushLock } from './flush';
+ import { fetchIntegration } from './integrations/fetch';
+ import { setupOpenTelemetryTracer } from './opentelemetry/tracer';
+ import { makeCloudflareTransport } from './transport';
++import { makeFlushLock } from './utils/flushLock';
+ import { defaultStackParser } from './vendor/stacktrace';
+ 
+ /** Get the default integrations for the Cloudflare SDK. */
+diff --git a/packages/cloudflare/src/utils/copyExecutionContext.ts b/packages/cloudflare/src/utils/copyExecutionContext.ts
+new file mode 100644
+index 000000000000..737a622d7a1c
+--- /dev/null
++++ b/packages/cloudflare/src/utils/copyExecutionContext.ts
+@@ -0,0 +1,47 @@
++import { type DurableObjectState, type ExecutionContext } from '@cloudflare/workers-types';
++
++const kBound = Symbol.for('kBound');
++
++const defaultPropertyOptions: PropertyDescriptor = {
++  enumerable: true,
++  configurable: true,
++  writable: true,
++};
++
++/**
++ * Clones the given execution context by creating a shallow copy while ensuring the binding of specific methods.
++ *
++ * @param {ExecutionContext|DurableObjectState|void} ctx - The execution context to clone. Can be void.
++ * @return {ExecutionContext|DurableObjectState|void} A cloned execution context with bound methods, or the original void value if no context was provided.
++ */
++export function copyExecutionContext<T extends ExecutionContext | DurableObjectState>(ctx: T): T {
++  if (!ctx) return ctx;
++  return Object.create(ctx, {
++    waitUntil: { ...defaultPropertyOptions, value: copyAndBindMethod(ctx, 'waitUntil') },
++    ...('passThroughOnException' in ctx && {
++      passThroughOnException: { ...defaultPropertyOptions, value: copyAndBindMethod(ctx, 'passThroughOnException') },
++    }),
++  });
++}
++
++/**
++ * Copies a method from the given object and ensures the copied method remains bound to the original object's context.
++ *
++ * @param {object} obj - The object containing the method to be copied and bound.
++ * @param {string|symbol} method - The key of the method within the object to be copied and bound.
++ * @return {Function} - The copied and bound method, or the original property if it is not a function.
++ */
++function copyAndBindMethod<T, K extends keyof T>(obj: T, method: K): T[K] {
++  const methodImpl = obj[method];
++  if (typeof methodImpl !== 'function') return methodImpl;
++  if ((methodImpl as T[K] & { [kBound]?: boolean })[kBound]) return methodImpl;
++  const bound = methodImpl.bind(obj);
++
++  return new Proxy(bound, {
++    get: (target, prop, receiver) => {
++      if (kBound === prop) return true;
++      if ('bind' === prop) return () => receiver;
++      return Reflect.get(target, prop, receiver);
++    },
++  });
++}
+diff --git a/packages/cloudflare/src/utils/flushLock.ts b/packages/cloudflare/src/utils/flushLock.ts
+new file mode 100644
+index 000000000000..dbb8d3666749
+--- /dev/null
++++ b/packages/cloudflare/src/utils/flushLock.ts
+@@ -0,0 +1,57 @@
++import type { ExecutionContext } from '@cloudflare/workers-types';
++import { createPromiseResolver } from './makePromiseResolver';
++
++type FlushLock = {
++  readonly ready: Promise<void>;
++  readonly finalize: () => Promise<void>;
++};
++type MaybeLockable<T extends object> = T & { [kFlushLock]?: FlushLock };
++
++const kFlushLock = Symbol.for('kFlushLock');
++
++function getInstrumentedLock<T extends object>(o: MaybeLockable<T>): FlushLock | undefined {
++  return o[kFlushLock];
++}
++
++function storeInstrumentedLock<T extends object>(o: MaybeLockable<T>, lock: FlushLock): void {
++  o[kFlushLock] = lock;
++}
++
++/**
++ * Enhances the given execution context by wrapping its `waitUntil` method with a proxy
++ * to monitor pending tasks and provides a flusher function to ensure all tasks
++ * have been completed before executing any subsequent logic.
++ *
++ * @param {ExecutionContext} context - The execution context to be enhanced. If no context is provided, the function returns undefined.
++ * @return {FlushLock} Returns a flusher function if a valid context is provided, otherwise undefined.
++ */
++export function makeFlushLock(context: ExecutionContext): FlushLock {
++  // eslint-disable-next-line @typescript-eslint/unbound-method
++  let lock = getInstrumentedLock(context.waitUntil);
++  if (lock) {
++    // It is fine to return the same lock multiple times because this means the context has already been instrumented.
++    return lock;
++  }
++  let pending = 0;
++  const originalWaitUntil = context.waitUntil.bind(context) as typeof context.waitUntil;
++  const { promise, resolve } = createPromiseResolver();
++  const hijackedWaitUntil: typeof originalWaitUntil = promise => {
++    pending++;
++    return originalWaitUntil(
++      promise.finally(() => {
++        if (--pending === 0) resolve();
++      }),
++    );
++  };
++  lock = Object.freeze({
++    ready: promise,
++    finalize: () => {
++      if (pending === 0) resolve();
++      return promise;
++    },
++  }) as FlushLock;
++  storeInstrumentedLock(hijackedWaitUntil, lock);
++  context.waitUntil = hijackedWaitUntil;
++
++  return lock;
++}
+diff --git a/packages/cloudflare/src/utils/makePromiseResolver.ts b/packages/cloudflare/src/utils/makePromiseResolver.ts
+new file mode 100644
+index 000000000000..f772951406b1
+--- /dev/null
++++ b/packages/cloudflare/src/utils/makePromiseResolver.ts
+@@ -0,0 +1,26 @@
++type PromiseWithResolvers<T, E = unknown> = {
++  readonly promise: Promise<T>;
++  readonly resolve: (value?: T | PromiseLike<T>) => void;
++  readonly reject: (reason?: E) => void;
++};
++/**
++ * Creates an object containing a promise, along with its corresponding resolve and reject functions.
++ *
++ * This method provides a convenient way to create a promise and access its resolvers externally.
++ *
++ * @template T - The type of the resolved value of the promise.
++ * @template E - The type of the rejected value of the promise. Defaults to `unknown`.
++ * @return {PromiseWithResolvers<T, E>} An object containing the promise and its resolve and reject functions.
++ */
++export function createPromiseResolver<T, E = unknown>(): PromiseWithResolvers<T, E> {
++  if ('withResolvers' in Promise && typeof Promise.withResolvers === 'function') {
++    return Promise.withResolvers();
++  }
++  let resolve;
++  let reject;
++  const promise = new Promise<T>((res, rej) => {
++    resolve = res;
++    reject = rej;
++  });
++  return { promise, resolve, reject } as unknown as PromiseWithResolvers<T, E>;
++}
+diff --git a/packages/cloudflare/test/copy-execution-context.test.ts b/packages/cloudflare/test/copy-execution-context.test.ts
+new file mode 100644
+index 000000000000..61757cf1f355
+--- /dev/null
++++ b/packages/cloudflare/test/copy-execution-context.test.ts
+@@ -0,0 +1,47 @@
++import { type ExecutionContext } from '@cloudflare/workers-types';
++import { type Mocked, describe, expect, it, vi } from 'vitest';
++import { copyExecutionContext } from '../src/utils/copyExecutionContext';
++
++describe('Copy of the execution context', () => {
++  describe.for<keyof ExecutionContext>(['waitUntil', 'passThroughOnException'])('%s', method => {
++    it('Was not bound more than once', async () => {
++      const context = makeExecutionContextMock();
++      const copy = copyExecutionContext(context);
++      const copy_of_copy = copyExecutionContext(copy);
++
++      expect(copy[method]).toBe(copy_of_copy[method]);
++    });
++    it('Copied method is bound to the original', async () => {
++      const context = makeExecutionContextMock();
++      const copy = copyExecutionContext(context);
++
++      expect(copy[method]()).toBe(context);
++    });
++    it('Copied method "rebind" prevention', async () => {
++      const context = makeExecutionContextMock();
++      const copy = copyExecutionContext(context);
++      expect(copy[method].bind('test')).toBe(copy[method]);
++    });
++  });
++
++  it('No side effects', async () => {
++    const context = makeExecutionContextMock();
++    expect(() => copyExecutionContext(Object.freeze(context))).not.toThrow(
++      /Cannot define property \w+, object is not extensible/,
++    );
++  });
++  it('Respects symbols', async () => {
++    const s = Symbol('test');
++    const context = makeExecutionContextMock<ExecutionContext & { [s]: unknown }>();
++    context[s] = {};
++    const copy = copyExecutionContext(context);
++    expect(copy[s]).toBe(context[s]);
++  });
++});
++
++function makeExecutionContextMock<T extends ExecutionContext>() {
++  return {
++    waitUntil: vi.fn().mockReturnThis(),
++    passThroughOnException: vi.fn().mockReturnThis(),
++  } as unknown as Mocked<T>;
++}
+diff --git a/packages/cloudflare/test/durableobject.test.ts b/packages/cloudflare/test/durableobject.test.ts
+index ce794dc7fb69..4c4d5c63bfd3 100644
+--- a/packages/cloudflare/test/durableobject.test.ts
++++ b/packages/cloudflare/test/durableobject.test.ts
+@@ -1,8 +1,9 @@
+ import type { ExecutionContext } from '@cloudflare/workers-types';
+ import * as SentryCore from '@sentry/core';
+-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
++import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { instrumentDurableObjectWithSentry } from '../src';
+ import { isInstrumented } from '../src/instrument';
++import { createPromiseResolver } from '../src/utils/makePromiseResolver';
+ 
+ describe('instrumentDurableObjectWithSentry', () => {
+   afterEach(() => {
+@@ -122,15 +123,13 @@ describe('instrumentDurableObjectWithSentry', () => {
+   });
+ 
+   it('flush performs after all waitUntil promises are finished', async () => {
+-    vi.useFakeTimers();
+-    onTestFinished(() => {
+-      vi.useRealTimers();
+-    });
+     const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+     const waitUntil = vi.fn();
++    const { promise, resolve } = createPromiseResolver();
++    process.nextTick(resolve);
+     const testClass = vi.fn(context => ({
+       fetch: () => {
+-        context.waitUntil(new Promise(res => setTimeout(res)));
++        context.waitUntil(promise);
+         return new Response('test');
+       },
+     }));
+@@ -142,8 +141,7 @@ describe('instrumentDurableObjectWithSentry', () => {
+     expect(() => dObject.fetch(new Request('https://example.com'))).not.toThrow();
+     expect(flush).not.toBeCalled();
+     expect(waitUntil).toHaveBeenCalledOnce();
+-    vi.advanceTimersToNextTimer();
+-    await Promise.all(waitUntil.mock.calls.map(([p]) => p));
++    await Promise.all(waitUntil.mock.calls.map(call => call[0]));
+     expect(flush).toBeCalled();
+   });
+ 
+diff --git a/packages/cloudflare/test/flush-lock.test.ts b/packages/cloudflare/test/flush-lock.test.ts
+new file mode 100644
+index 000000000000..cc40fd3a7e03
+--- /dev/null
++++ b/packages/cloudflare/test/flush-lock.test.ts
+@@ -0,0 +1,28 @@
++import { type ExecutionContext } from '@cloudflare/workers-types';
++import { describe, expect, it, vi } from 'vitest';
++import { makeFlushLock } from '../src/utils/flushLock';
++import { createPromiseResolver } from '../src/utils/makePromiseResolver';
++
++describe('Flush buffer test', () => {
++  const mockExecutionContext: ExecutionContext = {
++    waitUntil: vi.fn(),
++    passThroughOnException: vi.fn(),
++    props: null,
++  };
++  it('should flush buffer immediately if no waitUntil were called', async () => {
++    const { finalize } = makeFlushLock(mockExecutionContext);
++    await expect(finalize()).resolves.toBeUndefined();
++  });
++  it('waitUntil should not be wrapped mose than once', () => {
++    expect(makeFlushLock(mockExecutionContext), 'Execution context wrapped twice').toBe(
++      makeFlushLock(mockExecutionContext),
++    );
++  });
++  it('should flush buffer only after all waitUntil were finished', async () => {
++    const { promise, resolve } = createPromiseResolver();
++    const lock = makeFlushLock(mockExecutionContext);
++    mockExecutionContext.waitUntil(promise);
++    process.nextTick(resolve);
++    await expect(lock.finalize()).resolves.toBeUndefined();
++  });
++});
+diff --git a/packages/cloudflare/test/flush.test.ts b/packages/cloudflare/test/flush.test.ts
+deleted file mode 100644
+index 34714711c682..000000000000
+--- a/packages/cloudflare/test/flush.test.ts
++++ /dev/null
+@@ -1,30 +0,0 @@
+-import { type ExecutionContext } from '@cloudflare/workers-types';
+-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+-import { makeFlushLock } from '../src/flush';
+-
+-describe('Flush buffer test', () => {
+-  const waitUntilPromises: Promise<void>[] = [];
+-  const mockExecutionContext: ExecutionContext = {
+-    waitUntil: vi.fn(prmise => {
+-      waitUntilPromises.push(prmise);
+-    }),
+-    passThroughOnException: vi.fn(),
+-  };
+-  it('should flush buffer immediately if no waitUntil were called', async () => {
+-    const { finalize } = makeFlushLock(mockExecutionContext);
+-    await expect(finalize()).resolves.toBeUndefined();
+-  });
+-  it('should flush buffer only after all waitUntil were finished', async () => {
+-    vi.useFakeTimers();
+-    onTestFinished(() => {
+-      vi.useRealTimers();
+-    });
+-    const task = new Promise(resolve => setTimeout(resolve, 100));
+-    const lock = makeFlushLock(mockExecutionContext);
+-    mockExecutionContext.waitUntil(task);
+-    void lock.finalize();
+-    vi.advanceTimersToNextTimer();
+-    await Promise.all(waitUntilPromises);
+-    await expect(lock.ready).resolves.toBeUndefined();
+-  });
+-});
+diff --git a/packages/cloudflare/test/handler.test.ts b/packages/cloudflare/test/handler.test.ts
+index ddd4b0010ec0..8cedb715c4fe 100644
+--- a/packages/cloudflare/test/handler.test.ts
++++ b/packages/cloudflare/test/handler.test.ts
+@@ -10,10 +10,11 @@ import type {
+ } from '@cloudflare/workers-types';
+ import type { Event } from '@sentry/core';
+ import * as SentryCore from '@sentry/core';
+-import { beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
++import { beforeEach, describe, expect, test, vi } from 'vitest';
+ import { CloudflareClient } from '../src/client';
+ import { withSentry } from '../src/handler';
+ import { markAsInstrumented } from '../src/instrument';
++import { createPromiseResolver } from '../src/utils/makePromiseResolver';
+ 
+ // Custom type for hono-like apps (cloudflare handlers) that include errorHandler and onError
+ type HonoLikeApp<Env = unknown, QueueHandlerMessage = unknown, CfHostMetadata = unknown> = ExportedHandler<
+@@ -30,8 +31,29 @@ const MOCK_ENV = {
+   SENTRY_RELEASE: '1.1.1',
+ };
+ 
+-function addDelayedWaitUntil(context: ExecutionContext) {
+-  context.waitUntil(new Promise<void>(resolve => setTimeout(() => resolve())));
++function makeWaitUntilAndTask<
++  M extends ReturnType<typeof vi.fn>,
++  T extends M & {
++    readonly ready: Promise<M>;
++    readonly task: { readonly promise: Promise<void>; readonly resolve: M };
++  },
++>(): T {
++  const waitUntil = vi.fn();
++  const { promise, resolve } = createPromiseResolver();
++  const resolver = vi.fn().mockImplementation(resolve).mockName('waitUntil.ready');
++  Object.defineProperties(waitUntil, {
++    ready: {
++      get: () => Promise.all(waitUntil.mock.calls.map(call => call[0])).then(() => resolver),
++      enumerable: true,
++      configurable: true,
++    },
++    task: {
++      value: { promise, resolve: resolver },
++      enumerable: true,
++      configurable: true,
++    },
++  });
++  return waitUntil as T;
+ }
+ 
+ describe('withSentry', () => {
+@@ -135,27 +157,22 @@ describe('withSentry', () => {
+ 
+     test('flush must be called when all waitUntil are done', async () => {
+       const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+-      vi.useFakeTimers();
+-      onTestFinished(() => {
+-        vi.useRealTimers();
+-      });
++      const waitUntil = makeWaitUntilAndTask();
++      process.nextTick(waitUntil.task.resolve);
+       const handler = {
+-        fetch(_request, _env, _context) {
+-          addDelayedWaitUntil(_context);
++        fetch(...args) {
++          args[2].waitUntil(waitUntil.task.promise);
+           return new Response('test');
+         },
+       } satisfies ExportedHandler<typeof MOCK_ENV>;
+ 
+       const wrappedHandler = withSentry(vi.fn(), handler);
+-      const waits: Promise<unknown>[] = [];
+-      const waitUntil = vi.fn(promise => waits.push(promise));
+       await wrappedHandler.fetch?.(new Request('https://example.com'), MOCK_ENV, {
+         waitUntil,
+       } as unknown as ExecutionContext);
+       expect(flush).not.toBeCalled();
+-      expect(waitUntil).toBeCalled();
+-      vi.advanceTimersToNextTimer().runAllTimers();
+-      await Promise.all(waits);
++      const ready = await waitUntil.ready;
++      expect(flush).toHaveBeenCalledAfter(ready);
+       expect(flush).toHaveBeenCalledOnce();
+     });
+   });
+@@ -375,28 +392,23 @@ describe('withSentry', () => {
+ 
+     test('flush must be called when all waitUntil are done', async () => {
+       const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+-      vi.useFakeTimers();
+-      onTestFinished(() => {
+-        vi.useRealTimers();
+-      });
++      const waitUntil = makeWaitUntilAndTask();
++      process.nextTick(waitUntil.task.resolve);
+       const handler = {
+-        scheduled(_controller, _env, _context) {
+-          addDelayedWaitUntil(_context);
++        scheduled(...args) {
++          args[2].waitUntil(waitUntil.task.promise);
+           return;
+         },
+       } satisfies ExportedHandler<typeof MOCK_ENV>;
+ 
+       const wrappedHandler = withSentry(vi.fn(), handler);
+-      const waits: Promise<unknown>[] = [];
+-      const waitUntil = vi.fn(promise => waits.push(promise));
+       await wrappedHandler.scheduled?.(createMockScheduledController(), MOCK_ENV, {
+         waitUntil,
+       } as unknown as ExecutionContext);
+       expect(flush).not.toBeCalled();
+-      expect(waitUntil).toBeCalled();
+-      vi.advanceTimersToNextTimer().runAllTimers();
+-      await Promise.all(waits);
++      await waitUntil.ready;
+       expect(flush).toHaveBeenCalledOnce();
++      expect(flush).toHaveBeenCalledAfter(waitUntil);
+     });
+   });
+ 
+@@ -614,28 +626,24 @@ describe('withSentry', () => {
+ 
+     test('flush must be called when all waitUntil are done', async () => {
+       const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+-      vi.useFakeTimers();
+-      onTestFinished(() => {
+-        vi.useRealTimers();
+-      });
++      const waitUntil = makeWaitUntilAndTask();
++
++      process.nextTick(waitUntil.task.resolve);
+       const handler = {
+-        email(_controller, _env, _context) {
+-          addDelayedWaitUntil(_context);
++        email(...args) {
++          args[2].waitUntil(waitUntil.task.promise);
+           return;
+         },
+       } satisfies ExportedHandler<typeof MOCK_ENV>;
+ 
+       const wrappedHandler = withSentry(vi.fn(), handler);
+-      const waits: Promise<unknown>[] = [];
+-      const waitUntil = vi.fn(promise => waits.push(promise));
+       await wrappedHandler.email?.(createMockEmailMessage(), MOCK_ENV, {
+         waitUntil,
+       } as unknown as ExecutionContext);
+       expect(flush).not.toBeCalled();
+-      expect(waitUntil).toBeCalled();
+-      vi.advanceTimersToNextTimer().runAllTimers();
+-      await Promise.all(waits);
++      const ready = await waitUntil.ready;
+       expect(flush).toHaveBeenCalledOnce();
++      expect(flush).toHaveBeenCalledAfter(ready);
+     });
+   });
+ 
+@@ -857,27 +865,22 @@ describe('withSentry', () => {
+ 
+     test('flush must be called when all waitUntil are done', async () => {
+       const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+-      vi.useFakeTimers();
+-      onTestFinished(() => {
+-        vi.useRealTimers();
+-      });
++      const waitUntil = makeWaitUntilAndTask();
++      process.nextTick(waitUntil.task.resolve);
+       const handler = {
+-        queue(_controller, _env, _context) {
+-          addDelayedWaitUntil(_context);
++        queue(...args) {
++          args[2].waitUntil(waitUntil.task.promise);
+           return;
+         },
+       } satisfies ExportedHandler<typeof MOCK_ENV>;
+ 
+       const wrappedHandler = withSentry(vi.fn(), handler);
+-      const waits: Promise<unknown>[] = [];
+-      const waitUntil = vi.fn(promise => waits.push(promise));
+       await wrappedHandler.queue?.(createMockQueueBatch(), MOCK_ENV, {
+         waitUntil,
+       } as unknown as ExecutionContext);
+       expect(flush).not.toBeCalled();
+-      expect(waitUntil).toBeCalled();
+-      vi.advanceTimersToNextTimer().runAllTimers();
+-      await Promise.all(waits);
++
++      expect(flush).toHaveBeenCalledAfter(await waitUntil.ready);
+       expect(flush).toHaveBeenCalledOnce();
+     });
+   });
+@@ -1054,29 +1057,23 @@ describe('withSentry', () => {
+ 
+     test('flush must be called when all waitUntil are done', async () => {
+       const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+-      vi.useFakeTimers();
+-      onTestFinished(() => {
+-        vi.useRealTimers();
+-        flush.mockRestore();
+-      });
++      const waitUntil = makeWaitUntilAndTask();
++      process.nextTick(waitUntil.task.resolve);
+       const handler = {
+-        tail(_controller, _env, _context) {
+-          addDelayedWaitUntil(_context);
++        tail(...args) {
++          args[2].waitUntil(waitUntil.task.promise);
+           return;
+         },
+       } satisfies ExportedHandler<typeof MOCK_ENV>;
+ 
+       const wrappedHandler = withSentry(vi.fn(), handler);
+-      const waits: Promise<unknown>[] = [];
+-      const waitUntil = vi.fn(promise => waits.push(promise));
+       await wrappedHandler.tail?.(createMockTailEvent(), MOCK_ENV, {
+         waitUntil,
+       } as unknown as ExecutionContext);
+       expect(flush).not.toBeCalled();
+-      expect(waitUntil).toBeCalled();
+-      vi.advanceTimersToNextTimer().runAllTimers();
+-      await Promise.all(waits);
++      const ready = await waitUntil.ready;
+       expect(flush).toHaveBeenCalledOnce();
++      expect(flush).toHaveBeenCalledAfter(ready);
+     });
+   });
+ 
+diff --git a/packages/cloudflare/test/request.test.ts b/packages/cloudflare/test/request.test.ts
+index eb2989437396..2126ce8c2b75 100644
+--- a/packages/cloudflare/test/request.test.ts
++++ b/packages/cloudflare/test/request.test.ts
+@@ -4,20 +4,17 @@
+ import type { ExecutionContext } from '@cloudflare/workers-types';
+ import type { Event } from '@sentry/core';
+ import * as SentryCore from '@sentry/core';
+-import { beforeAll, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
++import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+ import { setAsyncLocalStorageAsyncContextStrategy } from '../src/async';
+ import type { CloudflareOptions } from '../src/client';
+ import { CloudflareClient } from '../src/client';
+ import { wrapRequestHandler } from '../src/request';
++import { createPromiseResolver } from '../src/utils/makePromiseResolver';
+ 
+ const MOCK_OPTIONS: CloudflareOptions = {
+   dsn: 'https://public@dsn.ingest.sentry.io/1337',
+ };
+ 
+-function addDelayedWaitUntil(context: ExecutionContext) {
+-  context.waitUntil(new Promise<void>(resolve => setTimeout(() => resolve())));
+-}
+-
+ describe('withSentry', () => {
+   beforeAll(() => {
+     setAsyncLocalStorageAsyncContextStrategy();
+@@ -70,25 +67,24 @@ describe('withSentry', () => {
+ 
+   test('flush must be called when all waitUntil are done', async () => {
+     const flush = vi.spyOn(SentryCore.Client.prototype, 'flush');
+-    vi.useFakeTimers();
+-    onTestFinished(() => {
+-      vi.useRealTimers();
+-    });
+-    const waits: Promise<unknown>[] = [];
+-    const waitUntil = vi.fn(promise => waits.push(promise));
++    const waitUntil = vi.fn();
+ 
+     const context = {
+       waitUntil,
+     } as unknown as ExecutionContext;
+ 
++    const { promise, resolve } = createPromiseResolver();
++    const resolved = vi.fn(() => resolve());
++    process.nextTick(resolved);
++
+     await wrapRequestHandler({ options: MOCK_OPTIONS, request: new Request('https://example.com'), context }, () => {
+-      addDelayedWaitUntil(context);
++      context.waitUntil(promise);
+       return new Response('test');
+     });
+     expect(flush).not.toBeCalled();
+     expect(waitUntil).toBeCalled();
+-    vi.advanceTimersToNextTimerAsync().then(() => vi.runAllTimers());
+-    await Promise.all(waits);
++    await Promise.all(waitUntil.mock.calls.map(call => call[0]));
++    expect(flush).toHaveBeenCalledAfter(resolved);
+     expect(flush).toHaveBeenCalledOnce();
+   });
+ 
+@@ -336,5 +332,5 @@ function createMockExecutionContext(): ExecutionContext {
+   return {
+     waitUntil: vi.fn(),
+     passThroughOnException: vi.fn(),
+-  };
++  } as unknown as ExecutionContext;
+ }

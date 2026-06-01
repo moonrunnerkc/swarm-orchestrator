@@ -1,0 +1,561 @@
+diff --git a/dev-packages/node-integration-tests/package.json b/dev-packages/node-integration-tests/package.json
+index 84040f3657b0..ee6f93e586e5 100644
+--- a/dev-packages/node-integration-tests/package.json
++++ b/dev-packages/node-integration-tests/package.json
+@@ -60,7 +60,8 @@
+     "graphql-tag": "^2.12.6",
+     "hono": "^4.12.18",
+     "http-terminator": "^3.2.0",
+-    "ioredis": "^5.4.1",
++    "ioredis": "5.10.1",
++    "ioredis-5": "npm:ioredis@^5.11.0",
+     "kafkajs": "2.2.4",
+     "knex": "^2.5.1",
+     "lru-memoizer": "2.3.0",
+diff --git a/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/docker-compose.yml b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/docker-compose.yml
+new file mode 100644
+index 000000000000..06661fa9c001
+--- /dev/null
++++ b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/docker-compose.yml
+@@ -0,0 +1,15 @@
++version: '3.9'
++
++services:
++  db:
++    image: redis:latest
++    restart: always
++    container_name: integration-tests-ioredis-dc
++    ports:
++      - '6379:6379'
++    healthcheck:
++      test: ['CMD-SHELL', 'redis-cli ping | grep -q PONG']
++      interval: 2s
++      timeout: 3s
++      retries: 30
++      start_period: 5s
+diff --git a/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/instrument.mjs b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/instrument.mjs
+new file mode 100644
+index 000000000000..db5276b8c536
+--- /dev/null
++++ b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/instrument.mjs
+@@ -0,0 +1,10 @@
++import * as Sentry from '@sentry/node';
++import { loggingTransport } from '@sentry-internal/node-integration-tests';
++
++Sentry.init({
++  dsn: 'https://public@dsn.ingest.sentry.io/1337',
++  release: '1.0',
++  tracesSampleRate: 1.0,
++  transport: loggingTransport,
++  integrations: [Sentry.redisIntegration({ cachePrefixes: ['dc-cache:'] })],
++});
+diff --git a/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/scenario-ioredis-5-11.mjs b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/scenario-ioredis-5-11.mjs
+new file mode 100644
+index 000000000000..e58c708e5958
+--- /dev/null
++++ b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/scenario-ioredis-5-11.mjs
+@@ -0,0 +1,37 @@
++import * as Sentry from '@sentry/node';
++
++async function run() {
++  // Yield a microtick so the DC subscriber (deferred via Promise.resolve().then)
++  // is registered before ioredis creates its native TracingChannels on import.
++  await Promise.resolve();
++
++  const { default: Redis } = await import('ioredis-5');
++  const redisClient = new Redis({ host: '127.0.0.1', port: 6379, lazyConnect: true });
++
++  await redisClient.connect();
++
++  await Sentry.startSpan(
++    {
++      name: 'Test Span IORedis 5.11 DC',
++      op: 'test-span-ioredis-5-11-dc',
++    },
++    async () => {
++      try {
++        await redisClient.set('dc-test-key', 'test-value');
++        await redisClient.set('dc-cache:test-key', 'test-value');
++
++        await redisClient.set('dc-cache:test-key-ex', 'test-value', 'EX', 10);
++
++        await redisClient.get('dc-test-key');
++        await redisClient.get('dc-cache:test-key');
++        await redisClient.get('dc-cache:unavailable-data');
++
++        await redisClient.mget('dc-test-key', 'dc-cache:test-key', 'dc-cache:unavailable-data');
++      } finally {
++        await redisClient.disconnect();
++      }
++    },
++  );
++}
++
++run();
+diff --git a/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/test.ts b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/test.ts
+new file mode 100644
+index 000000000000..8f7975944c29
+--- /dev/null
++++ b/dev-packages/node-integration-tests/suites/tracing/ioredis-dc/test.ts
+@@ -0,0 +1,104 @@
++import { afterAll, describe, expect } from 'vitest';
++import { cleanupChildProcesses, createEsmAndCjsTests } from '../../../utils/runner';
++
++describe('ioredis v5.11 diagnostics_channel auto instrumentation', () => {
++  afterAll(() => {
++    cleanupChildProcesses();
++  });
++
++  const EXPECTED_TRANSACTION = {
++    transaction: 'Test Span IORedis 5.11 DC',
++    spans: expect.arrayContaining([
++      expect.objectContaining({
++        op: 'db.redis',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.op': 'db.redis',
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.system': 'redis',
++          'db.statement': 'set dc-test-key [1 other arguments]',
++        }),
++      }),
++      expect.objectContaining({
++        description: 'dc-cache:test-key',
++        op: 'cache.put',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.statement': 'set dc-cache:test-key [1 other arguments]',
++          'cache.key': ['dc-cache:test-key'],
++          'cache.item_size': 2,
++        }),
++      }),
++      expect.objectContaining({
++        description: 'dc-cache:test-key-ex',
++        op: 'cache.put',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.statement': 'set dc-cache:test-key-ex [3 other arguments]',
++          'cache.key': ['dc-cache:test-key-ex'],
++          'cache.item_size': 2,
++        }),
++      }),
++      expect.objectContaining({
++        op: 'db.redis',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.op': 'db.redis',
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.system': 'redis',
++          'db.statement': 'get dc-test-key',
++        }),
++      }),
++      expect.objectContaining({
++        description: 'dc-cache:test-key',
++        op: 'cache.get',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.statement': 'get dc-cache:test-key',
++          'cache.hit': true,
++          'cache.key': ['dc-cache:test-key'],
++          'cache.item_size': 10,
++        }),
++      }),
++      expect.objectContaining({
++        description: 'dc-cache:unavailable-data',
++        op: 'cache.get',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.statement': 'get dc-cache:unavailable-data',
++          'cache.hit': false,
++          'cache.key': ['dc-cache:unavailable-data'],
++        }),
++      }),
++      expect.objectContaining({
++        op: 'db.redis',
++        origin: 'auto.db.redis.diagnostic_channel',
++        data: expect.objectContaining({
++          'sentry.op': 'db.redis',
++          'sentry.origin': 'auto.db.redis.diagnostic_channel',
++          'db.system': 'redis',
++          'db.statement': 'mget [3 other arguments]',
++        }),
++      }),
++    ]),
++  };
++
++  const EXPECTED_CONNECT = {
++    transaction: 'redis-connect',
++  };
++
++  createEsmAndCjsTests(__dirname, 'scenario-ioredis-5-11.mjs', 'instrument.mjs', (createTestRunner, test) => {
++    test('creates spans for ioredis v5.11 commands via diagnostics_channel', { timeout: 75_000 }, async () => {
++      await createTestRunner()
++        .withDockerCompose({ workingDirectory: [__dirname] })
++        .expect({ transaction: EXPECTED_CONNECT })
++        .expect({ transaction: EXPECTED_TRANSACTION })
++        .start()
++        .completed();
++    });
++  });
++});
+diff --git a/packages/node/src/integrations/tracing/redis/redis-dc-subscriber.ts b/packages/node/src/integrations/tracing/redis/redis-dc-subscriber.ts
+index 4a2ddaf8a9b2..927a4471b0d0 100644
+--- a/packages/node/src/integrations/tracing/redis/redis-dc-subscriber.ts
++++ b/packages/node/src/integrations/tracing/redis/redis-dc-subscriber.ts
+@@ -16,15 +16,16 @@ import {
+ } from './vendored/semconv';
+ import type { IORedisInstrumentationConfig } from './vendored/types';
+ 
+-// Channel names as published by node-redis >= 5.12.0.
+-// Hardcoded so we don't import `redis` at module-load time.
+-const CHANNEL_COMMAND = 'node-redis:command';
+-const CHANNEL_BATCH = 'node-redis:batch';
+-const CHANNEL_CONNECT = 'node-redis:connect';
++// Channel names as published by node-redis >= 5.12.0 and ioredis >= 5.11.0.
++const CHANNEL_REDIS_COMMAND = 'node-redis:command';
++const CHANNEL_REDIS_BATCH = 'node-redis:batch';
++const CHANNEL_REDIS_CONNECT = 'node-redis:connect';
++const CHANNEL_IOREDIS_COMMAND = 'ioredis:command';
++const CHANNEL_IOREDIS_CONNECT = 'ioredis:connect';
+ 
+ const ORIGIN = 'auto.db.redis.diagnostic_channel';
+ 
+-interface CommandData {
++interface RedisCommandData {
+   command: string;
+   args: Array<string | Buffer>;
+   database?: number;
+@@ -34,7 +35,19 @@ interface CommandData {
+   error?: Error;
+ }
+ 
+-interface BatchData {
++interface IORedisCommandData {
++  command: string;
++  args: string[];
++  batchMode?: 'MULTI';
++  batchSize?: number;
++  database?: number;
++  serverAddress?: string;
++  serverPort?: number;
++  result?: unknown;
++  error?: Error;
++}
++
++interface RedisBatchData {
+   batchMode?: 'MULTI' | 'PIPELINE';
+   batchSize?: number;
+   database?: number;
+@@ -73,9 +86,11 @@ export function subscribeRedisDiagnosticChannels(responseHook?: IORedisInstrumen
+   if (subscribed) return;
+ 
+   try {
+-    setupCommandChannel();
+-    setupBatchChannel();
+-    setupConnectChannel();
++    setupCommandChannel<RedisCommandData>(CHANNEL_REDIS_COMMAND, data => data.args.slice(1));
++    setupBatchChannel(CHANNEL_REDIS_BATCH, data => (data.batchMode === 'PIPELINE' ? 'PIPELINE' : 'MULTI'));
++    setupConnectChannel(CHANNEL_REDIS_CONNECT);
++    setupCommandChannel<IORedisCommandData>(CHANNEL_IOREDIS_COMMAND, data => data.args);
++    setupConnectChannel(CHANNEL_IOREDIS_CONNECT);
+     subscribed = true;
+   } catch {
+     // tracingChannel from @sentry/opentelemetry requires `node:diagnostics_channel`.
+@@ -83,12 +98,13 @@ export function subscribeRedisDiagnosticChannels(responseHook?: IORedisInstrumen
+   }
+ }
+ 
+-function setupCommandChannel(): void {
+-  const channel = tracingChannel<CommandData>(CHANNEL_COMMAND, data => {
+-    // node-redis >= 5.12.0 includes the command name as args[0] in the DC payload.
+-    // Strip it so serialization and cache key extraction see only the actual arguments.
+-    const actualArgs = data.args.slice(1);
+-    const statement = safeSerialize(data.command, actualArgs);
++function setupCommandChannel<T extends RedisCommandData | IORedisCommandData>(
++  channelName: string,
++  getCommandArgs: (data: T) => Array<string | Buffer>,
++): void {
++  const channel = tracingChannel<T>(channelName, data => {
++    const args = getCommandArgs(data);
++    const statement = safeSerialize(data.command, args);
+     return startSpanManual(
+       {
+         name: `redis-${data.command}`,
+@@ -113,8 +129,7 @@ function setupCommandChannel(): void {
+       const span = data._sentrySpan;
+       // only end if error handler isn't going to
+       if (!span || data.error) return;
+-      // Same slice: strip command name from args before passing to the response hook.
+-      runResponseHook(span, data.command, data.args.slice(1), data.result);
++      runResponseHook(span, data.command, getCommandArgs(data), data.result);
+       span.end();
+     },
+     error: data => {
+@@ -128,13 +143,11 @@ function setupCommandChannel(): void {
+   });
+ }
+ 
+-function setupBatchChannel(): void {
+-  const channel = tracingChannel<BatchData>(CHANNEL_BATCH, data => {
+-    const operationName = data.batchMode === 'PIPELINE' ? 'PIPELINE' : 'MULTI';
+-
++function setupBatchChannel(channelName: string, getOperationName: (data: RedisBatchData) => string): void {
++  const channel = tracingChannel<RedisBatchData>(channelName, data => {
+     return startSpanManual(
+       {
+-        name: operationName,
++        name: getOperationName(data),
+         attributes: {
+           [SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: ORIGIN,
+           [SEMANTIC_ATTRIBUTE_SENTRY_OP]: 'db.redis',
+@@ -167,8 +180,8 @@ function setupBatchChannel(): void {
+   });
+ }
+ 
+-function setupConnectChannel(): void {
+-  const channel = tracingChannel<ConnectData>(CHANNEL_CONNECT, data => {
++function setupConnectChannel(channelName: string): void {
++  const channel = tracingChannel<ConnectData>(channelName, data => {
+     return startSpanManual(
+       {
+         name: 'redis-connect',
+diff --git a/packages/node/src/integrations/tracing/redis/vendored/ioredis-instrumentation.ts b/packages/node/src/integrations/tracing/redis/vendored/ioredis-instrumentation.ts
+index a97900ab4f9d..e862e1f1cdd1 100644
+--- a/packages/node/src/integrations/tracing/redis/vendored/ioredis-instrumentation.ts
++++ b/packages/node/src/integrations/tracing/redis/vendored/ioredis-instrumentation.ts
+@@ -94,7 +94,7 @@ export class IORedisInstrumentation extends InstrumentationBase<IORedisInstrumen
+     return [
+       new InstrumentationNodeModuleDefinition(
+         'ioredis',
+-        ['>=2.0.0 <6'],
++        ['>=2.0.0 <5.11.0'],
+         (module: any, moduleVersion?: string) => {
+           const moduleExports =
+             module[Symbol.toStringTag] === 'Module'
+diff --git a/packages/node/test/integrations/tracing/redis/ioredis-instrumentation.test.ts b/packages/node/test/integrations/tracing/redis/ioredis-instrumentation.test.ts
+index 9e7b24d3dd0a..3ef0158c2526 100644
+--- a/packages/node/test/integrations/tracing/redis/ioredis-instrumentation.test.ts
++++ b/packages/node/test/integrations/tracing/redis/ioredis-instrumentation.test.ts
+@@ -59,10 +59,10 @@ describe('IORedisInstrumentation', () => {
+       expect(defs[0]!.name).toBe('ioredis');
+     });
+ 
+-    it('should support ioredis versions >=2.0.0 <6', () => {
++    it('should support ioredis versions >=2.0.0 <5.11.0', () => {
+       const defs = instrumentation.init();
+       const supportedVersions = defs[0]!.supportedVersions;
+-      expect(supportedVersions).toContain('>=2.0.0 <6');
++      expect(supportedVersions).toContain('>=2.0.0 <5.11.0');
+     });
+   });
+ 
+diff --git a/packages/node/test/integrations/tracing/redis/redis-dc-subscriber.test.ts b/packages/node/test/integrations/tracing/redis/redis-dc-subscriber.test.ts
+index 852298b3370c..aa6b5b51def8 100644
+--- a/packages/node/test/integrations/tracing/redis/redis-dc-subscriber.test.ts
++++ b/packages/node/test/integrations/tracing/redis/redis-dc-subscriber.test.ts
+@@ -20,6 +20,8 @@ import {
+ const CHANNEL_COMMAND = 'node-redis:command';
+ const CHANNEL_BATCH = 'node-redis:batch';
+ const CHANNEL_CONNECT = 'node-redis:connect';
++const CHANNEL_IOREDIS_COMMAND = 'ioredis:command';
++const CHANNEL_IOREDIS_CONNECT = 'ioredis:connect';
+ 
+ const subs = (name: string) =>
+   channels[name]?.subs as {
+@@ -211,4 +213,87 @@ describe('redis-dc-subscriber', () => {
+       expect(responseHook).not.toHaveBeenCalled();
+     });
+   });
++
++  describe('ioredis channels', () => {
++    describe('command channel', () => {
++      it('calls the response hook with args as published by ioredis', () => {
++        const data = {
++          command: 'get',
++          args: ['cache:key'],
++          result: 'hit-value',
++          _sentrySpan: mockSpan,
++        };
++        subs(CHANNEL_IOREDIS_COMMAND).asyncEnd(data);
++
++        expect(responseHook).toHaveBeenCalledWith(mockSpan, 'get', ['cache:key'], 'hit-value');
++        expect(mockSpan.end).toHaveBeenCalledTimes(1);
++      });
++
++      it('does not slice the first arg for ioredis command payloads', () => {
++        const data = {
++          command: 'mget',
++          args: ['key1', 'key2', 'key3'],
++          result: ['v1', 'v2', 'v3'],
++          _sentrySpan: mockSpan,
++        };
++        subs(CHANNEL_IOREDIS_COMMAND).asyncEnd(data);
++
++        expect(responseHook).toHaveBeenCalledWith(mockSpan, 'mget', ['key1', 'key2', 'key3'], ['v1', 'v2', 'v3']);
++      });
++
++      it('handles batch metadata on ioredis command payloads without a separate batch channel', () => {
++        const data = {
++          command: 'set',
++          args: ['cache:key', '?'],
++          batchMode: 'MULTI',
++          batchSize: 2,
++          result: 'OK',
++          _sentrySpan: mockSpan,
++        };
++        subs(CHANNEL_IOREDIS_COMMAND).asyncEnd(data);
++
++        expect(channels['ioredis:batch']).toBeUndefined();
++        expect(responseHook).toHaveBeenCalledWith(mockSpan, 'set', ['cache:key', '?'], 'OK');
++        expect(mockSpan.end).toHaveBeenCalledTimes(1);
++      });
++
++      it('sets error status and ends the span in the error handler', () => {
++        const error = new Error('WRONGTYPE');
++        const data = { command: 'hset', args: ['key', 'field', '?'], error, _sentrySpan: mockSpan };
++        subs(CHANNEL_IOREDIS_COMMAND).error(data);
++
++        expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: SPAN_STATUS_ERROR, message: 'WRONGTYPE' });
++        expect(mockSpan.end).toHaveBeenCalledTimes(1);
++      });
++
++      it('does not call the response hook or end the span a second time in asyncEnd when error is set', () => {
++        const error = new Error('WRONGTYPE');
++        const data = { command: 'hset', args: ['key', 'field', '?'], error, _sentrySpan: mockSpan };
++
++        subs(CHANNEL_IOREDIS_COMMAND).error(data);
++        subs(CHANNEL_IOREDIS_COMMAND).asyncEnd(data);
++
++        expect(responseHook).not.toHaveBeenCalled();
++        expect(mockSpan.end).toHaveBeenCalledTimes(1);
++      });
++    });
++
++    describe('connect channel', () => {
++      it('ends the span', () => {
++        const data = { serverAddress: 'localhost', serverPort: 6379, _sentrySpan: mockSpan };
++        subs(CHANNEL_IOREDIS_CONNECT).asyncEnd(data);
++
++        expect(mockSpan.end).toHaveBeenCalledTimes(1);
++      });
++
++      it('sets error status and ends the span in the error handler', () => {
++        const error = new Error('connect ECONNREFUSED');
++        const data = { serverAddress: 'localhost', serverPort: 1, error, _sentrySpan: mockSpan };
++        subs(CHANNEL_IOREDIS_CONNECT).error(data);
++
++        expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: SPAN_STATUS_ERROR, message: 'connect ECONNREFUSED' });
++        expect(mockSpan.end).toHaveBeenCalledTimes(1);
++      });
++    });
++  });
+ });
+diff --git a/yarn.lock b/yarn.lock
+index 5a0619ec1f69..fcec3a949d18 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -4944,6 +4944,11 @@
+   resolved "https://registry.yarnpkg.com/@img/sharp-win32-x64/-/sharp-win32-x64-0.34.5.tgz#a81ffb00e69267cd0a1d626eaedb8a8430b2b2f8"
+   integrity sha512-+29YMsqY2/9eFEiW93eqWnuLcWcufowXewwSNIT6UwZdUUCrM3oFjMWH/Z6/TMmb4hlFenmfAVbpWeup2jryCw==
+ 
++"@ioredis/commands@1.10.0":
++  version "1.10.0"
++  resolved "https://registry.yarnpkg.com/@ioredis/commands/-/commands-1.10.0.tgz#cc387f8ec5ebe5b3b5104d393b5ac1f9cf794b9a"
++  integrity sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==
++
+ "@ioredis/commands@1.5.1":
+   version "1.5.1"
+   resolved "https://registry.yarnpkg.com/@ioredis/commands/-/commands-1.5.1.tgz#a0a3449993b10c7aeb91ecb0d5f1a23692297e51"
+@@ -13096,6 +13101,11 @@ clsx@^2.0.0:
+   resolved "https://registry.yarnpkg.com/clsx/-/clsx-2.0.0.tgz#12658f3fd98fafe62075595a5c30e43d18f3d00b"
+   integrity sha512-rQ1+kcj+ttHG0MKVGBUXwayCCF1oh39BF5COIpRzuCEv8Mwjv0XucrI2ExNTOn9IlLifGClWQcU9BrZORvtw6Q==
+ 
++cluster-key-slot@1.1.1:
++  version "1.1.1"
++  resolved "https://registry.yarnpkg.com/cluster-key-slot/-/cluster-key-slot-1.1.1.tgz#10ccb9ded0729464b6d2e7d714b100a2d1259d43"
++  integrity sha512-rwHwUfXL40Chm1r08yrhU3qpUvdVlgkKNeyeGPOxnW8/SyVDvgRaed/Uz54AqWNaTCAThlj6QAs3TZcKI0xDEw==
++
+ cluster-key-slot@1.1.2, cluster-key-slot@^1.1.0:
+   version "1.1.2"
+   resolved "https://registry.yarnpkg.com/cluster-key-slot/-/cluster-key-slot-1.1.2.tgz#88ddaa46906e303b5de30d3153b7d9fe0a0c19ac"
+@@ -13983,7 +13993,7 @@ debug@2, debug@2.6.9, debug@^2.1.0, debug@^2.1.1, debug@^2.1.3, debug@^2.2.0, de
+   dependencies:
+     ms "2.0.0"
+ 
+-debug@4, debug@4.x, debug@^4, debug@^4.0.0, debug@^4.1.0, debug@^4.1.1, debug@^4.3.1, debug@^4.3.2, debug@^4.3.3, debug@^4.3.4, debug@^4.3.5, debug@^4.4.0, debug@^4.4.1, debug@^4.4.3, debug@~4.4.1:
++debug@4, debug@4.4.3, debug@4.x, debug@^4, debug@^4.0.0, debug@^4.1.0, debug@^4.1.1, debug@^4.3.1, debug@^4.3.2, debug@^4.3.3, debug@^4.3.4, debug@^4.3.5, debug@^4.4.0, debug@^4.4.1, debug@^4.4.3, debug@~4.4.1:
+   version "4.4.3"
+   resolved "https://registry.yarnpkg.com/debug/-/debug-4.4.3.tgz#c6ae432d9bd9662582fce08709b038c58e9e3d6a"
+   integrity sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==
+@@ -14199,16 +14209,16 @@ delegates@^1.0.0:
+   resolved "https://registry.yarnpkg.com/delegates/-/delegates-1.0.0.tgz#84c6e159b81904fdca59a0ef44cd870d31250f9a"
+   integrity sha1-hMbhWbgZBP3KWaDvRM2HDTElD5o=
+ 
++denque@2.1.0, denque@^2.1.0:
++  version "2.1.0"
++  resolved "https://registry.yarnpkg.com/denque/-/denque-2.1.0.tgz#e93e1a6569fb5e66f16a3c2a2964617d349d6ab1"
++  integrity sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw==
++
+ denque@^1.4.1:
+   version "1.5.1"
+   resolved "https://registry.yarnpkg.com/denque/-/denque-1.5.1.tgz#07f670e29c9a78f8faecb2566a1e2c11929c5cbf"
+   integrity sha512-XwE+iZ4D6ZUB7mfYRMb5wByE8L74HCn30FBN7sWnXksWc1LO1bPDl67pBR9o/kC4z/xSNAwkMYcGgqDV3BE3Hw==
+ 
+-denque@^2.1.0:
+-  version "2.1.0"
+-  resolved "https://registry.yarnpkg.com/denque/-/denque-2.1.0.tgz#e93e1a6569fb5e66f16a3c2a2964617d349d6ab1"
+-  integrity sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw==
+-
+ depd@2.0.0, depd@^2.0.0, depd@~2.0.0:
+   version "2.0.0"
+   resolved "https://registry.yarnpkg.com/depd/-/depd-2.0.0.tgz#b696163cc757560d09cf22cc8fad1571b79e76df"
+@@ -19007,7 +19017,20 @@ invert-kv@^3.0.0:
+   resolved "https://registry.yarnpkg.com/invert-kv/-/invert-kv-3.0.1.tgz#a93c7a3d4386a1dc8325b97da9bb1620c0282523"
+   integrity sha512-CYdFeFexxhv/Bcny+Q0BfOV+ltRlJcd4BBZBYFX/O0u4npJrgZtIcjokegtiSMAvlMTJ+Koq0GBCc//3bueQxw==
+ 
+-ioredis@^5.10.1, ioredis@^5.4.1:
++"ioredis-5@npm:ioredis@^5.11.0":
++  version "5.11.0"
++  resolved "https://registry.yarnpkg.com/ioredis/-/ioredis-5.11.0.tgz#cb87081f2a888060579d0ddeaccbf8ee5323ef4f"
++  integrity sha512-EZBErytyVovD8f6pDfG3Kb37N6Y3lmDA9NNj+4+IP13CzzHGeX+OyeRM2Um13khRzoBSzzL+5lVnCX8V2RLeMg==
++  dependencies:
++    "@ioredis/commands" "1.10.0"
++    cluster-key-slot "1.1.1"
++    debug "4.4.3"
++    denque "2.1.0"
++    redis-errors "1.2.0"
++    redis-parser "3.0.0"
++    standard-as-callback "2.1.0"
++
++ioredis@5.10.1, ioredis@^5.10.1:
+   version "5.10.1"
+   resolved "https://registry.yarnpkg.com/ioredis/-/ioredis-5.10.1.tgz#6082781d8aec8d51ee4936bf81d0610404db1e3d"
+   integrity sha512-HuEDBTI70aYdx1v6U97SbNx9F1+svQKBDo30o0b9fw055LMepzpOOd0Ccg9Q6tbqmBSJaMuY0fB7yw9/vjBYCA==
+@@ -25613,12 +25636,12 @@ redeyed@~1.0.0:
+     "@redis/search" "5.12.1"
+     "@redis/time-series" "5.12.1"
+ 
+-redis-errors@^1.0.0, redis-errors@^1.2.0:
++redis-errors@1.2.0, redis-errors@^1.0.0, redis-errors@^1.2.0:
+   version "1.2.0"
+   resolved "https://registry.yarnpkg.com/redis-errors/-/redis-errors-1.2.0.tgz#eb62d2adb15e4eaf4610c04afe1529384250abad"
+   integrity sha512-1qny3OExCf0UvUV/5wpYKf2YwPcOqXzkwKKSmKHiE6ZMQs5heeE/c8eXK+PNllPvmjgAbfnsbpkGZWy8cBpn9w==
+ 
+-redis-parser@^3.0.0:
++redis-parser@3.0.0, redis-parser@^3.0.0:
+   version "3.0.0"
+   resolved "https://registry.yarnpkg.com/redis-parser/-/redis-parser-3.0.0.tgz#b66d828cdcafe6b4b8a428a7def4c6bcac31c8b4"
+   integrity sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A==
+@@ -27588,7 +27611,7 @@ stagehand@^1.0.0:
+   dependencies:
+     debug "^4.1.0"
+ 
+-standard-as-callback@^2.1.0:
++standard-as-callback@2.1.0, standard-as-callback@^2.1.0:
+   version "2.1.0"
+   resolved "https://registry.yarnpkg.com/standard-as-callback/-/standard-as-callback-2.1.0.tgz#8953fc05359868a77b5b9739a665c5977bb7df45"
+   integrity sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==

@@ -1,0 +1,882 @@
+diff --git a/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/index.ts b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/index.ts
+new file mode 100644
+index 000000000000..26a0eb4532d4
+--- /dev/null
++++ b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/index.ts
+@@ -0,0 +1,54 @@
++import * as Sentry from '@sentry/cloudflare';
++import { DurableObject } from 'cloudflare:workers';
++
++interface Env {
++  SENTRY_DSN: string;
++  TEST_DURABLE_OBJECT: DurableObjectNamespace;
++}
++
++class SyncAlarmDurableObjectBase extends DurableObject<Env> {
++  public constructor(ctx: DurableObjectState, env: Env) {
++    super(ctx, env);
++  }
++
++  async setAlarm(): Promise<void> {
++    await this.ctx.storage.setAlarm(Date.now() + 100);
++  }
++
++  // Synchronous alarm handler - this is the case we're testing
++  alarm(): void {
++    // Intentionally synchronous - no async/await
++    const _ = 'sync alarm executed';
++  }
++}
++
++export const TestDurableObject = Sentry.instrumentDurableObjectWithSentry(
++  (env: Env) => ({
++    dsn: env.SENTRY_DSN,
++    tracesSampleRate: 1.0,
++    enableRpcTracePropagation: true,
++  }),
++  SyncAlarmDurableObjectBase,
++);
++
++export default Sentry.withSentry(
++  (env: Env) => ({
++    dsn: env.SENTRY_DSN,
++    tracesSampleRate: 1.0,
++  }),
++  {
++    async fetch(request: Request, env: Env): Promise<Response> {
++      const url = new URL(request.url);
++
++      if (url.pathname === '/set-alarm') {
++        const id = url.searchParams.get('id') || 'default';
++        const doId = env.TEST_DURABLE_OBJECT.idFromName(id);
++        const stub = env.TEST_DURABLE_OBJECT.get(doId) as unknown as SyncAlarmDurableObjectBase;
++        await stub.setAlarm();
++        return new Response('Alarm scheduled');
++      }
++
++      return new Response('OK');
++    },
++  } satisfies ExportedHandler<Env>,
++);
+diff --git a/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/test.ts b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/test.ts
+new file mode 100644
+index 000000000000..d328dd1ae7ed
+--- /dev/null
++++ b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/test.ts
+@@ -0,0 +1,67 @@
++import { expect, it } from 'vitest';
++import type { TransactionEvent } from '@sentry/core';
++import { createRunner } from '../../../runner';
++
++it('sync alarm links to the trace that scheduled it via sentry.previous_trace', async ({ signal }) => {
++  let setAlarmTransaction: TransactionEvent | undefined;
++  let alarmTransaction: TransactionEvent | undefined;
++  const testId = Date.now().toString();
++
++  const runner = createRunner(__dirname)
++    .expect(envelope => {
++      const transactionEvent = envelope[1]?.[0]?.[1] as TransactionEvent;
++      expect(transactionEvent).toEqual(
++        expect.objectContaining({
++          transaction: expect.stringContaining('/set-alarm'),
++        }),
++      );
++    })
++    .expect(envelope => {
++      const transactionEvent = envelope[1]?.[0]?.[1] as TransactionEvent;
++      expect(transactionEvent).toEqual(
++        expect.objectContaining({
++          transaction: 'setAlarm',
++          contexts: expect.objectContaining({
++            trace: expect.objectContaining({
++              op: 'rpc',
++              origin: 'auto.faas.cloudflare.durable_object',
++            }),
++          }),
++        }),
++      );
++      setAlarmTransaction = transactionEvent;
++    })
++    .expect(envelope => {
++      const transactionEvent = envelope[1]?.[0]?.[1] as TransactionEvent;
++      expect(transactionEvent).toEqual(
++        expect.objectContaining({
++          type: 'transaction',
++          transaction: 'alarm',
++          contexts: expect.objectContaining({
++            trace: expect.objectContaining({
++              op: 'function',
++              origin: 'auto.faas.cloudflare.durable_object',
++            }),
++          }),
++        }),
++      );
++      alarmTransaction = transactionEvent;
++    })
++    .unordered()
++    .start(signal);
++
++  await runner.makeRequest('get', `/set-alarm?id=${testId}`);
++  await runner.completed();
++
++  // This is the key assertion: even though the alarm handler is synchronous,
++  // sentry.previous_trace should still be set because we await the linkPromise
++  // before teardown in the sync path
++  const traceData = alarmTransaction!.contexts?.trace?.data as Record<string, unknown> | undefined;
++  const previousTrace = traceData?.['sentry.previous_trace'] as string | undefined;
++
++  expect(previousTrace).toBeDefined();
++  expect(previousTrace).toMatch(/^[a-f0-9]{32}-[a-f0-9]{16}-[01]$/);
++
++  const [linkedTraceId] = previousTrace!.split('-');
++  expect(linkedTraceId).toBe(setAlarmTransaction!.contexts?.trace?.trace_id);
++});
+diff --git a/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/wrangler.jsonc b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/wrangler.jsonc
+new file mode 100644
+index 000000000000..bf41cd5981e0
+--- /dev/null
++++ b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links-sync/wrangler.jsonc
+@@ -0,0 +1,20 @@
++{
++  "name": "durableobject-alarm-links-sync",
++  "main": "index.ts",
++  "compatibility_date": "2025-06-17",
++  "migrations": [
++    {
++      "new_sqlite_classes": ["TestDurableObject"],
++      "tag": "v1",
++    },
++  ],
++  "durable_objects": {
++    "bindings": [
++      {
++        "class_name": "TestDurableObject",
++        "name": "TEST_DURABLE_OBJECT",
++      },
++    ],
++  },
++  "compatibility_flags": ["nodejs_als"],
++}
+diff --git a/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/index.ts b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/index.ts
+new file mode 100644
+index 000000000000..5bceadff05d8
+--- /dev/null
++++ b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/index.ts
+@@ -0,0 +1,52 @@
++import * as Sentry from '@sentry/cloudflare';
++import { DurableObject } from 'cloudflare:workers';
++
++interface Env {
++  SENTRY_DSN: string;
++  TEST_DURABLE_OBJECT: DurableObjectNamespace;
++}
++
++class AlarmDurableObjectBase extends DurableObject<Env> {
++  public constructor(ctx: DurableObjectState, env: Env) {
++    super(ctx, env);
++  }
++
++  async setAlarm(): Promise<void> {
++    await this.ctx.storage.setAlarm(Date.now() + 100);
++  }
++
++  async alarm(): Promise<void> {
++    await new Promise<void>(resolve => setTimeout(resolve, 10));
++  }
++}
++
++export const TestDurableObject = Sentry.instrumentDurableObjectWithSentry(
++  (env: Env) => ({
++    dsn: env.SENTRY_DSN,
++    tracesSampleRate: 1.0,
++    enableRpcTracePropagation: true,
++  }),
++  AlarmDurableObjectBase,
++);
++
++export default Sentry.withSentry(
++  (env: Env) => ({
++    dsn: env.SENTRY_DSN,
++    tracesSampleRate: 1.0,
++  }),
++  {
++    async fetch(request: Request, env: Env): Promise<Response> {
++      const url = new URL(request.url);
++
++      if (url.pathname === '/set-alarm') {
++        const id = url.searchParams.get('id') || 'default';
++        const doId = env.TEST_DURABLE_OBJECT.idFromName(id);
++        const stub = env.TEST_DURABLE_OBJECT.get(doId) as unknown as AlarmDurableObjectBase;
++        await stub.setAlarm();
++        return new Response('Alarm scheduled');
++      }
++
++      return new Response('OK');
++    },
++  } satisfies ExportedHandler<Env>,
++);
+diff --git a/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/test.ts b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/test.ts
+new file mode 100644
+index 000000000000..9bcfa2b0cadc
+--- /dev/null
++++ b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/test.ts
+@@ -0,0 +1,64 @@
++import { expect, it } from 'vitest';
++import type { TransactionEvent } from '@sentry/core';
++import { createRunner } from '../../../runner';
++
++it('alarm links to the trace that scheduled it via sentry.previous_trace', async ({ signal }) => {
++  let setAlarmTransaction: TransactionEvent | undefined;
++  let alarmTransaction: TransactionEvent | undefined;
++  const testId = Date.now().toString();
++
++  const runner = createRunner(__dirname)
++    .expect(envelope => {
++      const transactionEvent = envelope[1]?.[0]?.[1] as TransactionEvent;
++      expect(transactionEvent).toEqual(
++        expect.objectContaining({
++          transaction: expect.stringContaining('/set-alarm'),
++        }),
++      );
++    })
++    .expect(envelope => {
++      const transactionEvent = envelope[1]?.[0]?.[1] as TransactionEvent;
++      expect(transactionEvent).toEqual(
++        expect.objectContaining({
++          transaction: 'setAlarm',
++          contexts: expect.objectContaining({
++            trace: expect.objectContaining({
++              op: 'rpc',
++              origin: 'auto.faas.cloudflare.durable_object',
++            }),
++          }),
++        }),
++      );
++      setAlarmTransaction = transactionEvent;
++    })
++    .expect(envelope => {
++      const transactionEvent = envelope[1]?.[0]?.[1] as TransactionEvent;
++      expect(transactionEvent).toEqual(
++        expect.objectContaining({
++          type: 'transaction',
++          transaction: 'alarm',
++          contexts: expect.objectContaining({
++            trace: expect.objectContaining({
++              op: 'function',
++              origin: 'auto.faas.cloudflare.durable_object',
++            }),
++          }),
++        }),
++      );
++      alarmTransaction = transactionEvent;
++    })
++    .unordered()
++    .start(signal);
++
++  await runner.makeRequest('get', `/set-alarm?id=${testId}`);
++  await runner.completed();
++
++  const traceData = alarmTransaction!.contexts?.trace?.data as Record<string, unknown> | undefined;
++  const previousTrace = traceData?.['sentry.previous_trace'] as string | undefined;
++
++  expect(previousTrace).toBeDefined();
++  expect(previousTrace).toMatch(/^[a-f0-9]{32}-[a-f0-9]{16}-[01]$/);
++
++  const [linkedTraceId] = previousTrace!.split('-');
++  expect(linkedTraceId).toBe(setAlarmTransaction!.contexts?.trace?.trace_id);
++});
+diff --git a/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/wrangler.jsonc b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/wrangler.jsonc
+new file mode 100644
+index 000000000000..e605296a46c5
+--- /dev/null
++++ b/dev-packages/cloudflare-integration-tests/suites/tracing/durableobject-alarm-links/wrangler.jsonc
+@@ -0,0 +1,20 @@
++{
++  "name": "durableobject-alarm-links",
++  "main": "index.ts",
++  "compatibility_date": "2025-06-17",
++  "migrations": [
++    {
++      "new_sqlite_classes": ["TestDurableObject"],
++      "tag": "v1",
++    },
++  ],
++  "durable_objects": {
++    "bindings": [
++      {
++        "class_name": "TestDurableObject",
++        "name": "TEST_DURABLE_OBJECT",
++      },
++    ],
++  },
++  "compatibility_flags": ["nodejs_als"],
++}
+diff --git a/packages/cloudflare/src/instrumentations/instrumentDurableObjectStorage.ts b/packages/cloudflare/src/instrumentations/instrumentDurableObjectStorage.ts
+index 1b41167b206c..5c7e02085eae 100644
+--- a/packages/cloudflare/src/instrumentations/instrumentDurableObjectStorage.ts
++++ b/packages/cloudflare/src/instrumentations/instrumentDurableObjectStorage.ts
+@@ -63,7 +63,7 @@ export function instrumentDurableObjectStorage(
+               // We use the original (uninstrumented) storage (target) to avoid creating a span
+               // for this internal operation. The storage is deferred via waitUntil to not block.
+               if (methodName === 'setAlarm') {
+-                await storeSpanContext(target, 'alarm');
++                storeSpanContext(target, 'alarm');
+               }
+             };
+ 
+diff --git a/packages/cloudflare/src/utils/traceLinks.ts b/packages/cloudflare/src/utils/traceLinks.ts
+index 46359955ea4f..c016243d02c4 100644
+--- a/packages/cloudflare/src/utils/traceLinks.ts
++++ b/packages/cloudflare/src/utils/traceLinks.ts
+@@ -26,7 +26,7 @@ export function getTraceLinkKey(methodName: string): string {
+  * Uses the original uninstrumented storage to avoid creating spans for internal operations.
+  * Errors are silently ignored to prevent internal storage failures from propagating to user code.
+  */
+-export async function storeSpanContext(originalStorage: DurableObjectStorage, methodName: string): Promise<void> {
++export function storeSpanContext(originalStorage: DurableObjectStorage, methodName: string): void {
+   try {
+     const activeSpan = getActiveSpan();
+     if (activeSpan) {
+@@ -36,7 +36,8 @@ export async function storeSpanContext(originalStorage: DurableObjectStorage, me
+         spanId: spanContext.spanId,
+         sampled: spanIsSampled(activeSpan),
+       };
+-      await originalStorage.put(getTraceLinkKey(methodName), storedContext);
++
++      originalStorage.kv.put(getTraceLinkKey(methodName), storedContext);
+     }
+   } catch (error) {
+     // Silently ignore storage errors to prevent internal failures from affecting user code
+@@ -46,14 +47,17 @@ export async function storeSpanContext(originalStorage: DurableObjectStorage, me
+ 
+ /**
+  * Retrieves a stored span context from Durable Object storage.
++ * Errors are silently ignored to prevent internal storage failures from propagating to user code.
+  */
+-export async function getStoredSpanContext(
++export function getStoredSpanContext(
+   originalStorage: DurableObjectStorage,
+   methodName: string,
+-): Promise<StoredSpanContext | undefined> {
++): StoredSpanContext | undefined {
+   try {
+-    return await originalStorage.get<StoredSpanContext>(getTraceLinkKey(methodName));
+-  } catch {
++    return originalStorage.kv.get<StoredSpanContext>(getTraceLinkKey(methodName));
++  } catch (error) {
++    // Silently ignore storage errors to prevent internal failures from affecting user code
++    DEBUG_BUILD && debug.log(`[CloudflareClient] Error retrieving span context for method ${methodName}`, error);
+     return undefined;
+   }
+ }
+diff --git a/packages/cloudflare/src/wrapMethodWithSentry.ts b/packages/cloudflare/src/wrapMethodWithSentry.ts
+index dffb0338c1da..ac6d8f196087 100644
+--- a/packages/cloudflare/src/wrapMethodWithSentry.ts
++++ b/packages/cloudflare/src/wrapMethodWithSentry.ts
+@@ -115,11 +115,27 @@ export function wrapMethodWithSentry<T extends OriginalMethod>(
+ 
+             const teardown = async (): Promise<void> => {
+               if (startNewTrace && storage) {
+-                await storeSpanContext(storage, methodName);
++                storeSpanContext(storage, methodName);
+               }
+               await flushAndDispose(clientToDispose);
+             };
+ 
++            const onFulfilled = (res: unknown) => {
++              waitUntil?.(teardown());
++              return res;
++            };
++
++            const onRejected = (e: unknown) => {
++              captureException(e, {
++                mechanism: {
++                  type: 'auto.faas.cloudflare.durable_object',
++                  handled: false,
++                },
++              });
++              waitUntil?.(teardown());
++              throw e;
++            };
++
+             if (!wrapperOptions.spanName) {
+               try {
+                 if (callback) {
+@@ -129,35 +145,12 @@ export function wrapMethodWithSentry<T extends OriginalMethod>(
+                 const result = Reflect.apply(target, thisArg, args);
+ 
+                 if (isThenable(result)) {
+-                  return result.then(
+-                    (res: unknown) => {
+-                      waitUntil?.(teardown());
+-                      return res;
+-                    },
+-                    (e: unknown) => {
+-                      captureException(e, {
+-                        mechanism: {
+-                          type: 'auto.faas.cloudflare.durable_object',
+-                          handled: false,
+-                        },
+-                      });
+-                      waitUntil?.(teardown());
+-                      throw e;
+-                    },
+-                  );
++                  return result.then(onFulfilled, onRejected);
+                 } else {
+-                  waitUntil?.(teardown());
+-                  return result;
++                  return onFulfilled(result);
+                 }
+               } catch (e) {
+-                captureException(e, {
+-                  mechanism: {
+-                    type: 'auto.faas.cloudflare.durable_object',
+-                    handled: false,
+-                  },
+-                });
+-                waitUntil?.(teardown());
+-                throw e;
++                return onRejected(e);
+               }
+             }
+ 
+@@ -170,60 +163,33 @@ export function wrapMethodWithSentry<T extends OriginalMethod>(
+ 
+             const executeSpan = (): unknown => {
+               return startSpan({ name: methodName, attributes }, span => {
+-                // When linking to previous trace, fetch the stored context and add links asynchronously
+-                // This avoids blocking the response while fetching from storage
+                 if (startNewTrace && storage) {
+-                  waitUntil?.(
+-                    getStoredSpanContext(storage, methodName).then(storedContext => {
+-                      if (storedContext) {
+-                        span.addLinks(buildSpanLinks(storedContext));
+-                        // TODO: Remove this once EAP can store span links. We currently only set this attribute so that we
+-                        // can obtain the previous trace information from the EAP store. Long-term, EAP will handle
+-                        // span links and then we should remove this again. Also throwing in a TODO(v11), to remind us
+-                        // to check this at v11 time :)
+-                        const sampledFlag = storedContext.sampled ? '1' : '0';
+-                        span.setAttribute(
+-                          'sentry.previous_trace',
+-                          `${storedContext.traceId}-${storedContext.spanId}-${sampledFlag}`,
+-                        );
+-                      }
+-                    }),
+-                  );
++                  const storedContext = getStoredSpanContext(storage, methodName);
++
++                  if (storedContext) {
++                    span.addLinks(buildSpanLinks(storedContext));
++                    // TODO: Remove this once EAP can store span links. We currently only set this attribute so that we
++                    // can obtain the previous trace information from the EAP store. Long-term, EAP will handle
++                    // span links and then we should remove this again. Also throwing in a TODO(v11), to remind us
++                    // to check this at v11 time :)
++                    const sampledFlag = storedContext.sampled ? '1' : '0';
++                    span.setAttribute(
++                      'sentry.previous_trace',
++                      `${storedContext.traceId}-${storedContext.spanId}-${sampledFlag}`,
++                    );
++                  }
+                 }
+ 
+                 try {
+                   const result = Reflect.apply(target, thisArg, args);
+ 
+                   if (isThenable(result)) {
+-                    return result.then(
+-                      (res: unknown) => {
+-                        waitUntil?.(teardown());
+-                        return res;
+-                      },
+-                      (e: unknown) => {
+-                        captureException(e, {
+-                          mechanism: {
+-                            type: 'auto.faas.cloudflare.durable_object',
+-                            handled: false,
+-                          },
+-                        });
+-                        waitUntil?.(teardown());
+-                        throw e;
+-                      },
+-                    );
++                    return result.then(onFulfilled, onRejected);
+                   } else {
+-                    waitUntil?.(teardown());
+-                    return result;
++                    return onFulfilled(result);
+                   }
+                 } catch (e) {
+-                  captureException(e, {
+-                    mechanism: {
+-                      type: 'auto.faas.cloudflare.durable_object',
+-                      handled: false,
+-                    },
+-                  });
+-                  waitUntil?.(teardown());
+-                  throw e;
++                  return onRejected(e);
+                 }
+               });
+             };
+diff --git a/packages/cloudflare/test/traceLinks.test.ts b/packages/cloudflare/test/traceLinks.test.ts
+index 76507a1f616a..b57618c92aaf 100644
+--- a/packages/cloudflare/test/traceLinks.test.ts
++++ b/packages/cloudflare/test/traceLinks.test.ts
+@@ -31,7 +31,7 @@ describe('traceLinks', () => {
+   });
+ 
+   describe('storeSpanContext', () => {
+-    it('stores span context with sampled=true when traceFlags is SAMPLED', async () => {
++    it('stores span context with sampled=true when traceFlags is SAMPLED', () => {
+       const mockSpanContext = {
+         traceId: 'abc123def456789012345678901234ab',
+         spanId: '1234567890abcdef',
+@@ -43,16 +43,16 @@ describe('traceLinks', () => {
+       vi.mocked(sentryCore.getActiveSpan).mockReturnValue(mockSpan as any);
+ 
+       const mockStorage = createMockStorage();
+-      await storeSpanContext(mockStorage, 'alarm');
++      storeSpanContext(mockStorage, 'alarm');
+ 
+-      expect(mockStorage.put).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', {
++      expect(mockStorage.kv.put).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', {
+         traceId: 'abc123def456789012345678901234ab',
+         spanId: '1234567890abcdef',
+         sampled: true,
+       });
+     });
+ 
+-    it('stores span context with sampled=false when traceFlags is NONE', async () => {
++    it('stores span context with sampled=false when traceFlags is NONE', () => {
+       const mockSpanContext = {
+         traceId: 'abc123def456789012345678901234ab',
+         spanId: '1234567890abcdef',
+@@ -64,25 +64,25 @@ describe('traceLinks', () => {
+       vi.mocked(sentryCore.getActiveSpan).mockReturnValue(mockSpan as any);
+ 
+       const mockStorage = createMockStorage();
+-      await storeSpanContext(mockStorage, 'alarm');
++      storeSpanContext(mockStorage, 'alarm');
+ 
+-      expect(mockStorage.put).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', {
++      expect(mockStorage.kv.put).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', {
+         traceId: 'abc123def456789012345678901234ab',
+         spanId: '1234567890abcdef',
+         sampled: false,
+       });
+     });
+ 
+-    it('does not store when no active span', async () => {
++    it('does not store when no active span', () => {
+       vi.mocked(sentryCore.getActiveSpan).mockReturnValue(undefined);
+ 
+       const mockStorage = createMockStorage();
+-      await storeSpanContext(mockStorage, 'alarm');
++      storeSpanContext(mockStorage, 'alarm');
+ 
+-      expect(mockStorage.put).not.toHaveBeenCalled();
++      expect(mockStorage.kv.put).not.toHaveBeenCalled();
+     });
+ 
+-    it('silently ignores storage errors', async () => {
++    it('silently ignores storage errors', () => {
+       const mockSpanContext = {
+         traceId: 'abc123def456789012345678901234ab',
+         spanId: '1234567890abcdef',
+@@ -94,42 +94,56 @@ describe('traceLinks', () => {
+       vi.mocked(sentryCore.getActiveSpan).mockReturnValue(mockSpan as any);
+ 
+       const mockStorage = createMockStorage();
+-      mockStorage.put = vi.fn().mockRejectedValue(new Error('Storage quota exceeded'));
++      mockStorage.kv.put = vi.fn().mockImplementation(() => {
++        throw new Error('Storage quota exceeded');
++      });
+ 
+-      await expect(storeSpanContext(mockStorage, 'alarm')).resolves.toBeUndefined();
++      // Should not throw
++      expect(() => storeSpanContext(mockStorage, 'alarm')).not.toThrow();
+     });
+   });
+ 
+   describe('getStoredSpanContext', () => {
+-    it('retrieves stored span context', async () => {
++    it('retrieves stored span context using sync KV API', () => {
+       const storedContext = {
+         traceId: 'abc123def456789012345678901234ab',
+         spanId: '1234567890abcdef',
+         sampled: true,
+       };
+       const mockStorage = createMockStorage();
+-      mockStorage.get = vi.fn().mockResolvedValue(storedContext);
++      mockStorage.kv.get = vi.fn().mockReturnValue(storedContext);
+ 
+-      const result = await getStoredSpanContext(mockStorage, 'alarm');
++      const result = getStoredSpanContext(mockStorage, 'alarm');
+ 
+-      expect(mockStorage.get).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm');
++      expect(mockStorage.kv.get).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm');
+       expect(result).toEqual(storedContext);
+     });
+ 
+-    it('returns undefined when no stored context', async () => {
++    it('returns undefined when no stored context', () => {
++      const mockStorage = createMockStorage();
++      mockStorage.kv.get = vi.fn().mockReturnValue(undefined);
++
++      const result = getStoredSpanContext(mockStorage, 'alarm');
++
++      expect(result).toBeUndefined();
++    });
++
++    it('returns undefined when sync KV API is unavailable', () => {
+       const mockStorage = createMockStorage();
+-      mockStorage.get = vi.fn().mockResolvedValue(undefined);
++      mockStorage.kv = undefined;
+ 
+-      const result = await getStoredSpanContext(mockStorage, 'alarm');
++      const result = getStoredSpanContext(mockStorage, 'alarm');
+ 
+       expect(result).toBeUndefined();
+     });
+ 
+-    it('returns undefined when storage throws', async () => {
++    it('returns undefined when storage throws', () => {
+       const mockStorage = createMockStorage();
+-      mockStorage.get = vi.fn().mockRejectedValue(new Error('Storage error'));
++      mockStorage.kv.get = vi.fn().mockImplementation(() => {
++        throw new Error('Storage error');
++      });
+ 
+-      const result = await getStoredSpanContext(mockStorage, 'alarm');
++      const result = getStoredSpanContext(mockStorage, 'alarm');
+ 
+       expect(result).toBeUndefined();
+     });
+@@ -183,6 +197,12 @@ describe('traceLinks', () => {
+ });
+ 
+ function createMockStorage(): any {
++  const mockKv = {
++    get: vi.fn().mockReturnValue(undefined),
++    put: vi.fn(),
++    delete: vi.fn().mockReturnValue(false),
++  };
++
+   return {
+     get: vi.fn().mockResolvedValue(undefined),
+     put: vi.fn().mockResolvedValue(undefined),
+@@ -197,5 +217,6 @@ function createMockStorage(): any {
+     sql: {
+       exec: vi.fn(),
+     },
++    kv: mockKv,
+   };
+ }
+diff --git a/packages/cloudflare/test/wrapMethodWithSentry.test.ts b/packages/cloudflare/test/wrapMethodWithSentry.test.ts
+index a812258c2c94..ae2e376cc555 100644
+--- a/packages/cloudflare/test/wrapMethodWithSentry.test.ts
++++ b/packages/cloudflare/test/wrapMethodWithSentry.test.ts
+@@ -61,10 +61,16 @@ function createMockSpan() {
+ }
+ 
+ function createMockContext(options: { hasStorage?: boolean; hasWaitUntil?: boolean } = {}) {
++  const mockKv = {
++    get: vi.fn().mockReturnValue(undefined),
++    put: vi.fn(),
++    delete: vi.fn().mockReturnValue(false),
++  };
+   const mockStorage = {
+     get: vi.fn().mockResolvedValue(undefined),
+     put: vi.fn().mockResolvedValue(undefined),
+     delete: vi.fn().mockResolvedValue(false),
++    kv: mockKv,
+   };
+ 
+   return {
+@@ -115,11 +121,11 @@ describe('wrapMethodWithSentry', () => {
+       expect(result).toBe('sync-result');
+     });
+ 
+-    it('wraps a sync method with startNewTrace and preserves sync behavior', () => {
++    it('wraps a sync method with startNewTrace and preserves sync behavior (no storage)', () => {
+       const handler = vi.fn().mockReturnValue('sync-result');
+       const options = {
+         options: {},
+-        context: createMockContext(),
++        context: createMockContext({ hasStorage: false }),
+         spanName: 'test-span',
+         startNewTrace: true,
+       };
+@@ -128,6 +134,7 @@ describe('wrapMethodWithSentry', () => {
+       const result = wrapped();
+ 
+       expect(handler).toHaveBeenCalled();
++      // Without storage, there's no linkPromise, so sync behavior is preserved
+       expect(result).not.toBeInstanceOf(Promise);
+       expect(result).toBe('sync-result');
+     });
+@@ -147,16 +154,34 @@ describe('wrapMethodWithSentry', () => {
+       expect(handler).toHaveBeenCalled();
+     });
+ 
+-    it('does not change sync/async behavior when startNewTrace is true (links are set via waitUntil)', () => {
++    it('preserves sync behavior when startNewTrace is true with storage (sync KV API)', () => {
+       const handler = vi.fn().mockReturnValue('sync-result');
+-      const mockStorage = {
+-        get: vi.fn().mockResolvedValue(undefined),
+-        put: vi.fn().mockResolvedValue(undefined),
++      const context = createMockContext({ hasStorage: true, hasWaitUntil: true });
++
++      const options = {
++        options: {},
++        context,
++        spanName: 'alarm',
++        startNewTrace: true,
+       };
++
++      const wrapped = wrapMethodWithSentry(options, handler);
++      const result = wrapped();
++
++      // With sync KV API, the trace link is read synchronously, so sync behavior is preserved
++      expect(result).not.toBeInstanceOf(Promise);
++      expect(result).toBe('sync-result');
++      expect(handler).toHaveBeenCalled();
++      // waitUntil is called for teardown
++      expect(context.waitUntil).toHaveBeenCalled();
++    });
++
++    it('preserves sync behavior when startNewTrace is true but no storage', () => {
++      const handler = vi.fn().mockReturnValue('sync-result');
+       const waitUntilPromises: Promise<void>[] = [];
+       const context = {
+         waitUntil: vi.fn((p: Promise<void>) => waitUntilPromises.push(p)),
+-        originalStorage: mockStorage,
++        // No originalStorage - linkPromise will be undefined
+       } as any;
+ 
+       const options = {
+@@ -169,12 +194,9 @@ describe('wrapMethodWithSentry', () => {
+       const wrapped = wrapMethodWithSentry(options, handler);
+       const result = wrapped();
+ 
+-      // startNewTrace does not make the result async - links are set via waitUntil
++      // Without storage, there's no linkPromise, so sync behavior is preserved
+       expect(result).not.toBeInstanceOf(Promise);
+       expect(result).toBe('sync-result');
+-
+-      // The link fetching happens via waitUntil, not blocking the response
+-      expect(context.waitUntil).toHaveBeenCalled();
+     });
+ 
+     it('marks handler as instrumented', () => {
+@@ -350,10 +372,11 @@ describe('wrapMethodWithSentry', () => {
+         traceId: 'previous-trace-id-1234567890123456',
+         spanId: 'previous-span-id',
+       };
+-      const mockStorage = {
+-        get: vi.fn().mockResolvedValue(storedContext),
+-        put: vi.fn().mockResolvedValue(undefined),
++      const mockKv = {
++        get: vi.fn().mockReturnValue(storedContext),
++        put: vi.fn(),
+       };
++      const mockStorage = { kv: mockKv };
+       const context = {
+         waitUntil: vi.fn(),
+         originalStorage: mockStorage,
+@@ -370,25 +393,26 @@ describe('wrapMethodWithSentry', () => {
+       const wrapped = wrapMethodWithSentry(options, handler);
+       await wrapped();
+ 
+-      expect(mockStorage.get).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm');
++      expect(mockKv.get).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm');
+     });
+ 
+     it('builds span links from stored context', async () => {
+       const storedContext = {
+         traceId: 'previous-trace-id-1234567890123456',
+         spanId: 'previous-span-id',
++        sampled: true,
+       };
+-      const mockStorage = {
+-        get: vi.fn().mockResolvedValue(storedContext),
+-        put: vi.fn().mockResolvedValue(undefined),
++      const mockKv = {
++        get: vi.fn().mockReturnValue(storedContext),
++        put: vi.fn(),
+       };
++      const mockStorage = { kv: mockKv };
+ 
+       const mockSpan = createMockSpan();
+       vi.mocked(sentryCore.startSpan).mockImplementation((opts, callback) => callback(mockSpan as any));
+ 
+-      const waitUntilPromises: Promise<void>[] = [];
+       const context = {
+-        waitUntil: vi.fn((p: Promise<void>) => waitUntilPromises.push(p)),
++        waitUntil: vi.fn(),
+         originalStorage: mockStorage,
+       } as any;
+ 
+@@ -403,10 +427,7 @@ describe('wrapMethodWithSentry', () => {
+       const wrapped = wrapMethodWithSentry(options, handler);
+       await wrapped();
+ 
+-      // Wait for waitUntil promises to resolve (setSpanLinks is called via waitUntil)
+-      await Promise.all(waitUntilPromises);
+-
+-      // addLinks should be called on the span with the stored context
++      // addLinks is called synchronously on the span with the stored context
+       expect(mockSpan.addLinks).toHaveBeenCalledWith(
+         expect.arrayContaining([
+           expect.objectContaining({
+@@ -428,10 +449,11 @@ describe('wrapMethodWithSentry', () => {
+         }),
+       } as any);
+ 
+-      const mockStorage = {
+-        get: vi.fn().mockResolvedValue(undefined),
+-        put: vi.fn().mockResolvedValue(undefined),
++      const mockKv = {
++        get: vi.fn().mockReturnValue(undefined),
++        put: vi.fn(),
+       };
++      const mockStorage = { kv: mockKv };
+       const context = {
+         waitUntil: vi.fn(),
+         originalStorage: mockStorage,
+@@ -448,8 +470,8 @@ describe('wrapMethodWithSentry', () => {
+       const wrapped = wrapMethodWithSentry(options, handler);
+       await wrapped();
+ 
+-      // Should store span context for future linking
+-      expect(mockStorage.put).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', expect.any(Object));
++      // Should store span context for future linking via sync KV API
++      expect(mockKv.put).toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', expect.any(Object));
+     });
+ 
+     it('does not store span context when startNewTrace is false', async () => {
+@@ -460,10 +482,11 @@ describe('wrapMethodWithSentry', () => {
+         }),
+       } as any);
+ 
+-      const mockStorage = {
+-        get: vi.fn().mockResolvedValue(undefined),
+-        put: vi.fn().mockResolvedValue(undefined),
++      const mockKv = {
++        get: vi.fn().mockReturnValue(undefined),
++        put: vi.fn(),
+       };
++      const mockStorage = { kv: mockKv };
+ 
+       const waitUntilPromises: Promise<void>[] = [];
+       const context = {
+@@ -486,7 +509,7 @@ describe('wrapMethodWithSentry', () => {
+       await Promise.all(waitUntilPromises);
+ 
+       // Should NOT store span context when startNewTrace is false
+-      expect(mockStorage.put).not.toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', expect.any(Object));
++      expect(mockKv.put).not.toHaveBeenCalledWith('__SENTRY_TRACE_LINK__alarm', expect.any(Object));
+     });
+   });
+ 

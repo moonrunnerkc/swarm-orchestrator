@@ -1,0 +1,945 @@
+diff --git a/.changeset/rare-ducks-occur.md b/.changeset/rare-ducks-occur.md
+new file mode 100644
+index 0000000000..f787a9cd54
+--- /dev/null
++++ b/.changeset/rare-ducks-occur.md
+@@ -0,0 +1,33 @@
++---
++"@cloudflare/vite-plugin": minor
++---
++
++Add `assetsOnly` (entry Worker) and `devOnly` (auxiliary Workers) options to the plugin config
++
++Both options accept a `boolean` or a function that returns a `boolean`. The function is evaluated lazily at build time, allowing frameworks to provide the value after initialization.
++
++Use `assetsOnly` on the entry Worker to skip building the Worker and instead emit an assets-only Wrangler config to the client output directory. This enables frameworks such as Astro to use the `ssr` environment during development but produce a fully static app for deployment.
++
++```ts
++export default defineConfig({
++	plugins: [
++		cloudflare({
++			assetsOnly: () => isStaticBuild,
++		}),
++	],
++});
++```
++
++Use `devOnly` on an auxiliary Worker to include it during `vite dev` but skip it at build time.
++
++```ts
++export default defineConfig({
++	plugins: [
++		cloudflare({
++			auxiliaryWorkers: [
++				{ configPath: "./dev-only-worker/wrangler.jsonc", devOnly: true },
++			],
++		}),
++	],
++});
++```
+diff --git a/packages/vite-plugin-cloudflare/playground/__test-utils__/index.ts b/packages/vite-plugin-cloudflare/playground/__test-utils__/index.ts
+index 734ea43792..400d4b6fea 100644
+--- a/packages/vite-plugin-cloudflare/playground/__test-utils__/index.ts
++++ b/packages/vite-plugin-cloudflare/playground/__test-utils__/index.ts
+@@ -1,15 +1,10 @@
+ import fs from "node:fs";
+-import semverGte from "semver/functions/gte";
+-import { version as viteVersion } from "vite";
+ import { onTestFinished, test } from "vitest";
+ import { isWindows } from "../vitest-setup";
+ 
+ export * from "../vitest-setup";
+ export * from "./responses";
+-
+-export function satisfiesViteVersion(minVersion: string): boolean {
+-	return semverGte(viteVersion, minVersion);
+-}
++export { satisfiesMinimumViteVersion } from "./vite-version";
+ 
+ /** Common options to use with `vi.waitFor()` */
+ export const WAIT_FOR_OPTIONS = {
+diff --git a/packages/vite-plugin-cloudflare/playground/__test-utils__/vite-version.ts b/packages/vite-plugin-cloudflare/playground/__test-utils__/vite-version.ts
+new file mode 100644
+index 0000000000..d445edc740
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/__test-utils__/vite-version.ts
+@@ -0,0 +1,6 @@
++import semverGte from "semver/functions/gte";
++import { version as viteVersion } from "vite";
++
++export function satisfiesMinimumViteVersion(minVersion: string): boolean {
++	return semverGte(viteVersion, minVersion);
++}
+diff --git a/packages/vite-plugin-cloudflare/playground/multi-worker/.gitignore b/packages/vite-plugin-cloudflare/playground/multi-worker/.gitignore
+index b4e768a46c..57e8cfedd5 100644
+--- a/packages/vite-plugin-cloudflare/playground/multi-worker/.gitignore
++++ b/packages/vite-plugin-cloudflare/playground/multi-worker/.gitignore
+@@ -2,3 +2,4 @@ custom-root-output-directory
+ custom-environment-output-directory
+ custom-worker-output-directory
+ custom-build-app-directory
++custom-dev-only-directory
+diff --git a/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/custom-build-app/multi-worker.spec.ts b/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/custom-build-app/multi-worker.spec.ts
+index e685eb4cad..2fcd62f59b 100644
+--- a/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/custom-build-app/multi-worker.spec.ts
++++ b/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/custom-build-app/multi-worker.spec.ts
+@@ -2,10 +2,10 @@ import { describe, test } from "vitest";
+ import {
+ 	getJsonResponse,
+ 	isBuild,
+-	satisfiesViteVersion,
++	satisfiesMinimumViteVersion,
+ } from "../../../__test-utils__";
+ 
+-describe.runIf(isBuild && satisfiesViteVersion("7.0.0"))(
++describe.runIf(isBuild && satisfiesMinimumViteVersion("7.0.0"))(
+ 	"builds additional Worker environments not built in `builder.buildApp` config",
+ 	() => {
+ 		test("returns a response from another Worker", async ({ expect }) => {
+diff --git a/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/dev-only-auxiliary/multi-worker.spec.ts b/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/dev-only-auxiliary/multi-worker.spec.ts
+new file mode 100644
+index 0000000000..1e4183afd9
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/multi-worker/__tests__/dev-only-auxiliary/multi-worker.spec.ts
+@@ -0,0 +1,29 @@
++import * as fs from "node:fs";
++import * as path from "node:path";
++import { describe, test } from "vitest";
++import { isBuild, rootDir } from "../../../__test-utils__";
++
++describe.runIf(isBuild)("dev-only auxiliary Worker", () => {
++	test("creates output directory for entry worker only", ({ expect }) => {
++		expect(
++			fs.existsSync(path.join(rootDir, "custom-dev-only-directory", "worker_a"))
++		).toBe(true);
++		expect(
++			fs.existsSync(path.join(rootDir, "custom-dev-only-directory", "worker_b"))
++		).toBe(false);
++	});
++
++	test("does not include dev-only auxiliary Worker in deploy config", ({
++		expect,
++	}) => {
++		const deployConfigPath = path.join(
++			rootDir,
++			".wrangler",
++			"deploy",
++			"config.json"
++		);
++		const deployConfig = JSON.parse(fs.readFileSync(deployConfigPath, "utf-8"));
++
++		expect(deployConfig.auxiliaryWorkers).toEqual([]);
++	});
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/multi-worker/package.json b/packages/vite-plugin-cloudflare/playground/multi-worker/package.json
+index 999ca7892f..8d00d02955 100644
+--- a/packages/vite-plugin-cloudflare/playground/multi-worker/package.json
++++ b/packages/vite-plugin-cloudflare/playground/multi-worker/package.json
+@@ -7,6 +7,7 @@
+ 		"build:custom-output-directories": "vite build -c ./vite.config.custom-output-directories.ts",
+ 		"build:customize-config": "vite build -c ./vite.config.customize-config.ts",
+ 		"build:default": "vite build",
++		"build:dev-only-auxiliary": "vite build -c ./vite.config.dev-only-auxiliary.ts",
+ 		"build:no-config-file": "vite build -c ./vite.config.no-config-file.ts",
+ 		"build:with-worker-configs-warning": "vite build -c vite.config.with-worker-configs-warning.ts",
+ 		"check:type": "tsc --build",
+@@ -14,6 +15,7 @@
+ 		"dev:custom-build-app": "vite dev -c ./vite.config.custom-build-app.ts",
+ 		"dev:custom-output-directories": "vite dev -c ./vite.config.custom-output-directories.ts",
+ 		"dev:customize-config": "vite dev -c ./vite.config.customize-config.ts",
++		"dev:dev-only-auxiliary": "vite dev -c ./vite.config.dev-only-auxiliary.ts",
+ 		"dev:no-config-file": "vite dev -c ./vite.config.no-config-file.ts",
+ 		"dev:with-worker-configs-warning": "vite dev -c vite.config.with-worker-configs-warning.ts",
+ 		"preview": "vite preview"
+diff --git a/packages/vite-plugin-cloudflare/playground/multi-worker/vite.config.dev-only-auxiliary.ts b/packages/vite-plugin-cloudflare/playground/multi-worker/vite.config.dev-only-auxiliary.ts
+new file mode 100644
+index 0000000000..d468b4f4a5
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/multi-worker/vite.config.dev-only-auxiliary.ts
+@@ -0,0 +1,18 @@
++import { cloudflare } from "@cloudflare/vite-plugin";
++import { defineConfig } from "vite";
++
++export default defineConfig({
++	build: {
++		outDir: "custom-dev-only-directory",
++	},
++	plugins: [
++		cloudflare({
++			configPath: "./worker-a/wrangler.jsonc",
++			auxiliaryWorkers: [
++				{ configPath: "./worker-b/wrangler.jsonc", devOnly: true },
++			],
++			inspectorPort: false,
++			persistState: false,
++		}),
++	],
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/assets-only/prerendering.spec.ts b/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/assets-only/prerendering.spec.ts
+new file mode 100644
+index 0000000000..4eebc09320
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/assets-only/prerendering.spec.ts
+@@ -0,0 +1,17 @@
++import { test, describe } from "vitest";
++import "../base-tests";
++import {
++	satisfiesMinimumViteVersion,
++	isBuild,
++	viteTestUrl,
++} from "../../../__test-utils__";
++
++describe.runIf(satisfiesMinimumViteVersion("7.0.0"))("assets-only", () => {
++	test.runIf(isBuild)(
++		"does not return a server rendered response at /hello after the build",
++		async ({ expect }) => {
++			const response = await fetch(`${viteTestUrl}/hello`);
++			expect(response.status).toBe(404);
++		}
++	);
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/base-tests.ts b/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/base-tests.ts
+new file mode 100644
+index 0000000000..750e84beaf
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/base-tests.ts
+@@ -0,0 +1,26 @@
++import { test, describe } from "vitest";
++import {
++	getTextResponse,
++	isBuild,
++	page,
++	satisfiesMinimumViteVersion,
++	viteTestUrl,
++} from "../../__test-utils__";
++
++describe.runIf(satisfiesMinimumViteVersion("7.0.0"))("pre-rendering", () => {
++	test.runIf(!isBuild)(
++		"returns the server rendered response at /hello in dev",
++		async ({ expect }) => {
++			expect(await getTextResponse("/hello")).toEqual("Hello world");
++		}
++	);
++
++	test.runIf(isBuild)(
++		"returns the prerendered route at /prerendered after the build",
++		async ({ expect }) => {
++			await page.goto(`${viteTestUrl}/prerendered`);
++			const content = await page.textContent("h1");
++			expect(content).toBe("Pre-rendered HTML");
++		}
++	);
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/prerendering.spec.ts b/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/prerendering.spec.ts
+index 254bf2b967..ae37e97199 100644
+--- a/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/prerendering.spec.ts
++++ b/packages/vite-plugin-cloudflare/playground/prerendering/__tests__/prerendering.spec.ts
+@@ -1,21 +1,17 @@
+-import { test } from "vitest";
++import { test, describe } from "vitest";
++import "./base-tests";
+ import {
+-	getTextResponse,
++	satisfiesMinimumViteVersion,
+ 	isBuild,
+-	page,
+-	satisfiesViteVersion,
+ 	viteTestUrl,
+ } from "../../__test-utils__";
+ 
+-test("returns the server rendered route at /", async ({ expect }) => {
+-	expect(await getTextResponse()).toEqual("Hello world");
++describe.runIf(satisfiesMinimumViteVersion("7.0.0"))("with-ssr", () => {
++	test.runIf(isBuild)(
++		"returns a server rendered response at /hello after the build",
++		async ({ expect }) => {
++			const response = await fetch(`${viteTestUrl}/hello`);
++			expect(response.status).toBe(200);
++		}
++	);
+ });
+-
+-test.runIf(isBuild && satisfiesViteVersion("7.0.0"))(
+-	"returns the prerendered route at /prerendered after the build",
+-	async ({ expect }) => {
+-		await page.goto(`${viteTestUrl}/prerendered`);
+-		const content = await page.textContent("h1");
+-		expect(content).toBe("Pre-rendered HTML");
+-	}
+-);
+diff --git a/packages/vite-plugin-cloudflare/playground/prerendering/package.json b/packages/vite-plugin-cloudflare/playground/prerendering/package.json
+index 3ffe6c0f90..13694c2a62 100644
+--- a/packages/vite-plugin-cloudflare/playground/prerendering/package.json
++++ b/packages/vite-plugin-cloudflare/playground/prerendering/package.json
+@@ -4,6 +4,7 @@
+ 	"type": "module",
+ 	"scripts": {
+ 		"build:default": "vite build",
++		"build:assets-only": "vite build -c ./vite.config.assets-only.ts",
+ 		"check:type": "tsc --build",
+ 		"dev": "vite dev",
+ 		"preview": "vite preview"
+diff --git a/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.assets-only.ts b/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.assets-only.ts
+new file mode 100644
+index 0000000000..660e01f6ca
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.assets-only.ts
+@@ -0,0 +1,3 @@
++import { createConfig } from "./vite.config";
++
++export default createConfig(true);
+diff --git a/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.ts b/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.ts
+index 78abaebb18..4fc61a019a 100644
+--- a/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.ts
++++ b/packages/vite-plugin-cloudflare/playground/prerendering/vite.config.ts
+@@ -3,62 +3,77 @@ import * as path from "node:path";
+ import { fileURLToPath } from "node:url";
+ import { cloudflare } from "@cloudflare/vite-plugin";
+ import { defineConfig, preview } from "vite";
++import { satisfiesMinimumViteVersion } from "../__test-utils__/vite-version";
+ 
+-export default defineConfig({
+-	plugins: [
+-		cloudflare({
+-			inspectorPort: false,
+-			persistState: false,
+-			experimental: {
+-				prerenderWorker: {
+-					config(_, { entryWorkerConfig }) {
+-						return {
+-							...entryWorkerConfig,
+-							name: "prerender",
+-							main: "./src/prerender.ts",
+-						};
+-					},
+-				},
+-			},
+-		}),
+-		{
+-			name: "prerender-plugin",
+-			enforce: "post",
+-			buildApp: {
+-				order: "post",
+-				async handler(builder) {
+-					const previewServer = await preview({
+-						// Needed because the tests are run from a different directory
+-						root: path.dirname(fileURLToPath(import.meta.url)),
+-						logLevel: "silent",
+-						preview: {
+-							port: 0,
+-						},
+-					});
++export function createConfig(assetsOnly: boolean) {
++	return defineConfig(
++		// These playground tests don't run in Vite 6 because the feature is not compatible
++		// We return an empty Vite config so that the preview server can still start
++		!satisfiesMinimumViteVersion("7.0.0")
++			? {}
++			: {
++					plugins: [
++						cloudflare({
++							inspectorPort: false,
++							persistState: false,
++							viteEnvironment: { name: "ssr" },
++							assetsOnly: () => assetsOnly,
++							experimental: {
++								prerenderWorker: {
++									config(_, { entryWorkerConfig }) {
++										return {
++											...entryWorkerConfig,
++											name: "prerender",
++											main: "./src/prerender.ts",
++										};
++									},
++								},
++							},
++						}),
++						{
++							name: "prerender-plugin",
++							enforce: "post",
++							buildApp: {
++								order: "post",
++								async handler(builder) {
++									const previewServer = await preview({
++										// Needed because the tests are run from a different directory
++										root: path.dirname(fileURLToPath(import.meta.url)),
++										logLevel: "silent",
++										preview: {
++											port: 0,
++										},
++									});
++
++									const baseUrl = previewServer.resolvedUrls?.local[0];
++									const clientOutputDirectory =
++										builder.environments.client?.config.build.outDir;
+ 
+-					const baseUrl = previewServer.resolvedUrls?.local[0];
+-					const clientOutputDirectory =
+-						builder.environments.client?.config.build.outDir;
++									if (baseUrl && clientOutputDirectory) {
++										const response = await fetch(
++											new URL("/prerendered", baseUrl)
++										);
++										const html = await response.text();
+ 
+-					if (baseUrl && clientOutputDirectory) {
+-						const response = await fetch(new URL("/prerendered", baseUrl));
+-						const html = await response.text();
++										await fsp.writeFile(
++											path.resolve(
++												builder.config.root,
++												clientOutputDirectory,
++												"prerendered.html"
++											),
++											html
++										);
+ 
+-						await fsp.writeFile(
+-							path.resolve(
+-								builder.config.root,
+-								clientOutputDirectory,
+-								"prerendered.html"
+-							),
+-							html
+-						);
++										console.log("Pre-rendered /prerendered");
++									}
+ 
+-						console.log("Pre-rendered /prerendered");
+-					}
++									await previewServer.close();
++								},
++							},
++						},
++					],
++				}
++	);
++}
+ 
+-					await previewServer.close();
+-				},
+-			},
+-		},
+-	],
+-});
++export default createConfig(false);
+diff --git a/packages/vite-plugin-cloudflare/src/build.ts b/packages/vite-plugin-cloudflare/src/build.ts
+index 2b2d277eb5..bfd6fd43e8 100644
+--- a/packages/vite-plugin-cloudflare/src/build.ts
++++ b/packages/vite-plugin-cloudflare/src/build.ts
+@@ -2,6 +2,7 @@ import assert from "node:assert";
+ import * as fs from "node:fs";
+ import * as path from "node:path";
+ import colors from "picocolors";
++import { resolveDevOnly } from "./plugin-config";
+ import { VIRTUAL_CLIENT_FALLBACK_ENTRY } from "./plugins/virtual-modules";
+ import { satisfiesMinimumViteVersion } from "./utils";
+ import type {
+@@ -25,19 +26,28 @@ export function createBuildApp(
+ 			fs.existsSync(defaultHtmlPath);
+ 
+ 		const workerEnvironments = [
+-			...resolvedPluginConfig.environmentNameToWorkerMap.keys(),
+-		].map((environmentName) => {
+-			const environment = builder.environments[environmentName];
+-			assert(environment, `"${environmentName}" environment not found`);
++			...resolvedPluginConfig.environmentNameToWorkerMap.entries(),
++		]
++			.filter(([_, worker]) => !resolveDevOnly(worker.devOnly))
++			.map(([environmentName]) => {
++				const environment = builder.environments[environmentName];
++				assert(environment, `"${environmentName}" environment not found`);
+ 
+-			return environment;
+-		});
++				return environment;
++			});
+ 
+ 		await Promise.all(
+ 			workerEnvironments.map((environment) => builder.build(environment))
+ 		);
+ 
+-		if (resolvedPluginConfig.type === "assets-only") {
++		const isAssetsOnly =
++			resolvedPluginConfig.type === "assets-only" ||
++			!workerEnvironments.some(
++				(environment) =>
++					environment.name === resolvedPluginConfig.entryWorkerEnvironmentName
++			);
++
++		if (isAssetsOnly) {
+ 			if (hasClientEntry) {
+ 				await builder.build(clientEnvironment);
+ 			} else if (
+diff --git a/packages/vite-plugin-cloudflare/src/deploy-config.ts b/packages/vite-plugin-cloudflare/src/deploy-config.ts
+index 722617ff75..6c9b117c71 100644
+--- a/packages/vite-plugin-cloudflare/src/deploy-config.ts
++++ b/packages/vite-plugin-cloudflare/src/deploy-config.ts
+@@ -2,6 +2,7 @@ import assert from "node:assert";
+ import * as fs from "node:fs";
+ import * as path from "node:path";
+ import * as wrangler from "wrangler";
++import { resolveDevOnly } from "./plugin-config";
+ import type {
+ 	AssetsOnlyResolvedConfig,
+ 	WorkersResolvedConfig,
+@@ -27,8 +28,7 @@ export function getWorkerConfigs(root: string, isPrerender: boolean) {
+ 	return [
+ 		...(isPrerender && deployConfig.prerenderWorkerConfigPath
+ 			? [{ configPath: deployConfig.prerenderWorkerConfigPath }]
+-			: []),
+-		{ configPath: deployConfig.configPath },
++			: [{ configPath: deployConfig.configPath }]),
+ 		...deployConfig.auxiliaryWorkers,
+ 	].map(({ configPath }) => {
+ 		const resolvedConfigPath = path.resolve(
+@@ -39,101 +39,65 @@ export function getWorkerConfigs(root: string, isPrerender: boolean) {
+ 	});
+ }
+ 
+-function getRelativePathToWorkerConfig(
+-	deployConfigDirectory: string,
+-	root: string,
+-	outputDirectory: string
+-) {
+-	return path.relative(
+-		deployConfigDirectory,
+-		path.resolve(root, outputDirectory, "wrangler.json")
+-	);
+-}
+-
+ export function writeDeployConfig(
+ 	resolvedPluginConfig: AssetsOnlyResolvedConfig | WorkersResolvedConfig,
+-	resolvedViteConfig: vite.ResolvedConfig
++	resolvedViteConfig: vite.ResolvedConfig,
++	isAssetsOnly: boolean
+ ) {
+ 	const deployConfigPath = getDeployConfigPath(resolvedViteConfig.root);
+ 	const deployConfigDirectory = path.dirname(deployConfigPath);
+ 
+ 	fs.mkdirSync(deployConfigDirectory, { recursive: true });
+ 
+-	if (resolvedPluginConfig.type === "assets-only") {
+-		const clientOutputDirectory =
+-			resolvedViteConfig.environments.client?.build.outDir;
++	const resolveConfigPath = (environmentName: string) => {
++		const outputDirectory =
++			resolvedViteConfig.environments[environmentName]?.build.outDir;
+ 
+ 		assert(
+-			clientOutputDirectory,
+-			"Unexpected error: client environment output directory is undefined"
++			outputDirectory,
++			`Unexpected error: ${environmentName} environment output directory is undefined`
+ 		);
+ 
+-		const prerenderOutputDirectory =
+-			resolvedPluginConfig.prerenderWorkerEnvironmentName
+-				? resolvedViteConfig.environments[
+-						resolvedPluginConfig.prerenderWorkerEnvironmentName
+-					]?.build.outDir
+-				: undefined;
+-
+-		const deployConfig: DeployConfig = {
+-			configPath: getRelativePathToWorkerConfig(
+-				deployConfigDirectory,
+-				resolvedViteConfig.root,
+-				clientOutputDirectory
+-			),
+-			auxiliaryWorkers: [],
+-			prerenderWorkerConfigPath: prerenderOutputDirectory
+-				? getRelativePathToWorkerConfig(
+-						deployConfigDirectory,
+-						resolvedViteConfig.root,
+-						prerenderOutputDirectory
++		return path.relative(
++			deployConfigDirectory,
++			path.resolve(resolvedViteConfig.root, outputDirectory, "wrangler.json")
++		);
++	};
++
++	const auxiliaryWorkerEnvironmentNames =
++		resolvedPluginConfig.type === "workers"
++			? [...resolvedPluginConfig.environmentNameToWorkerMap.entries()]
++					.filter(
++						([name, worker]) =>
++							name !== resolvedPluginConfig.entryWorkerEnvironmentName &&
++							name !== resolvedPluginConfig.prerenderWorkerEnvironmentName &&
++							!resolveDevOnly(worker.devOnly)
+ 					)
+-				: undefined,
+-		};
+-
+-		fs.writeFileSync(deployConfigPath, JSON.stringify(deployConfig));
+-	} else {
+-		let entryWorkerConfigPath: string | undefined;
+-		let prerenderWorkerConfigPath: string | undefined;
+-		const auxiliaryWorkers: DeployConfig["auxiliaryWorkers"] = [];
++					.map(([name]) => name)
++			: [];
+ 
+-		for (const environmentName of resolvedPluginConfig.environmentNameToWorkerMap.keys()) {
+-			const outputDirectory =
+-				resolvedViteConfig.environments[environmentName]?.build.outDir;
+-
+-			assert(
+-				outputDirectory,
+-				`Unexpected error: ${environmentName} environment output directory is undefined`
+-			);
+-
+-			const configPath = getRelativePathToWorkerConfig(
+-				deployConfigDirectory,
+-				resolvedViteConfig.root,
+-				outputDirectory
+-			);
+-
+-			if (environmentName === resolvedPluginConfig.entryWorkerEnvironmentName) {
+-				entryWorkerConfigPath = configPath;
+-			} else if (
+-				environmentName === resolvedPluginConfig.prerenderWorkerEnvironmentName
+-			) {
+-				prerenderWorkerConfigPath = configPath;
+-			} else {
+-				auxiliaryWorkers.push({ configPath });
+-			}
+-		}
++	let entryEnvironmentName: string;
+ 
++	if (isAssetsOnly) {
++		entryEnvironmentName = "client";
++	} else {
+ 		assert(
+-			entryWorkerConfigPath,
+-			`Unexpected error: entryWorkerConfigPath is undefined`
++			resolvedPluginConfig.type === "workers",
++			`Unexpected error: expected workers config but got ${resolvedPluginConfig.type}`
+ 		);
++		entryEnvironmentName = resolvedPluginConfig.entryWorkerEnvironmentName;
++	}
+ 
+-		const deployConfig: DeployConfig = {
+-			configPath: entryWorkerConfigPath,
+-			auxiliaryWorkers,
+-			prerenderWorkerConfigPath,
+-		};
++	const deployConfig: DeployConfig = {
++		configPath: resolveConfigPath(entryEnvironmentName),
++		auxiliaryWorkers: auxiliaryWorkerEnvironmentNames.map((name) => ({
++			configPath: resolveConfigPath(name),
++		})),
++		prerenderWorkerConfigPath:
++			resolvedPluginConfig.prerenderWorkerEnvironmentName
++				? resolveConfigPath(resolvedPluginConfig.prerenderWorkerEnvironmentName)
++				: undefined,
++	};
+ 
+-		fs.writeFileSync(deployConfigPath, JSON.stringify(deployConfig));
+-	}
++	fs.writeFileSync(deployConfigPath, JSON.stringify(deployConfig));
+ }
+diff --git a/packages/vite-plugin-cloudflare/src/plugin-config.ts b/packages/vite-plugin-cloudflare/src/plugin-config.ts
+index c575907c65..aa152fa16a 100644
+--- a/packages/vite-plugin-cloudflare/src/plugin-config.ts
++++ b/packages/vite-plugin-cloudflare/src/plugin-config.ts
+@@ -32,29 +32,62 @@ interface BaseWorkerConfig {
+ 	viteEnvironment?: { name?: string; childEnvironments?: string[] };
+ }
+ 
++/**
++ * Whether this Worker is only used during development and should not be built for production.
++ * Can be a boolean or a function that returns a boolean. The function is evaluated lazily
++ * at build time, allowing frameworks to provide the value after initialization.
++ */
++type DevOnly = boolean | (() => boolean);
++
+ interface EntryWorkerConfig extends BaseWorkerConfig {
+ 	configPath?: string;
+ 	config?: WorkerConfigCustomizer<true>;
++	/**
++	 * Whether the entry Worker should be omitted from the production build.
++	 * Can be a boolean or a function that returns a boolean. The function is
++	 * evaluated lazily at build time, allowing frameworks to provide the value
++	 * after initialization.
++	 *
++	 * When set, an assets-only Wrangler config is emitted to the client output
++	 * directory. This enables using server-side code in development but producing
++	 * a fully static app for deployment.
++	 */
++	assetsOnly?: DevOnly;
+ }
+ 
+ interface AuxiliaryWorkerFileConfig extends BaseWorkerConfig {
+ 	configPath: string;
++	devOnly?: DevOnly;
+ }
+ 
+ interface AuxiliaryWorkerInlineConfig extends BaseWorkerConfig {
+ 	configPath?: string;
+ 	config: WorkerConfigCustomizer<false>;
++	devOnly?: DevOnly;
+ }
+ 
+ type AuxiliaryWorkerConfig =
+ 	| AuxiliaryWorkerFileConfig
+ 	| AuxiliaryWorkerInlineConfig;
+ 
++interface PrerenderWorkerFileConfig extends BaseWorkerConfig {
++	configPath: string;
++}
++
++interface PrerenderWorkerInlineConfig extends BaseWorkerConfig {
++	configPath?: string;
++	config: WorkerConfigCustomizer<false>;
++}
++
++type PrerenderWorkerConfig =
++	| PrerenderWorkerFileConfig
++	| PrerenderWorkerInlineConfig;
++
+ interface Experimental {
+ 	/** Experimental support for handling the _headers and _redirects files during Vite dev mode. */
+ 	headersAndRedirectsDevModeSupport?: boolean;
+ 	/** Experimental support for a dedicated prerender Worker */
+-	prerenderWorker?: AuxiliaryWorkerConfig;
++	prerenderWorker?: PrerenderWorkerConfig;
+ }
+ 
+ type FilteredEntryWorkerConfig = Omit<
+@@ -95,6 +128,7 @@ export interface ResolvedWorkerConfig extends ResolvedAssetsOnlyConfig {
+ export interface Worker {
+ 	config: ResolvedWorkerConfig;
+ 	nodeJsCompat: NodeJsCompat | undefined;
++	devOnly: DevOnly | undefined;
+ }
+ 
+ interface BaseResolvedConfig {
+@@ -360,7 +394,10 @@ export function resolvePluginConfig(
+ 
+ 		environmentNameToWorkerMap.set(
+ 			prerenderWorkerEnvironmentName,
+-			resolveWorker(workerResolvedConfig.config as ResolvedWorkerConfig)
++			resolveWorker(
++				workerResolvedConfig.config as ResolvedWorkerConfig,
++				undefined
++			)
+ 		);
+ 
+ 		const prerenderWorkerChildEnvironments =
+@@ -413,7 +450,7 @@ export function resolvePluginConfig(
+ 
+ 	environmentNameToWorkerMap.set(
+ 		entryWorkerEnvironmentName,
+-		resolveWorker(entryWorkerResolvedConfig.config)
++		resolveWorker(entryWorkerResolvedConfig.config, pluginConfig.assetsOnly)
+ 	);
+ 
+ 	const entryWorkerChildEnvironments =
+@@ -464,7 +501,10 @@ export function resolvePluginConfig(
+ 
+ 		environmentNameToWorkerMap.set(
+ 			workerEnvironmentName,
+-			resolveWorker(workerResolvedConfig.config as ResolvedWorkerConfig)
++			resolveWorker(
++				workerResolvedConfig.config as ResolvedWorkerConfig,
++				auxiliaryWorker.devOnly
++			)
+ 		);
+ 
+ 		const auxiliaryWorkerChildEnvironments =
+@@ -521,11 +561,27 @@ function createEnvironmentNameValidator() {
+ 	};
+ }
+ 
+-function resolveWorker(workerConfig: ResolvedWorkerConfig): Worker {
++/**
++ * Evaluates the `devOnly` value. Should be called lazily at build time
++ * to allow frameworks to provide the value after initialization.
++ */
++export function resolveDevOnly(devOnly: DevOnly | undefined): boolean {
++	if (typeof devOnly === "function") {
++		return devOnly();
++	}
++
++	return devOnly ?? false;
++}
++
++function resolveWorker(
++	workerConfig: ResolvedWorkerConfig,
++	devOnly: DevOnly | undefined
++): Worker {
+ 	return {
+ 		config: workerConfig,
+ 		nodeJsCompat: hasNodeJsCompat(workerConfig)
+ 			? new NodeJsCompat(workerConfig)
+ 			: undefined,
++		devOnly,
+ 	};
+ }
+diff --git a/packages/vite-plugin-cloudflare/src/plugins/config.ts b/packages/vite-plugin-cloudflare/src/plugins/config.ts
+index 0b5ec6b804..104fd745ab 100644
+--- a/packages/vite-plugin-cloudflare/src/plugins/config.ts
++++ b/packages/vite-plugin-cloudflare/src/plugins/config.ts
+@@ -1,4 +1,5 @@
+ import assert from "node:assert";
++import * as fs from "node:fs";
+ import * as path from "node:path";
+ import { normalizePath } from "vite";
+ import { hasAssetsConfigChanged } from "../asset-config";
+@@ -8,12 +9,15 @@ import {
+ 	createCloudflareEnvironmentOptions,
+ } from "../cloudflare-environment";
+ import { assertIsNotPreview } from "../context";
++import { writeDeployConfig } from "../deploy-config";
+ import { hasLocalDevVarsFileChanged } from "../dev-vars";
++import { resolveDevOnly } from "../plugin-config";
+ import { createPlugin, debuglog, getOutputDirectory } from "../utils";
+ import { validateWorkerEnvironmentOptions } from "../vite-config";
+ import { getWarningForWorkersConfigs } from "../workers-configs";
+ import type { PluginContext } from "../context";
+ import type { EnvironmentOptions, UserConfig } from "vite";
++import type { Unstable_RawConfig } from "wrangler";
+ 
+ /**
+  * Plugin to handle configuration and config file watching
+@@ -122,15 +126,17 @@ export const configPlugin = createPlugin("config", (ctx) => {
+ 				}
+ 
+ 				const workerEnvironments = [
+-					...ctx.resolvedPluginConfig.environmentNameToWorkerMap.keys(),
+-				].map((environmentName) => {
+-					const environment = builder.environments[environmentName];
+-					assert(environment, `"${environmentName}" environment not found`);
++					...ctx.resolvedPluginConfig.environmentNameToWorkerMap.entries(),
++				]
++					.filter(([_, worker]) => !resolveDevOnly(worker.devOnly))
++					.map(([environmentName]) => {
++						const environment = builder.environments[environmentName];
++						assert(environment, `"${environmentName}" environment not found`);
+ 
+-					return environment;
+-				});
++						return environment;
++					});
+ 
+-				// Build any Worker environments that haven't already been built
++				// Build Worker environments that have not yet been built and are not dev-only
+ 				await Promise.all(
+ 					workerEnvironments
+ 						.filter((environment) => !environment.isBuilt)
+@@ -144,13 +150,69 @@ export const configPlugin = createPlugin("config", (ctx) => {
+ 					entryWorkerEnvironment,
+ 					`No "${entryWorkerEnvironmentName}" environment`
+ 				);
+-				const entryWorkerBuildDirectory = path.resolve(
+-					builder.config.root,
+-					entryWorkerEnvironment.config.build.outDir
+-				);
+ 
+-				if (!builder.environments.client?.isBuilt) {
+-					removeAssetsField(entryWorkerBuildDirectory);
++				if (entryWorkerEnvironment.isBuilt) {
++					if (!builder.environments.client?.isBuilt) {
++						// The client environment was not built so we remove the assets config
++
++						const entryWorkerBuildDirectory = path.resolve(
++							builder.config.root,
++							entryWorkerEnvironment.config.build.outDir
++						);
++
++						removeAssetsField(entryWorkerBuildDirectory);
++					}
++				} else {
++					// The entry Worker was only used in development so we emit an assets-only config to the client build output
++
++					const clientEnvironment = builder.environments.client;
++					assert(clientEnvironment, 'No "client" environment');
++
++					if (!clientEnvironment.isBuilt) {
++						throw new Error(
++							"If `assetsOnly` is set to `true`, the client environment must be built"
++						);
++					}
++
++					const entryWorkerConfig = ctx.getWorkerConfig(
++						entryWorkerEnvironmentName
++					);
++					assert(
++						entryWorkerConfig,
++						`No config found for "${entryWorkerEnvironmentName}" environment`
++					);
++
++					const outputConfig: Unstable_RawConfig = {
++						...entryWorkerConfig,
++						main: undefined,
++						assets: {
++							...entryWorkerConfig.assets,
++							directory: ".",
++							binding: undefined,
++						},
++					};
++
++					if (
++						outputConfig.unsafe &&
++						Object.keys(outputConfig.unsafe).length === 0
++					) {
++						outputConfig.unsafe = undefined;
++					}
++
++					fs.writeFileSync(
++						path.resolve(
++							builder.config.root,
++							clientEnvironment.config.build.outDir,
++							"wrangler.json"
++						),
++						JSON.stringify(outputConfig)
++					);
++
++					writeDeployConfig(
++						ctx.resolvedPluginConfig,
++						ctx.resolvedViteConfig,
++						true
++					);
+ 				}
+ 			},
+ 		},
+diff --git a/packages/vite-plugin-cloudflare/src/plugins/output-config.ts b/packages/vite-plugin-cloudflare/src/plugins/output-config.ts
+index add40e4a77..0d046b62d4 100644
+--- a/packages/vite-plugin-cloudflare/src/plugins/output-config.ts
++++ b/packages/vite-plugin-cloudflare/src/plugins/output-config.ts
+@@ -1,5 +1,5 @@
+ import assert from "node:assert";
+-import { existsSync, readFileSync } from "node:fs";
++import * as fs from "node:fs";
+ import * as path from "node:path";
+ import * as vite from "vite";
+ import { MAIN_ENTRY_NAME } from "../cloudflare-environment";
+@@ -137,22 +137,25 @@ export const outputConfigPlugin = createPlugin("output-config", (ctx) => {
+ 			assertIsNotPreview(ctx);
+ 
+ 			// These conditions ensure the deploy config is emitted once per application build as `writeBundle` is called for each environment.
+-			// If Vite introduces an additional hook that runs after the application has built then we could use that instead.
+ 			if (
+ 				this.environment.name ===
+ 				(ctx.resolvedPluginConfig.type === "workers"
+ 					? ctx.resolvedPluginConfig.entryWorkerEnvironmentName
+ 					: "client")
+ 			) {
+-				writeDeployConfig(ctx.resolvedPluginConfig, ctx.resolvedViteConfig);
++				writeDeployConfig(
++					ctx.resolvedPluginConfig,
++					ctx.resolvedViteConfig,
++					ctx.resolvedPluginConfig.type === "assets-only"
++				);
+ 			}
+ 		},
+ 	};
+ });
+ 
+ function readAssetsIgnoreFile(assetsIgnorePath: string): string {
+-	const content = existsSync(assetsIgnorePath)
+-		? readFileSync(assetsIgnorePath, "utf-8")
++	const content = fs.existsSync(assetsIgnorePath)
++		? fs.readFileSync(assetsIgnorePath, "utf-8")
+ 		: "";
+ 	if (content.length === 0) {
+ 		return "";

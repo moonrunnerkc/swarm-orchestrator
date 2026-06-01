@@ -1,0 +1,1672 @@
+diff --git a/packages/expo-brownfield/CHANGELOG.md b/packages/expo-brownfield/CHANGELOG.md
+index 8491fa081a6a71..fa643e0e356427 100644
+--- a/packages/expo-brownfield/CHANGELOG.md
++++ b/packages/expo-brownfield/CHANGELOG.md
+@@ -6,6 +6,8 @@
+ 
+ ### 🎉 New features
+ 
++- [iOS] Add hostProvidedFrameworks option to skip Frameworks provided by the host app ([#46355](https://github.com/expo/expo/pull/46355) by [@gabrieldonadel](https://github.com/gabrieldonadel))
++
+ ### 🐛 Bug fixes
+ 
+ ### 💡 Others
+diff --git a/packages/expo-brownfield/cli/build/commands/build-ios.js b/packages/expo-brownfield/cli/build/commands/build-ios.js
+index 7a728b00edb6cf..a84257d8055fcb 100644
+--- a/packages/expo-brownfield/cli/build/commands/build-ios.js
++++ b/packages/expo-brownfield/cli/build/commands/build-ios.js
+@@ -6,6 +6,7 @@ const buildIos = async (command) => {
+     await (0, utils_1.validatePrebuild)('ios', { dryRun: !!opts.dryRun });
+     const config = (0, utils_1.resolveBuildConfigIos)(opts);
+     (0, utils_1.printIosConfig)(config);
++    (0, utils_1.validateHostProvided)(config);
+     await (0, utils_1.buildFramework)(config);
+     if (config.output !== 'frameworks') {
+         // Ship frameworks as swift package
+diff --git a/packages/expo-brownfield/cli/build/commands/build-ios.js.map b/packages/expo-brownfield/cli/build/commands/build-ios.js.map
+index 6776f030f166a3..5174e55c1c11d6 100644
+--- a/packages/expo-brownfield/cli/build/commands/build-ios.js.map
++++ b/packages/expo-brownfield/cli/build/commands/build-ios.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"build-ios.js","sourceRoot":"","sources":["../../src/commands/build-ios.ts"],"names":[],"mappings":";;AAEA,oCAOkB;AAElB,MAAM,QAAQ,GAAG,KAAK,EAAE,OAAgB,EAAE,EAAE;IAC1C,MAAM,IAAI,GAAG,OAAO,CAAC,IAAI,EAAE,CAAC;IAC5B,MAAM,IAAA,wBAAgB,EAAC,KAAK,EAAE,EAAE,MAAM,EAAE,CAAC,CAAC,IAAI,CAAC,MAAM,EAAE,CAAC,CAAC;IACzD,MAAM,MAAM,GAAG,IAAA,6BAAqB,EAAC,IAAI,CAAC,CAAC;IAC3C,IAAA,sBAAc,EAAC,MAAM,CAAC,CAAC;IAEvB,MAAM,IAAA,sBAAc,EAAC,MAAM,CAAC,CAAC;IAE7B,IAAI,MAAM,CAAC,MAAM,KAAK,YAAY,EAAE,CAAC;QACnC,mCAAmC;QACnC,IAAA,wBAAgB,EAAC,MAAM,CAAC,CAAC;IAC3B,CAAC;SAAM,CAAC;QACN,6CAA6C;QAC7C,IAAA,sBAAc,EAAC,MAAM,CAAC,CAAC;IACzB,CAAC;AACH,CAAC,CAAC;AAEF,kBAAe,QAAQ,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"build-ios.js","sourceRoot":"","sources":["../../src/commands/build-ios.ts"],"names":[],"mappings":";;AAEA,oCAQkB;AAElB,MAAM,QAAQ,GAAG,KAAK,EAAE,OAAgB,EAAE,EAAE;IAC1C,MAAM,IAAI,GAAG,OAAO,CAAC,IAAI,EAAE,CAAC;IAC5B,MAAM,IAAA,wBAAgB,EAAC,KAAK,EAAE,EAAE,MAAM,EAAE,CAAC,CAAC,IAAI,CAAC,MAAM,EAAE,CAAC,CAAC;IACzD,MAAM,MAAM,GAAG,IAAA,6BAAqB,EAAC,IAAI,CAAC,CAAC;IAC3C,IAAA,sBAAc,EAAC,MAAM,CAAC,CAAC;IACvB,IAAA,4BAAoB,EAAC,MAAM,CAAC,CAAC;IAE7B,MAAM,IAAA,sBAAc,EAAC,MAAM,CAAC,CAAC;IAE7B,IAAI,MAAM,CAAC,MAAM,KAAK,YAAY,EAAE,CAAC;QACnC,mCAAmC;QACnC,IAAA,wBAAgB,EAAC,MAAM,CAAC,CAAC;IAC3B,CAAC;SAAM,CAAC;QACN,6CAA6C;QAC7C,IAAA,sBAAc,EAAC,MAAM,CAAC,CAAC;IACzB,CAAC;AACH,CAAC,CAAC;AAEF,kBAAe,QAAQ,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/index.js b/packages/expo-brownfield/cli/build/index.js
+index 2a7712f1a6e637..d2826a10a132b8 100644
+--- a/packages/expo-brownfield/cli/build/index.js
++++ b/packages/expo-brownfield/cli/build/index.js
+@@ -37,6 +37,7 @@ program
+     .option('-a, --artifacts <artifacts>', 'path to the artifacts directory')
+     .option('--dry-run', 'only print the commands without executing them')
+     .option('-p, --package [package]', 'package artifacts as a Swift Package (with an optionally specified name)')
++    .option('--host-provided <frameworks...>', 'framework names the host iOS app already provides, these will be stripped from the artifact (e.g. SDWebImage,SDWebImageWebPCoder)')
+     .action(async function () {
+     await (0, commands_1.buildIos)(this);
+ });
+diff --git a/packages/expo-brownfield/cli/build/index.js.map b/packages/expo-brownfield/cli/build/index.js.map
+index 1fc1e1e6c26178..182b5044b8300c 100644
+--- a/packages/expo-brownfield/cli/build/index.js.map
++++ b/packages/expo-brownfield/cli/build/index.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":";;;;;;AACA,yCAAoC;AAEpC,yCAA0E;AAC1E,sEAA6C;AAE7C,MAAM,OAAO,GAAG,IAAI,mBAAO,EAAE,CAAC;AAE9B,eAAe;AACf,OAAO,CAAC,IAAI,CAAC,iBAAiB,CAAC,CAAC,OAAO,CAAC,sBAAW,CAAC,OAAO,EAAE,eAAe,CAAC,CAAC;AAE9E,gBAAgB;AAChB,OAAO;KACJ,OAAO,CAAC,eAAe,CAAC;KACxB,WAAW,CAAC,gDAAgD,CAAC;KAC7D,MAAM,CAAC,aAAa,EAAE,qBAAqB,CAAC;KAC5C,MAAM,CAAC,eAAe,EAAE,uBAAuB,CAAC;KAChD,MAAM,CAAC,WAAW,EAAE,uCAAuC,CAAC;KAC5D,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,yBAAyB,EAAE,gCAAgC,CAAC;KACnE,MAAM,CAAC,sBAAsB,EAAE,oDAAoD,CAAC;KACpF,MAAM,CACL,sCAAsC,EACtC,mDAAmD,CACpD;KACA,MAAM,CAAC,WAAW,EAAE,gDAAgD,CAAC;KACrE,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,uBAAY,EAAC,IAAI,CAAC,CAAC;AAC3B,CAAC,CAAC,CAAC;AAEL,YAAY;AACZ,OAAO;KACJ,OAAO,CAAC,WAAW,CAAC;KACpB,WAAW,CAAC,4CAA4C,CAAC;KACzD,MAAM,CAAC,aAAa,EAAE,2BAA2B,CAAC;KAClD,MAAM,CAAC,eAAe,EAAE,6BAA6B,CAAC;KACtD,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,uBAAuB,EAAE,wBAAwB,CAAC;KACzD,MAAM,CAAC,iCAAiC,EAAE,4CAA4C,CAAC;KACvF,MAAM,CAAC,6BAA6B,EAAE,iCAAiC,CAAC;KACxE,MAAM,CAAC,WAAW,EAAE,gDAAgD,CAAC;KACrE,MAAM,CACL,yBAAyB,EACzB,0EAA0E,CAC3E;KACA,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,mBAAQ,EAAC,IAAI,CAAC,CAAC;AACvB,CAAC,CAAC,CAAC;AAEL,yEAAyE;AACzE,OAAO;KACJ,OAAO,CAAC,QAAQ,EAAE,EAAE,MAAM,EAAE,IAAI,EAAE,CAAC;KACnC,WAAW,CAAC,mDAAmD,CAAC;KAChE,MAAM,CAAC,uBAAuB,EAAE,6CAA6C,CAAC;KAC9E,MAAM,CAAC,uBAAuB,EAAE,qDAAqD,CAAC;KACtF,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,iBAAM,EAAC,IAAI,CAAC,CAAC;AACrB,CAAC,CAAC,CAAC;AAEL,gBAAgB;AAChB,OAAO;KACJ,OAAO,CAAC,eAAe,CAAC;KACxB,WAAW,CAAC,8DAA8D,CAAC;KAC3E,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,yBAAyB,EAAE,gCAAgC,CAAC;KACnE,MAAM,CAAC,WAAW,EAAE,gDAAgD,CAAC;KACrE,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,uBAAY,EAAC,IAAI,CAAC,CAAC;AAC3B,CAAC,CAAC,CAAC;AAEL,OAAO,CAAC,KAAK,EAAE,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":";;;;;;AACA,yCAAoC;AAEpC,yCAA0E;AAC1E,sEAA6C;AAE7C,MAAM,OAAO,GAAG,IAAI,mBAAO,EAAE,CAAC;AAE9B,eAAe;AACf,OAAO,CAAC,IAAI,CAAC,iBAAiB,CAAC,CAAC,OAAO,CAAC,sBAAW,CAAC,OAAO,EAAE,eAAe,CAAC,CAAC;AAE9E,gBAAgB;AAChB,OAAO;KACJ,OAAO,CAAC,eAAe,CAAC;KACxB,WAAW,CAAC,gDAAgD,CAAC;KAC7D,MAAM,CAAC,aAAa,EAAE,qBAAqB,CAAC;KAC5C,MAAM,CAAC,eAAe,EAAE,uBAAuB,CAAC;KAChD,MAAM,CAAC,WAAW,EAAE,uCAAuC,CAAC;KAC5D,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,yBAAyB,EAAE,gCAAgC,CAAC;KACnE,MAAM,CAAC,sBAAsB,EAAE,oDAAoD,CAAC;KACpF,MAAM,CACL,sCAAsC,EACtC,mDAAmD,CACpD;KACA,MAAM,CAAC,WAAW,EAAE,gDAAgD,CAAC;KACrE,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,uBAAY,EAAC,IAAI,CAAC,CAAC;AAC3B,CAAC,CAAC,CAAC;AAEL,YAAY;AACZ,OAAO;KACJ,OAAO,CAAC,WAAW,CAAC;KACpB,WAAW,CAAC,4CAA4C,CAAC;KACzD,MAAM,CAAC,aAAa,EAAE,2BAA2B,CAAC;KAClD,MAAM,CAAC,eAAe,EAAE,6BAA6B,CAAC;KACtD,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,uBAAuB,EAAE,wBAAwB,CAAC;KACzD,MAAM,CAAC,iCAAiC,EAAE,4CAA4C,CAAC;KACvF,MAAM,CAAC,6BAA6B,EAAE,iCAAiC,CAAC;KACxE,MAAM,CAAC,WAAW,EAAE,gDAAgD,CAAC;KACrE,MAAM,CACL,yBAAyB,EACzB,0EAA0E,CAC3E;KACA,MAAM,CACL,iCAAiC,EACjC,mIAAmI,CACpI;KACA,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,mBAAQ,EAAC,IAAI,CAAC,CAAC;AACvB,CAAC,CAAC,CAAC;AAEL,yEAAyE;AACzE,OAAO;KACJ,OAAO,CAAC,QAAQ,EAAE,EAAE,MAAM,EAAE,IAAI,EAAE,CAAC;KACnC,WAAW,CAAC,mDAAmD,CAAC;KAChE,MAAM,CAAC,uBAAuB,EAAE,6CAA6C,CAAC;KAC9E,MAAM,CAAC,uBAAuB,EAAE,qDAAqD,CAAC;KACtF,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,iBAAM,EAAC,IAAI,CAAC,CAAC;AACrB,CAAC,CAAC,CAAC;AAEL,gBAAgB;AAChB,OAAO;KACJ,OAAO,CAAC,eAAe,CAAC;KACxB,WAAW,CAAC,8DAA8D,CAAC;KAC3E,MAAM,CAAC,WAAW,EAAE,oCAAoC,CAAC;KACzD,MAAM,CAAC,yBAAyB,EAAE,gCAAgC,CAAC;KACnE,MAAM,CAAC,WAAW,EAAE,gDAAgD,CAAC;KACrE,MAAM,CAAC,KAAK;IACX,MAAM,IAAA,uBAAY,EAAC,IAAI,CAAC,CAAC;AAC3B,CAAC,CAAC,CAAC;AAEL,OAAO,CAAC,KAAK,EAAE,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/utils/config.js b/packages/expo-brownfield/cli/build/utils/config.js
+index 3e3ee3bda8c9ae..7a48e064e565f3 100644
+--- a/packages/expo-brownfield/cli/build/utils/config.js
++++ b/packages/expo-brownfield/cli/build/utils/config.js
+@@ -4,10 +4,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.resolveTasksConfigAndroid = exports.resolveBuildConfigIos = exports.resolveBuildConfigAndroid = void 0;
++const node_fs_1 = __importDefault(require("node:fs"));
+ const node_path_1 = __importDefault(require("node:path"));
+ const android_1 = require("./android");
+ const ios_1 = require("./ios");
+ const precompiled_1 = require("./precompiled");
++const build_1 = require("../../../shared/build");
+ const resolveBuildConfigAndroid = (options) => {
+     const variant = resolveVariant(options);
+     return {
+@@ -52,6 +54,7 @@ const resolveBuildConfigIos = (options) => {
+         buildConfiguration,
+         derivedDataPath,
+         device,
++        hostProvidedFrameworks: resolveHostProvidedFrameworks(options),
+         simulator,
+         scheme: resolveScheme(options),
+         usePrebuilds,
+@@ -59,6 +62,63 @@ const resolveBuildConfigIos = (options) => {
+     };
+ };
+ exports.resolveBuildConfigIos = resolveBuildConfigIos;
++/**
++ * Source order for `hostProvidedFrameworks`:
++ *  1. `--host-provided <names...>` from the CLI flag
++ *  2. `ios.brownfieldHostProvidedFrameworks` in `ios/Podfile.properties.json`
++ *
++ * Inputs are intentionally not merged. This is designed for CI smoke tests and quick repros.
++ */
++const resolveHostProvidedFrameworks = (options) => {
++    const fromFlag = parseHostProvidedFlag(options.hostProvided);
++    if (fromFlag.length > 0) {
++        return fromFlag;
++    }
++    return readHostProvidedFromPodfileProperties(process.cwd());
++};
++const parseHostProvidedFlag = (value) => {
++    if (value == null) {
++        return [];
++    }
++    const raw = Array.isArray(value) ? value : [value];
++    const names = raw
++        .flatMap((entry) => (typeof entry === 'string' ? entry.split(',') : []))
++        .map((entry) => entry.trim())
++        .filter((entry) => entry.length > 0);
++    return Array.from(new Set(names));
++};
++const readHostProvidedFromPodfileProperties = (cwd) => {
++    const propertiesPath = node_path_1.default.join(cwd, 'ios', 'Podfile.properties.json');
++    if (!node_fs_1.default.existsSync(propertiesPath)) {
++        return [];
++    }
++    let properties;
++    try {
++        properties = JSON.parse(node_fs_1.default.readFileSync(propertiesPath, 'utf8'));
++    }
++    catch {
++        // Malformed properties file — prebuild would normally repair it. Treat as "no host-provided"
++        // and let other parts of the CLI surface the actual problem.
++        return [];
++    }
++    const rawValue = properties[build_1.HOST_PROVIDED_FRAMEWORKS_KEY];
++    if (typeof rawValue !== 'string' || rawValue.length === 0) {
++        return [];
++    }
++    let parsed;
++    try {
++        parsed = JSON.parse(rawValue);
++    }
++    catch {
++        return [];
++    }
++    if (!Array.isArray(parsed)) {
++        return [];
++    }
++    return Array.from(new Set(parsed
++        .filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
++        .map((entry) => entry.trim())));
++};
+ const resolveTasksConfigAndroid = (options) => {
+     return {
+         ...resolveCommonConfig(options),
+diff --git a/packages/expo-brownfield/cli/build/utils/config.js.map b/packages/expo-brownfield/cli/build/utils/config.js.map
+index d201521079c78a..07a6aecf74df17 100644
+--- a/packages/expo-brownfield/cli/build/utils/config.js.map
++++ b/packages/expo-brownfield/cli/build/utils/config.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"config.js","sourceRoot":"","sources":["../../src/utils/config.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"config.js","sourceRoot":"","sources":["../../src/utils/config.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/utils/error.d.ts b/packages/expo-brownfield/cli/build/utils/error.d.ts
+index 82a7a0c46005f0..aa4407d0c653c4 100644
+--- a/packages/expo-brownfield/cli/build/utils/error.d.ts
++++ b/packages/expo-brownfield/cli/build/utils/error.d.ts
+@@ -1,4 +1,4 @@
+-type ErrorType = 'android-task-repo' | 'android-directory-not-found' | 'android-library-unknown-error' | 'android-library-not-found' | 'ios-artifacts-directory-unknown-error' | 'ios-directory-not-found' | 'ios-directory-unknown-error' | 'ios-hermes-framework-not-found' | 'ios-pod-install-cancelled' | 'ios-prebuilds-spm-dep-missing' | 'ios-scheme-not-found' | 'ios-workspace-not-found' | 'ios-workspace-unknown-error' | 'package-not-installed' | 'plugin-not-configured' | 'prebuild-cancelled';
++type ErrorType = 'android-task-repo' | 'android-directory-not-found' | 'android-library-unknown-error' | 'android-library-not-found' | 'ios-artifacts-directory-unknown-error' | 'ios-directory-not-found' | 'ios-directory-unknown-error' | 'ios-hermes-framework-not-found' | 'ios-host-provided-without-prebuilds' | 'ios-pod-install-cancelled' | 'ios-prebuilds-spm-dep-missing' | 'ios-scheme-not-found' | 'ios-workspace-not-found' | 'ios-workspace-unknown-error' | 'package-not-installed' | 'plugin-not-configured' | 'prebuild-cancelled';
+ declare class CLIError {
+     private static readonly errorSymbol;
+     private static readonly errorMessages;
+diff --git a/packages/expo-brownfield/cli/build/utils/error.js b/packages/expo-brownfield/cli/build/utils/error.js
+index e29f074235ddf1..0ecd8cdd310ca8 100644
+--- a/packages/expo-brownfield/cli/build/utils/error.js
++++ b/packages/expo-brownfield/cli/build/utils/error.js
+@@ -11,6 +11,7 @@ class CLIError {
+         'ios-directory-not-found': 'Cannot find `ios` directory in the project',
+         'ios-directory-unknown-error': 'Unknown error occurred while finding brownfield iOS scheme',
+         'ios-hermes-framework-not-found': 'Could not find hermes framework in the project at path',
++        'ios-host-provided-without-prebuilds': 'ios.hostProvidedFrameworks is set but precompiled modules are not enabled. Without precompiled modules, third-party pods (like SDWebImage) are statically linked into the brownfield framework itself, so there is no separate xcframework to strip. Enable `ios.usePrecompiledModules: true` in expo-build-properties (run `pod install` afterwards), or remove ios.hostProvidedFrameworks from the expo-brownfield plugin config.',
+         'ios-pod-install-cancelled': 'Brownfield cannot be built without installing CocoaPods. Run `pod install` in the `ios/` and try again.',
+         'ios-prebuilds-spm-dep-missing': "Could not find a prebuilt xcframework for an SPM dependency declared by an Expo module. The brownfield Swift Package would ship without it, causing `Library not loaded: @rpath/...` at runtime in the host app. Either re-install the affected Expo module from a release published with bundled SPM deps (`bundleSharedDeps: true`), populate the monorepo's `packages/precompile/.build/.spm-deps/` cache, or set `EXPO_PRECOMPILED_MODULES_PATH` to a directory that contains `.spm-deps/<dep>/<flavor>/<dep>.xcframework`.",
+         'ios-scheme-not-found': 'Could not find brownfield iOS scheme',
+diff --git a/packages/expo-brownfield/cli/build/utils/error.js.map b/packages/expo-brownfield/cli/build/utils/error.js.map
+index fb222473f32bf4..7ba27170e3dd43 100644
+--- a/packages/expo-brownfield/cli/build/utils/error.js.map
++++ b/packages/expo-brownfield/cli/build/utils/error.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"error.js","sourceRoot":"","sources":["../../src/utils/error.ts"],"names":[],"mappings":";;AAkBA,MAAM,QAAQ;IACJ,MAAM,CAAU,WAAW,GAAW,GAAG,CAAC;IAC1C,MAAM,CAAU,aAAa,GAA8B;QACjE,mBAAmB,EAAE,mDAAmD;QACxE,6BAA6B,EAAE,gDAAgD;QAC/E,+BAA+B,EAAE,yDAAyD;QAC1F,2BAA2B,EAAE,kDAAkD;QAC/E,uCAAuC,EACrC,2DAA2D;QAC7D,yBAAyB,EAAE,4CAA4C;QACvE,6BAA6B,EAAE,4DAA4D;QAC3F,gCAAgC,EAAE,wDAAwD;QAC1F,2BAA2B,EACzB,yGAAyG;QAC3G,+BAA+B,EAC7B,igBAAigB;QACngB,sBAAsB,EAAE,sCAAsC;QAC9D,yBAAyB,EACvB,6KAA6K;QAC/K,6BAA6B,EAAE,+DAA+D;QAC9F,uBAAuB,EACrB,qGAAqG;QACvG,uBAAuB,EACrB,iGAAiG;QACnG,oBAAoB,EAAE,mEAAmE;KAC1F,CAAC;IAEK,MAAM,CAAC,MAAM,CAAC,KAAgB,EAAE,eAAuB,EAAE,EAAE,QAAiB,IAAI;QACrF,MAAM,OAAO,GAAG,YAAY;YAC1B,CAAC,CAAC,GAAG,IAAI,CAAC,aAAa,CAAC,KAAK,CAAC,KAAK,YAAY,EAAE;YACjD,CAAC,CAAC,IAAI,CAAC,aAAa,CAAC,KAAK,CAAC,CAAC;QAC9B,IAAI,CAAC,cAAc,CAAC,OAAO,EAAE,KAAK,CAAC,CAAC;IACtC,CAAC;IAEO,MAAM,CAAC,cAAc,CAAC,OAAe,EAAE,QAAiB,IAAI;QAClE,OAAO,CAAC,KAAK,CAAC,GAAG,IAAI,CAAC,WAAW,WAAW,OAAO,EAAE,CAAC,CAAC;QACvD,IAAI,KAAK,EAAE,CAAC;YACV,OAAO,CAAC,IAAI,CAAC,CAAC,CAAC,CAAC;QAClB,CAAC;IACH,CAAC;;AAGH,kBAAe,QAAQ,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"error.js","sourceRoot":"","sources":["../../src/utils/error.ts"],"names":[],"mappings":";;AAmBA,MAAM,QAAQ;IACJ,MAAM,CAAU,WAAW,GAAW,GAAG,CAAC;IAC1C,MAAM,CAAU,aAAa,GAA8B;QACjE,mBAAmB,EAAE,mDAAmD;QACxE,6BAA6B,EAAE,gDAAgD;QAC/E,+BAA+B,EAAE,yDAAyD;QAC1F,2BAA2B,EAAE,kDAAkD;QAC/E,uCAAuC,EACrC,2DAA2D;QAC7D,yBAAyB,EAAE,4CAA4C;QACvE,6BAA6B,EAAE,4DAA4D;QAC3F,gCAAgC,EAAE,wDAAwD;QAC1F,qCAAqC,EACnC,qaAAqa;QACva,2BAA2B,EACzB,yGAAyG;QAC3G,+BAA+B,EAC7B,igBAAigB;QACngB,sBAAsB,EAAE,sCAAsC;QAC9D,yBAAyB,EACvB,6KAA6K;QAC/K,6BAA6B,EAAE,+DAA+D;QAC9F,uBAAuB,EACrB,qGAAqG;QACvG,uBAAuB,EACrB,iGAAiG;QACnG,oBAAoB,EAAE,mEAAmE;KAC1F,CAAC;IAEK,MAAM,CAAC,MAAM,CAAC,KAAgB,EAAE,eAAuB,EAAE,EAAE,QAAiB,IAAI;QACrF,MAAM,OAAO,GAAG,YAAY;YAC1B,CAAC,CAAC,GAAG,IAAI,CAAC,aAAa,CAAC,KAAK,CAAC,KAAK,YAAY,EAAE;YACjD,CAAC,CAAC,IAAI,CAAC,aAAa,CAAC,KAAK,CAAC,CAAC;QAC9B,IAAI,CAAC,cAAc,CAAC,OAAO,EAAE,KAAK,CAAC,CAAC;IACtC,CAAC;IAEO,MAAM,CAAC,cAAc,CAAC,OAAe,EAAE,QAAiB,IAAI;QAClE,OAAO,CAAC,KAAK,CAAC,GAAG,IAAI,CAAC,WAAW,WAAW,OAAO,EAAE,CAAC,CAAC;QACvD,IAAI,KAAK,EAAE,CAAC;YACV,OAAO,CAAC,IAAI,CAAC,CAAC,CAAC,CAAC;QAClB,CAAC;IACH,CAAC;;AAGH,kBAAe,QAAQ,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/utils/ios.d.ts b/packages/expo-brownfield/cli/build/utils/ios.d.ts
+index 9d75a4f1b27306..972f1e98c22b8d 100644
+--- a/packages/expo-brownfield/cli/build/utils/ios.d.ts
++++ b/packages/expo-brownfield/cli/build/utils/ios.d.ts
+@@ -26,5 +26,6 @@ export declare const libraryProduct: (name: string, targets: string[]) => string
+ export declare const binaryTarget: (name: string) => string;
+ export declare const makeArtifactsDirectory: (config: IosConfig) => void;
+ export declare const printIosConfig: (config: IosConfig) => void;
++export declare const validateHostProvided: (config: IosConfig) => void;
+ export declare const shipFrameworks: (config: IosConfig) => Promise<void>;
+ export declare const shipSwiftPackage: (config: IosConfig) => Promise<void>;
+diff --git a/packages/expo-brownfield/cli/build/utils/ios.js b/packages/expo-brownfield/cli/build/utils/ios.js
+index 7cba0ec9b19719..d18aa0ddeaa911 100644
+--- a/packages/expo-brownfield/cli/build/utils/ios.js
++++ b/packages/expo-brownfield/cli/build/utils/ios.js
+@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+     return (mod && mod.__esModule) ? mod : { "default": mod };
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+-exports.shipSwiftPackage = exports.shipFrameworks = exports.printIosConfig = exports.makeArtifactsDirectory = exports.binaryTarget = exports.libraryProduct = exports.getSupportedPlatforms = exports.generatePackageMetadataFile = exports.findWorkspace = exports.findScheme = exports.createXCframework = exports.createSwiftPackage = exports.copyXCFrameworks = exports.buildFramework = exports.cleanUpArtifacts = exports.enumerateSourceBuiltDeps = void 0;
++exports.shipSwiftPackage = exports.shipFrameworks = exports.validateHostProvided = exports.printIosConfig = exports.makeArtifactsDirectory = exports.binaryTarget = exports.libraryProduct = exports.getSupportedPlatforms = exports.generatePackageMetadataFile = exports.findWorkspace = exports.findScheme = exports.createXCframework = exports.createSwiftPackage = exports.copyXCFrameworks = exports.buildFramework = exports.cleanUpArtifacts = exports.enumerateSourceBuiltDeps = void 0;
+ const spawn_async_1 = __importDefault(require("@expo/spawn-async"));
+ const chalk_1 = __importDefault(require("chalk"));
+ const node_fs_1 = __importDefault(require("node:fs"));
+@@ -38,6 +38,7 @@ const enumerateSourceBuiltDeps = async (config, alreadyCovered) => {
+         // at runtime rather than blocking the whole build.
+         return [];
+     }
++    const hostProvided = new Set(config.hostProvidedFrameworks);
+     const names = new Set();
+     for (const line of stdout.split('\n')) {
+         const match = line.trim().match(/^@rpath\/([^/]+)\.framework\//);
+@@ -45,7 +46,7 @@ const enumerateSourceBuiltDeps = async (config, alreadyCovered) => {
+             names.add(match[1]);
+         }
+     }
+-    return Array.from(names).filter((name) => name !== config.scheme && !alreadyCovered.has(name));
++    return Array.from(names).filter((name) => name !== config.scheme && !alreadyCovered.has(name) && !hostProvided.has(name));
+ };
+ exports.enumerateSourceBuiltDeps = enumerateSourceBuiltDeps;
+ /**
+@@ -198,7 +199,9 @@ const copyXCFrameworks = async (config, dest) => {
+         // Single source of truth: enumerates all three layers (pod → bundled-npm → shared
+         // `.spm-deps/`) and runs the strict completeness check. Failing here surfaces missing
+         // deps at packaging time (rather than as `Library not loaded: @rpath/...` at runtime).
+-        const modules = (0, precompiled_1.enumerateAllPrebuildModules)(process.cwd(), config.buildConfiguration);
++        // Host-provided frameworks are filtered out here so they're neither copied to the artifact
++        // dir nor counted as a missing SPM-dep.
++        const modules = (0, precompiled_1.enumerateAllPrebuildModules)(process.cwd(), config.buildConfiguration, config.hostProvidedFrameworks);
+         // Reconcile flavor once per pod — replace-xcframework.js extracts the whole tarball
+         // (main + sibling SPM-dep xcframeworks) in one shot, so re-running per-xcframework would
+         // unpack the same tarball repeatedly. SPM-dep entries (mainProduct === name, no artifacts/)
+@@ -245,7 +248,7 @@ exports.copyXCFrameworks = copyXCFrameworks;
+ const collectCoveredFrameworkNames = (config) => {
+     const covered = new Set([config.scheme, ...(0, precompiled_1.resolvedFixedXCFrameworks)()]);
+     if (config.usePrebuilds) {
+-        for (const module of (0, precompiled_1.enumerateAllPrebuildModules)(process.cwd(), config.buildConfiguration)) {
++        for (const module of (0, precompiled_1.enumerateAllPrebuildModules)(process.cwd(), config.buildConfiguration, config.hostProvidedFrameworks)) {
+             covered.add(module.name);
+         }
+     }
+@@ -378,7 +381,7 @@ const generatePackageMetadataFile = async (config, packagePath) => {
+     // xcframework that lands on disk is also declared as a `.binaryTarget` here (and vice-versa).
+     // The check fails fast — Package.swift never gets written if a declared SPM dep is missing.
+     const precompiledModules = config.usePrebuilds
+-        ? (0, precompiled_1.enumerateAllPrebuildModules)(process.cwd(), config.buildConfiguration).map(({ name }) => ({
++        ? (0, precompiled_1.enumerateAllPrebuildModules)(process.cwd(), config.buildConfiguration, config.hostProvidedFrameworks).map(({ name }) => ({
+             name,
+             targets: [name],
+         }))
+@@ -477,9 +480,95 @@ const printIosConfig = (config) => {
+         console.log(` - Package name: ${chalk_1.default.blue(config.output.packageName)}`);
+     }
+     console.log(` - Bundle precompiled modules: ${chalk_1.default.blue(config.usePrebuilds)}`);
++    if (config.hostProvidedFrameworks.length > 0) {
++        console.log(` - Host-provided frameworks: ${chalk_1.default.blue(config.hostProvidedFrameworks.join(', '))}`);
++    }
+     console.log();
+ };
+ exports.printIosConfig = printIosConfig;
++const validateHostProvided = (config) => {
++    if (config.hostProvidedFrameworks.length === 0) {
++        return;
++    }
++    if (!config.usePrebuilds) {
++        error_1.default.handle('ios-host-provided-without-prebuilds');
++        return;
++    }
++    // Use the same three-layer enumeration the build path uses, so a host-provided framework
++    // resolved out of `node_modules/<pkg>/prebuilds/output/` or `packages/precompile/.build/.spm-deps/`
++    // (rather than `ios/Pods/`) is still detected and doesn't spuriously trigger the unused-entry
++    // warning. `enumeratePrebuildModulesRaw` skips the host-provided filter and missing-dep check
++    // that `enumerateAllPrebuildModules` would otherwise apply.
++    const { modules } = (0, precompiled_1.enumeratePrebuildModulesRaw)(process.cwd(), config.buildConfiguration);
++    const pathsByName = new Map();
++    for (const module of modules) {
++        if (!pathsByName.has(module.name)) {
++            pathsByName.set(module.name, module.xcframeworkPath);
++        }
++    }
++    for (const name of config.hostProvidedFrameworks) {
++        const xcframeworkPath = pathsByName.get(name);
++        if (xcframeworkPath === undefined) {
++            console.warn(chalk_1.default.yellow(`expo-brownfield: '${name}' is listed in ios.hostProvidedFrameworks but no matching xcframework was found in ios/Pods/, node_modules/<pkg>/prebuilds/output/, or the shared .spm-deps/ cache. Remove it from the config, or re-run \`pod install\` if the source module isn't installed yet.`));
++            continue;
++        }
++        const version = readXcframeworkShortVersion(xcframeworkPath);
++        const versionLabel = version ?? 'unknown version';
++        console.log(chalk_1.default.dim(`expo-brownfield: excluding ${name} (${versionLabel}) — the host iOS app must provide ${name} at a compatible version at link time.`));
++    }
++};
++exports.validateHostProvided = validateHostProvided;
++/**
++ * Reads the first `Info.plist` we can find inside an xcframework and returns
++ * the `CFBundleShortVersionString` value.
++ */
++const readXcframeworkShortVersion = (xcframeworkPath) => {
++    let slices;
++    try {
++        slices = node_fs_1.default.readdirSync(xcframeworkPath, { withFileTypes: true });
++    }
++    catch {
++        return null;
++    }
++    for (const slice of slices) {
++        if (!slice.isDirectory()) {
++            continue;
++        }
++        const sliceDir = node_path_1.default.join(xcframeworkPath, slice.name);
++        let frameworks;
++        try {
++            frameworks = node_fs_1.default.readdirSync(sliceDir, { withFileTypes: true });
++        }
++        catch {
++            continue;
++        }
++        for (const fw of frameworks) {
++            if (!fw.isDirectory() || !fw.name.endsWith('.framework')) {
++                continue;
++            }
++            const infoPlistCandidates = [
++                node_path_1.default.join(sliceDir, fw.name, 'Info.plist'),
++                node_path_1.default.join(sliceDir, fw.name, 'Resources', 'Info.plist'),
++            ];
++            for (const plist of infoPlistCandidates) {
++                if (!node_fs_1.default.existsSync(plist)) {
++                    continue;
++                }
++                try {
++                    const xml = node_fs_1.default.readFileSync(plist, 'utf8');
++                    const match = xml.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/);
++                    if (match?.[1]) {
++                        return match[1].trim();
++                    }
++                }
++                catch {
++                    // Ignore — this is best-effort.
++                }
++            }
++        }
++    }
++    return null;
++};
+ const shipFrameworks = async (config) => {
+     // Create artifacts directory
+     await (0, exports.cleanUpArtifacts)(config);
+diff --git a/packages/expo-brownfield/cli/build/utils/ios.js.map b/packages/expo-brownfield/cli/build/utils/ios.js.map
+index 1f365f26a6e262..08c819b2f00ff8 100644
+--- a/packages/expo-brownfield/cli/build/utils/ios.js.map
++++ b/packages/expo-brownfield/cli/build/utils/ios.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"ios.js","sourceRoot":"","sources":["../../src/utils/ios.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"ios.js","sourceRoot":"","sources":["../../src/utils/ios.ts"],"names":[],"mappings":";;;;;;AAAA,oEAA2C;AAC3C,kDAA0B;AAC1B,sDAAyB;AACzB,0DAA6B;AAE7B,2CAA0C;AAC1C,oDAA+B;AAC/B,+CAKuB;AACvB,uCAAwC;AAGxC;;;;;;;;;;;GAWG;AACI,MAAM,wBAAwB,GAAG,KAAK,EAC3C,MAAiB,EACjB,cAA2B,EACR,EAAE;IACrB,MAAM,eAAe,GAAG,mBAAI,CAAC,IAAI,CAAC,MAAM,CAAC,SAAS,EAAE,GAAG,MAAM,CAAC,MAAM,YAAY,EAAE,MAAM,CAAC,MAAM,CAAC,CAAC;IACjG,IAAI,CAAC,iBAAE,CAAC,UAAU,CAAC,eAAe,CAAC,EAAE,CAAC;QACpC,OAAO,EAAE,CAAC;IACZ,CAAC;IAED,IAAI,MAAc,CAAC;IACnB,IAAI,CAAC;QACH,CAAC,EAAE,MAAM,EAAE,GAAG,MAAM,IAAA,qBAAU,EAAC,OAAO,EAAE,CAAC,IAAI,EAAE,eAAe,CAAC,CAAC,CAAC,CAAC;IACpE,CAAC;IAAC,MAAM,CAAC;QACP,yFAAyF;QACzF,mDAAmD;QACnD,OAAO,EAAE,CAAC;IACZ,CAAC;IAED,MAAM,YAAY,GAAG,IAAI,GAAG,CAAC,MAAM,CAAC,sBAAsB,CAAC,CAAC;IAC5D,MAAM,KAAK,GAAG,IAAI,GAAG,EAAU,CAAC;IAChC,KAAK,MAAM,IAAI,IAAI,MAAM,CAAC,KAAK,CAAC,IAAI,CAAC,EAAE,CAAC;QACtC,MAAM,KAAK,GAAG,IAAI,CAAC,IAAI,EAAE,CAAC,KAAK,CAAC,+BAA+B,CAAC,CAAC;QACjE,IAAI,KAAK,EAAE,CAAC,CAAC,CAAC,EAAE,CAAC;YACf,KAAK,CAAC,GAAG,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,CAAC;QACtB,CAAC;IACH,CAAC;IACD,OAAO,KAAK,CAAC,IAAI,CAAC,KAAK,CAAC,CAAC,MAAM,CAC7B,CAAC,IAAI,EAAE,EAAE,CAAC,IAAI,KAAK,MAAM,CAAC,MAAM,IAAI,CAAC,cAAc,CAAC,GAAG,CAAC,IAAI,CAAC,IAAI,CAAC,YAAY,CAAC,GAAG,CAAC,IAAI,CAAC,CACzF,CAAC;AACJ,CAAC,CAAC;AA7BW,QAAA,wBAAwB,4BA6BnC;AAEF;;;;;;;;;;;GAWG;AACH,MAAM,oBAAoB,GAAG,CAAC,aAAqB,EAAY,EAAE;IAC/D,MAAM,IAAI,GAAG,CAAC,YAAY,EAAE,aAAa,CAAC,CAAC;IAC3C,MAAM,QAAQ,GAAG,GAAG,aAAa,OAAO,CAAC;IACzC,IAAI,iBAAE,CAAC,UAAU,CAAC,QAAQ,CAAC,EAAE,CAAC;QAC5B,IAAI,CAAC,IAAI,CAAC,gBAAgB,EAAE,QAAQ,CAAC,CAAC;IACxC,CAAC;IACD,OAAO,IAAI,CAAC;AACd,CAAC,CAAC;AAEF;;;;;GAKG;AACH,MAAM,wBAAwB,GAAG,CAAC,SAAiB,EAAE,IAAY,EAAiB,EAAE;IAClF,MAAM,UAAU,GAAG;QACjB,mBAAI,CAAC,IAAI,CAAC,SAAS,EAAE,GAAG,IAAI,YAAY,CAAC;QACzC,mBAAI,CAAC,IAAI,CAAC,SAAS,EAAE,0BAA0B,EAAE,IAAI,EAAE,GAAG,IAAI,YAAY,CAAC;KAC5E,CAAC;IACF,OAAO,UAAU,CAAC,IAAI,CAAC,CAAC,SAAS,EAAE,EAAE,CAAC,iBAAE,CAAC,UAAU,CAAC,SAAS,CAAC,CAAC,IAAI,IAAI,CAAC;AAC1E,CAAC,CAAC;AAEF;;;;;GAKG;AACH,MAAM,0BAA0B,GAAG,KAAK,EACtC,MAAiB,EACjB,IAAY,EACZ,IAAY,EACM,EAAE;IACpB,MAAM,eAAe,GAAG,wBAAwB,CAAC,MAAM,CAAC,MAAM,EAAE,IAAI,CAAC,CAAC;IACtE,MAAM,kBAAkB,GAAG,wBAAwB,CAAC,MAAM,CAAC,SAAS,EAAE,IAAI,CAAC,CAAC;IAE5E,IAAI,CAAC,eAAe,IAAI,CAAC,kBAAkB,EAAE,CAAC;QAC5C,OAAO,CAAC,IAAI,CACV,6CAA6C,IAAI,kBAAkB,MAAM,CAAC,MAAM,aAAa;YAC3F,0FAA0F;YAC1F,+EAA+E,IAAI,cAAc,IAAI,IAAI,CAC5G,CAAC;QACF,OAAO,KAAK,CAAC;IACf,CAAC;IAED,MAAM,UAAU,GAAG,mBAAI,CAAC,IAAI,CAAC,IAAI,EAAE,GAAG,IAAI,cAAc,CAAC,CAAC;IAC1D,IAAI,iBAAE,CAAC,UAAU,CAAC,UAAU,CAAC,EAAE,CAAC;QAC9B,iBAAE,CAAC,MAAM,CAAC,UAAU,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,KAAK,EAAE,IAAI,EAAE,CAAC,CAAC;IAC1D,CAAC;IAED,MAAM,IAAI,GAAG;QACX,qBAAqB;QACrB,GAAG,oBAAoB,CAAC,eAAe,CAAC;QACxC,GAAG,oBAAoB,CAAC,kBAAkB,CAAC;QAC3C,SAAS;QACT,UAAU;KACX,CAAC;IAEF,IAAI,MAAM,CAAC,MAAM,EAAE,CAAC;QAClB,OAAO,CAAC,GAAG,CAAC,cAAc,IAAI,CAAC,IAAI,CAAC,GAAG,CAAC,EAAE,CAAC,CAAC;QAC5C,OAAO,IAAI,CAAC;IACd,CAAC;IAED,MAAM,IAAA,qBAAU,EAAC,YAAY,EAAE,IAAI,EAAE,EAAE,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,MAAM,EAAE,CAAC,CAAC;IACrF,OAAO,IAAI,CAAC;AACd,CAAC,CAAC;AAEK,MAAM,gBAAgB,GAAG,KAAK,EAAE,MAAiB,EAAE,EAAE;IAC1D,IAAI,MAAM,CAAC,MAAM,EAAE,CAAC;QAClB,OAAO,CAAC,GAAG,CAAC,gCAAgC,CAAC,CAAC;QAC9C,OAAO;IACT,CAAC;IAED,OAAO,IAAA,qBAAW,EAAC;QACjB,SAAS,EAAE,KAAK,IAAI,EAAE;YACpB,IAAI,CAAC,iBAAE,CAAC,UAAU,CAAC,MAAM,CAAC,SAAS,CAAC,EAAE,CAAC;gBACrC,OAAO;YACT,CAAC;YAED,iBAAE,CAAC,WAAW,CAAC,MAAM,CAAC,SAAS,CAAC,CAAC,OAAO,CAAC,CAAC,IAAI,EAAE,EAAE;gBAChD,MAAM,QAAQ,GAAG,GAAG,MAAM,CAAC,SAAS,IAAI,IAAI,EAAE,CAAC;gBAC/C,iBAAE,CAAC,MAAM,CAAC,QAAQ,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,KAAK,EAAE,IAAI,EAAE,CAAC,CAAC;YACxD,CAAC,CAAC,CAAC;QACL,CAAC;QACD,aAAa,EAAE,mCAAmC;QAClD,cAAc,EAAE,0CAA0C;QAC1D,YAAY,EAAE,uCAAuC;KACtD,CAAC,CAAC;AACL,CAAC,CAAC;AArBW,QAAA,gBAAgB,oBAqB3B;AAEK,MAAM,cAAc,GAAG,KAAK,EAAE,MAAiB,EAAE,EAAE;IACxD,MAAM,IAAI,GAAG;QACX,YAAY;QACZ,MAAM,CAAC,SAAS;QAChB,SAAS;QACT,MAAM,CAAC,MAAM;QACb,kBAAkB;QAClB,MAAM,CAAC,eAAe;QACtB,cAAc;QACd,2BAA2B;QAC3B,cAAc;QACd,kCAAkC;QAClC,gBAAgB;QAChB,MAAM,CAAC,kBAAkB;QACzB,sEAAsE;QACtE,kEAAkE;QAClE,yEAAyE;QACzE,sEAAsE;QACtE,0CAA0C;KAC3C,CAAC;IAEF,IAAI,MAAM,CAAC,MAAM,EAAE,CAAC;QAClB,OAAO,CAAC,GAAG,CAAC,cAAc,IAAI,CAAC,IAAI,CAAC,GAAG,CAAC,EAAE,CAAC,CAAC;QAC5C,OAAO;IACT,CAAC;IAED,OAAO,IAAA,qBAAW,EAAC;QACjB,SAAS,EAAE,GAAG,EAAE,CAAC,IAAA,qBAAU,EAAC,YAAY,EAAE,IAAI,EAAE,EAAE,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,MAAM,EAAE,CAAC;QAC/F,aAAa,EAAE,wBAAwB;QACvC,cAAc,EAAE,+BAA+B;QAC/C,YAAY,EAAE,4BAA4B;QAC1C,OAAO,EAAE,MAAM,CAAC,OAAO;KACxB,CAAC,CAAC;AACL,CAAC,CAAC;AAjCW,QAAA,cAAc,kBAiCzB;AAEK,MAAM,gBAAgB,GAAG,KAAK,EAAE,MAAiB,EAAE,IAAY,EAAE,EAAE;IACxE,OAAO,CAAC,GAAG,CAAC,0BAA0B,EAAE,IAAI,CAAC,CAAC;IAE9C,IAAI,MAAM,CAAC,MAAM,EAAE,CAAC;QAClB,OAAO;IACT,CAAC;IAED,MAAM,YAAY,GAAG,MAAM,CAAC,MAAM,CAAC,uBAAW,CAAC,CAAC;IAChD,KAAK,MAAM,WAAW,IAAI,YAAY,EAAE,CAAC;QACvC,IAAI,iBAAE,CAAC,UAAU,CAAC,WAAW,CAAC,IAAI,CAAC,EAAE,CAAC;YACpC,MAAM,IAAA,qBAAW,EAAC;gBAChB,SAAS,EAAE,KAAK,IAAI,EAAE,CACpB,iBAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,WAAW,CAAC,IAAI,EAAE,mBAAI,CAAC,IAAI,CAAC,IAAI,EAAE,GAAG,WAAW,CAAC,IAAI,cAAc,CAAC,EAAE;oBACnF,KAAK,EAAE,IAAI;oBACX,SAAS,EAAE,IAAI;iBAChB,CAAC;gBACJ,aAAa,EAAE,WAAW,WAAW,CAAC,IAAI,gCAAgC;gBAC1E,cAAc,EAAE,WAAW,WAAW,CAAC,IAAI,uCAAuC;gBAClF,YAAY,EAAE,WAAW,WAAW,CAAC,IAAI,oCAAoC;gBAC7E,OAAO,EAAE,MAAM,CAAC,OAAO;aACxB,CAAC,CAAC;QACL,CAAC;aAAM,IAAI,WAAW,CAAC,IAAI,KAAK,uBAAW,CAAC,MAAM,CAAC,IAAI,EAAE,CAAC;YACxD,eAAQ,CAAC,MAAM,CAAC,gCAAgC,EAAE,WAAW,CAAC,IAAI,CAAC,CAAC;QACtE,CAAC;aAAM,CAAC;YACN,OAAO,CAAC,IAAI,CACV,GAAG,WAAW,CAAC,IAAI,8BAA8B,WAAW,CAAC,IAAI,oCAAoC,CACtG,CAAC;QACJ,CAAC;IACH,CAAC;IAED,IAAI,MAAM,CAAC,YAAY,EAAE,CAAC;QACxB,kFAAkF;QAClF,sFAAsF;QACtF,uFAAuF;QACvF,2FAA2F;QAC3F,wCAAwC;QACxC,MAAM,OAAO,GAAG,IAAA,yCAA2B,EACzC,OAAO,CAAC,GAAG,EAAE,EACb,MAAM,CAAC,kBAAkB,EACzB,MAAM,CAAC,sBAAsB,CAC9B,CAAC;QAEF,oFAAoF;QACpF,yFAAyF;QACzF,4FAA4F;QAC5F,2DAA2D;QAC3D,MAAM,cAAc,GAAG,IAAI,GAAG,EAAU,CAAC;QACzC,KAAK,MAAM,MAAM,IAAI,OAAO,EAAE,CAAC;YAC7B,IAAI,CAAC,cAAc,CAAC,GAAG,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC;gBACvC,cAAc,CAAC,GAAG,CAAC,MAAM,CAAC,MAAM,CAAC,CAAC;gBAClC,MAAM,IAAA,iCAAmB,EAAC,MAAM,EAAE,MAAM,CAAC,kBAAkB,EAAE,EAAE,OAAO,EAAE,MAAM,CAAC,OAAO,EAAE,CAAC,CAAC;YAC5F,CAAC;YACD,MAAM,IAAA,qBAAW,EAAC;gBAChB,SAAS,EAAE,KAAK,IAAI,EAAE,CACpB,iBAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,MAAM,CAAC,eAAe,EAAE,mBAAI,CAAC,IAAI,CAAC,IAAI,EAAE,GAAG,MAAM,CAAC,IAAI,cAAc,CAAC,EAAE;oBACpF,KAAK,EAAE,IAAI;oBACX,SAAS,EAAE,IAAI;iBAChB,CAAC;gBACJ,aAAa,EAAE,WAAW,MAAM,CAAC,IAAI,gCAAgC;gBACrE,cAAc,EAAE,WAAW,MAAM,CAAC,IAAI,uCAAuC;gBAC7E,YAAY,EAAE,WAAW,MAAM,CAAC,IAAI,oCAAoC;gBACxE,OAAO,EAAE,MAAM,CAAC,OAAO;aACxB,CAAC,CAAC;QACL,CAAC;IACH,CAAC;IAED,iFAAiF;IACjF,qFAAqF;IACrF,qEAAqE;IACrE,MAAM,cAAc,GAAG,4BAA4B,CAAC,MAAM,CAAC,CAAC;IAC5D,MAAM,eAAe,GAAG,MAAM,IAAA,gCAAwB,EAAC,MAAM,EAAE,cAAc,CAAC,CAAC;IAC/E,KAAK,MAAM,OAAO,IAAI,eAAe,EAAE,CAAC;QACtC,MAAM,IAAA,qBAAW,EAAC;YAChB,SAAS,EAAE,GAAG,EAAE,CAAC,0BAA0B,CAAC,MAAM,EAAE,OAAO,EAAE,IAAI,CAAC;YAClE,aAAa,EAAE,yBAAyB,OAAO,oBAAoB;YACnE,cAAc,EAAE,yBAAyB,OAAO,2BAA2B;YAC3E,YAAY,EAAE,yBAAyB,OAAO,wBAAwB;YACtE,OAAO,EAAE,MAAM,CAAC,OAAO;SACxB,CAAC,CAAC;IACL,CAAC;AACH,CAAC,CAAC;AAhFW,QAAA,gBAAgB,oBAgF3B;AAEF;;;;GAIG;AACH,MAAM,4BAA4B,GAAG,CAAC,MAAiB,EAAe,EAAE;IACtE,MAAM,OAAO,GAAG,IAAI,GAAG,CAAS,CAAC,MAAM,CAAC,MAAM,EAAE,GAAG,IAAA,uCAAyB,GAAE,CAAC,CAAC,CAAC;IACjF,IAAI,MAAM,CAAC,YAAY,EAAE,CAAC;QACxB,KAAK,MAAM,MAAM,IAAI,IAAA,yCAA2B,EAC9C,OAAO,CAAC,GAAG,EAAE,EACb,MAAM,CAAC,kBAAkB,EACzB,MAAM,CAAC,sBAAsB,CAC9B,EAAE,CAAC;YACF,OAAO,CAAC,GAAG,CAAC,MAAM,CAAC,IAAI,CAAC,CAAC;QAC3B,CAAC;IACH,CAAC;IACD,OAAO,OAAO,CAAC;AACjB,CAAC,CAAC;AAEK,MAAM,kBAAkB,GAAG,KAAK,EAAE,MAAiB,EAAmB,EAAE;IAC7E,IAAI,MAAM,CAAC,MAAM,IAAI,MAAM,CAAC,MAAM,KAAK,YAAY,EAAE,CAAC;QACpD,OAAO,CAAC,GAAG,CACT,qCAAqC,MAAM,CAAC,MAAM,CAAC,WAAW,aAAa,MAAM,CAAC,SAAS,EAAE,CAC9F,CAAC;QACF,OAAO,EAAE,CAAC;IACZ,CAAC;IAED,OAAO,MAAM,IAAA,qBAAW,EAAC;QACvB,SAAS,EAAE,KAAK,IAAI,EAAE;YACpB,IAAI,MAAM,CAAC,MAAM,KAAK,YAAY,EAAE,CAAC;gBACnC,OAAO,EAAE,CAAC;YACZ,CAAC;YAED,MAAM,WAAW,GAAG,mBAAI,CAAC,IAAI,CAAC,MAAM,CAAC,SAAS,EAAE,MAAM,CAAC,MAAM,CAAC,WAAW,CAAC,CAAC;YAC3E,MAAM,iBAAE,CAAC,QAAQ,CAAC,KAAK,CAAC,WAAW,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;YAE1D,8BAA8B;YAC9B,MAAM,eAAe,GAAG,mBAAI,CAAC,IAAI,CAAC,WAAW,EAAE,cAAc,CAAC,CAAC;YAC/D,MAAM,iBAAE,CAAC,QAAQ,CAAC,KAAK,CAAC,eAAe,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;YAE9D,MAAM,IAAA,mCAA2B,EAAC,MAAM,EAAE,WAAW,CAAC,CAAC;YAEvD,OAAO,WAAW,CAAC;QACrB,CAAC;QACD,aAAa,EAAE,2BAA2B;QAC1C,cAAc,EAAE,kCAAkC;QAClD,YAAY,EAAE,+BAA+B;QAC7C,OAAO,EAAE,MAAM,CAAC,OAAO;KACxB,CAAC,CAAC;AACL,CAAC,CAAC;AA9BW,QAAA,kBAAkB,sBA8B7B;AAEK,MAAM,iBAAiB,GAAG,KAAK,EAAE,MAAiB,EAAE,EAAU,EAAE,EAAE;IACvE,MAAM,aAAa,GAAG,GAAG,MAAM,CAAC,MAAM,cAAc,CAAC;IACrD,MAAM,UAAU,GAAG,mBAAI,CAAC,IAAI,CAAC,EAAE,EAAE,aAAa,CAAC,CAAC;IAEhD,MAAM,IAAI,GAAG;QACX,qBAAqB;QACrB,GAAG,oBAAoB,CAAC,GAAG,MAAM,CAAC,MAAM,IAAI,MAAM,CAAC,MAAM,YAAY,CAAC;QACtE,GAAG,oBAAoB,CAAC,GAAG,MAAM,CAAC,SAAS,IAAI,MAAM,CAAC,MAAM,YAAY,CAAC;QACzE,SAAS;QACT,UAAU;KACX,CAAC;IAEF,IAAI,MAAM,CAAC,MAAM,EAAE,CAAC;QAClB,OAAO,CAAC,GAAG,CAAC,cAAc,IAAI,CAAC,IAAI,CAAC,GAAG,CAAC,EAAE,CAAC,CAAC;QAC5C,OAAO;IACT,CAAC;IAED,OAAO,IAAA,qBAAW,EAAC;QACjB,SAAS,EAAE,GAAG,EAAE,CAAC,IAAA,qBAAU,EAAC,YAAY,EAAE,IAAI,EAAE,EAAE,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,MAAM,EAAE,CAAC;QAC/F,aAAa,EAAE,4CAA4C;QAC3D,cAAc,EAAE,mDAAmD;QACnE,YAAY,EAAE,gDAAgD;QAC9D,OAAO,EAAE,MAAM,CAAC,OAAO;KACxB,CAAC,CAAC;AACL,CAAC,CAAC;AAxBW,QAAA,iBAAiB,qBAwB5B;AAEK,MAAM,UAAU,GAAG,GAAuB,EAAE;IACjD,IAAI,CAAC;QACH,MAAM,OAAO,GAAG,mBAAI,CAAC,IAAI,CAAC,OAAO,CAAC,GAAG,EAAE,EAAE,KAAK,CAAC,CAAC;QAChD,IAAI,CAAC,iBAAE,CAAC,UAAU,CAAC,OAAO,CAAC,EAAE,CAAC;YAC5B,eAAQ,CAAC,MAAM,CAAC,yBAAyB,CAAC,CAAC;QAC7C,CAAC;QAED,MAAM,cAAc,GAAG,iBAAE;aACtB,WAAW,CAAC,OAAO,EAAE,EAAE,aAAa,EAAE,IAAI,EAAE,CAAC;aAC7C,MAAM,CAAC,CAAC,IAAI,EAAE,EAAE,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;QACxC,MAAM,MAAM,GAAG,cAAc,CAAC,IAAI,CAAC,CAAC,SAAS,EAAE,EAAE;YAC/C,MAAM,aAAa,GAAG,mBAAI,CAAC,OAAO,CAAC,OAAO,EAAE,SAAS,CAAC,IAAI,CAAC,CAAC;YAC5D,MAAM,WAAW,GAAG,CAAC,aAAa,CAAC,CAAC;YAEpC,IAAI,MAA0B,CAAC;YAC/B,OAAO,CAAC,MAAM,GAAG,WAAW,CAAC,KAAK,EAAE,CAAC,IAAI,IAAI,EAAE,CAAC;gBAC9C,MAAM,OAAO,GAAG,iBAAE,CAAC,WAAW,CAAC,MAAM,EAAE,EAAE,aAAa,EAAE,IAAI,EAAE,CAAC,CAAC;gBAChE,KAAK,MAAM,KAAK,IAAI,OAAO,EAAE,CAAC;oBAC5B,MAAM,SAAS,GAAG,mBAAI,CAAC,IAAI,CAAC,MAAM,EAAE,KAAK,CAAC,IAAI,CAAC,CAAC;oBAChD,IAAI,KAAK,CAAC,WAAW,EAAE,EAAE,CAAC;wBACxB,WAAW,CAAC,IAAI,CAAC,SAAS,CAAC,CAAC;oBAC9B,CAAC;yBAAM,IAAI,KAAK,CAAC,MAAM,EAAE,EAAE,CAAC;wBAC1B,IAAI,KAAK,CAAC,IAAI,KAAK,8BAA8B;4BAAE,OAAO,IAAI,CAAC;oBACjE,CAAC;gBACH,CAAC;YACH,CAAC;YAED,OAAO,KAAK,CAAC;QACf,CAAC,CAAC,CAAC;QAEH,IAAI,MAAM,EAAE,CAAC;YACX,OAAO,MAAM,CAAC,IAAI,CAAC;QACrB,CAAC;QAED,eAAQ,CAAC,MAAM,CAAC,sBAAsB,CAAC,CAAC;IAC1C,CAAC;IAAC,OAAO,KAAK,EAAE,CAAC;QACf,MAAM,YAAY,GAAG,KAAK,YAAY,KAAK,CAAC,CAAC,CAAC,KAAK,CAAC,OAAO,CAAC,CAAC,CAAC,EAAE,CAAC;QACjE,eAAQ,CAAC,MAAM,CAAC,6BAA6B,EAAE,YAAY,CAAC,CAAC;IAC/D,CAAC;IAED,OAAO;AACT,CAAC,CAAC;AAzCW,QAAA,UAAU,cAyCrB;AAEK,MAAM,aAAa,GAAG,CAAC,MAAe,EAAsB,EAAE;IACnE,mDAAmD;IACnD,8BAA8B;IAC9B,IAAI,MAAM,EAAE,CAAC;QACX,OAAO,mBAAI,CAAC,IAAI,CAAC,OAAO,CAAC,GAAG,EAAE,EAAE,mCAAmC,CAAC,CAAC;IACvE,CAAC;IAED,IAAI,CAAC;QACH,MAAM,OAAO,GAAG,mBAAI,CAAC,IAAI,CAAC,OAAO,CAAC,GAAG,EAAE,EAAE,KAAK,CAAC,CAAC;QAChD,IAAI,CAAC,iBAAE,CAAC,UAAU,CAAC,OAAO,CAAC,EAAE,CAAC;YAC5B,eAAQ,CAAC,MAAM,CAAC,yBAAyB,CAAC,CAAC;QAC7C,CAAC;QAED,MAAM,KAAK,GAAG,iBAAE,CAAC,WAAW,CAAC,OAAO,EAAE,EAAE,aAAa,EAAE,IAAI,EAAE,CAAC,CAAC;QAC/D,MAAM,SAAS,GAAG,KAAK,CAAC,IAAI,CAAC,CAAC,IAAI,EAAE,EAAE,CAAC,IAAI,CAAC,IAAI,CAAC,QAAQ,CAAC,cAAc,CAAC,CAAC,CAAC;QAC3E,IAAI,SAAS,EAAE,CAAC;YACd,OAAO,mBAAI,CAAC,IAAI,CAAC,OAAO,EAAE,SAAS,CAAC,IAAI,CAAC,CAAC;QAC5C,CAAC;QAED,eAAQ,CAAC,MAAM,CAAC,yBAAyB,CAAC,CAAC;IAC7C,CAAC;IAAC,OAAO,KAAK,EAAE,CAAC;QACf,MAAM,YAAY,GAAG,KAAK,YAAY,KAAK,CAAC,CAAC,CAAC,KAAK,CAAC,OAAO,CAAC,CAAC,CAAC,EAAE,CAAC;QACjE,eAAQ,CAAC,MAAM,CAAC,6BAA6B,EAAE,YAAY,CAAC,CAAC;IAC/D,CAAC;IAED,OAAO;AACT,CAAC,CAAC;AA1BW,QAAA,aAAa,iBA0BxB;AAEK,MAAM,2BAA2B,GAAG,KAAK,EAAE,MAAiB,EAAE,WAAmB,EAAE,EAAE;IAC1F,IAAI,MAAM,CAAC,MAAM,KAAK,YAAY,EAAE,CAAC;QACnC,OAAO;IACT,CAAC;IAED,MAAM,kBAAkB,GAAG,iBAAE,CAAC,UAAU,CAAC,uBAAW,CAAC,KAAK,CAAC,IAAI,CAAC,CAAC;IACjE,MAAM,cAAc,GAAG;QACrB,EAAE,IAAI,EAAE,MAAM,CAAC,MAAM,EAAE,OAAO,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE;QACjD,EAAE,IAAI,EAAE,UAAU,EAAE,OAAO,EAAE,CAAC,UAAU,CAAC,EAAE;QAC3C,GAAG,CAAC,kBAAkB,CAAC,CAAC,CAAC,CAAC,uBAAW,CAAC,KAAK,EAAE,uBAAW,CAAC,iBAAiB,CAAC,CAAC,CAAC,CAAC,EAAE,CAAC;KAClF,CAAC;IAEF,uFAAuF;IACvF,8FAA8F;IAC9F,4FAA4F;IAC5F,MAAM,kBAAkB,GAAG,MAAM,CAAC,YAAY;QAC5C,CAAC,CAAC,IAAA,yCAA2B,EACzB,OAAO,CAAC,GAAG,EAAE,EACb,MAAM,CAAC,kBAAkB,EACzB,MAAM,CAAC,sBAAsB,CAC9B,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,EAAE,EAAE,EAAE,CAAC,CAAC;YACnB,IAAI;YACJ,OAAO,EAAE,CAAC,IAAI,CAAC;SAChB,CAAC,CAAC;QACL,CAAC,CAAC,EAAE,CAAC;IAEP,0FAA0F;IAC1F,oFAAoF;IACpF,6DAA6D;IAC7D,MAAM,mBAAmB,GAAG,MAAM,IAAA,gCAAwB,EACxD,MAAM,EACN,IAAI,GAAG,CAAC;QACN,MAAM,CAAC,MAAM;QACb,GAAG,cAAc,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,EAAE,EAAE,EAAE,CAAC,IAAI,CAAC;QACzC,GAAG,kBAAkB,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,EAAE,EAAE,EAAE,CAAC,IAAI,CAAC;KAC9C,CAAC,CACH,CAAC;IACF,MAAM,eAAe,GAAG,mBAAmB,CAAC,GAAG,CAAC,CAAC,IAAI,EAAE,EAAE,CAAC,CAAC,EAAE,IAAI,EAAE,OAAO,EAAE,CAAC,IAAI,CAAC,EAAE,CAAC,CAAC,CAAC;IAEvF,MAAM,YAAY,GAAG,CAAC,GAAG,cAAc,EAAE,GAAG,kBAAkB,EAAE,GAAG,eAAe,CAAC,CAAC;IAEpF,2FAA2F;IAC3F,4FAA4F;IAC5F,mFAAmF;IACnF,MAAM,QAAQ,GAAG,MAAM,CAAC,YAAY;QAClC,CAAC,CAAC;YACE,IAAA,sBAAc,EACZ,MAAM,CAAC,MAAM,CAAC,WAAW,EACzB,YAAY,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,EAAE,EAAE,EAAE,CAAC,IAAI,CAAC,CACrC;SACF;QACH,CAAC,CAAC,YAAY,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,EAAE,OAAO,EAAE,EAAE,EAAE,CAAC,IAAA,sBAAc,EAAC,IAAI,EAAE,OAAO,CAAC,CAAC,CAAC;IAE3E,MAAM,QAAQ,GAAG;;;;aAIN,MAAM,CAAC,MAAM,CAAC,WAAW;kBACpB,CAAC,MAAM,IAAA,6BAAqB,EAAC,MAAM,CAAC,CAAC,CAAC,IAAI,CAAC,GAAG,CAAC;;EAE/D,QAAQ,CAAC,IAAI,CAAC,IAAI,CAAC;;;EAGnB,YAAY,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,EAAE,EAAE,EAAE,CAAC,IAAA,oBAAY,EAAC,IAAI,CAAC,CAAC,CAAC,IAAI,CAAC,IAAI,CAAC;;;CAG9D,CAAC;IAEA,MAAM,iBAAE,CAAC,QAAQ,CAAC,SAAS,CAAC,mBAAI,CAAC,IAAI,CAAC,WAAW,EAAE,eAAe,CAAC,EAAE,QAAQ,CAAC,CAAC;AACjF,CAAC,CAAC;AArEW,QAAA,2BAA2B,+BAqEtC;AAEK,MAAM,qBAAqB,GAAG,KAAK,EAAE,MAAiB,EAAqB,EAAE;IAClF,6DAA6D;IAC7D,MAAM,IAAI,GAAG,CAAC,YAAY,EAAE,MAAM,CAAC,SAAS,EAAE,SAAS,EAAE,MAAM,CAAC,MAAM,EAAE,oBAAoB,CAAC,CAAC;IAE9F,IAAI,CAAC;QACH,MAAM,EAAE,MAAM,EAAE,GAAG,MAAM,IAAA,qBAAU,EAAC,YAAY,EAAE,IAAI,CAAC,CAAC;QACxD,MAAM,KAAK,GAAG,yCAAyC,CAAC;QACxD,MAAM,KAAK,GAAG,KAAK,CAAC,IAAI,CAAC,MAAM,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,IAAI,EAAE,CAAC;QAC9C,IAAI,KAAK,EAAE,CAAC;YACV,OAAO,CAAC,SAAS,KAAK,IAAI,CAAC,CAAC;QAC9B,CAAC;aAAM,CAAC;YACN,MAAM,IAAI,KAAK,EAAE,CAAC;QACpB,CAAC;IACH,CAAC;IAAC,OAAO,KAAK,EAAE,CAAC;QACf,OAAO,CAAC,IAAI,CACV,sFAAsF,CACvF,CAAC;IACJ,CAAC;IAED,wCAAwC;IACxC,OAAO,CAAC,YAAY,CAAC,CAAC;AACxB,CAAC,CAAC;AArBW,QAAA,qBAAqB,yBAqBhC;AAEK,MAAM,cAAc,GAAG,CAAC,IAAY,EAAE,OAAiB,EAAE,EAAE;IAChE,OAAO;iBACQ,IAAI;qBACA,OAAO,CAAC,IAAI,CAAC,MAAM,CAAC;SAChC,CAAC;AACV,CAAC,CAAC;AALW,QAAA,cAAc,kBAKzB;AAEK,MAAM,YAAY,GAAG,CAAC,IAAY,EAAE,EAAE;IAC3C,OAAO;iBACQ,IAAI;8BACS,IAAI;SACzB,CAAC;AACV,CAAC,CAAC;AALW,QAAA,YAAY,gBAKvB;AAEK,MAAM,sBAAsB,GAAG,CAAC,MAAiB,EAAE,EAAE;IAC1D,IAAI,CAAC;QACH,IAAI,CAAC,iBAAE,CAAC,UAAU,CAAC,MAAM,CAAC,SAAS,CAAC,EAAE,CAAC;YACrC,iBAAE,CAAC,SAAS,CAAC,MAAM,CAAC,SAAS,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;QACtD,CAAC;IACH,CAAC;IAAC,OAAO,KAAK,EAAE,CAAC;QACf,MAAM,YAAY,GAAG,KAAK,YAAY,KAAK,CAAC,CAAC,CAAC,KAAK,CAAC,OAAO,CAAC,CAAC,CAAC,EAAE,CAAC;QACjE,eAAQ,CAAC,MAAM,CAAC,uCAAuC,EAAE,YAAY,CAAC,CAAC;IACzE,CAAC;AACH,CAAC,CAAC;AATW,QAAA,sBAAsB,0BASjC;AAEK,MAAM,cAAc,GAAG,CAAC,MAAiB,EAAE,EAAE;IAClD,OAAO,CAAC,GAAG,CAAC,eAAK,CAAC,IAAI,CAAC,8BAA8B,CAAC,CAAC,CAAC;IACxD,OAAO,CAAC,GAAG,CAAC,2BAA2B,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,kBAAkB,CAAC,EAAE,CAAC,CAAC;IAChF,OAAO,CAAC,GAAG,CAAC,cAAc,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC,CAAC;IACvD,OAAO,CAAC,GAAG,CAAC,iBAAiB,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,SAAS,CAAC,EAAE,CAAC,CAAC;IAC7D,OAAO,CAAC,GAAG,CAAC,eAAe,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC,CAAC;IACxD,OAAO,CAAC,GAAG,CAAC,eAAe,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,OAAO,CAAC,EAAE,CAAC,CAAC;IACzD,OAAO,CAAC,GAAG,CAAC,sBAAsB,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,SAAS,CAAC,EAAE,CAAC,CAAC;IAElE,IAAI,MAAM,CAAC,MAAM,KAAK,YAAY,EAAE,CAAC;QACnC,OAAO,CAAC,GAAG,CAAC,oBAAoB,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,MAAM,CAAC,WAAW,CAAC,EAAE,CAAC,CAAC;IAC3E,CAAC;IACD,OAAO,CAAC,GAAG,CAAC,kCAAkC,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,YAAY,CAAC,EAAE,CAAC,CAAC;IACjF,IAAI,MAAM,CAAC,sBAAsB,CAAC,MAAM,GAAG,CAAC,EAAE,CAAC;QAC7C,OAAO,CAAC,GAAG,CACT,gCAAgC,eAAK,CAAC,IAAI,CAAC,MAAM,CAAC,sBAAsB,CAAC,IAAI,CAAC,IAAI,CAAC,CAAC,EAAE,CACvF,CAAC;IACJ,CAAC;IAED,OAAO,CAAC,GAAG,EAAE,CAAC;AAChB,CAAC,CAAC;AApBW,QAAA,cAAc,kBAoBzB;AAEK,MAAM,oBAAoB,GAAG,CAAC,MAAiB,EAAQ,EAAE;IAC9D,IAAI,MAAM,CAAC,sBAAsB,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;QAC/C,OAAO;IACT,CAAC;IAED,IAAI,CAAC,MAAM,CAAC,YAAY,EAAE,CAAC;QACzB,eAAQ,CAAC,MAAM,CAAC,qCAAqC,CAAC,CAAC;QACvD,OAAO;IACT,CAAC;IAED,yFAAyF;IACzF,oGAAoG;IACpG,8FAA8F;IAC9F,8FAA8F;IAC9F,4DAA4D;IAC5D,MAAM,EAAE,OAAO,EAAE,GAAG,IAAA,yCAA2B,EAAC,OAAO,CAAC,GAAG,EAAE,EAAE,MAAM,CAAC,kBAAkB,CAAC,CAAC;IAC1F,MAAM,WAAW,GAAG,IAAI,GAAG,EAAkB,CAAC;IAC9C,KAAK,MAAM,MAAM,IAAI,OAAO,EAAE,CAAC;QAC7B,IAAI,CAAC,WAAW,CAAC,GAAG,CAAC,MAAM,CAAC,IAAI,CAAC,EAAE,CAAC;YAClC,WAAW,CAAC,GAAG,CAAC,MAAM,CAAC,IAAI,EAAE,MAAM,CAAC,eAAe,CAAC,CAAC;QACvD,CAAC;IACH,CAAC;IAED,KAAK,MAAM,IAAI,IAAI,MAAM,CAAC,sBAAsB,EAAE,CAAC;QACjD,MAAM,eAAe,GAAG,WAAW,CAAC,GAAG,CAAC,IAAI,CAAC,CAAC;QAC9C,IAAI,eAAe,KAAK,SAAS,EAAE,CAAC;YAClC,OAAO,CAAC,IAAI,CACV,eAAK,CAAC,MAAM,CACV,qBAAqB,IAAI,oQAAoQ,CAC9R,CACF,CAAC;YACF,SAAS;QACX,CAAC;QACD,MAAM,OAAO,GAAG,2BAA2B,CAAC,eAAe,CAAC,CAAC;QAC7D,MAAM,YAAY,GAAG,OAAO,IAAI,iBAAiB,CAAC;QAClD,OAAO,CAAC,GAAG,CACT,eAAK,CAAC,GAAG,CACP,8BAA8B,IAAI,KAAK,YAAY,qCAAqC,IAAI,wCAAwC,CACrI,CACF,CAAC;IACJ,CAAC;AACH,CAAC,CAAC;AAzCW,QAAA,oBAAoB,wBAyC/B;AAEF;;;GAGG;AACH,MAAM,2BAA2B,GAAG,CAAC,eAAuB,EAAiB,EAAE;IAC7E,IAAI,MAAmB,CAAC;IACxB,IAAI,CAAC;QACH,MAAM,GAAG,iBAAE,CAAC,WAAW,CAAC,eAAe,EAAE,EAAE,aAAa,EAAE,IAAI,EAAE,CAAC,CAAC;IACpE,CAAC;IAAC,MAAM,CAAC;QACP,OAAO,IAAI,CAAC;IACd,CAAC;IACD,KAAK,MAAM,KAAK,IAAI,MAAM,EAAE,CAAC;QAC3B,IAAI,CAAC,KAAK,CAAC,WAAW,EAAE,EAAE,CAAC;YACzB,SAAS;QACX,CAAC;QACD,MAAM,QAAQ,GAAG,mBAAI,CAAC,IAAI,CAAC,eAAe,EAAE,KAAK,CAAC,IAAI,CAAC,CAAC;QACxD,IAAI,UAAuB,CAAC;QAC5B,IAAI,CAAC;YACH,UAAU,GAAG,iBAAE,CAAC,WAAW,CAAC,QAAQ,EAAE,EAAE,aAAa,EAAE,IAAI,EAAE,CAAC,CAAC;QACjE,CAAC;QAAC,MAAM,CAAC;YACP,SAAS;QACX,CAAC;QACD,KAAK,MAAM,EAAE,IAAI,UAAU,EAAE,CAAC;YAC5B,IAAI,CAAC,EAAE,CAAC,WAAW,EAAE,IAAI,CAAC,EAAE,CAAC,IAAI,CAAC,QAAQ,CAAC,YAAY,CAAC,EAAE,CAAC;gBACzD,SAAS;YACX,CAAC;YACD,MAAM,mBAAmB,GAAG;gBAC1B,mBAAI,CAAC,IAAI,CAAC,QAAQ,EAAE,EAAE,CAAC,IAAI,EAAE,YAAY,CAAC;gBAC1C,mBAAI,CAAC,IAAI,CAAC,QAAQ,EAAE,EAAE,CAAC,IAAI,EAAE,WAAW,EAAE,YAAY,CAAC;aACxD,CAAC;YACF,KAAK,MAAM,KAAK,IAAI,mBAAmB,EAAE,CAAC;gBACxC,IAAI,CAAC,iBAAE,CAAC,UAAU,CAAC,KAAK,CAAC,EAAE,CAAC;oBAC1B,SAAS;gBACX,CAAC;gBACD,IAAI,CAAC;oBACH,MAAM,GAAG,GAAG,iBAAE,CAAC,YAAY,CAAC,KAAK,EAAE,MAAM,CAAC,CAAC;oBAC3C,MAAM,KAAK,GAAG,GAAG,CAAC,KAAK,CACrB,oEAAoE,CACrE,CAAC;oBACF,IAAI,KAAK,EAAE,CAAC,CAAC,CAAC,EAAE,CAAC;wBACf,OAAO,KAAK,CAAC,CAAC,CAAC,CAAC,IAAI,EAAE,CAAC;oBACzB,CAAC;gBACH,CAAC;gBAAC,MAAM,CAAC;oBACP,gCAAgC;gBAClC,CAAC;YACH,CAAC;QACH,CAAC;IACH,CAAC;IACD,OAAO,IAAI,CAAC;AACd,CAAC,CAAC;AAEK,MAAM,cAAc,GAAG,KAAK,EAAE,MAAiB,EAAE,EAAE;IACxD,6BAA6B;IAC7B,MAAM,IAAA,wBAAgB,EAAC,MAAM,CAAC,CAAC;IAC/B,IAAA,8BAAsB,EAAC,MAAM,CAAC,CAAC;IAE/B,4CAA4C;IAC5C,MAAM,IAAA,yBAAiB,EAAC,MAAM,EAAE,MAAM,CAAC,SAAS,CAAC,CAAC;IAClD,MAAM,IAAA,wBAAgB,EAAC,MAAM,EAAE,MAAM,CAAC,SAAS,CAAC,CAAC;AACnD,CAAC,CAAC;AARW,QAAA,cAAc,kBAQzB;AAEK,MAAM,gBAAgB,GAAG,KAAK,EAAE,MAAiB,EAAE,EAAE;IAC1D,+CAA+C;IAC/C,MAAM,IAAA,wBAAgB,EAAC,MAAM,CAAC,CAAC;IAC/B,IAAA,8BAAsB,EAAC,MAAM,CAAC,CAAC;IAC/B,MAAM,WAAW,GAAG,MAAM,IAAA,0BAAkB,EAAC,MAAM,CAAC,CAAC;IACrD,MAAM,gBAAgB,GAAG,mBAAI,CAAC,IAAI,CAAC,WAAW,EAAE,cAAc,CAAC,CAAC;IAEhE,4CAA4C;IAC5C,MAAM,IAAA,yBAAiB,EAAC,MAAM,EAAE,gBAAgB,CAAC,CAAC;IAClD,MAAM,IAAA,wBAAgB,EAAC,MAAM,EAAE,gBAAgB,CAAC,CAAC;AACnD,CAAC,CAAC;AAVW,QAAA,gBAAgB,oBAU3B"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/utils/precompiled.d.ts b/packages/expo-brownfield/cli/build/utils/precompiled.d.ts
+index fe9489177cf621..04624dcda7fae7 100644
+--- a/packages/expo-brownfield/cli/build/utils/precompiled.d.ts
++++ b/packages/expo-brownfield/cli/build/utils/precompiled.d.ts
+@@ -1,4 +1,10 @@
++import fs from 'node:fs';
+ import type { BuildConfiguration, ModuleXCFramework } from './types';
++/**
++ * Returns true when an `entry` refers to a directory either directly OR via a symlink whose
++ * target is a directory.
++ */
++export declare const isDirentDirectory: (entry: fs.Dirent, parentDir: string) => boolean;
+ /**
+  * Scans `ios/Pods/` for prebuilt xcframeworks installed by autolinking when
+  * `EXPO_USE_PRECOMPILED_MODULES=1` is set. A pod is "precompiled" when its directory contains
+@@ -119,5 +125,19 @@ export declare const enumerateBundledSpmDepsXcframeworks: (modules: ModuleXCFram
+  * xcframework can land on disk without a matching `.binaryTarget` (or vice-versa). Calling this
+  * helper from both sites guarantees they agree, and gates both behind the completeness check
+  * so we never produce a half-baked package on missing deps.
++ *
++ * `hostProvidedFrameworks` is the set of xcframework names the consuming host iOS app already
++ * provides (typically via its own CocoaPods). Matching entries are filtered out of both the
++ * enumeration result AND the completeness-check input — so we neither ship them nor fail the
++ * build when an `spm.config.json` declares them.
++ */
++export declare const enumerateAllPrebuildModules: (cwd: string, buildConfiguration: BuildConfiguration, hostProvidedFrameworks?: readonly string[]) => ModuleXCFramework[];
++/**
++ * Walks all three resolution layers (pod scan → npm-bundled → shared `.spm-deps/` cache) without
++ * applying host-provided filtering or running the missing-SPM-dep completeness check.
+  */
+-export declare const enumerateAllPrebuildModules: (cwd: string, buildConfiguration: BuildConfiguration) => ModuleXCFramework[];
++export declare const enumeratePrebuildModulesRaw: (cwd: string, buildConfiguration: BuildConfiguration) => {
++    modules: ModuleXCFramework[];
++    podModules: ModuleXCFramework[];
++    podToNpm: Map<string, NpmPackageInfo>;
++};
+diff --git a/packages/expo-brownfield/cli/build/utils/precompiled.js b/packages/expo-brownfield/cli/build/utils/precompiled.js
+index be216bfeadd71f..d3c8c484fada2b 100644
+--- a/packages/expo-brownfield/cli/build/utils/precompiled.js
++++ b/packages/expo-brownfield/cli/build/utils/precompiled.js
+@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+     return (mod && mod.__esModule) ? mod : { "default": mod };
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+-exports.enumerateAllPrebuildModules = exports.enumerateBundledSpmDepsXcframeworks = exports.collectDeclaredSpmDeps = exports.buildPodToNpmPackageMap = exports.enumerateSpmDepsXcframeworks = exports.findSpmDepsRoot = exports.resolvedFixedXCFrameworks = exports.ensureCorrectFlavor = exports.enumeratePrecompiledModules = void 0;
++exports.enumeratePrebuildModulesRaw = exports.enumerateAllPrebuildModules = exports.enumerateBundledSpmDepsXcframeworks = exports.collectDeclaredSpmDeps = exports.buildPodToNpmPackageMap = exports.enumerateSpmDepsXcframeworks = exports.findSpmDepsRoot = exports.resolvedFixedXCFrameworks = exports.ensureCorrectFlavor = exports.enumeratePrecompiledModules = exports.isDirentDirectory = void 0;
+ const spawn_async_1 = __importDefault(require("@expo/spawn-async"));
+ const node_fs_1 = __importDefault(require("node:fs"));
+ const node_path_1 = __importDefault(require("node:path"));
+@@ -20,6 +20,20 @@ const RESERVED_POD_DIRS = new Set([
+     'React-Core-prebuilt',
+     'ReactNativeDependencies',
+ ]);
++/**
++ * Returns true when an `entry` refers to a directory either directly OR via a symlink whose
++ * target is a directory.
++ */
++const isDirentDirectory = (entry, parentDir) => {
++    if (entry.isDirectory()) {
++        return true;
++    }
++    if (!entry.isSymbolicLink()) {
++        return false;
++    }
++    return (node_fs_1.default.statSync(node_path_1.default.join(parentDir, entry.name), { throwIfNoEntry: false })?.isDirectory() ?? false);
++};
++exports.isDirentDirectory = isDirentDirectory;
+ /**
+  * Scans `ios/Pods/` for prebuilt xcframeworks installed by autolinking when
+  * `EXPO_USE_PRECOMPILED_MODULES=1` is set. A pod is "precompiled" when its directory contains
+@@ -57,21 +71,9 @@ const enumeratePrecompiledModules = (iosDir) => {
+         if (tarballs.length === 0) {
+             continue;
+         }
+-        // `entry.isDirectory()` returns false for symlinks even when the target is a directory
+         const xcframeworks = node_fs_1.default
+             .readdirSync(podDir, { withFileTypes: true })
+-            .filter((f) => {
+-            if (!f.name.endsWith('.xcframework')) {
+-                return false;
+-            }
+-            if (f.isDirectory()) {
+-                return true;
+-            }
+-            if (!f.isSymbolicLink()) {
+-                return false;
+-            }
+-            return (node_fs_1.default.statSync(node_path_1.default.join(podDir, f.name), { throwIfNoEntry: false })?.isDirectory() ?? false);
+-        })
++            .filter((f) => f.name.endsWith('.xcframework') && (0, exports.isDirentDirectory)(f, podDir))
+             .map((f) => f.name.replace(/\.xcframework$/, ''));
+         // Identify the "main" product for this pod — the xcframework whose name matches a tarball.
+         // Used as the `-m` argument when reconciling debug/release flavors via replace-xcframework.js.
+@@ -191,7 +193,10 @@ const enumerateSpmDepsXcframeworks = (cwd, buildConfiguration, existingNames) =>
+     const flavor = buildConfiguration.toLowerCase();
+     const results = [];
+     for (const entry of node_fs_1.default.readdirSync(spmDepsRoot, { withFileTypes: true })) {
+-        if (!entry.isDirectory() || entry.name.startsWith('_') || entry.name.startsWith('.')) {
++        if (entry.name.startsWith('_') || entry.name.startsWith('.')) {
++            continue;
++        }
++        if (!(0, exports.isDirentDirectory)(entry, spmDepsRoot)) {
+             continue;
+         }
+         if (existingNames.has(entry.name)) {
+@@ -515,16 +520,18 @@ exports.enumerateBundledSpmDepsXcframeworks = enumerateBundledSpmDepsXcframework
+  * xcframework can land on disk without a matching `.binaryTarget` (or vice-versa). Calling this
+  * helper from both sites guarantees they agree, and gates both behind the completeness check
+  * so we never produce a half-baked package on missing deps.
++ *
++ * `hostProvidedFrameworks` is the set of xcframework names the consuming host iOS app already
++ * provides (typically via its own CocoaPods). Matching entries are filtered out of both the
++ * enumeration result AND the completeness-check input — so we neither ship them nor fail the
++ * build when an `spm.config.json` declares them.
+  */
+-const enumerateAllPrebuildModules = (cwd, buildConfiguration) => {
+-    const podModules = (0, exports.enumeratePrecompiledModules)(node_path_1.default.join(cwd, 'ios'));
+-    const podToNpm = (0, exports.buildPodToNpmPackageMap)(cwd);
+-    const seenNames = new Set(podModules.map((m) => m.name));
+-    const bundledModules = (0, exports.enumerateBundledSpmDepsXcframeworks)(podModules, podToNpm, buildConfiguration, seenNames);
+-    bundledModules.forEach((m) => seenNames.add(m.name));
+-    const spmDepModules = (0, exports.enumerateSpmDepsXcframeworks)(cwd, buildConfiguration, seenNames);
+-    const modules = [...podModules, ...bundledModules, ...spmDepModules];
+-    const declaredDeps = (0, exports.collectDeclaredSpmDeps)(podModules, podToNpm);
++const enumerateAllPrebuildModules = (cwd, buildConfiguration, hostProvidedFrameworks = []) => {
++    const hostProvided = new Set(hostProvidedFrameworks);
++    const { modules: allModules, podModules, podToNpm, } = (0, exports.enumeratePrebuildModulesRaw)(cwd, buildConfiguration);
++    const modules = allModules.filter((m) => !hostProvided.has(m.name));
++    // Drop host-provided names from the completeness check
++    const declaredDeps = (0, exports.collectDeclaredSpmDeps)(podModules, podToNpm).filter(({ name }) => !hostProvided.has(name));
+     const coveredNames = new Set(modules.map((m) => m.name));
+     const missing = declaredDeps.filter(({ name }) => !coveredNames.has(name));
+     if (missing.length > 0) {
+@@ -536,4 +543,22 @@ const enumerateAllPrebuildModules = (cwd, buildConfiguration) => {
+     return modules;
+ };
+ exports.enumerateAllPrebuildModules = enumerateAllPrebuildModules;
++/**
++ * Walks all three resolution layers (pod scan → npm-bundled → shared `.spm-deps/` cache) without
++ * applying host-provided filtering or running the missing-SPM-dep completeness check.
++ */
++const enumeratePrebuildModulesRaw = (cwd, buildConfiguration) => {
++    const podModules = (0, exports.enumeratePrecompiledModules)(node_path_1.default.join(cwd, 'ios'));
++    const podToNpm = (0, exports.buildPodToNpmPackageMap)(cwd);
++    const seenNames = new Set(podModules.map((m) => m.name));
++    const bundledModules = (0, exports.enumerateBundledSpmDepsXcframeworks)(podModules, podToNpm, buildConfiguration, seenNames);
++    bundledModules.forEach((m) => seenNames.add(m.name));
++    const spmDepModules = (0, exports.enumerateSpmDepsXcframeworks)(cwd, buildConfiguration, seenNames);
++    return {
++        modules: [...podModules, ...bundledModules, ...spmDepModules],
++        podModules,
++        podToNpm,
++    };
++};
++exports.enumeratePrebuildModulesRaw = enumeratePrebuildModulesRaw;
+ //# sourceMappingURL=precompiled.js.map
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/utils/precompiled.js.map b/packages/expo-brownfield/cli/build/utils/precompiled.js.map
+index 95e489c00f4aa7..a09d05cf4865b8 100644
+--- a/packages/expo-brownfield/cli/build/utils/precompiled.js.map
++++ b/packages/expo-brownfield/cli/build/utils/precompiled.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"precompiled.js","sourceRoot":"","sources":["../../src/utils/precompiled.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"precompiled.js","sourceRoot":"","sources":["../../src/utils/precompiled.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/cli/build/utils/types.d.ts b/packages/expo-brownfield/cli/build/utils/types.d.ts
+index 3cc1da0be35535..c0a057ff1de4a2 100644
+--- a/packages/expo-brownfield/cli/build/utils/types.d.ts
++++ b/packages/expo-brownfield/cli/build/utils/types.d.ts
+@@ -26,6 +26,7 @@ export interface IosConfig extends CommonConfig {
+     buildConfiguration: BuildConfiguration;
+     derivedDataPath: string;
+     device: string;
++    hostProvidedFrameworks: string[];
+     output: 'frameworks' | PackageConfiguration;
+     scheme: string;
+     simulator: string;
+diff --git a/packages/expo-brownfield/cli/src/commands/build-ios.ts b/packages/expo-brownfield/cli/src/commands/build-ios.ts
+index e5c62ad20e604a..8cec724c287b62 100644
+--- a/packages/expo-brownfield/cli/src/commands/build-ios.ts
++++ b/packages/expo-brownfield/cli/src/commands/build-ios.ts
+@@ -4,6 +4,7 @@ import {
+   buildFramework,
+   printIosConfig,
+   resolveBuildConfigIos,
++  validateHostProvided,
+   validatePrebuild,
+   shipSwiftPackage,
+   shipFrameworks,
+@@ -14,6 +15,7 @@ const buildIos = async (command: Command) => {
+   await validatePrebuild('ios', { dryRun: !!opts.dryRun });
+   const config = resolveBuildConfigIos(opts);
+   printIosConfig(config);
++  validateHostProvided(config);
+ 
+   await buildFramework(config);
+ 
+diff --git a/packages/expo-brownfield/cli/src/index.ts b/packages/expo-brownfield/cli/src/index.ts
+index fdd7e6b31ff1d6..064d155219b052 100644
+--- a/packages/expo-brownfield/cli/src/index.ts
++++ b/packages/expo-brownfield/cli/src/index.ts
+@@ -43,6 +43,10 @@ program
+     '-p, --package [package]',
+     'package artifacts as a Swift Package (with an optionally specified name)'
+   )
++  .option(
++    '--host-provided <frameworks...>',
++    'framework names the host iOS app already provides, these will be stripped from the artifact (e.g. SDWebImage,SDWebImageWebPCoder)'
++  )
+   .action(async function (this: Command) {
+     await buildIos(this);
+   });
+diff --git a/packages/expo-brownfield/cli/src/utils/config.ts b/packages/expo-brownfield/cli/src/utils/config.ts
+index 1d62e0d0bae56f..5cf701cfc60ab1 100644
+--- a/packages/expo-brownfield/cli/src/utils/config.ts
++++ b/packages/expo-brownfield/cli/src/utils/config.ts
+@@ -1,4 +1,5 @@
+ import type { OptionValues } from 'commander';
++import fs from 'node:fs';
+ import path from 'node:path';
+ 
+ import { buildPublishingTask, findBrownfieldLibrary } from './android';
+@@ -12,6 +13,7 @@ import type {
+   IosConfig,
+   TasksConfigAndroid,
+ } from './types';
++import { HOST_PROVIDED_FRAMEWORKS_KEY } from '../../../shared/build';
+ 
+ export const resolveBuildConfigAndroid = (options: OptionValues): AndroidConfig => {
+   const variant = resolveVariant(options);
+@@ -65,6 +67,7 @@ export const resolveBuildConfigIos = (options: OptionValues): IosConfig => {
+     buildConfiguration,
+     derivedDataPath,
+     device,
++    hostProvidedFrameworks: resolveHostProvidedFrameworks(options),
+     simulator,
+     scheme: resolveScheme(options),
+     usePrebuilds,
+@@ -72,6 +75,68 @@ export const resolveBuildConfigIos = (options: OptionValues): IosConfig => {
+   };
+ };
+ 
++/**
++ * Source order for `hostProvidedFrameworks`:
++ *  1. `--host-provided <names...>` from the CLI flag
++ *  2. `ios.brownfieldHostProvidedFrameworks` in `ios/Podfile.properties.json`
++ *
++ * Inputs are intentionally not merged. This is designed for CI smoke tests and quick repros.
++ */
++const resolveHostProvidedFrameworks = (options: OptionValues): string[] => {
++  const fromFlag = parseHostProvidedFlag(options.hostProvided);
++  if (fromFlag.length > 0) {
++    return fromFlag;
++  }
++  return readHostProvidedFromPodfileProperties(process.cwd());
++};
++
++const parseHostProvidedFlag = (value: unknown): string[] => {
++  if (value == null) {
++    return [];
++  }
++  const raw = Array.isArray(value) ? value : [value];
++  const names = raw
++    .flatMap((entry) => (typeof entry === 'string' ? entry.split(',') : []))
++    .map((entry) => entry.trim())
++    .filter((entry) => entry.length > 0);
++  return Array.from(new Set(names));
++};
++
++const readHostProvidedFromPodfileProperties = (cwd: string): string[] => {
++  const propertiesPath = path.join(cwd, 'ios', 'Podfile.properties.json');
++  if (!fs.existsSync(propertiesPath)) {
++    return [];
++  }
++  let properties: Record<string, unknown>;
++  try {
++    properties = JSON.parse(fs.readFileSync(propertiesPath, 'utf8'));
++  } catch {
++    // Malformed properties file — prebuild would normally repair it. Treat as "no host-provided"
++    // and let other parts of the CLI surface the actual problem.
++    return [];
++  }
++  const rawValue = properties[HOST_PROVIDED_FRAMEWORKS_KEY];
++  if (typeof rawValue !== 'string' || rawValue.length === 0) {
++    return [];
++  }
++  let parsed: unknown;
++  try {
++    parsed = JSON.parse(rawValue);
++  } catch {
++    return [];
++  }
++  if (!Array.isArray(parsed)) {
++    return [];
++  }
++  return Array.from(
++    new Set(
++      parsed
++        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
++        .map((entry) => entry.trim())
++    )
++  );
++};
++
+ export const resolveTasksConfigAndroid = (options: OptionValues): TasksConfigAndroid => {
+   return {
+     ...resolveCommonConfig(options),
+diff --git a/packages/expo-brownfield/cli/src/utils/error.ts b/packages/expo-brownfield/cli/src/utils/error.ts
+index b0eb0f2318b646..7b6a217c2044f4 100644
+--- a/packages/expo-brownfield/cli/src/utils/error.ts
++++ b/packages/expo-brownfield/cli/src/utils/error.ts
+@@ -7,6 +7,7 @@ type ErrorType =
+   | 'ios-directory-not-found'
+   | 'ios-directory-unknown-error'
+   | 'ios-hermes-framework-not-found'
++  | 'ios-host-provided-without-prebuilds'
+   | 'ios-pod-install-cancelled'
+   | 'ios-prebuilds-spm-dep-missing'
+   | 'ios-scheme-not-found'
+@@ -28,6 +29,8 @@ class CLIError {
+     'ios-directory-not-found': 'Cannot find `ios` directory in the project',
+     'ios-directory-unknown-error': 'Unknown error occurred while finding brownfield iOS scheme',
+     'ios-hermes-framework-not-found': 'Could not find hermes framework in the project at path',
++    'ios-host-provided-without-prebuilds':
++      'ios.hostProvidedFrameworks is set but precompiled modules are not enabled. Without precompiled modules, third-party pods (like SDWebImage) are statically linked into the brownfield framework itself, so there is no separate xcframework to strip. Enable `ios.usePrecompiledModules: true` in expo-build-properties (run `pod install` afterwards), or remove ios.hostProvidedFrameworks from the expo-brownfield plugin config.',
+     'ios-pod-install-cancelled':
+       'Brownfield cannot be built without installing CocoaPods. Run `pod install` in the `ios/` and try again.',
+     'ios-prebuilds-spm-dep-missing':
+diff --git a/packages/expo-brownfield/cli/src/utils/ios.ts b/packages/expo-brownfield/cli/src/utils/ios.ts
+index 1ffa9df698d1e0..8f77c7d4efe70f 100644
+--- a/packages/expo-brownfield/cli/src/utils/ios.ts
++++ b/packages/expo-brownfield/cli/src/utils/ios.ts
+@@ -8,6 +8,7 @@ import CLIError from './error';
+ import {
+   ensureCorrectFlavor,
+   enumerateAllPrebuildModules,
++  enumeratePrebuildModulesRaw,
+   resolvedFixedXCFrameworks,
+ } from './precompiled';
+ import { withSpinner } from './spinner';
+@@ -43,6 +44,7 @@ export const enumerateSourceBuiltDeps = async (
+     return [];
+   }
+ 
++  const hostProvided = new Set(config.hostProvidedFrameworks);
+   const names = new Set<string>();
+   for (const line of stdout.split('\n')) {
+     const match = line.trim().match(/^@rpath\/([^/]+)\.framework\//);
+@@ -50,7 +52,9 @@ export const enumerateSourceBuiltDeps = async (
+       names.add(match[1]);
+     }
+   }
+-  return Array.from(names).filter((name) => name !== config.scheme && !alreadyCovered.has(name));
++  return Array.from(names).filter(
++    (name) => name !== config.scheme && !alreadyCovered.has(name) && !hostProvided.has(name)
++  );
+ };
+ 
+ /**
+@@ -225,7 +229,13 @@ export const copyXCFrameworks = async (config: IosConfig, dest: string) => {
+     // Single source of truth: enumerates all three layers (pod → bundled-npm → shared
+     // `.spm-deps/`) and runs the strict completeness check. Failing here surfaces missing
+     // deps at packaging time (rather than as `Library not loaded: @rpath/...` at runtime).
+-    const modules = enumerateAllPrebuildModules(process.cwd(), config.buildConfiguration);
++    // Host-provided frameworks are filtered out here so they're neither copied to the artifact
++    // dir nor counted as a missing SPM-dep.
++    const modules = enumerateAllPrebuildModules(
++      process.cwd(),
++      config.buildConfiguration,
++      config.hostProvidedFrameworks
++    );
+ 
+     // Reconcile flavor once per pod — replace-xcframework.js extracts the whole tarball
+     // (main + sibling SPM-dep xcframeworks) in one shot, so re-running per-xcframework would
+@@ -275,7 +285,11 @@ export const copyXCFrameworks = async (config: IosConfig, dest: string) => {
+ const collectCoveredFrameworkNames = (config: IosConfig): Set<string> => {
+   const covered = new Set<string>([config.scheme, ...resolvedFixedXCFrameworks()]);
+   if (config.usePrebuilds) {
+-    for (const module of enumerateAllPrebuildModules(process.cwd(), config.buildConfiguration)) {
++    for (const module of enumerateAllPrebuildModules(
++      process.cwd(),
++      config.buildConfiguration,
++      config.hostProvidedFrameworks
++    )) {
+       covered.add(module.name);
+     }
+   }
+@@ -427,7 +441,11 @@ export const generatePackageMetadataFile = async (config: IosConfig, packagePath
+   // xcframework that lands on disk is also declared as a `.binaryTarget` here (and vice-versa).
+   // The check fails fast — Package.swift never gets written if a declared SPM dep is missing.
+   const precompiledModules = config.usePrebuilds
+-    ? enumerateAllPrebuildModules(process.cwd(), config.buildConfiguration).map(({ name }) => ({
++    ? enumerateAllPrebuildModules(
++        process.cwd(),
++        config.buildConfiguration,
++        config.hostProvidedFrameworks
++      ).map(({ name }) => ({
+         name,
+         targets: [name],
+       }))
+@@ -539,10 +557,109 @@ export const printIosConfig = (config: IosConfig) => {
+     console.log(` - Package name: ${chalk.blue(config.output.packageName)}`);
+   }
+   console.log(` - Bundle precompiled modules: ${chalk.blue(config.usePrebuilds)}`);
++  if (config.hostProvidedFrameworks.length > 0) {
++    console.log(
++      ` - Host-provided frameworks: ${chalk.blue(config.hostProvidedFrameworks.join(', '))}`
++    );
++  }
+ 
+   console.log();
+ };
+ 
++export const validateHostProvided = (config: IosConfig): void => {
++  if (config.hostProvidedFrameworks.length === 0) {
++    return;
++  }
++
++  if (!config.usePrebuilds) {
++    CLIError.handle('ios-host-provided-without-prebuilds');
++    return;
++  }
++
++  // Use the same three-layer enumeration the build path uses, so a host-provided framework
++  // resolved out of `node_modules/<pkg>/prebuilds/output/` or `packages/precompile/.build/.spm-deps/`
++  // (rather than `ios/Pods/`) is still detected and doesn't spuriously trigger the unused-entry
++  // warning. `enumeratePrebuildModulesRaw` skips the host-provided filter and missing-dep check
++  // that `enumerateAllPrebuildModules` would otherwise apply.
++  const { modules } = enumeratePrebuildModulesRaw(process.cwd(), config.buildConfiguration);
++  const pathsByName = new Map<string, string>();
++  for (const module of modules) {
++    if (!pathsByName.has(module.name)) {
++      pathsByName.set(module.name, module.xcframeworkPath);
++    }
++  }
++
++  for (const name of config.hostProvidedFrameworks) {
++    const xcframeworkPath = pathsByName.get(name);
++    if (xcframeworkPath === undefined) {
++      console.warn(
++        chalk.yellow(
++          `expo-brownfield: '${name}' is listed in ios.hostProvidedFrameworks but no matching xcframework was found in ios/Pods/, node_modules/<pkg>/prebuilds/output/, or the shared .spm-deps/ cache. Remove it from the config, or re-run \`pod install\` if the source module isn't installed yet.`
++        )
++      );
++      continue;
++    }
++    const version = readXcframeworkShortVersion(xcframeworkPath);
++    const versionLabel = version ?? 'unknown version';
++    console.log(
++      chalk.dim(
++        `expo-brownfield: excluding ${name} (${versionLabel}) — the host iOS app must provide ${name} at a compatible version at link time.`
++      )
++    );
++  }
++};
++
++/**
++ * Reads the first `Info.plist` we can find inside an xcframework and returns
++ * the `CFBundleShortVersionString` value.
++ */
++const readXcframeworkShortVersion = (xcframeworkPath: string): string | null => {
++  let slices: fs.Dirent[];
++  try {
++    slices = fs.readdirSync(xcframeworkPath, { withFileTypes: true });
++  } catch {
++    return null;
++  }
++  for (const slice of slices) {
++    if (!slice.isDirectory()) {
++      continue;
++    }
++    const sliceDir = path.join(xcframeworkPath, slice.name);
++    let frameworks: fs.Dirent[];
++    try {
++      frameworks = fs.readdirSync(sliceDir, { withFileTypes: true });
++    } catch {
++      continue;
++    }
++    for (const fw of frameworks) {
++      if (!fw.isDirectory() || !fw.name.endsWith('.framework')) {
++        continue;
++      }
++      const infoPlistCandidates = [
++        path.join(sliceDir, fw.name, 'Info.plist'),
++        path.join(sliceDir, fw.name, 'Resources', 'Info.plist'),
++      ];
++      for (const plist of infoPlistCandidates) {
++        if (!fs.existsSync(plist)) {
++          continue;
++        }
++        try {
++          const xml = fs.readFileSync(plist, 'utf8');
++          const match = xml.match(
++            /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/
++          );
++          if (match?.[1]) {
++            return match[1].trim();
++          }
++        } catch {
++          // Ignore — this is best-effort.
++        }
++      }
++    }
++  }
++  return null;
++};
++
+ export const shipFrameworks = async (config: IosConfig) => {
+   // Create artifacts directory
+   await cleanUpArtifacts(config);
+diff --git a/packages/expo-brownfield/cli/src/utils/precompiled.ts b/packages/expo-brownfield/cli/src/utils/precompiled.ts
+index 55c3bb57cf460c..a81dea6ae50227 100644
+--- a/packages/expo-brownfield/cli/src/utils/precompiled.ts
++++ b/packages/expo-brownfield/cli/src/utils/precompiled.ts
+@@ -19,6 +19,22 @@ const RESERVED_POD_DIRS = new Set([
+   'ReactNativeDependencies',
+ ]);
+ 
++/**
++ * Returns true when an `entry` refers to a directory either directly OR via a symlink whose
++ * target is a directory.
++ */
++export const isDirentDirectory = (entry: fs.Dirent, parentDir: string): boolean => {
++  if (entry.isDirectory()) {
++    return true;
++  }
++  if (!entry.isSymbolicLink()) {
++    return false;
++  }
++  return (
++    fs.statSync(path.join(parentDir, entry.name), { throwIfNoEntry: false })?.isDirectory() ?? false
++  );
++};
++
+ /**
+  * Scans `ios/Pods/` for prebuilt xcframeworks installed by autolinking when
+  * `EXPO_USE_PRECOMPILED_MODULES=1` is set. A pod is "precompiled" when its directory contains
+@@ -60,23 +76,9 @@ export const enumeratePrecompiledModules = (iosDir: string): ModuleXCFramework[]
+       continue;
+     }
+ 
+-    // `entry.isDirectory()` returns false for symlinks even when the target is a directory
+     const xcframeworks = fs
+       .readdirSync(podDir, { withFileTypes: true })
+-      .filter((f) => {
+-        if (!f.name.endsWith('.xcframework')) {
+-          return false;
+-        }
+-        if (f.isDirectory()) {
+-          return true;
+-        }
+-        if (!f.isSymbolicLink()) {
+-          return false;
+-        }
+-        return (
+-          fs.statSync(path.join(podDir, f.name), { throwIfNoEntry: false })?.isDirectory() ?? false
+-        );
+-      })
++      .filter((f) => f.name.endsWith('.xcframework') && isDirentDirectory(f, podDir))
+       .map((f) => f.name.replace(/\.xcframework$/, ''));
+ 
+     // Identify the "main" product for this pod — the xcframework whose name matches a tarball.
+@@ -219,7 +221,10 @@ export const enumerateSpmDepsXcframeworks = (
+   const results: ModuleXCFramework[] = [];
+ 
+   for (const entry of fs.readdirSync(spmDepsRoot, { withFileTypes: true })) {
+-    if (!entry.isDirectory() || entry.name.startsWith('_') || entry.name.startsWith('.')) {
++    if (entry.name.startsWith('_') || entry.name.startsWith('.')) {
++      continue;
++    }
++    if (!isDirentDirectory(entry, spmDepsRoot)) {
+       continue;
+     }
+     if (existingNames.has(entry.name)) {
+@@ -587,28 +592,30 @@ export const enumerateBundledSpmDepsXcframeworks = (
+  * xcframework can land on disk without a matching `.binaryTarget` (or vice-versa). Calling this
+  * helper from both sites guarantees they agree, and gates both behind the completeness check
+  * so we never produce a half-baked package on missing deps.
++ *
++ * `hostProvidedFrameworks` is the set of xcframework names the consuming host iOS app already
++ * provides (typically via its own CocoaPods). Matching entries are filtered out of both the
++ * enumeration result AND the completeness-check input — so we neither ship them nor fail the
++ * build when an `spm.config.json` declares them.
+  */
+ export const enumerateAllPrebuildModules = (
+   cwd: string,
+-  buildConfiguration: BuildConfiguration
++  buildConfiguration: BuildConfiguration,
++  hostProvidedFrameworks: readonly string[] = []
+ ): ModuleXCFramework[] => {
+-  const podModules = enumeratePrecompiledModules(path.join(cwd, 'ios'));
+-  const podToNpm = buildPodToNpmPackageMap(cwd);
+-  const seenNames = new Set(podModules.map((m) => m.name));
+-
+-  const bundledModules = enumerateBundledSpmDepsXcframeworks(
++  const hostProvided = new Set(hostProvidedFrameworks);
++  const {
++    modules: allModules,
+     podModules,
+     podToNpm,
+-    buildConfiguration,
+-    seenNames
+-  );
+-  bundledModules.forEach((m) => seenNames.add(m.name));
+-
+-  const spmDepModules = enumerateSpmDepsXcframeworks(cwd, buildConfiguration, seenNames);
++  } = enumeratePrebuildModulesRaw(cwd, buildConfiguration);
+ 
+-  const modules = [...podModules, ...bundledModules, ...spmDepModules];
++  const modules = allModules.filter((m) => !hostProvided.has(m.name));
+ 
+-  const declaredDeps = collectDeclaredSpmDeps(podModules, podToNpm);
++  // Drop host-provided names from the completeness check
++  const declaredDeps = collectDeclaredSpmDeps(podModules, podToNpm).filter(
++    ({ name }) => !hostProvided.has(name)
++  );
+   const coveredNames = new Set(modules.map((m) => m.name));
+   const missing = declaredDeps.filter(({ name }) => !coveredNames.has(name));
+   if (missing.length > 0) {
+@@ -620,3 +627,36 @@ export const enumerateAllPrebuildModules = (
+ 
+   return modules;
+ };
++
++/**
++ * Walks all three resolution layers (pod scan → npm-bundled → shared `.spm-deps/` cache) without
++ * applying host-provided filtering or running the missing-SPM-dep completeness check.
++ */
++export const enumeratePrebuildModulesRaw = (
++  cwd: string,
++  buildConfiguration: BuildConfiguration
++): {
++  modules: ModuleXCFramework[];
++  podModules: ModuleXCFramework[];
++  podToNpm: Map<string, NpmPackageInfo>;
++} => {
++  const podModules = enumeratePrecompiledModules(path.join(cwd, 'ios'));
++  const podToNpm = buildPodToNpmPackageMap(cwd);
++  const seenNames = new Set(podModules.map((m) => m.name));
++
++  const bundledModules = enumerateBundledSpmDepsXcframeworks(
++    podModules,
++    podToNpm,
++    buildConfiguration,
++    seenNames
++  );
++  bundledModules.forEach((m) => seenNames.add(m.name));
++
++  const spmDepModules = enumerateSpmDepsXcframeworks(cwd, buildConfiguration, seenNames);
++
++  return {
++    modules: [...podModules, ...bundledModules, ...spmDepModules],
++    podModules,
++    podToNpm,
++  };
++};
+diff --git a/packages/expo-brownfield/cli/src/utils/types.ts b/packages/expo-brownfield/cli/src/utils/types.ts
+index 2a84ea02206015..9db436e56b7306 100644
+--- a/packages/expo-brownfield/cli/src/utils/types.ts
++++ b/packages/expo-brownfield/cli/src/utils/types.ts
+@@ -33,6 +33,7 @@ export interface IosConfig extends CommonConfig {
+   buildConfiguration: BuildConfiguration;
+   derivedDataPath: string;
+   device: string;
++  hostProvidedFrameworks: string[];
+   output: 'frameworks' | PackageConfiguration;
+   scheme: string;
+   simulator: string;
+diff --git a/packages/expo-brownfield/e2e/cli/__tests__/__snapshots__/build-ios.test.ts.snap b/packages/expo-brownfield/e2e/cli/__tests__/__snapshots__/build-ios.test.ts.snap
+index d7c4ef50c4d0e0..59fcb743facbaf 100644
+--- a/packages/expo-brownfield/e2e/cli/__tests__/__snapshots__/build-ios.test.ts.snap
++++ b/packages/expo-brownfield/e2e/cli/__tests__/__snapshots__/build-ios.test.ts.snap
+@@ -16,6 +16,10 @@ Options:
+                                    them
+   -p, --package [package]          package artifacts as a Swift Package (with an
+                                    optionally specified name)
++  --host-provided <frameworks...>  framework names the host iOS app already
++                                   provides, these will be stripped from the
++                                   artifact (e.g.
++                                   SDWebImage,SDWebImageWebPCoder)
+   -h, --help                       display help for command"
+ `;
+ 
+@@ -35,6 +39,10 @@ Options:
+                                    them
+   -p, --package [package]          package artifacts as a Swift Package (with an
+                                    optionally specified name)
++  --host-provided <frameworks...>  framework names the host iOS app already
++                                   provides, these will be stripped from the
++                                   artifact (e.g.
++                                   SDWebImage,SDWebImageWebPCoder)
+   -h, --help                       display help for command"
+ `;
+ 
+@@ -54,5 +62,9 @@ Options:
+                                    them
+   -p, --package [package]          package artifacts as a Swift Package (with an
+                                    optionally specified name)
++  --host-provided <frameworks...>  framework names the host iOS app already
++                                   provides, these will be stripped from the
++                                   artifact (e.g.
++                                   SDWebImage,SDWebImageWebPCoder)
+   -h, --help                       display help for command"
+ `;
+diff --git a/packages/expo-brownfield/e2e/cli/__tests__/host-provided.test.ts b/packages/expo-brownfield/e2e/cli/__tests__/host-provided.test.ts
+new file mode 100644
+index 00000000000000..34abba57c41d7b
+--- /dev/null
++++ b/packages/expo-brownfield/e2e/cli/__tests__/host-provided.test.ts
+@@ -0,0 +1,249 @@
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++
++import { resolveBuildConfigIos } from '../../../cli/src/utils/config';
++import { validateHostProvided } from '../../../cli/src/utils/ios';
++import type { IosConfig } from '../../../cli/src/utils/types';
++
++/**
++ * Unit tests for `validateHostProvided`. The function is run before the build kicks off and is
++ * responsible for catching misconfigurations (source build with host-provided frameworks, typo'd
++ * framework names) before the user hits a confusing "Multiple commands produce" or runtime crash.
++ *
++ * The function reads `Pods/<pod>/<name>.xcframework/<slice>/<name>.framework/Info.plist` from
++ * `process.cwd()`, so each test chdir's into a synthetic project tree.
++ */
++describe('validateHostProvided', () => {
++  let tmpDir: string;
++  let originalCwd: string;
++  let logSpy: jest.SpyInstance | undefined;
++  let warnSpy: jest.SpyInstance | undefined;
++  let errorSpy: jest.SpyInstance | undefined;
++  let exitSpy: jest.SpyInstance | undefined;
++
++  beforeEach(() => {
++    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'brownfield-host-provided-'));
++    originalCwd = process.cwd();
++    process.chdir(tmpDir);
++  });
++
++  afterEach(() => {
++    logSpy?.mockRestore();
++    warnSpy?.mockRestore();
++    errorSpy?.mockRestore();
++    exitSpy?.mockRestore();
++    logSpy = warnSpy = errorSpy = exitSpy = undefined;
++    process.chdir(originalCwd);
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  });
++
++  const baseConfig = (overrides: Partial<IosConfig> = {}): IosConfig => ({
++    artifacts: path.join(tmpDir, 'artifacts'),
++    buildConfiguration: 'Release',
++    derivedDataPath: path.join(tmpDir, 'ios', 'build'),
++    device: path.join(tmpDir, 'ios', 'build', 'release-iphoneos'),
++    dryRun: false,
++    hostProvidedFrameworks: [],
++    output: 'frameworks',
++    scheme: 'TestBrownfield',
++    simulator: path.join(tmpDir, 'ios', 'build', 'release-iphonesimulator'),
++    usePrebuilds: true,
++    verbose: false,
++    workspace: path.join(tmpDir, 'ios', 'test.xcworkspace'),
++    ...overrides,
++  });
++
++  /**
++   * Writes a minimal xcframework directory tree (one slice + framework + Info.plist). Enough to
++   * exercise the version-extraction codepath without needing a real lipo-built binary. Pass
++   * `version: null` to skip the Info.plist write (exercises the unknown-version fallback).
++   */
++  const writeXcframeworkAt = (baseDir: string, frameworkName: string, version: string | null) => {
++    const sliceDir = path.join(baseDir, `${frameworkName}.xcframework`, 'ios-arm64', `${frameworkName}.framework`);
++    fs.mkdirSync(sliceDir, { recursive: true });
++    if (version !== null) {
++      fs.writeFileSync(
++        path.join(sliceDir, 'Info.plist'),
++        `<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0"><dict>
++  <key>CFBundleShortVersionString</key><string>${version}</string>
++</dict></plist>`
++      );
++    }
++  };
++
++  /**
++   * Sets up an `ios/Pods/<podName>/` precompiled-pod fixture: a main-product xcframework matching
++   * an `artifacts/<podName>-release.tar.gz` tarball, plus any number of sibling SPM-dep
++   * xcframeworks (e.g. SDWebImage bundled alongside ExpoImage). The validator uses the same
++   * enumeration the build path runs, which requires both the tarball and a matching xcframework
++   * for the pod to be picked up.
++   */
++  const seedPrecompiledPod = (
++    podName: string,
++    siblings: { name: string; version: string | null }[] = []
++  ) => {
++    const podDir = path.join(tmpDir, 'ios', 'Pods', podName);
++    fs.mkdirSync(podDir, { recursive: true });
++    writeXcframeworkAt(podDir, podName, null);
++    const artifactsDir = path.join(podDir, 'artifacts');
++    fs.mkdirSync(artifactsDir, { recursive: true });
++    fs.writeFileSync(path.join(artifactsDir, `${podName}-release.tar.gz`), '');
++    for (const sibling of siblings) {
++      writeXcframeworkAt(podDir, sibling.name, sibling.version);
++    }
++  };
++
++  it('is a no-op when hostProvidedFrameworks is empty', () => {
++    expect(() => validateHostProvided(baseConfig())).not.toThrow();
++  });
++
++  it('logs the resolved version of each excluded framework found in the pod scan (layer 1)', () => {
++    seedPrecompiledPod('ExpoImage', [
++      { name: 'SDWebImage', version: '5.21.6' },
++      { name: 'SDWebImageWebPCoder', version: '0.14.7' },
++    ]);
++
++    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
++    validateHostProvided(
++      baseConfig({ hostProvidedFrameworks: ['SDWebImage', 'SDWebImageWebPCoder'] })
++    );
++
++    const messages = logSpy.mock.calls.map(([msg]: [unknown]) => String(msg));
++    expect(messages.some((m) => m.includes('SDWebImage') && m.includes('5.21.6'))).toBe(true);
++    expect(messages.some((m) => m.includes('SDWebImageWebPCoder') && m.includes('0.14.7'))).toBe(
++      true
++    );
++  });
++
++  it('warns when a host-provided name does not resolve in any of the three layers', () => {
++    seedPrecompiledPod('ExpoImage', [{ name: 'SDWebImage', version: '5.21.6' }]);
++
++    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
++    validateHostProvided(baseConfig({ hostProvidedFrameworks: ['SDWebImage', 'NotInstalledKit'] }));
++
++    const warnings = warnSpy.mock.calls.map(([msg]: [unknown]) => String(msg));
++    expect(warnings.some((m) => m.includes('NotInstalledKit'))).toBe(true);
++    // SDWebImage was actually installed — it shouldn't get the unused-name warning.
++    expect(warnings.some((m) => m.includes("'SDWebImage'"))).toBe(false);
++  });
++
++  it('exits with a clear error when hostProvidedFrameworks is set but usePrebuilds is false', () => {
++    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
++    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
++
++    validateHostProvided(
++      baseConfig({ usePrebuilds: false, hostProvidedFrameworks: ['SDWebImage'] })
++    );
++
++    expect(exitSpy).toHaveBeenCalledWith(1);
++    const messages = errorSpy.mock.calls.map(([msg]: [unknown]) => String(msg));
++    expect(messages.some((m) => m.includes('precompiled modules are not enabled'))).toBe(true);
++  });
++
++  it('reads hostProvidedFrameworks from ios/Podfile.properties.json (the prebuild bridge)', () => {
++    // The plugin writes a JSON-stringified array under `ios.brownfieldHostProvidedFrameworks`
++    // during prebuild. The CLI reads it back here when no --host-provided flag is passed.
++    const iosDir = path.join(tmpDir, 'ios');
++    fs.mkdirSync(iosDir, { recursive: true });
++    fs.writeFileSync(
++      path.join(iosDir, 'Podfile.properties.json'),
++      JSON.stringify({
++        'ios.brownfieldHostProvidedFrameworks': JSON.stringify([
++          'SDWebImage',
++          ' SDWebImageWebPCoder ', // confirms trim
++          'SDWebImage', // confirms dedupe
++        ]),
++      })
++    );
++    // The CLI tries to find a workspace + scheme; provide minimal stubs.
++    fs.mkdirSync(path.join(iosDir, 'TestBrownfield'), { recursive: true });
++    fs.writeFileSync(path.join(iosDir, 'TestBrownfield', 'ReactNativeHostManager.swift'), '');
++    fs.mkdirSync(path.join(iosDir, 'test.xcworkspace'), { recursive: true });
++
++    const config = resolveBuildConfigIos({
++      release: true,
++      scheme: 'TestBrownfield',
++      xcworkspace: path.join(iosDir, 'test.xcworkspace'),
++      dryRun: true,
++    });
++
++    expect(config.hostProvidedFrameworks).toEqual(['SDWebImage', 'SDWebImageWebPCoder']);
++  });
++
++  it('lets the --host-provided CLI flag override Podfile.properties.json', () => {
++    const iosDir = path.join(tmpDir, 'ios');
++    fs.mkdirSync(iosDir, { recursive: true });
++    fs.writeFileSync(
++      path.join(iosDir, 'Podfile.properties.json'),
++      JSON.stringify({
++        'ios.brownfieldHostProvidedFrameworks': JSON.stringify(['SDWebImage']),
++      })
++    );
++    fs.mkdirSync(path.join(iosDir, 'TestBrownfield'), { recursive: true });
++    fs.writeFileSync(path.join(iosDir, 'TestBrownfield', 'ReactNativeHostManager.swift'), '');
++    fs.mkdirSync(path.join(iosDir, 'test.xcworkspace'), { recursive: true });
++
++    const config = resolveBuildConfigIos({
++      release: true,
++      scheme: 'TestBrownfield',
++      xcworkspace: path.join(iosDir, 'test.xcworkspace'),
++      dryRun: true,
++      hostProvided: ['lottie-ios,MMKV'],
++    });
++
++    expect(config.hostProvidedFrameworks).toEqual(['lottie-ios', 'MMKV']);
++  });
++
++  it('logs an unknown-version label when the xcframework Info.plist is unreadable', () => {
++    seedPrecompiledPod('ExpoImage', [{ name: 'SDWebImage', version: null }]);
++
++    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
++    validateHostProvided(baseConfig({ hostProvidedFrameworks: ['SDWebImage'] }));
++
++    const messages = logSpy.mock.calls.map(([msg]: [unknown]) => String(msg));
++    expect(messages.some((m) => m.includes('SDWebImage') && m.includes('unknown version'))).toBe(
++      true
++    );
++  });
++
++  it('resolves host-provided frameworks from node_modules/<pkg>/prebuilds/output/ (layer 2)', () => {
++    // When `ensure_shared_spm_deps` hasn't symlinked the npm-bundled SPM deps into ios/Pods/, a
++    // host-provided framework only exists under `node_modules/<pkg>/prebuilds/output/<flavor>/
++    // xcframeworks/`. The validator must still find it via the npm-bundled enumeration layer
++    // instead of spuriously warning "no matching xcframework was found".
++    seedPrecompiledPod('ExpoImage');
++    const expoImagePkgDir = path.join(tmpDir, 'node_modules', 'expo-image');
++    fs.mkdirSync(expoImagePkgDir, { recursive: true });
++    fs.writeFileSync(
++      path.join(expoImagePkgDir, 'package.json'),
++      JSON.stringify({ name: 'expo-image' })
++    );
++    fs.writeFileSync(
++      path.join(expoImagePkgDir, 'spm.config.json'),
++      JSON.stringify({
++        products: [
++          {
++            name: 'ExpoImage',
++            podName: 'ExpoImage',
++            spmPackages: [{ productName: 'SDWebImage' }],
++          },
++        ],
++      })
++    );
++    const bundleDir = path.join(expoImagePkgDir, 'prebuilds', 'output', 'release', 'xcframeworks');
++    fs.mkdirSync(bundleDir, { recursive: true });
++    writeXcframeworkAt(bundleDir, 'SDWebImage', '5.21.6');
++
++    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
++    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
++    validateHostProvided(baseConfig({ hostProvidedFrameworks: ['SDWebImage'] }));
++
++    const messages = logSpy.mock.calls.map(([msg]: [unknown]) => String(msg));
++    const warnings = warnSpy.mock.calls.map(([msg]: [unknown]) => String(msg));
++    expect(messages.some((m) => m.includes('SDWebImage') && m.includes('5.21.6'))).toBe(true);
++    expect(warnings).toEqual([]);
++  });
++});
+diff --git a/packages/expo-brownfield/e2e/cli/__tests__/precompiled.test.ts b/packages/expo-brownfield/e2e/cli/__tests__/precompiled.test.ts
+index 609a695411f007..e661b79e540ab5 100644
+--- a/packages/expo-brownfield/e2e/cli/__tests__/precompiled.test.ts
++++ b/packages/expo-brownfield/e2e/cli/__tests__/precompiled.test.ts
+@@ -5,6 +5,7 @@ import path from 'node:path';
+ import {
+   buildPodToNpmPackageMap,
+   collectDeclaredSpmDeps,
++  enumerateAllPrebuildModules,
+   enumerateBundledSpmDepsXcframeworks,
+   enumeratePrecompiledModules,
+   enumerateSpmDepsXcframeworks,
+@@ -436,6 +437,104 @@ describe('enumerateBundledSpmDepsXcframeworks', () => {
+   });
+ });
+ 
++describe('enumerateAllPrebuildModules', () => {
++  let tmpDir: string;
++
++  beforeEach(() => {
++    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'brownfield-enumerate-all-'));
++  });
++
++  afterEach(() => {
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  });
++
++  const seedExpoImagePod = (root: string) => {
++    const podDir = path.join(root, 'ios', 'Pods', 'ExpoImage');
++    fs.mkdirSync(podDir, { recursive: true });
++    for (const xcf of ['ExpoImage', 'SDWebImage', 'SDWebImageWebPCoder', 'libavif']) {
++      fs.mkdirSync(path.join(podDir, `${xcf}.xcframework`));
++    }
++    const artifactsDir = path.join(podDir, 'artifacts');
++    fs.mkdirSync(artifactsDir);
++    fs.writeFileSync(path.join(artifactsDir, 'ExpoImage-release.tar.gz'), '');
++  };
++
++  const seedExpoImageNpm = (root: string) => {
++    const pkgDir = path.join(root, 'node_modules', 'expo-image');
++    fs.mkdirSync(pkgDir, { recursive: true });
++    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: 'expo-image' }));
++    fs.writeFileSync(
++      path.join(pkgDir, 'spm.config.json'),
++      JSON.stringify({
++        products: [
++          {
++            name: 'ExpoImage',
++            podName: 'ExpoImage',
++            spmPackages: [
++              { productName: 'SDWebImage' },
++              { productName: 'SDWebImageWebPCoder' },
++              { productName: 'libavif' },
++            ],
++          },
++        ],
++      })
++    );
++  };
++
++  it('strips host-provided frameworks from the returned module set', () => {
++    seedExpoImagePod(tmpDir);
++    seedExpoImageNpm(tmpDir);
++
++    const modules = enumerateAllPrebuildModules(tmpDir, 'Release', [
++      'SDWebImage',
++      'SDWebImageWebPCoder',
++    ]);
++
++    const names = modules.map((m) => m.name).sort();
++    // ExpoImage and libavif remain; SDWebImage variants are gone.
++    expect(names).toEqual(['ExpoImage', 'libavif']);
++  });
++
++  it('suppresses the missing-SPM-dep completeness check for host-provided names', () => {
++    // Seed expo-image's spm.config.json declaring SDWebImage as required, but DON'T seed any
++    // SDWebImage xcframework on disk. Without the host-provided exemption this would call
++    // CLIError.handle (which exits the process). With host-provided exemption the build proceeds.
++    const podDir = path.join(tmpDir, 'ios', 'Pods', 'ExpoImage');
++    fs.mkdirSync(podDir, { recursive: true });
++    fs.mkdirSync(path.join(podDir, 'ExpoImage.xcframework'));
++    fs.mkdirSync(path.join(podDir, 'artifacts'));
++    fs.writeFileSync(
++      path.join(podDir, 'artifacts', 'ExpoImage-release.tar.gz'),
++      ''
++    );
++    seedExpoImageNpm(tmpDir);
++
++    // Without host-provided, the missing SDWebImage would trigger CLIError.handle (which calls
++    // process.exit). Spy on it to confirm host-provided suppresses the error.
++    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
++    try {
++      const modules = enumerateAllPrebuildModules(tmpDir, 'Release', [
++        'SDWebImage',
++        'SDWebImageWebPCoder',
++        'libavif',
++      ]);
++      expect(exitSpy).not.toHaveBeenCalled();
++      expect(modules.map((m) => m.name)).toEqual(['ExpoImage']);
++    } finally {
++      exitSpy.mockRestore();
++    }
++  });
++
++  it('returns the unfiltered module set when hostProvidedFrameworks is omitted', () => {
++    seedExpoImagePod(tmpDir);
++    seedExpoImageNpm(tmpDir);
++
++    const modules = enumerateAllPrebuildModules(tmpDir, 'Release');
++    const names = modules.map((m) => m.name).sort();
++    expect(names).toEqual(['ExpoImage', 'SDWebImage', 'SDWebImageWebPCoder', 'libavif']);
++  });
++});
++
+ describe('collectDeclaredSpmDeps', () => {
+   let tmpDir: string;
+ 
+diff --git a/packages/expo-brownfield/gradle-plugins/.kotlin/sessions/kotlin-compiler-1137845546697317810.salive b/packages/expo-brownfield/gradle-plugins/.kotlin/sessions/kotlin-compiler-1137845546697317810.salive
+deleted file mode 100644
+index e69de29bb2d1d6..00000000000000
+diff --git a/packages/expo-brownfield/package.json b/packages/expo-brownfield/package.json
+index 6cd63261d4302b..f0a28495b70e82 100644
+--- a/packages/expo-brownfield/package.json
++++ b/packages/expo-brownfield/package.json
+@@ -18,9 +18,12 @@
+   "sideEffects": false,
+   "scripts": {
+     "build": "expo-module build",
++    "build:shared": "expo-module build shared",
++    "build:plugin": "expo-module build plugin",
++    "build:cli": "expo-module build cli",
+     "clean": "expo-module clean",
+-    "lint": "expo-module lint && expo-module lint plugin && expo-module lint cli",
+-    "lint:fix": "expo-module lint --fix && expo-module lint plugin --fix && expo-module lint cli --fix",
++    "lint": "expo-module lint && expo-module lint shared && expo-module lint plugin && expo-module lint cli",
++    "lint:fix": "expo-module lint --fix && expo-module lint shared --fix && expo-module lint plugin --fix && expo-module lint cli --fix",
+     "test": "expo-module test",
+     "test:e2e-cli": "expo-module test --config e2e/cli/jest.config.js",
+     "test:e2e-plugin": "expo-module test --config e2e/plugin/jest.config.js",
+diff --git a/packages/expo-brownfield/plugin/build/ios/plugins/withPodfilePropertiesPlugin.js b/packages/expo-brownfield/plugin/build/ios/plugins/withPodfilePropertiesPlugin.js
+index 9ba2ccef3b65d8..aee3d1de9299e8 100644
+--- a/packages/expo-brownfield/plugin/build/ios/plugins/withPodfilePropertiesPlugin.js
++++ b/packages/expo-brownfield/plugin/build/ios/plugins/withPodfilePropertiesPlugin.js
+@@ -1,11 +1,18 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ const config_plugins_1 = require("expo/config-plugins");
++const build_1 = require("../../../../shared/build");
+ const withPodfilePropertiesPlugin = (config, pluginConfig) => {
+     return (0, config_plugins_1.withPodfileProperties)(config, (config) => {
+         if (pluginConfig.buildReactNativeFromSource) {
+             config.modResults['ios.useFrameworks'] = 'static';
+         }
++        if (pluginConfig.hostProvidedFrameworks.length > 0) {
++            config.modResults[build_1.HOST_PROVIDED_FRAMEWORKS_KEY] = JSON.stringify(pluginConfig.hostProvidedFrameworks);
++        }
++        else {
++            delete config.modResults[build_1.HOST_PROVIDED_FRAMEWORKS_KEY];
++        }
+         return config;
+     });
+ };
+diff --git a/packages/expo-brownfield/plugin/build/ios/types.d.ts b/packages/expo-brownfield/plugin/build/ios/types.d.ts
+index 054f89d39d0bd8..ded5218823a23c 100644
+--- a/packages/expo-brownfield/plugin/build/ios/types.d.ts
++++ b/packages/expo-brownfield/plugin/build/ios/types.d.ts
+@@ -3,6 +3,7 @@ export interface PluginConfig {
+     targetName: string;
+     buildReactNativeFromSource: boolean;
+     multipleFrameworks: boolean;
++    hostProvidedFrameworks: string[];
+ }
+ export type IOSPluginProps = Partial<PluginConfig>;
+ export type PluginProps = IOSPluginProps | undefined;
+diff --git a/packages/expo-brownfield/plugin/build/ios/utils/props.js b/packages/expo-brownfield/plugin/build/ios/utils/props.js
+index 87c1a43099eaa1..4e90c65357aac3 100644
+--- a/packages/expo-brownfield/plugin/build/ios/utils/props.js
++++ b/packages/expo-brownfield/plugin/build/ios/utils/props.js
+@@ -9,9 +9,19 @@ const getPluginConfig = (props, config) => {
+         targetName,
+         buildReactNativeFromSource: props?.buildReactNativeFromSource ?? false,
+         multipleFrameworks: props?.multipleFrameworks ?? false,
++        hostProvidedFrameworks: validateHostProvidedFrameworks(props?.hostProvidedFrameworks),
+     };
+ };
+ exports.getPluginConfig = getPluginConfig;
++const validateHostProvidedFrameworks = (value) => {
++    if (value == null) {
++        return [];
++    }
++    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !entry.trim())) {
++        throw new Error(`Invalid ios.hostProvidedFrameworks ${JSON.stringify(value)}: expected an array of non-empty framework name strings (e.g. ["SDWebImage", "SDWebImageWebPCoder"]). Update the expo-brownfield plugin entry in your app config.`);
++    }
++    return Array.from(new Set(value.map((entry) => entry.trim())));
++};
+ const validateBundleIdentifier = (value, fieldName) => {
+     if (typeof value !== 'string' || !APPLE_BUNDLE_IDENTIFIER.test(value)) {
+         throw new Error(`Invalid ${fieldName} ${JSON.stringify(value)}: must be a valid Apple bundle identifier (e.g. com.example.app). Update your app config and re-run prebuild.`);
+diff --git a/packages/expo-brownfield/plugin/src/ios/plugins/withPodfilePropertiesPlugin.ts b/packages/expo-brownfield/plugin/src/ios/plugins/withPodfilePropertiesPlugin.ts
+index 09dd547293285a..67e1ac6810f172 100644
+--- a/packages/expo-brownfield/plugin/src/ios/plugins/withPodfilePropertiesPlugin.ts
++++ b/packages/expo-brownfield/plugin/src/ios/plugins/withPodfilePropertiesPlugin.ts
+@@ -1,5 +1,6 @@
+ import { type ConfigPlugin, withPodfileProperties } from 'expo/config-plugins';
+ 
++import { HOST_PROVIDED_FRAMEWORKS_KEY } from '../../../../shared/build';
+ import type { PluginConfig } from '../types';
+ 
+ const withPodfilePropertiesPlugin: ConfigPlugin<PluginConfig> = (config, pluginConfig) => {
+@@ -7,6 +8,14 @@ const withPodfilePropertiesPlugin: ConfigPlugin<PluginConfig> = (config, pluginC
+     if (pluginConfig.buildReactNativeFromSource) {
+       config.modResults['ios.useFrameworks'] = 'static';
+     }
++
++    if (pluginConfig.hostProvidedFrameworks.length > 0) {
++      config.modResults[HOST_PROVIDED_FRAMEWORKS_KEY] = JSON.stringify(
++        pluginConfig.hostProvidedFrameworks
++      );
++    } else {
++      delete config.modResults[HOST_PROVIDED_FRAMEWORKS_KEY];
++    }
+     return config;
+   });
+ };
+diff --git a/packages/expo-brownfield/plugin/src/ios/types.ts b/packages/expo-brownfield/plugin/src/ios/types.ts
+index a1d2ce6037eb03..5e28b409ba4f93 100644
+--- a/packages/expo-brownfield/plugin/src/ios/types.ts
++++ b/packages/expo-brownfield/plugin/src/ios/types.ts
+@@ -3,6 +3,7 @@ export interface PluginConfig {
+   targetName: string;
+   buildReactNativeFromSource: boolean;
+   multipleFrameworks: boolean;
++  hostProvidedFrameworks: string[];
+ }
+ 
+ export type IOSPluginProps = Partial<PluginConfig>;
+diff --git a/packages/expo-brownfield/plugin/src/ios/utils/props.ts b/packages/expo-brownfield/plugin/src/ios/utils/props.ts
+index ff2971b2b57055..d5b00f82162479 100644
+--- a/packages/expo-brownfield/plugin/src/ios/utils/props.ts
++++ b/packages/expo-brownfield/plugin/src/ios/utils/props.ts
+@@ -15,9 +15,22 @@ export const getPluginConfig = (props: PluginProps, config: ExpoConfig): PluginC
+     targetName,
+     buildReactNativeFromSource: props?.buildReactNativeFromSource ?? false,
+     multipleFrameworks: props?.multipleFrameworks ?? false,
++    hostProvidedFrameworks: validateHostProvidedFrameworks(props?.hostProvidedFrameworks),
+   };
+ };
+ 
++const validateHostProvidedFrameworks = (value: unknown): string[] => {
++  if (value == null) {
++    return [];
++  }
++  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !entry.trim())) {
++    throw new Error(
++      `Invalid ios.hostProvidedFrameworks ${JSON.stringify(value)}: expected an array of non-empty framework name strings (e.g. ["SDWebImage", "SDWebImageWebPCoder"]). Update the expo-brownfield plugin entry in your app config.`
++    );
++  }
++  return Array.from(new Set(value.map((entry: string) => entry.trim())));
++};
++
+ const validateBundleIdentifier = (value: unknown, fieldName: string): string => {
+   if (typeof value !== 'string' || !APPLE_BUNDLE_IDENTIFIER.test(value)) {
+     throw new Error(
+diff --git a/packages/expo-brownfield/shared/build/index.d.ts b/packages/expo-brownfield/shared/build/index.d.ts
+new file mode 100644
+index 00000000000000..669e46d5b2ebd1
+--- /dev/null
++++ b/packages/expo-brownfield/shared/build/index.d.ts
+@@ -0,0 +1,6 @@
++/**
++ * Key under which the plugin writes the JSON-stringified list of host-provided
++ * frameworks into `ios/Podfile.properties.json`, and from which the CLI reads
++ * it back. Both sides import this constant so the contract cannot drift.
++ */
++export declare const HOST_PROVIDED_FRAMEWORKS_KEY = "ios.brownfieldHostProvidedFrameworks";
+diff --git a/packages/expo-brownfield/shared/build/index.js b/packages/expo-brownfield/shared/build/index.js
+new file mode 100644
+index 00000000000000..67e6f1876df5a6
+--- /dev/null
++++ b/packages/expo-brownfield/shared/build/index.js
+@@ -0,0 +1,10 @@
++"use strict";
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.HOST_PROVIDED_FRAMEWORKS_KEY = void 0;
++/**
++ * Key under which the plugin writes the JSON-stringified list of host-provided
++ * frameworks into `ios/Podfile.properties.json`, and from which the CLI reads
++ * it back. Both sides import this constant so the contract cannot drift.
++ */
++exports.HOST_PROVIDED_FRAMEWORKS_KEY = 'ios.brownfieldHostProvidedFrameworks';
++//# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/shared/build/index.js.map b/packages/expo-brownfield/shared/build/index.js.map
+new file mode 100644
+index 00000000000000..4a53038fe4d7da
+--- /dev/null
++++ b/packages/expo-brownfield/shared/build/index.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":";;;AAAA;;;;GAIG;AACU,QAAA,4BAA4B,GAAG,sCAAsC,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-brownfield/shared/src/index.ts b/packages/expo-brownfield/shared/src/index.ts
+new file mode 100644
+index 00000000000000..cf2608667a490e
+--- /dev/null
++++ b/packages/expo-brownfield/shared/src/index.ts
+@@ -0,0 +1,6 @@
++/**
++ * Key under which the plugin writes the JSON-stringified list of host-provided
++ * frameworks into `ios/Podfile.properties.json`, and from which the CLI reads
++ * it back. Both sides import this constant so the contract cannot drift.
++ */
++export const HOST_PROVIDED_FRAMEWORKS_KEY = 'ios.brownfieldHostProvidedFrameworks';
+diff --git a/packages/expo-brownfield/shared/tsconfig.json b/packages/expo-brownfield/shared/tsconfig.json
+new file mode 100644
+index 00000000000000..62fe223af9d2e7
+--- /dev/null
++++ b/packages/expo-brownfield/shared/tsconfig.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "expo-module-scripts/tsconfig.node",
++  "compilerOptions": {
++    "rootDir": "./src",
++    "outDir": "./build"
++  },
++  "include": ["./src"],
++  "exclude": ["**/__mocks__/*", "**/__tests__/*"]
++}
+diff --git a/packages/expo-module-scripts/bin/expo-module-build b/packages/expo-module-scripts/bin/expo-module-build
+index dd18fbaf94fd62..1172022dfc1c60 100755
+--- a/packages/expo-module-scripts/bin/expo-module-build
++++ b/packages/expo-module-scripts/bin/expo-module-build
+@@ -8,7 +8,7 @@ import { commandRunner, getArgs, addWatchFlagIfNeeded } from '../utils/commandUt
+ 
+ const dirname = path.dirname(fileURLToPath(import.meta.url));
+ 
+-const EXTRA_MODULE_BUILD_TARGETS = ['plugin', 'cli', 'utils', 'scripts'];
++const EXTRA_MODULE_BUILD_TARGETS = ['plugin', 'cli', 'utils', 'scripts', 'shared'];
+ 
+ let args = getArgs();
+ 
+diff --git a/packages/expo-module-scripts/bin/expo-module-lint b/packages/expo-module-scripts/bin/expo-module-lint
+index e9243ad0e4cfdc..75f1bbfc8ac8b4 100755
+--- a/packages/expo-module-scripts/bin/expo-module-lint
++++ b/packages/expo-module-scripts/bin/expo-module-lint
+@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
+ 
+ const dirname = path.dirname(fileURLToPath(import.meta.url));
+ 
+-const EXTRA_MODULE_BUILD_TARGETS = ['plugin', 'cli', 'utils', 'scripts'];
++const EXTRA_MODULE_BUILD_TARGETS = ['plugin', 'cli', 'utils', 'scripts', 'shared'];
+ 
+ let args = getArgs();
+ 

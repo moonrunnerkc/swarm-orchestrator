@@ -1,0 +1,1300 @@
+diff --git a/.changeset/fix-json-binding-mapping.md b/.changeset/fix-json-binding-mapping.md
+new file mode 100644
+index 0000000000..2b49c4b937
+--- /dev/null
++++ b/.changeset/fix-json-binding-mapping.md
+@@ -0,0 +1,7 @@
++---
++"@cloudflare/workers-utils": patch
++---
++
++Correctly map JSON bindings in `mapWorkerMetadataBindings`
++
++The `json` binding case used literal keys `name` and `json` instead of a computed property key `[binding.name]: binding.json`. This caused JSON bindings to always produce `{ name: "<binding_name>", json: <value> }` instead of `{ <binding_name>: <value> }`, clobbering any existing vars with those keys. This is now consistent with how `plain_text` bindings are mapped.
+diff --git a/.changeset/fix-wrangler-json-binding-init-from-dash.md b/.changeset/fix-wrangler-json-binding-init-from-dash.md
+new file mode 100644
+index 0000000000..5b9c8037d9
+--- /dev/null
++++ b/.changeset/fix-wrangler-json-binding-init-from-dash.md
+@@ -0,0 +1,12 @@
++---
++"wrangler": patch
++---
++
++Fix JSON variable bindings in `wrangler init --from-dash` and remote config diff
++
++When fetching a remote Worker's configuration, JSON variable bindings (e.g. `{"my_value": 5}`) were incorrectly serialized as `{ "name": "MY_JSON", "json": {"my_value": 5} }` instead of `{ "MY_JSON": {"my_value": 5} }`. This affected two areas:
++
++- `wrangler init --from-dash` would generate a `wrangler.json` with broken `vars` entries
++- Remote config diff checks would always report JSON bindings as changed, since the malformed remote representation could never match the local config
++
++Both issues are now fixed and remote JSON bindings are now correctly mapped.
+diff --git a/packages/workers-utils/src/map-worker-metadata-bindings.ts b/packages/workers-utils/src/map-worker-metadata-bindings.ts
+index db23b0543c..8f52db82bd 100644
+--- a/packages/workers-utils/src/map-worker-metadata-bindings.ts
++++ b/packages/workers-utils/src/map-worker-metadata-bindings.ts
+@@ -34,8 +34,7 @@ export function mapWorkerMetadataBindings(
+ 						{
+ 							configObj.vars = {
+ 								...(configObj.vars ?? {}),
+-								name: binding.name,
+-								json: binding.json,
++								[binding.name]: binding.json,
+ 							};
+ 						}
+ 						break;
+diff --git a/packages/workers-utils/tests/construct-wrangler-config.test.ts b/packages/workers-utils/tests/construct-wrangler-config.test.ts
+new file mode 100644
+index 0000000000..0c696da6bc
+--- /dev/null
++++ b/packages/workers-utils/tests/construct-wrangler-config.test.ts
+@@ -0,0 +1,517 @@
++import { describe, it } from "vitest";
++import { ENVIRONMENT_TAG_PREFIX, SERVICE_TAG_PREFIX } from "../src/constants";
++import { constructWranglerConfig } from "../src/construct-wrangler-config";
++
++type APIWorkerConfigOrArray = Parameters<typeof constructWranglerConfig>[0];
++type APIWorkerConfig = Exclude<APIWorkerConfigOrArray, unknown[]>;
++
++/**
++ * Factory for a minimal valid APIWorkerConfig.
++ * Tests override only the fields they care about.
++ *
++ * @param overrides - Partial fields to merge into the default config
++ * @returns A complete APIWorkerConfig with sensible defaults
++ */
++function makeWorkerConfig(
++	overrides: Partial<APIWorkerConfig> = {}
++): APIWorkerConfig {
++	return {
++		name: "my-worker",
++		entrypoint: "index.js",
++		tags: [],
++		compatibility_date: "2025-01-01",
++		compatibility_flags: [],
++		logpush: undefined,
++		routes: [],
++		tail_consumers: undefined,
++		domains: [],
++		schedules: [],
++		bindings: [],
++		observability: undefined,
++		limits: undefined,
++		placement: undefined,
++		subdomain: { enabled: true, previews_enabled: false },
++		...overrides,
++	};
++}
++
++describe("constructWranglerConfig", () => {
++	describe("input normalization", () => {
++		it("accepts a single worker (non-array)", ({ expect }) => {
++			const config = makeWorkerConfig();
++			const result = constructWranglerConfig(config);
++			expect(result.name).toBe("my-worker");
++			expect(result.main).toBe("index.js");
++		});
++
++		it("accepts an array with one worker", ({ expect }) => {
++			const config = makeWorkerConfig();
++			const result = constructWranglerConfig([config]);
++			expect(result.name).toBe("my-worker");
++			expect(result.main).toBe("index.js");
++		});
++	});
++
++	describe("basic field mapping", () => {
++		it("maps core fields correctly", ({ expect }) => {
++			const config = makeWorkerConfig({
++				name: "test-worker",
++				entrypoint: "src/main.ts",
++				compatibility_date: "2025-03-15",
++				compatibility_flags: ["nodejs_compat", "url_standard"],
++				subdomain: { enabled: true, previews_enabled: true },
++			});
++			const result = constructWranglerConfig(config);
++
++			expect(result.name).toBe("test-worker");
++			expect(result.main).toBe("src/main.ts");
++			expect(result.workers_dev).toBe(true);
++			expect(result.preview_urls).toBe(true);
++			expect(result.compatibility_date).toBe("2025-03-15");
++			expect(result.compatibility_flags).toEqual([
++				"nodejs_compat",
++				"url_standard",
++			]);
++		});
++
++		it("maps workers_dev and preview_urls from subdomain", ({ expect }) => {
++			const config = makeWorkerConfig({
++				subdomain: { enabled: false, previews_enabled: true },
++			});
++			const result = constructWranglerConfig(config);
++
++			expect(result.workers_dev).toBe(false);
++			expect(result.preview_urls).toBe(true);
++		});
++	});
++
++	describe("routes", () => {
++		it("merges API routes and custom domains into a unified routes array", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({
++				routes: [
++					{
++						id: "route-1",
++						pattern: "example.com/*",
++						zone_name: "example.com",
++						script: "my-worker",
++					},
++				],
++				domains: [
++					{
++						id: "domain-1",
++						hostname: "api.example.com",
++						zone_name: "example.com",
++						service: "my-worker",
++						environment: "production",
++						zone_id: "zone-123",
++					},
++				],
++			});
++			const result = constructWranglerConfig(config);
++
++			expect(result.routes).toEqual([
++				{ pattern: "example.com/*", zone_name: "example.com" },
++				{
++					pattern: "api.example.com",
++					zone_name: "example.com",
++					custom_domain: true,
++					enabled: undefined,
++					previews_enabled: undefined,
++				},
++			]);
++		});
++
++		it("omits routes key when both routes and domains are empty", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({ routes: [], domains: [] });
++			const result = constructWranglerConfig(config);
++			expect(result.routes).toBeUndefined();
++		});
++	});
++
++	describe("placement", () => {
++		it("sets placement to { mode: 'smart' } when mode is smart", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({
++				placement: { mode: "smart" },
++			});
++			const result = constructWranglerConfig(config);
++			expect(result.placement).toEqual({ mode: "smart" });
++		});
++
++		it("sets placement to undefined when mode is not smart", ({ expect }) => {
++			const config = makeWorkerConfig({
++				placement: { mode: "off" } as unknown as APIWorkerConfig["placement"],
++			});
++			const result = constructWranglerConfig(config);
++			expect(result.placement).toBeUndefined();
++		});
++
++		it("sets placement to undefined when placement is undefined", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({ placement: undefined });
++			const result = constructWranglerConfig(config);
++			expect(result.placement).toBeUndefined();
++		});
++	});
++
++	describe("durable object migrations", () => {
++		it("generates migrations when DO bindings match worker name and migration_tag is set", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({
++				name: "my-worker",
++				migration_tag: "v1",
++				bindings: [
++					{
++						type: "durable_object_namespace",
++						name: "MY_DO",
++						class_name: "MyDurableObject",
++						script_name: "my-worker",
++					},
++					{
++						type: "durable_object_namespace",
++						name: "OTHER_DO",
++						class_name: "OtherDO",
++						script_name: "my-worker",
++					},
++				],
++			});
++			const result = constructWranglerConfig(config);
++
++			expect(result.migrations).toEqual([
++				{
++					tag: "v1",
++					new_classes: ["MyDurableObject", "OtherDO"],
++				},
++			]);
++		});
++
++		it("does not generate migrations when DO bindings have different script_name", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({
++				name: "my-worker",
++				migration_tag: "v1",
++				bindings: [
++					{
++						type: "durable_object_namespace",
++						name: "EXTERNAL_DO",
++						class_name: "ExternalDO",
++						script_name: "other-worker",
++					},
++				],
++			});
++			const result = constructWranglerConfig(config);
++			expect(result.migrations).toBeUndefined();
++		});
++
++		it("does not generate migrations when migration_tag is missing", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({
++				name: "my-worker",
++				bindings: [
++					{
++						type: "durable_object_namespace",
++						name: "MY_DO",
++						class_name: "MyDO",
++						script_name: "my-worker",
++					},
++				],
++			});
++			const result = constructWranglerConfig(config);
++			expect(result.migrations).toBeUndefined();
++		});
++	});
++
++	describe("scheduled triggers", () => {
++		it("generates triggers.crons from schedules", ({ expect }) => {
++			const config = makeWorkerConfig({
++				schedules: [{ cron: "*/5 * * * *" }, { cron: "0 0 * * *" }],
++			});
++			const result = constructWranglerConfig(config);
++
++			expect(result.triggers).toEqual({
++				crons: ["*/5 * * * *", "0 0 * * *"],
++			});
++		});
++
++		it("omits triggers when schedules is empty", ({ expect }) => {
++			const config = makeWorkerConfig({ schedules: [] });
++			const result = constructWranglerConfig(config);
++			expect(result.triggers).toBeUndefined();
++		});
++	});
++
++	describe("tail_consumers", () => {
++		it("converts null tail_consumers to undefined (PR #11286 fix)", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({ tail_consumers: null });
++			const result = constructWranglerConfig(config);
++			expect(result.tail_consumers).toBeUndefined();
++		});
++
++		it("passes through non-null tail_consumers", ({ expect }) => {
++			const consumers = [
++				{ service: "logger" },
++				{ service: "metrics", environment: "production" },
++			];
++			const config = makeWorkerConfig({ tail_consumers: consumers });
++			const result = constructWranglerConfig(config);
++			expect(result.tail_consumers).toEqual(consumers);
++		});
++
++		it("passes through undefined tail_consumers as undefined", ({ expect }) => {
++			const config = makeWorkerConfig({ tail_consumers: undefined });
++			const result = constructWranglerConfig(config);
++			expect(result.tail_consumers).toBeUndefined();
++		});
++	});
++
++	describe("observability", () => {
++		it("passes through observability config", ({ expect }) => {
++			const observability = { enabled: true, head_sampling_rate: 0.5 };
++			const config = makeWorkerConfig({ observability });
++			const result = constructWranglerConfig(config);
++			expect(result.observability).toEqual(observability);
++		});
++
++		it("passes through undefined observability", ({ expect }) => {
++			const config = makeWorkerConfig({ observability: undefined });
++			const result = constructWranglerConfig(config);
++			expect(result.observability).toBeUndefined();
++		});
++	});
++
++	describe("limits", () => {
++		it("passes through limits config", ({ expect }) => {
++			const limits = { cpu_ms: 50, subrequests: 100 };
++			const config = makeWorkerConfig({ limits });
++			const result = constructWranglerConfig(config);
++			expect(result.limits).toEqual(limits);
++		});
++
++		it("passes through undefined limits", ({ expect }) => {
++			const config = makeWorkerConfig({ limits: undefined });
++			const result = constructWranglerConfig(config);
++			expect(result.limits).toBeUndefined();
++		});
++	});
++
++	describe("bindings integration", () => {
++		it("maps key binding types through to the config", ({ expect }) => {
++			const config = makeWorkerConfig({
++				bindings: [
++					{ type: "plain_text", name: "MY_VAR", text: "hello" },
++					{
++						type: "kv_namespace",
++						name: "MY_KV",
++						namespace_id: "kv-123",
++					},
++					{
++						type: "r2_bucket",
++						name: "MY_BUCKET",
++						bucket_name: "my-bucket",
++					},
++					{ type: "d1", name: "MY_DB", id: "db-123" },
++					{
++						type: "service",
++						name: "MY_SERVICE",
++						service: "other-worker",
++					},
++					{
++						type: "queue",
++						name: "MY_QUEUE",
++						queue_name: "my-queue",
++					},
++				],
++			});
++			const result = constructWranglerConfig(config);
++
++			expect(result.vars).toEqual({ MY_VAR: "hello" });
++			expect(result.kv_namespaces).toEqual([
++				{ id: "kv-123", binding: "MY_KV" },
++			]);
++			expect(result.r2_buckets).toEqual([
++				{
++					binding: "MY_BUCKET",
++					bucket_name: "my-bucket",
++					jurisdiction: undefined,
++				},
++			]);
++			expect(result.d1_databases).toEqual([
++				{ binding: "MY_DB", database_id: "db-123" },
++			]);
++			expect(result.services).toEqual([
++				{
++					binding: "MY_SERVICE",
++					service: "other-worker",
++					environment: undefined,
++					entrypoint: undefined,
++				},
++			]);
++			expect(result.queues).toEqual({
++				producers: [
++					{
++						binding: "MY_QUEUE",
++						queue: "my-queue",
++						delivery_delay: undefined,
++					},
++				],
++			});
++		});
++
++		it("handles assets binding without throwing (PR #11339 fix)", ({
++			expect,
++		}) => {
++			const config = makeWorkerConfig({
++				bindings: [{ type: "assets", name: "ASSETS" }],
++			});
++			const result = constructWranglerConfig(config);
++			expect(result.assets).toEqual({ binding: "ASSETS" });
++		});
++
++		it("filters out secret_text bindings", ({ expect }) => {
++			const config = makeWorkerConfig({
++				bindings: [
++					{ type: "secret_text", name: "MY_SECRET", text: "s3cret" },
++					{ type: "plain_text", name: "MY_VAR", text: "hello" },
++				],
++			});
++			const result = constructWranglerConfig(config);
++			expect(result.vars).toEqual({ MY_VAR: "hello" });
++			// secret_text should not appear anywhere in the output
++			expect(JSON.stringify(result)).not.toContain("s3cret");
++		});
++	});
++
++	describe("multi-environment support", () => {
++		it("uses top-level worker as base config and tagged workers as environments", ({
++			expect,
++		}) => {
++			const topLevel = makeWorkerConfig({
++				name: "my-worker",
++				entrypoint: "index.js",
++				tags: [],
++				compatibility_date: "2025-01-01",
++			});
++			const staging = makeWorkerConfig({
++				name: "my-worker-staging",
++				entrypoint: "index.js",
++				tags: [
++					`${SERVICE_TAG_PREFIX}my-worker`,
++					`${ENVIRONMENT_TAG_PREFIX}staging`,
++				],
++				compatibility_date: "2025-02-01",
++			});
++			const production = makeWorkerConfig({
++				name: "my-worker-production",
++				entrypoint: "index.js",
++				tags: [
++					`${SERVICE_TAG_PREFIX}my-worker`,
++					`${ENVIRONMENT_TAG_PREFIX}production`,
++				],
++				compatibility_date: "2025-03-01",
++			});
++
++			const result = constructWranglerConfig([topLevel, staging, production]);
++
++			expect(result.name).toBe("my-worker");
++			expect(result.compatibility_date).toBe("2025-01-01");
++			expect(result.env).toBeDefined();
++			expect(result.env?.staging).toBeDefined();
++			expect(result.env?.staging?.compatibility_date).toBe("2025-02-01");
++			expect(result.env?.production).toBeDefined();
++			expect(result.env?.production?.compatibility_date).toBe("2025-03-01");
++		});
++
++		it("creates synthetic top-level when no untagged worker exists", ({
++			expect,
++		}) => {
++			const staging = makeWorkerConfig({
++				name: "my-worker-staging",
++				entrypoint: "src/index.ts",
++				tags: [
++					`${ENVIRONMENT_TAG_PREFIX}staging`,
++					`${SERVICE_TAG_PREFIX}my-worker-staging`,
++				],
++			});
++			const production = makeWorkerConfig({
++				name: "my-worker-prod",
++				entrypoint: "src/index.ts",
++				tags: [
++					`${ENVIRONMENT_TAG_PREFIX}production`,
++					`${SERVICE_TAG_PREFIX}my-worker-staging`,
++				],
++			});
++
++			const result = constructWranglerConfig([staging, production]);
++
++			// Synthetic top-level should use workers[0] for name and entrypoint
++			expect(result.name).toBe("my-worker-staging");
++			expect(result.main).toBe("src/index.ts");
++			// Should not have compatibility_date etc. since it's synthetic
++			expect(result.compatibility_date).toBeUndefined();
++		});
++
++		it("skips workers with mismatched service tags", ({ expect }) => {
++			const topLevel = makeWorkerConfig({
++				name: "my-worker",
++				tags: [],
++			});
++			const matchingEnv = makeWorkerConfig({
++				name: "my-worker-staging",
++				tags: [
++					`${SERVICE_TAG_PREFIX}my-worker`,
++					`${ENVIRONMENT_TAG_PREFIX}staging`,
++				],
++			});
++			const mismatchedEnv = makeWorkerConfig({
++				name: "other-worker-prod",
++				tags: [
++					`${SERVICE_TAG_PREFIX}other-worker`,
++					`${ENVIRONMENT_TAG_PREFIX}production`,
++				],
++			});
++
++			const result = constructWranglerConfig([
++				topLevel,
++				matchingEnv,
++				mismatchedEnv,
++			]);
++
++			expect(result.env?.staging).toBeDefined();
++			expect(result.env?.production).toBeUndefined();
++		});
++
++		it("skips workers without an environment tag", ({ expect }) => {
++			const topLevel = makeWorkerConfig({
++				name: "my-worker",
++				tags: [],
++			});
++			const noEnvTag = makeWorkerConfig({
++				name: "my-worker-noenv",
++				tags: [`${SERVICE_TAG_PREFIX}my-worker`],
++			});
++
++			const result = constructWranglerConfig([topLevel, noEnvTag]);
++			expect(result.env).toBeUndefined();
++		});
++
++		it("handles null tags by treating worker as top-level", ({ expect }) => {
++			const config = makeWorkerConfig({ tags: null });
++			const result = constructWranglerConfig(config);
++			// Worker with null tags is treated as having no tags,
++			// so it becomes the top-level environment
++			expect(result.name).toBe("my-worker");
++			expect(result.main).toBe("index.js");
++		});
++	});
++});
+diff --git a/packages/workers-utils/tests/map-worker-metadata-bindings.test.ts b/packages/workers-utils/tests/map-worker-metadata-bindings.test.ts
+new file mode 100644
+index 0000000000..2899cc8129
+--- /dev/null
++++ b/packages/workers-utils/tests/map-worker-metadata-bindings.test.ts
+@@ -0,0 +1,726 @@
++import { describe, it } from "vitest";
++import { mapWorkerMetadataBindings } from "../src/map-worker-metadata-bindings";
++import type { WorkerMetadataBinding } from "../src/types";
++
++describe("mapWorkerMetadataBindings", () => {
++	it("returns an empty object for an empty bindings array", ({ expect }) => {
++		const result = mapWorkerMetadataBindings([]);
++		expect(result).toEqual({});
++	});
++
++	describe("vars", () => {
++		it("maps plain_text binding to vars", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "plain_text", name: "MY_VAR", text: "hello world" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vars).toEqual({ MY_VAR: "hello world" });
++		});
++
++		it("accumulates multiple plain_text bindings", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "plain_text", name: "VAR_A", text: "aaa" },
++				{ type: "plain_text", name: "VAR_B", text: "bbb" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vars).toEqual({ VAR_A: "aaa", VAR_B: "bbb" });
++		});
++
++		it("maps json binding to vars", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "json",
++					name: "MY_JSON",
++					json: { key: "value" },
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vars).toEqual({
++				MY_JSON: { key: "value" },
++			});
++		});
++	});
++
++	describe("kv_namespaces", () => {
++		it("maps kv_namespace binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "kv_namespace",
++					name: "MY_KV",
++					namespace_id: "kv-abc-123",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.kv_namespaces).toEqual([
++				{ id: "kv-abc-123", binding: "MY_KV" },
++			]);
++		});
++
++		it("accumulates multiple kv_namespace bindings", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "kv_namespace",
++					name: "KV_A",
++					namespace_id: "ns-1",
++				},
++				{
++					type: "kv_namespace",
++					name: "KV_B",
++					namespace_id: "ns-2",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.kv_namespaces).toHaveLength(2);
++		});
++	});
++
++	describe("durable_objects", () => {
++		it("maps durable_object_namespace binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "durable_object_namespace",
++					name: "MY_DO",
++					class_name: "MyDurableObject",
++					script_name: "my-worker",
++					environment: "production",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.durable_objects).toEqual({
++				bindings: [
++					{
++						name: "MY_DO",
++						class_name: "MyDurableObject",
++						script_name: "my-worker",
++						environment: "production",
++					},
++				],
++			});
++		});
++
++		it("accumulates multiple DO bindings", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "durable_object_namespace",
++					name: "DO_A",
++					class_name: "ClassA",
++				},
++				{
++					type: "durable_object_namespace",
++					name: "DO_B",
++					class_name: "ClassB",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.durable_objects?.bindings).toHaveLength(2);
++		});
++	});
++
++	describe("d1_databases", () => {
++		it("maps d1 binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "d1", name: "MY_DB", id: "db-456" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.d1_databases).toEqual([
++				{ binding: "MY_DB", database_id: "db-456" },
++			]);
++		});
++	});
++
++	describe("r2_buckets", () => {
++		it("maps r2_bucket binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "r2_bucket",
++					name: "MY_BUCKET",
++					bucket_name: "my-bucket",
++					jurisdiction: "eu",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.r2_buckets).toEqual([
++				{
++					binding: "MY_BUCKET",
++					bucket_name: "my-bucket",
++					jurisdiction: "eu",
++				},
++			]);
++		});
++	});
++
++	describe("singleton bindings", () => {
++		it("maps browser binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "browser", name: "BROWSER" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.browser).toEqual({ binding: "BROWSER" });
++		});
++
++		it("maps ai binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [{ type: "ai", name: "AI" }];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.ai).toEqual({ binding: "AI" });
++		});
++
++		it("maps images binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "images", name: "IMAGES" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.images).toEqual({ binding: "IMAGES" });
++		});
++
++		it("maps stream binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "stream", name: "STREAM" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.stream).toEqual({ binding: "STREAM" });
++		});
++
++		it("maps media binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "media", name: "MEDIA" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.media).toEqual({ binding: "MEDIA" });
++		});
++
++		it("maps version_metadata binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "version_metadata", name: "VERSION" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.version_metadata).toEqual({ binding: "VERSION" });
++		});
++	});
++
++	describe("services", () => {
++		it("maps service binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "service",
++					name: "AUTH",
++					service: "auth-worker",
++					environment: "production",
++					entrypoint: "AuthHandler",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.services).toEqual([
++				{
++					binding: "AUTH",
++					service: "auth-worker",
++					environment: "production",
++					entrypoint: "AuthHandler",
++				},
++			]);
++		});
++	});
++
++	describe("queues", () => {
++		it("maps queue binding to queues.producers", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "queue",
++					name: "MY_QUEUE",
++					queue_name: "my-queue",
++					delivery_delay: 30,
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.queues).toEqual({
++				producers: [
++					{
++						binding: "MY_QUEUE",
++						queue: "my-queue",
++						delivery_delay: 30,
++					},
++				],
++			});
++		});
++
++		it("accumulates multiple queue bindings", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "queue", name: "Q1", queue_name: "queue-1" },
++				{ type: "queue", name: "Q2", queue_name: "queue-2" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.queues?.producers).toHaveLength(2);
++		});
++	});
++
++	describe("vectorize", () => {
++		it("maps vectorize binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "vectorize",
++					name: "MY_INDEX",
++					index_name: "my-index",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vectorize).toEqual([
++				{ binding: "MY_INDEX", index_name: "my-index" },
++			]);
++		});
++	});
++
++	describe("hyperdrive", () => {
++		it("maps hyperdrive binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "hyperdrive", name: "MY_HD", id: "hd-123" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.hyperdrive).toEqual([{ binding: "MY_HD", id: "hd-123" }]);
++		});
++	});
++
++	describe("analytics_engine_datasets", () => {
++		it("maps analytics_engine binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "analytics_engine",
++					name: "ANALYTICS",
++					dataset: "my-dataset",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.analytics_engine_datasets).toEqual([
++				{ binding: "ANALYTICS", dataset: "my-dataset" },
++			]);
++		});
++	});
++
++	describe("dispatch_namespaces", () => {
++		it("maps dispatch_namespace binding without outbound", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "dispatch_namespace",
++					name: "DISPATCHER",
++					namespace: "my-ns",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.dispatch_namespaces).toEqual([
++				{ binding: "DISPATCHER", namespace: "my-ns" },
++			]);
++		});
++
++		it("maps dispatch_namespace binding with outbound", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "dispatch_namespace",
++					name: "DISPATCHER",
++					namespace: "my-ns",
++					outbound: {
++						worker: {
++							service: "outbound-worker",
++							environment: "production",
++						},
++						params: [{ name: "param1" }, { name: "param2" }],
++					},
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.dispatch_namespaces).toEqual([
++				{
++					binding: "DISPATCHER",
++					namespace: "my-ns",
++					outbound: {
++						service: "outbound-worker",
++						environment: "production",
++						parameters: ["param1", "param2"],
++					},
++				},
++			]);
++		});
++	});
++
++	describe("logfwdr", () => {
++		it("maps logfwdr binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "logfwdr",
++					name: "LOG",
++					destination: "my-destination",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.logfwdr).toEqual({
++				bindings: [{ name: "LOG", destination: "my-destination" }],
++			});
++		});
++	});
++
++	describe("blob bindings", () => {
++		it("maps wasm_module binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "wasm_module", name: "WASM", part: "wasm-part" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.wasm_modules).toEqual({ WASM: "wasm-part" });
++		});
++
++		it("maps text_blob binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "text_blob", name: "TEXT", part: "text-part" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.text_blobs).toEqual({ TEXT: "text-part" });
++		});
++
++		it("maps data_blob binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "data_blob", name: "DATA", part: "data-part" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.data_blobs).toEqual({ DATA: "data-part" });
++		});
++	});
++
++	describe("send_email", () => {
++		it("maps send_email binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "send_email",
++					name: "EMAIL",
++					destination_address: "test@example.com",
++					allowed_destination_addresses: ["a@b.com", "c@d.com"],
++					allowed_sender_addresses: ["sender@example.com"],
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.send_email).toEqual([
++				{
++					name: "EMAIL",
++					destination_address: "test@example.com",
++					allowed_destination_addresses: ["a@b.com", "c@d.com"],
++					allowed_sender_addresses: ["sender@example.com"],
++				},
++			]);
++		});
++	});
++
++	describe("mtls_certificates", () => {
++		it("maps mtls_certificate binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "mtls_certificate",
++					name: "CERT",
++					certificate_id: "cert-123",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.mtls_certificates).toEqual([
++				{ binding: "CERT", certificate_id: "cert-123" },
++			]);
++		});
++	});
++
++	describe("secrets_store_secrets", () => {
++		it("maps secrets_store_secret binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "secrets_store_secret",
++					name: "SECRET",
++					store_id: "store-1",
++					secret_name: "my-secret",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.secrets_store_secrets).toEqual([
++				{
++					binding: "SECRET",
++					store_id: "store-1",
++					secret_name: "my-secret",
++				},
++			]);
++		});
++	});
++
++	describe("artifacts", () => {
++		it("maps artifacts binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "artifacts",
++					name: "ARTIFACTS",
++					namespace: "my-artifacts",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.artifacts).toEqual([
++				{ binding: "ARTIFACTS", namespace: "my-artifacts" },
++			]);
++		});
++	});
++
++	describe("unsafe_hello_world", () => {
++		it("maps unsafe_hello_world binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "unsafe_hello_world",
++					name: "HELLO",
++					enable_timer: true,
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.unsafe_hello_world).toEqual([
++				{ binding: "HELLO", enable_timer: true },
++			]);
++		});
++	});
++
++	describe("flagship", () => {
++		it("maps flagship binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "flagship",
++					name: "FLAGS",
++					app_id: "app-123",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.flagship).toEqual([
++				{ binding: "FLAGS", app_id: "app-123" },
++			]);
++		});
++	});
++
++	describe("pipelines", () => {
++		it("maps pipelines binding with stream", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "pipelines",
++					name: "PIPE",
++					stream: "my-stream",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.pipelines).toEqual([
++				{ binding: "PIPE", stream: "my-stream" },
++			]);
++		});
++
++		it("maps pipelines binding with pipeline", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "pipelines",
++					name: "PIPE",
++					pipeline: "my-pipeline",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.pipelines).toEqual([
++				{ binding: "PIPE", pipeline: "my-pipeline" },
++			]);
++		});
++	});
++
++	describe("assets", () => {
++		it("maps assets binding (PR #11339 fix)", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "assets", name: "ASSETS" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.assets).toEqual({ binding: "ASSETS" });
++		});
++	});
++
++	describe("workflows", () => {
++		it("maps workflow binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "workflow",
++					name: "MY_WORKFLOW",
++					workflow_name: "my-wf",
++					class_name: "MyWorkflow",
++					script_name: "wf-worker",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.workflows).toEqual([
++				{
++					binding: "MY_WORKFLOW",
++					name: "my-wf",
++					class_name: "MyWorkflow",
++					script_name: "wf-worker",
++				},
++			]);
++		});
++	});
++
++	describe("worker_loaders", () => {
++		it("maps worker_loader binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "worker_loader", name: "LOADER" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.worker_loaders).toEqual([{ binding: "LOADER" }]);
++		});
++	});
++
++	describe("ratelimits", () => {
++		it("maps ratelimit binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "ratelimit",
++					name: "RATE_LIMIT",
++					namespace_id: "rl-ns-1",
++					simple: { limit: 100, period: 60 },
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.ratelimits).toEqual([
++				{
++					name: "RATE_LIMIT",
++					namespace_id: "rl-ns-1",
++					simple: { limit: 100, period: 60 },
++				},
++			]);
++		});
++	});
++
++	describe("vpc_services", () => {
++		it("maps vpc_service binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "vpc_service",
++					name: "VPC",
++					service_id: "svc-123",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vpc_services).toEqual([
++				{ binding: "VPC", service_id: "svc-123" },
++			]);
++		});
++	});
++
++	describe("vpc_networks", () => {
++		it("maps vpc_network binding with tunnel_id", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "vpc_network",
++					name: "VPC_NET",
++					tunnel_id: "tun-123",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vpc_networks).toEqual([
++				{ binding: "VPC_NET", tunnel_id: "tun-123" },
++			]);
++		});
++
++		it("maps vpc_network binding with network_id", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "vpc_network",
++					name: "VPC_NET",
++					network_id: "net-456",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vpc_networks).toEqual([
++				{ binding: "VPC_NET", network_id: "net-456" },
++			]);
++		});
++
++		it("does not map vpc_network binding without tunnel_id or network_id", ({
++			expect,
++		}) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "vpc_network", name: "VPC_NET" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vpc_networks).toBeUndefined();
++		});
++	});
++
++	describe("ai_search", () => {
++		it("maps ai_search_namespace binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "ai_search_namespace",
++					name: "SEARCH_NS",
++					namespace: "my-search-ns",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.ai_search_namespaces).toEqual([
++				{ binding: "SEARCH_NS", namespace: "my-search-ns" },
++			]);
++		});
++
++		it("maps ai_search binding", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{
++					type: "ai_search",
++					name: "SEARCH",
++					instance_name: "my-instance",
++				},
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.ai_search).toEqual([
++				{ binding: "SEARCH", instance_name: "my-instance" },
++			]);
++		});
++	});
++
++	describe("secret_text filtering", () => {
++		it("filters out secret_text bindings", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "secret_text", name: "SECRET", text: "s3cret" },
++				{ type: "plain_text", name: "VAR", text: "public" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.vars).toEqual({ VAR: "public" });
++			expect(JSON.stringify(result)).not.toContain("s3cret");
++		});
++	});
++
++	describe("inherit binding", () => {
++		it("maps inherit binding to unsafe", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "inherit", name: "INHERITED" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++			expect(result.unsafe).toEqual({
++				bindings: [{ type: "inherit", name: "INHERITED" }],
++				metadata: undefined,
++			});
++		});
++	});
++
++	describe("mixed bindings", () => {
++		it("correctly combines multiple different binding types", ({ expect }) => {
++			const bindings: WorkerMetadataBinding[] = [
++				{ type: "plain_text", name: "VAR", text: "hello" },
++				{
++					type: "kv_namespace",
++					name: "KV",
++					namespace_id: "ns-1",
++				},
++				{
++					type: "r2_bucket",
++					name: "BUCKET",
++					bucket_name: "bucket",
++				},
++				{ type: "ai", name: "AI" },
++				{ type: "d1", name: "DB", id: "db-1" },
++				{ type: "secret_text", name: "SECRET", text: "hidden" },
++			];
++			const result = mapWorkerMetadataBindings(bindings);
++
++			expect(result.vars).toEqual({ VAR: "hello" });
++			expect(result.kv_namespaces).toHaveLength(1);
++			expect(result.r2_buckets).toHaveLength(1);
++			expect(result.ai).toEqual({ binding: "AI" });
++			expect(result.d1_databases).toHaveLength(1);
++			// secret_text should be filtered out
++			expect(JSON.stringify(result)).not.toContain("hidden");
++		});
++	});
++});

@@ -1,0 +1,2056 @@
+diff --git a/docs/.vitepress/config.ts b/docs/.vitepress/config.ts
+index ce5a4023eae661..8a33a733905b64 100644
+--- a/docs/.vitepress/config.ts
++++ b/docs/.vitepress/config.ts
+@@ -527,7 +527,14 @@ const config = defineConfig({
+     // languages used for twoslash and jsdocs in twoslash
+     languages: ['ts', 'js', 'json'],
+     codeTransformers: [
+-      transformerTwoslash(),
++      transformerTwoslash({
++        twoslashOptions: {
++          compilerOptions: {
++            moduleResolution: 100, // bundler
++            ignoreDeprecations: '6.0', // remove the options entirely when twoslash doesn't set `baseUrl`
++          },
++        },
++      }),
+       // add `style:*` support
+       {
+         root(hast) {
+diff --git a/docs/tsconfig.json b/docs/tsconfig.json
+index 931d76185b6059..367bf159856f4a 100644
+--- a/docs/tsconfig.json
++++ b/docs/tsconfig.json
+@@ -1,8 +1,8 @@
+ {
+   "compilerOptions": {
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "skipLibCheck": true,
+     "types": ["vite/client"],
+ 
+@@ -14,12 +14,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["**/*.ts", ".vitepress/**/*.ts", ".vitepress/**/*.vue"]
+ }
+diff --git a/package.json b/package.json
+index ef47d0c291d9b9..db863b01834d8d 100644
+--- a/package.json
++++ b/package.json
+@@ -68,8 +68,8 @@
+     "rollup": "^4.59.0",
+     "simple-git-hooks": "^2.13.1",
+     "tsx": "^4.21.0",
+-    "typescript": "~5.9.3",
+-    "typescript-eslint": "^8.57.2",
++    "typescript": "~6.0.2",
++    "typescript-eslint": "^8.58.0",
+     "vite": "workspace:*",
+     "vitest": "^4.1.2"
+   },
+diff --git a/packages/create-vite/template-lit-ts/package.json b/packages/create-vite/template-lit-ts/package.json
+index 996d71aa858533..c30e3957d9fbd3 100644
+--- a/packages/create-vite/template-lit-ts/package.json
++++ b/packages/create-vite/template-lit-ts/package.json
+@@ -12,7 +12,7 @@
+     "lit": "^3.3.2"
+   },
+   "devDependencies": {
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3"
+   }
+ }
+diff --git a/packages/create-vite/template-lit-ts/tsconfig.json b/packages/create-vite/template-lit-ts/tsconfig.json
+index 4811fcdec53bcd..f3ad657d5f4534 100644
+--- a/packages/create-vite/template-lit-ts/tsconfig.json
++++ b/packages/create-vite/template-lit-ts/tsconfig.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+-    "target": "ES2023",
++    "target": "es2023",
+     "experimentalDecorators": true,
+     "useDefineForClassFields": false,
+-    "module": "ESNext",
++    "module": "esnext",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+     "types": ["vite/client"],
+     "skipLibCheck": true,
+@@ -16,12 +16,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src"]
+ }
+diff --git a/packages/create-vite/template-preact-ts/package.json b/packages/create-vite/template-preact-ts/package.json
+index dd398efc8d4550..479541a808a3bb 100644
+--- a/packages/create-vite/template-preact-ts/package.json
++++ b/packages/create-vite/template-preact-ts/package.json
+@@ -14,7 +14,7 @@
+   "devDependencies": {
+     "@preact/preset-vite": "^2.10.5",
+     "@types/node": "^24.12.0",
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3"
+   }
+ }
+diff --git a/packages/create-vite/template-preact-ts/tsconfig.app.json b/packages/create-vite/template-preact-ts/tsconfig.app.json
+index 94abec86ddf0c3..e61d4e7b8620d9 100644
+--- a/packages/create-vite/template-preact-ts/tsconfig.app.json
++++ b/packages/create-vite/template-preact-ts/tsconfig.app.json
+@@ -1,9 +1,8 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+-    "target": "ES2023",
+-    "useDefineForClassFields": true,
+-    "module": "ESNext",
++    "target": "es2023",
++    "module": "esnext",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+     "types": ["vite/client"],
+     "skipLibCheck": true,
+@@ -22,12 +21,10 @@
+     "jsxImportSource": "preact",
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src"]
+ }
+diff --git a/packages/create-vite/template-preact-ts/tsconfig.node.json b/packages/create-vite/template-preact-ts/tsconfig.node.json
+index 8a67f62f4ceebf..d3c52ea64c6cd6 100644
+--- a/packages/create-vite/template-preact-ts/tsconfig.node.json
++++ b/packages/create-vite/template-preact-ts/tsconfig.node.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["node"],
+     "skipLibCheck": true,
+ 
+@@ -15,12 +15,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["vite.config.ts"]
+ }
+diff --git a/packages/create-vite/template-qwik-ts/package.json b/packages/create-vite/template-qwik-ts/package.json
+index 36d43a437fa3a2..1bed1d49f092f6 100644
+--- a/packages/create-vite/template-qwik-ts/package.json
++++ b/packages/create-vite/template-qwik-ts/package.json
+@@ -11,7 +11,7 @@
+   "devDependencies": {
+     "@types/node": "^24.12.0",
+     "serve": "^14.2.6",
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3"
+   },
+   "dependencies": {
+diff --git a/packages/create-vite/template-qwik-ts/tsconfig.app.json b/packages/create-vite/template-qwik-ts/tsconfig.app.json
+index f57d9fecff48d8..50aee0b50ceec6 100644
+--- a/packages/create-vite/template-qwik-ts/tsconfig.app.json
++++ b/packages/create-vite/template-qwik-ts/tsconfig.app.json
+@@ -1,9 +1,8 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+-    "target": "ES2023",
+-    "useDefineForClassFields": true,
+-    "module": "ESNext",
++    "target": "es2023",
++    "module": "esnext",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+     "types": ["vite/client"],
+     "skipLibCheck": true,
+@@ -18,12 +17,10 @@
+     "jsxImportSource": "@builder.io/qwik",
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src"]
+ }
+diff --git a/packages/create-vite/template-qwik-ts/tsconfig.node.json b/packages/create-vite/template-qwik-ts/tsconfig.node.json
+index 8a67f62f4ceebf..d3c52ea64c6cd6 100644
+--- a/packages/create-vite/template-qwik-ts/tsconfig.node.json
++++ b/packages/create-vite/template-qwik-ts/tsconfig.node.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["node"],
+     "skipLibCheck": true,
+ 
+@@ -15,12 +15,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["vite.config.ts"]
+ }
+diff --git a/packages/create-vite/template-react-ts/package.json b/packages/create-vite/template-react-ts/package.json
+index 83de342a036aa5..dff492269be6e9 100644
+--- a/packages/create-vite/template-react-ts/package.json
++++ b/packages/create-vite/template-react-ts/package.json
+@@ -23,7 +23,7 @@
+     "eslint-plugin-react-hooks": "^7.0.1",
+     "eslint-plugin-react-refresh": "^0.5.2",
+     "globals": "^17.4.0",
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "typescript-eslint": "^8.57.2",
+     "vite": "^8.0.3"
+   }
+diff --git a/packages/create-vite/template-react-ts/tsconfig.app.json b/packages/create-vite/template-react-ts/tsconfig.app.json
+index af516fcca5aeda..1d29c885f28d69 100644
+--- a/packages/create-vite/template-react-ts/tsconfig.app.json
++++ b/packages/create-vite/template-react-ts/tsconfig.app.json
+@@ -1,10 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+-    "target": "ES2023",
+-    "useDefineForClassFields": true,
++    "target": "es2023",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["vite/client"],
+     "skipLibCheck": true,
+ 
+@@ -17,12 +16,10 @@
+     "jsx": "react-jsx",
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src"]
+ }
+diff --git a/packages/create-vite/template-react-ts/tsconfig.node.json b/packages/create-vite/template-react-ts/tsconfig.node.json
+index 8a67f62f4ceebf..d3c52ea64c6cd6 100644
+--- a/packages/create-vite/template-react-ts/tsconfig.node.json
++++ b/packages/create-vite/template-react-ts/tsconfig.node.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["node"],
+     "skipLibCheck": true,
+ 
+@@ -15,12 +15,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["vite.config.ts"]
+ }
+diff --git a/packages/create-vite/template-solid-ts/package.json b/packages/create-vite/template-solid-ts/package.json
+index e12b499a0f8174..5a53a289c2aa27 100644
+--- a/packages/create-vite/template-solid-ts/package.json
++++ b/packages/create-vite/template-solid-ts/package.json
+@@ -13,7 +13,7 @@
+   },
+   "devDependencies": {
+     "@types/node": "^24.12.0",
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3",
+     "vite-plugin-solid": "^2.11.11"
+   }
+diff --git a/packages/create-vite/template-solid-ts/tsconfig.app.json b/packages/create-vite/template-solid-ts/tsconfig.app.json
+index 4de71f37ccf246..6108f393f78075 100644
+--- a/packages/create-vite/template-solid-ts/tsconfig.app.json
++++ b/packages/create-vite/template-solid-ts/tsconfig.app.json
+@@ -1,9 +1,8 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+-    "target": "ES2023",
+-    "useDefineForClassFields": true,
+-    "module": "ESNext",
++    "target": "es2023",
++    "module": "esnext",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+     "types": ["vite/client"],
+     "skipLibCheck": true,
+@@ -18,12 +17,10 @@
+     "jsxImportSource": "solid-js",
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src"]
+ }
+diff --git a/packages/create-vite/template-solid-ts/tsconfig.node.json b/packages/create-vite/template-solid-ts/tsconfig.node.json
+index 8a67f62f4ceebf..d3c52ea64c6cd6 100644
+--- a/packages/create-vite/template-solid-ts/tsconfig.node.json
++++ b/packages/create-vite/template-solid-ts/tsconfig.node.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["node"],
+     "skipLibCheck": true,
+ 
+@@ -15,12 +15,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["vite.config.ts"]
+ }
+diff --git a/packages/create-vite/template-svelte-ts/package.json b/packages/create-vite/template-svelte-ts/package.json
+index 67c24f417cddee..b34fa31b95de75 100644
+--- a/packages/create-vite/template-svelte-ts/package.json
++++ b/packages/create-vite/template-svelte-ts/package.json
+@@ -15,7 +15,7 @@
+     "@types/node": "^24.12.0",
+     "svelte": "^5.55.1",
+     "svelte-check": "^4.4.5",
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3"
+   }
+ }
+diff --git a/packages/create-vite/template-svelte-ts/tsconfig.app.json b/packages/create-vite/template-svelte-ts/tsconfig.app.json
+index acfd2e5b888e88..d774b20121e441 100644
+--- a/packages/create-vite/template-svelte-ts/tsconfig.app.json
++++ b/packages/create-vite/template-svelte-ts/tsconfig.app.json
+@@ -2,9 +2,8 @@
+   "extends": "@tsconfig/svelte/tsconfig.json",
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+-    "target": "ES2023",
+-    "useDefineForClassFields": true,
+-    "module": "ESNext",
++    "target": "es2023",
++    "module": "esnext",
+     "types": ["svelte", "vite/client"],
+     "noEmit": true,
+     /**
+diff --git a/packages/create-vite/template-svelte-ts/tsconfig.node.json b/packages/create-vite/template-svelte-ts/tsconfig.node.json
+index 8a67f62f4ceebf..d3c52ea64c6cd6 100644
+--- a/packages/create-vite/template-svelte-ts/tsconfig.node.json
++++ b/packages/create-vite/template-svelte-ts/tsconfig.node.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["node"],
+     "skipLibCheck": true,
+ 
+@@ -15,12 +15,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["vite.config.ts"]
+ }
+diff --git a/packages/create-vite/template-vanilla-ts/package.json b/packages/create-vite/template-vanilla-ts/package.json
+index d910c1326d6d3f..b3ed9c52be8ac0 100644
+--- a/packages/create-vite/template-vanilla-ts/package.json
++++ b/packages/create-vite/template-vanilla-ts/package.json
+@@ -9,7 +9,7 @@
+     "preview": "vite preview"
+   },
+   "devDependencies": {
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3"
+   }
+ }
+diff --git a/packages/create-vite/template-vanilla-ts/tsconfig.json b/packages/create-vite/template-vanilla-ts/tsconfig.json
+index 87cdec07285484..bc7a940954d60c 100644
+--- a/packages/create-vite/template-vanilla-ts/tsconfig.json
++++ b/packages/create-vite/template-vanilla-ts/tsconfig.json
+@@ -1,8 +1,7 @@
+ {
+   "compilerOptions": {
+-    "target": "ES2023",
+-    "useDefineForClassFields": true,
+-    "module": "ESNext",
++    "target": "es2023",
++    "module": "esnext",
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+     "types": ["vite/client"],
+     "skipLibCheck": true,
+@@ -15,12 +14,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src"]
+ }
+diff --git a/packages/create-vite/template-vue-ts/package.json b/packages/create-vite/template-vue-ts/package.json
+index 042489dbb7b2ec..205d905c32d431 100644
+--- a/packages/create-vite/template-vue-ts/package.json
++++ b/packages/create-vite/template-vue-ts/package.json
+@@ -15,7 +15,7 @@
+     "@types/node": "^24.12.0",
+     "@vitejs/plugin-vue": "^6.0.5",
+     "@vue/tsconfig": "^0.9.1",
+-    "typescript": "~5.9.3",
++    "typescript": "~6.0.2",
+     "vite": "^8.0.3",
+     "vue-tsc": "^3.2.6"
+   }
+diff --git a/packages/create-vite/template-vue-ts/tsconfig.app.json b/packages/create-vite/template-vue-ts/tsconfig.app.json
+index 8d16e42551288b..5c750c5d835622 100644
+--- a/packages/create-vite/template-vue-ts/tsconfig.app.json
++++ b/packages/create-vite/template-vue-ts/tsconfig.app.json
+@@ -5,12 +5,10 @@
+     "types": ["vite/client"],
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
+ }
+diff --git a/packages/create-vite/template-vue-ts/tsconfig.node.json b/packages/create-vite/template-vue-ts/tsconfig.node.json
+index 8a67f62f4ceebf..d3c52ea64c6cd6 100644
+--- a/packages/create-vite/template-vue-ts/tsconfig.node.json
++++ b/packages/create-vite/template-vue-ts/tsconfig.node.json
+@@ -1,9 +1,9 @@
+ {
+   "compilerOptions": {
+     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+-    "target": "ES2023",
++    "target": "es2023",
+     "lib": ["ES2023"],
+-    "module": "ESNext",
++    "module": "esnext",
+     "types": ["node"],
+     "skipLibCheck": true,
+ 
+@@ -15,12 +15,10 @@
+     "noEmit": true,
+ 
+     /* Linting */
+-    "strict": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "noFallthroughCasesInSwitch": true,
+-    "noUncheckedSideEffectImports": true
++    "noFallthroughCasesInSwitch": true
+   },
+   "include": ["vite.config.ts"]
+ }
+diff --git a/packages/create-vite/tsconfig.json b/packages/create-vite/tsconfig.json
+index 86452407b5377f..8eaf2411519b2e 100644
+--- a/packages/create-vite/tsconfig.json
++++ b/packages/create-vite/tsconfig.json
+@@ -1,16 +1,15 @@
+ {
+   "include": ["tsdown.config.ts", "src", "__tests__"],
+   "compilerOptions": {
++    "rootDir": "..", // imports 'packages/vite/rollupLicensePlugin.ts'
+     "outDir": "dist",
+-    "target": "ES2023",
+-    "module": "Preserve",
+-    "moduleResolution": "bundler",
++    "target": "es2023",
++    "module": "preserve",
+     "types": [],
++    "noEmit": true,
++    "moduleResolution": "bundler",
+     "allowImportingTsExtensions": true,
+-    "strict": true,
+     "skipLibCheck": true,
+-    "noUnusedLocals": true,
+-    "esModuleInterop": true,
+-    "noEmit": true
++    "noUnusedLocals": true
+   }
+ }
+diff --git a/packages/plugin-legacy/tsconfig.json b/packages/plugin-legacy/tsconfig.json
+index a0abf6f64cf6f3..cbf0655e2187e0 100644
+--- a/packages/plugin-legacy/tsconfig.json
++++ b/packages/plugin-legacy/tsconfig.json
+@@ -3,15 +3,14 @@
+   "exclude": ["**/*.spec.ts"],
+   "compilerOptions": {
+     "outDir": "dist",
+-    "target": "ES2023",
+-    "module": "Preserve",
++    "target": "es2023",
++    "module": "preserve",
++    "types": ["node"],
+     "moduleResolution": "bundler",
+     "isolatedDeclarations": true,
+     "declaration": true,
+-    "strict": true,
+     "sourceMap": true,
+     "noUnusedLocals": true,
+-    "esModuleInterop": true,
+     "paths": {
+       "vite": ["../vite/src/node/index.js"]
+     }
+diff --git a/packages/vite/src/client/tsconfig.json b/packages/vite/src/client/tsconfig.json
+index 4fa46e1fc4404c..6c1d1041835dee 100644
+--- a/packages/vite/src/client/tsconfig.json
++++ b/packages/vite/src/client/tsconfig.json
+@@ -3,7 +3,7 @@
+   "include": ["./", "../types"],
+   "compilerOptions": {
+     "types": [],
+-    "target": "ES2020",
++    "target": "es2020",
+     "lib": ["ESNext", "DOM"],
+     "isolatedDeclarations": false,
+     "declaration": false
+diff --git a/packages/vite/src/node/__tests__/fixtures/scan-jsx-runtime/tsconfig.json b/packages/vite/src/node/__tests__/fixtures/scan-jsx-runtime/tsconfig.json
+index 77bd00c24e571b..9ee4651f2ebec6 100644
+--- a/packages/vite/src/node/__tests__/fixtures/scan-jsx-runtime/tsconfig.json
++++ b/packages/vite/src/node/__tests__/fixtures/scan-jsx-runtime/tsconfig.json
+@@ -5,9 +5,9 @@
+     "strict": true,
+     "verbatimModuleSyntax": true,
+     "noEmit": true,
+-    "moduleResolution": "Bundler",
+-    "module": "ESNext",
+-    "target": "ESNext",
++    "moduleResolution": "bundler",
++    "module": "esnext",
++    "target": "esnext",
+     "lib": ["ESNext", "DOM", "DOM.Iterable"]
+   }
+ }
+diff --git a/packages/vite/src/node/optimizer/rolldownDepPlugin.ts b/packages/vite/src/node/optimizer/rolldownDepPlugin.ts
+index 90660b6e5fb145..b8681289a10f0c 100644
+--- a/packages/vite/src/node/optimizer/rolldownDepPlugin.ts
++++ b/packages/vite/src/node/optimizer/rolldownDepPlugin.ts
+@@ -323,7 +323,8 @@ export function rolldownDepPlugin(
+ 
+           let match: RegExpExecArray | null
+           while ((match = re.exec(cleanString))) {
+-            const [[startIndex, endIndex], [urlStart, urlEnd]] = match.indices!
++            const [[startIndex, endIndex], [urlStart, urlEnd]] =
++              match.indices as Array<[number, number]>
+             if (hasViteIgnoreRE.test(code.slice(startIndex, urlStart))) continue
+ 
+             const rawUrl = code.slice(urlStart, urlEnd)
+diff --git a/packages/vite/src/node/plugins/assetImportMetaUrl.ts b/packages/vite/src/node/plugins/assetImportMetaUrl.ts
+index b28da927b0e523..bc3a7153afdf00 100644
+--- a/packages/vite/src/node/plugins/assetImportMetaUrl.ts
++++ b/packages/vite/src/node/plugins/assetImportMetaUrl.ts
+@@ -68,7 +68,8 @@ export function assetImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
+ 
+         let match: RegExpExecArray | null
+         while ((match = re.exec(cleanString))) {
+-          const [[startIndex, endIndex], [urlStart, urlEnd]] = match.indices!
++          const [[startIndex, endIndex], [urlStart, urlEnd]] =
++            match.indices as Array<[number, number]>
+           if (hasViteIgnoreRE.test(code.slice(startIndex, urlStart))) continue
+ 
+           const rawUrl = code.slice(urlStart, urlEnd)
+diff --git a/packages/vite/src/node/plugins/html.ts b/packages/vite/src/node/plugins/html.ts
+index a8dbdb1f63983b..938f60163a0b35 100644
+--- a/packages/vite/src/node/plugins/html.ts
++++ b/packages/vite/src/node/plugins/html.ts
+@@ -1099,7 +1099,7 @@ export function extractImportExpressionFromClassicScript(
+   let match: RegExpExecArray | null
+   inlineImportRE.lastIndex = 0
+   while ((match = inlineImportRE.exec(cleanCode))) {
+-    const [, [urlStart, urlEnd]] = match.indices!
++    const [, [urlStart, urlEnd]] = match.indices as Array<[number, number]>
+     const start = urlStart + 1
+     const end = urlEnd - 1
+     scriptUrls.push({
+diff --git a/packages/vite/src/node/plugins/workerImportMetaUrl.ts b/packages/vite/src/node/plugins/workerImportMetaUrl.ts
+index 84c249f4829882..55d28d17e0f97b 100644
+--- a/packages/vite/src/node/plugins/workerImportMetaUrl.ts
++++ b/packages/vite/src/node/plugins/workerImportMetaUrl.ts
+@@ -214,7 +214,7 @@ export function workerImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
+         let match: RegExpExecArray | null
+         while ((match = re.exec(cleanString))) {
+           const [[, endIndex], [expStart, expEnd], [urlStart, urlEnd]] =
+-            match.indices!
++            match.indices as Array<[number, number]>
+ 
+           const rawUrl = code.slice(urlStart, urlEnd)
+ 
+diff --git a/packages/vite/src/node/tsconfig.json b/packages/vite/src/node/tsconfig.json
+index cf1687e38172ae..ad25bd148ad396 100644
+--- a/packages/vite/src/node/tsconfig.json
++++ b/packages/vite/src/node/tsconfig.json
+@@ -5,7 +5,7 @@
+   "compilerOptions": {
+     // https://github.com/microsoft/TypeScript/wiki/Node-Target-Mapping#node-20
+     "lib": ["ES2023", "DOM"], // DOM because we have client code that gets inlined via function.toString()
+-    "target": "ES2023",
++    "target": "es2023",
+     "skipLibCheck": true, // lib check is done on final types
+     "stripInternal": true,
+     "paths": {
+diff --git a/packages/vite/tsconfig.base.json b/packages/vite/tsconfig.base.json
+index e1f3f6e3774eb2..9253f0875953b0 100644
+--- a/packages/vite/tsconfig.base.json
++++ b/packages/vite/tsconfig.base.json
+@@ -1,17 +1,15 @@
+ {
+   "compilerOptions": {
+     "rootDir": ".",
+-    "target": "ES2023",
+-    "module": "Preserve",
++    "target": "es2023",
++    "module": "preserve",
+     "types": ["node"],
+     "noEmit": true,
+     "moduleResolution": "bundler",
+     "isolatedDeclarations": true,
+     "declaration": true,
+-    "strict": true,
+     "noImplicitOverride": true,
+     "noUnusedLocals": true,
+-    "esModuleInterop": true,
+     "useUnknownInCatchVariables": false
+   }
+ }
+diff --git a/packages/vite/tsconfig.check.json b/packages/vite/tsconfig.check.json
+index 16957a6a6e90fe..f94fc945d4aa8b 100644
+--- a/packages/vite/tsconfig.check.json
++++ b/packages/vite/tsconfig.check.json
+@@ -1,13 +1,11 @@
+ {
+   "compilerOptions": {
+-    "target": "ES2020",
++    "target": "es2020",
+     "moduleResolution": "node16",
+-    "module": "Node16",
++    "module": "node16",
+     "lib": ["ES2020"], // ES2020 is very conservative check for client types, could be bumped if needed
+     "types": [], // Avoid checking unrelated node_modules types
+     "noEmit": true,
+-    "strict": true,
+-    "noUncheckedSideEffectImports": true,
+     "exactOptionalPropertyTypes": true
+   },
+   "include": [
+diff --git a/packages/vite/tsconfig.json b/packages/vite/tsconfig.json
+index e5533587a0397d..158f41136cb63d 100644
+--- a/packages/vite/tsconfig.json
++++ b/packages/vite/tsconfig.json
+@@ -2,7 +2,6 @@
+   "extends": "./tsconfig.base.json",
+   "include": ["rolldown.config.ts", "rolldown.dts.config.ts", "scripts"],
+   "compilerOptions": {
+-    "esModuleInterop": true,
+     "isolatedDeclarations": false,
+     "declaration": false,
+     "resolveJsonModule": true
+diff --git a/playground/backend-integration/frontend/entrypoints/main.ts b/playground/backend-integration/frontend/entrypoints/main.ts
+index f32a8084f2a90d..a147ddbfffb421 100644
+--- a/playground/backend-integration/frontend/entrypoints/main.ts
++++ b/playground/backend-integration/frontend/entrypoints/main.ts
+@@ -1,3 +1,4 @@
++// @ts-expect-error virtual module (TODO: investigate typing this)
+ import 'vite/modulepreload-polyfill'
+ import cssUrl from '../styles/url.css?url'
+ import waterContainer from './water-container.svg'
+diff --git a/playground/tsconfig-json-load-error/tsconfig.json b/playground/tsconfig-json-load-error/tsconfig.json
+index 3439b3583174de..2c195a37c3371d 100644
+--- a/playground/tsconfig-json-load-error/tsconfig.json
++++ b/playground/tsconfig-json-load-error/tsconfig.json
+@@ -1,13 +1,12 @@
+ {
+   "compilerOptions": {
+-    "target": "ESNext",
+-    "module": "ESNext",
++    "target": "esnext",
++    "module": "esnext",
+     "lib": ["ESNext", "DOM"],
+     "moduleResolution": "bundler",
+     "strict": true,
+     "sourceMap": true,
+     "resolveJsonModule": true,
+-    "esModuleInterop": true,
+     "noEmit": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+diff --git a/playground/tsconfig-json/nested/tsconfig.json b/playground/tsconfig-json/nested/tsconfig.json
+index 9d7016bdfc7b9e..0178517075b2c4 100644
+--- a/playground/tsconfig-json/nested/tsconfig.json
++++ b/playground/tsconfig-json/nested/tsconfig.json
+@@ -2,14 +2,13 @@
+ {
+   "include": ["./"],
+   "compilerOptions": {
+-    "target": "ESNext",
+-    "module": "ESNext",
++    "target": "esnext",
++    "module": "esnext",
+     "lib": ["ESNext", "DOM"],
+     "moduleResolution": "bundler",
+     "strict": true,
+     "sourceMap": true,
+     "resolveJsonModule": true,
+-    "esModuleInterop": true,
+     "noEmit": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+diff --git a/playground/tsconfig-json/tsconfig.json b/playground/tsconfig-json/tsconfig.json
+index b6258de7350dc1..fe2ba3f446df64 100644
+--- a/playground/tsconfig-json/tsconfig.json
++++ b/playground/tsconfig-json/tsconfig.json
+@@ -1,13 +1,12 @@
+ {
+   "compilerOptions": {
+-    "target": "ESNext",
+-    "module": "ESNext",
++    "target": "esnext",
++    "module": "esnext",
+     "lib": ["ESNext", "DOM"],
+     "moduleResolution": "bundler",
+     "strict": true,
+     "sourceMap": true,
+     "resolveJsonModule": true,
+-    "esModuleInterop": true,
+     "noEmit": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+diff --git a/playground/tsconfig.json b/playground/tsconfig.json
+index c64534f6602301..d26cb6465e72a9 100644
+--- a/playground/tsconfig.json
++++ b/playground/tsconfig.json
+@@ -3,13 +3,14 @@
+   "exclude": ["**/dist/**", "./legacy/**", "./resolve-tsconfig-paths/**"],
+   "compilerOptions": {
+     "checkJs": true,
+-    "target": "ES2023",
+-    "module": "Preserve",
++    "target": "es2023",
++    "module": "preserve",
++    "strict": false,
+     "noEmit": true,
+     "allowJs": true,
+-    "esModuleInterop": true,
+     "resolveJsonModule": true,
+     "moduleResolution": "bundler",
++    "allowImportingTsExtensions": true,
+     "erasableSyntaxOnly": true,
+     "skipLibCheck": true,
+     "noUnusedLocals": true,
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 747974305704c6..1fe6748d871ba5 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -70,10 +70,10 @@ importers:
+         version: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+       eslint-plugin-import-x:
+         specifier: ^4.16.2
+-        version: 4.16.2(@typescript-eslint/utils@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)
++        version: 4.16.2(@typescript-eslint/utils@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)
+       eslint-plugin-n:
+         specifier: ^17.24.0
+-        version: 17.24.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(typescript@5.9.3)
++        version: 17.24.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(typescript@6.0.2)
+       eslint-plugin-regexp:
+         specifier: ^3.1.0
+         version: 3.1.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))
+@@ -108,11 +108,11 @@ importers:
+         specifier: ^4.21.0
+         version: 4.21.0
+       typescript:
+-        specifier: ~5.9.3
+-        version: 5.9.3
++        specifier: ~6.0.2
++        version: 6.0.2
+       typescript-eslint:
+-        specifier: ^8.57.2
+-        version: 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
++        specifier: ^8.58.0
++        version: 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
+       vite:
+         specifier: workspace:*
+         version: link:packages/vite
+@@ -124,16 +124,16 @@ importers:
+     devDependencies:
+       '@iconify/vue':
+         specifier: ^5.0.0
+-        version: 5.0.0(vue@3.5.31(typescript@5.9.3))
++        version: 5.0.0(vue@3.5.31(typescript@6.0.2))
+       '@shikijs/vitepress-twoslash':
+         specifier: ^4.0.2
+-        version: 4.0.2(ms@2.1.3)(typescript@5.9.3)
++        version: 4.0.2(ms@2.1.3)(typescript@6.0.2)
+       '@types/express':
+         specifier: ^5.0.6
+         version: 5.0.6
+       '@voidzero-dev/vitepress-theme':
+         specifier: ^4.8.4
+-        version: 4.8.4(focus-trap@8.0.1)(vite@packages+vite)(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3))(vue@3.5.31(typescript@5.9.3))
++        version: 4.8.4(focus-trap@8.0.1)(vite@packages+vite)(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2))(vue@3.5.31(typescript@6.0.2))
+       feed:
+         specifier: ^5.2.0
+         version: 5.2.0
+@@ -145,10 +145,10 @@ importers:
+         version: 0.121.0
+       vitepress:
+         specifier: ^2.0.0-alpha.17
+-        version: 2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3)
++        version: 2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2)
+       vitepress-plugin-graphviz:
+         specifier: ^0.0.1
+-        version: 0.0.1(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3))
++        version: 0.0.1(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2))
+       vitepress-plugin-group-icons:
+         specifier: ^1.7.3
+         version: 1.7.3(vite@packages+vite)
+@@ -157,10 +157,10 @@ importers:
+         version: 1.12.0(ms@2.1.3)
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+       vue-tsc:
+         specifier: ^3.2.6
+-        version: 3.2.6(typescript@5.9.3)
++        version: 3.2.6(typescript@6.0.2)
+ 
+   packages/create-vite:
+     devDependencies:
+@@ -181,7 +181,7 @@ importers:
+         version: 1.1.1
+       tsdown:
+         specifier: ^0.21.7
+-        version: 0.21.7(@vitejs/devtools@0.1.11(typescript@5.9.3)(vite@packages+vite))(publint@0.3.18)(typescript@5.9.3)(vue-tsc@3.2.6(typescript@5.9.3))
++        version: 0.21.7(@vitejs/devtools@0.1.11(typescript@6.0.2)(vite@packages+vite))(publint@0.3.18)(typescript@6.0.2)(vue-tsc@3.2.6(typescript@6.0.2))
+ 
+   packages/plugin-legacy:
+     dependencies:
+@@ -230,7 +230,7 @@ importers:
+         version: 1.1.1
+       tsdown:
+         specifier: ^0.21.7
+-        version: 0.21.7(@vitejs/devtools@0.1.11(typescript@5.9.3)(vite@packages+vite))(publint@0.3.18)(typescript@5.9.3)(vue-tsc@3.2.6(typescript@5.9.3))
++        version: 0.21.7(@vitejs/devtools@0.1.11(typescript@6.0.2)(vite@packages+vite))(publint@0.3.18)(typescript@6.0.2)(vue-tsc@3.2.6(typescript@6.0.2))
+       vite:
+         specifier: workspace:*
+         version: link:../vite
+@@ -285,7 +285,7 @@ importers:
+         version: 1.2.1
+       '@vitejs/devtools':
+         specifier: ^0.1.11
+-        version: 0.1.11(typescript@5.9.3)(vite@packages+vite)
++        version: 0.1.11(typescript@6.0.2)(vite@packages+vite)
+       '@vitest/utils':
+         specifier: 4.1.2
+         version: 4.1.2
+@@ -387,7 +387,7 @@ importers:
+         version: 2.0.3
+       rolldown-plugin-dts:
+         specifier: ^0.23.2
+-        version: 0.23.2(rolldown@1.0.0-rc.12)(typescript@5.9.3)(vue-tsc@3.2.6(typescript@5.9.3))
++        version: 0.23.2(rolldown@1.0.0-rc.12)(typescript@6.0.2)(vue-tsc@3.2.6(typescript@6.0.2))
+       rollup:
+         specifier: ^4.59.0
+         version: 4.59.0
+@@ -433,7 +433,7 @@ importers:
+         version: file:packages/vite/src/node/__tests__/fixtures/test-dep-conditions
+       vue:
+         specifier: ^3.5.18
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+ 
+   packages/vite/src/node/__tests__/fixtures/cjs-ssr-dep: {}
+ 
+@@ -566,7 +566,7 @@ importers:
+         version: '@vitejs/test-aliased-module@file:playground/alias/dir/module'
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+     devDependencies:
+       '@vitejs/test-resolve-linked':
+         specifier: workspace:*
+@@ -740,11 +740,11 @@ importers:
+     dependencies:
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+     devDependencies:
+       '@vitejs/devtools':
+         specifier: ^0.1.11
+-        version: 0.1.11(typescript@5.9.3)(vite@packages+vite)
++        version: 0.1.11(typescript@6.0.2)(vite@packages+vite)
+       vite:
+         specifier: workspace:*
+         version: link:../../packages/vite
+@@ -788,16 +788,16 @@ importers:
+     dependencies:
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+ 
+   playground/external:
+     dependencies:
+       '@vitejs/test-dep-that-imports':
+         specifier: file:./dep-that-imports
+-        version: file:playground/external/dep-that-imports(typescript@5.9.3)
++        version: file:playground/external/dep-that-imports(typescript@6.0.2)
+       '@vitejs/test-dep-that-requires':
+         specifier: file:./dep-that-requires
+-        version: file:playground/external/dep-that-requires(typescript@5.9.3)
++        version: file:playground/external/dep-that-requires(typescript@6.0.2)
+     devDependencies:
+       slash3:
+         specifier: npm:slash@^3.0.0
+@@ -810,10 +810,10 @@ importers:
+         version: link:../../packages/vite
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+       vue34:
+         specifier: npm:vue@~3.4.38
+-        version: vue@3.4.38(typescript@5.9.3)
++        version: vue@3.4.38(typescript@6.0.2)
+ 
+   playground/external/dep-that-imports:
+     dependencies:
+@@ -825,7 +825,7 @@ importers:
+         version: slash@5.1.0
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+ 
+   playground/external/dep-that-requires:
+     dependencies:
+@@ -837,7 +837,7 @@ importers:
+         version: slash@5.1.0
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+ 
+   playground/forward-console:
+     dependencies:
+@@ -900,7 +900,7 @@ importers:
+         version: '@vitejs/require@file:playground/json/dep-json-require'
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+ 
+   playground/json/dep-json-require: {}
+ 
+@@ -1146,10 +1146,10 @@ importers:
+         version: 0.11.4
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+       vuex:
+         specifier: ^4.1.0
+-        version: 4.1.0(vue@3.5.31(typescript@5.9.3))
++        version: 4.1.0(vue@3.5.31(typescript@6.0.2))
+ 
+   playground/optimize-deps-no-discovery:
+     dependencies:
+@@ -1158,10 +1158,10 @@ importers:
+         version: file:playground/optimize-deps-no-discovery/dep-no-discovery
+       vue:
+         specifier: ^3.5.31
+-        version: 3.5.31(typescript@5.9.3)
++        version: 3.5.31(typescript@6.0.2)
+       vuex:
+         specifier: ^4.1.0
+-        version: 4.1.0(vue@3.5.31(typescript@5.9.3))
++        version: 4.1.0(vue@3.5.31(typescript@6.0.2))
+ 
+   playground/optimize-deps-no-discovery/dep-no-discovery: {}
+ 
+@@ -3867,63 +3867,63 @@ packages:
+   '@types/ws@8.18.1':
+     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+ 
+-  '@typescript-eslint/eslint-plugin@8.57.2':
+-    resolution: {integrity: sha512-NZZgp0Fm2IkD+La5PR81sd+g+8oS6JwJje+aRWsDocxHkjyRw0J5L5ZTlN3LI1LlOcGL7ph3eaIUmTXMIjLk0w==}
++  '@typescript-eslint/eslint-plugin@8.58.0':
++    resolution: {integrity: sha512-RLkVSiNuUP1C2ROIWfqX+YcUfLaSnxGE/8M+Y57lopVwg9VTYYfhuz15Yf1IzCKgZj6/rIbYTmJCUSqr76r0Wg==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+-      '@typescript-eslint/parser': ^8.57.2
++      '@typescript-eslint/parser': ^8.58.0
+       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/parser@8.57.2':
+-    resolution: {integrity: sha512-30ScMRHIAD33JJQkgfGW1t8CURZtjc2JpTrq5n2HFhOefbAhb7ucc7xJwdWcrEtqUIYJ73Nybpsggii6GtAHjA==}
++  '@typescript-eslint/parser@8.58.0':
++    resolution: {integrity: sha512-rLoGZIf9afaRBYsPUMtvkDWykwXwUPL60HebR4JgTI8mxfFe2cQTu3AGitANp4b9B2QlVru6WzjgB2IzJKiCSA==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/project-service@8.57.2':
+-    resolution: {integrity: sha512-FuH0wipFywXRTHf+bTTjNyuNQQsQC3qh/dYzaM4I4W0jrCqjCVuUh99+xd9KamUfmCGPvbO8NDngo/vsnNVqgw==}
++  '@typescript-eslint/project-service@8.58.0':
++    resolution: {integrity: sha512-8Q/wBPWLQP1j16NxoPNIKpDZFMaxl7yWIoqXWYeWO+Bbd2mjgvoF0dxP2jKZg5+x49rgKdf7Ck473M8PC3V9lg==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/scope-manager@8.57.2':
+-    resolution: {integrity: sha512-snZKH+W4WbWkrBqj4gUNRIGb/jipDW3qMqVJ4C9rzdFc+wLwruxk+2a5D+uoFcKPAqyqEnSb4l2ULuZf95eSkw==}
++  '@typescript-eslint/scope-manager@8.58.0':
++    resolution: {integrity: sha512-W1Lur1oF50FxSnNdGp3Vs6P+yBRSmZiw4IIjEeYxd8UQJwhUF0gDgDD/W/Tgmh73mxgEU3qX0Bzdl/NGuSPEpQ==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+ 
+-  '@typescript-eslint/tsconfig-utils@8.57.2':
+-    resolution: {integrity: sha512-3Lm5DSM+DCowsUOJC+YqHHnKEfFh5CoGkj5Z31NQSNF4l5wdOwqGn99wmwN/LImhfY3KJnmordBq/4+VDe2eKw==}
++  '@typescript-eslint/tsconfig-utils@8.58.0':
++    resolution: {integrity: sha512-doNSZEVJsWEu4htiVC+PR6NpM+pa+a4ClH9INRWOWCUzMst/VA9c4gXq92F8GUD1rwhNvRLkgjfYtFXegXQF7A==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/type-utils@8.57.2':
+-    resolution: {integrity: sha512-Co6ZCShm6kIbAM/s+oYVpKFfW7LBc6FXoPXjTRQ449PPNBY8U0KZXuevz5IFuuUj2H9ss40atTaf9dlGLzbWZg==}
++  '@typescript-eslint/type-utils@8.58.0':
++    resolution: {integrity: sha512-aGsCQImkDIqMyx1u4PrVlbi/krmDsQUs4zAcCV6M7yPcPev+RqVlndsJy9kJ8TLihW9TZ0kbDAzctpLn5o+lOg==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/types@8.57.2':
+-    resolution: {integrity: sha512-/iZM6FnM4tnx9csuTxspMW4BOSegshwX5oBDznJ7S4WggL7Vczz5d2W11ecc4vRrQMQHXRSxzrCsyG5EsPPTbA==}
++  '@typescript-eslint/types@8.58.0':
++    resolution: {integrity: sha512-O9CjxypDT89fbHxRfETNoAnHj/i6IpRK0CvbVN3qibxlLdo5p5hcLmUuCCrHMpxiWSwKyI8mCP7qRNYuOJ0Uww==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+ 
+-  '@typescript-eslint/typescript-estree@8.57.2':
+-    resolution: {integrity: sha512-2MKM+I6g8tJxfSmFKOnHv2t8Sk3T6rF20A1Puk0svLK+uVapDZB/4pfAeB7nE83uAZrU6OxW+HmOd5wHVdXwXA==}
++  '@typescript-eslint/typescript-estree@8.58.0':
++    resolution: {integrity: sha512-7vv5UWbHqew/dvs+D3e1RvLv1v2eeZ9txRHPnEEBUgSNLx5ghdzjHa0sgLWYVKssH+lYmV0JaWdoubo0ncGYLA==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/utils@8.57.2':
+-    resolution: {integrity: sha512-krRIbvPK1ju1WBKIefiX+bngPs+odIQUtR7kymzPfo1POVw3jlF+nLkmexdSSd4UCbDcQn+wMBATOOmpBbqgKg==}
++  '@typescript-eslint/utils@8.58.0':
++    resolution: {integrity: sha512-RfeSqcFeHMHlAWzt4TBjWOAtoW9lnsAGiP3GbaX9uVgTYYrMbVnGONEfUCiSss+xMHFl+eHZiipmA8WkQ7FuNA==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  '@typescript-eslint/visitor-keys@8.57.2':
+-    resolution: {integrity: sha512-zhahknjobV2FiD6Ee9iLbS7OV9zi10rG26odsQdfBO/hjSzUQbkIYgda+iNKK1zNiW2ey+Lf8MU5btN17V3dUw==}
++  '@typescript-eslint/visitor-keys@8.58.0':
++    resolution: {integrity: sha512-XJ9UD9+bbDo4a4epraTwG3TsNPeiB9aShrUneAVXy8q4LuwowN+qu89/6ByLMINqvIMeI9H9hOHQtg/ijrYXzQ==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+ 
+   '@typescript/vfs@1.6.2':
+@@ -4725,8 +4725,8 @@ packages:
+   brace-expansion@2.0.2:
+     resolution: {integrity: sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==}
+ 
+-  brace-expansion@5.0.3:
+-    resolution: {integrity: sha512-fy6KJm2RawA5RcHkLa1z/ScpBeA762UF9KmZQxwIbDtRJrgLzM10depAiEQ+CXYcoiqW1/m96OAAoke2nE9EeA==}
++  brace-expansion@5.0.5:
++    resolution: {integrity: sha512-VZznLgtwhn+Mact9tfiwx64fA9erHH/MCXEUfB/0bX/6Fz6ny5EGTXYltMocqg4xFAQZtnO3DHWWXi8RiuN7cQ==}
+     engines: {node: 18 || 20 || >=22}
+ 
+   braces@3.0.3:
+@@ -6152,8 +6152,8 @@ packages:
+     engines: {node: '>=18.0.0'}
+     hasBin: true
+ 
+-  minimatch@10.2.4:
+-    resolution: {integrity: sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg==}
++  minimatch@10.2.5:
++    resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
+     engines: {node: 18 || 20 || >=22}
+ 
+   minimatch@3.1.5:
+@@ -7358,8 +7358,8 @@ packages:
+   trough@2.2.0:
+     resolution: {integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==}
+ 
+-  ts-api-utils@2.4.0:
+-    resolution: {integrity: sha512-3TaVTaAv2gTiMB35i3FiGJaRfwb3Pyn/j3m/bfAvGe8FB7CF6u+LMYqYlDh7reQf7UNvoTvdfAqHGmPGOSsPmA==}
++  ts-api-utils@2.5.0:
++    resolution: {integrity: sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==}
+     engines: {node: '>=18.12'}
+     peerDependencies:
+       typescript: '>=4.8.4'
+@@ -7429,15 +7429,15 @@ packages:
+     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
+     engines: {node: '>= 0.6'}
+ 
+-  typescript-eslint@8.57.2:
+-    resolution: {integrity: sha512-VEPQ0iPgWO/sBaZOU1xo4nuNdODVOajPnTIbog2GKYr31nIlZ0fWPoCQgGfF3ETyBl1vn63F/p50Um9Z4J8O8A==}
++  typescript-eslint@8.58.0:
++    resolution: {integrity: sha512-e2TQzKfaI85fO+F3QywtX+tCTsu/D3WW5LVU6nz8hTFKFZ8yBJ6mSYRpXqdR3mFjPWmO0eWsTa5f+UpAOe/FMA==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+     peerDependencies:
+       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
+-      typescript: '>=4.8.4 <6.0.0'
++      typescript: '>=4.8.4 <6.1.0'
+ 
+-  typescript@5.9.3:
+-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
++  typescript@6.0.2:
++    resolution: {integrity: sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ==}
+     engines: {node: '>=14.17'}
+     hasBin: true
+ 
+@@ -8795,11 +8795,11 @@ snapshots:
+ 
+   '@floating-ui/utils@0.2.11': {}
+ 
+-  '@floating-ui/vue@1.1.11(vue@3.5.31(typescript@5.9.3))':
++  '@floating-ui/vue@1.1.11(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@floating-ui/dom': 1.7.6
+       '@floating-ui/utils': 0.2.11
+-      vue-demi: 0.14.10(vue@3.5.31(typescript@5.9.3))
++      vue-demi: 0.14.10(vue@3.5.31(typescript@6.0.2))
+     transitivePeerDependencies:
+       - '@vue/composition-api'
+       - vue
+@@ -8839,10 +8839,10 @@ snapshots:
+       '@iconify/types': 2.0.0
+       mlly: 1.8.2
+ 
+-  '@iconify/vue@5.0.0(vue@3.5.31(typescript@5.9.3))':
++  '@iconify/vue@5.0.0(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@iconify/types': 2.0.0
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+   '@img/colour@1.0.0': {}
+ 
+@@ -9508,12 +9508,12 @@ snapshots:
+       '@shikijs/core': 3.22.0
+       '@shikijs/types': 3.22.0
+ 
+-  '@shikijs/twoslash@4.0.2(ms@2.1.3)(typescript@5.9.3)':
++  '@shikijs/twoslash@4.0.2(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+       '@shikijs/core': 4.0.2
+       '@shikijs/types': 4.0.2
+-      twoslash: 0.3.6(ms@2.1.3)(typescript@5.9.3)
+-      typescript: 5.9.3
++      twoslash: 0.3.6(ms@2.1.3)(typescript@6.0.2)
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+@@ -9527,10 +9527,10 @@ snapshots:
+       '@shikijs/vscode-textmate': 10.0.2
+       '@types/hast': 3.0.4
+ 
+-  '@shikijs/vitepress-twoslash@4.0.2(ms@2.1.3)(typescript@5.9.3)':
++  '@shikijs/vitepress-twoslash@4.0.2(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+-      '@shikijs/twoslash': 4.0.2(ms@2.1.3)(typescript@5.9.3)
+-      floating-vue: 5.2.2(vue@3.5.31(typescript@5.9.3))
++      '@shikijs/twoslash': 4.0.2(ms@2.1.3)(typescript@6.0.2)
++      floating-vue: 5.2.2(vue@3.5.31(typescript@6.0.2))
+       lz-string: 1.5.0
+       magic-string: 0.30.21
+       markdown-it: 14.1.1
+@@ -9539,9 +9539,9 @@ snapshots:
+       mdast-util-to-hast: 13.2.1
+       ohash: 2.0.11
+       shiki: 4.0.2
+-      twoslash: 0.3.6(ms@2.1.3)(typescript@5.9.3)
+-      twoslash-vue: 0.3.6(ms@2.1.3)(typescript@5.9.3)
+-      vue: 3.5.31(typescript@5.9.3)
++      twoslash: 0.3.6(ms@2.1.3)(typescript@6.0.2)
++      twoslash-vue: 0.3.6(ms@2.1.3)(typescript@6.0.2)
++      vue: 3.5.31(typescript@6.0.2)
+     transitivePeerDependencies:
+       - '@nuxt/kit'
+       - ms
+@@ -9653,10 +9653,10 @@ snapshots:
+ 
+   '@tanstack/virtual-core@3.13.21': {}
+ 
+-  '@tanstack/vue-virtual@3.13.21(vue@3.5.31(typescript@5.9.3))':
++  '@tanstack/vue-virtual@3.13.21(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@tanstack/virtual-core': 3.13.21
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+   '@tybys/wasm-util@0.10.1':
+     dependencies:
+@@ -9811,101 +9811,101 @@ snapshots:
+     dependencies:
+       '@types/node': 24.12.0
+ 
+-  '@typescript-eslint/eslint-plugin@8.57.2(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript-eslint/eslint-plugin@8.58.0(@typescript-eslint/parser@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+       '@eslint-community/regexpp': 4.12.2
+-      '@typescript-eslint/parser': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/scope-manager': 8.57.2
+-      '@typescript-eslint/type-utils': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/utils': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/visitor-keys': 8.57.2
++      '@typescript-eslint/parser': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/scope-manager': 8.58.0
++      '@typescript-eslint/type-utils': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/utils': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/visitor-keys': 8.58.0
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+       ignore: 7.0.5
+       natural-compare: 1.4.0
+-      ts-api-utils: 2.4.0(typescript@5.9.3)
+-      typescript: 5.9.3
++      ts-api-utils: 2.5.0(typescript@6.0.2)
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  '@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript-eslint/parser@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+-      '@typescript-eslint/scope-manager': 8.57.2
+-      '@typescript-eslint/types': 8.57.2
+-      '@typescript-eslint/typescript-estree': 8.57.2(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/visitor-keys': 8.57.2
++      '@typescript-eslint/scope-manager': 8.58.0
++      '@typescript-eslint/types': 8.58.0
++      '@typescript-eslint/typescript-estree': 8.58.0(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/visitor-keys': 8.58.0
+       debug: obug@1.0.2(ms@2.1.3)
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  '@typescript-eslint/project-service@8.57.2(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript-eslint/project-service@8.58.0(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+-      '@typescript-eslint/tsconfig-utils': 8.57.2(typescript@5.9.3)
+-      '@typescript-eslint/types': 8.57.2
++      '@typescript-eslint/tsconfig-utils': 8.58.0(typescript@6.0.2)
++      '@typescript-eslint/types': 8.58.0
+       debug: obug@1.0.2(ms@2.1.3)
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  '@typescript-eslint/scope-manager@8.57.2':
++  '@typescript-eslint/scope-manager@8.58.0':
+     dependencies:
+-      '@typescript-eslint/types': 8.57.2
+-      '@typescript-eslint/visitor-keys': 8.57.2
++      '@typescript-eslint/types': 8.58.0
++      '@typescript-eslint/visitor-keys': 8.58.0
+ 
+-  '@typescript-eslint/tsconfig-utils@8.57.2(typescript@5.9.3)':
++  '@typescript-eslint/tsconfig-utils@8.58.0(typescript@6.0.2)':
+     dependencies:
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+-  '@typescript-eslint/type-utils@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript-eslint/type-utils@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+-      '@typescript-eslint/types': 8.57.2
+-      '@typescript-eslint/typescript-estree': 8.57.2(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/utils': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
++      '@typescript-eslint/types': 8.58.0
++      '@typescript-eslint/typescript-estree': 8.58.0(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/utils': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
+       debug: obug@1.0.2(ms@2.1.3)
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+-      ts-api-utils: 2.4.0(typescript@5.9.3)
+-      typescript: 5.9.3
++      ts-api-utils: 2.5.0(typescript@6.0.2)
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  '@typescript-eslint/types@8.57.2': {}
++  '@typescript-eslint/types@8.58.0': {}
+ 
+-  '@typescript-eslint/typescript-estree@8.57.2(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript-eslint/typescript-estree@8.58.0(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+-      '@typescript-eslint/project-service': 8.57.2(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/tsconfig-utils': 8.57.2(typescript@5.9.3)
+-      '@typescript-eslint/types': 8.57.2
+-      '@typescript-eslint/visitor-keys': 8.57.2
++      '@typescript-eslint/project-service': 8.58.0(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/tsconfig-utils': 8.58.0(typescript@6.0.2)
++      '@typescript-eslint/types': 8.58.0
++      '@typescript-eslint/visitor-keys': 8.58.0
+       debug: obug@1.0.2(ms@2.1.3)
+-      minimatch: 10.2.4
++      minimatch: 10.2.5
+       semver: 7.7.4
+       tinyglobby: 0.2.15
+-      ts-api-utils: 2.4.0(typescript@5.9.3)
+-      typescript: 5.9.3
++      ts-api-utils: 2.5.0(typescript@6.0.2)
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  '@typescript-eslint/utils@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript-eslint/utils@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+       '@eslint-community/eslint-utils': 4.9.1(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))
+-      '@typescript-eslint/scope-manager': 8.57.2
+-      '@typescript-eslint/types': 8.57.2
+-      '@typescript-eslint/typescript-estree': 8.57.2(ms@2.1.3)(typescript@5.9.3)
++      '@typescript-eslint/scope-manager': 8.58.0
++      '@typescript-eslint/types': 8.58.0
++      '@typescript-eslint/typescript-estree': 8.58.0(ms@2.1.3)(typescript@6.0.2)
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  '@typescript-eslint/visitor-keys@8.57.2':
++  '@typescript-eslint/visitor-keys@8.58.0':
+     dependencies:
+-      '@typescript-eslint/types': 8.57.2
++      '@typescript-eslint/types': 8.58.0
+       eslint-visitor-keys: 5.0.1
+ 
+-  '@typescript/vfs@1.6.2(ms@2.1.3)(typescript@5.9.3)':
++  '@typescript/vfs@1.6.2(ms@2.1.3)(typescript@6.0.2)':
+     dependencies:
+       debug: obug@1.0.2(ms@2.1.3)
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+@@ -9972,9 +9972,9 @@ snapshots:
+ 
+   '@vercel/detect-agent@1.2.1': {}
+ 
+-  '@vitejs/devtools-kit@0.1.11(typescript@5.9.3)(vite@packages+vite)(ws@8.20.0)':
++  '@vitejs/devtools-kit@0.1.11(typescript@6.0.2)(vite@packages+vite)(ws@8.20.0)':
+     dependencies:
+-      '@vitejs/devtools-rpc': 0.1.11(typescript@5.9.3)(ws@8.20.0)
++      '@vitejs/devtools-rpc': 0.1.11(typescript@6.0.2)(ws@8.20.0)
+       birpc: 4.0.0
+       ohash: 2.0.11
+       vite: link:packages/vite
+@@ -9982,13 +9982,13 @@ snapshots:
+       - typescript
+       - ws
+ 
+-  '@vitejs/devtools-rolldown@0.1.11(typescript@5.9.3)(vite@packages+vite)(vue@3.5.31(typescript@5.9.3))':
++  '@vitejs/devtools-rolldown@0.1.11(typescript@6.0.2)(vite@packages+vite)(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@floating-ui/dom': 1.7.6
+       '@pnpm/read-project-manifest': 1001.2.5
+       '@rolldown/debug': 1.0.0-rc.12
+-      '@vitejs/devtools-kit': 0.1.11(typescript@5.9.3)(vite@packages+vite)(ws@8.20.0)
+-      '@vitejs/devtools-rpc': 0.1.11(typescript@5.9.3)(ws@8.20.0)
++      '@vitejs/devtools-kit': 0.1.11(typescript@6.0.2)(vite@packages+vite)(ws@8.20.0)
++      '@vitejs/devtools-rpc': 0.1.11(typescript@6.0.2)(ws@8.20.0)
+       ansis: 4.2.0
+       birpc: 4.0.0
+       cac: 7.0.0
+@@ -10008,7 +10008,7 @@ snapshots:
+       tinyglobby: 0.2.15
+       unconfig: 7.5.0
+       unstorage: 1.17.4
+-      vue-virtual-scroller: 2.0.0-beta.10(vue@3.5.31(typescript@5.9.3))
++      vue-virtual-scroller: 2.0.0-beta.10(vue@3.5.31(typescript@6.0.2))
+       ws: 8.20.0
+     transitivePeerDependencies:
+       - '@azure/app-configuration'
+@@ -10037,23 +10037,23 @@ snapshots:
+       - vite
+       - vue
+ 
+-  '@vitejs/devtools-rpc@0.1.11(typescript@5.9.3)(ws@8.20.0)':
++  '@vitejs/devtools-rpc@0.1.11(typescript@6.0.2)(ws@8.20.0)':
+     dependencies:
+       birpc: 4.0.0
+       ohash: 2.0.11
+       p-limit: 7.3.0
+       structured-clone-es: 2.0.0
+-      valibot: 1.3.1(typescript@5.9.3)
++      valibot: 1.3.1(typescript@6.0.2)
+     optionalDependencies:
+       ws: 8.20.0
+     transitivePeerDependencies:
+       - typescript
+ 
+-  '@vitejs/devtools@0.1.11(typescript@5.9.3)(vite@packages+vite)':
++  '@vitejs/devtools@0.1.11(typescript@6.0.2)(vite@packages+vite)':
+     dependencies:
+-      '@vitejs/devtools-kit': 0.1.11(typescript@5.9.3)(vite@packages+vite)(ws@8.20.0)
+-      '@vitejs/devtools-rolldown': 0.1.11(typescript@5.9.3)(vite@packages+vite)(vue@3.5.31(typescript@5.9.3))
+-      '@vitejs/devtools-rpc': 0.1.11(typescript@5.9.3)(ws@8.20.0)
++      '@vitejs/devtools-kit': 0.1.11(typescript@6.0.2)(vite@packages+vite)(ws@8.20.0)
++      '@vitejs/devtools-rolldown': 0.1.11(typescript@6.0.2)(vite@packages+vite)(vue@3.5.31(typescript@6.0.2))
++      '@vitejs/devtools-rpc': 0.1.11(typescript@6.0.2)(ws@8.20.0)
+       birpc: 4.0.0
+       cac: 7.0.0
+       h3: 1.15.10
+@@ -10067,7 +10067,7 @@ snapshots:
+       sirv: 3.0.2(patch_hash=c07c56eb72faea34341d465cde2314e89db472106ed378181e3447893af6bf95)
+       tinyexec: 1.0.4
+       vite: link:packages/vite
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+       ws: 8.20.0
+     transitivePeerDependencies:
+       - '@azure/app-configuration'
+@@ -10096,11 +10096,11 @@ snapshots:
+ 
+   '@vitejs/longfilename-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@file:playground/optimize-deps/longfilename': {}
+ 
+-  '@vitejs/plugin-vue@6.0.4(vite@packages+vite)(vue@3.5.31(typescript@5.9.3))':
++  '@vitejs/plugin-vue@6.0.4(vite@packages+vite)(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@rolldown/pluginutils': 1.0.0-rc.2
+       vite: link:packages/vite
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+   '@vitejs/release-scripts@1.6.0(conventional-commits-filter@5.0.0)':
+     dependencies:
+@@ -10218,19 +10218,19 @@ snapshots:
+ 
+   '@vitejs/test-dep-source-map-no-sources@file:playground/optimize-deps/dep-source-map-no-sources': {}
+ 
+-  '@vitejs/test-dep-that-imports@file:playground/external/dep-that-imports(typescript@5.9.3)':
++  '@vitejs/test-dep-that-imports@file:playground/external/dep-that-imports(typescript@6.0.2)':
+     dependencies:
+       slash3: slash@3.0.0
+       slash5: slash@5.1.0
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+     transitivePeerDependencies:
+       - typescript
+ 
+-  '@vitejs/test-dep-that-requires@file:playground/external/dep-that-requires(typescript@5.9.3)':
++  '@vitejs/test-dep-that-requires@file:playground/external/dep-that-requires(typescript@6.0.2)':
+     dependencies:
+       slash3: slash@3.0.0
+       slash5: slash@5.1.0
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+     transitivePeerDependencies:
+       - typescript
+ 
+@@ -10399,25 +10399,25 @@ snapshots:
+       convert-source-map: 2.0.0
+       tinyrainbow: 3.1.0
+ 
+-  '@voidzero-dev/vitepress-theme@4.8.4(focus-trap@8.0.1)(vite@packages+vite)(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3))(vue@3.5.31(typescript@5.9.3))':
++  '@voidzero-dev/vitepress-theme@4.8.4(focus-trap@8.0.1)(vite@packages+vite)(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2))(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@docsearch/css': 4.5.4
+       '@docsearch/js': 4.5.4
+       '@docsearch/sidepanel-js': 4.5.4
+-      '@iconify/vue': 5.0.0(vue@3.5.31(typescript@5.9.3))
++      '@iconify/vue': 5.0.0(vue@3.5.31(typescript@6.0.2))
+       '@rive-app/canvas-lite': 2.35.1
+       '@tailwindcss/typography': 0.5.19(tailwindcss@4.2.2)
+       '@tailwindcss/vite': 4.2.2(vite@packages+vite)
+       '@vue/shared': 3.5.31
+-      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@5.9.3))
+-      '@vueuse/integrations': 14.2.0(focus-trap@8.0.1)(vue@3.5.31(typescript@5.9.3))
+-      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@5.9.3))
++      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@6.0.2))
++      '@vueuse/integrations': 14.2.0(focus-trap@8.0.1)(vue@3.5.31(typescript@6.0.2))
++      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@6.0.2))
+       mark.js: 8.11.1
+       minisearch: 7.2.0
+-      reka-ui: 2.9.0(vue@3.5.31(typescript@5.9.3))
++      reka-ui: 2.9.0(vue@3.5.31(typescript@6.0.2))
+       tailwindcss: 4.2.2
+-      vitepress: 2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3)
+-      vue: 3.5.31(typescript@5.9.3)
++      vitepress: 2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2)
++      vue: 3.5.31(typescript@6.0.2)
+     transitivePeerDependencies:
+       - '@vue/composition-api'
+       - async-validator
+@@ -10568,42 +10568,42 @@ snapshots:
+       '@vue/shared': 3.5.31
+       csstype: 3.2.3
+ 
+-  '@vue/server-renderer@3.4.38(vue@3.5.31(typescript@5.9.3))':
++  '@vue/server-renderer@3.4.38(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@vue/compiler-ssr': 3.4.38
+       '@vue/shared': 3.4.38
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+-  '@vue/server-renderer@3.5.31(vue@3.5.31(typescript@5.9.3))':
++  '@vue/server-renderer@3.5.31(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@vue/compiler-ssr': 3.5.31
+       '@vue/shared': 3.5.31
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+   '@vue/shared@3.4.38': {}
+ 
+   '@vue/shared@3.5.31': {}
+ 
+-  '@vueuse/core@14.2.0(vue@3.5.31(typescript@5.9.3))':
++  '@vueuse/core@14.2.0(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+       '@types/web-bluetooth': 0.0.21
+       '@vueuse/metadata': 14.2.0
+-      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@5.9.3))
+-      vue: 3.5.31(typescript@5.9.3)
++      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@6.0.2))
++      vue: 3.5.31(typescript@6.0.2)
+ 
+-  '@vueuse/integrations@14.2.0(focus-trap@8.0.1)(vue@3.5.31(typescript@5.9.3))':
++  '@vueuse/integrations@14.2.0(focus-trap@8.0.1)(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+-      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@5.9.3))
+-      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@5.9.3))
+-      vue: 3.5.31(typescript@5.9.3)
++      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@6.0.2))
++      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@6.0.2))
++      vue: 3.5.31(typescript@6.0.2)
+     optionalDependencies:
+       focus-trap: 8.0.1
+ 
+   '@vueuse/metadata@14.2.0': {}
+ 
+-  '@vueuse/shared@14.2.0(vue@3.5.31(typescript@5.9.3))':
++  '@vueuse/shared@14.2.0(vue@3.5.31(typescript@6.0.2))':
+     dependencies:
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+   accepts@2.0.0:
+     dependencies:
+@@ -10758,7 +10758,7 @@ snapshots:
+     dependencies:
+       balanced-match: 1.0.2
+ 
+-  brace-expansion@5.0.3:
++  brace-expansion@5.0.5:
+     dependencies:
+       balanced-match: 4.0.4
+ 
+@@ -11172,25 +11172,25 @@ snapshots:
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+       eslint-compat-utils: 0.5.1(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))
+ 
+-  eslint-plugin-import-x@4.16.2(@typescript-eslint/utils@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3):
++  eslint-plugin-import-x@4.16.2(@typescript-eslint/utils@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3):
+     dependencies:
+       '@package-json/types': 0.0.12
+-      '@typescript-eslint/types': 8.57.2
++      '@typescript-eslint/types': 8.58.0
+       comment-parser: 1.4.5
+       debug: obug@1.0.2(ms@2.1.3)
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+       eslint-import-context: 0.1.9(unrs-resolver@1.11.1)
+       is-glob: 4.0.3
+-      minimatch: 10.2.4
++      minimatch: 10.2.5
+       semver: 7.7.4
+       stable-hash-x: 0.2.0
+       unrs-resolver: 1.11.1
+     optionalDependencies:
+-      '@typescript-eslint/utils': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
++      '@typescript-eslint/utils': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
+     transitivePeerDependencies:
+       - ms
+ 
+-  eslint-plugin-n@17.24.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(typescript@5.9.3):
++  eslint-plugin-n@17.24.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(typescript@6.0.2):
+     dependencies:
+       '@eslint-community/eslint-utils': 4.9.1(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))
+       enhanced-resolve: 5.19.0
+@@ -11201,7 +11201,7 @@ snapshots:
+       globrex: 0.1.2
+       ignore: 5.3.2
+       semver: 7.7.4
+-      ts-declaration-location: 1.0.7(typescript@5.9.3)
++      ts-declaration-location: 1.0.7(typescript@6.0.2)
+     transitivePeerDependencies:
+       - typescript
+ 
+@@ -11453,11 +11453,11 @@ snapshots:
+ 
+   flatted@3.3.3: {}
+ 
+-  floating-vue@5.2.2(vue@3.5.31(typescript@5.9.3)):
++  floating-vue@5.2.2(vue@3.5.31(typescript@6.0.2)):
+     dependencies:
+       '@floating-ui/dom': 1.1.1
+-      vue: 3.5.31(typescript@5.9.3)
+-      vue-resize: 2.0.0-alpha.1(vue@3.5.31(typescript@5.9.3))
++      vue: 3.5.31(typescript@6.0.2)
++      vue-resize: 2.0.0-alpha.1(vue@3.5.31(typescript@6.0.2))
+ 
+   focus-trap@8.0.1:
+     dependencies:
+@@ -12325,9 +12325,9 @@ snapshots:
+       - bufferutil
+       - utf-8-validate
+ 
+-  minimatch@10.2.4:
++  minimatch@10.2.5:
+     dependencies:
+-      brace-expansion: 5.0.3
++      brace-expansion: 5.0.5
+ 
+   minimatch@3.1.5:
+     dependencies:
+@@ -12916,19 +12916,19 @@ snapshots:
+     dependencies:
+       jsesc: 3.1.0
+ 
+-  reka-ui@2.9.0(vue@3.5.31(typescript@5.9.3)):
++  reka-ui@2.9.0(vue@3.5.31(typescript@6.0.2)):
+     dependencies:
+       '@floating-ui/dom': 1.7.6
+-      '@floating-ui/vue': 1.1.11(vue@3.5.31(typescript@5.9.3))
++      '@floating-ui/vue': 1.1.11(vue@3.5.31(typescript@6.0.2))
+       '@internationalized/date': 3.12.0
+       '@internationalized/number': 3.6.5
+-      '@tanstack/vue-virtual': 3.13.21(vue@3.5.31(typescript@5.9.3))
+-      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@5.9.3))
+-      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@5.9.3))
++      '@tanstack/vue-virtual': 3.13.21(vue@3.5.31(typescript@6.0.2))
++      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@6.0.2))
++      '@vueuse/shared': 14.2.0(vue@3.5.31(typescript@6.0.2))
+       aria-hidden: 1.2.6
+       defu: 6.1.4
+       ohash: 2.0.11
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+     transitivePeerDependencies:
+       - '@vue/composition-api'
+ 
+@@ -12988,7 +12988,7 @@ snapshots:
+ 
+   rfdc@1.4.1: {}
+ 
+-  rolldown-plugin-dts@0.23.2(rolldown@1.0.0-rc.12)(typescript@5.9.3)(vue-tsc@3.2.6(typescript@5.9.3)):
++  rolldown-plugin-dts@0.23.2(rolldown@1.0.0-rc.12)(typescript@6.0.2)(vue-tsc@3.2.6(typescript@6.0.2)):
+     dependencies:
+       '@babel/generator': 8.0.0-rc.3
+       '@babel/helper-validator-identifier': 8.0.0-rc.3
+@@ -13002,8 +13002,8 @@ snapshots:
+       picomatch: 4.0.4
+       rolldown: 1.0.0-rc.12
+     optionalDependencies:
+-      typescript: 5.9.3
+-      vue-tsc: 3.2.6(typescript@5.9.3)
++      typescript: 6.0.2
++      vue-tsc: 3.2.6(typescript@6.0.2)
+     transitivePeerDependencies:
+       - oxc-resolver
+ 
+@@ -13615,18 +13615,18 @@ snapshots:
+ 
+   trough@2.2.0: {}
+ 
+-  ts-api-utils@2.4.0(typescript@5.9.3):
++  ts-api-utils@2.5.0(typescript@6.0.2):
+     dependencies:
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+-  ts-declaration-location@1.0.7(typescript@5.9.3):
++  ts-declaration-location@1.0.7(typescript@6.0.2):
+     dependencies:
+       picomatch: 4.0.4
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+   ts-interface-checker@0.1.13: {}
+ 
+-  tsdown@0.21.7(@vitejs/devtools@0.1.11(typescript@5.9.3)(vite@packages+vite))(publint@0.3.18)(typescript@5.9.3)(vue-tsc@3.2.6(typescript@5.9.3)):
++  tsdown@0.21.7(@vitejs/devtools@0.1.11(typescript@6.0.2)(vite@packages+vite))(publint@0.3.18)(typescript@6.0.2)(vue-tsc@3.2.6(typescript@6.0.2)):
+     dependencies:
+       ansis: 4.2.0
+       cac: 7.0.0
+@@ -13637,7 +13637,7 @@ snapshots:
+       obug: 2.1.1
+       picomatch: 4.0.4
+       rolldown: 1.0.0-rc.12
+-      rolldown-plugin-dts: 0.23.2(rolldown@1.0.0-rc.12)(typescript@5.9.3)(vue-tsc@3.2.6(typescript@5.9.3))
++      rolldown-plugin-dts: 0.23.2(rolldown@1.0.0-rc.12)(typescript@6.0.2)(vue-tsc@3.2.6(typescript@6.0.2))
+       semver: 7.7.4
+       tinyexec: 1.0.4
+       tinyglobby: 0.2.15
+@@ -13645,9 +13645,9 @@ snapshots:
+       unconfig-core: 7.5.0
+       unrun: 0.2.34
+     optionalDependencies:
+-      '@vitejs/devtools': 0.1.11(typescript@5.9.3)(vite@packages+vite)
++      '@vitejs/devtools': 0.1.11(typescript@6.0.2)(vite@packages+vite)
+       publint: 0.3.18
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - '@ts-macro/tsc'
+       - '@typescript/native-preview'
+@@ -13666,20 +13666,20 @@ snapshots:
+ 
+   twoslash-protocol@0.3.6: {}
+ 
+-  twoslash-vue@0.3.6(ms@2.1.3)(typescript@5.9.3):
++  twoslash-vue@0.3.6(ms@2.1.3)(typescript@6.0.2):
+     dependencies:
+       '@vue/language-core': 3.2.6
+-      twoslash: 0.3.6(ms@2.1.3)(typescript@5.9.3)
++      twoslash: 0.3.6(ms@2.1.3)(typescript@6.0.2)
+       twoslash-protocol: 0.3.6
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  twoslash@0.3.6(ms@2.1.3)(typescript@5.9.3):
++  twoslash@0.3.6(ms@2.1.3)(typescript@6.0.2):
+     dependencies:
+-      '@typescript/vfs': 1.6.2(ms@2.1.3)(typescript@5.9.3)
++      '@typescript/vfs': 1.6.2(ms@2.1.3)(typescript@6.0.2)
+       twoslash-protocol: 0.3.6
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+@@ -13693,18 +13693,18 @@ snapshots:
+       media-typer: 1.1.0
+       mime-types: 3.0.2
+ 
+-  typescript-eslint@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3):
++  typescript-eslint@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2):
+     dependencies:
+-      '@typescript-eslint/eslint-plugin': 8.57.2(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/parser': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/typescript-estree': 8.57.2(ms@2.1.3)(typescript@5.9.3)
+-      '@typescript-eslint/utils': 8.57.2(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@5.9.3)
++      '@typescript-eslint/eslint-plugin': 8.58.0(@typescript-eslint/parser@8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/parser': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/typescript-estree': 8.58.0(ms@2.1.3)(typescript@6.0.2)
++      '@typescript-eslint/utils': 8.58.0(eslint@9.39.4(jiti@2.6.1)(ms@2.1.3))(ms@2.1.3)(typescript@6.0.2)
+       eslint: 9.39.4(jiti@2.6.1)(ms@2.1.3)
+-      typescript: 5.9.3
++      typescript: 6.0.2
+     transitivePeerDependencies:
+       - ms
+ 
+-  typescript@5.9.3: {}
++  typescript@6.0.2: {}
+ 
+   uc.micro@2.1.0: {}
+ 
+@@ -13846,9 +13846,9 @@ snapshots:
+ 
+   utils-merge@1.0.1: {}
+ 
+-  valibot@1.3.1(typescript@5.9.3):
++  valibot@1.3.1(typescript@6.0.2):
+     optionalDependencies:
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+   validate-npm-package-license@3.0.4:
+     dependencies:
+@@ -13869,10 +13869,10 @@ snapshots:
+       '@types/unist': 3.0.3
+       vfile-message: 4.0.3
+ 
+-  vitepress-plugin-graphviz@0.0.1(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3)):
++  vitepress-plugin-graphviz@0.0.1(vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2)):
+     dependencies:
+       '@hpcc-js/wasm-graphviz': 1.21.0
+-      vitepress: 2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3)
++      vitepress: 2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2)
+ 
+   vitepress-plugin-group-icons@1.7.3(vite@packages+vite):
+     dependencies:
+@@ -13889,7 +13889,7 @@ snapshots:
+       markdown-title: 1.0.2
+       mdast-util-from-markdown: 2.0.3(ms@2.1.3)
+       millify: 6.1.0
+-      minimatch: 10.2.4
++      minimatch: 10.2.5
+       path-to-regexp: 6.3.0
+       picocolors: 1.1.1
+       pretty-bytes: 7.1.0
+@@ -13901,7 +13901,7 @@ snapshots:
+     transitivePeerDependencies:
+       - ms
+ 
+-  vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@5.9.3):
++  vitepress@2.0.0-alpha.17(oxc-minify@0.121.0)(postcss@8.5.8)(typescript@6.0.2):
+     dependencies:
+       '@docsearch/css': 4.5.4
+       '@docsearch/js': 4.5.4
+@@ -13911,17 +13911,17 @@ snapshots:
+       '@shikijs/transformers': 3.22.0
+       '@shikijs/types': 3.22.0
+       '@types/markdown-it': 14.1.2
+-      '@vitejs/plugin-vue': 6.0.4(vite@packages+vite)(vue@3.5.31(typescript@5.9.3))
++      '@vitejs/plugin-vue': 6.0.4(vite@packages+vite)(vue@3.5.31(typescript@6.0.2))
+       '@vue/devtools-api': 8.0.5
+       '@vue/shared': 3.5.31
+-      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@5.9.3))
+-      '@vueuse/integrations': 14.2.0(focus-trap@8.0.1)(vue@3.5.31(typescript@5.9.3))
++      '@vueuse/core': 14.2.0(vue@3.5.31(typescript@6.0.2))
++      '@vueuse/integrations': 14.2.0(focus-trap@8.0.1)(vue@3.5.31(typescript@6.0.2))
+       focus-trap: 8.0.1
+       mark.js: 8.11.1
+       minisearch: 7.2.0
+       shiki: 3.22.0
+       vite: link:packages/vite
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+     optionalDependencies:
+       oxc-minify: 0.121.0
+       postcss: 8.5.8
+@@ -13970,49 +13970,49 @@ snapshots:
+ 
+   vscode-uri@3.1.0: {}
+ 
+-  vue-demi@0.14.10(vue@3.5.31(typescript@5.9.3)):
++  vue-demi@0.14.10(vue@3.5.31(typescript@6.0.2)):
+     dependencies:
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+-  vue-resize@2.0.0-alpha.1(vue@3.5.31(typescript@5.9.3)):
++  vue-resize@2.0.0-alpha.1(vue@3.5.31(typescript@6.0.2)):
+     dependencies:
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+-  vue-tsc@3.2.6(typescript@5.9.3):
++  vue-tsc@3.2.6(typescript@6.0.2):
+     dependencies:
+       '@volar/typescript': 2.4.28
+       '@vue/language-core': 3.2.6
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+-  vue-virtual-scroller@2.0.0-beta.10(vue@3.5.31(typescript@5.9.3)):
++  vue-virtual-scroller@2.0.0-beta.10(vue@3.5.31(typescript@6.0.2)):
+     dependencies:
+       mitt: 2.1.0
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+-  vue@3.4.38(typescript@5.9.3):
++  vue@3.4.38(typescript@6.0.2):
+     dependencies:
+       '@vue/compiler-dom': 3.4.38
+       '@vue/compiler-sfc': 3.4.38
+       '@vue/runtime-dom': 3.4.38
+-      '@vue/server-renderer': 3.4.38(vue@3.5.31(typescript@5.9.3))
++      '@vue/server-renderer': 3.4.38(vue@3.5.31(typescript@6.0.2))
+       '@vue/shared': 3.4.38
+     optionalDependencies:
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+-  vue@3.5.31(typescript@5.9.3):
++  vue@3.5.31(typescript@6.0.2):
+     dependencies:
+       '@vue/compiler-dom': 3.5.31
+       '@vue/compiler-sfc': 3.5.31
+       '@vue/runtime-dom': 3.5.31
+-      '@vue/server-renderer': 3.5.31(vue@3.5.31(typescript@5.9.3))
++      '@vue/server-renderer': 3.5.31(vue@3.5.31(typescript@6.0.2))
+       '@vue/shared': 3.5.31
+     optionalDependencies:
+-      typescript: 5.9.3
++      typescript: 6.0.2
+ 
+-  vuex@4.1.0(vue@3.5.31(typescript@5.9.3)):
++  vuex@4.1.0(vue@3.5.31(typescript@6.0.2)):
+     dependencies:
+       '@vue/devtools-api': 6.6.4
+-      vue: 3.5.31(typescript@5.9.3)
++      vue: 3.5.31(typescript@6.0.2)
+ 
+   walk-up-path@4.0.0: {}
+ 
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index 9e80a8e2705655..2418f11303ef55 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -34,6 +34,7 @@ packageExtensions:
+       '@types/estree': ^1.0.0
+ ignoredBuiltDependencies:
+   - core-js
++  - vue-demi
+ onlyBuiltDependencies:
+   - "@parcel/watcher"
+   - "@tailwindcss/oxide"
+diff --git a/scripts/tsconfig.json b/scripts/tsconfig.json
+index 284d342c1c6884..339127f7d0296a 100644
+--- a/scripts/tsconfig.json
++++ b/scripts/tsconfig.json
+@@ -2,13 +2,11 @@
+   "$schema": "https://json.schemastore.org/tsconfig",
+   "include": ["."],
+   "compilerOptions": {
+-    "module": "Preserve",
+-    "target": "ES2023",
++    "module": "preserve",
++    "target": "es2023",
+     "moduleResolution": "bundler",
+     "types": ["node"],
+     "noEmit": true,
+-    "strict": true,
+-    "esModuleInterop": true,
+     "erasableSyntaxOnly": true,
+     "skipLibCheck": true,
+     "noUnusedLocals": true

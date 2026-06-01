@@ -1,0 +1,2308 @@
+diff --git a/.github/scripts/tsconfig.json b/.github/scripts/tsconfig.json
+index 2529f53ec0ef..73c65eec211a 100644
+--- a/.github/scripts/tsconfig.json
++++ b/.github/scripts/tsconfig.json
+@@ -1,5 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
++  "extends": "../../configs/tsconfig.base.json",
+   "compilerOptions": {
+     "composite": true,
+     "allowJs": true
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 6de1ff9aee0c..43082d5c39e7 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -140,8 +140,8 @@ jobs:
+       - name: Lint publish code
+         run: pnpm run publint
+ 
+-      - name: Type-check test files
+-        run: pnpm run typecheck:tests
++      - name: Type-check files
++        run: pnpm run typecheck
+ 
+   test:
+     name: 'Test (${{ matrix.TEST_SUITE.name }}): ${{ matrix.os }} (node@${{ matrix.NODE_VERSION }})'
+diff --git a/benchmark/packages/adapter/tsconfig.json b/benchmark/packages/adapter/tsconfig.json
+index 7f8d5c4c2184..9c68e9d49b08 100644
+--- a/benchmark/packages/adapter/tsconfig.json
++++ b/benchmark/packages/adapter/tsconfig.json
+@@ -1,5 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
++  "extends": "../../../configs/tsconfig.base.json",
+   "include": ["src"],
+   "compilerOptions": {
+     "rootDir": "./src",
+diff --git a/benchmark/packages/timer/tsconfig.json b/benchmark/packages/timer/tsconfig.json
+index 7f8d5c4c2184..9c68e9d49b08 100644
+--- a/benchmark/packages/timer/tsconfig.json
++++ b/benchmark/packages/timer/tsconfig.json
+@@ -1,5 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
++  "extends": "../../../configs/tsconfig.base.json",
+   "include": ["src"],
+   "compilerOptions": {
+     "rootDir": "./src",
+diff --git a/tsconfig.base.json b/configs/tsconfig.base.json
+similarity index 64%
+rename from tsconfig.base.json
+rename to configs/tsconfig.base.json
+index 1600925b31ce..657c8ddca6b2 100644
+--- a/tsconfig.base.json
++++ b/configs/tsconfig.base.json
+@@ -1,9 +1,12 @@
+ {
+   "$schema": "https://json.schemastore.org/tsconfig",
+   "compilerOptions": {
++    "composite": true,
+     "declaration": true,
+     "emitDeclarationOnly": true,
+     "strict": true,
++    "allowJs": true,
++    "forceConsistentCasingInFileNames": true,
+     "moduleResolution": "nodenext",
+     "target": "esnext",
+     "module": "nodenext",
+@@ -14,7 +17,8 @@
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+     "erasableSyntaxOnly": true,
+-    "outDir": "${configDir}/node_modules/.cache/tsconfig/out",
++    // Emit declaration and cache files to a directory that would be ignored by tools like Git and ESLint.  
++    "outDir": "${configDir}/node_modules/.cache/ts_base/out",
+     "types": ["node"]
+   }
+ }
+diff --git a/configs/tsconfig.build.json b/configs/tsconfig.build.json
+new file mode 100644
+index 000000000000..5772e9670b57
+--- /dev/null
++++ b/configs/tsconfig.build.json
+@@ -0,0 +1,12 @@
++{
++  "$schema": "https://json.schemastore.org/tsconfig",
++  "extends": "./tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "${configDir}/src",
++    "outDir": "${configDir}/dist",
++    // `._cache/` is ignored when publishing to NPM registry, so it's a safe place to put build artifacts that we don't want to publish.
++    // See https://docs.npmjs.com/cli/v10/configuring-npm/package-json#files
++    "tsBuildInfoFile": "${configDir}/dist/._cache/ts_build/build.tsbuildinfo"
++  },
++  "include": ["${configDir}/src"]
++}
+diff --git a/packages/language-tools/tsconfig.json b/configs/tsconfig.language-tools.json
+similarity index 55%
+rename from packages/language-tools/tsconfig.json
+rename to configs/tsconfig.language-tools.json
+index 83a96ac9ee32..5c388d86979c 100644
+--- a/packages/language-tools/tsconfig.json
++++ b/configs/tsconfig.language-tools.json
+@@ -1,15 +1,13 @@
+ {
++  "$schema": "https://json.schemastore.org/tsconfig",
++  "extends": "./tsconfig.build.json",
+   "compilerOptions": {
+     "target": "ES2021",
+     "lib": ["WebWorker", "ES2021"],
+     "module": "commonjs",
+     // TODO: when upgrading to TS 6, will need to be set to "bundler"
+     "moduleResolution": "node",
+-    "declaration": true,
+-    "emitDeclarationOnly": true,
+-    "strict": true,
+-    "esModuleInterop": true,
+-    "skipLibCheck": true,
+-    "forceConsistentCasingInFileNames": true
++    "verbatimModuleSyntax": false,
++    "erasableSyntaxOnly": false
+   }
+ }
+diff --git a/configs/tsconfig.test.json b/configs/tsconfig.test.json
+new file mode 100644
+index 000000000000..3d43c022cb1e
+--- /dev/null
++++ b/configs/tsconfig.test.json
+@@ -0,0 +1,13 @@
++{
++  "$schema": "https://json.schemastore.org/tsconfig",
++  "extends": "./tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "${configDir}",
++    "noUnusedLocals": false,
++    "noUnusedParameters": false,
++    "allowImportingTsExtensions": true,
++    "outDir": "${configDir}/node_modules/.cache/ts_test/out"
++  },
++  "include": ["${configDir}/test/**/*"],
++  "exclude": ["${configDir}/test/fixtures/**/*"]
++}
+diff --git a/knip.js b/knip.js
+index 12e1efcf7afa..09c35626ae9b 100644
+--- a/knip.js
++++ b/knip.js
+@@ -1,4 +1,6 @@
+ // @ts-check
++const srcEntry = 'src/**/*.{js,ts,cts}';
++const dtsEntry = '*.d.ts';
+ const testEntry = 'test/**/*.test.{js,ts}';
+ 
+ /** @type {import('knip').KnipConfig} */
+@@ -24,12 +26,14 @@ export default {
+ 			entry: ['.flue/agents/*.ts', '.flue/workflows/*/WORKFLOW.ts'],
+ 		},
+ 		'packages/*': {
+-			entry: [testEntry],
++			entry: [srcEntry, dtsEntry, testEntry],
+ 		},
+ 		'packages/astro': {
+ 			entry: [
+ 				// Can't be detected automatically since it's only in package.json#files
+ 				'templates/**/*',
++				srcEntry,
++				dtsEntry,
+ 				testEntry,
+ 				'test/types/**/*',
+ 				'e2e/**/*.test.{js,ts}',
+@@ -53,37 +57,30 @@ export default {
+ 				'rehype-toc',
+ 				'remark-code-titles',
+ 				'@types/http-cache-semantics',
+-				// Dynamically imported by astro add cloudflare
+-				'@astrojs/cloudflare',
+ 			],
+ 		},
+ 		'packages/db': {
+-			entry: [testEntry, 'test/types/**/*'],
++			entry: [srcEntry, dtsEntry, testEntry, 'test/types/**/*'],
+ 		},
+ 		'packages/integrations/*': {
+-			entry: [testEntry],
++			entry: [srcEntry, dtsEntry, testEntry],
+ 		},
+ 		'packages/integrations/cloudflare': {
+-			entry: [testEntry],
++			entry: [srcEntry, dtsEntry, testEntry],
+ 			// False positive because of cloudflare:workers
+ 			ignoreDependencies: ['cloudflare'],
+ 		},
+-		'packages/integrations/mdx': {
+-			entry: [testEntry],
+-			// Required but not imported directly
+-			ignoreDependencies: ['@types/*'],
+-		},
+ 		'packages/integrations/netlify': {
+-			entry: [testEntry],
++			entry: [srcEntry, dtsEntry, testEntry],
+ 			ignore: ['test/hosted/**'],
+ 		},
+ 		'packages/integrations/solid': {
+-			entry: [testEntry],
++			entry: [srcEntry, dtsEntry, testEntry],
+ 			// It's an optional peer dep (triggers a warning) but it's fine in this case
+ 			ignoreDependencies: ['solid-devtools'],
+ 		},
+ 		'packages/markdown/remark': {
+-			entry: [testEntry],
++			entry: [srcEntry, dtsEntry, testEntry],
+ 			// package.json#imports are not resolved at the moment
+ 			ignore: ['src/import-plugin-browser.ts', 'src/shiki-engine-workerd.ts'],
+ 		},
+diff --git a/package.json b/package.json
+index 74b59aef1d85..21f9374ba832 100644
+--- a/package.json
++++ b/package.json
+@@ -38,7 +38,7 @@
+     "test:e2e": "cd packages/astro && pnpm playwright install firefox && pnpm run test:e2e",
+     "test:e2e:match": "cd packages/astro && pnpm playwright install firefox && pnpm run test:e2e:match",
+     "test:e2e:hosts": "turbo run test:hosted",
+-    "typecheck:tests": "pnpm -r run --sequential typecheck:tests",
++    "typecheck": "tsc -b",
+     "benchmark": "astro-benchmark",
+     "lint": "biome lint && knip && eslint . --report-unused-disable-directives-severity=warn --concurrency=auto",
+     "lint:ci": "knip && pnpm run eslint:ci",
+diff --git a/packages/astro-prism/package.json b/packages/astro-prism/package.json
+index 5a7c3ced874a..2486ec08732a 100644
+--- a/packages/astro-prism/package.json
++++ b/packages/astro-prism/package.json
+@@ -14,7 +14,7 @@
+   "homepage": "https://docs.astro.build/en/reference/api-reference/#prism-",
+   "main": "dist/index.js",
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc -p ./tsconfig.json",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\""
+   },
+diff --git a/packages/astro-prism/tsconfig.build.json b/packages/astro-prism/tsconfig.build.json
+new file mode 100644
+index 000000000000..79fbbc66db11
+--- /dev/null
++++ b/packages/astro-prism/tsconfig.build.json
+@@ -0,0 +1,3 @@
++{
++  "extends": "../../configs/tsconfig.build.json"
++}
+diff --git a/packages/astro-prism/tsconfig.json b/packages/astro-prism/tsconfig.json
+index 17e08031358c..585d16fe2f3c 100644
+--- a/packages/astro-prism/tsconfig.json
++++ b/packages/astro-prism/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/astro-rss/package.json b/packages/astro-rss/package.json
+index ef76cd050187..a74e5410b33c 100644
+--- a/packages/astro-rss/package.json
++++ b/packages/astro-rss/package.json
+@@ -21,11 +21,10 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "devDependencies": {
+     "@types/xml2js": "^0.4.14",
+diff --git a/packages/astro-rss/tsconfig.build.json b/packages/astro-rss/tsconfig.build.json
+new file mode 100644
+index 000000000000..79fbbc66db11
+--- /dev/null
++++ b/packages/astro-rss/tsconfig.build.json
+@@ -0,0 +1,3 @@
++{
++  "extends": "../../configs/tsconfig.build.json"
++}
+diff --git a/packages/astro-rss/tsconfig.json b/packages/astro-rss/tsconfig.json
+index 17e08031358c..64908093d2fe 100644
+--- a/packages/astro-rss/tsconfig.json
++++ b/packages/astro-rss/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/astro-rss/tsconfig.test.json b/packages/astro-rss/tsconfig.test.json
+index 7d6bc4428b35..9ca68b5a3d26 100644
+--- a/packages/astro-rss/tsconfig.test.json
++++ b/packages/astro-rss/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../astro/tsconfig.test.json" }]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/astro/components/tsconfig.json b/packages/astro/components/tsconfig.json
+index 71b1925eb046..34dadb4719a4 100644
+--- a/packages/astro/components/tsconfig.json
++++ b/packages/astro/components/tsconfig.json
+@@ -1,9 +1,8 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
++  "extends": "../../../configs/tsconfig.base.json",
+   "compilerOptions": {
+-    "allowJs": true,
+     "emitDeclarationOnly": false,
+-    "noEmit": true,
+     "jsx": "preserve"
+-  }
++  },
++  "references": [{ "path": "../tsconfig.build.json" }]
+ }
+diff --git a/packages/astro/package.json b/packages/astro/package.json
+index 5c435735c2a1..adb3ba4daa10 100644
+--- a/packages/astro/package.json
++++ b/packages/astro/package.json
+@@ -112,7 +112,7 @@
+   ],
+   "scripts": {
+     "prebuild": "astro-scripts prebuild --to-string \"src/runtime/server/astro-island.ts\" \"src/runtime/client/{idle,load,media,only,visible}.ts\"",
+-    "build": "pnpm run prebuild && astro-scripts build \"src/**/*.{ts,js}\" --copy-wasm && tsc && astro-check -- -- --root ./components",
++    "build": "pnpm run prebuild && astro-scripts build \"src/**/*.{ts,js}\" --copy-wasm && tsc -b && astro-check -- -- --root ./components",
+     "build:ci": "pnpm run prebuild && astro-scripts build \"src/**/*.{ts,js}\" --copy-wasm",
+     "dev": "astro-scripts dev --copy-wasm --prebuild \"src/runtime/server/astro-island.ts\" --prebuild \"src/runtime/client/{idle,load,media,only,visible}.ts\" \"src/**/*.{ts,js}\"",
+     "test": "pnpm run test:unit && pnpm run test:integration && pnpm run test:types",
+@@ -123,7 +123,6 @@
+     "test:e2e:chrome": "playwright test",
+     "test:e2e:firefox": "playwright test --config playwright.firefox.config.js",
+     "test:types": "tsc --build test/types/tsconfig.json",
+-    "typecheck:tests": "tsc --build tsconfig.test.json",
+     "test:unit": "astro-scripts test \"test/units/**/*.test.ts\" --strip-types --teardown ./test/units/teardown.ts",
+     "test:integration": "pnpm run test:integration:js && pnpm run test:integration:ts",
+     "test:integration:js": "astro-scripts test \"test/*.test.js\"",
+diff --git a/packages/astro/src/cli/check/index.ts b/packages/astro/src/cli/check/index.ts
+index b6fa06f6cf76..06cab5ec7d57 100644
+--- a/packages/astro/src/cli/check/index.ts
++++ b/packages/astro/src/cli/check/index.ts
+@@ -3,7 +3,7 @@ import { ensureProcessNodeEnv } from '../../core/util.js';
+ import { createLoggerFromFlags, type Flags, flagsToAstroInlineConfig } from '../flags.js';
+ import { getPackage } from '../install-package.js';
+ 
+-export async function check(flags: Flags) {
++export async function check(flags: Flags): Promise<boolean | void> {
+ 	ensureProcessNodeEnv('production');
+ 	const logger = createLoggerFromFlags(flags);
+ 	const getPackageOpts = {
+diff --git a/packages/astro/test/cli.test.ts b/packages/astro/test/cli.test.ts
+index e4fa2b235a67..4569596597c2 100644
+--- a/packages/astro/test/cli.test.ts
++++ b/packages/astro/test/cli.test.ts
+@@ -29,7 +29,7 @@ describe('astro cli', () => {
+ 		});
+ 		const logs: LogEntry[] = [];
+ 
+-		const checkServer = await fixture.check({
++		const checkServer: boolean | void = await fixture.check({
+ 			_: [],
+ 			flags: { watch: true },
+ 			logging: {
+diff --git a/packages/astro/test/types/tsconfig.json b/packages/astro/test/types/tsconfig.json
+index 249c1cc68986..6af19ba53005 100644
+--- a/packages/astro/test/types/tsconfig.json
++++ b/packages/astro/test/types/tsconfig.json
+@@ -1,8 +1,6 @@
+ {
+-  "extends": "../../../../tsconfig.base.json",
++  "extends": "../../../../configs/tsconfig.base.json",
+   "compilerOptions": {
+-    "composite": true,
+-    "allowJs": true,
+     "emitDeclarationOnly": false
+   }
+ }
+diff --git a/packages/astro/tsconfig.build.json b/packages/astro/tsconfig.build.json
+new file mode 100644
+index 000000000000..aef5245acc21
+--- /dev/null
++++ b/packages/astro/tsconfig.build.json
+@@ -0,0 +1,12 @@
++{
++  "extends": "../../configs/tsconfig.build.json",
++  "compilerOptions": {
++    "jsx": "preserve"
++  },
++  "include": ["./src", "./dev-only.d.ts"],
++  "references": [
++    { "path": "../internal-helpers/tsconfig.json" },
++    { "path": "../telemetry/tsconfig.json" },
++    { "path": "../markdown/remark/tsconfig.json" }
++  ]
++}
+diff --git a/packages/astro/tsconfig.json b/packages/astro/tsconfig.json
+index 473fa36b5f04..a1a3294c6d65 100644
+--- a/packages/astro/tsconfig.json
++++ b/packages/astro/tsconfig.json
+@@ -1,15 +1,9 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src", "dev-only.d.ts"],
+-  "exclude": ["dist"],
+-  "compilerOptions": {
+-    "composite": true,
+-    "rootDir": "./src",
+-    "allowJs": true,
+-    "declarationDir": "./dist",
+-    "outDir": "./dist",
+-    "jsx": "preserve",
+-    "tsBuildInfoFile": "${configDir}/dist/._cache/tsconfig/tsbuildinfo.json",
+-    "erasableSyntaxOnly": true
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [
++    { "path": "./tsconfig.build.json" },
++    { "path": "./tsconfig.test.json" },
++    { "path": "./components/tsconfig.json" }
++  ]
+ }
+diff --git a/packages/astro/tsconfig.test.json b/packages/astro/tsconfig.test.json
+index a72dfb9af52e..e3adbddf4ef2 100644
+--- a/packages/astro/tsconfig.test.json
++++ b/packages/astro/tsconfig.test.json
+@@ -1,5 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
++  "extends": "../../configs/tsconfig.test.json",
+   "include": ["test/units/**/*.ts", "test/*.ts", "e2e/*.ts", "package.json"],
+   "exclude": ["test/units/_temp-fixtures/**", "test/fixtures/**", "e2e/fixtures/**"],
+   "files": [
+@@ -9,19 +9,7 @@
+     "./test/fixtures/before-hydration/deps.mjs"
+   ],
+   "compilerOptions": {
+-    "types": ["vite/client", "node"],
+-    "composite": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
++    "types": ["vite/client", "node"]
+   },
+-  "references": [
+-    {
+-      "path": "./tsconfig.json"
+-    },
+-    {
+-      "path": "../../scripts/tsconfig.json"
+-    }
+-  ]
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "../../scripts/tsconfig.json" }]
+ }
+diff --git a/packages/create-astro/package.json b/packages/create-astro/package.json
+index 8e9959af1814..b0fb14543e0d 100644
+--- a/packages/create-astro/package.json
++++ b/packages/create-astro/package.json
+@@ -19,11 +19,10 @@
+     "create-astro": "./create-astro.mjs"
+   },
+   "scripts": {
+-    "build": "astro-scripts build \"src/index.ts\" --bundle && tsc",
++    "build": "astro-scripts build \"src/index.ts\" --bundle && tsc -b",
+     "build:ci": "astro-scripts build \"src/index.ts\" --bundle",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "files": [
+     "dist",
+diff --git a/packages/create-astro/tsconfig.build.json b/packages/create-astro/tsconfig.build.json
+new file mode 100644
+index 000000000000..81172969f5ec
+--- /dev/null
++++ b/packages/create-astro/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../configs/tsconfig.build.json",
++  "references": [{ "path": "../internal-helpers/tsconfig.json" }]
++}
+diff --git a/packages/create-astro/tsconfig.json b/packages/create-astro/tsconfig.json
+index 17e08031358c..64908093d2fe 100644
+--- a/packages/create-astro/tsconfig.json
++++ b/packages/create-astro/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/create-astro/tsconfig.test.json b/packages/create-astro/tsconfig.test.json
+index cff674d824b9..9ca68b5a3d26 100644
+--- a/packages/create-astro/tsconfig.test.json
++++ b/packages/create-astro/tsconfig.test.json
+@@ -1,16 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/db/package.json b/packages/db/package.json
+index e7a4cae5d264..9772f18e28b0 100644
+--- a/packages/db/package.json
++++ b/packages/db/package.json
+@@ -63,13 +63,11 @@
+     "astro-integration"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "pnpm run test:integration && pnpm run test:types",
+-    "test:integration": "astro-scripts test \"test/**/*.test.ts\"",
+-    "test:types": "tsc --project test/types/tsconfig.json",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "pnpm run test:integration",
++    "test:integration": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@clack/prompts": "^1.0.1",
+diff --git a/packages/db/test/types/tsconfig.json b/packages/db/test/types/tsconfig.json
+deleted file mode 100644
+index cc320a61e407..000000000000
+--- a/packages/db/test/types/tsconfig.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "extends": "../../../../tsconfig.base.json",
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "emitDeclarationOnly": false,
+-    "noEmit": true
+-  }
+-}
+diff --git a/packages/db/tsconfig.build.json b/packages/db/tsconfig.build.json
+new file mode 100644
+index 000000000000..6fc16b22308a
+--- /dev/null
++++ b/packages/db/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../configs/tsconfig.build.json",
++  "references": [{ "path": "../astro/tsconfig.json" }]
++}
+diff --git a/packages/db/tsconfig.json b/packages/db/tsconfig.json
+index 17e08031358c..64908093d2fe 100644
+--- a/packages/db/tsconfig.json
++++ b/packages/db/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/db/tsconfig.test.json b/packages/db/tsconfig.test.json
+index 7d6bc4428b35..9ca68b5a3d26 100644
+--- a/packages/db/tsconfig.test.json
++++ b/packages/db/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../astro/tsconfig.test.json" }]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/alpinejs/package.json b/packages/integrations/alpinejs/package.json
+index 756ad2b888d2..5a35951e127d 100644
+--- a/packages/integrations/alpinejs/package.json
++++ b/packages/integrations/alpinejs/package.json
+@@ -28,11 +28,10 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test:e2e": "playwright test",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test:e2e": "playwright test"
+   },
+   "peerDependencies": {
+     "@types/alpinejs": "^3.0.0",
+diff --git a/packages/integrations/alpinejs/tsconfig.build.json b/packages/integrations/alpinejs/tsconfig.build.json
+new file mode 100644
+index 000000000000..a761ab3c2ef3
+--- /dev/null
++++ b/packages/integrations/alpinejs/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [{ "path": "../../astro/tsconfig.json" }]
++}
+diff --git a/packages/integrations/alpinejs/tsconfig.json b/packages/integrations/alpinejs/tsconfig.json
+index 7f8d5c4c2184..c0e0de315104 100644
+--- a/packages/integrations/alpinejs/tsconfig.json
++++ b/packages/integrations/alpinejs/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/alpinejs/tsconfig.test.json b/packages/integrations/alpinejs/tsconfig.test.json
+index 27c89c5fe7a7..9af37150bd9d 100644
+--- a/packages/integrations/alpinejs/tsconfig.test.json
++++ b/packages/integrations/alpinejs/tsconfig.test.json
+@@ -1,17 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/cloudflare/package.json b/packages/integrations/cloudflare/package.json
+index 61fb25c243c6..cafaa0fcc752 100644
+--- a/packages/integrations/cloudflare/package.json
++++ b/packages/integrations/cloudflare/package.json
+@@ -36,10 +36,9 @@
+   ],
+   "scripts": {
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "build": "astro-scripts build \"src/**/*.ts\" --clean-dts && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" --clean-dts && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+-    "test": "astro-scripts test --force-exit \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test --force-exit \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/integrations/cloudflare/tsconfig.build.json b/packages/integrations/cloudflare/tsconfig.build.json
+new file mode 100644
+index 000000000000..0159de078be3
+--- /dev/null
++++ b/packages/integrations/cloudflare/tsconfig.build.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "include": ["./src", "./virtual.d.ts"],
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" },
++    { "path": "../../underscore-redirects/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/cloudflare/tsconfig.json b/packages/integrations/cloudflare/tsconfig.json
+index cc4ec75d8fbc..c0e0de315104 100644
+--- a/packages/integrations/cloudflare/tsconfig.json
++++ b/packages/integrations/cloudflare/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "virtual.d.ts", "types.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/cloudflare/tsconfig.test.json b/packages/integrations/cloudflare/tsconfig.test.json
+index fa4f11e4ae8b..9af37150bd9d 100644
+--- a/packages/integrations/cloudflare/tsconfig.test.json
++++ b/packages/integrations/cloudflare/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/markdoc/package.json b/packages/integrations/markdoc/package.json
+index eb8a699c9a17..b99a1fce320d 100644
+--- a/packages/integrations/markdoc/package.json
++++ b/packages/integrations/markdoc/package.json
+@@ -56,11 +56,10 @@
+     "template"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test --timeout 100000 \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test --timeout 100000 \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/integrations/markdoc/tsconfig.build.json b/packages/integrations/markdoc/tsconfig.build.json
+new file mode 100644
+index 000000000000..278f2607434f
+--- /dev/null
++++ b/packages/integrations/markdoc/tsconfig.build.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" },
++    { "path": "../../markdown/remark/tsconfig.json" },
++    { "path": "../../astro-prism/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/markdoc/tsconfig.json b/packages/integrations/markdoc/tsconfig.json
+index 7f8d5c4c2184..c0e0de315104 100644
+--- a/packages/integrations/markdoc/tsconfig.json
++++ b/packages/integrations/markdoc/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/markdoc/tsconfig.test.json b/packages/integrations/markdoc/tsconfig.test.json
+index 27c89c5fe7a7..9af37150bd9d 100644
+--- a/packages/integrations/markdoc/tsconfig.test.json
++++ b/packages/integrations/markdoc/tsconfig.test.json
+@@ -1,17 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/mdx/package.json b/packages/integrations/mdx/package.json
+index b529e0ecf1b6..f1065fdec410 100644
+--- a/packages/integrations/mdx/package.json
++++ b/packages/integrations/mdx/package.json
+@@ -28,11 +28,10 @@
+     "template"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test --timeout 70000 \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test --timeout 70000 \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/markdown-remark": "workspace:*",
+diff --git a/packages/integrations/mdx/tsconfig.build.json b/packages/integrations/mdx/tsconfig.build.json
+new file mode 100644
+index 000000000000..66419f67e561
+--- /dev/null
++++ b/packages/integrations/mdx/tsconfig.build.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../markdown/remark/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/mdx/tsconfig.json b/packages/integrations/mdx/tsconfig.json
+index 7f8d5c4c2184..c0e0de315104 100644
+--- a/packages/integrations/mdx/tsconfig.json
++++ b/packages/integrations/mdx/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/mdx/tsconfig.test.json b/packages/integrations/mdx/tsconfig.test.json
+index 853326403557..9af37150bd9d 100644
+--- a/packages/integrations/mdx/tsconfig.test.json
++++ b/packages/integrations/mdx/tsconfig.test.json
+@@ -1,13 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true,
+-    "rootDir": "."
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/netlify/package.json b/packages/integrations/netlify/package.json
+index 4c5f6e7353b4..80f13c9e9125 100644
+--- a/packages/integrations/netlify/package.json
++++ b/packages/integrations/netlify/package.json
+@@ -30,14 +30,13 @@
+   ],
+   "scripts": {
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "test": "pnpm run test-fn && pnpm run test-static && pnpm run test:dev",
+     "test-fn": "astro-scripts test \"test/functions/*.test.ts\"",
+     "test:dev": "astro-scripts test \"test/development/*.test.ts\"",
+     "test-static": "astro-scripts test \"test/static/*.test.ts\"",
+-    "test:hosted": "astro-scripts test \"test/hosted/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test:hosted": "astro-scripts test \"test/hosted/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/integrations/netlify/tsconfig.build.json b/packages/integrations/netlify/tsconfig.build.json
+new file mode 100644
+index 000000000000..0159de078be3
+--- /dev/null
++++ b/packages/integrations/netlify/tsconfig.build.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "include": ["./src", "./virtual.d.ts"],
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" },
++    { "path": "../../underscore-redirects/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/netlify/tsconfig.json b/packages/integrations/netlify/tsconfig.json
+index 8b6303c6d76d..c0e0de315104 100644
+--- a/packages/integrations/netlify/tsconfig.json
++++ b/packages/integrations/netlify/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "virtual.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/netlify/tsconfig.test.json b/packages/integrations/netlify/tsconfig.test.json
+index 462c7b7db770..5d654a66eaab 100644
+--- a/packages/integrations/netlify/tsconfig.test.json
++++ b/packages/integrations/netlify/tsconfig.test.json
+@@ -1,13 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/**/fixtures/**", "test/hosted/hosted-astro-project/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true,
+-    "rootDir": "."
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "extends": "../../../configs/tsconfig.test.json",
++  "exclude": ["./test/**/fixtures/**", "./test/hosted/hosted-astro-project/**"],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/node/package.json b/packages/integrations/node/package.json
+index 6fbdfcfd48b1..7be9c4d54357 100644
+--- a/packages/integrations/node/package.json
++++ b/packages/integrations/node/package.json
+@@ -28,10 +28,9 @@
+   ],
+   "scripts": {
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/integrations/node/tsconfig.build.json b/packages/integrations/node/tsconfig.build.json
+new file mode 100644
+index 000000000000..583cfc481c80
+--- /dev/null
++++ b/packages/integrations/node/tsconfig.build.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "include": ["./src", "./virtual.d.ts"],
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/node/tsconfig.json b/packages/integrations/node/tsconfig.json
+index 8b6303c6d76d..c0e0de315104 100644
+--- a/packages/integrations/node/tsconfig.json
++++ b/packages/integrations/node/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "virtual.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/node/tsconfig.test.json b/packages/integrations/node/tsconfig.test.json
+index 27c89c5fe7a7..9af37150bd9d 100644
+--- a/packages/integrations/node/tsconfig.test.json
++++ b/packages/integrations/node/tsconfig.test.json
+@@ -1,17 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/partytown/package.json b/packages/integrations/partytown/package.json
+index 69c4baba0447..951d5465c91f 100644
+--- a/packages/integrations/partytown/package.json
++++ b/packages/integrations/partytown/package.json
+@@ -27,7 +27,7 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\""
+   },
+diff --git a/packages/integrations/partytown/tsconfig.build.json b/packages/integrations/partytown/tsconfig.build.json
+new file mode 100644
+index 000000000000..a761ab3c2ef3
+--- /dev/null
++++ b/packages/integrations/partytown/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [{ "path": "../../astro/tsconfig.json" }]
++}
+diff --git a/packages/integrations/partytown/tsconfig.json b/packages/integrations/partytown/tsconfig.json
+index 7f8d5c4c2184..504a76f4f5ba 100644
+--- a/packages/integrations/partytown/tsconfig.json
++++ b/packages/integrations/partytown/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/preact/package.json b/packages/integrations/preact/package.json
+index 7b30d97ea5c1..25e065ca2c67 100644
+--- a/packages/integrations/preact/package.json
++++ b/packages/integrations/preact/package.json
+@@ -30,7 +30,7 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\""
+   },
+diff --git a/packages/integrations/preact/tsconfig.build.json b/packages/integrations/preact/tsconfig.build.json
+new file mode 100644
+index 000000000000..8d8a409b03f6
+--- /dev/null
++++ b/packages/integrations/preact/tsconfig.build.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "include": ["./src", "./env.d.ts"],
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/preact/tsconfig.json b/packages/integrations/preact/tsconfig.json
+index c72c8035a4ba..504a76f4f5ba 100644
+--- a/packages/integrations/preact/tsconfig.json
++++ b/packages/integrations/preact/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "env.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/react/package.json b/packages/integrations/react/package.json
+index ba7336505505..c0859395384b 100644
+--- a/packages/integrations/react/package.json
++++ b/packages/integrations/react/package.json
+@@ -33,11 +33,10 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/integrations/react/tsconfig.build.json b/packages/integrations/react/tsconfig.build.json
+new file mode 100644
+index 000000000000..8d8a409b03f6
+--- /dev/null
++++ b/packages/integrations/react/tsconfig.build.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "include": ["./src", "./env.d.ts"],
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/react/tsconfig.json b/packages/integrations/react/tsconfig.json
+index c72c8035a4ba..c0e0de315104 100644
+--- a/packages/integrations/react/tsconfig.json
++++ b/packages/integrations/react/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "env.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/react/tsconfig.test.json b/packages/integrations/react/tsconfig.test.json
+index 27c89c5fe7a7..9af37150bd9d 100644
+--- a/packages/integrations/react/tsconfig.test.json
++++ b/packages/integrations/react/tsconfig.test.json
+@@ -1,17 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/sitemap/package.json b/packages/integrations/sitemap/package.json
+index d12881a99281..2e8cb08d2388 100644
+--- a/packages/integrations/sitemap/package.json
++++ b/packages/integrations/sitemap/package.json
+@@ -27,11 +27,10 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "sitemap": "^9.0.0",
+diff --git a/packages/integrations/sitemap/tsconfig.build.json b/packages/integrations/sitemap/tsconfig.build.json
+new file mode 100644
+index 000000000000..a761ab3c2ef3
+--- /dev/null
++++ b/packages/integrations/sitemap/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [{ "path": "../../astro/tsconfig.json" }]
++}
+diff --git a/packages/integrations/sitemap/tsconfig.json b/packages/integrations/sitemap/tsconfig.json
+index 7f8d5c4c2184..c0e0de315104 100644
+--- a/packages/integrations/sitemap/tsconfig.json
++++ b/packages/integrations/sitemap/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/sitemap/tsconfig.test.json b/packages/integrations/sitemap/tsconfig.test.json
+index 27c89c5fe7a7..0d81495453dc 100644
+--- a/packages/integrations/sitemap/tsconfig.test.json
++++ b/packages/integrations/sitemap/tsconfig.test.json
+@@ -1,17 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "files": ["./test/fixtures/static/deps.mjs"],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/solid/package.json b/packages/integrations/solid/package.json
+index 849f47c79a57..684b934307ee 100644
+--- a/packages/integrations/solid/package.json
++++ b/packages/integrations/solid/package.json
+@@ -29,7 +29,7 @@
+     "dist"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\""
+   },
+diff --git a/packages/integrations/solid/tsconfig.build.json b/packages/integrations/solid/tsconfig.build.json
+new file mode 100644
+index 000000000000..a761ab3c2ef3
+--- /dev/null
++++ b/packages/integrations/solid/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [{ "path": "../../astro/tsconfig.json" }]
++}
+diff --git a/packages/integrations/solid/tsconfig.json b/packages/integrations/solid/tsconfig.json
+index 7f8d5c4c2184..504a76f4f5ba 100644
+--- a/packages/integrations/solid/tsconfig.json
++++ b/packages/integrations/solid/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/svelte/package.json b/packages/integrations/svelte/package.json
+index a184d67036d6..2438ff7ac01f 100644
+--- a/packages/integrations/svelte/package.json
++++ b/packages/integrations/svelte/package.json
+@@ -32,11 +32,10 @@
+     "svelte-shims.d.ts"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && astro-scripts build \"src/editor.cts\" --force-cjs --no-clean-dist && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && astro-scripts build \"src/editor.cts\" --force-cjs --no-clean-dist && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\" && astro-scripts build \"src/editor.cts\" --force-cjs --no-clean-dist",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@sveltejs/vite-plugin-svelte": "^6.2.4",
+diff --git a/packages/integrations/svelte/tsconfig.build.json b/packages/integrations/svelte/tsconfig.build.json
+new file mode 100644
+index 000000000000..7fb8657fdc17
+--- /dev/null
++++ b/packages/integrations/svelte/tsconfig.build.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "compilerOptions": {
++    // `"verbatimModuleSyntax": false` is required to support import/export statements in `src/editor.cts` file.
++    "verbatimModuleSyntax": false
++  },
++  "include": ["./src/**/*.ts", "./src/**/*.cts"],
++  "references": [{ "path": "../../astro/tsconfig.json" }]
++}
+diff --git a/packages/integrations/svelte/tsconfig.json b/packages/integrations/svelte/tsconfig.json
+index cf99770081ac..c0e0de315104 100644
+--- a/packages/integrations/svelte/tsconfig.json
++++ b/packages/integrations/svelte/tsconfig.json
+@@ -1,9 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist",
+-    "verbatimModuleSyntax": false
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/svelte/tsconfig.test.json b/packages/integrations/svelte/tsconfig.test.json
+index 27c89c5fe7a7..9af37150bd9d 100644
+--- a/packages/integrations/svelte/tsconfig.test.json
++++ b/packages/integrations/svelte/tsconfig.test.json
+@@ -1,17 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/vercel/package.json b/packages/integrations/vercel/package.json
+index d3080b6077d8..c5f966faf12f 100644
+--- a/packages/integrations/vercel/package.json
++++ b/packages/integrations/vercel/package.json
+@@ -40,11 +40,10 @@
+   ],
+   "scripts": {
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "test": "astro-scripts test --timeout 60000 \"test/**/!(hosted).test.ts\"",
+-    "test:hosted": "astro-scripts test --timeout 30000 \"test/hosted/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test:hosted": "astro-scripts test --timeout 30000 \"test/hosted/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/integrations/vercel/tsconfig.build.json b/packages/integrations/vercel/tsconfig.build.json
+new file mode 100644
+index 000000000000..583cfc481c80
+--- /dev/null
++++ b/packages/integrations/vercel/tsconfig.build.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "include": ["./src", "./virtual.d.ts"],
++  "references": [
++    { "path": "../../astro/tsconfig.json" },
++    { "path": "../../internal-helpers/tsconfig.json" }
++  ]
++}
+diff --git a/packages/integrations/vercel/tsconfig.json b/packages/integrations/vercel/tsconfig.json
+index 8b6303c6d76d..c0e0de315104 100644
+--- a/packages/integrations/vercel/tsconfig.json
++++ b/packages/integrations/vercel/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "virtual.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/vercel/tsconfig.test.json b/packages/integrations/vercel/tsconfig.test.json
+index 853326403557..9af37150bd9d 100644
+--- a/packages/integrations/vercel/tsconfig.test.json
++++ b/packages/integrations/vercel/tsconfig.test.json
+@@ -1,13 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true,
+-    "rootDir": "."
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/integrations/vue/package.json b/packages/integrations/vue/package.json
+index 7a9c5ac46077..aaec584d249c 100644
+--- a/packages/integrations/vue/package.json
++++ b/packages/integrations/vue/package.json
+@@ -32,11 +32,10 @@
+     "vue-shims.d.ts"
+   ],
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && astro-scripts build \"src/editor.cts\" --force-cjs --no-clean-dist && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && astro-scripts build \"src/editor.cts\" --force-cjs --no-clean-dist && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\" && astro-scripts build \"src/editor.cts\" --force-cjs --no-clean-dist",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@vitejs/plugin-vue": "^6.0.5",
+diff --git a/packages/integrations/vue/tsconfig.build.json b/packages/integrations/vue/tsconfig.build.json
+new file mode 100644
+index 000000000000..54177e6a588a
+--- /dev/null
++++ b/packages/integrations/vue/tsconfig.build.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "compilerOptions": {
++    // `"verbatimModuleSyntax": false` is required to support import/export statements in `src/editor.cts` file.
++    "verbatimModuleSyntax": false
++  },
++  "include": ["./src/**/*.ts", "./src/**/*.cts", "./env.d.ts"],
++  "references": [{ "path": "../../astro/tsconfig.json" }]
++}
+diff --git a/packages/integrations/vue/tsconfig.json b/packages/integrations/vue/tsconfig.json
+index 346a8461206c..c0e0de315104 100644
+--- a/packages/integrations/vue/tsconfig.json
++++ b/packages/integrations/vue/tsconfig.json
+@@ -1,9 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src", "env.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist",
+-    "verbatimModuleSyntax": false
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/integrations/vue/tsconfig.test.json b/packages/integrations/vue/tsconfig.test.json
+index 27c89c5fe7a7..9af37150bd9d 100644
+--- a/packages/integrations/vue/tsconfig.test.json
++++ b/packages/integrations/vue/tsconfig.test.json
+@@ -1,17 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "noEmit": true,
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [
+-    {
+-      "path": "../../astro/tsconfig.test.json"
+-    }
+-  ]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/internal-helpers/package.json b/packages/internal-helpers/package.json
+index 7a5ca175bd03..b6a004ab0fed 100644
+--- a/packages/internal-helpers/package.json
++++ b/packages/internal-helpers/package.json
+@@ -47,11 +47,10 @@
+   ],
+   "scripts": {
+     "prepublish": "pnpm build",
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc -p tsconfig.json",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "picomatch": "^4.0.4"
+diff --git a/packages/internal-helpers/tsconfig.build.json b/packages/internal-helpers/tsconfig.build.json
+new file mode 100644
+index 000000000000..79fbbc66db11
+--- /dev/null
++++ b/packages/internal-helpers/tsconfig.build.json
+@@ -0,0 +1,3 @@
++{
++  "extends": "../../configs/tsconfig.build.json"
++}
+diff --git a/packages/internal-helpers/tsconfig.json b/packages/internal-helpers/tsconfig.json
+index 17e08031358c..64908093d2fe 100644
+--- a/packages/internal-helpers/tsconfig.json
++++ b/packages/internal-helpers/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/internal-helpers/tsconfig.test.json b/packages/internal-helpers/tsconfig.test.json
+index 7d6bc4428b35..9ca68b5a3d26 100644
+--- a/packages/internal-helpers/tsconfig.test.json
++++ b/packages/internal-helpers/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../astro/tsconfig.test.json" }]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/language-tools/astro-check/package.json b/packages/language-tools/astro-check/package.json
+index 598627a7a569..dd1d057ed6de 100644
+--- a/packages/language-tools/astro-check/package.json
++++ b/packages/language-tools/astro-check/package.json
+@@ -26,8 +26,8 @@
+     "dist/**/*.d.ts"
+   ],
+   "scripts": {
+-    "build": "tsc",
+-    "dev": "tsc --watch",
++    "build": "tsc -b",
++    "dev": "tsc -b --watch",
+     "test": "astro-scripts test \"**/*.test.ts\"  --tsx true"
+   },
+   "dependencies": {
+diff --git a/packages/language-tools/astro-check/test/bin.test.ts b/packages/language-tools/astro-check/test/bin.test.ts
+index c8f1fa0516a2..7d5a3b313c0a 100644
+--- a/packages/language-tools/astro-check/test/bin.test.ts
++++ b/packages/language-tools/astro-check/test/bin.test.ts
+@@ -2,11 +2,16 @@ import assert from 'node:assert';
+ import { spawnSync } from 'node:child_process';
+ import { describe, it } from 'node:test';
+ import { fileURLToPath } from 'node:url';
++import path from 'node:path';
+ 
+ describe('astro-check - binary', async () => {
+ 	it('Can run the binary', async () => {
+-		const childProcess = spawnSync('node', ['../bin/astro-check.js', '--root', './fixture'], {
+-			cwd: fileURLToPath(new URL('./', import.meta.url)),
++		const pkgPath = fileURLToPath(new URL('..', import.meta.url));
++		const binPath = path.join(pkgPath, 'bin', 'astro-check.js');
++		const fixturePath = path.join(pkgPath, 'test', 'fixture');
++		const childProcess = spawnSync('node', [binPath], {
++			// Set the working directory to the fixture directory so that `astro check` can use the tsconfig in the fixture directory.
++			cwd: fixturePath,
+ 		});
+ 
+ 		assert.strictEqual(childProcess.status, 1);
+diff --git a/packages/language-tools/astro-check/test/fixture/index.ts b/packages/language-tools/astro-check/test/fixture/index.ts
+new file mode 100644
+index 000000000000..ac43e68216c3
+--- /dev/null
++++ b/packages/language-tools/astro-check/test/fixture/index.ts
+@@ -0,0 +1,2 @@
++// An empty ts file to satisfy the `tsconfig.json` to make sure it contains at least one standard ts file when running `tsc`. This file is not needed when running `astro-check`.
++export {}
+diff --git a/packages/language-tools/astro-check/test/fixture/tsconfig.json b/packages/language-tools/astro-check/test/fixture/tsconfig.json
+index 81f5f6dde1dc..595f47c5c7e8 100644
+--- a/packages/language-tools/astro-check/test/fixture/tsconfig.json
++++ b/packages/language-tools/astro-check/test/fixture/tsconfig.json
+@@ -1,4 +1,10 @@
+ {
+   // A `tsconfig.json` isn't needed for astro check to work, however if we don't have this file,
+   // TypeScript will pick up the root `tsconfig.json` from the monorepo, which does not include the `.astro` files in this folder
++  "compilerOptions": {
++    "composite": true,
++    "verbatimModuleSyntax": true,
++    "outDir": "./node_modules/.cache/ts_fixture/out",
++  },
++  "include": ["./*", "./*.astro"]
+ }
+diff --git a/packages/language-tools/astro-check/test/tsconfig.json b/packages/language-tools/astro-check/test/tsconfig.json
+deleted file mode 100644
+index ff64d4dc024d..000000000000
+--- a/packages/language-tools/astro-check/test/tsconfig.json
++++ /dev/null
+@@ -1,9 +0,0 @@
+-{
+-  "extends": "../../tsconfig.json",
+-  "compilerOptions": {
+-    "emitDeclarationOnly": false,
+-    "noEmit": true,
+-    "module": "ESNext",
+-    "allowImportingTsExtensions": true
+-  }
+-}
+diff --git a/packages/language-tools/astro-check/tsconfig.build.json b/packages/language-tools/astro-check/tsconfig.build.json
+new file mode 100644
+index 000000000000..356fff42a3f9
+--- /dev/null
++++ b/packages/language-tools/astro-check/tsconfig.build.json
+@@ -0,0 +1,10 @@
++{
++  "extends": "../../../configs/tsconfig.language-tools.json",
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "ES2022",
++    "emitDeclarationOnly": false,
++    "sourceMap": true
++  },
++  "references": [{ "path": "../language-server/tsconfig.json" }]
++}
+diff --git a/packages/language-tools/astro-check/tsconfig.json b/packages/language-tools/astro-check/tsconfig.json
+index 7c2d5f06b897..c0e0de315104 100644
+--- a/packages/language-tools/astro-check/tsconfig.json
++++ b/packages/language-tools/astro-check/tsconfig.json
+@@ -1,12 +1,5 @@
+ {
+-  "extends": "../tsconfig.json",
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist",
+-    "emitDeclarationOnly": false,
+-    "sourceMap": true,
+-    "module": "ES2022",
+-    "target": "ES2022"
+-  },
+-  "include": ["src"]
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/language-tools/astro-check/tsconfig.test.json b/packages/language-tools/astro-check/tsconfig.test.json
+new file mode 100644
+index 000000000000..9ebda4fb272e
+--- /dev/null
++++ b/packages/language-tools/astro-check/tsconfig.test.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./test/fixture/tsconfig.json" }]
++}
+diff --git a/packages/language-tools/language-server/package.json b/packages/language-tools/language-server/package.json
+index ca955c6e3ed5..06fa35f98d95 100644
+--- a/packages/language-tools/language-server/package.json
++++ b/packages/language-tools/language-server/package.json
+@@ -20,11 +20,10 @@
+     "astro-ls": "./bin/nodeServer.js"
+   },
+   "scripts": {
+-    "build": "tsc",
+-    "dev": "tsc --watch",
++    "build": "tsc -b",
++    "dev": "tsc -b --watch",
+     "test": "astro-scripts test \"**/*.test.ts\" --teardown-test ./test/misc/teardown.ts --tsx true --setup ./test/setup.ts",
+-    "test:match": "pnpm run test --match",
+-    "typecheck:tests": "tsc --build test/tsconfig.json"
++    "test:match": "pnpm run test --match"
+   },
+   "dependencies": {
+     "@astrojs/compiler": "^2.13.1",
+diff --git a/packages/language-tools/language-server/test/tsconfig.json b/packages/language-tools/language-server/test/tsconfig.json
+index 0a8f96d70a21..4caa1530a6a6 100644
+--- a/packages/language-tools/language-server/test/tsconfig.json
++++ b/packages/language-tools/language-server/test/tsconfig.json
+@@ -1,12 +1,5 @@
+ {
+-  "extends": "../../../../tsconfig.base.json",
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "composite": true,
+-    "emitDeclarationOnly": false,
+-    "noEmit": true,
+-    "allowImportingTsExtensions": true
+-  },
++  "extends": "../../../../configs/tsconfig.test.json",
+   "include": ["."],
+   "exclude": ["node_modules/", "fixture/", "check/fixture/"],
+   "references": [{ "path": "../../../astro/tsconfig.test.json" }]
+diff --git a/packages/language-tools/language-server/tsconfig.build.json b/packages/language-tools/language-server/tsconfig.build.json
+new file mode 100644
+index 000000000000..f59657c3b716
+--- /dev/null
++++ b/packages/language-tools/language-server/tsconfig.build.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../../configs/tsconfig.language-tools.json",
++  "compilerOptions": {
++    "emitDeclarationOnly": false,
++    "sourceMap": true
++  },
++  "references": [{ "path": "../yaml2ts/tsconfig.json" }]
++}
+diff --git a/packages/language-tools/language-server/tsconfig.json b/packages/language-tools/language-server/tsconfig.json
+index 2b5c5fb560b6..504a76f4f5ba 100644
+--- a/packages/language-tools/language-server/tsconfig.json
++++ b/packages/language-tools/language-server/tsconfig.json
+@@ -1,10 +1,5 @@
+ {
+-  "extends": "../tsconfig.json",
+-  "compilerOptions": {
+-    "outDir": "./dist",
+-    "rootDir": "./src",
+-    "emitDeclarationOnly": false,
+-    "sourceMap": true
+-  },
+-  "include": ["src"]
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/language-tools/ts-plugin/package.json b/packages/language-tools/ts-plugin/package.json
+index 2890edccff5d..929956d8f94b 100644
+--- a/packages/language-tools/ts-plugin/package.json
++++ b/packages/language-tools/ts-plugin/package.json
+@@ -20,10 +20,9 @@
+     "dist/**/*.d.ts"
+   ],
+   "scripts": {
+-    "build": "tsc",
+-    "dev": "tsc --watch",
+-    "test": "vscode-test",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "build": "tsc -b",
++    "dev": "tsc -b --watch",
++    "test": "vscode-test"
+   },
+   "author": "withastro",
+   "license": "MIT",
+diff --git a/packages/language-tools/ts-plugin/tsconfig.build.json b/packages/language-tools/ts-plugin/tsconfig.build.json
+new file mode 100644
+index 000000000000..48e6a9d16b61
+--- /dev/null
++++ b/packages/language-tools/ts-plugin/tsconfig.build.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "../../../configs/tsconfig.language-tools.json",
++  "compilerOptions": {
++    "emitDeclarationOnly": false
++  },
++  "references": [{ "path": "../yaml2ts/tsconfig.json" }]
++}
+diff --git a/packages/language-tools/ts-plugin/tsconfig.json b/packages/language-tools/ts-plugin/tsconfig.json
+index 90eb9eaaad2b..c0e0de315104 100644
+--- a/packages/language-tools/ts-plugin/tsconfig.json
++++ b/packages/language-tools/ts-plugin/tsconfig.json
+@@ -1,10 +1,5 @@
+ {
+-  "extends": "../tsconfig.json",
+-  "compilerOptions": {
+-    "outDir": "./dist",
+-    "rootDir": "./src",
+-    "emitDeclarationOnly": false
+-  },
+-  "include": ["src"],
+-  "exclude": ["node_modules"]
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/language-tools/ts-plugin/tsconfig.test.json b/packages/language-tools/ts-plugin/tsconfig.test.json
+index 3ad1bbfc413f..fa43cb0a3682 100644
+--- a/packages/language-tools/ts-plugin/tsconfig.test.json
++++ b/packages/language-tools/ts-plugin/tsconfig.test.json
+@@ -1,13 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
++  "extends": "../../../configs/tsconfig.test.json",
+   "include": ["test/**/*.mts", "test/**/*.ts", ".vscode-test.*"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "types": ["node"],
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/language-tools/vscode/package.json b/packages/language-tools/vscode/package.json
+index c5e50506dd56..a9ba1d986e66 100644
+--- a/packages/language-tools/vscode/package.json
++++ b/packages/language-tools/vscode/package.json
+@@ -236,15 +236,14 @@
+   },
+   "scripts": {
+     "prebuild": "cd ../ts-plugin && pnpm build",
+-    "build": "tsc && pnpm prebuild && node scripts/build.mjs -- --minify",
++    "build": "tsc -b && pnpm prebuild && node scripts/build.mjs -- --minify",
+     "dev": "node scripts/build.mjs -- --watch",
+     "build:grammar": "node scripts/build-grammar.mjs",
+     "dev:grammar": "node scripts/build-grammar.mjs -- --watch",
+     "test": "pnpm test:vscode && pnpm test:grammar",
+     "test:vscode": "vscode-test",
+     "test:grammar": "pnpm build:grammar && node ./test/grammar/test.mjs",
+-    "update-grammar-snapshots": "node ./test/grammar/test.mjs --updateSnapshot",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "update-grammar-snapshots": "node ./test/grammar/test.mjs --updateSnapshot"
+   },
+   "devDependencies": {
+     "@astrojs/language-server": "^2.16.6",
+diff --git a/packages/language-tools/vscode/tsconfig.build.json b/packages/language-tools/vscode/tsconfig.build.json
+new file mode 100644
+index 000000000000..65b33391759b
+--- /dev/null
++++ b/packages/language-tools/vscode/tsconfig.build.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "../../../configs/tsconfig.language-tools.json",
++  "references": [
++    { "path": "../language-server/tsconfig.json" },
++    { "path": "../ts-plugin/tsconfig.json" }
++  ]
++}
+diff --git a/packages/language-tools/vscode/tsconfig.json b/packages/language-tools/vscode/tsconfig.json
+index 523b94dc4b99..c0e0de315104 100644
+--- a/packages/language-tools/vscode/tsconfig.json
++++ b/packages/language-tools/vscode/tsconfig.json
+@@ -1,10 +1,5 @@
+ {
+-  "extends": "../tsconfig.json",
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist",
+-    "emitDeclarationOnly": true,
+-    "checkJs": true
+-  },
+-  "include": ["src"]
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/language-tools/vscode/tsconfig.test.json b/packages/language-tools/vscode/tsconfig.test.json
+index 3ad1bbfc413f..d4152e753015 100644
+--- a/packages/language-tools/vscode/tsconfig.test.json
++++ b/packages/language-tools/vscode/tsconfig.test.json
+@@ -1,13 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.mts", "test/**/*.ts", ".vscode-test.*"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "types": ["node"],
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "extends": "../../../configs/tsconfig.test.json",
++  "include": ["test/**/*.mts", "test/**/*.mjs", "test/**/*.ts", ".vscode-test.*"],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/language-tools/yaml2ts/package.json b/packages/language-tools/yaml2ts/package.json
+index 6e0c8f995df5..cca00be9f43b 100644
+--- a/packages/language-tools/yaml2ts/package.json
++++ b/packages/language-tools/yaml2ts/package.json
+@@ -3,8 +3,8 @@
+   "version": "0.2.3",
+   "description": "Package to convert a YAML string to a Volar VirtualCode, to be used by the Astro language server to provide intellisense",
+   "scripts": {
+-    "build": "tsc",
+-    "dev": "tsc --watch"
++    "build": "tsc -b",
++    "dev": "tsc -b --watch"
+   },
+   "repository": {
+     "type": "git",
+diff --git a/packages/language-tools/yaml2ts/tsconfig.build.json b/packages/language-tools/yaml2ts/tsconfig.build.json
+new file mode 100644
+index 000000000000..0995c2878b6a
+--- /dev/null
++++ b/packages/language-tools/yaml2ts/tsconfig.build.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "../../../configs/tsconfig.language-tools.json",
++  "compilerOptions": {
++    "emitDeclarationOnly": false,
++    "sourceMap": true
++  }
++}
+diff --git a/packages/language-tools/yaml2ts/tsconfig.json b/packages/language-tools/yaml2ts/tsconfig.json
+index 2b5c5fb560b6..504a76f4f5ba 100644
+--- a/packages/language-tools/yaml2ts/tsconfig.json
++++ b/packages/language-tools/yaml2ts/tsconfig.json
+@@ -1,10 +1,5 @@
+ {
+-  "extends": "../tsconfig.json",
+-  "compilerOptions": {
+-    "outDir": "./dist",
+-    "rootDir": "./src",
+-    "emitDeclarationOnly": false,
+-    "sourceMap": true
+-  },
+-  "include": ["src"]
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/markdown/remark/package.json b/packages/markdown/remark/package.json
+index e14a2d8ce869..60042d9f8854 100644
+--- a/packages/markdown/remark/package.json
++++ b/packages/markdown/remark/package.json
+@@ -31,11 +31,10 @@
+   ],
+   "scripts": {
+     "prepublish": "pnpm build",
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc -p tsconfig.json",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+diff --git a/packages/markdown/remark/tsconfig.build.json b/packages/markdown/remark/tsconfig.build.json
+new file mode 100644
+index 000000000000..ca3e8fb24545
+--- /dev/null
++++ b/packages/markdown/remark/tsconfig.build.json
+@@ -0,0 +1,7 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [
++    { "path": "../../internal-helpers/tsconfig.json" },
++    { "path": "../../astro-prism/tsconfig.json" }
++  ]
++}
+diff --git a/packages/markdown/remark/tsconfig.json b/packages/markdown/remark/tsconfig.json
+index f3bcd5eceb40..c0e0de315104 100644
+--- a/packages/markdown/remark/tsconfig.json
++++ b/packages/markdown/remark/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "outDir": "./dist",
+-    "rootDir": "./src"
+-  }
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/markdown/remark/tsconfig.test.json b/packages/markdown/remark/tsconfig.test.json
+index fa4f11e4ae8b..9af37150bd9d 100644
+--- a/packages/markdown/remark/tsconfig.test.json
++++ b/packages/markdown/remark/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../../astro/tsconfig.test.json" }]
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/telemetry/package.json b/packages/telemetry/package.json
+index cf44d90a1103..24b4adc50290 100644
+--- a/packages/telemetry/package.json
++++ b/packages/telemetry/package.json
+@@ -20,11 +20,10 @@
+     "./package.json": "./package.json"
+   },
+   "scripts": {
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "files": [
+     "dist"
+diff --git a/packages/telemetry/tsconfig.build.json b/packages/telemetry/tsconfig.build.json
+new file mode 100644
+index 000000000000..79fbbc66db11
+--- /dev/null
++++ b/packages/telemetry/tsconfig.build.json
+@@ -0,0 +1,3 @@
++{
++  "extends": "../../configs/tsconfig.build.json"
++}
+diff --git a/packages/telemetry/tsconfig.json b/packages/telemetry/tsconfig.json
+index 17e08031358c..64908093d2fe 100644
+--- a/packages/telemetry/tsconfig.json
++++ b/packages/telemetry/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/telemetry/tsconfig.test.json b/packages/telemetry/tsconfig.test.json
+index 7d6bc4428b35..9ca68b5a3d26 100644
+--- a/packages/telemetry/tsconfig.test.json
++++ b/packages/telemetry/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../astro/tsconfig.test.json" }]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/underscore-redirects/package.json b/packages/underscore-redirects/package.json
+index 06b8bedeb06c..7dc61e770705 100644
+--- a/packages/underscore-redirects/package.json
++++ b/packages/underscore-redirects/package.json
+@@ -21,11 +21,10 @@
+   ],
+   "scripts": {
+     "prepublish": "pnpm build",
+-    "build": "astro-scripts build \"src/**/*.ts\" && tsc -p tsconfig.json",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
+     "build:ci": "astro-scripts build \"src/**/*.ts\"",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "devDependencies": {
+     "astro": "workspace:*",
+diff --git a/packages/underscore-redirects/tsconfig.build.json b/packages/underscore-redirects/tsconfig.build.json
+new file mode 100644
+index 000000000000..6fc16b22308a
+--- /dev/null
++++ b/packages/underscore-redirects/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../configs/tsconfig.build.json",
++  "references": [{ "path": "../astro/tsconfig.json" }]
++}
+diff --git a/packages/underscore-redirects/tsconfig.json b/packages/underscore-redirects/tsconfig.json
+index 17e08031358c..64908093d2fe 100644
+--- a/packages/underscore-redirects/tsconfig.json
++++ b/packages/underscore-redirects/tsconfig.json
+@@ -1,8 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "outDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/underscore-redirects/tsconfig.test.json b/packages/underscore-redirects/tsconfig.test.json
+index 7d6bc4428b35..9ca68b5a3d26 100644
+--- a/packages/underscore-redirects/tsconfig.test.json
++++ b/packages/underscore-redirects/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../astro/tsconfig.test.json" }]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/packages/upgrade/package.json b/packages/upgrade/package.json
+index 83ba51656496..078e524b058d 100644
+--- a/packages/upgrade/package.json
++++ b/packages/upgrade/package.json
+@@ -17,11 +17,10 @@
+   "main": "./upgrade.mjs",
+   "bin": "./upgrade.mjs",
+   "scripts": {
+-    "build": "astro-scripts build \"src/index.ts\" --bundle && tsc",
++    "build": "astro-scripts build \"src/index.ts\" --bundle && tsc -b",
+     "build:ci": "astro-scripts build \"src/index.ts\" --bundle",
+     "dev": "astro-scripts dev \"src/**/*.ts\"",
+-    "test": "astro-scripts test \"test/**/*.test.ts\"",
+-    "typecheck:tests": "tsc --build tsconfig.test.json"
++    "test": "astro-scripts test \"test/**/*.test.ts\""
+   },
+   "files": [
+     "dist/**/*.js",
+diff --git a/packages/upgrade/tsconfig.build.json b/packages/upgrade/tsconfig.build.json
+new file mode 100644
+index 000000000000..79fbbc66db11
+--- /dev/null
++++ b/packages/upgrade/tsconfig.build.json
+@@ -0,0 +1,3 @@
++{
++  "extends": "../../configs/tsconfig.build.json"
++}
+diff --git a/packages/upgrade/tsconfig.json b/packages/upgrade/tsconfig.json
+index 5517451eeba9..64908093d2fe 100644
+--- a/packages/upgrade/tsconfig.json
++++ b/packages/upgrade/tsconfig.json
+@@ -1,13 +1,5 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["src", "index.d.ts"],
+-  "compilerOptions": {
+-    "rootDir": "./src",
+-    "allowJs": true,
+-    "target": "ES2022",
+-    "module": "ES2022",
+-    "moduleResolution": "Bundler",
+-    "outDir": "./dist",
+-    "declarationDir": "./dist"
+-  }
++  "extends": "../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
+ }
+diff --git a/packages/upgrade/tsconfig.test.json b/packages/upgrade/tsconfig.test.json
+index 7d6bc4428b35..9ca68b5a3d26 100644
+--- a/packages/upgrade/tsconfig.test.json
++++ b/packages/upgrade/tsconfig.test.json
+@@ -1,12 +1,4 @@
+ {
+-  "extends": "../../tsconfig.base.json",
+-  "include": ["test/**/*.ts"],
+-  "exclude": ["test/fixtures/**"],
+-  "compilerOptions": {
+-    "allowJs": true,
+-    "noUnusedLocals": false,
+-    "noUnusedParameters": false,
+-    "rewriteRelativeImportExtensions": true
+-  },
+-  "references": [{ "path": "../astro/tsconfig.test.json" }]
++  "extends": "../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
+ }
+diff --git a/scripts/cmd/build.js b/scripts/cmd/build.js
+index f1344af0ac92..fa0ce818e9e7 100644
+--- a/scripts/cmd/build.js
++++ b/scripts/cmd/build.js
+@@ -123,6 +123,7 @@ export default async function build(...args) {
+ async function clean(outdir, cleanDts) {
+ 	const files = await glob('**', {
+ 		cwd: outdir,
++		dot: true,
+ 		filesOnly: true,
+ 		ignore: cleanDts ? undefined : ['**/*.d.ts'],
+ 		absolute: true,
+diff --git a/scripts/tsconfig.json b/scripts/tsconfig.json
+index 00ed7dd5d654..c36c0bbfba62 100644
+--- a/scripts/tsconfig.json
++++ b/scripts/tsconfig.json
+@@ -1,5 +1,5 @@
+ {
+-  "extends": "../tsconfig.base.json",
++  "extends": "../configs/tsconfig.base.json",
+   "compilerOptions": {
+     "composite": true,
+     "allowJs": true
+diff --git a/tsconfig.eslint.json b/tsconfig.eslint.json
+index 678a223c90a8..ae55e96cd9bc 100644
+--- a/tsconfig.eslint.json
++++ b/tsconfig.eslint.json
+@@ -2,5 +2,5 @@
+   "compilerOptions": {
+     "allowJs": true
+   },
+-  "extends": "./tsconfig.base.json"
++  "extends": "./configs/tsconfig.base.json"
+ }
+diff --git a/tsconfig.json b/tsconfig.json
+index 7704e13bc0fa..6a6dd6bd48ea 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -1,5 +1,38 @@
+-// Yes this file is intentionally empty!
+-// ---
+-// Having a blank `tsconfig.json` file prevents TypeScript from crawling up your directory tree
+-// and possibly picking up a parent `tsconfig.json` (which, unsurprisingly, is very hard to debug)
+-{}
++// This file is the workspace solution: it references each package's
++// tsconfig.json so a single `tsc -b` covers the whole monorepo.
++{
++  "extends": "./configs/tsconfig.base.json",
++  "files": ["./prettier.config.mjs"],
++  "references": [
++    { "path": "./packages/internal-helpers/tsconfig.json" },
++    { "path": "./packages/telemetry/tsconfig.json" },
++    { "path": "./packages/astro-prism/tsconfig.json" },
++    { "path": "./packages/astro-rss/tsconfig.json" },
++    { "path": "./packages/markdown/remark/tsconfig.json" },
++    { "path": "./packages/astro/tsconfig.json" },
++    { "path": "./packages/underscore-redirects/tsconfig.json" },
++    { "path": "./packages/integrations/alpinejs/tsconfig.json" },
++    { "path": "./packages/integrations/cloudflare/tsconfig.json" },
++    { "path": "./packages/integrations/markdoc/tsconfig.json" },
++    { "path": "./packages/integrations/mdx/tsconfig.json" },
++    { "path": "./packages/integrations/netlify/tsconfig.json" },
++    { "path": "./packages/integrations/node/tsconfig.json" },
++    { "path": "./packages/integrations/partytown/tsconfig.json" },
++    { "path": "./packages/integrations/preact/tsconfig.json" },
++    { "path": "./packages/integrations/react/tsconfig.json" },
++    { "path": "./packages/integrations/sitemap/tsconfig.json" },
++    { "path": "./packages/integrations/solid/tsconfig.json" },
++    { "path": "./packages/integrations/svelte/tsconfig.json" },
++    { "path": "./packages/integrations/vercel/tsconfig.json" },
++    { "path": "./packages/integrations/vue/tsconfig.json" },
++    { "path": "./packages/create-astro/tsconfig.json" },
++    { "path": "./packages/db/tsconfig.json" },
++    { "path": "./packages/upgrade/tsconfig.json" },
++    { "path": "./packages/language-tools/astro-check/tsconfig.json" },
++    { "path": "./packages/language-tools/language-server/tsconfig.json" },
++    { "path": "./packages/language-tools/language-server/test/tsconfig.json" },
++    { "path": "./packages/language-tools/ts-plugin/tsconfig.json" },
++    { "path": "./packages/language-tools/vscode/tsconfig.json" },
++    { "path": "./packages/language-tools/yaml2ts/tsconfig.json" }
++  ]
++}

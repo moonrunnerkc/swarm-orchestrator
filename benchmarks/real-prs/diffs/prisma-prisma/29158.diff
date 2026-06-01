@@ -1,0 +1,701 @@
+diff --git a/packages/adapter-mssql/src/connection-string.test.ts b/packages/adapter-mssql/src/connection-string.test.ts
+index 0e3952bfb1aa..ac940c262d9d 100644
+--- a/packages/adapter-mssql/src/connection-string.test.ts
++++ b/packages/adapter-mssql/src/connection-string.test.ts
+@@ -1,12 +1,12 @@
+ import { describe, expect, it } from 'vitest'
+ 
+-import { extractSchemaFromConnectionString, parseConnectionString } from './connection-string'
++import { parseConnectionString } from './connection-string'
+ 
+ describe('parseConnectionString', () => {
+   describe('basic connection parameters', () => {
+     it('should parse a basic connection string correctly', () => {
+       const connectionString = 'sqlserver://localhost:1433;database=testdb;user=sa;password=mypassword;encrypt=true'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.server).toBe('localhost')
+       expect(config.port).toBe(1433)
+@@ -18,7 +18,7 @@ describe('parseConnectionString', () => {
+ 
+     it('should parse connection string without port', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password=mypassword'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.server).toBe('localhost')
+       expect(config.port).toBeUndefined()
+@@ -36,7 +36,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach((connectionString) => {
+-        const config = parseConnectionString(connectionString)
++        const { config } = parseConnectionString(connectionString)
+         expect(config.user).toBe('sa')
+       })
+     })
+@@ -48,7 +48,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach((connectionString) => {
+-        const config = parseConnectionString(connectionString)
++        const { config } = parseConnectionString(connectionString)
+         expect(config.password).toBe('mypassword')
+       })
+     })
+@@ -60,7 +60,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach((connectionString) => {
+-        const config = parseConnectionString(connectionString)
++        const { config } = parseConnectionString(connectionString)
+         expect(config.database).toBe('testdb')
+       })
+     })
+@@ -74,7 +74,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach(({ input, expected }) => {
+-        const config = parseConnectionString(input)
++        const { config } = parseConnectionString(input)
+         expect(config.options?.encrypt).toBe(expected)
+       })
+     })
+@@ -86,14 +86,14 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach(({ input, expected }) => {
+-        const config = parseConnectionString(input)
++        const { config } = parseConnectionString(input)
+         expect(config.options?.trustServerCertificate).toBe(expected)
+       })
+     })
+ 
+     it('should handle both encryption parameters together', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;encrypt=true;trustServerCertificate=true'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.options?.encrypt).toBe(true)
+       expect(config.options?.trustServerCertificate).toBe(true)
+@@ -104,21 +104,21 @@ describe('parseConnectionString', () => {
+     { input: 'sqlserver://localhost;database=testdb;multiSubnetFailover=true', expected: true },
+     { input: 'sqlserver://localhost;database=testdb;multiSubnetFailover=false', expected: false },
+   ])('should parse multiSubnetFailover parameter correctly for %o', ({ input, expected }) => {
+-    const config = parseConnectionString(input)
++    const { config } = parseConnectionString(input)
+     expect(config.options?.multiSubnetFailover).toBe(expected)
+   })
+ 
+   describe('connection pool parameters', () => {
+     it('should parse connectionLimit parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;connectionLimit=10'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.pool?.max).toBe(10)
+     })
+ 
+     it('should parse poolTimeout parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;poolTimeout=15'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.pool?.acquireTimeoutMillis).toBe(15000) // 15 seconds in milliseconds
+     })
+@@ -127,35 +127,35 @@ describe('parseConnectionString', () => {
+   describe('timeout parameters', () => {
+     it('should parse connectTimeout parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;connectTimeout=30'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.connectionTimeout).toBe(30)
+     })
+ 
+     it('should parse connectionTimeout parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;connectionTimeout=30'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.connectionTimeout).toBe(30)
+     })
+ 
+     it('should parse loginTimeout parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;loginTimeout=45'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.connectionTimeout).toBe(45)
+     })
+ 
+     it('should parse socketTimeout parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;socketTimeout=60'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.requestTimeout).toBe(60)
+     })
+ 
+     it('should handle multiple timeout parameters', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;connectTimeout=30;socketTimeout=60;poolTimeout=10'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.connectionTimeout).toBe(30)
+       expect(config.requestTimeout).toBe(60)
+@@ -166,28 +166,142 @@ describe('parseConnectionString', () => {
+   describe('application name parameter', () => {
+     it('should parse applicationName parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;applicationName=MyApp'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.options?.appName).toBe('MyApp')
+     })
+ 
+     it('should parse application name parameter correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;application name=MyApp'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.options?.appName).toBe('MyApp')
+     })
+   })
+ 
+   describe('schema parameter', () => {
+-    it('should ignore schema parameter', () => {
++    it('should ignore schema parameter in the config', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;schema=custom'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       // Schema should not be in the config, it's handled separately
+       // The schema parameter is ignored during parsing
+       expect(config.database).toBe('testdb')
+     })
++
++    it('should return schema parameter separately from config', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;schema=custom'
++      const { schema } = parseConnectionString(connectionString)
++      expect(schema).toBe('custom')
++    })
++
++    it('should return undefined for schema parameter if not provided', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb'
++      const { schema } = parseConnectionString(connectionString)
++      expect(schema).toBeUndefined()
++    })
++  })
++
++  describe('escaped values with curly braces', () => {
++    it('should parse password with curly braces correctly', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password={mypassword}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('mypassword')
++    })
++
++    it('should handle password with semicolon when escaped', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password={pass;word}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('pass;word')
++    })
++
++    it('should handle password with equals sign when escaped', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password={pass=word}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('pass=word')
++    })
++
++    it('should throw error for nested braces inside braced values', () => {
++      const connectionString = 'sqlserver://localhost;password={my=pass{nested}};database=testdb'
++      expect(() => parseConnectionString(connectionString)).toThrow(
++        "Malformed connection string: nested '{' braces are not supported",
++      )
++    })
++
++    it('should handle password with both semicolon and equals when escaped', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password={pass;word=123}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('pass;word=123')
++    })
++
++    it('should handle escaped database name', () => {
++      const connectionString = 'sqlserver://localhost;database={test;db};user=sa;password=mypassword'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.database).toBe('test;db')
++    })
++
++    it('should handle escaped user name', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user={domain\\user;name};password=mypassword'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.user).toBe('domain\\user;name')
++    })
++
++    it('should handle multiple escaped values', () => {
++      const connectionString = 'sqlserver://localhost;database={test;db};user={my;user};password={my;pass=word}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.database).toBe('test;db')
++      expect(config.user).toBe('my;user')
++      expect(config.password).toBe('my;pass=word')
++    })
++
++    it('should handle complex password with multiple special characters', () => {
++      const connectionString =
++        'sqlserver://localhost:1433;database=testdb;user=sa;password={P@ss;w=rd!123};encrypt=true'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.server).toBe('localhost')
++      expect(config.port).toBe(1433)
++      expect(config.database).toBe('testdb')
++      expect(config.user).toBe('sa')
++      expect(config.password).toBe('P@ss;w=rd!123')
++      expect(config.options?.encrypt).toBe(true)
++    })
++
++    it('should handle empty braces as empty string', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password={}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('')
++    })
++
++    it('should not unescape braces that are not at value boundaries', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password=my{pass}word'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('my{pass}word')
++    })
++
++    it('should throw error on unclosed opening brace', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password={unclosed;value'
++
++      expect(() => {
++        parseConnectionString(connectionString)
++      }).toThrow("Malformed connection string: unclosed '{' brace")
++    })
++
++    it('should not throw on unmatched closing brace (clamped)', () => {
++      const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password=pass}word'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.password).toBe('pass}word')
++    })
+   })
+ 
+   describe('isolation level parameter', () => {
+@@ -201,7 +315,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach(({ input, expected }) => {
+-        const config = parseConnectionString(input)
++        const { config } = parseConnectionString(input)
+         expect(config.options?.isolationLevel).toBe(expected)
+       })
+     })
+@@ -216,7 +330,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach(({ input, expected }) => {
+-        const config = parseConnectionString(input)
++        const { config } = parseConnectionString(input)
+         expect(config.options?.isolationLevel).toBe(expected)
+       })
+     })
+@@ -229,7 +343,7 @@ describe('parseConnectionString', () => {
+       ]
+ 
+       testCases.forEach(({ input, expected }) => {
+-        const config = parseConnectionString(input)
++        const { config } = parseConnectionString(input)
+         expect(config.options?.isolationLevel).toBe(expected)
+       })
+     })
+@@ -238,7 +352,7 @@ describe('parseConnectionString', () => {
+   describe('case sensitivity', () => {
+     it('should handle case sensitive parameter names correctly', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password=mypassword;encrypt=true'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.database).toBe('testdb')
+       expect(config.user).toBe('sa')
+@@ -248,7 +362,7 @@ describe('parseConnectionString', () => {
+ 
+     it('should handle case insensitive boolean values', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;encrypt=TRUE;trustServerCertificate=FALSE'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.options?.encrypt).toBe(true)
+       expect(config.options?.trustServerCertificate).toBe(false)
+@@ -258,7 +372,7 @@ describe('parseConnectionString', () => {
+   describe('whitespace handling', () => {
+     it('should handle whitespace around parameters', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;user=sa;password=mypassword'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.database).toBe('testdb')
+       expect(config.user).toBe('sa')
+@@ -267,7 +381,7 @@ describe('parseConnectionString', () => {
+ 
+     it('should handle whitespace around values', () => {
+       const connectionString = 'sqlserver://localhost;database= testdb ;user= sa ;password= mypassword '
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.database).toBe('testdb')
+       expect(config.user).toBe('sa')
+@@ -278,7 +392,7 @@ describe('parseConnectionString', () => {
+   describe('unknown parameters', () => {
+     it('should ignore unknown parameters without throwing', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;unknownParam=value;anotherUnknown=123'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.database).toBe('testdb')
+       // Should not throw and should ignore unknown parameters
+@@ -368,9 +482,52 @@ describe('parseConnectionString', () => {
+   })
+ 
+   describe('edge cases', () => {
++    it('should handle brace escaping only when { is the first character (tedious compatibility)', () => {
++      // Edge case from jacek-prisma: https://github.com/prisma/prisma/pull/29158#discussion_r1943210520
++      // Tedious treats { as a quote character ONLY when it's the FIRST character of a value
++      const connectionString = 'sqlserver://localhost;database=testdb;user=u{s;password=}password;'
++      const { config } = parseConnectionString(connectionString)
++
++      // According to tedious behavior:
++      // user=u{s → user is "u{s" (the { is not the first char, so not treated as quote)
++      // password=}password → password is "}password" (no opening { to match)
++      expect(config.user).toBe('u{s')
++      expect(config.password).toBe('}password')
++      expect(config.database).toBe('testdb')
++    })
++
++    it('should handle braces in the middle of values correctly', () => {
++      const connectionString = 'sqlserver://localhost;database=test{db}name;user=my{user}name;password=pass{word}'
++      const { config } = parseConnectionString(connectionString)
++
++      // Braces in the middle should be treated as literal characters
++      expect(config.database).toBe('test{db}name')
++      expect(config.user).toBe('my{user}name')
++      expect(config.password).toBe('pass{word}')
++    })
++
++    it('should still escape when { is the first character', () => {
++      const connectionString = 'sqlserver://localhost;database={test;db};user={my;user};password={my;pass=word}'
++      const { config } = parseConnectionString(connectionString)
++
++      // When { is first character, it should escape the content
++      expect(config.database).toBe('test;db')
++      expect(config.user).toBe('my;user')
++      expect(config.password).toBe('my;pass=word')
++    })
++
++    it('should handle mixed scenarios with braces', () => {
++      const connectionString = 'sqlserver://localhost;database={db;1};user=prefix{middle};password={escaped;pwd}'
++      const { config } = parseConnectionString(connectionString)
++
++      expect(config.database).toBe('db;1')
++      expect(config.user).toBe('prefix{middle}')
++      expect(config.password).toBe('escaped;pwd')
++    })
++
+     it('should handle connection string with only server', () => {
+       const connectionString = 'sqlserver://localhost'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.server).toBe('localhost')
+       expect(config.database).toBeUndefined()
+@@ -380,7 +537,7 @@ describe('parseConnectionString', () => {
+ 
+     it('should handle connection string with empty values', () => {
+       const connectionString = 'sqlserver://localhost;database=;user=;password='
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.server).toBe('localhost')
+       expect(config.database).toBe('')
+@@ -390,7 +547,7 @@ describe('parseConnectionString', () => {
+ 
+     it('should handle connection string with malformed key-value pairs', () => {
+       const connectionString = 'sqlserver://localhost;database=testdb;=value;key=;='
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.server).toBe('localhost')
+       expect(config.database).toBe('testdb')
+@@ -404,7 +561,7 @@ describe('parseConnectionString', () => {
+       'sqlserver://localhost:1433;database=testdb;authentication=ActiveDirectoryIntegrated',
+       'sqlserver://localhost:1433;database=testdb;authentication=ActiveDirectoryInteractive',
+     ])('should support authentication parameter for %s', (connectionString) => {
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+       expect(config.user).toBe(undefined)
+       expect(config.password).toBe(undefined)
+       expect(config.authentication?.type).toBe('azure-active-directory-default')
+@@ -413,7 +570,7 @@ describe('parseConnectionString', () => {
+     it('should support authentication password parameters', () => {
+       const connectionString =
+         'sqlserver://localhost:1433;database=testdb;authentication=ActiveDirectoryPassword;userName=user1;password=mypassword;clientId=my-client-id'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.authentication?.type).toBe('azure-active-directory-password')
+       if (config.authentication?.type === 'azure-active-directory-password') {
+@@ -430,7 +587,7 @@ describe('parseConnectionString', () => {
+       'sqlserver://localhost:1433;database=testdb;authentication=ActiveDirectoryManagedIdentity;clientId=test-client;msiEndpoint=msi-endpoint-1;msiSecret=msi-secret-1',
+       'sqlserver://localhost:1433;database=testdb;authentication=ActiveDirectoryMSI;clientId=test-client;msiEndpoint=msi-endpoint-1;msiSecret=msi-secret-1',
+     ])('should support authentication managed identity parameters for %s', (connectionString) => {
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.user).toBe(undefined)
+       expect(config.password).toBe(undefined)
+@@ -449,7 +606,7 @@ describe('parseConnectionString', () => {
+     it('should support authentication service principal parameters', () => {
+       const connectionString =
+         'sqlserver://localhost:1433;database=testdb;authentication=ActiveDirectoryServicePrincipal;userName=test-client-id;password=mysecret'
+-      const config = parseConnectionString(connectionString)
++      const { config } = parseConnectionString(connectionString)
+ 
+       expect(config.authentication?.type).toBe('azure-active-directory-service-principal-secret')
+       if (config.authentication?.type === 'azure-active-directory-service-principal-secret') {
+@@ -492,40 +649,3 @@ describe('parseConnectionString', () => {
+     })
+   })
+ })
+-
+-describe('extractSchemaFromConnectionString', () => {
+-  it('should extract schema parameter correctly', () => {
+-    const connectionString = 'sqlserver://localhost;database=testdb;schema=custom'
+-    const schema = extractSchemaFromConnectionString(connectionString)
+-
+-    expect(schema).toBe('custom')
+-  })
+-
+-  it('should extract schema parameter without database', () => {
+-    const connectionString = 'sqlserver://localhost;schema=custom'
+-    const schema = extractSchemaFromConnectionString(connectionString)
+-
+-    expect(schema).toBe('custom')
+-  })
+-
+-  it('should return undefined when schema is not provided', () => {
+-    const connectionString = 'sqlserver://localhost;database=testdb'
+-    const schema = extractSchemaFromConnectionString(connectionString)
+-
+-    expect(schema).toBeUndefined()
+-  })
+-
+-  it('should handle schema parameter with whitespace', () => {
+-    const connectionString = 'sqlserver://localhost;database=testdb; schema = custom '
+-    const schema = extractSchemaFromConnectionString(connectionString)
+-
+-    expect(schema).toBe('custom')
+-  })
+-
+-  it('should handle empty schema value', () => {
+-    const connectionString = 'sqlserver://localhost;database=testdb;schema='
+-    const schema = extractSchemaFromConnectionString(connectionString)
+-
+-    expect(schema).toBe('')
+-  })
+-})
+diff --git a/packages/adapter-mssql/src/connection-string.ts b/packages/adapter-mssql/src/connection-string.ts
+index 1ed9424e3acd..8bf648f39294 100644
+--- a/packages/adapter-mssql/src/connection-string.ts
++++ b/packages/adapter-mssql/src/connection-string.ts
+@@ -27,21 +27,77 @@ function mapIsolationLevelFromString(level: string): number {
+ const debug = Debug('prisma:driver-adapter:mssql:connection-string')
+ 
+ /**
+- * Extracts the schema parameter from a connection string.
+- * @param connectionString The connection string.
+- * @returns The schema value or undefined if not found.
++ * Splits a connection string by semicolons while respecting curly brace escaping.
++ * Values wrapped in curly braces like {value} are treated as literals where
++ * semicolons and equals signs are not treated as delimiters.
++ *
++ * Important: Curly braces are only treated as quote characters when { is the
++ * FIRST character of a value (after the = sign). This matches tedious behavior.
++ *
++ * @param str The string to split
++ * @returns Array of parts split by semicolon (outside of curly braces)
+  */
+-export function extractSchemaFromConnectionString(connectionString: string): string | undefined {
+-  const withoutProtocol = connectionString.replace(/^sqlserver:\/\//, '')
+-  const parts = withoutProtocol.split(';')
+-
+-  for (const part of parts) {
+-    const [key, value] = part.split('=', 2)
+-    if (key?.trim() === 'schema') {
+-      return value?.trim()
++function splitRespectingBraces(str: string): string[] {
++  const parts: string[] = []
++  let current = ''
++  let braceDepth = 0
++  let valueStartIndex = -1
++
++  for (let i = 0; i < str.length; i++) {
++    const char = str[i]
++
++    if (char === '=') {
++      current += char
++      if (braceDepth === 0) {
++        valueStartIndex = i + 1
++      }
++    } else if (char === '{') {
++      // Only treat { as opening brace if it's the first character of a value
++      const isFirstCharOfValue = i === valueStartIndex
++      if (isFirstCharOfValue) {
++        braceDepth++
++      } else if (braceDepth > 0) {
++        throw new Error(`Malformed connection string: nested '{' braces are not supported`)
++      }
++      current += char
++    } else if (char === '}') {
++      if (braceDepth > 0) {
++        braceDepth--
++      }
++      current += char
++    } else if (char === ';' && braceDepth === 0) {
++      parts.push(current)
++      current = ''
++      valueStartIndex = -1
++    } else {
++      current += char
+     }
+   }
+-  return undefined
++
++  if (current) {
++    parts.push(current)
++  }
++
++  if (braceDepth !== 0) {
++    throw new Error(`Malformed connection string: unclosed '{' brace (braceDepth=${braceDepth})`)
++  }
++
++  return parts
++}
++
++/**
++ * Extracts the value from a parameter, removing curly braces if present.
++ * If the value is wrapped in curly braces like {value}, returns value.
++ * Otherwise returns the value as-is.
++ * @param value The value to process
++ * @returns The unescaped value
++ */
++function unescapeValue(value: string): string {
++  const trimmed = value.trim()
++  if (trimmed.startsWith('{') && trimmed.endsWith('}') && trimmed.length >= 2) {
++    return trimmed.slice(1, -1)
++  }
++  return trimmed
+ }
+ 
+ /**
+@@ -50,11 +106,11 @@ export function extractSchemaFromConnectionString(connectionString: string): str
+  * @param connectionString The connection string.
+  * @returns A sql.config object
+  */
+-export function parseConnectionString(connectionString: string): sql.config {
++export function parseConnectionString(connectionString: string): { config: sql.config; schema?: string } {
+   const withoutProtocol = connectionString.replace(/^sqlserver:\/\//, '')
+ 
+-  // Split by semicolon to get key-value pairs
+-  const [hostPart, ...paramParts] = withoutProtocol.split(';')
++  const parts = splitRespectingBraces(withoutProtocol)
++  const [hostPart, ...paramParts] = parts
+ 
+   const config: sql.config = {
+     server: '',
+@@ -63,6 +119,10 @@ export function parseConnectionString(connectionString: string): sql.config {
+   }
+ 
+   // Parse the first part which contains host and port
++  if (!hostPart || hostPart.trim() === '') {
++    throw new Error('Server host is required in connection string')
++  }
++
+   const [host, portStr] = hostPart.split(':')
+   config.server = host.trim()
+ 
+@@ -78,14 +138,15 @@ export function parseConnectionString(connectionString: string): sql.config {
+   const parameters: Record<string, string> = {}
+ 
+   for (const part of paramParts) {
+-    const [key, value] = part.split('=', 2)
++    const [key, ...valueParts] = part.split('=')
+     if (!key) continue
+ 
+     const trimmedKey = key.trim()
+     if (trimmedKey in parameters) {
+       throw new Error(`Duplication configuration parameter: ${trimmedKey}`)
+     }
+-    parameters[trimmedKey] = value.trim()
++    const value = valueParts.join('=')
++    parameters[trimmedKey] = unescapeValue(value)
+     if (!handledParameters.includes(trimmedKey)) {
+       debug(`Unknown connection string parameter: ${trimmedKey}`)
+     }
+@@ -192,7 +253,9 @@ export function parseConnectionString(connectionString: string): sql.config {
+     throw new Error('Server host is required in connection string')
+   }
+ 
+-  return config
++  const schema = firstKey(parameters, 'schema') ?? undefined
++
++  return { config, schema }
+ }
+ 
+ /**
+@@ -303,6 +366,7 @@ const handledParameters = [
+   'password',
+   'poolTimeout',
+   'pwd',
++  'schema',
+   'socketTimeout',
+   'trustServerCertificate',
+   'uid',
+diff --git a/packages/adapter-mssql/src/mssql.ts b/packages/adapter-mssql/src/mssql.ts
+index 456f579028e9..2e4d828f7727 100644
+--- a/packages/adapter-mssql/src/mssql.ts
++++ b/packages/adapter-mssql/src/mssql.ts
+@@ -15,7 +15,7 @@ import { Mutex } from 'async-mutex'
+ import sql from 'mssql'
+ 
+ import { name as packageName } from '../package.json'
+-import { extractSchemaFromConnectionString, parseConnectionString } from './connection-string'
++import { parseConnectionString } from './connection-string'
+ import { mapArg, mapColumnType, mapIsolationLevel, mapRow } from './conversion'
+ import { convertDriverError } from './errors'
+ 
+@@ -185,12 +185,12 @@ export class PrismaMssqlAdapterFactory implements SqlDriverAdapterFactory {
+ 
+   constructor(configOrString: sql.config | string, options?: PrismaMssqlOptions) {
+     if (typeof configOrString === 'string') {
+-      this.#config = parseConnectionString(configOrString)
++      const { config, schema } = parseConnectionString(configOrString)
++      this.#config = config
+       // Extract schema from connection string and merge with provided options
+-      const extractedSchema = extractSchemaFromConnectionString(configOrString)
+       this.#options = {
+         ...options,
+-        schema: options?.schema ?? extractedSchema,
++        schema: options?.schema ?? schema,
+       }
+     } else {
+       this.#config = configOrString

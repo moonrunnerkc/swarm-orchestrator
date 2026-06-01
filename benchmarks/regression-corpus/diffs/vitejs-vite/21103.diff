@@ -1,0 +1,189 @@
+diff --git a/packages/vite/src/node/__tests__/shortcuts.spec.ts b/packages/vite/src/node/__tests__/shortcuts.spec.ts
+new file mode 100644
+index 00000000000000..c2169018c42cc2
+--- /dev/null
++++ b/packages/vite/src/node/__tests__/shortcuts.spec.ts
+@@ -0,0 +1,70 @@
++import { describe, expect, test, vi } from 'vitest'
++import { createServer } from '../server'
++import { preview } from '../preview'
++import { bindCLIShortcuts } from '../shortcuts'
++
++describe('bindCLIShortcuts', () => {
++  test.each([
++    ['dev server', () => createServer()],
++    ['preview server', () => preview()],
++  ])('binding custom shortcuts with the %s', async (_, startServer) => {
++    const server = await startServer()
++
++    try {
++      const xAction = vi.fn()
++      const yAction = vi.fn()
++
++      bindCLIShortcuts(
++        server,
++        {
++          customShortcuts: [
++            { key: 'x', description: 'test x', action: xAction },
++            { key: 'y', description: 'test y', action: yAction },
++          ],
++        },
++        true,
++      )
++
++      expect.assert(
++        server._rl,
++        'The readline interface should be defined after binding shortcuts.',
++      )
++      expect(xAction).not.toHaveBeenCalled()
++
++      server._rl.emit('line', 'x')
++      await vi.waitFor(() => expect(xAction).toHaveBeenCalledOnce())
++
++      const xUpdatedAction = vi.fn()
++      const zAction = vi.fn()
++
++      xAction.mockClear()
++      bindCLIShortcuts(
++        server,
++        {
++          customShortcuts: [
++            { key: 'x', description: 'test x updated', action: xUpdatedAction },
++            { key: 'z', description: 'test z', action: zAction },
++          ],
++        },
++        true,
++      )
++
++      expect(xUpdatedAction).not.toHaveBeenCalled()
++      server._rl.emit('line', 'x')
++      await vi.waitFor(() => expect(xUpdatedAction).toHaveBeenCalledOnce())
++
++      // Ensure original xAction is not called again
++      expect(xAction).not.toBeCalled()
++
++      expect(yAction).not.toHaveBeenCalled()
++      server._rl.emit('line', 'y')
++      await vi.waitFor(() => expect(yAction).toHaveBeenCalledOnce())
++
++      expect(zAction).not.toHaveBeenCalled()
++      server._rl.emit('line', 'z')
++      await vi.waitFor(() => expect(zAction).toHaveBeenCalledOnce())
++    } finally {
++      await server.close()
++    }
++  })
++})
+diff --git a/packages/vite/src/node/preview.ts b/packages/vite/src/node/preview.ts
+index b424de3e6bf66f..6e45f0b377c5c3 100644
+--- a/packages/vite/src/node/preview.ts
++++ b/packages/vite/src/node/preview.ts
+@@ -1,5 +1,6 @@
+ import fs from 'node:fs'
+ import path from 'node:path'
++import type readline from 'node:readline'
+ import sirv from 'sirv'
+ import compression from '@polka/compression'
+ import connect from 'connect'
+@@ -107,6 +108,14 @@ export interface PreviewServer {
+    * Bind CLI shortcuts
+    */
+   bindCLIShortcuts(options?: BindCLIShortcutsOptions<PreviewServer>): void
++  /**
++   * @internal
++   */
++  _shortcutsOptions?: BindCLIShortcutsOptions<PreviewServer>
++  /**
++   * @internal
++   */
++  _rl?: readline.Interface | undefined
+ }
+ 
+ export type PreviewServerHook = (
+diff --git a/packages/vite/src/node/server/index.ts b/packages/vite/src/node/server/index.ts
+index 27d694dea04541..5396aab5d42093 100644
+--- a/packages/vite/src/node/server/index.ts
++++ b/packages/vite/src/node/server/index.ts
+@@ -6,6 +6,7 @@ import { get as httpsGet } from 'node:https'
+ import type * as http from 'node:http'
+ import { performance } from 'node:perf_hooks'
+ import type { Http2SecureServer } from 'node:http2'
++import type readline from 'node:readline'
+ import connect from 'connect'
+ import corsMiddleware from 'cors'
+ import colors from 'picocolors'
+@@ -408,6 +409,10 @@ export interface ViteDevServer {
+    * @internal
+    */
+   _shortcutsOptions?: BindCLIShortcutsOptions<ViteDevServer>
++  /**
++   * @internal
++   */
++  _rl?: readline.Interface | undefined
+   /**
+    * @internal
+    */
+diff --git a/packages/vite/src/node/shortcuts.ts b/packages/vite/src/node/shortcuts.ts
+index 1bac571627008b..bbca13dd58a27a 100644
+--- a/packages/vite/src/node/shortcuts.ts
++++ b/packages/vite/src/node/shortcuts.ts
+@@ -28,15 +28,28 @@ export type CLIShortcut<Server = ViteDevServer | PreviewServer> = {
+ export function bindCLIShortcuts<Server extends ViteDevServer | PreviewServer>(
+   server: Server,
+   opts?: BindCLIShortcutsOptions<Server>,
++  enabled: boolean = process.stdin.isTTY && !process.env.CI,
+ ): void {
+-  if (!server.httpServer || !process.stdin.isTTY || process.env.CI) {
++  if (!server.httpServer || !enabled) {
+     return
+   }
+ 
+   const isDev = isDevServer(server)
+ 
+-  if (isDev) {
+-    server._shortcutsOptions = opts as BindCLIShortcutsOptions<ViteDevServer>
++  const customShortcuts: CLIShortcut<ViteDevServer | PreviewServer>[] =
++    opts?.customShortcuts ?? []
++
++  // Merge custom shortcuts from existing options
++  // with new shortcuts taking priority
++  for (const shortcut of server._shortcutsOptions?.customShortcuts ?? []) {
++    if (!customShortcuts.some((s) => s.key === shortcut.key)) {
++      customShortcuts.push(shortcut)
++    }
++  }
++
++  server._shortcutsOptions = {
++    ...opts,
++    customShortcuts,
+   }
+ 
+   if (opts?.print) {
+@@ -48,7 +61,7 @@ export function bindCLIShortcuts<Server extends ViteDevServer | PreviewServer>(
+     )
+   }
+ 
+-  const shortcuts = (opts?.customShortcuts ?? []).concat(
++  const shortcuts = customShortcuts.concat(
+     (isDev
+       ? BASE_DEV_SHORTCUTS
+       : BASE_PREVIEW_SHORTCUTS) as CLIShortcut<Server>[],
+@@ -87,9 +100,15 @@ export function bindCLIShortcuts<Server extends ViteDevServer | PreviewServer>(
+     actionRunning = false
+   }
+ 
+-  const rl = readline.createInterface({ input: process.stdin })
+-  rl.on('line', onInput)
+-  server.httpServer.on('close', () => rl.close())
++  if (!server._rl) {
++    const rl = readline.createInterface({ input: process.stdin })
++    server._rl = rl
++    server.httpServer.on('close', () => rl.close())
++  } else {
++    server._rl.removeAllListeners('line')
++  }
++
++  server._rl.on('line', onInput)
+ }
+ 
+ const BASE_DEV_SHORTCUTS: CLIShortcut<ViteDevServer>[] = [

@@ -1,0 +1,551 @@
+diff --git a/.oxlintrc.json b/.oxlintrc.json
+index bc00810453b4..2f10648eccc2 100644
+--- a/.oxlintrc.json
++++ b/.oxlintrc.json
+@@ -219,6 +219,7 @@
+ 		"tldraw/no-tiptap-default-import": "error",
+ 		"tldraw/no-setter-getter": "error",
+ 		"tldraw/no-direct-storage": "error",
++		"tldraw/no-path2d-roundrect": "error",
+ 		"tldraw/no-exported-arrow-const": "error",
+ 		"tldraw/no-focused-tests": "error",
+ 		"tldraw/enforce-default-message": ["error", "literal"],
+diff --git a/apps/docs/content/docs/indicators.mdx b/apps/docs/content/docs/indicators.mdx
+index f6038c79281c..71b9b739a7c8 100644
+--- a/apps/docs/content/docs/indicators.mdx
++++ b/apps/docs/content/docs/indicators.mdx
+@@ -72,7 +72,7 @@ For most shapes, return a `Path2D`:
+ class MyShapeUtil extends ShapeUtil<MyShape> {
+ 	override getIndicatorPath(shape: MyShape): Path2D | undefined {
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, shape.props.w, shape.props.h, 5)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ }
+diff --git a/apps/examples/src/examples/data/assets/custom-asset-type/CustomAssetTypeExample.tsx b/apps/examples/src/examples/data/assets/custom-asset-type/CustomAssetTypeExample.tsx
+index 36e64755d159..cf7c94dceb16 100644
+--- a/apps/examples/src/examples/data/assets/custom-asset-type/CustomAssetTypeExample.tsx
++++ b/apps/examples/src/examples/data/assets/custom-asset-type/CustomAssetTypeExample.tsx
+@@ -207,7 +207,7 @@ class FileCardShapeUtil extends BaseBoxShapeUtil<FileCardShape> {
+ 
+ 	override getIndicatorPath(shape: FileCardShape) {
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, shape.props.w, shape.props.h, 8)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ }
+diff --git a/apps/examples/src/examples/editor-api/conditional-culling/ConditionalCullingExample.tsx b/apps/examples/src/examples/editor-api/conditional-culling/ConditionalCullingExample.tsx
+index 1f40256ccc3d..be4dd75076e6 100644
+--- a/apps/examples/src/examples/editor-api/conditional-culling/ConditionalCullingExample.tsx
++++ b/apps/examples/src/examples/editor-api/conditional-culling/ConditionalCullingExample.tsx
+@@ -84,7 +84,7 @@ class GlowShapeUtil extends BaseBoxShapeUtil<GlowShape> {
+ 
+ 	getIndicatorPath(shape: GlowShape) {
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, shape.props.w, shape.props.h, 8)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ }
+diff --git a/apps/examples/src/examples/shapes/tools/ag-grid-shape/DataGridExample.tsx b/apps/examples/src/examples/shapes/tools/ag-grid-shape/DataGridExample.tsx
+index d492a1118696..7b60ee2daf3b 100644
+--- a/apps/examples/src/examples/shapes/tools/ag-grid-shape/DataGridExample.tsx
++++ b/apps/examples/src/examples/shapes/tools/ag-grid-shape/DataGridExample.tsx
+@@ -58,7 +58,7 @@ class AgGridShapeUtil extends BaseBoxShapeUtil<AgGridShape> {
+ 	}
+ 	override getIndicatorPath(shape: AgGridShape) {
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, shape.props.w, shape.props.h, 8)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ }
+diff --git a/apps/examples/src/examples/use-cases/exam-marking/add-mark-util.tsx b/apps/examples/src/examples/use-cases/exam-marking/add-mark-util.tsx
+index b988c260118c..3cf6b43c9077 100644
+--- a/apps/examples/src/examples/use-cases/exam-marking/add-mark-util.tsx
++++ b/apps/examples/src/examples/use-cases/exam-marking/add-mark-util.tsx
+@@ -114,7 +114,7 @@ export class ExamMarkUtil extends ShapeUtil<IExamMarkShape> {
+ 
+ 	override getIndicatorPath() {
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, EXAM_MARK_WIDTH, EXAM_MARK_HEIGHT, 4)
++		path.rect(0, 0, EXAM_MARK_WIDTH, EXAM_MARK_HEIGHT)
+ 		return path
+ 	}
+ 
+diff --git a/internal/scripts/oxlint/tldraw-plugin.mjs b/internal/scripts/oxlint/tldraw-plugin.mjs
+index 8671c393a25a..925863f74d76 100644
+--- a/internal/scripts/oxlint/tldraw-plugin.mjs
++++ b/internal/scripts/oxlint/tldraw-plugin.mjs
+@@ -137,6 +137,78 @@ function findTopLevelParent(node) {
+ 	return current
+ }
+ 
++function unwrapExpression(node) {
++	let current = node
++	while (
++		current &&
++		(current.type === 'ChainExpression' ||
++			current.type === 'ParenthesizedExpression' ||
++			current.type === 'TSAsExpression' ||
++			current.type === 'TSSatisfiesExpression' ||
++			current.type === 'TSNonNullExpression' ||
++			current.type === 'TSTypeAssertion')
++	) {
++		current = current.expression
++	}
++	return current
++}
++
++function getStaticPropertyName(node) {
++	if (node.type === 'Identifier') return node.name
++	if (node.type === 'Literal' && typeof node.value === 'string') return node.value
++	return null
++}
++
++function isPath2DConstructor(callee) {
++	const unwrapped = unwrapExpression(callee)
++	if (unwrapped?.type === 'Identifier') return unwrapped.name === 'Path2D'
++	if (unwrapped?.type !== 'MemberExpression') return false
++
++	const object = unwrapExpression(unwrapped.object)
++	const propertyName = getStaticPropertyName(unwrapped.property)
++
++	return (
++		propertyName === 'Path2D' &&
++		object?.type === 'Identifier' &&
++		(object.name === 'globalThis' || object.name === 'window')
++	)
++}
++
++function isNewPath2D(node) {
++	const unwrapped = unwrapExpression(node)
++	return unwrapped?.type === 'NewExpression' && isPath2DConstructor(unwrapped.callee)
++}
++
++function isPath2DTypeAnnotation(node) {
++	const annotation = node?.type === 'TSTypeAnnotation' ? node.typeAnnotation : node
++	if (!annotation) return false
++
++	if (annotation.type === 'TSTypeReference') {
++		return annotation.typeName?.type === 'Identifier' && annotation.typeName.name === 'Path2D'
++	}
++
++	if (annotation.type === 'TSUnionType') {
++		return annotation.types.some(isPath2DTypeAnnotation)
++	}
++
++	return false
++}
++
++function getAssignableIdentifier(node) {
++	const unwrapped = unwrapExpression(node)
++
++	switch (unwrapped?.type) {
++		case 'Identifier':
++			return unwrapped
++		case 'AssignmentPattern':
++			return getAssignableIdentifier(unwrapped.left)
++		case 'RestElement':
++			return getAssignableIdentifier(unwrapped.argument)
++		default:
++			return null
++	}
++}
++
+ // ---------------------------------------------------------------------------
+ // Rules ported from internal/scripts/eslint/eslint-plugin.mts
+ // ---------------------------------------------------------------------------
+@@ -558,6 +630,154 @@ const rules = {
+ 		},
+ 	},
+ 
++	'no-path2d-roundrect': {
++		meta: {
++			messages: {
++				noRoundRect:
++					'Avoid `Path2D#roundRect()`; use `Path2D#rect()`, an SVG path string, or manual path commands instead.',
++			},
++			type: 'problem',
++			schema: [],
++		},
++		create(context) {
++			const scopes = []
++
++			function currentScope() {
++				if (scopes.length === 0) enterScope()
++				return scopes[scopes.length - 1]
++			}
++
++			function enterScope() {
++				scopes.push({
++					declared: new Set(),
++					path2d: new Set(),
++					typedPath2d: new Set(),
++				})
++			}
++
++			function exitScope() {
++				scopes.pop()
++			}
++
++			function declareIdentifier(identifier, isPath2D, isTypedPath2D = false) {
++				const scope = currentScope()
++				scope.declared.add(identifier.name)
++				if (isTypedPath2D) {
++					scope.typedPath2d.add(identifier.name)
++				} else {
++					scope.typedPath2d.delete(identifier.name)
++				}
++				if (isPath2D) {
++					scope.path2d.add(identifier.name)
++				} else {
++					scope.path2d.delete(identifier.name)
++				}
++			}
++
++			function assignIdentifier(identifier, isPath2D) {
++				for (let i = scopes.length - 1; i >= 0; i--) {
++					const scope = scopes[i]
++					if (scope.declared.has(identifier.name)) {
++						if (isPath2D) {
++							scope.path2d.add(identifier.name)
++						} else if (!scope.typedPath2d.has(identifier.name)) {
++							scope.path2d.delete(identifier.name)
++						}
++						return
++					}
++				}
++
++				declareIdentifier(identifier, isPath2D)
++			}
++
++			function isPath2DIdentifier(identifier) {
++				for (let i = scopes.length - 1; i >= 0; i--) {
++					const scope = scopes[i]
++					if (!scope.declared.has(identifier.name)) continue
++					return scope.path2d.has(identifier.name)
++				}
++				return false
++			}
++
++			function declarePattern(pattern, isPath2D) {
++				const identifier = getAssignableIdentifier(pattern)
++				if (identifier) declareIdentifier(identifier, isPath2D, isPath2D)
++			}
++
++			function declareParam(param) {
++				const identifier = getAssignableIdentifier(param)
++				if (!identifier) return
++				const hasPath2DType = isPath2DTypeAnnotation(identifier.typeAnnotation)
++				declareIdentifier(identifier, hasPath2DType, hasPath2DType)
++			}
++
++			function enterFunctionScope(node) {
++				enterScope()
++				for (const param of node.params) {
++					declareParam(param)
++				}
++			}
++
++			function isPath2DTarget(node) {
++				const unwrapped = unwrapExpression(node)
++				if (isNewPath2D(unwrapped)) return true
++				return unwrapped?.type === 'Identifier' && isPath2DIdentifier(unwrapped)
++			}
++
++			function isRoundRectCall(node) {
++				const callee = unwrapExpression(node.callee)
++				if (callee?.type !== 'MemberExpression') return false
++				if (getStaticPropertyName(callee.property) !== 'roundRect') return false
++				return isPath2DTarget(callee.object)
++			}
++
++			return {
++				Program() {
++					enterScope()
++				},
++				'Program:exit'() {
++					exitScope()
++				},
++				BlockStatement() {
++					enterScope()
++				},
++				'BlockStatement:exit'() {
++					exitScope()
++				},
++				FunctionDeclaration: enterFunctionScope,
++				'FunctionDeclaration:exit': exitScope,
++				FunctionExpression: enterFunctionScope,
++				'FunctionExpression:exit': exitScope,
++				ArrowFunctionExpression: enterFunctionScope,
++				'ArrowFunctionExpression:exit': exitScope,
++				CatchClause(node) {
++					if (node.param) {
++						declarePattern(node.param, isPath2DTypeAnnotation(node.param.typeAnnotation))
++					}
++				},
++				VariableDeclarator(node) {
++					const identifier = getAssignableIdentifier(node.id)
++					if (!identifier) return
++
++					const hasPath2DType = isPath2DTypeAnnotation(identifier.typeAnnotation)
++					declareIdentifier(identifier, isNewPath2D(node.init) || hasPath2DType, hasPath2DType)
++				},
++				AssignmentExpression(node) {
++					const identifier = getAssignableIdentifier(node.left)
++					if (!identifier) return
++
++					assignIdentifier(identifier, isNewPath2D(node.right))
++				},
++				CallExpression(node) {
++					if (isRoundRectCall(node)) {
++						const callee = unwrapExpression(node.callee)
++						context.report({ node: callee.property, messageId: 'noRoundRect' })
++					}
++				},
++			}
++		},
++	},
++
+ 	'no-exported-arrow-const': {
+ 		meta: {
+ 			messages: {
+diff --git a/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx b/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
+index 4d7231e3a126..fafaca5379b4 100644
+--- a/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
+@@ -88,6 +88,40 @@ const ArrowHandles = {
+ } as const
+ type ArrowHandles = (typeof ArrowHandles)[keyof typeof ArrowHandles]
+ 
++function addRoundedRectPath(path: Path2D, bounds: Box, radius: number, counterClockwise = false) {
++	const r = Math.max(0, Math.min(radius, bounds.w / 2, bounds.h / 2))
++
++	if (r === 0) {
++		path.rect(bounds.x, bounds.y, bounds.w, bounds.h)
++		return
++	}
++
++	if (counterClockwise) {
++		path.moveTo(bounds.x, bounds.y + r)
++		path.lineTo(bounds.x, bounds.maxY - r)
++		path.arcTo(bounds.x, bounds.maxY, bounds.x + r, bounds.maxY, r)
++		path.lineTo(bounds.maxX - r, bounds.maxY)
++		path.arcTo(bounds.maxX, bounds.maxY, bounds.maxX, bounds.maxY - r, r)
++		path.lineTo(bounds.maxX, bounds.y + r)
++		path.arcTo(bounds.maxX, bounds.y, bounds.maxX - r, bounds.y, r)
++		path.lineTo(bounds.x + r, bounds.y)
++		path.arcTo(bounds.x, bounds.y, bounds.x, bounds.y + r, r)
++		path.closePath()
++		return
++	}
++
++	path.moveTo(bounds.x + r, bounds.y)
++	path.lineTo(bounds.maxX - r, bounds.y)
++	path.arcTo(bounds.maxX, bounds.y, bounds.maxX, bounds.y + r, r)
++	path.lineTo(bounds.maxX, bounds.maxY - r)
++	path.arcTo(bounds.maxX, bounds.maxY, bounds.maxX - r, bounds.maxY, r)
++	path.lineTo(bounds.x + r, bounds.maxY)
++	path.arcTo(bounds.x, bounds.maxY, bounds.x, bounds.maxY - r, r)
++	path.lineTo(bounds.x, bounds.y + r)
++	path.arcTo(bounds.x, bounds.y, bounds.x + r, bounds.y, r)
++	path.closePath()
++}
++
+ /** @public */
+ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 	static override type = 'arrow' as const
+@@ -867,13 +901,7 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 		if (isEditing && labelGeometry) {
+ 			const labelBounds = labelGeometry.getBounds()
+ 			const path = new Path2D()
+-			path.roundRect(
+-				labelBounds.x,
+-				labelBounds.y,
+-				labelBounds.w,
+-				labelBounds.h,
+-				dv.labelBorderRadius * shape.props.scale
+-			)
++			addRoundedRectPath(path, labelBounds, dv.labelBorderRadius * shape.props.scale)
+ 			return path
+ 		}
+ 
+@@ -910,23 +938,10 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 			// Outer rectangle (clockwise) - defines the area to keep
+ 			clipPath.rect(bounds.minX - 100, bounds.minY - 100, bounds.width + 200, bounds.height + 200)
+ 
+-			// Label cutout (counter-clockwise via roundRect's default winding)
++			// Label cutout (counter-clockwise)
+ 			if (labelGeometry) {
+ 				const labelBounds = labelGeometry.getBounds()
+-				const radius = dv.labelBorderRadius * shape.props.scale
+-				// Create counter-clockwise rounded rect to cut out the label area
+-				// We need to manually create the path in reverse winding order
+-				const lb = labelBounds
+-				clipPath.moveTo(lb.x, lb.y + radius)
+-				clipPath.lineTo(lb.x, lb.maxY - radius)
+-				clipPath.arcTo(lb.x, lb.maxY, lb.x + radius, lb.maxY, radius)
+-				clipPath.lineTo(lb.maxX - radius, lb.maxY)
+-				clipPath.arcTo(lb.maxX, lb.maxY, lb.maxX, lb.maxY - radius, radius)
+-				clipPath.lineTo(lb.maxX, lb.y + radius)
+-				clipPath.arcTo(lb.maxX, lb.y, lb.maxX - radius, lb.y, radius)
+-				clipPath.lineTo(lb.x + radius, lb.y)
+-				clipPath.arcTo(lb.x, lb.y, lb.x, lb.y + radius, radius)
+-				clipPath.closePath()
++				addRoundedRectPath(clipPath, labelBounds, dv.labelBorderRadius * shape.props.scale, true)
+ 			}
+ 
+ 			// Add arrowhead paths to clip path if needed
+@@ -944,13 +959,7 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 			if (labelGeometry) {
+ 				const labelBounds = labelGeometry.getBounds()
+ 				const labelPath = new Path2D()
+-				labelPath.roundRect(
+-					labelBounds.x,
+-					labelBounds.y,
+-					labelBounds.w,
+-					labelBounds.h,
+-					dv.labelBorderRadius * shape.props.scale
+-				)
++				addRoundedRectPath(labelPath, labelBounds, dv.labelBorderRadius * shape.props.scale)
+ 				additionalPaths.push(labelPath)
+ 			}
+ 
+diff --git a/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx b/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx
+index 2ab273128846..19676e94d12a 100644
+--- a/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx
+@@ -96,7 +96,7 @@ export class BookmarkShapeUtil extends BaseBoxShapeUtil<TLBookmarkShape> {
+ 
+ 	override getIndicatorPath(shape: TLBookmarkShape): Path2D {
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, shape.props.w, shape.props.h, 6)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ 
+diff --git a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+index 992542ebeae8..59bbeb264118 100644
+--- a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+@@ -283,9 +283,7 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 
+ 	override getIndicatorPath(shape: TLEmbedShape): Path2D {
+ 		const path = new Path2D()
+-		const embedInfo = this.getEmbedDefinition(shape.props.url)
+-		const radius = embedInfo?.definition?.overrideOutlineRadius ?? 8
+-		path.roundRect(0, 0, shape.props.w, shape.props.h, radius)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ 
+diff --git a/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx b/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
+index 200ccbc30fbe..c3f7742c1d9e 100644
+--- a/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
+@@ -423,7 +423,7 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+ 		const { scale } = shape.props
+ 		const dv = getDisplayValues(this, shape)
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, dv.noteWidth * scale, getNoteHeight(shape, dv.noteHeight), scale)
++		path.rect(0, 0, dv.noteWidth * scale, getNoteHeight(shape, dv.noteHeight))
+ 		return path
+ 	}
+ 
+diff --git a/packages/tldraw/src/test/overlays/SelectionForegroundOverlayUtil.test.ts b/packages/tldraw/src/test/overlays/SelectionForegroundOverlayUtil.test.ts
+index 28fe22386416..57817cde8d7d 100644
+--- a/packages/tldraw/src/test/overlays/SelectionForegroundOverlayUtil.test.ts
++++ b/packages/tldraw/src/test/overlays/SelectionForegroundOverlayUtil.test.ts
+@@ -1,4 +1,5 @@
+ import { createShapeId } from '@tldraw/editor'
++import { vi } from 'vitest'
+ import { defaultOverlayUtils } from '../../lib/defaultOverlayUtils'
+ import { SelectionForegroundOverlayUtil } from '../../lib/overlays/SelectionForegroundOverlayUtil'
+ import { TestEditor } from '../TestEditor'
+@@ -8,6 +9,8 @@ let editor: TestEditor
+ const ids = {
+ 	box1: createShapeId('box1'),
+ 	image1: createShapeId('image1'),
++	note1: createShapeId('note1'),
++	note2: createShapeId('note2'),
+ 	text1: createShapeId('text1'),
+ }
+ 
+@@ -260,6 +263,35 @@ describe('SelectionForegroundOverlayUtil', () => {
+ 		})
+ 	})
+ 
++	describe('render', () => {
++		it('renders the selection box while brushing over multiple notes', () => {
++			editor.createShapes([
++				{ id: ids.note1, type: 'note', x: 200, y: 180 },
++				{ id: ids.note2, type: 'note', x: 460, y: 180 },
++			])
++
++			editor.pointerDown(120, 120)
++			editor.pointerMove(710, 450)
++
++			expect(editor.getPath()).toBe('select.brushing')
++			expect(editor.getSelectedShapeIds()).toHaveLength(2)
++
++			const util =
++				editor.overlays.getOverlayUtil<SelectionForegroundOverlayUtil>('selection_foreground')
++			const ctx = {
++				save: vi.fn(),
++				restore: vi.fn(),
++				rotate: vi.fn(),
++				strokeRect: vi.fn(),
++				translate: vi.fn(),
++			} as unknown as CanvasRenderingContext2D
++
++			util.render(ctx, [])
++
++			expect(ctx.strokeRect).toHaveBeenCalledWith(0, 0, 460, 200)
++		})
++	})
++
+ 	describe('getCursor', () => {
+ 		it('returns correct cursors for handle types', () => {
+ 			editor.createShapes([{ id: ids.box1, type: 'geo', x: 0, y: 0, props: { w: 100, h: 100 } }])
+diff --git a/templates/branching-chat/client/nodes/NodeShapeUtil.tsx b/templates/branching-chat/client/nodes/NodeShapeUtil.tsx
+index c17d35076401..f4b1cb1eaec6 100644
+--- a/templates/branching-chat/client/nodes/NodeShapeUtil.tsx
++++ b/templates/branching-chat/client/nodes/NodeShapeUtil.tsx
+@@ -112,7 +112,7 @@ export class NodeShapeUtil extends ShapeUtil<NodeShape> {
+ 	getIndicatorPath(shape: NodeShape) {
+ 		const height = getNodeHeightPx(this.editor, shape)
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, NODE_WIDTH_PX, height, 9)
++		path.rect(0, 0, NODE_WIDTH_PX, height)
+ 		const ports = getNodePorts(this.editor, shape)
+ 		for (const port of Object.values(ports)) {
+ 			path.moveTo(port.x + PORT_RADIUS_PX, port.y)
+diff --git a/templates/image-pipeline/src/nodes/NodeShapeUtil.tsx b/templates/image-pipeline/src/nodes/NodeShapeUtil.tsx
+index 7cf5003c92ff..ddd95accb204 100644
+--- a/templates/image-pipeline/src/nodes/NodeShapeUtil.tsx
++++ b/templates/image-pipeline/src/nodes/NodeShapeUtil.tsx
+@@ -158,7 +158,7 @@ export class NodeShapeUtil extends ShapeUtil<NodeShape> {
+ 		const width = getNodeWidthPx(this.editor, shape)
+ 		const height = getNodeHeightPx(this.editor, shape)
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, width, height, 9)
++		path.rect(0, 0, width, height)
+ 		const ports = Object.values(getNodePorts(this.editor, shape))
+ 		for (const port of ports) {
+ 			path.moveTo(port.x + PORT_RADIUS_PX, port.y)
+diff --git a/templates/workflow/src/nodes/NodeShapeUtil.tsx b/templates/workflow/src/nodes/NodeShapeUtil.tsx
+index 0afee9cc62fb..e7ac90a9b831 100644
+--- a/templates/workflow/src/nodes/NodeShapeUtil.tsx
++++ b/templates/workflow/src/nodes/NodeShapeUtil.tsx
+@@ -112,7 +112,7 @@ export class NodeShapeUtil extends ShapeUtil<NodeShape> {
+ 	getIndicatorPath(shape: NodeShape) {
+ 		const height = getNodeHeightPx(this.editor, shape)
+ 		const path = new Path2D()
+-		path.roundRect(0, 0, NODE_WIDTH_PX, height, 9)
++		path.rect(0, 0, NODE_WIDTH_PX, height)
+ 		const ports = Object.values(getNodePorts(this.editor, shape))
+ 		for (const port of ports) {
+ 			path.moveTo(port.x + PORT_RADIUS_PX, port.y)

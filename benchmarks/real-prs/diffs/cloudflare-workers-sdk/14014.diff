@@ -1,0 +1,1648 @@
+diff --git a/.changeset/curly-deploy-helpers.md b/.changeset/curly-deploy-helpers.md
+new file mode 100644
+index 0000000000..7464ccf0a4
+--- /dev/null
++++ b/.changeset/curly-deploy-helpers.md
+@@ -0,0 +1,7 @@
++---
++"@cloudflare/deploy-helpers": minor
++---
++
++Add `@cloudflare/deploy-helpers` package.
++
++This introduces a shared internal package for deploy-related helper types and code.
+diff --git a/.changeset/plain-deploy-gate.md b/.changeset/plain-deploy-gate.md
+new file mode 100644
+index 0000000000..facac9a050
+--- /dev/null
++++ b/.changeset/plain-deploy-gate.md
+@@ -0,0 +1,5 @@
++---
++"wrangler": minor
++---
++
++Add `--x-deploy-helpers` to gate an upcoming deploy path refactor.
+diff --git a/packages/deploy-helpers/package.json b/packages/deploy-helpers/package.json
+new file mode 100644
+index 0000000000..c90bbc2f64
+--- /dev/null
++++ b/packages/deploy-helpers/package.json
+@@ -0,0 +1,52 @@
++{
++	"name": "@cloudflare/deploy-helpers",
++	"version": "0.0.1",
++	"description": "Internal deploy helpers for workers-sdk. Not intended for external use — APIs may change without notice.",
++	"homepage": "https://github.com/cloudflare/workers-sdk/tree/main/packages/deploy-helpers#readme",
++	"bugs": {
++		"url": "https://github.com/cloudflare/workers-sdk/issues"
++	},
++	"license": "MIT OR Apache-2.0",
++	"author": "workers-devprod@cloudflare.com",
++	"repository": {
++		"type": "git",
++		"url": "https://github.com/cloudflare/workers-sdk.git",
++		"directory": "packages/deploy-helpers"
++	},
++	"files": [
++		"dist"
++	],
++	"sideEffects": false,
++	"exports": {
++		".": {
++			"import": "./dist/index.mjs",
++			"types": "./dist/index.d.mts"
++		}
++	},
++	"scripts": {
++		"build": "tsup",
++		"check:type": "tsc -p ./tsconfig.json",
++		"deploy": "echo 'no deploy'",
++		"dev": "concurrently -c black,blue --kill-others-on-fail false \"pnpm tsup --watch src\" \"pnpm run check:type --watch --preserveWatchOutput\"",
++		"test": "vitest",
++		"test:ci": "vitest run",
++		"type:tests": "tsc -p ./tests/tsconfig.json"
++	},
++	"devDependencies": {
++		"@cloudflare/containers-shared": "workspace:*",
++		"@cloudflare/workers-tsconfig": "workspace:*",
++		"@cloudflare/workers-utils": "workspace:*",
++		"@types/node": "catalog:default",
++		"concurrently": "^8.2.2",
++		"miniflare": "workspace:*",
++		"tsup": "8.3.0",
++		"typescript": "catalog:default",
++		"vitest": "catalog:default"
++	},
++	"volta": {
++		"extends": "../../package.json"
++	},
++	"workers-sdk": {
++		"prerelease": true
++	}
++}
+diff --git a/packages/deploy-helpers/src/index.ts b/packages/deploy-helpers/src/index.ts
+new file mode 100644
+index 0000000000..a4a4e0dc33
+--- /dev/null
++++ b/packages/deploy-helpers/src/index.ts
+@@ -0,0 +1 @@
++export * from "./shared/types";
+diff --git a/packages/deploy-helpers/src/shared/types.ts b/packages/deploy-helpers/src/shared/types.ts
+new file mode 100644
+index 0000000000..6a5e3741b3
+--- /dev/null
++++ b/packages/deploy-helpers/src/shared/types.ts
+@@ -0,0 +1,113 @@
++import type { ContainerNormalizedConfig } from "@cloudflare/containers-shared";
++import type {
++	AssetsOptions,
++	LegacyAssetPaths,
++	CfPlacement,
++	Config,
++	EphemeralDirectory,
++	Route,
++	Entry,
++} from "@cloudflare/workers-utils";
++import type { NodeJSCompatMode } from "miniflare";
++
++/**
++ * Shared fields produced by merging CLI args with wrangler config.
++ * After this point, no raw config/arg merging should happen.
++ *
++ * Use props for all resolved/merged values. Only access config directly
++ * for raw values that aren't merged with CLI args (e.g., config.durable_objects,
++ * config.unsafe, config.tail_consumers).
++ */
++export type SharedDeployVersionsProps = {
++	config: Config;
++	/** Merged from args.script/config.main/config.site.entry-point/config.assets. */
++	entry: Entry;
++	/** From config.rules. */
++	rules: Config["rules"];
++	/** Merged: --name arg ?? config.name, with CI override applied. */
++	name: string;
++	workerNameOverridden: boolean;
++	/** Merged: --compatibility-date arg ?? config.compatibility_date. Still optional — validated as required in stage 4. */
++	compatibilityDate: string | undefined;
++	/** Merged: --compatibility-flags arg ?? config.compatibility_flags. */
++	compatibilityFlags: string[];
++	/** computed based on compat date and args */
++	nodejsCompatMode: NodeJSCompatMode;
++	/** Merged from --assets arg and config.assets. */
++	assetsOptions: AssetsOptions | undefined;
++	/** Merged: --jsx-factory arg || config.jsx_factory. */
++	jsxFactory: string;
++	/** Merged: --jsx-fragment arg || config.jsx_fragment. */
++	jsxFragment: string;
++	/** Merged: --tsconfig arg ?? config.tsconfig. */
++	tsconfig: string | undefined;
++	/** Merged: --minify arg ?? config.minify. */
++	minify: boolean | undefined;
++	/** Merged: !(--bundle arg ?? !config.no_bundle). */
++	noBundle: boolean;
++	/** Merged: --upload-source-maps arg ?? config.upload_source_maps. */
++	uploadSourceMaps: boolean | undefined;
++	/** Merged: --keep-vars arg || config.keep_vars. */
++	keepVars: boolean;
++	/** Merged from --site arg and config.site. */
++	isWorkersSite: boolean;
++	/** Merged: { ...config.define, ...--define arg }. CLI overrides config. */
++	defines: Record<string, string>;
++	/** Merged: { ...config.alias, ...--alias arg }. CLI overrides config. */
++	alias: Record<string, string>;
++	/**
++	 * Whether to use the deprecated service environments API path.
++	 * True only when config opts in (legacy_env: false) AND --env is specified.
++	 */
++	useServiceEnvApiPath: boolean;
++	placement: CfPlacement | undefined;
++	/** Output directory for the bundled Worker. From --outdir arg or a temp directory. */
++	destination: string | EphemeralDirectory;
++	/** From --dry-run arg. */
++	dryRun: boolean;
++	/** From --env arg. */
++	env: string | undefined;
++	/** From --outdir arg. Already used to derive `destination`, but also needed for outdir README and noBundleWorker. */
++	outdir: string | undefined;
++	/** From --outfile arg. */
++	outfile: string | undefined;
++	/** From --tag arg. */
++	tag: string | undefined;
++	/** From --message arg. */
++	message: string | undefined;
++	/** From --secrets-file arg. */
++	secretsFile: string | undefined;
++	/** From collectKeyValues(--var arg). Pre-resolved key-value pairs. */
++	var: Record<string, string>;
++	/** From --experimental-auto-create arg. */
++	experimentalAutoCreate: boolean;
++};
++
++export type DeployProps = SharedDeployVersionsProps & {
++	/** Discriminant for DeployProps vs VersionsUploadProps */
++	command: "deploy";
++	/** Merged from --site arg and config.site. */
++	legacyAssetPaths: LegacyAssetPaths | undefined;
++	/** Merged: --triggers arg ?? config.triggers.crons. */
++	triggers: string[] | undefined;
++	/** Merged: --routes arg ?? config.routes ?? config.route. AND --domains and custom_domains*/
++	routes: Route[];
++	/** Merged: --logpush arg ?? config.logpush. */
++	logpush: boolean | undefined;
++	containers: ContainerNormalizedConfig[];
++	/** From --dispatch-namespace arg. Deploy-only (Workers for Platforms). */
++	dispatchNamespace: string | undefined;
++	/** From --strict arg. Deploy-only. */
++	strict: boolean;
++	/** From --metafile arg. Deploy-only. */
++	metafile: string | boolean | undefined;
++	/** From --old-asset-ttl arg. Deploy-only. */
++	oldAssetTtl: number | undefined;
++};
++
++export type VersionsUploadProps = SharedDeployVersionsProps & {
++	/** Discriminant for DeployProps vs VersionsUploadProps */
++	command: "versions upload";
++	/** CLI-only (--preview-alias), or auto-generated from CI branch name. */
++	previewAlias: string | undefined;
++};
+diff --git a/packages/deploy-helpers/tests/index.test.ts b/packages/deploy-helpers/tests/index.test.ts
+new file mode 100644
+index 0000000000..bb30edb9cf
+--- /dev/null
++++ b/packages/deploy-helpers/tests/index.test.ts
+@@ -0,0 +1,7 @@
++import { describe, it } from "vitest";
++
++describe("placeholder", () => {
++	it("should pass", ({ expect }) => {
++		expect(true).toBe(true);
++	});
++});
+diff --git a/packages/deploy-helpers/tests/tsconfig.json b/packages/deploy-helpers/tests/tsconfig.json
+new file mode 100644
+index 0000000000..094c387712
+--- /dev/null
++++ b/packages/deploy-helpers/tests/tsconfig.json
+@@ -0,0 +1,8 @@
++{
++	"extends": "@cloudflare/workers-tsconfig/tsconfig.json",
++	"compilerOptions": {
++		"module": "preserve",
++		"types": ["node"]
++	},
++	"include": ["../*.d.ts", "**/*.ts", "**/*.js"]
++}
+diff --git a/packages/deploy-helpers/tsconfig.json b/packages/deploy-helpers/tsconfig.json
+new file mode 100644
+index 0000000000..1fd9f9e989
+--- /dev/null
++++ b/packages/deploy-helpers/tsconfig.json
+@@ -0,0 +1,10 @@
++{
++	"extends": "@cloudflare/workers-tsconfig/tsconfig.json",
++	"compilerOptions": {
++		"module": "esnext",
++		"types": ["node"],
++		"tsBuildInfoFile": ".tsbuildinfo"
++	},
++	"include": ["**/*.ts", "**/*.js"],
++	"exclude": ["dist", "node_modules", "**/__tests__/**", "**/*.test.ts"]
++}
+diff --git a/packages/deploy-helpers/tsup.config.ts b/packages/deploy-helpers/tsup.config.ts
+new file mode 100644
+index 0000000000..9c4e367648
+--- /dev/null
++++ b/packages/deploy-helpers/tsup.config.ts
+@@ -0,0 +1,17 @@
++import { defineConfig } from "tsup";
++
++export default defineConfig(() => [
++	{
++		treeshake: true,
++		keepNames: true,
++		entry: ["src/index.ts"],
++		platform: "node",
++		format: "esm",
++		dts: true,
++		outDir: "dist",
++		tsconfig: "tsconfig.json",
++		metafile: true,
++		sourcemap: process.env.SOURCEMAPS !== "false",
++		external: ["@cloudflare/*"],
++	},
++]);
+diff --git a/packages/deploy-helpers/turbo.json b/packages/deploy-helpers/turbo.json
+new file mode 100644
+index 0000000000..a90e902eb8
+--- /dev/null
++++ b/packages/deploy-helpers/turbo.json
+@@ -0,0 +1,16 @@
++{
++	"$schema": "http://turbo.build/schema.json",
++	"extends": ["//"],
++	"tasks": {
++		"build": {
++			"inputs": ["$TURBO_DEFAULT$", "!**/__tests__/**"],
++			"outputs": ["dist/**"],
++			"env": ["SOURCEMAPS"],
++			"passThroughEnv": ["PWD"]
++		},
++		"test:ci": {
++			"dependsOn": ["build"],
++			"env": ["LC_ALL", "TZ"]
++		}
++	}
++}
+diff --git a/packages/deploy-helpers/vitest.config.mts b/packages/deploy-helpers/vitest.config.mts
+new file mode 100644
+index 0000000000..d4cc444315
+--- /dev/null
++++ b/packages/deploy-helpers/vitest.config.mts
+@@ -0,0 +1,11 @@
++import { defineConfig } from "vitest/config";
++
++export default defineConfig({
++	test: {
++		testTimeout: 15_000,
++		pool: "forks",
++		include: ["**/tests/**/*.test.ts"],
++		reporters: ["default"],
++		mockReset: true,
++	},
++});
+diff --git a/packages/workers-utils/package.json b/packages/workers-utils/package.json
+index 58ef2ae998..7e54857173 100644
+--- a/packages/workers-utils/package.json
++++ b/packages/workers-utils/package.json
+@@ -50,12 +50,14 @@
+ 		"@cloudflare/workflows-shared": "workspace:*",
+ 		"@types/command-exists": "^1.2.0",
+ 		"@types/node": "catalog:default",
++		"@types/signal-exit": "^3.0.1",
+ 		"@vitest/ui": "catalog:default",
+ 		"cloudflare": "^5.2.0",
+ 		"command-exists": "^1.2.9",
+ 		"concurrently": "^8.2.2",
+ 		"empathic": "^2.0.0",
+ 		"jsonc-parser": "catalog:default",
++		"signal-exit": "catalog:default",
+ 		"smol-toml": "catalog:default",
+ 		"ts-dedent": "^2.2.0",
+ 		"tsdown": "^0.15.9",
+diff --git a/packages/workers-utils/src/index.ts b/packages/workers-utils/src/index.ts
+index 366ec3fd4b..405be7b541 100644
+--- a/packages/workers-utils/src/index.ts
++++ b/packages/workers-utils/src/index.ts
+@@ -93,6 +93,13 @@ export { isDockerfile } from "./config/validation";
+ 
+ export { isDirectory, removeDir, removeDirSync } from "./fs-helpers";
+ 
++export {
++	type EphemeralDirectory,
++	getWranglerHiddenDirPath,
++	getWranglerTmpDir,
++	sweepStaleWranglerTmpDirs,
++} from "./wrangler-tmp-dir";
++
+ export { MetricsRegistry } from "./prometheus-metrics";
+ export type { Counter } from "./prometheus-metrics";
+ 
+diff --git a/packages/workers-utils/src/types.ts b/packages/workers-utils/src/types.ts
+index aa5882c379..9e80ac9235 100644
+--- a/packages/workers-utils/src/types.ts
++++ b/packages/workers-utils/src/types.ts
+@@ -42,8 +42,9 @@ import type {
+ 	CfVpcService,
+ 	CfWorkerLoader,
+ 	CfWorkflow,
++	CfScriptFormat,
+ } from "./worker";
+-import type { AssetConfig } from "@cloudflare/workers-shared";
++import type { AssetConfig, RouterConfig } from "@cloudflare/workers-shared";
+ 
+ export type Json =
+ 	| string
+@@ -203,6 +204,40 @@ export type AssetConfigMetadata = {
+ 	_headers?: string;
+ };
+ 
++export type AssetsOptions = {
++	directory: string;
++	binding?: string;
++	routerConfig: RouterConfig;
++	assetConfig: AssetConfig;
++	_redirects?: string;
++	_headers?: string;
++	run_worker_first?: boolean | string[];
++};
++
++/**
++ * Information about the assets that should be uploaded
++ */
++export interface LegacyAssetPaths {
++	/**
++	 * Absolute path to the root of the project.
++	 *
++	 * This is the directory containing wrangler.toml or cwd if no config.
++	 */
++	baseDirectory: string;
++	/**
++	 * The path to the assets directory, relative to the `baseDirectory`.
++	 */
++	assetDirectory: string;
++	/**
++	 * An array of patterns that match files that should be uploaded.
++	 */
++	includePatterns: string[];
++	/**
++	 * An array of patterns that match files that should not be uploaded.
++	 */
++	excludePatterns: string[];
++}
++
+ // for PUT /accounts/:accountId/workers/scripts/:scriptName
+ type WorkerMetadataPut = {
+ 	/** The name of the entry point module. Only exists when the worker is in the ES module format */
+@@ -354,3 +389,28 @@ export type Binding =
+ 	| ({ type: `unsafe_${string}` } & Omit<CfUnsafeBinding, "name" | "type">)
+ 	| { type: "assets" }
+ 	| { type: "inherit" };
++
++/**
++ * An entry point for the Worker.
++ *
++ * It consists not just of a `file`, but also of a `directory` that is used to resolve relative paths.
++ */
++export type Entry = {
++	/** A worker's entrypoint */
++	file: string;
++	/** A worker's directory. Usually where the Wrangler configuration file is located */
++	projectRoot: string;
++	/** The path to the config file, if it exists. */
++	configPath: string | undefined;
++	/** Is this a module worker or a service worker? */
++	format: CfScriptFormat;
++	/** The directory that contains all of a `--no-bundle` worker's modules. Usually `${directory}/src`. Defaults to path.dirname(file) */
++	moduleRoot: string;
++	/**
++	 * A worker's name
++	 */
++	name?: string | undefined;
++
++	/** Export from a Worker's entrypoint */
++	exports: string[];
++};
+diff --git a/packages/workers-utils/src/wrangler-tmp-dir.ts b/packages/workers-utils/src/wrangler-tmp-dir.ts
+new file mode 100644
+index 0000000000..83b1e4d730
+--- /dev/null
++++ b/packages/workers-utils/src/wrangler-tmp-dir.ts
+@@ -0,0 +1,111 @@
++import fs from "node:fs";
++import path from "node:path";
++import onExit from "signal-exit";
++import { removeDirSync } from "./fs-helpers";
++
++/**
++ * A short-lived directory. Automatically removed when the process exits, but
++ * can be removed earlier by calling `remove()`.
++ */
++export interface EphemeralDirectory {
++	path: string;
++	remove(): void;
++}
++
++/**
++ * Gets the path to the project's `.wrangler` folder.
++ */
++export function getWranglerHiddenDirPath(
++	projectRoot: string | undefined
++): string {
++	projectRoot ??= process.cwd();
++	return path.join(projectRoot, ".wrangler");
++}
++
++/**
++ * Maximum age of a `.wrangler/tmp/*` entry before we treat it as orphaned and
++ * eligible for the startup sweep. Tuned to avoid touching any directory a
++ * concurrent wrangler session might still own.
++ */
++const STALE_WRANGLER_TMP_DIR_MS = 24 * 60 * 60 * 1000;
++
++/**
++ * Tracks tmp roots already swept by this process so repeated
++ * `getWranglerTmpDir` calls within one wrangler invocation only scan once.
++ */
++const sweptTmpRoots = new Set<string>();
++
++/**
++ * Removes stale `.wrangler/tmp/*` entries left behind by previous wrangler
++ * sessions that exited abnormally (SIGKILL, OOM, host crash) and so missed
++ * the `signal-exit` cleanup. Runs at most once per tmp root per process.
++ *
++ * Exported for tests.
++ */
++export function sweepStaleWranglerTmpDirs(tmpRoot: string): void {
++	if (sweptTmpRoots.has(tmpRoot)) {
++		return;
++	}
++	sweptTmpRoots.add(tmpRoot);
++
++	let entries: fs.Dirent[];
++	try {
++		entries = fs.readdirSync(tmpRoot, { withFileTypes: true });
++	} catch {
++		return;
++	}
++
++	const cutoff = Date.now() - STALE_WRANGLER_TMP_DIR_MS;
++	for (const entry of entries) {
++		if (!entry.isDirectory()) {
++			continue;
++		}
++		const entryPath = path.join(tmpRoot, entry.name);
++		try {
++			if (fs.statSync(entryPath).mtimeMs < cutoff) {
++				removeDirSync(entryPath);
++			}
++		} catch {
++			/* best effort - another process may have removed it first */
++		}
++	}
++}
++
++/**
++ * Gets a temporary directory in the project's `.wrangler` folder with the
++ * specified prefix. We create temporary directories in `.wrangler` as opposed
++ * to the OS's temporary directory to avoid issues with different drive letters
++ * on Windows. For example, when `esbuild` outputs a file to a different drive
++ * than the input sources, the generated source maps are incorrect.
++ */
++export function getWranglerTmpDir(
++	projectRoot: string | undefined,
++	prefix: string,
++	cleanup = true
++): EphemeralDirectory {
++	const tmpRoot = path.join(getWranglerHiddenDirPath(projectRoot), "tmp");
++	fs.mkdirSync(tmpRoot, { recursive: true });
++	sweepStaleWranglerTmpDirs(tmpRoot);
++
++	const tmpPrefix = path.join(tmpRoot, `${prefix}-`);
++	const tmpDir = fs.realpathSync(fs.mkdtempSync(tmpPrefix));
++
++	const cleanupDir = () => {
++		if (cleanup) {
++			try {
++				removeDirSync(tmpDir);
++			} catch {
++				/* best effort */
++			}
++		}
++	};
++	const removeExitListener = onExit(cleanupDir);
++
++	return {
++		path: tmpDir,
++		remove() {
++			removeExitListener();
++			cleanupDir();
++		},
++	};
++}
+diff --git a/packages/workers-utils/tests/wrangler-tmp-dir.test.ts b/packages/workers-utils/tests/wrangler-tmp-dir.test.ts
+new file mode 100644
+index 0000000000..cc2a4aa45c
+--- /dev/null
++++ b/packages/workers-utils/tests/wrangler-tmp-dir.test.ts
+@@ -0,0 +1,72 @@
++import fs from "node:fs";
++import * as path from "node:path";
++import { describe, it } from "vitest";
++import { runInTempDir } from "../src/test-helpers";
++import {
++	getWranglerHiddenDirPath,
++	sweepStaleWranglerTmpDirs,
++} from "../src/wrangler-tmp-dir";
++
++describe("getWranglerHiddenDirPath()", () => {
++	it("should return .wrangler path in project root", ({ expect }) => {
++		expect(getWranglerHiddenDirPath("/project")).toBe(
++			path.join("/project", ".wrangler")
++		);
++	});
++
++	it("should use current working directory when projectRoot is undefined", ({
++		expect,
++	}) => {
++		expect(getWranglerHiddenDirPath(undefined)).toBe(
++			path.join(process.cwd(), ".wrangler")
++		);
++	});
++});
++
++describe("sweepStaleWranglerTmpDirs()", () => {
++	runInTempDir();
++
++	const ageDir = (dir: string, ageMs: number): void => {
++		const seconds = (Date.now() - ageMs) / 1000;
++		fs.utimesSync(dir, seconds, seconds);
++	};
++
++	it("removes orphaned dirs older than the staleness threshold", ({
++		expect,
++	}) => {
++		const tmpRoot = path.join(process.cwd(), ".wrangler", "tmp");
++		fs.mkdirSync(tmpRoot, { recursive: true });
++		const stale = path.join(tmpRoot, "bundle-stale");
++		const fresh = path.join(tmpRoot, "bundle-fresh");
++		fs.mkdirSync(stale);
++		fs.mkdirSync(fresh);
++		ageDir(stale, 2 * 24 * 60 * 60 * 1000);
++
++		sweepStaleWranglerTmpDirs(tmpRoot);
++
++		expect(fs.existsSync(stale)).toBe(false);
++		expect(fs.existsSync(fresh)).toBe(true);
++	});
++
++	it("does not throw when the tmp root is missing", ({ expect }) => {
++		const tmpRoot = path.join(process.cwd(), ".wrangler", "tmp");
++		expect(() => sweepStaleWranglerTmpDirs(tmpRoot)).not.toThrow();
++	});
++
++	it("only sweeps a given root once per process", ({ expect }) => {
++		const tmpRoot = path.join(process.cwd(), ".wrangler", "tmp");
++		fs.mkdirSync(tmpRoot, { recursive: true });
++		const orphan = path.join(tmpRoot, "bundle-orphan");
++		fs.mkdirSync(orphan);
++		ageDir(orphan, 2 * 24 * 60 * 60 * 1000);
++
++		sweepStaleWranglerTmpDirs(tmpRoot);
++		expect(fs.existsSync(orphan)).toBe(false);
++
++		// Recreate an equally stale entry; the cached root must skip rescanning.
++		fs.mkdirSync(orphan);
++		ageDir(orphan, 2 * 24 * 60 * 60 * 1000);
++		sweepStaleWranglerTmpDirs(tmpRoot);
++		expect(fs.existsSync(orphan)).toBe(true);
++	});
++});
+diff --git a/packages/wrangler/package.json b/packages/wrangler/package.json
+index 5fc5f1b7d7..cc85984f0a 100644
+--- a/packages/wrangler/package.json
++++ b/packages/wrangler/package.json
+@@ -81,6 +81,7 @@
+ 		"@cloudflare/cli-shared-helpers": "workspace:*",
+ 		"@cloudflare/codemod": "workspace:*",
+ 		"@cloudflare/containers-shared": "workspace:*",
++		"@cloudflare/deploy-helpers": "workspace:*",
+ 		"@cloudflare/pages-shared": "workspace:^",
+ 		"@cloudflare/types": "6.18.4",
+ 		"@cloudflare/workers-shared": "workspace:*",
+@@ -151,7 +152,7 @@
+ 		"resolve": "^1.22.8",
+ 		"semiver": "^1.1.0",
+ 		"shell-quote": "^1.8.1",
+-		"signal-exit": "^3.0.7",
++		"signal-exit": "catalog:default",
+ 		"smol-toml": "catalog:default",
+ 		"source-map": "^0.6.1",
+ 		"supports-color": "^9.2.2",
+diff --git a/packages/wrangler/src/__tests__/deploy/config-args-merging.test.ts b/packages/wrangler/src/__tests__/deploy/config-args-merging.test.ts
+index d0b1bc9930..dc7b8efb64 100644
+--- a/packages/wrangler/src/__tests__/deploy/config-args-merging.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/config-args-merging.test.ts
+@@ -34,7 +34,7 @@ import {
+ import { mockGetZoneWorkerRoutes } from "../helpers/mock-zone-routes";
+ import { createFetchResult, msw } from "../helpers/msw";
+ import { mswListNewDeploymentsLatestFull } from "../helpers/msw/handlers/versions";
+-import { runWrangler } from "../helpers/run-wrangler";
++import { runWrangler as runWranglerBase } from "../helpers/run-wrangler";
+ import { toString } from "../helpers/serialize-form-data-entry";
+ import { writeWorkerSource } from "../helpers/write-worker-source";
+ import {
+@@ -156,12 +156,16 @@ async function getMetadata(request: Request): Promise<WorkerMetadata> {
+ 
+ // ─── Test suites ─────────────────────────────────────────────────────
+ 
+-describe("config/args merging", () => {
++describe.each([
++	{ mode: "default", flag: "" },
++	{ mode: "deploy helpers", flag: " --experimental-deploy-helpers" },
++])("config/args merging ($mode)", ({ flag }) => {
+ 	runInTempDir();
+ 	mockAccountId();
+ 	mockApiToken();
+ 	const { setIsTTY } = useMockIsTTY();
+ 	const std = mockConsoleMethods();
++	const runWrangler = (command: string) => runWranglerBase(`${command}${flag}`);
+ 
+ 	beforeEach(() => {
+ 		vi.stubGlobal("setTimeout", (fn: () => void) => {
+diff --git a/packages/wrangler/src/__tests__/get-entry.test.ts b/packages/wrangler/src/__tests__/get-entry.test.ts
+index 6190a68a25..53d7468bff 100644
+--- a/packages/wrangler/src/__tests__/get-entry.test.ts
++++ b/packages/wrangler/src/__tests__/get-entry.test.ts
+@@ -1,11 +1,10 @@
+ import path from "node:path";
+-import { defaultWranglerConfig } from "@cloudflare/workers-utils";
++import { defaultWranglerConfig, type Entry } from "@cloudflare/workers-utils";
+ import { runInTempDir, seed } from "@cloudflare/workers-utils/test-helpers";
+ import dedent from "ts-dedent";
+ import { describe, it } from "vitest";
+ import { getEntry } from "../deployment-bundle/entry";
+ import { mockConsoleMethods } from "./helpers/mock-console";
+-import type { Entry } from "../deployment-bundle/entry";
+ 
+ function normalize(entry: Entry): Entry {
+ 	const tmpDir = process.cwd();
+diff --git a/packages/wrangler/src/__tests__/paths.test.ts b/packages/wrangler/src/__tests__/paths.test.ts
+index 95d2a3de4c..bf74fe7e87 100644
+--- a/packages/wrangler/src/__tests__/paths.test.ts
++++ b/packages/wrangler/src/__tests__/paths.test.ts
+@@ -1,13 +1,6 @@
+-import fs from "node:fs";
+ import * as path from "node:path";
+-import { runInTempDir } from "@cloudflare/workers-utils/test-helpers";
+ import { describe, it } from "vitest";
+-import {
+-	getBasePath,
+-	getWranglerHiddenDirPath,
+-	readableRelative,
+-	sweepStaleWranglerTmpDirs,
+-} from "../paths";
++import { getBasePath, readableRelative } from "../paths";
+ describe("paths", () => {
+ 	describe("getBasePath()", () => {
+ 		it("should return the path to the wrangler package", ({ expect }) => {
+@@ -23,70 +16,6 @@ describe("paths", () => {
+ 			expect(getBasePath()).toEqual(path.resolve("/foo/bar"));
+ 		});
+ 	});
+-
+-	describe("getWranglerHiddenDirPath()", () => {
+-		it("should return .wrangler path in project root", ({ expect }) => {
+-			expect(getWranglerHiddenDirPath("/project")).toBe(
+-				path.join("/project", ".wrangler")
+-			);
+-		});
+-
+-		it("should use current working directory when projectRoot is undefined", ({
+-			expect,
+-		}) => {
+-			expect(getWranglerHiddenDirPath(undefined)).toBe(
+-				path.join(process.cwd(), ".wrangler")
+-			);
+-		});
+-	});
+-});
+-
+-describe("sweepStaleWranglerTmpDirs()", () => {
+-	runInTempDir();
+-
+-	const ageDir = (dir: string, ageMs: number): void => {
+-		const seconds = (Date.now() - ageMs) / 1000;
+-		fs.utimesSync(dir, seconds, seconds);
+-	};
+-
+-	it("removes orphaned dirs older than the staleness threshold", ({
+-		expect,
+-	}) => {
+-		const tmpRoot = path.join(process.cwd(), ".wrangler", "tmp");
+-		fs.mkdirSync(tmpRoot, { recursive: true });
+-		const stale = path.join(tmpRoot, "bundle-stale");
+-		const fresh = path.join(tmpRoot, "bundle-fresh");
+-		fs.mkdirSync(stale);
+-		fs.mkdirSync(fresh);
+-		ageDir(stale, 2 * 24 * 60 * 60 * 1000);
+-
+-		sweepStaleWranglerTmpDirs(tmpRoot);
+-
+-		expect(fs.existsSync(stale)).toBe(false);
+-		expect(fs.existsSync(fresh)).toBe(true);
+-	});
+-
+-	it("does not throw when the tmp root is missing", ({ expect }) => {
+-		const tmpRoot = path.join(process.cwd(), ".wrangler", "tmp");
+-		expect(() => sweepStaleWranglerTmpDirs(tmpRoot)).not.toThrow();
+-	});
+-
+-	it("only sweeps a given root once per process", ({ expect }) => {
+-		const tmpRoot = path.join(process.cwd(), ".wrangler", "tmp");
+-		fs.mkdirSync(tmpRoot, { recursive: true });
+-		const orphan = path.join(tmpRoot, "bundle-orphan");
+-		fs.mkdirSync(orphan);
+-		ageDir(orphan, 2 * 24 * 60 * 60 * 1000);
+-
+-		sweepStaleWranglerTmpDirs(tmpRoot);
+-		expect(fs.existsSync(orphan)).toBe(false);
+-
+-		// Recreate an equally stale entry; the cached root must skip rescanning.
+-		fs.mkdirSync(orphan);
+-		ageDir(orphan, 2 * 24 * 60 * 60 * 1000);
+-		sweepStaleWranglerTmpDirs(tmpRoot);
+-		expect(fs.existsSync(orphan)).toBe(true);
+-	});
+ });
+ 
+ describe("readableRelative", () => {
+diff --git a/packages/wrangler/src/api/integrations/platform/index.ts b/packages/wrangler/src/api/integrations/platform/index.ts
+index d1b4180c65..7e10bdfe27 100644
+--- a/packages/wrangler/src/api/integrations/platform/index.ts
++++ b/packages/wrangler/src/api/integrations/platform/index.ts
+@@ -27,11 +27,11 @@ import { ExecutionContext } from "./executionContext";
+ // TODO: import from `@cloudflare/workers-utils` after migrating to `tsdown`
+ // This is a temporary fix to ensure that the types are included in the build output
+ import type {
++	AssetsOptions,
+ 	Config,
+ 	RawConfig,
+ 	RawEnvironment,
+ } from "../../../../../workers-utils/src";
+-import type { AssetsOptions } from "../../../assets";
+ import type { RemoteProxySession } from "../../remoteBindings";
+ import type { IncomingRequestCfProperties } from "@cloudflare/workers-types/experimental";
+ import type {
+diff --git a/packages/wrangler/src/api/startDevWorker/BundlerController.ts b/packages/wrangler/src/api/startDevWorker/BundlerController.ts
+index 1968c3cae2..e124e57c1e 100644
+--- a/packages/wrangler/src/api/startDevWorker/BundlerController.ts
++++ b/packages/wrangler/src/api/startDevWorker/BundlerController.ts
+@@ -1,6 +1,7 @@
+ import assert from "node:assert";
+ import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+ import path from "node:path";
++import { getWranglerTmpDir } from "@cloudflare/workers-utils";
+ import { watch } from "chokidar";
+ import { bundleWorker, shouldCheckFetch } from "../../deployment-bundle/bundle";
+ import { getBundleType } from "../../deployment-bundle/bundle-type";
+@@ -14,17 +15,15 @@ import { getAssetChangeMessage } from "../../dev";
+ import { runBuild } from "../../dev/use-esbuild";
+ import { logger } from "../../logger";
+ import { isNavigatorDefined } from "../../navigator-user-agent";
+-import { getWranglerTmpDir } from "../../paths";
+ import { debounce } from "../../utils/debounce";
+ import { Controller } from "./BaseController";
+ import { castErrorCause } from "./events";
+ import { extractBindingsOfType } from "./utils";
+ import type { BundleResult } from "../../deployment-bundle/bundle";
+-import type { Entry } from "../../deployment-bundle/entry";
+ import type { EsbuildBundle } from "../../dev/use-esbuild";
+-import type { EphemeralDirectory } from "../../paths";
+ import type { ConfigUpdateEvent } from "./events";
+ import type { StartDevWorkerOptions } from "./types";
++import type { EphemeralDirectory, Entry } from "@cloudflare/workers-utils";
+ 
+ export class BundlerController extends Controller {
+ 	#currentBundle?: EsbuildBundle;
+diff --git a/packages/wrangler/src/api/startDevWorker/types.ts b/packages/wrangler/src/api/startDevWorker/types.ts
+index 2bafe7fba4..ae17bcdf03 100644
+--- a/packages/wrangler/src/api/startDevWorker/types.ts
++++ b/packages/wrangler/src/api/startDevWorker/types.ts
+@@ -1,10 +1,10 @@
+-import type { AssetsOptions } from "../../assets";
+ import type { CfAccount } from "../../dev/create-worker-preview";
+ import type { EsbuildBundle } from "../../dev/use-esbuild";
+ import type { ConfigController } from "./ConfigController";
+ import type { DevEnv } from "./DevEnv";
+ import type { ContainerNormalizedConfig } from "@cloudflare/containers-shared";
+ import type {
++	AssetsOptions,
+ 	BinaryFile,
+ 	Binding,
+ 	CfModule,
+diff --git a/packages/wrangler/src/assets.ts b/packages/wrangler/src/assets.ts
+index 42b1cd88c0..7780525ddb 100644
+--- a/packages/wrangler/src/assets.ts
++++ b/packages/wrangler/src/assets.ts
+@@ -31,7 +31,11 @@ import type { StartDevWorkerOptions } from "./api";
+ import type { DeployArgs } from "./deploy";
+ import type { StartDevOptions } from "./dev";
+ import type { AssetConfig, RouterConfig } from "@cloudflare/workers-shared";
+-import type { ComplianceConfig, Config } from "@cloudflare/workers-utils";
++import type {
++	AssetsOptions,
++	ComplianceConfig,
++	Config,
++} from "@cloudflare/workers-utils";
+ 
+ export type AssetManifest = { [path: string]: { hash: string; size: number } };
+ 
+@@ -389,16 +393,6 @@ function getAssetsBasePath(
+ 		: path.resolve(path.dirname(config.configPath ?? "wrangler.toml"));
+ }
+ 
+-export type AssetsOptions = {
+-	directory: string;
+-	binding?: string;
+-	routerConfig: RouterConfig;
+-	assetConfig: AssetConfig;
+-	_redirects?: string;
+-	_headers?: string;
+-	run_worker_first?: boolean | string[];
+-};
+-
+ export class NonExistentAssetsDirError extends UserError {}
+ 
+ export class NonDirectoryAssetsDirError extends UserError {}
+diff --git a/packages/wrangler/src/check/commands.ts b/packages/wrangler/src/check/commands.ts
+index e5b41d0d32..ab90353c89 100644
+--- a/packages/wrangler/src/check/commands.ts
++++ b/packages/wrangler/src/check/commands.ts
+@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
+ import path from "node:path";
+ import { log } from "@cloudflare/cli-shared-helpers";
+ import { spinnerWhile } from "@cloudflare/cli-shared-helpers/interactive";
+-import { UserError } from "@cloudflare/workers-utils";
++import { getWranglerTmpDir, UserError } from "@cloudflare/workers-utils";
+ import chalk from "chalk";
+ import { Miniflare } from "miniflare";
+ import { WebSocket } from "ws";
+@@ -16,7 +16,6 @@ import {
+ 	ModuleTypeToRuleType,
+ } from "../deployment-bundle/module-collection";
+ import { logger } from "../logger";
+-import { getWranglerTmpDir } from "../paths";
+ import type { Config } from "@cloudflare/workers-utils";
+ import type { ModuleDefinition } from "miniflare";
+ import type { FormData, FormDataEntryValue } from "undici";
+diff --git a/packages/wrangler/src/deploy/deploy.ts b/packages/wrangler/src/deploy/deploy.ts
+index 13bb0e481f..47b37cdc2f 100644
+--- a/packages/wrangler/src/deploy/deploy.ts
++++ b/packages/wrangler/src/deploy/deploy.ts
+@@ -12,6 +12,7 @@ import {
+ 	formatConfigSnippet,
+ 	getDockerPath,
+ 	parseNonHyphenedUuid,
++	getWranglerTmpDir,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+ import PQueue from "p-queue";
+@@ -50,7 +51,6 @@ import isInteractive, { isNonInteractiveOrCI } from "../is-interactive";
+ import { logger } from "../logger";
+ import { getMetricsUsageHeaders } from "../metrics";
+ import { isNavigatorDefined } from "../navigator-user-agent";
+-import { getWranglerTmpDir } from "../paths";
+ import {
+ 	ensureQueuesExistByConfig,
+ 	getQueue,
+@@ -80,19 +80,19 @@ import { checkRemoteSecretsOverride } from "./check-remote-secrets-override";
+ import { checkWorkflowConflicts } from "./check-workflow-conflicts";
+ import { getConfigPatch, getRemoteConfigDiff } from "./config-diffs";
+ import type { StartDevWorkerInput } from "../api/startDevWorker/types";
+-import type { AssetsOptions } from "../assets";
+-import type { Entry } from "../deployment-bundle/entry";
+ import type { PostTypedConsumerBody } from "../queues/client";
+-import type { LegacyAssetPaths } from "../sites";
+ import type { RetrieveSourceMapFunction } from "../sourcemap";
+ import type { ApiVersion, Percentage, VersionId } from "../versions/types";
+ import type {
++	AssetsOptions,
+ 	CfModule,
+ 	CfScriptFormat,
+ 	CfWorkerInit,
+ 	ComplianceConfig,
+ 	Config,
+ 	CustomDomainRoute,
++	Entry,
++	LegacyAssetPaths,
+ 	RawConfig,
+ 	Route,
+ 	ZoneIdRoute,
+diff --git a/packages/wrangler/src/deployment-bundle/apply-middleware.ts b/packages/wrangler/src/deployment-bundle/apply-middleware.ts
+index 5dba0fe181..da3d3c3de0 100644
+--- a/packages/wrangler/src/deployment-bundle/apply-middleware.ts
++++ b/packages/wrangler/src/deployment-bundle/apply-middleware.ts
+@@ -2,8 +2,7 @@ import * as fs from "node:fs";
+ import * as path from "node:path";
+ import { getBasePath } from "../paths";
+ import { dedent } from "../utils/dedent";
+-import type { Entry } from "./entry";
+-import type { CfScriptFormat } from "@cloudflare/workers-utils";
++import type { CfScriptFormat, Entry } from "@cloudflare/workers-utils";
+ 
+ /**
+  * A facade that acts as a "middleware loader".
+diff --git a/packages/wrangler/src/deployment-bundle/bundle.ts b/packages/wrangler/src/deployment-bundle/bundle.ts
+index 3e1a4a2a45..98b5561913 100644
+--- a/packages/wrangler/src/deployment-bundle/bundle.ts
++++ b/packages/wrangler/src/deployment-bundle/bundle.ts
+@@ -3,12 +3,13 @@ import * as path from "node:path";
+ import {
+ 	getBuildConditionsFromEnv,
+ 	getBuildPlatformFromEnv,
++	getWranglerTmpDir,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+ import chalk from "chalk";
+ import * as esbuild from "esbuild";
+ import { getFlag } from "../experimental-flags";
+-import { getBasePath, getWranglerTmpDir } from "../paths";
++import { getBasePath } from "../paths";
+ import { applyMiddlewareLoaderFacade } from "./apply-middleware";
+ import {
+ 	isBuildFailure,
+@@ -23,13 +24,13 @@ import { getNodeJSCompatPlugins } from "./esbuild-plugins/nodejs-plugins";
+ import { writeAdditionalModules } from "./find-additional-modules";
+ import { noopModuleCollector } from "./module-collection";
+ import type { MiddlewareLoader } from "./apply-middleware";
+-import type { Entry } from "./entry";
+ import type { ModuleCollector } from "./module-collection";
+ import type {
+ 	CfModule,
+ 	CfModuleType,
+ 	Config,
+ 	DurableObjectBindings,
++	Entry,
+ 	WorkflowBinding,
+ } from "@cloudflare/workers-utils";
+ import type { NodeJSCompatMode } from "miniflare";
+diff --git a/packages/wrangler/src/deployment-bundle/deploy-args.ts b/packages/wrangler/src/deployment-bundle/deploy-args.ts
+index a9bfc67689..857da54ddc 100644
+--- a/packages/wrangler/src/deployment-bundle/deploy-args.ts
++++ b/packages/wrangler/src/deployment-bundle/deploy-args.ts
+@@ -146,13 +146,6 @@ export const sharedDeployVersionsArgs = {
+ 			"Compile a project and run checks without actually uploading the Worker",
+ 		type: "boolean",
+ 	},
+-	"experimental-auto-create": {
+-		describe: "Automatically provision draft bindings with new resources",
+-		type: "boolean",
+-		default: true,
+-		hidden: true,
+-		alias: "x-auto-create",
+-	},
+ 	"secrets-file": {
+ 		describe:
+ 			"Path to a file containing secrets to upload with the version (JSON or .env format). Applies additively with secrets from previous deployments - omitted secrets will not be deleted.",
+@@ -168,6 +161,20 @@ export const sharedDeployVersionsArgs = {
+ 		default: false,
+ 		type: "boolean",
+ 	},
++	"experimental-auto-create": {
++		describe: "Automatically provision draft bindings with new resources",
++		type: "boolean",
++		default: true,
++		hidden: true,
++		alias: "x-auto-create",
++	},
++	"experimental-deploy-helpers": {
++		describe: "Experimental: Gates refactored deploy/upload path",
++		type: "boolean",
++		default: false,
++		hidden: true,
++		alias: ["x-deploy-helpers"],
++	},
+ } as const satisfies NamedArgDefinitions;
+ 
+ export function validateDeployVersionsArgs(args: {
+diff --git a/packages/wrangler/src/deployment-bundle/entry.ts b/packages/wrangler/src/deployment-bundle/entry.ts
+index 73c512c057..06aa4e8a9c 100644
+--- a/packages/wrangler/src/deployment-bundle/entry.ts
++++ b/packages/wrangler/src/deployment-bundle/entry.ts
+@@ -16,37 +16,12 @@ import {
+ } from "./resolve-entry";
+ import { runCustomBuild } from "./run-custom-build";
+ import type {
+-	CfScriptFormat,
+ 	Config,
+ 	DurableObjectBindings,
++	Entry,
+ 	RawConfig,
+ } from "@cloudflare/workers-utils";
+ 
+-/**
+- * An entry point for the Worker.
+- *
+- * It consists not just of a `file`, but also of a `directory` that is used to resolve relative paths.
+- */
+-export type Entry = {
+-	/** A worker's entrypoint */
+-	file: string;
+-	/** A worker's directory. Usually where the Wrangler configuration file is located */
+-	projectRoot: string;
+-	/** The path to the config file, if it exists. */
+-	configPath: string | undefined;
+-	/** Is this a module worker or a service worker? */
+-	format: CfScriptFormat;
+-	/** The directory that contains all of a `--no-bundle` worker's modules. Usually `${directory}/src`. Defaults to path.dirname(file) */
+-	moduleRoot: string;
+-	/**
+-	 * A worker's name
+-	 */
+-	name?: string | undefined;
+-
+-	/** Export from a Worker's entrypoint */
+-	exports: string[];
+-};
+-
+ /**
+  * Compute the entry-point for the Worker.
+  */
+diff --git a/packages/wrangler/src/deployment-bundle/find-additional-modules.ts b/packages/wrangler/src/deployment-bundle/find-additional-modules.ts
+index 9c325f1aa3..00bec40761 100644
+--- a/packages/wrangler/src/deployment-bundle/find-additional-modules.ts
++++ b/packages/wrangler/src/deployment-bundle/find-additional-modules.ts
+@@ -1,18 +1,21 @@
+ import { existsSync } from "node:fs";
+ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+ import path from "node:path";
+-import { UserError } from "@cloudflare/workers-utils";
++import { getWranglerHiddenDirPath, UserError } from "@cloudflare/workers-utils";
+ import chalk from "chalk";
+ import globToRegExp from "glob-to-regexp";
+ import { logger } from "../logger";
+-import { getWranglerHiddenDirPath } from "../paths";
+ import { getBundleType } from "./bundle-type";
+ import { RuleTypeToModuleType } from "./module-collection";
+ import { parseRules } from "./rules";
+ import { tryAttachSourcemapToModule } from "./source-maps";
+-import type { Entry } from "./entry";
+ import type { ParsedRules } from "./rules";
+-import type { CfModule, CfModuleType, Rule } from "@cloudflare/workers-utils";
++import type {
++	Entry,
++	CfModule,
++	CfModuleType,
++	Rule,
++} from "@cloudflare/workers-utils";
+ 
+ async function* getFiles(
+ 	configPath: string | undefined,
+diff --git a/packages/wrangler/src/deployment-bundle/module-collection.ts b/packages/wrangler/src/deployment-bundle/module-collection.ts
+index e89d462587..bb796b3304 100644
+--- a/packages/wrangler/src/deployment-bundle/module-collection.ts
++++ b/packages/wrangler/src/deployment-bundle/module-collection.ts
+@@ -12,8 +12,8 @@ import {
+ 	findAdditionalModuleWatchDirs,
+ } from "./find-additional-modules";
+ import { isJavaScriptModuleRule, parseRules } from "./rules";
+-import type { Entry } from "./entry";
+ import type {
++	Entry,
+ 	CfModule,
+ 	CfModuleType,
+ 	Config,
+diff --git a/packages/wrangler/src/deployment-bundle/no-bundle-worker.ts b/packages/wrangler/src/deployment-bundle/no-bundle-worker.ts
+index 5c3110d2ae..abc0a1b455 100644
+--- a/packages/wrangler/src/deployment-bundle/no-bundle-worker.ts
++++ b/packages/wrangler/src/deployment-bundle/no-bundle-worker.ts
+@@ -3,8 +3,7 @@ import {
+ 	findAdditionalModules,
+ 	writeAdditionalModules,
+ } from "./find-additional-modules";
+-import type { Entry } from "./entry";
+-import type { Rule } from "@cloudflare/workers-utils";
++import type { Rule, Entry } from "@cloudflare/workers-utils";
+ 
+ export async function noBundleWorker(
+ 	entry: Entry,
+diff --git a/packages/wrangler/src/dev/miniflare/index.ts b/packages/wrangler/src/dev/miniflare/index.ts
+index 1818dd3c3d..eac03bfd3a 100644
+--- a/packages/wrangler/src/dev/miniflare/index.ts
++++ b/packages/wrangler/src/dev/miniflare/index.ts
+@@ -20,11 +20,10 @@ import { updateCheck } from "../../update-check";
+ import { warnOrError } from "../../utils/print-bindings";
+ import { getDurableObjectClassNameToUseSQLiteMap } from "../class-names-sqlite";
+ import type { StartDevWorkerInput } from "../../api/startDevWorker/types";
+-import type { AssetsOptions } from "../../assets";
+ import type { LoggerLevel } from "../../logger";
+-import type { LegacyAssetPaths } from "../../sites";
+ import type { EsbuildBundle } from "../use-esbuild";
+ import type {
++	AssetsOptions,
+ 	Binding,
+ 	CfD1Database,
+ 	CfDispatchNamespace,
+@@ -37,6 +36,7 @@ import type {
+ 	CfWorkflow,
+ 	Config,
+ 	ContainerEngine,
++	LegacyAssetPaths,
+ } from "@cloudflare/workers-utils";
+ import type {
+ 	DOContainerOptions,
+diff --git a/packages/wrangler/src/dev/remote.ts b/packages/wrangler/src/dev/remote.ts
+index 602d0adc36..0dbda2ca04 100644
+--- a/packages/wrangler/src/dev/remote.ts
++++ b/packages/wrangler/src/dev/remote.ts
+@@ -12,17 +12,17 @@ import { requireApiToken } from "../user";
+ import { isAbortError } from "../utils/isAbortError";
+ import { getZoneIdForPreview } from "../zones";
+ import type { StartDevWorkerInput } from "../api";
+-import type { AssetsOptions } from "../assets";
+-import type { LegacyAssetPaths } from "../sites";
+ import type { ApiCredentials } from "../user";
+ import type { CfAccount } from "./create-worker-preview";
+ import type { EsbuildBundle } from "./use-esbuild";
+ import type {
++	AssetsOptions,
+ 	CfModule,
+ 	CfScriptFormat,
+ 	CfWorkerContext,
+ 	CfWorkerInit,
+ 	ComplianceConfig,
++	LegacyAssetPaths,
+ 	Route,
+ } from "@cloudflare/workers-utils";
+ 
+diff --git a/packages/wrangler/src/dev/use-esbuild.ts b/packages/wrangler/src/dev/use-esbuild.ts
+index 7df6298ed9..5b40945ef3 100644
+--- a/packages/wrangler/src/dev/use-esbuild.ts
++++ b/packages/wrangler/src/dev/use-esbuild.ts
+@@ -13,8 +13,12 @@ import {
+ 	noopModuleCollector,
+ } from "../deployment-bundle/module-collection";
+ import type { SourceMapMetadata } from "../deployment-bundle/bundle";
+-import type { Entry } from "../deployment-bundle/entry";
+-import type { CfModule, CfModuleType, Config } from "@cloudflare/workers-utils";
++import type {
++	CfModule,
++	CfModuleType,
++	Config,
++	Entry,
++} from "@cloudflare/workers-utils";
+ import type { Metafile } from "esbuild";
+ import type { NodeJSCompatMode } from "miniflare";
+ 
+diff --git a/packages/wrangler/src/pages/functions/buildPlugin.ts b/packages/wrangler/src/pages/functions/buildPlugin.ts
+index cb1281f61f..877ef25ce1 100644
+--- a/packages/wrangler/src/pages/functions/buildPlugin.ts
++++ b/packages/wrangler/src/pages/functions/buildPlugin.ts
+@@ -5,8 +5,8 @@ import { createModuleCollector } from "../../deployment-bundle/module-collection
+ import { getBasePath } from "../../paths";
+ import { getPagesProjectRoot } from "../utils";
+ import { buildNotifierPlugin } from "./buildWorker";
+-import type { Entry } from "../../deployment-bundle/entry";
+ import type { Options as WorkerOptions } from "./buildWorker";
++import type { Entry } from "@cloudflare/workers-utils";
+ 
+ type Options = Omit<
+ 	WorkerOptions,
+diff --git a/packages/wrangler/src/pages/functions/buildWorker.ts b/packages/wrangler/src/pages/functions/buildWorker.ts
+index c5bc86c7bd..b2c2ca525a 100644
+--- a/packages/wrangler/src/pages/functions/buildWorker.ts
++++ b/packages/wrangler/src/pages/functions/buildWorker.ts
+@@ -13,8 +13,7 @@ import { logBuildFailure, logger } from "../../logger";
+ import { getBasePath } from "../../paths";
+ import { getPagesProjectRoot, getPagesTmpDir } from "../utils";
+ import type { BundleResult } from "../../deployment-bundle/bundle";
+-import type { Entry } from "../../deployment-bundle/entry";
+-import type { CfModule } from "@cloudflare/workers-utils";
++import type { CfModule, Entry } from "@cloudflare/workers-utils";
+ import type { Plugin } from "esbuild";
+ import type { NodeJSCompatMode } from "miniflare";
+ 
+diff --git a/packages/wrangler/src/pages/utils.ts b/packages/wrangler/src/pages/utils.ts
+index e14afaa2cf..b8738cbf64 100644
+--- a/packages/wrangler/src/pages/utils.ts
++++ b/packages/wrangler/src/pages/utils.ts
+@@ -1,6 +1,6 @@
+ import path from "node:path";
++import { getWranglerTmpDir } from "@cloudflare/workers-utils";
+ import * as find from "empathic/find";
+-import { getWranglerTmpDir } from "../paths";
+ import type { BundleResult } from "../deployment-bundle/bundle";
+ 
+ export const RUNNING_BUILDERS: BundleResult[] = [];
+diff --git a/packages/wrangler/src/paths.ts b/packages/wrangler/src/paths.ts
+index f822d448cf..1ac2de8802 100644
+--- a/packages/wrangler/src/paths.ts
++++ b/packages/wrangler/src/paths.ts
+@@ -1,8 +1,5 @@
+ import { assert } from "node:console";
+-import fs from "node:fs";
+ import path from "node:path";
+-import { removeDirSync } from "@cloudflare/workers-utils";
+-import onExit from "signal-exit";
+ 
+ type DiscriminatedPath<Discriminator extends string> = string & {
+ 	_discriminator: Discriminator;
+@@ -72,110 +69,3 @@ export function getBasePath(): string {
+ 	// eslint-disable-next-line no-restricted-globals
+ 	return path.resolve(__dirname, __RELATIVE_PACKAGE_PATH__);
+ }
+-
+-/**
+- * A short-lived directory. Automatically removed when the process exits, but
+- * can be removed earlier by calling `remove()`.
+- */
+-export interface EphemeralDirectory {
+-	path: string;
+-	remove(): void;
+-}
+-
+-/**
+- * Gets the path to the project's `.wrangler` folder.
+- */
+-export function getWranglerHiddenDirPath(
+-	projectRoot: string | undefined
+-): string {
+-	projectRoot ??= process.cwd();
+-	return path.join(projectRoot, ".wrangler");
+-}
+-
+-/**
+- * Maximum age of a `.wrangler/tmp/*` entry before we treat it as orphaned and
+- * eligible for the startup sweep. Tuned to avoid touching any directory a
+- * concurrent wrangler session might still own.
+- */
+-const STALE_WRANGLER_TMP_DIR_MS = 24 * 60 * 60 * 1000;
+-
+-/**
+- * Tracks tmp roots already swept by this process so repeated
+- * `getWranglerTmpDir` calls within one wrangler invocation only scan once.
+- */
+-const sweptTmpRoots = new Set<string>();
+-
+-/**
+- * Removes stale `.wrangler/tmp/*` entries left behind by previous wrangler
+- * sessions that exited abnormally (SIGKILL, OOM, host crash) and so missed
+- * the `signal-exit` cleanup. Runs at most once per tmp root per process.
+- *
+- * Exported for tests.
+- */
+-export function sweepStaleWranglerTmpDirs(tmpRoot: string): void {
+-	if (sweptTmpRoots.has(tmpRoot)) {
+-		return;
+-	}
+-	sweptTmpRoots.add(tmpRoot);
+-
+-	let entries: fs.Dirent[];
+-	try {
+-		entries = fs.readdirSync(tmpRoot, { withFileTypes: true });
+-	} catch {
+-		return;
+-	}
+-
+-	const cutoff = Date.now() - STALE_WRANGLER_TMP_DIR_MS;
+-	for (const entry of entries) {
+-		if (!entry.isDirectory()) {
+-			continue;
+-		}
+-		const entryPath = path.join(tmpRoot, entry.name);
+-		try {
+-			if (fs.statSync(entryPath).mtimeMs < cutoff) {
+-				removeDirSync(entryPath);
+-			}
+-		} catch {
+-			/* best effort — another process may have removed it first */
+-		}
+-	}
+-}
+-
+-/**
+- * Gets a temporary directory in the project's `.wrangler` folder with the
+- * specified prefix. We create temporary directories in `.wrangler` as opposed
+- * to the OS's temporary directory to avoid issues with different drive letters
+- * on Windows. For example, when `esbuild` outputs a file to a different drive
+- * than the input sources, the generated source maps are incorrect.
+- */
+-export function getWranglerTmpDir(
+-	projectRoot: string | undefined,
+-	prefix: string,
+-	cleanup = true
+-): EphemeralDirectory {
+-	const tmpRoot = path.join(getWranglerHiddenDirPath(projectRoot), "tmp");
+-	fs.mkdirSync(tmpRoot, { recursive: true });
+-	sweepStaleWranglerTmpDirs(tmpRoot);
+-
+-	const tmpPrefix = path.join(tmpRoot, `${prefix}-`);
+-	const tmpDir = fs.realpathSync(fs.mkdtempSync(tmpPrefix));
+-
+-	const cleanupDir = () => {
+-		if (cleanup) {
+-			try {
+-				removeDirSync(tmpDir);
+-			} catch {
+-				/* best effort */
+-			}
+-		}
+-	};
+-	const removeExitListener = onExit(cleanupDir);
+-
+-	return {
+-		path: tmpDir,
+-		remove() {
+-			removeExitListener();
+-			cleanupDir();
+-		},
+-	};
+-}
+diff --git a/packages/wrangler/src/sites.ts b/packages/wrangler/src/sites.ts
+index f34c18fa6b..c109fdd7a0 100644
+--- a/packages/wrangler/src/sites.ts
++++ b/packages/wrangler/src/sites.ts
+@@ -18,7 +18,11 @@ import {
+ } from "./kv/helpers";
+ import { logger, LOGGER_LEVELS } from "./logger";
+ import type { KeyValue } from "./kv/helpers";
+-import type { ComplianceConfig, Config } from "@cloudflare/workers-utils";
++import type {
++	ComplianceConfig,
++	Config,
++	LegacyAssetPaths,
++} from "@cloudflare/workers-utils";
+ import type { XXHashAPI } from "xxhash-wasm";
+ 
+ /** Paths to always ignore. */
+@@ -441,30 +445,6 @@ function urlSafe(filePath: string): string {
+ 	return filePath.replace(/\\/g, "/");
+ }
+ 
+-/**
+- * Information about the assets that should be uploaded
+- */
+-export interface LegacyAssetPaths {
+-	/**
+-	 * Absolute path to the root of the project.
+-	 *
+-	 * This is the directory containing wrangler.toml or cwd if no config.
+-	 */
+-	baseDirectory: string;
+-	/**
+-	 * The path to the assets directory, relative to the `baseDirectory`.
+-	 */
+-	assetDirectory: string;
+-	/**
+-	 * An array of patterns that match files that should be uploaded.
+-	 */
+-	includePatterns: string[];
+-	/**
+-	 * An array of patterns that match files that should not be uploaded.
+-	 */
+-	excludePatterns: string[];
+-}
+-
+ /**
+  * Get an object that describes what site assets to upload, if any.
+  *
+diff --git a/packages/wrangler/src/triggers/deploy.ts b/packages/wrangler/src/triggers/deploy.ts
+index 3db53ec49c..2dec82f7c9 100644
+--- a/packages/wrangler/src/triggers/deploy.ts
++++ b/packages/wrangler/src/triggers/deploy.ts
+@@ -19,9 +19,8 @@ import { ensureQueuesExistByConfig } from "../queues/client";
+ import { getWorkersDevSubdomain } from "../routes";
+ import { retryOnAPIFailure } from "../utils/retry";
+ import { getZoneForRoute } from "../zones";
+-import type { AssetsOptions } from "../assets";
+ import type { RouteObject } from "../deploy/deploy";
+-import type { Config, Route } from "@cloudflare/workers-utils";
++import type { AssetsOptions, Config, Route } from "@cloudflare/workers-utils";
+ 
+ type Props = {
+ 	config: Config;
+diff --git a/packages/wrangler/src/triggers/index.ts b/packages/wrangler/src/triggers/index.ts
+index 7c83015870..01141ad89b 100644
+--- a/packages/wrangler/src/triggers/index.ts
++++ b/packages/wrangler/src/triggers/index.ts
+@@ -50,6 +50,13 @@ export const triggersDeployCommand = createCommand({
+ 			describe: "Use legacy environments",
+ 			hidden: true,
+ 		},
++		"experimental-deploy-helpers": {
++			describe: "Experimental: Gates refactored deploy/upload path",
++			type: "boolean",
++			default: false,
++			hidden: true,
++			alias: ["x-deploy-helpers"],
++		},
+ 	},
+ 	behaviour: {
+ 		warnIfMultipleEnvsConfiguredButNoneSpecified: true,
+diff --git a/packages/wrangler/src/type-generation/helpers.ts b/packages/wrangler/src/type-generation/helpers.ts
+index e6f66c2983..abf0b7dc0b 100644
+--- a/packages/wrangler/src/type-generation/helpers.ts
++++ b/packages/wrangler/src/type-generation/helpers.ts
+@@ -10,8 +10,7 @@ import { getEntry } from "../deployment-bundle/entry";
+ import { logger } from "../logger";
+ import { generateRuntimeTypes } from "./runtime";
+ import { generateEnvTypes } from ".";
+-import type { Entry } from "../deployment-bundle/entry";
+-import type { Config } from "@cloudflare/workers-utils";
++import type { Config, Entry } from "@cloudflare/workers-utils";
+ 
+ export const DEFAULT_WORKERS_TYPES_FILE_NAME = "worker-configuration.d.ts";
+ export const DEFAULT_WORKERS_TYPES_FILE_PATH = `./${DEFAULT_WORKERS_TYPES_FILE_NAME}`;
+diff --git a/packages/wrangler/src/type-generation/index.ts b/packages/wrangler/src/type-generation/index.ts
+index 0eb549b291..c371d77c1e 100644
+--- a/packages/wrangler/src/type-generation/index.ts
++++ b/packages/wrangler/src/type-generation/index.ts
+@@ -31,9 +31,9 @@ import {
+ import { fetchPipelineTypes } from "./pipeline-schema";
+ import { generateRuntimeTypes } from "./runtime";
+ import { logRuntimeTypesMessage } from "./runtime/log-runtime-types-message";
+-import type { Entry } from "../deployment-bundle/entry";
+ import type {
+ 	Config,
++	Entry,
+ 	RawConfig,
+ 	RawEnvironment,
+ } from "@cloudflare/workers-utils";
+diff --git a/packages/wrangler/src/utils/friendly-validator-errors.ts b/packages/wrangler/src/utils/friendly-validator-errors.ts
+index 14a5c4175d..1b22e84c7a 100644
+--- a/packages/wrangler/src/utils/friendly-validator-errors.ts
++++ b/packages/wrangler/src/utils/friendly-validator-errors.ts
+@@ -1,10 +1,9 @@
+ import { writeFile } from "node:fs/promises";
+ import path from "node:path";
+-import { ParseError } from "@cloudflare/workers-utils";
++import { getWranglerTmpDir, ParseError } from "@cloudflare/workers-utils";
+ import dedent from "ts-dedent";
+ import { analyseBundle } from "../check/commands";
+ import { logger } from "../logger";
+-import { getWranglerTmpDir } from "../paths";
+ import type { Metafile } from "esbuild";
+ import type { FormData } from "undici";
+ 
+diff --git a/packages/wrangler/src/versions/upload.ts b/packages/wrangler/src/versions/upload.ts
+index f9fce15fac..e68554b0c7 100644
+--- a/packages/wrangler/src/versions/upload.ts
++++ b/packages/wrangler/src/versions/upload.ts
+@@ -11,6 +11,7 @@ import {
+ 	getCIGeneratePreviewAlias,
+ 	getCIOverrideName,
+ 	getWorkersCIBranchName,
++	getWranglerTmpDir,
+ 	ParseError,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+@@ -57,7 +58,6 @@ import { getMetricsUsageHeaders } from "../metrics";
+ import * as metrics from "../metrics";
+ import { isNavigatorDefined } from "../navigator-user-agent";
+ import { writeOutput } from "../output";
+-import { getWranglerTmpDir } from "../paths";
+ import { ensureQueuesExistByConfig } from "../queues/client";
+ import { getWorkersDevSubdomain } from "../routes";
+ import { parseBulkInputToObject } from "../secret";
+@@ -76,10 +76,13 @@ import { retryOnAPIFailure } from "../utils/retry";
+ import { useServiceEnvironments } from "../utils/useServiceEnvironments";
+ import { isWorkerNotFoundError } from "../utils/worker-not-found-error";
+ import { patchNonVersionedScriptSettings } from "./api";
+-import type { AssetsOptions } from "../assets";
+-import type { Entry } from "../deployment-bundle/entry";
+ import type { RetrieveSourceMapFunction } from "../sourcemap";
+-import type { CfWorkerInit, Config } from "@cloudflare/workers-utils";
++import type {
++	AssetsOptions,
++	CfWorkerInit,
++	Config,
++	Entry,
++} from "@cloudflare/workers-utils";
+ import type { FormData } from "undici";
+ 
+ type Props = {
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index acded701f8..d26ca5a7b9 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -48,6 +48,9 @@ catalogs:
+     playwright-chromium:
+       specifier: ^1.56.1
+       version: 1.56.1
++    signal-exit:
++      specifier: ^3.0.7
++      version: 3.0.7
+     smol-toml:
+       specifier: ^1.5.2
+       version: 1.5.2
+@@ -1784,6 +1787,36 @@ importers:
+         specifier: ^17.7.2
+         version: 17.7.2
+ 
++  packages/deploy-helpers:
++    devDependencies:
++      '@cloudflare/containers-shared':
++        specifier: workspace:*
++        version: link:../containers-shared
++      '@cloudflare/workers-tsconfig':
++        specifier: workspace:*
++        version: link:../workers-tsconfig
++      '@cloudflare/workers-utils':
++        specifier: workspace:*
++        version: link:../workers-utils
++      '@types/node':
++        specifier: ^22.10.1
++        version: 22.15.17
++      concurrently:
++        specifier: ^8.2.2
++        version: 8.2.2
++      miniflare:
++        specifier: workspace:*
++        version: link:../miniflare
++      tsup:
++        specifier: 8.3.0
++        version: 8.3.0(@microsoft/api-extractor@7.52.8(@types/node@22.15.17))(jiti@2.6.1)(postcss@8.5.14)(supports-color@9.2.2)(tsx@4.21.0)(typescript@5.8.3)(yaml@2.8.1)
++      typescript:
++        specifier: catalog:default
++        version: 5.8.3
++      vitest:
++        specifier: catalog:default
++        version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@22.15.17)(@vitest/ui@4.1.0)(msw@2.12.4(@types/node@22.15.17)(typescript@5.8.3))(vite@8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1))
++
+   packages/devprod-status-bot:
+     devDependencies:
+       '@cloudflare/workers-types':
+@@ -3849,6 +3882,9 @@ importers:
+       '@types/node':
+         specifier: ^22.10.1
+         version: 22.15.17
++      '@types/signal-exit':
++        specifier: ^3.0.1
++        version: 3.0.1
+       '@vitest/ui':
+         specifier: catalog:default
+         version: 4.1.0(vitest@4.1.0)
+@@ -3867,6 +3903,9 @@ importers:
+       jsonc-parser:
+         specifier: catalog:default
+         version: 3.2.0
++      signal-exit:
++        specifier: catalog:default
++        version: 3.0.7
+       smol-toml:
+         specifier: catalog:default
+         version: 1.5.2
+@@ -3971,6 +4010,9 @@ importers:
+       '@cloudflare/containers-shared':
+         specifier: workspace:*
+         version: link:../containers-shared
++      '@cloudflare/deploy-helpers':
++        specifier: workspace:*
++        version: link:../deploy-helpers
+       '@cloudflare/pages-shared':
+         specifier: workspace:^
+         version: link:../pages-shared
+@@ -4182,7 +4224,7 @@ importers:
+         specifier: ^1.8.1
+         version: 1.8.1
+       signal-exit:
+-        specifier: ^3.0.7
++        specifier: catalog:default
+         version: 3.0.7
+       smol-toml:
+         specifier: catalog:default
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index f86ef8b35f..5fa07e1b4a 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -122,6 +122,7 @@ catalog:
+   "capnweb": "^0.5.0"
+   "ci-info": "^4.4.0"
+   "open": "^11.0.0"
++  "signal-exit": "^3.0.7"
+   # CAUTION: Most usage of @cloudflare/vitest-pool-workers in this monorepo should use workspace:* instead of this catalog version
+   # However, some packages (pages-shared, workers-shared, etc...) need to be tested using vitest-pool-workers but are themselves
+   # ultimately included in vitest-pool-workers (through Wrangler), causing a circular dependency.
+diff --git a/tools/deployments/__tests__/validate-changesets.test.ts b/tools/deployments/__tests__/validate-changesets.test.ts
+index b549fde1ac..81ee3c5efb 100644
+--- a/tools/deployments/__tests__/validate-changesets.test.ts
++++ b/tools/deployments/__tests__/validate-changesets.test.ts
+@@ -26,6 +26,7 @@ describe("findPackageNames()", () => {
+ 				"@cloudflare/cli-shared-helpers",
+ 				"@cloudflare/codemod",
+ 				"@cloudflare/containers-shared",
++				"@cloudflare/deploy-helpers",
+ 				"@cloudflare/devprod-status-bot",
+ 				"@cloudflare/edge-preview-authenticated-proxy",
+ 				"@cloudflare/lint-config-shared",

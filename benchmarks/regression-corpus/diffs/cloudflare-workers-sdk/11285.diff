@@ -1,0 +1,4810 @@
+diff --git a/.changeset/many-lands-allow.md b/.changeset/many-lands-allow.md
+new file mode 100644
+index 0000000000..085a55b194
+--- /dev/null
++++ b/.changeset/many-lands-allow.md
+@@ -0,0 +1,21 @@
++---
++"wrangler": minor
++---
++
++Implement the `wrangler r2 bulk put bucket-name --filename list.json` command.
++
++The command uploads multiple objects to an R2 bucket.
++
++The list of object is provided as a JSON encoded file via `--filename`. It is a list of key and file (respectively the name and the content for the object).
++
++```
++[
++  { "key": "/path/to/obj", "file": "/path/to/file_1"},
++  { "key": "/path/to/other/obj", "file": "/path/to/file_2"},
++  // ...
++]
++```
++
++Uploads are executed concurrently and the level of concurrency can be set via `--concurrency`.
++
++The command supports the same options as `wrangler r2 object put`, minus `--file`, and `--pipe` and plus `--concurrency`
+diff --git a/packages/wrangler/e2e/r2.test.ts b/packages/wrangler/e2e/r2.test.ts
+index dde6d82a95..ecae826752 100644
+--- a/packages/wrangler/e2e/r2.test.ts
++++ b/packages/wrangler/e2e/r2.test.ts
+@@ -48,6 +48,25 @@ describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)("r2", () => {
+ 		`);
+ 	});
+ 
++	it("batch create objects", async () => {
++		await helper.seed({
++			"file1.txt": fileContents,
++			"file2.txt": fileContents,
++			"list.json": JSON.stringify([
++				{ key: "file1", file: "file1.txt" },
++				{ key: "file2", file: "file2.txt" },
++			]),
++		});
++		const output = await helper.run(
++			`wrangler r2 bulk put ${bucketName} --filename list.json --remote`
++		);
++		expect(normalize(output.stdout)).toMatchInlineSnapshot(`
++			"Resource location: remote
++			Starting bulk upload of 2 objects to bucket tmp-e2e-r2-00000000-0000-0000-0000-000000000000 using a concurrency of 20
++			Uploaded 100% (2 out of 2)"
++		`);
++	});
++
+ 	it("download object", async () => {
+ 		const output = await helper.run(
+ 			`wrangler r2 object get ${bucketName}/testr2 --file test-r2o.txt --remote`
+@@ -65,6 +84,8 @@ describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)("r2", () => {
+ 	});
+ 
+ 	it("delete object", async () => {
++		await helper.run(`wrangler r2 object delete ${bucketName}/file1 --remote`);
++		await helper.run(`wrangler r2 object delete ${bucketName}/file2 --remote`);
+ 		const output = await helper.run(
+ 			`wrangler r2 object delete ${bucketName}/testr2 --remote`
+ 		);
+@@ -84,10 +105,12 @@ describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)("r2", () => {
+ 
+ 	it("delete bucket", async () => {
+ 		const output = await helper.run(`wrangler r2 bucket delete ${bucketName}`);
+-		expect(normalize(output.stdout)).toMatchInlineSnapshot(`
++		expect(normalize(output.stdout)).toMatchInlineSnapshot(
++			`
+ 			"Deleting bucket tmp-e2e-r2-00000000-0000-0000-0000-000000000000.
+ 			Deleted bucket tmp-e2e-r2-00000000-0000-0000-0000-000000000000."
+-		`);
++		`
++		);
+ 	});
+ 
+ 	it("check bucket deleted", async () => {
+diff --git a/packages/wrangler/src/__tests__/helpers/msw/handlers/r2.ts b/packages/wrangler/src/__tests__/helpers/msw/handlers/r2.ts
+index 1ab1edb554..2eecb51e81 100644
+--- a/packages/wrangler/src/__tests__/helpers/msw/handlers/r2.ts
++++ b/packages/wrangler/src/__tests__/helpers/msw/handlers/r2.ts
+@@ -69,15 +69,36 @@ export const mswR2handlers = [
+ 	),
+ 	http.put(
+ 		"*/accounts/:accountId/r2/buckets/:bucketName/objects/:objectName",
+-		() =>
+-			HttpResponse.json(
++		({ params }) => {
++			const { accountId, bucketName, objectName } = params;
++			return HttpResponse.json(
+ 				createFetchResult({
+-					accountId: "some-account-id",
+-					bucketName: "bucketName-object-test",
+-					objectName: "wormhole-img.png",
++					accountId,
++					bucketName,
++					objectName,
+ 				})
+-			),
+-		{ once: true }
++			);
++		},
++		{
++			once: true,
++		}
++	),
++	http.put(
++		"*/accounts/:accountId/r2/buckets/bulk-buket/objects/:objectName",
++		({ params }) => {
++			const { accountId, objectName } = params;
++			return HttpResponse.json(
++				createFetchResult({
++					accountId,
++					bucketName: "bulk-buket",
++					objectName,
++				})
++			);
++		},
++		{
++			// false to support bulk uploads in tests
++			once: false,
++		}
+ 	),
+ 	http.delete(
+ 		"*/accounts/:accountId/r2/buckets/:bucketName/objects/:objectName",
+diff --git a/packages/wrangler/src/__tests__/index.test.ts b/packages/wrangler/src/__tests__/index.test.ts
+index 37a2984eee..4eb4cec5e0 100644
+--- a/packages/wrangler/src/__tests__/index.test.ts
++++ b/packages/wrangler/src/__tests__/index.test.ts
+@@ -301,6 +301,7 @@ describe("wrangler", () => {
+ 				  wrangler r2 object  Manage R2 objects
+ 				  wrangler r2 bucket  Manage R2 buckets
+ 				  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
++				  wrangler r2 bulk    Interact with multiple R2 objects at once
+ 
+ 				GLOBAL FLAGS
+ 				  -c, --config    Path to Wrangler configuration file  [string]
+diff --git a/packages/wrangler/src/__tests__/r2.local.test.ts b/packages/wrangler/src/__tests__/r2.local.test.ts
+index e206c8148c..4ad6add2e3 100644
+--- a/packages/wrangler/src/__tests__/r2.local.test.ts
++++ b/packages/wrangler/src/__tests__/r2.local.test.ts
+@@ -14,7 +14,7 @@ describe("r2", () => {
+ 
+ 	describe("r2 object", () => {
+ 		describe("local", () => {
+-			it("should put R2 object from local bucket", async () => {
++			it("should put R2 object to a local bucket", async () => {
+ 				await expect(() =>
+ 					runWrangler(
+ 						`r2 object get bucket-object-test/wormhole-img.png --file ./wormhole-img.png `
+@@ -82,6 +82,127 @@ describe("r2", () => {
+ 				`);
+ 			});
+ 
++			it("should bulk put R2 objects to a local bucket", async () => {
++				await expect(() =>
++					runWrangler(
++						`r2 object get bucket-object-test/wormhole-img.png --file ./wormhole-img.png `
++					)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The specified key does not exist.]`
++				);
++
++				await expect(() =>
++					runWrangler(
++						`r2 object get bucket-object-test/wormhole-img.png --file ./nebula-img.png`
++					)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The specified key does not exist.]`
++				);
++
++				fs.writeFileSync("wormhole-img.png", "passageway");
++				fs.writeFileSync("nebula-img.png", "nebula");
++				fs.writeFileSync(
++					"list.json",
++					JSON.stringify([
++						{
++							key: "wormhole-img.png",
++							file: "wormhole-img.png",
++						},
++						{
++							key: "nebula-img.png",
++							file: "nebula-img.png",
++						},
++					])
++				);
++				await runWrangler(
++					`r2 bulk put bucket-object-test --filename ./list.json`
++				);
++				expect(std.out).toMatchInlineSnapshot(`
++					"
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Downloading \\"wormhole-img.png\\" from \\"bucket-object-test\\".
++
++
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Downloading \\"wormhole-img.png\\" from \\"bucket-object-test\\".
++
++
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Starting bulk upload of 2 objects to bucket bucket-object-test using a concurrency of 20
++					Uploaded 100% (2 out of 2)"
++				`);
++
++				await runWrangler(
++					`r2 object get bucket-object-test/wormhole-img.png --file ./wormhole-img.png `
++				);
++				await runWrangler(
++					`r2 object get bucket-object-test/wormhole-img.png --file ./wormhole-img.png `
++				);
++
++				expect(std.out).toMatchInlineSnapshot(`
++					"
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Downloading \\"wormhole-img.png\\" from \\"bucket-object-test\\".
++
++
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Downloading \\"wormhole-img.png\\" from \\"bucket-object-test\\".
++
++
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Starting bulk upload of 2 objects to bucket bucket-object-test using a concurrency of 20
++					Uploaded 100% (2 out of 2)
++
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Downloading \\"wormhole-img.png\\" from \\"bucket-object-test\\".
++					Download complete.
++
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: local
++
++					Use --remote if you want to access the remote instance.
++
++					Downloading \\"wormhole-img.png\\" from \\"bucket-object-test\\".
++					Download complete."
++				`);
++			});
++
+ 			it("should delete R2 object from local bucket", async () => {
+ 				fs.writeFileSync("wormhole-img.png", "passageway");
+ 				await runWrangler(
+diff --git a/packages/wrangler/src/__tests__/r2.test.ts b/packages/wrangler/src/__tests__/r2.test.ts
+index 98f6ae481a..c423a4a326 100644
+--- a/packages/wrangler/src/__tests__/r2.test.ts
++++ b/packages/wrangler/src/__tests__/r2.test.ts
+@@ -1,8 +1,8 @@
+ import * as fs from "node:fs";
+ import { writeFileSync } from "node:fs";
+ import { http, HttpResponse } from "msw";
+-import { MAX_UPLOAD_SIZE } from "../r2/constants";
+-import { actionsForEventCategories } from "../r2/helpers";
++import { MAX_UPLOAD_SIZE_BYTES } from "../r2/constants";
++import { actionsForEventCategories } from "../r2/helpers/notification";
+ import { endEventLoop } from "./helpers/end-event-loop";
+ import { mockAccountId, mockApiToken } from "./helpers/mock-account-id";
+ import { mockConsoleMethods } from "./helpers/mock-console";
+@@ -12,12 +12,12 @@ import { createFetchResult, msw, mswR2handlers } from "./helpers/msw";
+ import { runInTempDir } from "./helpers/run-in-tmp";
+ import { runWrangler } from "./helpers/run-wrangler";
+ import { writeWranglerConfig } from "./helpers/write-wrangler-config";
++import type { BucketLockRule } from "../r2/helpers/bucket";
+ import type {
+-	BucketLockRule,
+ 	PutNotificationRequestBody,
+ 	R2EventableOperation,
+ 	R2EventType,
+-} from "../r2/helpers";
++} from "../r2/helpers/notification";
+ 
+ function mockBucketLockPutNew(bucketName: string, rules: BucketLockRule[]) {
+ 	mockBucketLockPutWithExistingRules(bucketName, [], rules);
+@@ -100,6 +100,7 @@ describe("r2", () => {
+ 			  wrangler r2 object  Manage R2 objects
+ 			  wrangler r2 bucket  Manage R2 buckets
+ 			  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
++			  wrangler r2 bulk    Interact with multiple R2 objects at once
+ 
+ 			GLOBAL FLAGS
+ 			  -c, --config    Path to Wrangler configuration file  [string]
+@@ -131,6 +132,7 @@ describe("r2", () => {
+ 			  wrangler r2 object  Manage R2 objects
+ 			  wrangler r2 bucket  Manage R2 buckets
+ 			  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
++			  wrangler r2 bulk    Interact with multiple R2 objects at once
+ 
+ 			GLOBAL FLAGS
+ 			  -c, --config    Path to Wrangler configuration file  [string]
+@@ -3829,7 +3831,7 @@ describe("r2", () => {
+ 				"should fail to upload R2 object to bucket if too large",
+ 				{ timeout: 30_000 },
+ 				async () => {
+-					const TOO_BIG_FILE_SIZE = MAX_UPLOAD_SIZE + 1024 * 1024;
++					const TOO_BIG_FILE_SIZE = MAX_UPLOAD_SIZE_BYTES + 1024 * 1024;
+ 					fs.writeFileSync("wormhole-img.png", Buffer.alloc(TOO_BIG_FILE_SIZE));
+ 					await expect(
+ 						runWrangler(
+@@ -3957,4 +3959,249 @@ describe("r2", () => {
+ 			});
+ 		});
+ 	});
++
++	describe("r2 bulk", () => {
++		it("should show help when the bulk command is passed", async () => {
++			await runWrangler("r2 bulk");
++			await endEventLoop();
++			expect(std.out).toMatchInlineSnapshot(`
++				"wrangler r2 bulk
++
++				Interact with multiple R2 objects at once
++
++				COMMANDS
++				  wrangler r2 bulk put <bucket>  Create objects in an R2 bucket
++
++				GLOBAL FLAGS
++				  -c, --config    Path to Wrangler configuration file  [string]
++				      --cwd       Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
++				  -e, --env       Environment to use for operations, and for selecting .env and .dev.vars files  [string]
++				      --env-file  Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
++				  -h, --help      Show help  [boolean]
++				  -v, --version   Show version number  [boolean]"
++			`);
++		});
++
++		describe("remote", () => {
++			// Only login for remote tests, local tests shouldn't require auth
++			mockAccountId();
++			mockApiToken();
++
++			it("should bulk upload R2 objects to bucket", async () => {
++				fs.writeFileSync("wormhole-img.png", "passageway");
++				fs.writeFileSync("nebula-img.png", "cosmos");
++				fs.writeFileSync(
++					"list.json",
++					JSON.stringify([
++						{ key: "wormhole-img.png", file: "wormhole-img.png" },
++						{ key: "nebula-img.png", file: "nebula-img.png" },
++					])
++				);
++
++				await runWrangler(
++					`r2 bulk put bulk-buket --filename list.json --remote`
++				);
++
++				expect(std.out).toMatchInlineSnapshot(`
++					"
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: remote
++
++					Starting bulk upload of 2 objects to bucket bulk-buket using a concurrency of 20
++					Uploaded 100% (2 out of 2)"
++				`);
++			});
++
++			it("should bulk upload R2 with storage class to bucket", async () => {
++				fs.writeFileSync("wormhole-img.png", "passageway");
++				fs.writeFileSync("nebula-img.png", "cosmos");
++				fs.writeFileSync(
++					"list.json",
++					JSON.stringify([
++						{ key: "wormhole-img.png", file: "wormhole-img.png" },
++						{ key: "nebula-img.png", file: "nebula-img.png" },
++					])
++				);
++				await runWrangler(
++					`r2 bulk put bulk-buket --filename list.json --remote -s InfrequentAccess`
++				);
++
++				expect(std.out).toMatchInlineSnapshot(`
++					"
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: remote
++
++					Starting bulk upload of 2 objects to bucket bulk-buket with InfrequentAccess storage class using a concurrency of 20
++					Uploaded 100% (2 out of 2)"
++				`);
++			});
++
++			it("should fail to bulk upload R2 objects if the list doesn't exist", async () => {
++				await expect(
++					runWrangler(`r2 bulk put bulk-buket --filename no-list.json --remote`)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The file "no-list.json" does not exist.]`
++				);
++			});
++
++			it("should fail to bulk upload R2 objects if the list format is invalid", async () => {
++				fs.writeFileSync("bad-list.json", "[ invalid json }");
++				await expect(
++					runWrangler(
++						`r2 bulk put bulk-buket --filename bad-list.json --remote`
++					)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The file "bad-list.json" is not a valid JSON.]`
++				);
++			});
++
++			it("should fail to bulk upload R2 objects if the list contain invalid entries", async () => {
++				fs.writeFileSync(
++					"bad-list.json",
++					JSON.stringify([{ key: 123, file: [] }])
++				);
++				await expect(
++					runWrangler(
++						`r2 bulk put bulk-buket --filename bad-list.json --remote`
++					)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: Each entry in the file "bad-list.json" must be an object with "key" and "file" string properties.]`
++				);
++			});
++
++			it("should fail to bulk upload R2 objects if the list contain a non existent file", async () => {
++				fs.writeFileSync(
++					"bad-list.json",
++					JSON.stringify([{ key: "key", file: "not/a/file" }])
++				);
++				await expect(
++					runWrangler(
++						`r2 bulk put bulk-buket --filename bad-list.json --remote`
++					)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The file "not/a/file" does not exist.]`
++				);
++			});
++
++			it("should fail to bulk upload R2 objects if too large", async () => {
++				const TOO_BIG_FILE_SIZE = MAX_UPLOAD_SIZE_BYTES + 1024 * 1024;
++				fs.writeFileSync("big-img.png", Buffer.alloc(TOO_BIG_FILE_SIZE));
++				fs.writeFileSync(
++					"big-list.json",
++					JSON.stringify([{ key: "too-big", file: "big-img.png" }])
++				);
++				await expect(
++					runWrangler(
++						`r2 bulk put bulk-buket --filename big-list.json --remote`
++					)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The file "big-img.png" exceeds the maximum upload size of 300 MiB.]`
++				);
++			});
++
++			it("should fail to bulk upload R2 objects if the name is invalid", async () => {
++				fs.writeFileSync("wormhole-img.png", "passageway");
++				fs.writeFileSync("nebula-img.png", "cosmos");
++				fs.writeFileSync(
++					"list.json",
++					JSON.stringify([
++						{ key: "wormhole-img.png", file: "wormhole-img.png" },
++						{ key: "nebula-img.png", file: "nebula-img.png" },
++					])
++				);
++
++				await expect(
++					runWrangler(`r2 bulk put BUCKET --filename list.json --remote`)
++				).rejects.toThrowErrorMatchingInlineSnapshot(
++					`[Error: The bucket name "BUCKET" is invalid. Bucket names must begin and end with an alphanumeric character, only contain lowercase letters, numbers, and hyphens, and be between 3 and 63 characters long.]`
++				);
++			});
++
++			it("should pass all fetch option flags into requestInit & check request inputs", async () => {
++				msw.use(
++					http.put(
++						"*/accounts/:accountId/r2/buckets/bulk-buket/objects/:objectName",
++						({ request, params }) => {
++							const { accountId } = params;
++							expect(accountId).toEqual("some-account-id");
++							const headersObject = Object.fromEntries(
++								request.headers.entries()
++							);
++							delete headersObject["user-agent"];
++							//This is removed because jest-fetch-mock does not support ReadableStream request bodies and has an incorrect body and content-length
++							delete headersObject["content-length"];
++							expect(headersObject).toMatchInlineSnapshot(`
++						Object {
++						  "authorization": "Bearer some-api-token",
++						  "cache-control": "cache-control-mock",
++						  "content-disposition": "content-disposition-mock",
++						  "content-encoding": "content-encoding-mock",
++						  "content-language": "content-lang-mock",
++						  "content-type": "content-type-mock",
++						  "expires": "expire-time-mock",
++						}
++					`);
++							return HttpResponse.json(
++								createFetchResult({
++									accountId: "some-account-id",
++									bucketName: "bucket-object-test",
++									objectName: "wormhole-img.png",
++								})
++							);
++						},
++						{ once: false }
++					)
++				);
++				fs.writeFileSync("wormhole-img.png", "passageway");
++				fs.writeFileSync("nebula-img.png", "cosmos");
++				fs.writeFileSync(
++					"list.json",
++					JSON.stringify([
++						{ key: "wormhole-img.png", file: "wormhole-img.png" },
++						{ key: "nebula-img.png", file: "nebula-img.png" },
++					])
++				);
++				const flags =
++					"--ct content-type-mock --cd content-disposition-mock --ce content-encoding-mock --cl content-lang-mock --cc cache-control-mock --expires expire-time-mock";
++
++				await runWrangler(
++					`r2 bulk put bulk-buket --remote --filename list.json ${flags}`
++				);
++
++				expect(std.out).toMatchInlineSnapshot(`
++					"
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Resource location: remote
++
++					Starting bulk upload of 2 objects to bucket bulk-buket using a concurrency of 20
++					Uploaded 100% (2 out of 2)"
++				`);
++			});
++
++			it("should allow --env and --expires to be used together without conflict", async () => {
++				fs.writeFileSync("wormhole-img.png", "passageway");
++				fs.writeFileSync("nebula-img.png", "cosmos");
++				fs.writeFileSync(
++					"list.json",
++					JSON.stringify([
++						{ key: "wormhole-img.png", file: "wormhole-img.png" },
++						{ key: "nebula-img.png", file: "nebula-img.png" },
++					])
++				);
++				writeWranglerConfig({
++					env: {
++						production: {},
++					},
++				});
++				await runWrangler(
++					`r2 bulk put bulk-buket --remote --filename list.json --env production --expires 2024-12-31`
++				);
++
++				expect(std.out).toContain("Uploaded 100%");
++			});
++		});
++	});
+ });
+diff --git a/packages/wrangler/src/__tests__/r2/bucket.test.ts b/packages/wrangler/src/__tests__/r2/bucket.test.ts
+index 2de8ef690a..cd536a04fb 100644
+--- a/packages/wrangler/src/__tests__/r2/bucket.test.ts
++++ b/packages/wrangler/src/__tests__/r2/bucket.test.ts
+@@ -1,10 +1,10 @@
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+-import { getR2Bucket, getR2BucketMetrics } from "../../r2/helpers";
++import { getR2Bucket, getR2BucketMetrics } from "../../r2/helpers/bucket";
+ import { requireAuth } from "../../user";
+ import { mockConsoleMethods } from "../helpers/mock-console";
+ import { runWrangler } from "../helpers/run-wrangler";
+ 
+-vi.mock("../../r2/helpers");
++vi.mock("../../r2/helpers/bucket");
+ vi.mock("../../user");
+ 
+ const logs = mockConsoleMethods();
+diff --git a/packages/wrangler/src/__tests__/r2/helpers.test.ts b/packages/wrangler/src/__tests__/r2/helpers/notification.test.ts
+similarity index 86%
+rename from packages/wrangler/src/__tests__/r2/helpers.test.ts
+rename to packages/wrangler/src/__tests__/r2/helpers/notification.test.ts
+index 85ced6165a..8d4a81b456 100644
+--- a/packages/wrangler/src/__tests__/r2/helpers.test.ts
++++ b/packages/wrangler/src/__tests__/r2/helpers/notification.test.ts
+@@ -1,12 +1,12 @@
+-import { logger } from "../../logger";
++import { logger } from "../../../logger";
+ import {
+ 	eventNotificationHeaders,
+ 	tableFromNotificationGetResponse,
+-} from "../../r2/helpers";
+-import formatLabelledValues from "../../utils/render-labelled-values";
+-import { mockConsoleMethods } from "../helpers/mock-console";
+-import type { GetNotificationConfigResponse } from "../../r2/helpers";
+-import type { ApiCredentials } from "../../user";
++} from "../../../r2/helpers/notification";
++import formatLabelledValues from "../../../utils/render-labelled-values";
++import { mockConsoleMethods } from "../../helpers/mock-console";
++import type { GetNotificationConfigResponse } from "../../../r2/helpers/notification";
++import type { ApiCredentials } from "../../../user";
+ 
+ describe("event notifications", () => {
+ 	const std = mockConsoleMethods();
+diff --git a/packages/wrangler/src/deployment-bundle/bindings.ts b/packages/wrangler/src/deployment-bundle/bindings.ts
+index 0a882cbfba..2f904eb2bd 100644
+--- a/packages/wrangler/src/deployment-bundle/bindings.ts
++++ b/packages/wrangler/src/deployment-bundle/bindings.ts
+@@ -16,7 +16,11 @@ import { isNonInteractiveOrCI } from "../is-interactive";
+ import { createKVNamespace, listKVNamespaces } from "../kv/helpers";
+ import { logger } from "../logger";
+ import * as metrics from "../metrics";
+-import { createR2Bucket, getR2Bucket, listR2Buckets } from "../r2/helpers";
++import {
++	createR2Bucket,
++	getR2Bucket,
++	listR2Buckets,
++} from "../r2/helpers/bucket";
+ import { printBindings } from "../utils/print-bindings";
+ import { useServiceEnvironments } from "../utils/useServiceEnvironments";
+ import type { ComplianceConfig } from "../environment-variables/misc-variables";
+diff --git a/packages/wrangler/src/index.ts b/packages/wrangler/src/index.ts
+index f6077babcc..8dad70cbc2 100644
+--- a/packages/wrangler/src/index.ts
++++ b/packages/wrangler/src/index.ts
+@@ -235,6 +235,8 @@ import {
+ 	r2BucketNotificationNamespace,
+ } from "./r2/notification";
+ import {
++	r2BulkNamespace,
++	r2BulkPutCommand,
+ 	r2ObjectDeleteCommand,
+ 	r2ObjectGetCommand,
+ 	r2ObjectNamespace,
+@@ -991,6 +993,14 @@ export function createCLIParser(argv: string[]) {
+ 			command: "wrangler r2 sql query",
+ 			definition: r2SqlQueryCommand,
+ 		},
++		{
++			command: "wrangler r2 bulk",
++			definition: r2BulkNamespace,
++		},
++		{
++			command: "wrangler r2 bulk put",
++			definition: r2BulkPutCommand,
++		},
+ 	]);
+ 	registry.registerNamespace("r2");
+ 
+diff --git a/packages/wrangler/src/pipelines/client.ts b/packages/wrangler/src/pipelines/client.ts
+index 82adedb13d..0f026fe63e 100644
+--- a/packages/wrangler/src/pipelines/client.ts
++++ b/packages/wrangler/src/pipelines/client.ts
+@@ -9,7 +9,7 @@ import { logger } from "../logger";
+ import openInBrowser from "../open-in-browser";
+ import { requireAuth } from "../user";
+ import type { ComplianceConfig } from "../environment-variables/misc-variables";
+-import type { R2BucketInfo } from "../r2/helpers";
++import type { R2BucketInfo } from "../r2/helpers/bucket";
+ import type {
+ 	CreatePipelineRequest,
+ 	CreateSinkRequest,
+diff --git a/packages/wrangler/src/r2/bucket.ts b/packages/wrangler/src/r2/bucket.ts
+index 14d16b77b3..584b8ecbdf 100644
+--- a/packages/wrangler/src/r2/bucket.ts
++++ b/packages/wrangler/src/r2/bucket.ts
+@@ -21,9 +21,9 @@ import {
+ 	getR2Bucket,
+ 	getR2BucketMetrics,
+ 	listR2Buckets,
+-	tablefromR2BucketsListResponse,
++	tableFromR2BucketsListResponse,
+ 	updateR2BucketStorageClass,
+-} from "./helpers";
++} from "./helpers/bucket";
+ 
+ export const r2BucketNamespace = createNamespace({
+ 	metadata: {
+@@ -197,7 +197,7 @@ export const r2BucketListCommand = createCommand({
+ 		logger.log(`Listing buckets...`);
+ 
+ 		const buckets = await listR2Buckets(config, accountId, args.jurisdiction);
+-		const tableOutput = tablefromR2BucketsListResponse(buckets);
++		const tableOutput = tableFromR2BucketsListResponse(buckets);
+ 		logger.log(tableOutput.map((x) => formatLabelledValues(x)).join("\n\n"));
+ 	},
+ });
+diff --git a/packages/wrangler/src/r2/catalog.ts b/packages/wrangler/src/r2/catalog.ts
+index a99b22d201..723b8d450d 100644
+--- a/packages/wrangler/src/r2/catalog.ts
++++ b/packages/wrangler/src/r2/catalog.ts
+@@ -13,8 +13,8 @@ import {
+ 	enableR2CatalogCompaction,
+ 	enableR2CatalogTableCompaction,
+ 	getR2Catalog,
+-	upsertR2DataCatalogCredential,
+-} from "./helpers";
++	upsertR2CatalogCredential,
++} from "./helpers/catalog";
+ 
+ export const r2BucketCatalogNamespace = createNamespace({
+ 	metadata: {
+@@ -242,7 +242,7 @@ export const r2BucketCatalogCompactionEnableCommand = createCommand({
+ 				);
+ 			}
+ 
+-			await upsertR2DataCatalogCredential(
++			await upsertR2CatalogCredential(
+ 				config,
+ 				accountId,
+ 				args.bucket,
+diff --git a/packages/wrangler/src/r2/constants.ts b/packages/wrangler/src/r2/constants.ts
+index a5fd5447d8..e9831c1c38 100644
+--- a/packages/wrangler/src/r2/constants.ts
++++ b/packages/wrangler/src/r2/constants.ts
+@@ -1,5 +1,5 @@
+ /**
+  * The maximum file size we can upload using the V4 API.
+  */
+-export const MAX_UPLOAD_SIZE = 300 * 1024 * 1024;
++export const MAX_UPLOAD_SIZE_BYTES = 300 * 1024 * 1024;
+ export const LOCATION_CHOICES = ["weur", "eeur", "apac", "wnam", "enam", "oc"];
+diff --git a/packages/wrangler/src/r2/cors.ts b/packages/wrangler/src/r2/cors.ts
+index 88f32d78e1..941d61e4b2 100644
+--- a/packages/wrangler/src/r2/cors.ts
++++ b/packages/wrangler/src/r2/cors.ts
+@@ -10,8 +10,8 @@ import {
+ 	getCORSPolicy,
+ 	putCORSPolicy,
+ 	tableFromCORSPolicyResponse,
+-} from "./helpers";
+-import type { CORSRule } from "./helpers";
++} from "./helpers/bucket";
++import type { CORSRule } from "./helpers/bucket";
+ 
+ export const r2BucketCORSNamespace = createNamespace({
+ 	metadata: {
+diff --git a/packages/wrangler/src/r2/domain.ts b/packages/wrangler/src/r2/domain.ts
+index 9df6054047..3697b04224 100644
+--- a/packages/wrangler/src/r2/domain.ts
++++ b/packages/wrangler/src/r2/domain.ts
+@@ -10,7 +10,7 @@ import {
+ 	listCustomDomainsOfBucket,
+ 	removeCustomDomainFromBucket,
+ 	tableFromCustomDomainListResponse,
+-} from "./helpers";
++} from "./helpers/domain";
+ 
+ export const r2BucketDomainNamespace = createNamespace({
+ 	metadata: {
+diff --git a/packages/wrangler/src/r2/helpers.ts b/packages/wrangler/src/r2/helpers.ts
+deleted file mode 100644
+index a0dfb44d0f..0000000000
+--- a/packages/wrangler/src/r2/helpers.ts
++++ /dev/null
+@@ -1,1595 +0,0 @@
+-import {
+-	bucketFormatMessage,
+-	isValidR2BucketName,
+-	UserError,
+-} from "@cloudflare/workers-utils";
+-import { Miniflare } from "miniflare";
+-import prettyBytes from "pretty-bytes";
+-import { fetchGraphqlResult, fetchResult } from "../cfetch";
+-import { fetchR2Objects } from "../cfetch/internal";
+-import { getLocalPersistencePath } from "../dev/get-local-persistence-path";
+-import { getDefaultPersistRoot } from "../dev/miniflare";
+-import { logger } from "../logger";
+-import { getQueue, getQueueById } from "../queues/client";
+-import type { ComplianceConfig } from "../environment-variables/misc-variables";
+-import type { ApiCredentials } from "../user";
+-import type { R2Bucket } from "@cloudflare/workers-types/experimental";
+-import type { Config } from "@cloudflare/workers-utils";
+-import type { ReplaceWorkersTypes } from "miniflare";
+-import type { Readable } from "node:stream";
+-import type { ReadableStream } from "node:stream/web";
+-import type { HeadersInit } from "undici";
+-
+-/**
+- * Information about a bucket, returned from `listR2Buckets()`.
+- */
+-export interface R2BucketInfo {
+-	name: string;
+-	creation_date: string;
+-	location?: string;
+-	storage_class?: string;
+-}
+-
+-export interface R2BucketMetrics {
+-	max?: {
+-		objectCount?: number;
+-		payloadSize?: number;
+-		metadataSize?: number;
+-	};
+-	dimensions: {
+-		datetime?: string;
+-	};
+-}
+-
+-export interface R2BucketMetricsGraphQLResponse {
+-	data: {
+-		viewer: {
+-			accounts: {
+-				r2StorageAdaptiveGroups?: R2BucketMetrics[];
+-			}[];
+-		};
+-	};
+-}
+-
+-/**
+- * Fetch a list of all the buckets under the given `accountId`.
+- */
+-export async function listR2Buckets(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	jurisdiction?: string
+-): Promise<R2BucketInfo[]> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	const results = await fetchResult<{
+-		buckets: R2BucketInfo[];
+-	}>(complianceConfig, `/accounts/${accountId}/r2/buckets`, { headers });
+-	return results.buckets;
+-}
+-
+-export function tablefromR2BucketsListResponse(buckets: R2BucketInfo[]): {
+-	name: string;
+-	creation_date: string;
+-}[] {
+-	const rows = [];
+-	for (const bucket of buckets) {
+-		rows.push({
+-			name: bucket.name,
+-			creation_date: bucket.creation_date,
+-		});
+-	}
+-	return rows;
+-}
+-
+-export async function getR2Bucket(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<R2BucketInfo> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	const result = await fetchResult<R2BucketInfo>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-	return result;
+-}
+-
+-export async function getR2BucketMetrics(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<{ objectCount: number; totalSize: string }> {
+-	const today = new Date();
+-	const yesterday = new Date(new Date(today).setDate(today.getDate() - 1));
+-
+-	let fullBucketName = bucketName;
+-	if (jurisdiction) {
+-		fullBucketName = `${jurisdiction}_${bucketName}`;
+-	}
+-
+-	const storageMetricsQuery = `
+-    query getR2StorageMetrics($accountTag: String, $filter: R2StorageAdaptiveGroupsFilter_InputObject) {
+-      viewer {
+-        accounts(filter: { accountTag: $accountTag }) {
+-          r2StorageAdaptiveGroups(
+-            limit: 1
+-            filter: $filter
+-            orderBy: [datetime_DESC]
+-          ) {
+-            max {
+-              objectCount
+-              payloadSize
+-              metadataSize
+-            }
+-            dimensions {
+-              datetime
+-            }
+-          }
+-        }
+-      }
+-    }
+-    `;
+-
+-	const variables = {
+-		accountTag: accountId,
+-		filter: {
+-			datetime_geq: yesterday.toISOString(),
+-			datetime_leq: today.toISOString(),
+-			bucketName: fullBucketName,
+-		},
+-	};
+-	const storageMetricsResult =
+-		await fetchGraphqlResult<R2BucketMetricsGraphQLResponse>(complianceConfig, {
+-			method: "POST",
+-			body: JSON.stringify({
+-				query: storageMetricsQuery,
+-				operationName: "getR2StorageMetrics",
+-				variables,
+-			}),
+-			headers: {
+-				"Content-Type": "application/json",
+-			},
+-		});
+-
+-	if (storageMetricsResult) {
+-		const metricsData =
+-			storageMetricsResult.data?.viewer?.accounts[0]
+-				?.r2StorageAdaptiveGroups?.[0];
+-		if (metricsData && metricsData.max) {
+-			const objectCount = metricsData.max.objectCount || 0;
+-			const totalSize =
+-				(metricsData.max.payloadSize || 0) +
+-				(metricsData.max.metadataSize || 0);
+-			return {
+-				objectCount,
+-				totalSize: prettyBytes(totalSize),
+-			};
+-		}
+-	}
+-	return { objectCount: 0, totalSize: "0 B" };
+-}
+-
+-/**
+- * Create a bucket with the given `bucketName` within the account given by `accountId`.
+- *
+- * A 400 is returned if the account already owns a bucket with this name.
+- * A bucket must be explicitly deleted to be replaced.
+- */
+-export async function createR2Bucket(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	location?: string,
+-	jurisdiction?: string,
+-	storageClass?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	return await fetchResult<void>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets`,
+-		{
+-			method: "POST",
+-			body: JSON.stringify({
+-				name: bucketName,
+-				...(storageClass !== undefined && { storageClass }),
+-				...(location !== undefined && { locationHint: location }),
+-			}),
+-			headers,
+-		}
+-	);
+-}
+-
+-/**
+- * Update the default storage class to `storageClass` of a bucket with the given `bucketName`
+- * within the account given by `accountId`.
+- */
+-export async function updateR2BucketStorageClass(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	storageClass: string,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	headers["cf-r2-storage-class"] = storageClass;
+-	return await fetchResult<void>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}`,
+-		{
+-			method: "PATCH",
+-			headers,
+-		}
+-	);
+-}
+-
+-/**
+- * Delete a bucket with the given name
+- */
+-export async function deleteR2Bucket(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	return await fetchResult<void>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}`,
+-		{ method: "DELETE", headers }
+-	);
+-}
+-
+-export function bucketAndKeyFromObjectPath(objectPath = ""): {
+-	bucket: string;
+-	key: string;
+-} {
+-	// Path format is `<bucket>/<key>`
+-	const match = /^(?<bucket>[^/]+)\/(?<key>.*)/.exec(objectPath);
+-	if (match === null || !match.groups) {
+-		throw new UserError(
+-			`The object path must be in the form of {bucket}/{key} you provided ${objectPath}`
+-		);
+-	}
+-	const { bucket, key } = match.groups;
+-	if (!isValidR2BucketName(bucket)) {
+-		throw new UserError(
+-			`The bucket name "${bucket}" is invalid. ${bucketFormatMessage}`
+-		);
+-	}
+-
+-	return { bucket, key };
+-}
+-
+-/**
+- * Downloads an object
+- */
+-export async function getR2Object(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	objectName: string,
+-	jurisdiction?: string
+-): Promise<ReadableStream | null> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	const response = await fetchR2Objects(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/objects/${objectName}`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-
+-	return response === null ? null : response.body;
+-}
+-
+-const headerKeys = [
+-	"cache-control",
+-	"content-disposition",
+-	"content-encoding",
+-	"content-language",
+-	"content-length",
+-	"content-type",
+-	"expires",
+-] as const;
+-
+-/**
+- * Uploads an object
+- */
+-export async function putR2Object(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	objectName: string,
+-	object: Readable | ReadableStream | Buffer,
+-	options: Record<(typeof headerKeys)[number], string | undefined>,
+-	jurisdiction?: string,
+-	storageClass?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	for (const key of headerKeys) {
+-		const value = options[key] || "";
+-		if (value && typeof value === "string") {
+-			headers[key] = value;
+-		}
+-	}
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	if (storageClass !== undefined) {
+-		headers["cf-r2-storage-class"] = storageClass;
+-	}
+-
+-	const result = await fetchR2Objects(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/objects/${objectName}`,
+-		{
+-			body: object,
+-			headers,
+-			method: "PUT",
+-			duplex: "half",
+-		}
+-	);
+-	if (result === null) {
+-		throw new UserError("The specified bucket does not exist.");
+-	}
+-}
+-/**
+- * Delete an Object
+- */
+-export async function deleteR2Object(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	objectName: string,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	await fetchR2Objects(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/objects/${objectName}`,
+-		{ method: "DELETE", headers }
+-	);
+-}
+-
+-export async function usingLocalBucket<T>(
+-	persistTo: string | undefined,
+-	config: Config,
+-	bucketName: string,
+-	closure: (
+-		namespace: ReplaceWorkersTypes<R2Bucket>,
+-		mf: Miniflare
+-	) => Promise<T>
+-): Promise<T> {
+-	const persist = getLocalPersistencePath(persistTo, config);
+-	const defaultPersistRoot = getDefaultPersistRoot(persist);
+-	const mf = new Miniflare({
+-		modules: true,
+-		// TODO(soon): import `reduceError()` from `miniflare:shared`
+-		script: `
+-		function reduceError(e) {
+-			return {
+-				name: e?.name,
+-				message: e?.message ?? String(e),
+-				stack: e?.stack,
+-				cause: e?.cause === undefined ? undefined : reduceError(e.cause),
+-			};
+-		}
+-		export default {
+-			async fetch(request, env, ctx) {
+-				try {
+-					if (request.method !== "PUT") return new Response(null, { status: 405 });
+-					const url = new URL(request.url);
+-					const key = url.pathname.substring(1);
+-					const optsHeader = request.headers.get("Wrangler-R2-Put-Options");
+-					const opts = JSON.parse(optsHeader);
+-					await env.BUCKET.put(key, request.body, opts);
+-					return new Response(null, { status: 204 });
+-				} catch (e) {
+-					const error = reduceError(e);
+-					return Response.json(error, {
+-						status: 500,
+-						headers: { "MF-Experimental-Error-Stack": "true" },
+-					});
+-				}
+-			}
+-		}`,
+-		defaultPersistRoot,
+-		r2Buckets: { BUCKET: bucketName },
+-	});
+-	const bucket = await mf.getR2Bucket("BUCKET");
+-	try {
+-		return await closure(bucket, mf);
+-	} finally {
+-		await mf.dispose();
+-	}
+-}
+-
+-type SippyConfig = {
+-	source:
+-		| { provider: "aws"; region: string; bucket: string }
+-		| { provider: "gcs"; bucket: string };
+-	destination: {
+-		provider: "r2";
+-		account: string;
+-		bucket: string;
+-		accessKeyId: string;
+-	};
+-};
+-
+-/**
+- * Retreive the sippy upstream bucket for the bucket with the given name
+- */
+-export async function getR2Sippy(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<SippyConfig> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/sippy`,
+-		{ method: "GET", headers }
+-	);
+-}
+-
+-/**
+- * Disable sippy on the bucket with the given name
+- */
+-export async function deleteR2Sippy(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/sippy`,
+-		{ method: "DELETE", headers }
+-	);
+-}
+-
+-export type SippyPutParams = {
+-	source:
+-		| {
+-				provider: "aws";
+-				region: string;
+-				bucket: string;
+-				accessKeyId: string;
+-				secretAccessKey: string;
+-		  }
+-		| {
+-				provider: "gcs";
+-				bucket: string;
+-				clientEmail: string;
+-				privateKey: string;
+-		  };
+-	destination: {
+-		provider: "r2";
+-		accessKeyId: string;
+-		secretAccessKey: string;
+-	};
+-};
+-
+-/**
+- * Enable sippy on the bucket with the given name
+- */
+-export async function putR2Sippy(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	params: SippyPutParams,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction !== undefined) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/sippy`,
+-		{ method: "PUT", body: JSON.stringify(params), headers }
+-	);
+-}
+-
+-type R2Warehouse = {
+-	id: string;
+-	name: string;
+-	bucket: string;
+-	status: "active" | "inactive";
+-};
+-
+-/**
+- * Retreive the warehouse for the bucket with the given name
+- */
+-export async function getR2Catalog(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string
+-): Promise<R2Warehouse> {
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}`,
+-		{
+-			method: "GET",
+-		}
+-	);
+-}
+-
+-type R2WarehouseEnableResponse = {
+-	id: string;
+-	name: string;
+-};
+-
+-/**
+- * Activate the R2 bucket as an Iceberg warehouse
+- */
+-export async function enableR2Catalog(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string
+-): Promise<R2WarehouseEnableResponse> {
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/enable`,
+-		{
+-			method: "POST",
+-		}
+-	);
+-}
+-
+-/**
+- * Deactivate the R2 bucket as an Iceberg warehouse
+- */
+-export async function disableR2Catalog(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string
+-): Promise<R2WarehouseEnableResponse> {
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/disable`,
+-		{
+-			method: "POST",
+-		}
+-	);
+-}
+-
+-type R2CatalogCompactionConfig = {
+-	state: "enabled" | "disabled";
+-
+-	// If undefined, the service will set the default value
+-	targetSizeMb?: number;
+-};
+-
+-type R2CatalogCompactionResponse = {
+-	success: boolean;
+-};
+-
+-/**
+- * Enable compaction maintenance configuration for a table in the R2 catalog
+- */
+-export async function enableR2CatalogCompaction(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	targetSizeMb: number | undefined
+-): Promise<R2CatalogCompactionResponse> {
+-	const config: R2CatalogCompactionConfig = {
+-		state: "enabled",
+-		targetSizeMb,
+-	};
+-
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/maintenance-configs`,
+-		{
+-			method: "POST",
+-			body: JSON.stringify({
+-				compaction: config,
+-			}),
+-			headers: {
+-				"Content-Type": "application/json",
+-			},
+-		}
+-	);
+-}
+-
+-/**
+- * Disable compaction maintenance configuration for a table in the R2 catalog
+- */
+-export async function disableR2CatalogCompaction(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string
+-): Promise<R2CatalogCompactionResponse> {
+-	const config: R2CatalogCompactionConfig = {
+-		state: "disabled",
+-	};
+-
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/maintenance-configs`,
+-		{
+-			method: "POST",
+-			body: JSON.stringify({
+-				compaction: config,
+-			}),
+-			headers: {
+-				"Content-Type": "application/json",
+-			},
+-		}
+-	);
+-}
+-
+-type R2CatalogCredentialResponse = {
+-	success: boolean;
+-};
+-
+-/**
+- * Sets a Cloudflare token which R2 Data Catalog uses for async table maintenance
+- * jobs (such as file compaction), where it needs direct access to the customer's R2 bucket.
+- */
+-export async function upsertR2DataCatalogCredential(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	token: string
+-): Promise<R2CatalogCredentialResponse> {
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/credential`,
+-		{
+-			method: "POST",
+-			body: JSON.stringify({
+-				token,
+-			}),
+-			headers: {
+-				"Content-Type": "application/json",
+-			},
+-		}
+-	);
+-}
+-
+-/**
+- * Enable compaction for a specific table in the R2 catalog
+- */
+-export async function enableR2CatalogTableCompaction(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	namespace: string,
+-	tableName: string,
+-	targetSizeMb?: number
+-): Promise<void> {
+-	const body: {
+-		compaction: {
+-			state: string;
+-			target_size_mb?: number;
+-		};
+-	} = {
+-		compaction: {
+-			state: "enabled",
+-		},
+-	};
+-
+-	if (targetSizeMb !== undefined) {
+-		body.compaction.target_size_mb = targetSizeMb;
+-	}
+-
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/namespaces/${namespace}/tables/${tableName}/maintenance-configs`,
+-		{
+-			method: "POST",
+-			body: JSON.stringify(body),
+-			headers: {
+-				"Content-Type": "application/json",
+-			},
+-		}
+-	);
+-}
+-
+-/**
+- * Disable compaction for a specific table in the R2 catalog
+- */
+-export async function disableR2CatalogTableCompaction(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	namespace: string,
+-	tableName: string
+-): Promise<void> {
+-	return await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2-catalog/${bucketName}/namespaces/${namespace}/tables/${tableName}/maintenance-configs`,
+-		{
+-			method: "POST",
+-			body: JSON.stringify({
+-				compaction: {
+-					state: "disabled",
+-				},
+-			}),
+-			headers: {
+-				"Content-Type": "application/json",
+-			},
+-		}
+-	);
+-}
+-
+-export type R2EventableOperation =
+-	| "PutObject"
+-	| "DeleteObject"
+-	| "CompleteMultipartUpload"
+-	| "AbortMultipartUpload"
+-	| "CopyObject"
+-	| "LifecycleDeletion";
+-
+-export const actionsForEventCategories: Record<
+-	"object-create" | "object-delete",
+-	R2EventableOperation[]
+-> = {
+-	"object-create": ["PutObject", "CompleteMultipartUpload", "CopyObject"],
+-	"object-delete": ["DeleteObject", "LifecycleDeletion"],
+-};
+-export type R2EventType = keyof typeof actionsForEventCategories;
+-type NotificationRule = {
+-	prefix?: string;
+-	suffix?: string;
+-	actions: R2EventableOperation[];
+-	description?: string;
+-};
+-type GetNotificationRule = {
+-	ruleId: string;
+-	createdAt?: string;
+-	prefix?: string;
+-	suffix?: string;
+-	actions: R2EventableOperation[];
+-};
+-export type GetQueueDetail = {
+-	queueId: string;
+-	queueName: string;
+-	rules: GetNotificationRule[];
+-};
+-export type GetNotificationConfigResponse = {
+-	bucketName: string;
+-	queues: GetQueueDetail[];
+-};
+-type DetailID = string;
+-type QueueID = string;
+-type BucketName = string;
+-type NotificationDetail = Record<
+-	DetailID, // This is the detail ID that identifies this config
+-	{ queue: QueueID; rules: NotificationRule[] }
+->;
+-// Event Notifications API Backwards Compatibility
+-export type GetNotificationConfigResponseOld = Record<
+-	BucketName,
+-	NotificationDetail
+->;
+-// This type captures the shape of the data expected by EWC API.
+-export type PutNotificationRequestBody = {
+-	// `jurisdiction` is included here for completeness, but until Queues
+-	// supports jurisdictions, then this command will not send anything to do
+-	// with jurisdictions.
+-	jurisdiction?: string;
+-	rules: NotificationRule[];
+-};
+-
+-// This type captures the shape of the data expected by EWC API.
+-export type DeleteNotificationRequestBody = {
+-	ruleIds?: string[];
+-};
+-
+-export function eventNotificationHeaders(
+-	apiCredentials: ApiCredentials,
+-	jurisdiction: string
+-): HeadersInit {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-
+-	if ("apiToken" in apiCredentials) {
+-		headers["Authorization"] = `Bearer ${apiCredentials.apiToken}`;
+-	} else {
+-		headers["X-Auth-Key"] = apiCredentials.authKey;
+-		headers["X-Auth-Email"] = apiCredentials.authEmail;
+-	}
+-	if (jurisdiction !== "") {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-	return headers;
+-}
+-
+-export function tableFromNotificationGetResponse(
+-	response: GetNotificationConfigResponse
+-): {
+-	rule_id: string;
+-	created_at: string;
+-	queue_name: string;
+-	prefix: string;
+-	suffix: string;
+-	event_type: string;
+-}[] {
+-	const rows = [];
+-	for (const entry of response.queues) {
+-		for (const {
+-			prefix = "",
+-			suffix = "",
+-			actions,
+-			ruleId,
+-			createdAt = "",
+-		} of entry.rules) {
+-			rows.push({
+-				rule_id: ruleId,
+-				created_at: createdAt,
+-				queue_name: entry.queueName,
+-				prefix: prefix || "(all prefixes)",
+-				suffix: suffix || "(all suffixes)",
+-				event_type: actions.join(","),
+-			});
+-		}
+-	}
+-	return rows;
+-}
+-
+-export async function listEventNotificationConfig(
+-	config: Config,
+-	apiCredentials: ApiCredentials,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction: string
+-): Promise<GetNotificationConfigResponse> {
+-	const headers = eventNotificationHeaders(apiCredentials, jurisdiction);
+-	logger.log(`Fetching notification rules for bucket ${bucketName}...`);
+-	const res = await fetchResult<GetNotificationConfigResponse>(
+-		config,
+-		`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration`,
+-		{ method: "GET", headers }
+-	);
+-	if ("bucketName" in res && "queues" in res) {
+-		return res;
+-	}
+-	// API response doesn't match new format. Trying the old format.
+-	// Convert the old style payload to the new
+-	// We can assume that the old payload has a single bucket entry
+-	const oldResult = res as GetNotificationConfigResponseOld;
+-	const [oldBucketName, oldDetail] = Object.entries(oldResult)[0];
+-	const newResult: GetNotificationConfigResponse = {
+-		bucketName: oldBucketName,
+-		queues: await Promise.all(
+-			Object.values(oldDetail).map(async (oldQueue) => {
+-				const newQueue: GetQueueDetail = {
+-					queueId: oldQueue.queue,
+-					queueName: (await getQueueById(config, accountId, oldQueue.queue))
+-						.queue_name,
+-					rules: oldQueue.rules.map((oldRule) => {
+-						const newRule: GetNotificationRule = {
+-							ruleId: "",
+-							prefix: oldRule.prefix,
+-							suffix: oldRule.suffix,
+-							actions: oldRule.actions,
+-						};
+-						return newRule;
+-					}),
+-				};
+-				return newQueue;
+-			})
+-		),
+-	};
+-	return newResult;
+-}
+-
+-/** Construct & transmit notification configuration to EWC.
+- *
+- * On success, receive HTTP 200 response with no body
+- *
+- * Possible status codes on failure:
+- * - 400 Bad Request - Either:
+- * 		- Uploaded configuration is invalid
+- * 		- Communication with either R2-gateway-worker or queue-broker-worker fails
+- * - 409 Conflict - A configuration between the bucket and queue already exists
+- * */
+-export async function putEventNotificationConfig(
+-	config: Config,
+-	apiCredentials: ApiCredentials,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction: string,
+-	queueName: string,
+-	eventTypes: R2EventType[],
+-	prefix?: string,
+-	suffix?: string,
+-	description?: string
+-): Promise<void> {
+-	const queue = await getQueue(config, queueName);
+-	const headers = eventNotificationHeaders(apiCredentials, jurisdiction);
+-	let actions: R2EventableOperation[] = [];
+-
+-	for (const et of eventTypes) {
+-		actions = actions.concat(actionsForEventCategories[et]);
+-	}
+-
+-	const body: PutNotificationRequestBody =
+-		description === undefined
+-			? {
+-					rules: [{ prefix, suffix, actions }],
+-				}
+-			: {
+-					rules: [{ prefix, suffix, actions, description }],
+-				};
+-	const ruleFor = eventTypes.map((et) =>
+-		et === "object-create" ? "creation" : "deletion"
+-	);
+-	logger.log(
+-		`Creating event notification rule for object ${ruleFor.join(
+-			" and "
+-		)} (${actions.join(",")})`
+-	);
+-	return await fetchResult<void>(
+-		config,
+-		`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration/queues/${queue.queue_id}`,
+-		{ method: "PUT", body: JSON.stringify(body), headers }
+-	);
+-}
+-
+-export async function deleteEventNotificationConfig(
+-	config: Config,
+-	apiCredentials: ApiCredentials,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction: string,
+-	queueName: string,
+-	ruleId: string | undefined
+-): Promise<null> {
+-	const queue = await getQueue(config, queueName);
+-	const headers = eventNotificationHeaders(apiCredentials, jurisdiction);
+-	if (ruleId !== undefined) {
+-		logger.log(`Deleting event notifications rule "${ruleId}"...`);
+-		const body: DeleteNotificationRequestBody =
+-			ruleId !== undefined
+-				? {
+-						ruleIds: [ruleId],
+-					}
+-				: {};
+-
+-		return await fetchResult<null>(
+-			config,
+-			`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration/queues/${queue.queue_id}`,
+-			{ method: "DELETE", body: JSON.stringify(body), headers }
+-		);
+-	} else {
+-		logger.log(
+-			`Deleting event notification rules associated with queue ${queueName}...`
+-		);
+-		return await fetchResult<null>(
+-			config,
+-			`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration/queues/${queue.queue_id}`,
+-			{ method: "DELETE", headers }
+-		);
+-	}
+-}
+-
+-export interface CustomDomainConfig {
+-	domain: string;
+-	minTLS?: string;
+-	zoneId?: string;
+-}
+-
+-export interface CustomDomainInfo {
+-	domain: string;
+-	enabled: boolean;
+-	status: {
+-		ownership: string;
+-		ssl: string;
+-	};
+-	minTLS: string;
+-	zoneId: string;
+-	zoneName: string;
+-}
+-
+-export async function getCustomDomain(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	domainName: string,
+-	jurisdiction?: string
+-): Promise<CustomDomainInfo> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<CustomDomainInfo>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom/${domainName}`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-
+-	return result;
+-}
+-
+-export async function attachCustomDomainToBucket(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	domainConfig: CustomDomainConfig,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom`,
+-		{
+-			method: "POST",
+-			headers,
+-			body: JSON.stringify({
+-				...domainConfig,
+-				enabled: true,
+-			}),
+-		}
+-	);
+-}
+-
+-export async function removeCustomDomainFromBucket(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	domainName: string,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom/${domainName}`,
+-		{
+-			method: "DELETE",
+-			headers,
+-		}
+-	);
+-}
+-
+-export function tableFromCustomDomainListResponse(
+-	domains: CustomDomainInfo[]
+-): {
+-	domain: string;
+-	enabled: string;
+-	ownership_status: string;
+-	ssl_status: string;
+-	min_tls_version: string;
+-	zone_id: string;
+-	zone_name: string;
+-}[] {
+-	const rows = [];
+-	for (const domainInfo of domains) {
+-		rows.push({
+-			domain: domainInfo.domain,
+-			enabled: domainInfo.enabled ? "Yes" : "No",
+-			ownership_status: domainInfo.status.ownership || "(unknown)",
+-			ssl_status: domainInfo.status.ssl || "(unknown)",
+-			min_tls_version: domainInfo.minTLS || "1.0",
+-			zone_id: domainInfo.zoneId || "(none)",
+-			zone_name: domainInfo.zoneName || "(none)",
+-		});
+-	}
+-	return rows;
+-}
+-
+-export async function listCustomDomainsOfBucket(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<CustomDomainInfo[]> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<{
+-		domains: CustomDomainInfo[];
+-	}>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-
+-	return result.domains;
+-}
+-
+-export async function configureCustomDomainSettings(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	domainName: string,
+-	domainConfig: CustomDomainConfig,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom/${domainName}`,
+-		{
+-			method: "PUT",
+-			headers,
+-			body: JSON.stringify(domainConfig),
+-		}
+-	);
+-}
+-
+-export interface R2DevDomainInfo {
+-	bucketId: string;
+-	domain: string;
+-	enabled: boolean;
+-}
+-
+-export async function getR2DevDomain(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<R2DevDomainInfo> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<R2DevDomainInfo>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/managed`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-	return result;
+-}
+-
+-export async function updateR2DevDomain(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	enabled: boolean,
+-	jurisdiction?: string
+-): Promise<R2DevDomainInfo> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<R2DevDomainInfo>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/managed`,
+-		{
+-			method: "PUT",
+-			headers,
+-			body: JSON.stringify({ enabled }),
+-		}
+-	);
+-	return result;
+-}
+-
+-export interface LifecycleCondition {
+-	type: "Age" | "Date";
+-	maxAge?: number;
+-	date?: string;
+-}
+-
+-export interface LifecycleRule {
+-	id: string;
+-	enabled: boolean;
+-	conditions: {
+-		prefix?: string;
+-	};
+-	deleteObjectsTransition?: {
+-		condition: LifecycleCondition;
+-	};
+-	storageClassTransitions?: Array<{
+-		condition: LifecycleCondition;
+-		storageClass: "InfrequentAccess";
+-	}>;
+-	abortMultipartUploadsTransition?: {
+-		condition: LifecycleCondition;
+-	};
+-}
+-
+-function formatCondition(condition: LifecycleCondition): string {
+-	if (condition.type === "Age" && typeof condition.maxAge === "number") {
+-		const days = condition.maxAge / 86400; // Convert seconds to days
+-		return `after ${days} days`;
+-	} else if (condition.type === "Date" && condition.date) {
+-		const date = new Date(condition.date);
+-		const displayDate = date.toISOString().split("T")[0];
+-		return `on ${displayDate}`;
+-	}
+-
+-	return "";
+-}
+-
+-export function tableFromLifecycleRulesResponse(rules: LifecycleRule[]): {
+-	name: string;
+-	enabled: string;
+-	prefix: string;
+-	action: string;
+-}[] {
+-	const rows = [];
+-	for (const rule of rules) {
+-		const actions = [];
+-
+-		if (rule.deleteObjectsTransition) {
+-			const action = "Expire objects";
+-			const condition = formatCondition(rule.deleteObjectsTransition.condition);
+-			actions.push(`${action} ${condition}`);
+-		}
+-		if (
+-			rule.storageClassTransitions &&
+-			rule.storageClassTransitions.length > 0
+-		) {
+-			for (const transition of rule.storageClassTransitions) {
+-				const action = "Transition to Infrequent Access";
+-				const condition = formatCondition(transition.condition);
+-				actions.push(`${action} ${condition}`);
+-			}
+-		}
+-		if (rule.abortMultipartUploadsTransition) {
+-			const action = "Abort incomplete multipart uploads";
+-			const condition = formatCondition(
+-				rule.abortMultipartUploadsTransition.condition
+-			);
+-			actions.push(`${action} ${condition}`);
+-		}
+-
+-		rows.push({
+-			name: rule.id,
+-			enabled: rule.enabled ? "Yes" : "No",
+-			prefix: rule.conditions.prefix || "(all prefixes)",
+-			action: actions.join(", ") || "(none)",
+-		});
+-	}
+-	return rows;
+-}
+-
+-export async function getLifecycleRules(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucket: string,
+-	jurisdiction?: string
+-): Promise<LifecycleRule[]> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<{ rules: LifecycleRule[] }>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucket}/lifecycle`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-	return result.rules;
+-}
+-
+-export async function putLifecycleRules(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucket: string,
+-	rules: LifecycleRule[],
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucket}/lifecycle`,
+-		{
+-			method: "PUT",
+-			headers,
+-			body: JSON.stringify({ rules: rules }),
+-		}
+-	);
+-}
+-
+-// bucket lock rules
+-
+-export interface BucketLockRule {
+-	id: string;
+-	enabled: boolean;
+-	prefix?: string;
+-	condition: BucketLockRuleCondition;
+-}
+-
+-export interface BucketLockRuleCondition {
+-	type: "Age" | "Date" | "Indefinite";
+-	maxAgeSeconds?: number;
+-	date?: string;
+-}
+-
+-export function tableFromBucketLockRulesResponse(rules: BucketLockRule[]): {
+-	name: string;
+-	enabled: string;
+-	prefix: string;
+-	condition: string;
+-}[] {
+-	const rows = [];
+-	for (const rule of rules) {
+-		const conditionString = formatLockCondition(rule.condition);
+-		rows.push({
+-			name: rule.id,
+-			enabled: rule.enabled ? "Yes" : "No",
+-			prefix: rule.prefix || "(all prefixes)",
+-			condition: conditionString,
+-		});
+-	}
+-	return rows;
+-}
+-
+-function formatLockCondition(condition: BucketLockRuleCondition): string {
+-	if (condition.type === "Age" && typeof condition.maxAgeSeconds === "number") {
+-		const days = condition.maxAgeSeconds / 86400; // Convert seconds to days
+-		if (days == 1) {
+-			return `after ${days} day`;
+-		} else {
+-			return `after ${days} days`;
+-		}
+-	} else if (condition.type === "Date" && condition.date) {
+-		const date = new Date(condition.date);
+-		const displayDate = date.toISOString().split("T")[0];
+-		return `on ${displayDate}`;
+-	}
+-
+-	return `indefinitely`;
+-}
+-
+-export async function getBucketLockRules(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucket: string,
+-	jurisdiction?: string
+-): Promise<BucketLockRule[]> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<{ rules: BucketLockRule[] }>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucket}/lock`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-	return result.rules;
+-}
+-
+-export async function putBucketLockRules(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucket: string,
+-	rules: BucketLockRule[],
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucket}/lock`,
+-		{
+-			method: "PUT",
+-			headers,
+-			body: JSON.stringify({ rules: rules }),
+-		}
+-	);
+-}
+-
+-// bucket lock rules
+-
+-export function formatActionDescription(action: string): string {
+-	switch (action) {
+-		case "expire":
+-			return "expire objects";
+-		case "transition":
+-			return "transition to Infrequent Access storage class";
+-		case "abort-multipart":
+-			return "abort incomplete multipart uploads";
+-		default:
+-			return action;
+-	}
+-}
+-
+-export function isValidDate(dateString: string): boolean {
+-	const regex = /^\d{4}-\d{2}-\d{2}$/;
+-	if (!regex.test(dateString)) {
+-		return false;
+-	}
+-	const date = new Date(`${dateString}T00:00:00.000Z`);
+-	const timestamp = date.getTime();
+-	if (isNaN(timestamp)) {
+-		return false;
+-	}
+-	const [year, month, day] = dateString.split("-").map(Number);
+-	return (
+-		date.getUTCFullYear() === year &&
+-		date.getUTCMonth() + 1 === month &&
+-		date.getUTCDate() === day
+-	);
+-}
+-
+-export function isNonNegativeNumber(str: string): boolean {
+-	if (str === "") {
+-		return false;
+-	}
+-	const num = Number(str);
+-	return num >= 0;
+-}
+-
+-export interface CORSRule {
+-	allowed?: {
+-		origins?: string[];
+-		methods?: string[];
+-		headers?: string[];
+-	};
+-	exposeHeaders?: string[];
+-	maxAgeSeconds?: number;
+-}
+-
+-export async function getCORSPolicy(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<CORSRule[]> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	const result = await fetchResult<{ rules: CORSRule[] }>(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/cors`,
+-		{
+-			method: "GET",
+-			headers,
+-		}
+-	);
+-	return result.rules;
+-}
+-
+-export function tableFromCORSPolicyResponse(rules: CORSRule[]): {
+-	allowed_origins: string;
+-	allowed_methods: string;
+-	allowed_headers: string;
+-	exposed_headers: string;
+-	max_age_seconds: string;
+-}[] {
+-	const rows = [];
+-	for (const rule of rules) {
+-		rows.push({
+-			allowed_origins: rule.allowed?.origins?.join(", ") || "(no origins)",
+-			allowed_methods: rule.allowed?.methods?.join(", ") || "(no methods)",
+-			allowed_headers: rule.allowed?.headers?.join(", ") || "(no headers)",
+-			exposed_headers: rule.exposeHeaders?.join(", ") || "(no exposed headers)",
+-			max_age_seconds: rule.maxAgeSeconds?.toString() || "(0 seconds)",
+-		});
+-	}
+-	return rows;
+-}
+-
+-export async function putCORSPolicy(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	rules: CORSRule[],
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {
+-		"Content-Type": "application/json",
+-	};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/cors`,
+-		{
+-			method: "PUT",
+-			headers,
+-			body: JSON.stringify({ rules: rules }),
+-		}
+-	);
+-}
+-
+-export async function deleteCORSPolicy(
+-	complianceConfig: ComplianceConfig,
+-	accountId: string,
+-	bucketName: string,
+-	jurisdiction?: string
+-): Promise<void> {
+-	const headers: HeadersInit = {};
+-	if (jurisdiction) {
+-		headers["cf-r2-jurisdiction"] = jurisdiction;
+-	}
+-
+-	await fetchResult(
+-		complianceConfig,
+-		`/accounts/${accountId}/r2/buckets/${bucketName}/cors`,
+-		{
+-			method: "DELETE",
+-			headers,
+-		}
+-	);
+-}
+diff --git a/packages/wrangler/src/r2/helpers/bucket.ts b/packages/wrangler/src/r2/helpers/bucket.ts
+new file mode 100644
+index 0000000000..28072d59a9
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/bucket.ts
+@@ -0,0 +1,564 @@
++import prettyBytes from "pretty-bytes";
++import { fetchGraphqlResult, fetchResult } from "../../cfetch";
++import type { ComplianceConfig } from "../../environment-variables/misc-variables";
++import type { HeadersInit } from "undici";
++
++/**
++ * Information about a bucket, returned from `listR2Buckets()`.
++ */
++export interface R2BucketInfo {
++	name: string;
++	creation_date: string;
++	location?: string;
++	storage_class?: string;
++}
++
++export interface R2BucketMetrics {
++	max?: {
++		objectCount?: number;
++		payloadSize?: number;
++		metadataSize?: number;
++	};
++	dimensions: {
++		datetime?: string;
++	};
++}
++
++export interface R2BucketMetricsGraphQLResponse {
++	data: {
++		viewer: {
++			accounts: {
++				r2StorageAdaptiveGroups?: R2BucketMetrics[];
++			}[];
++		};
++	};
++}
++
++/**
++ * Fetch a list of all the buckets under the given `accountId`.
++ */
++export async function listR2Buckets(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	jurisdiction?: string
++): Promise<R2BucketInfo[]> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	const results = await fetchResult<{
++		buckets: R2BucketInfo[];
++	}>(complianceConfig, `/accounts/${accountId}/r2/buckets`, { headers });
++	return results.buckets;
++}
++
++export function tableFromR2BucketsListResponse(buckets: R2BucketInfo[]): {
++	name: string;
++	creation_date: string;
++}[] {
++	const rows = [];
++	for (const bucket of buckets) {
++		rows.push({
++			name: bucket.name,
++			creation_date: bucket.creation_date,
++		});
++	}
++	return rows;
++}
++
++export async function getR2Bucket(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<R2BucketInfo> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	const result = await fetchResult<R2BucketInfo>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++	return result;
++}
++
++export async function getR2BucketMetrics(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<{ objectCount: number; totalSize: string }> {
++	const today = new Date();
++	const yesterday = new Date(new Date(today).setDate(today.getDate() - 1));
++
++	let fullBucketName = bucketName;
++	if (jurisdiction) {
++		fullBucketName = `${jurisdiction}_${bucketName}`;
++	}
++
++	const storageMetricsQuery = `
++    query getR2StorageMetrics($accountTag: String, $filter: R2StorageAdaptiveGroupsFilter_InputObject) {
++      viewer {
++        accounts(filter: { accountTag: $accountTag }) {
++          r2StorageAdaptiveGroups(
++            limit: 1
++            filter: $filter
++            orderBy: [datetime_DESC]
++          ) {
++            max {
++              objectCount
++              payloadSize
++              metadataSize
++            }
++            dimensions {
++              datetime
++            }
++          }
++        }
++      }
++    }
++    `;
++
++	const variables = {
++		accountTag: accountId,
++		filter: {
++			datetime_geq: yesterday.toISOString(),
++			datetime_leq: today.toISOString(),
++			bucketName: fullBucketName,
++		},
++	};
++	const storageMetricsResult =
++		await fetchGraphqlResult<R2BucketMetricsGraphQLResponse>(complianceConfig, {
++			method: "POST",
++			body: JSON.stringify({
++				query: storageMetricsQuery,
++				operationName: "getR2StorageMetrics",
++				variables,
++			}),
++			headers: {
++				"Content-Type": "application/json",
++			},
++		});
++
++	if (storageMetricsResult) {
++		const metricsData =
++			storageMetricsResult.data?.viewer?.accounts[0]
++				?.r2StorageAdaptiveGroups?.[0];
++		if (metricsData && metricsData.max) {
++			const objectCount = metricsData.max.objectCount || 0;
++			const totalSize =
++				(metricsData.max.payloadSize || 0) +
++				(metricsData.max.metadataSize || 0);
++			return {
++				objectCount,
++				totalSize: prettyBytes(totalSize),
++			};
++		}
++	}
++	return { objectCount: 0, totalSize: "0 B" };
++}
++
++/**
++ * Create a bucket with the given `bucketName` within the account given by `accountId`.
++ *
++ * A 400 is returned if the account already owns a bucket with this name.
++ * A bucket must be explicitly deleted to be replaced.
++ */
++export async function createR2Bucket(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	location?: string,
++	jurisdiction?: string,
++	storageClass?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	return await fetchResult<void>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets`,
++		{
++			method: "POST",
++			body: JSON.stringify({
++				name: bucketName,
++				...(storageClass !== undefined && { storageClass }),
++				...(location !== undefined && { locationHint: location }),
++			}),
++			headers,
++		}
++	);
++}
++
++/**
++ * Update the default storage class to `storageClass` of a bucket with the given `bucketName`
++ * within the account given by `accountId`.
++ */
++export async function updateR2BucketStorageClass(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	storageClass: string,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	headers["cf-r2-storage-class"] = storageClass;
++	return await fetchResult<void>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}`,
++		{
++			method: "PATCH",
++			headers,
++		}
++	);
++}
++
++/**
++ * Delete a bucket with the given name
++ */
++export async function deleteR2Bucket(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	return await fetchResult<void>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}`,
++		{ method: "DELETE", headers }
++	);
++}
++
++export interface CORSRule {
++	allowed?: {
++		origins?: string[];
++		methods?: string[];
++		headers?: string[];
++	};
++	exposeHeaders?: string[];
++	maxAgeSeconds?: number;
++}
++
++export async function getCORSPolicy(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<CORSRule[]> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<{ rules: CORSRule[] }>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/cors`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++	return result.rules;
++}
++
++export function tableFromCORSPolicyResponse(rules: CORSRule[]): {
++	allowed_origins: string;
++	allowed_methods: string;
++	allowed_headers: string;
++	exposed_headers: string;
++	max_age_seconds: string;
++}[] {
++	const rows = [];
++	for (const rule of rules) {
++		rows.push({
++			allowed_origins: rule.allowed?.origins?.join(", ") || "(no origins)",
++			allowed_methods: rule.allowed?.methods?.join(", ") || "(no methods)",
++			allowed_headers: rule.allowed?.headers?.join(", ") || "(no headers)",
++			exposed_headers: rule.exposeHeaders?.join(", ") || "(no exposed headers)",
++			max_age_seconds: rule.maxAgeSeconds?.toString() || "(0 seconds)",
++		});
++	}
++	return rows;
++}
++
++export async function putCORSPolicy(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	rules: CORSRule[],
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/cors`,
++		{
++			method: "PUT",
++			headers,
++			body: JSON.stringify({ rules: rules }),
++		}
++	);
++}
++
++export async function deleteCORSPolicy(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/cors`,
++		{
++			method: "DELETE",
++			headers,
++		}
++	);
++}
++
++export interface BucketLockRule {
++	id: string;
++	enabled: boolean;
++	prefix?: string;
++	condition: BucketLockRuleCondition;
++}
++
++export interface BucketLockRuleCondition {
++	type: "Age" | "Date" | "Indefinite";
++	maxAgeSeconds?: number;
++	date?: string;
++}
++
++export function tableFromBucketLockRulesResponse(rules: BucketLockRule[]): {
++	name: string;
++	enabled: string;
++	prefix: string;
++	condition: string;
++}[] {
++	const rows = [];
++	for (const rule of rules) {
++		const conditionString = formatLockCondition(rule.condition);
++		rows.push({
++			name: rule.id,
++			enabled: rule.enabled ? "Yes" : "No",
++			prefix: rule.prefix || "(all prefixes)",
++			condition: conditionString,
++		});
++	}
++	return rows;
++}
++
++function formatLockCondition(condition: BucketLockRuleCondition): string {
++	if (condition.type === "Age" && typeof condition.maxAgeSeconds === "number") {
++		const days = condition.maxAgeSeconds / 86400; // Convert seconds to days
++		if (days == 1) {
++			return `after ${days} day`;
++		} else {
++			return `after ${days} days`;
++		}
++	} else if (condition.type === "Date" && condition.date) {
++		const date = new Date(condition.date);
++		const displayDate = date.toISOString().split("T")[0];
++		return `on ${displayDate}`;
++	}
++
++	return `indefinitely`;
++}
++
++export async function getBucketLockRules(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucket: string,
++	jurisdiction?: string
++): Promise<BucketLockRule[]> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<{ rules: BucketLockRule[] }>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucket}/lock`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++	return result.rules;
++}
++
++export async function putBucketLockRules(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucket: string,
++	rules: BucketLockRule[],
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucket}/lock`,
++		{
++			method: "PUT",
++			headers,
++			body: JSON.stringify({ rules: rules }),
++		}
++	);
++}
++
++export interface LifecycleCondition {
++	type: "Age" | "Date";
++	maxAge?: number;
++	date?: string;
++}
++
++export interface LifecycleRule {
++	id: string;
++	enabled: boolean;
++	conditions: {
++		prefix?: string;
++	};
++	deleteObjectsTransition?: {
++		condition: LifecycleCondition;
++	};
++	storageClassTransitions?: Array<{
++		condition: LifecycleCondition;
++		storageClass: "InfrequentAccess";
++	}>;
++	abortMultipartUploadsTransition?: {
++		condition: LifecycleCondition;
++	};
++}
++
++function formatCondition(condition: LifecycleCondition): string {
++	if (condition.type === "Age" && typeof condition.maxAge === "number") {
++		const days = condition.maxAge / 86400; // Convert seconds to days
++		return `after ${days} days`;
++	} else if (condition.type === "Date" && condition.date) {
++		const date = new Date(condition.date);
++		const displayDate = date.toISOString().split("T")[0];
++		return `on ${displayDate}`;
++	}
++
++	return "";
++}
++
++export function tableFromLifecycleRulesResponse(rules: LifecycleRule[]): {
++	name: string;
++	enabled: string;
++	prefix: string;
++	action: string;
++}[] {
++	const rows = [];
++	for (const rule of rules) {
++		const actions = [];
++
++		if (rule.deleteObjectsTransition) {
++			const action = "Expire objects";
++			const condition = formatCondition(rule.deleteObjectsTransition.condition);
++			actions.push(`${action} ${condition}`);
++		}
++		if (
++			rule.storageClassTransitions &&
++			rule.storageClassTransitions.length > 0
++		) {
++			for (const transition of rule.storageClassTransitions) {
++				const action = "Transition to Infrequent Access";
++				const condition = formatCondition(transition.condition);
++				actions.push(`${action} ${condition}`);
++			}
++		}
++		if (rule.abortMultipartUploadsTransition) {
++			const action = "Abort incomplete multipart uploads";
++			const condition = formatCondition(
++				rule.abortMultipartUploadsTransition.condition
++			);
++			actions.push(`${action} ${condition}`);
++		}
++
++		rows.push({
++			name: rule.id,
++			enabled: rule.enabled ? "Yes" : "No",
++			prefix: rule.conditions.prefix || "(all prefixes)",
++			action: actions.join(", ") || "(none)",
++		});
++	}
++	return rows;
++}
++
++export async function getLifecycleRules(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucket: string,
++	jurisdiction?: string
++): Promise<LifecycleRule[]> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<{ rules: LifecycleRule[] }>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucket}/lifecycle`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++	return result.rules;
++}
++
++export async function putLifecycleRules(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucket: string,
++	rules: LifecycleRule[],
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucket}/lifecycle`,
++		{
++			method: "PUT",
++			headers,
++			body: JSON.stringify({ rules: rules }),
++		}
++	);
++}
+diff --git a/packages/wrangler/src/r2/helpers/bulk.ts b/packages/wrangler/src/r2/helpers/bulk.ts
+new file mode 100644
+index 0000000000..6c213bc1db
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/bulk.ts
+@@ -0,0 +1,107 @@
++import fs from "fs";
++import {
++	isRequiredProperty,
++	readFileSync,
++	UserError,
++} from "@cloudflare/workers-utils";
++import prettyBytes from "pretty-bytes";
++import { logger } from "../../logger";
++import { MAX_UPLOAD_SIZE_BYTES } from "../constants";
++
++/**
++ * Validates the file to be used for bulk put operations.
++ *
++ * The file is a list of {key, file} in JSON format.
++ *
++ * This functions throws a `UserError`:
++ * - when the file does not exist
++ * - when the file is not readable
++ * - when the file is not a valid JSON
++ * - when the file content is not an array of {key, file} objects
++ * - when any of the `file` entries is not a file that exists
++ * - when any of the `file` entries exceeds the maximum upload size
++ *
++ * @param filename The path to the bulk put JSON file
++ * @returns
++ */
++export function validateBulkPutFile(
++	filename: string
++): { key: string; file: string; size: number }[] {
++	if (!fs.existsSync(filename)) {
++		throw new UserError(`The file "${filename}" does not exist.`);
++	}
++
++	let fileContent: string;
++	try {
++		fileContent = readFileSync(filename);
++	} catch {
++		throw new UserError(`The file "${filename}" is not readable.`);
++	}
++
++	// The `size` property is added in the for loop below
++	let entries: { key: string; file: string; size: number }[];
++	try {
++		entries = JSON.parse(fileContent);
++	} catch {
++		throw new UserError(`The file "${filename}" is not a valid JSON.`);
++	}
++
++	if (!Array.isArray(entries)) {
++		throw new UserError(
++			`The file "${filename}" must contain an array of entries.`
++		);
++	}
++
++	for (const entry of entries) {
++		if (
++			entry === null ||
++			typeof entry !== "object" ||
++			!isRequiredProperty(entry, "key", "string") ||
++			!isRequiredProperty(entry, "file", "string")
++		) {
++			throw new UserError(
++				`Each entry in the file "${filename}" must be an object with "key" and "file" string properties.`
++			);
++		}
++
++		if (!fs.existsSync(entry.file)) {
++			throw new UserError(`The file "${entry.file}" does not exist.`);
++		}
++
++		const stat = fs.statSync(entry.file);
++		if (!stat.isFile()) {
++			throw new UserError(`The path "${entry.file}" is not a file.`);
++		}
++
++		if (stat.size > MAX_UPLOAD_SIZE_BYTES) {
++			throw new UserError(
++				`The file "${entry.file}" exceeds the maximum upload size of ${prettyBytes(
++					MAX_UPLOAD_SIZE_BYTES,
++					{ binary: true }
++				)}.`
++			);
++		}
++
++		entry.size = stat.size;
++	}
++
++	return entries;
++}
++
++/**
++ * Formatter for converting e.g. 5328 --> 5,328
++ */
++const formatNumber = new Intl.NumberFormat("en-US", {
++	notation: "standard",
++}).format;
++
++/**
++ * Helper function for bulk requests, logs ongoing output to console.
++ */
++export function logBulkProgress(label: string, index: number, total: number) {
++	logger.log(
++		`${label} ${Math.floor(
++			(100 * index) / total
++		)}% (${formatNumber(index)} out of ${formatNumber(total)})`
++	);
++}
+diff --git a/packages/wrangler/src/r2/helpers/catalog.ts b/packages/wrangler/src/r2/helpers/catalog.ts
+new file mode 100644
+index 0000000000..e9b9f1a83c
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/catalog.ts
+@@ -0,0 +1,227 @@
++import { fetchResult } from "../../cfetch";
++import type { ComplianceConfig } from "../../environment-variables/misc-variables";
++
++type R2Warehouse = {
++	id: string;
++	name: string;
++	bucket: string;
++	status: "active" | "inactive";
++};
++
++/**
++ * Retrieve the warehouse for the bucket with the given name
++ */
++export async function getR2Catalog(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string
++): Promise<R2Warehouse> {
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}`,
++		{
++			method: "GET",
++		}
++	);
++}
++
++type R2WarehouseEnableResponse = {
++	id: string;
++	name: string;
++};
++
++/**
++ * Activate the R2 bucket as an Iceberg warehouse
++ */
++export async function enableR2Catalog(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string
++): Promise<R2WarehouseEnableResponse> {
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/enable`,
++		{
++			method: "POST",
++		}
++	);
++}
++
++/**
++ * Deactivate the R2 bucket as an Iceberg warehouse
++ */
++export async function disableR2Catalog(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string
++): Promise<R2WarehouseEnableResponse> {
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/disable`,
++		{
++			method: "POST",
++		}
++	);
++}
++
++type R2CatalogCompactionConfig = {
++	state: "enabled" | "disabled";
++
++	// If undefined, the service will set the default value
++	targetSizeMb?: number;
++};
++
++type R2CatalogCompactionResponse = {
++	success: boolean;
++};
++
++/**
++ * Enable compaction maintenance configuration for a table in the R2 catalog
++ */
++export async function enableR2CatalogCompaction(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	targetSizeMb: number | undefined
++): Promise<R2CatalogCompactionResponse> {
++	const config: R2CatalogCompactionConfig = {
++		state: "enabled",
++		targetSizeMb,
++	};
++
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/maintenance-configs`,
++		{
++			method: "POST",
++			body: JSON.stringify({
++				compaction: config,
++			}),
++			headers: {
++				"Content-Type": "application/json",
++			},
++		}
++	);
++}
++
++/**
++ * Disable compaction maintenance configuration for a table in the R2 catalog
++ */
++export async function disableR2CatalogCompaction(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string
++): Promise<R2CatalogCompactionResponse> {
++	const config: R2CatalogCompactionConfig = {
++		state: "disabled",
++	};
++
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/maintenance-configs`,
++		{
++			method: "POST",
++			body: JSON.stringify({
++				compaction: config,
++			}),
++			headers: {
++				"Content-Type": "application/json",
++			},
++		}
++	);
++}
++
++type R2CatalogCredentialResponse = {
++	success: boolean;
++};
++
++/**
++ * Sets a Cloudflare token which R2 Data Catalog uses for async table maintenance
++ * jobs (such as file compaction), where it needs direct access to the customer's R2 bucket.
++ */
++export async function upsertR2CatalogCredential(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	token: string
++): Promise<R2CatalogCredentialResponse> {
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/credential`,
++		{
++			method: "POST",
++			body: JSON.stringify({
++				token,
++			}),
++			headers: {
++				"Content-Type": "application/json",
++			},
++		}
++	);
++}
++
++/**
++ * Enable compaction for a specific table in the R2 catalog
++ */
++export async function enableR2CatalogTableCompaction(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	namespace: string,
++	tableName: string,
++	targetSizeMb?: number
++): Promise<void> {
++	const body: {
++		compaction: {
++			state: string;
++			target_size_mb?: number;
++		};
++	} = {
++		compaction: {
++			state: "enabled",
++		},
++	};
++
++	if (targetSizeMb !== undefined) {
++		body.compaction.target_size_mb = targetSizeMb;
++	}
++
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/namespaces/${namespace}/tables/${tableName}/maintenance-configs`,
++		{
++			method: "POST",
++			body: JSON.stringify(body),
++			headers: {
++				"Content-Type": "application/json",
++			},
++		}
++	);
++}
++
++/**
++ * Disable compaction for a specific table in the R2 catalog
++ */
++export async function disableR2CatalogTableCompaction(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	namespace: string,
++	tableName: string
++): Promise<void> {
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2-catalog/${bucketName}/namespaces/${namespace}/tables/${tableName}/maintenance-configs`,
++		{
++			method: "POST",
++			body: JSON.stringify({
++				compaction: {
++					state: "disabled",
++				},
++			}),
++			headers: {
++				"Content-Type": "application/json",
++			},
++		}
++	);
++}
+diff --git a/packages/wrangler/src/r2/helpers/domain.ts b/packages/wrangler/src/r2/helpers/domain.ts
+new file mode 100644
+index 0000000000..effbef7eff
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/domain.ts
+@@ -0,0 +1,226 @@
++import { fetchResult } from "../../cfetch";
++import type { ComplianceConfig } from "../../environment-variables/misc-variables";
++import type { HeadersInit } from "undici";
++
++export interface CustomDomainConfig {
++	domain: string;
++	minTLS?: string;
++	zoneId?: string;
++}
++
++export interface CustomDomainInfo {
++	domain: string;
++	enabled: boolean;
++	status: {
++		ownership: string;
++		ssl: string;
++	};
++	minTLS: string;
++	zoneId: string;
++	zoneName: string;
++}
++
++export async function getCustomDomain(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	domainName: string,
++	jurisdiction?: string
++): Promise<CustomDomainInfo> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<CustomDomainInfo>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom/${domainName}`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++
++	return result;
++}
++
++export async function attachCustomDomainToBucket(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	domainConfig: CustomDomainConfig,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom`,
++		{
++			method: "POST",
++			headers,
++			body: JSON.stringify({
++				...domainConfig,
++				enabled: true,
++			}),
++		}
++	);
++}
++
++export async function removeCustomDomainFromBucket(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	domainName: string,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom/${domainName}`,
++		{
++			method: "DELETE",
++			headers,
++		}
++	);
++}
++
++export function tableFromCustomDomainListResponse(
++	domains: CustomDomainInfo[]
++): {
++	domain: string;
++	enabled: string;
++	ownership_status: string;
++	ssl_status: string;
++	min_tls_version: string;
++	zone_id: string;
++	zone_name: string;
++}[] {
++	const rows = [];
++	for (const domainInfo of domains) {
++		rows.push({
++			domain: domainInfo.domain,
++			enabled: domainInfo.enabled ? "Yes" : "No",
++			ownership_status: domainInfo.status.ownership || "(unknown)",
++			ssl_status: domainInfo.status.ssl || "(unknown)",
++			min_tls_version: domainInfo.minTLS || "1.0",
++			zone_id: domainInfo.zoneId || "(none)",
++			zone_name: domainInfo.zoneName || "(none)",
++		});
++	}
++	return rows;
++}
++
++export async function listCustomDomainsOfBucket(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<CustomDomainInfo[]> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<{
++		domains: CustomDomainInfo[];
++	}>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++
++	return result.domains;
++}
++
++export async function configureCustomDomainSettings(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	domainName: string,
++	domainConfig: CustomDomainConfig,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/custom/${domainName}`,
++		{
++			method: "PUT",
++			headers,
++			body: JSON.stringify(domainConfig),
++		}
++	);
++}
++
++export interface R2DevDomainInfo {
++	bucketId: string;
++	domain: string;
++	enabled: boolean;
++}
++
++export async function getR2DevDomain(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<R2DevDomainInfo> {
++	const headers: HeadersInit = {};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<R2DevDomainInfo>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/managed`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++	return result;
++}
++
++export async function updateR2DevDomain(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	enabled: boolean,
++	jurisdiction?: string
++): Promise<R2DevDomainInfo> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	const result = await fetchResult<R2DevDomainInfo>(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/domains/managed`,
++		{
++			method: "PUT",
++			headers,
++			body: JSON.stringify({ enabled }),
++		}
++	);
++	return result;
++}
+diff --git a/packages/wrangler/src/r2/helpers/misc.ts b/packages/wrangler/src/r2/helpers/misc.ts
+new file mode 100644
+index 0000000000..42ec97c281
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/misc.ts
+@@ -0,0 +1,38 @@
++export function formatActionDescription(action: string): string {
++	switch (action) {
++		case "expire":
++			return "expire objects";
++		case "transition":
++			return "transition to Infrequent Access storage class";
++		case "abort-multipart":
++			return "abort incomplete multipart uploads";
++		default:
++			return action;
++	}
++}
++
++export function isValidDate(dateString: string): boolean {
++	const regex = /^\d{4}-\d{2}-\d{2}$/;
++	if (!regex.test(dateString)) {
++		return false;
++	}
++	const date = new Date(`${dateString}T00:00:00.000Z`);
++	const timestamp = date.getTime();
++	if (isNaN(timestamp)) {
++		return false;
++	}
++	const [year, month, day] = dateString.split("-").map(Number);
++	return (
++		date.getUTCFullYear() === year &&
++		date.getUTCMonth() + 1 === month &&
++		date.getUTCDate() === day
++	);
++}
++
++export function isNonNegativeNumber(str: string): boolean {
++	if (str === "") {
++		return false;
++	}
++	const num = Number(str);
++	return num >= 0;
++}
+diff --git a/packages/wrangler/src/r2/helpers/notification.ts b/packages/wrangler/src/r2/helpers/notification.ts
+new file mode 100644
+index 0000000000..c80196b018
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/notification.ts
+@@ -0,0 +1,259 @@
++import { fetchResult } from "../../cfetch";
++import { logger } from "../../logger";
++import { getQueue, getQueueById } from "../../queues/client";
++import type { ApiCredentials } from "../../user";
++import type { Config } from "@cloudflare/workers-utils";
++import type { HeadersInit } from "undici";
++
++export type R2EventableOperation =
++	| "PutObject"
++	| "DeleteObject"
++	| "CompleteMultipartUpload"
++	| "AbortMultipartUpload"
++	| "CopyObject"
++	| "LifecycleDeletion";
++
++export const actionsForEventCategories: Record<
++	"object-create" | "object-delete",
++	R2EventableOperation[]
++> = {
++	"object-create": ["PutObject", "CompleteMultipartUpload", "CopyObject"],
++	"object-delete": ["DeleteObject", "LifecycleDeletion"],
++};
++export type R2EventType = keyof typeof actionsForEventCategories;
++type NotificationRule = {
++	prefix?: string;
++	suffix?: string;
++	actions: R2EventableOperation[];
++	description?: string;
++};
++type GetNotificationRule = {
++	ruleId: string;
++	createdAt?: string;
++	prefix?: string;
++	suffix?: string;
++	actions: R2EventableOperation[];
++};
++export type GetQueueDetail = {
++	queueId: string;
++	queueName: string;
++	rules: GetNotificationRule[];
++};
++export type GetNotificationConfigResponse = {
++	bucketName: string;
++	queues: GetQueueDetail[];
++};
++type DetailID = string;
++type QueueID = string;
++type BucketName = string;
++type NotificationDetail = Record<
++	DetailID, // This is the detail ID that identifies this config
++	{ queue: QueueID; rules: NotificationRule[] }
++>;
++// Event Notifications API Backwards Compatibility
++export type GetNotificationConfigResponseOld = Record<
++	BucketName,
++	NotificationDetail
++>;
++// This type captures the shape of the data expected by EWC API.
++export type PutNotificationRequestBody = {
++	// `jurisdiction` is included here for completeness, but until Queues
++	// supports jurisdictions, then this command will not send anything to do
++	// with jurisdictions.
++	jurisdiction?: string;
++	rules: NotificationRule[];
++};
++
++// This type captures the shape of the data expected by EWC API.
++export type DeleteNotificationRequestBody = {
++	ruleIds?: string[];
++};
++
++export function eventNotificationHeaders(
++	apiCredentials: ApiCredentials,
++	jurisdiction: string
++): HeadersInit {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++
++	if ("apiToken" in apiCredentials) {
++		headers["Authorization"] = `Bearer ${apiCredentials.apiToken}`;
++	} else {
++		headers["X-Auth-Key"] = apiCredentials.authKey;
++		headers["X-Auth-Email"] = apiCredentials.authEmail;
++	}
++	if (jurisdiction !== "") {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	return headers;
++}
++
++export function tableFromNotificationGetResponse(
++	response: GetNotificationConfigResponse
++): {
++	rule_id: string;
++	created_at: string;
++	queue_name: string;
++	prefix: string;
++	suffix: string;
++	event_type: string;
++}[] {
++	const rows = [];
++	for (const entry of response.queues) {
++		for (const {
++			prefix = "",
++			suffix = "",
++			actions,
++			ruleId,
++			createdAt = "",
++		} of entry.rules) {
++			rows.push({
++				rule_id: ruleId,
++				created_at: createdAt,
++				queue_name: entry.queueName,
++				prefix: prefix || "(all prefixes)",
++				suffix: suffix || "(all suffixes)",
++				event_type: actions.join(","),
++			});
++		}
++	}
++	return rows;
++}
++
++export async function listEventNotificationConfig(
++	config: Config,
++	apiCredentials: ApiCredentials,
++	accountId: string,
++	bucketName: string,
++	jurisdiction: string
++): Promise<GetNotificationConfigResponse> {
++	const headers = eventNotificationHeaders(apiCredentials, jurisdiction);
++	logger.log(`Fetching notification rules for bucket ${bucketName}...`);
++	const res = await fetchResult<GetNotificationConfigResponse>(
++		config,
++		`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration`,
++		{ method: "GET", headers }
++	);
++	if ("bucketName" in res && "queues" in res) {
++		return res;
++	}
++	// API response doesn't match new format. Trying the old format.
++	// Convert the old style payload to the new
++	// We can assume that the old payload has a single bucket entry
++	const oldResult = res as GetNotificationConfigResponseOld;
++	const [oldBucketName, oldDetail] = Object.entries(oldResult)[0];
++	const newResult: GetNotificationConfigResponse = {
++		bucketName: oldBucketName,
++		queues: await Promise.all(
++			Object.values(oldDetail).map(async (oldQueue) => {
++				const newQueue: GetQueueDetail = {
++					queueId: oldQueue.queue,
++					queueName: (await getQueueById(config, accountId, oldQueue.queue))
++						.queue_name,
++					rules: oldQueue.rules.map((oldRule) => {
++						const newRule: GetNotificationRule = {
++							ruleId: "",
++							prefix: oldRule.prefix,
++							suffix: oldRule.suffix,
++							actions: oldRule.actions,
++						};
++						return newRule;
++					}),
++				};
++				return newQueue;
++			})
++		),
++	};
++	return newResult;
++}
++
++/** Construct & transmit notification configuration to EWC.
++ *
++ * On success, receive HTTP 200 response with no body
++ *
++ * Possible status codes on failure:
++ * - 400 Bad Request - Either:
++ * 		- Uploaded configuration is invalid
++ * 		- Communication with either R2-gateway-worker or queue-broker-worker fails
++ * - 409 Conflict - A configuration between the bucket and queue already exists
++ * */
++export async function putEventNotificationConfig(
++	config: Config,
++	apiCredentials: ApiCredentials,
++	accountId: string,
++	bucketName: string,
++	jurisdiction: string,
++	queueName: string,
++	eventTypes: R2EventType[],
++	prefix?: string,
++	suffix?: string,
++	description?: string
++): Promise<void> {
++	const queue = await getQueue(config, queueName);
++	const headers = eventNotificationHeaders(apiCredentials, jurisdiction);
++	let actions: R2EventableOperation[] = [];
++
++	for (const et of eventTypes) {
++		actions = actions.concat(actionsForEventCategories[et]);
++	}
++
++	const body: PutNotificationRequestBody =
++		description === undefined
++			? {
++					rules: [{ prefix, suffix, actions }],
++				}
++			: {
++					rules: [{ prefix, suffix, actions, description }],
++				};
++	const ruleFor = eventTypes.map((et) =>
++		et === "object-create" ? "creation" : "deletion"
++	);
++	logger.log(
++		`Creating event notification rule for object ${ruleFor.join(
++			" and "
++		)} (${actions.join(",")})`
++	);
++	return await fetchResult<void>(
++		config,
++		`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration/queues/${queue.queue_id}`,
++		{ method: "PUT", body: JSON.stringify(body), headers }
++	);
++}
++
++export async function deleteEventNotificationConfig(
++	config: Config,
++	apiCredentials: ApiCredentials,
++	accountId: string,
++	bucketName: string,
++	jurisdiction: string,
++	queueName: string,
++	ruleId: string | undefined
++): Promise<null> {
++	const queue = await getQueue(config, queueName);
++	const headers = eventNotificationHeaders(apiCredentials, jurisdiction);
++	if (ruleId !== undefined) {
++		logger.log(`Deleting event notifications rule "${ruleId}"...`);
++		const body: DeleteNotificationRequestBody =
++			ruleId !== undefined
++				? {
++						ruleIds: [ruleId],
++					}
++				: {};
++
++		return await fetchResult<null>(
++			config,
++			`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration/queues/${queue.queue_id}`,
++			{ method: "DELETE", body: JSON.stringify(body), headers }
++		);
++	} else {
++		logger.log(
++			`Deleting event notification rules associated with queue ${queueName}...`
++		);
++		return await fetchResult<null>(
++			config,
++			`/accounts/${accountId}/event_notifications/r2/${bucketName}/configuration/queues/${queue.queue_id}`,
++			{ method: "DELETE", headers }
++		);
++	}
++}
+diff --git a/packages/wrangler/src/r2/helpers/object.ts b/packages/wrangler/src/r2/helpers/object.ts
+new file mode 100644
+index 0000000000..98483a8f0b
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/object.ts
+@@ -0,0 +1,221 @@
++import {
++	bucketFormatMessage,
++	FatalError,
++	isValidR2BucketName,
++	UserError,
++} from "@cloudflare/workers-utils";
++import { Miniflare } from "miniflare";
++import prettyBytes from "pretty-bytes";
++import { fetchR2Objects } from "../../cfetch/internal";
++import { getLocalPersistencePath } from "../../dev/get-local-persistence-path";
++import { getDefaultPersistRoot } from "../../dev/miniflare";
++import { MAX_UPLOAD_SIZE_BYTES } from "../constants";
++import type { ComplianceConfig } from "../../environment-variables/misc-variables";
++import type { R2Bucket } from "@cloudflare/workers-types/experimental";
++import type { Config } from "@cloudflare/workers-utils";
++import type { ReplaceWorkersTypes } from "miniflare";
++import type { Readable } from "node:stream";
++import type { ReadableStream } from "node:stream/web";
++import type { HeadersInit } from "undici";
++
++/**
++ * Downloads an object
++ */
++export async function getR2Object(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	objectName: string,
++	jurisdiction?: string
++): Promise<ReadableStream | null> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	const response = await fetchR2Objects(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/objects/${objectName}`,
++		{
++			method: "GET",
++			headers,
++		}
++	);
++
++	return response === null ? null : response.body;
++}
++
++/**
++ * Validate upload size.
++ *
++ * Throws a FatalError if the size exceeds the maximum allowed upload size.
++ *
++ * @param sizeBytes the size of the object to upload in bytes
++ */
++export function validateUploadSize(key: string, sizeBytes: number): void {
++	if (sizeBytes > MAX_UPLOAD_SIZE_BYTES) {
++		throw new FatalError(
++			`Error: Wrangler only supports uploading files up to ${prettyBytes(
++				MAX_UPLOAD_SIZE_BYTES,
++				{ binary: true }
++			)} in size\n${key} is ${prettyBytes(sizeBytes, {
++				binary: true,
++			})} in size`,
++			1
++		);
++	}
++}
++
++const putHeaderKeys = [
++	"cache-control",
++	"content-disposition",
++	"content-encoding",
++	"content-language",
++	"content-length",
++	"content-type",
++	"expires",
++] as const;
++
++/**
++ * Uploads an object to remote R2
++ */
++export async function putRemoteObject(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	objectName: string,
++	object: Readable | ReadableStream | Buffer,
++	options: Record<(typeof putHeaderKeys)[number], string | undefined>,
++	jurisdiction?: string,
++	storageClass?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	for (const key of putHeaderKeys) {
++		const value = options[key] || "";
++		if (value && typeof value === "string") {
++			headers[key] = value;
++		}
++	}
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++
++	if (storageClass !== undefined) {
++		headers["cf-r2-storage-class"] = storageClass;
++	}
++
++	const result = await fetchR2Objects(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/objects/${objectName}`,
++		{
++			body: object,
++			headers,
++			method: "PUT",
++			duplex: "half",
++		}
++	);
++	if (result === null) {
++		throw new UserError("The specified bucket does not exist.");
++	}
++}
++/**
++ * Delete an Object
++ */
++export async function deleteR2Object(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	objectName: string,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	await fetchR2Objects(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/objects/${objectName}`,
++		{ method: "DELETE", headers }
++	);
++}
++
++export async function usingLocalBucket<T>(
++	persistTo: string | undefined,
++	config: Config,
++	bucketName: string,
++	closure: (
++		namespace: ReplaceWorkersTypes<R2Bucket>,
++		mf: Miniflare
++	) => Promise<T>
++): Promise<T> {
++	const persist = getLocalPersistencePath(persistTo, config);
++	const defaultPersistRoot = getDefaultPersistRoot(persist);
++	const mf = new Miniflare({
++		modules: true,
++		// TODO(soon): import `reduceError()` from `miniflare:shared`
++		script: `
++    function reduceError(e) {
++      return {
++        name: e?.name,
++        message: e?.message ?? String(e),
++        stack: e?.stack,
++        cause: e?.cause === undefined ? undefined : reduceError(e.cause),
++      };
++    }
++    export default {
++      async fetch(request, env, ctx) {
++        try {
++          if (request.method !== "PUT") return new Response(null, { status: 405 });
++          const url = new URL(request.url);
++          const key = url.pathname.substring(1);
++          const optsHeader = request.headers.get("Wrangler-R2-Put-Options");
++          const opts = JSON.parse(optsHeader);
++          await env.BUCKET.put(key, request.body, opts);
++          return new Response(null, { status: 204 });
++        } catch (e) {
++          const error = reduceError(e);
++          return Response.json(error, {
++            status: 500,
++            headers: { "MF-Experimental-Error-Stack": "true" },
++          });
++        }
++      }
++    }`,
++		defaultPersistRoot,
++		r2Buckets: { BUCKET: bucketName },
++	});
++	const bucket = await mf.getR2Bucket("BUCKET");
++	try {
++		return await closure(bucket, mf);
++	} finally {
++		await mf.dispose();
++	}
++}
++
++/**
++ * Extract the bucket and key from an object path, validating the bucket name in the process.
++ *
++ * Throws when an invalid format is provided or when the bucket name is invalid.
++ *
++ * @param objectPath The path passed to wrangler commands in the format `{bucket}/{key}`
++ * @returns The bucket and key extracted from the object path
++ */
++export function validateAndReturnBucketAndKey(objectPath: string): {
++	bucket: string;
++	key: string;
++} {
++	// Path format is `<bucket>/<key>`
++	const match = /^(?<bucket>[^/]+)\/(?<key>.*)/.exec(objectPath);
++	if (match === null || !match.groups) {
++		throw new UserError(
++			`The object path must be in the form of {bucket}/{key} you provided ${objectPath}`
++		);
++	}
++	const { bucket, key } = match.groups;
++	if (!isValidR2BucketName(bucket)) {
++		throw new UserError(
++			`The bucket name "${bucket}" is invalid. ${bucketFormatMessage}`
++		);
++	}
++
++	return { bucket, key };
++}
+diff --git a/packages/wrangler/src/r2/helpers/sippy.ts b/packages/wrangler/src/r2/helpers/sippy.ts
+new file mode 100644
+index 0000000000..071e19506c
+--- /dev/null
++++ b/packages/wrangler/src/r2/helpers/sippy.ts
+@@ -0,0 +1,100 @@
++import { fetchResult } from "../../cfetch";
++import type { ComplianceConfig } from "../../environment-variables/misc-variables";
++import type { HeadersInit } from "undici";
++
++type SippyConfig = {
++	source:
++		| { provider: "aws"; region: string; bucket: string }
++		| { provider: "gcs"; bucket: string };
++	destination: {
++		provider: "r2";
++		account: string;
++		bucket: string;
++		accessKeyId: string;
++	};
++};
++
++/**
++ * Retrieve the sippy upstream bucket for the bucket with the given name
++ */
++export async function getR2Sippy(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<SippyConfig> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/sippy`,
++		{ method: "GET", headers }
++	);
++}
++
++/**
++ * Disable sippy on the bucket with the given name
++ */
++export async function deleteR2Sippy(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/sippy`,
++		{ method: "DELETE", headers }
++	);
++}
++
++export type SippyPutParams = {
++	source:
++		| {
++				provider: "aws";
++				region: string;
++				bucket: string;
++				accessKeyId: string;
++				secretAccessKey: string;
++		  }
++		| {
++				provider: "gcs";
++				bucket: string;
++				clientEmail: string;
++				privateKey: string;
++		  };
++	destination: {
++		provider: "r2";
++		accessKeyId: string;
++		secretAccessKey: string;
++	};
++};
++
++/**
++ * Enable sippy on the bucket with the given name
++ */
++export async function putR2Sippy(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	bucketName: string,
++	params: SippyPutParams,
++	jurisdiction?: string
++): Promise<void> {
++	const headers: HeadersInit = {
++		"Content-Type": "application/json",
++	};
++	if (jurisdiction !== undefined) {
++		headers["cf-r2-jurisdiction"] = jurisdiction;
++	}
++	return await fetchResult(
++		complianceConfig,
++		`/accounts/${accountId}/r2/buckets/${bucketName}/sippy`,
++		{ method: "PUT", body: JSON.stringify(params), headers }
++	);
++}
+diff --git a/packages/wrangler/src/r2/lifecycle.ts b/packages/wrangler/src/r2/lifecycle.ts
+index 478712dfc6..9909ee9a5f 100644
+--- a/packages/wrangler/src/r2/lifecycle.ts
++++ b/packages/wrangler/src/r2/lifecycle.ts
+@@ -6,14 +6,16 @@ import { logger } from "../logger";
+ import { requireAuth } from "../user";
+ import formatLabelledValues from "../utils/render-labelled-values";
+ import {
+-	formatActionDescription,
+ 	getLifecycleRules,
+-	isNonNegativeNumber,
+-	isValidDate,
+ 	putLifecycleRules,
+ 	tableFromLifecycleRulesResponse,
+-} from "./helpers";
+-import type { LifecycleRule } from "./helpers";
++} from "./helpers/bucket";
++import {
++	formatActionDescription,
++	isNonNegativeNumber,
++	isValidDate,
++} from "./helpers/misc";
++import type { LifecycleRule } from "./helpers/bucket";
+ 
+ export const r2BucketLifecycleNamespace = createNamespace({
+ 	metadata: {
+diff --git a/packages/wrangler/src/r2/lock.ts b/packages/wrangler/src/r2/lock.ts
+index 2b1584fa29..de6ab4a810 100644
+--- a/packages/wrangler/src/r2/lock.ts
++++ b/packages/wrangler/src/r2/lock.ts
+@@ -7,11 +7,11 @@ import { requireAuth } from "../user";
+ import formatLabelledValues from "../utils/render-labelled-values";
+ import {
+ 	getBucketLockRules,
+-	isValidDate,
+ 	putBucketLockRules,
+ 	tableFromBucketLockRulesResponse,
+-} from "./helpers";
+-import type { BucketLockRule } from "./helpers";
++} from "./helpers/bucket";
++import { isValidDate } from "./helpers/misc";
++import type { BucketLockRule } from "./helpers/bucket";
+ 
+ export const r2BucketLockNamespace = createNamespace({
+ 	metadata: {
+diff --git a/packages/wrangler/src/r2/notification.ts b/packages/wrangler/src/r2/notification.ts
+index 68bdba7c9f..80f7c68699 100644
+--- a/packages/wrangler/src/r2/notification.ts
++++ b/packages/wrangler/src/r2/notification.ts
+@@ -12,8 +12,8 @@ import {
+ 	listEventNotificationConfig,
+ 	putEventNotificationConfig,
+ 	tableFromNotificationGetResponse,
+-} from "./helpers";
+-import type { R2EventType } from "./helpers";
++} from "./helpers/notification";
++import type { R2EventType } from "./helpers/notification";
+ 
+ export const r2BucketNotificationNamespace = createNamespace({
+ 	metadata: {
+diff --git a/packages/wrangler/src/r2/object.ts b/packages/wrangler/src/r2/object.ts
+index a62ea61af1..7e67426d19 100644
+--- a/packages/wrangler/src/r2/object.ts
++++ b/packages/wrangler/src/r2/object.ts
+@@ -3,24 +3,27 @@ import * as fs from "node:fs";
+ import * as path from "node:path";
+ import * as stream from "node:stream";
+ import {
++	bucketFormatMessage,
+ 	CommandLineArgsError,
+ 	FatalError,
++	isValidR2BucketName,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+-import prettyBytes from "pretty-bytes";
++import PQueue from "p-queue";
+ import { readConfig } from "../config";
+ import { createCommand, createNamespace } from "../core/create-command";
+ import { logger } from "../logger";
+ import { requireAuth } from "../user";
+ import { isLocal } from "../utils/is-local";
+-import { MAX_UPLOAD_SIZE } from "./constants";
++import { logBulkProgress, validateBulkPutFile } from "./helpers/bulk";
+ import {
+-	bucketAndKeyFromObjectPath,
+ 	deleteR2Object,
+ 	getR2Object,
+-	putR2Object,
++	putRemoteObject,
+ 	usingLocalBucket,
+-} from "./helpers";
++	validateAndReturnBucketAndKey,
++	validateUploadSize,
++} from "./helpers/object";
+ import type { R2PutOptions } from "@cloudflare/workers-types/experimental";
+ 
+ export const r2ObjectNamespace = createNamespace({
+@@ -31,6 +34,14 @@ export const r2ObjectNamespace = createNamespace({
+ 	},
+ });
+ 
++export const r2BulkNamespace = createNamespace({
++	metadata: {
++		description: `Interact with multiple R2 objects at once`,
++		status: "stable",
++		owner: "Product: R2",
++	},
++});
++
+ export const r2ObjectGetCommand = createCommand({
+ 	metadata: {
+ 		description: "Fetch an object from an R2 bucket",
+@@ -89,7 +100,7 @@ export const r2ObjectGetCommand = createCommand({
+ 	async handler(objectGetYargs, { config }) {
+ 		const localMode = isLocal(objectGetYargs);
+ 		const { objectPath, pipe, jurisdiction } = objectGetYargs;
+-		const { bucket, key } = bucketAndKeyFromObjectPath(objectPath);
++		const { bucket, key } = validateAndReturnBucketAndKey(objectPath);
+ 		let fullBucketName = bucket;
+ 		if (jurisdiction !== undefined) {
+ 			fullBucketName += ` (${jurisdiction})`;
+@@ -144,6 +155,73 @@ export const r2ObjectGetCommand = createCommand({
+ 	},
+ });
+ 
++/**
++ * Common arguments for R2 object put commands (single & bulk).
++ */
++const commonPutArguments = {
++	"content-type": {
++		describe: "A standard MIME type describing the format of the object data",
++		alias: "ct",
++		requiresArg: true,
++		type: "string",
++	},
++	"content-disposition": {
++		describe: "Specifies presentational information for the object",
++		alias: "cd",
++		requiresArg: true,
++		type: "string",
++	},
++	"content-encoding": {
++		describe:
++			"Specifies what content encodings have been applied to the object and thus what decoding mechanisms must be applied to obtain the media-type referenced by the Content-Type header field",
++		alias: "ce",
++		requiresArg: true,
++		type: "string",
++	},
++	"content-language": {
++		describe: "The language the content is in",
++		alias: "cl",
++		requiresArg: true,
++		type: "string",
++	},
++	"cache-control": {
++		describe: "Specifies caching behavior along the request/reply chain",
++		alias: "cc",
++		requiresArg: true,
++		type: "string",
++	},
++	expires: {
++		describe: "The date and time at which the object is no longer cacheable",
++		requiresArg: true,
++		type: "string",
++	},
++	local: {
++		type: "boolean",
++		describe: "Interact with local storage",
++	},
++	remote: {
++		type: "boolean",
++		describe: "Interact with remote storage",
++		conflicts: "local",
++	},
++	"persist-to": {
++		type: "string",
++		describe: "Directory for local persistence",
++	},
++	jurisdiction: {
++		describe: "The jurisdiction where the object will be created",
++		alias: "J",
++		requiresArg: true,
++		type: "string",
++	},
++	"storage-class": {
++		describe: "The storage class of the object to be created",
++		alias: "s",
++		requiresArg: false,
++		type: "string",
++	},
++} as const;
++
+ export const r2ObjectPutCommand = createCommand({
+ 	metadata: {
+ 		description: "Create an object in an R2 bucket",
+@@ -157,6 +235,7 @@ export const r2ObjectPutCommand = createCommand({
+ 			type: "string",
+ 			demandOption: true,
+ 		},
++		...commonPutArguments,
+ 		file: {
+ 			describe: "The path of the file to upload",
+ 			alias: "f",
+@@ -171,97 +250,29 @@ export const r2ObjectPutCommand = createCommand({
+ 			conflicts: "file",
+ 			type: "boolean",
+ 		},
+-		"content-type": {
+-			describe: "A standard MIME type describing the format of the object data",
+-			alias: "ct",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		"content-disposition": {
+-			describe: "Specifies presentational information for the object",
+-			alias: "cd",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		"content-encoding": {
+-			describe:
+-				"Specifies what content encodings have been applied to the object and thus what decoding mechanisms must be applied to obtain the media-type referenced by the Content-Type header field",
+-			alias: "ce",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		"content-language": {
+-			describe: "The language the content is in",
+-			alias: "cl",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		"cache-control": {
+-			describe: "Specifies caching behavior along the request/reply chain",
+-			alias: "cc",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		expires: {
+-			describe: "The date and time at which the object is no longer cacheable",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		local: {
+-			type: "boolean",
+-			describe: "Interact with local storage",
+-		},
+-		remote: {
+-			type: "boolean",
+-			describe: "Interact with remote storage",
+-			conflicts: "local",
+-		},
+-		"persist-to": {
+-			type: "string",
+-			describe: "Directory for local persistence",
+-		},
+-		jurisdiction: {
+-			describe: "The jurisdiction where the object will be created",
+-			alias: "J",
+-			requiresArg: true,
+-			type: "string",
+-		},
+-		"storage-class": {
+-			describe: "The storage class of the object to be created",
+-			alias: "s",
+-			requiresArg: false,
+-			type: "string",
+-		},
+ 	},
+ 	behaviour: {
+ 		printResourceLocation(args) {
+ 			return !args?.pipe;
+ 		},
+ 	},
+-	async handler(objectPutYargs, { config }) {
+-		const {
+-			objectPath,
+-			file,
+-			pipe,
+-			persistTo,
+-			jurisdiction,
+-			storageClass,
+-			...options
+-		} = objectPutYargs;
+-		const localMode = isLocal(objectPutYargs);
+-		const { bucket, key } = bucketAndKeyFromObjectPath(objectPath);
++	async handler(yArgs, { config }) {
++		const { file, pipe } = yArgs;
+ 		if (!file && !pipe) {
+ 			throw new CommandLineArgsError(
+ 				"Either the --file or --pipe options are required."
+ 			);
+ 		}
+-		let object: ReadableStream;
+-		let objectSize: number;
++
++		const { bucket, key } = validateAndReturnBucketAndKey(yArgs.objectPath);
++
++		let objectStream: ReadableStream;
++		let sizeBytes: number;
+ 		if (file) {
+ 			try {
+ 				const stats = fs.statSync(file);
+-				objectSize = stats.size;
+-				object = stream.Readable.toWeb(fs.createReadStream(file));
++				sizeBytes = stats.size;
++				objectStream = stream.Readable.toWeb(fs.createReadStream(file));
+ 			} catch (err) {
+ 				if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+ 					throw new UserError(`The file "${file}" does not exist.`);
+@@ -287,55 +298,46 @@ export const r2ObjectPutCommand = createCommand({
+ 				);
+ 			});
+ 			const blob = new Blob([buffer]);
+-			object = blob.stream();
+-			objectSize = blob.size;
+-		}
+-
+-		if (objectSize > MAX_UPLOAD_SIZE && !localMode) {
+-			throw new FatalError(
+-				`Error: Wrangler only supports uploading files up to ${prettyBytes(
+-					MAX_UPLOAD_SIZE,
+-					{ binary: true }
+-				)} in size\n${key} is ${prettyBytes(objectSize, {
+-					binary: true,
+-				})} in size`,
+-				1
+-			);
++			objectStream = blob.stream();
++			sizeBytes = blob.size;
+ 		}
+ 
+ 		let fullBucketName = bucket;
+-		if (jurisdiction !== undefined) {
+-			fullBucketName += ` (${jurisdiction})`;
++		if (yArgs.jurisdiction !== undefined) {
++			fullBucketName += ` (${yArgs.jurisdiction})`;
+ 		}
+ 
+ 		let storageClassLog = ``;
+-		if (storageClass !== undefined) {
+-			storageClassLog = ` with ${storageClass} storage class`;
++		if (yArgs.storageClass !== undefined) {
++			storageClassLog = ` with ${yArgs.storageClass} storage class`;
+ 		}
++
+ 		logger.log(
+ 			`Creating object "${key}"${storageClassLog} in bucket "${fullBucketName}".`
+ 		);
+ 
+-		if (localMode) {
++		const isLocalMode = isLocal(yArgs);
++
++		if (isLocalMode) {
+ 			await usingLocalBucket(
+-				persistTo,
++				yArgs.persistTo,
+ 				config,
+ 				bucket,
+-				async (_r2Bucket, mf) => {
++				async (_bucket, mf) => {
+ 					const putOptions: R2PutOptions = {
+ 						httpMetadata: {
+-							contentType: options.contentType,
+-							contentDisposition: options.contentDisposition,
+-							contentEncoding: options.contentEncoding,
+-							contentLanguage: options.contentLanguage,
+-							cacheControl: options.cacheControl,
++							contentType: yArgs.contentType,
++							contentDisposition: yArgs.contentDisposition,
++							contentEncoding: yArgs.contentEncoding,
++							contentLanguage: yArgs.contentLanguage,
++							cacheControl: yArgs.cacheControl,
+ 							// @ts-expect-error `@cloudflare/workers-types` is wrong
+ 							//  here, `number`'s are allowed for `Date`s
+ 							// TODO(now): fix
+ 							cacheExpiry:
+-								options.expires === undefined
++								yArgs.expires === undefined
+ 									? undefined
+-									: parseInt(options.expires),
++									: parseInt(yArgs.expires),
+ 						},
+ 					};
+ 					// We can't use `r2Bucket.put()` here as `R2Bucket#put()`
+@@ -345,34 +347,35 @@ export const r2ObjectPutCommand = createCommand({
+ 					// for writing to a local bucket.
+ 					await mf.dispatchFetch(`http://localhost/${key}`, {
+ 						method: "PUT",
+-						body: object,
++						body: objectStream,
+ 						duplex: "half",
+ 						headers: {
+-							"Content-Length": objectSize.toString(),
++							"Content-Length": String(sizeBytes),
+ 							"Wrangler-R2-Put-Options": JSON.stringify(putOptions),
+ 						},
+ 					});
+ 				}
+ 			);
+ 		} else {
+-			const accountId = await requireAuth(config);
+-			await putR2Object(
++			validateUploadSize(key, sizeBytes);
++
++			await putRemoteObject(
+ 				config,
+-				accountId,
++				await requireAuth(config),
+ 				bucket,
+ 				key,
+-				object,
++				objectStream,
+ 				{
+-					"cache-control": options.cacheControl,
+-					"content-disposition": options.contentDisposition,
+-					"content-encoding": options.contentEncoding,
+-					"content-language": options.contentLanguage,
+-					"content-length": String(objectSize),
+-					"content-type": options.contentType,
+-					expires: options.expires,
++					"content-type": yArgs.contentType,
++					"content-disposition": yArgs.contentDisposition,
++					"content-encoding": yArgs.contentEncoding,
++					"content-language": yArgs.contentLanguage,
++					"cache-control": yArgs.cacheControl,
++					"content-length": String(sizeBytes),
++					expires: yArgs.expires,
+ 				},
+-				jurisdiction,
+-				storageClass
++				yArgs.jurisdiction,
++				yArgs.storageClass
+ 			);
+ 		}
+ 
+@@ -421,7 +424,7 @@ export const r2ObjectDeleteCommand = createCommand({
+ 
+ 		const { objectPath, jurisdiction } = args;
+ 		const config = readConfig(args);
+-		const { bucket, key } = bucketAndKeyFromObjectPath(objectPath);
++		const { bucket, key } = validateAndReturnBucketAndKey(objectPath);
+ 		let fullBucketName = bucket;
+ 		if (jurisdiction !== undefined) {
+ 			fullBucketName += ` (${jurisdiction})`;
+@@ -441,3 +444,169 @@ export const r2ObjectDeleteCommand = createCommand({
+ 		logger.log("Delete complete.");
+ 	},
+ });
++
++// Bulk operations
++
++export const r2BulkPutCommand = createCommand({
++	metadata: {
++		description: "Create objects in an R2 bucket",
++		status: "stable",
++		owner: "Product: R2",
++	},
++	positionalArgs: ["bucket"],
++	args: {
++		bucket: {
++			describe: "The name of the new bucket",
++			type: "string",
++			demandOption: true,
++		},
++		...commonPutArguments,
++		// TODO: add a mutually exclusive option to specify a directory to upload
++		filename: {
++			describe: "The file containing the key/file pairs to write",
++			alias: "f",
++			requiresArg: true,
++			type: "string",
++		},
++		concurrency: {
++			describe: "The number of concurrent uploads to perform",
++			type: "number",
++			default: 20,
++		},
++	},
++	behaviour: {
++		printResourceLocation: true,
++	},
++	async handler(yArgs, { config }) {
++		if (!isValidR2BucketName(yArgs.bucket)) {
++			throw new UserError(
++				`The bucket name "${yArgs.bucket}" is invalid. ${bucketFormatMessage}`
++			);
++		}
++
++		if (!yArgs.filename) {
++			throw new UserError(
++				"The --filename argument is required for bulk put operations."
++			);
++		}
++
++		const entries = validateBulkPutFile(yArgs.filename);
++
++		const isLocalMode = isLocal(yArgs);
++
++		let fullBucketName = yArgs.bucket;
++		if (yArgs.jurisdiction !== undefined) {
++			fullBucketName += ` (${yArgs.jurisdiction})`;
++		}
++
++		let storageClassLog = ``;
++		if (yArgs.storageClass !== undefined) {
++			storageClassLog = ` with ${yArgs.storageClass} storage class`;
++		}
++
++		const concurrency = Math.max(1, yArgs.concurrency);
++
++		logger.log(
++			`Starting bulk upload of ${entries.length} objects to bucket ${fullBucketName}${storageClassLog} using a concurrency of ${concurrency}`
++		);
++
++		if (isLocalMode) {
++			await usingLocalBucket(
++				yArgs.persistTo,
++				config,
++				yArgs.bucket,
++				async (_bucket, mf) => {
++					const putOptions: R2PutOptions = {
++						httpMetadata: {
++							contentType: yArgs.contentType,
++							contentDisposition: yArgs.contentDisposition,
++							contentEncoding: yArgs.contentEncoding,
++							contentLanguage: yArgs.contentLanguage,
++							cacheControl: yArgs.cacheControl,
++							// @ts-expect-error `@cloudflare/workers-types` is wrong
++							//  here, `number`'s are allowed for `Date`s
++							// TODO(now): fix
++							cacheExpiry:
++								yArgs.expires === undefined
++									? undefined
++									: parseInt(yArgs.expires),
++						},
++					};
++
++					const queue = new PQueue({ concurrency });
++					const jsonPutOptions = JSON.stringify(putOptions);
++
++					await queue.addAll(
++						entries.map((entry, index) => async () => {
++							if ((index + 1) % 100 === 0 || index + 1 === entries.length) {
++								logBulkProgress("Uploaded", index + 1, entries.length);
++							}
++							// We can't use `r2Bucket.put()` here as `R2Bucket#put()`
++							// requires a known length stream, and Miniflare's magic proxy
++							// currently doesn't support sending these. Instead,
++							// `usingLocalBucket()` provides a single `PUT` endpoint
++							// for writing to a local bucket.
++							await mf.dispatchFetch(`http://localhost/${entry.key}`, {
++								method: "PUT",
++								body: stream.Readable.toWeb(fs.createReadStream(entry.file)),
++								duplex: "half",
++								headers: {
++									"Content-Length": String(entry.size),
++									"Wrangler-R2-Put-Options": jsonPutOptions,
++								},
++							});
++						})
++					);
++
++					try {
++						await Promise.race([queue.onError(), queue.onIdle()]);
++					} catch (error) {
++						queue.pause();
++						throw new FatalError(`R2 bulk upload failed\n${error}`);
++					}
++				}
++			);
++		} else {
++			const accountId = await requireAuth(config);
++
++			const queue = new PQueue({ concurrency });
++
++			await queue.addAll(
++				entries.map((entry, index) => async () => {
++					try {
++						if ((index + 1) % 10 === 0 || index + 1 === entries.length) {
++							logBulkProgress("Uploaded", index + 1, entries.length);
++						}
++						await putRemoteObject(
++							config,
++							accountId,
++							yArgs.bucket,
++							entry.key,
++							stream.Readable.toWeb(fs.createReadStream(entry.file)),
++							{
++								"cache-control": yArgs.cacheControl,
++								"content-disposition": yArgs.contentDisposition,
++								"content-encoding": yArgs.contentEncoding,
++								"content-language": yArgs.contentLanguage,
++								"content-type": yArgs.contentType,
++								"content-length": String(entry.size),
++								expires: yArgs.expires,
++							},
++							yArgs.jurisdiction,
++							yArgs.storageClass
++						);
++					} catch (e) {
++						throw new FatalError(`Error uploading "${entry.file}"\n${e}`);
++					}
++				})
++			);
++
++			try {
++				await Promise.race([queue.onError(), queue.onIdle()]);
++			} catch (error) {
++				queue.pause();
++				throw new FatalError(`R2 bulk upload failed\n${error}`);
++			}
++		}
++	},
++});
+diff --git a/packages/wrangler/src/r2/public-dev-url.ts b/packages/wrangler/src/r2/public-dev-url.ts
+index 78c84c0254..3dc883caaa 100644
+--- a/packages/wrangler/src/r2/public-dev-url.ts
++++ b/packages/wrangler/src/r2/public-dev-url.ts
+@@ -2,7 +2,7 @@ import { createCommand, createNamespace } from "../core/create-command";
+ import { confirm } from "../dialogs";
+ import { logger } from "../logger";
+ import { requireAuth } from "../user";
+-import { getR2DevDomain, updateR2DevDomain } from "./helpers";
++import { getR2DevDomain, updateR2DevDomain } from "./helpers/domain";
+ 
+ export const r2BucketDevUrlNamespace = createNamespace({
+ 	metadata: {
+diff --git a/packages/wrangler/src/r2/sippy.ts b/packages/wrangler/src/r2/sippy.ts
+index ef4f17d97f..acfde27d3c 100644
+--- a/packages/wrangler/src/r2/sippy.ts
++++ b/packages/wrangler/src/r2/sippy.ts
+@@ -3,8 +3,8 @@ import { createCommand, createNamespace } from "../core/create-command";
+ import { prompt } from "../dialogs";
+ import { logger } from "../logger";
+ import { requireAuth } from "../user";
+-import { deleteR2Sippy, getR2Sippy, putR2Sippy } from "./helpers";
+-import type { SippyPutParams } from "./helpers";
++import { deleteR2Sippy, getR2Sippy, putR2Sippy } from "./helpers/sippy";
++import type { SippyPutParams } from "./helpers/sippy";
+ 
+ const NO_SUCH_OBJECT_KEY = 10007;
+ const SIPPY_PROVIDER_CHOICES = ["AWS", "GCS"];

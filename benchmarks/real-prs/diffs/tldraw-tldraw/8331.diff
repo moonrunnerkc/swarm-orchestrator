@@ -1,0 +1,1232 @@
+diff --git a/apps/examples/src/examples/shapes/tools/portal-shapes/PortalShapeUtil.tsx b/apps/examples/src/examples/shapes/tools/portal-shapes/PortalShapeUtil.tsx
+new file mode 100644
+index 000000000000..26fa1cfaf357
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/portal-shapes/PortalShapeUtil.tsx
+@@ -0,0 +1,167 @@
++import {
++	BaseFrameLikeShapeUtil,
++	Ellipse2d,
++	Geometry2d,
++	Group2d,
++	RecordProps,
++	SVGContainer,
++	T,
++	TLBaseBoxShape,
++	TLDropShapesOverInfo,
++	TLResizeInfo,
++	TLShape,
++	resizeBox,
++	toDomPrecision,
++	toRichText,
++} from 'tldraw'
++
++const PORTAL_SHAPE_TYPE = 'portal'
++
++declare module 'tldraw' {
++	export interface TLGlobalShapePropsMap {
++		[PORTAL_SHAPE_TYPE]: { w: number; h: number; color: string }
++	}
++}
++
++export type PortalShape = TLBaseBoxShape & {
++	type: typeof PORTAL_SHAPE_TYPE
++	props: { color: 'blue' | 'orange' }
++}
++
++const COLORS = {
++	blue: {
++		fill: 'rgba(60, 130, 246, 0.08)',
++		stroke: '#3b82f6',
++		glow: 'rgba(59, 130, 246, 0.4)',
++	},
++	orange: {
++		fill: 'rgba(249, 115, 22, 0.08)',
++		stroke: '#f97316',
++		glow: 'rgba(249, 115, 22, 0.4)',
++	},
++} as const
++
++let teleportCount = 0
++
++export class PortalShapeUtil extends BaseFrameLikeShapeUtil<PortalShape> {
++	static override type = PORTAL_SHAPE_TYPE
++	static override props: RecordProps<PortalShape> = {
++		w: T.number,
++		h: T.number,
++		color: T.literalEnum('blue', 'orange'),
++	}
++
++	override getDefaultProps(): PortalShape['props'] {
++		return { w: 250, h: 300, color: 'blue' }
++	}
++
++	override canResize() {
++		return true
++	}
++
++	override getGeometry(shape: PortalShape): Geometry2d {
++		return new Group2d({
++			children: [
++				new Ellipse2d({
++					width: shape.props.w,
++					height: shape.props.h,
++					isFilled: true,
++				}),
++			],
++		})
++	}
++
++	override onResize(shape: PortalShape, info: TLResizeInfo<PortalShape>) {
++		return resizeBox(shape, info)
++	}
++
++	private findLinkedPortal(shape: PortalShape): PortalShape | undefined {
++		const otherColor = shape.props.color === 'blue' ? 'orange' : 'blue'
++		const allShapes = this.editor.getCurrentPageShapes() as TLShape[]
++		return allShapes.find(
++			(s): s is PortalShape =>
++				s.type === PORTAL_SHAPE_TYPE && (s as PortalShape).props.color === otherColor
++		)
++	}
++
++	// On drop, teleport: move shapes from this portal to the linked one.
++	override onDropShapesOver(shape: PortalShape, shapes: TLShape[], _info: TLDropShapesOverInfo) {
++		const linked = this.findLinkedPortal(shape)
++		if (!linked) return
++
++		const { editor } = this
++
++		// First, ensure all dropped shapes are children of this portal so we
++		// have consistent local coordinates. Shapes dragged in during the drag
++		// are already parented here; shapes dropped directly may not be.
++		const needsReparent = shapes.filter((s) => s.parentId !== shape.id)
++		if (needsReparent.length > 0) {
++			editor.reparentShapes(needsReparent, shape.id)
++		}
++
++		// Re-read shapes after reparenting so local coords are up to date.
++		const freshShapes = shapes.map((s) => editor.getShape(s.id)!).filter(Boolean)
++
++		// Stash each shape's local position inside this portal, then
++		// reparent to the linked portal and restore the same local offset.
++		const localPositions = new Map<TLShape['id'], { x: number; y: number }>()
++		for (const s of freshShapes) {
++			localPositions.set(s.id, { x: s.x, y: s.y })
++		}
++
++		editor.reparentShapes(
++			freshShapes.map((s) => s.id),
++			linked.id
++		)
++
++		for (const s of freshShapes) {
++			const pos = localPositions.get(s.id)!
++			const current = editor.getShape(s.id)!
++			editor.updateShape({ ...current, x: pos.x, y: pos.y })
++		}
++
++		teleportCount++
++		if (teleportCount === 3) {
++			editor.createShape({
++				type: 'text',
++				x: linked.x + linked.props.w + 40,
++				y: linked.y + linked.props.h / 2 - 20,
++				props: { size: 'xl', richText: toRichText('🍰') },
++			})
++		}
++	}
++
++	override component(shape: PortalShape) {
++		const theme = COLORS[shape.props.color]
++		const cx = shape.props.w / 2
++		const cy = shape.props.h / 2
++		const rx = shape.props.w / 2
++		const ry = shape.props.h / 2
++
++		return (
++			<SVGContainer>
++				<ellipse
++					cx={toDomPrecision(cx)}
++					cy={toDomPrecision(cy)}
++					rx={toDomPrecision(rx)}
++					ry={toDomPrecision(ry)}
++					fill={theme.fill}
++					stroke={theme.stroke}
++					strokeWidth={3}
++					style={{ filter: `drop-shadow(0 0 12px ${theme.glow})` }}
++				/>
++			</SVGContainer>
++		)
++	}
++
++	override indicator(shape: PortalShape) {
++		return (
++			<ellipse
++				cx={toDomPrecision(shape.props.w / 2)}
++				cy={toDomPrecision(shape.props.h / 2)}
++				rx={toDomPrecision(shape.props.w / 2)}
++				ry={toDomPrecision(shape.props.h / 2)}
++			/>
++		)
++	}
++}
+diff --git a/apps/examples/src/examples/shapes/tools/portal-shapes/PortalShapesExample.tsx b/apps/examples/src/examples/shapes/tools/portal-shapes/PortalShapesExample.tsx
+new file mode 100644
+index 000000000000..6fa939105ffb
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/portal-shapes/PortalShapesExample.tsx
+@@ -0,0 +1,98 @@
++import {
++	createShapeId,
++	TLContent,
++	TLShapePartial,
++	TLRichText,
++	TLTextShapeProps,
++	Tldraw,
++} from 'tldraw'
++import 'tldraw/tldraw.css'
++import companionCube from './companion-cube.json'
++import { PortalShapeUtil } from './PortalShapeUtil'
++
++// [1]
++const shapeUtils = [PortalShapeUtil]
++
++const tagline: TLRichText = {
++	type: 'doc',
++	content: [
++		{
++			type: 'paragraph',
++			content: [
++				{ type: 'text', text: "Now you're thinking with " },
++				{ type: 'text', marks: [{ type: 'strike' }], text: 'portals' },
++				{ type: 'text', text: ' frames' },
++			],
++		},
++	],
++}
++
++export default function PortalShapesExample() {
++	return (
++		<div className="tldraw__editor">
++			<Tldraw
++				shapeUtils={shapeUtils}
++				onMount={(editor) => {
++					// [2]
++					const blueId = createShapeId('blue-portal')
++					const orangeId = createShapeId('orange-portal')
++					const portalShapes = [
++						{
++							id: blueId,
++							type: 'portal',
++							x: 100,
++							y: 150,
++							props: { w: 200, h: 300, color: 'blue' },
++						},
++						{
++							id: orangeId,
++							type: 'portal',
++							x: 500,
++							y: 150,
++							props: { w: 200, h: 300, color: 'orange' },
++						},
++					] as const
++
++					editor.createShapes(portalShapes as unknown as TLShapePartial[])
++
++					// [3]
++					editor.createShape({
++						type: 'text',
++						x: 100,
++						y: 500,
++						props: {
++							size: 'l',
++							richText: tagline,
++						} satisfies Partial<TLTextShapeProps>,
++					})
++
++					// [4]
++					editor.putContentOntoCurrentPage(companionCube as unknown as TLContent, {
++						point: { x: 300, y: 20 },
++					})
++					editor.selectNone()
++
++					editor.zoomToFit({ animation: { duration: 0 } })
++					editor.zoomOut(undefined, { animation: { duration: 0 } })
++				}}
++			/>
++		</div>
++	)
++}
++
++/*
++[1]
++Register the custom PortalShapeUtil. This array is defined outside of the
++component so it stays referentially stable across renders.
++
++[2]
++Create a pair of linked portals — one blue, one orange. They find each
++other by color, so only one of each should exist on a page.
++
++[3]
++Add the Portal tagline as a text shape.
++
++[4]
++Load the companion cube from a snapshot and place it on the canvas
++for the user to drag into the portals.
++*/
+diff --git a/apps/examples/src/examples/shapes/tools/portal-shapes/README.md b/apps/examples/src/examples/shapes/tools/portal-shapes/README.md
+new file mode 100644
+index 000000000000..4a2b23c859c5
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/portal-shapes/README.md
+@@ -0,0 +1,13 @@
++---
++title: Portal shapes
++component: ./PortalShapesExample.tsx
++category: shapes/tools
++priority: 6
++keywords: [frame, portal, BaseFrameLikeShapeUtil, reparent, drag]
++---
++
++Custom frame-like shapes that teleport children between each other, inspired by Portal.
++
++---
++
++This example shows how to extend `BaseFrameLikeShapeUtil` to create custom shapes that behave like frames — they accept children via drag-and-drop and clip their contents. Two portal shapes (blue and orange) are linked: dragging a shape into one teleports it into the other.
+diff --git a/apps/examples/src/examples/shapes/tools/portal-shapes/companion-cube.json b/apps/examples/src/examples/shapes/tools/portal-shapes/companion-cube.json
+new file mode 100644
+index 000000000000..7a45e2fcb980
+--- /dev/null
++++ b/apps/examples/src/examples/shapes/tools/portal-shapes/companion-cube.json
+@@ -0,0 +1,167 @@
++{
++	"schema": {
++		"schemaVersion": 2,
++		"sequences": {
++			"com.tldraw.store": 5,
++			"com.tldraw.asset": 1,
++			"com.tldraw.camera": 1,
++			"com.tldraw.document": 2,
++			"com.tldraw.instance": 26,
++			"com.tldraw.instance_page_state": 5,
++			"com.tldraw.page": 1,
++			"com.tldraw.instance_presence": 6,
++			"com.tldraw.pointer": 1,
++			"com.tldraw.shape": 4,
++			"com.tldraw.asset.bookmark": 2,
++			"com.tldraw.asset.image": 6,
++			"com.tldraw.asset.video": 5,
++			"com.tldraw.shape.group": 0,
++			"com.tldraw.shape.text": 4,
++			"com.tldraw.shape.bookmark": 2,
++			"com.tldraw.shape.draw": 4,
++			"com.tldraw.shape.geo": 11,
++			"com.tldraw.shape.note": 10,
++			"com.tldraw.shape.line": 5,
++			"com.tldraw.shape.frame": 1,
++			"com.tldraw.shape.arrow": 8,
++			"com.tldraw.shape.highlight": 3,
++			"com.tldraw.shape.embed": 4,
++			"com.tldraw.shape.image": 5,
++			"com.tldraw.shape.video": 4,
++			"com.tldraw.shape.portal": 0,
++			"com.tldraw.binding.arrow": 1
++		}
++	},
++	"shapes": [
++		{
++			"x": 236.85312277831696,
++			"y": 32.389556116167014,
++			"rotation": 0,
++			"isLocked": false,
++			"opacity": 1,
++			"meta": {},
++			"id": "shape:VtTu3OKU3xeE620k3WJq6",
++			"type": "group",
++			"parentId": "page:page",
++			"index": "aOUP0Tal",
++			"props": {},
++			"typeName": "shape"
++		},
++		{
++			"x": 0,
++			"y": -0.004479216785725271,
++			"rotation": 0,
++			"isLocked": false,
++			"opacity": 1,
++			"meta": {},
++			"id": "shape:awkWPHlCLJkONro16bHbu",
++			"type": "draw",
++			"props": {
++				"segments": [
++					{
++						"type": "free",
++						"path": "AAAAAAAASEIAAEA/5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAAsb+xNwAA"
++					}
++				],
++				"color": "grey",
++				"fill": "lined-fill",
++				"dash": "draw",
++				"size": "s",
++				"isComplete": true,
++				"isClosed": true,
++				"isPen": true,
++				"scale": 1,
++				"scaleX": 0.5733397485725996,
++				"scaleY": 0.5733397485725996
++			},
++			"parentId": "shape:VtTu3OKU3xeE620k3WJq6",
++			"index": "a1",
++			"typeName": "shape"
++		},
++		{
++			"x": 0,
++			"y": -0.004479216785725271,
++			"rotation": 0,
++			"isLocked": false,
++			"opacity": 1,
++			"meta": {},
++			"id": "shape:ninwWVjpMQPwnj2k7OM9Z",
++			"type": "draw",
++			"props": {
++				"segments": [
++					{
++						"type": "free",
++						"path": "AAAAAAAASEIAAEA/jj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAA5T8AAAAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA5b8AAAAA"
++					}
++				],
++				"color": "grey",
++				"fill": "lined-fill",
++				"dash": "draw",
++				"size": "s",
++				"isComplete": true,
++				"isClosed": true,
++				"isPen": true,
++				"scale": 1,
++				"scaleX": 0.5733397485725996,
++				"scaleY": 0.5733397485725996
++			},
++			"parentId": "shape:VtTu3OKU3xeE620k3WJq6",
++			"index": "a2zsUamO",
++			"typeName": "shape"
++		},
++		{
++			"x": 86.0009622858899,
++			"y": -0.004479216785725271,
++			"rotation": 0,
++			"isLocked": false,
++			"opacity": 1,
++			"meta": {},
++			"id": "shape:fUGF_gGBqjxPoqeeJje5D",
++			"type": "draw",
++			"props": {
++				"segments": [
++					{
++						"type": "free",
++						"path": "AAAAAAAASEIAAEA/jj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAjj2OvQAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAAADlPwAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAjr2OPQAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAAAADlvwAA"
++					}
++				],
++				"color": "grey",
++				"fill": "lined-fill",
++				"dash": "draw",
++				"size": "s",
++				"isComplete": true,
++				"isClosed": true,
++				"isPen": true,
++				"scale": 1,
++				"scaleX": 0.5733397485725996,
++				"scaleY": 0.5733397485725996
++			},
++			"parentId": "shape:VtTu3OKU3xeE620k3WJq6",
++			"index": "a3MMWnCV",
++			"typeName": "shape"
++		},
++		{"x":11.466794971451975,"y":40.129303183296244,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:-t_kzvkGA_152FbfvqjEv","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAAAAAAEA/2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAA2z8AAAAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAAAADbPwAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAA278AAAAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAAAADbvwAA"}],"color":"black","fill":"solid","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"a4w7LGkV","typeName":"shape"},
++		{"x":22.93358994290395,"y":8.595617011803256,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:iZV6of0wa7d2HOXQAf-Xm","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAyEEAAEA/AD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAAAD4AvQAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAA2D8AAAAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAAAL4APQAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA2L8AAAAA"}],"color":"black","fill":"solid","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"a5KYoXEV","typeName":"shape"},
++		{"x":91.73435977161591,"y":17.19571324039225,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:2kusCUpu4hUPY7ejpUYni","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAA8EEAAEA/dD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAAADTPwAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAnrwnPgAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAAAADYvwAA"}],"color":"black","fill":"solid","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"a6wQSI4V","typeName":"shape"},
++		{"x":28.666987428629966,"y":57.329495640474235,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:ivVXBpZ2Jdu2bSq9ShXzF","type":"geo","typeName":"shape","index":"a7JVjzzO","parentId":"shape:VtTu3OKU3xeE620k3WJq6","props":{"w":28.66698742862998,"h":28.66698742862998,"geo":"heart","dash":"draw","growY":0,"url":"","scale":1,"color":"light-red","labelColor":"black","fill":"lined-fill","size":"s","font":"draw","align":"middle","verticalAlign":"middle","richText":{"type":"doc","content":[{"type":"paragraph"}]}}},
++		{"x":0,"y":28.662508211844255,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:J0oJUYTug9WurC506gm22","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAAAAAAEA/gD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"a8sBFdzG","typeName":"shape"},
++		{"x":68.8007698287119,"y":28.662508211844255,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:iPi_gAqA7YCrYDLVxomGS","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAAAAAAEA/gD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"a9DsEOkV","typeName":"shape"},
++		{"x":0,"y":97.4632780405562,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:d_0uxDXwAIUrXUZScWoBP","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAAAAAAEA/gD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aAWyo2UG","typeName":"shape"},
++		{"x":68.8007698287119,"y":97.4632780405562,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:q-RboKzoZWp3rZ1DhUe48","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAAAAAAEA/gD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAgD8AAAAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAAACAPwAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAgL8AAAAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAAAACAvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.5733397485725996,"scaleY":0.5733397485725996},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aBE5Sd1V","typeName":"shape"},
++		{"x":51.746680037384806,"y":12.402418818127614,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:NP74ZSiAZ6I5QWgOzJXZa","type":"geo","typeName":"shape","index":"aCYnfD6V","parentId":"shape:VtTu3OKU3xeE620k3WJq6","props":{"w":14.442613405469439,"h":7.141645072594521,"geo":"heart","dash":"draw","growY":0,"url":"","scale":1,"color":"light-red","labelColor":"black","fill":"lined-fill","size":"s","font":"draw","align":"middle","verticalAlign":"middle","richText":{"type":"doc","content":[{"type":"paragraph"}]}}},
++		{"x":96.28162568675316,"y":46.39942340819148,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:fXvlvX2p4u3DbO4YP4pwo","type":"geo","typeName":"shape","index":"aDflWnDV","parentId":"shape:VtTu3OKU3xeE620k3WJq6","props":{"w":7.906218892567377,"h":14.069954141660842,"geo":"heart","dash":"draw","growY":0,"url":"","scale":1,"color":"light-red","labelColor":"black","fill":"lined-fill","size":"s","font":"draw","align":"middle","verticalAlign":"middle","richText":{"type":"doc","content":[{"type":"paragraph"}]}}},
++		{"x":1.9768088477579795,"y":19.119760827188983,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:XNcNrUnfYOWpMCfrCvV61","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAoEEAAEA/sT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.6290026587241817,"scaleY":0.3484603621148216},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aEYJ0vJV","typeName":"shape"},
++		{"x":21.321096165874224,"y":0.825280192938564,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:s6PQwGT3BgFjS_BffHU_i","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAoEEAAEA/sT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.6290026587241817,"scaleY":0.3484603621148216},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aF7mYYdV","typeName":"shape"},
++		{"x":90.75132172391392,"y":1.3332511690026507,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:f0mB5FF9Jw-StsTrILoQH","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAoEEAAEA/sT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.6290026587241817,"scaleY":0.3484603621148216},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aGKfSDzG","typeName":"shape"},
++		{"x":70.42495718540698,"y":18.679519314600014,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:qWlNYsHWkGSzQ8oh3wJXb","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAoEEAAEA/sT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAsT8AAAAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAqzqrvgAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAsb8AAAAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAAq7qrPgAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.6290026587241817,"scaleY":0.3484603621148216},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aHoWoLOV","typeName":"shape"},
++		{"x":86.69397939496912,"y":23.291776648303056,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:mCBQswFHwqvZcJ1COx39f","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAcEEAAEA/dD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.4817475992767947,"scaleY":0.6307418235323693},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aIlCQhLV","typeName":"shape"},
++		{"x":107.20283721006206,"y":3.362382020720304,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:vV_4RBYg2ZeNoInqVHthj","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAcEEAAEA/dD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.4817475992767947,"scaleY":0.6307418235323693},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aJcsD2OV","typeName":"shape"},
++		{"x":107.37404224273547,"y":69.81251118585035,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:ZM1BM67ehWoqm_niGDgLG","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAcEEAAEA/dD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.4817475992767947,"scaleY":0.6307418235323693},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aKW9rC5V","typeName":"shape"},
++		{"x":87.43147799725477,"y":88.60743730022322,"rotation":0,"isLocked":false,"opacity":1,"meta":{},"id":"shape:mXi-xNsKDQCBQEnMberQa","type":"draw","props":{"segments":[{"type":"free","path":"AAAAAAAAcEEAAEA/dD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAdD10vQAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAAABGPwAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAdL10PQAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAAAABGvwAA"}],"color":"grey","fill":"pattern","dash":"draw","size":"s","isComplete":true,"isClosed":true,"isPen":true,"scale":1,"scaleX":0.4817475992767947,"scaleY":0.6307418235323693},"parentId":"shape:VtTu3OKU3xeE620k3WJq6","index":"aLOjbHOV","typeName":"shape"}
++	],
++	"rootShapeIds": [
++		"shape:VtTu3OKU3xeE620k3WJq6"
++	],
++	"bindings": [],
++	"assets": []
++}
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 010dae8a6161..11b634b6a27e 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -194,6 +194,22 @@ export abstract class BaseBoxShapeUtil<Shape extends TLBaseBoxShape> extends Sha
+     onResize(shape: any, info: TLResizeInfo<any>): any;
+ }
+ 
++// @public
++export abstract class BaseFrameLikeShapeUtil<Shape extends TLBaseBoxShape> extends BaseBoxShapeUtil<Shape> {
++    // (undocumented)
++    canReceiveNewChildrenOfType(shape: Shape, _type: TLShape['type']): boolean;
++    // (undocumented)
++    getClipPath(shape: Shape): undefined | Vec[];
++    // (undocumented)
++    isFrameLike(_shape: Shape): boolean;
++    // (undocumented)
++    onDragShapesIn(shape: Shape, draggingShapes: TLShape[], { initialParentIds, initialIndices }: TLDragShapesInInfo): void;
++    // (undocumented)
++    onDragShapesOut(shape: Shape, draggingShapes: TLShape[], info: TLDragShapesOutInfo): void;
++    // (undocumented)
++    providesBackgroundForChildren(): boolean;
++}
++
+ // @public (undocumented)
+ export interface BatchMeasurementRequest {
+     // (undocumented)
+@@ -1459,6 +1475,7 @@ export class Editor extends EventEmitter<TLEventMap> {
+         hitInside?: boolean | undefined;
+         margin?: number | undefined;
+     }): boolean;
++    isShapeFrameLike(shape: TLShape | TLShapeId): boolean;
+     // (undocumented)
+     isShapeHidden(shapeOrId: TLShape | TLShapeId): boolean;
+     isShapeInPage(shape: TLShape | TLShapeId, pageId?: TLPageId): boolean;
+@@ -2958,6 +2975,7 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+     abstract indicator(shape: Shape): any;
+     isAspectRatioLocked(shape: Shape): boolean;
+     isExportBoundsContainer(shape: Shape): boolean;
++    isFrameLike(_shape: Shape): boolean;
+     static migrations?: LegacyMigrations | MigrationSequence | TLPropsMigrations;
+     onBeforeCreate?(next: Shape): Shape | void;
+     onBeforeUpdate?(prev: Shape, next: Shape): Shape | void;
+diff --git a/packages/editor/src/index.ts b/packages/editor/src/index.ts
+index d1dad25d9592..1309e768c037 100644
+--- a/packages/editor/src/index.ts
++++ b/packages/editor/src/index.ts
+@@ -191,6 +191,7 @@ export {
+ } from './lib/editor/managers/PerformanceManager/perf-types'
+ export { UserPreferencesManager } from './lib/editor/managers/UserPreferencesManager/UserPreferencesManager'
+ export { BaseBoxShapeUtil, type TLBaseBoxShape } from './lib/editor/shapes/BaseBoxShapeUtil'
++export { BaseFrameLikeShapeUtil } from './lib/editor/shapes/BaseFrameLikeShapeUtil'
+ export { GroupShapeUtil } from './lib/editor/shapes/group/GroupShapeUtil'
+ export {
+ 	ShapeUtil,
+diff --git a/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx b/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
+index 0a3320b4956d..af807ef3314c 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
+@@ -530,7 +530,8 @@ function DebugSvgCopy({ id, mode }: { id: TLShapeId; mode: 'img' | 'iframe' }) {
+ 			const renderId = Math.random()
+ 			latest = renderId
+ 
+-			const isSingleFrame = editor.isShapeOfType(id, 'frame')
++			const shape = editor.getShape(id)
++			const isSingleFrame = !!shape && editor.isShapeFrameLike(shape)
+ 			const padding = isSingleFrame ? 0 : 10
+ 			let bounds = editor.getShapePageBounds(id)
+ 			if (!bounds) return
+diff --git a/packages/editor/src/lib/editor/Editor.ts b/packages/editor/src/lib/editor/Editor.ts
+index c9277c2df07d..fcd004eb1b06 100644
+--- a/packages/editor/src/lib/editor/Editor.ts
++++ b/packages/editor/src/lib/editor/Editor.ts
+@@ -5703,8 +5703,8 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 				? this.getCurrentPageRenderingShapesSorted()
+ 				: this.getCurrentPageShapesSorted()
+ 		).filter((shape) => {
+-			// Frames have labels positioned above the shape (outside bounds), so always include them
+-			if (!candidateIds.has(shape.id) && !this.isShapeOfType(shape, 'frame')) return false
++			// Frame-like shapes have labels positioned above the shape (outside bounds), so always include them
++			if (!candidateIds.has(shape.id) && !this.isShapeFrameLike(shape)) return false
+ 
+ 			if (
+ 				(shape.isLocked && !hitLocked) ||
+@@ -5726,12 +5726,14 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 			const pointInShapeSpace = this.getPointInShapeSpace(shape, point)
+ 
+ 			// Check labels first
++			const shapeUtil = this.getShapeUtil(shape)
++			const isShapeFrameLike = this.isShapeFrameLike(shape)
+ 			if (
+-				this.isShapeOfType(shape, 'frame') ||
++				isShapeFrameLike ||
+ 				((this.isShapeOfType(shape, 'note') ||
+ 					this.isShapeOfType(shape, 'arrow') ||
+ 					(this.isShapeOfType(shape, 'geo') && shape.props.fill === 'none')) &&
+-					this.getShapeUtil(shape).getText(shape)?.trim())
++					shapeUtil.getText(shape)?.trim())
+ 			) {
+ 				for (const childGeometry of (geometry as Group2d).children) {
+ 					if (childGeometry.isLabel && childGeometry.isPointInBounds(pointInShapeSpace)) {
+@@ -5740,8 +5742,8 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 				}
+ 			}
+ 
+-			if (this.isShapeOfType(shape, 'frame')) {
+-				// On the rare case that we've hit a frame (not its label), test again hitInside to be forced true;
++			if (isShapeFrameLike) {
++				// On the rare case that we've hit a frame-like shape (not its label), test again hitInside to be forced true;
+ 				// this prevents clicks from passing through the body of a frame to shapes behind it.
+ 
+ 				// If the hit is within the frame's outer margin, then select the frame
+@@ -5900,11 +5902,11 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 		const candidateIds = this._spatialIndex.getShapeIdsAtPoint(point, margin)
+ 
+ 		// Get all page shapes in z-index order and filter to candidates that pass isPointInShape
+-		// Frames are always checked because their labels can be outside their bounds
++		// Frame-like shapes are always checked because their labels can be outside their bounds
+ 		return this.getCurrentPageShapesSorted()
+ 			.filter((shape) => {
+ 				if (this.isShapeHidden(shape)) return false
+-				if (!candidateIds.has(shape.id) && !this.isShapeOfType(shape, 'frame')) return false
++				if (!candidateIds.has(shape.id) && !this.isShapeFrameLike(shape)) return false
+ 				return this.isPointInShape(shape, point, opts)
+ 			})
+ 			.reverse()
+@@ -6079,6 +6081,25 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 		return shape.type === type
+ 	}
+ 
++	/**
++	 * Get whether a shape behaves like a frame — a container that has child
++	 * shapes, requires full-brush selection, blocks erasure from inside, etc.
++	 *
++	 * @example
++	 * ```ts
++	 * const isFrameLike = editor.isShapeFrameLike(someShape)
++	 * ```
++	 *
++	 * @param shape - The shape (or shape id) to test.
++	 *
++	 * @public
++	 */
++	isShapeFrameLike(shape: TLShape | TLShapeId): boolean {
++		const _shape = typeof shape === 'string' ? this.getShape(shape) : shape
++		if (!_shape) return false
++		return this.getShapeUtil(_shape).isFrameLike(_shape)
++	}
++
+ 	/**
+ 	 * Get a shape by its id.
+ 	 *
+diff --git a/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.test.ts b/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.test.ts
+index 2d01b016146c..91981a718ac8 100644
+--- a/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.test.ts
++++ b/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.test.ts
+@@ -77,8 +77,13 @@ describe('SnapManager', () => {
+ 			})),
+ 			getShapePageBounds: vi.fn(),
+ 			isShapeOfType: vi.fn(),
++			isShapeFrameLike: vi.fn(() => false),
+ 		} as any
+ 
++		editor.getShapeUtil.mockReturnValue({
++			canSnap: vi.fn(() => true),
++		} as any)
++
+ 		snapManager = new SnapManager(editor)
+ 	})
+ 
+@@ -351,7 +356,10 @@ describe('SnapManager', () => {
+ 
+ 			editor.getSortedChildIdsForParent.mockReturnValue([frameId])
+ 			editor.getShape.mockReturnValue(frameShape)
+-			editor.isShapeOfType.mockImplementation((_shape, type) => type === 'frame')
++			editor.getShapeUtil.mockReturnValue({
++				canSnap: vi.fn(() => true),
++			} as any)
++			editor.isShapeFrameLike.mockReturnValue(true)
+ 			editor.getShapePageBounds.mockReturnValue(new Box(10, 10, 50, 50))
+ 
+ 			const result = snapManager.getSnappableShapes()
+@@ -401,7 +409,10 @@ describe('SnapManager', () => {
+ 				return undefined
+ 			})
+ 
+-			editor.isShapeOfType.mockImplementation((shape: any, type: any) => type === 'frame')
++			editor.getShapeUtil.mockReturnValue({
++				canSnap: vi.fn(() => true),
++			} as any)
++			editor.isShapeFrameLike.mockReturnValue(true)
+ 			editor.getShapePageBounds.mockReturnValue(new Box(10, 10, 50, 50))
+ 
+ 			const result = snapManager.getSnappableShapes()
+diff --git a/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.ts b/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.ts
+index 593db19404bf..e5f67b87ecb7 100644
+--- a/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.ts
++++ b/packages/editor/src/lib/editor/managers/SnapManager/SnapManager.ts
+@@ -72,7 +72,7 @@ export class SnapManager {
+ 		const collectSnappableShapesFromParent = (parentId: TLParentId) => {
+ 			if (isShapeId(parentId)) {
+ 				const parent = editor.getShape(parentId)
+-				if (parent && editor.isShapeOfType(parent, 'frame')) {
++				if (parent && editor.isShapeFrameLike(parent)) {
+ 					snappableShapes.add(parentId)
+ 				}
+ 			}
+diff --git a/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx b/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx
+new file mode 100644
+index 000000000000..1bd1440a4687
+--- /dev/null
++++ b/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx
+@@ -0,0 +1,121 @@
++import { TLShape, TLShapeId } from '@tldraw/tlschema'
++import { IndexKey, compact } from '@tldraw/utils'
++import { Vec } from '../../primitives/Vec'
++import { BaseBoxShapeUtil, TLBaseBoxShape } from './BaseBoxShapeUtil'
++import { TLDragShapesInInfo, TLDragShapesOutInfo } from './ShapeUtil'
++
++/**
++ * A base class for frame-like shapes — containers that clip their children,
++ * require full-brush selection, block erasure from inside, and support
++ * drag-and-drop reparenting.
++ *
++ * Extending this class is the easiest way to create a custom frame-like shape.
++ * It provides sensible defaults for all frame-like behaviors:
++ *
++ * - `isFrameLike()` returns `true`
++ * - `providesBackgroundForChildren()` returns `true`
++ * - `canReceiveNewChildrenOfType()` returns `true` unless the container is locked
++ * - `getClipPath()` returns the shape geometry's vertices
++ * - `onDragShapesIn()` reparents shapes into the frame (with index restoration)
++ * - `onDragShapesOut()` reparents shapes back to the page
++ *
++ * All methods can be overridden for custom behavior.
++ *
++ * @example
++ * ```ts
++ * class MyContainerUtil extends BaseFrameLikeShapeUtil<MyContainerShape> {
++ *   static override type = 'my-container' as const
++ *   static override props = myContainerShapeProps
++ *
++ *   override getDefaultProps() {
++ *     return { w: 300, h: 200 }
++ *   }
++ *
++ *   override component(shape: MyContainerShape) {
++ *     return <SVGContainer>...</SVGContainer>
++ *   }
++ *
++ *   override indicator(shape: MyContainerShape) {
++ *     return <rect width={shape.props.w} height={shape.props.h} />
++ *   }
++ * }
++ * ```
++ *
++ * @public
++ */
++export abstract class BaseFrameLikeShapeUtil<
++	Shape extends TLBaseBoxShape,
++> extends BaseBoxShapeUtil<Shape> {
++	override isFrameLike(_shape: Shape): boolean {
++		return true
++	}
++
++	override providesBackgroundForChildren(): boolean {
++		return true
++	}
++
++	override canReceiveNewChildrenOfType(shape: Shape, _type: TLShape['type']): boolean {
++		return !shape.isLocked
++	}
++
++	override getClipPath(shape: Shape): Vec[] | undefined {
++		return this.editor.getShapeGeometry(shape.id).vertices
++	}
++
++	override onDragShapesIn(
++		shape: Shape,
++		draggingShapes: TLShape[],
++		{ initialParentIds, initialIndices }: TLDragShapesInInfo
++	): void {
++		const { editor } = this
++
++		if (draggingShapes.every((s) => s.parentId === shape.id)) return
++
++		// Check to see whether any of the shapes can have their old index restored
++		let canRestoreOriginalIndices = false
++		const previousChildren = draggingShapes.filter(
++			(s) => shape.id === (initialParentIds.get(s.id) as TLShapeId)
++		)
++
++		if (previousChildren.length > 0) {
++			const currentChildren = compact(
++				editor.getSortedChildIdsForParent(shape).map((id) => editor.getShape(id))
++			)
++			if (previousChildren.every((s) => !currentChildren.find((c) => c.index === s.index))) {
++				canRestoreOriginalIndices = true
++			}
++		}
++
++		// If any of the children are the ancestor of the frame, quit here
++		if (draggingShapes.some((s) => editor.hasAncestor(shape, s.id))) return
++
++		editor.reparentShapes(draggingShapes, shape.id)
++
++		if (canRestoreOriginalIndices) {
++			for (const s of previousChildren) {
++				editor.updateShape({
++					id: s.id,
++					type: s.type,
++					index: initialIndices.get(s.id) as IndexKey,
++				})
++			}
++		}
++	}
++
++	override onDragShapesOut(
++		shape: Shape,
++		draggingShapes: TLShape[],
++		info: TLDragShapesOutInfo
++	): void {
++		const { editor } = this
++		// When a user drags shapes out and we're not dragging into a new shape,
++		// reparent the dragging shapes onto the current page instead
++		if (!info.nextDraggingOverShapeId) {
++			// Locked shapes are already filtered out upstream by DragAndDropManager.
++			editor.reparentShapes(
++				draggingShapes.filter((s) => s.parentId === shape.id),
++				editor.getCurrentPageId()
++			)
++		}
++	}
++}
+diff --git a/packages/editor/src/lib/editor/shapes/ShapeUtil.ts b/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
+index 3425638604f4..548ddaba6138 100644
+--- a/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
++++ b/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
+@@ -492,6 +492,17 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+ 		return false
+ 	}
+ 
++	/**
++	 * Whether the shape behaves like a frame — a container that has child shapes,
++	 * requires full-brush selection, blocks erasure from inside, etc.
++	 *
++	 * @param shape - The shape.
++	 * @public
++	 */
++	isFrameLike(_shape: Shape): boolean {
++		return false
++	}
++
+ 	/**
+ 	 * By default, the bounds of an image export are the bounds of all the shapes it contains, plus
+ 	 * some padding. If an export includes a shape where `isExportBoundsContainer` is true, then the
+diff --git a/packages/editor/src/lib/exports/getSvgJsx.tsx b/packages/editor/src/lib/exports/getSvgJsx.tsx
+index 0e41b083718b..a769848f9ce2 100644
+--- a/packages/editor/src/lib/exports/getSvgJsx.tsx
++++ b/packages/editor/src/lib/exports/getSvgJsx.tsx
+@@ -60,8 +60,9 @@ export function getSvgJsx(editor: Editor, ids: TLShapeId[], opts: TLImageExportO
+ 		.filter(({ id }) => shapeIdsToInclude.has(id))
+ 
+ 	// --- Common bounding box of all shapes
++	const singleFrameShape = ids.length === 1 ? editor.getShape(ids[0]) : null
+ 	const singleFrameShapeId =
+-		ids.length === 1 && editor.isShapeOfType(editor.getShape(ids[0])!, 'frame') ? ids[0] : null
++		singleFrameShape && editor.isShapeFrameLike(singleFrameShape) ? ids[0] : null
+ 
+ 	let bbox: null | Box = null
+ 	let paddingWasApplied = false
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index ee617137e6ae..02394ab11eaa 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -8,6 +8,7 @@ import { AssetUtil } from '@tldraw/editor';
+ import { Atom } from '@tldraw/editor';
+ import { BaseBoxShapeTool } from '@tldraw/editor';
+ import { BaseBoxShapeUtil } from '@tldraw/editor';
++import { BaseFrameLikeShapeUtil } from '@tldraw/editor';
+ import { BindingOnChangeOptions } from '@tldraw/editor';
+ import { BindingOnCreateOptions } from '@tldraw/editor';
+ import { BindingOnShapeChangeOptions } from '@tldraw/editor';
+@@ -88,8 +89,6 @@ import { TLCropInfo } from '@tldraw/editor';
+ import { TLDefaultColorStyle } from '@tldraw/tlschema';
+ import { TLDefaultFontStyle } from '@tldraw/tlschema';
+ import { TLDefaultSizeStyle } from '@tldraw/editor';
+-import { TLDragShapesOutInfo } from '@tldraw/editor';
+-import { TLDragShapesOverInfo } from '@tldraw/editor';
+ import { TldrawEditorBaseProps } from '@tldraw/editor';
+ import { TldrawEditorStoreProps } from '@tldraw/editor';
+ import { TldrawOptions } from '@tldraw/editor';
+@@ -1680,12 +1679,10 @@ export class FrameShapeTool extends BaseBoxShapeTool {
+ }
+ 
+ // @public (undocumented)
+-export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
++export class FrameShapeUtil extends BaseFrameLikeShapeUtil<TLFrameShape> {
+     // (undocumented)
+     canEdit(shape: TLFrameShape, info: TLEditStartInfo): boolean;
+     // (undocumented)
+-    canReceiveNewChildrenOfType(shape: TLShape): boolean;
+-    // (undocumented)
+     canResize(shape: TLFrameShape): boolean;
+     // (undocumented)
+     canResizeChildren(shape: TLFrameShape): boolean;
+@@ -1698,8 +1695,6 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+     // (undocumented)
+     getAriaDescriptor(shape: TLFrameShape): string;
+     // (undocumented)
+-    getClipPath(shape: TLFrameShape): Vec[];
+-    // (undocumented)
+     getDefaultProps(): TLFrameShape['props'];
+     // (undocumented)
+     getGeometry(shape: TLFrameShape): Geometry2d;
+@@ -1730,18 +1725,10 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+         type: "frame";
+     } | undefined;
+     // (undocumented)
+-    onDragShapesIn(shape: TLFrameShape, draggingShapes: TLShape[], { initialParentIds, initialIndices }: TLDragShapesOverInfo): void;
+-    // (undocumented)
+-    onDragShapesOut(shape: TLFrameShape, draggingShapes: TLShape[], info: TLDragShapesOutInfo): void;
+-    // (undocumented)
+-    onResize(shape: any, info: TLResizeInfo<any>): any;
+-    // (undocumented)
+     options: FrameShapeOptions;
+     // (undocumented)
+     static props: RecordProps<TLFrameShape>;
+     // (undocumented)
+-    providesBackgroundForChildren(): boolean;
+-    // (undocumented)
+     toSvg(shape: TLFrameShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "frame";
+diff --git a/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx b/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
+index 60ac0c74c350..7bc32096956a 100644
+--- a/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
+@@ -1,5 +1,5 @@
+ import {
+-	BaseBoxShapeUtil,
++	BaseFrameLikeShapeUtil,
+ 	DefaultColorStyle,
+ 	Geometry2d,
+ 	Group2d,
+@@ -7,13 +7,9 @@ import {
+ 	SVGContainer,
+ 	SvgExportContext,
+ 	TLClickEventInfo,
+-	TLDragShapesOutInfo,
+-	TLDragShapesOverInfo,
+ 	TLEditStartInfo,
+ 	TLFrameShape,
+ 	TLFrameShapeProps,
+-	TLResizeInfo,
+-	TLShape,
+ 	TLShapePartial,
+ 	TLShapeUtilConstructor,
+ 	clamp,
+@@ -22,7 +18,6 @@ import {
+ 	frameShapeProps,
+ 	getColorValue,
+ 	lerp,
+-	resizeBox,
+ 	toDomPrecision,
+ 	useColorMode,
+ 	useValue,
+@@ -79,7 +74,7 @@ export interface FrameShapeOptions extends ShapeOptionsWithDisplayValues<
+ }
+ 
+ /** @public */
+-export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
++export class FrameShapeUtil extends BaseFrameLikeShapeUtil<TLFrameShape> {
+ 	static override type = 'frame' as const
+ 	static override props = frameShapeProps
+ 	static override migrations = frameShapeMigrations
+@@ -362,22 +357,6 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+ 		return path
+ 	}
+ 
+-	override providesBackgroundForChildren(): boolean {
+-		return true
+-	}
+-
+-	override getClipPath(shape: TLFrameShape) {
+-		return this.editor.getShapeGeometry(shape.id).vertices
+-	}
+-
+-	override canReceiveNewChildrenOfType(shape: TLShape) {
+-		return !shape.isLocked
+-	}
+-
+-	override onResize(shape: any, info: TLResizeInfo<any>) {
+-		return resizeBox(shape, info)
+-	}
+-
+ 	override getInterpolatedProps(
+ 		startShape: TLFrameShape,
+ 		endShape: TLFrameShape,
+@@ -437,62 +416,4 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+ 			type: shape.type,
+ 		}
+ 	}
+-
+-	override onDragShapesIn(
+-		shape: TLFrameShape,
+-		draggingShapes: TLShape[],
+-		{ initialParentIds, initialIndices }: TLDragShapesOverInfo
+-	) {
+-		const { editor } = this
+-
+-		if (draggingShapes.every((s) => s.parentId === shape.id)) return
+-
+-		// Check to see whether any of the shapes can have their old index restored
+-		let canRestoreOriginalIndices = false
+-		const previousChildren = draggingShapes.filter((s) => shape.id === initialParentIds.get(s.id))
+-
+-		if (previousChildren.length > 0) {
+-			const currentChildren = compact(
+-				editor.getSortedChildIdsForParent(shape).map((id) => editor.getShape(id))
+-			)
+-			if (previousChildren.every((s) => !currentChildren.find((c) => c.index === s.index))) {
+-				canRestoreOriginalIndices = true
+-			}
+-		}
+-
+-		// I can't imagine this happening, but if any of the children are the ancestor of the frame, quit here
+-		if (draggingShapes.some((s) => editor.hasAncestor(shape, s.id))) return
+-
+-		// Reparent the shapes to the new parent
+-		editor.reparentShapes(draggingShapes, shape.id)
+-
+-		// If we can restore the original indices, then do so
+-		if (canRestoreOriginalIndices) {
+-			for (const shape of previousChildren) {
+-				editor.updateShape({
+-					id: shape.id,
+-					type: shape.type,
+-					index: initialIndices.get(shape.id),
+-				})
+-			}
+-		}
+-	}
+-
+-	override onDragShapesOut(
+-		shape: TLFrameShape,
+-		draggingShapes: TLShape[],
+-		info: TLDragShapesOutInfo
+-	): void {
+-		const { editor } = this
+-		// When a user drags shapes out of a frame, and if we're not dragging into a new shape, then reparent
+-		// the dragging shapes (that are current children of the frame) onto the current page instead
+-		if (!info.nextDraggingOverShapeId) {
+-			editor.reparentShapes(
+-				draggingShapes.filter(
+-					(s) => s.parentId === shape.id && this.canReceiveNewChildrenOfType(s)
+-				),
+-				editor.getCurrentPageId()
+-			)
+-		}
+-	}
+ }
+diff --git a/packages/tldraw/src/lib/tools/EraserTool/childStates/Erasing.ts b/packages/tldraw/src/lib/tools/EraserTool/childStates/Erasing.ts
+index f904fdf657e1..4fed1154c58e 100644
+--- a/packages/tldraw/src/lib/tools/EraserTool/childStates/Erasing.ts
++++ b/packages/tldraw/src/lib/tools/EraserTool/childStates/Erasing.ts
+@@ -35,11 +35,8 @@ export class Erasing extends StateNode {
+ 				.filter((shape) => {
+ 					//If the shape is locked, we shouldn't erase it
+ 					if (this.editor.isShapeOrAncestorLocked(shape)) return true
+-					//If the shape is a group or frame, check we're inside it when we start erasing
+-					if (
+-						this.editor.isShapeOfType(shape, 'group') ||
+-						this.editor.isShapeOfType(shape, 'frame')
+-					) {
++					//If the shape is a group or frame-like, check we're inside it when we start erasing
++					if (this.editor.isShapeOfType(shape, 'group') || this.editor.isShapeFrameLike(shape)) {
+ 						const pointInShapeShape = this.editor.getPointInShapeSpace(shape, originPagePoint)
+ 						const geometry = this.editor.getShapeGeometry(shape)
+ 						return geometry.bounds.containsPoint(pointInShapeShape)
+diff --git a/packages/tldraw/src/lib/tools/EraserTool/childStates/Pointing.ts b/packages/tldraw/src/lib/tools/EraserTool/childStates/Pointing.ts
+index a8cc3c926bdb..495c13762f51 100644
+--- a/packages/tldraw/src/lib/tools/EraserTool/childStates/Pointing.ts
++++ b/packages/tldraw/src/lib/tools/EraserTool/childStates/Pointing.ts
+@@ -29,8 +29,8 @@ export class Pointing extends StateNode {
+ 				})
+ 			) {
+ 				const hitShape = this.editor.getOutermostSelectableShape(shape)
+-				// If we've hit a frame after hitting any other shape, stop here
+-				if (this.editor.isShapeOfType(hitShape, 'frame') && erasing.size > initialSize) {
++				// If we've hit a frame-like shape after hitting any other shape, stop here
++				if (this.editor.isShapeFrameLike(hitShape) && erasing.size > initialSize) {
+ 					break
+ 				}
+ 
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/childStates/Brushing.ts b/packages/tldraw/src/lib/tools/SelectTool/childStates/Brushing.ts
+index 04312c2c6ff3..2b6c65277b54 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/childStates/Brushing.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/childStates/Brushing.ts
+@@ -194,8 +194,8 @@ export class Brushing extends StateNode {
+ 			}
+ 
+ 			// If we're in wrap mode and the brush did not fully encloses the shape, it's a miss
+-			// We also skip frames unless we've completely selected the frame.
+-			if (isWrapping || editor.isShapeOfType(shape, 'frame')) {
++			// We also skip frame-like shapes unless we've completely selected them.
++			if (isWrapping || editor.isShapeFrameLike(shape)) {
+ 				continue testAllShapes
+ 			}
+ 
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/childStates/EditingShape.ts b/packages/tldraw/src/lib/tools/SelectTool/childStates/EditingShape.ts
+index 2460bf53b884..7b83f4cfcaa7 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/childStates/EditingShape.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/childStates/EditingShape.ts
+@@ -162,8 +162,8 @@ export class EditingShape extends StateNode {
+ 					}
+ 				} else {
+ 					if (selectingShape.id === editingShape.id) {
+-						// If we clicked on a frame, while editing its heading, cancel editing
+-						if (this.editor.isShapeOfType(selectingShape, 'frame')) {
++						// If we clicked on a frame-like shape while editing its heading, cancel editing
++						if (this.editor.isShapeFrameLike(selectingShape)) {
+ 							this.editor.setEditingShape(null)
+ 							this.parent.transition('idle', info)
+ 						}
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/childStates/Resizing.ts b/packages/tldraw/src/lib/tools/SelectTool/childStates/Resizing.ts
+index 87b41b5ec399..013f4d9b8b47 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/childStates/Resizing.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/childStates/Resizing.ts
+@@ -542,7 +542,7 @@ export class Resizing extends StateNode {
+ 			// descendants (easy) but also flagging with behavior like "resize" or "keep absolute position" or "reposition only with accel key",
+ 			// though I'm not sure where that would be defined; perhaps better handled with onResizeStart / onResize callbacks on the util, and
+ 			// pass `accelKeyIsPressed` as well as `accelKeyWasPressed`?
+-			if (editor.isShapeOfType(shape, 'frame')) {
++			if (editor.isShapeFrameLike(shape)) {
+ 				frames.push({
+ 					id: shape.id,
+ 					children: compact(
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/childStates/ScribbleBrushing.ts b/packages/tldraw/src/lib/tools/SelectTool/childStates/ScribbleBrushing.ts
+index 02f59353494b..b26ff6a6e82e 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/childStates/ScribbleBrushing.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/childStates/ScribbleBrushing.ts
+@@ -134,9 +134,9 @@ export class ScribbleBrushing extends StateNode {
+ 
+ 			geometry = editor.getShapeGeometry(shape)
+ 
+-			// If the scribble started inside of the frame, don't select it
++			// If the scribble started inside of a frame-like shape, don't select it
+ 			if (
+-				editor.isShapeOfType(shape, 'frame') &&
++				editor.isShapeFrameLike(shape) &&
+ 				geometry.bounds.containsPoint(editor.getPointInShapeSpace(shape, originPagePoint))
+ 			) {
+ 				continue
+diff --git a/packages/tldraw/src/lib/ui/components/menu-items.tsx b/packages/tldraw/src/lib/ui/components/menu-items.tsx
+index 837847600af1..4e9e12569fdd 100644
+--- a/packages/tldraw/src/lib/ui/components/menu-items.tsx
++++ b/packages/tldraw/src/lib/ui/components/menu-items.tsx
+@@ -111,7 +111,7 @@ export function RemoveFrameMenuItem() {
+ 		() => {
+ 			const selectedShapes = editor.getSelectedShapes()
+ 			if (selectedShapes.length === 0) return false
+-			return selectedShapes.every((shape) => editor.isShapeOfType(shape, 'frame'))
++			return selectedShapes.every((shape) => editor.isShapeFrameLike(shape))
+ 		},
+ 		[editor]
+ 	)
+@@ -129,7 +129,7 @@ export function FitFrameToContentMenuItem() {
+ 			const onlySelectedShape = editor.getOnlySelectedShape()
+ 			if (!onlySelectedShape) return false
+ 			return (
+-				editor.isShapeOfType(onlySelectedShape, 'frame') &&
++				editor.isShapeFrameLike(onlySelectedShape) &&
+ 				editor.getSortedChildIdsForParent(onlySelectedShape).length > 0
+ 			)
+ 		},
+diff --git a/packages/tldraw/src/lib/ui/context/actions.tsx b/packages/tldraw/src/lib/ui/context/actions.tsx
+index ed2ae8d52dff..8012fe492c48 100644
+--- a/packages/tldraw/src/lib/ui/context/actions.tsx
++++ b/packages/tldraw/src/lib/ui/context/actions.tsx
+@@ -594,7 +594,7 @@ export function ActionsProvider({ overrides, children }: ActionsProviderProps) {
+ 					const selectedShapes = editor.getSelectedShapes()
+ 					if (
+ 						selectedShapes.length > 0 &&
+-						selectedShapes.every((shape) => editor.isShapeOfType(shape, 'frame'))
++						selectedShapes.every((shape) => editor.isShapeFrameLike(shape))
+ 					) {
+ 						editor.markHistoryStoppingPoint('remove-frame')
+ 						removeFrame(
+@@ -612,7 +612,7 @@ export function ActionsProvider({ overrides, children }: ActionsProviderProps) {
+ 
+ 					trackEvent('fit-frame-to-content', { source })
+ 					const onlySelectedShape = editor.getOnlySelectedShape()
+-					if (onlySelectedShape && editor.isShapeOfType(onlySelectedShape, 'frame')) {
++					if (onlySelectedShape && editor.isShapeFrameLike(onlySelectedShape)) {
+ 						editor.markHistoryStoppingPoint('fit-frame-to-content')
+ 						fitFrameToContent(editor, onlySelectedShape.id)
+ 					}
+diff --git a/packages/tldraw/src/lib/utils/export/exportAs.ts b/packages/tldraw/src/lib/utils/export/exportAs.ts
+index aced915fbb5e..835cff781453 100644
+--- a/packages/tldraw/src/lib/utils/export/exportAs.ts
++++ b/packages/tldraw/src/lib/utils/export/exportAs.ts
+@@ -35,6 +35,7 @@ export async function exportAs(
+ 		name = `shapes at ${getTimestamp()}`
+ 		if (ids.length === 1) {
+ 			const first = editor.getShape(ids[0])!
++			// Uses isShapeOfType (not isFrameLike) because it accesses frame-specific props (name)
+ 			if (editor.isShapeOfType(first, 'frame')) {
+ 				name = first.props.name || 'frame'
+ 			} else {
+diff --git a/packages/tldraw/src/lib/utils/frames/frames.ts b/packages/tldraw/src/lib/utils/frames/frames.ts
+index 5c56054aaa50..2276c92cc3ce 100644
+--- a/packages/tldraw/src/lib/utils/frames/frames.ts
++++ b/packages/tldraw/src/lib/utils/frames/frames.ts
+@@ -1,7 +1,7 @@
+ import {
+ 	Box,
+ 	Editor,
+-	TLFrameShape,
++	TLBaseBoxShape,
+ 	TLShape,
+ 	TLShapeId,
+ 	TLShapePartial,
+@@ -11,7 +11,7 @@ import {
+ } from '@tldraw/editor'
+ 
+ /**
+- * Remove a frame.
++ * Remove a frame (or any frame-like container shape).
+  *
+  * @param editor - tldraw editor instance.
+  * @param ids - Ids of the frames you wish to remove.
+@@ -21,8 +21,8 @@ import {
+ export function removeFrame(editor: Editor, ids: TLShapeId[]) {
+ 	const frames = compact(
+ 		ids
+-			.map((id) => editor.getShape<TLFrameShape>(id))
+-			.filter((f) => f && editor.isShapeOfType(f, 'frame'))
++			.map((id) => editor.getShape<TLBaseBoxShape>(id))
++			.filter((f) => f && editor.isShapeFrameLike(f))
+ 	)
+ 	if (!frames.length) return
+ 
+@@ -69,7 +69,7 @@ export function getFrameChildrenBounds(
+ }
+ 
+ /**
+- * Fit a frame to its content.
++ * Fit a frame (or any frame-like container shape) to its content.
+  *
+  * @param id - Id of the frame you wish to fit to content.
+  * @param editor - tlraw editor instance.
+@@ -78,8 +78,8 @@ export function getFrameChildrenBounds(
+  * @public
+  */
+ export function fitFrameToContent(editor: Editor, id: TLShapeId, opts = {} as { padding: number }) {
+-	const frame = editor.getShape<TLFrameShape>(id)
+-	if (!frame) return
++	const frame = editor.getShape<TLBaseBoxShape>(id)
++	if (!frame || !editor.isShapeFrameLike(frame)) return
+ 
+ 	const childIds = editor.getSortedChildIdsForParent(frame.id)
+ 	const children = compact(childIds.map((id) => editor.getShape(id)))

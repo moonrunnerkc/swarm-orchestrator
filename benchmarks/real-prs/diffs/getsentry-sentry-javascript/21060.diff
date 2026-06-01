@@ -1,0 +1,300 @@
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts b/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts
+index 1a3c74630648..a712ddcdfc43 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts
+@@ -1,4 +1,4 @@
+-import type { Hono } from 'hono';
++import { type Hono as HonoType, Hono } from 'hono';
+ import { HTTPException } from 'hono/http-exception';
+ import { failingMiddleware, middlewareA, middlewareB } from './middleware';
+ import { errorRoutes } from './route-groups/test-errors';
+@@ -6,7 +6,7 @@ import { middlewareRoutes, subAppWithInlineMiddleware, subAppWithMiddleware } fr
+ import { multiFetchRoutes } from './route-groups/test-multi-fetch';
+ import { routePatterns } from './route-groups/test-route-patterns';
+ 
+-export function addRoutes(app: Hono<{ Bindings?: { E2E_TEST_DSN: string } }>): void {
++export function addRoutes(app: HonoType<{ Bindings?: { E2E_TEST_DSN: string } }>): void {
+   app.get('/', c => {
+     return c.text('Hello Hono!');
+   });
+@@ -52,4 +52,27 @@ export function addRoutes(app: Hono<{ Bindings?: { E2E_TEST_DSN: string } }>): v
+ 
+   // Multi-fetch routes: storefront sub-app calls inventoryApp via .request()
+   app.route('/test-multi-fetch', multiFetchRoutes);
++
++  // .basePath() with sub-app mounting via .route()
++  const apiSubApp = new Hono();
++  apiSubApp.use(async function apiAuth(_c, next) {
++    await next();
++  });
++  apiSubApp.get('/users', c => c.json({ users: [{ id: 1, name: 'Alice' }] }));
++  apiSubApp.get('/users/:userId', c => c.json({ userId: c.req.param('userId') }));
++
++  app.basePath('/test-basepath').route('/v1', apiSubApp);
++
++  // .use() on the cloned instance returned by .basePath() — the clone has its own
++  // .use class field, so this tests whether middleware instrumentation propagates.
++  app
++    .basePath('/test-basepath-mw')
++    .use(async function basepathMiddleware(_c, next) {
++      await new Promise(resolve => setTimeout(resolve, 50));
++      await next();
++    })
++    .get('/hello', c => c.json({ greeting: 'world' }));
++
++  // .get() registered on the root app after .basePath()/.route() chains
++  app.get('/test-late-get', c => c.json({ registered: 'after-chains' }));
+ }
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/tests/basepath-and-late-routes.test.ts b/dev-packages/e2e-tests/test-applications/hono-4/tests/basepath-and-late-routes.test.ts
+new file mode 100644
+index 000000000000..03a97816c9c5
+--- /dev/null
++++ b/dev-packages/e2e-tests/test-applications/hono-4/tests/basepath-and-late-routes.test.ts
+@@ -0,0 +1,80 @@
++import { expect, test } from '@playwright/test';
++import { waitForTransaction } from '@sentry-internal/test-utils';
++import { APP_NAME } from './constants';
++
++test.describe('basePath with sub-app routes', () => {
++  test('traces GET on a sub-app mounted via .basePath().route()', async ({ baseURL }) => {
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === 'GET /test-basepath/v1/users';
++    });
++
++    const response = await fetch(`${baseURL}/test-basepath/v1/users`);
++    expect(response.status).toBe(200);
++
++    const body = await response.json();
++    expect(body).toEqual({ users: [{ id: 1, name: 'Alice' }] });
++
++    const transaction = await transactionPromise;
++    expect(transaction.transaction).toBe('GET /test-basepath/v1/users');
++    expect(transaction.contexts?.trace?.op).toBe('http.server');
++  });
++
++  test('traces parameterized route under .basePath().route()', async ({ baseURL }) => {
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === 'GET /test-basepath/v1/users/:userId';
++    });
++
++    const response = await fetch(`${baseURL}/test-basepath/v1/users/42`);
++    expect(response.status).toBe(200);
++
++    const body = await response.json();
++    expect(body).toEqual({ userId: '42' });
++
++    const transaction = await transactionPromise;
++    expect(transaction.transaction).toBe('GET /test-basepath/v1/users/:userId');
++    expect(transaction.contexts?.trace?.op).toBe('http.server');
++  });
++});
++
++// TODO: this test is currently skipped because we do not yet support middleware registered on new instances (e.g. here via .basePath(..).use(...)).
++test.skip('.basePath() middleware instrumentation', () => {
++  test('creates middleware span for .use() on .basePath() clone', async ({ baseURL }) => {
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === 'GET /test-basepath-mw/hello';
++    });
++
++    const response = await fetch(`${baseURL}/test-basepath-mw/hello`);
++    expect(response.status).toBe(200);
++
++    const body = await response.json();
++    expect(body).toEqual({ greeting: 'world' });
++
++    const transaction = await transactionPromise;
++    expect(transaction.transaction).toBe('GET /test-basepath-mw/hello');
++
++    const spans = transaction.spans || [];
++    const middlewareSpan = spans.find(
++      (span: { description?: string; op?: string }) =>
++        span.op === 'middleware.hono' && span.description === 'basepathMiddleware',
++    );
++
++    expect(middlewareSpan).toBeDefined();
++    expect(middlewareSpan?.origin).toBe('auto.middleware.hono');
++  });
++});
++
++test('traces .get() route registered after .basePath()/.route() chains', async ({ baseURL }) => {
++  const transactionPromise = waitForTransaction(APP_NAME, event => {
++    return event.contexts?.trace?.op === 'http.server' && event.transaction === 'GET /test-late-get';
++  });
++
++  const response = await fetch(`${baseURL}/test-late-get`);
++  expect(response.status).toBe(200);
++
++  const body = await response.json();
++  expect(body).toEqual({ registered: 'after-chains' });
++
++  const transaction = await transactionPromise;
++  expect(transaction.transaction).toBe('GET /test-late-get');
++  expect(transaction.contexts?.trace?.op).toBe('http.server');
++});
+diff --git a/packages/hono/src/bun/middleware.ts b/packages/hono/src/bun/middleware.ts
+index 651cb4649378..739fb2c33ee9 100644
+--- a/packages/hono/src/bun/middleware.ts
++++ b/packages/hono/src/bun/middleware.ts
+@@ -1,6 +1,6 @@
+ import { type BaseTransportOptions, debug, type Options } from '@sentry/core';
+ import { init } from './sdk';
+-import type { Hono, MiddlewareHandler } from 'hono';
++import type { Env, Hono, MiddlewareHandler } from 'hono';
+ import { requestHandler, responseHandler } from '../shared/middlewareHandlers';
+ import { applyPatches } from '../shared/applyPatches';
+ 
+@@ -9,7 +9,7 @@ export interface HonoBunOptions extends Options<BaseTransportOptions> {}
+ /**
+  * Sentry middleware for Hono running in a Bun runtime environment.
+  */
+-export const sentry = (app: Hono, options: HonoBunOptions): MiddlewareHandler => {
++export const sentry = <E extends Env>(app: Hono<E>, options: HonoBunOptions): MiddlewareHandler => {
+   const isDebug = options.debug;
+ 
+   isDebug && debug.log('Initialized Sentry Hono middleware (Bun)');
+diff --git a/packages/hono/src/node/middleware.ts b/packages/hono/src/node/middleware.ts
+index bcfd65d573c1..bd12d7ce82f8 100644
+--- a/packages/hono/src/node/middleware.ts
++++ b/packages/hono/src/node/middleware.ts
+@@ -1,5 +1,5 @@
+ import { type BaseTransportOptions, debug, type Options, getClient } from '@sentry/core';
+-import type { Hono, MiddlewareHandler } from 'hono';
++import type { Env, Hono, MiddlewareHandler } from 'hono';
+ import { requestHandler, responseHandler } from '../shared/middlewareHandlers';
+ import { applyPatches } from '../shared/applyPatches';
+ 
+@@ -13,7 +13,7 @@ export interface HonoNodeOptions extends Options<BaseTransportOptions> {}
+  *
+  * **Note:** You must initialize Sentry separately before using this middleware. Typically, this is done by calling `Sentry.init()` in an `instrument.ts` file and loading it via the Node `--import` flag.
+  */
+-export const sentry = (app: Hono): MiddlewareHandler => {
++export const sentry = <E extends Env>(app: Hono<E>): MiddlewareHandler => {
+   const sentryClient = getClient();
+   if (sentryClient === undefined) {
+     debug.warn(
+diff --git a/packages/hono/test/bun/middleware.test.ts b/packages/hono/test/bun/middleware.test.ts
+index f3fc82d3696f..8e3135e52afb 100644
+--- a/packages/hono/test/bun/middleware.test.ts
++++ b/packages/hono/test/bun/middleware.test.ts
+@@ -29,6 +29,16 @@ describe('Hono Bun Middleware', () => {
+   });
+ 
+   describe('sentry middleware', () => {
++    it('accepts Hono with custom env types without requiring a cast', () => {
++      type CustomEnv = { Bindings: { DATABASE_URL: string }; Variables: { userId: string } };
++      const app = new Hono<CustomEnv>();
++
++      const middleware = sentry(app, { dsn: 'https://public@dsn.ingest.sentry.io/1337' });
++
++      expect(typeof middleware).toBe('function');
++      expect(middleware).toHaveLength(2);
++    });
++
+     it('calls applySdkMetadata with "hono" and "bun"', () => {
+       const app = new Hono();
+       const options = {
+diff --git a/packages/hono/test/node/middleware.test.ts b/packages/hono/test/node/middleware.test.ts
+index 745e924e7804..443d1b48ea3b 100644
+--- a/packages/hono/test/node/middleware.test.ts
++++ b/packages/hono/test/node/middleware.test.ts
+@@ -36,6 +36,16 @@ describe('Hono Node Middleware', () => {
+       expect(initNodeMock).not.toHaveBeenCalled();
+     });
+ 
++    it('accepts Hono with custom env types without requiring a cast', () => {
++      type CustomEnv = { Bindings: { DATABASE_URL: string }; Variables: { userId: string } };
++      const app = new Hono<CustomEnv>();
++
++      const middleware = sentry(app);
++
++      expect(typeof middleware).toBe('function');
++      expect(middleware).toHaveLength(2);
++    });
++
+     it('returns a middleware handler function', () => {
+       const app = new Hono();
+       const middleware = sentry(app);
+diff --git a/packages/hono/test/shared/applyPatches.test.ts b/packages/hono/test/shared/applyPatches.test.ts
+index 7a029367250f..51a68859e614 100644
+--- a/packages/hono/test/shared/applyPatches.test.ts
++++ b/packages/hono/test/shared/applyPatches.test.ts
+@@ -494,6 +494,79 @@ describe('applyPatches', () => {
+     });
+   });
+ 
++  describe('main-app .get() routes after applyPatches', () => {
++    it('responds correctly from .get() routes registered after applyPatches', async () => {
++      const app = new Hono();
++      applyPatches(app);
++
++      app.get('/docs', c => c.text('API Documentation'));
++      app.get('/openapi.json', c => c.json({ openapi: '3.0.0', paths: {} }));
++
++      const docsRes = await app.fetch(new Request('http://localhost/docs'));
++      expect(docsRes.status).toBe(200);
++      expect(await docsRes.text()).toBe('API Documentation');
++
++      const specRes = await app.fetch(new Request('http://localhost/openapi.json'));
++      expect(specRes.status).toBe(200);
++      expect(await specRes.json()).toEqual({ openapi: '3.0.0', paths: {} });
++    });
++
++    it('preserves .get() routes registered after .basePath() and .route() chains', async () => {
++      const app = new Hono();
++      applyPatches(app);
++
++      const subApp = new Hono();
++      subApp.use(async function authMiddleware(_c: unknown, next: () => Promise<void>) {
++        await next();
++      });
++      subApp.get('/resource', () => new Response('resource'));
++
++      app.basePath('/api').route('/v1', subApp);
++
++      app.get('/docs', c => c.text('Docs page'));
++      app.get('/openapi.json', c => c.json({ openapi: '3.0.0' }));
++
++      const resourceRes = await app.fetch(new Request('http://localhost/api/v1/resource'));
++      expect(resourceRes.status).toBe(200);
++      expect(await resourceRes.text()).toBe('resource');
++
++      const docsRes = await app.fetch(new Request('http://localhost/docs'));
++      expect(docsRes.status).toBe(200);
++      expect(await docsRes.text()).toBe('Docs page');
++
++      const specRes = await app.fetch(new Request('http://localhost/openapi.json'));
++      expect(specRes.status).toBe(200);
++      expect(await specRes.json()).toEqual({ openapi: '3.0.0' });
++    });
++
++    it('does not corrupt app.routes for third-party route introspection', () => {
++      const app = new Hono();
++      applyPatches(app);
++
++      app.use(async function globalMw(_c: unknown, next: () => Promise<void>) {
++        await next();
++      });
++      app.get('/users', () => new Response('users'));
++      app.post('/users', () => new Response('created'));
++
++      const subApp = new Hono();
++      subApp.get('/items', () => new Response('items'));
++      app.route('/api', subApp);
++
++      const routes = app.routes as Array<{ method: string; path: string; handler: Function }>;
++      const getPaths = routes.filter(r => r.method === 'GET').map(r => r.path);
++      const postPaths = routes.filter(r => r.method === 'POST').map(r => r.path);
++
++      expect(getPaths).toContain('/users');
++      expect(getPaths).toContain('/api/items');
++      expect(postPaths).toContain('/users');
++
++      for (const route of routes) {
++        expect(typeof route.handler).toBe('function');
++      }
++    });
++  });
++
+   describe('patchAppRequest integration', () => {
+     it('patches .request() on sub-apps when they are mounted via route()', async () => {
+       const app = new Hono();

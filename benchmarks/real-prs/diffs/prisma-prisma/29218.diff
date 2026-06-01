@@ -1,0 +1,631 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index f881bbc8fcb4..509d36d2434b 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -36,6 +36,8 @@
+   - `QueryInterpreter` class in `packages/client-engine-runtime/src/interpreter/query-interpreter.ts` executes query plans against `SqlQueryable` (driver adapter interface).
+   - Query flow: `PrismaClient` → `ClientEngine.request()` → query compiler → `executor.execute()` → `QueryInterpreter.run()` → driver adapter.
+   - `ExecutePlanParams` interface in `packages/client/src/runtime/core/engines/client/Executor.ts` defines what's passed through the execution chain.
++  - Fluent API `dataPath` is built in `packages/client/src/runtime/core/model/applyFluent.ts` by appending `['select', <relationName>]` on each hop; runtime unpacking in `packages/client/src/runtime/RequestHandler.ts` currently strips `'select'`/`'include'` segments before `deepGet`.
++  - In extension context resolution, `dataPath` should be interpreted as selector/field pairs (`select|include`, relation field). Do not strip by raw string value or relation fields literally named `select`/`include` get dropped.
+ 
+ - **Adding PrismaClient constructor options**:
+   - Runtime types: `PrismaClientOptions` in `packages/client/src/runtime/getPrismaClient.ts`.
+@@ -69,6 +71,7 @@
+   - Tests rely on fixtures under `packages/**/src/__tests__/fixtures`; many now contain `prisma.config.ts`.
+   - Default Jest/Vitest runner is invoked via `pnpm --filter @prisma/<pkg> test <pattern>`; it wraps `dotenv` and expects `.db.env`.
+     - Some packages already use Vitest, `packages/cli` uses both for different tests as it's in the process of transition, older packages still use Jest.
++  - Functional generated clients in `packages/client/tests/functional/**/.generated` import `packages/client/runtime/client.js` directly; runtime changes in `src/runtime` may need corresponding runtime bundle updates to be exercised by functional tests.
+   - Inline snapshots can be sensitive to formatting; prefer concise expectations unless the exact message matters.
+ 
+ - **Environment loading**: Prisma 7 removes automatic `.env` loading.
+diff --git a/packages/client/src/runtime/core/extensions/resolve-result-extension-context.test.ts b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.test.ts
+new file mode 100644
+index 000000000000..6857f7c6d944
+--- /dev/null
++++ b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.test.ts
+@@ -0,0 +1,264 @@
++import { field, model, runtimeDataModel } from '../../../testUtils/dataModelBuilder'
++import { applyAllResultExtensions } from './applyAllResultExtensions'
++import { MergedExtensionsList } from './MergedExtensionsList'
++import { resolveResultExtensionContext } from './resolve-result-extension-context'
++
++const UserModel = model('User', [field('object', 'posts', 'Post', { relationName: 'UserToPost', isList: true })])
++
++const PostModel = model('Post', [field('object', 'author', 'User', { relationName: 'PostToUser' })])
++
++const datamodel = runtimeDataModel({
++  models: [UserModel, PostModel],
++})
++
++const KeywordRelationSourceModel = model('KeywordRelationSource', [
++  field('object', 'select', 'KeywordSelectTarget', {
++    relationName: 'KeywordRelationSourceToKeywordSelectTarget',
++    isList: true,
++  }),
++  field('object', 'include', 'KeywordIncludeTarget', {
++    relationName: 'KeywordRelationSourceToKeywordIncludeTarget',
++    isList: true,
++  }),
++])
++
++const KeywordSelectTargetModel = model('KeywordSelectTarget', [])
++
++const KeywordIncludeTargetModel = model('KeywordIncludeTarget', [])
++
++const keywordRelationsDatamodel = runtimeDataModel({
++  models: [KeywordRelationSourceModel, KeywordSelectTargetModel, KeywordIncludeTargetModel],
++})
++
++test('returns root context if dataPath is empty', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: [],
++    modelName: 'User',
++    args: { where: { id: '1' } },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'User',
++    args: { where: { id: '1' } },
++  })
++})
++
++test('resolves model and args for fluent one-hop select path', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: {
++          select: {
++            id: true,
++          },
++        },
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'Post',
++    args: {
++      select: {
++        id: true,
++      },
++    },
++  })
++})
++
++test('resolves model and args for fluent one-hop include path', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['include', 'posts'],
++    modelName: 'User',
++    args: {
++      include: {
++        posts: {
++          where: { id: 'post-id' },
++        },
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'Post',
++    args: {
++      where: { id: 'post-id' },
++    },
++  })
++})
++
++test('resolves model and args for multi-hop fluent path', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts', 'select', 'author'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: {
++          select: {
++            author: {
++              select: {
++                id: true,
++              },
++            },
++          },
++        },
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'User',
++    args: {
++      select: {
++        id: true,
++      },
++    },
++  })
++})
++
++test('throws a runtime error when a relation field from dataPath is missing', () => {
++  expect(() =>
++    resolveResultExtensionContext({
++      dataPath: ['select', 'email'],
++      modelName: 'User',
++      args: {
++        select: {
++          email: true,
++        },
++      },
++      runtimeDataModel: datamodel,
++    }),
++  ).toThrow('Could not resolve relation field "email" on model "User" from dataPath "select.email"')
++})
++
++test('defaults nested args to empty object when selection is true', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: true,
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'Post',
++    args: {},
++  })
++})
++
++test('resolved context applies result extensions to fluent-style unwrapped results', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: true,
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  const extensions = MergedExtensionsList.single({
++    result: {
++      post: {
++        postLabel: {
++          needs: { id: true },
++          compute(post) {
++            return `post-${post.id}`
++          },
++        },
++      },
++    },
++  })
++
++  const result = applyAllResultExtensions({
++    result: [{ id: 'post-id' }] as Array<{ id: string; postLabel?: string }>,
++    modelName: context.modelName,
++    args: context.args,
++    extensions,
++    runtimeDataModel: datamodel,
++  })
++
++  expect(result?.[0]?.postLabel).toBe('post-post-id')
++})
++
++test('resolved context applies result extensions when relation field is named "select"', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'select'],
++    modelName: 'KeywordRelationSource',
++    args: {
++      select: {
++        select: true,
++      },
++    },
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  const extensions = MergedExtensionsList.single({
++    result: {
++      keywordSelectTarget: {
++        selectLabel: {
++          needs: { id: true },
++          compute(model) {
++            return `select-${model.id}`
++          },
++        },
++      },
++    },
++  })
++
++  const result = applyAllResultExtensions({
++    result: [{ id: 'keyword-id' }] as Array<{ id: string; selectLabel?: string }>,
++    modelName: context.modelName,
++    args: context.args,
++    extensions,
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  expect(result?.[0]?.selectLabel).toBe('select-keyword-id')
++})
++
++test('resolved context applies result extensions when relation field is named "include"', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['include', 'include'],
++    modelName: 'KeywordRelationSource',
++    args: {
++      include: {
++        include: true,
++      },
++    },
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  const extensions = MergedExtensionsList.single({
++    result: {
++      keywordIncludeTarget: {
++        includeLabel: {
++          needs: { id: true },
++          compute(model) {
++            return `include-${model.id}`
++          },
++        },
++      },
++    },
++  })
++
++  const result = applyAllResultExtensions({
++    result: [{ id: 'keyword-id' }] as Array<{ id: string; includeLabel?: string }>,
++    modelName: context.modelName,
++    args: context.args,
++    extensions,
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  expect(result?.[0]?.includeLabel).toBe('include-keyword-id')
++})
+diff --git a/packages/client/src/runtime/core/extensions/resolve-result-extension-context.ts b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.ts
+new file mode 100644
+index 000000000000..c8468c521c22
+--- /dev/null
++++ b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.ts
+@@ -0,0 +1,101 @@
++import { RuntimeDataModel } from '@prisma/client-common'
++
++import { JsArgs } from '../types/exported/JsApi'
++
++type ResolveResultExtensionContextParams = {
++  dataPath: string[]
++  modelName: string
++  args?: JsArgs
++  runtimeDataModel: RuntimeDataModel
++}
++
++type ResultExtensionContext = {
++  modelName: string
++  args: JsArgs
++}
++
++/**
++ * Resolves the model/args context used for result extensions from a query dataPath.
++ * Falls back to the root model context when traversal can not continue because the model is
++ * missing, the segment is not a relation, or the path format is invalid.
++ * Throws when a relation field segment from dataPath does not exist on the current model.
++ */
++export function resolveResultExtensionContext({
++  dataPath,
++  modelName,
++  args,
++  runtimeDataModel,
++}: ResolveResultExtensionContextParams): ResultExtensionContext {
++  const rootContext = {
++    modelName,
++    args: args ?? {},
++  }
++
++  const relationPath = relationPathFromDataPath(dataPath)
++  if (!relationPath || relationPath.length === 0) {
++    return rootContext
++  }
++
++  let currentModelName = modelName
++  let currentArgs: JsArgs = args ?? {}
++
++  for (const relationFieldName of relationPath) {
++    const currentModel = runtimeDataModel.models[currentModelName]
++    if (!currentModel) {
++      return rootContext
++    }
++
++    const relationField = currentModel.fields.find((field) => field.name === relationFieldName)
++    if (!relationField) {
++      throw new Error(
++        `Could not resolve relation field "${relationFieldName}" on model "${currentModelName}" from dataPath "${dataPath.join('.')}"`,
++      )
++    }
++    if (relationField.kind !== 'object' || !relationField.relationName) {
++      return rootContext
++    }
++
++    currentModelName = relationField.type
++    currentArgs = resolveNextArgs(currentArgs, relationFieldName)
++  }
++
++  return {
++    modelName: currentModelName,
++    args: currentArgs,
++  }
++}
++
++function relationPathFromDataPath(dataPath: string[]): string[] | undefined {
++  const relationPath: string[] = []
++
++  for (let index = 0; index < dataPath.length; index += 2) {
++    const selector = dataPath[index]
++    const relationFieldName = dataPath[index + 1]
++
++    if ((selector !== 'select' && selector !== 'include') || relationFieldName === undefined) {
++      return undefined
++    }
++
++    relationPath.push(relationFieldName)
++  }
++
++  return relationPath
++}
++
++function resolveNextArgs(args: JsArgs, relationFieldName: string): JsArgs {
++  const select = args.select?.[relationFieldName]
++  if (isNestedArgs(select)) {
++    return select
++  }
++
++  const include = args.include?.[relationFieldName]
++  if (isNestedArgs(include)) {
++    return include
++  }
++
++  return {}
++}
++
++function isNestedArgs(value: unknown): value is JsArgs {
++  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
++}
+diff --git a/packages/client/src/runtime/getPrismaClient.ts b/packages/client/src/runtime/getPrismaClient.ts
+index cab4c1426992..11f5d3df3687 100644
+--- a/packages/client/src/runtime/getPrismaClient.ts
++++ b/packages/client/src/runtime/getPrismaClient.ts
+@@ -20,6 +20,7 @@ import { $extends } from './core/extensions/$extends'
+ import { applyAllResultExtensions } from './core/extensions/applyAllResultExtensions'
+ import { applyQueryExtensions } from './core/extensions/applyQueryExtensions'
+ import { MergedExtensionsList } from './core/extensions/MergedExtensionsList'
++import { resolveResultExtensionContext } from './core/extensions/resolve-result-extension-context'
+ import { getEngineInstance } from './core/init/getEngineInstance'
+ import { GlobalOmitOptions, serializeJsonQuery } from './core/jsonProtocol/serializeJsonQuery'
+ import {
+@@ -808,10 +809,18 @@ Or read our docs at https://www.prisma.io/docs/concepts/components/prisma-client
+         if (!requestParams.model) {
+           return result
+         }
+-        return applyAllResultExtensions({
+-          result,
++
++        const extensionContext = resolveResultExtensionContext({
++          dataPath: requestParams.dataPath,
+           modelName: requestParams.model,
+           args: requestParams.args,
++          runtimeDataModel: this._runtimeDataModel,
++        })
++
++        return applyAllResultExtensions({
++          result,
++          modelName: extensionContext.modelName,
++          args: extensionContext.args,
+           extensions: this._extensions,
+           runtimeDataModel: this._runtimeDataModel,
+           globalOmit: this._globalOmit,
+diff --git a/packages/client/tests/functional/extensions/result.ts b/packages/client/tests/functional/extensions/result.ts
+index 23debeb41032..8d0cd0b4e083 100644
+--- a/packages/client/tests/functional/extensions/result.ts
++++ b/packages/client/tests/functional/extensions/result.ts
+@@ -25,6 +25,29 @@ function prismaWithExtension() {
+   })
+ }
+ 
++function prismaWithUserAndPostExtensions() {
++  return prisma.$extends({
++    result: {
++      user: {
++        fullName: {
++          needs: { firstName: true, lastName: true },
++          compute(user) {
++            return `${user.firstName} ${user.lastName}`
++          },
++        },
++      },
++      post: {
++        postLabel: {
++          needs: { id: true },
++          compute(post) {
++            return `post-${post.id}`
++          },
++        },
++      },
++    },
++  })
++}
++
+ testMatrix.setupTestSuite(
+   () => {
+     beforeEach(async () => {
+@@ -204,6 +227,165 @@ testMatrix.setupTestSuite(
+       expectTypeOf(post?.user.fullName).toEqualTypeOf<string | undefined>()
+     })
+ 
++    test('nested reads: include applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const user = await xprisma.user.findFirstOrThrow({
++        include: {
++          posts: true,
++        },
++      })
++
++      expect(user.posts[0].postLabel).toBe(`post-${user.posts[0].id}`)
++    })
++
++    test('nested reads: select applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const user = await xprisma.user.findFirstOrThrow({
++        select: {
++          posts: {
++            select: {
++              postLabel: true,
++            },
++          },
++        },
++      })
++
++      expect(user.posts[0].postLabel).toBeDefined()
++    })
++
++    test('nested writes (create): include applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const createdUser = await xprisma.user.create({
++        data: {
++          email: faker.internet.email(),
++          firstName: 'Nested',
++          lastName: 'Create',
++          posts: {
++            create: [{}],
++          },
++        },
++        include: {
++          posts: true,
++        },
++      })
++
++      expect(createdUser.posts[0].postLabel).toBe(`post-${createdUser.posts[0].id}`)
++    })
++
++    test('nested writes (create): select applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const createdUser = await xprisma.user.create({
++        data: {
++          email: faker.internet.email(),
++          firstName: 'Nested',
++          lastName: 'Create',
++          posts: {
++            create: [{}],
++          },
++        },
++        select: {
++          posts: {
++            select: {
++              postLabel: true,
++            },
++          },
++        },
++      })
++
++      expect(createdUser.posts[0].postLabel).toBeDefined()
++    })
++
++    test('nested writes (update): include applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const updatedUser = await xprisma.user.update({
++        where: { email },
++        data: {
++          firstName: 'Nested Update',
++          posts: {
++            create: [{}],
++          },
++        },
++        include: {
++          posts: true,
++        },
++      })
++
++      expect(updatedUser.posts[0].postLabel).toBe(`post-${updatedUser.posts[0].id}`)
++    })
++
++    test('nested writes (update): select applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const updatedUser = await xprisma.user.update({
++        where: { email },
++        data: {
++          firstName: 'Nested Update',
++          posts: {
++            create: [{}],
++          },
++        },
++        select: {
++          posts: {
++            select: {
++              postLabel: true,
++            },
++          },
++        },
++      })
++
++      expect(updatedUser.posts[0].postLabel).toBeDefined()
++    })
++
++    test('fluent reads apply result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const posts = await xprisma.user.findUniqueOrThrow({ where: { email } }).posts()
++
++      expect(posts[0].postLabel).toBe(`post-${posts[0].id}`)
++    })
++
++    test('fluent writes (create) apply result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const posts = await xprisma.user
++        .create({
++          data: {
++            email: faker.internet.email(),
++            firstName: 'Fluent',
++            lastName: 'Create',
++            posts: {
++              create: [{}],
++            },
++          },
++        })
++        .posts()
++
++      expect(posts[0].postLabel).toBe(`post-${posts[0].id}`)
++    })
++
++    test('fluent writes (update) apply result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const posts = await xprisma.user
++        .update({
++          where: { email },
++          data: {
++            firstName: 'Fluent Update',
++            posts: {
++              create: [{}],
++            },
++          },
++        })
++        .posts()
++
++      expect(posts[0].postLabel).toBe(`post-${posts[0].id}`)
++    })
++
+     test('dependencies between computed fields', async () => {
+       const xprisma = prismaWithExtension().$extends({
+         result: {

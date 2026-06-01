@@ -1,0 +1,157 @@
+diff --git a/.changeset/wet-hornets-dance.md b/.changeset/wet-hornets-dance.md
+new file mode 100644
+index 000000000000..ff48227f7146
+--- /dev/null
++++ b/.changeset/wet-hornets-dance.md
+@@ -0,0 +1,5 @@
++---
++'@astrojs/cloudflare': patch
++---
++
++Fix static assets and prerendered pages 404ing when `base` is configured.
+diff --git a/packages/integrations/cloudflare/src/index.ts b/packages/integrations/cloudflare/src/index.ts
+index 1e7de2a2cfcc..c3d17194ce6d 100644
+--- a/packages/integrations/cloudflare/src/index.ts
++++ b/packages/integrations/cloudflare/src/index.ts
+@@ -1,5 +1,5 @@
+ import { createReadStream, existsSync, readFileSync } from 'node:fs';
+-import { appendFile, stat } from 'node:fs/promises';
++import { appendFile, rename, stat } from 'node:fs/promises';
+ import { createInterface } from 'node:readline/promises';
+ import { removeLeadingForwardSlash } from '@astrojs/internal-helpers/path';
+ import { createRedirectsFromAstroRoutes, printAsRedirects } from '@astrojs/underscore-redirects';
+@@ -118,6 +118,7 @@ export default function createIntegration({
+ 	...cloudflareOptions
+ }: Options = {}): AstroIntegration {
+ 	let _config: AstroConfig;
++	let _originalClientDir: URL;
+ 
+ 	let _routes: IntegrationResolvedRoute[];
+ 	let _isFullyStatic = false;
+@@ -350,6 +351,15 @@ export default function createIntegration({
+ 			},
+ 			'astro:config:done': ({ setAdapter, config, injectTypes, logger }) => {
+ 				_config = config;
++				_originalClientDir = new URL(config.build.client.href);
++
++				// When a base path is configured, nest the client output directory under
++				// the base so that on-disk paths match the URLs Astro writes into HTML.
++				// Cloudflare Workers' static-asset binding resolves request URLs literally
++				// against the client directory, so the files must live under the base prefix.
++				if (config.base !== '/') {
++					config.build.client = new URL('.' + config.base + '/', config.build.client);
++				}
+ 
+ 				injectTypes({
+ 					filename: 'cloudflare.d.ts',
+@@ -437,9 +447,24 @@ export default function createIntegration({
+ 				}
+ 			},
+ 			'astro:build:done': async ({ dir, logger, assets }) => {
++				// Move platform files from the base-prefixed client dir to the
++				// original client root, since Cloudflare reads them from there.
++				if (_config.base !== '/') {
++					for (const file of ['.assetsignore', '_headers']) {
++						try {
++							await rename(
++								new URL(`./${file}`, _config.build.client),
++								new URL(`./${file}`, _originalClientDir),
++							);
++						} catch {
++							// File may not exist — that's fine
++						}
++					}
++				}
++
+ 				let redirectsExists = false;
+ 				try {
+-					const redirectsStat = await stat(new URL('./_redirects', _config.build.client));
++					const redirectsStat = await stat(new URL('./_redirects', _originalClientDir));
+ 					if (redirectsStat.isFile()) {
+ 						redirectsExists = true;
+ 					}
+@@ -450,7 +475,7 @@ export default function createIntegration({
+ 				const redirects: IntegrationResolvedRoute['segments'][] = [];
+ 				if (redirectsExists) {
+ 					const rl = createInterface({
+-						input: createReadStream(new URL('./_redirects', _config.build.client)),
++						input: createReadStream(new URL('./_redirects', _originalClientDir)),
+ 						crlfDelay: Number.POSITIVE_INFINITY,
+ 					});
+ 
+@@ -489,7 +514,7 @@ export default function createIntegration({
+ 				if (!trueRedirects.empty()) {
+ 					try {
+ 						await appendFile(
+-							new URL('./_redirects', _config.build.client),
++							new URL('./_redirects', _originalClientDir),
+ 							printAsRedirects(trueRedirects),
+ 						);
+ 					} catch (_error) {
+diff --git a/packages/integrations/cloudflare/test/fixtures/with-base/public/.assetsignore b/packages/integrations/cloudflare/test/fixtures/with-base/public/.assetsignore
+new file mode 100644
+index 000000000000..09a6b399e935
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/with-base/public/.assetsignore
+@@ -0,0 +1 @@
++_worker.js
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/with-base/public/_headers b/packages/integrations/cloudflare/test/fixtures/with-base/public/_headers
+new file mode 100644
+index 000000000000..6f09724c66eb
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/with-base/public/_headers
+@@ -0,0 +1,2 @@
++/*
++  X-Custom-Header: 67
+diff --git a/packages/integrations/cloudflare/test/fixtures/with-base/public/favicon.ico b/packages/integrations/cloudflare/test/fixtures/with-base/public/favicon.ico
+new file mode 100644
+index 000000000000..ce6fb0796dc3
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/with-base/public/favicon.ico
+@@ -0,0 +1 @@
++fake-favicon
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/with-base.test.ts b/packages/integrations/cloudflare/test/with-base.test.ts
+index eb0cd4398a1c..9accf4fd9dbe 100644
+--- a/packages/integrations/cloudflare/test/with-base.test.ts
++++ b/packages/integrations/cloudflare/test/with-base.test.ts
+@@ -41,9 +41,37 @@ describe('base', () => {
+ 		await fixture.clean();
+ 	});
+ 
+-	it('correctly prints redirects', async () => {
++	it('correctly prints redirects at the client root', async () => {
+ 		const fileContent = await fixture.readFile('client/_redirects');
+ 		assert.match(fileContent, /\/a\/redirect\s+\/\s+301/);
+ 		assert.match(fileContent, /\/a\/redirect\/\s+\/\s+301/);
+ 	});
++
++	it('places prerendered pages under the base prefix', async () => {
++		assert.ok(
++			fixture.pathExists('client/blog/static/index.html'),
++			'prerendered page should be at client/blog/static/index.html',
++		);
++	});
++
++	it('places public files under the base prefix', async () => {
++		assert.ok(
++			fixture.pathExists('client/blog/favicon.ico'),
++			'public file should be at client/blog/favicon.ico',
++		);
++	});
++
++	it('keeps .assetsignore at the client root', async () => {
++		assert.ok(
++			fixture.pathExists('client/.assetsignore'),
++			'.assetsignore should be at client/.assetsignore (not under base)',
++		);
++	});
++
++	it('keeps _headers at the client root', async () => {
++		assert.ok(
++			fixture.pathExists('client/_headers'),
++			'_headers should be at client/_headers (not under base)',
++		);
++	});
+ });

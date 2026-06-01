@@ -1,0 +1,1799 @@
+diff --git a/.changeset/markdown-satteri.md b/.changeset/markdown-satteri.md
+new file mode 100644
+index 000000000000..237df7b69014
+--- /dev/null
++++ b/.changeset/markdown-satteri.md
+@@ -0,0 +1,24 @@
++---
++'@astrojs/markdown-satteri': minor
++---
++
++Adds `@astrojs/markdown-satteri`, a Markdown processor based on [Sätteri](https://satteri.bruits.org), a fast Markdown pipeline written in Rust.
++
++Sätteri is much faster than the default Remark-based processor, and supports a wide range of Markdown features out of the box, without requiring additional plugins. In the future, we plan to make this the default Markdown processor in Astro.
++
++```sh
++npm install @astrojs/markdown-satteri
++```
++
++```js
++// astro.config.mjs
++import { satteri } from '@astrojs/markdown-satteri';
++
++export default defineConfig({
++  markdown: {
++    processor: satteri(),
++  },
++});
++```
++
++Note that this processor currently does not support Prism syntax highlighting, and require using `syntaxHighlight: 'shiki'` or disabling syntax highlighting altogether for now.
+diff --git a/.changeset/mdx-satteri-support.md b/.changeset/mdx-satteri-support.md
+new file mode 100644
+index 000000000000..ea0ff3ec2342
+--- /dev/null
++++ b/.changeset/mdx-satteri-support.md
+@@ -0,0 +1,46 @@
++---
++'@astrojs/mdx': minor
++---
++
++Adds support for using [`@astrojs/markdown-satteri`](https://www.npmjs.com/package/@astrojs/markdown-satteri) to parse `.mdx` files.
++
++```js
++// astro.config.mjs
++import { defineConfig } from 'astro/config';
++import mdx from '@astrojs/mdx';
++import { satteri } from '@astrojs/markdown-satteri';
++
++export default defineConfig({
++  markdown: {
++    processor: satteri({
++      features: { directive: true },
++    }),
++  },
++  integrations: [mdx()],
++});
++```
++
++Note that the [`recmaPlugins` option](https://docs.astro.build/en/guides/integrations-guide/mdx/#recmaplugins) is not supported when using Sätteri as your MDX processor. If you would like to use Sätteri for Markdown files, but still use Unified for MDX, you can pass a different Markdown processor to the MDX integration:
++
++```js
++// astro.config.mjs
++import { defineConfig } from 'astro/config';
++import mdx from '@astrojs/mdx';
++import { satteri } from '@astrojs/markdown-satteri';
++import { unified } from '@astrojs/markdown-remark';
++import myPlugin from "./my-recma-plugin.js";
++
++export default defineConfig({
++  markdown: {
++    processor: satteri({
++      features: { directive: true },
++    }),
++  },
++  integrations: [
++    mdx({
++      recmaPlugins: [myPlugin],
++      processor: unified(),
++    }),
++  ],
++});
++```
+diff --git a/knip.js b/knip.js
+index 577c47e73ea9..8d553d72db41 100644
+--- a/knip.js
++++ b/knip.js
+@@ -87,9 +87,18 @@ export default {
+ 			// Used in testing-library compatibility tests but not directly imported
+ 			ignoreDependencies: ['@testing-library/svelte'],
+ 		},
++		'packages/integrations/mdx': {
++			entry: [srcEntry, dtsEntry, testEntry],
++			// Optional peer dep: type-only imports for narrowing the `satteri()` processor.
++			// Knip flags it because the peer is referenced from source; the runtime stays gated by name-check.
++			ignoreDependencies: ['@astrojs/markdown-satteri'],
++		},
+ 		'packages/markdown/remark': {
+ 			entry: [srcEntry, dtsEntry, testEntry],
+ 		},
++		'packages/markdown/satteri': {
++			entry: [srcEntry, dtsEntry, testEntry],
++		},
+ 		'packages/upgrade': {
+ 			entry: ['src/index.ts', testEntry],
+ 		},
+diff --git a/packages/integrations/mdx/package.json b/packages/integrations/mdx/package.json
+index 4fca355ff127..bc6a4e5b563c 100644
+--- a/packages/integrations/mdx/package.json
++++ b/packages/integrations/mdx/package.json
+@@ -50,9 +50,16 @@
+     "vfile": "^6.0.3"
+   },
+   "peerDependencies": {
++    "@astrojs/markdown-satteri": "workspace:*",
+     "astro": "^6.4.0"
+   },
++  "peerDependenciesMeta": {
++    "@astrojs/markdown-satteri": {
++      "optional": true
++    }
++  },
+   "devDependencies": {
++    "@astrojs/markdown-satteri": "workspace:*",
+     "@shikijs/rehype": "^4.0.2",
+     "@shikijs/twoslash": "^4.0.2",
+     "@types/estree": "^1.0.8",
+@@ -69,6 +76,7 @@
+     "remark-math": "^6.0.0",
+     "remark-rehype": "^11.1.2",
+     "remark-toc": "^9.0.0",
++    "satteri": "^0.6.3",
+     "shiki": "^4.0.2",
+     "unified": "^11.0.5",
+     "vite": "^7.3.2"
+diff --git a/packages/integrations/mdx/src/image-constants.ts b/packages/integrations/mdx/src/image-constants.ts
+new file mode 100644
+index 000000000000..643015ac683d
+--- /dev/null
++++ b/packages/integrations/mdx/src/image-constants.ts
+@@ -0,0 +1,10 @@
++// Tag name we rewrite markdown-derived `<img>` elements to. Lowercase + hyphenated
++// so MDX routes the tag through the `_components` map.
++export const ASTRO_IMAGE_ELEMENT = 'astro-image';
++// Module-level identifier bound to Astro's `Image` component (from `astro:assets`).
++// Imported by every compiled MDX file that contains a rewritten image; used as the
++// fallback when no `components.img` is provided.
++export const ASTRO_IMAGE_IMPORT = '__AstroImage__';
++// Boolean export set on MDX modules that contain rewritten images. Read by
++// `vite-plugin-mdx-postprocess` to decide whether to wire up the image component.
++export const USES_ASTRO_IMAGE_FLAG = '__usesAstroImage';
+diff --git a/packages/integrations/mdx/src/index.ts b/packages/integrations/mdx/src/index.ts
+index f057279d0aa0..f6e5a4d6f469 100644
+--- a/packages/integrations/mdx/src/index.ts
++++ b/packages/integrations/mdx/src/index.ts
+@@ -14,7 +14,7 @@ import type {
+ import type { MarkdownProcessor } from 'astro/markdown';
+ import type { Options as RemarkRehypeOptions } from 'remark-rehype';
+ import type { PluggableList } from 'unified';
+-import { isUnifiedProcessor } from './processor-guards.js';
++import { isSatteriProcessor, isUnifiedProcessor } from './processor-guards.js';
+ import type { OptimizeOptions } from './rehype-optimize-static.js';
+ import { ignoreStringPlugins, safeParseFrontmatter } from './utils.js';
+ import { type VitePluginMdxOptions, vitePluginMdx } from './vite-plugin-mdx.js';
+@@ -168,8 +168,24 @@ export default function mdx(partialMdxOptions: Partial<MdxOptions> = {}): AstroI
+ 						resolvedMdxOptions.smartypants = processor.options.smartypants;
+ 					}
+ 				}
+-				// Third-party processors don't expose their plugins to MDX's built-in option
+-				// merging; they handle their own pipeline via `createMdxRenderer`.
++				if (extendMarkdownConfig && isSatteriProcessor(processor)) {
++					// `gfm`/`smartPunctuation` from `satteri({ features: {...} })` apply to `.mdx`
++					// too, unless `mdx({...})` set its own. Mirrors the unified branch above.
++					const features = processor.options.features;
++					if (partialMdxOptions.gfm === undefined && features.gfm !== undefined) {
++						resolvedMdxOptions.gfm = features.gfm;
++					}
++					// `smartPunctuation` can be `boolean | SmartPunctuationOptions`; only the boolean
++					// form is shape-compatible with `mdxOptions.smartypants`. Object configs stay on
++					// the processor and are applied at the satteri/mdx boundary.
++					if (
++						partialMdxOptions.smartypants === undefined &&
++						typeof features.smartPunctuation === 'boolean'
++					) {
++						resolvedMdxOptions.smartypants = features.smartPunctuation;
++					}
++				}
++				// Other third-party processors handle their own pipeline via `createMdxRenderer`.
+ 
+ 				// Mutate `mdxOptions` so that `vitePluginMdx` can reference the actual options
+ 				Object.assign(vitePluginMdxOptions, {
+diff --git a/packages/integrations/mdx/src/processor-guards.ts b/packages/integrations/mdx/src/processor-guards.ts
+index 7953f64ff7ce..c7a4eebf467c 100644
+--- a/packages/integrations/mdx/src/processor-guards.ts
++++ b/packages/integrations/mdx/src/processor-guards.ts
+@@ -1,9 +1,14 @@
+ import type { UnifiedResolvedOptions } from '@astrojs/markdown-remark';
++import type { SatteriResolvedOptions } from '@astrojs/markdown-satteri';
+ import type { MarkdownProcessor } from 'astro/markdown';
+ 
+-// Name-checks for the built-in processor. Type-only imports keep
+-// `@astrojs/markdown-remark` out of MDX's eagerly-loaded runtime graph.
++// Name-checks for the built-in processors. Type-only imports keep
++// `@astrojs/markdown-satteri` (an optional peer) out of MDX's runtime graph.
+ 
+ export const isUnifiedProcessor = (
+ 	p: { name: string },
+ ): p is MarkdownProcessor<UnifiedResolvedOptions> => p.name === 'unified';
++
++export const isSatteriProcessor = (
++	p: { name: string },
++): p is MarkdownProcessor<SatteriResolvedOptions> => p.name === 'satteri';
+diff --git a/packages/integrations/mdx/src/rehype-analyze-astro-metadata.ts b/packages/integrations/mdx/src/rehype-analyze-astro-metadata.ts
+index 96fd1f333258..4985423e3099 100644
+--- a/packages/integrations/mdx/src/rehype-analyze-astro-metadata.ts
++++ b/packages/integrations/mdx/src/rehype-analyze-astro-metadata.ts
+@@ -1,6 +1,7 @@
+ import type { AstroMetadata, RehypePlugin } from '@astrojs/internal-helpers/markdown';
+ import { AstroError, AstroErrorData } from 'astro/errors';
+ import { resolvePath } from 'astro/markdown';
++import type { Program } from 'estree';
+ import type { RootContent } from 'hast';
+ import type {} from 'mdast-util-mdx';
+ import type {
+@@ -135,7 +136,10 @@ function parseImports(children: RootContent[]) {
+ 	for (const child of children) {
+ 		if (child.type !== 'mdxjsEsm') continue;
+ 
+-		const body = child.data?.estree?.body;
++		// satteri and `mdast-util-mdxjs-esm` both augment `hast` for `mdxjsEsm` with
++		// conflicting `data` types; the one that wins doesn't necessarily model `estree`, so type
++		// the access here. The unified pipeline's nodes always carry the program.
++		const body = (child.data as { estree?: Program } | undefined)?.estree?.body;
+ 		if (!body) continue;
+ 
+ 		for (const ast of body) {
+diff --git a/packages/integrations/mdx/src/rehype-images-to-component.ts b/packages/integrations/mdx/src/rehype-images-to-component.ts
+index 6676ee3230a6..ad287422c517 100644
+--- a/packages/integrations/mdx/src/rehype-images-to-component.ts
++++ b/packages/integrations/mdx/src/rehype-images-to-component.ts
+@@ -3,11 +3,14 @@ import type { MdxJsxAttribute, MdxjsEsm } from 'mdast-util-mdx';
+ import type { MdxJsxFlowElementHast } from 'mdast-util-mdx-jsx';
+ import { visit } from 'unist-util-visit';
+ import type { VFile } from 'vfile';
++import {
++	ASTRO_IMAGE_ELEMENT,
++	ASTRO_IMAGE_IMPORT,
++	USES_ASTRO_IMAGE_FLAG,
++} from './image-constants.js';
+ import { jsToTreeNode } from './utils.js';
+ 
+-export const ASTRO_IMAGE_ELEMENT = 'astro-image';
+-export const ASTRO_IMAGE_IMPORT = '__AstroImage__';
+-export const USES_ASTRO_IMAGE_FLAG = '__usesAstroImage';
++export { ASTRO_IMAGE_ELEMENT, ASTRO_IMAGE_IMPORT, USES_ASTRO_IMAGE_FLAG };
+ 
+ function createArrayAttribute(name: string, values: (string | number)[]): MdxJsxAttribute {
+ 	return {
+diff --git a/packages/integrations/mdx/src/rehype-optimize-static.ts b/packages/integrations/mdx/src/rehype-optimize-static.ts
+index 56975644f0a8..7aa7e6346978 100644
+--- a/packages/integrations/mdx/src/rehype-optimize-static.ts
++++ b/packages/integrations/mdx/src/rehype-optimize-static.ts
+@@ -1,5 +1,5 @@
+ import type { RehypePlugin } from '@astrojs/internal-helpers/markdown';
+-import type { Expression } from 'estree';
++import type { Expression, Program } from 'estree';
+ import { SKIP, visit } from 'estree-util-visit';
+ import type { Element, RootContent, RootContentMap } from 'hast';
+ import { toHtml } from 'hast-util-to-html';
+@@ -254,8 +254,11 @@ function getExportConstComponentObjectKeys(node: RootContentMap['mdxjsEsm']) {
+ 	/** AST for the initial value of the exported  `components` variable in the MDX document. */
+ 	let variableInit: Expression | undefined | null;
+ 
+-	// Find the initial value of `components` in the AST.
+-	for (const part of node.data?.estree?.body || []) {
++	// Find the initial value of `components` in the AST. Cast `data` since `mdast-util-mdx`'s
++	// augmentation of `MdxjsEsmHastData` to add `estree` isn't visible after adding
++	// `@astrojs/internal-helpers` as a direct dep (a `unified` dedup quirk).
++	const estree = (node.data as { estree?: Program } | undefined)?.estree;
++	for (const part of estree?.body || []) {
+ 		if (
+ 			part.type !== 'ExportNamedDeclaration' ||
+ 			part.declaration?.type !== 'VariableDeclaration'
+diff --git a/packages/integrations/mdx/src/satteri/charset.ts b/packages/integrations/mdx/src/satteri/charset.ts
+new file mode 100644
+index 000000000000..c36cd70c629e
+--- /dev/null
++++ b/packages/integrations/mdx/src/satteri/charset.ts
+@@ -0,0 +1,47 @@
++// TODO: This is a workaround around a missing API in Sätteri. The visitor architecture naturally does not provide
++// a way to "visit" the root and prepend nodes (it'd kill performance), as such this file currently works around that
++// in a clumsy way. Once Sätteri ship an actual API to prepend / append, this file could get removed.
++
++import * as path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const exportConstPartialTrueRe = /export\s+const\s+partial\s*=\s*true/;
++const leadingComponentRe = /^\s*<\s*([A-Za-z][A-Za-z0-9]*)\b/;
++
++// Scans MDX source directly because Sätteri exposes no root-level visitor.
++// Skips imports/exports/blank lines and bails when the first content line is a
++// capitalized JSX element (treated as a wrapping layout).
++export function shouldAddCharset(content: string, filePath: string, srcDir: URL): boolean {
++	const srcDirPath = fileURLToPath(srcDir).replace(/\\/g, '/');
++	const pagesDir = path.posix.join(srcDirPath, 'pages');
++	const normalizedFilePath = filePath.replace(/\\/g, '/');
++	if (!normalizedFilePath.startsWith(pagesDir)) return false;
++
++	const segments = normalizedFilePath.slice(pagesDir.length).split('/');
++	if (segments.some((part) => part.startsWith('_'))) return false;
++
++	if (exportConstPartialTrueRe.test(content)) return false;
++
++	// Strip MDX JSX expression comments `{/* ... */}` so they don't trip the
++	// "first content" scan below — they're not the wrapping layout.
++	const stripped = content.replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
++
++	for (const rawLine of stripped.split('\n')) {
++		const line = rawLine.trim();
++		if (!line) continue;
++		if (line.startsWith('import ') || line.startsWith('export ')) continue;
++		if (line.startsWith('//') || line.startsWith('/*')) continue;
++		// Other JSX expressions (e.g. `{someVar}` at top level) aren't a wrapping layout.
++		if (line.startsWith('{')) continue;
++
++		const match = leadingComponentRe.exec(line);
++		if (match) {
++			const tag = match[1];
++			// Capitalized tag suggests a user-provided wrapping layout component
++			if (tag[0] >= 'A' && tag[0] <= 'Z') return false;
++		}
++		break;
++	}
++
++	return true;
++}
+diff --git a/packages/integrations/mdx/src/satteri/hast-astro-metadata.ts b/packages/integrations/mdx/src/satteri/hast-astro-metadata.ts
+new file mode 100644
+index 000000000000..c6ddb95c0e98
+--- /dev/null
++++ b/packages/integrations/mdx/src/satteri/hast-astro-metadata.ts
+@@ -0,0 +1,183 @@
++import type { AstroMetadata } from '@astrojs/internal-helpers/markdown';
++import { resolvePath } from 'astro/markdown';
++import type { Identifier, Literal } from 'estree';
++import {
++	defineHastPlugin,
++	type EstreeProgram,
++	type HastPluginDefinition,
++	type HastVisitorContext,
++} from 'satteri';
++import { findAttrValue, hasDirective, isComponent, type MdxJsxHastNode } from './jsx-utils.js';
++
++export type { AstroMetadata };
++
++type ImportSpecifier = { local: string; imported: string };
++type MatchedImport = { name: string; path: string };
++
++function exportNameToString(name: Identifier | Literal): string {
++	return name.type === 'Identifier' ? name.name : String(name.value);
++}
++
++function collectImportsFromEsm(
++	program: EstreeProgram,
++	imports: Map<string, Set<ImportSpecifier>>,
++): void {
++	for (const stmt of program.body) {
++		if (stmt.type !== 'ImportDeclaration') continue;
++		const source = String(stmt.source.value);
++
++		let specSet = imports.get(source);
++		if (!specSet) {
++			specSet = new Set();
++			imports.set(source, specSet);
++		}
++
++		for (const spec of stmt.specifiers) {
++			switch (spec.type) {
++				case 'ImportDefaultSpecifier':
++					specSet.add({ local: spec.local.name, imported: 'default' });
++					break;
++				case 'ImportNamespaceSpecifier':
++					specSet.add({ local: spec.local.name, imported: '*' });
++					break;
++				case 'ImportSpecifier':
++					specSet.add({
++						local: spec.local.name,
++						imported: exportNameToString(spec.imported),
++					});
++					break;
++			}
++		}
++	}
++}
++
++function findMatchingImport(
++	tagName: string,
++	imports: Map<string, Set<ImportSpecifier>>,
++): MatchedImport | undefined {
++	const tagSpecifier = tagName.split('.')[0];
++	for (const [source, specs] of imports) {
++		for (const { imported, local } of specs) {
++			if (local === tagSpecifier) {
++				if (tagSpecifier !== tagName) {
++					switch (imported) {
++						case '*': {
++							const accessPath = tagName.slice(tagSpecifier.length + 1);
++							return { name: accessPath, path: source };
++						}
++						case 'default': {
++							const accessPath = tagName.slice(tagSpecifier.length + 1);
++							return { name: `default.${accessPath}`, path: source };
++						}
++						default: {
++							return { name: tagName, path: source };
++						}
++					}
++				}
++				return { name: imported, path: source };
++			}
++		}
++	}
++}
++
++function processJsxNode(
++	node: MdxJsxHastNode,
++	ctx: HastVisitorContext,
++	metadata: AstroMetadata,
++	imports: Map<string, Set<ImportSpecifier>>,
++	filePath: string,
++) {
++	const tagName = node.name;
++	if (!tagName || !isComponent(tagName)) return;
++
++	const hasClient = hasDirective(node, 'client:');
++	const hasServerDefer = !hasClient && hasDirective(node, 'server:defer');
++	if (!hasClient && !hasServerDefer) return;
++
++	const matchedImport = findMatchingImport(tagName, imports);
++	if (!matchedImport) {
++		throw new Error(
++			`Expected a matching import for component \`${tagName}\`. Did you forget to import it?`,
++		);
++	}
++
++	if (matchedImport.path.endsWith('.astro') && hasClient) {
++		let clientAttr = 'client:*';
++		for (const a of node.attributes) {
++			if (a.type === 'mdxJsxAttribute' && a.name.startsWith('client:')) {
++				clientAttr = a.name;
++				break;
++			}
++		}
++		console.warn(
++			`You are attempting to render <${tagName} ${clientAttr} />, but ${tagName} is an Astro component. Astro components do not render in the client and should not have a hydration directive. Please use a framework component for client rendering.`,
++		);
++	}
++
++	const resolvedPath = resolvePath(matchedImport.path, filePath);
++	const exportName =
++		matchedImport.name === '*' ? tagName.split('.').slice(1).join('.') : matchedImport.name;
++
++	if (hasClient && findAttrValue(node, 'client:only') !== null) {
++		metadata.clientOnlyComponents.push({
++			exportName: matchedImport.name,
++			localName: '',
++			specifier: tagName,
++			resolvedPath,
++		});
++		ctx.setProperty(node, 'client:display-name', tagName);
++		ctx.setProperty(node, 'client:component-path', resolvedPath);
++		ctx.setProperty(node, 'client:component-export', exportName);
++		ctx.setProperty(node, 'client:component-hydration', '');
++	} else if (hasClient) {
++		metadata.hydratedComponents.push({
++			exportName: '*',
++			localName: '',
++			specifier: tagName,
++			resolvedPath,
++		});
++		ctx.setProperty(node, 'client:component-path', resolvedPath);
++		ctx.setProperty(node, 'client:component-export', exportName);
++		ctx.setProperty(node, 'client:component-hydration', '');
++	} else if (hasServerDefer) {
++		metadata.serverComponents.push({
++			exportName: matchedImport.name,
++			localName: tagName,
++			specifier: matchedImport.path,
++			resolvedPath,
++		});
++		ctx.setProperty(node, 'server:component-directive', 'server:defer');
++		ctx.setProperty(node, 'server:component-path', resolvedPath);
++		ctx.setProperty(node, 'server:component-export', exportName);
++	}
++}
++
++export function createAstroMetadataPlugin(
++	metadata: AstroMetadata,
++	filePath: string,
++): HastPluginDefinition {
++	const imports = new Map<string, Set<ImportSpecifier>>();
++	return defineHastPlugin({
++		name: 'astro-metadata',
++		mdxjsEsm(node) {
++			const program = node.parseExpression();
++			if (program) {
++				collectImportsFromEsm(program, imports);
++			}
++		},
++
++		mdxJsxFlowElement: {
++			filter: [],
++			visit(node, ctx) {
++				processJsxNode(node, ctx, metadata, imports, filePath);
++			},
++		},
++
++		mdxJsxTextElement: {
++			filter: [],
++			visit(node, ctx) {
++				processJsxNode(node, ctx, metadata, imports, filePath);
++			},
++		},
++	});
++}
+diff --git a/packages/integrations/mdx/src/satteri/hast-images-to-component.ts b/packages/integrations/mdx/src/satteri/hast-images-to-component.ts
+new file mode 100644
+index 000000000000..ec074451e6b1
+--- /dev/null
++++ b/packages/integrations/mdx/src/satteri/hast-images-to-component.ts
+@@ -0,0 +1,82 @@
++import {
++	defineHastPlugin,
++	type HastNode,
++	type HastPluginDefinition,
++	type MdxJsxAttributeNode,
++} from 'satteri';
++import { ASTRO_IMAGE_ELEMENT } from '../image-constants.js';
++import { makeJsxAttr, makeJsxExprAttr } from './jsx-utils.js';
++
++export interface ImageImportInfo {
++	importedImages: Map<string, string>;
++	hasImages: boolean;
++}
++
++export function createImageToComponentPlugin(
++	localImagePaths: Set<string>,
++	remoteImagePaths: Set<string>,
++	imageImportInfo: ImageImportInfo,
++): HastPluginDefinition {
++	return defineHastPlugin({
++		name: 'image-to-component',
++		element: {
++			filter: ['img'],
++			visit(node) {
++				const src = node.properties?.src;
++				if (typeof src !== 'string') return;
++
++				const decodedSrc = decodeURI(src);
++				const isLocal = localImagePaths.has(decodedSrc);
++				const isRemote = remoteImagePaths.has(decodedSrc);
++				if (!isLocal && !isRemote) return;
++
++				const attrs: MdxJsxAttributeNode[] = [];
++
++				if (node.properties) {
++					for (const [key, value] of Object.entries(node.properties)) {
++						if (key === 'src') continue;
++						if (value == null || value === false) continue;
++
++						if (key === 'widths' || key === 'densities') {
++							attrs.push(makeJsxExprAttr(key, JSON.stringify(String(value).split(' '))));
++						} else {
++							const attrName = key === 'className' ? 'class' : key === 'htmlFor' ? 'for' : key;
++							attrs.push(makeJsxAttr(attrName, String(value)));
++						}
++					}
++				}
++
++				if (isLocal) {
++					let importName = imageImportInfo.importedImages.get(decodedSrc);
++					if (!importName) {
++						importName = `__${imageImportInfo.importedImages.size}_${decodedSrc.replace(/\W/g, '_')}__`;
++						imageImportInfo.importedImages.set(decodedSrc, importName);
++					}
++					attrs.push(makeJsxExprAttr('src', importName));
++				} else {
++					const hasWidth = node.properties && 'width' in node.properties;
++					const hasHeight = node.properties && 'height' in node.properties;
++					if (!hasWidth || !hasHeight) {
++						attrs.push(makeJsxExprAttr('inferSize', 'true'));
++					}
++					attrs.push(makeJsxAttr('src', decodedSrc));
++				}
++
++				imageImportInfo.hasImages = true;
++
++				// Emit `<astro-image>` (lowercase hyphenated) so MDX routes the tag through
++				// `_components['astro-image']`. The vite-plugin-mdx-postprocess wraps the
++				// final component to map `astro-image` → `components.img ?? __AstroImage__`,
++				// which lets a user's `export const components = { img: MyImage }` win.
++				// Match the unified pipeline, which emits a flow (block) element for
++				// markdown-derived images so MDX compiles them consistently.
++				return {
++					type: 'mdxJsxFlowElement',
++					name: ASTRO_IMAGE_ELEMENT,
++					attributes: attrs,
++					children: [],
++				} as unknown as HastNode;
++			},
++		},
++	});
++}
+diff --git a/packages/integrations/mdx/src/satteri/index.ts b/packages/integrations/mdx/src/satteri/index.ts
+new file mode 100644
+index 000000000000..436d84d2c024
+--- /dev/null
++++ b/packages/integrations/mdx/src/satteri/index.ts
+@@ -0,0 +1,222 @@
++import type { MarkdownHeading } from '@astrojs/internal-helpers/markdown';
++import { createShikiHighlighter } from '@astrojs/internal-helpers/shiki';
++import type { SatteriResolvedOptions } from '@astrojs/markdown-satteri';
++import {
++	satteriCollectImagesPlugin,
++	satteriHeadingIdsPlugin,
++	satteriShikiPlugin,
++} from '@astrojs/markdown-satteri';
++import { createDefaultAstroMetadata } from 'astro/markdown';
++import {
++	mdxToJs,
++	type HastPluginDefinition,
++	type MdastPluginDefinition,
++	type MdxCompileOptions,
++} from 'satteri';
++import { ASTRO_IMAGE_IMPORT, USES_ASTRO_IMAGE_FLAG } from '../image-constants.js';
++import type { ResolvedMdxOptions } from '../index.js';
++import { shouldAddCharset } from './charset.js';
++import { type AstroMetadata, createAstroMetadataPlugin } from './hast-astro-metadata.js';
++import { createImageToComponentPlugin, type ImageImportInfo } from './hast-images-to-component.js';
++
++type HighlightFn = (code: string, lang: string, meta?: string) => Promise<string>;
++
++export type { MdastPluginDefinition, HastPluginDefinition, MarkdownHeading };
++export type { AstroMetadata } from './hast-astro-metadata.js';
++
++declare module 'hast' {
++	interface ElementData {
++		lang?: string | null;
++	}
++}
++
++export interface CompileMdxResult {
++	code: string;
++	astroMetadata: AstroMetadata;
++}
++
++interface CreateMdxProcessorContext {
++	srcDir: URL;
++}
++
++export function createMdxProcessor(
++	mdxOptions: ResolvedMdxOptions,
++	satteriOptions: SatteriResolvedOptions,
++	ctx: CreateMdxProcessorContext,
++) {
++	let highlightFn: HighlightFn | undefined;
++	let initPromise: Promise<void> | undefined;
++
++	function initShiki() {
++		const syntaxHighlight = mdxOptions.syntaxHighlight;
++		const syntaxHighlightType =
++			typeof syntaxHighlight === 'string'
++				? syntaxHighlight
++				: syntaxHighlight
++					? syntaxHighlight.type
++					: undefined;
++
++		if (syntaxHighlightType === 'prism') {
++			throw new Error(
++				'Prism syntax highlighting is not supported by the `satteri()` markdown processor. Use shiki instead, or switch to `markdown.processor: unified({...})`.',
++			);
++		}
++
++		if (syntaxHighlightType === 'shiki') {
++			const shikiConfig = mdxOptions.shikiConfig ?? {};
++			initPromise = createShikiHighlighter({
++				langs: shikiConfig.langs,
++				theme: shikiConfig.theme,
++				themes: shikiConfig.themes,
++				langAlias: shikiConfig.langAlias,
++			}).then((hl) => {
++				highlightFn = (code, lang, meta) =>
++					hl.codeToHtml(code, lang, {
++						meta,
++						wrap: shikiConfig.wrap,
++						defaultColor: shikiConfig.defaultColor,
++						transformers: shikiConfig.transformers,
++					});
++			});
++		}
++	}
++
++	return {
++		async process(
++			content: string,
++			filePath: string,
++			frontmatter: Record<string, any>,
++		): Promise<CompileMdxResult> {
++			if (!highlightFn && !initPromise) {
++				initShiki();
++			}
++			if (initPromise) await initPromise;
++
++			const headings: MarkdownHeading[] = [];
++			const localImagePaths = new Set<string>();
++			const remoteImagePaths = new Set<string>();
++
++			const astroMetadata = createDefaultAstroMetadata();
++
++			const collectImages = satteriCollectImagesPlugin(localImagePaths, remoteImagePaths);
++			const headingIds = satteriHeadingIdsPlugin(headings, frontmatter);
++			const astroMeta = createAstroMetadataPlugin(astroMetadata, filePath);
++			const imageImportInfo: ImageImportInfo = {
++				importedImages: new Map(),
++				hasImages: false,
++			};
++			const imageToComponent = createImageToComponentPlugin(
++				localImagePaths,
++				remoteImagePaths,
++				imageImportInfo,
++			);
++
++			const syntaxHighlight = mdxOptions.syntaxHighlight;
++			const excludeLangs =
++				typeof syntaxHighlight === 'object' ? syntaxHighlight.excludeLangs : undefined;
++
++			const allMdastPlugins: MdastPluginDefinition[] = satteriOptions.mdastPlugins.length
++				? [collectImages, ...satteriOptions.mdastPlugins]
++				: [collectImages];
++
++			const hastPlugins: HastPluginDefinition[] = [];
++			if (highlightFn) {
++				// `mdx: true` wraps the highlighted HTML in a JSX `<Fragment set:html>` node
++				// rather than a raw HTML node, since the Sätteri pipeline is compiling to JSX.
++				hastPlugins.push(satteriShikiPlugin(highlightFn, excludeLangs, { mdx: true }));
++			}
++			hastPlugins.push(headingIds, imageToComponent, astroMeta);
++			if (satteriOptions.hastPlugins.length) {
++				hastPlugins.push(...satteriOptions.hastPlugins);
++			}
++
++			let optimizeStatic: MdxCompileOptions['optimizeStatic'];
++			if (mdxOptions.optimize) {
++				const ignoreElements =
++					typeof mdxOptions.optimize === 'object'
++						? mdxOptions.optimize.ignoreElementNames
++						: undefined;
++
++				optimizeStatic = {
++					component: 'Fragment',
++					prop: 'set:html',
++					...(ignoreElements && { ignoreElements }),
++				};
++			}
++
++			const mdxResult = await mdxToJs(content, {
++				mdastPlugins: allMdastPlugins,
++				hastPlugins,
++				optimizeStatic,
++				features: {
++					...satteriOptions.features,
++					gfm: mdxOptions.gfm !== false,
++					// `mdxOptions.smartypants` is always boolean-shaped; skip the override when
++					// satteri's `smartPunctuation` is an object so granular config isn't clobbered.
++					...(typeof satteriOptions.features.smartPunctuation === 'object'
++						? {}
++						: { smartPunctuation: mdxOptions.smartypants !== false }),
++				},
++				filename: filePath,
++				jsxImportSource: 'astro',
++			});
++			let compiled = mdxResult.code;
++
++			compiled = compiled.replace(/^export default MDXContent;\s*$/m, '');
++
++			if (imageImportInfo.hasImages) {
++				// `vite-plugin-mdx-postprocess` wraps Content to map
++				// `astro-image` → `components.img ?? __AstroImage__`, so a user's
++				// `export const components = { img: ... }` override is honored.
++				compiled += `\nimport { Image as ${ASTRO_IMAGE_IMPORT} } from "astro:assets";`;
++				for (const [src, importName] of imageImportInfo.importedImages) {
++					compiled += `\nimport ${importName} from ${JSON.stringify(src)};`;
++				}
++				compiled += `\nexport const ${USES_ASTRO_IMAGE_FLAG} = true;`;
++			}
++
++			compiled += `\nexport const frontmatter = ${JSON.stringify(frontmatter)};`;
++			compiled += `\nexport function getHeadings() { return ${JSON.stringify(headings)}; }`;
++
++			if (frontmatter.layout) {
++				compiled = compiled.replace(/^function MDXContent\(/m, 'function __OriginalMDXContent__(');
++				compiled += `
++import { jsx as __astro_layout_jsx__ } from 'astro/jsx-runtime';
++import __astro_layout_component__ from ${JSON.stringify(frontmatter.layout)};
++export default function MDXContent(props) {
++	const content = __OriginalMDXContent__(props);
++	const { layout, ...frontmatterContent } = frontmatter;
++	frontmatterContent.file = file;
++	frontmatterContent.url = url;
++	return __astro_layout_jsx__(__astro_layout_component__, {
++		file,
++		url,
++		content: frontmatterContent,
++		frontmatter: frontmatterContent,
++		headings: getHeadings(),
++		'server:root': true,
++		children: content,
++	});
++}`;
++			} else if (shouldAddCharset(content, filePath, ctx.srcDir)) {
++				// Default MDX pages without a layout to UTF-8 so users don't have to think about it.
++				compiled = compiled.replace(/^function MDXContent\(/m, 'function __OriginalMDXContent__(');
++				compiled += `
++import { jsx as __astro_charset_jsx__, jsxs as __astro_charset_jsxs__, Fragment as __astro_charset_Fragment__ } from 'astro/jsx-runtime';
++export default function MDXContent(props) {
++	return __astro_charset_jsxs__(__astro_charset_Fragment__, {
++		children: [
++			__astro_charset_jsx__('meta', { charset: 'utf-8' }),
++			__OriginalMDXContent__(props),
++		],
++	});
++}`;
++			}
++
++			return {
++				code: compiled,
++				astroMetadata,
++			};
++		},
++	};
++}
+diff --git a/packages/integrations/mdx/src/satteri/jsx-utils.ts b/packages/integrations/mdx/src/satteri/jsx-utils.ts
+new file mode 100644
+index 000000000000..b82ad012fb3e
+--- /dev/null
++++ b/packages/integrations/mdx/src/satteri/jsx-utils.ts
+@@ -0,0 +1,46 @@
++import type { MdxJsxAttributeNode, MdxJsxFlowElementHast, MdxJsxTextElementHast } from 'satteri';
++
++// JSX-specific helpers used by the MDX pipeline. Non-MDX equivalents (e.g.
++// `makeFragmentNode`, `collectHastText`) live in `@astrojs/markdown-satteri`
++// because they're shared with the markdown render pipeline.
++
++// Sätteri hands plugin visitors readonly nodes; these helpers only read them.
++export type MdxJsxHastNode = Readonly<MdxJsxFlowElementHast | MdxJsxTextElementHast>;
++
++const nonAlphaRe = /[^a-zA-Z]/;
++
++export function isComponent(tagName: string): boolean {
++	return (
++		(tagName[0] && tagName[0].toLowerCase() !== tagName[0]) ||
++		tagName.includes('.') ||
++		nonAlphaRe.test(tagName[0])
++	);
++}
++
++export function hasDirective(node: MdxJsxHastNode, prefix: string): boolean {
++	for (const a of node.attributes) {
++		if (a.type === 'mdxJsxAttribute' && a.name.startsWith(prefix)) return true;
++	}
++	return false;
++}
++
++export function findAttrValue(node: MdxJsxHastNode, name: string): string | null {
++	for (const a of node.attributes) {
++		if (a.type === 'mdxJsxAttribute' && a.name === name) {
++			return typeof a.value === 'string' ? a.value : null;
++		}
++	}
++	return null;
++}
++
++export function makeJsxAttr(name: string, value: string): MdxJsxAttributeNode {
++	return { type: 'mdxJsxAttribute', name, value };
++}
++
++export function makeJsxExprAttr(name: string, expression: string): MdxJsxAttributeNode {
++	return {
++		type: 'mdxJsxAttribute',
++		name,
++		value: { type: 'mdxJsxAttributeValueExpression', value: expression },
++	};
++}
+diff --git a/packages/integrations/mdx/src/vite-plugin-mdx.ts b/packages/integrations/mdx/src/vite-plugin-mdx.ts
+index 2307025738ad..58028c710ff7 100644
+--- a/packages/integrations/mdx/src/vite-plugin-mdx.ts
++++ b/packages/integrations/mdx/src/vite-plugin-mdx.ts
+@@ -3,7 +3,7 @@ import type { MarkdownProcessor, MdxRenderer } from 'astro/markdown';
+ import { VFile } from 'vfile';
+ import type { Plugin } from 'vite';
+ import type { ResolvedMdxOptions } from './index.js';
+-import { isUnifiedProcessor } from './processor-guards.js';
++import { isSatteriProcessor, isUnifiedProcessor } from './processor-guards.js';
+ import { safeParseFrontmatter } from './utils.js';
+ 
+ export interface VitePluginMdxOptions {
+@@ -101,6 +101,19 @@ async function resolveMdxRenderer(
+ 		);
+ 	}
+ 
++	if (isSatteriProcessor(processor)) {
++		const { createMdxProcessor: createSatteriMdxProcessor } = await import('./satteri/index.js');
++		const satteriProcessor = createSatteriMdxProcessor(opts.mdxOptions, processor.options, {
++			srcDir: opts.srcDir,
++		});
++		return {
++			async process(content, filePath, frontmatter) {
++				const result = await satteriProcessor.process(content, filePath, frontmatter);
++				return { code: result.code, map: null, astroMetadata: result.astroMetadata };
++			},
++		};
++	}
++
+ 	if (isUnifiedProcessor(processor)) {
+ 		const { createMdxProcessor } = await import('./plugins.js');
+ 		const { getAstroMetadata } = await import('./rehype-analyze-astro-metadata.js');
+diff --git a/packages/integrations/mdx/test/mdx-satteri.test.ts b/packages/integrations/mdx/test/mdx-satteri.test.ts
+new file mode 100644
+index 000000000000..92d3e9e9d6fc
+--- /dev/null
++++ b/packages/integrations/mdx/test/mdx-satteri.test.ts
+@@ -0,0 +1,40 @@
++import * as assert from 'node:assert/strict';
++import { before, describe, it } from 'node:test';
++import mdx from '@astrojs/mdx';
++import { satteri } from '@astrojs/markdown-satteri';
++import { parseHTML } from 'linkedom';
++import { loadFixture, type Fixture } from './test-utils.ts';
++
++describe('MDX with the Sätteri processor', () => {
++	let fixture: Fixture;
++
++	before(async () => {
++		fixture = await loadFixture({
++			root: new URL('./fixtures/mdx-get-headings/', import.meta.url),
++			integrations: [mdx()],
++			markdown: {
++				processor: satteri(),
++			},
++		});
++
++		await fixture.build();
++	});
++
++	it('renders headings through the Sätteri MDX pipeline', async () => {
++		const html = await fixture.readFile('/test/index.html');
++		const { document } = parseHTML(html);
++
++		assert.equal(document.querySelector('h1')?.id, 'heading-test');
++		const h2Ids = Array.from(document.querySelectorAll('h2')).map((el) => el?.id);
++		assert.equal(h2Ids.includes('section-1'), true);
++		assert.equal(h2Ids.includes('section-2'), true);
++	});
++
++	it('exposes the same headings via getHeadings()', async () => {
++		const { headingsByPage } = JSON.parse(await fixture.readFile('/pages.json'));
++		const slugs = headingsByPage['./test.mdx'].map((h: { slug: string }) => h.slug);
++		assert.ok(slugs.includes('heading-test'));
++		assert.ok(slugs.includes('section-1'));
++		assert.ok(slugs.includes('section-2'));
++	});
++});
+diff --git a/packages/integrations/mdx/tsconfig.build.json b/packages/integrations/mdx/tsconfig.build.json
+index 1e0928da4c28..410d855da6da 100644
+--- a/packages/integrations/mdx/tsconfig.build.json
++++ b/packages/integrations/mdx/tsconfig.build.json
+@@ -3,6 +3,7 @@
+   "references": [
+     { "path": "../../astro/tsconfig.json" },
+     { "path": "../../internal-helpers/tsconfig.json" },
+-    { "path": "../../markdown/remark/tsconfig.json" }
++    { "path": "../../markdown/remark/tsconfig.json" },
++    { "path": "../../markdown/satteri/tsconfig.json" }
+   ]
+ }
+diff --git a/packages/markdown/satteri/package.json b/packages/markdown/satteri/package.json
+new file mode 100644
+index 000000000000..3402827ce274
+--- /dev/null
++++ b/packages/markdown/satteri/package.json
+@@ -0,0 +1,39 @@
++{
++  "name": "@astrojs/markdown-satteri",
++  "version": "0.1.0",
++  "type": "module",
++  "author": "withastro",
++  "license": "MIT",
++  "repository": {
++    "type": "git",
++    "url": "git+https://github.com/withastro/astro.git",
++    "directory": "packages/markdown/satteri"
++  },
++  "bugs": "https://github.com/withastro/astro/issues",
++  "homepage": "https://astro.build",
++  "main": "./dist/index.js",
++  "exports": {
++    ".": "./dist/index.js"
++  },
++  "files": [
++    "dist"
++  ],
++  "scripts": {
++    "prepublish": "pnpm build",
++    "build": "astro-scripts build \"src/**/*.ts\" && tsc -b",
++    "build:ci": "astro-scripts build \"src/**/*.ts\"",
++    "dev": "astro-scripts dev \"src/**/*.ts\"",
++    "test": "astro-scripts test \"test/**/*.test.ts\""
++  },
++  "dependencies": {
++    "@astrojs/internal-helpers": "workspace:*",
++    "github-slugger": "^2.0.0",
++    "satteri": "^0.6.3"
++  },
++  "devDependencies": {
++    "astro-scripts": "workspace:*"
++  },
++  "publishConfig": {
++    "provenance": true
++  }
++}
+diff --git a/packages/markdown/satteri/src/index.ts b/packages/markdown/satteri/src/index.ts
+new file mode 100644
+index 000000000000..f95d2a44bcd2
+--- /dev/null
++++ b/packages/markdown/satteri/src/index.ts
+@@ -0,0 +1,16 @@
++export {
++	createCollectImagesPlugin as satteriCollectImagesPlugin,
++	createHeadingIdsPlugin as satteriHeadingIdsPlugin,
++	createImageMarkerPlugin as satteriImageMarkerPlugin,
++	createShikiPlugin as satteriShikiPlugin,
++	collectHastText as satteriCollectHastText,
++	makeFragmentNode as satteriMakeFragmentNode,
++	createSatteriMarkdownProcessor,
++	type SatteriMarkdownProcessorOptions,
++} from './satteri-processor.js';
++export {
++	isSatteriProcessor,
++	satteri,
++	type SatteriProcessorOptions,
++	type SatteriResolvedOptions,
++} from './processor.js';
+diff --git a/packages/markdown/satteri/src/processor.ts b/packages/markdown/satteri/src/processor.ts
+new file mode 100644
+index 000000000000..86ecb24359f7
+--- /dev/null
++++ b/packages/markdown/satteri/src/processor.ts
+@@ -0,0 +1,63 @@
++import type { MarkdownProcessor } from '@astrojs/internal-helpers/markdown';
++import type { Features, HastPluginDefinition, MdastPluginDefinition } from 'satteri';
++import { createSatteriMarkdownProcessor } from './satteri-processor.js';
++
++export interface SatteriProcessorOptions {
++	mdastPlugins?: MdastPluginDefinition[];
++	hastPlugins?: HastPluginDefinition[];
++	features?: Features;
++}
++
++/**
++ * Resolved options on the processor returned by `satteri()`. Always populated
++ * (the factory normalises absent inputs into defaults).
++ */
++export interface SatteriResolvedOptions {
++	mdastPlugins: MdastPluginDefinition[];
++	hastPlugins: HastPluginDefinition[];
++	features: Features;
++}
++
++/**
++ * Use the Sätteri Markdown processor for `markdown.processor`. Extend the pipeline
++ * with mdast or hast plugins, or toggle Markdown features.
++ *
++ * ```js
++ * import { satteri } from '@astrojs/markdown-satteri';
++ *
++ * export default defineConfig({
++ *   markdown: {
++ *     processor: satteri({ features: { directive: true } }),
++ *   },
++ * });
++ * ```
++ */
++export function satteri(
++	opts: SatteriProcessorOptions = {},
++): MarkdownProcessor<SatteriResolvedOptions> {
++	const processor: MarkdownProcessor<SatteriResolvedOptions> = {
++		name: 'satteri',
++		options: {
++			mdastPlugins: [...(opts.mdastPlugins ?? [])],
++			hastPlugins: [...(opts.hastPlugins ?? [])],
++			// Default to `{}` so integrations can write `options.features.gfm = false`
++			// without an `??=` check.
++			features: { ...opts.features },
++		},
++		createRenderer(shared) {
++			return createSatteriMarkdownProcessor({
++				...shared,
++				mdastPlugins: processor.options.mdastPlugins,
++				hastPlugins: processor.options.hastPlugins,
++				features: processor.options.features,
++			});
++		},
++	};
++	return processor;
++}
++
++export function isSatteriProcessor(
++	p: { name: string },
++): p is MarkdownProcessor<SatteriResolvedOptions> {
++	return p.name === 'satteri';
++}
+diff --git a/packages/markdown/satteri/src/satteri-processor.ts b/packages/markdown/satteri/src/satteri-processor.ts
+new file mode 100644
+index 000000000000..c7feb3b22cef
+--- /dev/null
++++ b/packages/markdown/satteri/src/satteri-processor.ts
+@@ -0,0 +1,310 @@
++import { isRemoteAllowed } from '@astrojs/internal-helpers/remote';
++import {
++	defaultExcludeLanguages,
++	markdownConfigDefaults,
++	syntaxHighlightDefaults,
++} from '@astrojs/internal-helpers/markdown';
++import Slugger from 'github-slugger';
++import type { Features, HastNode, HastPluginDefinition, MdastPluginDefinition } from 'satteri';
++import { createShikiHighlighter } from '@astrojs/internal-helpers/shiki';
++import type {
++	AstroMarkdownOptions,
++	MarkdownHeading,
++	MarkdownRenderer,
++} from '@astrojs/internal-helpers/markdown';
++
++type HighlightFn = (code: string, lang: string, meta?: string) => Promise<string>;
++
++let satteri: typeof import('satteri') | undefined;
++
++// Loaded lazily so the Sätteri Rust/WASM binary isn't pulled in unless the
++// Sätteri processor actually runs.
++async function loadSatteri(): Promise<typeof import('satteri')> {
++	satteri ??= await import('satteri');
++	return satteri;
++}
++
++export function createCollectImagesPlugin(
++	localImagePaths: Set<string>,
++	remoteImagePaths: Set<string>,
++	image: AstroMarkdownOptions['image'] = {},
++): MdastPluginDefinition {
++	const domains = image?.domains ?? [];
++	const remotePatterns = image?.remotePatterns ?? [];
++	return {
++		name: 'collect-images',
++		image(node) {
++			const url = node.url ? decodeURI(node.url) : undefined;
++			if (!url) return;
++
++			if (URL.canParse(url)) {
++				if (isRemoteAllowed(url, { domains, remotePatterns })) {
++					remoteImagePaths.add(url);
++				}
++			} else if (!url.startsWith('/')) {
++				localImagePaths.add(url);
++			}
++		},
++	};
++}
++
++function resolveFrontmatterExpression(
++	expr: string,
++	frontmatter: Record<string, any>,
++): string | undefined {
++	if (!expr.startsWith('frontmatter.') && !expr.startsWith('frontmatter[')) return undefined;
++
++	const pathStr = expr.slice('frontmatter'.length);
++	const parts: string[] = [];
++	const pathRegex = /\.(\w+)|\[(\d+)\]|\["([^"]+)"\]|\['([^']+)'\]/g;
++	let match;
++	while ((match = pathRegex.exec(pathStr)) !== null) {
++		parts.push(match[1] ?? match[2] ?? match[3] ?? match[4]);
++	}
++
++	if (parts.length === 0) return undefined;
++
++	let value: any = frontmatter;
++	for (const key of parts) {
++		if (value == null || typeof value !== 'object') return undefined;
++		value = value[key];
++	}
++
++	return typeof value === 'string' ? value : undefined;
++}
++
++export function collectHastText(
++	node: HastNode,
++	frontmatter: Record<string, any> | undefined,
++): string {
++	let text = '';
++	if (node.type === 'mdxFlowExpression' || node.type === 'mdxTextExpression') {
++		if (node.value != null && frontmatter) {
++			const resolved = resolveFrontmatterExpression(node.value.trim(), frontmatter);
++			text += resolved ?? node.value;
++		}
++	} else if ('value' in node && node.value != null) {
++		text += node.value;
++	}
++	if ('children' in node && node.children) {
++		for (const child of node.children) {
++			text += collectHastText(child as HastNode, frontmatter);
++		}
++	}
++	return text;
++}
++
++export function makeFragmentNode(html: string): HastNode {
++	return {
++		type: 'mdxJsxFlowElement',
++		name: 'Fragment',
++		attributes: [{ type: 'mdxJsxAttribute', name: 'set:html', value: html }],
++		children: [],
++	} as unknown as HastNode;
++}
++
++export function createHeadingIdsPlugin(
++	headings: MarkdownHeading[],
++	frontmatter: Record<string, any> | undefined,
++): HastPluginDefinition {
++	const slugger = new Slugger();
++	return {
++		name: 'heading-ids',
++		element: {
++			filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
++			visit(node, ctx) {
++				const rawText = ctx.textContent(node);
++				const text =
++					frontmatter && rawText.includes('frontmatter')
++						? collectHastText(node, frontmatter)
++						: rawText;
++				const existingId = node.properties?.id;
++				const slug = typeof existingId === 'string' ? existingId : slugger.slug(text);
++				const depth = Number.parseInt(node.tagName[1], 10);
++				headings.push({ depth, slug, text });
++				if (typeof existingId !== 'string') {
++					ctx.setProperty(node, 'id', slug);
++				}
++			},
++		},
++	};
++}
++
++function makeRawNode(html: string): HastNode {
++	return { type: 'raw', value: html } as unknown as HastNode;
++}
++
++const HAST_PRESERVED_PROPERTIES = new Set(['className', 'htmlFor']);
++
++/** Tags <img> with `__ASTRO_IMAGE_` for astro's vite-plugin-markdown to replace with the processed image's attributes. */
++export function createImageMarkerPlugin(
++	localImagePaths: Set<string>,
++	remoteImagePaths: Set<string>,
++): HastPluginDefinition {
++	const indexBySrc = new Map<string, number>();
++	return {
++		name: 'image-marker',
++		element: {
++			filter: ['img'],
++			visit(node, ctx) {
++				const props = (node.properties ?? {}) as Record<string, unknown>;
++				const rawSrc = typeof props.src === 'string' ? props.src : undefined;
++				if (!rawSrc) return;
++				const src = decodeURI(rawSrc);
++
++				const isLocal = localImagePaths.has(src);
++				const isRemote = !isLocal && remoteImagePaths.has(src);
++				if (!isLocal && !isRemote) return;
++
++				const { src: _src, ...rest } = props;
++				const index = indexBySrc.get(rawSrc) ?? 0;
++				indexBySrc.set(rawSrc, index + 1);
++
++				const imageProperties: Record<string, unknown> = { ...rest, src, index };
++				if (isRemote && !('width' in props) && !('height' in props)) {
++					imageProperties.inferSize = true;
++				}
++
++				ctx.setProperty(node, '__ASTRO_IMAGE_', JSON.stringify(imageProperties));
++				for (const key of Object.keys(rest)) {
++					if (!HAST_PRESERVED_PROPERTIES.has(key)) {
++						ctx.setProperty(node, key, null);
++					}
++				}
++				ctx.setProperty(node, 'src', null);
++			},
++		},
++	};
++}
++
++export function createShikiPlugin(
++	highlight: HighlightFn,
++	excludeLangs: string[] | undefined,
++	options?: { mdx?: boolean },
++): HastPluginDefinition {
++	const wrapResult = options?.mdx ? makeFragmentNode : makeRawNode;
++	return {
++		name: 'shiki-highlight',
++		element: {
++			filter: ['pre'],
++			async visit(node, ctx) {
++				const codeChild = node.children?.find(
++					(c: HastNode) => c.type === 'element' && c.tagName === 'code',
++				) as HastNode | undefined;
++				if (!codeChild || codeChild.type !== 'element') return;
++
++				const lang = (codeChild.data as any)?.lang ?? 'plaintext';
++				const meta = (codeChild.data as any)?.meta ?? undefined;
++
++				if (
++					(excludeLangs && excludeLangs.includes(lang)) ||
++					defaultExcludeLanguages.includes(lang)
++				) {
++					return;
++				}
++
++				const code = ctx.textContent(codeChild).replace(/\n$/, '');
++				const html = await highlight(code, lang, meta);
++				return wrapResult(html);
++			},
++		},
++	};
++}
++
++export interface SatteriMarkdownProcessorOptions extends AstroMarkdownOptions {
++	mdastPlugins?: MdastPluginDefinition[];
++	hastPlugins?: HastPluginDefinition[];
++	features?: Features;
++}
++
++export async function createSatteriMarkdownProcessor(
++	opts?: SatteriMarkdownProcessorOptions,
++): Promise<MarkdownRenderer> {
++	const s = await loadSatteri();
++
++	const {
++		syntaxHighlight = syntaxHighlightDefaults,
++		shikiConfig = markdownConfigDefaults.shikiConfig,
++		gfm = markdownConfigDefaults.gfm,
++		smartypants = markdownConfigDefaults.smartypants,
++		mdastPlugins: userMdastPlugins = [],
++		hastPlugins: userHastPlugins = [],
++		features: userFeatures,
++	} = opts ?? {};
++
++	const syntaxHighlightType =
++		typeof syntaxHighlight === 'string'
++			? syntaxHighlight
++			: syntaxHighlight
++				? syntaxHighlight.type
++				: undefined;
++
++	if (syntaxHighlightType === 'prism') {
++		throw new Error(
++			'Prism syntax highlighting is not supported by the `satteri()` markdown processor. Use shiki instead, or switch to `markdown.processor: unified({...})`.',
++		);
++	}
++
++	let highlightFn: HighlightFn | undefined;
++	if (syntaxHighlightType === 'shiki') {
++		const hl = await createShikiHighlighter({
++			langs: shikiConfig.langs,
++			theme: shikiConfig.theme,
++			themes: shikiConfig.themes,
++			langAlias: shikiConfig.langAlias,
++		});
++		highlightFn = (code, lang, meta) =>
++			hl.codeToHtml(code, lang, {
++				meta,
++				wrap: shikiConfig.wrap,
++				defaultColor: shikiConfig.defaultColor,
++				transformers: shikiConfig.transformers,
++			});
++	}
++
++	const syntaxHighlightExcludeLangs =
++		typeof syntaxHighlight === 'object' ? syntaxHighlight.excludeLangs : undefined;
++
++	return {
++		async render(content, renderOpts) {
++			const headings: MarkdownHeading[] = [];
++			const localImagePaths = new Set<string>();
++			const remoteImagePaths = new Set<string>();
++			const frontmatter = renderOpts?.frontmatter ?? {};
++
++			const allMdastPlugins: MdastPluginDefinition[] = [
++				createCollectImagesPlugin(localImagePaths, remoteImagePaths, opts?.image),
++				...userMdastPlugins,
++			];
++
++			const hastPlugins: HastPluginDefinition[] = [];
++			if (highlightFn) {
++				hastPlugins.push(createShikiPlugin(highlightFn, syntaxHighlightExcludeLangs));
++			}
++			hastPlugins.push(createHeadingIdsPlugin(headings, frontmatter));
++			hastPlugins.push(...userHastPlugins);
++			hastPlugins.push(createImageMarkerPlugin(localImagePaths, remoteImagePaths));
++
++			const { html } = await s.markdownToHtml(content, {
++				mdastPlugins: allMdastPlugins,
++				hastPlugins,
++				features: {
++					gfm: gfm !== false,
++					smartPunctuation: smartypants !== false,
++					...userFeatures,
++				},
++				filename: renderOpts?.fileURL?.pathname,
++			});
++
++			return {
++				code: html,
++				metadata: {
++					headings,
++					localImagePaths: Array.from(localImagePaths),
++					remoteImagePaths: Array.from(remoteImagePaths),
++					frontmatter,
++				},
++			};
++		},
++	};
++}
+diff --git a/packages/markdown/satteri/test/highlight.test.ts b/packages/markdown/satteri/test/highlight.test.ts
+new file mode 100644
+index 000000000000..9ff091fbc3c2
+--- /dev/null
++++ b/packages/markdown/satteri/test/highlight.test.ts
+@@ -0,0 +1,32 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import { createSatteriMarkdownProcessor } from '../dist/index.js';
++
++describe('satteri highlight', () => {
++	it('highlights using shiki by default', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { code } = await processor.render('```js\nconsole.log("Hello, world!");\n```');
++		assert.match(code, /background-color:/);
++	});
++
++	it('does not highlight math code blocks by default', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { code } = await processor.render('```math\n\\frac{1}{2}\n```');
++		assert.ok(!code.includes('background-color:'));
++	});
++
++	it('supports excludeLangs', async () => {
++		const processor = await createSatteriMarkdownProcessor({
++			syntaxHighlight: { type: 'shiki', excludeLangs: ['mermaid'] },
++		});
++		const { code } = await processor.render('```mermaid\ngraph TD\nA --> B\n```');
++		assert.ok(!code.includes('background-color:'));
++	});
++
++	it('rejects prism highlighting', async () => {
++		await assert.rejects(
++			createSatteriMarkdownProcessor({ syntaxHighlight: { type: 'prism' } }),
++			/Prism syntax highlighting is not supported/,
++		);
++	});
++});
+diff --git a/packages/markdown/satteri/test/markdown.test.ts b/packages/markdown/satteri/test/markdown.test.ts
+new file mode 100644
+index 000000000000..a4c1ac37b508
+--- /dev/null
++++ b/packages/markdown/satteri/test/markdown.test.ts
+@@ -0,0 +1,57 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import { createSatteriMarkdownProcessor } from '../dist/index.js';
++
++describe('satteri markdown', () => {
++	it('renders basic markdown', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { code } = await processor.render('# Title\n\nSome **bold** text.');
++		assert.match(code, /<h1 id="title">Title<\/h1>/);
++		assert.match(code, /<strong>bold<\/strong>/);
++	});
++
++	it('collects headings into metadata', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { metadata } = await processor.render(
++			'# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six',
++		);
++		assert.deepEqual(metadata.headings, [
++			{ depth: 1, slug: 'one', text: 'One' },
++			{ depth: 2, slug: 'two', text: 'Two' },
++			{ depth: 3, slug: 'three', text: 'Three' },
++			{ depth: 4, slug: 'four', text: 'Four' },
++			{ depth: 5, slug: 'five', text: 'Five' },
++			{ depth: 6, slug: 'six', text: 'Six' },
++		]);
++	});
++
++	it('applies GFM by default', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { code } = await processor.render('Visit https://example.com today');
++		assert.match(code, /<a href="https:\/\/example\.com"/);
++	});
++
++	it('disables GFM when `gfm: false`', async () => {
++		const processor = await createSatteriMarkdownProcessor({ gfm: false });
++		const { code } = await processor.render('Visit https://example.com today');
++		assert.ok(!code.includes('<a '));
++	});
++
++	it('applies smart punctuation by default', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { code } = await processor.render('He said "hello"');
++		assert.match(code, /“hello”/);
++	});
++
++	it('disables smart punctuation when `smartypants: false`', async () => {
++		const processor = await createSatteriMarkdownProcessor({ smartypants: false });
++		const { code } = await processor.render('He said "hello"');
++		assert.ok(code.includes('"hello"'));
++	});
++
++	it('collects local image paths into metadata', async () => {
++		const processor = await createSatteriMarkdownProcessor();
++		const { metadata } = await processor.render('![alt](./local.png)');
++		assert.deepEqual(metadata.localImagePaths, ['./local.png']);
++	});
++});
+diff --git a/packages/markdown/satteri/tsconfig.build.json b/packages/markdown/satteri/tsconfig.build.json
+new file mode 100644
+index 000000000000..2a10b0fd387a
+--- /dev/null
++++ b/packages/markdown/satteri/tsconfig.build.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.build.json",
++  "references": [{ "path": "../../internal-helpers/tsconfig.json" }]
++}
+diff --git a/packages/markdown/satteri/tsconfig.json b/packages/markdown/satteri/tsconfig.json
+new file mode 100644
+index 000000000000..c0e0de315104
+--- /dev/null
++++ b/packages/markdown/satteri/tsconfig.json
+@@ -0,0 +1,5 @@
++{
++  "extends": "../../../configs/tsconfig.base.json",
++  "files": [],
++  "references": [{ "path": "./tsconfig.build.json" }, { "path": "./tsconfig.test.json" }]
++}
+diff --git a/packages/markdown/satteri/tsconfig.test.json b/packages/markdown/satteri/tsconfig.test.json
+new file mode 100644
+index 000000000000..9af37150bd9d
+--- /dev/null
++++ b/packages/markdown/satteri/tsconfig.test.json
+@@ -0,0 +1,4 @@
++{
++  "extends": "../../../configs/tsconfig.test.json",
++  "references": [{ "path": "./tsconfig.build.json" }]
++}
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 3464d0fa93f1..010677b39b5c 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -5124,6 +5124,9 @@ importers:
+         specifier: ^6.0.3
+         version: 6.0.3
+     devDependencies:
++      '@astrojs/markdown-satteri':
++        specifier: workspace:*
++        version: link:../../markdown/satteri
+       '@shikijs/rehype':
+         specifier: ^4.0.2
+         version: 4.0.2
+@@ -5172,6 +5175,9 @@ importers:
+       remark-toc:
+         specifier: ^9.0.0
+         version: 9.0.0
++      satteri:
++        specifier: ^0.6.3
++        version: 0.6.3
+       shiki:
+         specifier: ^4.0.2
+         version: 4.0.2
+@@ -6767,6 +6773,22 @@ importers:
+         specifier: ^4.0.0
+         version: 4.0.2
+ 
++  packages/markdown/satteri:
++    dependencies:
++      '@astrojs/internal-helpers':
++        specifier: workspace:*
++        version: link:../../internal-helpers
++      github-slugger:
++        specifier: ^2.0.0
++        version: 2.0.0
++      satteri:
++        specifier: ^0.6.3
++        version: 0.6.3
++    devDependencies:
++      astro-scripts:
++        specifier: workspace:*
++        version: link:../../../scripts
++
+   packages/telemetry:
+     dependencies:
+       ci-info:
+@@ -7401,6 +7423,32 @@ packages:
+   '@borewit/text-codec@0.2.2':
+     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
+ 
++  '@bruits/satteri-darwin-arm64@0.6.3':
++    resolution: {integrity: sha512-oKgMfpmNzQ8vaqmkE37PBu8tOyVjoOc4s+DV2tLpWvO6WO467qn/+Nbcirm/ceer7wUM8v4vMLGcZO0gkRzBEg==}
++    cpu: [arm64]
++    os: [darwin]
++
++  '@bruits/satteri-darwin-x64@0.6.3':
++    resolution: {integrity: sha512-9I5pbwZRWH5LvhoCtwpRr4rYSDe43/dLvps6zO70ipVF2XbH4rJ20T+EfvPcmou5jsWMsq9Ybn5GX3PwlSrBaw==}
++    cpu: [x64]
++    os: [darwin]
++
++  '@bruits/satteri-linux-x64-gnu@0.6.3':
++    resolution: {integrity: sha512-aFfw2DL2HpIcAQ8I3ZEtKuz+/GoF0H0sq387jAlvr00Q7buiiFbvARFuQlvTk00N7u3SJIh/3+YkKssTJDT+yQ==}
++    cpu: [x64]
++    os: [linux]
++    libc: [glibc]
++
++  '@bruits/satteri-wasm32-wasi@0.6.3':
++    resolution: {integrity: sha512-DdpfnJ+04Mb4YtHaxAeETUvhdxFKg3URnroGY39FvweJEgeXx8cFNutuF5w904BhqaiblhmF76AoBnJwNLxsXg==}
++    engines: {node: '>=14.0.0'}
++    cpu: [wasm32]
++
++  '@bruits/satteri-win32-x64-msvc@0.6.3':
++    resolution: {integrity: sha512-J/CZqACnBbv77eImx/JeO5RmCuCyliihiC81u3M4VobA8eupsygaPen3/UFFqf3yfeHvMlE3myilouh/2iHMOA==}
++    cpu: [x64]
++    os: [win32]
++
+   '@capsizecss/unpack@4.0.0':
+     resolution: {integrity: sha512-VERIM64vtTP1C4mxQ5thVT9fK0apjPFobqybMtA1UdUujWka24ERHbRHFGmpbbhp73MhV+KSsHQH9C6uOTdEQA==}
+     engines: {node: '>=18'}
+@@ -7911,12 +7959,21 @@ packages:
+   '@emnapi/core@1.8.1':
+     resolution: {integrity: sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg==}
+ 
++  '@emnapi/core@1.9.1':
++    resolution: {integrity: sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA==}
++
+   '@emnapi/runtime@1.8.1':
+     resolution: {integrity: sha512-mehfKSMWjjNol8659Z8KxEMrdSJDDot5SXMq00dM8BN4o+CLNXQ0xH2V7EchNHV4RmbZLmmPdEaXZc5H2FXmDg==}
+ 
++  '@emnapi/runtime@1.9.1':
++    resolution: {integrity: sha512-VYi5+ZVLhpgK4hQ0TAjiQiZ6ol0oe4mBx7mVv7IflsiEp0OWoVsp/+f9Vc1hOhE0TtkORVrI1GvzyreqpgWtkA==}
++
+   '@emnapi/wasi-threads@1.1.0':
+     resolution: {integrity: sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ==}
+ 
++  '@emnapi/wasi-threads@1.2.0':
++    resolution: {integrity: sha512-N10dEJNSsUx41Z6pZsXU8FjPjpBEplgH24sfkmITrBED1/U2Esum9F3lfLrMjKHHjmi557zQn7kR9R+XWXu5Rg==}
++
+   '@envelop/instrumentation@1.0.0':
+     resolution: {integrity: sha512-cxgkB66RQB95H3X27jlnxCRNTmPuSTgmBAq6/4n2Dtv4hsk4yz8FadA1ggmd0uZzvKqWD6CR+WFgTjhDqg7eyw==}
+     engines: {node: '>=18.0.0'}
+@@ -8994,6 +9051,12 @@ packages:
+   '@napi-rs/wasm-runtime@1.1.1':
+     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
+ 
++  '@napi-rs/wasm-runtime@1.1.4':
++    resolution: {integrity: sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow==}
++    peerDependencies:
++      '@emnapi/core': ^1.7.1
++      '@emnapi/runtime': ^1.7.1
++
+   '@neon-rs/load@0.0.4':
+     resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
+ 
+@@ -14930,6 +14993,9 @@ packages:
+     engines: {node: '>=14.0.0'}
+     hasBin: true
+ 
++  satteri@0.6.3:
++    resolution: {integrity: sha512-iY5xd2tBDQveYRFkL1F0cegkabWSVoXHi64e1p49SiCs1bZDaqTQPGQI+PqEQIaWkz0iqK80CuQQUYvhsssviw==}
++
+   sax@1.6.0:
+     resolution: {integrity: sha512-6R3J5M4AcbtLUdZmRv2SygeVaM7IhrLXu9BmnOGmmACak8fiUtOsYNWUS4uK7upbmHIBbLBeFeI//477BKLBzA==}
+     engines: {node: '>=11.0.0'}
+@@ -17240,6 +17306,25 @@ snapshots:
+ 
+   '@borewit/text-codec@0.2.2': {}
+ 
++  '@bruits/satteri-darwin-arm64@0.6.3':
++    optional: true
++
++  '@bruits/satteri-darwin-x64@0.6.3':
++    optional: true
++
++  '@bruits/satteri-linux-x64-gnu@0.6.3':
++    optional: true
++
++  '@bruits/satteri-wasm32-wasi@0.6.3':
++    dependencies:
++      '@emnapi/core': 1.9.1
++      '@emnapi/runtime': 1.9.1
++      '@napi-rs/wasm-runtime': 1.1.4(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)
++    optional: true
++
++  '@bruits/satteri-win32-x64-msvc@0.6.3':
++    optional: true
++
+   '@capsizecss/unpack@4.0.0':
+     dependencies:
+       fontkitten: 1.0.2
+@@ -17858,16 +17943,32 @@ snapshots:
+       tslib: 2.8.1
+     optional: true
+ 
++  '@emnapi/core@1.9.1':
++    dependencies:
++      '@emnapi/wasi-threads': 1.2.0
++      tslib: 2.8.1
++    optional: true
++
+   '@emnapi/runtime@1.8.1':
+     dependencies:
+       tslib: 2.8.1
+     optional: true
+ 
++  '@emnapi/runtime@1.9.1':
++    dependencies:
++      tslib: 2.8.1
++    optional: true
++
+   '@emnapi/wasi-threads@1.1.0':
+     dependencies:
+       tslib: 2.8.1
+     optional: true
+ 
++  '@emnapi/wasi-threads@1.2.0':
++    dependencies:
++      tslib: 2.8.1
++    optional: true
++
+   '@envelop/instrumentation@1.0.0':
+     dependencies:
+       '@whatwg-node/promise-helpers': 1.3.2
+@@ -18741,6 +18842,13 @@ snapshots:
+       '@tybys/wasm-util': 0.10.1
+     optional: true
+ 
++  '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)':
++    dependencies:
++      '@emnapi/core': 1.9.1
++      '@emnapi/runtime': 1.9.1
++      '@tybys/wasm-util': 0.10.1
++    optional: true
++
+   '@neon-rs/load@0.0.4': {}
+ 
+   '@netlify/ai@0.4.1':
+@@ -25803,6 +25911,19 @@ snapshots:
+     optionalDependencies:
+       '@parcel/watcher': 2.5.6
+ 
++  satteri@0.6.3:
++    dependencies:
++      '@types/estree-jsx': 1.0.5
++      '@types/hast': 3.0.4
++      '@types/mdast': 4.0.4
++      '@types/unist': 3.0.3
++    optionalDependencies:
++      '@bruits/satteri-darwin-arm64': 0.6.3
++      '@bruits/satteri-darwin-x64': 0.6.3
++      '@bruits/satteri-linux-x64-gnu': 0.6.3
++      '@bruits/satteri-wasm32-wasi': 0.6.3
++      '@bruits/satteri-win32-x64-msvc': 0.6.3
++
+   sax@1.6.0: {}
+ 
+   scheduler@0.23.2:
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index 274015dd4b38..be1715612550 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -41,6 +41,8 @@ minimumReleaseAgeExclude:
+   # TODO: remove once more stable
+   - '@flue/*'
+   - '@astrojs/*'
++  - 'satteri'
++  - '@bruits/*'
+ peerDependencyRules:
+   allowAny:
+     - 'astro'

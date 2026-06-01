@@ -1,0 +1,486 @@
+diff --git a/e2e/maven/src/maven-batch-v4.test.ts b/e2e/maven/src/maven-batch-v4.test.ts
+index f9fd69b8322..ac8bb50ffde 100644
+--- a/e2e/maven/src/maven-batch-v4.test.ts
++++ b/e2e/maven/src/maven-batch-v4.test.ts
+@@ -66,8 +66,6 @@ wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-w
+   });
+ 
+   it('should fail when unit test fails', () => {
+-    // TODO: remove once batch mode dependentTaskOutputs is fixed
+-    runCLI('reset');
+     // Add a failing unit test
+     updateFile(
+       'app/src/test/java/com/example/app/AppApplicationTests.java',
+diff --git a/e2e/maven/src/utils/create-maven-project.ts b/e2e/maven/src/utils/create-maven-project.ts
+index 09927bb5b23..605b886c434 100644
+--- a/e2e/maven/src/utils/create-maven-project.ts
++++ b/e2e/maven/src/utils/create-maven-project.ts
+@@ -3,6 +3,7 @@ import {
+   tmpProjPath,
+   readFile,
+   updateFile,
++  fileExists,
+ } from '@nx/e2e-utils';
+ import { execSync } from 'child_process';
+ import { writeFileSync } from 'fs-extra';
+@@ -155,6 +156,11 @@ export async function createMavenProject(
+     '.mvn/wrapper/maven-wrapper.properties',
+     readFile('app/.mvn/wrapper/maven-wrapper.properties')
+   );
++  if (fileExists('.gitignore')) {
++    updateFile('.gitignore', readFile('.gitignore') + '\ntarget');
++  } else {
++    updateFile('.gitignore', 'target');
++  }
+ 
+   chmodSync(join(cwd, 'mvnw'), 0o755);
+   chmodSync(join(cwd, 'mvnw.cmd'), 0o755);
+diff --git a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/cache/CacheConfig.kt b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/cache/CacheConfig.kt
+index d22f2663f20..7e01c8a424a 100644
+--- a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/cache/CacheConfig.kt
++++ b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/cache/CacheConfig.kt
+@@ -10,7 +10,7 @@ data class Parameter(val name: String, val glob: String?)
+ data class MojoConfig(
+     val inputProperties: Set<String>? = null,
+     val inputParameters: Set<Parameter>? = null,
+-    val outputParameters: Set<Parameter>? = null
++    val outputParameters: Set<Parameter>? = null,
+ )
+ 
+ /**
+@@ -81,7 +81,7 @@ data class CacheConfig(
+                 ),
+                 "maven-compiler-plugin:testCompile" to MojoConfig(
+                     inputParameters = setOf(
+-                        Parameter("testCompileSourceRoots", "**/*.java"),
++                        Parameter("compileSourceRoots", "**/*.java"),
+                     ),
+                     outputParameters = setOf(
+                         Parameter("outputDirectory", null),
+diff --git a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/targets/NxTargetFactory.kt b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/targets/NxTargetFactory.kt
+index ed0ef909808..6f6df7699b4 100644
+--- a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/targets/NxTargetFactory.kt
++++ b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/targets/NxTargetFactory.kt
+@@ -614,10 +614,10 @@ class NxTargetFactory(
+     val isIgnored = gitIgnoreClassifier.isIgnored(buildJsonFile)
+     if (isIgnored) {
+       log.warn("Input path is gitignored: ${buildJsonFile.path}")
+-      val input = pathFormatter.toDependentTaskOutputs(buildJsonFile, project.basedir)
++      // Match the specific build state file in dependency outputs
+       val obj = JsonObject()
+-      obj.addProperty("dependentTasksOutputFiles", input.path)
+-      if (input.transitive) obj.addProperty("transitive", true)
++      obj.addProperty("dependentTasksOutputFiles", "nx-build-state.json")
++      obj.addProperty("transitive", true)
+       target.inputs?.add(obj)
+     } else {
+       val input = pathFormatter.formatInputPath(buildJsonFile, projectRoot = project.basedir)
+diff --git a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MavenExpressionResolver.kt b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MavenExpressionResolver.kt
+index 191c0b28ba9..4f22fa2b41c 100644
+--- a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MavenExpressionResolver.kt
++++ b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MavenExpressionResolver.kt
+@@ -15,16 +15,6 @@ class MavenExpressionResolver(
+     private val log: Logger = LoggerFactory.getLogger(MavenExpressionResolver::class.java)
+ 
+     fun resolveParameter(parameter: Parameter, project: MavenProject): List<String> {
+-        // For compileSourceRoots and testCompileSourceRoots, always use collection handling
+-        // to include ALL source roots (including generated sources)
+-        if (parameter.name in setOf("compileSourceRoots", "testCompileSourceRoots")) {
+-            return when (parameter.name) {
+-                "compileSourceRoots" -> project.compileSourceRoots ?: emptyList()
+-                "testCompileSourceRoots" -> project.testCompileSourceRoots ?: emptyList()
+-                else -> emptyList()
+-            }
+-        }
+-
+         return when (parameter.type) {
+             "java.io.File" -> listOfNotNull(
+                 resolveStringParameterValue(
+diff --git a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MojoAnalyzer.kt b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MojoAnalyzer.kt
+index 159539c5476..8323f7687cf 100644
+--- a/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MojoAnalyzer.kt
++++ b/packages/maven/maven-plugin/src/main/kotlin/dev/nx/maven/utils/MojoAnalyzer.kt
+@@ -83,15 +83,16 @@ class MojoAnalyzer(
+       val paths = expressionResolver.resolveParameter(parameter, project)
+ 
+       paths.forEach { path ->
+-        val pathWithGlob = paramConfig.glob?.let { "$path/$it" } ?: path
+-        val pathFile = File(pathWithGlob);
++        val pathFile = File(path)
+         val isIgnored = gitIgnoreClassifier.isIgnored(pathFile)
+         if (isIgnored) {
+           log.warn("Input path is gitignored: ${pathFile.path}")
+-          val input = pathResolver.toDependentTaskOutputs(pathFile, project.basedir)
+-          dependentTaskOutputInputs.add(input)
++          // Use the parameter's glob pattern if provided, otherwise use **/*
++          val globPattern = paramConfig.glob ?: "**/*"
++          dependentTaskOutputInputs.add(DependentTaskOutputs(globPattern, transitive = true))
+         } else {
+-          val input = pathResolver.formatInputPath(pathFile, projectRoot = project.basedir)
++          val pathWithGlob = paramConfig.glob?.let { "$path/$it" } ?: path
++          val input = pathResolver.formatInputPath(File(pathWithGlob), projectRoot = project.basedir)
+ 
+           inputs.add(input)
+         }
+@@ -106,8 +107,8 @@ class MojoAnalyzer(
+         val isIgnored = gitIgnoreClassifier.isIgnored(pathFile)
+         if (isIgnored) {
+           log.warn("Input path is gitignored: ${pathFile.path}")
+-          val input = pathResolver.toDependentTaskOutputs(pathFile, project.basedir)
+-          dependentTaskOutputInputs.add(input)
++          // For properties, always use **/* pattern
++          dependentTaskOutputInputs.add(DependentTaskOutputs("**/*", transitive = true))
+         } else {
+           val input = pathResolver.formatInputPath(pathFile, projectRoot = project.basedir)
+ 
+@@ -122,8 +123,8 @@ class MojoAnalyzer(
+         val isIgnored = gitIgnoreClassifier.isIgnored(pathFile)
+         if (isIgnored) {
+           log.warn("Input path is gitignored: ${pathFile.path}")
+-          val input = pathResolver.toDependentTaskOutputs(pathFile, project.basedir)
+-          dependentTaskOutputInputs.add(input)
++          // For default inputs, always use **/* pattern
++          dependentTaskOutputInputs.add(DependentTaskOutputs("**/*", transitive = true))
+         } else {
+           val input = pathResolver.formatInputPath(pathFile, projectRoot = project.basedir)
+ 
+diff --git a/packages/maven/src/executors/maven/maven-batch.impl.ts b/packages/maven/src/executors/maven/maven-batch.impl.ts
+index 93891bfbade..14ff6f5d8a5 100644
+--- a/packages/maven/src/executors/maven/maven-batch.impl.ts
++++ b/packages/maven/src/executors/maven/maven-batch.impl.ts
+@@ -197,7 +197,12 @@ export default async function* mavenBatchExecutor(
+           console.error(output);
+         }
+       }
+-      resolve();
++      // Reject promise if batch runner exited with non-zero code
++      if (code !== 0) {
++        reject(new Error(`Maven batch runner exited with code ${code}`));
++      } else {
++        resolve();
++      }
+     });
+     child.on('error', reject);
+   });
+diff --git a/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle-old.ts b/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle-old.ts
+index cb10e35225b..fcb533ffaa8 100644
+--- a/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle-old.ts
++++ b/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle-old.ts
+@@ -13,14 +13,9 @@ import { LifeCycle, TaskResult } from '../life-cycle';
+ 
+ export class LegacyTaskHistoryLifeCycle implements LifeCycle {
+   private startTimings: Record<string, number> = {};
+-  private taskRuns: TaskRun[] = [];
++  private pendingResults: TaskResult[] = [];
+   private flakyTasks: string[];
+ 
+-  // hashes which could trigger flaky task detection.
+-  // set here rather than on the TaskRun to avoid storing data on
+-  // the fs
+-  private cacheableHashes: Set<string> = new Set();
+-
+   startTasks(tasks: Task[]): void {
+     for (let task of tasks) {
+       this.startTimings[task.id] = new Date().getTime();
+@@ -29,11 +24,19 @@ export class LegacyTaskHistoryLifeCycle implements LifeCycle {
+ 
+   async endTasks(taskResults: TaskResult[]) {
+     for (const taskResult of taskResults) {
+-      // Track cacheable tasks for flaky detection
++      this.pendingResults.push(taskResult);
++    }
++  }
++
++  async endCommand() {
++    // Build TaskRun objects now — task.hash is guaranteed to be set by this point
++    const taskRuns: TaskRun[] = [];
++    const cacheableHashes = new Set<string>();
++    for (const taskResult of this.pendingResults) {
+       if (taskResult.task.cache === true) {
+-        this.cacheableHashes.add(taskResult.task.hash);
++        cacheableHashes.add(taskResult.task.hash);
+       }
+-      this.taskRuns.push({
++      taskRuns.push({
+         project: taskResult.task.target.project,
+         target: taskResult.task.target.target,
+         configuration: taskResult.task.target.configuration,
+@@ -46,13 +49,11 @@ export class LegacyTaskHistoryLifeCycle implements LifeCycle {
+         end: (taskResult.task.endTime ?? new Date().getTime()).toString(),
+       });
+     }
+-  }
+ 
+-  async endCommand() {
+-    await writeTaskRunsToHistory(this.taskRuns);
++    await writeTaskRunsToHistory(taskRuns);
+     // Only check for flaky tasks among cacheable tasks
+-    const cacheableTaskRuns = this.taskRuns.filter((t) =>
+-      this.cacheableHashes.has(t.hash)
++    const cacheableTaskRuns = taskRuns.filter((t) =>
++      cacheableHashes.has(t.hash)
+     );
+     const history = await getHistoryForHashes(
+       cacheableTaskRuns.map((t) => t.hash)
+diff --git a/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle.ts b/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle.ts
+index 763b688bc53..a223dbec586 100644
+--- a/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle.ts
++++ b/packages/nx/src/tasks-runner/life-cycles/task-history-life-cycle.ts
+@@ -30,6 +30,7 @@ export function getTasksHistoryLifeCycle():
+ 
+ export class TaskHistoryLifeCycle implements LifeCycle {
+   private startTimings: Record<string, number> = {};
++  private pendingResults = new Map<string, TaskResult>();
+   private taskRuns = new Map<string, TaskRun>();
+   private taskHistory: TaskHistory | null = getTaskHistory();
+   private flakyTasks: string[];
+@@ -51,6 +52,17 @@ export class TaskHistoryLifeCycle implements LifeCycle {
+ 
+   async endTasks(taskResults: TaskResult[]) {
+     for (const taskResult of taskResults) {
++      this.pendingResults.set(taskResult.task.id, taskResult);
++    }
++  }
++
++  async endCommand() {
++    if (!this.taskHistory) {
++      return;
++    }
++
++    // Build TaskRun objects now — task.hash is guaranteed to be set by this point
++    for (const [, taskResult] of this.pendingResults) {
+       this.taskRuns.set(taskResult.task.hash, {
+         hash: taskResult.task.hash,
+         target: taskResult.task.target,
+@@ -62,12 +74,7 @@ export class TaskHistoryLifeCycle implements LifeCycle {
+         cacheable: taskResult.task.cache === true,
+       });
+     }
+-  }
+ 
+-  async endCommand() {
+-    if (!this.taskHistory) {
+-      return;
+-    }
+     const runs = [];
+ 
+     // Only check for flaky tasks among cacheable tasks
+diff --git a/packages/nx/src/tasks-runner/task-orchestrator.ts b/packages/nx/src/tasks-runner/task-orchestrator.ts
+index ce8c668061f..af6f4094af3 100644
+--- a/packages/nx/src/tasks-runner/task-orchestrator.ts
++++ b/packages/nx/src/tasks-runner/task-orchestrator.ts
+@@ -8,8 +8,8 @@ import { ProjectGraph } from '../config/project-graph';
+ import { Task, TaskGraph } from '../config/task-graph';
+ import { DaemonClient } from '../daemon/client/client';
+ import { runCommands } from '../executors/run-commands/run-commands.impl';
+-import { getTaskDetails, hashTask, hashTasks } from '../hasher/hash-task';
+-import { TaskHasher } from '../hasher/task-hasher';
++import { getTaskDetails, hashTask } from '../hasher/hash-task';
++import { getInputs, TaskHasher } from '../hasher/task-hasher';
+ import {
+   BatchStatus,
+   IS_WASM,
+@@ -291,14 +291,7 @@ export class TaskOrchestrator {
+   }
+ 
+   private async processScheduledBatch(batch: Batch) {
+-    await hashTasks(
+-      this.hasher,
+-      this.projectGraph,
+-      batch.taskGraph,
+-      this.batchEnv,
+-      this.taskDetails
+-    );
+-
++    // Hashing moved to applyFromCacheOrRunBatch for topological ordering
+     await Promise.all(
+       Object.values(batch.taskGraph.tasks).map((task) =>
+         this.options.lifeCycle.scheduleTask(task)
+@@ -368,6 +361,21 @@ export class TaskOrchestrator {
+   // endregion Applying Cache
+ 
+   // region Batch
++  private async hashBatchTasks(tasks: Task[]): Promise<void> {
++    await Promise.all(
++      tasks.map((task) =>
++        hashTask(
++          this.hasher,
++          this.projectGraph,
++          this.taskGraphForHashing,
++          task,
++          this.batchEnv,
++          this.taskDetails
++        )
++      )
++    );
++  }
++
+   public async applyFromCacheOrRunBatch(
+     doNotSkipCache: boolean,
+     batch: Batch,
+@@ -389,28 +397,105 @@ export class TaskOrchestrator {
+ 
+     await this.preRunSteps(tasks, { groupId });
+ 
+-    let results: TaskResult[] = doNotSkipCache
+-      ? await this.applyCachedResults(tasks)
+-      : [];
++    // Phase 1: Topological cache resolution
++    // Walk the entire batch task graph level by level. At each level, partition
++    // root tasks into cache-eligible vs ineligible. A task is ineligible if it
++    // has depsOutputs inputs AND any of its dependencies were not cached (their
++    // outputs aren't on disk, so the hash would be wrong). All roots are removed
++    // each iteration so the walk continues to deeper levels.
++    let allCachedResults: TaskResult[] = [];
++    let remaining = batch.taskGraph;
++    const nonCachedTaskIds = new Set<string>();
++
++    if (doNotSkipCache) {
++      while (remaining.roots.length > 0) {
++        const rootTasks = remaining.roots.map((id) => remaining.tasks[id]);
++
++        // Partition: skip cache for depsOutputs tasks with non-cached deps.
++        // Only call getInputs() when a task actually has a non-cached dep —
++        // if all deps are cached, the task is always eligible regardless.
++        const eligible: Task[] = [];
++        for (const task of rootTasks) {
++          const depIds = batch.taskGraph.dependencies[task.id];
++          const hasNonCachedDep = depIds.some((id) => nonCachedTaskIds.has(id));
++
++          if (
++            hasNonCachedDep &&
++            getInputs(task, this.projectGraph, this.nxJson).depsOutputs.length >
++              0
++          ) {
++            nonCachedTaskIds.add(task.id);
++          } else {
++            eligible.push(task);
++          }
++        }
+ 
+-    // Run tasks that were not cached
+-    if (results.length !== taskEntries.length) {
+-      await this.postRunSteps(results, doNotSkipCache, { groupId });
++        // Hash and check cache for eligible tasks
++        if (eligible.length > 0) {
++          await this.hashBatchTasks(eligible);
++          const cacheResults = await this.applyCachedResults(eligible);
++          const cachedIds = new Set(cacheResults.map((r) => r.task.id));
++          allCachedResults.push(...cacheResults);
++
++          for (const task of eligible) {
++            if (!cachedIds.has(task.id)) {
++              nonCachedTaskIds.add(task.id);
++            }
++          }
++        }
++
++        // Remove ALL roots to expose next level
++        remaining = removeTasksFromTaskGraph(remaining, remaining.roots);
++      }
++    }
++
++    // Phase 2: Run remaining tasks without hashing, then hash after execution
++    // Hashing is deferred until after the batch so that all outputs (including
++    // from sibling tasks) are fresh on disk. This means tasks with depsOutputs
++    // get correct hashes on the first pass — no re-hash needed.
++    let results: TaskResult[] = allCachedResults;
++
++    if (nonCachedTaskIds.size > 0) {
++      const cachedTaskIds = tasks
++        .map((t) => t.id)
++        .filter((id) => !nonCachedTaskIds.has(id));
++      const runGraph = removeTasksFromTaskGraph(batch.taskGraph, cachedTaskIds);
+ 
+-      const unrunTaskGraph = removeTasksFromTaskGraph(
+-        batch.taskGraph,
+-        results.map(({ task }) => task.id)
++      const batchResults = await this.runBatch(
++        {
++          id: batch.id,
++          executorName: batch.executorName,
++          taskGraph: runGraph,
++        },
++        this.batchEnv,
++        groupId
+       );
+ 
+-      results = await this.runBatch(
++      // Hash all tasks that ran — outputs are now fresh on disk
++      const tasksToHash = batchResults
++        .filter((r) => r.status === 'success' || r.status === 'failure')
++        .map((r) => r.task);
++      await this.hashBatchTasks(tasksToHash);
++
++      results = [...allCachedResults, ...batchResults];
++    } else if (!doNotSkipCache) {
++      // Cache is skipped — run everything
++      const batchResults = await this.runBatch(
+         {
+           id: batch.id,
+           executorName: batch.executorName,
+-          taskGraph: unrunTaskGraph,
++          taskGraph: batch.taskGraph,
+         },
+         this.batchEnv,
+         groupId
+       );
++
++      const tasksToHash = batchResults
++        .filter((r) => r.status === 'success' || r.status === 'failure')
++        .map((r) => r.task);
++      await this.hashBatchTasks(tasksToHash);
++
++      results = batchResults;
+     }
+ 
+     await this.postRunSteps(results, doNotSkipCache, { groupId });
+@@ -498,14 +583,13 @@ export class TaskOrchestrator {
+           );
+         }
+ 
++        task.startTime = result.startTime;
++        task.endTime = result.endTime;
++
+         this.options.lifeCycle.endTasks(
+           [
+             {
+-              task: {
+-                ...task,
+-                startTime: result.startTime,
+-                endTime: result.endTime,
+-              },
++              task,
+               status,
+               code: result.success ? 0 : 1,
+               terminalOutput: result.terminalOutput,
+@@ -521,17 +605,18 @@ export class TaskOrchestrator {
+       const results = await batchProcess.getResults();
+       const batchResultEntries = Object.entries(results);
+ 
+-      return batchResultEntries.map(([taskId, result]) => ({
+-        ...result,
+-        code: result.success ? 0 : 1,
+-        task: {
+-          ...this.taskGraph.tasks[taskId],
+-          startTime: result.startTime,
+-          endTime: result.endTime,
+-        },
+-        status: (result.success ? 'success' : 'failure') as TaskStatus,
+-        terminalOutput: result.terminalOutput,
+-      }));
++      return batchResultEntries.map(([taskId, result]) => {
++        const task = this.taskGraph.tasks[taskId];
++        task.startTime = result.startTime;
++        task.endTime = result.endTime;
++        return {
++          ...result,
++          code: result.success ? 0 : 1,
++          task,
++          status: (result.success ? 'success' : 'failure') as TaskStatus,
++          terminalOutput: result.terminalOutput,
++        };
++      });
+     } catch (e) {
+       const isBatchStopping = this.stopRequested;
+ 

@@ -1,0 +1,674 @@
+diff --git a/apps/native-component-list/src/screens/UI/ButtonScreen.ios.tsx b/apps/native-component-list/src/screens/UI/ButtonScreen.ios.tsx
+index c0d6703bc8243a..e6161e6b8d5fe0 100644
+--- a/apps/native-component-list/src/screens/UI/ButtonScreen.ios.tsx
++++ b/apps/native-component-list/src/screens/UI/ButtonScreen.ios.tsx
+@@ -7,7 +7,13 @@ import {
+   Text,
+   VStack,
+ } from '@expo/ui/swift-ui';
+-import { background, fixedSize, foregroundStyle, padding } from '@expo/ui/swift-ui/modifiers';
++import {
++  background,
++  fixedSize,
++  foregroundStyle,
++  padding,
++  shapes,
++} from '@expo/ui/swift-ui/modifiers';
+ import * as React from 'react';
+ import { ScrollView, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+ 
+@@ -21,7 +27,12 @@ export default function ButtonScreen() {
+           <Button style={styles.button}>
+             <Label
+               title="Default Padding"
+-              modifiers={[foregroundStyle('black'), padding(), background('yellow')]}
++              systemImage="gear"
++              modifiers={[
++                foregroundStyle('black'),
++                padding(),
++                background('yellow', shapes.capsule()),
++              ]}
+             />
+           </Button>
+           <Button style={styles.button}>
+diff --git a/apps/native-component-list/src/screens/UI/ShapesScreen.ios.tsx b/apps/native-component-list/src/screens/UI/ShapesScreen.ios.tsx
+index dbf3b6d1f72bc9..94295dfd50f825 100644
+--- a/apps/native-component-list/src/screens/UI/ShapesScreen.ios.tsx
++++ b/apps/native-component-list/src/screens/UI/ShapesScreen.ios.tsx
+@@ -20,8 +20,8 @@ import {
+   shadow,
+   foregroundStyle,
+   containerShape,
+-  RoundedRectangularShape,
+   padding,
++  shapes,
+ } from '@expo/ui/swift-ui/modifiers';
+ import React from 'react';
+ 
+@@ -123,7 +123,12 @@ export default function ShapesScreen() {
+               <ZStack
+                 modifiers={[
+                   frame({ width: 120, height: 120 }),
+-                  containerShape(RoundedRectangularShape.rect(40)),
++                  containerShape(
++                    shapes.roundedRectangle({
++                      cornerRadius: 10,
++                      cornerSize: { width: 50, height: 50 },
++                    })
++                  ),
+                 ]}>
+                 <ConcentricRectangle modifiers={[foregroundStyle('#000')]} />
+                 <ConcentricRectangle
+diff --git a/packages/expo-ui/CHANGELOG.md b/packages/expo-ui/CHANGELOG.md
+index 51ba6a1625228a..055ebd4247befc 100644
+--- a/packages/expo-ui/CHANGELOG.md
++++ b/packages/expo-ui/CHANGELOG.md
+@@ -31,6 +31,7 @@
+ - [iOS] Add `font` modifier ([#40553](https://github.com/expo/expo/pull/40553) by [@nishan](https://github.com/intergalacticspacehighway))
+ - [iOS] Add `getItemAsync` to `ShareLink` ([#40391](https://github.com/expo/expo/pull/40391) by [@intergalacticspacehighway](https://github.com/intergalacticspacehighway))
+ - [iOS] Add Grid component and modifiers `gridCellUnsizedAxes`, `gridCellColumns`, `gridColumnAlignment`, `gridCellAnchor` ([#40485](https://github.com/expo/expo/pull/40485) by [@doombladeoff](https://github.com/doombladeoff))
++- [iOS] - Add shape in `background` modifier and fix `foregroundStyle` modifer in `Label` ([#40748](https://github.com/expo/expo/pull/40748) by [@nishan](https://github.com/intergalacticspacehighway))
+ 
+ ### 🐛 Bug fixes
+ 
+diff --git a/packages/expo-ui/build/swift-ui/Label/index.d.ts b/packages/expo-ui/build/swift-ui/Label/index.d.ts
+index b906215adcecef..f81d436d210870 100644
+--- a/packages/expo-ui/build/swift-ui/Label/index.d.ts
++++ b/packages/expo-ui/build/swift-ui/Label/index.d.ts
+@@ -12,6 +12,7 @@ export type LabelProps = {
+     systemImage?: SFSymbol;
+     /**
+      * The color of the label icon.
++     * @deprecated Use `foregroundStyle` modifier instead.
+      */
+     color?: ColorValue;
+ } & CommonViewModifierProps;
+diff --git a/packages/expo-ui/build/swift-ui/Label/index.d.ts.map b/packages/expo-ui/build/swift-ui/Label/index.d.ts.map
+index aa7264e82f3ab3..2a2889bf79db6f 100644
+--- a/packages/expo-ui/build/swift-ui/Label/index.d.ts.map
++++ b/packages/expo-ui/build/swift-ui/Label/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/Label/index.tsx"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC;AAC/C,OAAO,EAAE,KAAK,QAAQ,EAAE,MAAM,uBAAuB,CAAC;AAGtD,OAAO,EAAE,KAAK,uBAAuB,EAAE,MAAM,UAAU,CAAC;AAExD,MAAM,MAAM,UAAU,GAAG;IACvB;;OAEG;IACH,KAAK,CAAC,EAAE,MAAM,CAAC;IAEf;;OAEG;IACH,WAAW,CAAC,EAAE,QAAQ,CAAC;IAEvB;;OAEG;IACH,KAAK,CAAC,EAAE,UAAU,CAAC;CACpB,GAAG,uBAAuB,CAAC;AAI5B;;;;;GAKG;AACH,wBAAgB,KAAK,CAAC,KAAK,EAAE,UAAU,+BAStC"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/Label/index.tsx"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC;AAC/C,OAAO,EAAE,KAAK,QAAQ,EAAE,MAAM,uBAAuB,CAAC;AAGtD,OAAO,EAAE,KAAK,uBAAuB,EAAE,MAAM,UAAU,CAAC;AAExD,MAAM,MAAM,UAAU,GAAG;IACvB;;OAEG;IACH,KAAK,CAAC,EAAE,MAAM,CAAC;IAEf;;OAEG;IACH,WAAW,CAAC,EAAE,QAAQ,CAAC;IAEvB;;;OAGG;IACH,KAAK,CAAC,EAAE,UAAU,CAAC;CACpB,GAAG,uBAAuB,CAAC;AAI5B;;;;;GAKG;AACH,wBAAgB,KAAK,CAAC,KAAK,EAAE,UAAU,+BAStC"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/background.d.ts b/packages/expo-ui/build/swift-ui/modifiers/background.d.ts
+new file mode 100644
+index 00000000000000..c5156905668295
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/modifiers/background.d.ts
+@@ -0,0 +1,10 @@
++import type { Shape } from './shapes/index';
++import type { Color } from './types';
++/**
++ * Sets the background of a view.
++ * @param color - The background color (hex string). For example, `#FF0000`.
++ * @param shape - Optional shape to clip the background. If not provided, the background will fill the entire view.
++ * @see Official [SwiftUI documentation](https://developer.apple.com/documentation/SwiftUI/View/background(_:alignment:)).
++ */
++export declare const background: (color: Color, shape?: Shape) => import("./createModifier").ModifierConfig;
++//# sourceMappingURL=background.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/background.d.ts.map b/packages/expo-ui/build/swift-ui/modifiers/background.d.ts.map
+new file mode 100644
+index 00000000000000..e2b996844fccf1
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/modifiers/background.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"background.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/modifiers/background.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,KAAK,EAAE,MAAM,gBAAgB,CAAC;AAC5C,OAAO,KAAK,EAAE,KAAK,EAAE,MAAM,SAAS,CAAC;AAErC;;;;;GAKG;AACH,eAAO,MAAM,UAAU,GAAI,OAAO,KAAK,EAAE,QAAQ,KAAK,8CACH,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts b/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts
+index c7e4d107332da3..9fc6a61b09d23b 100644
+--- a/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts
++++ b/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts
+@@ -1,11 +1,8 @@
+-export declare const RoundedRectangularShape: {
+-    rect: (cornerRadius?: number) => {
+-        cornerRadius: number | undefined;
+-    };
+-};
++import type { Shape } from './shapes/index';
+ /**
+  * Sets the container shape for the view.
+- * @param shape - A shape configuration from RoundedRectangularShape.rect()
++ * @param shape - A shape configuration from the shapes API
++ * @see Official [SwiftUI documentation](https://developer.apple.com/documentation/swiftui/view/containershape(_:)).
+  */
+-export declare const containerShape: (shape: ReturnType<typeof RoundedRectangularShape.rect>) => import("./createModifier").ModifierConfig;
++export declare const containerShape: (shape: Shape) => import("./createModifier").ModifierConfig;
+ //# sourceMappingURL=containerShape.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts.map b/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts.map
+index a309ab76f8e3ff..83939303b2df9c 100644
+--- a/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts.map
++++ b/packages/expo-ui/build/swift-ui/modifiers/containerShape.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"containerShape.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/modifiers/containerShape.ts"],"names":[],"mappings":"AAEA,eAAO,MAAM,uBAAuB;0BACZ,MAAM;;;CAG7B,CAAC;AAEF;;;GAGG;AACH,eAAO,MAAM,cAAc,GAAI,OAAO,UAAU,CAAC,OAAO,uBAAuB,CAAC,IAAI,CAAC,8CAC5C,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"containerShape.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/modifiers/containerShape.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,KAAK,EAAE,MAAM,gBAAgB,CAAC;AAE5C;;;;GAIG;AACH,eAAO,MAAM,cAAc,GAAI,OAAO,KAAK,8CAA4C,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/index.d.ts b/packages/expo-ui/build/swift-ui/modifiers/index.d.ts
+index 24476ed3b4348e..30777216b50518 100644
+--- a/packages/expo-ui/build/swift-ui/modifiers/index.d.ts
++++ b/packages/expo-ui/build/swift-ui/modifiers/index.d.ts
+@@ -2,24 +2,17 @@
+  * Core modifier factory and type definitions for SwiftUI view modifiers.
+  * This system allows both built-in and 3rd party modifiers to use the same API.
+  */
+-import { ColorValue } from 'react-native';
+ import { animation } from './animation/index';
++import { background } from './background';
+ import { containerShape } from './containerShape';
+ import { createModifier, ModifierConfig } from './createModifier';
+-type NamedColor = 'primary' | 'secondary' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'white' | 'gray' | 'black' | 'clear' | 'mint' | 'teal' | 'cyan' | 'indigo' | 'brown';
+-type Color = string | ColorValue | NamedColor;
++import type { Color } from './types';
+ /**
+  * Sets the spacing between adjacent sections.
+  * @param spacing - The spacing to apply.
+  * @platform ios 17.0+
+  */
+ export declare const listSectionSpacing: (spacing: "default" | "compact" | number) => ModifierConfig;
+-/**
+- * Sets the background of a view.
+- * @param color - The background color (hex string). For example, `#FF0000`.
+- * @see Official [SwiftUI documentation](https://developer.apple.com/documentation/SwiftUI/View/background(_:alignment:)).
+- */
+-export declare const background: (color: Color) => ModifierConfig;
+ /**
+  * Applies corner radius to a view.
+  * @param radius - The corner radius value.
+@@ -682,4 +675,7 @@ export declare const isModifier: (value: any) => value is ModifierConfig;
+ export declare const filterModifiers: (modifiers: unknown[]) => ModifierConfig[];
+ export * from './animation/index';
+ export * from './containerShape';
++export * from './shapes/index';
++export * from './background';
++export type * from './types';
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/index.d.ts.map b/packages/expo-ui/build/swift-ui/modifiers/index.d.ts.map
+index 6ba5683e1c361a..f67707b57a8a51 100644
+--- a/packages/expo-ui/build/swift-ui/modifiers/index.d.ts.map
++++ b/packages/expo-ui/build/swift-ui/modifiers/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/modifiers/index.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/modifiers/index.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/shapes/index.d.ts b/packages/expo-ui/build/swift-ui/modifiers/shapes/index.d.ts
+new file mode 100644
+index 00000000000000..3bdfbaf429595e
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/modifiers/shapes/index.d.ts
+@@ -0,0 +1,35 @@
++export declare const shapes: {
++    roundedRectangle: (params: {
++        cornerRadius?: number;
++        roundedCornerStyle?: "continuous" | "circular";
++        cornerSize?: {
++            width: number;
++            height: number;
++        };
++    }) => {
++        cornerRadius: number | undefined;
++        roundedCornerStyle: "circular" | "continuous" | undefined;
++        cornerSize: {
++            width: number;
++            height: number;
++        } | undefined;
++        shape: string;
++    };
++    capsule: (params?: {
++        roundedCornerStyle?: "continuous" | "circular";
++    }) => {
++        roundedCornerStyle: "circular" | "continuous" | undefined;
++        shape: string;
++    };
++    rectangle: () => {
++        shape: string;
++    };
++    ellipse: () => {
++        shape: string;
++    };
++    circle: () => {
++        shape: string;
++    };
++};
++export type Shape = ReturnType<typeof shapes.roundedRectangle> | ReturnType<typeof shapes.capsule> | ReturnType<typeof shapes.rectangle> | ReturnType<typeof shapes.ellipse> | ReturnType<typeof shapes.circle>;
++//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/shapes/index.d.ts.map b/packages/expo-ui/build/swift-ui/modifiers/shapes/index.d.ts.map
+new file mode 100644
+index 00000000000000..731e1e3e7a7f36
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/modifiers/shapes/index.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../../src/swift-ui/modifiers/shapes/index.ts"],"names":[],"mappings":"AAAA,eAAO,MAAM,MAAM;+BACU;QACzB,YAAY,CAAC,EAAE,MAAM,CAAC;QACtB,kBAAkB,CAAC,EAAE,YAAY,GAAG,UAAU,CAAC;QAC/C,UAAU,CAAC,EAAE;YAAE,KAAK,EAAE,MAAM,CAAC;YAAC,MAAM,EAAE,MAAM,CAAA;SAAE,CAAC;KAChD;;;;mBADuB,MAAM;oBAAU,MAAM;;;;uBAO3B;QAAE,kBAAkB,CAAC,EAAE,YAAY,GAAG,UAAU,CAAA;KAAE;;;;;;;;;;;;;CAatE,CAAC;AAEF,MAAM,MAAM,KAAK,GACb,UAAU,CAAC,OAAO,MAAM,CAAC,gBAAgB,CAAC,GAC1C,UAAU,CAAC,OAAO,MAAM,CAAC,OAAO,CAAC,GACjC,UAAU,CAAC,OAAO,MAAM,CAAC,SAAS,CAAC,GACnC,UAAU,CAAC,OAAO,MAAM,CAAC,OAAO,CAAC,GACjC,UAAU,CAAC,OAAO,MAAM,CAAC,MAAM,CAAC,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/types.d.ts b/packages/expo-ui/build/swift-ui/modifiers/types.d.ts
+new file mode 100644
+index 00000000000000..07be7ebaff4e27
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/modifiers/types.d.ts
+@@ -0,0 +1,5 @@
++import { ColorValue } from 'react-native';
++type NamedColor = 'primary' | 'secondary' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'white' | 'gray' | 'black' | 'clear' | 'mint' | 'teal' | 'cyan' | 'indigo' | 'brown';
++export type Color = string | ColorValue | NamedColor;
++export {};
++//# sourceMappingURL=types.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/modifiers/types.d.ts.map b/packages/expo-ui/build/swift-ui/modifiers/types.d.ts.map
+new file mode 100644
+index 00000000000000..e9982d25c87152
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/modifiers/types.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/modifiers/types.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC;AAE1C,KAAK,UAAU,GACX,SAAS,GACT,WAAW,GACX,KAAK,GACL,QAAQ,GACR,QAAQ,GACR,OAAO,GACP,MAAM,GACN,QAAQ,GACR,MAAM,GACN,OAAO,GACP,MAAM,GACN,OAAO,GACP,OAAO,GACP,MAAM,GACN,MAAM,GACN,MAAM,GACN,QAAQ,GACR,OAAO,CAAC;AAEZ,MAAM,MAAM,KAAK,GAAG,MAAM,GAAG,UAAU,GAAG,UAAU,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/ios/Label.swift b/packages/expo-ui/ios/Label.swift
+index eea85a5068c359..4049fce93ce987 100644
+--- a/packages/expo-ui/ios/Label.swift
++++ b/packages/expo-ui/ios/Label.swift
+@@ -11,17 +11,22 @@ final class LabelViewProps: UIBaseViewProps {
+ 
+ struct LabelView: ExpoSwiftUI.View {
+   @ObservedObject var props: LabelViewProps
+-  
++
+   var body: some View {
+-    Label {
+-      Text(props.title ?? "")
+-    } icon: {
+-      if let systemImage = props.systemImage, !systemImage.isEmpty {
+-        Image(systemName: systemImage)
+-          .foregroundStyle(props.color ?? .accentColor)
++    if let title = props.title, let systemImage = props.systemImage {
++      // TODO: Deprecate this - recommend using foregroundStyle modifier
++      if let color = props.color {
++        Label(title, systemImage: systemImage).foregroundStyle(color)
++          .applyFixedSize(props.fixedSize ?? true)
++      } else {
++        Label(title, systemImage: systemImage)
++          .applyFixedSize(props.fixedSize ?? true)
+       }
+     }
+-    .labelStyle(.titleAndIcon) // ensures proper layout when icon exists
+-    .applyFixedSize(props.fixedSize ?? true)
++    // TODO: Deprecate this - recommend using labelStyle modifier
++    else if let title = props.title {
++      Label(title, systemImage: "").labelStyle(.titleOnly)
++        .applyFixedSize(props.fixedSize ?? true)
++    }
+   }
+ }
+diff --git a/packages/expo-ui/ios/Modifiers/BackgroundModifier.swift b/packages/expo-ui/ios/Modifiers/BackgroundModifier.swift
+new file mode 100644
+index 00000000000000..63c12889a0604f
+--- /dev/null
++++ b/packages/expo-ui/ios/Modifiers/BackgroundModifier.swift
+@@ -0,0 +1,37 @@
++// Copyright 2015-present 650 Industries. All rights reserved.
++
++import ExpoModulesCore
++import SwiftUI
++
++internal struct BackgroundModifier: ViewModifier, Record {
++  @Field var color: Color?
++  @Field var shape: ShapeType?
++  @Field var cornerRadius: CGFloat = 0
++  @Field var roundedCornerStyle: RoundedCornerStyle?
++  @Field var cornerSize: CornerSize?
++
++  @ViewBuilder
++  func body(content: Content) -> some View {
++    if let color = color {
++      if let shapeType = shape {
++        switch shapeType {
++        case .capsule:
++          content.background(color, in: makeCapsule(style: roundedCornerStyle))
++        case .circle:
++          content.background(color, in: Circle())
++        case .ellipse:
++          content.background(color, in: Ellipse())
++        case .rectangle:
++          content.background(color, in: Rectangle())
++        case .roundedRectangle:
++          content.background(color, in: makeRoundedRectangle(cornerRadius: cornerRadius, cornerSize: cornerSize, style: roundedCornerStyle))
++        }
++      } else {
++        // Default behavior when no shape is specified
++        content.background(color)
++      }
++    } else {
++      content
++    }
++  }
++}
+diff --git a/packages/expo-ui/ios/Modifiers/ContainerShapeModifier.swift b/packages/expo-ui/ios/Modifiers/ContainerShapeModifier.swift
+new file mode 100644
+index 00000000000000..c5f906aac8a4dc
+--- /dev/null
++++ b/packages/expo-ui/ios/Modifiers/ContainerShapeModifier.swift
+@@ -0,0 +1,27 @@
++// Copyright 2015-present 650 Industries. All rights reserved.
++
++import ExpoModulesCore
++import SwiftUI
++
++internal struct ContainerShapeModifier: ViewModifier, Record {
++  @Field var shape: ShapeType = .rectangle
++  @Field var cornerRadius: CGFloat = 0
++  @Field var roundedCornerStyle: RoundedCornerStyle?
++  @Field var cornerSize: CornerSize?
++
++  @ViewBuilder
++  func body(content: Content) -> some View {
++    switch shape {
++    case .capsule:
++      content.containerShape(makeCapsule(style: roundedCornerStyle))
++    case .circle:
++      content.containerShape(Circle())
++    case .ellipse:
++      content.containerShape(Ellipse())
++    case .rectangle:
++      content.containerShape(Rectangle())
++    case .roundedRectangle:
++      content.containerShape(makeRoundedRectangle(cornerRadius: cornerRadius, cornerSize: cornerSize, style: roundedCornerStyle))
++    }
++  }
++}
+diff --git a/packages/expo-ui/ios/Modifiers/ShapeTypes.swift b/packages/expo-ui/ios/Modifiers/ShapeTypes.swift
+new file mode 100644
+index 00000000000000..d8f3003e7f96cb
+--- /dev/null
++++ b/packages/expo-ui/ios/Modifiers/ShapeTypes.swift
+@@ -0,0 +1,62 @@
++// Copyright 2015-present 650 Industries. All rights reserved.
++
++import ExpoModulesCore
++import SwiftUI
++
++internal enum ShapeType: String, Enumerable {
++  case capsule
++  case circle
++  case ellipse
++  case rectangle
++  case roundedRectangle
++}
++
++internal enum RoundedCornerStyle: String, Enumerable {
++  case continuous
++  case circular
++}
++
++internal struct CornerSize: Record {
++  @Field var width: Int = 0
++  @Field var height: Int = 0
++}
++
++// MARK: - Shape Helper Functions
++
++internal func makeCapsule(style: RoundedCornerStyle?) -> Capsule {
++  if let style = style {
++    switch style {
++    case .continuous:
++      return Capsule(style: .continuous)
++    case .circular:
++      return Capsule(style: .circular)
++    }
++  }
++  return Capsule()
++}
++
++internal func makeRoundedRectangle(
++  cornerRadius: CGFloat,
++  cornerSize: CornerSize?,
++  style: RoundedCornerStyle?
++) -> RoundedRectangle {
++  if let style = style {
++    switch style {
++    case .continuous:
++      if let cornerSize {
++        return RoundedRectangle(cornerSize: CGSize(width: cornerSize.width, height: cornerSize.height), style: .continuous)
++      }
++      return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
++    case .circular:
++      if let cornerSize {
++        return RoundedRectangle(cornerSize: CGSize(width: cornerSize.width, height: cornerSize.height), style: .circular)
++      }
++      return RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
++    }
++  } else {
++    if let cornerSize {
++      return RoundedRectangle(cornerSize: CGSize(width: cornerSize.width, height: cornerSize.height))
++    }
++    return RoundedRectangle(cornerRadius: cornerRadius)
++  }
++}
+diff --git a/packages/expo-ui/ios/Modifiers/ViewModifierRegistry.swift b/packages/expo-ui/ios/Modifiers/ViewModifierRegistry.swift
+index cd391264763f42..91e0c87f4aa41c 100644
+--- a/packages/expo-ui/ios/Modifiers/ViewModifierRegistry.swift
++++ b/packages/expo-ui/ios/Modifiers/ViewModifierRegistry.swift
+@@ -35,18 +35,6 @@ internal struct ListSectionSpacingModifier: ViewModifier, Record {
+   }
+ }
+ 
+-internal struct BackgroundModifier: ViewModifier, Record {
+-  @Field var color: Color?
+-
+-  func body(content: Content) -> some View {
+-    if let color = color {
+-      content.background(color)
+-    } else {
+-      content
+-    }
+-  }
+-}
+-
+ internal struct CornerRadiusModifier: ViewModifier, Record {
+   @Field var radius: CGFloat = 0
+ 
+@@ -1291,14 +1279,6 @@ internal struct MatchedGeometryEffectModifier: ViewModifier, Record {
+   }
+ }
+ 
+-internal struct ContainerShapeModifier: ViewModifier, Record {
+-  @Field var cornerRadius: CGFloat = 0
+-
+-  func body(content: Content) -> some View {
+-    content.containerShape(.rect(cornerRadius: cornerRadius))
+-  }
+-}
+-
+ internal enum ButtonStyle: String, Enumerable {
+   case automatic
+   case bordered
+diff --git a/packages/expo-ui/src/swift-ui/Label/index.tsx b/packages/expo-ui/src/swift-ui/Label/index.tsx
+index 0dd4cc9e2a4ade..bf2d4125f0de59 100644
+--- a/packages/expo-ui/src/swift-ui/Label/index.tsx
++++ b/packages/expo-ui/src/swift-ui/Label/index.tsx
+@@ -18,6 +18,7 @@ export type LabelProps = {
+ 
+   /**
+    * The color of the label icon.
++   * @deprecated Use `foregroundStyle` modifier instead.
+    */
+   color?: ColorValue;
+ } & CommonViewModifierProps;
+diff --git a/packages/expo-ui/src/swift-ui/modifiers/background.ts b/packages/expo-ui/src/swift-ui/modifiers/background.ts
+new file mode 100644
+index 00000000000000..175e0dd73eca8f
+--- /dev/null
++++ b/packages/expo-ui/src/swift-ui/modifiers/background.ts
+@@ -0,0 +1,12 @@
++import { createModifier } from './createModifier';
++import type { Shape } from './shapes/index';
++import type { Color } from './types';
++
++/**
++ * Sets the background of a view.
++ * @param color - The background color (hex string). For example, `#FF0000`.
++ * @param shape - Optional shape to clip the background. If not provided, the background will fill the entire view.
++ * @see Official [SwiftUI documentation](https://developer.apple.com/documentation/SwiftUI/View/background(_:alignment:)).
++ */
++export const background = (color: Color, shape?: Shape) =>
++  createModifier('background', { color, ...shape });
+diff --git a/packages/expo-ui/src/swift-ui/modifiers/containerShape.ts b/packages/expo-ui/src/swift-ui/modifiers/containerShape.ts
+index d93de4f3d7eaee..9b420d735779a2 100644
+--- a/packages/expo-ui/src/swift-ui/modifiers/containerShape.ts
++++ b/packages/expo-ui/src/swift-ui/modifiers/containerShape.ts
+@@ -1,14 +1,9 @@
+ import { createModifier } from './createModifier';
+-
+-export const RoundedRectangularShape = {
+-  rect: (cornerRadius?: number) => ({
+-    cornerRadius,
+-  }),
+-};
++import type { Shape } from './shapes/index';
+ 
+ /**
+  * Sets the container shape for the view.
+- * @param shape - A shape configuration from RoundedRectangularShape.rect()
++ * @param shape - A shape configuration from the shapes API
++ * @see Official [SwiftUI documentation](https://developer.apple.com/documentation/swiftui/view/containershape(_:)).
+  */
+-export const containerShape = (shape: ReturnType<typeof RoundedRectangularShape.rect>) =>
+-  createModifier('containerShape', shape);
++export const containerShape = (shape: Shape) => createModifier('containerShape', shape);
+diff --git a/packages/expo-ui/src/swift-ui/modifiers/index.ts b/packages/expo-ui/src/swift-ui/modifiers/index.ts
+index 03c4f356cee29b..460486acce49dd 100644
+--- a/packages/expo-ui/src/swift-ui/modifiers/index.ts
++++ b/packages/expo-ui/src/swift-ui/modifiers/index.ts
+@@ -3,11 +3,11 @@
+  * This system allows both built-in and 3rd party modifiers to use the same API.
+  */
+ 
+-import { ColorValue } from 'react-native';
+-
+ import { animation } from './animation/index';
++import { background } from './background';
+ import { containerShape } from './containerShape';
+ import { createModifier, ModifierConfig } from './createModifier';
++import type { Color } from './types';
+ 
+ /**
+  * Creates a modifier with an event listener.
+@@ -20,28 +20,6 @@ function createModifierWithEventListener(
+   return { $type: type, ...params, eventListener };
+ }
+ 
+-type NamedColor =
+-  | 'primary'
+-  | 'secondary'
+-  | 'red'
+-  | 'orange'
+-  | 'yellow'
+-  | 'green'
+-  | 'blue'
+-  | 'purple'
+-  | 'pink'
+-  | 'white'
+-  | 'gray'
+-  | 'black'
+-  | 'clear'
+-  | 'mint'
+-  | 'teal'
+-  | 'cyan'
+-  | 'indigo'
+-  | 'brown';
+-
+-type Color = string | ColorValue | NamedColor;
+-
+ // =============================================================================
+ // Built-in Modifier Functions
+ // =============================================================================
+@@ -62,13 +40,6 @@ export const listSectionSpacing = (spacing: 'default' | 'compact' | number) => {
+   return createModifier('listSectionSpacing', { spacing });
+ };
+ 
+-/**
+- * Sets the background of a view.
+- * @param color - The background color (hex string). For example, `#FF0000`.
+- * @see Official [SwiftUI documentation](https://developer.apple.com/documentation/SwiftUI/View/background(_:alignment:)).
+- */
+-export const background = (color: Color) => createModifier('background', { color });
+-
+ /**
+  * Applies corner radius to a view.
+  * @param radius - The corner radius value.
+@@ -909,3 +880,6 @@ export const filterModifiers = (modifiers: unknown[]): ModifierConfig[] => {
+ 
+ export * from './animation/index';
+ export * from './containerShape';
++export * from './shapes/index';
++export * from './background';
++export type * from './types';
+diff --git a/packages/expo-ui/src/swift-ui/modifiers/shapes/index.ts b/packages/expo-ui/src/swift-ui/modifiers/shapes/index.ts
+new file mode 100644
+index 00000000000000..5a05913aa29513
+--- /dev/null
++++ b/packages/expo-ui/src/swift-ui/modifiers/shapes/index.ts
+@@ -0,0 +1,32 @@
++export const shapes = {
++  roundedRectangle: (params: {
++    cornerRadius?: number;
++    roundedCornerStyle?: 'continuous' | 'circular';
++    cornerSize?: { width: number; height: number };
++  }) => ({
++    cornerRadius: params.cornerRadius,
++    roundedCornerStyle: params.roundedCornerStyle,
++    cornerSize: params.cornerSize,
++    shape: 'roundedRectangle',
++  }),
++  capsule: (params?: { roundedCornerStyle?: 'continuous' | 'circular' }) => ({
++    roundedCornerStyle: params?.roundedCornerStyle,
++    shape: 'capsule',
++  }),
++  rectangle: () => ({
++    shape: 'rectangle',
++  }),
++  ellipse: () => ({
++    shape: 'ellipse',
++  }),
++  circle: () => ({
++    shape: 'circle',
++  }),
++};
++
++export type Shape =
++  | ReturnType<typeof shapes.roundedRectangle>
++  | ReturnType<typeof shapes.capsule>
++  | ReturnType<typeof shapes.rectangle>
++  | ReturnType<typeof shapes.ellipse>
++  | ReturnType<typeof shapes.circle>;
+diff --git a/packages/expo-ui/src/swift-ui/modifiers/types.ts b/packages/expo-ui/src/swift-ui/modifiers/types.ts
+new file mode 100644
+index 00000000000000..fd8f30eb9e72c4
+--- /dev/null
++++ b/packages/expo-ui/src/swift-ui/modifiers/types.ts
+@@ -0,0 +1,23 @@
++import { ColorValue } from 'react-native';
++
++type NamedColor =
++  | 'primary'
++  | 'secondary'
++  | 'red'
++  | 'orange'
++  | 'yellow'
++  | 'green'
++  | 'blue'
++  | 'purple'
++  | 'pink'
++  | 'white'
++  | 'gray'
++  | 'black'
++  | 'clear'
++  | 'mint'
++  | 'teal'
++  | 'cyan'
++  | 'indigo'
++  | 'brown';
++
++export type Color = string | ColorValue | NamedColor;

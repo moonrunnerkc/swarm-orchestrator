@@ -1,0 +1,1801 @@
+diff --git a/packages/next/errors.json b/packages/next/errors.json
+index 27294cad10a1..20bff7b45e29 100644
+--- a/packages/next/errors.json
++++ b/packages/next/errors.json
+@@ -1278,5 +1278,11 @@
+   "1277": "no route matched for path \"%s\"",
+   "1278": "compileRoute: either routeSpecifier or path is required",
+   "1279": "\\`experimental.appShells\\` requires the following to also be enabled: %s. Please update your %s accordingly.",
+-  "1280": "Invariant: expected static metadata route to have a prerender pathname (%s)"
++  "1280": "Invariant: expected static metadata route to have a prerender pathname (%s)",
++  "1281": "Cache Components HTTP fallback recovery unexpectedly produced a DynamicServerError",
++  "1282": "Cache Components error recovery expected an original Flight prerender result",
++  "1283": "Cache Components error recovery expected to know whether the original Flight prerender result was dynamic",
++  "1284": "Cache Components error recovery expected an original prerender resume data cache",
++  "1285": "Cache Components error recovery expected an original prerender store",
++  "1286": "Cache Components error recovery unexpectedly produced a dynamic HTML hole"
+ }
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index 2773dea732af..5413c1e4ec34 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -118,11 +118,7 @@ import {
+   walkTreeWithFlightRouterState,
+   createFullTreeFlightDataForNavigation,
+ } from './walk-tree-with-flight-router-state'
+-import {
+-  createComponentTree,
+-  getRootParams,
+-  type PrerenderHTTPErrorState,
+-} from './create-component-tree'
++import { createComponentTree, getRootParams } from './create-component-tree'
+ import { getAssetQueryString } from './get-asset-query-string'
+ import {
+   getClientReferenceManifest,
+@@ -531,54 +527,6 @@ function createNotFoundLoaderTree(loaderTree: LoaderTree): LoaderTree {
+   ]
+ }
+ 
+-type HTTPAccessErrorStatusCode = 404 | 403 | 401
+-
+-function hasPrerenderHTTPErrorBoundary(
+-  loaderTree: LoaderTree,
+-  triggeredStatus: HTTPAccessErrorStatusCode,
+-  authInterrupts: boolean
+-): boolean {
+-  switch (triggeredStatus) {
+-    case 404:
+-      return !!loaderTree[2]['not-found']
+-    case 403:
+-      return authInterrupts && !!loaderTree[2].forbidden
+-    case 401:
+-      return authInterrupts && !!loaderTree[2].unauthorized
+-    default:
+-      return false
+-  }
+-}
+-
+-function findPrerenderHTTPErrorBoundaryTree(
+-  loaderTree: LoaderTree,
+-  triggeredStatus: HTTPAccessErrorStatusCode,
+-  authInterrupts: boolean
+-): LoaderTree | null {
+-  let boundaryTree: LoaderTree | null = hasPrerenderHTTPErrorBoundary(
+-    loaderTree,
+-    triggeredStatus,
+-    authInterrupts
+-  )
+-    ? loaderTree
+-    : null
+-
+-  const childrenTree = loaderTree[1].children
+-  if (childrenTree) {
+-    const deeperBoundaryTree = findPrerenderHTTPErrorBoundaryTree(
+-      childrenTree,
+-      triggeredStatus,
+-      authInterrupts
+-    )
+-
+-    if (deeperBoundaryTree) {
+-      boundaryTree = deeperBoundaryTree
+-    }
+-  }
+-
+-  return boundaryTree
+-}
+-
+ /**
+  * Returns a function that parses the dynamic segment and return the associated value.
+  */
+@@ -2112,9 +2060,6 @@ async function getRSCPayload(
+   ctx: AppRenderContext,
+   options: {
+     is404: boolean
+-    // When set, rerender a segment-scoped HTTP fallback inside the normal app
+-    // router tree instead of falling back to the generic error shell payload.
+-    prerenderHTTPError?: PrerenderHTTPErrorState
+     staleTimeIterable?: AsyncIterable<number>
+     staticStageByteLengthPromise?: Promise<number>
+     runtimePrefetchStream?: ReadableStream<Uint8Array>
+@@ -2122,7 +2067,6 @@ async function getRSCPayload(
+ ): Promise<InitialRSCPayload & { P: ReactNode }> {
+   const {
+     is404,
+-    prerenderHTTPError,
+     staleTimeIterable,
+     staticStageByteLengthPromise,
+     runtimePrefetchStream,
+@@ -2197,7 +2141,6 @@ async function getRSCPayload(
+     preloadCallbacks,
+     authInterrupts: ctx.renderOpts.experimental.authInterrupts,
+     MetadataOutlet,
+-    prerenderHTTPError,
+   })
+ 
+   // When the `vary` response header is present with `Next-URL`, that means there's a chance
+@@ -7170,6 +7113,8 @@ type PrerenderToStreamResult = {
+ /**
+  * Determines whether we should generate static flight data.
+  */
++// TODO: This helper used to exclude fallback route params. It now only checks
++// static generation inside prerenderToStream and can be removed. LOE: low.
+ function shouldGenerateStaticFlightData(workStore: WorkStore): boolean {
+   const { isStaticGeneration } = workStore
+   if (!isStaticGeneration) return false
+@@ -7177,6 +7122,74 @@ function shouldGenerateStaticFlightData(workStore: WorkStore): boolean {
+   return true
+ }
+ 
++async function continueStaticPrerenderWithInlinedData(
++  htmlStream: AnyStream,
++  reactServerResult: ReactServerPrerenderResult,
++  fallbackRouteParams: OpaqueFallbackRouteParams | null,
++  createInlinedDataStream: typeof createWebInlinedDataStream,
++  formState: unknown | null,
++  nonce: string | undefined,
++  getServerInsertedHTML: () => Promise<string>,
++  getServerInsertedMetadata: () => Promise<string>,
++  deploymentId: string | undefined,
++  ComponentMod: AppPageModule,
++  renderFlightStream: typeof renderToWebFlightStream,
++  clientModules: Parameters<typeof renderToWebFlightStream>[2],
++  filterStackFrameForError: typeof filterStackFrame,
++  serverComponentsErrorHandler: (err: unknown) => string | undefined
++): Promise<AnyStream> {
++  const hasFallbackRouteParams =
++    fallbackRouteParams && fallbackRouteParams.size > 0
++  if (hasFallbackRouteParams) {
++    // This is a "static fallback" prerender: although the page didn't
++    // access any runtime params in a Server Component, it may have
++    // accessed a runtime param in a client segment.
++    //
++    // TODO: If there were no client segments, we can use the fully static
++    // path instead.
++    //
++    // Rather than use a dynamic server resume to fill in the params,
++    // we can rely on the client to parse the params from the URL and use
++    // that to hydrate the page.
++    //
++    // Send an empty InitialRSCPayload to the server component renderer
++    // The data will be fetched by the client instead.
++    // TODO: In the future, rather than defer the entire hydration payload
++    // to be fetched by the client, we should only defer the client
++    // segments, since those are the only ones whose data is not complete.
++    const emptyReactServerResult =
++      await createReactServerPrerenderResultFromRender(
++        renderFlightStream(ComponentMod, [], clientModules, {
++          filterStackFrame: filterStackFrameForError,
++          onError: serverComponentsErrorHandler,
++        })
++      )
++    const inlinedDataStream = createInlinedDataStream(
++      emptyReactServerResult.consumeAsStream(),
++      nonce,
++      formState
++    )
++    return continueStaticFallbackPrerender(htmlStream, {
++      inlinedDataStream,
++      getServerInsertedHTML,
++      getServerInsertedMetadata,
++      deploymentId,
++    })
++  }
++
++  const inlinedDataStream = createInlinedDataStream(
++    reactServerResult.consumeAsStream(),
++    nonce,
++    formState
++  )
++  return continueStaticPrerender(htmlStream, {
++    inlinedDataStream,
++    getServerInsertedHTML,
++    getServerInsertedMetadata,
++    deploymentId,
++  })
++}
++
+ async function prerenderToStream(
+   req: BaseNextRequest,
+   res: BaseNextResponse,
+@@ -7314,6 +7327,10 @@ async function prerenderToStream(
+   )
+ 
+   let reactServerPrerenderResult: null | ReactServerPrerenderResult = null
++  let reactServerPrerenderResultIsDynamic: null | boolean = null
++  let reactServerPrerenderResumeDataCache: null | PrerenderResumeDataCache =
++    null
++  let reactServerPrerenderStore: null | PrerenderStore = null
+   const setMetadataHeader = (name: string) => {
+     metadata.headers ??= {}
+     metadata.headers[name] = res.getHeader(name)
+@@ -7385,6 +7402,9 @@ async function prerenderToStream(
+       // Always start with a fresh prerender RDC so warmup can fill misses,
+       // even when we have a prefilled render RDC to seed from.
+       const prerenderResumeDataCache = createPrerenderResumeDataCache()
++      reactServerPrerenderResultIsDynamic = null
++      reactServerPrerenderResumeDataCache = prerenderResumeDataCache
++      reactServerPrerenderStore = null
+       let renderResumeDataCache: RenderResumeDataCache | null =
+         renderOpts.renderResumeDataCache ?? null
+ 
+@@ -7823,6 +7843,33 @@ async function prerenderToStream(
+         await createReactServerPrerenderResult(
+           runInSequentialTasks(finalRSCPrerenderFn, finalRSCAbortCallback)
+         ))
++      reactServerPrerenderResultIsDynamic = serverIsDynamic
++      reactServerPrerenderStore = finalServerPrerenderStore
++
++      if (shouldGenerateStaticFlightData(workStore)) {
++        metadata.flightData = await streamToBuffer(
++          cachedNavigations
++            ? prependIsPartialByte(
++                reactServerResult.asStream(),
++                serverIsDynamic
++              )
++            : reactServerResult.asStream()
++        )
++
++        // collectSegmentData needs the raw flight data without the marker byte.
++        const flightData = cachedNavigations
++          ? metadata.flightData.subarray(1)
++          : metadata.flightData
++
++        await collectSegmentData(
++          flightData,
++          finalServerPrerenderStore,
++          ComponentMod,
++          renderOpts,
++          ctx.pagePath,
++          metadata
++        )
++      }
+ 
+       const clientDynamicTracking = createDynamicTrackingState(
+         isDebugDynamicAccesses
+@@ -7940,34 +7987,9 @@ async function prerenderToStream(
+         tracingMetadata: tracingMetadata,
+       })
+ 
+-      metadata.flightData = await streamToBuffer(
+-        cachedNavigations
+-          ? prependIsPartialByte(reactServerResult.asStream(), serverIsDynamic)
+-          : reactServerResult.asStream()
+-      )
+-
+-      // collectSegmentData needs the raw flight data without the marker byte.
+-      const flightData = cachedNavigations
+-        ? metadata.flightData.subarray(1)
+-        : metadata.flightData
+-
+-      await collectSegmentData(
+-        flightData,
+-        finalServerPrerenderStore,
+-        ComponentMod,
+-        renderOpts,
+-        ctx.pagePath,
+-        metadata
+-      )
+-
++      let htmlStream: AnyStream = prelude
+       if (serverIsDynamic) {
+-        // Dynamic case
+-        // We will always need to perform a "resume" render of some kind when this route is accessed
+-        // because the RSC data itself is dynamic. We determine if there are any HTML holes or not
+-        // but generally this is a "partial" prerender in that there will be a per-request compute
+-        // concatenated to the static shell.
+         if (postponed != null) {
+-          // Dynamic HTML case
+           metadata.postponed = await getDynamicHTMLPostponedState(
+             postponed,
+             preludeIsEmpty
+@@ -7978,132 +8000,20 @@ async function prerenderToStream(
+             cacheComponents
+           )
+         } else {
+-          // Dynamic Data case
+           metadata.postponed = await getDynamicDataPostponedState(
+             prerenderResumeDataCache,
+             cacheComponents
+           )
+         }
+         reactServerResult.consume()
+-        const continueDynamicPrerenderOpts = {
+-          getServerInsertedHTML,
+-          getServerInsertedMetadata,
+-          deploymentId: ctx.sharedContext.deploymentId,
+-        }
+         return {
+           digestErrorsMap: reactServerErrorsByDigest,
+           ssrErrors: allCapturedErrors,
+-          stream: await continueDynamicPrerender(
+-            prelude,
+-            continueDynamicPrerenderOpts
+-          ),
+-          dynamicAccess: consumeDynamicAccess(
+-            serverDynamicTracking,
+-            clientDynamicTracking
+-          ),
+-          // TODO: Should this include the SSR pass?
+-          collectedRevalidate: finalServerPrerenderStore.revalidate,
+-          collectedExpire: finalServerPrerenderStore.expire,
+-          collectedStale: selectStaleTime(finalServerPrerenderStore.stale),
+-          collectedTags: finalServerPrerenderStore.tags,
+-          renderResumeDataCache: createRenderResumeDataCache(
+-            prerenderResumeDataCache
+-          ),
+-        }
+-      } else {
+-        // Static case
+-        // We will not perform resumption per request. The result can be served statically to the requestor
+-        // and if there was anything dynamic it will only be rendered in the browser.
+-        if (workStore.forceDynamic) {
+-          throw new StaticGenBailoutError(
+-            'Invariant: a Page with `dynamic = "force-dynamic"` did not trigger the dynamic pathway. This is a bug in Next.js'
+-          )
+-        }
+-
+-        let htmlStream: AnyStream = prelude
+-        if (postponed != null) {
+-          // We postponed but nothing dynamic was used. We resume the render now and immediately abort it
+-          // so we can set all the postponed boundaries to client render mode before we store the HTML response
+-          const foreverStream = createPendingStream()
+-          const resumePrelude = await workUnitAsyncStorage.run(
+-            finalServerPrerenderStore,
+-            resumeAndAbort,
+-            // eslint-disable-next-line @next/internal/no-ambiguous-jsx
+-            <App
+-              reactServerStream={foreverStream}
+-              reactDebugStream={undefined}
+-              debugEndTime={undefined}
+-              preinitScripts={() => {}}
+-              ServerInsertedHTMLProvider={ServerInsertedHTMLProvider}
+-              nonce={nonce}
+-              images={ctx.renderOpts.images}
+-            />,
+-            JSON.parse(JSON.stringify(postponed)),
+-            {
+-              signal: createRenderInBrowserAbortSignal(),
+-              onError: htmlRendererErrorHandler,
+-              nonce,
+-            }
+-          )
+-          // First we write everything from the prerender, then we write everything from the aborted resume render
+-          htmlStream = chainStreams(prelude, resumePrelude)
+-        }
+-
+-        let finalStream
+-        const hasFallbackRouteParams =
+-          fallbackRouteParams && fallbackRouteParams.size > 0
+-        if (hasFallbackRouteParams) {
+-          // This is a "static fallback" prerender: although the page didn't
+-          // access any runtime params in a Server Component, it may have
+-          // accessed a runtime param in a client segment.
+-          //
+-          // TODO: If there were no client segments, we can use the fully static
+-          // path instead.
+-          //
+-          // Rather than use a dynamic server resume to fill in the params,
+-          // we can rely on the client to parse the params from the URL and use
+-          // that to hydrate the page.
+-          //
+-          // Send an empty InitialRSCPayload to the server component renderer
+-          // The data will be fetched by the client instead.
+-          // TODO: In the future, rather than defer the entire hydration payload
+-          // to be fetched by the client, we should only defer the client
+-          // segments, since those are the only ones whose data is not complete.
+-          const emptyReactServerResult =
+-            await createReactServerPrerenderResultFromRender(
+-              renderFlightStream(ComponentMod, [], clientModules, {
+-                filterStackFrame,
+-                onError: serverComponentsErrorHandler,
+-              })
+-            )
+-          finalStream = await continueStaticFallbackPrerender(htmlStream, {
+-            inlinedDataStream: createInlinedDataStream(
+-              emptyReactServerResult.consumeAsStream(),
+-              nonce,
+-              formState
+-            ),
++          stream: await continueDynamicPrerender(htmlStream, {
+             getServerInsertedHTML,
+             getServerInsertedMetadata,
+             deploymentId: ctx.sharedContext.deploymentId,
+-          })
+-        } else {
+-          // Normal static prerender case, no fallback param handling needed
+-          finalStream = await continueStaticPrerender(htmlStream, {
+-            inlinedDataStream: createInlinedDataStream(
+-              reactServerResult.consumeAsStream(),
+-              nonce,
+-              formState
+-            ),
+-            getServerInsertedHTML,
+-            getServerInsertedMetadata,
+-            deploymentId: ctx.sharedContext.deploymentId,
+-          })
+-        }
+-
+-        return {
+-          digestErrorsMap: reactServerErrorsByDigest,
+-          ssrErrors: allCapturedErrors,
+-          stream: finalStream,
++          }),
+           dynamicAccess: consumeDynamicAccess(
+             serverDynamicTracking,
+             clientDynamicTracking
+@@ -8117,13 +8027,79 @@ async function prerenderToStream(
+             prerenderResumeDataCache
+           ),
+         }
++      } else if (postponed != null) {
++        // We postponed but nothing dynamic was used. We resume the render now and immediately abort it
++        // so we can set all the postponed boundaries to client render mode before we store the HTML response
++        const foreverStream = createPendingStream()
++        const resumePrelude = await workUnitAsyncStorage.run(
++          finalServerPrerenderStore,
++          resumeAndAbort,
++          // eslint-disable-next-line @next/internal/no-ambiguous-jsx
++          <App
++            reactServerStream={foreverStream}
++            reactDebugStream={undefined}
++            debugEndTime={undefined}
++            preinitScripts={() => {}}
++            ServerInsertedHTMLProvider={ServerInsertedHTMLProvider}
++            nonce={nonce}
++            images={ctx.renderOpts.images}
++          />,
++          JSON.parse(JSON.stringify(postponed)),
++          {
++            signal: createRenderInBrowserAbortSignal(),
++            onError: htmlRendererErrorHandler,
++            nonce,
++          }
++        )
++        // First we write everything from the prerender, then we write everything from the aborted resume render
++        htmlStream = chainStreams(prelude, resumePrelude)
++      }
++
++      if (workStore.forceDynamic) {
++        throw new StaticGenBailoutError(
++          'Invariant: a Page with `dynamic = "force-dynamic"` did not trigger the dynamic pathway. This is a bug in Next.js'
++        )
++      }
++
++      const stream = await continueStaticPrerenderWithInlinedData(
++        htmlStream,
++        reactServerResult,
++        fallbackRouteParams,
++        createInlinedDataStream,
++        formState,
++        nonce,
++        getServerInsertedHTML,
++        getServerInsertedMetadata,
++        ctx.sharedContext.deploymentId,
++        ComponentMod,
++        renderFlightStream,
++        clientModules,
++        filterStackFrame,
++        serverComponentsErrorHandler
++      )
++
++      return {
++        digestErrorsMap: reactServerErrorsByDigest,
++        ssrErrors: allCapturedErrors,
++        stream,
++        dynamicAccess: consumeDynamicAccess(
++          serverDynamicTracking,
++          clientDynamicTracking
++        ),
++        collectedRevalidate: finalServerPrerenderStore.revalidate,
++        collectedExpire: finalServerPrerenderStore.expire,
++        collectedStale: selectStaleTime(finalServerPrerenderStore.stale),
++        collectedTags: finalServerPrerenderStore.tags,
++        renderResumeDataCache: createRenderResumeDataCache(
++          prerenderResumeDataCache
++        ),
+       }
+     } else if (experimental.isRoutePPREnabled) {
+       // We're statically generating with PPR and need to do dynamic tracking
+       let dynamicTracking = createDynamicTrackingState(isDebugDynamicAccesses)
+ 
+       const prerenderResumeDataCache = createPrerenderResumeDataCache()
+-      const reactServerPrerenderStore: PrerenderStore = (prerenderStore = {
++      const pprReactServerPrerenderStore: PrerenderStore = (prerenderStore = {
+         type: 'prerender-ppr',
+         phase: 'render',
+         rootParams,
+@@ -8137,7 +8113,7 @@ async function prerenderToStream(
+         prerenderResumeDataCache,
+       })
+       const RSCPayload = await workUnitAsyncStorage.run(
+-        reactServerPrerenderStore,
++        pprReactServerPrerenderStore,
+         getRSCPayload,
+         tree,
+         ctx,
+@@ -8147,7 +8123,7 @@ async function prerenderToStream(
+       reactServerResult = reactServerPrerenderResult =
+         await createReactServerPrerenderResultFromRender(
+           workUnitAsyncStorage.run(
+-            reactServerPrerenderStore,
++            pprReactServerPrerenderStore,
+             renderFlightStream,
+             ComponentMod,
+             RSCPayload,
+@@ -8272,10 +8248,10 @@ async function prerenderToStream(
+           stream: await continueDynamicPrerender(prelude, pprDynamicOpts),
+           dynamicAccess: dynamicTracking.dynamicAccesses,
+           // TODO: Should this include the SSR pass?
+-          collectedRevalidate: reactServerPrerenderStore.revalidate,
+-          collectedExpire: reactServerPrerenderStore.expire,
+-          collectedStale: selectStaleTime(reactServerPrerenderStore.stale),
+-          collectedTags: reactServerPrerenderStore.tags,
++          collectedRevalidate: pprReactServerPrerenderStore.revalidate,
++          collectedExpire: pprReactServerPrerenderStore.expire,
++          collectedStale: selectStaleTime(pprReactServerPrerenderStore.stale),
++          collectedTags: pprReactServerPrerenderStore.tags,
+         }
+       } else if (fallbackRouteParams && fallbackRouteParams.size > 0) {
+         // Rendering the fallback case.
+@@ -8298,10 +8274,10 @@ async function prerenderToStream(
+           ),
+           dynamicAccess: dynamicTracking.dynamicAccesses,
+           // TODO: Should this include the SSR pass?
+-          collectedRevalidate: reactServerPrerenderStore.revalidate,
+-          collectedExpire: reactServerPrerenderStore.expire,
+-          collectedStale: selectStaleTime(reactServerPrerenderStore.stale),
+-          collectedTags: reactServerPrerenderStore.tags,
++          collectedRevalidate: pprReactServerPrerenderStore.revalidate,
++          collectedExpire: pprReactServerPrerenderStore.expire,
++          collectedStale: selectStaleTime(pprReactServerPrerenderStore.stale),
++          collectedTags: pprReactServerPrerenderStore.tags,
+         }
+       } else {
+         // Static case
+@@ -8354,10 +8330,10 @@ async function prerenderToStream(
+           }),
+           dynamicAccess: dynamicTracking.dynamicAccesses,
+           // TODO: Should this include the SSR pass?
+-          collectedRevalidate: reactServerPrerenderStore.revalidate,
+-          collectedExpire: reactServerPrerenderStore.expire,
+-          collectedStale: selectStaleTime(reactServerPrerenderStore.stale),
+-          collectedTags: reactServerPrerenderStore.tags,
++          collectedRevalidate: pprReactServerPrerenderStore.revalidate,
++          collectedExpire: pprReactServerPrerenderStore.expire,
++          collectedStale: selectStaleTime(pprReactServerPrerenderStore.stale),
++          collectedTags: pprReactServerPrerenderStore.tags,
+         }
+       }
+     } else {
+@@ -8497,14 +8473,15 @@ async function prerenderToStream(
+     if (reactServerPrerenderResult === null) {
+       throw err
+     }
+-
+     let errorType: MetadataErrorType | 'redirect' | undefined
++    const isHTTPAccessFallback = isHTTPAccessFallbackError(err)
++    const isRedirect = isRedirectError(err)
+ 
+-    if (isHTTPAccessFallbackError(err)) {
++    if (isHTTPAccessFallback) {
+       res.statusCode = getAccessFallbackHTTPStatus(err)
+       metadata.statusCode = res.statusCode
+       errorType = getAccessFallbackErrorTypeByStatus(res.statusCode)
+-    } else if (isRedirectError(err)) {
++    } else if (isRedirect) {
+       errorType = 'redirect'
+       res.statusCode = getRedirectStatusCodeFromError(err)
+       metadata.statusCode = res.statusCode
+@@ -8512,11 +8489,15 @@ async function prerenderToStream(
+       const redirectUrl = addPathPrefix(getURLFromRedirectError(err), basePath)
+ 
+       setHeader('location', redirectUrl)
+-    } else if (!shouldBailoutToCSR) {
++    } else {
+       res.statusCode = 500
+       metadata.statusCode = res.statusCode
+     }
+ 
++    if (cacheComponents && !isHTTPAccessFallback && !isRedirect) {
++      throw reactServerErrorsByDigest.get((err as any).digest) ?? err
++    }
++
+     const [errorPreinitScripts, errorBootstrapScript] = getRequiredScripts(
+       buildManifest,
+       assetPrefix,
+@@ -8527,7 +8508,352 @@ async function prerenderToStream(
+       '/_not-found/page'
+     )
+ 
+-    const prerenderLegacyStore: PrerenderStore = (prerenderStore = {
++    if (cacheComponents) {
++      const originalFlightPrerenderResult = reactServerPrerenderResult
++      const originalFlightPrerenderResultIsDynamic =
++        reactServerPrerenderResultIsDynamic
++      const originalPrerenderResumeDataCache =
++        reactServerPrerenderResumeDataCache
++      const originalPrerenderStore =
++        reactServerPrerenderStore as PrerenderStore | null
++
++      if (originalFlightPrerenderResult === null) {
++        throw new InvariantError(
++          'Cache Components error recovery expected an original Flight prerender result'
++        )
++      }
++      if (originalFlightPrerenderResultIsDynamic === null) {
++        throw new InvariantError(
++          'Cache Components error recovery expected to know whether the original Flight prerender result was dynamic'
++        )
++      }
++      if (originalPrerenderResumeDataCache === null) {
++        throw new InvariantError(
++          'Cache Components error recovery expected an original prerender resume data cache'
++        )
++      }
++      if (originalPrerenderStore === null) {
++        throw new InvariantError(
++          'Cache Components error recovery expected an original prerender store'
++        )
++      }
++      const originalCollectedStale = selectStaleTime(
++        originalPrerenderStore.stale
++      )
++
++      // The final recovery still belongs to Cache Components. Render the error
++      // payload with the same prerender APIs as the normal path so not-found
++      // metadata can participate in static, dynamic-data, and dynamic-HTML
++      // outcomes instead of being dropped from the recovery shell.
++      const errorPrerenderResumeDataCache = createPrerenderResumeDataCache()
++      const errorServerReactController = new AbortController()
++      const errorServerRenderController = new AbortController()
++      const errorServerDynamicTracking = createDynamicTrackingState(
++        isDebugDynamicAccesses
++      )
++      const errorPrerenderStore: PrerenderStore = {
++        type: 'prerender',
++        phase: 'render',
++        rootParams,
++        fallbackRouteParams,
++        implicitTags,
++        renderSignal: errorServerRenderController.signal,
++        controller: errorServerReactController,
++        cacheSignal: null,
++        dynamicTracking: errorServerDynamicTracking,
++        allowEmptyStaticShell,
++        revalidate:
++          typeof prerenderStore?.revalidate !== 'undefined'
++            ? prerenderStore.revalidate
++            : INFINITE_CACHE,
++        expire:
++          typeof prerenderStore?.expire !== 'undefined'
++            ? prerenderStore.expire
++            : INFINITE_CACHE,
++        stale:
++          typeof prerenderStore?.stale !== 'undefined'
++            ? prerenderStore.stale
++            : INFINITE_CACHE,
++        tags: [...(prerenderStore?.tags || implicitTags.tags)],
++        prerenderResumeDataCache: errorPrerenderResumeDataCache,
++        renderResumeDataCache: renderOpts.renderResumeDataCache ?? null,
++        hmrRefreshHash: undefined,
++        varyParamsAccumulator: null,
++      }
++
++      const errorRSCPayload = await workUnitAsyncStorage.run(
++        errorPrerenderStore,
++        getErrorRSCPayload,
++        tree,
++        ctx,
++        reactServerErrorsByDigest.has((err as any).digest) ? undefined : err,
++        errorType
++      )
++
++      const errorServerResult = await createReactServerPrerenderResult(
++        runInSequentialTasks(
++          async () => {
++            const pendingErrorServerResult = workUnitAsyncStorage.run(
++              errorPrerenderStore,
++              getServerPrerender(ComponentMod),
++              errorRSCPayload,
++              clientModules,
++              {
++                filterStackFrame,
++                signal: errorServerReactController.signal,
++                onError: (rscError: unknown) => {
++                  return serverComponentsErrorHandler(rscError)
++                },
++              }
++            )
++
++            // The listener to abort our own render controller must be added
++            // after React has added its listener, to ensure that pending I/O
++            // is not aborted/rejected too early.
++            errorServerReactController.signal.addEventListener(
++              'abort',
++              () => {
++                errorServerRenderController.abort()
++              },
++              { once: true }
++            )
++
++            const prerenderResult = await pendingErrorServerResult
++            return prerenderResult
++          },
++          () => {
++            if (!errorServerReactController.signal.aborted) {
++              errorServerReactController.abort()
++            }
++          }
++        )
++      )
++
++      try {
++        const errorClientReactController = new AbortController()
++        const errorClientRenderController = new AbortController()
++        const errorClientDynamicTracking = createDynamicTrackingState(
++          isDebugDynamicAccesses
++        )
++        const errorDynamicValidation = createDynamicValidationState()
++        const errorClientPrerenderStore: PrerenderStore = {
++          type: 'prerender-client',
++          phase: 'render',
++          rootParams,
++          fallbackRouteParams,
++          implicitTags,
++          renderSignal: errorClientRenderController.signal,
++          controller: errorClientReactController,
++          cacheSignal: null,
++          dynamicTracking: errorClientDynamicTracking,
++          allowEmptyStaticShell,
++          revalidate: errorPrerenderStore.revalidate,
++          expire: errorPrerenderStore.expire,
++          stale: errorPrerenderStore.stale,
++          tags: [...(errorPrerenderStore.tags || implicitTags.tags)],
++          prerenderResumeDataCache: errorPrerenderResumeDataCache,
++          renderResumeDataCache: renderOpts.renderResumeDataCache ?? null,
++          hmrRefreshHash: undefined,
++          varyParamsAccumulator: null,
++        }
++
++        const {
++          prelude: unprocessedErrorHtmlStream,
++          postponed: errorPostponed,
++        } = await runInSequentialTasks(
++          () => {
++            const pendingErrorHtmlResult = workUnitAsyncStorage.run(
++              errorClientPrerenderStore,
++              getClientPrerender,
++              // eslint-disable-next-line @next/internal/no-ambiguous-jsx
++              <ErrorApp
++                reactServerStream={errorServerResult.asUnclosingStream()}
++                ServerInsertedHTMLProvider={ServerInsertedHTMLProvider}
++                preinitScripts={errorPreinitScripts}
++                nonce={nonce}
++                images={ctx.renderOpts.images}
++              />,
++              {
++                nonce,
++                bootstrapScripts: [errorBootstrapScript],
++                formState,
++                signal: errorClientReactController.signal,
++                onError: (clientError: unknown, errorInfo: ErrorInfo) => {
++                  if (
++                    isPrerenderInterruptedError(clientError) ||
++                    errorClientReactController.signal.aborted
++                  ) {
++                    const componentStack: string | undefined = (
++                      errorInfo as any
++                    ).componentStack
++                    if (typeof componentStack === 'string') {
++                      trackAllowedDynamicAccess(
++                        workStore,
++                        componentStack,
++                        errorDynamicValidation,
++                        errorClientDynamicTracking
++                      )
++                    }
++                    return
++                  }
++
++                  return htmlRendererErrorHandler(clientError, errorInfo)
++                },
++              }
++            )
++
++            // The listener to abort our own render controller must be added
++            // after React has added its listener, to ensure that pending I/O
++            // is not aborted/rejected too early.
++            errorClientReactController.signal.addEventListener(
++              'abort',
++              () => {
++                errorClientRenderController.abort()
++              },
++              { once: true }
++            )
++
++            return pendingErrorHtmlResult
++          },
++          () => {
++            errorClientReactController.abort()
++          }
++        )
++
++        const { prelude, preludeIsEmpty } = await processPreludeOp(
++          unprocessedErrorHtmlStream
++        )
++
++        if (preludeIsEmpty) {
++          console.error(
++            `Route "${workStore.route}" did not produce a static shell while rendering its error page.`
++          )
++          throwIfDisallowedDynamic(
++            workStore,
++            PreludeState.Empty,
++            errorDynamicValidation,
++            errorServerDynamicTracking,
++            false
++          )
++          throw new StaticGenBailoutError()
++        }
++
++        const getServerInsertedHTML = makeGetServerInsertedHTML({
++          polyfills,
++          renderServerInsertedHTML,
++          serverCapturedErrors: [],
++          basePath,
++          tracingMetadata: tracingMetadata,
++        })
++
++        let errorHtmlStream: AnyStream = prelude
++        if (originalFlightPrerenderResultIsDynamic) {
++          metadata.postponed = await getDynamicDataPostponedState(
++            originalPrerenderResumeDataCache,
++            cacheComponents
++          )
++          originalFlightPrerenderResult.consume()
++          errorServerResult.consume()
++          return {
++            digestErrorsMap: reactServerErrorsByDigest,
++            ssrErrors: allCapturedErrors,
++            stream: await continueDynamicPrerender(errorHtmlStream, {
++              getServerInsertedHTML,
++              getServerInsertedMetadata,
++              deploymentId: ctx.sharedContext.deploymentId,
++            }),
++            dynamicAccess: consumeDynamicAccess(
++              errorServerDynamicTracking,
++              errorClientDynamicTracking
++            ),
++            collectedRevalidate: originalPrerenderStore.revalidate,
++            collectedExpire: originalPrerenderStore.expire,
++            collectedStale: originalCollectedStale,
++            collectedTags: originalPrerenderStore.tags,
++            renderResumeDataCache: createRenderResumeDataCache(
++              originalPrerenderResumeDataCache
++            ),
++          }
++        } else if (errorPostponed != null) {
++          // We postponed but nothing dynamic was used. Resume the error shell
++          // and immediately abort it so postponed client boundaries are marked
++          // for browser rendering before the static response is stored.
++          const foreverStream = createPendingStream()
++          const resumePrelude = await workUnitAsyncStorage.run(
++            errorPrerenderStore,
++            resumeAndAbort,
++            // eslint-disable-next-line @next/internal/no-ambiguous-jsx
++            <ErrorApp
++              reactServerStream={foreverStream}
++              ServerInsertedHTMLProvider={ServerInsertedHTMLProvider}
++              preinitScripts={() => {}}
++              nonce={nonce}
++              images={ctx.renderOpts.images}
++            />,
++            JSON.parse(JSON.stringify(errorPostponed)),
++            {
++              signal: createRenderInBrowserAbortSignal(),
++              onError: htmlRendererErrorHandler,
++              nonce,
++            }
++          )
++          errorHtmlStream = chainStreams(prelude, resumePrelude)
++        }
++
++        if (workStore.forceDynamic) {
++          throw new StaticGenBailoutError(
++            'Invariant: a Page with `dynamic = "force-dynamic"` did not trigger the dynamic pathway. This is a bug in Next.js'
++          )
++        }
++
++        const stream = await continueStaticPrerenderWithInlinedData(
++          errorHtmlStream,
++          originalFlightPrerenderResult,
++          fallbackRouteParams,
++          createInlinedDataStream,
++          formState,
++          nonce,
++          getServerInsertedHTML,
++          getServerInsertedMetadata,
++          ctx.sharedContext.deploymentId,
++          ComponentMod,
++          renderFlightStream,
++          clientModules,
++          filterStackFrame,
++          serverComponentsErrorHandler
++        )
++
++        errorServerResult.consume()
++        return {
++          digestErrorsMap: reactServerErrorsByDigest,
++          ssrErrors: allCapturedErrors,
++          stream,
++          dynamicAccess: consumeDynamicAccess(
++            errorServerDynamicTracking,
++            errorClientDynamicTracking
++          ),
++          collectedRevalidate: originalPrerenderStore.revalidate,
++          collectedExpire: originalPrerenderStore.expire,
++          collectedStale: originalCollectedStale,
++          collectedTags: originalPrerenderStore.tags,
++          renderResumeDataCache: createRenderResumeDataCache(
++            originalPrerenderResumeDataCache
++          ),
++        }
++      } catch (finalErr: any) {
++        if (
++          process.env.__NEXT_DEV_SERVER &&
++          isHTTPAccessFallbackError(finalErr)
++        ) {
++          const { bailOnRootNotFound } =
++            require('../../client/components/dev-root-http-access-fallback-boundary') as typeof import('../../client/components/dev-root-http-access-fallback-boundary')
++          bailOnRootNotFound()
++        }
++        throw finalErr
++      }
++    }
++
++    const prerenderLegacyStore: PrerenderStore = {
+       type: 'prerender-legacy',
+       phase: 'render',
+       rootParams,
+@@ -8545,47 +8871,18 @@ async function prerenderToStream(
+           ? prerenderStore.stale
+           : INFINITE_CACHE,
+       tags: [...(prerenderStore?.tags || implicitTags.tags)],
+-    })
+-    let prerenderHTTPError: PrerenderHTTPErrorState | undefined
+-    if (cacheComponents && isHTTPAccessFallbackError(err)) {
+-      const triggeredStatus = getAccessFallbackHTTPStatus(
+-        err
+-      ) as HTTPAccessErrorStatusCode
+-      const boundaryTree = findPrerenderHTTPErrorBoundaryTree(
+-        tree,
+-        triggeredStatus,
+-        ctx.renderOpts.experimental.authInterrupts
+-      )
+-
+-      if (boundaryTree) {
+-        prerenderHTTPError = {
+-          boundaryTree,
+-          triggeredStatus,
+-        }
+-      }
+     }
+ 
+-    const errorRSCPayload = prerenderHTTPError
+-      ? await workUnitAsyncStorage.run(
+-          prerenderLegacyStore,
+-          getRSCPayload,
+-          tree,
+-          ctx,
+-          {
+-            is404: errorType === 'not-found',
+-            prerenderHTTPError,
+-          }
+-        )
+-      : await workUnitAsyncStorage.run(
+-          prerenderLegacyStore,
+-          getErrorRSCPayload,
+-          tree,
+-          ctx,
+-          reactServerErrorsByDigest.has((err as any).digest) ? undefined : err,
+-          errorType
+-        )
++    const errorRSCPayload = await workUnitAsyncStorage.run(
++      prerenderLegacyStore,
++      getErrorRSCPayload,
++      tree,
++      ctx,
++      reactServerErrorsByDigest.has((err as any).digest) ? undefined : err,
++      errorType
++    )
+ 
+-    const errorServerStreamRaw = workUnitAsyncStorage.run(
++    const errorServerStream = workUnitAsyncStorage.run(
+       prerenderLegacyStore,
+       renderFlightStream,
+       ComponentMod,
+@@ -8597,19 +8894,6 @@ async function prerenderToStream(
+       }
+     )
+ 
+-    let errorServerStream = errorServerStreamRaw
+-    const errorFlightResultPromise = prerenderHTTPError
+-      ? (() => {
+-          // Fizz still needs to read the Flight stream to render ErrorApp, but
+-          // the prerender path also needs a buffered Flight result for the HTML
+-          // prelude and segment data collectors. Tee the stream so each consumer
+-          // gets its own copy.
+-          const [appStream, flightStream] = teeStream(errorServerStreamRaw)
+-          errorServerStream = appStream
+-          return createReactServerPrerenderResultFromRender(flightStream)
+-        })()
+-      : null
+-
+     try {
+       const { stream: errorHtmlStream } = await workUnitAsyncStorage.run(
+         prerenderLegacyStore,
+@@ -8630,15 +8914,10 @@ async function prerenderToStream(
+         { waitForAllReady: true }
+       )
+ 
+-      const resolvedFlightResult = errorFlightResultPromise
+-        ? await errorFlightResultPromise
+-        : reactServerPrerenderResult
+-      if (errorFlightResultPromise) {
+-        reactServerPrerenderResult.consume()
+-      }
+-
+       if (shouldGenerateStaticFlightData(workStore)) {
+-        const flightData = await streamToBuffer(resolvedFlightResult.asStream())
++        const flightData = await streamToBuffer(
++          reactServerPrerenderResult.asStream()
++        )
+         metadata.flightData = flightData
+         await collectSegmentData(
+           flightData,
+@@ -8650,14 +8929,12 @@ async function prerenderToStream(
+         )
+       }
+ 
+-      const flightStream = resolvedFlightResult.consumeAsStream()
+-
+       return {
+         digestErrorsMap: reactServerErrorsByDigest,
+         ssrErrors: allCapturedErrors,
+         stream: await continueFizzStream(errorHtmlStream, {
+           inlinedDataStream: createInlinedDataStream(
+-            flightStream,
++            reactServerPrerenderResult.consumeAsStream(),
+             nonce,
+             formState
+           ),
+@@ -8674,14 +8951,10 @@ async function prerenderToStream(
+           deploymentId: ctx.sharedContext.deploymentId,
+         }),
+         dynamicAccess: null,
+-        collectedRevalidate:
+-          prerenderStore !== null ? prerenderStore.revalidate : INFINITE_CACHE,
+-        collectedExpire:
+-          prerenderStore !== null ? prerenderStore.expire : INFINITE_CACHE,
+-        collectedStale: selectStaleTime(
+-          prerenderStore !== null ? prerenderStore.stale : INFINITE_CACHE
+-        ),
+-        collectedTags: prerenderStore !== null ? prerenderStore.tags : null,
++        collectedRevalidate: prerenderLegacyStore.revalidate,
++        collectedExpire: prerenderLegacyStore.expire,
++        collectedStale: selectStaleTime(prerenderLegacyStore.stale),
++        collectedTags: prerenderLegacyStore.tags,
+       }
+     } catch (finalErr: any) {
+       if (
+diff --git a/packages/next/src/server/app-render/create-component-tree.tsx b/packages/next/src/server/app-render/create-component-tree.tsx
+index 00cb082118a2..5fba3179fd02 100644
+--- a/packages/next/src/server/app-render/create-component-tree.tsx
++++ b/packages/next/src/server/app-render/create-component-tree.tsx
+@@ -44,13 +44,6 @@ import {
+ import type { AppSegmentConfig } from '../../build/segment-config/app/app-segment-config'
+ import { RenderStage, type StagedRenderingController } from './staged-rendering'
+ 
+-type HTTPAccessErrorStatusCode = 404 | 403 | 401
+-
+-export type PrerenderHTTPErrorState = {
+-  boundaryTree: LoaderTree
+-  triggeredStatus: HTTPAccessErrorStatusCode
+-}
+-
+ /**
+  * Use the provided loader tree to create the React Component tree.
+  */
+@@ -69,7 +62,6 @@ export function createComponentTree(props: {
+   preloadCallbacks: PreloadCallbacks
+   authInterrupts: boolean
+   MetadataOutlet: ComponentType
+-  prerenderHTTPError?: PrerenderHTTPErrorState
+ }): Promise<CacheNodeSeedData> {
+   return getTracer().trace(
+     NextNodeServerSpan.createComponentTree,
+@@ -107,7 +99,6 @@ async function createComponentTreeInternal(
+     preloadCallbacks,
+     authInterrupts,
+     MetadataOutlet,
+-    prerenderHTTPError,
+   }: {
+     loaderTree: LoaderTree
+     parentParams: Params
+@@ -122,7 +113,6 @@ async function createComponentTreeInternal(
+     preloadCallbacks: PreloadCallbacks
+     authInterrupts: boolean
+     MetadataOutlet: ComponentType | null
+-    prerenderHTTPError?: PrerenderHTTPErrorState
+   },
+   isRoot: boolean
+ ): Promise<CacheNodeSeedData> {
+@@ -602,46 +592,6 @@ async function createComponentTreeInternal(
+             }
+           }
+ 
+-          // The outer prerender catch already found the deepest segment whose
+-          // HTTP fallback should replace the throwing page. When we reach that
+-          // segment's `children` slot, render the fallback directly instead of
+-          // descending back into the subtree that threw during deserialization.
+-
+-          // Like the other segment-level boundary props below, HTTP access
+-          // fallbacks are attached to the default `children` slot, not to named
+-          // parallel routes.
+-          const shouldRenderPrerenderHTTPFallback =
+-            prerenderHTTPError?.boundaryTree === tree && isChildrenRouteKey
+-
+-          if (shouldRenderPrerenderHTTPFallback) {
+-            let fallbackElement: React.ReactNode | undefined
+-            switch (prerenderHTTPError.triggeredStatus) {
+-              case 404:
+-                fallbackElement = notFoundElement
+-                break
+-              case 403:
+-                fallbackElement = forbiddenElement
+-                break
+-              case 401:
+-                fallbackElement = unauthorizedElement
+-                break
+-              default:
+-                break
+-            }
+-
+-            if (fallbackElement) {
+-              childCacheNodeSeedData = createSeedData(
+-                ctx,
+-                fallbackElement,
+-                {},
+-                null,
+-                isPossiblyPartialResponse,
+-                false,
+-                emptyVaryParamsAccumulator
+-              )
+-            }
+-          }
+-
+           if (childCacheNodeSeedData === null) {
+             const seedData = await createComponentTreeInternal(
+               {
+@@ -661,7 +611,6 @@ async function createComponentTreeInternal(
+                 // `StreamingMetadataOutlet` is used to conditionally throw. In the case of parallel routes we will have more than one page
+                 // but we only want to throw on the first one.
+                 MetadataOutlet: isChildrenRouteKey ? MetadataOutlet : null,
+-                prerenderHTTPError,
+               },
+               false
+             )
+diff --git a/test/e2e/app-dir/cache-components-errors/cache-components-errors.http-access-fallback-prerender.test.ts b/test/e2e/app-dir/cache-components-errors/cache-components-errors.http-access-fallback-prerender.test.ts
+index afc7c71b0f17..e837d6f8a954 100644
+--- a/test/e2e/app-dir/cache-components-errors/cache-components-errors.http-access-fallback-prerender.test.ts
++++ b/test/e2e/app-dir/cache-components-errors/cache-components-errors.http-access-fallback-prerender.test.ts
+@@ -2,7 +2,7 @@ import { isNextDev, nextTestSetup } from 'e2e-utils'
+ import { getPrerenderOutput } from './utils'
+ 
+ describe('Cache Components HTTP Access Fallback Prerender', () => {
+-  const { next, isTurbopack, isNextStart, skipped } = nextTestSetup({
++  const { next, isNextStart, skipped } = nextTestSetup({
+     files: __dirname + '/fixtures/http-access-fallback-prerender',
+     skipStart: !isNextDev,
+     skipDeployment: true,
+@@ -72,6 +72,55 @@ describe('Cache Components HTTP Access Fallback Prerender', () => {
+       await next.build({ args })
+     }
+ 
++    const buildPath = async (pathname: string) => {
++      const args = ['--debug-build-paths', `app${pathname}/page.tsx`]
++
++      if (isDebugPrerender) {
++        args.push('--debug-prerender')
++      }
++
++      await next.build({ args })
++    }
++
++    const expectStaticRouteArtifacts = async (route: string, status = 404) => {
++      const meta = JSON.parse(
++        await next.readFile(`.next/server/app/${route}.meta`)
++      )
++
++      expect(await next.readFile(`.next/server/app/${route}.html`)).toEqual(
++        expect.any(String)
++      )
++      expect(meta.status).toBe(status)
++      expect(meta.postponed).toBeUndefined()
++      expect(meta.segmentPaths).toContain('/_tree')
++      expect(
++        await next.readFile(
++          `.next/server/app/${route}.segments/_tree.segment.rsc`
++        )
++      ).toEqual(expect.any(String))
++    }
++
++    const expectPartiallyStaticErrorArtifacts = async (
++      route: string,
++      status = 404
++    ) => {
++      const meta = JSON.parse(
++        await next.readFile(`.next/server/app/${route}.meta`)
++      )
++
++      expect(await next.readFile(`.next/server/app/${route}.html`)).toEqual(
++        expect.any(String)
++      )
++      expect(meta.status).toBe(status)
++      expect(meta.postponed).toEqual(expect.any(String))
++      expect(meta.segmentPaths).toContain('/_tree')
++      expect(
++        await next.readFile(
++          `.next/server/app/${route}.segments/_tree.segment.rsc`
++        )
++      ).toEqual(expect.any(String))
++    }
++
+     describe('notFound()', () => {
+       const pagePath = '/not-found/[slug]'
+       const visitUrl = '/not-found/not-found'
+@@ -85,92 +134,72 @@ describe('Cache Components HTTP Access Fallback Prerender', () => {
+           )
+         })
+       } else {
+-        it('should error the build with a blocking-route error', async () => {
+-          try {
+-            await prerender(pagePath)
+-          } catch {
+-            // we expect the build to fail
+-          }
++        it('should skip static shell validation during fallback recovery', async () => {
++          await prerender(pagePath)
++
++          const output = getPrerenderOutput(
++            next.cliOutput.slice(cliOutputLength),
++            { isMinified: !isDebugPrerender }
++          )
++
++          expect(output).toMatchInlineSnapshot(`""`)
++          await expectStaticRouteArtifacts('not-found/not-found')
++        })
++      }
++    })
++
++    describe('notFound() with root client params during recovery', () => {
++      const pagePath = '/not-found-use-params/[slug]'
++
++      if (!isNextDev) {
++        it('should fall through from the resume-abort recovery and emit static artifacts', async () => {
++          await prerender(pagePath)
++
++          const output = getPrerenderOutput(
++            next.cliOutput.slice(cliOutputLength),
++            { isMinified: !isDebugPrerender }
++          )
++
++          expect(output).toMatchInlineSnapshot(`""`)
++          await expectStaticRouteArtifacts('not-found-use-params/not-found')
++        })
++      }
++    })
++
++    describe('notFound() with static RSC data', () => {
++      const pagePath = '/not-found-static-flight/[slug]'
++
++      if (!isNextDev) {
++        it('should preserve the original static Flight data during recovery', async () => {
++          await prerender(pagePath)
+ 
+           const output = getPrerenderOutput(
+             next.cliOutput.slice(cliOutputLength),
+             { isMinified: !isDebugPrerender }
+           )
+ 
+-          if (isTurbopack) {
+-            if (isDebugPrerender) {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at NotFound (app/not-found/[slug]/not-found.tsx:6:39)
+-                 4 |
+-                 5 | export default function NotFound() {
+-               > 6 |   const searchParams = useSearchParams()
+-                   |                                       ^
+-                 7 |
+-                 8 |   return <p>not found {searchParams.get('foo')}</p>
+-                 9 | } {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/not-found/not-found". Read more: https://nextjs.org/docs/messages/prerender-error
+-
+-               > Export encountered errors on 1 path:
+-               	/not-found/[slug]/page: /not-found/not-found"
+-              `)
+-            } else {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at <unknown> (app/not-found/[slug]/not-found.tsx:6:24)
+-                 4 |
+-                 5 | export default function NotFound() {
+-               > 6 |   const searchParams = useSearchParams()
+-                   |                        ^
+-                 7 |
+-                 8 |   return <p>not found {searchParams.get('foo')}</p>
+-                 9 | } {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/not-found/not-found". Read more: https://nextjs.org/docs/messages/prerender-error
+-               Export encountered an error on /not-found/[slug]/page: /not-found/not-found, exiting the build."
+-              `)
+-            }
+-          } else {
+-            if (isDebugPrerender) {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at useDynamicSearchParams (webpack:///<next-src>)
+-                   at useSearchParams (webpack:///<next-src>)
+-                   at NotFound (webpack:///app/not-found/[slug]/not-found.tsx:6:39)
+-                 707 |         return
+-                 708 |       }
+-               > 709 |       throw new BailoutToCSRError(expression)
+-                     |             ^
+-                 710 |     }
+-                 711 |     case 'prerender':
+-                 712 |     case 'prerender-runtime': {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/not-found/not-found". Read more: https://nextjs.org/docs/messages/prerender-error
+-
+-               > Export encountered errors on 1 path:
+-               	/not-found/[slug]/page: /not-found/not-found"
+-              `)
+-            } else {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at a (<next-dist-dir>)
+-                   at b (<next-dist-dir>)
+-                   at c (<next-dist-dir>) {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/not-found/not-found". Read more: https://nextjs.org/docs/messages/prerender-error
+-               Export encountered an error on /not-found/[slug]/page: /not-found/not-found, exiting the build."
+-              `)
+-            }
+-          }
++          expect(output).toMatchInlineSnapshot(`""`)
++          await expectStaticRouteArtifacts('not-found-static-flight/not-found')
++        })
++      }
++    })
++
++    describe('notFound() with dynamic RSC data', () => {
++      const pagePath = '/not-found-dynamic-flight/[slug]'
++
++      if (!isNextDev) {
++        it('should preserve the original dynamic Flight data during recovery', async () => {
++          await prerender(pagePath)
++
++          const output = getPrerenderOutput(
++            next.cliOutput.slice(cliOutputLength),
++            { isMinified: !isDebugPrerender }
++          )
++
++          expect(output).toMatchInlineSnapshot(`""`)
++          await expectPartiallyStaticErrorArtifacts(
++            'not-found-dynamic-flight/not-found'
++          )
+         })
+       }
+     })
+@@ -188,92 +217,16 @@ describe('Cache Components HTTP Access Fallback Prerender', () => {
+           )
+         })
+       } else {
+-        it('should error the build with a blocking-route error', async () => {
+-          try {
+-            await prerender(pagePath)
+-          } catch {
+-            // we expect the build to fail
+-          }
++        it('should skip static shell validation during fallback recovery', async () => {
++          await prerender(pagePath)
+ 
+           const output = getPrerenderOutput(
+             next.cliOutput.slice(cliOutputLength),
+             { isMinified: !isDebugPrerender }
+           )
+ 
+-          if (isTurbopack) {
+-            if (isDebugPrerender) {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at Forbidden (app/forbidden/[slug]/forbidden.tsx:6:39)
+-                 4 |
+-                 5 | export default function Forbidden() {
+-               > 6 |   const searchParams = useSearchParams()
+-                   |                                       ^
+-                 7 |
+-                 8 |   return <p>forbidden {searchParams.get('foo')}</p>
+-                 9 | } {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/forbidden/forbidden". Read more: https://nextjs.org/docs/messages/prerender-error
+-
+-               > Export encountered errors on 1 path:
+-               	/forbidden/[slug]/page: /forbidden/forbidden"
+-              `)
+-            } else {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at <unknown> (app/forbidden/[slug]/forbidden.tsx:6:24)
+-                 4 |
+-                 5 | export default function Forbidden() {
+-               > 6 |   const searchParams = useSearchParams()
+-                   |                        ^
+-                 7 |
+-                 8 |   return <p>forbidden {searchParams.get('foo')}</p>
+-                 9 | } {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/forbidden/forbidden". Read more: https://nextjs.org/docs/messages/prerender-error
+-               Export encountered an error on /forbidden/[slug]/page: /forbidden/forbidden, exiting the build."
+-              `)
+-            }
+-          } else {
+-            if (isDebugPrerender) {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at useDynamicSearchParams (webpack:///<next-src>)
+-                   at useSearchParams (webpack:///<next-src>)
+-                   at Forbidden (webpack:///app/forbidden/[slug]/forbidden.tsx:6:39)
+-                 707 |         return
+-                 708 |       }
+-               > 709 |       throw new BailoutToCSRError(expression)
+-                     |             ^
+-                 710 |     }
+-                 711 |     case 'prerender':
+-                 712 |     case 'prerender-runtime': {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/forbidden/forbidden". Read more: https://nextjs.org/docs/messages/prerender-error
+-
+-               > Export encountered errors on 1 path:
+-               	/forbidden/[slug]/page: /forbidden/forbidden"
+-              `)
+-            } else {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at a (<next-dist-dir>)
+-                   at b (<next-dist-dir>)
+-                   at c (<next-dist-dir>) {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/forbidden/forbidden". Read more: https://nextjs.org/docs/messages/prerender-error
+-               Export encountered an error on /forbidden/[slug]/page: /forbidden/forbidden, exiting the build."
+-              `)
+-            }
+-          }
++          expect(output).toMatchInlineSnapshot(`""`)
++          await expectStaticRouteArtifacts('forbidden/forbidden', 403)
+         })
+       }
+     })
+@@ -291,92 +244,25 @@ describe('Cache Components HTTP Access Fallback Prerender', () => {
+           )
+         })
+       } else {
+-        it('should error the build with a blocking-route error', async () => {
+-          try {
+-            await prerender(pagePath)
+-          } catch {
+-            // we expect the build to fail
+-          }
++        it('should skip static shell validation during fallback recovery', async () => {
++          await prerender(pagePath)
+ 
+           const output = getPrerenderOutput(
+             next.cliOutput.slice(cliOutputLength),
+             { isMinified: !isDebugPrerender }
+           )
+ 
+-          if (isTurbopack) {
+-            if (isDebugPrerender) {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at Unauthorized (app/unauthorized/[slug]/unauthorized.tsx:6:39)
+-                 4 |
+-                 5 | export default function Unauthorized() {
+-               > 6 |   const searchParams = useSearchParams()
+-                   |                                       ^
+-                 7 |
+-                 8 |   return <p>unauthorized {searchParams.get('foo')}</p>
+-                 9 | } {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/unauthorized/unauthorized". Read more: https://nextjs.org/docs/messages/prerender-error
+-
+-               > Export encountered errors on 1 path:
+-               	/unauthorized/[slug]/page: /unauthorized/unauthorized"
+-              `)
+-            } else {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at <unknown> (app/unauthorized/[slug]/unauthorized.tsx:6:24)
+-                 4 |
+-                 5 | export default function Unauthorized() {
+-               > 6 |   const searchParams = useSearchParams()
+-                   |                        ^
+-                 7 |
+-                 8 |   return <p>unauthorized {searchParams.get('foo')}</p>
+-                 9 | } {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/unauthorized/unauthorized". Read more: https://nextjs.org/docs/messages/prerender-error
+-               Export encountered an error on /unauthorized/[slug]/page: /unauthorized/unauthorized, exiting the build."
+-              `)
+-            }
+-          } else {
+-            if (isDebugPrerender) {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at useDynamicSearchParams (webpack:///<next-src>)
+-                   at useSearchParams (webpack:///<next-src>)
+-                   at Unauthorized (webpack:///app/unauthorized/[slug]/unauthorized.tsx:6:39)
+-                 707 |         return
+-                 708 |       }
+-               > 709 |       throw new BailoutToCSRError(expression)
+-                     |             ^
+-                 710 |     }
+-                 711 |     case 'prerender':
+-                 712 |     case 'prerender-runtime': {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/unauthorized/unauthorized". Read more: https://nextjs.org/docs/messages/prerender-error
+-
+-               > Export encountered errors on 1 path:
+-               	/unauthorized/[slug]/page: /unauthorized/unauthorized"
+-              `)
+-            } else {
+-              expect(output).toMatchInlineSnapshot(`
+-               "Error: Bail out to client-side rendering: useSearchParams()
+-                   at a (<next-dist-dir>)
+-                   at b (<next-dist-dir>)
+-                   at c (<next-dist-dir>) {
+-                 reason: 'useSearchParams()',
+-                 digest: 'BAILOUT_TO_CLIENT_SIDE_RENDERING'
+-               }
+-               Error occurred prerendering page "/unauthorized/unauthorized". Read more: https://nextjs.org/docs/messages/prerender-error
+-               Export encountered an error on /unauthorized/[slug]/page: /unauthorized/unauthorized, exiting the build."
+-              `)
+-            }
+-          }
++          expect(output).toMatchInlineSnapshot(`""`)
++          await expectStaticRouteArtifacts('unauthorized/unauthorized', 401)
++        })
++      }
++    })
++
++    describe('notFound() above the matching not-found boundary', () => {
++      if (!isNextDev) {
++        it('should emit static artifacts', async () => {
++          await buildPath('/not-found-above-boundary/child')
++          await expectStaticRouteArtifacts('not-found-above-boundary/child')
+         })
+       }
+     })
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/child/not-found.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/child/not-found.tsx
+new file mode 100644
+index 000000000000..928a7b0a215a
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/child/not-found.tsx
+@@ -0,0 +1,3 @@
++export default function NotFound() {
++  return <p>child not found</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/child/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/child/page.tsx
+new file mode 100644
+index 000000000000..87795eb416e1
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/child/page.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>child page</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/layout.tsx
+new file mode 100644
+index 000000000000..6694a3e60d0d
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-above-boundary/layout.tsx
+@@ -0,0 +1,5 @@
++import { notFound } from 'next/navigation'
++
++export default function Layout() {
++  notFound()
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/@parallel/default.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/@parallel/default.tsx
+new file mode 100644
+index 000000000000..6dbe479afc29
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/@parallel/default.tsx
+@@ -0,0 +1,5 @@
++import { notFound } from 'next/navigation'
++
++export default function Default() {
++  notFound()
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/layout.tsx
+new file mode 100644
+index 000000000000..be4b2bb5dcc0
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/layout.tsx
+@@ -0,0 +1,14 @@
++export default function Layout({
++  children,
++  parallel,
++}: {
++  children: React.ReactNode
++  parallel: React.ReactNode
++}) {
++  return (
++    <>
++      {children}
++      {parallel}
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/not-found.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/not-found.tsx
+new file mode 100644
+index 000000000000..b9b605f4c5cd
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/not-found.tsx
+@@ -0,0 +1,3 @@
++export default function NotFound() {
++  return <p>not found after dynamic flight</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/page.tsx
+new file mode 100644
+index 000000000000..372927312c21
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-dynamic-flight/[slug]/page.tsx
+@@ -0,0 +1,21 @@
++import { Suspense } from 'react'
++import { cookies } from 'next/headers'
++
++export function generateStaticParams() {
++  return [{ slug: 'not-found' }]
++}
++
++export default function Page() {
++  return (
++    <Suspense fallback={<p>loading dynamic flight</p>}>
++      <DynamicCookieValue />
++    </Suspense>
++  )
++}
++
++async function DynamicCookieValue() {
++  const value =
++    (await cookies()).get('http-access-fallback-prerender')?.value ?? 'missing'
++
++  return <p>dynamic cookie value: {value}</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/@parallel/default.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/@parallel/default.tsx
+new file mode 100644
+index 000000000000..6dbe479afc29
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/@parallel/default.tsx
+@@ -0,0 +1,5 @@
++import { notFound } from 'next/navigation'
++
++export default function Default() {
++  notFound()
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/layout.tsx
+new file mode 100644
+index 000000000000..be4b2bb5dcc0
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/layout.tsx
+@@ -0,0 +1,14 @@
++export default function Layout({
++  children,
++  parallel,
++}: {
++  children: React.ReactNode
++  parallel: React.ReactNode
++}) {
++  return (
++    <>
++      {children}
++      {parallel}
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/not-found.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/not-found.tsx
+new file mode 100644
+index 000000000000..3c6f282f9db0
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/not-found.tsx
+@@ -0,0 +1,3 @@
++export default function NotFound() {
++  return <p>not found after static flight</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/page.tsx
+new file mode 100644
+index 000000000000..89e3a7b40b9f
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-static-flight/[slug]/page.tsx
+@@ -0,0 +1,7 @@
++export function generateStaticParams() {
++  return [{ slug: 'not-found' }]
++}
++
++export default function Page() {
++  return <p>static flight</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-use-params/[slug]/not-found.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-use-params/[slug]/not-found.tsx
+new file mode 100644
+index 000000000000..45a20df80621
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-use-params/[slug]/not-found.tsx
+@@ -0,0 +1,9 @@
++'use client'
++
++import { useParams } from 'next/navigation'
++
++export default function NotFound() {
++  const params = useParams<{ slug: string }>()
++
++  return <p>not found {params.slug}</p>
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-use-params/[slug]/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-use-params/[slug]/page.tsx
+new file mode 100644
+index 000000000000..560ba513ae4f
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/http-access-fallback-prerender/app/not-found-use-params/[slug]/page.tsx
+@@ -0,0 +1,19 @@
++import { notFound } from 'next/navigation'
++
++export function generateStaticParams() {
++  return [{ slug: 'found' }, { slug: 'not-found' }]
++}
++
++export default async function Page({
++  params,
++}: {
++  params: Promise<{ slug: string }>
++}) {
++  const { slug } = await params
++
++  if (slug === 'found') {
++    return <p>hello world</p>
++  }
++
++  notFound()
++}

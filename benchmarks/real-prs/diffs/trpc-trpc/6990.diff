@@ -1,0 +1,1230 @@
+diff --git a/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts b/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts
+index b1cfd90e927..7d4264f9c3b 100644
+--- a/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts
++++ b/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts
+@@ -256,7 +256,7 @@ export function trpcInfiniteQueryOptions<
+   queryClient: QueryClient | (() => QueryClient);
+   path: string[];
+   queryKey: TRPCQueryKey<TFeatureFlags['keyPrefix']>;
+-  opts: AnyTRPCInfiniteQueryOptionsIn<TFeatureFlags>;
++  opts: AnyTRPCInfiniteQueryOptionsIn<TFeatureFlags> | undefined;
+ }): AnyTRPCInfiniteQueryOptionsOut<TFeatureFlags> {
+   const { input, query, path, queryKey, opts } = args;
+   const inputIsSkipToken = input === skipToken;
+@@ -288,7 +288,7 @@ export function trpcInfiniteQueryOptions<
+ 
+   return Object.assign(
+     infiniteQueryOptions({
+-      ...opts,
++      ...(opts ?? ({} as AnyTRPCInfiniteQueryOptionsIn<TFeatureFlags>)),
+       queryKey,
+       queryFn: inputIsSkipToken ? skipToken : queryFn,
+       initialPageParam: opts?.initialCursor ?? (input as any)?.cursor,
+diff --git a/packages/tanstack-react-query/src/internals/mutationOptions.ts b/packages/tanstack-react-query/src/internals/mutationOptions.ts
+index 708b8ac20f8..bf8ad312017 100644
+--- a/packages/tanstack-react-query/src/internals/mutationOptions.ts
++++ b/packages/tanstack-react-query/src/internals/mutationOptions.ts
+@@ -101,7 +101,7 @@ export function trpcMutationOptions<TFeatureFlags extends FeatureFlags>(args: {
+   mutate: typeof TRPCUntypedClient.prototype.mutation;
+   queryClient: QueryClient | (() => QueryClient);
+   path: string[];
+-  opts: AnyTRPCMutationOptionsIn<TFeatureFlags>;
++  opts: AnyTRPCMutationOptionsIn<TFeatureFlags> | undefined;
+   overrides: MutationOptionsOverride | undefined;
+ }): AnyTRPCMutationOptionsOut<TFeatureFlags> {
+   const { mutate, path, opts, overrides } = args;
+@@ -109,7 +109,7 @@ export function trpcMutationOptions<TFeatureFlags extends FeatureFlags>(args: {
+ 
+   const mutationKey = getMutationKeyInternal({
+     path,
+-    prefix: opts.keyPrefix,
++    prefix: opts?.keyPrefix,
+   }) as TRPCMutationKey<TFeatureFlags['keyPrefix']>;
+ 
+   const defaultOpts = queryClient.defaultMutationOptions(
+diff --git a/packages/tanstack-react-query/src/internals/queryOptions.ts b/packages/tanstack-react-query/src/internals/queryOptions.ts
+index 3861697f46d..48107fdea60 100644
+--- a/packages/tanstack-react-query/src/internals/queryOptions.ts
++++ b/packages/tanstack-react-query/src/internals/queryOptions.ts
+@@ -223,7 +223,7 @@ export function trpcQueryOptions<TFeatureFlags extends FeatureFlags>(args: {
+   queryClient: QueryClient | (() => QueryClient);
+   path: string[];
+   queryKey: TRPCQueryKey<TFeatureFlags['keyPrefix']>;
+-  opts: AnyTRPCQueryOptionsIn<TFeatureFlags>;
++  opts: AnyTRPCQueryOptionsIn<TFeatureFlags> | undefined;
+ }): AnyTRPCQueryOptionsOut<TFeatureFlags> {
+   const { input, query, path, queryKey, opts } = args;
+   const queryClient = unwrapLazyArg(args.queryClient);
+diff --git a/packages/tanstack-react-query/test/__snapshots__/queryOptions.test.tsx.snap b/packages/tanstack-react-query/test/__snapshots__/queryOptions.test.tsx.snap
+new file mode 100644
+index 00000000000..5e294331deb
+--- /dev/null
++++ b/packages/tanstack-react-query/test/__snapshots__/queryOptions.test.tsx.snap
+@@ -0,0 +1,305 @@
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
++
++exports[`queryOptions with key prefix: undefined > iterable > 
++        Array [
++          Object {
++            "data": undefined,
++            "fetchStatus": "fetching",
++            "status": "pending",
++          },
++          Object {
++            "data": Array [],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++              3,
++            ],
++            "fetchStatus": "idle",
++            "status": "success",
++          },
++        ]
++       1`] = `
++Array [
++  Object {
++    "data": undefined,
++    "fetchStatus": "fetching",
++    "status": "pending",
++  },
++  Object {
++    "data": Array [],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++      3,
++    ],
++    "fetchStatus": "idle",
++    "status": "success",
++  },
++]
++`;
++
++exports[`queryOptions with key prefix: user-123 > iterable > 
++        Array [
++          Object {
++            "data": undefined,
++            "fetchStatus": "fetching",
++            "status": "pending",
++          },
++          Object {
++            "data": Array [],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++              3,
++            ],
++            "fetchStatus": "idle",
++            "status": "success",
++          },
++        ]
++       1`] = `
++Array [
++  Object {
++    "data": undefined,
++    "fetchStatus": "fetching",
++    "status": "pending",
++  },
++  Object {
++    "data": Array [],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++      3,
++    ],
++    "fetchStatus": "idle",
++    "status": "success",
++  },
++]
++`;
++
++exports[`queryOptions with keyPrefix: undefined > iterable > 
++        Array [
++          Object {
++            "data": undefined,
++            "fetchStatus": "fetching",
++            "status": "pending",
++          },
++          Object {
++            "data": Array [],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++              3,
++            ],
++            "fetchStatus": "idle",
++            "status": "success",
++          },
++        ]
++       1`] = `
++Array [
++  Object {
++    "data": undefined,
++    "fetchStatus": "fetching",
++    "status": "pending",
++  },
++  Object {
++    "data": Array [],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++      3,
++    ],
++    "fetchStatus": "idle",
++    "status": "success",
++  },
++]
++`;
++
++exports[`queryOptions with keyPrefix: user-123 > iterable > 
++        Array [
++          Object {
++            "data": undefined,
++            "fetchStatus": "fetching",
++            "status": "pending",
++          },
++          Object {
++            "data": Array [],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++            ],
++            "fetchStatus": "fetching",
++            "status": "success",
++          },
++          Object {
++            "data": Array [
++              1,
++              2,
++              3,
++            ],
++            "fetchStatus": "idle",
++            "status": "success",
++          },
++        ]
++       1`] = `
++Array [
++  Object {
++    "data": undefined,
++    "fetchStatus": "fetching",
++    "status": "pending",
++  },
++  Object {
++    "data": Array [],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++    ],
++    "fetchStatus": "fetching",
++    "status": "success",
++  },
++  Object {
++    "data": Array [
++      1,
++      2,
++      3,
++    ],
++    "fetchStatus": "idle",
++    "status": "success",
++  },
++]
++`;
+diff --git a/packages/tanstack-react-query/test/mutationOptions.test.tsx b/packages/tanstack-react-query/test/mutationOptions.test.tsx
+index fdd3061628b..e02f138e7af 100644
+--- a/packages/tanstack-react-query/test/mutationOptions.test.tsx
++++ b/packages/tanstack-react-query/test/mutationOptions.test.tsx
+@@ -6,7 +6,7 @@ import * as React from 'react';
+ import { describe, expect, expectTypeOf, test } from 'vitest';
+ import { z } from 'zod';
+ 
+-const testContext = () => {
++const testContext = (keyPrefix?: string) => {
+   const t = initTRPC.create({});
+ 
+   const posts = ['initial'];
+@@ -40,122 +40,181 @@ const testContext = () => {
+     }),
+   });
+ 
+-  return testReactResource(appRouter);
++  return testReactResource(appRouter, {
++    keyPrefix: keyPrefix,
++  });
+ };
+ 
+-describe('mutationOptions', () => {
+-  test('useMutation', async () => {
+-    await using ctx = testContext();
+-    const { useTRPC } = ctx;
++describe.each(['userid-123', undefined])(
++  'mutationOptions with keyPrefix: %s',
++  (keyPrefix) => {
++    test('useMutation', async () => {
++      await using ctx = testContext(keyPrefix);
++      const { useTRPC } = ctx;
+ 
+-    const calls: string[] = [];
++      const calls: string[] = [];
+ 
+-    function MyComponent() {
+-      const trpc = useTRPC();
++      function MyComponent() {
++        const trpc = useTRPC();
+ 
+-      const options = trpc.post.create.mutationOptions({
+-        onMutate(variables) {
+-          expectTypeOf<{ text: string }>(variables);
+-          calls.push('onMutate');
+-        },
+-        onSettled(data) {
+-          expectTypeOf<'__mutationResult' | undefined>(data);
+-          calls.push('onSettled');
+-        },
+-        onError(_error) {
+-          calls.push('onError');
+-        },
+-        onSuccess(data) {
+-          expectTypeOf<'__mutationResult'>(data);
+-          calls.push('onSuccess');
+-        },
+-      });
+-      expect(options.trpc.path).toBe('post.create');
++        const options = trpc.post.create.mutationOptions({
++          onMutate(variables) {
++            expectTypeOf<{ text: string }>(variables);
++            calls.push('onMutate');
++          },
++          onSettled(data) {
++            expectTypeOf<'__mutationResult' | undefined>(data);
++            calls.push('onSettled');
++          },
++          onError(_error) {
++            calls.push('onError');
++          },
++          onSuccess(data) {
++            expectTypeOf<'__mutationResult'>(data);
++            calls.push('onSuccess');
++          },
++        });
++        expect(options.trpc.path).toBe('post.create');
+ 
+-      const mutation = useMutation(options);
++        const mutation = useMutation(options);
+ 
+-      React.useEffect(() => {
+-        mutation.mutate({
+-          text: 'hello',
+-        });
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+-      }, []);
+-      if (!mutation.data) {
+-        return <>...</>;
+-      }
++        React.useEffect(() => {
++          mutation.mutate({
++            text: 'hello',
++          });
++          // eslint-disable-next-line react-hooks/exhaustive-deps
++        }, []);
++        if (!mutation.data) {
++          return <>...</>;
++        }
+ 
+-      type TData = (typeof mutation)['data'];
+-      expectTypeOf<TData>().toMatchTypeOf<'__mutationResult'>();
++        type TData = (typeof mutation)['data'];
++        expectTypeOf<TData>().toMatchTypeOf<'__mutationResult'>();
+ 
+-      return <pre>{JSON.stringify(mutation.data ?? 'n/a', null, 4)}</pre>;
+-    }
++        return <pre>{JSON.stringify(mutation.data ?? 'n/a', null, 4)}</pre>;
++      }
++
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`__mutationResult`);
++      });
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`__mutationResult`);
++      expect(calls).toEqual(['onMutate', 'onSuccess', 'onSettled']);
+     });
+ 
+-    expect(calls).toEqual(['onMutate', 'onSuccess', 'onSettled']);
+-  });
++    test('useMutation with no opts', async () => {
++      await using ctx = testContext(keyPrefix);
++      const { useTRPC } = ctx;
+ 
+-  test('optimistic update', async () => {
+-    await using ctx = testContext();
+-    const { useTRPC } = ctx;
++      const calls: string[] = [];
+ 
+-    const calls: string[] = [];
++      function MyComponent() {
++        const trpc = useTRPC();
+ 
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryClient = useQueryClient();
++        const options = trpc.post.create.mutationOptions();
++        expect(options.trpc.path).toBe('post.create');
+ 
+-      const query = useQuery(trpc.post.list.queryOptions());
++        const mutation = useMutation(options);
+ 
+-      const mutation = useMutation(
+-        trpc.post.create.mutationOptions({
+-          async onMutate(variables) {
+-            calls.push('onMutate');
+-            const queryKey = trpc.post.list.queryKey();
+-            await queryClient.cancelQueries({ queryKey });
++        React.useEffect(() => {
++          calls.push('onMutate');
++          mutation.mutate(
++            {
++              text: 'hello',
++            },
++            {
++              onSettled(data) {
++                expectTypeOf<'__mutationResult' | undefined>(data);
++                calls.push('onSettled');
++              },
++              onError(_error) {
++                calls.push('onError');
++              },
++              onSuccess(data) {
++                expectTypeOf<'__mutationResult'>(data);
++                calls.push('onSuccess');
++              },
++            },
++          );
++          // eslint-disable-next-line react-hooks/exhaustive-deps
++        }, []);
++        if (!mutation.data) {
++          return <>...</>;
++        }
++
++        type TData = (typeof mutation)['data'];
++        expectTypeOf<TData>().toMatchTypeOf<'__mutationResult'>();
++
++        return <pre>{JSON.stringify(mutation.data ?? 'n/a', null, 4)}</pre>;
++      }
+ 
+-            const previousData = queryClient.getQueryData(queryKey);
+-            queryClient.setQueryData(queryKey, (old) => [
+-              ...(old ?? []),
+-              variables.text,
+-            ]);
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`__mutationResult`);
++      });
+ 
+-            return { previousData };
+-          },
+-          onError(_err, _variables, context) {
+-            calls.push('onError');
+-            queryClient.setQueryData(
+-              trpc.post.list.queryKey(),
+-              context?.previousData,
+-            );
+-          },
+-          onSettled() {
+-            calls.push('onSettled');
+-            queryClient.invalidateQueries(trpc.post.list.queryFilter());
+-          },
+-        }),
+-      );
++      expect(calls).toEqual(['onMutate', 'onSuccess', 'onSettled']);
++    });
+ 
+-      React.useEffect(() => {
+-        mutation.mutate({
+-          text: 'optimistic',
+-        });
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+-      }, []);
++    test('optimistic update', async () => {
++      await using ctx = testContext(keyPrefix);
++      const { useTRPC } = ctx;
++
++      const calls: string[] = [];
++
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryClient = useQueryClient();
++
++        const query = useQuery(trpc.post.list.queryOptions());
++
++        const mutation = useMutation(
++          trpc.post.create.mutationOptions({
++            async onMutate(variables) {
++              calls.push('onMutate');
++              const queryKey = trpc.post.list.queryKey();
++              await queryClient.cancelQueries({ queryKey });
++
++              const previousData = queryClient.getQueryData(queryKey);
++              queryClient.setQueryData(queryKey, (old) => [
++                ...(old ?? []),
++                variables.text,
++              ]);
++
++              return { previousData };
++            },
++            onError(_err, _variables, context) {
++              calls.push('onError');
++              queryClient.setQueryData(
++                trpc.post.list.queryKey(),
++                context?.previousData,
++              );
++            },
++            onSettled() {
++              calls.push('onSettled');
++              queryClient.invalidateQueries(trpc.post.list.queryFilter());
++            },
++          }),
++        );
+ 
+-      return <pre>{JSON.stringify(query.data)}</pre>;
+-    }
++        React.useEffect(() => {
++          mutation.mutate({
++            text: 'optimistic',
++          });
++          // eslint-disable-next-line react-hooks/exhaustive-deps
++        }, []);
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
++        return <pre>{JSON.stringify(query.data)}</pre>;
++      }
++
++      const utils = ctx.renderApp(<MyComponent />);
+ 
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(
+-        JSON.stringify(['initial', 'optimistic']),
+-      );
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(
++          JSON.stringify(['initial', 'optimistic']),
++        );
++      });
++      expect(calls).toEqual(['onMutate', 'onSettled']);
+     });
+-    expect(calls).toEqual(['onMutate', 'onSettled']);
+-  });
+-});
++  },
++);
+diff --git a/packages/tanstack-react-query/test/queryOptions.test.tsx b/packages/tanstack-react-query/test/queryOptions.test.tsx
+index 1ea6983e2b9..a476eaf8702 100644
+--- a/packages/tanstack-react-query/test/queryOptions.test.tsx
++++ b/packages/tanstack-react-query/test/queryOptions.test.tsx
+@@ -14,7 +14,7 @@ type Post = {
+   title: string;
+ };
+ 
+-const testContext = () => {
++const testContext = (keyPrefix?: string) => {
+   let iterableDeferred = createDeferred<void>();
+   const nextIterable = () => {
+     iterableDeferred.resolve();
+@@ -54,224 +54,228 @@ const testContext = () => {
+   });
+ 
+   return {
+-    ...testReactResource(appRouter),
++    ...testReactResource(appRouter, {
++      keyPrefix,
++    }),
+     nextIterable,
+   };
+ };
+ 
+-describe('queryOptions', () => {
+-  test('basic', async () => {
+-    await using ctx = testContext();
++describe.each(['user-123', undefined])(
++  'queryOptions with keyPrefix: %s',
++  (keyPrefix) => {
++    test('basic', async () => {
++      await using ctx = testContext(keyPrefix);
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryOptions = trpc.post.byId.queryOptions({ id: '1' });
+-      expect(queryOptions.trpc.path).toBe('post.byId');
+-      const query1 = useQuery(queryOptions);
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryOptions = trpc.post.byId.queryOptions({ id: '1' });
++        expect(queryOptions.trpc.path).toBe('post.byId');
++        const query1 = useQuery(queryOptions);
+ 
+-      const query2 = useQuery(trpc.post.byId.queryOptions({ id: '1' }));
+-      expectTypeOf(query1).toMatchTypeOf(query2);
++        const query2 = useQuery(trpc.post.byId.queryOptions({ id: '1' }));
++        expectTypeOf(query1).toMatchTypeOf(query2);
+ 
+-      if (!query1.data) {
+-        return <>...</>;
+-      }
++        if (!query1.data) {
++          return <>...</>;
++        }
+ 
+-      expectTypeOf(query1.data).toMatchTypeOf<'__result'>();
+-      expectTypeOf(query1.error).toMatchTypeOf<TRPCClientErrorLike<{
+-        transformer: false;
+-        errorShape: inferRouterError<typeof ctx.router>;
+-      }> | null>();
++        expectTypeOf(query1.data).toMatchTypeOf<'__result'>();
++        expectTypeOf(query1.error).toMatchTypeOf<TRPCClientErrorLike<{
++          transformer: false;
++          errorShape: inferRouterError<typeof ctx.router>;
++        }> | null>();
+ 
+-      return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+-    }
++        return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`__result`);
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`__result`);
++      });
+     });
+-  });
+ 
+-  test('select', async () => {
+-    await using ctx = testContext();
+-
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryOptions = trpc.post.byId.queryOptions(
+-        { id: '1' },
+-        {
+-          select: (data) => `mutated${data}` as const,
+-        },
+-      );
+-      expect(queryOptions.trpc.path).toBe('post.byId');
+-      const query1 = useQuery(queryOptions);
++    test('select', async () => {
++      await using ctx = testContext(keyPrefix);
+ 
+-      if (!query1.data) {
+-        return <>...</>;
+-      }
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryOptions = trpc.post.byId.queryOptions(
++          { id: '1' },
++          {
++            select: (data) => `mutated${data}` as const,
++          },
++        );
++        expect(queryOptions.trpc.path).toBe('post.byId');
++        const query1 = useQuery(queryOptions);
+ 
+-      expectTypeOf(query1.data).toMatchTypeOf<'mutated__result'>();
++        if (!query1.data) {
++          return <>...</>;
++        }
+ 
+-      return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+-    }
++        expectTypeOf(query1.data).toMatchTypeOf<'mutated__result'>();
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`mutated__result`);
++        return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
++      }
++
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`mutated__result`);
++      });
+     });
+-  });
+ 
+-  test('initialData', async () => {
+-    await using ctx = testContext();
++    test('initialData', async () => {
++      await using ctx = testContext(keyPrefix);
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryOptions = trpc.post.byId.queryOptions(
+-        { id: '1' },
+-        { initialData: '__result' },
+-      );
+-      expect(queryOptions.trpc.path).toBe('post.byId');
+-      const query1 = useQuery(queryOptions);
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryOptions = trpc.post.byId.queryOptions(
++          { id: '1' },
++          { initialData: '__result' },
++        );
++        expect(queryOptions.trpc.path).toBe('post.byId');
++        const query1 = useQuery(queryOptions);
+ 
+-      expectTypeOf(query1.data).toEqualTypeOf<'__result'>();
++        expectTypeOf(query1.data).toEqualTypeOf<'__result'>();
+ 
+-      return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+-    }
++        return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`__result`);
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`__result`);
++      });
+     });
+-  });
+ 
+-  test('disabling query with skipToken', async () => {
+-    await using ctx = testContext();
++    test('disabling query with skipToken', async () => {
++      await using ctx = testContext(keyPrefix);
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const options = trpc.post.byId.queryOptions(skipToken);
+-      const query1 = useQuery(options);
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const options = trpc.post.byId.queryOptions(skipToken);
++        const query1 = useQuery(options);
+ 
+-      const query2 = useQuery(trpc.post.byId.queryOptions(skipToken));
++        const query2 = useQuery(trpc.post.byId.queryOptions(skipToken));
+ 
+-      expectTypeOf(query1.data).toMatchTypeOf<'__result' | undefined>();
+-      expectTypeOf(query2.data).toMatchTypeOf<'__result' | undefined>();
++        expectTypeOf(query1.data).toMatchTypeOf<'__result' | undefined>();
++        expectTypeOf(query2.data).toMatchTypeOf<'__result' | undefined>();
+ 
+-      return <pre>{query1.status}</pre>;
+-    }
++        return <pre>{query1.status}</pre>;
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`pending`);
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`pending`);
++      });
+     });
+-  });
+ 
+-  test('with extra `trpc` context', async () => {
+-    await using ctx = testContext();
+-
+-    const context = {
+-      __TEST__: true,
+-    };
++    test('with extra `trpc` context', async () => {
++      await using ctx = testContext(keyPrefix);
++
++      const context = {
++        __TEST__: true,
++      };
++
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryOptions = trpc.post.byId.queryOptions(
++          { id: '1' },
++          { trpc: { context } },
++        );
++        expect(queryOptions.trpc.path).toBe('post.byId');
++        const query1 = useQuery(queryOptions);
++
++        if (!query1.data) {
++          return <>...</>;
++        }
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryOptions = trpc.post.byId.queryOptions(
+-        { id: '1' },
+-        { trpc: { context } },
+-      );
+-      expect(queryOptions.trpc.path).toBe('post.byId');
+-      const query1 = useQuery(queryOptions);
++        expectTypeOf(query1.data).toMatchTypeOf<'__result'>();
+ 
+-      if (!query1.data) {
+-        return <>...</>;
++        return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+       }
+ 
+-      expectTypeOf(query1.data).toMatchTypeOf<'__result'>();
+-
+-      return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+-    }
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`__result`);
++      });
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`__result`);
++      expect(ctx.linkSpy.up.mock.calls[0]![0].context).toMatchObject(context);
+     });
+ 
+-    expect(ctx.linkSpy.up.mock.calls[0]![0].context).toMatchObject(context);
+-  });
+-
+-  test('iterable', async () => {
+-    await using ctx = testContext();
+-
+-    const { useTRPC } = ctx;
+-    const states: {
+-      status: string;
+-      data: unknown;
+-      fetchStatus: string;
+-    }[] = [];
+-    const selects: number[][] = [];
+-
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const opts = trpc.post.iterable.queryOptions(undefined, {
+-        select(data) {
+-          expectTypeOf<number[]>(data);
+-          selects.push(data);
+-          return data;
+-        },
+-        trpc: {
+-          context: {
+-            stream: 1,
++    test('iterable', async () => {
++      await using ctx = testContext(keyPrefix);
++
++      const { useTRPC } = ctx;
++      const states: {
++        status: string;
++        data: unknown;
++        fetchStatus: string;
++      }[] = [];
++      const selects: number[][] = [];
++
++      function MyComponent() {
++        const trpc = useTRPC();
++        const opts = trpc.post.iterable.queryOptions(undefined, {
++          select(data) {
++            expectTypeOf<number[]>(data);
++            selects.push(data);
++            return data;
+           },
+-        },
+-      });
+-      const query1 = useQuery(opts);
+-      states.push({
+-        status: query1.status,
+-        data: query1.data,
+-        fetchStatus: query1.fetchStatus,
+-      });
+-      ctx.nextIterable();
+-
+-      expectTypeOf(query1.data).toEqualTypeOf<undefined | number[]>();
+-
+-      return (
+-        <pre>
+-          {query1.status}:{query1.fetchStatus}
+-        </pre>
+-      );
+-    }
++          trpc: {
++            context: {
++              stream: 1,
++            },
++          },
++        });
++        const query1 = useQuery(opts);
++        states.push({
++          status: query1.status,
++          data: query1.data,
++          fetchStatus: query1.fetchStatus,
++        });
++        ctx.nextIterable();
++
++        expectTypeOf(query1.data).toEqualTypeOf<undefined | number[]>();
++
++        return (
++          <pre>
++            {query1.status}:{query1.fetchStatus}
++          </pre>
++        );
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`success:idle`);
+-    });
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`success:idle`);
++      });
+ 
+-    expect(selects).toEqual([
+-      [],
+-      [],
+-      [1],
+-      [1],
+-      [1, 2],
+-      [1, 2],
+-      [1, 2, 3],
+-      [1, 2, 3],
+-    ]);
+-
+-    expect(states.map((s) => [s.status, s.fetchStatus])).toEqual([
+-      // initial
+-      ['pending', 'fetching'],
+-      // waiting 3 values
+-      ['success', 'fetching'],
+-      ['success', 'fetching'],
+-      ['success', 'fetching'],
+-      // done iterating
+-      ['success', 'idle'],
+-    ]);
+-    expect(states).toMatchInlineSnapshot(`
++      expect(selects).toEqual([
++        [],
++        [],
++        [1],
++        [1],
++        [1, 2],
++        [1, 2],
++        [1, 2, 3],
++        [1, 2, 3],
++      ]);
++
++      expect(states.map((s) => [s.status, s.fetchStatus])).toEqual([
++        // initial
++        ['pending', 'fetching'],
++        // waiting 3 values
++        ['success', 'fetching'],
++        ['success', 'fetching'],
++        ['success', 'fetching'],
++        // done iterating
++        ['success', 'idle'],
++      ]);
++      expect(states).toMatchSnapshot(`
+         Array [
+           Object {
+             "data": undefined,
+@@ -309,88 +313,89 @@ describe('queryOptions', () => {
+           },
+         ]
+       `);
+-  });
++    });
+ 
+-  test('useSuspenseQuery', async () => {
+-    await using ctx = testContext();
++    test('useSuspenseQuery', async () => {
++      await using ctx = testContext(keyPrefix);
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const { data } = useSuspenseQuery(
+-        trpc.post.byId.queryOptions({ id: '1' }),
+-      );
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const { data } = useSuspenseQuery(
++          trpc.post.byId.queryOptions({ id: '1' }),
++        );
+ 
+-      expectTypeOf(data).toMatchTypeOf<'__result'>();
++        expectTypeOf(data).toMatchTypeOf<'__result'>();
+ 
+-      return <pre>{JSON.stringify(data ?? 'n/a', null, 4)}</pre>;
+-    }
++        return <pre>{JSON.stringify(data ?? 'n/a', null, 4)}</pre>;
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent(`__result`);
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent(`__result`);
++      });
+     });
+-  });
+ 
+-  test('does not fetch if called from router directly', async () => {
+-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+-    await using ctx = testContext();
++    test('does not fetch if called from router directly', async () => {
++      const fetchSpy = vi.spyOn(globalThis, 'fetch');
++      await using ctx = testContext(keyPrefix);
+ 
+-    const post = await ctx.queryClient.fetchQuery(
+-      ctx.optionsProxyServer.post.byId.queryOptions({ id: '1' }),
+-    );
++      const post = await ctx.queryClient.fetchQuery(
++        ctx.optionsProxyServer.post.byId.queryOptions({ id: '1' }),
++      );
+ 
+-    expect(post).toEqual('__result');
++      expect(post).toEqual('__result');
+ 
+-    expect(fetchSpy).toHaveBeenCalledTimes(0);
+-  });
++      expect(fetchSpy).toHaveBeenCalledTimes(0);
++    });
+ 
+-  // regression test for https://github.com/trpc/trpc/issues/6792
+-  test('initialData inference', async () => {
+-    await using ctx = testContext();
++    // regression test for https://github.com/trpc/trpc/issues/6792
++    test('initialData inference', async () => {
++      await using ctx = testContext(keyPrefix);
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryOptions = trpc.post.list.queryOptions(undefined, {
+-        initialData: [],
+-      });
+-      expect(queryOptions.trpc.path).toBe('post.list');
+-      const query1 = useQuery(queryOptions);
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryOptions = trpc.post.list.queryOptions(undefined, {
++          initialData: [],
++        });
++        expect(queryOptions.trpc.path).toBe('post.list');
++        const query1 = useQuery(queryOptions);
+ 
+-      expectTypeOf(query1.data).toEqualTypeOf<Post[]>();
++        expectTypeOf(query1.data).toEqualTypeOf<Post[]>();
+ 
+-      return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+-    }
++        return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent('Hello world');
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent('Hello world');
++      });
+     });
+-  });
+ 
+-  test('initialData inference + select', async () => {
+-    await using ctx = testContext();
+-    const noPostSymbol = Symbol('noPost');
++    test('initialData inference + select', async () => {
++      await using ctx = testContext(keyPrefix);
++      const noPostSymbol = Symbol('noPost');
+ 
+-    const { useTRPC } = ctx;
+-    function MyComponent() {
+-      const trpc = useTRPC();
+-      const queryOptions = trpc.post.list.queryOptions(undefined, {
+-        initialData: [],
+-        select: (data) => data[0] ?? noPostSymbol,
+-      });
+-      expect(queryOptions.trpc.path).toBe('post.list');
+-      const query1 = useQuery(queryOptions);
++      const { useTRPC } = ctx;
++      function MyComponent() {
++        const trpc = useTRPC();
++        const queryOptions = trpc.post.list.queryOptions(undefined, {
++          initialData: [],
++          select: (data) => data[0] ?? noPostSymbol,
++        });
++        expect(queryOptions.trpc.path).toBe('post.list');
++        const query1 = useQuery(queryOptions);
+ 
+-      expectTypeOf(query1.data).toEqualTypeOf<Post | typeof noPostSymbol>();
++        expectTypeOf(query1.data).toEqualTypeOf<Post | typeof noPostSymbol>();
+ 
+-      return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
+-    }
++        return <pre>{JSON.stringify(query1.data ?? 'n/a', null, 4)}</pre>;
++      }
+ 
+-    const utils = ctx.renderApp(<MyComponent />);
+-    await vi.waitFor(() => {
+-      expect(utils.container).toHaveTextContent('Hello world');
++      const utils = ctx.renderApp(<MyComponent />);
++      await vi.waitFor(() => {
++        expect(utils.container).toHaveTextContent('Hello world');
++      });
+     });
+-  });
+-});
++  },
++);

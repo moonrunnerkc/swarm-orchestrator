@@ -1,0 +1,643 @@
+diff --git a/.changeset/quiet-birds-fly.md b/.changeset/quiet-birds-fly.md
+new file mode 100644
+index 0000000000..cc07c816f6
+--- /dev/null
++++ b/.changeset/quiet-birds-fly.md
+@@ -0,0 +1,10 @@
++---
++"@cloudflare/vite-plugin": patch
++"@cloudflare/workers-utils": patch
++---
++
++Filter compatibility date fallback warning when no update is available
++
++The compatibility date warning from workerd (e.g., "The latest compatibility date supported by the installed Cloudflare Workers Runtime is...") is now only shown when a newer version of `@cloudflare/vite-plugin` is available. This matches the behavior in Wrangler and reduces noise when the user is already on the latest version.
++
++The update-check logic has been extracted to `@cloudflare/workers-utils` so it can be shared across packages.
+diff --git a/packages/vite-plugin-cloudflare/src/miniflare-options.ts b/packages/vite-plugin-cloudflare/src/miniflare-options.ts
+index b9541e1f7b..ea757d8ec9 100644
+--- a/packages/vite-plugin-cloudflare/src/miniflare-options.ts
++++ b/packages/vite-plugin-cloudflare/src/miniflare-options.ts
+@@ -34,6 +34,7 @@ import { getContainerOptions, getDockerPath } from "./containers";
+ import { getInputInspectorPort } from "./debug";
+ import { additionalModuleRE } from "./plugins/additional-modules";
+ import { ENVIRONMENT_NAME_HEADER } from "./shared";
++import { checkForNpmUpdate } from "./update-check";
+ import { satisfiesMinimumViteVersion, withTrailingSlash } from "./utils";
+ import type { CloudflareDevEnvironment } from "./cloudflare-environment";
+ import type { ContainerTagToOptionsMap } from "./containers";
+@@ -688,7 +689,10 @@ export async function getPreviewMiniflareOptions(
+  * A Miniflare logger that forwards messages onto a Vite logger.
+  */
+ class ViteMiniflareLogger extends Log {
++	#warnedCompatibilityDateFallback = false;
++
+ 	private logger: vite.Logger;
++
+ 	constructor(config: vite.ResolvedConfig) {
+ 		super(miniflareLogLevelFromViteLogLevel(config.logLevel));
+ 		this.logger = config.logger;
+@@ -705,6 +709,33 @@ class ViteMiniflareLogger extends Log {
+ 		}
+ 	}
+ 
++	override warn(message: string): void {
++		// workerd emits a warning when the requested compatibility date is newer
++		// than the binary supports. We intercept it here so we only show it once
++		// and only when a newer version of the plugin is actually available on
++		// npm — otherwise the warning is just noise the user cannot act on.
++		if (!message.startsWith("The latest compatibility date supported by")) {
++			this.logger.warn(message);
++			return;
++		}
++
++		if (this.#warnedCompatibilityDateFallback) {
++			return;
++		}
++		this.#warnedCompatibilityDateFallback = true;
++
++		return void checkForNpmUpdate().then((result) => {
++			if (result.status !== "update-available") {
++				return;
++			}
++			this.logger.warn(
++				`${message}\nFeatures enabled by your requested compatibility date may not be available.` +
++					`\nUpgrade to \`@cloudflare/vite-plugin@${result.latest}\` to remove this warning.`
++			);
++			return;
++		});
++	}
++
+ 	override logReady() {
+ 		// Noop so that Miniflare server start messages are not logged
+ 	}
+diff --git a/packages/vite-plugin-cloudflare/src/update-check.ts b/packages/vite-plugin-cloudflare/src/update-check.ts
+new file mode 100644
+index 0000000000..0c0e44f770
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/src/update-check.ts
+@@ -0,0 +1,32 @@
++import { fetchLatestNpmVersion } from "@cloudflare/workers-utils";
++import type { NpmVersionCheckResult } from "@cloudflare/workers-utils";
++
++// Memoise update check promise, so we can call this multiple times as required
++// without having to prop drill the result. It's unlikely to change through the
++// process lifetime.
++let updateCheckPromise: Promise<NpmVersionCheckResult>;
++
++/**
++ * Checks if a newer version of `@cloudflare/vite-plugin` is available on npm.
++ *
++ * The result is memoised so the check is only performed once per process
++ * lifetime — callers can invoke this freely without worrying about redundant
++ * network requests.
++ *
++ * @returns A discriminated result indicating whether an update is available,
++ *   the package is already up-to-date, or the check failed
++ */
++export function checkForNpmUpdate(): Promise<NpmVersionCheckResult> {
++	return (updateCheckPromise ??= (async () => {
++		try {
++			const pkg = (
++				await import("../package.json", {
++					with: { type: "json" },
++				})
++			).default;
++			return fetchLatestNpmVersion(pkg.name, pkg.version);
++		} catch {
++			return { status: "failed" };
++		}
++	})());
++}
+diff --git a/packages/workers-utils/package.json b/packages/workers-utils/package.json
+index b9f1bedeca..4128a1e5aa 100644
+--- a/packages/workers-utils/package.json
++++ b/packages/workers-utils/package.json
+@@ -63,6 +63,7 @@
+ 		"tsdown": "^0.15.9",
+ 		"tsup": "8.3.0",
+ 		"typescript": "catalog:default",
++		"update-check": "^1.5.4",
+ 		"vitest": "catalog:default",
+ 		"xdg-app-paths": "^8.3.0"
+ 	},
+diff --git a/packages/workers-utils/src/index.ts b/packages/workers-utils/src/index.ts
+index 0942f14441..3a7f08fd46 100644
+--- a/packages/workers-utils/src/index.ts
++++ b/packages/workers-utils/src/index.ts
+@@ -110,3 +110,6 @@ export type { Counter } from "./prometheus-metrics";
+ export type { Tunnel, TunnelOptions } from "./tunnel";
+ export { startTunnel } from "./tunnel";
+ export { spawnCloudflared } from "./cloudflared";
++
++export { fetchLatestNpmVersion } from "./update-check";
++export type { NpmVersionCheckResult } from "./update-check";
+diff --git a/packages/workers-utils/src/update-check.ts b/packages/workers-utils/src/update-check.ts
+new file mode 100644
+index 0000000000..bd2e255e11
+--- /dev/null
++++ b/packages/workers-utils/src/update-check.ts
+@@ -0,0 +1,64 @@
++import * as timersPromises from "node:timers/promises";
++import checkForUpdate from "update-check";
++import type { Result } from "update-check";
++
++// Safety-net timeout for the update check network request.
++// The `update-check` library has its own 2s socket timeout, but if the first
++// request gets a 4xx it retries with auth — potentially doubling the wait.
++// This caps the total wall-clock time for the entire operation.
++const UPDATE_CHECK_TIMEOUT_MS = 3_000;
++
++// Sentinel value used to distinguish a timeout from the library returning null
++// (which means "already up-to-date").
++const TIMED_OUT: unique symbol = Symbol("timed_out");
++
++export type NpmVersionCheckResult =
++	| { status: "up-to-date" }
++	| { status: "update-available"; latest: string }
++	| { status: "failed" };
++
++/**
++ * Checks if a newer version of a package is available on npm.
++ *
++ * Uses the `update-check` library to query the npm registry for the latest
++ * version. The dist tag used for comparison depends on the current version —
++ * "beta" for pre-release versions (0.0.0-*) and "latest" for stable versions.
++ *
++ * @param name - The npm package name to check
++ * @param version - The current version to compare against
++ * @returns A discriminated result:
++ *   - `{ status: "update-available", latest: string }` if a newer version exists
++ *   - `{ status: "up-to-date" }` if the installed version is already the latest
++ *   - `{ status: "failed" }` if the check could not be completed (network error, timeout, etc.)
++ */
++export async function fetchLatestNpmVersion(
++	name: string,
++	version: string
++): Promise<NpmVersionCheckResult> {
++	let result: Result | null | typeof TIMED_OUT = null;
++	try {
++		// Race with a timeout as a safety net — the library's own 2s socket
++		// timeout handles most cases, but the auth-retry path can take up to 4s.
++		result = await Promise.race([
++			checkForUpdate(
++				{ name, version },
++				{
++					distTag: version.startsWith("0.0.0") ? "beta" : "latest",
++				}
++			),
++			timersPromises.setTimeout(UPDATE_CHECK_TIMEOUT_MS, TIMED_OUT, {
++				ref: false,
++			}),
++		]);
++	} catch {
++		return { status: "failed" };
++	}
++
++	if (result === TIMED_OUT) {
++		return { status: "failed" };
++	}
++	if (result === null) {
++		return { status: "up-to-date" };
++	}
++	return { status: "update-available", latest: result.latest };
++}
+diff --git a/packages/wrangler/package.json b/packages/wrangler/package.json
+index e5013627c5..682ba6e288 100644
+--- a/packages/wrangler/package.json
++++ b/packages/wrangler/package.json
+@@ -163,7 +163,6 @@
+ 		"tsup": "8.3.0",
+ 		"typescript": "catalog:default",
+ 		"undici": "catalog:default",
+-		"update-check": "^1.5.4",
+ 		"vitest": "catalog:default",
+ 		"vitest-websocket-mock": "^0.4.0",
+ 		"ws": "catalog:default",
+diff --git a/packages/wrangler/src/__tests__/config/configuration.test.ts b/packages/wrangler/src/__tests__/config/configuration.test.ts
+index 6e2617373b..894c711597 100644
+--- a/packages/wrangler/src/__tests__/config/configuration.test.ts
++++ b/packages/wrangler/src/__tests__/config/configuration.test.ts
+@@ -16,7 +16,7 @@ describe("readConfig() upgrade hint", () => {
+ 	it("should not show an upgrade hint when unexpected fields are found but no update is available", async ({
+ 		expect,
+ 	}) => {
+-		vi.mocked(updateCheck).mockResolvedValue(undefined);
++		vi.mocked(updateCheck).mockResolvedValue({ status: "up-to-date" });
+ 		writeWranglerConfig({
+ 			// @ts-expect-error intentional unknown field for test
+ 			unknown_field: "some_value",
+@@ -30,7 +30,10 @@ describe("readConfig() upgrade hint", () => {
+ 	it("should show an upgrade hint when unexpected fields are found and an update is available", async ({
+ 		expect,
+ 	}) => {
+-		vi.mocked(updateCheck).mockResolvedValue("9.9.9");
++		vi.mocked(updateCheck).mockResolvedValue({
++			status: "update-available",
++			latest: "9.9.9",
++		});
+ 		writeWranglerConfig({
+ 			// @ts-expect-error intentional unknown field for test
+ 			unknown_field: "some_value",
+@@ -48,7 +51,10 @@ describe("readConfig() upgrade hint", () => {
+ 	it("should not show an upgrade hint when warnings are unrelated to unexpected fields", async ({
+ 		expect,
+ 	}) => {
+-		vi.mocked(updateCheck).mockResolvedValue("9.9.9");
++		vi.mocked(updateCheck).mockResolvedValue({
++			status: "update-available",
++			latest: "9.9.9",
++		});
+ 		// legacy_env: false produces a "Service environments are deprecated" warning
+ 		// but does NOT trigger validateAdditionalProperties, so no upgrade hint
+ 		writeWranglerConfig({ legacy_env: false });
+diff --git a/packages/wrangler/src/__tests__/index.test.ts b/packages/wrangler/src/__tests__/index.test.ts
+index 8536d4e174..2221feb8be 100644
+--- a/packages/wrangler/src/__tests__/index.test.ts
++++ b/packages/wrangler/src/__tests__/index.test.ts
+@@ -411,7 +411,10 @@ describe("wrangler", () => {
+ 		it("should display a 'try updating' message if there is one available", async ({
+ 			expect,
+ 		}) => {
+-			(updateCheck as Mock).mockImplementation(async () => "123.123.123");
++			(updateCheck as Mock).mockImplementation(async () => ({
++				status: "update-available",
++				latest: "123.123.123",
++			}));
+ 			await logPossibleBugMessage();
+ 			expect(std.out).toMatchInlineSnapshot(`
+ 			"[32mIf you think this is a bug then please create an issue at https://github.com/cloudflare/workers-sdk/issues/new/choose[0m
+diff --git a/packages/wrangler/src/__tests__/vitest.setup.ts b/packages/wrangler/src/__tests__/vitest.setup.ts
+index 96b35b0340..fda2f133fd 100644
+--- a/packages/wrangler/src/__tests__/vitest.setup.ts
++++ b/packages/wrangler/src/__tests__/vitest.setup.ts
+@@ -124,7 +124,13 @@ vi.mock("../package-manager", async (importOriginal) => {
+ 	return mocked;
+ });
+ 
+-vi.mock("../update-check");
++vi.mock("../update-check", async (importOriginal) => {
++	const mod = await importOriginal<typeof import("../update-check")>();
++	return {
++		...mod,
++		updateCheck: vi.fn().mockResolvedValue({ status: "up-to-date" }),
++	};
++});
+ 
+ beforeAll(() => {
+ 	msw.listen({
+diff --git a/packages/wrangler/src/config/index.ts b/packages/wrangler/src/config/index.ts
+index 3c44ddd668..e62e442a38 100644
+--- a/packages/wrangler/src/config/index.ts
++++ b/packages/wrangler/src/config/index.ts
+@@ -51,11 +51,11 @@ async function logWarningsWithUpgradeHint(
+ 	}
+ 	logger.warn(diagnostics.renderWarnings());
+ 	if (diagnostics.hasUnexpectedFieldsInTree()) {
+-		const latestVersion = await updateCheck();
+-		if (latestVersion !== undefined) {
++		const result = await updateCheck();
++		if (result.status === "update-available") {
+ 			logger.log(
+ 				`There is a newer version of Wrangler available ` +
+-					`(current: ${wranglerVersion}, latest: ${latestVersion}). ` +
++					`(current: ${wranglerVersion}, latest: ${result.latest}). ` +
+ 					`Try upgrading, as it might support this configuration option.`
+ 			);
+ 		}
+diff --git a/packages/wrangler/src/dev/miniflare/index.ts b/packages/wrangler/src/dev/miniflare/index.ts
+index e0f17e2a3e..f23a318990 100644
+--- a/packages/wrangler/src/dev/miniflare/index.ts
++++ b/packages/wrangler/src/dev/miniflare/index.ts
+@@ -126,14 +126,14 @@ export class WranglerLog extends Log {
+ 				return;
+ 			}
+ 			this.#warnedCompatibilityDateFallback = true;
+-			return void updateCheck().then((maybeNewVersion) => {
+-				if (maybeNewVersion === undefined) {
++			return void updateCheck().then((result) => {
++				if (result.status !== "update-available") {
+ 					return;
+ 				}
+ 				message += [
+ 					"",
+ 					"Features enabled by your requested compatibility date may not be available.",
+-					`Upgrade to \`wrangler@${maybeNewVersion}\` to remove this warning.`,
++					`Upgrade to \`wrangler@${result.latest}\` to remove this warning.`,
+ 				].join("\n");
+ 				super.warn(message);
+ 			});
+diff --git a/packages/wrangler/src/update-check.ts b/packages/wrangler/src/update-check.ts
+index e975c071c7..133c7e5184 100644
+--- a/packages/wrangler/src/update-check.ts
++++ b/packages/wrangler/src/update-check.ts
+@@ -1,42 +1,28 @@
+-import checkForUpdate from "update-check";
++import { fetchLatestNpmVersion } from "@cloudflare/workers-utils";
+ import {
+ 	name as wranglerName,
+ 	version as wranglerVersion,
+ } from "../package.json";
+-import type { Result } from "update-check";
+-
+-// Safety-net timeout for the update check network request.
+-// The `update-check` library has its own 2s socket timeout, but if the first
+-// request gets a 4xx it retries with auth — potentially doubling the wait.
+-// This caps the total wall-clock time for the entire operation.
+-const UPDATE_CHECK_TIMEOUT_MS = 3000;
+-
+-async function doUpdateCheck(): Promise<string | undefined> {
+-	let update: Result | null = null;
+-	const pkg = { name: wranglerName, version: wranglerVersion };
+-	try {
+-		// Race with a timeout as a safety net — the library's own 2s socket
+-		// timeout handles most cases, but the auth-retry path can take up to 4s.
+-		update = await Promise.race([
+-			checkForUpdate(pkg, {
+-				distTag: pkg.version.startsWith("0.0.0") ? "beta" : "latest",
+-			}),
+-			new Promise<null>((resolve) => {
+-				const timer = setTimeout(() => resolve(null), UPDATE_CHECK_TIMEOUT_MS);
+-				// Don't let the orphaned timer prevent process exit
+-				timer.unref();
+-			}),
+-		]);
+-	} catch {
+-		// ignore error
+-	}
+-	return update?.latest;
+-}
++import type { NpmVersionCheckResult } from "@cloudflare/workers-utils";
+ 
+ // Memoise update check promise, so we can call this multiple times as required
+ // without having to prop drill the result. It's unlikely to change through the
+ // process lifetime.
+-let updateCheckPromise: Promise<string | undefined>;
+-export function updateCheck(): Promise<string | undefined> {
+-	return (updateCheckPromise ??= doUpdateCheck());
++let updateCheckPromise: Promise<NpmVersionCheckResult>;
++
++/**
++ * Checks if a newer version of `wrangler` is available on npm.
++ *
++ * The result is memoised so the check is only performed once per process
++ * lifetime — callers can invoke this freely without worrying about redundant
++ * network requests.
++ *
++ * @returns A discriminated result indicating whether an update is available,
++ *   the package is already up-to-date, or the check failed
++ */
++export function updateCheck(): Promise<NpmVersionCheckResult> {
++	return (updateCheckPromise ??= fetchLatestNpmVersion(
++		wranglerName,
++		wranglerVersion
++	));
+ }
+diff --git a/packages/wrangler/src/utils/logPossibleBugMessage.ts b/packages/wrangler/src/utils/logPossibleBugMessage.ts
+index 9537639049..718ba7b0d8 100644
+--- a/packages/wrangler/src/utils/logPossibleBugMessage.ts
++++ b/packages/wrangler/src/utils/logPossibleBugMessage.ts
+@@ -16,10 +16,10 @@ export async function logPossibleBugMessage() {
+ 		`${fgGreenColor}%s${resetColor}`,
+ 		"If you think this is a bug then please create an issue at https://github.com/cloudflare/workers-sdk/issues/new/choose"
+ 	);
+-	const latestVersion = await updateCheck();
+-	if (latestVersion) {
++	const result = await updateCheck();
++	if (result.status === "update-available") {
+ 		logger.log(
+-			`Note that there is a newer version of Wrangler available (${latestVersion}). Consider checking whether upgrading resolves this error.`
++			`Note that there is a newer version of Wrangler available (${result.latest}). Consider checking whether upgrading resolves this error.`
+ 		);
+ 	}
+ }
+diff --git a/packages/wrangler/src/wrangler-banner.ts b/packages/wrangler/src/wrangler-banner.ts
+index 9e338bb3ba..82e29b5067 100644
+--- a/packages/wrangler/src/wrangler-banner.ts
++++ b/packages/wrangler/src/wrangler-banner.ts
+@@ -6,6 +6,7 @@ import supportsColor from "supports-color";
+ import { version as wranglerVersion } from "../package.json";
+ import { logger } from "./logger";
+ import { updateCheck } from "./update-check";
++import type { NpmVersionCheckResult } from "@cloudflare/workers-utils";
+ 
+ const MIN_NODE_VERSION = "22.0.0";
+ 
+@@ -27,14 +28,14 @@ export async function printWranglerBanner(performUpdateCheck = true) {
+ 		typeof WRANGLER_PRERELEASE_LABEL === "undefined"
+ 			? ` ⛅️ wrangler ${wranglerVersion}`
+ 			: ` ⛅️ wrangler ${wranglerVersion} (${chalk.blue(WRANGLER_PRERELEASE_LABEL)})`;
+-	let maybeNewVersion: string | undefined;
++	let updateResult: NpmVersionCheckResult | undefined;
+ 	if (performUpdateCheck) {
+ 		// Race the update check against a short grace period. On a cache
+ 		// hit the library's readFile I/O completes within the first event-
+ 		// loop tick (<1 ms on SSD), so the result is almost always available.
+ 		// On a cache miss or slow network the timer wins and the banner
+ 		// prints immediately — no blocking.
+-		maybeNewVersion = await Promise.race([
++		updateResult = await Promise.race([
+ 			updateCheck(),
+ 			new Promise<undefined>((resolve) => {
+ 				const timer = setTimeout(
+@@ -44,8 +45,8 @@ export async function printWranglerBanner(performUpdateCheck = true) {
+ 				timer.unref();
+ 			}),
+ 		]);
+-		if (maybeNewVersion !== undefined) {
+-			text += ` (update available ${chalk.green(maybeNewVersion)})`;
++		if (updateResult?.status === "update-available") {
++			text += ` (update available ${chalk.green(updateResult.latest)})`;
+ 		}
+ 	}
+ 
+@@ -67,9 +68,9 @@ export async function printWranglerBanner(performUpdateCheck = true) {
+ 	}
+ 
+ 	// Log a slightly more noticeable message if this is a major bump
+-	if (maybeNewVersion !== undefined) {
++	if (updateResult?.status === "update-available") {
+ 		const currentMajor = parseInt(wranglerVersion.split(".")[0]);
+-		const newMajor = parseInt(maybeNewVersion.split(".")[0]);
++		const newMajor = parseInt(updateResult.latest.split(".")[0]);
+ 		if (newMajor > currentMajor) {
+ 			logger.warn(
+ 				`The version of Wrangler you are using is now out-of-date.
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 90e227b5b9..718ef03acf 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -56,7 +56,7 @@ catalogs:
+       version: 1.5.2
+     tinyglobby:
+       specifier: ^0.2.12
+-      version: 0.2.15
++      version: 0.2.16
+     tree-kill:
+       specifier: ^1.2.2
+       version: 1.2.2
+@@ -1752,7 +1752,7 @@ importers:
+         version: 1.5.2
+       tinyglobby:
+         specifier: catalog:default
+-        version: 0.2.15
++        version: 0.2.16
+       tree-kill:
+         specifier: catalog:default
+         version: 1.2.2
+@@ -2455,7 +2455,7 @@ importers:
+         version: 7.7.3
+       tinyglobby:
+         specifier: catalog:default
+-        version: 0.2.15
++        version: 0.2.16
+       tree-kill:
+         specifier: catalog:default
+         version: 1.2.2
+@@ -3921,6 +3921,9 @@ importers:
+       typescript:
+         specifier: catalog:default
+         version: 5.8.3
++      update-check:
++        specifier: ^1.5.4
++        version: 1.5.4
+       vitest:
+         specifier: catalog:default
+         version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@22.15.17)(@vitest/ui@4.1.0)(msw@2.12.4(@types/node@22.15.17)(typescript@5.8.3))(vite@8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1))
+@@ -4256,9 +4259,6 @@ importers:
+       undici:
+         specifier: catalog:default
+         version: 7.24.8
+-      update-check:
+-        specifier: ^1.5.4
+-        version: 1.5.4
+       vitest:
+         specifier: catalog:default
+         version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@22.15.17)(@vitest/ui@4.1.0)(msw@2.12.4(@types/node@22.15.17)(typescript@5.8.3))(vite@8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1))
+@@ -4307,7 +4307,7 @@ importers:
+         version: 7.7.3
+       tinyglobby:
+         specifier: catalog:default
+-        version: 0.2.15
++        version: 0.2.16
+       ts-dedent:
+         specifier: ^2.2.0
+         version: 2.2.0
+@@ -18522,10 +18522,10 @@ snapshots:
+       '@rollup/pluginutils': 5.1.4(rollup@4.30.1)
+       commondir: 1.0.1
+       estree-walker: 2.0.2
+-      fdir: 6.5.0(picomatch@4.0.3)
++      fdir: 6.5.0(picomatch@4.0.4)
+       is-reference: 1.2.1
+       magic-string: 0.30.21
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+     optionalDependencies:
+       rollup: 4.30.1
+ 
+@@ -18564,7 +18564,7 @@ snapshots:
+     dependencies:
+       '@types/estree': 1.0.8
+       estree-walker: 2.0.2
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+     optionalDependencies:
+       rollup: 4.30.1
+ 
+@@ -19582,7 +19582,7 @@ snapshots:
+       babel-dead-code-elimination: 1.0.12
+       diff: 8.0.3
+       pathe: 2.0.3
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+     transitivePeerDependencies:
+       - supports-color
+ 
+@@ -20148,7 +20148,7 @@ snapshots:
+       flatted: 3.4.0
+       pathe: 2.0.3
+       sirv: 3.0.2
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+       tinyrainbow: 3.0.3
+       vitest: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@22.15.17)(@vitest/ui@4.1.0)(msw@2.12.4(@types/node@22.15.17)(typescript@5.8.3))(vite@8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1))
+ 
+@@ -23328,7 +23328,7 @@ snapshots:
+       postcss: 8.5.8
+       postcss-nested: 7.0.2(postcss@8.5.8)
+       semver: 7.7.3
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+     optionalDependencies:
+       typescript: 5.8.3
+       vue-tsc: 2.0.29(typescript@5.8.3)
+@@ -25776,7 +25776,7 @@ snapshots:
+       rolldown-plugin-dts: 0.17.6(ms@2.1.3)(rolldown@1.0.0-beta.49)(typescript@5.8.3)
+       semver: 7.7.3
+       tinyexec: 1.0.2
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+       tree-kill: 1.2.2
+       unconfig-core: 7.4.1
+       unrun: 0.2.8(synckit@0.11.12)
+@@ -26063,7 +26063,7 @@ snapshots:
+       rollup: 4.30.1
+       rollup-plugin-dts: 6.1.1(rollup@4.30.1)(typescript@5.8.3)
+       scule: 1.3.0
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+       untyped: 1.5.2
+     optionalDependencies:
+       typescript: 5.8.3
+@@ -26353,7 +26353,7 @@ snapshots:
+       picomatch: 4.0.3
+       postcss: 8.5.6
+       rollup: 4.57.1
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+     optionalDependencies:
+       '@types/node': 22.15.17
+       fsevents: 2.3.3
+@@ -26412,11 +26412,11 @@ snapshots:
+       magic-string: 0.30.21
+       obug: 2.1.1
+       pathe: 2.0.3
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+       std-env: 4.0.0
+       tinybench: 2.9.0
+       tinyexec: 1.0.2
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+       tinyrainbow: 3.0.3
+       vite: 8.0.13(@types/node@22.15.17)(esbuild@0.23.1)(jiti@2.6.1)(tsx@3.12.10)(yaml@2.8.1)
+       why-is-node-running: 2.3.0
+@@ -26441,11 +26441,11 @@ snapshots:
+       magic-string: 0.30.21
+       obug: 2.1.1
+       pathe: 2.0.3
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+       std-env: 4.0.0
+       tinybench: 2.9.0
+       tinyexec: 1.0.2
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+       tinyrainbow: 3.0.3
+       vite: 8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1)
+       why-is-node-running: 2.3.0
+@@ -26470,11 +26470,11 @@ snapshots:
+       magic-string: 0.30.21
+       obug: 2.1.1
+       pathe: 2.0.3
+-      picomatch: 4.0.3
++      picomatch: 4.0.4
+       std-env: 4.0.0
+       tinybench: 2.9.0
+       tinyexec: 1.0.2
+-      tinyglobby: 0.2.15
++      tinyglobby: 0.2.16
+       tinyrainbow: 3.0.3
+       vite: 8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1)
+       why-is-node-running: 2.3.0

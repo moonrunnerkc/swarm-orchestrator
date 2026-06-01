@@ -1,0 +1,1211 @@
+diff --git a/apps/examples/e2e/tests/test-context-menu.spec.ts b/apps/examples/e2e/tests/test-context-menu.spec.ts
+index 45405bd09499..6585cf51eae2 100644
+--- a/apps/examples/e2e/tests/test-context-menu.spec.ts
++++ b/apps/examples/e2e/tests/test-context-menu.spec.ts
+@@ -2,11 +2,26 @@ import test, { Page, expect } from '@playwright/test'
+ import { hardResetEditor, setupPage, setupPageWithShapes, withMenu } from '../shared-e2e'
+ 
+ declare const __tldraw_ui_event: { name: string }
++// `editor` is a global exposed on the page, not imported at test-runner level.
++// Importing from 'tldraw' (even as `type`) breaks Node's --no-strip-types because
++// the tldraw package re-exports PointerEvent from react, which doesn't exist in Node.
++declare const editor: {
++	inputs: any
++	getCamera(): { x: number; y: number; z: number }
++	getCurrentToolId(): string
++	getPath(): string
++	getSelectedShapeIds(): string[]
++}
+ 
+ // We're just testing the events, not the actual results.
+ 
+ let page: Page
+ 
++// Mobile emulation in Playwright dispatches touch events for `mouse.click/down/up`,
++// so it can't simulate a real right-mouse-button sequence. Tests that depend on
++// right-click pointer events only run on desktop (Chromium).
++const isMobileProject = () => test.info().project.name.includes('Mobile')
++
+ test.describe('Context menu', async () => {
+ 	test.beforeEach(async ({ browser }) => {
+ 		if (!page) {
+@@ -41,4 +56,243 @@ test.describe('Context menu', async () => {
+ 			data: { operation: 'vertical', source: 'context-menu' },
+ 		})
+ 	})
++
++	test('reopens after moving and right-clicking again', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		await page.mouse.move(600, 400)
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.up({ button: 'right' })
++
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++		expect(
++			await page.evaluate(() => ({
++				isRightPointing: editor.inputs.getIsRightPointing(),
++				isPanning: editor.inputs.getIsPanning(),
++			}))
++		).toMatchObject({
++			isRightPointing: false,
++			isPanning: false,
++		})
++	})
++
++	test('static right-click on plain canvas opens context menu', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		// Right-click on empty canvas (no menu already open)
++		await page.mouse.click(600, 400, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Wait for any async events (native contextmenu follows pointerup)
++		await page.waitForTimeout(100)
++
++		// Menu should still be visible — a leaked native contextmenu must not toggle it closed
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++		expect(
++			await page.evaluate(() => ({
++				isRightPointing: editor.inputs.getIsRightPointing(),
++				isPanning: editor.inputs.getIsPanning(),
++			}))
++		).toMatchObject({
++			isRightPointing: false,
++			isPanning: false,
++		})
++	})
++
++	test('right-click drag on plain canvas pans without opening context menu', async () => {
++		const initialCamera = await page.evaluate(() => {
++			const camera = editor.getCamera()
++			return { x: camera.x, y: camera.y, z: camera.z }
++		})
++
++		await page.mouse.move(300, 300)
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.move(500, 500, { steps: 5 })
++
++		expect(
++			await page.evaluate(() => ({
++				isPanning: editor.inputs.getIsPanning(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			isPanning: true,
++			isRightPointing: true,
++		})
++
++		await page.mouse.up({ button: 'right' })
++
++		// Context menu should NOT open after a drag
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		// Camera should have moved
++		expect(
++			await page.evaluate((initialCamera) => {
++				const camera = editor.getCamera()
++				return camera.x !== initialCamera.x || camera.y !== initialCamera.y
++			}, initialCamera)
++		).toBe(true)
++
++		// Input state should be clean
++		expect(
++			await page.evaluate(() => ({
++				isPanning: editor.inputs.getIsPanning(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			isPanning: false,
++			isRightPointing: false,
++		})
++	})
++
++	test('can begin a right-click drag after closing the menu', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		await page.mouse.move(600, 400)
++		const initialCamera = await page.evaluate(() => {
++			const camera = editor.getCamera()
++			return { x: camera.x, y: camera.y, z: camera.z }
++		})
++
++		await page.mouse.down({ button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		await page.mouse.move(700, 500, { steps: 5 })
++
++		expect(
++			await page.evaluate(() => ({
++				camera: editor.getCamera(),
++				isPanning: editor.inputs.getIsPanning(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			isPanning: true,
++			isRightPointing: true,
++		})
++
++		await page.mouse.up({ button: 'right' })
++
++		expect(
++			await page.evaluate((initialCamera) => {
++				const camera = editor.getCamera()
++				return {
++					cameraChanged:
++						camera.x !== initialCamera.x ||
++						camera.y !== initialCamera.y ||
++						camera.z !== initialCamera.z,
++					isPanning: editor.inputs.getIsPanning(),
++					isRightPointing: editor.inputs.getIsRightPointing(),
++				}
++			}, initialCamera)
++		).toMatchObject({
++			cameraChanged: true,
++			isPanning: false,
++			isRightPointing: false,
++		})
++	})
++
++	test('left-click closes menu and leaves editor idle', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		// Move to a clearly empty spot so the right-click doesn't select or hover a shape
++		await page.mouse.move(800, 600)
++		await page.mouse.click(800, 600, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Left-click elsewhere on empty canvas — should close the menu
++		await page.mouse.click(900, 700)
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		// Tool state clean, pointer released — regardless of selection state
++		expect(
++			await page.evaluate(() => ({
++				path: editor.getPath(),
++				isPointing: editor.inputs.getIsPointing(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			path: 'select.idle',
++			isPointing: false,
++			isRightPointing: false,
++		})
++	})
++
++	test('left-click drag with menu open starts brush selection', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.move(800, 600)
++		await page.mouse.click(800, 600, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Left-click + drag entirely on empty canvas
++		await page.mouse.move(900, 100)
++		await page.mouse.down({ button: 'left' })
++		await page.mouse.move(1100, 300, { steps: 10 })
++
++		// Menu closes, editor enters brushing state
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++		expect(await page.evaluate(() => editor.getPath())).toBe('select.brushing')
++
++		await page.mouse.up({ button: 'left' })
++
++		// After release: brush ended, editor idle, pointer released
++		expect(
++			await page.evaluate(() => ({
++				path: editor.getPath(),
++				isPointing: editor.inputs.getIsPointing(),
++			}))
++		).toMatchObject({
++			path: 'select.idle',
++			isPointing: false,
++		})
++	})
++
++	test('consecutive right-clicks keep menu continuously visible', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Right-click at a new location — observe visibility frequently during the transition
++		// to catch any hidden flash between the old menu closing and the new one opening.
++		await page.mouse.move(600, 400)
++		const menu = page.getByTestId('context-menu')
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.up({ button: 'right' })
++
++		// Poll visibility for ~300ms; it must never be hidden during the transition.
++		const samples = await page.evaluate(async () => {
++			const results: boolean[] = []
++			const el = () => document.querySelector('[data-testid="context-menu"]')
++			for (let i = 0; i < 30; i++) {
++				results.push(!!el())
++				await new Promise((r) => setTimeout(r, 10))
++			}
++			return results
++		})
++		expect(samples.every((v) => v === true)).toBe(true)
++		await expect(menu).toBeVisible()
++	})
++
++	test('left-click drag works after a right-click drag with menu open', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		// Open a menu
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Right-click + drag to pan; this should release all pointer capture cleanly
++		await page.mouse.move(600, 400)
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.move(700, 500, { steps: 5 })
++		await page.mouse.up({ button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		// Now a regular left-click drag must still work — if pointer capture
++		// leaked to the capture div or canvas, this brush would not engage.
++		await page.mouse.move(100, 100)
++		await page.mouse.down({ button: 'left' })
++		await page.mouse.move(400, 400, { steps: 10 })
++		expect(await page.evaluate(() => editor.getPath())).toBe('select.brushing')
++		await page.mouse.up({ button: 'left' })
++		expect(await page.evaluate(() => editor.getPath())).toBe('select.idle')
++	})
+ })
+diff --git a/assets/translations/main.json b/assets/translations/main.json
+index c86cb6aede84..4344bef7854c 100644
+--- a/assets/translations/main.json
++++ b/assets/translations/main.json
+@@ -102,8 +102,6 @@
+ 	"action.toggle-edge-scrolling": "Toggle edge scrolling",
+ 	"action.toggle-invert-zoom.menu": "Invert mouse zoom",
+ 	"action.toggle-invert-zoom": "Toggle invert mouse zoom",
+-	"action.toggle-right-click-to-drag.menu": "Right-click to drag",
+-	"action.toggle-right-click-to-drag": "Toggle right-click to drag",
+ 	"action.toggle-debug-mode.menu": "Debug mode",
+ 	"action.toggle-debug-mode": "Toggle debug mode",
+ 	"action.toggle-focus-mode.menu": "Focus mode",
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 7b74e7292068..4901d7126482 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -806,7 +806,6 @@ export const defaultUserPreferences: Readonly<{
+     inputMode: null;
+     isDynamicSizeMode: false;
+     isPasteAtCursorMode: false;
+-    isRightClickToDrag: false;
+     isSnapMode: false;
+     isWrapMode: false;
+     isZoomDirectionInverted: false;
+@@ -2198,6 +2197,7 @@ export class InputsManager {
+     getIsPen(): boolean;
+     getIsPinching(): boolean;
+     getIsPointing(): boolean;
++    getIsRightPointing(): boolean;
+     getIsSpacebarPanning(): boolean;
+     getMetaKey(): boolean;
+     getOriginPagePoint(): Vec;
+@@ -2257,6 +2257,8 @@ export class InputsManager {
+     // @internal (undocumented)
+     setIsPointing(isPointing: boolean): void;
+     // @internal (undocumented)
++    setIsRightPointing(isRightPointing: boolean): void;
++    // @internal (undocumented)
+     setIsSpacebarPanning(isSpacebarPanning: boolean): void;
+     // @internal (undocumented)
+     setMetaKey(metaKey: boolean): void;
+@@ -4945,8 +4947,6 @@ export interface TLUserPreferences {
+     // (undocumented)
+     isPasteAtCursorMode?: boolean | null;
+     // (undocumented)
+-    isRightClickToDrag?: boolean | null;
+-    // (undocumented)
+     isSnapMode?: boolean | null;
+     // (undocumented)
+     isWrapMode?: boolean | null;
+@@ -5130,8 +5130,6 @@ export class UserPreferencesManager {
+     // (undocumented)
+     getIsPasteAtCursorMode(): boolean;
+     // (undocumented)
+-    getIsRightClickToDrag(): boolean;
+-    // (undocumented)
+     getIsSnapMode(): boolean;
+     // (undocumented)
+     getIsWrapMode(): boolean;
+diff --git a/packages/editor/src/lib/components/MenuClickCapture.tsx b/packages/editor/src/lib/components/MenuClickCapture.tsx
+index d433c5e61e8f..b92a4b49f733 100644
+--- a/packages/editor/src/lib/components/MenuClickCapture.tsx
++++ b/packages/editor/src/lib/components/MenuClickCapture.tsx
+@@ -1,8 +1,10 @@
+ import { useValue } from '@tldraw/state-react'
+-import { PointerEvent, useCallback, useRef, useState } from 'react'
++import { type PointerEvent, useCallback, useEffect, useRef, useState } from 'react'
++import { flushSync } from 'react-dom'
+ import { useCanvasEvents } from '../hooks/useCanvasEvents'
+ import { useEditor } from '../hooks/useEditor'
+ import { Vec } from '../primitives/Vec'
++import { releasePointerCapture, setPointerCapture } from '../utils/dom'
+ import { getPointerInfo } from '../utils/getPointerInfo'
+ 
+ /**
+@@ -13,115 +15,166 @@ import { getPointerInfo } from '../utils/getPointerInfo'
+ export function MenuClickCapture() {
+ 	const editor = useEditor()
+ 
+-	// Whether any menus are open
+ 	const isMenuOpen = useValue('is menu open', () => editor.menus.hasAnyOpenMenus(), [editor])
+ 
+-	// Whether we're pointing or not—keep this component visible if we're pointing
++	// Keep this component mounted while the pointer is down so pointerup/move still
++	// land here after a synchronous clearOpenMenus() flips isMenuOpen to false.
+ 	const [isPointing, setIsPointing] = useState(false)
+-
+ 	const showElement = isMenuOpen || isPointing
+ 
+-	// Get the same events that we use on the canvas
+ 	const canvasEvents = useCanvasEvents()
+ 
+-	// Keep track of the pointer state
+ 	const rPointerState = useRef({
+ 		isDown: false,
+ 		isDragging: false,
++		button: 0,
+ 		start: new Vec(),
+ 	})
+ 
++	// Swallow the native contextmenu that follows a right-click pointerdown. Without
++	// this, Radix's trigger catches the native event and opens a menu at the pointer-
++	// DOWN position — then our own synthetic contextmenu (fired on pointerup) opens it
++	// again at the release position, producing a visible flash.
++	const rCancelContextMenuSwallow = useRef<null | (() => void)>(null)
++	useEffect(
++		() => () => {
++			rCancelContextMenuSwallow.current?.()
++			rCancelContextMenuSwallow.current = null
++		},
++		[]
++	)
++	const swallowNextNativeContextMenu = useCallback(() => {
++		rCancelContextMenuSwallow.current?.()
++		const doc = editor.getContainerDocument()
++		const onContextMenu = (event: MouseEvent) => {
++			// Skip our own synthetic contextmenu — only swallow the real browser one
++			if (!event.isTrusted) return
++			rCancelContextMenuSwallow.current?.()
++			rCancelContextMenuSwallow.current = null
++			event.preventDefault()
++			event.stopImmediatePropagation()
++		}
++		const cancel = () => doc.removeEventListener('contextmenu', onContextMenu, true)
++		rCancelContextMenuSwallow.current = cancel
++		doc.addEventListener('contextmenu', onContextMenu, true)
++		// Drop the listener on the next tick if it never fires (e.g. pointer moved off-screen)
++		doc.defaultView?.setTimeout(() => {
++			if (rCancelContextMenuSwallow.current === cancel) {
++				cancel()
++				rCancelContextMenuSwallow.current = null
++			}
++		}, 0)
++	}, [editor])
++
+ 	const handlePointerDown = useCallback(
+ 		(e: PointerEvent) => {
+-			if (e.button === 0) {
+-				setIsPointing(true)
+-				rPointerState.current = {
+-					isDown: true,
+-					isDragging: false,
+-					start: new Vec(e.clientX, e.clientY),
+-				}
+-				rDidAPointerDownAndDragWhileMenuWasOpen.current = false
++			if (e.button !== 0 && e.button !== 2) return
++
++			flushSync(() => setIsPointing(true))
++			setPointerCapture(e.currentTarget, e)
++			rPointerState.current = {
++				isDown: true,
++				isDragging: false,
++				button: e.button,
++				start: new Vec(e.clientX, e.clientY),
+ 			}
++
+ 			if (e.button === 2) {
+-				// Swallow the contextmenu event that follows this right-click pointerdown.
+-				// clearOpenMenus() below triggers a synchronous render that unmounts this
+-				// component, so our React onContextMenu handler won't be around to catch it.
+-				// Without this, the contextmenu event reaches the Radix Trigger and briefly
+-				// opens a new context menu (which then immediately dismisses — causing a flash).
+-				const ownerDocument = editor.getContainerDocument()
+-				ownerDocument.addEventListener(
+-					'contextmenu',
+-					(event) => {
+-						event.preventDefault()
+-						event.stopImmediatePropagation()
+-					},
+-					{ capture: true, once: true }
+-				)
++				// Forward right-click pointerdown through the canvas's own handler so
++				// pointer capture is also set on the canvas (load-bearing: without this
++				// the context menu briefly flashes closed during consecutive right-clicks).
++				// We don't clearOpenMenus() — Radix's DismissableLayer closes the menu
++				// via outside-click detection, keeping its internal state in sync.
++				const canvas =
++					editor.getContainer().querySelector<HTMLDivElement>('.tl-canvas') ?? e.currentTarget
++				canvasEvents.onPointerDown?.({ ...e, currentTarget: canvas })
++				swallowNextNativeContextMenu()
++				return
+ 			}
++
+ 			editor.menus.clearOpenMenus()
+ 		},
+-		[editor]
++		[canvasEvents, editor, swallowNextNativeContextMenu]
+ 	)
+ 
+-	const rDidAPointerDownAndDragWhileMenuWasOpen = useRef(false)
+-
+ 	const handlePointerMove = useCallback(
+ 		(e: PointerEvent) => {
+-			// Do nothing unless we're pointing
+-			if (!rPointerState.current.isDown) return
+-
+-			// call the onPointerDown with the original pointer position
+-			const { x, y } = rPointerState.current.start
++			const state = rPointerState.current
++			if (!state.isDown) return
+ 
+-			if (!rDidAPointerDownAndDragWhileMenuWasOpen.current) {
++			// Left-click: wait for the drag threshold before forwarding anything, then
++			// replay pointerdown at the original start so the editor records the
++			// correct drag origin. Right-click forwards moves immediately (pointerdown
++			// was already dispatched in handlePointerDown).
++			if (state.button !== 2 && !state.isDragging) {
+ 				if (
+-					// We're pointing, but are we dragging?
+-					Vec.Dist2(rPointerState.current.start, new Vec(e.clientX, e.clientY)) >
++					Vec.Dist2(state.start, new Vec(e.clientX, e.clientY)) <=
+ 					editor.options.dragDistanceSquared
+ 				) {
+-					rDidAPointerDownAndDragWhileMenuWasOpen.current = true
+-					// Wehaddaeventitsadrag
+-					rPointerState.current = {
+-						...rPointerState.current,
+-						isDown: true,
+-						isDragging: true,
+-					}
+-					canvasEvents.onPointerDown?.({
+-						...e,
+-						clientX: x,
+-						clientY: y,
+-						button: 0,
+-					})
++					return
+ 				}
+-			}
+-
+-			if (rDidAPointerDownAndDragWhileMenuWasOpen.current) {
++				state.isDragging = true
+ 				editor.dispatch({
+ 					type: 'pointer',
+ 					target: 'canvas',
+-					name: 'pointer_move',
+-					...getPointerInfo(editor, e),
++					name: 'pointer_down',
++					...getPointerInfo(editor, { ...e, clientX: state.start.x, clientY: state.start.y }),
+ 				})
+ 			}
++
++			editor.dispatch({
++				type: 'pointer',
++				target: 'canvas',
++				name: 'pointer_move',
++				...getPointerInfo(editor, e),
++			})
+ 		},
+-		[canvasEvents, editor]
++		[editor]
+ 	)
+ 
+ 	const handlePointerUp = useCallback(
+ 		(e: PointerEvent) => {
+-			// Run the pointer up
+-			canvasEvents.onPointerUp?.(e)
+-			// Then turn off pointing
++			const isStaticRightClick = e.button === 2 && !rPointerState.current.isDragging
++
++			editor.dispatch({
++				type: 'pointer',
++				target: 'canvas',
++				name: 'pointer_up',
++				...getPointerInfo(editor, e),
++			})
++
++			if (isStaticRightClick) {
++				// Dispatch contextmenu on the canvas's parent (Radix's trigger) so the
++				// menu opens at the release position. Bypassing the canvas avoids its
++				// own onContextMenu handler, which preventDefaults non-synthesized events.
++				const canvas = editor.getContainer().querySelector<HTMLDivElement>('.tl-canvas')
++				const trigger = canvas?.parentElement ?? e.currentTarget
++				editor.timers.requestAnimationFrame(() => {
++					trigger.dispatchEvent(
++						new PointerEvent('contextmenu', {
++							bubbles: true,
++							clientX: e.clientX,
++							clientY: e.clientY,
++							button: 2,
++							buttons: 0,
++							pointerId: e.pointerId,
++							pointerType: e.pointerType,
++							isPrimary: e.isPrimary,
++						})
++					)
++				})
++			}
++
++			releasePointerCapture(e.currentTarget, e)
+ 			setIsPointing(false)
+-			// Reset the pointer state
+ 			rPointerState.current = {
+ 				isDown: false,
+ 				isDragging: false,
++				button: 0,
+ 				start: new Vec(e.clientX, e.clientY),
+ 			}
+-			rDidAPointerDownAndDragWhileMenuWasOpen.current = false
+ 		},
+-		[canvasEvents]
++		[editor]
+ 	)
+ 
+ 	return (
+diff --git a/packages/editor/src/lib/config/TLUserPreferences.test.ts b/packages/editor/src/lib/config/TLUserPreferences.test.ts
+index 747c9d847eac..d039c3978b33 100644
+--- a/packages/editor/src/lib/config/TLUserPreferences.test.ts
++++ b/packages/editor/src/lib/config/TLUserPreferences.test.ts
+@@ -22,7 +22,6 @@ describe('TLUserPreferences consistency', () => {
+ 		'enhancedA11yMode',
+ 		'inputMode',
+ 		'isZoomDirectionInverted',
+-		'isRightClickToDrag',
+ 	] as const
+ 
+ 	it('defaultUserPreferences contains all TLUserPreferences keys (except id)', () => {
+diff --git a/packages/editor/src/lib/config/TLUserPreferences.ts b/packages/editor/src/lib/config/TLUserPreferences.ts
+index 6c098f8ac65c..f6ef2c3bdd13 100644
+--- a/packages/editor/src/lib/config/TLUserPreferences.ts
++++ b/packages/editor/src/lib/config/TLUserPreferences.ts
+@@ -28,7 +28,6 @@ export interface TLUserPreferences {
+ 	enhancedA11yMode?: boolean | null
+ 	inputMode?: 'trackpad' | 'mouse' | null
+ 	isZoomDirectionInverted?: boolean | null
+-	isRightClickToDrag?: boolean | null
+ }
+ 
+ interface UserDataSnapshot {
+@@ -60,7 +59,6 @@ export const userTypeValidator: T.Validator<TLUserPreferences> = T.object<TLUser
+ 	enhancedA11yMode: T.boolean.nullable().optional(),
+ 	inputMode: T.literalEnum('trackpad', 'mouse').nullable().optional(),
+ 	isZoomDirectionInverted: T.boolean.nullable().optional(),
+-	isRightClickToDrag: T.boolean.nullable().optional(),
+ })
+ 
+ const Versions = {
+@@ -77,7 +75,6 @@ const Versions = {
+ 	AddPointerPeripheral: 11,
+ 	RenameShowUiLabelsToEnhancedA11yMode: 12,
+ 	AddZoomDirectionInverted: 13,
+-	AddRightClickToDrag: 14,
+ } as const
+ 
+ const CURRENT_VERSION = Math.max(...Object.values(Versions))
+@@ -132,10 +129,6 @@ function migrateSnapshot(data: { version: number; user: any }) {
+ 		data.user.isZoomDirectionInverted = false
+ 	}
+ 
+-	if (data.version < Versions.AddRightClickToDrag) {
+-		data.user.isRightClickToDrag = false
+-	}
+-
+ 	// finally
+ 	data.version = CURRENT_VERSION
+ }
+@@ -187,7 +180,6 @@ export const defaultUserPreferences = Object.freeze({
+ 	colorScheme: 'light',
+ 	inputMode: null,
+ 	isZoomDirectionInverted: false,
+-	isRightClickToDrag: false,
+ }) satisfies Readonly<Omit<TLUserPreferences, 'id'>>
+ 
+ /** @public */
+diff --git a/packages/editor/src/lib/editor/Editor.ts b/packages/editor/src/lib/editor/Editor.ts
+index bac79f9f10ac..c044f8ab335e 100644
+--- a/packages/editor/src/lib/editor/Editor.ts
++++ b/packages/editor/src/lib/editor/Editor.ts
+@@ -10656,9 +10656,6 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 	/** @internal */
+ 	private _longPressTimeout = -1 as any
+ 
+-	/** @internal */
+-	private _rightClickCursorTimeout = -1 as any
+-
+ 	/** @internal */
+ 	capturedPointerId: number | null = null
+ 
+@@ -11039,21 +11036,9 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 							}
+ 							this.inputs.setIsPanning(true)
+ 							clearTimeout(this._longPressTimeout)
+-						} else if (info.button === RIGHT_MOUSE_BUTTON && this.user.getIsRightClickToDrag()) {
+-							if (!this.inputs.getIsPanning()) {
+-								this._prevCursor = this.getInstanceState().cursor.type
+-							}
+-
+-							this.inputs.setIsPanning(true)
++						} else if (info.button === RIGHT_MOUSE_BUTTON) {
++							this.inputs.setIsRightPointing(true)
+ 							clearTimeout(this._longPressTimeout)
+-							// Debounce the cursor change for right-click to prevent flash on quick clicks
+-							clearTimeout(this._rightClickCursorTimeout)
+-							this._rightClickCursorTimeout = this.timers.setTimeout(() => {
+-								if (this.inputs.getIsPanning()) {
+-									this.setCursor({ type: 'grabbing', rotation: 0 })
+-								}
+-							}, 100)
+-							this.stopCameraAnimation()
+ 							return this
+ 						}
+ 
+@@ -11073,9 +11058,31 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 
+ 						const { x: cx, y: cy, z: cz } = unsafe__withoutCapture(() => this.getCamera())
+ 
++						// Right-click pointing: waiting to see if this becomes a drag
++						if (this.inputs.getIsRightPointing() && !this.inputs.getIsPanning()) {
++							const currentScreenPoint = this.inputs.getCurrentScreenPoint()
++							const originScreenPoint = this.inputs.getOriginScreenPoint()
++							if (
++								Vec.Dist2(originScreenPoint, currentScreenPoint) > this.options.dragDistanceSquared
++							) {
++								// Passed the drag threshold—transition to panning
++								this._prevCursor = this.getInstanceState().cursor.type
++								this.inputs.setIsPanning(true)
++								this.setCursor({ type: 'grabbing', rotation: 0 })
++								this.stopCameraAnimation()
++								// Apply the initial delta from the pointer down origin
++								const offset = Vec.Sub(currentScreenPoint, originScreenPoint)
++								this.setCamera(new Vec(cx + offset.x / cz, cy + offset.y / cz, cz), {
++									immediate: true,
++								})
++								this.maybeTrackPerformance('Panning')
++							}
++							return
++						}
++
+ 						// If we've started panning, then clear any long press timeout
+ 						if (this.inputs.getIsPanning() && this.inputs.getIsPointing()) {
+-							// Handle spacebar / middle mouse button panning
++							// Handle spacebar / middle mouse button / right-click panning
+ 							const currentScreenPoint = this.inputs.getCurrentScreenPoint()
+ 							const previousScreenPoint = this.inputs.getPreviousScreenPoint()
+ 							const offset = Vec.Sub(currentScreenPoint, previousScreenPoint)
+@@ -11083,14 +11090,6 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 								immediate: true,
+ 							})
+ 							this.maybeTrackPerformance('Panning')
+-							// Show grabbing cursor once the user has moved past the drag threshold
+-							if (
+-								Vec.Dist2(this.inputs.getOriginScreenPoint(), currentScreenPoint) >
+-								this.options.dragDistanceSquared
+-							) {
+-								clearTimeout(this._rightClickCursorTimeout)
+-								this.setCursor({ type: 'grabbing', rotation: 0 })
+-							}
+ 							this.performance._notifyCameraOperation('panning')
+ 							return
+ 						}
+@@ -11116,14 +11115,24 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 						inputs.setIsDragging(false)
+ 						inputs.setIsPointing(false)
+ 						clearTimeout(this._longPressTimeout)
+-						clearTimeout(this._rightClickCursorTimeout)
+-
+ 						// Remove the button from the buttons set
+ 						inputs.buttons.delete(info.button)
+ 
+ 						// If we're in pen mode and we're not using a pen, stop here
+ 						if (instanceState.isPenMode && !isPen) return
+ 
++						// Right-click pointing ended without dragging—this is a static
++						// right-click, so let it through to the state chart as right_click.
++						// Check isPanning first: if we transitioned to panning, isRightPointing
++						// is still true but we want the panning cleanup path instead.
++						if (this.inputs.getIsRightPointing() && !this.inputs.getIsPanning()) {
++							this.inputs.setIsRightPointing(false)
++							this._selectedShapeIdsAtPointerDown = []
++							break // fall through to state chart dispatch as right_click
++						}
++
++						this.inputs.setIsRightPointing(false)
++
+ 						// Firefox bug fix...
+ 						// If it's the same pointer that we stored earlier...
+ 						// ... then it's probably still a left-mouse-click!
+diff --git a/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts b/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
+index f2ade9825f9c..b85c43c6bd53 100644
+--- a/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
++++ b/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
+@@ -331,6 +331,18 @@ export class InputsManager {
+ 		this._isPointing.set(isPointing)
+ 	}
+ 
++	private _isRightPointing = atom<boolean>('isRightPointing', false)
++	/**
++	 * Whether the user is right-click pointing (before drag threshold).
++	 */
++	getIsRightPointing() {
++		return this._isRightPointing.get()
++	}
++	/** @internal */
++	setIsRightPointing(isRightPointing: boolean) {
++		this._isRightPointing.set(isRightPointing)
++	}
++
+ 	private _isPinching = atom<boolean>('isPinching', false)
+ 	/**
+ 	 * Whether the user is pinching.
+diff --git a/packages/editor/src/lib/editor/managers/UserPreferencesManager/UserPreferencesManager.ts b/packages/editor/src/lib/editor/managers/UserPreferencesManager/UserPreferencesManager.ts
+index 276eb1cb5b4f..f500f13b3548 100644
+--- a/packages/editor/src/lib/editor/managers/UserPreferencesManager/UserPreferencesManager.ts
++++ b/packages/editor/src/lib/editor/managers/UserPreferencesManager/UserPreferencesManager.ts
+@@ -142,11 +142,4 @@ export class UserPreferencesManager {
+ 			defaultUserPreferences.isZoomDirectionInverted
+ 		)
+ 	}
+-
+-	@computed getIsRightClickToDrag() {
+-		return (
+-			this.user.userPreferences.get().isRightClickToDrag ??
+-			defaultUserPreferences.isRightClickToDrag
+-		)
+-	}
+ }
+diff --git a/packages/editor/src/lib/hooks/useCanvasEvents.ts b/packages/editor/src/lib/hooks/useCanvasEvents.ts
+index 4a78e216113a..3df3af52d71d 100644
+--- a/packages/editor/src/lib/hooks/useCanvasEvents.ts
++++ b/packages/editor/src/lib/hooks/useCanvasEvents.ts
+@@ -1,7 +1,6 @@
+ import { useValue } from '@tldraw/state-react'
+-import React, { useEffect, useMemo, useRef } from 'react'
++import React, { useEffect, useMemo } from 'react'
+ import { tlenv } from '../globals/environment'
+-import { Vec } from '../primitives/Vec'
+ import {
+ 	elementShouldCaptureKeys,
+ 	preventDefault,
+@@ -16,25 +15,10 @@ export function useCanvasEvents() {
+ 	const ownerDocument = editor.getContainerDocument()
+ 	const currentTool = useValue('current tool', () => editor.getCurrentTool(), [editor])
+ 
+-	const rWasStaticRightClick = useRef(false)
+-
+ 	const events = useMemo(
+ 		function canvasEvents() {
+ 			function onPointerDown(e: React.PointerEvent) {
+ 				if (editor.wasEventAlreadyHandled(e)) return
+-				rWasStaticRightClick.current = false
+-
+-				// Handle right-click when right-click-to-drag is disabled
+-				// This matches main branch behavior - dispatch right_click and return early
+-				if (e.button === 2 && !editor.user.getIsRightClickToDrag()) {
+-					editor.dispatch({
+-						type: 'pointer',
+-						target: 'canvas',
+-						name: 'right_click',
+-						...getPointerInfo(editor, e),
+-					})
+-					return
+-				}
+ 
+ 				if (e.button !== 0 && e.button !== 1 && e.button !== 2 && e.button !== 5) return
+ 
+@@ -52,18 +36,8 @@ export function useCanvasEvents() {
+ 				if (editor.wasEventAlreadyHandled(e)) return
+ 				if (e.button !== 0 && e.button !== 1 && e.button !== 2 && e.button !== 5) return
+ 
+-				const pointerDownNearPointerUp =
+-					Vec.Dist2(editor.inputs.getOriginScreenPoint(), editor.inputs.getCurrentScreenPoint()) <
+-					editor.options.dragDistanceSquared
+-				if (pointerDownNearPointerUp && e.button === 2) {
+-					rWasStaticRightClick.current = true
+-					const contextMenuEvent = new MouseEvent('contextmenu', {
+-						bubbles: true,
+-						clientX: e.clientX,
+-						clientY: e.clientY,
+-					})
+-					e.currentTarget.dispatchEvent(contextMenuEvent)
+-				}
++				// Check before dispatch (which resets isPanning)
++				const wasRightClickPanning = e.button === 2 && editor.inputs.getIsPanning()
+ 
+ 				releasePointerCapture(e.currentTarget, e)
+ 
+@@ -73,6 +47,21 @@ export function useCanvasEvents() {
+ 					name: 'pointer_up',
+ 					...getPointerInfo(editor, e),
+ 				})
++
++				// Static right-click: fire contextmenu at the pointer-up location
++				if (e.button === 2 && !wasRightClickPanning) {
++					const contextMenuEvent = new PointerEvent('contextmenu', {
++						bubbles: true,
++						clientX: e.clientX,
++						clientY: e.clientY,
++						button: 2,
++						buttons: 0,
++						pointerId: e.pointerId,
++						pointerType: e.pointerType,
++						isPrimary: e.isPrimary,
++					})
++					e.currentTarget.dispatchEvent(contextMenuEvent)
++				}
+ 			}
+ 
+ 			function onPointerEnter(e: React.PointerEvent) {
+@@ -162,7 +151,13 @@ export function useCanvasEvents() {
+ 			}
+ 
+ 			function onContextMenu(e: React.MouseEvent) {
+-				if (editor.user.getIsRightClickToDrag() && !rWasStaticRightClick.current) {
++				// Synthetic events — our own dispatch from onPointerUp, or tests using
++				// fireEvent.contextMenu — pass through so Radix can open the menu. The real
++				// browser contextmenu is always suppressed: right-click behavior has
++				// already been decided by our pointer handling (either we dispatched a
++				// synthetic to open the menu at the release position, or we panned and
++				// don't want a menu at all).
++				if (e.nativeEvent.isTrusted) {
+ 					preventDefault(e)
+ 				}
+ 			}
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index f268a2844046..ee617137e6ae 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -4625,8 +4625,6 @@ export interface TLUiEventMap {
+     // (undocumented)
+     'toggle-reduce-motion': null;
+     // (undocumented)
+-    'toggle-right-click-to-drag': null;
+-    // (undocumented)
+     'toggle-snap-mode': null;
+     // (undocumented)
+     'toggle-tool-lock': null;
+@@ -5248,7 +5246,7 @@ export interface TLUiTranslation {
+ export type TLUiTranslationContextType = TLUiTranslation;
+ 
+ // @public (undocumented)
+-export type TLUiTranslationKey = 'a11y.adjust-shape-styles' | 'a11y.enlarge-shape' | 'a11y.enter-leave-container' | 'a11y.move-shape-faster' | 'a11y.move-shape' | 'a11y.multiple-shapes' | 'a11y.open-context-menu' | 'a11y.open-keyboard-shortcuts' | 'a11y.pan-camera' | 'a11y.repeat-shape' | 'a11y.rotate-shape-ccw-fine' | 'a11y.rotate-shape-ccw' | 'a11y.rotate-shape-cw-fine' | 'a11y.rotate-shape-cw' | 'a11y.select-shape-direction' | 'a11y.select-shape' | 'a11y.shape-image' | 'a11y.shape-index' | 'a11y.shape-video' | 'a11y.shrink-shape' | 'a11y.skip-to-main-content' | 'a11y.status' | 'action.align-bottom' | 'action.align-center-horizontal.short' | 'action.align-center-horizontal' | 'action.align-center-vertical.short' | 'action.align-center-vertical' | 'action.align-left' | 'action.align-right' | 'action.align-top' | 'action.back-to-content' | 'action.bring-forward' | 'action.bring-to-front' | 'action.convert-to-bookmark' | 'action.convert-to-embed' | 'action.copy-as-json.short' | 'action.copy-as-json' | 'action.copy-as-png.short' | 'action.copy-as-png' | 'action.copy-as-svg.short' | 'action.copy-as-svg' | 'action.copy' | 'action.cut' | 'action.delete' | 'action.distribute-horizontal.short' | 'action.distribute-horizontal' | 'action.distribute-vertical.short' | 'action.distribute-vertical' | 'action.download-original' | 'action.duplicate' | 'action.edit-link' | 'action.enhanced-a11y-mode.menu' | 'action.enhanced-a11y-mode' | 'action.exit-pen-mode' | 'action.export-all-as-png.short' | 'action.export-all-as-png' | 'action.export-all-as-svg.short' | 'action.export-all-as-svg' | 'action.export-as-png.short' | 'action.export-as-png' | 'action.export-as-svg.short' | 'action.export-as-svg' | 'action.fit-frame-to-content' | 'action.flatten-to-image' | 'action.flip-horizontal.short' | 'action.flip-horizontal' | 'action.flip-vertical.short' | 'action.flip-vertical' | 'action.fork-project-on-tldraw' | 'action.fork-project' | 'action.group' | 'action.insert-embed' | 'action.insert-media' | 'action.leave-shared-project' | 'action.new-project' | 'action.new-shared-project' | 'action.open-cursor-chat' | 'action.open-embed-link' | 'action.open-file' | 'action.open-kbd-shortcuts' | 'action.pack' | 'action.paste-error-description' | 'action.paste-error-title' | 'action.paste' | 'action.print' | 'action.redo' | 'action.remove-frame' | 'action.rename' | 'action.rotate-ccw' | 'action.rotate-cw' | 'action.save-copy' | 'action.select-all' | 'action.select-none' | 'action.select-zoom-tool' | 'action.send-backward' | 'action.send-to-back' | 'action.share-project' | 'action.stack-horizontal.short' | 'action.stack-horizontal' | 'action.stack-vertical.short' | 'action.stack-vertical' | 'action.stop-following' | 'action.stretch-horizontal.short' | 'action.stretch-horizontal' | 'action.stretch-vertical.short' | 'action.stretch-vertical' | 'action.toggle-auto-none' | 'action.toggle-auto-pan' | 'action.toggle-auto-size' | 'action.toggle-auto-zoom' | 'action.toggle-dark-mode.menu' | 'action.toggle-dark-mode' | 'action.toggle-debug-mode.menu' | 'action.toggle-debug-mode' | 'action.toggle-dynamic-size-mode.menu' | 'action.toggle-dynamic-size-mode' | 'action.toggle-edge-scrolling.menu' | 'action.toggle-edge-scrolling' | 'action.toggle-focus-mode.menu' | 'action.toggle-focus-mode' | 'action.toggle-grid.menu' | 'action.toggle-grid' | 'action.toggle-invert-zoom.menu' | 'action.toggle-invert-zoom' | 'action.toggle-keyboard-shortcuts.menu' | 'action.toggle-keyboard-shortcuts' | 'action.toggle-lock' | 'action.toggle-mouse' | 'action.toggle-paste-at-cursor.menu' | 'action.toggle-paste-at-cursor' | 'action.toggle-reduce-motion.menu' | 'action.toggle-reduce-motion' | 'action.toggle-right-click-to-drag.menu' | 'action.toggle-right-click-to-drag' | 'action.toggle-snap-mode.menu' | 'action.toggle-snap-mode' | 'action.toggle-tool-lock.menu' | 'action.toggle-tool-lock' | 'action.toggle-trackpad' | 'action.toggle-transparent.context-menu' | 'action.toggle-transparent.menu' | 'action.toggle-transparent' | 'action.toggle-wrap-mode.menu' | 'action.toggle-wrap-mode' | 'action.undo' | 'action.ungroup' | 'action.unlock-all' | 'action.zoom-in' | 'action.zoom-out' | 'action.zoom-quick' | 'action.zoom-to-100' | 'action.zoom-to-fit' | 'action.zoom-to-selection' | 'actions-menu.title' | 'align-style.end' | 'align-style.justify' | 'align-style.middle' | 'align-style.start' | 'app.loading' | 'arrow-kind-style.arc' | 'arrow-kind-style.elbow' | 'arrowheadEnd-style.arrow' | 'arrowheadEnd-style.bar' | 'arrowheadEnd-style.diamond' | 'arrowheadEnd-style.dot' | 'arrowheadEnd-style.inverted' | 'arrowheadEnd-style.none' | 'arrowheadEnd-style.pipe' | 'arrowheadEnd-style.square' | 'arrowheadEnd-style.triangle' | 'arrowheadStart-style.arrow' | 'arrowheadStart-style.bar' | 'arrowheadStart-style.diamond' | 'arrowheadStart-style.dot' | 'arrowheadStart-style.inverted' | 'arrowheadStart-style.none' | 'arrowheadStart-style.pipe' | 'arrowheadStart-style.square' | 'arrowheadStart-style.triangle' | 'assets.files.amount-too-many' | 'assets.files.maximum-size' | 'assets.files.size-too-big' | 'assets.files.type-not-allowed' | 'assets.files.upload-failed' | 'assets.url.failed' | 'color-style.black' | 'color-style.blue' | 'color-style.green' | 'color-style.grey' | 'color-style.light-blue' | 'color-style.light-green' | 'color-style.light-red' | 'color-style.light-violet' | 'color-style.orange' | 'color-style.red' | 'color-style.violet' | 'color-style.white' | 'color-style.yellow' | 'context-menu.arrange' | 'context-menu.copy-as' | 'context-menu.edit' | 'context-menu.export-all-as' | 'context-menu.export-as' | 'context-menu.move-to-page' | 'context-menu.reorder' | 'context-menu.title' | 'context.pages.new-page' | 'cursor-chat.type-to-chat' | 'dash-style.dashed' | 'dash-style.dotted' | 'dash-style.draw' | 'dash-style.solid' | 'document-name-menu.copy-link' | 'document.default-name' | 'edit-link-dialog.cancel' | 'edit-link-dialog.clear' | 'edit-link-dialog.detail' | 'edit-link-dialog.external-link' | 'edit-link-dialog.invalid-url' | 'edit-link-dialog.save' | 'edit-link-dialog.title' | 'edit-link-dialog.url' | 'embed-dialog.back' | 'embed-dialog.cancel' | 'embed-dialog.create' | 'embed-dialog.instruction' | 'embed-dialog.invalid-url' | 'embed-dialog.title' | 'embed-dialog.url' | 'file-system.confirm-clear.cancel' | 'file-system.confirm-clear.continue' | 'file-system.confirm-clear.description' | 'file-system.confirm-clear.dont-show-again' | 'file-system.confirm-clear.title' | 'file-system.confirm-open.cancel' | 'file-system.confirm-open.description' | 'file-system.confirm-open.dont-show-again' | 'file-system.confirm-open.open' | 'file-system.confirm-open.title' | 'file-system.file-open-error.file-format-version-too-new' | 'file-system.file-open-error.generic-corrupted-file' | 'file-system.file-open-error.not-a-tldraw-file' | 'file-system.file-open-error.title' | 'file-system.shared-document-file-open-error.description' | 'file-system.shared-document-file-open-error.title' | 'fill-style.fill' | 'fill-style.lined-fill' | 'fill-style.none' | 'fill-style.pattern' | 'fill-style.semi' | 'fill-style.solid' | 'focus-mode.toggle-focus-mode' | 'font-style.draw' | 'font-style.mono' | 'font-style.sans' | 'font-style.serif' | 'geo-style.arrow-down' | 'geo-style.arrow-left' | 'geo-style.arrow-right' | 'geo-style.arrow-up' | 'geo-style.check-box' | 'geo-style.cloud' | 'geo-style.diamond' | 'geo-style.ellipse' | 'geo-style.heart' | 'geo-style.hexagon' | 'geo-style.octagon' | 'geo-style.oval' | 'geo-style.pentagon' | 'geo-style.rectangle' | 'geo-style.rhombus-2' | 'geo-style.rhombus' | 'geo-style.star' | 'geo-style.trapezoid' | 'geo-style.triangle' | 'geo-style.x-box' | 'handle.crop.bottom-left' | 'handle.crop.bottom-right' | 'handle.crop.bottom' | 'handle.crop.left' | 'handle.crop.right' | 'handle.crop.top-left' | 'handle.crop.top-right' | 'handle.crop.top' | 'handle.resize-bottom-left' | 'handle.resize-bottom-right' | 'handle.resize-bottom' | 'handle.resize-left' | 'handle.resize-right' | 'handle.resize-top-left' | 'handle.resize-top-right' | 'handle.resize-top' | 'handle.rotate.bottom_left_rotate' | 'handle.rotate.bottom_right_rotate' | 'handle.rotate.mobile_rotate' | 'handle.rotate.top_left_rotate' | 'handle.rotate.top_right_rotate' | 'help-menu.about' | 'help-menu.discord' | 'help-menu.github' | 'help-menu.import-tldr-file' | 'help-menu.keyboard-shortcuts' | 'help-menu.privacy' | 'help-menu.terms' | 'help-menu.title' | 'help-menu.twitter' | 'menu.accessibility' | 'menu.copy-as' | 'menu.edit' | 'menu.export-as' | 'menu.file' | 'menu.input-device' | 'menu.language' | 'menu.preferences' | 'menu.theme' | 'menu.title' | 'menu.view' | 'navigation-zone.minimap' | 'navigation-zone.title' | 'navigation-zone.toggle-minimap' | 'navigation-zone.zoom' | 'opacity-style.0.1' | 'opacity-style.0.25' | 'opacity-style.0.5' | 'opacity-style.0.75' | 'opacity-style.1' | 'page-menu.create-new-page' | 'page-menu.edit-done' | 'page-menu.edit-start' | 'page-menu.go-to-page' | 'page-menu.max-page-count-reached' | 'page-menu.new-page-initial-name' | 'page-menu.submenu.delete' | 'page-menu.submenu.duplicate-page' | 'page-menu.submenu.move-down' | 'page-menu.submenu.move-up' | 'page-menu.submenu.rename' | 'page-menu.submenu.title' | 'page-menu.title' | 'people-menu.anonymous-user' | 'people-menu.avatar-color' | 'people-menu.change-color' | 'people-menu.change-name' | 'people-menu.follow' | 'people-menu.following' | 'people-menu.invite' | 'people-menu.leading' | 'people-menu.title' | 'people-menu.user' | 'share-menu.copied' | 'share-menu.copy-link-note' | 'share-menu.copy-link' | 'share-menu.copy-readonly-link-note' | 'share-menu.copy-readonly-link' | 'share-menu.create-snapshot-link' | 'share-menu.creating-project' | 'share-menu.fork-note' | 'share-menu.offline-note' | 'share-menu.project-too-large' | 'share-menu.save-note' | 'share-menu.share-project' | 'share-menu.snapshot-link-note' | 'share-menu.title' | 'share-menu.upload-failed' | 'sharing.confirm-leave.cancel' | 'sharing.confirm-leave.description' | 'sharing.confirm-leave.dont-show-again' | 'sharing.confirm-leave.leave' | 'sharing.confirm-leave.title' | 'shortcuts-dialog.a11y' | 'shortcuts-dialog.collaboration' | 'shortcuts-dialog.edit' | 'shortcuts-dialog.file' | 'shortcuts-dialog.preferences' | 'shortcuts-dialog.text-formatting' | 'shortcuts-dialog.title' | 'shortcuts-dialog.tools' | 'shortcuts-dialog.transform' | 'shortcuts-dialog.view' | 'size-style.l' | 'size-style.m' | 'size-style.s' | 'size-style.xl' | 'spline-style.cubic' | 'spline-style.line' | 'status.offline' | 'style-panel.align' | 'style-panel.arrow-kind' | 'style-panel.arrowhead-end' | 'style-panel.arrowhead-start' | 'style-panel.arrowheads' | 'style-panel.color' | 'style-panel.dash' | 'style-panel.fill' | 'style-panel.font' | 'style-panel.geo' | 'style-panel.label-align' | 'style-panel.mixed' | 'style-panel.opacity' | 'style-panel.position' | 'style-panel.selected' | 'style-panel.size' | 'style-panel.spline' | 'style-panel.title' | 'style-panel.vertical-align' | 'theme.dark' | 'theme.light' | 'theme.system' | 'toast.close' | 'toast.error.copy-fail.desc' | 'toast.error.copy-fail.title' | 'toast.error.export-fail.desc' | 'toast.error.export-fail.title' | 'toast.error' | 'toast.info' | 'toast.success' | 'toast.warning' | 'tool-panel.more' | 'tool-panel.title' | 'tool.arrow-down' | 'tool.arrow-left' | 'tool.arrow-right' | 'tool.arrow-up' | 'tool.arrow' | 'tool.aspect-ratio.circle' | 'tool.aspect-ratio.landscape' | 'tool.aspect-ratio.original' | 'tool.aspect-ratio.portrait' | 'tool.aspect-ratio.square' | 'tool.aspect-ratio.wide' | 'tool.aspect-ratio' | 'tool.bookmark' | 'tool.check-box' | 'tool.cloud' | 'tool.diamond' | 'tool.draw' | 'tool.ellipse' | 'tool.embed' | 'tool.eraser' | 'tool.flip-horz' | 'tool.flip-vert' | 'tool.frame' | 'tool.hand' | 'tool.heart' | 'tool.hexagon' | 'tool.highlight' | 'tool.image-crop-confirm' | 'tool.image-crop' | 'tool.image-toolbar-title' | 'tool.image-zoom' | 'tool.laser' | 'tool.line' | 'tool.media-alt-text-confirm' | 'tool.media-alt-text-desc' | 'tool.media-alt-text' | 'tool.media' | 'tool.note' | 'tool.octagon' | 'tool.oval' | 'tool.pentagon' | 'tool.pointer-down' | 'tool.rectangle' | 'tool.replace-media' | 'tool.rhombus' | 'tool.rich-text-bold' | 'tool.rich-text-bulletList' | 'tool.rich-text-code' | 'tool.rich-text-header' | 'tool.rich-text-highlight' | 'tool.rich-text-italic' | 'tool.rich-text-link-remove' | 'tool.rich-text-link-visit' | 'tool.rich-text-link' | 'tool.rich-text-orderedList' | 'tool.rich-text-strikethrough' | 'tool.rich-text-toolbar-title' | 'tool.rotate-cw' | 'tool.select' | 'tool.star' | 'tool.text' | 'tool.trapezoid' | 'tool.triangle' | 'tool.x-box' | 'ui.checked' | 'ui.close' | 'ui.unchecked' | 'verticalAlign-style.end' | 'verticalAlign-style.middle' | 'verticalAlign-style.start' | 'vscode.file-open.backup-failed' | 'vscode.file-open.backup-saved' | 'vscode.file-open.backup' | 'vscode.file-open.desc' | 'vscode.file-open.dont-show-again' | 'vscode.file-open.open';
++export type TLUiTranslationKey = 'a11y.adjust-shape-styles' | 'a11y.enlarge-shape' | 'a11y.enter-leave-container' | 'a11y.move-shape-faster' | 'a11y.move-shape' | 'a11y.multiple-shapes' | 'a11y.open-context-menu' | 'a11y.open-keyboard-shortcuts' | 'a11y.pan-camera' | 'a11y.repeat-shape' | 'a11y.rotate-shape-ccw-fine' | 'a11y.rotate-shape-ccw' | 'a11y.rotate-shape-cw-fine' | 'a11y.rotate-shape-cw' | 'a11y.select-shape-direction' | 'a11y.select-shape' | 'a11y.shape-image' | 'a11y.shape-index' | 'a11y.shape-video' | 'a11y.shrink-shape' | 'a11y.skip-to-main-content' | 'a11y.status' | 'action.align-bottom' | 'action.align-center-horizontal.short' | 'action.align-center-horizontal' | 'action.align-center-vertical.short' | 'action.align-center-vertical' | 'action.align-left' | 'action.align-right' | 'action.align-top' | 'action.back-to-content' | 'action.bring-forward' | 'action.bring-to-front' | 'action.convert-to-bookmark' | 'action.convert-to-embed' | 'action.copy-as-json.short' | 'action.copy-as-json' | 'action.copy-as-png.short' | 'action.copy-as-png' | 'action.copy-as-svg.short' | 'action.copy-as-svg' | 'action.copy' | 'action.cut' | 'action.delete' | 'action.distribute-horizontal.short' | 'action.distribute-horizontal' | 'action.distribute-vertical.short' | 'action.distribute-vertical' | 'action.download-original' | 'action.duplicate' | 'action.edit-link' | 'action.enhanced-a11y-mode.menu' | 'action.enhanced-a11y-mode' | 'action.exit-pen-mode' | 'action.export-all-as-png.short' | 'action.export-all-as-png' | 'action.export-all-as-svg.short' | 'action.export-all-as-svg' | 'action.export-as-png.short' | 'action.export-as-png' | 'action.export-as-svg.short' | 'action.export-as-svg' | 'action.fit-frame-to-content' | 'action.flatten-to-image' | 'action.flip-horizontal.short' | 'action.flip-horizontal' | 'action.flip-vertical.short' | 'action.flip-vertical' | 'action.fork-project-on-tldraw' | 'action.fork-project' | 'action.group' | 'action.insert-embed' | 'action.insert-media' | 'action.leave-shared-project' | 'action.new-project' | 'action.new-shared-project' | 'action.open-cursor-chat' | 'action.open-embed-link' | 'action.open-file' | 'action.open-kbd-shortcuts' | 'action.pack' | 'action.paste-error-description' | 'action.paste-error-title' | 'action.paste' | 'action.print' | 'action.redo' | 'action.remove-frame' | 'action.rename' | 'action.rotate-ccw' | 'action.rotate-cw' | 'action.save-copy' | 'action.select-all' | 'action.select-none' | 'action.select-zoom-tool' | 'action.send-backward' | 'action.send-to-back' | 'action.share-project' | 'action.stack-horizontal.short' | 'action.stack-horizontal' | 'action.stack-vertical.short' | 'action.stack-vertical' | 'action.stop-following' | 'action.stretch-horizontal.short' | 'action.stretch-horizontal' | 'action.stretch-vertical.short' | 'action.stretch-vertical' | 'action.toggle-auto-none' | 'action.toggle-auto-pan' | 'action.toggle-auto-size' | 'action.toggle-auto-zoom' | 'action.toggle-dark-mode.menu' | 'action.toggle-dark-mode' | 'action.toggle-debug-mode.menu' | 'action.toggle-debug-mode' | 'action.toggle-dynamic-size-mode.menu' | 'action.toggle-dynamic-size-mode' | 'action.toggle-edge-scrolling.menu' | 'action.toggle-edge-scrolling' | 'action.toggle-focus-mode.menu' | 'action.toggle-focus-mode' | 'action.toggle-grid.menu' | 'action.toggle-grid' | 'action.toggle-invert-zoom.menu' | 'action.toggle-invert-zoom' | 'action.toggle-keyboard-shortcuts.menu' | 'action.toggle-keyboard-shortcuts' | 'action.toggle-lock' | 'action.toggle-mouse' | 'action.toggle-paste-at-cursor.menu' | 'action.toggle-paste-at-cursor' | 'action.toggle-reduce-motion.menu' | 'action.toggle-reduce-motion' | 'action.toggle-snap-mode.menu' | 'action.toggle-snap-mode' | 'action.toggle-tool-lock.menu' | 'action.toggle-tool-lock' | 'action.toggle-trackpad' | 'action.toggle-transparent.context-menu' | 'action.toggle-transparent.menu' | 'action.toggle-transparent' | 'action.toggle-wrap-mode.menu' | 'action.toggle-wrap-mode' | 'action.undo' | 'action.ungroup' | 'action.unlock-all' | 'action.zoom-in' | 'action.zoom-out' | 'action.zoom-quick' | 'action.zoom-to-100' | 'action.zoom-to-fit' | 'action.zoom-to-selection' | 'actions-menu.title' | 'align-style.end' | 'align-style.justify' | 'align-style.middle' | 'align-style.start' | 'app.loading' | 'arrow-kind-style.arc' | 'arrow-kind-style.elbow' | 'arrowheadEnd-style.arrow' | 'arrowheadEnd-style.bar' | 'arrowheadEnd-style.diamond' | 'arrowheadEnd-style.dot' | 'arrowheadEnd-style.inverted' | 'arrowheadEnd-style.none' | 'arrowheadEnd-style.pipe' | 'arrowheadEnd-style.square' | 'arrowheadEnd-style.triangle' | 'arrowheadStart-style.arrow' | 'arrowheadStart-style.bar' | 'arrowheadStart-style.diamond' | 'arrowheadStart-style.dot' | 'arrowheadStart-style.inverted' | 'arrowheadStart-style.none' | 'arrowheadStart-style.pipe' | 'arrowheadStart-style.square' | 'arrowheadStart-style.triangle' | 'assets.files.amount-too-many' | 'assets.files.maximum-size' | 'assets.files.size-too-big' | 'assets.files.type-not-allowed' | 'assets.files.upload-failed' | 'assets.url.failed' | 'color-style.black' | 'color-style.blue' | 'color-style.green' | 'color-style.grey' | 'color-style.light-blue' | 'color-style.light-green' | 'color-style.light-red' | 'color-style.light-violet' | 'color-style.orange' | 'color-style.red' | 'color-style.violet' | 'color-style.white' | 'color-style.yellow' | 'context-menu.arrange' | 'context-menu.copy-as' | 'context-menu.edit' | 'context-menu.export-all-as' | 'context-menu.export-as' | 'context-menu.move-to-page' | 'context-menu.reorder' | 'context-menu.title' | 'context.pages.new-page' | 'cursor-chat.type-to-chat' | 'dash-style.dashed' | 'dash-style.dotted' | 'dash-style.draw' | 'dash-style.solid' | 'document-name-menu.copy-link' | 'document.default-name' | 'edit-link-dialog.cancel' | 'edit-link-dialog.clear' | 'edit-link-dialog.detail' | 'edit-link-dialog.external-link' | 'edit-link-dialog.invalid-url' | 'edit-link-dialog.save' | 'edit-link-dialog.title' | 'edit-link-dialog.url' | 'embed-dialog.back' | 'embed-dialog.cancel' | 'embed-dialog.create' | 'embed-dialog.instruction' | 'embed-dialog.invalid-url' | 'embed-dialog.title' | 'embed-dialog.url' | 'file-system.confirm-clear.cancel' | 'file-system.confirm-clear.continue' | 'file-system.confirm-clear.description' | 'file-system.confirm-clear.dont-show-again' | 'file-system.confirm-clear.title' | 'file-system.confirm-open.cancel' | 'file-system.confirm-open.description' | 'file-system.confirm-open.dont-show-again' | 'file-system.confirm-open.open' | 'file-system.confirm-open.title' | 'file-system.file-open-error.file-format-version-too-new' | 'file-system.file-open-error.generic-corrupted-file' | 'file-system.file-open-error.not-a-tldraw-file' | 'file-system.file-open-error.title' | 'file-system.shared-document-file-open-error.description' | 'file-system.shared-document-file-open-error.title' | 'fill-style.fill' | 'fill-style.lined-fill' | 'fill-style.none' | 'fill-style.pattern' | 'fill-style.semi' | 'fill-style.solid' | 'focus-mode.toggle-focus-mode' | 'font-style.draw' | 'font-style.mono' | 'font-style.sans' | 'font-style.serif' | 'geo-style.arrow-down' | 'geo-style.arrow-left' | 'geo-style.arrow-right' | 'geo-style.arrow-up' | 'geo-style.check-box' | 'geo-style.cloud' | 'geo-style.diamond' | 'geo-style.ellipse' | 'geo-style.heart' | 'geo-style.hexagon' | 'geo-style.octagon' | 'geo-style.oval' | 'geo-style.pentagon' | 'geo-style.rectangle' | 'geo-style.rhombus-2' | 'geo-style.rhombus' | 'geo-style.star' | 'geo-style.trapezoid' | 'geo-style.triangle' | 'geo-style.x-box' | 'handle.crop.bottom-left' | 'handle.crop.bottom-right' | 'handle.crop.bottom' | 'handle.crop.left' | 'handle.crop.right' | 'handle.crop.top-left' | 'handle.crop.top-right' | 'handle.crop.top' | 'handle.resize-bottom-left' | 'handle.resize-bottom-right' | 'handle.resize-bottom' | 'handle.resize-left' | 'handle.resize-right' | 'handle.resize-top-left' | 'handle.resize-top-right' | 'handle.resize-top' | 'handle.rotate.bottom_left_rotate' | 'handle.rotate.bottom_right_rotate' | 'handle.rotate.mobile_rotate' | 'handle.rotate.top_left_rotate' | 'handle.rotate.top_right_rotate' | 'help-menu.about' | 'help-menu.discord' | 'help-menu.github' | 'help-menu.import-tldr-file' | 'help-menu.keyboard-shortcuts' | 'help-menu.privacy' | 'help-menu.terms' | 'help-menu.title' | 'help-menu.twitter' | 'menu.accessibility' | 'menu.copy-as' | 'menu.edit' | 'menu.export-as' | 'menu.file' | 'menu.input-device' | 'menu.language' | 'menu.preferences' | 'menu.theme' | 'menu.title' | 'menu.view' | 'navigation-zone.minimap' | 'navigation-zone.title' | 'navigation-zone.toggle-minimap' | 'navigation-zone.zoom' | 'opacity-style.0.1' | 'opacity-style.0.25' | 'opacity-style.0.5' | 'opacity-style.0.75' | 'opacity-style.1' | 'page-menu.create-new-page' | 'page-menu.edit-done' | 'page-menu.edit-start' | 'page-menu.go-to-page' | 'page-menu.max-page-count-reached' | 'page-menu.new-page-initial-name' | 'page-menu.submenu.delete' | 'page-menu.submenu.duplicate-page' | 'page-menu.submenu.move-down' | 'page-menu.submenu.move-up' | 'page-menu.submenu.rename' | 'page-menu.submenu.title' | 'page-menu.title' | 'people-menu.anonymous-user' | 'people-menu.avatar-color' | 'people-menu.change-color' | 'people-menu.change-name' | 'people-menu.follow' | 'people-menu.following' | 'people-menu.invite' | 'people-menu.leading' | 'people-menu.title' | 'people-menu.user' | 'share-menu.copied' | 'share-menu.copy-link-note' | 'share-menu.copy-link' | 'share-menu.copy-readonly-link-note' | 'share-menu.copy-readonly-link' | 'share-menu.create-snapshot-link' | 'share-menu.creating-project' | 'share-menu.fork-note' | 'share-menu.offline-note' | 'share-menu.project-too-large' | 'share-menu.save-note' | 'share-menu.share-project' | 'share-menu.snapshot-link-note' | 'share-menu.title' | 'share-menu.upload-failed' | 'sharing.confirm-leave.cancel' | 'sharing.confirm-leave.description' | 'sharing.confirm-leave.dont-show-again' | 'sharing.confirm-leave.leave' | 'sharing.confirm-leave.title' | 'shortcuts-dialog.a11y' | 'shortcuts-dialog.collaboration' | 'shortcuts-dialog.edit' | 'shortcuts-dialog.file' | 'shortcuts-dialog.preferences' | 'shortcuts-dialog.text-formatting' | 'shortcuts-dialog.title' | 'shortcuts-dialog.tools' | 'shortcuts-dialog.transform' | 'shortcuts-dialog.view' | 'size-style.l' | 'size-style.m' | 'size-style.s' | 'size-style.xl' | 'spline-style.cubic' | 'spline-style.line' | 'status.offline' | 'style-panel.align' | 'style-panel.arrow-kind' | 'style-panel.arrowhead-end' | 'style-panel.arrowhead-start' | 'style-panel.arrowheads' | 'style-panel.color' | 'style-panel.dash' | 'style-panel.fill' | 'style-panel.font' | 'style-panel.geo' | 'style-panel.label-align' | 'style-panel.mixed' | 'style-panel.opacity' | 'style-panel.position' | 'style-panel.selected' | 'style-panel.size' | 'style-panel.spline' | 'style-panel.title' | 'style-panel.vertical-align' | 'theme.dark' | 'theme.light' | 'theme.system' | 'toast.close' | 'toast.error.copy-fail.desc' | 'toast.error.copy-fail.title' | 'toast.error.export-fail.desc' | 'toast.error.export-fail.title' | 'toast.error' | 'toast.info' | 'toast.success' | 'toast.warning' | 'tool-panel.more' | 'tool-panel.title' | 'tool.arrow-down' | 'tool.arrow-left' | 'tool.arrow-right' | 'tool.arrow-up' | 'tool.arrow' | 'tool.aspect-ratio.circle' | 'tool.aspect-ratio.landscape' | 'tool.aspect-ratio.original' | 'tool.aspect-ratio.portrait' | 'tool.aspect-ratio.square' | 'tool.aspect-ratio.wide' | 'tool.aspect-ratio' | 'tool.bookmark' | 'tool.check-box' | 'tool.cloud' | 'tool.diamond' | 'tool.draw' | 'tool.ellipse' | 'tool.embed' | 'tool.eraser' | 'tool.flip-horz' | 'tool.flip-vert' | 'tool.frame' | 'tool.hand' | 'tool.heart' | 'tool.hexagon' | 'tool.highlight' | 'tool.image-crop-confirm' | 'tool.image-crop' | 'tool.image-toolbar-title' | 'tool.image-zoom' | 'tool.laser' | 'tool.line' | 'tool.media-alt-text-confirm' | 'tool.media-alt-text-desc' | 'tool.media-alt-text' | 'tool.media' | 'tool.note' | 'tool.octagon' | 'tool.oval' | 'tool.pentagon' | 'tool.pointer-down' | 'tool.rectangle' | 'tool.replace-media' | 'tool.rhombus' | 'tool.rich-text-bold' | 'tool.rich-text-bulletList' | 'tool.rich-text-code' | 'tool.rich-text-header' | 'tool.rich-text-highlight' | 'tool.rich-text-italic' | 'tool.rich-text-link-remove' | 'tool.rich-text-link-visit' | 'tool.rich-text-link' | 'tool.rich-text-orderedList' | 'tool.rich-text-strikethrough' | 'tool.rich-text-toolbar-title' | 'tool.rotate-cw' | 'tool.select' | 'tool.star' | 'tool.text' | 'tool.trapezoid' | 'tool.triangle' | 'tool.x-box' | 'ui.checked' | 'ui.close' | 'ui.unchecked' | 'verticalAlign-style.end' | 'verticalAlign-style.middle' | 'verticalAlign-style.start' | 'vscode.file-open.backup-failed' | 'vscode.file-open.backup-saved' | 'vscode.file-open.backup' | 'vscode.file-open.desc' | 'vscode.file-open.dont-show-again' | 'vscode.file-open.open';
+ 
+ // @public (undocumented)
+ export interface TLUiTranslationProviderProps {
+@@ -5727,9 +5725,6 @@ export function TogglePasteAtCursorItem(): JSX.Element;
+ // @public (undocumented)
+ export function ToggleReduceMotionItem(): JSX.Element;
+ 
+-// @public (undocumented)
+-export function ToggleRightClickToDragItem(): JSX.Element;
+-
+ // @public (undocumented)
+ export function ToggleSnapModeItem(): JSX.Element;
+ 
+diff --git a/packages/tldraw/src/index.ts b/packages/tldraw/src/index.ts
+index 4d005a88e009..0da86bebe0cf 100644
+--- a/packages/tldraw/src/index.ts
++++ b/packages/tldraw/src/index.ts
+@@ -1,7 +1,6 @@
+ /// <reference types="react" />
+ 
+ import { registerTldrawLibraryVersion } from '@tldraw/editor'
+-import { DefaultPeopleMenu } from './lib/ui/components/SharePanel/DefaultPeopleMenu'
+ export { getPointsFromDrawSegment, getPointsFromDrawSegments } from './lib/shapes/draw/getPath'
+ export {
+ 	PathBuilder,
+@@ -146,8 +145,8 @@ export {
+ export { createBookmarkFromUrl } from './lib/shapes/bookmark/bookmarks'
+ export {
+ 	BookmarkShapeUtil,
+-	type BookmarkShapeUtilDisplayValues,
+ 	type BookmarkShapeOptions,
++	type BookmarkShapeUtilDisplayValues,
+ } from './lib/shapes/bookmark/BookmarkShapeUtil'
+ export { DrawShapeTool } from './lib/shapes/draw/DrawShapeTool'
+ export {
+@@ -169,8 +168,8 @@ export {
+ export { GeoShapeTool } from './lib/shapes/geo/GeoShapeTool'
+ export {
+ 	GeoShapeUtil,
+-	type GeoShapeUtilDisplayValues,
+ 	type GeoShapeOptions,
++	type GeoShapeUtilDisplayValues,
+ } from './lib/shapes/geo/GeoShapeUtil'
+ export { HighlightShapeTool } from './lib/shapes/highlight/HighlightShapeTool'
+ export {
+@@ -180,20 +179,20 @@ export {
+ } from './lib/shapes/highlight/HighlightShapeUtil'
+ export {
+ 	ImageShapeUtil,
+-	type ImageShapeUtilDisplayValues,
+ 	type ImageShapeOptions,
++	type ImageShapeUtilDisplayValues,
+ } from './lib/shapes/image/ImageShapeUtil'
+ export { LineShapeTool } from './lib/shapes/line/LineShapeTool'
+ export {
+ 	LineShapeUtil,
+-	type LineShapeUtilDisplayValues,
+ 	type LineShapeOptions,
++	type LineShapeUtilDisplayValues,
+ } from './lib/shapes/line/LineShapeUtil'
+ export { NoteShapeTool } from './lib/shapes/note/NoteShapeTool'
+ export {
+ 	NoteShapeUtil,
+-	type NoteShapeUtilDisplayValues,
+ 	type NoteShapeOptions,
++	type NoteShapeUtilDisplayValues,
+ } from './lib/shapes/note/NoteShapeUtil'
+ export {
+ 	ASPECT_RATIO_OPTIONS,
+@@ -204,6 +203,7 @@ export {
+ 	type ASPECT_RATIO_OPTION,
+ 	type CropBoxOptions,
+ } from './lib/shapes/shared/crop'
++export { getFontFamily } from './lib/shapes/shared/default-shape-constants'
+ export {
+ 	allDefaultFontFaces,
+ 	DefaultFontFaces,
+@@ -246,7 +246,6 @@ export {
+ 	type VideoShapeOptions,
+ 	type VideoShapeUtilDisplayValues,
+ } from './lib/shapes/video/VideoShapeUtil'
+-export { getFontFamily } from './lib/shapes/shared/default-shape-constants'
+ export { getColorStyleItems, getFontStyleItems, type StyleValuesForUi } from './lib/styles'
+ export { Tldraw, type TLComponents, type TldrawBaseProps, type TldrawProps } from './lib/Tldraw'
+ export { TldrawImage, type TldrawImageProps } from './lib/TldrawImage'
+@@ -364,7 +363,6 @@ export {
+ 	ToggleLockMenuItem,
+ 	TogglePasteAtCursorItem,
+ 	ToggleReduceMotionItem,
+-	ToggleRightClickToDragItem,
+ 	ToggleSnapModeItem,
+ 	ToggleToolLockItem,
+ 	ToggleTransparentBgMenuItem,
+@@ -508,14 +506,17 @@ export {
+ 	type TLUiQuickActionsProps,
+ } from './lib/ui/components/QuickActions/DefaultQuickActions'
+ export { DefaultQuickActionsContent } from './lib/ui/components/QuickActions/DefaultQuickActionsContent'
+-export { DefaultSharePanel } from './lib/ui/components/SharePanel/DefaultSharePanel'
+ export {
+ 	DefaultPeopleMenu,
+-	type DefaultPeopleMenuProps,
+ 	// legacy
+ 	DefaultPeopleMenu as PeopleMenu,
++	type DefaultPeopleMenuProps,
+ 	type DefaultPeopleMenuProps as PeopleMenuProps,
+ } from './lib/ui/components/SharePanel/DefaultPeopleMenu'
++export {
++	DefaultPeopleMenuAvatar,
++	type TLUiPeopleMenuAvatarProps,
++} from './lib/ui/components/SharePanel/DefaultPeopleMenuAvatar'
+ export {
+ 	DefaultPeopleMenuContent,
+ 	type DefaultPeopleMenuContentProps,
+@@ -525,13 +526,10 @@ export {
+ 	type TLUiPeopleMenuFacePileProps,
+ } from './lib/ui/components/SharePanel/DefaultPeopleMenuFacePile'
+ export {
+-	type TLUiPeopleMenuAvatarProps,
+-	DefaultPeopleMenuAvatar,
+-} from './lib/ui/components/SharePanel/DefaultPeopleMenuAvatar'
+-export {
+-	type TLUiPeopleMenuItemProps,
+ 	DefaultPeopleMenuItem,
++	type TLUiPeopleMenuItemProps,
+ } from './lib/ui/components/SharePanel/DefaultPeopleMenuItem'
++export { DefaultSharePanel } from './lib/ui/components/SharePanel/DefaultSharePanel'
+ export { DefaultUserPresenceEditor } from './lib/ui/components/SharePanel/DefaultUserPresenceEditor'
+ export { Spinner } from './lib/ui/components/Spinner'
+ export {
+diff --git a/packages/tldraw/src/lib/ui/components/MainMenu/DefaultMainMenuContent.tsx b/packages/tldraw/src/lib/ui/components/MainMenu/DefaultMainMenuContent.tsx
+index 137ecc35fae7..b931a114e8c8 100644
+--- a/packages/tldraw/src/lib/ui/components/MainMenu/DefaultMainMenuContent.tsx
++++ b/packages/tldraw/src/lib/ui/components/MainMenu/DefaultMainMenuContent.tsx
+@@ -23,7 +23,6 @@ import {
+ 	ToggleGridItem,
+ 	ToggleLockMenuItem,
+ 	TogglePasteAtCursorItem,
+-	ToggleRightClickToDragItem,
+ 	ToggleSnapModeItem,
+ 	ToggleToolLockItem,
+ 	ToggleTransparentBgMenuItem,
+@@ -162,7 +161,6 @@ export function PreferencesGroup() {
+ 					<ToggleWrapModeItem />
+ 					<ToggleFocusModeItem />
+ 					<ToggleEdgeScrollingItem />
+-					<ToggleRightClickToDragItem />
+ 					<ToggleDynamicSizeModeItem />
+ 					<TogglePasteAtCursorItem />
+ 				</TldrawUiMenuGroup>
+diff --git a/packages/tldraw/src/lib/ui/components/menu-items.tsx b/packages/tldraw/src/lib/ui/components/menu-items.tsx
+index 180d95c9bb82..837847600af1 100644
+--- a/packages/tldraw/src/lib/ui/components/menu-items.tsx
++++ b/packages/tldraw/src/lib/ui/components/menu-items.tsx
+@@ -632,23 +632,6 @@ export function ToggleInvertZoomItem() {
+ 	)
+ }
+ 
+-/** @public @react */
+-export function ToggleRightClickToDragItem() {
+-	const editor = useEditor()
+-	const isRightClickToDrag = useValue(
+-		'isRightClickToDrag',
+-		() => editor.user.getIsRightClickToDrag(),
+-		[editor]
+-	)
+-
+-	return (
+-		<TldrawUiMenuActionCheckboxItem
+-			actionId="toggle-right-click-to-drag"
+-			checked={isRightClickToDrag}
+-		/>
+-	)
+-}
+-
+ /** @public @react */
+ export function ToggleReduceMotionItem() {
+ 	const editor = useEditor()
+diff --git a/packages/tldraw/src/lib/ui/context/actions.tsx b/packages/tldraw/src/lib/ui/context/actions.tsx
+index 644be0c59591..ed2ae8d52dff 100644
+--- a/packages/tldraw/src/lib/ui/context/actions.tsx
++++ b/packages/tldraw/src/lib/ui/context/actions.tsx
+@@ -1381,21 +1381,6 @@ export function ActionsProvider({ overrides, children }: ActionsProviderProps) {
+ 				},
+ 				checkbox: true,
+ 			},
+-			{
+-				id: 'toggle-right-click-to-drag',
+-				label: {
+-					default: 'action.toggle-right-click-to-drag',
+-					menu: 'action.toggle-right-click-to-drag.menu',
+-				},
+-				readonlyOk: true,
+-				onSelect(source) {
+-					trackEvent('toggle-right-click-to-drag', { source })
+-					editor.user.updateUserPreferences({
+-						isRightClickToDrag: !editor.user.getIsRightClickToDrag(),
+-					})
+-				},
+-				checkbox: true,
+-			},
+ 			{
+ 				id: 'toggle-transparent',
+ 				label: {
+diff --git a/packages/tldraw/src/lib/ui/context/events.tsx b/packages/tldraw/src/lib/ui/context/events.tsx
+index 76e3025714f1..706ad68dacfe 100644
+--- a/packages/tldraw/src/lib/ui/context/events.tsx
++++ b/packages/tldraw/src/lib/ui/context/events.tsx
+@@ -112,7 +112,6 @@ export interface TLUiEventMap {
+ 	'toggle-keyboard-shortcuts': null
+ 	'enhanced-a11y-mode': null
+ 	'toggle-edge-scrolling': null
+-	'toggle-right-click-to-drag': null
+ 	'color-scheme': { value: string }
+ 	'exit-pen-mode': null
+ 	'start-following': null
+diff --git a/packages/tldraw/src/lib/ui/hooks/useTranslation/TLUiTranslationKey.ts b/packages/tldraw/src/lib/ui/hooks/useTranslation/TLUiTranslationKey.ts
+index 666d45365368..eba70694f1d6 100644
+--- a/packages/tldraw/src/lib/ui/hooks/useTranslation/TLUiTranslationKey.ts
++++ b/packages/tldraw/src/lib/ui/hooks/useTranslation/TLUiTranslationKey.ts
+@@ -106,8 +106,6 @@ export type TLUiTranslationKey =
+ 	| 'action.toggle-edge-scrolling'
+ 	| 'action.toggle-invert-zoom.menu'
+ 	| 'action.toggle-invert-zoom'
+-	| 'action.toggle-right-click-to-drag.menu'
+-	| 'action.toggle-right-click-to-drag'
+ 	| 'action.toggle-debug-mode.menu'
+ 	| 'action.toggle-debug-mode'
+ 	| 'action.toggle-focus-mode.menu'
+diff --git a/packages/tldraw/src/lib/ui/hooks/useTranslation/defaultTranslation.ts b/packages/tldraw/src/lib/ui/hooks/useTranslation/defaultTranslation.ts
+index d400b55bdbf5..0a2ba04447fa 100644
+--- a/packages/tldraw/src/lib/ui/hooks/useTranslation/defaultTranslation.ts
++++ b/packages/tldraw/src/lib/ui/hooks/useTranslation/defaultTranslation.ts
+@@ -107,8 +107,6 @@ export const DEFAULT_TRANSLATION = {
+ 	'action.toggle-edge-scrolling': 'Toggle edge scrolling',
+ 	'action.toggle-invert-zoom.menu': 'Invert mouse zoom',
+ 	'action.toggle-invert-zoom': 'Toggle invert mouse zoom',
+-	'action.toggle-right-click-to-drag.menu': 'Right-click to drag',
+-	'action.toggle-right-click-to-drag': 'Toggle right-click to drag',
+ 	'action.toggle-debug-mode.menu': 'Debug mode',
+ 	'action.toggle-debug-mode': 'Toggle debug mode',
+ 	'action.toggle-focus-mode.menu': 'Focus mode',
+diff --git a/packages/tldraw/src/test/groups.test.tsx b/packages/tldraw/src/test/groups.test.tsx
+index a75fce55b0db..439f86e020b6 100644
+--- a/packages/tldraw/src/test/groups.test.tsx
++++ b/packages/tldraw/src/test/groups.test.tsx
+@@ -919,7 +919,7 @@ describe('right clicking in detail', () => {
+ 
+ 	// TODO: fix this
+ 	it('should select the group by right-clicking the margin of a hollow shape', () => {
+-		editor.pointerMove(4, 4).pointerDown(4, 4, { target: 'canvas', button: 2 }).pointerUp()
++		editor.pointerMove(4, 4).rightClick(4, 4)
+ 		expect(onlySelectedId()).toBe(groupId)
+ 	})
+ })
+@@ -967,21 +967,15 @@ describe('the select tool', () => {
+ 	it('should select the outermost non-selected group when you right-click on one of the shapes in that group', () => {
+ 		const boxA = editor.getShape(ids.boxA)
+ 
+-		editor
+-			.pointerDown(0, 0, { target: 'shape', shape: boxA, button: 2 })
+-			.pointerUp(0, 0, { button: 2 })
++		editor.rightClick(0, 0, { target: 'shape', shape: boxA })
+ 		expect(onlySelectedId()).toBe(groupCId)
+ 		expect(editor.getFocusedGroupId()).toBe(editor.getCurrentPageId())
+-		editor
+-			.pointerDown(0, 0, { target: 'shape', shape: boxA, button: 2 })
+-			.pointerUp(0, 0, { button: 2 })
++		editor.rightClick(0, 0, { target: 'shape', shape: boxA })
+ 		expect(onlySelectedId()).toBe(groupCId)
+ 		expect(editor.getFocusedGroupId()).toBe(editor.getCurrentPageId())
+ 		editor.select(groupAId)
+ 		expect(editor.getFocusedGroupId()).toBe(groupCId)
+-		editor
+-			.pointerDown(0, 0, { target: 'shape', shape: boxA, button: 2 })
+-			.pointerUp(0, 0, { button: 2 })
++		editor.rightClick(0, 0, { target: 'shape', shape: boxA })
+ 		expect(onlySelectedId()).toBe(groupAId)
+ 		expect(editor.getFocusedGroupId()).toBe(groupCId)
+ 	})
+diff --git a/packages/tldraw/src/test/selection-omnibus.test.ts b/packages/tldraw/src/test/selection-omnibus.test.ts
+index 72e6aba2d0ee..17099106e2f9 100644
+--- a/packages/tldraw/src/test/selection-omnibus.test.ts
++++ b/packages/tldraw/src/test/selection-omnibus.test.ts
+@@ -1781,8 +1781,7 @@ describe('right clicking', () => {
+ 		editor.createShapes([{ id: ids.box1, type: 'geo' }])
+ 		expect(editor.getSelectedShapeIds()).toEqual([])
+ 		editor.pointerMove(4, 4)
+-		editor.pointerDown(4, 4, { target: 'canvas', button: 2 })
+-		editor.pointerUp()
++		editor.rightClick(4, 4)
+ 		expect(editor.getSelectedShapeIds()).toEqual([ids.box1])
+ 	})
+ 
+@@ -1835,8 +1834,7 @@ describe('right clicking', () => {
+ 		// Not inside of the shape but inside of the selection bounds
+ 		editor.pointerMove(510, 590)
+ 		expect(editor.getHoveredShapeId()).toBe(null)
+-		editor.pointerDown(30, 30, { target: 'canvas', button: 2 })
+-		editor.pointerUp()
++		editor.rightClick(30, 30)
+ 		expect(editor.getSelectedShapeIds()).toEqual([])
+ 	})
+ })

@@ -1,0 +1,1800 @@
+diff --git a/apps/bare-expo/ios/Podfile.lock b/apps/bare-expo/ios/Podfile.lock
+index 8eee846de53a83..2b9ab69a4a0c08 100644
+--- a/apps/bare-expo/ios/Podfile.lock
++++ b/apps/bare-expo/ios/Podfile.lock
+@@ -4327,7 +4327,7 @@ SPEC CHECKSUMS:
+   ExpoWebBrowser: 41dc1db6ed9185a3b80a9f917ba3c62dafd22eec
+   EXStructuredHeaders: 1c799cb91e8057e0671610635e5b2109fa295114
+   EXTaskManager: 0128b9f39a088b0c762d8d1c42017e6d44200b29
+-  EXUpdates: 0f13f322ef9c42348dda20bdb19d37d148fcbc83
++  EXUpdates: 90ae8de78856383eec69dba4b30149e195a9f2bd
+   EXUpdatesInterface: d6c802a2d1d11867523d03a95397957f9ba3d1c7
+   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6
+   FBLazyVector: 09f03e4b6f42f955734b64a118f86509cc719427
+diff --git a/apps/native-component-list/src/navigation/ExpoApisStackNavigator.tsx b/apps/native-component-list/src/navigation/ExpoApisStackNavigator.tsx
+index 17f6e4dc7284b2..54baa12bea708a 100644
+--- a/apps/native-component-list/src/navigation/ExpoApisStackNavigator.tsx
++++ b/apps/native-component-list/src/navigation/ExpoApisStackNavigator.tsx
+@@ -403,6 +403,12 @@ export const ScreensList: ScreenConfig[] = [
+     name: 'TrackingTransparency',
+     options: { title: 'TrackingTransparency' },
+   },
++  {
++    getComponent() {
++      return optionalRequire(() => require('../screens/UpdatesScreen'));
++    },
++    name: 'Updates Reload Screen',
++  },
+   {
+     getComponent() {
+       return optionalRequire(() => require('../screens/WebBrowser/WebBrowserScreen'));
+diff --git a/apps/native-component-list/src/screens/UpdatesScreen.tsx b/apps/native-component-list/src/screens/UpdatesScreen.tsx
+new file mode 100644
+index 00000000000000..f6a30e8c22aafd
+--- /dev/null
++++ b/apps/native-component-list/src/screens/UpdatesScreen.tsx
+@@ -0,0 +1,193 @@
++import * as Updates from 'expo-updates';
++import React from 'react';
++import { ScrollView, StyleSheet, Text, View, Alert } from 'react-native';
++
++import Button from '../components/Button';
++
++export default function UpdatesScreen() {
++  const getRandomColor = () => {
++    const colors = [
++      '#FF6B6B',
++      '#4ECDC4',
++      '#45B7D1',
++      '#96CEB4',
++      '#FFEAA7',
++      '#DDA0DD',
++      '#F39C12',
++      '#E74C3C',
++      '#9B59B6',
++      '#2ECC71',
++      '#3498DB',
++      '#E67E22',
++      '#1ABC9C',
++      '#F1C40F',
++      '#8E44AD',
++    ];
++    return colors[Math.floor(Math.random() * colors.length)];
++  };
++
++  const getRandomSpinnerColor = () => {
++    const colors = [
++      '#007AFF',
++      '#FF6B6B',
++      '#4ECDC4',
++      '#45B7D1',
++      '#96CEB4',
++      '#FFEAA7',
++      '#DDA0DD',
++      '#F39C12',
++      '#E74C3C',
++      '#9B59B6',
++    ];
++    return colors[Math.floor(Math.random() * colors.length)];
++  };
++
++  const handleShowReloadScreen = async (action: () => Promise<void>) => {
++    try {
++      await action();
++      setTimeout(async () => {
++        await Updates.hideReloadScreen();
++      }, 3000);
++    } catch (error) {
++      Alert.alert('Error', `Failed to show reload screen: ${error.message}`);
++    }
++  };
++
++  const setDefaultOptions = () => {
++    return Updates.showReloadScreen({
++      reloadScreenOptions: {
++        backgroundColor: getRandomColor(),
++        spinner: {
++          enabled: true,
++          color: getRandomSpinnerColor(),
++          size: 'medium',
++        },
++      },
++    });
++  };
++
++  const setDarkOptions = () => {
++    return Updates.showReloadScreen({
++      reloadScreenOptions: {
++        backgroundColor: '#1a1a1a',
++        fade: true,
++        spinner: {
++          enabled: true,
++          color: '#ffffff',
++          size: 'large',
++        },
++      },
++    });
++  };
++
++  const setLocalImageOptions = () => {
++    return Updates.showReloadScreen({
++      reloadScreenOptions: {
++        backgroundColor: getRandomColor(),
++        image: require('../../assets/images/react-native.png'),
++        imageResizeMode: 'contain',
++      },
++    });
++  };
++
++  const setRemoteUrlImageOptions = () => {
++    return Updates.showReloadScreen({
++      reloadScreenOptions: {
++        backgroundColor: getRandomColor(),
++        image: {
++          url: 'https://picsum.photos/200/200',
++          height: 200,
++          width: 200,
++        },
++        imageResizeMode: 'contain',
++      },
++    });
++  };
++
++  const setFullScreenImageOptions = () => {
++    return Updates.showReloadScreen({
++      reloadScreenOptions: {
++        backgroundColor: getRandomColor(),
++        image: require('../../assets/images/large-example.jpg'),
++        imageResizeMode: 'cover',
++        imageFullScreen: true,
++        fade: true,
++      },
++    });
++  };
++
++  const setOptionsFromReload = () => {
++    Updates.reloadAsync({
++      reloadScreenOptions: {
++        backgroundColor: getRandomColor(),
++        image: require('../../assets/images/large-example.jpg'),
++        imageResizeMode: 'cover',
++        imageFullScreen: true,
++        fade: true,
++      },
++    });
++  };
++
++  return (
++    <ScrollView style={styles.container}>
++      <View style={styles.section}>
++        <Button
++          onPress={() => handleShowReloadScreen(Updates.showReloadScreen)}
++          title="Show Reload Screen"
++        />
++      </View>
++
++      <View style={styles.section}>
++        <Text style={styles.sectionTitle}>Configuration Options</Text>
++        <Button
++          onPress={() => handleShowReloadScreen(setDefaultOptions)}
++          title="Set Default Options"
++        />
++        <Button
++          onPress={() => handleShowReloadScreen(setDarkOptions)}
++          title="Set Dark Theme Options"
++        />
++        <Button
++          onPress={() => handleShowReloadScreen(setLocalImageOptions)}
++          title="Set Local Image Options"
++        />
++        <Button
++          onPress={() => handleShowReloadScreen(setRemoteUrlImageOptions)}
++          title="Set Remote Image Options"
++        />
++        <Button
++          onPress={() => handleShowReloadScreen(setFullScreenImageOptions)}
++          title="Set Full Screen Image Options"
++        />
++        <Button onPress={setOptionsFromReload} title="Set options from reload" />
++      </View>
++    </ScrollView>
++  );
++}
++
++const styles = StyleSheet.create({
++  container: {
++    flex: 1,
++    padding: 16,
++    backgroundColor: '#fff',
++  },
++  section: {
++    marginBottom: 20,
++    gap: 12,
++  },
++  sectionTitle: {
++    fontSize: 16,
++    fontWeight: 'bold',
++    marginBottom: 10,
++  },
++  info: {
++    fontSize: 12,
++    marginBottom: 4,
++    color: '#666',
++  },
++  instructions: {
++    fontSize: 12,
++    color: '#666',
++    lineHeight: 18,
++  },
++});
+diff --git a/packages/expo-updates/CHANGELOG.md b/packages/expo-updates/CHANGELOG.md
+index 5d398fb7f4f9f8..997ea4e071e18d 100644
+--- a/packages/expo-updates/CHANGELOG.md
++++ b/packages/expo-updates/CHANGELOG.md
+@@ -7,6 +7,7 @@
+ ### 🎉 New features
+ 
+ - Add experimental support for macOS. ([#37629](https://github.com/expo/expo/pull/37629) by [@gabrieldonadel](https://github.com/gabrieldonadel))
++- Add support for a customisable reloading view when `reloadAsync` is called. ([#38074](https://github.com/expo/expo/pull/38074) by [@alanjhughes](https://github.com/alanjhughes))
+ 
+ ### 🐛 Bug fixes
+ 
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesModule.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesModule.kt
+index ba785a95b34080..bffcdaf4e2460b 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesModule.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesModule.kt
+@@ -6,6 +6,7 @@ import android.os.Bundle
+ import expo.modules.kotlin.exception.CodedException
+ import expo.modules.kotlin.exception.Exceptions
+ import expo.modules.kotlin.functions.Coroutine
++import expo.modules.kotlin.functions.Queues
+ import expo.modules.kotlin.modules.Module
+ import expo.modules.kotlin.modules.ModuleDefinition
+ import expo.modules.kotlin.records.Field
+@@ -17,6 +18,8 @@ import expo.modules.updates.logging.UpdatesLogEntry
+ import expo.modules.updates.logging.UpdatesLogReader
+ import expo.modules.updates.logging.UpdatesLogger
+ import expo.modules.updates.statemachine.UpdatesStateContext
++import expo.modules.updates.reloadscreen.ReloadScreenManager
++import expo.modules.updates.reloadscreen.ReloadScreenOptions
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.withContext
+ import java.io.File
+@@ -61,7 +64,8 @@ class UpdatesModule : Module(), IUpdatesEventManagerObserver {
+       UpdatesController.removeUpdatesEventManagerObserver()
+     }
+ 
+-    AsyncFunction("reload") Coroutine { ->
++    AsyncFunction("reload") Coroutine { options: ReloadScreenOptions? ->
++      ReloadScreenManager.setConfiguration(options)
+       UpdatesController.instance.relaunchReactApplicationForModule()
+     }
+ 
+@@ -161,6 +165,20 @@ class UpdatesModule : Module(), IUpdatesEventManagerObserver {
+     Function("setUpdateURLAndRequestHeadersOverride") { configOverride: UpdatesConfigurationOverrideParam? ->
+       UpdatesController.instance.setUpdateURLAndRequestHeadersOverride(configOverride?.toUpdatesConfigurationOverride())
+     }
++
++    AsyncFunction("showReloadScreen") { options: ReloadScreenOptions? ->
++      if (BuildConfig.DEBUG) {
++        val activity = appContext.currentActivity
++        ReloadScreenManager.setConfiguration(options)
++        ReloadScreenManager.show(activity)
++      }
++    }.runOnQueue(Queues.MAIN)
++
++    AsyncFunction("hideReloadScreen") {
++      if (BuildConfig.DEBUG) {
++        ReloadScreenManager.hide()
++      }
++    }.runOnQueue(Queues.MAIN)
+   }
+ 
+   companion object {
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/RelaunchProcedure.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/RelaunchProcedure.kt
+index f5835a9a8089d1..8d28cf929f7c8d 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/RelaunchProcedure.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/RelaunchProcedure.kt
+@@ -16,6 +16,7 @@ import expo.modules.updates.logging.UpdatesErrorCode
+ import expo.modules.updates.logging.UpdatesLogger
+ import expo.modules.updates.selectionpolicy.SelectionPolicy
+ import expo.modules.updates.statemachine.UpdatesStateEvent
++import expo.modules.updates.reloadscreen.ReloadScreenManager
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.launch
+@@ -81,6 +82,7 @@ class RelaunchProcedure(
+ 
+     procedureScope.launch {
+       withContext(Dispatchers.Main) {
++        ReloadScreenManager.show(weakActivity?.get())
+         reactApplication.restart(weakActivity?.get(), "Restart from RelaunchProcedure")
+       }
+     }
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/StateMachineSerialExecutorQueue.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/StateMachineSerialExecutorQueue.kt
+index 182b788428c9d0..d324a87a761a6b 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/StateMachineSerialExecutorQueue.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/procedures/StateMachineSerialExecutorQueue.kt
+@@ -85,9 +85,4 @@ class StateMachineSerialExecutorQueue(
+       }
+     }
+   }
+-
+-  fun cancel() {
+-    executorJob.cancel()
+-    procedureChannel.close()
+-  }
+ }
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenConfiguration.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenConfiguration.kt
+new file mode 100644
+index 00000000000000..57801216840c7f
+--- /dev/null
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenConfiguration.kt
+@@ -0,0 +1,82 @@
++package expo.modules.updates.reloadscreen
++
++import android.net.Uri
++import expo.modules.kotlin.records.Field
++import expo.modules.kotlin.records.Record
++import expo.modules.kotlin.types.Enumerable
++import androidx.core.graphics.toColorInt
++
++data class ReloadScreenOptions(
++  @Field val backgroundColor: String?,
++  @Field val image: ReloadScreenImageSource?,
++  @Field val imageResizeMode: ImageResizeMode?,
++  @Field val imageFullScreen: Boolean?,
++  @Field val fade: Boolean?,
++  @Field val spinner: SpinnerOptions?
++) : Record
++
++data class ReloadScreenImageSource(
++  @Field val url: Uri? = null,
++  @Field val width: Double? = null,
++  @Field val height: Double? = null,
++  @Field val scale: Double? = null
++) : Record
++
++data class SpinnerOptions(
++  @Field val enabled: Boolean? = null,
++  @Field val color: String? = null,
++  @Field val size: SpinnerSize? = null
++) : Record
++
++data class ReloadScreenConfiguration(
++  val backgroundColor: Int,
++  val image: ReloadScreenImageSource?,
++  val imageResizeMode: ImageResizeMode,
++  val imageFullScreen: Boolean,
++  val fade: Boolean,
++  val spinner: SpinnerConfiguration
++) {
++  companion object {
++    fun fromOptions(options: ReloadScreenOptions?): ReloadScreenConfiguration {
++      val hasImage = options?.image != null
++
++      return ReloadScreenConfiguration(
++        backgroundColor = options?.backgroundColor?.toColorInt() ?: "#ffffff".toColorInt(),
++        image = options?.image,
++        imageResizeMode = options?.imageResizeMode ?: ImageResizeMode.CONTAIN,
++        imageFullScreen = options?.imageFullScreen ?: false,
++        fade = options?.fade ?: false,
++        spinner = SpinnerConfiguration(
++          enabled = options?.spinner?.enabled ?: !hasImage,
++          color = options?.spinner?.color?.toColorInt() ?: "#007aff".toColorInt(),
++          size = options?.spinner?.size ?: SpinnerSize.MEDIUM
++        )
++      )
++    }
++  }
++}
++
++data class SpinnerConfiguration(
++  val enabled: Boolean,
++  val color: Int,
++  val size: SpinnerSize
++)
++
++enum class ImageResizeMode(val value: String) : Enumerable {
++  CONTAIN("contain"),
++  COVER("cover"),
++  CENTER("center"),
++  STRETCH("stretch")
++}
++
++enum class SpinnerSize(val value: String) : Enumerable {
++  SMALL("small"),
++  MEDIUM("medium"),
++  LARGE("large");
++
++  fun getSize(): Int = when (this) {
++    SMALL -> 24
++    MEDIUM -> 48
++    LARGE -> 72
++  }
++}
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenManager.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenManager.kt
+new file mode 100644
+index 00000000000000..6e5223d5ff5122
+--- /dev/null
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenManager.kt
+@@ -0,0 +1,100 @@
++package expo.modules.updates.reloadscreen
++
++import android.app.Activity
++import android.view.ViewGroup
++import com.facebook.react.bridge.ReactMarker
++import com.facebook.react.bridge.ReactMarkerConstants
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import java.lang.ref.WeakReference
++
++object ReloadScreenManager {
++  private var currentConfiguration: ReloadScreenConfiguration? = null
++  private var currentReloadScreen: WeakReference<ReloadScreenView>? = null
++  private var currentActivity: WeakReference<Activity>? = null
++  private var isShowing = false
++  private val scope = CoroutineScope(Dispatchers.Main)
++
++  private val reloadListener = ReactMarker.MarkerListener { name, _, _ ->
++    if (name == ReactMarkerConstants.RUN_JS_BUNDLE_END) {
++      if (isShowing) {
++        scope.launch {
++          hide()
++        }
++      }
++    }
++  }
++
++  fun setConfiguration(options: ReloadScreenOptions?) {
++    currentConfiguration = ReloadScreenConfiguration.fromOptions(options)
++  }
++
++  fun show(activity: Activity? = null) {
++    if (isShowing) {
++      return
++    }
++
++    ReactMarker.addListener(reloadListener)
++
++    val targetActivity = activity ?: currentActivity?.get()
++    if (targetActivity == null) {
++      return
++    }
++
++    showReloadScreen(targetActivity)
++    isShowing = true
++  }
++
++  fun hide() {
++    if (!isShowing) {
++      return
++    }
++
++    hideReloadScreen()
++    isShowing = false
++  }
++
++  private fun showReloadScreen(activity: Activity) {
++    val config = currentConfiguration ?: ReloadScreenConfiguration.fromOptions(null)
++
++    val reloadScreenView = ReloadScreenView(activity).apply {
++      updateConfiguration(config)
++    }
++
++    val rootView = activity.findViewById<ViewGroup>(android.R.id.content)
++    rootView?.addView(
++      reloadScreenView,
++      ViewGroup.LayoutParams(
++        ViewGroup.LayoutParams.MATCH_PARENT,
++        ViewGroup.LayoutParams.MATCH_PARENT
++      )
++    )
++
++    currentReloadScreen = WeakReference(reloadScreenView)
++  }
++
++  private fun hideReloadScreen() {
++    val reloadScreen = currentReloadScreen?.get() ?: return
++    val config = currentConfiguration
++
++    if (config?.fade == true) {
++      reloadScreen.animate()
++        .alpha(0f)
++        .setDuration(300)
++        .withEndAction {
++          removeView(reloadScreen)
++        }
++        .start()
++    } else {
++      removeView(reloadScreen)
++    }
++  }
++
++  private fun removeView(reloadScreen: ReloadScreenView) {
++    val parent = reloadScreen.parent as? ViewGroup
++    parent?.removeView(reloadScreen)
++    currentReloadScreen = null
++    ReactMarker.removeListener(reloadListener)
++  }
++}
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenView.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenView.kt
+new file mode 100644
+index 00000000000000..3765dad7005047
+--- /dev/null
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/reloadscreen/ReloadScreenView.kt
+@@ -0,0 +1,162 @@
++package expo.modules.updates.reloadscreen
++
++import android.content.Context
++import android.graphics.BitmapFactory
++import android.graphics.Color
++import android.net.Uri
++import android.util.AttributeSet
++import android.util.Base64
++import android.view.Gravity
++import android.view.View
++import android.widget.FrameLayout
++import android.widget.ImageView
++import android.widget.ProgressBar
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import java.io.InputStream
++import java.net.HttpURLConnection
++import java.net.URL
++
++class ReloadScreenView @JvmOverloads constructor(
++  context: Context,
++  attrs: AttributeSet? = null,
++  defStyleAttr: Int = 0
++) : FrameLayout(context, attrs, defStyleAttr) {
++  private var progressBar: ProgressBar? = null
++  private var imageView: ImageView? = null
++  private var currentConfiguration: ReloadScreenConfiguration? = null
++  private val scope = CoroutineScope(Dispatchers.IO)
++
++  init {
++    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
++  }
++
++  fun updateConfiguration(configuration: ReloadScreenConfiguration) {
++    currentConfiguration = configuration
++    removeAllViews()
++    if (configuration.image != null && configuration.imageFullScreen) {
++      setBackgroundColor(Color.TRANSPARENT)
++    } else {
++      setBackgroundColor(configuration.backgroundColor)
++    }
++
++    if (configuration.image != null) {
++      addImageView(configuration)
++    }
++    if (configuration.spinner.enabled) {
++      addSpinner(configuration.spinner)
++    }
++  }
++
++  private fun addImageView(configuration: ReloadScreenConfiguration) {
++    val imageSource = configuration.image ?: return
++
++    imageView = ImageView(context).apply {
++      scaleType = when (configuration.imageResizeMode) {
++        ImageResizeMode.CONTAIN -> ImageView.ScaleType.FIT_CENTER
++        ImageResizeMode.COVER -> ImageView.ScaleType.CENTER_CROP
++        ImageResizeMode.CENTER -> ImageView.ScaleType.CENTER
++        ImageResizeMode.STRETCH -> ImageView.ScaleType.FIT_XY
++      }
++
++      if (configuration.imageFullScreen) {
++        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
++      } else if (imageSource.width != null && imageSource.height != null && imageSource.width > 0 && imageSource.height > 0) {
++        val scale = imageSource.scale ?: 1.0
++        val scaledWidth = dpToPx((imageSource.width * scale).toFloat())
++        val scaledHeight = dpToPx((imageSource.height * scale).toFloat())
++        layoutParams = LayoutParams(scaledWidth, scaledHeight).apply {
++          gravity = Gravity.CENTER
++        }
++      } else {
++        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
++      }
++    }
++
++    addView(imageView)
++    loadImage(imageSource)
++  }
++
++  private fun addSpinner(spinnerConfig: SpinnerConfiguration) {
++    progressBar = ProgressBar(context).apply {
++      isIndeterminate = true
++
++      val size = dpToPx(spinnerConfig.size.getSize().toFloat())
++      layoutParams = LayoutParams(size, size).apply {
++        gravity = Gravity.CENTER
++      }
++
++      indeterminateDrawable?.setTint(spinnerConfig.color)
++    }
++
++    addView(progressBar)
++  }
++
++  private fun loadImage(imageSource: ReloadScreenImageSource) {
++    val view = imageView ?: return
++    val url = imageSource.url ?: return
++
++    loadImageFromUrl(url, view)
++  }
++
++  private fun loadImageFromUrl(uri: Uri, imageView: ImageView) {
++    scope.launch {
++      try {
++        val bitmap = when (uri.scheme) {
++          "http", "https" -> {
++            val url = URL(uri.toString())
++            val connection = url.openConnection() as HttpURLConnection
++            connection.doInput = true
++            connection.connect()
++            val inputStream: InputStream = connection.inputStream
++            BitmapFactory.decodeStream(inputStream)
++          }
++          "file" -> {
++            BitmapFactory.decodeFile(uri.path)
++          }
++          "data" -> {
++            val dataString = uri.toString()
++            if (dataString.startsWith("data:image/")) {
++              val base64String = dataString.substring(dataString.indexOf(",") + 1)
++              val decodedBytes = Base64.decode(base64String, Base64.DEFAULT)
++              BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
++            } else {
++              null
++            }
++          }
++          else -> null
++        }
++
++        withContext(Dispatchers.Main) {
++          bitmap?.let {
++            imageView.setImageBitmap(it)
++          } ?: handleImageLoadFailure()
++        }
++      } catch (e: Exception) {
++        withContext(Dispatchers.Main) {
++          handleImageLoadFailure()
++        }
++      }
++    }
++  }
++
++  private fun handleImageLoadFailure() {
++    imageView?.visibility = View.GONE
++    currentConfiguration?.let { config ->
++      setBackgroundColor(config.backgroundColor)
++      addSpinner(config.spinner.copy(enabled = true))
++    }
++  }
++
++  private fun dpToPx(dp: Float): Int {
++    return (dp * context.resources.displayMetrics.density).toInt()
++  }
++
++  override fun onDetachedFromWindow() {
++    super.onDetachedFromWindow()
++    scope.cancel()
++  }
++}
+diff --git a/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts b/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts
+index f1ea7e20ed9d28..a466ea183c39e5 100644
+--- a/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts
++++ b/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts
+@@ -1,5 +1,5 @@
+ import { NativeModule } from 'expo-modules-core';
+-import { Manifest, UpdateCheckResultAvailable, UpdateCheckResultNotAvailable, UpdateCheckResultRollBack, UpdateFetchResultRollBackToEmbedded, UpdateFetchResultFailure, UpdateFetchResultSuccess, UpdatesLogEntry, UpdatesNativeStateMachineContext } from './Updates.types';
++import { Manifest, UpdateCheckResultAvailable, UpdateCheckResultNotAvailable, UpdateCheckResultRollBack, UpdateFetchResultRollBackToEmbedded, UpdateFetchResultFailure, UpdateFetchResultSuccess, UpdatesLogEntry, UpdatesNativeStateMachineContext, ReloadScreenOptions } from './Updates.types';
+ export type UpdatesEvents = {
+     'Expo.nativeUpdatesStateChangeEvent': (params: any) => void;
+ };
+@@ -84,7 +84,7 @@ export declare class ExpoUpdatesModule extends NativeModule<UpdatesEvents> imple
+         lastCheckForUpdateTimeString?: string;
+         rollbackString?: string;
+     };
+-    reload: () => Promise<void>;
++    reload: (options?: ReloadScreenOptions) => Promise<void>;
+     checkForUpdateAsync: () => Promise<UpdateCheckResultRollBack | (Omit<UpdateCheckResultAvailable, 'manifest'> & ({
+         manifestString: string;
+     } | {
+diff --git a/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts.map b/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts.map
+index a61b93d9144c22..e54badd3028c3a 100644
+--- a/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts.map
++++ b/packages/expo-updates/build/ExpoUpdatesModule.types.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"ExpoUpdatesModule.types.d.ts","sourceRoot":"","sources":["../src/ExpoUpdatesModule.types.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"ExpoUpdatesModule.types.d.ts","sourceRoot":"","sources":["../src/ExpoUpdatesModule.types.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/ExpoUpdatesModule.types.js.map b/packages/expo-updates/build/ExpoUpdatesModule.types.js.map
+index e5841db6d9d41b..3546bde5e19a13 100644
+--- a/packages/expo-updates/build/ExpoUpdatesModule.types.js.map
++++ b/packages/expo-updates/build/ExpoUpdatesModule.types.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"ExpoUpdatesModule.types.js","sourceRoot":"","sources":["../src/ExpoUpdatesModule.types.ts"],"names":[],"mappings":"","sourcesContent":["import { NativeModule } from 'expo-modules-core';\n\nimport {\n  Manifest,\n  UpdateCheckResultAvailable,\n  UpdateCheckResultNotAvailable,\n  UpdateCheckResultRollBack,\n  UpdateFetchResultRollBackToEmbedded,\n  UpdateFetchResultFailure,\n  UpdateFetchResultSuccess,\n  UpdatesLogEntry,\n  UpdatesNativeStateMachineContext,\n} from './Updates.types';\n\nexport type UpdatesEvents = {\n  'Expo.nativeUpdatesStateChangeEvent': (params: any) => void;\n};\n\nexport type UpdatesCheckAutomaticallyNativeValue =\n  | 'ALWAYS'\n  | 'ERROR_RECOVERY_ONLY'\n  | 'NEVER'\n  | 'WIFI_ONLY';\n\n/**\n * Common interface for all native module implementations (android, ios, web).\n *\n * @internal\n */\nexport interface UpdatesModuleInterface {\n  isEmergencyLaunch: boolean;\n  emergencyLaunchReason: string | null;\n  launchDuration: number | null;\n  isEmbeddedLaunch: boolean;\n  isEnabled: boolean;\n  isUsingEmbeddedAssets?: boolean;\n  /**\n   * Can be empty string\n   */\n  runtimeVersion: string;\n  checkAutomatically: UpdatesCheckAutomaticallyNativeValue;\n  /**\n   * Can be empty string\n   */\n  channel: string;\n  shouldDeferToNativeForAPIMethodAvailabilityInDevelopment: boolean;\n  updateId?: string;\n  commitTime?: string;\n  /**\n   * @platform android\n   */\n  manifestString?: string;\n  /**\n   * @platform ios\n   */\n  manifest?: Manifest;\n  localAssets?: Record<string, string>;\n\n  initialContext: UpdatesNativeStateMachineContext & {\n    latestManifestString?: string;\n    downloadedManifestString?: string;\n    lastCheckForUpdateTimeString?: string;\n    rollbackString?: string;\n  };\n\n  reload: () => Promise<void>;\n  checkForUpdateAsync: () => Promise<\n    | UpdateCheckResultRollBack\n    | (Omit<UpdateCheckResultAvailable, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateCheckResultNotAvailable\n  >;\n  getExtraParamsAsync: () => Promise<Record<string, string>>;\n  setExtraParamAsync: (key: string, value: string | null) => Promise<void>;\n  readLogEntriesAsync: (maxAge: number) => Promise<UpdatesLogEntry[]>;\n  clearLogEntriesAsync: () => Promise<void>;\n  fetchUpdateAsync: () => Promise<\n    | (Omit<UpdateFetchResultSuccess, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateFetchResultFailure\n    | UpdateFetchResultRollBackToEmbedded\n  >;\n}\n\n/**\n * @internal\n */\nexport declare class ExpoUpdatesModule\n  extends NativeModule<UpdatesEvents>\n  implements UpdatesModuleInterface\n{\n  isEmergencyLaunch: boolean;\n  emergencyLaunchReason: string | null;\n  launchDuration: number | null;\n  isEmbeddedLaunch: boolean;\n  isEnabled: boolean;\n  isUsingEmbeddedAssets?: boolean;\n  runtimeVersion: string;\n  checkAutomatically: UpdatesCheckAutomaticallyNativeValue;\n  channel: string;\n  shouldDeferToNativeForAPIMethodAvailabilityInDevelopment: boolean;\n  updateId?: string;\n  commitTime?: string;\n  manifestString?: string;\n  manifest?: Manifest;\n  localAssets?: Record<string, string>;\n\n  initialContext: UpdatesNativeStateMachineContext & {\n    latestManifestString?: string;\n    downloadedManifestString?: string;\n    lastCheckForUpdateTimeString?: string;\n    rollbackString?: string;\n  };\n\n  reload: () => Promise<void>;\n  checkForUpdateAsync: () => Promise<\n    | UpdateCheckResultRollBack\n    | (Omit<UpdateCheckResultAvailable, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateCheckResultNotAvailable\n  >;\n  getExtraParamsAsync: () => Promise<Record<string, string>>;\n  setExtraParamAsync: (key: string, value: string | null) => Promise<void>;\n  readLogEntriesAsync: (maxAge: number) => Promise<UpdatesLogEntry[]>;\n  clearLogEntriesAsync: () => Promise<void>;\n  fetchUpdateAsync: () => Promise<\n    | (Omit<UpdateFetchResultSuccess, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateFetchResultFailure\n    | UpdateFetchResultRollBackToEmbedded\n  >;\n}\n"]}
+\ No newline at end of file
++{"version":3,"file":"ExpoUpdatesModule.types.js","sourceRoot":"","sources":["../src/ExpoUpdatesModule.types.ts"],"names":[],"mappings":"","sourcesContent":["import { NativeModule } from 'expo-modules-core';\n\nimport {\n  Manifest,\n  UpdateCheckResultAvailable,\n  UpdateCheckResultNotAvailable,\n  UpdateCheckResultRollBack,\n  UpdateFetchResultRollBackToEmbedded,\n  UpdateFetchResultFailure,\n  UpdateFetchResultSuccess,\n  UpdatesLogEntry,\n  UpdatesNativeStateMachineContext,\n  ReloadScreenOptions,\n} from './Updates.types';\n\nexport type UpdatesEvents = {\n  'Expo.nativeUpdatesStateChangeEvent': (params: any) => void;\n};\n\nexport type UpdatesCheckAutomaticallyNativeValue =\n  | 'ALWAYS'\n  | 'ERROR_RECOVERY_ONLY'\n  | 'NEVER'\n  | 'WIFI_ONLY';\n\n/**\n * Common interface for all native module implementations (android, ios, web).\n *\n * @internal\n */\nexport interface UpdatesModuleInterface {\n  isEmergencyLaunch: boolean;\n  emergencyLaunchReason: string | null;\n  launchDuration: number | null;\n  isEmbeddedLaunch: boolean;\n  isEnabled: boolean;\n  isUsingEmbeddedAssets?: boolean;\n  /**\n   * Can be empty string\n   */\n  runtimeVersion: string;\n  checkAutomatically: UpdatesCheckAutomaticallyNativeValue;\n  /**\n   * Can be empty string\n   */\n  channel: string;\n  shouldDeferToNativeForAPIMethodAvailabilityInDevelopment: boolean;\n  updateId?: string;\n  commitTime?: string;\n  /**\n   * @platform android\n   */\n  manifestString?: string;\n  /**\n   * @platform ios\n   */\n  manifest?: Manifest;\n  localAssets?: Record<string, string>;\n\n  initialContext: UpdatesNativeStateMachineContext & {\n    latestManifestString?: string;\n    downloadedManifestString?: string;\n    lastCheckForUpdateTimeString?: string;\n    rollbackString?: string;\n  };\n\n  reload: () => Promise<void>;\n  checkForUpdateAsync: () => Promise<\n    | UpdateCheckResultRollBack\n    | (Omit<UpdateCheckResultAvailable, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateCheckResultNotAvailable\n  >;\n  getExtraParamsAsync: () => Promise<Record<string, string>>;\n  setExtraParamAsync: (key: string, value: string | null) => Promise<void>;\n  readLogEntriesAsync: (maxAge: number) => Promise<UpdatesLogEntry[]>;\n  clearLogEntriesAsync: () => Promise<void>;\n  fetchUpdateAsync: () => Promise<\n    | (Omit<UpdateFetchResultSuccess, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateFetchResultFailure\n    | UpdateFetchResultRollBackToEmbedded\n  >;\n}\n\n/**\n * @internal\n */\nexport declare class ExpoUpdatesModule\n  extends NativeModule<UpdatesEvents>\n  implements UpdatesModuleInterface\n{\n  isEmergencyLaunch: boolean;\n  emergencyLaunchReason: string | null;\n  launchDuration: number | null;\n  isEmbeddedLaunch: boolean;\n  isEnabled: boolean;\n  isUsingEmbeddedAssets?: boolean;\n  runtimeVersion: string;\n  checkAutomatically: UpdatesCheckAutomaticallyNativeValue;\n  channel: string;\n  shouldDeferToNativeForAPIMethodAvailabilityInDevelopment: boolean;\n  updateId?: string;\n  commitTime?: string;\n  manifestString?: string;\n  manifest?: Manifest;\n  localAssets?: Record<string, string>;\n\n  initialContext: UpdatesNativeStateMachineContext & {\n    latestManifestString?: string;\n    downloadedManifestString?: string;\n    lastCheckForUpdateTimeString?: string;\n    rollbackString?: string;\n  };\n\n  reload: (options?: ReloadScreenOptions) => Promise<void>;\n  checkForUpdateAsync: () => Promise<\n    | UpdateCheckResultRollBack\n    | (Omit<UpdateCheckResultAvailable, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateCheckResultNotAvailable\n  >;\n  getExtraParamsAsync: () => Promise<Record<string, string>>;\n  setExtraParamAsync: (key: string, value: string | null) => Promise<void>;\n  readLogEntriesAsync: (maxAge: number) => Promise<UpdatesLogEntry[]>;\n  clearLogEntriesAsync: () => Promise<void>;\n  fetchUpdateAsync: () => Promise<\n    | (Omit<UpdateFetchResultSuccess, 'manifest'> &\n        ({ manifestString: string } | { manifest: Manifest }))\n    | UpdateFetchResultFailure\n    | UpdateFetchResultRollBackToEmbedded\n  >;\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/ReloadScreen.types.d.ts b/packages/expo-updates/build/ReloadScreen.types.d.ts
+new file mode 100644
+index 00000000000000..5194b84e113241
+--- /dev/null
++++ b/packages/expo-updates/build/ReloadScreen.types.d.ts
+@@ -0,0 +1,70 @@
++/**
++ * Image source that can be used for the reload screen.
++ */
++export interface ReloadScreenImageSource {
++    /**
++     * URL to the image.
++     */
++    url?: string;
++    /**
++     * Width of the image in pixels.
++     */
++    width?: number;
++    /**
++     * Height of the image in pixels.
++     */
++    height?: number;
++    /**
++     * Scale factor of the image.
++     */
++    scale?: number;
++}
++/**
++ * Configuration options for customizing the reload screen appearance.
++ */
++export interface ReloadScreenOptions {
++    /**
++     * Background color for the reload screen.
++     * @default '#ffffff'
++     */
++    backgroundColor?: string;
++    /**
++     * Custom image to display on the reload screen.
++     */
++    image?: string | number | ReloadScreenImageSource;
++    /**
++     * How to resize the custom image to fit the screen.
++     * @default 'contain'
++     */
++    imageResizeMode?: 'contain' | 'cover' | 'center' | 'stretch';
++    /**
++     * Whether to display the image at the full screen size.
++     * @default false
++     */
++    imageFullScreen?: boolean;
++    /**
++     * Whether to fade out the reload screen when hiding.
++     * @default false
++     */
++    fade?: boolean;
++    /**
++     * Configuration for the loading spinner.
++     */
++    spinner?: {
++        /**
++         * Whether to show the loading spinner.
++         * @default true (if no image is provided), false (if image is provided)
++         */
++        enabled?: boolean;
++        /**
++         * Color of the loading spinner.
++         */
++        color?: string;
++        /**
++         * Size of the loading spinner.
++         * @default 'medium'
++         */
++        size?: 'small' | 'medium' | 'large';
++    };
++}
++//# sourceMappingURL=ReloadScreen.types.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/ReloadScreen.types.d.ts.map b/packages/expo-updates/build/ReloadScreen.types.d.ts.map
+new file mode 100644
+index 00000000000000..4da35aed354bd9
+--- /dev/null
++++ b/packages/expo-updates/build/ReloadScreen.types.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"ReloadScreen.types.d.ts","sourceRoot":"","sources":["../src/ReloadScreen.types.ts"],"names":[],"mappings":"AAAA;;GAEG;AACH,MAAM,WAAW,uBAAuB;IACtC;;OAEG;IACH,GAAG,CAAC,EAAE,MAAM,CAAC;IAEb;;OAEG;IACH,KAAK,CAAC,EAAE,MAAM,CAAC;IAEf;;OAEG;IACH,MAAM,CAAC,EAAE,MAAM,CAAC;IAEhB;;OAEG;IACH,KAAK,CAAC,EAAE,MAAM,CAAC;CAChB;AAED;;GAEG;AACH,MAAM,WAAW,mBAAmB;IAClC;;;OAGG;IACH,eAAe,CAAC,EAAE,MAAM,CAAC;IAEzB;;OAEG;IACH,KAAK,CAAC,EAAE,MAAM,GAAG,MAAM,GAAG,uBAAuB,CAAC;IAElD;;;OAGG;IACH,eAAe,CAAC,EAAE,SAAS,GAAG,OAAO,GAAG,QAAQ,GAAG,SAAS,CAAC;IAE7D;;;OAGG;IACH,eAAe,CAAC,EAAE,OAAO,CAAC;IAE1B;;;OAGG;IACH,IAAI,CAAC,EAAE,OAAO,CAAC;IAEf;;OAEG;IACH,OAAO,CAAC,EAAE;QACR;;;WAGG;QACH,OAAO,CAAC,EAAE,OAAO,CAAC;QAElB;;WAEG;QACH,KAAK,CAAC,EAAE,MAAM,CAAC;QAEf;;;WAGG;QACH,IAAI,CAAC,EAAE,OAAO,GAAG,QAAQ,GAAG,OAAO,CAAC;KACrC,CAAC;CACH"}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/ReloadScreen.types.js b/packages/expo-updates/build/ReloadScreen.types.js
+new file mode 100644
+index 00000000000000..e447056bc082ce
+--- /dev/null
++++ b/packages/expo-updates/build/ReloadScreen.types.js
+@@ -0,0 +1,2 @@
++export {};
++//# sourceMappingURL=ReloadScreen.types.js.map
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/ReloadScreen.types.js.map b/packages/expo-updates/build/ReloadScreen.types.js.map
+new file mode 100644
+index 00000000000000..d0e93595532f4f
+--- /dev/null
++++ b/packages/expo-updates/build/ReloadScreen.types.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"ReloadScreen.types.js","sourceRoot":"","sources":["../src/ReloadScreen.types.ts"],"names":[],"mappings":"","sourcesContent":["/**\n * Image source that can be used for the reload screen.\n */\nexport interface ReloadScreenImageSource {\n  /**\n   * URL to the image.\n   */\n  url?: string;\n\n  /**\n   * Width of the image in pixels.\n   */\n  width?: number;\n\n  /**\n   * Height of the image in pixels.\n   */\n  height?: number;\n\n  /**\n   * Scale factor of the image.\n   */\n  scale?: number;\n}\n\n/**\n * Configuration options for customizing the reload screen appearance.\n */\nexport interface ReloadScreenOptions {\n  /**\n   * Background color for the reload screen.\n   * @default '#ffffff'\n   */\n  backgroundColor?: string;\n\n  /**\n   * Custom image to display on the reload screen.\n   */\n  image?: string | number | ReloadScreenImageSource;\n\n  /**\n   * How to resize the custom image to fit the screen.\n   * @default 'contain'\n   */\n  imageResizeMode?: 'contain' | 'cover' | 'center' | 'stretch';\n\n  /**\n   * Whether to display the image at the full screen size.\n   * @default false\n   */\n  imageFullScreen?: boolean;\n\n  /**\n   * Whether to fade out the reload screen when hiding.\n   * @default false\n   */\n  fade?: boolean;\n\n  /**\n   * Configuration for the loading spinner.\n   */\n  spinner?: {\n    /**\n     * Whether to show the loading spinner.\n     * @default true (if no image is provided), false (if image is provided)\n     */\n    enabled?: boolean;\n\n    /**\n     * Color of the loading spinner.\n     */\n    color?: string;\n\n    /**\n     * Size of the loading spinner.\n     * @default 'medium'\n     */\n    size?: 'small' | 'medium' | 'large';\n  };\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/Updates.d.ts b/packages/expo-updates/build/Updates.d.ts
+index f4d2c45747199f..3096806dcd1c45 100644
+--- a/packages/expo-updates/build/Updates.d.ts
++++ b/packages/expo-updates/build/Updates.d.ts
+@@ -1,4 +1,4 @@
+-import { LocalAssets, Manifest, UpdateCheckResult, UpdateFetchResult, UpdatesCheckAutomaticallyValue, UpdatesLogEntry } from './Updates.types';
++import { LocalAssets, Manifest, UpdateCheckResult, UpdateFetchResult, UpdatesCheckAutomaticallyValue, UpdatesLogEntry, ReloadScreenOptions } from './Updates.types';
+ /**
+  * Whether `expo-updates` is enabled. This may be false in a variety of cases including:
+  * - enabled set to false in configuration
+@@ -106,7 +106,9 @@ export declare const createdAt: Date | null;
+  * `ReactApplication` you want to reload, or call `UpdatesController.setReactNativeHost` with the
+  * proper instance of `ReactNativeHost`.
+  */
+-export declare function reloadAsync(): Promise<void>;
++export declare function reloadAsync(options?: {
++    reloadScreenOptions?: ReloadScreenOptions;
++}): Promise<void>;
+ /**
+  * Checks the server to see if a newly deployed update to your project is available. Does not
+  * actually download the update. This method cannot be used in development mode, and the returned
+@@ -185,4 +187,51 @@ export declare function setUpdateURLAndRequestHeadersOverride(configOverride: {
+     updateUrl: string;
+     requestHeaders: Record<string, string>;
+ } | null): void;
++/**
++ * Shows the reload screen with customizable appearance. This is primarily useful for testing
++ * how the reload screen will appear to users during app reloads and is only available in
++ * debug builds of the app. The reload screen can be hidden by calling `hideReloadScreen()`.
++ *
++ *
++ * @param options Configuration options for customizing the reload screen appearance.
++ *
++ * @hidden exposed for testing
++ * @example
++ * ```ts
++ * import * as Updates from 'expo-updates';
++ *
++ * // Show the reload screen with custom styling for testing
++ * await Updates.showReloadScreen({
++ *   reloadScreenOptions: {
++ *     backgroundColor: '#1a1a1a',
++ *     spinner: {
++ *       color: '#ffffff'
++ *     }
++ *   }
++ * });
++ *
++ * // Hide it after 3 seconds
++ * setTimeout(async () => {
++ *   await Updates.hideReloadScreen();
++ * }, 3000);
++ *
++ * // Test with a custom image
++ * await Updates.showReloadScreen({
++ *   reloadScreenOptions: {
++ *     backgroundColor: '#ffffff',
++ *     image: require('./assets/loading.png'),
++ *     imageResizeMode: 'contain'
++ *   }
++ * });
++ * ```
++ */
++export declare function showReloadScreen(options?: {
++    reloadScreenOptions?: ReloadScreenOptions;
++}): Promise<void>;
++/**
++ *
++ * @hidden exposed for testing
++ * @return A promise that resolves when the reload screen is hidden.
++ */
++export declare function hideReloadScreen(): Promise<void>;
+ //# sourceMappingURL=Updates.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/Updates.d.ts.map b/packages/expo-updates/build/Updates.d.ts.map
+index 6946658d82ffef..6bc957f628d905 100644
+--- a/packages/expo-updates/build/Updates.d.ts.map
++++ b/packages/expo-updates/build/Updates.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"Updates.d.ts","sourceRoot":"","sources":["../src/Updates.ts"],"names":[],"mappings":"AAIA,OAAO,EACL,WAAW,EACX,QAAQ,EACR,iBAAiB,EACjB,iBAAiB,EACjB,8BAA8B,EAC9B,eAAe,EAChB,MAAM,iBAAiB,CAAC;AAEzB;;;;;;;;GAQG;AACH,eAAO,MAAM,SAAS,EAAE,OAAiC,CAAC;AAE1D;;;;;;GAMG;AACH,eAAO,MAAM,QAAQ,EAAE,MAAM,GAAG,IAGtB,CAAC;AAEX;;;;GAIG;AACH,eAAO,MAAM,OAAO,EAAE,MAAM,GAAG,IAAkC,CAAC;AAElE;;GAEG;AACH,eAAO,MAAM,cAAc,EAAE,MAAM,GAAG,IAAyC,CAAC;AAYhF;;GAEG;AACH,eAAO,MAAM,kBAAkB,EAAE,8BAA8B,GAAG,IACQ,CAAC;AAG3E;;GAEG;AACH,eAAO,MAAM,WAAW,EAAE,WAA2C,CAAC;AAEtE;;;;;;;;GAQG;AACH,eAAO,MAAM,iBAAiB,SAAgC,CAAC;AAE/D;;;GAGG;AACH,eAAO,MAAM,qBAAqB,eAAoC,CAAC;AAEvE;;GAEG;AACH,eAAO,MAAM,cAAc,eAA6B,CAAC;AAEzD;;;GAGG;AACH,eAAO,MAAM,gBAAgB,EAAE,OAA+C,CAAC;AAG/E;;GAEG;AACH,eAAO,MAAM,qBAAqB,EAAE,OAAoD,CAAC;AAEzF;;;;;;;;GAQG;AACH,eAAO,MAAM,QAAQ,EAAE,OAAO,CAAC,QAAQ,CAEnC,CAAC;AAEL;;;;;GAKG;AACH,eAAO,MAAM,SAAS,EAAE,IAAI,GAAG,IAEvB,CAAC;AAoBT;;;;;;;;;;;;;;;;;;;;;;;;;GAyBG;AACH,wBAAsB,WAAW,IAAI,OAAO,CAAC,IAAI,CAAC,CAWjD;AAED;;;;;;;;;;;;;;GAcG;AACH,wBAAsB,mBAAmB,IAAI,OAAO,CAAC,iBAAiB,CAAC,CAoBtE;AAED;;;;GAIG;AACH,wBAAsB,mBAAmB,IAAI,OAAO,CAAC,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAC,CAE3E;AAED;;;;;;GAMG;AACH,wBAAsB,kBAAkB,CACtC,GAAG,EAAE,MAAM,EACX,KAAK,EAAE,MAAM,GAAG,IAAI,GAAG,SAAS,GAC/B,OAAO,CAAC,IAAI,CAAC,CAEf;AAED;;;;;;;;GAQG;AACH,wBAAsB,mBAAmB,CAAC,MAAM,GAAE,MAAgB,GAAG,OAAO,CAAC,eAAe,EAAE,CAAC,CAE9F;AAED;;;;;;;;;;GAUG;AACH,wBAAsB,oBAAoB,IAAI,OAAO,CAAC,IAAI,CAAC,CAE1D;AAED;;;;;;;;;;;;;GAaG;AACH,wBAAsB,gBAAgB,IAAI,OAAO,CAAC,iBAAiB,CAAC,CAoBnE;AAED;;;;;;GAMG;AACH,wBAAgB,qCAAqC,CACnD,cAAc,EAAE;IAAE,SAAS,EAAE,MAAM,CAAC;IAAC,cAAc,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAA;CAAE,GAAG,IAAI,GACnF,IAAI,CAEN"}
+\ No newline at end of file
++{"version":3,"file":"Updates.d.ts","sourceRoot":"","sources":["../src/Updates.ts"],"names":[],"mappings":"AAKA,OAAO,EACL,WAAW,EACX,QAAQ,EACR,iBAAiB,EACjB,iBAAiB,EACjB,8BAA8B,EAC9B,eAAe,EACf,mBAAmB,EAEpB,MAAM,iBAAiB,CAAC;AAEzB;;;;;;;;GAQG;AACH,eAAO,MAAM,SAAS,EAAE,OAAiC,CAAC;AAE1D;;;;;;GAMG;AACH,eAAO,MAAM,QAAQ,EAAE,MAAM,GAAG,IAGtB,CAAC;AAEX;;;;GAIG;AACH,eAAO,MAAM,OAAO,EAAE,MAAM,GAAG,IAAkC,CAAC;AAElE;;GAEG;AACH,eAAO,MAAM,cAAc,EAAE,MAAM,GAAG,IAAyC,CAAC;AAYhF;;GAEG;AACH,eAAO,MAAM,kBAAkB,EAAE,8BAA8B,GAAG,IACQ,CAAC;AAG3E;;GAEG;AACH,eAAO,MAAM,WAAW,EAAE,WAA2C,CAAC;AAEtE;;;;;;;;GAQG;AACH,eAAO,MAAM,iBAAiB,SAAgC,CAAC;AAE/D;;;GAGG;AACH,eAAO,MAAM,qBAAqB,eAAoC,CAAC;AAEvE;;GAEG;AACH,eAAO,MAAM,cAAc,eAA6B,CAAC;AAEzD;;;GAGG;AACH,eAAO,MAAM,gBAAgB,EAAE,OAA+C,CAAC;AAG/E;;GAEG;AACH,eAAO,MAAM,qBAAqB,EAAE,OAAoD,CAAC;AAEzF;;;;;;;;GAQG;AACH,eAAO,MAAM,QAAQ,EAAE,OAAO,CAAC,QAAQ,CAEnC,CAAC;AAEL;;;;;GAKG;AACH,eAAO,MAAM,SAAS,EAAE,IAAI,GAAG,IAEvB,CAAC;AAwDT;;;;;;;;;;;;;;;;;;;;;;;;;GAyBG;AACH,wBAAsB,WAAW,CAAC,OAAO,CAAC,EAAE;IAC1C,mBAAmB,CAAC,EAAE,mBAAmB,CAAC;CAC3C,GAAG,OAAO,CAAC,IAAI,CAAC,CAehB;AAED;;;;;;;;;;;;;;GAcG;AACH,wBAAsB,mBAAmB,IAAI,OAAO,CAAC,iBAAiB,CAAC,CAoBtE;AAED;;;;GAIG;AACH,wBAAsB,mBAAmB,IAAI,OAAO,CAAC,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAC,CAE3E;AAED;;;;;;GAMG;AACH,wBAAsB,kBAAkB,CACtC,GAAG,EAAE,MAAM,EACX,KAAK,EAAE,MAAM,GAAG,IAAI,GAAG,SAAS,GAC/B,OAAO,CAAC,IAAI,CAAC,CAEf;AAED;;;;;;;;GAQG;AACH,wBAAsB,mBAAmB,CAAC,MAAM,GAAE,MAAgB,GAAG,OAAO,CAAC,eAAe,EAAE,CAAC,CAE9F;AAED;;;;;;;;;;GAUG;AACH,wBAAsB,oBAAoB,IAAI,OAAO,CAAC,IAAI,CAAC,CAE1D;AAED;;;;;;;;;;;;;GAaG;AACH,wBAAsB,gBAAgB,IAAI,OAAO,CAAC,iBAAiB,CAAC,CAoBnE;AAED;;;;;;GAMG;AACH,wBAAgB,qCAAqC,CACnD,cAAc,EAAE;IAAE,SAAS,EAAE,MAAM,CAAC;IAAC,cAAc,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAA;CAAE,GAAG,IAAI,GACnF,IAAI,CAEN;AAED;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAqCG;AACH,wBAAsB,gBAAgB,CAAC,OAAO,CAAC,EAAE;IAC/C,mBAAmB,CAAC,EAAE,mBAAmB,CAAC;CAC3C,GAAG,OAAO,CAAC,IAAI,CAAC,CAMhB;AAED;;;;GAIG;AACH,wBAAsB,gBAAgB,IAAI,OAAO,CAAC,IAAI,CAAC,CAEtD"}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/Updates.js b/packages/expo-updates/build/Updates.js
+index ea1a1ef663b381..1aa12c611287b6 100644
+--- a/packages/expo-updates/build/Updates.js
++++ b/packages/expo-updates/build/Updates.js
+@@ -1,4 +1,5 @@
+ import { CodedError } from 'expo-modules-core';
++import { Image } from 'react-native';
+ import ExpoUpdates from './ExpoUpdates';
+ import { UpdatesCheckAutomaticallyValue, } from './Updates.types';
+ /**
+@@ -107,6 +108,37 @@ const shouldDeferToNativeForAPIMethodAvailabilityInDevelopment = !!ExpoUpdates.s
+ const isUsingDeveloperTool = 'extra' in manifest ? !!manifest.extra?.expoGo?.developer?.tool : false;
+ const manualUpdatesInstructions = 'To test usage of the expo-updates JS API in your app, make a release build with `npx expo run:ios --configuration Release` or ' +
+     '`npx expo run:android --variant Release`.';
++function resolveImageSource(source) {
++    if (typeof source === 'string') {
++        return { url: source };
++    }
++    if (typeof source === 'number') {
++        const resolved = Image.resolveAssetSource(source);
++        if (resolved) {
++            return {
++                url: resolved.uri,
++                width: resolved.width,
++                height: resolved.height,
++                scale: resolved.scale,
++            };
++        }
++        return null;
++    }
++    if (typeof source === 'object' && source !== null) {
++        return source;
++    }
++    return null;
++}
++function resolveReloadScreenOptions(options) {
++    if (!options.image) {
++        return options;
++    }
++    const resolvedImage = resolveImageSource(options.image);
++    return {
++        ...options,
++        image: resolvedImage || undefined,
++    };
++}
+ /**
+  * Instructs the app to reload using the most recently downloaded version. This is useful for
+  * triggering a newly downloaded update to launch without the user needing to manually restart the
+@@ -133,11 +165,15 @@ const manualUpdatesInstructions = 'To test usage of the expo-updates JS API in y
+  * `ReactApplication` you want to reload, or call `UpdatesController.setReactNativeHost` with the
+  * proper instance of `ReactNativeHost`.
+  */
+-export async function reloadAsync() {
++export async function reloadAsync(options) {
+     if ((__DEV__ || isUsingDeveloperTool) &&
+         !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment) {
+         throw new CodedError('ERR_UPDATES_DISABLED', `You cannot use the Updates module in development mode in a production app. ${manualUpdatesInstructions}`);
+     }
++    if (options?.reloadScreenOptions) {
++        const resolvedOptions = resolveReloadScreenOptions(options.reloadScreenOptions);
++        return await ExpoUpdates.reload(resolvedOptions);
++    }
+     await ExpoUpdates.reload();
+ }
+ /**
+@@ -253,4 +289,57 @@ export async function fetchUpdateAsync() {
+ export function setUpdateURLAndRequestHeadersOverride(configOverride) {
+     ExpoUpdates.setUpdateURLAndRequestHeadersOverride(configOverride);
+ }
++/**
++ * Shows the reload screen with customizable appearance. This is primarily useful for testing
++ * how the reload screen will appear to users during app reloads and is only available in
++ * debug builds of the app. The reload screen can be hidden by calling `hideReloadScreen()`.
++ *
++ *
++ * @param options Configuration options for customizing the reload screen appearance.
++ *
++ * @hidden exposed for testing
++ * @example
++ * ```ts
++ * import * as Updates from 'expo-updates';
++ *
++ * // Show the reload screen with custom styling for testing
++ * await Updates.showReloadScreen({
++ *   reloadScreenOptions: {
++ *     backgroundColor: '#1a1a1a',
++ *     spinner: {
++ *       color: '#ffffff'
++ *     }
++ *   }
++ * });
++ *
++ * // Hide it after 3 seconds
++ * setTimeout(async () => {
++ *   await Updates.hideReloadScreen();
++ * }, 3000);
++ *
++ * // Test with a custom image
++ * await Updates.showReloadScreen({
++ *   reloadScreenOptions: {
++ *     backgroundColor: '#ffffff',
++ *     image: require('./assets/loading.png'),
++ *     imageResizeMode: 'contain'
++ *   }
++ * });
++ * ```
++ */
++export async function showReloadScreen(options) {
++    if (options?.reloadScreenOptions) {
++        const resolvedOptions = resolveReloadScreenOptions(options.reloadScreenOptions);
++        return ExpoUpdates.showReloadScreen(resolvedOptions);
++    }
++    return ExpoUpdates.showReloadScreen();
++}
++/**
++ *
++ * @hidden exposed for testing
++ * @return A promise that resolves when the reload screen is hidden.
++ */
++export async function hideReloadScreen() {
++    return ExpoUpdates.hideReloadScreen();
++}
+ //# sourceMappingURL=Updates.js.map
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/Updates.js.map b/packages/expo-updates/build/Updates.js.map
+index 0a689078ce1a44..f913cbfbf97ef9 100644
+--- a/packages/expo-updates/build/Updates.js.map
++++ b/packages/expo-updates/build/Updates.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"Updates.js","sourceRoot":"","sources":["../src/Updates.ts"],"names":[],"mappings":"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","sourcesContent":["import { CodedError } from 'expo-modules-core';\n\nimport ExpoUpdates from './ExpoUpdates';\nimport { UpdatesCheckAutomaticallyNativeValue } from './ExpoUpdatesModule.types';\nimport {\n  LocalAssets,\n  Manifest,\n  UpdateCheckResult,\n  UpdateFetchResult,\n  UpdatesCheckAutomaticallyValue,\n  UpdatesLogEntry,\n} from './Updates.types';\n\n/**\n * Whether `expo-updates` is enabled. This may be false in a variety of cases including:\n * - enabled set to false in configuration\n * - missing or invalid URL in configuration\n * - missing runtime version or SDK version in configuration\n * - error accessing storage on device during initialization\n *\n * When false, the embedded update is loaded.\n */\nexport const isEnabled: boolean = !!ExpoUpdates.isEnabled;\n\n/**\n * The UUID that uniquely identifies the currently running update. The\n * UUID is represented in its canonical string form and will always use lowercase letters.\n * This value is `null` when running in a local development environment or any other environment where `expo-updates` is disabled.\n * @example\n * `\"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\"`\n */\nexport const updateId: string | null =\n  ExpoUpdates.updateId && typeof ExpoUpdates.updateId === 'string'\n    ? ExpoUpdates.updateId.toLowerCase()\n    : null;\n\n/**\n * The channel name of the current build, if configured for use with EAS Update. `null` otherwise.\n *\n * Expo Go and development builds are not set to a specific channel and can run any updates compatible with their native runtime. Therefore, this value will always be `null` when running an update on Expo Go or a development build.\n */\nexport const channel: string | null = ExpoUpdates.channel ?? null;\n\n/**\n * The runtime version of the current build.\n */\nexport const runtimeVersion: string | null = ExpoUpdates.runtimeVersion ?? null;\n\nconst _checkAutomaticallyMapNativeToJS: Record<\n  UpdatesCheckAutomaticallyNativeValue,\n  UpdatesCheckAutomaticallyValue\n> = {\n  ALWAYS: UpdatesCheckAutomaticallyValue.ON_LOAD,\n  ERROR_RECOVERY_ONLY: UpdatesCheckAutomaticallyValue.ON_ERROR_RECOVERY,\n  NEVER: UpdatesCheckAutomaticallyValue.NEVER,\n  WIFI_ONLY: UpdatesCheckAutomaticallyValue.WIFI_ONLY,\n};\n\n/**\n * Determines if and when `expo-updates` checks for and downloads updates automatically on startup.\n */\nexport const checkAutomatically: UpdatesCheckAutomaticallyValue | null =\n  _checkAutomaticallyMapNativeToJS[ExpoUpdates.checkAutomatically] ?? null;\n\n// @docsMissing\n/**\n * @hidden\n */\nexport const localAssets: LocalAssets = ExpoUpdates.localAssets ?? {};\n\n/**\n * `expo-updates` does its very best to always launch monotonically newer versions of your app so\n * you don't need to worry about backwards compatibility when you put out an update. In very rare\n * cases, it's possible that `expo-updates` may need to fall back to the update that's embedded in\n * the app binary, even after newer updates have been downloaded and run (an \"emergency launch\").\n * This boolean will be `true` if the app is launching under this fallback mechanism and `false`\n * otherwise. If you are concerned about backwards compatibility of future updates to your app, you\n * can use this constant to provide special behavior for this rare case.\n */\nexport const isEmergencyLaunch = ExpoUpdates.isEmergencyLaunch;\n\n/**\n * If `isEmergencyLaunch` is set to true, this will contain a string error message describing\n * what failed during initialization.\n */\nexport const emergencyLaunchReason = ExpoUpdates.emergencyLaunchReason;\n\n/**\n * Number of milliseconds it took to launch.\n */\nexport const launchDuration = ExpoUpdates.launchDuration;\n\n/**\n * This will be true if the currently running update is the one embedded in the build,\n * and not one downloaded from the updates server.\n */\nexport const isEmbeddedLaunch: boolean = ExpoUpdates.isEmbeddedLaunch || false;\n\n// @docsMissing\n/**\n * @hidden\n */\nexport const isUsingEmbeddedAssets: boolean = ExpoUpdates.isUsingEmbeddedAssets || false;\n\n/**\n * If `expo-updates` is enabled, this is the\n * [manifest](/versions/latest/sdk/constants/#manifest) (or\n * [classic manifest](/versions/latest/sdk/constants/#appmanifest))\n * object for the update that's currently running.\n *\n * In development mode, or any other environment in which `expo-updates` is disabled, this object is\n * empty.\n */\nexport const manifest: Partial<Manifest> =\n  (ExpoUpdates.manifestString ? JSON.parse(ExpoUpdates.manifestString) : ExpoUpdates.manifest) ??\n  {};\n\n/**\n * If `expo-updates` is enabled, this is a `Date` object representing the creation time of the update that's currently running (whether it was embedded or downloaded at runtime).\n *\n * In development mode, or any other environment in which `expo-updates` is disabled, this value is\n * null.\n */\nexport const createdAt: Date | null = ExpoUpdates.commitTime\n  ? new Date(ExpoUpdates.commitTime)\n  : null;\n\n/**\n * During non-expo development we block accessing the updates API methods on the JS side, but when developing in\n * Expo Go or a development client build, the controllers should have control over which API methods should\n * be allowed.\n */\nconst shouldDeferToNativeForAPIMethodAvailabilityInDevelopment =\n  !!ExpoUpdates.shouldDeferToNativeForAPIMethodAvailabilityInDevelopment;\n\n/**\n * Developer tool is set when a project is served by `expo start`.\n */\nconst isUsingDeveloperTool =\n  'extra' in manifest ? !!manifest.extra?.expoGo?.developer?.tool : false;\n\nconst manualUpdatesInstructions =\n  'To test usage of the expo-updates JS API in your app, make a release build with `npx expo run:ios --configuration Release` or ' +\n  '`npx expo run:android --variant Release`.';\n\n/**\n * Instructs the app to reload using the most recently downloaded version. This is useful for\n * triggering a newly downloaded update to launch without the user needing to manually restart the\n * app.\n * Unlike `Expo.reloadAppAsync()` provided by the `expo` package,\n * this function not only reloads the app but also changes the loaded JavaScript bundle to that of the most recently downloaded update.\n *\n * It is not recommended to place any meaningful logic after a call to `await\n * Updates.reloadAsync()`. This is because the promise is resolved after verifying that the app can\n * be reloaded, and immediately before posting an asynchronous task to the main thread to actually\n * reload the app. It is unsafe to make any assumptions about whether any more JS code will be\n * executed after the `Updates.reloadAsync` method call resolves, since that depends on the OS and\n * the state of the native module and main threads.\n *\n * This method cannot be used in Expo Go or development mode, and the returned promise will be rejected if you\n * try to do so. It also rejects when `expo-updates` is not enabled.\n *\n * @return A promise that fulfills right before the reload instruction is sent to the JS runtime, or\n * rejects if it cannot find a reference to the JS runtime. If the promise is rejected in production\n * mode, it most likely means you have installed the module incorrectly. Double check you've\n * followed the installation instructions. In particular, on iOS ensure that you set the `bridge`\n * property on `EXUpdatesAppController` with a pointer to the `RCTBridge` you want to reload, and on\n * Android ensure you either call `UpdatesController.initialize` with the instance of\n * `ReactApplication` you want to reload, or call `UpdatesController.setReactNativeHost` with the\n * proper instance of `ReactNativeHost`.\n */\nexport async function reloadAsync(): Promise<void> {\n  if (\n    (__DEV__ || isUsingDeveloperTool) &&\n    !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment\n  ) {\n    throw new CodedError(\n      'ERR_UPDATES_DISABLED',\n      `You cannot use the Updates module in development mode in a production app. ${manualUpdatesInstructions}`\n    );\n  }\n  await ExpoUpdates.reload();\n}\n\n/**\n * Checks the server to see if a newly deployed update to your project is available. Does not\n * actually download the update. This method cannot be used in development mode, and the returned\n * promise will be rejected if you try to do so.\n *\n * Checking for an update uses a device's bandwidth and battery life like any network call.\n * Additionally, updates served by Expo may be rate limited. A good rule of thumb to check for\n * updates judiciously is to check when the user launches or foregrounds the app. Avoid polling for\n * updates in a frequent loop.\n *\n * @return A promise that fulfills with an [`UpdateCheckResult`](#updatecheckresult) object.\n *\n * The promise rejects in Expo Go or if the app is in development mode, or if there is an unexpected error or\n * timeout communicating with the server. It also rejects when `expo-updates` is not enabled.\n */\nexport async function checkForUpdateAsync(): Promise<UpdateCheckResult> {\n  if (\n    (__DEV__ || isUsingDeveloperTool) &&\n    !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment\n  ) {\n    throw new CodedError(\n      'ERR_UPDATES_DISABLED',\n      `You cannot check for updates in development mode. ${manualUpdatesInstructions}`\n    );\n  }\n\n  const result = await ExpoUpdates.checkForUpdateAsync();\n  if ('manifestString' in result) {\n    const { manifestString, ...rest } = result;\n    return {\n      ...rest,\n      manifest: JSON.parse(manifestString),\n    };\n  }\n  return result;\n}\n\n/**\n * Retrieves the current extra params.\n *\n * This method cannot be used in Expo Go or development mode. It also rejects when `expo-updates` is not enabled.\n */\nexport async function getExtraParamsAsync(): Promise<Record<string, string>> {\n  return await ExpoUpdates.getExtraParamsAsync();\n}\n\n/**\n * Sets an extra param if value is non-null, otherwise unsets the param.\n * Extra params are sent as an [Expo Structured Field Value Dictionary](/technical-specs/expo-sfv-0/)\n * in the `Expo-Extra-Params` header of update requests. A compliant update server may use these params when selecting an update to serve.\n *\n * This method cannot be used in Expo Go or development mode. It also rejects when `expo-updates` is not enabled.\n */\nexport async function setExtraParamAsync(\n  key: string,\n  value: string | null | undefined\n): Promise<void> {\n  return await ExpoUpdates.setExtraParamAsync(key, value ?? null);\n}\n\n/**\n * Retrieves the most recent `expo-updates` log entries.\n *\n * @param maxAge Sets the max age of retrieved log entries in milliseconds. Default to `3600000` ms (1 hour).\n *\n * @return A promise that fulfills with an array of [`UpdatesLogEntry`](#updateslogentry) objects;\n *\n * The promise rejects if there is an unexpected error in retrieving the logs.\n */\nexport async function readLogEntriesAsync(maxAge: number = 3600000): Promise<UpdatesLogEntry[]> {\n  return await ExpoUpdates.readLogEntriesAsync(maxAge);\n}\n\n/**\n * Clears existing `expo-updates` log entries.\n *\n * > For now, this operation does nothing on the client.  Once log persistence has been\n * > implemented, this operation will actually remove existing logs.\n *\n * @return A promise that fulfills if the clear operation was successful.\n *\n * The promise rejects if there is an unexpected error in clearing the logs.\n *\n */\nexport async function clearLogEntriesAsync(): Promise<void> {\n  await ExpoUpdates.clearLogEntriesAsync();\n}\n\n/**\n * Downloads the most recently deployed update to your project from server to the device's local\n * storage. This method cannot be used in development mode, and the returned promise will be\n * rejected if you try to do so.\n *\n > **Note:** [`reloadAsync()`](#updatesreloadasync) can be called after promise resolution to\n * reload the app using the most recently downloaded version. Otherwise, the update will be applied\n * on the next app cold start.\n *\n * @return A promise that fulfills with an [`UpdateFetchResult`](#updatefetchresult) object.\n *\n * The promise rejects in Expo Go or if the app is in development mode, or if there is an unexpected error or\n * timeout communicating with the server. It also rejects when `expo-updates` is not enabled.\n */\nexport async function fetchUpdateAsync(): Promise<UpdateFetchResult> {\n  if (\n    (__DEV__ || isUsingDeveloperTool) &&\n    !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment\n  ) {\n    throw new CodedError(\n      'ERR_UPDATES_DISABLED',\n      `You cannot fetch updates in development mode. ${manualUpdatesInstructions}`\n    );\n  }\n\n  const result = await ExpoUpdates.fetchUpdateAsync();\n  if ('manifestString' in result) {\n    const { manifestString, ...rest } = result;\n    return {\n      ...rest,\n      manifest: JSON.parse(manifestString),\n    };\n  }\n  return result;\n}\n\n/**\n * Overrides updates URL and reuqest headers in runtime from build time.\n * This method allows you to load specific updates from a URL that you provide.\n * Use this method at your own risk, as it may cause unexpected behavior.\n * [Learn more about use cases and limitations](https://docs.expo.dev/eas-update/override/).\n * @experimental\n */\nexport function setUpdateURLAndRequestHeadersOverride(\n  configOverride: { updateUrl: string; requestHeaders: Record<string, string> } | null\n): void {\n  ExpoUpdates.setUpdateURLAndRequestHeadersOverride(configOverride);\n}\n"]}
+\ No newline at end of file
++{"version":3,"file":"Updates.js","sourceRoot":"","sources":["../src/Updates.ts"],"names":[],"mappings":"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","sourcesContent":["import { CodedError } from 'expo-modules-core';\nimport { Image } from 'react-native';\n\nimport ExpoUpdates from './ExpoUpdates';\nimport { UpdatesCheckAutomaticallyNativeValue } from './ExpoUpdatesModule.types';\nimport {\n  LocalAssets,\n  Manifest,\n  UpdateCheckResult,\n  UpdateFetchResult,\n  UpdatesCheckAutomaticallyValue,\n  UpdatesLogEntry,\n  ReloadScreenOptions,\n  ReloadScreenImageSource,\n} from './Updates.types';\n\n/**\n * Whether `expo-updates` is enabled. This may be false in a variety of cases including:\n * - enabled set to false in configuration\n * - missing or invalid URL in configuration\n * - missing runtime version or SDK version in configuration\n * - error accessing storage on device during initialization\n *\n * When false, the embedded update is loaded.\n */\nexport const isEnabled: boolean = !!ExpoUpdates.isEnabled;\n\n/**\n * The UUID that uniquely identifies the currently running update. The\n * UUID is represented in its canonical string form and will always use lowercase letters.\n * This value is `null` when running in a local development environment or any other environment where `expo-updates` is disabled.\n * @example\n * `\"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\"`\n */\nexport const updateId: string | null =\n  ExpoUpdates.updateId && typeof ExpoUpdates.updateId === 'string'\n    ? ExpoUpdates.updateId.toLowerCase()\n    : null;\n\n/**\n * The channel name of the current build, if configured for use with EAS Update. `null` otherwise.\n *\n * Expo Go and development builds are not set to a specific channel and can run any updates compatible with their native runtime. Therefore, this value will always be `null` when running an update on Expo Go or a development build.\n */\nexport const channel: string | null = ExpoUpdates.channel ?? null;\n\n/**\n * The runtime version of the current build.\n */\nexport const runtimeVersion: string | null = ExpoUpdates.runtimeVersion ?? null;\n\nconst _checkAutomaticallyMapNativeToJS: Record<\n  UpdatesCheckAutomaticallyNativeValue,\n  UpdatesCheckAutomaticallyValue\n> = {\n  ALWAYS: UpdatesCheckAutomaticallyValue.ON_LOAD,\n  ERROR_RECOVERY_ONLY: UpdatesCheckAutomaticallyValue.ON_ERROR_RECOVERY,\n  NEVER: UpdatesCheckAutomaticallyValue.NEVER,\n  WIFI_ONLY: UpdatesCheckAutomaticallyValue.WIFI_ONLY,\n};\n\n/**\n * Determines if and when `expo-updates` checks for and downloads updates automatically on startup.\n */\nexport const checkAutomatically: UpdatesCheckAutomaticallyValue | null =\n  _checkAutomaticallyMapNativeToJS[ExpoUpdates.checkAutomatically] ?? null;\n\n// @docsMissing\n/**\n * @hidden\n */\nexport const localAssets: LocalAssets = ExpoUpdates.localAssets ?? {};\n\n/**\n * `expo-updates` does its very best to always launch monotonically newer versions of your app so\n * you don't need to worry about backwards compatibility when you put out an update. In very rare\n * cases, it's possible that `expo-updates` may need to fall back to the update that's embedded in\n * the app binary, even after newer updates have been downloaded and run (an \"emergency launch\").\n * This boolean will be `true` if the app is launching under this fallback mechanism and `false`\n * otherwise. If you are concerned about backwards compatibility of future updates to your app, you\n * can use this constant to provide special behavior for this rare case.\n */\nexport const isEmergencyLaunch = ExpoUpdates.isEmergencyLaunch;\n\n/**\n * If `isEmergencyLaunch` is set to true, this will contain a string error message describing\n * what failed during initialization.\n */\nexport const emergencyLaunchReason = ExpoUpdates.emergencyLaunchReason;\n\n/**\n * Number of milliseconds it took to launch.\n */\nexport const launchDuration = ExpoUpdates.launchDuration;\n\n/**\n * This will be true if the currently running update is the one embedded in the build,\n * and not one downloaded from the updates server.\n */\nexport const isEmbeddedLaunch: boolean = ExpoUpdates.isEmbeddedLaunch || false;\n\n// @docsMissing\n/**\n * @hidden\n */\nexport const isUsingEmbeddedAssets: boolean = ExpoUpdates.isUsingEmbeddedAssets || false;\n\n/**\n * If `expo-updates` is enabled, this is the\n * [manifest](/versions/latest/sdk/constants/#manifest) (or\n * [classic manifest](/versions/latest/sdk/constants/#appmanifest))\n * object for the update that's currently running.\n *\n * In development mode, or any other environment in which `expo-updates` is disabled, this object is\n * empty.\n */\nexport const manifest: Partial<Manifest> =\n  (ExpoUpdates.manifestString ? JSON.parse(ExpoUpdates.manifestString) : ExpoUpdates.manifest) ??\n  {};\n\n/**\n * If `expo-updates` is enabled, this is a `Date` object representing the creation time of the update that's currently running (whether it was embedded or downloaded at runtime).\n *\n * In development mode, or any other environment in which `expo-updates` is disabled, this value is\n * null.\n */\nexport const createdAt: Date | null = ExpoUpdates.commitTime\n  ? new Date(ExpoUpdates.commitTime)\n  : null;\n\n/**\n * During non-expo development we block accessing the updates API methods on the JS side, but when developing in\n * Expo Go or a development client build, the controllers should have control over which API methods should\n * be allowed.\n */\nconst shouldDeferToNativeForAPIMethodAvailabilityInDevelopment =\n  !!ExpoUpdates.shouldDeferToNativeForAPIMethodAvailabilityInDevelopment;\n\n/**\n * Developer tool is set when a project is served by `expo start`.\n */\nconst isUsingDeveloperTool =\n  'extra' in manifest ? !!manifest.extra?.expoGo?.developer?.tool : false;\n\nconst manualUpdatesInstructions =\n  'To test usage of the expo-updates JS API in your app, make a release build with `npx expo run:ios --configuration Release` or ' +\n  '`npx expo run:android --variant Release`.';\n\nfunction resolveImageSource(\n  source?: string | number | ReloadScreenImageSource | null\n): ReloadScreenImageSource | null {\n  if (typeof source === 'string') {\n    return { url: source };\n  }\n  if (typeof source === 'number') {\n    const resolved = Image.resolveAssetSource(source);\n    if (resolved) {\n      return {\n        url: resolved.uri,\n        width: resolved.width,\n        height: resolved.height,\n        scale: resolved.scale,\n      };\n    }\n    return null;\n  }\n  if (typeof source === 'object' && source !== null) {\n    return source;\n  }\n  return null;\n}\n\nfunction resolveReloadScreenOptions(options: ReloadScreenOptions): ReloadScreenOptions {\n  if (!options.image) {\n    return options;\n  }\n\n  const resolvedImage = resolveImageSource(options.image);\n  return {\n    ...options,\n    image: resolvedImage || undefined,\n  };\n}\n\n/**\n * Instructs the app to reload using the most recently downloaded version. This is useful for\n * triggering a newly downloaded update to launch without the user needing to manually restart the\n * app.\n * Unlike `Expo.reloadAppAsync()` provided by the `expo` package,\n * this function not only reloads the app but also changes the loaded JavaScript bundle to that of the most recently downloaded update.\n *\n * It is not recommended to place any meaningful logic after a call to `await\n * Updates.reloadAsync()`. This is because the promise is resolved after verifying that the app can\n * be reloaded, and immediately before posting an asynchronous task to the main thread to actually\n * reload the app. It is unsafe to make any assumptions about whether any more JS code will be\n * executed after the `Updates.reloadAsync` method call resolves, since that depends on the OS and\n * the state of the native module and main threads.\n *\n * This method cannot be used in Expo Go or development mode, and the returned promise will be rejected if you\n * try to do so. It also rejects when `expo-updates` is not enabled.\n *\n * @return A promise that fulfills right before the reload instruction is sent to the JS runtime, or\n * rejects if it cannot find a reference to the JS runtime. If the promise is rejected in production\n * mode, it most likely means you have installed the module incorrectly. Double check you've\n * followed the installation instructions. In particular, on iOS ensure that you set the `bridge`\n * property on `EXUpdatesAppController` with a pointer to the `RCTBridge` you want to reload, and on\n * Android ensure you either call `UpdatesController.initialize` with the instance of\n * `ReactApplication` you want to reload, or call `UpdatesController.setReactNativeHost` with the\n * proper instance of `ReactNativeHost`.\n */\nexport async function reloadAsync(options?: {\n  reloadScreenOptions?: ReloadScreenOptions;\n}): Promise<void> {\n  if (\n    (__DEV__ || isUsingDeveloperTool) &&\n    !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment\n  ) {\n    throw new CodedError(\n      'ERR_UPDATES_DISABLED',\n      `You cannot use the Updates module in development mode in a production app. ${manualUpdatesInstructions}`\n    );\n  }\n  if (options?.reloadScreenOptions) {\n    const resolvedOptions = resolveReloadScreenOptions(options.reloadScreenOptions);\n    return await ExpoUpdates.reload(resolvedOptions);\n  }\n  await ExpoUpdates.reload();\n}\n\n/**\n * Checks the server to see if a newly deployed update to your project is available. Does not\n * actually download the update. This method cannot be used in development mode, and the returned\n * promise will be rejected if you try to do so.\n *\n * Checking for an update uses a device's bandwidth and battery life like any network call.\n * Additionally, updates served by Expo may be rate limited. A good rule of thumb to check for\n * updates judiciously is to check when the user launches or foregrounds the app. Avoid polling for\n * updates in a frequent loop.\n *\n * @return A promise that fulfills with an [`UpdateCheckResult`](#updatecheckresult) object.\n *\n * The promise rejects in Expo Go or if the app is in development mode, or if there is an unexpected error or\n * timeout communicating with the server. It also rejects when `expo-updates` is not enabled.\n */\nexport async function checkForUpdateAsync(): Promise<UpdateCheckResult> {\n  if (\n    (__DEV__ || isUsingDeveloperTool) &&\n    !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment\n  ) {\n    throw new CodedError(\n      'ERR_UPDATES_DISABLED',\n      `You cannot check for updates in development mode. ${manualUpdatesInstructions}`\n    );\n  }\n\n  const result = await ExpoUpdates.checkForUpdateAsync();\n  if ('manifestString' in result) {\n    const { manifestString, ...rest } = result;\n    return {\n      ...rest,\n      manifest: JSON.parse(manifestString),\n    };\n  }\n  return result;\n}\n\n/**\n * Retrieves the current extra params.\n *\n * This method cannot be used in Expo Go or development mode. It also rejects when `expo-updates` is not enabled.\n */\nexport async function getExtraParamsAsync(): Promise<Record<string, string>> {\n  return await ExpoUpdates.getExtraParamsAsync();\n}\n\n/**\n * Sets an extra param if value is non-null, otherwise unsets the param.\n * Extra params are sent as an [Expo Structured Field Value Dictionary](/technical-specs/expo-sfv-0/)\n * in the `Expo-Extra-Params` header of update requests. A compliant update server may use these params when selecting an update to serve.\n *\n * This method cannot be used in Expo Go or development mode. It also rejects when `expo-updates` is not enabled.\n */\nexport async function setExtraParamAsync(\n  key: string,\n  value: string | null | undefined\n): Promise<void> {\n  return await ExpoUpdates.setExtraParamAsync(key, value ?? null);\n}\n\n/**\n * Retrieves the most recent `expo-updates` log entries.\n *\n * @param maxAge Sets the max age of retrieved log entries in milliseconds. Default to `3600000` ms (1 hour).\n *\n * @return A promise that fulfills with an array of [`UpdatesLogEntry`](#updateslogentry) objects;\n *\n * The promise rejects if there is an unexpected error in retrieving the logs.\n */\nexport async function readLogEntriesAsync(maxAge: number = 3600000): Promise<UpdatesLogEntry[]> {\n  return await ExpoUpdates.readLogEntriesAsync(maxAge);\n}\n\n/**\n * Clears existing `expo-updates` log entries.\n *\n * > For now, this operation does nothing on the client.  Once log persistence has been\n * > implemented, this operation will actually remove existing logs.\n *\n * @return A promise that fulfills if the clear operation was successful.\n *\n * The promise rejects if there is an unexpected error in clearing the logs.\n *\n */\nexport async function clearLogEntriesAsync(): Promise<void> {\n  await ExpoUpdates.clearLogEntriesAsync();\n}\n\n/**\n * Downloads the most recently deployed update to your project from server to the device's local\n * storage. This method cannot be used in development mode, and the returned promise will be\n * rejected if you try to do so.\n *\n > **Note:** [`reloadAsync()`](#updatesreloadasync) can be called after promise resolution to\n * reload the app using the most recently downloaded version. Otherwise, the update will be applied\n * on the next app cold start.\n *\n * @return A promise that fulfills with an [`UpdateFetchResult`](#updatefetchresult) object.\n *\n * The promise rejects in Expo Go or if the app is in development mode, or if there is an unexpected error or\n * timeout communicating with the server. It also rejects when `expo-updates` is not enabled.\n */\nexport async function fetchUpdateAsync(): Promise<UpdateFetchResult> {\n  if (\n    (__DEV__ || isUsingDeveloperTool) &&\n    !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment\n  ) {\n    throw new CodedError(\n      'ERR_UPDATES_DISABLED',\n      `You cannot fetch updates in development mode. ${manualUpdatesInstructions}`\n    );\n  }\n\n  const result = await ExpoUpdates.fetchUpdateAsync();\n  if ('manifestString' in result) {\n    const { manifestString, ...rest } = result;\n    return {\n      ...rest,\n      manifest: JSON.parse(manifestString),\n    };\n  }\n  return result;\n}\n\n/**\n * Overrides updates URL and reuqest headers in runtime from build time.\n * This method allows you to load specific updates from a URL that you provide.\n * Use this method at your own risk, as it may cause unexpected behavior.\n * [Learn more about use cases and limitations](https://docs.expo.dev/eas-update/override/).\n * @experimental\n */\nexport function setUpdateURLAndRequestHeadersOverride(\n  configOverride: { updateUrl: string; requestHeaders: Record<string, string> } | null\n): void {\n  ExpoUpdates.setUpdateURLAndRequestHeadersOverride(configOverride);\n}\n\n/**\n * Shows the reload screen with customizable appearance. This is primarily useful for testing\n * how the reload screen will appear to users during app reloads and is only available in\n * debug builds of the app. The reload screen can be hidden by calling `hideReloadScreen()`.\n *\n *\n * @param options Configuration options for customizing the reload screen appearance.\n *\n * @hidden exposed for testing\n * @example\n * ```ts\n * import * as Updates from 'expo-updates';\n *\n * // Show the reload screen with custom styling for testing\n * await Updates.showReloadScreen({\n *   reloadScreenOptions: {\n *     backgroundColor: '#1a1a1a',\n *     spinner: {\n *       color: '#ffffff'\n *     }\n *   }\n * });\n *\n * // Hide it after 3 seconds\n * setTimeout(async () => {\n *   await Updates.hideReloadScreen();\n * }, 3000);\n *\n * // Test with a custom image\n * await Updates.showReloadScreen({\n *   reloadScreenOptions: {\n *     backgroundColor: '#ffffff',\n *     image: require('./assets/loading.png'),\n *     imageResizeMode: 'contain'\n *   }\n * });\n * ```\n */\nexport async function showReloadScreen(options?: {\n  reloadScreenOptions?: ReloadScreenOptions;\n}): Promise<void> {\n  if (options?.reloadScreenOptions) {\n    const resolvedOptions = resolveReloadScreenOptions(options.reloadScreenOptions);\n    return ExpoUpdates.showReloadScreen(resolvedOptions);\n  }\n  return ExpoUpdates.showReloadScreen();\n}\n\n/**\n *\n * @hidden exposed for testing\n * @return A promise that resolves when the reload screen is hidden.\n */\nexport async function hideReloadScreen(): Promise<void> {\n  return ExpoUpdates.hideReloadScreen();\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/Updates.types.d.ts b/packages/expo-updates/build/Updates.types.d.ts
+index 1a370720c54866..a528727c656222 100644
+--- a/packages/expo-updates/build/Updates.types.d.ts
++++ b/packages/expo-updates/build/Updates.types.d.ts
+@@ -238,6 +238,7 @@ export declare enum UpdatesCheckAutomaticallyValue {
+  * @hidden
+  */
+ export type LocalAssets = Record<string, string>;
++export type { ReloadScreenOptions, ReloadScreenImageSource } from './ReloadScreen.types';
+ /**
+  * @hidden
+  */
+diff --git a/packages/expo-updates/build/Updates.types.d.ts.map b/packages/expo-updates/build/Updates.types.d.ts.map
+index a6bc5a9eff5197..ee8e086f0f185b 100644
+--- a/packages/expo-updates/build/Updates.types.d.ts.map
++++ b/packages/expo-updates/build/Updates.types.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"Updates.types.d.ts","sourceRoot":"","sources":["../src/Updates.types.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"Updates.types.d.ts","sourceRoot":"","sources":["../src/Updates.types.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,mBAAmB,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAEvE,MAAM,MAAM,QAAQ,GAAG,mBAAmB,GAAG,gBAAgB,CAAC;AAE9D,oBAAY,mCAAmC;IAC7C;;OAEG;IACH,6BAA6B,8BAA8B;IAC3D;;;OAGG;IACH,mCAAmC,oCAAoC;IACvE;;;OAGG;IACH,wBAAwB,2BAA2B;IACnD;;;OAGG;IACH,qCAAqC,sCAAsC;IAC3E;;OAEG;IACH,oBAAoB,oCAAoC;CACzD;AAED;;GAEG;AACH,MAAM,MAAM,yBAAyB,GAAG;IACtC;;OAEG;IACH,WAAW,EAAE,KAAK,CAAC;IACnB;;OAEG;IACH,QAAQ,EAAE,SAAS,CAAC;IACpB;;OAEG;IACH,oBAAoB,EAAE,IAAI,CAAC;IAC3B;;OAEG;IACH,MAAM,EAAE,SAAS,CAAC;CACnB,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,0BAA0B,GAAG;IACvC;;OAEG;IACH,WAAW,EAAE,IAAI,CAAC;IAClB;;OAEG;IACH,QAAQ,EAAE,QAAQ,CAAC;IACnB;;OAEG;IACH,oBAAoB,EAAE,KAAK,CAAC;IAC5B;;OAEG;IACH,MAAM,EAAE,SAAS,CAAC;CACnB,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,6BAA6B,GAAG;IAC1C;;OAEG;IACH,WAAW,EAAE,KAAK,CAAC;IACnB;;OAEG;IACH,QAAQ,EAAE,SAAS,CAAC;IACpB;;OAEG;IACH,oBAAoB,EAAE,KAAK,CAAC;IAC5B;;OAEG;IACH,MAAM,EAAE,mCAAmC,CAAC;CAC7C,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,iBAAiB,GACzB,yBAAyB,GACzB,0BAA0B,GAC1B,6BAA6B,CAAC;AAElC;;GAEG;AACH,MAAM,MAAM,wBAAwB,GAAG;IACrC;;;OAGG;IACH,KAAK,EAAE,IAAI,CAAC;IACZ;;OAEG;IACH,QAAQ,EAAE,QAAQ,CAAC;IACnB;;OAEG;IACH,oBAAoB,EAAE,KAAK,CAAC;CAC7B,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,wBAAwB,GAAG;IACrC;;;OAGG;IACH,KAAK,EAAE,KAAK,CAAC;IACb;;OAEG;IACH,QAAQ,EAAE,SAAS,CAAC;IACpB;;OAEG;IACH,oBAAoB,EAAE,KAAK,CAAC;CAC7B,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,mCAAmC,GAAG;IAChD;;;OAGG;IACH,KAAK,EAAE,KAAK,CAAC;IACb;;OAEG;IACH,QAAQ,EAAE,SAAS,CAAC;IACpB;;OAEG;IACH,oBAAoB,EAAE,IAAI,CAAC;CAC5B,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,iBAAiB,GACzB,wBAAwB,GACxB,wBAAwB,GACxB,mCAAmC,CAAC;AAExC;;GAEG;AACH,MAAM,MAAM,eAAe,GAAG;IAC5B;;OAEG;IACH,SAAS,EAAE,MAAM,CAAC;IAClB;;OAEG;IACH,OAAO,EAAE,MAAM,CAAC;IAChB;;OAEG;IACH,IAAI,EAAE,mBAAmB,CAAC;IAC1B;;OAEG;IACH,KAAK,EAAE,oBAAoB,CAAC;IAC5B;;OAEG;IACH,QAAQ,CAAC,EAAE,MAAM,CAAC;IAClB;;OAEG;IACH,OAAO,CAAC,EAAE,MAAM,CAAC;IACjB;;OAEG;IACH,UAAU,CAAC,EAAE,MAAM,EAAE,CAAC;CACvB,CAAC;AAEF;;GAEG;AACH,oBAAY,mBAAmB;IAC7B,IAAI,SAAS;IACb,oBAAoB,uBAAuB;IAC3C,2BAA2B,6BAA6B;IACxD,yBAAyB,4BAA4B;IACrD,4BAA4B,8BAA8B;IAC1D,yBAAyB,2BAA2B;IACpD,qBAAqB,uBAAuB;IAC5C,qBAAqB,uBAAuB;IAC5C,gBAAgB,mBAAmB;IACnC,oBAAoB,wBAAwB;IAC5C,OAAO,YAAY;CACpB;AAED;;GAEG;AACH,oBAAY,oBAAoB;IAC9B,KAAK,UAAU;IACf,KAAK,UAAU;IACf,IAAI,SAAS;IACb,IAAI,SAAS;IACb,KAAK,UAAU;IACf,KAAK,UAAU;CAChB;AAED;;;;;GAKG;AACH,oBAAY,8BAA8B;IACxC;;OAEG;IACH,OAAO,YAAY;IACnB;;OAEG;IACH,iBAAiB,sBAAsB;IACvC;;OAEG;IACH,SAAS,cAAc;IACvB;;OAEG;IACH,KAAK,UAAU;CAChB;AAED;;GAEG;AACH,MAAM,MAAM,WAAW,GAAG,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAC;AAEjD,YAAY,EAAE,mBAAmB,EAAE,uBAAuB,EAAE,MAAM,sBAAsB,CAAC;AAEzF;;GAEG;AACH,MAAM,MAAM,0BAA0B,GAAG;IAEvC,UAAU,EAAE,MAAM,CAAC;CACpB,CAAC;AAEF;;;;GAIG;AACH,MAAM,MAAM,gCAAgC,GAAG;IAC7C,yBAAyB,EAAE,OAAO,CAAC;IACnC,iBAAiB,EAAE,OAAO,CAAC;IAC3B,eAAe,EAAE,OAAO,CAAC;IACzB,UAAU,EAAE,OAAO,CAAC;IACpB,aAAa,EAAE,OAAO,CAAC;IACvB,YAAY,EAAE,OAAO,CAAC;IACtB,YAAY,EAAE,MAAM,CAAC;IACrB,cAAc,CAAC,EAAE,QAAQ,CAAC;IAC1B,kBAAkB,CAAC,EAAE,QAAQ,CAAC;IAC9B,QAAQ,CAAC,EAAE,0BAA0B,CAAC;IACtC,UAAU,CAAC,EAAE,KAAK,CAAC;IACnB,aAAa,CAAC,EAAE,KAAK,CAAC;IACtB,sBAAsB,CAAC,EAAE,IAAI,CAAC;IAC9B,cAAc,EAAE,MAAM,CAAC;CACxB,CAAC;AAEF;;GAEG;AACH,MAAM,MAAM,6BAA6B,GAAG;IAE1C,OAAO,EAAE,gCAAgC,CAAC;CAC3C,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-updates/build/Updates.types.js.map b/packages/expo-updates/build/Updates.types.js.map
+index 837a550bcc3735..5c8e66349ed540 100644
+--- a/packages/expo-updates/build/Updates.types.js.map
++++ b/packages/expo-updates/build/Updates.types.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"Updates.types.js","sourceRoot":"","sources":["../src/Updates.types.ts"],"names":[],"mappings":"AAIA,MAAM,CAAN,IAAY,mCAwBX;AAxBD,WAAY,mCAAmC;IAC7C;;OAEG;IACH,kGAA2D,CAAA;IAC3D;;;OAGG;IACH,8GAAuE,CAAA;IACvE;;;OAGG;IACH,0FAAmD,CAAA;IACnD;;;OAGG;IACH,kHAA2E,CAAA;IAC3E;;OAEG;IACH,+FAAwD,CAAA;AAC1D,CAAC,EAxBW,mCAAmC,KAAnC,mCAAmC,QAwB9C;AA+KD;;GAEG;AACH,MAAM,CAAN,IAAY,mBAYX;AAZD,WAAY,mBAAmB;IAC7B,oCAAa,CAAA;IACb,kEAA2C,CAAA;IAC3C,+EAAwD,CAAA;IACxD,4EAAqD,CAAA;IACrD,iFAA0D,CAAA;IAC1D,2EAAoD,CAAA;IACpD,mEAA4C,CAAA;IAC5C,mEAA4C,CAAA;IAC5C,0DAAmC,CAAA;IACnC,mEAA4C,CAAA;IAC5C,0CAAmB,CAAA;AACrB,CAAC,EAZW,mBAAmB,KAAnB,mBAAmB,QAY9B;AAED;;GAEG;AACH,MAAM,CAAN,IAAY,oBAOX;AAPD,WAAY,oBAAoB;IAC9B,uCAAe,CAAA;IACf,uCAAe,CAAA;IACf,qCAAa,CAAA;IACb,qCAAa,CAAA;IACb,uCAAe,CAAA;IACf,uCAAe,CAAA;AACjB,CAAC,EAPW,oBAAoB,KAApB,oBAAoB,QAO/B;AAED;;;;;GAKG;AACH,MAAM,CAAN,IAAY,8BAiBX;AAjBD,WAAY,8BAA8B;IACxC;;OAEG;IACH,qDAAmB,CAAA;IACnB;;OAEG;IACH,yEAAuC,CAAA;IACvC;;OAEG;IACH,yDAAuB,CAAA;IACvB;;OAEG;IACH,iDAAe,CAAA;AACjB,CAAC,EAjBW,8BAA8B,KAA9B,8BAA8B,QAiBzC","sourcesContent":["import { ExpoUpdatesManifest, EmbeddedManifest } from 'expo-manifests';\n\nexport type Manifest = ExpoUpdatesManifest | EmbeddedManifest;\n\nexport enum UpdateCheckResultNotAvailableReason {\n  /**\n   * No update manifest or rollback directive received from the update server.\n   */\n  NO_UPDATE_AVAILABLE_ON_SERVER = 'noUpdateAvailableOnServer',\n  /**\n   * An update manifest was received from the update server, but the update is not launchable,\n   * or does not pass the configured selection policy.\n   */\n  UPDATE_REJECTED_BY_SELECTION_POLICY = 'updateRejectedBySelectionPolicy',\n  /**\n   * An update manifest was received from the update server, but the update has been previously\n   * launched on this device and never successfully launched.\n   */\n  UPDATE_PREVIOUSLY_FAILED = 'updatePreviouslyFailed',\n  /**\n   * A rollback directive was received from the update server, but the directive does not pass\n   * the configured selection policy.\n   */\n  ROLLBACK_REJECTED_BY_SELECTION_POLICY = 'rollbackRejectedBySelectionPolicy',\n  /**\n   * A rollback directive was received from the update server, but this app has no embedded update.\n   */\n  ROLLBACK_NO_EMBEDDED = 'rollbackNoEmbeddedConfiguration',\n}\n\n/**\n * The update check result when a rollback directive is received.\n */\nexport type UpdateCheckResultRollBack = {\n  /**\n   * Whether an update is available. This property is false for a roll back update.\n   */\n  isAvailable: false;\n  /**\n   * The manifest of the update when available.\n   */\n  manifest: undefined;\n  /**\n   * Whether a roll back to embedded update is available.\n   */\n  isRollBackToEmbedded: true;\n  /**\n   * If no new update is found, this contains one of several enum values indicating the reason.\n   */\n  reason: undefined;\n};\n\n/**\n * The update check result when a new update is found on the server.\n */\nexport type UpdateCheckResultAvailable = {\n  /**\n   * Whether an update is available. This property is false for a roll back update.\n   */\n  isAvailable: true;\n  /**\n   * The manifest of the update when available.\n   */\n  manifest: Manifest;\n  /**\n   * Whether a roll back to embedded update is available.\n   */\n  isRollBackToEmbedded: false;\n  /**\n   * If no new update is found, this contains one of several enum values indicating the reason.\n   */\n  reason: undefined;\n};\n\n/**\n * The update check result if no new update was found.\n */\nexport type UpdateCheckResultNotAvailable = {\n  /**\n   * Whether an update is available. This property is false for a roll back update.\n   */\n  isAvailable: false;\n  /**\n   * The manifest of the update when available.\n   */\n  manifest: undefined;\n  /**\n   * Whether a roll back to embedded update is available.\n   */\n  isRollBackToEmbedded: false;\n  /**\n   * If no new update is found, this contains one of several enum values indicating the reason.\n   */\n  reason: UpdateCheckResultNotAvailableReason;\n};\n\n/**\n * The result of checking for a new update.\n */\nexport type UpdateCheckResult =\n  | UpdateCheckResultRollBack\n  | UpdateCheckResultAvailable\n  | UpdateCheckResultNotAvailable;\n\n/**\n * The successful result of fetching a new update.\n */\nexport type UpdateFetchResultSuccess = {\n  /**\n   * Whether the fetched update is new (that is, a different version than what's currently running).\n   * Always `true` when `isRollBackToEmbedded` is `false`.\n   */\n  isNew: true;\n  /**\n   * The manifest of the fetched update.\n   */\n  manifest: Manifest;\n  /**\n   * Whether the fetched update is a roll back to the embedded update.\n   */\n  isRollBackToEmbedded: false;\n};\n\n/**\n * The failed result of fetching a new update.\n */\nexport type UpdateFetchResultFailure = {\n  /**\n   * Whether the fetched update is new (that is, a different version than what's currently running).\n   * Always `false` when `isRollBackToEmbedded` is `true`.\n   */\n  isNew: false;\n  /**\n   * The manifest of the fetched update.\n   */\n  manifest: undefined;\n  /**\n   * Whether the fetched update is a roll back to the embedded update.\n   */\n  isRollBackToEmbedded: false;\n};\n\n/**\n * The roll back to embedded result of fetching a new update.\n */\nexport type UpdateFetchResultRollBackToEmbedded = {\n  /**\n   * Whether the fetched update is new (that is, a different version than what's currently running).\n   * Always `false` when `isRollBackToEmbedded` is `true`.\n   */\n  isNew: false;\n  /**\n   * The manifest of the fetched update.\n   */\n  manifest: undefined;\n  /**\n   * Whether the fetched update is a roll back to the embedded update.\n   */\n  isRollBackToEmbedded: true;\n};\n\n/**\n * The result of fetching a new update.\n */\nexport type UpdateFetchResult =\n  | UpdateFetchResultSuccess\n  | UpdateFetchResultFailure\n  | UpdateFetchResultRollBackToEmbedded;\n\n/**\n * An object representing a single log entry from `expo-updates` logging on the client.\n */\nexport type UpdatesLogEntry = {\n  /**\n   * The time the log was written, in milliseconds since Jan 1 1970 UTC.\n   */\n  timestamp: number;\n  /**\n   * The log entry message.\n   */\n  message: string;\n  /**\n   * One of the defined code values for `expo-updates` log entries.\n   */\n  code: UpdatesLogEntryCode;\n  /**\n   * One of the defined log level or severity values.\n   */\n  level: UpdatesLogEntryLevel;\n  /**\n   * If present, the unique ID of an update associated with this log entry.\n   */\n  updateId?: string;\n  /**\n   * If present, the unique ID or hash of an asset associated with this log entry.\n   */\n  assetId?: string;\n  /**\n   * If present, an Android or iOS native stack trace associated with this log entry.\n   */\n  stacktrace?: string[];\n};\n\n/**\n * The possible code values for `expo-updates` log entries\n */\nexport enum UpdatesLogEntryCode {\n  NONE = 'None',\n  NO_UPDATES_AVAILABLE = 'NoUpdatesAvailable',\n  UPDATE_ASSETS_NOT_AVAILABLE = 'UpdateAssetsNotAvailable',\n  UPDATE_SERVER_UNREACHABLE = 'UpdateServerUnreachable',\n  UPDATE_HAS_INVALID_SIGNATURE = 'UpdateHasInvalidSignature',\n  UPDATE_CODE_SIGNING_ERROR = 'UpdateCodeSigningError',\n  UPDATE_FAILED_TO_LOAD = 'UpdateFailedToLoad',\n  ASSETS_FAILED_TO_LOAD = 'AssetsFailedToLoad',\n  JS_RUNTIME_ERROR = 'JSRuntimeError',\n  INITIALIZATION_ERROR = 'InitializationError',\n  UNKNOWN = 'Unknown',\n}\n\n/**\n * The possible log levels for `expo-updates` log entries\n */\nexport enum UpdatesLogEntryLevel {\n  TRACE = 'trace',\n  DEBUG = 'debug',\n  INFO = 'info',\n  WARN = 'warn',\n  ERROR = 'error',\n  FATAL = 'fatal',\n}\n\n/**\n * The possible settings that determine if `expo-updates` will check for updates on app startup.\n * By default, Expo will check for updates every time the app is loaded.\n * Set this to `ON_ERROR_RECOVERY` to disable automatic checking unless recovering from an error.\n * Set this to `NEVER` to completely disable automatic checking.\n */\nexport enum UpdatesCheckAutomaticallyValue {\n  /**\n   * Checks for updates whenever the app is loaded. This is the default setting.\n   */\n  ON_LOAD = 'ON_LOAD',\n  /**\n   * Only checks for updates when the app starts up after an error recovery.\n   */\n  ON_ERROR_RECOVERY = 'ON_ERROR_RECOVERY',\n  /**\n   * Only checks for updates when the app starts and has a Wi-Fi connection.\n   */\n  WIFI_ONLY = 'WIFI_ONLY',\n  /**\n   * Automatic update checks are off, and update checks must be done through the JS API.\n   */\n  NEVER = 'NEVER',\n}\n\n/**\n * @hidden\n */\nexport type LocalAssets = Record<string, string>;\n\n/**\n * @hidden\n */\nexport type UpdatesNativeStateRollback = {\n  // ISO date string with the rollback commit time\n  commitTime: string;\n};\n\n/**\n * The native state machine context, either read directly from a native module method,\n * or received in a state change event. Used internally by this module and not exported publicly.\n * @hidden\n */\nexport type UpdatesNativeStateMachineContext = {\n  isStartupProcedureRunning: boolean;\n  isUpdateAvailable: boolean;\n  isUpdatePending: boolean;\n  isChecking: boolean;\n  isDownloading: boolean;\n  isRestarting: boolean;\n  restartCount: number;\n  latestManifest?: Manifest;\n  downloadedManifest?: Manifest;\n  rollback?: UpdatesNativeStateRollback;\n  checkError?: Error;\n  downloadError?: Error;\n  lastCheckForUpdateTime?: Date;\n  sequenceNumber: number;\n};\n\n/**\n * @hidden\n */\nexport type UpdatesNativeStateChangeEvent = {\n  // Change event emitted by native\n  context: UpdatesNativeStateMachineContext;\n};\n"]}
+\ No newline at end of file
++{"version":3,"file":"Updates.types.js","sourceRoot":"","sources":["../src/Updates.types.ts"],"names":[],"mappings":"AAIA,MAAM,CAAN,IAAY,mCAwBX;AAxBD,WAAY,mCAAmC;IAC7C;;OAEG;IACH,kGAA2D,CAAA;IAC3D;;;OAGG;IACH,8GAAuE,CAAA;IACvE;;;OAGG;IACH,0FAAmD,CAAA;IACnD;;;OAGG;IACH,kHAA2E,CAAA;IAC3E;;OAEG;IACH,+FAAwD,CAAA;AAC1D,CAAC,EAxBW,mCAAmC,KAAnC,mCAAmC,QAwB9C;AA+KD;;GAEG;AACH,MAAM,CAAN,IAAY,mBAYX;AAZD,WAAY,mBAAmB;IAC7B,oCAAa,CAAA;IACb,kEAA2C,CAAA;IAC3C,+EAAwD,CAAA;IACxD,4EAAqD,CAAA;IACrD,iFAA0D,CAAA;IAC1D,2EAAoD,CAAA;IACpD,mEAA4C,CAAA;IAC5C,mEAA4C,CAAA;IAC5C,0DAAmC,CAAA;IACnC,mEAA4C,CAAA;IAC5C,0CAAmB,CAAA;AACrB,CAAC,EAZW,mBAAmB,KAAnB,mBAAmB,QAY9B;AAED;;GAEG;AACH,MAAM,CAAN,IAAY,oBAOX;AAPD,WAAY,oBAAoB;IAC9B,uCAAe,CAAA;IACf,uCAAe,CAAA;IACf,qCAAa,CAAA;IACb,qCAAa,CAAA;IACb,uCAAe,CAAA;IACf,uCAAe,CAAA;AACjB,CAAC,EAPW,oBAAoB,KAApB,oBAAoB,QAO/B;AAED;;;;;GAKG;AACH,MAAM,CAAN,IAAY,8BAiBX;AAjBD,WAAY,8BAA8B;IACxC;;OAEG;IACH,qDAAmB,CAAA;IACnB;;OAEG;IACH,yEAAuC,CAAA;IACvC;;OAEG;IACH,yDAAuB,CAAA;IACvB;;OAEG;IACH,iDAAe,CAAA;AACjB,CAAC,EAjBW,8BAA8B,KAA9B,8BAA8B,QAiBzC","sourcesContent":["import { ExpoUpdatesManifest, EmbeddedManifest } from 'expo-manifests';\n\nexport type Manifest = ExpoUpdatesManifest | EmbeddedManifest;\n\nexport enum UpdateCheckResultNotAvailableReason {\n  /**\n   * No update manifest or rollback directive received from the update server.\n   */\n  NO_UPDATE_AVAILABLE_ON_SERVER = 'noUpdateAvailableOnServer',\n  /**\n   * An update manifest was received from the update server, but the update is not launchable,\n   * or does not pass the configured selection policy.\n   */\n  UPDATE_REJECTED_BY_SELECTION_POLICY = 'updateRejectedBySelectionPolicy',\n  /**\n   * An update manifest was received from the update server, but the update has been previously\n   * launched on this device and never successfully launched.\n   */\n  UPDATE_PREVIOUSLY_FAILED = 'updatePreviouslyFailed',\n  /**\n   * A rollback directive was received from the update server, but the directive does not pass\n   * the configured selection policy.\n   */\n  ROLLBACK_REJECTED_BY_SELECTION_POLICY = 'rollbackRejectedBySelectionPolicy',\n  /**\n   * A rollback directive was received from the update server, but this app has no embedded update.\n   */\n  ROLLBACK_NO_EMBEDDED = 'rollbackNoEmbeddedConfiguration',\n}\n\n/**\n * The update check result when a rollback directive is received.\n */\nexport type UpdateCheckResultRollBack = {\n  /**\n   * Whether an update is available. This property is false for a roll back update.\n   */\n  isAvailable: false;\n  /**\n   * The manifest of the update when available.\n   */\n  manifest: undefined;\n  /**\n   * Whether a roll back to embedded update is available.\n   */\n  isRollBackToEmbedded: true;\n  /**\n   * If no new update is found, this contains one of several enum values indicating the reason.\n   */\n  reason: undefined;\n};\n\n/**\n * The update check result when a new update is found on the server.\n */\nexport type UpdateCheckResultAvailable = {\n  /**\n   * Whether an update is available. This property is false for a roll back update.\n   */\n  isAvailable: true;\n  /**\n   * The manifest of the update when available.\n   */\n  manifest: Manifest;\n  /**\n   * Whether a roll back to embedded update is available.\n   */\n  isRollBackToEmbedded: false;\n  /**\n   * If no new update is found, this contains one of several enum values indicating the reason.\n   */\n  reason: undefined;\n};\n\n/**\n * The update check result if no new update was found.\n */\nexport type UpdateCheckResultNotAvailable = {\n  /**\n   * Whether an update is available. This property is false for a roll back update.\n   */\n  isAvailable: false;\n  /**\n   * The manifest of the update when available.\n   */\n  manifest: undefined;\n  /**\n   * Whether a roll back to embedded update is available.\n   */\n  isRollBackToEmbedded: false;\n  /**\n   * If no new update is found, this contains one of several enum values indicating the reason.\n   */\n  reason: UpdateCheckResultNotAvailableReason;\n};\n\n/**\n * The result of checking for a new update.\n */\nexport type UpdateCheckResult =\n  | UpdateCheckResultRollBack\n  | UpdateCheckResultAvailable\n  | UpdateCheckResultNotAvailable;\n\n/**\n * The successful result of fetching a new update.\n */\nexport type UpdateFetchResultSuccess = {\n  /**\n   * Whether the fetched update is new (that is, a different version than what's currently running).\n   * Always `true` when `isRollBackToEmbedded` is `false`.\n   */\n  isNew: true;\n  /**\n   * The manifest of the fetched update.\n   */\n  manifest: Manifest;\n  /**\n   * Whether the fetched update is a roll back to the embedded update.\n   */\n  isRollBackToEmbedded: false;\n};\n\n/**\n * The failed result of fetching a new update.\n */\nexport type UpdateFetchResultFailure = {\n  /**\n   * Whether the fetched update is new (that is, a different version than what's currently running).\n   * Always `false` when `isRollBackToEmbedded` is `true`.\n   */\n  isNew: false;\n  /**\n   * The manifest of the fetched update.\n   */\n  manifest: undefined;\n  /**\n   * Whether the fetched update is a roll back to the embedded update.\n   */\n  isRollBackToEmbedded: false;\n};\n\n/**\n * The roll back to embedded result of fetching a new update.\n */\nexport type UpdateFetchResultRollBackToEmbedded = {\n  /**\n   * Whether the fetched update is new (that is, a different version than what's currently running).\n   * Always `false` when `isRollBackToEmbedded` is `true`.\n   */\n  isNew: false;\n  /**\n   * The manifest of the fetched update.\n   */\n  manifest: undefined;\n  /**\n   * Whether the fetched update is a roll back to the embedded update.\n   */\n  isRollBackToEmbedded: true;\n};\n\n/**\n * The result of fetching a new update.\n */\nexport type UpdateFetchResult =\n  | UpdateFetchResultSuccess\n  | UpdateFetchResultFailure\n  | UpdateFetchResultRollBackToEmbedded;\n\n/**\n * An object representing a single log entry from `expo-updates` logging on the client.\n */\nexport type UpdatesLogEntry = {\n  /**\n   * The time the log was written, in milliseconds since Jan 1 1970 UTC.\n   */\n  timestamp: number;\n  /**\n   * The log entry message.\n   */\n  message: string;\n  /**\n   * One of the defined code values for `expo-updates` log entries.\n   */\n  code: UpdatesLogEntryCode;\n  /**\n   * One of the defined log level or severity values.\n   */\n  level: UpdatesLogEntryLevel;\n  /**\n   * If present, the unique ID of an update associated with this log entry.\n   */\n  updateId?: string;\n  /**\n   * If present, the unique ID or hash of an asset associated with this log entry.\n   */\n  assetId?: string;\n  /**\n   * If present, an Android or iOS native stack trace associated with this log entry.\n   */\n  stacktrace?: string[];\n};\n\n/**\n * The possible code values for `expo-updates` log entries\n */\nexport enum UpdatesLogEntryCode {\n  NONE = 'None',\n  NO_UPDATES_AVAILABLE = 'NoUpdatesAvailable',\n  UPDATE_ASSETS_NOT_AVAILABLE = 'UpdateAssetsNotAvailable',\n  UPDATE_SERVER_UNREACHABLE = 'UpdateServerUnreachable',\n  UPDATE_HAS_INVALID_SIGNATURE = 'UpdateHasInvalidSignature',\n  UPDATE_CODE_SIGNING_ERROR = 'UpdateCodeSigningError',\n  UPDATE_FAILED_TO_LOAD = 'UpdateFailedToLoad',\n  ASSETS_FAILED_TO_LOAD = 'AssetsFailedToLoad',\n  JS_RUNTIME_ERROR = 'JSRuntimeError',\n  INITIALIZATION_ERROR = 'InitializationError',\n  UNKNOWN = 'Unknown',\n}\n\n/**\n * The possible log levels for `expo-updates` log entries\n */\nexport enum UpdatesLogEntryLevel {\n  TRACE = 'trace',\n  DEBUG = 'debug',\n  INFO = 'info',\n  WARN = 'warn',\n  ERROR = 'error',\n  FATAL = 'fatal',\n}\n\n/**\n * The possible settings that determine if `expo-updates` will check for updates on app startup.\n * By default, Expo will check for updates every time the app is loaded.\n * Set this to `ON_ERROR_RECOVERY` to disable automatic checking unless recovering from an error.\n * Set this to `NEVER` to completely disable automatic checking.\n */\nexport enum UpdatesCheckAutomaticallyValue {\n  /**\n   * Checks for updates whenever the app is loaded. This is the default setting.\n   */\n  ON_LOAD = 'ON_LOAD',\n  /**\n   * Only checks for updates when the app starts up after an error recovery.\n   */\n  ON_ERROR_RECOVERY = 'ON_ERROR_RECOVERY',\n  /**\n   * Only checks for updates when the app starts and has a Wi-Fi connection.\n   */\n  WIFI_ONLY = 'WIFI_ONLY',\n  /**\n   * Automatic update checks are off, and update checks must be done through the JS API.\n   */\n  NEVER = 'NEVER',\n}\n\n/**\n * @hidden\n */\nexport type LocalAssets = Record<string, string>;\n\nexport type { ReloadScreenOptions, ReloadScreenImageSource } from './ReloadScreen.types';\n\n/**\n * @hidden\n */\nexport type UpdatesNativeStateRollback = {\n  // ISO date string with the rollback commit time\n  commitTime: string;\n};\n\n/**\n * The native state machine context, either read directly from a native module method,\n * or received in a state change event. Used internally by this module and not exported publicly.\n * @hidden\n */\nexport type UpdatesNativeStateMachineContext = {\n  isStartupProcedureRunning: boolean;\n  isUpdateAvailable: boolean;\n  isUpdatePending: boolean;\n  isChecking: boolean;\n  isDownloading: boolean;\n  isRestarting: boolean;\n  restartCount: number;\n  latestManifest?: Manifest;\n  downloadedManifest?: Manifest;\n  rollback?: UpdatesNativeStateRollback;\n  checkError?: Error;\n  downloadError?: Error;\n  lastCheckForUpdateTime?: Date;\n  sequenceNumber: number;\n};\n\n/**\n * @hidden\n */\nexport type UpdatesNativeStateChangeEvent = {\n  // Change event emitted by native\n  context: UpdatesNativeStateMachineContext;\n};\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-updates/ios/EXUpdates/Procedures/RelaunchProcedure.swift b/packages/expo-updates/ios/EXUpdates/Procedures/RelaunchProcedure.swift
+index eb58be12c16da5..88250dcb384dc3 100644
+--- a/packages/expo-updates/ios/EXUpdates/Procedures/RelaunchProcedure.swift
++++ b/packages/expo-updates/ios/EXUpdates/Procedures/RelaunchProcedure.swift
+@@ -72,6 +72,8 @@ final class RelaunchProcedure: StateMachineProcedure {
+           RCTReloadCommandSetBundleURL(self.launcherWithDatabase.launchAssetUrl)
+           RCTTriggerReloadCommandListeners(self.triggerReloadCommandListenersReason)
+ 
++          ReloadScreenManager.shared.show()
++
+           // TODO(wschurman): this was moved to after the RCT calls to unify reload
+           // code between JS API call and error recovery handler. double check that
+           // this is okay
+diff --git a/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadExceptions.swift b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadExceptions.swift
+new file mode 100644
+index 00000000000000..071bf68484dc4a
+--- /dev/null
++++ b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadExceptions.swift
+@@ -0,0 +1,7 @@
++import ExpoModulesCore
++
++internal final class ReloadOverlayException: Exception {
++  override var reason: String {
++    "Failed to create overlay window"
++  }
++}
+diff --git a/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenConfiguration.swift b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenConfiguration.swift
+new file mode 100644
+index 00000000000000..dc412697161649
+--- /dev/null
++++ b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenConfiguration.swift
+@@ -0,0 +1,97 @@
++// Copyright 2018-present 650 Industries. All rights reserved.
++
++import ExpoModulesCore
++
++private let defaultBackgroundColor = UIColor.white
++private let defaultSpinnerColor = UIColor.systemBlue
++private let defaultSpinnerSize = SpinnerSize.medium
++private let defaultImageResizeMode = ImageResizeMode.contain
++
++internal struct ReloadScreenOptions: Record {
++  @Field var backgroundColor: UIColor = .white
++  @Field var image: ReloadScreenImageSource?
++  @Field var imageResizeMode: ImageResizeMode = .contain
++  @Field var imageFullScreen: Bool = false
++  @Field var fade: Bool = false
++  @Field var spinner: SpinnerOptions?
++}
++
++internal struct ReloadScreenImageSource: Record {
++  @Field var url: URL?
++  @Field var width: Double?
++  @Field var height: Double?
++  @Field var scale: Double?
++}
++
++internal struct SpinnerOptions: Record {
++  @Field var enabled: Bool = true
++  @Field var color: UIColor = .systemBlue
++  @Field var size: SpinnerSize = .medium
++}
++
++struct ReloadScreenConfiguration {
++  let backgroundColor: UIColor
++  let image: ReloadScreenImageSource?
++  let imageResizeMode: ImageResizeMode
++  let imageFullScreen: Bool
++  let fade: Bool
++  let spinner: SpinnerConfiguration
++
++  init(options: ReloadScreenOptions?) {
++    let hasImage = options?.image != nil
++
++    backgroundColor = options?.backgroundColor ?? defaultBackgroundColor
++    image = options?.image
++    imageResizeMode = options?.imageResizeMode ?? defaultImageResizeMode
++    imageFullScreen = options?.imageFullScreen ?? false
++    fade = options?.fade ?? false
++    spinner = SpinnerConfiguration(
++      enabled: options?.spinner?.enabled ?? !hasImage,
++      color: options?.spinner?.color ?? defaultSpinnerColor,
++      size: options?.spinner?.size ?? defaultSpinnerSize
++    )
++  }
++}
++
++struct SpinnerConfiguration {
++  let enabled: Bool
++  let color: UIColor
++  let size: SpinnerSize
++}
++
++enum ImageResizeMode: String, Enumerable {
++  case contain
++  case cover
++  case center
++  case stretch
++
++  var contentMode: UIView.ContentMode {
++    switch self {
++    case .contain:
++      return .scaleAspectFit
++    case .cover:
++      return .scaleAspectFill
++    case .center:
++      return .center
++    case .stretch:
++      return .scaleToFill
++    }
++  }
++}
++
++enum SpinnerSize: String, Enumerable {
++  case small
++  case medium
++  case large
++
++  var spinnerSize: CGFloat {
++    switch self {
++    case .small:
++      return 24.0
++    case .medium:
++      return 48.0
++    case .large:
++      return 72.0
++    }
++  }
++}
+diff --git a/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenManager.swift b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenManager.swift
+new file mode 100644
+index 00000000000000..816682424177bc
+--- /dev/null
++++ b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenManager.swift
+@@ -0,0 +1,101 @@
++// Copyright 2018-present 650 Industries. All rights reserved.
++
++import ExpoModulesCore
++
++internal class ReloadScreenManager {
++  static let shared = ReloadScreenManager()
++
++  private var currentConfiguration: ReloadScreenConfiguration?
++  private var currentReloadScreen: ReloadScreenView?
++  private var overlayWindow: UIWindow?
++  private var isShowing = false
++
++  private init() {
++    NotificationCenter.default.addObserver(self, selector: #selector(hide), name: Notification.Name("RCTContentDidAppearNotification"), object: nil)
++  }
++
++  func setConfiguration(_ options: ReloadScreenOptions?) {
++    currentConfiguration = ReloadScreenConfiguration(options: options)
++  }
++
++  func show() {
++    if isShowing {
++      return
++    }
++
++    do {
++      try showReloadScreen()
++      isShowing = true
++    } catch {
++      isShowing = false
++    }
++  }
++
++  @objc
++  func hide() {
++    if !isShowing {
++      return
++    }
++
++    hideReloadScreen()
++    isShowing = false
++  }
++
++  private func showReloadScreen() throws {
++    let config = currentConfiguration ?? ReloadScreenConfiguration(options: nil)
++
++    if let windowScene = UIApplication.shared.connectedScenes
++      .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
++      overlayWindow = UIWindow(windowScene: windowScene)
++    } else {
++      overlayWindow = UIWindow(frame: UIScreen.main.bounds)
++    }
++
++    guard let window = overlayWindow else {
++      throw ReloadOverlayException()
++    }
++
++    window.windowLevel = UIWindow.Level.alert + 1
++    window.backgroundColor = UIColor.clear
++    window.isHidden = false
++
++    let reloadScreenView = ReloadScreenView(frame: window.bounds)
++    reloadScreenView.updateConfiguration(config)
++
++    let viewController = UIViewController()
++    viewController.view = reloadScreenView
++
++    window.rootViewController = viewController
++    window.makeKeyAndVisible()
++
++    currentReloadScreen = reloadScreenView
++  }
++
++  private func hideReloadScreen() {
++    guard let window = overlayWindow else {
++      return
++    }
++
++    let config = currentConfiguration ?? ReloadScreenConfiguration(options: nil)
++
++    if config.fade {
++      UIView.animate(withDuration: 0.3) {
++        window.alpha = 0.0
++      } completion: { _ in
++        window.isHidden = true
++        window.rootViewController = nil
++        self.overlayWindow = nil
++        self.currentReloadScreen = nil
++      }
++    } else {
++      window.isHidden = true
++      window.rootViewController = nil
++      overlayWindow = nil
++      currentReloadScreen = nil
++    }
++  }
++
++  deinit {
++    NotificationCenter.default.removeObserver(self)
++  }
++}
+diff --git a/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenView.swift b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenView.swift
+new file mode 100644
+index 00000000000000..a865eb2f61a5d9
+--- /dev/null
++++ b/packages/expo-updates/ios/EXUpdates/ReloadScreen/ReloadScreenView.swift
+@@ -0,0 +1,171 @@
++// Copyright 2018-present 650 Industries. All rights reserved.
++
++import UIKit
++
++public class ReloadScreenView: UIView {
++  private var activityIndicator: UIActivityIndicatorView?
++  private var imageView: UIImageView?
++  private var currentConfiguration: ReloadScreenConfiguration?
++
++  override init(frame: CGRect) {
++    super.init(frame: frame)
++    setupView()
++  }
++
++  @available(*, unavailable)
++  required init?(coder: NSCoder) {
++    fatalError("Not implemented")
++  }
++
++  private func setupView() {
++    autoresizingMask = [.flexibleWidth, .flexibleHeight]
++    backgroundColor = UIColor.clear
++  }
++
++  func updateConfiguration(_ configuration: ReloadScreenConfiguration) {
++    currentConfiguration = configuration
++    backgroundColor = if configuration.imageFullScreen {
++      UIColor.clear
++    } else {
++      configuration.backgroundColor
++    }
++
++    subviews.forEach { $0.removeFromSuperview() }
++
++    if let imageSource = configuration.image {
++      addImageView(configuration: configuration, imageSource: imageSource)
++    }
++
++    if configuration.spinner.enabled {
++      addSpinner(configuration: configuration.spinner)
++    }
++  }
++
++  private func addImageView(configuration: ReloadScreenConfiguration, imageSource: ReloadScreenImageSource) {
++    guard let url = imageSource.url else {
++      return
++    }
++
++    imageView = UIImageView()
++    guard let imageView else {
++      return
++    }
++
++    imageView.contentMode = configuration.imageResizeMode.contentMode
++    imageView.clipsToBounds = true
++    imageView.translatesAutoresizingMaskIntoConstraints = false
++
++    addSubview(imageView)
++
++    if configuration.imageFullScreen {
++      addViewConstraints(for: imageView)
++    } else if let width = imageSource.width, let height = imageSource.height, width > 0 && height > 0 {
++      let scale = imageSource.scale ?? 1.0
++      let scaledWidth = width * scale
++      let scaledHeight = height * scale
++
++      NSLayoutConstraint.activate([
++        imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
++        imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
++        imageView.widthAnchor.constraint(equalToConstant: scaledWidth),
++        imageView.heightAnchor.constraint(equalToConstant: scaledHeight)
++      ])
++    } else {
++      addViewConstraints(for: imageView)
++    }
++
++    loadImage(source: url, into: imageView)
++  }
++
++  private func addViewConstraints(for imageView: UIImageView) {
++    NSLayoutConstraint.activate([
++      imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
++      imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
++      imageView.topAnchor.constraint(equalTo: topAnchor),
++      imageView.bottomAnchor.constraint(equalTo: bottomAnchor)
++    ])
++  }
++
++  private func addSpinner(configuration: SpinnerConfiguration) {
++    activityIndicator = UIActivityIndicatorView()
++    guard let activityIndicator = activityIndicator else {
++      return
++    }
++    activityIndicator.style = switch configuration.size {
++    case .large:
++      .large
++    case .medium:
++      .medium
++    case .small:
++      .medium
++    }
++
++    activityIndicator.color = configuration.color
++    activityIndicator.translatesAutoresizingMaskIntoConstraints = false
++
++    addSubview(activityIndicator)
++
++    NSLayoutConstraint.activate([
++      activityIndicator.centerXAnchor.constraint(equalTo: centerXAnchor),
++      activityIndicator.centerYAnchor.constraint(equalTo: centerYAnchor),
++      activityIndicator.widthAnchor.constraint(equalToConstant: configuration.size.spinnerSize),
++      activityIndicator.heightAnchor.constraint(equalToConstant: configuration.size.spinnerSize)
++    ])
++
++    activityIndicator.startAnimating()
++  }
++
++  private func loadImage(source: URL, into imageView: UIImageView) {
++    Task {
++      await loadImageFromURL(source, into: imageView)
++    }
++  }
++
++  private func loadImageFromURL(_ url: URL, into imageView: UIImageView) async {
++    do {
++      let image: UIImage?
++
++      switch url.scheme {
++      case "http", "https":
++        let (data, _) = try await URLSession.shared.data(from: url)
++        image = UIImage(data: data)
++      case "file":
++        image = UIImage(contentsOfFile: url.path)
++      case "data":
++        let data = try Data(contentsOf: url)
++        image = UIImage(data: data)
++      default:
++        image = nil
++      }
++
++      guard let image else {
++        await MainActor.run {
++          self.handleImageLoadFailure()
++        }
++        return
++      }
++
++      await MainActor.run {
++        imageView.image = image
++      }
++    } catch {
++      await MainActor.run {
++        self.handleImageLoadFailure()
++      }
++    }
++  }
++
++  private func handleImageLoadFailure() {
++    imageView?.isHidden = true
++
++    if let config = currentConfiguration {
++      backgroundColor = config.backgroundColor
++      let spinnerConfig = SpinnerConfiguration(
++        enabled: true,
++        color: config.spinner.color,
++        size: config.spinner.size
++      )
++      addSpinner(configuration: spinnerConfig)
++    }
++  }
++}
+diff --git a/packages/expo-updates/ios/EXUpdates/UpdatesModule.swift b/packages/expo-updates/ios/EXUpdates/UpdatesModule.swift
+index f197d374201b72..596d13ad389866 100644
+--- a/packages/expo-updates/ios/EXUpdates/UpdatesModule.swift
++++ b/packages/expo-updates/ios/EXUpdates/UpdatesModule.swift
+@@ -35,7 +35,8 @@ public final class UpdatesModule: Module, UpdatesEventManagerObserver {
+       AppController.removeUpdatesEventManagerObserver()
+     }
+ 
+-    AsyncFunction("reload") { (promise: Promise) in
++    AsyncFunction("reload") { (options: ReloadScreenOptions?, promise: Promise) in
++      ReloadScreenManager.shared.setConfiguration(options)
+       AppController.sharedInstance.requestRelaunch {
+         promise.resolve(nil)
+       } error: { error in
+@@ -144,6 +145,19 @@ public final class UpdatesModule: Module, UpdatesEventManagerObserver {
+     Function("setUpdateURLAndRequestHeadersOverride") { (configOverride: UpdatesConfigOverrideParam?) in
+       try AppController.sharedInstance.setUpdateURLAndRequestHeadersOverride(configOverride?.toUpdatesConfigOverride())
+     }
++
++    AsyncFunction("showReloadScreen") { (options: ReloadScreenOptions?) in
++#if DEBUG
++      ReloadScreenManager.shared.setConfiguration(options)
++      ReloadScreenManager.shared.show()
++#endif
++    }.runOnQueue(.main)
++
++    AsyncFunction("hideReloadScreen") {
++#if DEBUG
++      ReloadScreenManager.shared.hide()
++#endif
++    }.runOnQueue(.main)
+   }
+ 
+   public func onStateMachineContextEvent(context: UpdatesStateContext) {
+diff --git a/packages/expo-updates/package.json b/packages/expo-updates/package.json
+index 1475c2c24cd79c..0d4dffd3fa288b 100644
+--- a/packages/expo-updates/package.json
++++ b/packages/expo-updates/package.json
+@@ -67,6 +67,7 @@
+   },
+   "peerDependencies": {
+     "expo": "*",
+-    "react": "*"
++    "react": "*",
++    "react-native": "*"
+   }
+ }
+diff --git a/packages/expo-updates/src/ExpoUpdatesModule.types.ts b/packages/expo-updates/src/ExpoUpdatesModule.types.ts
+index b8cd06a983eaea..73955dc1fc26c5 100644
+--- a/packages/expo-updates/src/ExpoUpdatesModule.types.ts
++++ b/packages/expo-updates/src/ExpoUpdatesModule.types.ts
+@@ -10,6 +10,7 @@ import {
+   UpdateFetchResultSuccess,
+   UpdatesLogEntry,
+   UpdatesNativeStateMachineContext,
++  ReloadScreenOptions,
+ } from './Updates.types';
+ 
+ export type UpdatesEvents = {
+@@ -112,7 +113,7 @@ export declare class ExpoUpdatesModule
+     rollbackString?: string;
+   };
+ 
+-  reload: () => Promise<void>;
++  reload: (options?: ReloadScreenOptions) => Promise<void>;
+   checkForUpdateAsync: () => Promise<
+     | UpdateCheckResultRollBack
+     | (Omit<UpdateCheckResultAvailable, 'manifest'> &
+diff --git a/packages/expo-updates/src/ReloadScreen.types.ts b/packages/expo-updates/src/ReloadScreen.types.ts
+new file mode 100644
+index 00000000000000..45668a927d882c
+--- /dev/null
++++ b/packages/expo-updates/src/ReloadScreen.types.ts
+@@ -0,0 +1,80 @@
++/**
++ * Image source that can be used for the reload screen.
++ */
++export interface ReloadScreenImageSource {
++  /**
++   * URL to the image.
++   */
++  url?: string;
++
++  /**
++   * Width of the image in pixels.
++   */
++  width?: number;
++
++  /**
++   * Height of the image in pixels.
++   */
++  height?: number;
++
++  /**
++   * Scale factor of the image.
++   */
++  scale?: number;
++}
++
++/**
++ * Configuration options for customizing the reload screen appearance.
++ */
++export interface ReloadScreenOptions {
++  /**
++   * Background color for the reload screen.
++   * @default '#ffffff'
++   */
++  backgroundColor?: string;
++
++  /**
++   * Custom image to display on the reload screen.
++   */
++  image?: string | number | ReloadScreenImageSource;
++
++  /**
++   * How to resize the custom image to fit the screen.
++   * @default 'contain'
++   */
++  imageResizeMode?: 'contain' | 'cover' | 'center' | 'stretch';
++
++  /**
++   * Whether to display the image at the full screen size.
++   * @default false
++   */
++  imageFullScreen?: boolean;
++
++  /**
++   * Whether to fade out the reload screen when hiding.
++   * @default false
++   */
++  fade?: boolean;
++
++  /**
++   * Configuration for the loading spinner.
++   */
++  spinner?: {
++    /**
++     * Whether to show the loading spinner.
++     * @default true (if no image is provided), false (if image is provided)
++     */
++    enabled?: boolean;
++
++    /**
++     * Color of the loading spinner.
++     */
++    color?: string;
++
++    /**
++     * Size of the loading spinner.
++     * @default 'medium'
++     */
++    size?: 'small' | 'medium' | 'large';
++  };
++}
+diff --git a/packages/expo-updates/src/Updates.ts b/packages/expo-updates/src/Updates.ts
+index 153f328b83fce2..5b8e86d33dfca0 100644
+--- a/packages/expo-updates/src/Updates.ts
++++ b/packages/expo-updates/src/Updates.ts
+@@ -1,4 +1,5 @@
+ import { CodedError } from 'expo-modules-core';
++import { Image } from 'react-native';
+ 
+ import ExpoUpdates from './ExpoUpdates';
+ import { UpdatesCheckAutomaticallyNativeValue } from './ExpoUpdatesModule.types';
+@@ -9,6 +10,8 @@ import {
+   UpdateFetchResult,
+   UpdatesCheckAutomaticallyValue,
+   UpdatesLogEntry,
++  ReloadScreenOptions,
++  ReloadScreenImageSource,
+ } from './Updates.types';
+ 
+ /**
+@@ -143,6 +146,42 @@ const manualUpdatesInstructions =
+   'To test usage of the expo-updates JS API in your app, make a release build with `npx expo run:ios --configuration Release` or ' +
+   '`npx expo run:android --variant Release`.';
+ 
++function resolveImageSource(
++  source?: string | number | ReloadScreenImageSource | null
++): ReloadScreenImageSource | null {
++  if (typeof source === 'string') {
++    return { url: source };
++  }
++  if (typeof source === 'number') {
++    const resolved = Image.resolveAssetSource(source);
++    if (resolved) {
++      return {
++        url: resolved.uri,
++        width: resolved.width,
++        height: resolved.height,
++        scale: resolved.scale,
++      };
++    }
++    return null;
++  }
++  if (typeof source === 'object' && source !== null) {
++    return source;
++  }
++  return null;
++}
++
++function resolveReloadScreenOptions(options: ReloadScreenOptions): ReloadScreenOptions {
++  if (!options.image) {
++    return options;
++  }
++
++  const resolvedImage = resolveImageSource(options.image);
++  return {
++    ...options,
++    image: resolvedImage || undefined,
++  };
++}
++
+ /**
+  * Instructs the app to reload using the most recently downloaded version. This is useful for
+  * triggering a newly downloaded update to launch without the user needing to manually restart the
+@@ -169,7 +208,9 @@ const manualUpdatesInstructions =
+  * `ReactApplication` you want to reload, or call `UpdatesController.setReactNativeHost` with the
+  * proper instance of `ReactNativeHost`.
+  */
+-export async function reloadAsync(): Promise<void> {
++export async function reloadAsync(options?: {
++  reloadScreenOptions?: ReloadScreenOptions;
++}): Promise<void> {
+   if (
+     (__DEV__ || isUsingDeveloperTool) &&
+     !shouldDeferToNativeForAPIMethodAvailabilityInDevelopment
+@@ -179,6 +220,10 @@ export async function reloadAsync(): Promise<void> {
+       `You cannot use the Updates module in development mode in a production app. ${manualUpdatesInstructions}`
+     );
+   }
++  if (options?.reloadScreenOptions) {
++    const resolvedOptions = resolveReloadScreenOptions(options.reloadScreenOptions);
++    return await ExpoUpdates.reload(resolvedOptions);
++  }
+   await ExpoUpdates.reload();
+ }
+ 
+@@ -318,3 +363,60 @@ export function setUpdateURLAndRequestHeadersOverride(
+ ): void {
+   ExpoUpdates.setUpdateURLAndRequestHeadersOverride(configOverride);
+ }
++
++/**
++ * Shows the reload screen with customizable appearance. This is primarily useful for testing
++ * how the reload screen will appear to users during app reloads and is only available in
++ * debug builds of the app. The reload screen can be hidden by calling `hideReloadScreen()`.
++ *
++ *
++ * @param options Configuration options for customizing the reload screen appearance.
++ *
++ * @hidden exposed for testing
++ * @example
++ * ```ts
++ * import * as Updates from 'expo-updates';
++ *
++ * // Show the reload screen with custom styling for testing
++ * await Updates.showReloadScreen({
++ *   reloadScreenOptions: {
++ *     backgroundColor: '#1a1a1a',
++ *     spinner: {
++ *       color: '#ffffff'
++ *     }
++ *   }
++ * });
++ *
++ * // Hide it after 3 seconds
++ * setTimeout(async () => {
++ *   await Updates.hideReloadScreen();
++ * }, 3000);
++ *
++ * // Test with a custom image
++ * await Updates.showReloadScreen({
++ *   reloadScreenOptions: {
++ *     backgroundColor: '#ffffff',
++ *     image: require('./assets/loading.png'),
++ *     imageResizeMode: 'contain'
++ *   }
++ * });
++ * ```
++ */
++export async function showReloadScreen(options?: {
++  reloadScreenOptions?: ReloadScreenOptions;
++}): Promise<void> {
++  if (options?.reloadScreenOptions) {
++    const resolvedOptions = resolveReloadScreenOptions(options.reloadScreenOptions);
++    return ExpoUpdates.showReloadScreen(resolvedOptions);
++  }
++  return ExpoUpdates.showReloadScreen();
++}
++
++/**
++ *
++ * @hidden exposed for testing
++ * @return A promise that resolves when the reload screen is hidden.
++ */
++export async function hideReloadScreen(): Promise<void> {
++  return ExpoUpdates.hideReloadScreen();
++}
+diff --git a/packages/expo-updates/src/Updates.types.ts b/packages/expo-updates/src/Updates.types.ts
+index 1c7497f16704e1..d3328801ad8704 100644
+--- a/packages/expo-updates/src/Updates.types.ts
++++ b/packages/expo-updates/src/Updates.types.ts
+@@ -260,6 +260,8 @@ export enum UpdatesCheckAutomaticallyValue {
+  */
+ export type LocalAssets = Record<string, string>;
+ 
++export type { ReloadScreenOptions, ReloadScreenImageSource } from './ReloadScreen.types';
++
+ /**
+  * @hidden
+  */

@@ -1,0 +1,450 @@
+diff --git a/crates/next-core/src/next_config.rs b/crates/next-core/src/next_config.rs
+index 32aa25f75dee..690b0653dd41 100644
+--- a/crates/next-core/src/next_config.rs
++++ b/crates/next-core/src/next_config.rs
+@@ -801,8 +801,9 @@ pub struct ExperimentalConfig {
+     global_not_found: Option<bool>,
+     /// Defaults to false in development mode, true in production mode.
+     turbopack_remove_unused_exports: Option<bool>,
+-    /// Devtool option for the segment explorer.
+-    devtool_segment_explorer: Option<bool>,
++    /// Devtool option for new panel UI.
++    #[serde(rename = "devtoolNewPanelUI")]
++    devtool_new_panel_ui: Option<bool>,
+ }
+ 
+ #[derive(
+diff --git a/packages/next/src/build/define-env.ts b/packages/next/src/build/define-env.ts
+index f6f7a175a2c6..3a7b9a84373e 100644
+--- a/packages/next/src/build/define-env.ts
++++ b/packages/next/src/build/define-env.ts
+@@ -298,9 +298,6 @@ export function getDefineEnv({
+           ),
+         }
+       : {}),
+-    'process.env.__NEXT_DEVTOOL_SEGMENT_EXPLORER':
+-      // Enable segment explorer in devtools
+-      isDevToolPanelUIEnabled || !!config.experimental.devtoolSegmentExplorer,
+     'process.env.__NEXT_DEVTOOL_NEW_PANEL_UI': isDevToolPanelUIEnabled,
+ 
+     // The devtools need to know whether or not to show an option to clear the
+diff --git a/packages/next/src/build/templates/app-page.ts b/packages/next/src/build/templates/app-page.ts
+index 91347999495a..336c432ef604 100644
+--- a/packages/next/src/build/templates/app-page.ts
++++ b/packages/next/src/build/templates/app-page.ts
+@@ -484,8 +484,7 @@ export async function handler(
+           deploymentId: nextConfig.deploymentId,
+           enableTainting: nextConfig.experimental.taint,
+           htmlLimitedBots: nextConfig.htmlLimitedBots,
+-          devtoolSegmentExplorer:
+-            nextConfig.experimental.devtoolSegmentExplorer,
++          devtoolNewPanelUI: nextConfig.experimental.devtoolNewPanelUI,
+           reactMaxHeadersLength: nextConfig.reactMaxHeadersLength,
+ 
+           multiZoneDraftMode,
+diff --git a/packages/next/src/build/webpack/loaders/next-edge-ssr-loader/render.ts b/packages/next/src/build/webpack/loaders/next-edge-ssr-loader/render.ts
+index c45746066b89..b433dc304afd 100644
+--- a/packages/next/src/build/webpack/loaders/next-edge-ssr-loader/render.ts
++++ b/packages/next/src/build/webpack/loaders/next-edge-ssr-loader/render.ts
+@@ -100,7 +100,7 @@ export function getRender({
+         serverActionsManifest,
+         serverActions,
+         nextFontManifest,
+-        devtoolSegmentExplorer: config.experimental.devtoolSegmentExplorer,
++        devtoolNewPanelUI: config.experimental.devtoolNewPanelUI,
+       },
+       renderToHTML,
+       incrementalCacheHandler,
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/devtools-indicator.tsx b/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/devtools-indicator.tsx
+index 0cf967371d82..9e1abb07d8db 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/devtools-indicator.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/devtools-indicator.tsx
+@@ -56,7 +56,7 @@ export function DevToolsIndicator({
+           [vertical]: `${INDICATOR_PADDING}px`,
+           [horizontal]: `${INDICATOR_PADDING}px`,
+           visibility:
+-            state.isDevToolsPanelOpen || state.isErrorOverlayOpen
++            state.isDevToolsPanelOpen && !state.isErrorOverlayOpen
+               ? 'hidden'
+               : 'visible',
+         } as CSSProperties
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/devtools-panel/devtools-panel.tsx b/packages/next/src/next-devtools/dev-overlay/components/devtools-panel/devtools-panel.tsx
+index 5cc6113691a3..8a8f9567f06b 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/devtools-panel/devtools-panel.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/devtools-panel/devtools-panel.tsx
+@@ -159,7 +159,8 @@ export function DevToolsPanel({
+                 >
+                   <div data-nextjs-devtools-panel-header-tab-group>
+                     <button
+-                      data-nextjs-devtools-panel-header-tab={
++                      data-nextjs-devtools-panel-header-tab="issues"
++                      data-nextjs-devtools-panel-header-tab-active={
+                         activeTab === 'issues'
+                       }
+                       onClick={() => setActiveTab('issues')}
+@@ -174,7 +175,8 @@ export function DevToolsPanel({
+                       ) : null}
+                     </button>
+                     <button
+-                      data-nextjs-devtools-panel-header-tab={
++                      data-nextjs-devtools-panel-header-tab="route"
++                      data-nextjs-devtools-panel-header-tab-active={
+                         activeTab === 'route'
+                       }
+                       onClick={() => setActiveTab('route')}
+@@ -182,7 +184,8 @@ export function DevToolsPanel({
+                       Route Info
+                     </button>
+                     <button
+-                      data-nextjs-devtools-panel-header-tab={
++                      data-nextjs-devtools-panel-header-tab="settings"
++                      data-nextjs-devtools-panel-header-tab-active={
+                         activeTab === 'settings'
+                       }
+                       onClick={() => setActiveTab('settings')}
+@@ -349,7 +352,7 @@ export const DEVTOOLS_PANEL_STYLES = css`
+     }
+   }
+ 
+-  [data-nextjs-devtools-panel-header-tab='true'] {
++  [data-nextjs-devtools-panel-header-tab-active='true'] {
+     color: var(--color-gray-1000);
+     background-color: var(--color-gray-100);
+   }
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-indicator.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-indicator.tsx
+index f88d23f8ed7a..b3ce1ead5384 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-indicator.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-indicator.tsx
+@@ -26,7 +26,6 @@ import {
+   type DevToolsScale,
+ } from './dev-tools-info/preferences'
+ import { Draggable } from './draggable'
+-import { SegmentsExplorer } from './dev-tools-info/segments-explorer'
+ 
+ // TODO: add E2E tests to cover different scenarios
+ 
+@@ -84,7 +83,6 @@ const OVERLAYS = {
+   Turbo: 'turbo',
+   Route: 'route',
+   Preferences: 'preferences',
+-  SegmentExplorer: 'segment-explorer',
+ } as const
+ 
+ export type Overlays = (typeof OVERLAYS)[keyof typeof OVERLAYS]
+@@ -130,7 +128,6 @@ function DevToolsPopover({
+   const isTurbopackInfoOpen = open === OVERLAYS.Turbo
+   const isRouteInfoOpen = open === OVERLAYS.Route
+   const isPreferencesOpen = open === OVERLAYS.Preferences
+-  const isSegmentExplorerOpen = open === OVERLAYS.SegmentExplorer
+ 
+   const { mounted: menuMounted, rendered: menuRendered } = useDelayedRender(
+     isMenuOpen,
+@@ -220,7 +217,9 @@ function DevToolsPopover({
+   }
+ 
+   function toggleErrorOverlay() {
+-    dispatch({ type: ACTION_ERROR_OVERLAY_TOGGLE })
++    if (!process.env.__NEXT_DEVTOOL_NEW_PANEL_UI) {
++      dispatch({ type: ACTION_ERROR_OVERLAY_TOGGLE })
++    }
+   }
+ 
+   function closeToRootMenu() {
+@@ -336,19 +335,6 @@ function DevToolsPopover({
+         setScale={setScale}
+       />
+ 
+-      {/* Page Route Info */}
+-      {process.env.__NEXT_DEVTOOL_SEGMENT_EXPLORER ? (
+-        <SegmentsExplorer
+-          isOpen={isSegmentExplorerOpen}
+-          close={closeToRootMenu}
+-          triggerRef={triggerRef}
+-          style={popover}
+-          routerType={routerType}
+-          // dummy page for legacy segment explorer, will be removed in the future
+-          page={''}
+-        />
+-      ) : null}
+-
+       {/* Dropdown Menu */}
+       {menuMounted && (
+         <div
+@@ -414,15 +400,6 @@ function DevToolsPopover({
+                 onClick={() => setOpen(OVERLAYS.Preferences)}
+                 index={isTurbopack ? 2 : 3}
+               />
+-              {process.env.__NEXT_DEVTOOL_SEGMENT_EXPLORER ? (
+-                <MenuItem
+-                  data-segment-explorer
+-                  label="Route Info"
+-                  value={<ChevronRight />}
+-                  onClick={() => setOpen(OVERLAYS.SegmentExplorer)}
+-                  index={isTurbopack ? 3 : 4}
+-                />
+-              ) : null}
+             </div>
+           </Context.Provider>
+         </div>
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-info/segments-explorer.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-info/segments-explorer.tsx
+deleted file mode 100644
+index 526bb89ff93d..000000000000
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/dev-tools-indicator/dev-tools-info/segments-explorer.tsx
++++ /dev/null
+@@ -1,27 +0,0 @@
+-import { PageSegmentTree } from '../../../overview/segment-explorer'
+-import { DevToolsInfo, type DevToolsInfoPropsCore } from './dev-tools-info'
+-
+-export function SegmentsExplorer({
+-  routerType,
+-  page,
+-  ...props
+-}: DevToolsInfoPropsCore &
+-  React.HTMLProps<HTMLDivElement> & {
+-    routerType: 'app' | 'pages'
+-    page: string
+-  }) {
+-  const isAppRouter = routerType === 'app'
+-  return (
+-    <DevToolsInfo title="Route Info" {...props}>
+-      <div data-nextjs-segments-explorer>
+-        <PageSegmentTree isAppRouter={isAppRouter} page={page} />
+-      </div>
+-    </DevToolsInfo>
+-  )
+-}
+-
+-export const SEGMENTS_EXPLORER_STYLES = `
+-  [data-nextjs-segments-explorer] {
+-    margin: -12px -8px;
+-  }
+-`
+diff --git a/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx b/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx
+index 3d5f19b2267f..e66c2bd5a42e 100644
+--- a/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx
+@@ -36,7 +36,6 @@ import { DEVTOOLS_PANEL_TAB_ISSUES_CONTENT_STYLES } from '../components/devtools
+ import { ISSUE_FEEDBACK_BUTTON_STYLES } from '../components/errors/error-overlay-toolbar/issue-feedback-button'
+ import { ERROR_CONTENT_SKELETON_STYLES } from '../container/runtime-error/error-content-skeleton'
+ import { SEGMENTS_EXPLORER_TAB_STYLES } from '../components/devtools-panel/devtools-panel-tab/segments-explorer-tab'
+-import { SEGMENTS_EXPLORER_STYLES } from '../components/errors/dev-tools-indicator/dev-tools-info/segments-explorer'
+ import { DEVTOOLS_PANEL_TAB_ISSUES_CONTENT_LAYOUT_STYLES } from '../components/devtools-panel/devtools-panel-tab/issues-tab/issues-tab-content-layout'
+ import { DEVTOOLS_PANEL_TAB_ISSUES_EMPTY_CONTENT_STYLES } from '../components/devtools-panel/devtools-panel-tab/issues-tab/issues-tab-empty-content'
+ 
+@@ -68,7 +67,6 @@ export function ComponentStyles() {
+         ${DEV_TOOLS_INFO_TURBOPACK_INFO_STYLES}
+         ${DEV_TOOLS_INFO_ROUTE_INFO_STYLES}
+         ${DEV_TOOLS_INFO_USER_PREFERENCES_STYLES}
+-        ${SEGMENTS_EXPLORER_STYLES}
+         ${DEV_TOOLS_INFO_RENDER_FILES_STYLES}
+         ${FADER_STYLES}
+         ${DEVTOOLS_PANEL_STYLES}
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index e9b5bed17c6d..4641fd7546de 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -3977,7 +3977,7 @@ const getGlobalErrorStyles = async (
+       dir,
+       globalErrorModule?.[1]
+     )
+-    if (ctx.renderOpts.devtoolSegmentExplorer && globalErrorModulePath) {
++    if (ctx.renderOpts.devtoolNewPanelUI && globalErrorModulePath) {
+       const SegmentViewNode = ctx.componentMod.SegmentViewNode
+       globalErrorStyles = (
+         // This will be rendered next to GlobalError component under ErrorBoundary,
+diff --git a/packages/next/src/server/app-render/create-component-tree.tsx b/packages/next/src/server/app-render/create-component-tree.tsx
+index 94f465269c49..f071a4825fc3 100644
+--- a/packages/next/src/server/app-render/create-component-tree.tsx
++++ b/packages/next/src/server/app-render/create-component-tree.tsx
+@@ -396,8 +396,7 @@ async function createComponentTreeInternal({
+   // Resolve the segment param
+   const actualSegment = segmentParam ? segmentParam.treeSegment : segment
+   const isSegmentViewEnabled =
+-    process.env.NODE_ENV === 'development' &&
+-    ctx.renderOpts.devtoolSegmentExplorer
++    process.env.NODE_ENV === 'development' && ctx.renderOpts.devtoolNewPanelUI
+   const dir =
+     process.env.NEXT_RUNTIME === 'edge'
+       ? process.env.__NEXT_EDGE_PROJECT_DIR!
+@@ -1084,8 +1083,7 @@ async function createBoundaryConventionElement({
+   tree: LoaderTree
+ }) {
+   const isSegmentViewEnabled =
+-    process.env.NODE_ENV === 'development' &&
+-    ctx.renderOpts.devtoolSegmentExplorer
++    process.env.NODE_ENV === 'development' && ctx.renderOpts.devtoolNewPanelUI
+   const dir =
+     process.env.NEXT_RUNTIME === 'edge'
+       ? process.env.__NEXT_EDGE_PROJECT_DIR!
+diff --git a/packages/next/src/server/app-render/types.ts b/packages/next/src/server/app-render/types.ts
+index 95737918aa6e..a479f5f734c8 100644
+--- a/packages/next/src/server/app-render/types.ts
++++ b/packages/next/src/server/app-render/types.ts
+@@ -280,9 +280,9 @@ export interface RenderOptsPartial {
+   allowEmptyStaticShell?: boolean
+ 
+   /**
+-   * next config experimental.devtoolSegmentExplorer
++   * next config experimental.devtoolNewPanelUI
+    */
+-  devtoolSegmentExplorer?: boolean
++  devtoolNewPanelUI?: boolean
+ }
+ 
+ export type RenderOpts = LoadComponentsReturnType<AppPageModule> &
+diff --git a/packages/next/src/server/base-server.ts b/packages/next/src/server/base-server.ts
+index 5611478f0cae..4edbfb80a6f0 100644
+--- a/packages/next/src/server/base-server.ts
++++ b/packages/next/src/server/base-server.ts
+@@ -612,8 +612,7 @@ export default abstract class Server<
+       onInstrumentationRequestError:
+         this.instrumentationOnRequestError.bind(this),
+       reactMaxHeadersLength: this.nextConfig.reactMaxHeadersLength,
+-      devtoolSegmentExplorer:
+-        this.nextConfig.experimental.devtoolSegmentExplorer,
++      devtoolNewPanelUI: this.nextConfig.experimental.devtoolNewPanelUI,
+     }
+ 
+     // Initialize next/config with the environment configuration
+diff --git a/packages/next/src/server/config-schema.ts b/packages/next/src/server/config-schema.ts
+index 12cb82fad11a..071d3eb42af3 100644
+--- a/packages/next/src/server/config-schema.ts
++++ b/packages/next/src/server/config-schema.ts
+@@ -500,7 +500,6 @@ export const configSchema: zod.ZodType<NextConfig> = z.lazy(() =>
+           })
+           .optional(),
+         globalNotFound: z.boolean().optional(),
+-        devtoolSegmentExplorer: z.boolean().optional(),
+         devtoolNewPanelUI: z.boolean().optional(),
+       })
+       .optional(),
+diff --git a/packages/next/src/server/config-shared.ts b/packages/next/src/server/config-shared.ts
+index 3279341797b0..dae848c4b341 100644
+--- a/packages/next/src/server/config-shared.ts
++++ b/packages/next/src/server/config-shared.ts
+@@ -736,11 +736,6 @@ export interface ExperimentalConfig {
+    */
+   globalNotFound?: boolean
+ 
+-  /**
+-   * Enable segment viewer for the app directory in Next.js DevTools.
+-   */
+-  devtoolSegmentExplorer?: boolean
+-
+   /**
+    * Enable new panel UI for the Next.js DevTools.
+    */
+@@ -1456,7 +1451,6 @@ export const defaultConfig = {
+     useCache: undefined,
+     slowModuleDetection: undefined,
+     globalNotFound: false,
+-    devtoolSegmentExplorer: false,
+   },
+   htmlLimitedBots: undefined,
+   bundlePagesRouterDependencies: false,
+diff --git a/test/development/app-dir/segment-explorer-globals/next.config.js b/test/development/app-dir/segment-explorer-globals/next.config.js
+index 8a5b5c187d4e..8000cd58afdf 100644
+--- a/test/development/app-dir/segment-explorer-globals/next.config.js
++++ b/test/development/app-dir/segment-explorer-globals/next.config.js
+@@ -3,7 +3,7 @@
+  */
+ const nextConfig = {
+   experimental: {
+-    devtoolSegmentExplorer: true,
++    devtoolNewPanelUI: true,
+     authInterrupts: true,
+     globalNotFound: true,
+   },
+diff --git a/test/development/app-dir/segment-explorer-globals/segment-explorer-globals.test.ts b/test/development/app-dir/segment-explorer-globals/segment-explorer-globals.test.ts
+index 136a25cbc1ce..ee2882eaf940 100644
+--- a/test/development/app-dir/segment-explorer-globals/segment-explorer-globals.test.ts
++++ b/test/development/app-dir/segment-explorer-globals/segment-explorer-globals.test.ts
+@@ -3,11 +3,12 @@ import { openDevToolsIndicatorPopover } from 'next-test-utils'
+ import { Playwright } from 'next-webdriver'
+ 
+ async function getSegmentExplorerContent(browser: Playwright) {
+-  // open the devtool button
+   await openDevToolsIndicatorPopover(browser)
+ 
+-  // open the segment explorer
+-  await browser.elementByCss('[data-segment-explorer]').click()
++  // open segment explorer tab
++  await browser
++    .elementByCss('[data-nextjs-devtools-panel-header-tab="route"]')
++    .click()
+ 
+   //  wait for the segment explorer to be visible
+   await browser.waitForElementByCss('[data-nextjs-devtool-segment-explorer]')
+diff --git a/test/development/app-dir/segment-explorer/next.config.js b/test/development/app-dir/segment-explorer/next.config.js
+index 6a4b4a634d56..07b7054c79bc 100644
+--- a/test/development/app-dir/segment-explorer/next.config.js
++++ b/test/development/app-dir/segment-explorer/next.config.js
+@@ -3,7 +3,7 @@
+  */
+ const nextConfig = {
+   experimental: {
+-    devtoolSegmentExplorer: true,
++    devtoolNewPanelUI: true,
+     authInterrupts: true,
+   },
+ }
+diff --git a/test/development/app-dir/segment-explorer/segment-explorer.test.ts b/test/development/app-dir/segment-explorer/segment-explorer.test.ts
+index ce472236f543..4ded56ff20d0 100644
+--- a/test/development/app-dir/segment-explorer/segment-explorer.test.ts
++++ b/test/development/app-dir/segment-explorer/segment-explorer.test.ts
+@@ -6,8 +6,10 @@ async function getSegmentExplorerContent(browser: Playwright) {
+   // open the devtool button
+   await openDevToolsIndicatorPopover(browser)
+ 
+-  // open the segment explorer
+-  await browser.elementByCss('[data-segment-explorer]').click()
++  // open segment explorer tab
++  await browser
++    .elementByCss('[data-nextjs-devtools-panel-header-tab="route"]')
++    .click()
+ 
+   //  wait for the segment explorer to be visible
+   await browser.waitForElementByCss('[data-nextjs-devtool-segment-explorer]')
+@@ -86,6 +88,7 @@ describe('segment-explorer', () => {
+     await browser.elementByCss('[href="/soft-navigation/b"]').click()
+     await retry(async () => {
+       expect(await browser.elementByCss('body').text()).toContain('Page B')
++      expect(await browser.url()).toBe(`${next.url}/soft-navigation/b`)
+     })
+ 
+     expect(await getSegmentExplorerContent(browser)).toMatchInlineSnapshot(`
+diff --git a/test/lib/next-test-utils.ts b/test/lib/next-test-utils.ts
+index c2799d744389..61141e3ae5f4 100644
+--- a/test/lib/next-test-utils.ts
++++ b/test/lib/next-test-utils.ts
+@@ -951,6 +951,11 @@ export async function openRedbox(browser: Playwright): Promise<void> {
+ export async function openDevToolsIndicatorPopover(
+   browser: Playwright
+ ): Promise<void> {
++  // If the devtools panel is already open, we don't assert the indicator,
++  // and no need to open it again.
++  if (await hasDevToolsPanel(browser)) {
++    return
++  }
+   const devToolsIndicator = await assertHasDevToolsIndicator(browser)
+ 
+   try {
+@@ -962,6 +967,18 @@ export async function openDevToolsIndicatorPopover(
+   }
+ }
+ 
++export async function hasDevToolsPanel(browser: Playwright) {
++  const result = await browser.eval(() => {
++    const portal = [].slice
++      .call(document.querySelectorAll('nextjs-portal'))
++      .find((p) => p.shadowRoot.querySelector('[data-nextjs-dialog-overlay]'))
++
++    const root = portal?.shadowRoot
++    return root?.querySelector('[data-nextjs-dialog-overlay]') != null
++  })
++  return result
++}
++
+ export async function assertHasDevToolsIndicator(browser: Playwright) {
+   const devToolsIndicator = browser.locateDevToolsIndicator()
+   try {

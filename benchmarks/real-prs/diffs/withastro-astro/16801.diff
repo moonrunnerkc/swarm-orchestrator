@@ -1,0 +1,371 @@
+diff --git a/.changeset/dirty-friends-argue.md b/.changeset/dirty-friends-argue.md
+new file mode 100644
+index 000000000000..0b2a2b75812e
+--- /dev/null
++++ b/.changeset/dirty-friends-argue.md
+@@ -0,0 +1,5 @@
++---
++'@astrojs/cloudflare': patch
++---
++
++Reverts a change to the esbuild dep-scan plugin that caused `astro check` and `astro build` to fail by making esbuild incorrectly bundle `virtual:` modules (e.g. from expressive-code)
+diff --git a/packages/integrations/cloudflare/src/esbuild-plugin-astro-frontmatter.ts b/packages/integrations/cloudflare/src/esbuild-plugin-astro-frontmatter.ts
+index b57998139022..4a3e4039d67a 100644
+--- a/packages/integrations/cloudflare/src/esbuild-plugin-astro-frontmatter.ts
++++ b/packages/integrations/cloudflare/src/esbuild-plugin-astro-frontmatter.ts
+@@ -1,5 +1,4 @@
+ import { readFile } from 'node:fs/promises';
+-import { dirname, isAbsolute, resolve } from 'node:path';
+ import type { DepOptimizationConfig } from 'vite';
+ 
+ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+@@ -17,8 +16,6 @@ function replaceTopLevelReturns(code: string): string {
+ 	});
+ }
+ 
+-const ASTRO_FRONTMATTER_NAMESPACE = 'astro-frontmatter';
+-
+ // Not exposed as a type from Vite, so need to grab this way.
+ type ESBuildPlugin = NonNullable<
+ 	NonNullable<DepOptimizationConfig['esbuildOptions']>['plugins']
+@@ -28,56 +25,45 @@ type ESBuildPlugin = NonNullable<
+  * An esbuild plugin that extracts frontmatter from .astro files during
+  * dependency optimization scanning. This allows Vite to discover imports
+  * in the server-side frontmatter code.
+- *
+- * This plugin uses an `onResolve` handler to intercept `.astro` files before
+- * Vite's built-in `vite:dep-scan` plugin routes them to the `html` namespace.
+- * Without this, Vite's scanner only extracts `<script>` tags from `.astro`
+- * files, completely missing frontmatter imports (which is where SSR-side
+- * dependencies like `zod`, `nanostores`, `astro:transitions`, etc. live).
+  */
+ export function astroFrontmatterScanPlugin(): ESBuildPlugin {
+ 	return {
+ 		name: 'astro-frontmatter-scan',
+ 		setup(build) {
+-			// Intercept .astro file resolution to route them through our namespace
+-			// before Vite's `vite:dep-scan` plugin puts them in the `html` namespace.
+-			// In esbuild, plugins are processed in order and the first `onResolve`
+-			// match wins. Since user plugins (including this one) are registered before
+-			// Vite's scanner plugin, this handler takes priority.
+-			build.onResolve({ filter: /\.astro$/ }, (args) => {
+-				// Only intercept files in the default namespace. Files already in a
+-				// custom namespace are either already claimed or are re-entry points
+-				// that should not be processed again.
+-				if (args.namespace !== 'file' && args.namespace !== '' && args.namespace !== undefined) {
+-					return undefined;
+-				}
+-				const resolvedPath = isAbsolute(args.path)
+-					? args.path
+-					: resolve(args.resolveDir, args.path);
+-				return { path: resolvedPath, namespace: ASTRO_FRONTMATTER_NAMESPACE };
+-			});
+-
+-			build.onLoad({ filter: /\.astro$/, namespace: ASTRO_FRONTMATTER_NAMESPACE }, async (args) => {
++			// Scope to the "file" namespace so that .astro files resolved into the
++			// "html" namespace (e.g. when a .ts file default-imports a component)
++			// fall through to Vite's built-in html-type handler, which appends
++			// `export default {}` and avoids "No matching export" errors.
++			build.onLoad({ filter: /\.astro$/, namespace: 'file' }, async (args) => {
+ 				try {
+ 					const code = await readFile(args.path, 'utf-8');
+ 
++					// Extract frontmatter content between --- markers
+ 					const frontmatterMatch = FRONTMATTER_RE.exec(code);
+ 					if (frontmatterMatch) {
++						// Replace `return` with `throw` to avoid esbuild's "Top-level return" error during scanning.
++						// This aligns with Astro's core compiler logic for frontmatter error handling.
++						// See: packages/astro/src/vite-plugin-astro/compile.ts
+ 						const contents = replaceTopLevelReturns(frontmatterMatch[1]);
++
++						// Append `export default {}` so that default imports of .astro files
++						// (e.g. `import MyComponent from './MyComponent.astro'`) resolve correctly
++						// during the dep scan. Without this, .astro files loaded in the `html`
++						// namespace (when imported from .ts files) would have no default export,
++						// causing esbuild to fail with "No matching export for import 'default'".
+ 						return {
+ 							contents: contents + '\nexport default {}',
+ 							loader: 'ts',
+-							resolveDir: dirname(args.path),
+ 						};
+ 					}
+ 				} catch {
+ 					// Ignore read errors
+ 				}
+ 
++				// No frontmatter or read error, return empty with a default export
+ 				return {
+ 					contents: 'export default {}',
+ 					loader: 'ts',
+-					resolveDir: dirname(args.path),
+ 				};
+ 			});
+ 		},
+diff --git a/packages/integrations/cloudflare/src/index.ts b/packages/integrations/cloudflare/src/index.ts
+index d0a4e80037cb..a8dec400e36a 100644
+--- a/packages/integrations/cloudflare/src/index.ts
++++ b/packages/integrations/cloudflare/src/index.ts
+@@ -286,11 +286,6 @@ export default function createIntegration({
+ 													'astro/jsx-runtime',
+ 													'astro/app/entrypoint/dev',
+ 													'astro/virtual-modules/middleware.js',
+-													'astro/virtual-modules/transitions.js',
+-													'astro/virtual-modules/transitions-router.js',
+-													'astro/virtual-modules/transitions-types.js',
+-													'astro/virtual-modules/transitions-events.js',
+-													'astro/virtual-modules/transitions-swap-functions.js',
+ 													...(isAstroPrismPackageInstalled ? prismFiles : []),
+ 												],
+ 												exclude: [
+@@ -301,7 +296,6 @@ export default function createIntegration({
+ 													'virtual:@astrojs/*',
+ 													'@astrojs/starlight',
+ 												],
+-												ignoreOutdatedRequests: true,
+ 												esbuildOptions: {
+ 													// Suppress Vite's `createRequire(import.meta.url)` banner to work around
+ 													// https://github.com/vitejs/vite/issues/22004 — Vite's SSR transform
+diff --git a/packages/integrations/cloudflare/test/dev-ssr-optimization.test.ts b/packages/integrations/cloudflare/test/dev-ssr-optimization.test.ts
+deleted file mode 100644
+index cc49bbfac841..000000000000
+--- a/packages/integrations/cloudflare/test/dev-ssr-optimization.test.ts
++++ /dev/null
+@@ -1,149 +0,0 @@
+-import * as assert from 'node:assert/strict';
+-import { Writable } from 'node:stream';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { AstroLogger } from '../../../astro/dist/core/logger/core.js';
+-import cloudflare from '../dist/index.js';
+-import { astroFrontmatterScanPlugin } from '../dist/esbuild-plugin-astro-frontmatter.js';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
+-
+-describe('Cloudflare SSR Optimization', () => {
+-	// Verifies that the Cloudflare integration's SSR optimization plugin
+-	// correctly pre-registers critical virtual modules and configures Vite to handle cascading re-optimizations gracefully,
+-	// preventing crashes during development when using features like View Transitions.
+-	async function captureEnvironmentPlugin(): Promise<any> {
+-		const integration = cloudflare({});
+-		const capturedPlugins: any[] = [];
+-
+-		await integration.hooks['astro:config:setup']?.({
+-			command: 'dev',
+-			isRestart: false,
+-			config: {
+-				root: new URL('file:///tmp/'),
+-				srcDir: new URL('file:///tmp/src/'),
+-				session: { driver: 'memory' },
+-			} as any,
+-			updateConfig: (cfg: any) => {
+-				const plugins = [cfg?.vite?.plugins ?? []].flat(Number.POSITIVE_INFINITY);
+-				capturedPlugins.push(...plugins.filter(Boolean));
+-			},
+-			addWatchFile: () => {},
+-			logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+-		} as any);
+-
+-		return capturedPlugins.find((p: any) => p?.name === '@astrojs/cloudflare:environment') ?? null;
+-	}
+-
+-	// Note: These tests are designed to run in a Node environment and may not be compatible with browser-based testing frameworks.
+-	describe('Astro Frontmatter Scanner', () => {
+-		it('registers an onResolve handler to prioritize .astro file interception and dependency discovery', () => {
+-			const plugin = astroFrontmatterScanPlugin();
+-			const resolvers: Array<{ filter: RegExp }> = [];
+-
+-			void plugin.setup({
+-				onResolve(options: { filter: RegExp }, _callback: (...args: unknown[]) => unknown) {
+-					resolvers.push(options);
+-				},
+-				onLoad(_options: any, _callback: (...args: unknown[]) => unknown) {},
+-			} as any);
+-
+-			const hasAstroResolver = resolvers.some((r) => r.filter.test('Component.astro'));
+-			assert.equal(hasAstroResolver, true);
+-		});
+-	});
+-
+-	const TRANSITIONS_MODULES = [
+-		'astro/virtual-modules/transitions.js',
+-		'astro/virtual-modules/transitions-router.js',
+-		'astro/virtual-modules/transitions-types.js',
+-		'astro/virtual-modules/transitions-events.js',
+-		'astro/virtual-modules/transitions-swap-functions.js',
+-	] as const;
+-
+-	// SSR environment in which critical virtual modules are pre-registered and reload resilience is configured
+-	// to ensure they are correctly injected.
+-	describe('Vite Environment Configuration', () => {
+-		let envPlugin: any;
+-
+-		before(async () => {
+-			envPlugin = await captureEnvironmentPlugin();
+-		});
+-
+-		for (const envName of ['astro', 'ssr', 'prerender'] as const) {
+-			it(`explicitly includes View Transitions virtual modules in "${envName}" environment to prevent runtime discovery`, () => {
+-				const config = envPlugin?.configEnvironment(envName, {});
+-				const include: string[] = config?.optimizeDeps?.include ?? [];
+-				const missing = TRANSITIONS_MODULES.filter((m) => !include.includes(m));
+-				assert.deepEqual(
+-					missing,
+-					[],
+-					`Missing virtual modules in "${envName}": ${missing.join(', ')}`,
+-				);
+-			});
+-
+-			it(`enables ignoreOutdatedRequests for "${envName}" environment to prevent crashes during cascading re-optimization`, () => {
+-				const config = envPlugin?.configEnvironment(envName, {});
+-				assert.equal(config?.optimizeDeps?.ignoreOutdatedRequests, true);
+-			});
+-		}
+-	});
+-
+-	// Verify that the dev server remains stable and correctly handles SSR optimizations without crashing
+-	// even when features like View Transitions trigger multiple optimization cycles.
+-	describe('Dev Server Runtime Behavior', () => {
+-		let fixture: Fixture;
+-		let devServer: DevServer;
+-		const logs: string[] = [];
+-
+-		before(async () => {
+-			fixture = await loadFixture({
+-				root: './fixtures/dev-ssr-optimization/',
+-			});
+-
+-			const logger = new AstroLogger({
+-				level: 'warn',
+-				destination: new Writable({
+-					objectMode: true,
+-					write(event, _, callback) {
+-						logs.push(event.message);
+-						callback();
+-					},
+-				}),
+-			});
+-
+-			devServer = await fixture.startDevServer({
+-				// @ts-expect-error: logger is @internal
+-				logger,
+-			});
+-
+-			// initial request to trigger optimization and potential re-optimization cycles
+-			await fixture.fetch('/');
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('successfully serves the initial request without triggering fatal optimization errors', async () => {
+-			const res = await fixture.fetch('/');
+-			assert.equal(res.status, 200);
+-		});
+-
+-		it('maintains stability across multiple requests and handles in-place restarts', async () => {
+-			const res = await fixture.fetch('/');
+-			assert.equal(res.status, 200);
+-		});
+-
+-		it('suppresses "The file does not exist" errors by handling stale chunk references gracefully', () => {
+-			const staleChunkErrors = logs.filter((msg) => msg.includes('The file does not exist'));
+-			assert.equal(staleChunkErrors.length, 0);
+-		});
+-
+-		it('ensures correct server-side rendering of pages utilizing View Transitions', async () => {
+-			const res = await fixture.fetch('/');
+-			const html = await res.text();
+-			const $ = cheerio.load(html);
+-			assert.equal($('#content').text(), 'OK');
+-		});
+-	});
+-});
+diff --git a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/astro.config.mjs b/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/astro.config.mjs
+deleted file mode 100644
+index 95234c069ab7..000000000000
+--- a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/astro.config.mjs
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import cloudflare from '@astrojs/cloudflare';
+-import { defineConfig } from 'astro/config';
+-
+-export default defineConfig({
+-	adapter: cloudflare({
+-		platformProxy: {
+-			enabled: true,
+-		},
+-	}),
+-	output: 'server',
+-});
+diff --git a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/package.json b/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/package.json
+deleted file mode 100644
+index 27b47e213fd4..000000000000
+--- a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/package.json
++++ /dev/null
+@@ -1,12 +0,0 @@
+-{
+-  "name": "@test/cloudflare-dev-ssr-optimization",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "@astrojs/cloudflare": "workspace:*",
+-    "astro": "workspace:*"
+-  },
+-  "devDependencies": {
+-    "wrangler": "^4.83.0"
+-  }
+-}
+diff --git a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/src/components/Counter.svelte b/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/src/components/Counter.svelte
+deleted file mode 100644
+index cbfe49244a77..000000000000
+--- a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/src/components/Counter.svelte
++++ /dev/null
+@@ -1,5 +0,0 @@
+-<script>
+-	let count = $state(0);
+-</script>
+-
+-<button onclick={() => count++}>Count: {count}</button>
+diff --git a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/src/pages/index.astro b/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/src/pages/index.astro
+deleted file mode 100644
+index 396d2d384b6d..000000000000
+--- a/packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization/src/pages/index.astro
++++ /dev/null
+@@ -1,13 +0,0 @@
+----
+-import { ClientRouter } from 'astro:transitions';
+----
+-<html lang="en">
+-	<head>
+-		<meta charset="utf-8" />
+-		<title>Dev SSR Optimization Test</title>
+-		<ClientRouter />
+-	</head>
+-	<body>
+-		<div id="content">OK</div>
+-	</body>
+-</html>
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 2e78e788d53f..e462b175ddbd 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -4591,19 +4591,6 @@ importers:
+         specifier: workspace:*
+         version: link:../../../../../astro
+ 
+-  packages/integrations/cloudflare/test/fixtures/dev-ssr-optimization:
+-    dependencies:
+-      '@astrojs/cloudflare':
+-        specifier: workspace:*
+-        version: link:../../..
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../../../../astro
+-    devDependencies:
+-      wrangler:
+-        specifier: ^4.83.0
+-        version: 4.83.0(@cloudflare/workers-types@4.20260228.0)
+-
+   packages/integrations/cloudflare/test/fixtures/external-image-service:
+     dependencies:
+       '@astrojs/cloudflare':

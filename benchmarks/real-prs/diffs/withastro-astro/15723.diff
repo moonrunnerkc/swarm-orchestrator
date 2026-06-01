@@ -1,0 +1,585 @@
+diff --git a/.changeset/pretty-canyons-refuse.md b/.changeset/pretty-canyons-refuse.md
+new file mode 100644
+index 000000000000..28401e9e9e90
+--- /dev/null
++++ b/.changeset/pretty-canyons-refuse.md
+@@ -0,0 +1,6 @@
++---
++'@astrojs/markdoc': patch
++'@astrojs/markdown-remark': patch
++---
++
++Updates internal type usage from `@astrojs/prism`.
+diff --git a/.changeset/strict-coats-throw.md b/.changeset/strict-coats-throw.md
+new file mode 100644
+index 000000000000..952e11f2ea08
+--- /dev/null
++++ b/.changeset/strict-coats-throw.md
+@@ -0,0 +1,6 @@
++---
++'@astrojs/prism': patch
++'@astrojs/cloudflare': patch
++---
++
++Fixes an issue where the `<Prism />` component failed to work in Cloudflare Workers.
+diff --git a/knip.js b/knip.js
+index 09c35626ae9b..53f801438d4e 100644
+--- a/knip.js
++++ b/knip.js
+@@ -59,6 +59,11 @@ export default {
+ 				'@types/http-cache-semantics',
+ 			],
+ 		},
++		'packages/astro-prism': {
++			entry: [srcEntry, dtsEntry, testEntry],
++			// package.json#imports are not resolved at the moment
++			ignore: ['src/loadLanguages-workerd.ts'],
++		},
+ 		'packages/db': {
+ 			entry: [srcEntry, dtsEntry, testEntry, 'test/types/**/*'],
+ 		},
+diff --git a/packages/astro-prism/Prism.astro b/packages/astro-prism/Prism.astro
+index 9306024a18a6..ad35461512c0 100644
+--- a/packages/astro-prism/Prism.astro
++++ b/packages/astro-prism/Prism.astro
+@@ -8,7 +8,7 @@ interface Props {
+ }
+ 
+ const { class: className, lang, code } = Astro.props as Props;
+-const { classLanguage, html } = runHighlighterWithAstro(lang, code);
++const { classLanguage, html } = await runHighlighterWithAstro(lang, code);
+ ---
+ 
+ <pre
+diff --git a/packages/astro-prism/package.json b/packages/astro-prism/package.json
+index 2486ec08732a..4c9b584a9783 100644
+--- a/packages/astro-prism/package.json
++++ b/packages/astro-prism/package.json
+@@ -23,6 +23,12 @@
+     "./Prism.astro": "./Prism.astro",
+     "./dist/highlighter": "./dist/highlighter.js"
+   },
++  "imports": {
++    "#prism-loadLanguages": {
++      "workerd": "./dist/loadLanguages-workerd.js",
++      "default": "./dist/loadLanguages-default.js"
++    }
++  },
+   "files": [
+     "dist",
+     "Prism.astro"
+diff --git a/packages/astro-prism/src/highlighter.ts b/packages/astro-prism/src/highlighter.ts
+index 99810b435aed..908cfa05a626 100644
+--- a/packages/astro-prism/src/highlighter.ts
++++ b/packages/astro-prism/src/highlighter.ts
+@@ -1,28 +1,28 @@
+ import Prism from 'prismjs';
+-import loadLanguages from 'prismjs/components/index.js';
++import { loadLanguages } from '#prism-loadLanguages';
+ import { addAstro } from './plugin.js';
+ 
+ const languageMap = new Map([['ts', 'typescript']]);
+ 
+-export function runHighlighterWithAstro(lang: string | undefined, code: string) {
++export async function runHighlighterWithAstro(lang: string | undefined, code: string) {
+ 	if (!lang) {
+ 		lang = 'plaintext';
+ 	}
+ 	let classLanguage = `language-${lang}`;
+-	const ensureLoaded = (language: string) => {
++	const ensureLoaded = async (language: string) => {
+ 		if (language && !Prism.languages[language]) {
+-			loadLanguages([language]);
++			await loadLanguages([language]);
+ 		}
+ 	};
+ 
+ 	if (languageMap.has(lang)) {
+-		ensureLoaded(languageMap.get(lang)!);
++		await ensureLoaded(languageMap.get(lang)!);
+ 	} else if (lang === 'astro') {
+-		ensureLoaded('typescript');
++		await ensureLoaded('typescript');
+ 		addAstro(Prism);
+ 	} else {
+-		ensureLoaded('markup-templating'); // Prism expects this to exist for a number of other langs
+-		ensureLoaded(lang);
++		await ensureLoaded('markup-templating'); // Prism expects this to exist for a number of other langs
++		await ensureLoaded(lang);
+ 	}
+ 
+ 	if (lang && !Prism.languages[lang]) {
+diff --git a/packages/astro-prism/src/loadLanguages-default.ts b/packages/astro-prism/src/loadLanguages-default.ts
+new file mode 100644
+index 000000000000..a550403742c9
+--- /dev/null
++++ b/packages/astro-prism/src/loadLanguages-default.ts
+@@ -0,0 +1,5 @@
++import prismLoadLanguages from 'prismjs/components/index.js';
++
++export async function loadLanguages(languages: string | string[]) {
++	return prismLoadLanguages(languages);
++}
+diff --git a/packages/astro-prism/src/loadLanguages-workerd.ts b/packages/astro-prism/src/loadLanguages-workerd.ts
+new file mode 100644
+index 000000000000..fa30436a7935
+--- /dev/null
++++ b/packages/astro-prism/src/loadLanguages-workerd.ts
+@@ -0,0 +1,99 @@
++// This implementation was based from: https://github.com/PrismJS/prism/blob/76dde18a575831c91491895193f56081ac08b0c5/components/index.js
++import Prism from 'prismjs';
++import components from 'prismjs/components.js';
++import getLoader, { type LoadChainer } from 'prismjs/dependencies.js';
++import { bundledLanguages } from 'virtual:astro-cloudflare:prism';
++
++// This `loadChainer` is required when working with Promises in Prism's loader.
++// ref: https://github.com/PrismJS/prism/blob/76dde18a575831c91491895193f56081ac08b0c5/dependencies.js#L346-L360
++const loadChainer: LoadChainer<Promise<void>> = {
++	series: async (before, after) => {
++		await before;
++		await after();
++	},
++	parallel: async (values) => {
++		await Promise.all(values);
++	},
++};
++
++// Since Prism language files are written assuming the Prism instance is defined
++// as a global variable, we will temporarily set the Prism instance globally.
++// As loadLanguages can be called asynchronously multiple times, there is a risk
++// that globalThis.Prism may be accessed again after cleanup, even when it appears
++// to be no longer needed after a Promise resolves, potentially causing a
++// `Prism is not defined` error.
++// To avoid this, we track the number of active references and only perform cleanup
++// when the count returns to zero.
++let prismRefCount = 0;
++
++const prismRefCounter = {
++	increment: () => {
++		if (prismRefCount === 0) {
++			globalThis.Prism = Prism;
++		}
++
++		prismRefCount += 1;
++	},
++	decrement: () => {
++		prismRefCount -= 1;
++
++		if (prismRefCount === 0) {
++			// @ts-expect-error globalThis type
++			delete globalThis.Prism;
++		}
++	},
++};
++
++/**
++ * The set of all languages which have been loaded using the below function.
++ *
++ * @type {Set<string>}
++ */
++const loadedLanguages = new Set<string>();
++
++/**
++ * Loads the given languages and adds them to the current Prism instance.
++ *
++ * If no languages are provided, __all__ Prism languages will be loaded.
++ *
++ * @param {string|string[]} [languages]
++ * @returns {Promise<void>}
++ */
++export async function loadLanguages(languages: string | string[]) {
++	prismRefCounter.increment();
++
++	if (languages === undefined) {
++		languages = Object.keys(components.languages).filter((l) => l !== 'meta');
++	} else if (!Array.isArray(languages)) {
++		languages = [languages];
++	}
++
++	// the user might have loaded languages via some other way or used `prism.js` which already includes some
++	// we don't need to validate the ids because `getLoader` will ignore invalid ones
++	const loaded = [...loadedLanguages, ...Object.keys(Prism.languages)];
++
++	await getLoader(components, languages, loaded).load(async (lang: string) => {
++		if (!(lang in components.languages)) {
++			if (!loadLanguages.silent) {
++				console.warn('Language does not exist: ' + lang);
++			}
++			return;
++		}
++
++		// remove from Prism
++		delete Prism.languages[lang];
++
++		if (Object.hasOwn(bundledLanguages, lang)) {
++			await bundledLanguages[lang]();
++		}
++
++		loadedLanguages.add(lang);
++	}, loadChainer);
++
++	prismRefCounter.decrement();
++}
++
++/**
++ * Set this to `true` to prevent all warning messages `loadLanguages` logs.
++ */
++loadLanguages.silent = false;
+diff --git a/packages/astro-prism/tsconfig.build.json b/packages/astro-prism/tsconfig.build.json
+index 79fbbc66db11..0df1179de9b9 100644
+--- a/packages/astro-prism/tsconfig.build.json
++++ b/packages/astro-prism/tsconfig.build.json
+@@ -1,3 +1,4 @@
+ {
+-  "extends": "../../configs/tsconfig.build.json"
++  "extends": "../../configs/tsconfig.build.json",
++  "include": ["./src", "./virtual.d.ts"]
+ }
+diff --git a/packages/astro-prism/virtual.d.ts b/packages/astro-prism/virtual.d.ts
+new file mode 100644
+index 000000000000..ee8f267e410b
+--- /dev/null
++++ b/packages/astro-prism/virtual.d.ts
+@@ -0,0 +1,3 @@
++declare module 'virtual:astro-cloudflare:prism' {
++	export const bundledLanguages: Record<string, () => Promise<void>>;
++}
+diff --git a/packages/integrations/cloudflare/package.json b/packages/integrations/cloudflare/package.json
+index 8b880ca0c2bb..ab087021716b 100644
+--- a/packages/integrations/cloudflare/package.json
++++ b/packages/integrations/cloudflare/package.json
+@@ -58,7 +58,9 @@
+     "astro": "workspace:*",
+     "astro-scripts": "workspace:*",
+     "cheerio": "1.2.0",
+-    "devalue": "^5.6.3"
++    "devalue": "^5.6.3",
++    "prismjs": "^1.30.0",
++    "@types/prismjs": "1.26.6"
+   },
+   "publishConfig": {
+     "provenance": true
+diff --git a/packages/integrations/cloudflare/src/index.ts b/packages/integrations/cloudflare/src/index.ts
+index d006b312ec24..5629ac5c6cb7 100644
+--- a/packages/integrations/cloudflare/src/index.ts
++++ b/packages/integrations/cloudflare/src/index.ts
+@@ -1,5 +1,5 @@
+ import { createReadStream, existsSync, readFileSync } from 'node:fs';
+-import { appendFile, rename, stat } from 'node:fs/promises';
++import { appendFile, readFile, rename, stat } from 'node:fs/promises';
+ import { createInterface } from 'node:readline/promises';
+ import { removeLeadingForwardSlash } from '@astrojs/internal-helpers/path';
+ import { createRedirectsFromAstroRoutes, printAsRedirects } from '@astrojs/underscore-redirects';
+@@ -22,6 +22,7 @@ import {
+ import { parseEnv } from 'node:util';
+ import { sessionDrivers } from 'astro/config';
+ import { createCloudflarePrerenderer } from './prerenderer.js';
++import cfPrismPlugin from './vite-plugin-prism.js';
+ 
+ const CLOUDFLARE_KV_SESSION_DRIVER_ENTRYPOINT = sessionDrivers.cloudflareKVBinding().entrypoint;
+ 
+@@ -130,7 +131,7 @@ export default function createIntegration({
+ 	return {
+ 		name: '@astrojs/cloudflare',
+ 		hooks: {
+-			'astro:config:setup': ({ command, config, updateConfig, logger, addWatchFile }) => {
++			'astro:config:setup': async ({ command, config, updateConfig, logger, addWatchFile }) => {
+ 				if (!!process.versions.webcontainer) {
+ 					throw new Error('`workerd` does not run on Stackblitz.');
+ 				}
+@@ -206,6 +207,21 @@ export default function createIntegration({
+ 					globalThis.astroCloudflareOptions = cfPluginConfig;
+ 				}
+ 
++				// Including prismjs files in `optimizeDeps.includes` when `@astrojs/prism` is not installed
++				// causes a "Failed to resolve dependency: @astrojs/prism > prismjs" log to appear.
++				// However, when using the `<Prism />` component in a Cloudflare Workers environment,
++				// not including prismjs files in `optimizeDeps.includes` causes
++				// a "The file does not exist at ..." log to appear.
++				// To work around this, we check whether `@astrojs/prism` is installed in the current project.
++				// Note: this "Failed to resolve dependency" log will not appear as long as the `@astrojs/prism` package is installed,
++				// even if it is not actually used.
++				const prismFiles = [
++					'@astrojs/prism > prismjs',
++					'@astrojs/prism > prismjs/components.js',
++					'@astrojs/prism > prismjs/dependencies.js',
++				] as const;
++				const isAstroPrismPackageInstalled = await getIsAstroPrismInstalled(config.root);
++
+ 				updateConfig({
+ 					build: {
+ 						redirects: false,
+@@ -270,6 +286,7 @@ export default function createIntegration({
+ 													'astro/jsx-runtime',
+ 													'astro/app/entrypoint/dev',
+ 													'astro/virtual-modules/middleware.js',
++													...(isAstroPrismPackageInstalled ? prismFiles : []),
+ 												],
+ 												exclude: [
+ 													'unstorage/drivers/cloudflare-kv-binding',
+@@ -330,6 +347,7 @@ export default function createIntegration({
+ 											}
+ 										: null,
+ 							}),
++							cfPrismPlugin(),
+ 						],
+ 					},
+ 					image: setImageConfig(imageService, config.image, command, logger),
+@@ -532,3 +550,19 @@ export default function createIntegration({
+ 		},
+ 	};
+ }
++
++// Reads the package.json at the current root to check whether `@astrojs/prism` is installed.
++// Using `require.resolve()` would not work correctly for projects inside a monorepo
++// (such as Astro's test fixtures), as it would traverse parent node_modules directories
++// to resolve the package. For this reason, we directly read `package.json` using `readFile` instead.
++async function getIsAstroPrismInstalled(rootURL: URL) {
++	try {
++		const pkgURL = new URL('./package.json', rootURL);
++		const input = await readFile(pkgURL, { encoding: 'utf-8' });
++		const pkgJson = JSON.parse(input);
++
++		return Object.hasOwn(pkgJson['dependencies'], '@astrojs/prism');
++	} catch {
++		return false;
++	}
++}
+diff --git a/packages/integrations/cloudflare/src/vite-plugin-prism.ts b/packages/integrations/cloudflare/src/vite-plugin-prism.ts
+new file mode 100644
+index 000000000000..a65e99defb18
+--- /dev/null
++++ b/packages/integrations/cloudflare/src/vite-plugin-prism.ts
+@@ -0,0 +1,63 @@
++import { fileURLToPath } from 'node:url';
++import type { Plugin } from 'vite';
++import components from 'prismjs/components.js';
++
++const MODULE_ID = 'virtual:astro-cloudflare:prism';
++const RESOLVED_MODULE_ID = '\0' + MODULE_ID;
++
++const languages = Object.keys(components.languages).filter((l) => l !== 'meta');
++
++export default function cfPrismPlugin(): Plugin {
++	return {
++		name: '@astrojs/cloudflare:prism',
++		configEnvironment(environmentName) {
++			if (environmentName === 'ssr') {
++				return {
++					// Because this virtual module adds a large number of dynamic import statements,
++					// Vite’s logs will consequently display the message “new dependencies optimized” for all languages.
++					// To avoid this, we explicitly specify that the module should be optimized in advance.
++					optimizeDeps: {
++						include: ['prismjs/components/prism-*.js'],
++					},
++				};
++			}
++		},
++		resolveId: {
++			filter: {
++				id: new RegExp(`^${MODULE_ID}$`),
++			},
++			handler() {
++				return RESOLVED_MODULE_ID;
++			},
++		},
++		load: {
++			filter: {
++				id: new RegExp(`^${RESOLVED_MODULE_ID}$`),
++			},
++			async handler() {
++				const importerPath = fileURLToPath(import.meta.url);
++
++				const resolvedModules = await Promise.all(
++					languages.map(async (lang) => {
++						const resolvedId = await this.resolve(
++							`prismjs/components/prism-${lang}.js`,
++							importerPath,
++						);
++
++						return { resolvedId: resolvedId?.id, lang };
++					}),
++				);
++				const prismBundledLanguages = resolvedModules
++					.filter(({ resolvedId }) => resolvedId !== undefined)
++					.map(
++						({ resolvedId, lang }) =>
++							`${JSON.stringify(lang)}: () => import(${JSON.stringify(resolvedId)})`,
++					);
++
++				return `
++					export const bundledLanguages = { ${prismBundledLanguages.join(',')} };
++				`;
++			},
++		},
++	};
++}
+diff --git a/packages/integrations/cloudflare/test/astro-dev-platform.test.ts b/packages/integrations/cloudflare/test/astro-dev-platform.test.ts
+index 62440398df03..56bc79479d4c 100644
+--- a/packages/integrations/cloudflare/test/astro-dev-platform.test.ts
++++ b/packages/integrations/cloudflare/test/astro-dev-platform.test.ts
+@@ -2,15 +2,32 @@ import * as assert from 'node:assert/strict';
+ import { after, before, describe, it } from 'node:test';
+ import * as cheerio from 'cheerio';
+ import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
++import { Writable } from 'node:stream';
++import { AstroLogger, type AstroLoggerMessage } from '../../../astro/dist/core/logger/core.js';
+ 
+ describe('AstroDevPlatform', () => {
+ 	let fixture: Fixture;
+ 	let devServer: DevServer;
++	const logs: AstroLoggerMessage[] = [];
++
+ 	before(async () => {
+ 		fixture = await loadFixture({
+ 			root: './fixtures/astro-dev-platform/',
+ 		});
+-		devServer = await fixture.startDevServer();
++		devServer = await fixture.startDevServer({
++			vite: { logLevel: 'info' },
++			// @ts-expect-error: `logger` is an internal API
++			logger: new AstroLogger({
++				level: 'info',
++				destination: new Writable({
++					objectMode: true,
++					write(event, _, callback) {
++						logs.push(event);
++						callback();
++					},
++				}),
++			}),
++		});
+ 		// Do an initial request to prime preloading
+ 		await fixture.fetch('/');
+ 	});
+@@ -70,4 +87,27 @@ describe('AstroDevPlatform', () => {
+ 		// Verify the code block was rendered
+ 		assert.ok($('pre').length > 0, 'Code block should be rendered');
+ 	});
++
++	it('Prism component works in dev mode (no CommonJS module errors)', async () => {
++		const res = await fixture.fetch('/prism-test');
++		assert.equal(res.status, 200);
++		const html = await res.text();
++		const $ = cheerio.load(html);
++		// Verify the page rendered successfully with Prism component
++		assert.equal($('h1').text(), 'Testing Prism Component');
++		// Verify the code block was rendered
++		// 'css', 'js', 'ts', and 'rust'
++		assert.equal($('pre').length, 4, 'Code block should be rendered');
++	});
++
++	it('Prism component loads languages correctly in dev mode', async () => {
++		const prismUnableToLoadLog = logs.find((log) =>
++			log.message.includes('Unable to load the language'),
++		);
++
++		assert.ok(
++			!prismUnableToLoadLog,
++			`Should not see "Unable to load the language" message, but got: ${prismUnableToLoadLog?.message}`,
++		);
++	});
+ });
+diff --git a/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/package.json b/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/package.json
+index 3bbc951c51e3..749bfa27e885 100644
+--- a/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/package.json
++++ b/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/package.json
+@@ -4,6 +4,7 @@
+   "private": true,
+   "dependencies": {
+     "@astrojs/cloudflare": "workspace:*",
++    "@astrojs/prism": "workspace:*",
+     "astro": "workspace:*"
+   },
+   "devDependencies": {
+diff --git a/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/src/pages/prism-test.astro b/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/src/pages/prism-test.astro
+new file mode 100644
+index 000000000000..cc63cede5616
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/astro-dev-platform/src/pages/prism-test.astro
+@@ -0,0 +1,16 @@
++---
++import { Prism } from '@astrojs/prism';
++---
++<html>
++<head>
++	<title>Prism Component Test</title>
++</head>
++<body>
++<h1>Testing Prism Component</h1>
++<Prism code={`:root { color: red; }`} lang="css" />
++<Prism code={`const hello = "world";`} lang="js" />
++<!-- To verify that Prism is loading the language data correctly, we use `ts` and `rust` here -->
++<Prism code={`const hello: string = "world";`} lang="ts" />
++<Prism code={`const HELLO: &str = "world";`} lang="rust" />
++</body>
++</html>
+diff --git a/packages/integrations/markdoc/src/extensions/prism.ts b/packages/integrations/markdoc/src/extensions/prism.ts
+index 7215648712d9..05d546ceb3e2 100644
+--- a/packages/integrations/markdoc/src/extensions/prism.ts
++++ b/packages/integrations/markdoc/src/extensions/prism.ts
+@@ -7,8 +7,8 @@ export default function prism(): AstroMarkdocConfig {
+ 		nodes: {
+ 			fence: {
+ 				attributes: Markdoc.nodes.fence.attributes!,
+-				transform({ attributes: { language, content } }) {
+-					const { html, classLanguage } = runHighlighterWithAstro(language, content);
++				async transform({ attributes: { language, content } }) {
++					const { html, classLanguage } = await runHighlighterWithAstro(language, content);
+ 
+ 					// Use `unescapeHTML` to return `HTMLString` for Astro renderer to inline as HTML
+ 					return unescapeHTML(
+diff --git a/packages/markdown/remark/src/rehype-prism.ts b/packages/markdown/remark/src/rehype-prism.ts
+index 096c4ab79100..0f32a22deca7 100644
+--- a/packages/markdown/remark/src/rehype-prism.ts
++++ b/packages/markdown/remark/src/rehype-prism.ts
+@@ -7,12 +7,10 @@ export const rehypePrism: Plugin<[string[]?], Root> = (excludeLangs) => {
+ 	return async (tree) => {
+ 		await highlightCodeBlocks(
+ 			tree,
+-			(code, language) => {
+-				let { html, classLanguage } = runHighlighterWithAstro(language, code);
++			async (code, language) => {
++				let { html, classLanguage } = await runHighlighterWithAstro(language, code);
+ 
+-				return Promise.resolve(
+-					`<pre class="${classLanguage}" data-language="${language}"><code class="${classLanguage}">${html}</code></pre>`,
+-				);
++				return `<pre class="${classLanguage}" data-language="${language}"><code class="${classLanguage}">${html}</code></pre>`;
+ 			},
+ 			excludeLangs,
+ 		);
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 016428efa1d5..f2639810ce76 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -4654,6 +4654,9 @@ importers:
+       '@types/node':
+         specifier: ^25.2.2
+         version: 25.2.3
++      '@types/prismjs':
++        specifier: 1.26.6
++        version: 1.26.6
+       astro:
+         specifier: workspace:*
+         version: link:../../astro
+@@ -4666,6 +4669,9 @@ importers:
+       devalue:
+         specifier: ^5.6.3
+         version: 5.6.4
++      prismjs:
++        specifier: ^1.30.0
++        version: 1.30.0
+ 
+   packages/integrations/cloudflare/test/fixtures/allowed-hosts:
+     dependencies:
+@@ -4681,6 +4687,9 @@ importers:
+       '@astrojs/cloudflare':
+         specifier: workspace:*
+         version: link:../../..
++      '@astrojs/prism':
++        specifier: workspace:*
++        version: link:../../../../../astro-prism
+       astro:
+         specifier: workspace:*
+         version: link:../../../../../astro

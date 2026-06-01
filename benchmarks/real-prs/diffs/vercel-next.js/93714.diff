@@ -1,0 +1,482 @@
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index d8ff3f0b337c..20171ba9d3f7 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -168,6 +168,7 @@ import {
+   DynamicHoleKind,
+   trackThrownErrorInNavigation,
+   createInstantValidationState,
++  type NavigationValidationResult,
+ } from './dynamic-rendering'
+ import { logBuildDebugHint } from './blocking-route-messages'
+ import {
+@@ -6107,21 +6108,10 @@ async function validateInstantConfigs(
+   const { implicitTags, nonce, workStore } = ctx
+   const isDebugChannelEnabled = !!ctx.renderOpts.setReactDebugChannel
+ 
+-  /**
+-   * Build and validate a combined payload at the given URL depth.
+-   *
+-   * Returns null if no instant config exists at this depth.
+-   * Returns an empty array if validation passed.
+-   * Returns a non-empty array of errors if validation failed.
+-   *
+-   * When the initial validation uses static segments and finds errors,
+-   * automatically retries with runtime stages to discriminate between
+-   * runtime and dynamic errors, returning the more specific result.
+-   */
+   async function validateAtDepth(
+     depth: number,
+     groupDepthForValidation: number
+-  ): Promise<Array<unknown> | null> {
++  ): Promise<null | NavigationValidationResult> {
+     return validateAtDepthImpl(depth, groupDepthForValidation, null)
+   }
+ 
+@@ -6129,7 +6119,7 @@ async function validateInstantConfigs(
+     depth: number,
+     groupDepthForValidation: number,
+     previousBoundaryState: null | ValidationBoundaryTracking
+-  ): Promise<null | Array<unknown>> {
++  ): Promise<null | NavigationValidationResult> {
+     const extraChunksController = new AbortController()
+ 
+     const boundaryState = createValidationBoundaryTracking()
+@@ -6211,7 +6201,7 @@ async function validateInstantConfigs(
+       validationSampleTracking,
+     }
+ 
+-    let errors: Array<unknown>
++    let result: NavigationValidationResult
+     try {
+       const { prelude: unprocessedPrelude } = await runInSequentialTasks(
+         () => {
+@@ -6307,7 +6297,7 @@ async function validateInstantConfigs(
+ 
+       const { preludeIsEmpty } = await processPreludeOp(unprocessedPrelude)
+ 
+-      errors = getNavigationDisallowedDynamicReasons(
++      result = getNavigationDisallowedDynamicReasons(
+         workStore,
+         preludeIsEmpty ? PreludeState.Empty : PreludeState.Full,
+         instantValidationState,
+@@ -6315,7 +6305,7 @@ async function validateInstantConfigs(
+         boundaryState
+       )
+     } catch (thrownValue) {
+-      errors = getNavigationDisallowedDynamicReasons(
++      result = getNavigationDisallowedDynamicReasons(
+         workStore,
+         PreludeState.Errored,
+         instantValidationState,
+@@ -6324,28 +6314,32 @@ async function validateInstantConfigs(
+       )
+     }
+ 
+-    // This prerender did not produce any errors
+-    if (errors.length === 0) {
+-      return []
++    // If the prerender produced no real errors at this depth — either an
++    // empty array (clean) or a deferred-only result (Error/AggregateError
++    // representing a missing-boundary fallback) — there's nothing to
++    // discriminate. Pass it up so the outer loop can hold any deferred
++    // fallback back until every depth has been tried.
++    if (!Array.isArray(result) || result.length === 0) {
++      return result
+     }
+ 
+     if (previousBoundaryState === null && payloadResult.hasAmbiguousErrors) {
+       // This is the first validation attempt. we prepared a payload where dynamic holes might be runtime data dependencies
+       // or dynamic data dependencies. We do a followup validation using a payload with only Runtime segments to discriminate
+-      const dynamicOnlyErrors = await validateAtDepthImpl(
++      const dynamicOnlyResult = await validateAtDepthImpl(
+         depth,
+         groupDepthForValidation,
+         boundaryState
+       )
+ 
+-      if (dynamicOnlyErrors !== null && dynamicOnlyErrors.length > 0) {
++      if (Array.isArray(dynamicOnlyResult) && dynamicOnlyResult.length > 0) {
+         // The dynamic errors only validation found errors to report so we favor those
+-        return dynamicOnlyErrors
++        return dynamicOnlyResult
+       }
+     }
+ 
+-    // If we didn't return some other errors at this point the only thing to return is this validation's errors
+-    return errors
++    // If we didn't return some other errors at this point the only thing to return is this validation's result
++    return result
+   }
+ 
+   // Discover validation depth bounds from the LoaderTree. The array
+@@ -6354,6 +6348,8 @@ async function validateInstantConfigs(
+   const groupDepthsByUrlDepth = discoverValidationDepths(loaderTree)
+   const maxDepth = groupDepthsByUrlDepth.length
+ 
++  let impairedValidation: null | Error | AggregateError = null
++
+   for (let depth = maxDepth - 1; depth >= 0; depth--) {
+     const maxGroupDepth = groupDepthsByUrlDepth[depth]
+ 
+@@ -6369,21 +6365,43 @@ async function validateInstantConfigs(
+             : '...')
+       )
+ 
+-      const errors = await validateAtDepth(depth, currentGroupDepth)
++      const result = await validateAtDepth(depth, currentGroupDepth)
+ 
+-      if (errors === null) {
++      if (Array.isArray(result)) {
++        const errors: Array<Error> = result
++        // Validation completed at least partially.
++        if (errors.length > 0) {
++          // There were issues with producing an instant UI for this attempted navigation
++          debug?.(
++            `  Depth ${depth}+${currentGroupDepth}: ❌ Failed (${errors.length} errors)`
++          )
++          return errors
++        } else {
++          // There is nothing blocking instant UI for this simluated navigation
++          debug?.(`  Depth ${depth}+${currentGroupDepth}: ✅ Passed`)
++        }
++      } else if (result === null) {
++        // There was no validation to perform at this level
+         debug?.(`  No config at depth ${depth}+${currentGroupDepth}, skipping.`)
+-        continue
+-      }
+-
+-      if (errors.length > 0) {
+-        debug?.(
+-          `  Depth ${depth}+${currentGroupDepth}: ❌ Failed (${errors.length} errors)`
+-        )
+-        return errors
++      } else {
++        // Something prevented this level from fully validating but there were no detected errors
++        if (impairedValidation === null) {
++          impairedValidation = result
++        }
+       }
++    }
++  }
+ 
+-      debug?.(`  Depth ${depth}+${currentGroupDepth}: ✅ Passed`)
++  if (impairedValidation) {
++    debug?.(
++      `⏸ All depths passed without real errors; surfacing deferred missing-boundary fallback`
++    )
++    if (impairedValidation instanceof AggregateError) {
++      // There is at least one potential cause of the validation blocking
++      return impairedValidation.errors
++    } else {
++      // There was no known cause but we report something anyway
++      return [impairedValidation]
+     }
+   }
+ 
+diff --git a/packages/next/src/server/app-render/dynamic-rendering.ts b/packages/next/src/server/app-render/dynamic-rendering.ts
+index 6256a5ede7df..efafe795a8ea 100644
+--- a/packages/next/src/server/app-render/dynamic-rendering.ts
++++ b/packages/next/src/server/app-render/dynamic-rendering.ts
+@@ -1318,13 +1318,27 @@ export function getStaticShellDisallowedDynamicReasons(
+   return []
+ }
+ 
++/**
++ * `errors` are validation failures that should be surfaced immediately.
++ * `deferredFallback` carries a missing-boundary explanation that the caller
++ * should hold back until *every* validation depth has been tried — a missing
++ * boundary often just means a parent layout intentionally omitted a slot, and
++ * a different depth's validation may surface a more meaningful error.
++ */
++export type NavigationValidationResult =
++  // instances that block instant navigation
++  | Array<Error>
++  // validation was blocked with zero or more reasons
++  | Error
++  | AggregateError
++
+ export function getNavigationDisallowedDynamicReasons(
+   workStore: WorkStore,
+   prelude: PreludeState,
+   dynamicValidation: InstantValidationState,
+   validationSampleTracking: InstantValidationSampleTracking | null,
+   boundaryState: ValidationBoundaryTracking
+-): Array<Error> {
++): NavigationValidationResult {
+   // If we have errors related to missing samples, those should take precedence over everything else.
+   if (validationSampleTracking) {
+     const { missingSampleErrors } = validationSampleTracking
+@@ -1338,14 +1352,6 @@ export function getNavigationDisallowedDynamicReasons(
+     return validationPreventingErrors
+   }
+ 
+-  // Missing boundaries on their own aren't a strong signal — a parent
+-  // layout may legitimately omit a slot. Run the remaining validation
+-  // layers first; if they find a genuine problem we'd rather surface
+-  // that. Only fall back to the missing-boundary error when nothing
+-  // else explains the failure (so the user is still made aware that
+-  // validation didn't complete). When we add a markers API, the
+-  // marker-based variant of this check can become strict again.
+-  //
+   // NOTE: We don't care about Suspense above body here,
+   // we're only concerned with the validation boundary
+   if (prelude !== PreludeState.Full) {
+@@ -1360,13 +1366,11 @@ export function getNavigationDisallowedDynamicReasons(
+       allRequiredBoundariesRendered(boundaryState)
+     ) {
+       // If we ever get this far then we messed up the tracking of invalid
+-      // dynamic. (When boundaries are missing the fallback below will
+-      // surface a more useful error.)
+-      return [
+-        new InvariantError(
+-          `Route "${workStore.route}" failed to render during instant validation and Next.js was unable to determine a reason.`
+-        ),
+-      ]
++      // dynamic. (When boundaries are missing the deferred fallback below
++      // will surface a more useful error.)
++      return new InvariantError(
++        `Route "${workStore.route}" failed to render during instant validation and Next.js was unable to determine a reason.`
++      )
+     }
+   } else {
+     const dynamicErrors = dynamicValidation.dynamicErrors
+@@ -1382,6 +1386,12 @@ export function getNavigationDisallowedDynamicReasons(
+     }
+   }
+ 
++  // Missing boundaries on their own aren't a strong signal — a parent
++  // layout may legitimately omit a slot. Defer this so the caller can
++  // try shallower validation depths first; if every depth comes up
++  // empty we still want to surface this so the user is made aware that
++  // validation didn't complete. When we add a markers API, the
++  // marker-based variant of this check can become strict again.
+   if (!allRequiredBoundariesRendered(boundaryState)) {
+     const { thrownErrorsOutsideBoundary } = dynamicValidation
+     const rootInstantStack = dynamicValidation.slotStacks[0]
+@@ -1390,19 +1400,25 @@ export function getNavigationDisallowedDynamicReasons(
+       const error = rootInstantStack !== null ? rootInstantStack() : new Error()
+       error.name = 'Error'
+       error.message = message
+-      return [error]
++      return error
+     } else if (thrownErrorsOutsideBoundary.length === 1) {
+       const message = `Route "${workStore.route}": Could not validate \`unstable_instant\` because the target segment was prevented from rendering, likely due to the following error.`
+       const error = rootInstantStack !== null ? rootInstantStack() : new Error()
+       error.name = 'Error'
+       error.message = message
+-      return [error, thrownErrorsOutsideBoundary[0] as Error]
++      return new AggregateError([
++        error,
++        thrownErrorsOutsideBoundary[0] as Error,
++      ])
+     } else {
+       const message = `Route "${workStore.route}": Could not validate \`unstable_instant\` because the target segment was prevented from rendering, likely due to one of the following errors.`
+       const error = rootInstantStack !== null ? rootInstantStack() : new Error()
+       error.name = 'Error'
+       error.message = message
+-      return [error, ...(thrownErrorsOutsideBoundary as Error[])]
++      return new AggregateError([
++        error,
++        ...(thrownErrorsOutsideBoundary as Error[]),
++      ])
+     }
+   }
+ 
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/page.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/page.tsx
+index aab56fb135a3..7244911112e9 100644
+--- a/test/e2e/app-dir/instant-validation/app/suspense-in-root/page.tsx
++++ b/test/e2e/app-dir/instant-validation/app/suspense-in-root/page.tsx
+@@ -254,6 +254,9 @@ export default async function Page() {
+         <li>
+           <DebugLinks href="/suspense-in-root/static/cross-slot-blocking/inner/deep" />
+         </li>
++        <li>
++          <DebugLinks href="/suspense-in-root/static/multi-depth-deferred-fallback/inner" />
++        </li>
+       </ul>
+ 
+       <h2>Disable Validation</h2>
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/inner/layout.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/inner/layout.tsx
+new file mode 100644
+index 000000000000..df7ebb7b2ebb
+--- /dev/null
++++ b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/inner/layout.tsx
+@@ -0,0 +1,7 @@
++// Inner layout intentionally drops `{children}` so the inner page
++// boundary (configured for instant validation) cannot render. This
++// produces a missing-boundary fallback at the inner depth's iteration
++// of the validation loop.
++export default function Layout() {
++  return <p>Children intentionally hidden to test multi-depth deferral.</p>
++}
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx
+new file mode 100644
+index 000000000000..cedd439f6979
+--- /dev/null
++++ b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx
+@@ -0,0 +1,11 @@
++// Inner page configured for instant validation. The parent layout
++// hides `{children}`, so this page never renders — its boundary will
++// never appear in `boundaryState.renderedIds`, producing a missing-
++// boundary fallback at the inner depth's iteration of the validation
++// loop. The outer layout above is also configured but validates
++// cleanly, so the deferred fallback surfaces only at the end.
++export const unstable_instant = { level: 'experimental-error' }
++
++export default function Page() {
++  return <p>Inner page (should never render in this fixture).</p>
++}
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/layout.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/layout.tsx
+new file mode 100644
+index 000000000000..e0e63f77d11a
+--- /dev/null
++++ b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/layout.tsx
+@@ -0,0 +1,14 @@
++import { ReactNode } from 'react'
++
++// Outer layout: configured for instant validation, no errors. Renders
++// children cleanly so this depth's iteration of the validation loop
++// validates without producing errors or fallback. Used together with
++// the deeper inner page config to exercise the multi-depth deferral
++// path: the inner depth defers a missing-boundary fallback, this
++// (shallower) depth has nothing to report, and the deferred fallback
++// surfaces only after the loop has exhausted every depth.
++export const unstable_instant = { level: 'experimental-error' }
++
++export default function Layout({ children }: { children: ReactNode }) {
++  return <main>{children}</main>
++}
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/page.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/page.tsx
+new file mode 100644
+index 000000000000..dc41024e012f
+--- /dev/null
++++ b/test/e2e/app-dir/instant-validation/app/suspense-in-root/static/multi-depth-deferred-fallback/page.tsx
+@@ -0,0 +1,5 @@
++// Landing page for the multi-depth-deferred-fallback fixture. Not
++// targeted by the deferral test — only present so the route exists.
++export default function Page() {
++  return <p>multi-depth-deferred-fallback root</p>
++}
+diff --git a/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts b/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts
+index d66a3a3bd6a7..940e48a490f7 100644
+--- a/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts
++++ b/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts
+@@ -617,14 +617,27 @@ describe('instant validation - parallel slot configs', () => {
+           const browser = await navigateTo(href)
+           await expect(browser).toDisplayCollapsedRedbox(`
+            {
+-             "description": "Route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked": Could not validate \`unstable_instant\` because the target segment was prevented from rendering for an unknown reason.",
+-             "environmentLabel": "Server",
+-             "label": "Console Error",
+-             "source": "app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx (1:33) @ unstable_instant
++             "cause": [
++               {
++                 "label": "Caused by: Instant Validation",
++                 "source": "app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx (1:33) @ unstable_instant
+            > 1 | export const unstable_instant = { level: 'experimental-error' }
+                |                                 ^",
++                 "stack": [
++                   "unstable_instant app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx (1:33)",
++                   "Set.forEach <anonymous>",
++                 ],
++               },
++             ],
++             "code": "E1166",
++             "description": "Next.js encountered runtime data during the initial render.",
++             "environmentLabel": "Server",
++             "label": "Instant",
++             "source": "app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/@breadcrumbs/blocked/page.tsx (3:16) @ BreadcrumbsPage
++           > 3 |   await cookies()
++               |                ^",
+              "stack": [
+-               "unstable_instant app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx (1:33)",
++               "BreadcrumbsPage app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/@breadcrumbs/blocked/page.tsx (3:16)",
+              ],
+            }
+           `)
+@@ -632,8 +645,20 @@ describe('instant validation - parallel slot configs', () => {
+           const result = await prerender(href)
+           expect(extractBuildValidationError(result.cliOutput))
+             .toMatchInlineSnapshot(`
+-           "Error: Route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked": Could not validate \`unstable_instant\` because the target segment was prevented from rendering for an unknown reason.
+-               at ignore-listed frames
++           "Error: Route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked": Next.js encountered runtime data during the initial render.
++
++           \`cookies()\`, \`headers()\`, \`params\`, or \`searchParams\` accessed outside of \`<Suspense>\` blocks navigation, leading to a slower user experience.
++
++           Ways to fix this:
++             - Move the data access into a child component within a <Suspense> boundary
++             - Use \`generateStaticParams\` to make route params static
++             - Set \`export const instant = false\` to allow a blocking route
++
++           Learn more: https://nextjs.org/docs/messages/blocking-route
++               at main (<anonymous>)
++               at body (<anonymous>)
++               at html (<anonymous>)
++               at a (<anonymous>)
+            Build-time instant validation failed for route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked".
+            To get a more detailed stack trace and pinpoint the issue, try one of the following:
+              - Start the app in development mode by running \`next dev\`, then open "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked" in your browser to investigate the error.
+diff --git a/test/e2e/app-dir/instant-validation/instant-validation.test.ts b/test/e2e/app-dir/instant-validation/instant-validation.test.ts
+index 1d7eaa5348cb..2b8af700ee14 100644
+--- a/test/e2e/app-dir/instant-validation/instant-validation.test.ts
++++ b/test/e2e/app-dir/instant-validation/instant-validation.test.ts
+@@ -3302,6 +3302,57 @@ describe('instant validation', () => {
+       })
+     })
+ 
++    describe('multi-depth fallback deferral', () => {
++      // The validation outer loop iterates from deepest configured depth
++      // to shallowest. When the deepest iteration only produces a missing-
++      // boundary fallback (i.e., the configured boundary didn't render and
++      // there were no thrown errors), that fallback should be deferred so
++      // a real error from a shallower depth can win. If no shallower depth
++      // surfaces a real error, the deferred fallback eventually surfaces
++      // so the user is still made aware that validation didn't complete.
++
++      it('surfaces deferred fallback when no shallower depth has a real error', async () => {
++        // Outer layout has unstable_instant and validates cleanly. Inner
++        // page has unstable_instant but its parent layout drops {children},
++        // so the inner boundary can't render. Without the deferral, we'd
++        // bail out after the deepest iteration; with deferral, the outer
++        // iteration runs cleanly and the deferred fallback then surfaces.
++        if (isNextDev) {
++          const browser = await navigateTo(
++            '/suspense-in-root/static/multi-depth-deferred-fallback/inner'
++          )
++          await expect(browser).toDisplayCollapsedRedbox(`
++           {
++             "description": "Route "/suspense-in-root/static/multi-depth-deferred-fallback/inner": Could not validate \`unstable_instant\` because the target segment was prevented from rendering for an unknown reason.",
++             "environmentLabel": "Server",
++             "label": "Console Error",
++             "source": "app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx (7:33) @ unstable_instant
++           >  7 | export const unstable_instant = { level: 'experimental-error' }
++                |                                 ^",
++             "stack": [
++               "unstable_instant app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx (7:33)",
++             ],
++           }
++          `)
++        } else {
++          const result = await prerender(
++            '/suspense-in-root/static/multi-depth-deferred-fallback/inner'
++          )
++          expect(extractBuildValidationError(result.cliOutput))
++            .toMatchInlineSnapshot(`
++           "Error: Route "/suspense-in-root/static/multi-depth-deferred-fallback/inner": Could not validate \`unstable_instant\` because the target segment was prevented from rendering for an unknown reason.
++               at ignore-listed frames
++           Build-time instant validation failed for route "/suspense-in-root/static/multi-depth-deferred-fallback/inner".
++           To get a more detailed stack trace and pinpoint the issue, try one of the following:
++             - Start the app in development mode by running \`next dev\`, then open "/suspense-in-root/static/multi-depth-deferred-fallback/inner" in your browser to investigate the error.
++             - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.
++           Stopping prerender due to instant validation errors."
++          `)
++          expect(result.exitCode).toBe(1)
++        }
++      })
++    })
++
+     describe('disabling validation', () => {
+       it('in a layout', async () => {
+         if (isNextDev) {

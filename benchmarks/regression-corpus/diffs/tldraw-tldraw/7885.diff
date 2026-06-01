@@ -1,0 +1,277 @@
+diff --git a/apps/examples/e2e/fixtures/menus/StylePanel.ts b/apps/examples/e2e/fixtures/menus/StylePanel.ts
+index 49d448ea1209..9c9d01a790d7 100644
+--- a/apps/examples/e2e/fixtures/menus/StylePanel.ts
++++ b/apps/examples/e2e/fixtures/menus/StylePanel.ts
+@@ -38,7 +38,6 @@ export class StylePanel {
+ 			none: this.page.getByTestId('style.fill.none'),
+ 			semi: this.page.getByTestId('style.fill.semi'),
+ 			solid: this.page.getByTestId('style.fill.solid'),
+-			pattern: this.page.getByTestId('style.fill.pattern'),
+ 		}
+ 		this.dash = {
+ 			draw: this.page.getByTestId('style.dash.draw'),
+diff --git a/apps/examples/e2e/tests/test-style-panel.spec.ts b/apps/examples/e2e/tests/test-style-panel.spec.ts
+index cbc906338d41..dd64733628cb 100644
+--- a/apps/examples/e2e/tests/test-style-panel.spec.ts
++++ b/apps/examples/e2e/tests/test-style-panel.spec.ts
+@@ -9,7 +9,7 @@ test.describe('Style selection behaviour', () => {
+ 	test.beforeEach(setupOrReset)
+ 	test('selecting a style hints the button', async ({ isMobile, stylePanel, toolbar }) => {
+ 		const { blue, black } = stylePanel.colors
+-		const { pattern, none } = stylePanel.fill
++		const { solid, none } = stylePanel.fill
+ 		if (isMobile) {
+ 			await toolbar.mobileStylesButton.click()
+ 		}
+@@ -17,15 +17,15 @@ test.describe('Style selection behaviour', () => {
+ 		await stylePanel.isActive(black)
+ 		await stylePanel.isActive(none)
+ 		// these are not hinted by default
+-		await stylePanel.isInactive(pattern)
++		await stylePanel.isInactive(solid)
+ 		await stylePanel.isInactive(blue)
+ 
+ 		await blue.click()
+ 		await stylePanel.isActive(blue)
+ 		await stylePanel.isInactive(black)
+ 
+-		await pattern.click()
+-		await stylePanel.isActive(pattern)
++		await solid.click()
++		await stylePanel.isActive(solid)
+ 		await stylePanel.isInactive(none)
+ 		// this should not change the hint state of color buttons
+ 		await stylePanel.isActive(blue)
+@@ -40,7 +40,7 @@ test.describe('Style selection behaviour', () => {
+ 		const { blue } = stylePanel.colors
+ 		const { rectangle } = toolbar.tools
+ 		const { popoverRectangle } = toolbar.popOverTools
+-		const { pattern } = stylePanel.fill
++		const { solid } = stylePanel.fill
+ 		if (isMobile) {
+ 			await toolbar.mobileStylesButton.click()
+ 		}
+@@ -59,7 +59,7 @@ test.describe('Style selection behaviour', () => {
+ 		if (isMobile) {
+ 			await toolbar.mobileStylesButton.click()
+ 		}
+-		await pattern.click()
++		await solid.click()
+ 		await rectangle.click()
+ 		await page.mouse.click(250, 150)
+ 		await page.mouse.move(100, 100)
+@@ -67,7 +67,7 @@ test.describe('Style selection behaviour', () => {
+ 		await page.mouse.move(400, 400)
+ 		await page.mouse.up()
+ 		const shapes2 = await page.evaluate(() => editor.getSelectedShapes())
+-		expect(shapes2.every((s: any) => s.props.color === 'blue' && s.props.fill === 'pattern')).toBe(
++		expect(shapes2.every((s: any) => s.props.color === 'blue' && s.props.fill === 'solid')).toBe(
+ 			true
+ 		)
+ 	})
+diff --git a/assets/icons/icon/fill-lined-fill.svg b/assets/icons/icon/fill-lined-fill.svg
+new file mode 100644
+index 000000000000..2aacc2d62dd1
+--- /dev/null
++++ b/assets/icons/icon/fill-lined-fill.svg
+@@ -0,0 +1,4 @@
++<svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
++<path fill-rule="evenodd" clip-rule="evenodd" d="M26 4H8V5.99951H22C23.1046 5.99951 24 6.89494 24 7.99951V22H26V4ZM6 4V5.99951H4C2.89543 5.99951 2 6.89494 2 7.99951V25.9995C2 27.1041 2.89543 27.9995 4 27.9995H22C23.1046 27.9995 24 27.1041 24 25.9995V24H26C27.1046 24 28 23.1046 28 22V4C28 2.89543 27.1046 2 26 2H8C6.89543 2 6 2.89543 6 4ZM22 25.9995L4 26V8L22 7.99951V25.9995Z" fill="black"/>
++<path d="M4 8L22 7.99951V25.9995L4 26V8Z" fill="black" fill-opacity="0.68"/>
++</svg>
+diff --git a/packages/assets/imports.js b/packages/assets/imports.js
+index 16247441c08e..9938521c45b5 100644
+--- a/packages/assets/imports.js
++++ b/packages/assets/imports.js
+@@ -180,6 +180,7 @@ export function getAssetUrlsByImport(opts) {
+ 			edit: iconsIcon0MergedSvg2 + '#edit',
+ 			'external-link': iconsIcon0MergedSvg2 + '#external-link',
+ 			'fill-fill': iconsIcon0MergedSvg2 + '#fill-fill',
++			'fill-lined-fill': iconsIcon0MergedSvg2 + '#fill-lined-fill',
+ 			'fill-none': iconsIcon0MergedSvg2 + '#fill-none',
+ 			'fill-pattern': iconsIcon0MergedSvg2 + '#fill-pattern',
+ 			'fill-semi': iconsIcon0MergedSvg2 + '#fill-semi',
+diff --git a/packages/assets/imports.vite.js b/packages/assets/imports.vite.js
+index 3b843e12fbfb..3c0d90c76d1b 100644
+--- a/packages/assets/imports.vite.js
++++ b/packages/assets/imports.vite.js
+@@ -180,6 +180,7 @@ export function getAssetUrlsByImport(opts) {
+ 			edit: iconsIcon0MergedSvg2 + '#edit',
+ 			'external-link': iconsIcon0MergedSvg2 + '#external-link',
+ 			'fill-fill': iconsIcon0MergedSvg2 + '#fill-fill',
++			'fill-lined-fill': iconsIcon0MergedSvg2 + '#fill-lined-fill',
+ 			'fill-none': iconsIcon0MergedSvg2 + '#fill-none',
+ 			'fill-pattern': iconsIcon0MergedSvg2 + '#fill-pattern',
+ 			'fill-semi': iconsIcon0MergedSvg2 + '#fill-semi',
+diff --git a/packages/assets/selfHosted.js b/packages/assets/selfHosted.js
+index eb89b1cdb0c2..242d2b0da9f3 100644
+--- a/packages/assets/selfHosted.js
++++ b/packages/assets/selfHosted.js
+@@ -97,6 +97,7 @@ export function getAssetUrls(opts) {
+ 			edit: iconsIcon0MergedSvg + '#edit',
+ 			'external-link': iconsIcon0MergedSvg + '#external-link',
+ 			'fill-fill': iconsIcon0MergedSvg + '#fill-fill',
++			'fill-lined-fill': iconsIcon0MergedSvg + '#fill-lined-fill',
+ 			'fill-none': iconsIcon0MergedSvg + '#fill-none',
+ 			'fill-pattern': iconsIcon0MergedSvg + '#fill-pattern',
+ 			'fill-semi': iconsIcon0MergedSvg + '#fill-semi',
+diff --git a/packages/assets/types.d.ts b/packages/assets/types.d.ts
+index 7edd786582d4..e91fe0779182 100644
+--- a/packages/assets/types.d.ts
++++ b/packages/assets/types.d.ts
+@@ -83,6 +83,7 @@ export type AssetUrls = {
+ 		edit: string
+ 		'external-link': string
+ 		'fill-fill': string
++		'fill-lined-fill': string
+ 		'fill-none': string
+ 		'fill-pattern': string
+ 		'fill-semi': string
+diff --git a/packages/assets/urls.js b/packages/assets/urls.js
+index 600d3720185c..5e50a59b3825 100644
+--- a/packages/assets/urls.js
++++ b/packages/assets/urls.js
+@@ -142,6 +142,7 @@ export function getAssetUrlsByMetaUrl(opts) {
+ 			edit: iconsIcon0MergedSvg + '#edit',
+ 			'external-link': iconsIcon0MergedSvg + '#external-link',
+ 			'fill-fill': iconsIcon0MergedSvg + '#fill-fill',
++			'fill-lined-fill': iconsIcon0MergedSvg + '#fill-lined-fill',
+ 			'fill-none': iconsIcon0MergedSvg + '#fill-none',
+ 			'fill-pattern': iconsIcon0MergedSvg + '#fill-pattern',
+ 			'fill-semi': iconsIcon0MergedSvg + '#fill-semi',
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index 60500298ad18..b216020165db 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -1968,7 +1968,7 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+ export function HighlightToolbarItem(): JSX.Element;
+ 
+ // @public (undocumented)
+-export const iconTypes: readonly ["align-bottom", "align-center-horizontal", "align-center-vertical", "align-left", "align-right", "align-top", "alt", "arrow-arc", "arrow-cycle", "arrow-elbow", "arrow-left", "arrowhead-arrow", "arrowhead-bar", "arrowhead-diamond", "arrowhead-dot", "arrowhead-none", "arrowhead-square", "arrowhead-triangle-inverted", "arrowhead-triangle", "blob", "bold", "bookmark", "bring-forward", "bring-to-front", "broken", "bulletList", "check-circle", "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up", "chevrons-ne", "chevrons-sw", "clipboard-copied", "clipboard-copy", "code", "color", "comment", "corners", "crop", "cross-2", "cross-circle", "dash-dashed", "dash-dotted", "dash-draw", "dash-solid", "disconnected", "discord", "distribute-horizontal", "distribute-vertical", "dot", "dots-horizontal", "dots-vertical", "download", "drag-handle-dots", "duplicate", "edit", "external-link", "fill-fill", "fill-none", "fill-pattern", "fill-semi", "fill-solid", "follow", "following", "font-draw", "font-mono", "font-sans", "font-serif", "geo-arrow-down", "geo-arrow-left", "geo-arrow-right", "geo-arrow-up", "geo-check-box", "geo-cloud", "geo-diamond", "geo-ellipse", "geo-heart", "geo-hexagon", "geo-octagon", "geo-oval", "geo-pentagon", "geo-rectangle", "geo-rhombus-2", "geo-rhombus", "geo-star", "geo-trapezoid", "geo-triangle", "geo-x-box", "github", "group", "heading", "help-circle", "highlight", "horizontal-align-end", "horizontal-align-middle", "horizontal-align-start", "info-circle", "italic", "leading", "link", "list", "lock", "manual", "menu", "minus", "mixed", "pack", "plus", "question-mark-circle", "question-mark", "redo", "reset-zoom", "rotate-ccw", "rotate-cw", "send-backward", "send-to-back", "share-1", "size-extra-large", "size-large", "size-medium", "size-small", "spline-cubic", "spline-line", "stack-horizontal", "stack-vertical", "status-offline", "stretch-horizontal", "stretch-vertical", "strike", "text-align-center", "text-align-left", "text-align-right", "toggle-off", "toggle-on", "tool-arrow", "tool-eraser", "tool-frame", "tool-hand", "tool-highlight", "tool-laser", "tool-line", "tool-media", "tool-note", "tool-pencil", "tool-pointer", "tool-screenshot", "tool-text", "trash", "twitter", "underline", "undo", "ungroup", "unlock", "vertical-align-end", "vertical-align-middle", "vertical-align-start", "warning-triangle", "zoom-in", "zoom-out"];
++export const iconTypes: readonly ["align-bottom", "align-center-horizontal", "align-center-vertical", "align-left", "align-right", "align-top", "alt", "arrow-arc", "arrow-cycle", "arrow-elbow", "arrow-left", "arrowhead-arrow", "arrowhead-bar", "arrowhead-diamond", "arrowhead-dot", "arrowhead-none", "arrowhead-square", "arrowhead-triangle-inverted", "arrowhead-triangle", "blob", "bold", "bookmark", "bring-forward", "bring-to-front", "broken", "bulletList", "check-circle", "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up", "chevrons-ne", "chevrons-sw", "clipboard-copied", "clipboard-copy", "code", "color", "comment", "corners", "crop", "cross-2", "cross-circle", "dash-dashed", "dash-dotted", "dash-draw", "dash-solid", "disconnected", "discord", "distribute-horizontal", "distribute-vertical", "dot", "dots-horizontal", "dots-vertical", "download", "drag-handle-dots", "duplicate", "edit", "external-link", "fill-fill", "fill-lined-fill", "fill-none", "fill-pattern", "fill-semi", "fill-solid", "follow", "following", "font-draw", "font-mono", "font-sans", "font-serif", "geo-arrow-down", "geo-arrow-left", "geo-arrow-right", "geo-arrow-up", "geo-check-box", "geo-cloud", "geo-diamond", "geo-ellipse", "geo-heart", "geo-hexagon", "geo-octagon", "geo-oval", "geo-pentagon", "geo-rectangle", "geo-rhombus-2", "geo-rhombus", "geo-star", "geo-trapezoid", "geo-triangle", "geo-x-box", "github", "group", "heading", "help-circle", "highlight", "horizontal-align-end", "horizontal-align-middle", "horizontal-align-start", "info-circle", "italic", "leading", "link", "list", "lock", "manual", "menu", "minus", "mixed", "pack", "plus", "question-mark-circle", "question-mark", "redo", "reset-zoom", "rotate-ccw", "rotate-cw", "send-backward", "send-to-back", "share-1", "size-extra-large", "size-large", "size-medium", "size-small", "spline-cubic", "spline-line", "stack-horizontal", "stack-vertical", "status-offline", "stretch-horizontal", "stretch-vertical", "strike", "text-align-center", "text-align-left", "text-align-right", "toggle-off", "toggle-on", "tool-arrow", "tool-eraser", "tool-frame", "tool-hand", "tool-highlight", "tool-laser", "tool-line", "tool-media", "tool-note", "tool-pencil", "tool-pointer", "tool-screenshot", "tool-text", "trash", "twitter", "underline", "undo", "ungroup", "unlock", "vertical-align-end", "vertical-align-middle", "vertical-align-start", "warning-triangle", "zoom-in", "zoom-out"];
+ 
+ // @public (undocumented)
+ export class ImageShapeUtil extends BaseBoxShapeUtil<TLImageShape> {
+@@ -4365,7 +4365,7 @@ export interface TLUiIconProps extends React.HTMLAttributes<HTMLDivElement> {
+ }
+ 
+ // @public (undocumented)
+-export type TLUiIconType = 'align-bottom' | 'align-center-horizontal' | 'align-center-vertical' | 'align-left' | 'align-right' | 'align-top' | 'alt' | 'arrow-arc' | 'arrow-cycle' | 'arrow-elbow' | 'arrow-left' | 'arrowhead-arrow' | 'arrowhead-bar' | 'arrowhead-diamond' | 'arrowhead-dot' | 'arrowhead-none' | 'arrowhead-square' | 'arrowhead-triangle-inverted' | 'arrowhead-triangle' | 'blob' | 'bold' | 'bookmark' | 'bring-forward' | 'bring-to-front' | 'broken' | 'bulletList' | 'check-circle' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'chevron-up' | 'chevrons-ne' | 'chevrons-sw' | 'clipboard-copied' | 'clipboard-copy' | 'code' | 'color' | 'comment' | 'corners' | 'crop' | 'cross-2' | 'cross-circle' | 'dash-dashed' | 'dash-dotted' | 'dash-draw' | 'dash-solid' | 'disconnected' | 'discord' | 'distribute-horizontal' | 'distribute-vertical' | 'dot' | 'dots-horizontal' | 'dots-vertical' | 'download' | 'drag-handle-dots' | 'duplicate' | 'edit' | 'external-link' | 'fill-fill' | 'fill-none' | 'fill-pattern' | 'fill-semi' | 'fill-solid' | 'follow' | 'following' | 'font-draw' | 'font-mono' | 'font-sans' | 'font-serif' | 'geo-arrow-down' | 'geo-arrow-left' | 'geo-arrow-right' | 'geo-arrow-up' | 'geo-check-box' | 'geo-cloud' | 'geo-diamond' | 'geo-ellipse' | 'geo-heart' | 'geo-hexagon' | 'geo-octagon' | 'geo-oval' | 'geo-pentagon' | 'geo-rectangle' | 'geo-rhombus-2' | 'geo-rhombus' | 'geo-star' | 'geo-trapezoid' | 'geo-triangle' | 'geo-x-box' | 'github' | 'group' | 'heading' | 'help-circle' | 'highlight' | 'horizontal-align-end' | 'horizontal-align-middle' | 'horizontal-align-start' | 'info-circle' | 'italic' | 'leading' | 'link' | 'list' | 'lock' | 'manual' | 'menu' | 'minus' | 'mixed' | 'pack' | 'plus' | 'question-mark-circle' | 'question-mark' | 'redo' | 'reset-zoom' | 'rotate-ccw' | 'rotate-cw' | 'send-backward' | 'send-to-back' | 'share-1' | 'size-extra-large' | 'size-large' | 'size-medium' | 'size-small' | 'spline-cubic' | 'spline-line' | 'stack-horizontal' | 'stack-vertical' | 'status-offline' | 'stretch-horizontal' | 'stretch-vertical' | 'strike' | 'text-align-center' | 'text-align-left' | 'text-align-right' | 'toggle-off' | 'toggle-on' | 'tool-arrow' | 'tool-eraser' | 'tool-frame' | 'tool-hand' | 'tool-highlight' | 'tool-laser' | 'tool-line' | 'tool-media' | 'tool-note' | 'tool-pencil' | 'tool-pointer' | 'tool-screenshot' | 'tool-text' | 'trash' | 'twitter' | 'underline' | 'undo' | 'ungroup' | 'unlock' | 'vertical-align-end' | 'vertical-align-middle' | 'vertical-align-start' | 'warning-triangle' | 'zoom-in' | 'zoom-out';
++export type TLUiIconType = 'align-bottom' | 'align-center-horizontal' | 'align-center-vertical' | 'align-left' | 'align-right' | 'align-top' | 'alt' | 'arrow-arc' | 'arrow-cycle' | 'arrow-elbow' | 'arrow-left' | 'arrowhead-arrow' | 'arrowhead-bar' | 'arrowhead-diamond' | 'arrowhead-dot' | 'arrowhead-none' | 'arrowhead-square' | 'arrowhead-triangle-inverted' | 'arrowhead-triangle' | 'blob' | 'bold' | 'bookmark' | 'bring-forward' | 'bring-to-front' | 'broken' | 'bulletList' | 'check-circle' | 'check' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'chevron-up' | 'chevrons-ne' | 'chevrons-sw' | 'clipboard-copied' | 'clipboard-copy' | 'code' | 'color' | 'comment' | 'corners' | 'crop' | 'cross-2' | 'cross-circle' | 'dash-dashed' | 'dash-dotted' | 'dash-draw' | 'dash-solid' | 'disconnected' | 'discord' | 'distribute-horizontal' | 'distribute-vertical' | 'dot' | 'dots-horizontal' | 'dots-vertical' | 'download' | 'drag-handle-dots' | 'duplicate' | 'edit' | 'external-link' | 'fill-fill' | 'fill-lined-fill' | 'fill-none' | 'fill-pattern' | 'fill-semi' | 'fill-solid' | 'follow' | 'following' | 'font-draw' | 'font-mono' | 'font-sans' | 'font-serif' | 'geo-arrow-down' | 'geo-arrow-left' | 'geo-arrow-right' | 'geo-arrow-up' | 'geo-check-box' | 'geo-cloud' | 'geo-diamond' | 'geo-ellipse' | 'geo-heart' | 'geo-hexagon' | 'geo-octagon' | 'geo-oval' | 'geo-pentagon' | 'geo-rectangle' | 'geo-rhombus-2' | 'geo-rhombus' | 'geo-star' | 'geo-trapezoid' | 'geo-triangle' | 'geo-x-box' | 'github' | 'group' | 'heading' | 'help-circle' | 'highlight' | 'horizontal-align-end' | 'horizontal-align-middle' | 'horizontal-align-start' | 'info-circle' | 'italic' | 'leading' | 'link' | 'list' | 'lock' | 'manual' | 'menu' | 'minus' | 'mixed' | 'pack' | 'plus' | 'question-mark-circle' | 'question-mark' | 'redo' | 'reset-zoom' | 'rotate-ccw' | 'rotate-cw' | 'send-backward' | 'send-to-back' | 'share-1' | 'size-extra-large' | 'size-large' | 'size-medium' | 'size-small' | 'spline-cubic' | 'spline-line' | 'stack-horizontal' | 'stack-vertical' | 'status-offline' | 'stretch-horizontal' | 'stretch-vertical' | 'strike' | 'text-align-center' | 'text-align-left' | 'text-align-right' | 'toggle-off' | 'toggle-on' | 'tool-arrow' | 'tool-eraser' | 'tool-frame' | 'tool-hand' | 'tool-highlight' | 'tool-laser' | 'tool-line' | 'tool-media' | 'tool-note' | 'tool-pencil' | 'tool-pointer' | 'tool-screenshot' | 'tool-text' | 'trash' | 'twitter' | 'underline' | 'undo' | 'ungroup' | 'unlock' | 'vertical-align-end' | 'vertical-align-middle' | 'vertical-align-start' | 'warning-triangle' | 'zoom-in' | 'zoom-out';
+ 
+ // @public (undocumented)
+ export interface TLUiImageToolbarProps {
+diff --git a/packages/tldraw/src/lib/styles.tsx b/packages/tldraw/src/lib/styles.tsx
+index 57304286a156..a6a9c9c06503 100644
+--- a/packages/tldraw/src/lib/styles.tsx
++++ b/packages/tldraw/src/lib/styles.tsx
+@@ -26,8 +26,11 @@ export const STYLES = {
+ 		{ value: 'none', icon: 'fill-none' },
+ 		{ value: 'semi', icon: 'fill-semi' },
+ 		{ value: 'solid', icon: 'fill-solid' },
++	],
++	fillExtra: [
+ 		{ value: 'pattern', icon: 'fill-pattern' },
+-		// { value: 'fill', icon: 'fill-fill' },
++		{ value: 'lined-fill', icon: 'fill-lined-fill' },
++		{ value: 'fill', icon: 'fill-fill' },
+ 	],
+ 	dash: [
+ 		{ value: 'draw', icon: 'dash-draw' },
+diff --git a/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx b/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx
+index 8a8ba2556bd0..b4dec9b4131b 100644
+--- a/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx
++++ b/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx
+@@ -148,19 +148,35 @@ export function StylePanelOpacityPicker() {
+ 
+ /** @public @react */
+ export function StylePanelFillPicker() {
+-	const { styles } = useStylePanelContext()
++	const { styles, enhancedA11yMode } = useStylePanelContext()
+ 	const msg = useTranslation()
+ 	const fill = styles.get(DefaultFillStyle)
+ 	if (fill === undefined) return null
+ 
++	const title = msg('style-panel.fill')
++
+ 	return (
+-		<StylePanelButtonPicker
+-			title={msg('style-panel.fill')}
+-			uiType="fill"
+-			style={DefaultFillStyle}
+-			items={STYLES.fill}
+-			value={fill}
+-		/>
++		<>
++			{enhancedA11yMode && <StylePanelSubheading>{title}</StylePanelSubheading>}
++			<TldrawUiToolbar orientation="horizontal" label={title}>
++				<StylePanelButtonPickerInline
++					title={title}
++					uiType="fill"
++					style={DefaultFillStyle}
++					items={STYLES.fill}
++					value={fill}
++				/>
++				<StylePanelDropdownPickerInline
++					type="icon"
++					id="fill-extra"
++					uiType="fill-extra"
++					stylePanelType="fill"
++					style={DefaultFillStyle}
++					items={STYLES.fillExtra}
++					value={fill}
++				/>
++			</TldrawUiToolbar>
++		</>
+ 	)
+ }
+ 
+diff --git a/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx b/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx
+index e74be87ab2ae..ec279bb57fda 100644
+--- a/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx
++++ b/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx
+@@ -59,10 +59,11 @@ function StylePanelDropdownPickerInlineInner<T extends string>(
+ 	const editor = useEditor()
+ 	const [isOpen, setIsOpen] = React.useState(false)
+ 
+-	const icon = React.useMemo(
+-		() => items.find((item) => value.type === 'shared' && item.value === value.value)?.icon,
+-		[items, value]
+-	)
++	const icon = React.useMemo(() => {
++		if (value.type === 'mixed') return 'mixed' as TLUiIconType
++		const match = items.find((item) => item.value === value.value)?.icon
++		return match ?? items[0]?.icon
++	}, [items, value])
+ 
+ 	const stylePanelName = msg(`style-panel.${stylePanelType}` as TLUiTranslationKey)
+ 
+@@ -88,7 +89,7 @@ function StylePanelDropdownPickerInlineInner<T extends string>(
+ 					title={titleStr}
+ 				>
+ 					{labelStr && <TldrawUiButtonLabel>{labelStr}</TldrawUiButtonLabel>}
+-					<TldrawUiButtonIcon icon={(icon as TLUiIconType) ?? 'mixed'} />
++					<TldrawUiButtonIcon icon={icon as TLUiIconType} />
+ 				</TldrawUiToolbarButton>
+ 			</TldrawUiPopoverTrigger>
+ 			<TldrawUiPopoverContent side="left" align="center">
+diff --git a/packages/tldraw/src/lib/ui/icon-types.ts b/packages/tldraw/src/lib/ui/icon-types.ts
+index 184d5e3ca6a3..2d1fd6c945c2 100644
+--- a/packages/tldraw/src/lib/ui/icon-types.ts
++++ b/packages/tldraw/src/lib/ui/icon-types.ts
+@@ -63,6 +63,7 @@ export type TLUiIconType =
+ 	| 'edit'
+ 	| 'external-link'
+ 	| 'fill-fill'
++	| 'fill-lined-fill'
+ 	| 'fill-none'
+ 	| 'fill-pattern'
+ 	| 'fill-semi'
+@@ -227,6 +228,7 @@ export const iconTypes = [
+ 	'edit',
+ 	'external-link',
+ 	'fill-fill',
++	'fill-lined-fill',
+ 	'fill-none',
+ 	'fill-pattern',
+ 	'fill-semi',

@@ -1,0 +1,666 @@
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index 20171ba9d3f7..047691cafd3c 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -6012,8 +6012,6 @@ async function validateStagedShell(
+       workStore,
+       preludeIsEmpty ? PreludeState.Empty : PreludeState.Full,
+       dynamicValidation,
+-      // TODO(instant-validation): if allowEmptyStaticShell is true (likely due to blocking configs),
+-      // we should probably just skip this altogether
+       allowEmptyStaticShell
+     )
+   } catch (thrownValue) {
+@@ -6023,8 +6021,6 @@ async function validateStagedShell(
+       workStore,
+       PreludeState.Errored,
+       dynamicValidation,
+-      // TODO(instant-validation): if allowEmptyStaticShell is true (likely due to blocking configs),
+-      // we should probably just skip this altogether
+       allowEmptyStaticShell
+     )
+ 
+@@ -7843,17 +7839,13 @@ async function prerenderToStream(
+       const { prelude, preludeIsEmpty } =
+         await processPreludeOp(unprocessedPrelude)
+ 
+-      // If we've disabled throwing on empty static shell, then we don't need to
+-      // track any dynamic access that occurs above the suspense boundary because
+-      // we'll do so in the route shell.
+-      if (!allowEmptyStaticShell) {
+-        throwIfDisallowedDynamic(
+-          workStore,
+-          preludeIsEmpty ? PreludeState.Empty : PreludeState.Full,
+-          dynamicValidation,
+-          serverDynamicTracking
+-        )
+-      }
++      throwIfDisallowedDynamic(
++        workStore,
++        preludeIsEmpty ? PreludeState.Empty : PreludeState.Full,
++        dynamicValidation,
++        serverDynamicTracking,
++        allowEmptyStaticShell
++      )
+ 
+       const getServerInsertedHTML = makeGetServerInsertedHTML({
+         polyfills,
+diff --git a/packages/next/src/server/app-render/dynamic-rendering.ts b/packages/next/src/server/app-render/dynamic-rendering.ts
+index dcd8444b7ec9..93a3b649e01c 100644
+--- a/packages/next/src/server/app-render/dynamic-rendering.ts
++++ b/packages/next/src/server/app-render/dynamic-rendering.ts
+@@ -790,6 +790,42 @@ function resolveInstantStack(
+   return slotStacks[0] ?? null
+ }
+ 
++/**
++ * Inspects the component stack of an outlet boundary to discover whether the
++ * user placed a Suspense boundary above the document body, and records the
++ * opt-in on `dynamicValidation.hasSuspenseAboveBody` if so.
++ *
++ * The outlet itself isn't a meaningful source of dynamic — it only resolves
++ * when metadata/viewport are dynamic, which we track via their own boundaries.
++ * However, the outlet renders alongside the page content, so its stack passes
++ * through the user's layout chain (typically reaching into `<body>` via the
++ * root layout). That makes the outlet stack our best opportunity to spot a
++ * Suspense boundary above the body, even when no real body content is dynamic.
++ * Without this, a route whose only dynamic source is `generateViewport()` would
++ * miss the Suspense-above-body opt-in, because the viewport's stack lives in
++ * the head and never sees the user's root layout.
++ *
++ * We deliberately only set `hasSuspenseAboveBody`, not `hasAllowedDynamic`. The
++ * latter tracks whether the body has dynamic content that's been wrapped in
++ * Suspense (i.e., the page is partially dynamic). The outlet rendering tells us
++ * about the structural opt-in for an empty shell, not about the body being
++ * partially dynamic. The distinction matters because dynamic metadata is only
++ * acceptable when the page is partially dynamic (via real body holes), and we
++ * don't want this outlet-based detection to mask that case.
++ */
++function trackOutletSuspenseAboveBody(
++  componentStack: string,
++  dynamicValidation: DynamicValidationState
++): void {
++  if (
++    hasSuspenseBeforeRootLayoutWithoutBodyOrImplicitBodyRegex.test(
++      componentStack
++    )
++  ) {
++    dynamicValidation.hasSuspenseAboveBody = true
++  }
++}
++
+ export function trackAllowedDynamicAccess(
+   workStore: WorkStore,
+   componentStack: string,
+@@ -797,7 +833,7 @@ export function trackAllowedDynamicAccess(
+   clientDynamic: DynamicTrackingState
+ ) {
+   if (hasOutletRegex.test(componentStack)) {
+-    // We don't need to track that this is dynamic. It is only so when something else is also dynamic.
++    trackOutletSuspenseAboveBody(componentStack, dynamicValidation)
+     return
+   } else if (hasMetadataRegex.test(componentStack)) {
+     dynamicValidation.hasDynamicMetadata = true
+@@ -1058,7 +1094,7 @@ export function trackDynamicHoleInRuntimeShell(
+   clientDynamic: DynamicTrackingState
+ ) {
+   if (hasOutletRegex.test(componentStack)) {
+-    // We don't need to track that this is dynamic. It is only so when something else is also dynamic.
++    trackOutletSuspenseAboveBody(componentStack, dynamicValidation)
+     return
+   } else if (hasMetadataRegex.test(componentStack)) {
+     const error = addErrorContext(
+@@ -1069,9 +1105,6 @@ export function trackDynamicHoleInRuntimeShell(
+     dynamicValidation.dynamicMetadata = error
+     return
+   } else if (hasViewportRegex.test(componentStack)) {
+-    // TODO(instant-validation): If the page only has holes caused by runtime data,
+-    // we won't find out if there's a suspense-above-body and error for dynamic viewport
+-    // even if there is in fact a suspense-above-body
+     const error = addErrorContext(
+       createDynamicViewportError(workStore.route),
+       componentStack,
+@@ -1118,7 +1151,7 @@ export function trackDynamicHoleInStaticShell(
+   clientDynamic: DynamicTrackingState
+ ) {
+   if (hasOutletRegex.test(componentStack)) {
+-    // We don't need to track that this is dynamic. It is only so when something else is also dynamic.
++    trackOutletSuspenseAboveBody(componentStack, dynamicValidation)
+     return
+   } else if (hasMetadataRegex.test(componentStack)) {
+     const error = addErrorContext(
+@@ -1213,7 +1246,8 @@ export function throwIfDisallowedDynamic(
+   workStore: WorkStore,
+   prelude: PreludeState,
+   dynamicValidation: DynamicValidationState,
+-  serverDynamic: DynamicTrackingState
++  serverDynamic: DynamicTrackingState,
++  allowEmptyStaticShell: boolean
+ ): void {
+   if (serverDynamic.syncDynamicErrorWithStack) {
+     logDisallowedDynamicError(
+@@ -1223,14 +1257,31 @@ export function throwIfDisallowedDynamic(
+     throw new StaticGenBailoutError()
+   }
+ 
+-  if (prelude !== PreludeState.Full) {
+-    if (dynamicValidation.hasSuspenseAboveBody) {
+-      // This route has opted into allowing fully dynamic rendering
+-      // by including a Suspense boundary above the body. In this case
+-      // a lack of a shell is not considered disallowed so we simply return
+-      return
+-    }
++  // The dynamic metadata error is a mistake-detection signal. It fires when the
++  // rest of the shell is otherwise fully static apart from metadata, suggesting
++  // the dynamic data access in `generateMetadata` was probably unintentional.
++  // That condition is independent of whether the user or build phase accepted
++  // an empty shell, so we surface it before any opt-in bypass.
++  if (
++    prelude === PreludeState.Full &&
++    dynamicValidation.hasAllowedDynamic === false &&
++    dynamicValidation.hasDynamicMetadata
++  ) {
++    console.error(createDynamicOrRuntimeMetadataError(workStore.route).message)
++    throw new StaticGenBailoutError()
++  }
++
++  // Either flag expresses "this shell is allowed to be empty/blocking":
++  //   - `allowEmptyStaticShell` covers `unstable_instant = false` (user opt-in)
++  //     and the build-phase fallback-shell case.
++  //   - `hasSuspenseAboveBody` is the structural opt-in inside the user's root
++  //     layout.
++  // Treat them as synonyms for the purpose of bypassing shell-failure errors.
++  if (allowEmptyStaticShell || dynamicValidation.hasSuspenseAboveBody) {
++    return
++  }
+ 
++  if (prelude !== PreludeState.Full) {
+     // We didn't have any sync bailouts but there may be user code which
+     // blocked the root. We would have captured these during the prerender
+     // and can log them here and then terminate the build/validating render
+@@ -1263,16 +1314,6 @@ export function throwIfDisallowedDynamic(
+       )
+       throw new StaticGenBailoutError()
+     }
+-  } else {
+-    if (
+-      dynamicValidation.hasAllowedDynamic === false &&
+-      dynamicValidation.hasDynamicMetadata
+-    ) {
+-      console.error(
+-        createDynamicOrRuntimeMetadataError(workStore.route).message
+-      )
+-      throw new StaticGenBailoutError()
+-    }
+   }
+ }
+ 
+@@ -1280,12 +1321,29 @@ export function getStaticShellDisallowedDynamicReasons(
+   workStore: WorkStore,
+   prelude: PreludeState,
+   dynamicValidation: DynamicValidationState,
+-  configAllowsBlocking: boolean
++  allowEmptyStaticShell: boolean
+ ): Array<Error> {
+-  if (configAllowsBlocking || dynamicValidation.hasSuspenseAboveBody) {
+-    // This route has opted into allowing fully dynamic rendering
+-    // by including a Suspense boundary above the body. In this case
+-    // a lack of a shell is not considered disallowed so we simply return
++  // The dynamic metadata error is a mistake-detection signal. It fires when the
++  // rest of the shell is otherwise fully static apart from metadata, suggesting
++  // the dynamic data access in `generateMetadata` was probably unintentional.
++  // That condition is independent of whether the user or build phase accepted
++  // an empty shell, so we surface it before any opt-in bypass.
++  if (
++    prelude === PreludeState.Full &&
++    dynamicValidation.hasAllowedDynamic === false &&
++    dynamicValidation.dynamicErrors.length === 0 &&
++    dynamicValidation.dynamicMetadata
++  ) {
++    return [dynamicValidation.dynamicMetadata]
++  }
++
++  // Either flag expresses "this shell is allowed to be empty/blocking":
++  //   - `allowEmptyStaticShell` covers `unstable_instant = false` (user opt-in)
++  //     and the build-phase fallback-shell case.
++  //   - `hasSuspenseAboveBody` is the structural opt-in inside the user's root
++  //     layout.
++  // Treat them as synonyms for the purpose of bypassing shell-failure errors.
++  if (allowEmptyStaticShell || dynamicValidation.hasSuspenseAboveBody) {
+     return []
+   }
+ 
+@@ -1308,15 +1366,6 @@ export function getStaticShellDisallowedDynamicReasons(
+         ),
+       ]
+     }
+-  } else {
+-    // We have a prelude but we might still have dynamic metadata without any other dynamic access
+-    if (
+-      dynamicValidation.hasAllowedDynamic === false &&
+-      dynamicValidation.dynamicErrors.length === 0 &&
+-      dynamicValidation.dynamicMetadata
+-    ) {
+-      return [dynamicValidation.dynamicMetadata]
+-    }
+   }
+   // We had a non-empty prelude and there are no dynamic holes
+   return []
+diff --git a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+index bbf7557db50d..7190fb64ccd6 100644
+--- a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
++++ b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+@@ -388,6 +388,150 @@ describe('Cache Components Errors', () => {
+       }
+     })
+ 
++    describe('Dynamic Metadata - Static Route With Suspense Above Body', () => {
++      const pathname = '/dynamic-metadata-static-with-suspense-above-body'
++
++      if (isNextDev) {
++        it('should show a collapsed redbox error', async () => {
++          const browser = await next.browser(pathname)
++
++          await expect(browser).toDisplayCollapsedRedbox(`
++           {
++             "code": "E1231",
++             "description": "Next.js encountered uncached data in generateMetadata().",
++             "environmentLabel": "Server",
++             "label": "Instant",
++             "source": "app/dynamic-metadata-static-with-suspense-above-body/page.tsx (2:9) @ Module.generateMetadata
++           > 2 |   await new Promise((r) => setTimeout(r, 0))
++               |         ^",
++             "stack": [
++               "Module.generateMetadata app/dynamic-metadata-static-with-suspense-above-body/page.tsx (2:9)",
++             ],
++           }
++          `)
++        })
++      } else {
++        it('should error the build because Suspense above body is not a documented mitigation for dynamic generateMetadata', async () => {
++          try {
++            await prerender(pathname)
++          } catch {
++            // we expect the build to fail
++          }
++
++          const output = getPrerenderOutput(
++            next.cliOutput.slice(cliOutputLength),
++            { isMinified: !isDebugPrerender }
++          )
++
++          if (isDebugPrerender) {
++            expect(output).toMatchInlineSnapshot(`
++             "Route "/dynamic-metadata-static-with-suspense-above-body": Next.js encountered uncached or runtime data in \`generateMetadata()\`.
++
++             This route's metadata is blocked, but the rest of its content can be prerendered.
++
++             Ways to fix this:
++               - Use a static metadata export instead of \`generateMetadata()\`
++               - Cache the metadata with \`"use cache"\` in \`generateMetadata()\`
++               - Add a dynamic data access (e.g. \`await connection()\`) to the page to render it at request time
++
++             Learn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata
++             Error occurred prerendering page "/dynamic-metadata-static-with-suspense-above-body". Read more: https://nextjs.org/docs/messages/prerender-error
++
++             > Export encountered errors on 1 path:
++             	/dynamic-metadata-static-with-suspense-above-body/page: /dynamic-metadata-static-with-suspense-above-body"
++            `)
++          } else {
++            expect(output).toMatchInlineSnapshot(`
++             "Route "/dynamic-metadata-static-with-suspense-above-body": Next.js encountered uncached or runtime data in \`generateMetadata()\`.
++
++             This route's metadata is blocked, but the rest of its content can be prerendered.
++
++             Ways to fix this:
++               - Use a static metadata export instead of \`generateMetadata()\`
++               - Cache the metadata with \`"use cache"\` in \`generateMetadata()\`
++               - Add a dynamic data access (e.g. \`await connection()\`) to the page to render it at request time
++
++             Learn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata
++             Error occurred prerendering page "/dynamic-metadata-static-with-suspense-above-body". Read more: https://nextjs.org/docs/messages/prerender-error
++             Export encountered an error on /dynamic-metadata-static-with-suspense-above-body/page: /dynamic-metadata-static-with-suspense-above-body, exiting the build."
++            `)
++          }
++        })
++      }
++    })
++
++    describe('Dynamic Metadata - Static Route With instant = false', () => {
++      const pathname = '/dynamic-metadata-static-with-instant-false'
++
++      if (isNextDev) {
++        it('should show a collapsed redbox error', async () => {
++          const browser = await next.browser(pathname)
++
++          await expect(browser).toDisplayCollapsedRedbox(`
++           {
++             "code": "E1231",
++             "description": "Next.js encountered uncached data in generateMetadata().",
++             "environmentLabel": "Server",
++             "label": "Instant",
++             "source": "app/dynamic-metadata-static-with-instant-false/page.tsx (4:9) @ Module.generateMetadata
++           > 4 |   await new Promise((r) => setTimeout(r, 0))
++               |         ^",
++             "stack": [
++               "Module.generateMetadata app/dynamic-metadata-static-with-instant-false/page.tsx (4:9)",
++             ],
++           }
++          `)
++        })
++      } else {
++        it('should error the build because instant = false is not a documented mitigation for dynamic generateMetadata', async () => {
++          try {
++            await prerender(pathname)
++          } catch {
++            // we expect the build to fail
++          }
++
++          const output = getPrerenderOutput(
++            next.cliOutput.slice(cliOutputLength),
++            { isMinified: !isDebugPrerender }
++          )
++
++          if (isDebugPrerender) {
++            expect(output).toMatchInlineSnapshot(`
++             "Route "/dynamic-metadata-static-with-instant-false": Next.js encountered uncached or runtime data in \`generateMetadata()\`.
++
++             This route's metadata is blocked, but the rest of its content can be prerendered.
++
++             Ways to fix this:
++               - Use a static metadata export instead of \`generateMetadata()\`
++               - Cache the metadata with \`"use cache"\` in \`generateMetadata()\`
++               - Add a dynamic data access (e.g. \`await connection()\`) to the page to render it at request time
++
++             Learn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata
++             Error occurred prerendering page "/dynamic-metadata-static-with-instant-false". Read more: https://nextjs.org/docs/messages/prerender-error
++
++             > Export encountered errors on 1 path:
++             	/dynamic-metadata-static-with-instant-false/page: /dynamic-metadata-static-with-instant-false"
++            `)
++          } else {
++            expect(output).toMatchInlineSnapshot(`
++             "Route "/dynamic-metadata-static-with-instant-false": Next.js encountered uncached or runtime data in \`generateMetadata()\`.
++
++             This route's metadata is blocked, but the rest of its content can be prerendered.
++
++             Ways to fix this:
++               - Use a static metadata export instead of \`generateMetadata()\`
++               - Cache the metadata with \`"use cache"\` in \`generateMetadata()\`
++               - Add a dynamic data access (e.g. \`await connection()\`) to the page to render it at request time
++
++             Learn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata
++             Error occurred prerendering page "/dynamic-metadata-static-with-instant-false". Read more: https://nextjs.org/docs/messages/prerender-error
++             Export encountered an error on /dynamic-metadata-static-with-instant-false/page: /dynamic-metadata-static-with-instant-false, exiting the build."
++            `)
++          }
++        })
++      }
++    })
++
+     describe('Dynamic Metadata - Dynamic Route', () => {
+       const pathname = '/dynamic-metadata-dynamic-route'
+ 
+@@ -487,6 +631,44 @@ describe('Cache Components Errors', () => {
+       }
+     })
+ 
++    describe('Dynamic Viewport - Static Route With Suspense Above Body', () => {
++      const pathname = '/dynamic-viewport-static-with-suspense'
++
++      if (isNextDev) {
++        it('should not show a collapsed redbox error', async () => {
++          const browser = await next.browser(pathname)
++          await waitForNoErrorToast(browser)
++        })
++      } else {
++        it('should not error the build when generateViewport is dynamic and the root layout wraps body in Suspense', async () => {
++          try {
++            await prerender(pathname)
++          } catch (error) {
++            throw new Error('expected build not to fail', { cause: error })
++          }
++        })
++      }
++    })
++
++    describe('Dynamic Viewport - Static Route With instant = false', () => {
++      const pathname = '/dynamic-viewport-static-with-instant-false'
++
++      if (isNextDev) {
++        it('should not show a collapsed redbox error', async () => {
++          const browser = await next.browser(pathname)
++          await waitForNoErrorToast(browser)
++        })
++      } else {
++        it('should not error the build when generateViewport is dynamic and the page opts into blocking via instant = false', async () => {
++          try {
++            await prerender(pathname)
++          } catch (error) {
++            throw new Error('expected build not to fail', { cause: error })
++          }
++        })
++      }
++    })
++
+     describe('Dynamic Viewport - Dynamic Route', () => {
+       const pathname = '/dynamic-viewport-dynamic-route'
+ 
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-instant-false/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-instant-false/layout.tsx
+new file mode 100644
+index 000000000000..745e32b8a8d2
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-instant-false/layout.tsx
+@@ -0,0 +1,9 @@
++export default function Root({ children }: { children: React.ReactNode }) {
++  return (
++    <html>
++      <body>
++        <main>{children}</main>
++      </body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-instant-false/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-instant-false/page.tsx
+new file mode 100644
+index 000000000000..3e237d205088
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-instant-false/page.tsx
+@@ -0,0 +1,24 @@
++export const unstable_instant = false
++
++export async function generateMetadata() {
++  await new Promise((r) => setTimeout(r, 0))
++  return { title: 'Dynamic Metadata' }
++}
++
++export default async function Page() {
++  return (
++    <>
++      <p>
++        This page is static except for `generateMetadata`. It opts into a fully
++        dynamic, blocking route via `export const unstable_instant = false`.
++        That opt-in is a synonym for wrapping the document body in a Suspense
++        boundary — it says the user accepts a blocking route — but it is NOT a
++        documented mitigation for dynamic `generateMetadata`. So even with the
++        opt-in, we still expect the dynamic-metadata error to be shown to nudge
++        users back toward making `generateMetadata` static (or, secondarily,
++        making the page partially dynamic).
++      </p>
++      <span id="sentinel">sentinel</span>
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-suspense-above-body/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-suspense-above-body/layout.tsx
+new file mode 100644
+index 000000000000..418df3cfb037
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-suspense-above-body/layout.tsx
+@@ -0,0 +1,13 @@
++import { Suspense } from 'react'
++
++export default function Root({ children }: { children: React.ReactNode }) {
++  return (
++    <html>
++      <Suspense>
++        <body>
++          <main>{children}</main>
++        </body>
++      </Suspense>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-suspense-above-body/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-suspense-above-body/page.tsx
+new file mode 100644
+index 000000000000..cf6feb72c95c
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-metadata-static-with-suspense-above-body/page.tsx
+@@ -0,0 +1,22 @@
++export async function generateMetadata() {
++  await new Promise((r) => setTimeout(r, 0))
++  return { title: 'Dynamic Metadata' }
++}
++
++export default async function Page() {
++  return (
++    <>
++      <p>
++        This page is static except for `generateMetadata`. The root layout wraps
++        the document body in a Suspense boundary. Wrapping the body in Suspense
++        is the opt-in for a fully dynamic shell, which is the documented
++        mitigation for dynamic `generateViewport`, but is NOT a documented
++        mitigation for dynamic `generateMetadata`. So even with Suspense above
++        body, we still expect the dynamic-metadata error to be shown to nudge
++        users back toward making `generateMetadata` static (or, secondarily,
++        making the page partially dynamic).
++      </p>
++      <span id="sentinel">sentinel</span>
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-instant-false/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-instant-false/layout.tsx
+new file mode 100644
+index 000000000000..745e32b8a8d2
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-instant-false/layout.tsx
+@@ -0,0 +1,9 @@
++export default function Root({ children }: { children: React.ReactNode }) {
++  return (
++    <html>
++      <body>
++        <main>{children}</main>
++      </body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-instant-false/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-instant-false/page.tsx
+new file mode 100644
+index 000000000000..be2732453d3a
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-instant-false/page.tsx
+@@ -0,0 +1,22 @@
++export const unstable_instant = false
++
++export async function generateViewport() {
++  await new Promise((r) => setTimeout(r, 0))
++  return { themeColor: 'black' }
++}
++
++export default async function Page() {
++  return (
++    <>
++      <p>
++        This page is static except for `generateViewport`. It opts into a fully
++        dynamic, blocking route via `export const unstable_instant = false`,
++        which is a documented mitigation for dynamic `generateViewport`. With
++        that opt-in, the dynamic viewport should not error the build and should
++        not show a redbox in dev. This is the symmetric counterpart to the
++        Suspense-above-body opt-in.
++      </p>
++      <span id="sentinel">sentinel</span>
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-suspense/layout.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-suspense/layout.tsx
+new file mode 100644
+index 000000000000..418df3cfb037
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-suspense/layout.tsx
+@@ -0,0 +1,13 @@
++import { Suspense } from 'react'
++
++export default function Root({ children }: { children: React.ReactNode }) {
++  return (
++    <html>
++      <Suspense>
++        <body>
++          <main>{children}</main>
++        </body>
++      </Suspense>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-suspense/page.tsx b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-suspense/page.tsx
+new file mode 100644
+index 000000000000..f876d30ca93e
+--- /dev/null
++++ b/test/e2e/app-dir/cache-components-errors/fixtures/default/app/dynamic-viewport-static-with-suspense/page.tsx
+@@ -0,0 +1,18 @@
++export async function generateViewport() {
++  await new Promise((r) => setTimeout(r, 0))
++  return { themeColor: 'black' }
++}
++
++export default async function Page() {
++  return (
++    <>
++      <p>
++        This page is static except for `generateViewport`. The root layout wraps
++        the document body in a Suspense boundary, which is an explicit opt-in to
++        a fully dynamic shell. With that opt-in, a dynamic `generateViewport`
++        should not error the build and should not show a redbox in dev.
++      </p>
++      <span id="sentinel">sentinel</span>
++    </>
++  )
++}
+diff --git a/test/e2e/app-dir/segment-cache/vary-params/app/(main)/metadata/[slug]/page.tsx b/test/e2e/app-dir/segment-cache/vary-params/app/(main)/metadata/[slug]/page.tsx
+index d314f826ce0f..f595350428b3 100644
+--- a/test/e2e/app-dir/segment-cache/vary-params/app/(main)/metadata/[slug]/page.tsx
++++ b/test/e2e/app-dir/segment-cache/vary-params/app/(main)/metadata/[slug]/page.tsx
+@@ -1,3 +1,6 @@
++import { Suspense } from 'react'
++import { connection } from 'next/server'
++
+ type Params = { slug: string }
+ 
+ /**
+@@ -7,6 +10,13 @@ type Params = { slug: string }
+  * When the slug changes:
+  * - Head segment should be re-fetched (metadata accesses slug)
+  * - Body segment should be cached (body does NOT access slug)
++ *
++ * The body contains a self-contained dynamic marker (`<DynamicContent />`
++ * inside Suspense). This is the documented mitigation for dynamic
++ * `generateMetadata` on an otherwise-static body — it makes the body partially
++ * dynamic via PPR, which is what we actually want here: the body doesn't depend
++ * on `slug`, so the static portion of the prefetch is still cacheable across
++ * slug changes.
+  */
+ export async function generateStaticParams(): Promise<Params[]> {
+   return [{ slug: 'aaa' }, { slug: 'bbb' }, { slug: 'ccc' }]
+@@ -26,6 +36,14 @@ export default function MetadataPage() {
+   return (
+     <div id="metadata-page">
+       <div data-content="true">{`Static page body`}</div>
++      <Suspense fallback={<div>Loading...</div>}>
++        <DynamicContent />
++      </Suspense>
+     </div>
+   )
+ }
++
++async function DynamicContent() {
++  await connection()
++  return <div data-dynamic-content="true">Dynamic content loaded</div>
++}

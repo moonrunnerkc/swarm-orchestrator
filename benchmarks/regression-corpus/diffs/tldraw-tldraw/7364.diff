@@ -1,0 +1,3600 @@
+diff --git a/apps/dotcom/client/src/fairy/fairy-actions/PenActionUtil.ts b/apps/dotcom/client/src/fairy/fairy-actions/PenActionUtil.ts
+index 7037d8c7fa8a..dd6f22c3d92a 100644
+--- a/apps/dotcom/client/src/fairy/fairy-actions/PenActionUtil.ts
++++ b/apps/dotcom/client/src/fairy/fairy-actions/PenActionUtil.ts
+@@ -6,7 +6,7 @@ import {
+ 	convertSimpleIdToTldrawId,
+ 	createAgentActionInfo,
+ } from '@tldraw/fairy-shared'
+-import { TLDrawShapeSegment, Vec, VecModel, last } from 'tldraw'
++import { TLDrawShapeSegment, Vec, VecModel, b64Vecs, last } from 'tldraw'
+ import { AgentHelpers } from '../fairy-agent/AgentHelpers'
+ import { AgentActionUtil } from './AgentActionUtil'
+ 
+@@ -84,14 +84,17 @@ export class PenActionUtil extends AgentActionUtil<PenAction> {
+ 			return
+ 		}
+ 
++		const segmentPoints = points.map((point) => ({
++			x: point.x - minX,
++			y: point.y - minY,
++			z: 0.75,
++		}))
++		const base64Points = b64Vecs.encodePoints(segmentPoints)
++
+ 		const segments: TLDrawShapeSegment[] = [
+ 			{
+ 				type: 'free',
+-				points: points.map((point) => ({
+-					x: point.x - minX,
+-					y: point.y - minY,
+-					z: 0.75,
+-				})),
++				points: base64Points,
+ 			},
+ 		]
+ 
+diff --git a/apps/dotcom/client/src/fairy/fairy-actions/__test__/PenActionUtil.test.ts b/apps/dotcom/client/src/fairy/fairy-actions/__test__/PenActionUtil.test.ts
+index 1e97c50e1797..6f0f8f3caa6b 100644
+--- a/apps/dotcom/client/src/fairy/fairy-actions/__test__/PenActionUtil.test.ts
++++ b/apps/dotcom/client/src/fairy/fairy-actions/__test__/PenActionUtil.test.ts
+@@ -1,5 +1,5 @@
+ import { createAgentAction, PenAction, Streaming, toSimpleShapeId } from '@tldraw/fairy-shared'
+-import { Editor, TLDrawShape } from 'tldraw'
++import { b64Vecs, Editor, TLDrawShape } from 'tldraw'
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+ import { AgentHelpers } from '../../fairy-agent/AgentHelpers'
+ import { FairyAgent } from '../../fairy-agent/FairyAgent'
+@@ -437,10 +437,12 @@ describe('PenActionUtil', () => {
+ 
+ 			expect(drawShape.props.segments).toHaveLength(1)
+ 			expect(drawShape.props.segments[0].type).toBe('free')
+-			expect(drawShape.props.segments[0].points.length).toBeGreaterThan(0)
++			// Decode the base64 points
++			const decodedPoints = b64Vecs.decodePoints(drawShape.props.segments[0].points)
++			expect(decodedPoints.length).toBeGreaterThan(0)
+ 			// First point should be normalized to 0,0
+-			expect(drawShape.props.segments[0].points[0].x).toBe(0)
+-			expect(drawShape.props.segments[0].points[0].y).toBe(0)
++			expect(decodedPoints[0].x).toBe(0)
++			expect(decodedPoints[0].y).toBe(0)
+ 		})
+ 
+ 		it('should close shape by duplicating first point when closed is true', () => {
+diff --git a/apps/dotcom/client/src/tla/components/TlaEditor/useExtraToolDragIcons.ts b/apps/dotcom/client/src/tla/components/TlaEditor/useExtraToolDragIcons.ts
+index 78b5e825863f..96a281273f40 100644
+--- a/apps/dotcom/client/src/tla/components/TlaEditor/useExtraToolDragIcons.ts
++++ b/apps/dotcom/client/src/tla/components/TlaEditor/useExtraToolDragIcons.ts
+@@ -1,5 +1,11 @@
+ import { useMemo } from 'react'
+-import { DefaultSizeStyle, onDragFromToolbarToCreateShape, TLUiOverrides, VecModel } from 'tldraw'
++import {
++	b64Vecs,
++	DefaultSizeStyle,
++	onDragFromToolbarToCreateShape,
++	TLUiOverrides,
++	VecModel,
++} from 'tldraw'
+ import { trackEvent } from '../../../utils/analytics'
+ 
+ export function useExtraDragIconOverrides() {
+@@ -17,7 +23,7 @@ export function useExtraDragIconOverrides() {
+ 									segments: [
+ 										{
+ 											type: 'free',
+-											points: scalePoints(POINTER_POINTS, SCALES[sizeStyle]),
++											points: b64Vecs.encodePoints(scalePoints(POINTER_POINTS, SCALES[sizeStyle])),
+ 										},
+ 									],
+ 									isClosed: true,
+@@ -40,7 +46,7 @@ export function useExtraDragIconOverrides() {
+ 									segments: [
+ 										{
+ 											type: 'free',
+-											points: scalePoints(HAND_POINTS, SCALES[sizeStyle]),
++											points: b64Vecs.encodePoints(scalePoints(HAND_POINTS, SCALES[sizeStyle])),
+ 										},
+ 									],
+ 									isClosed: true,
+@@ -63,7 +69,7 @@ export function useExtraDragIconOverrides() {
+ 									segments: [
+ 										{
+ 											type: 'free',
+-											points: scalePoints(DRAW_POINTS, SCALES[sizeStyle]),
++											points: b64Vecs.encodePoints(scalePoints(DRAW_POINTS, SCALES[sizeStyle])),
+ 										},
+ 									],
+ 									isClosed: true,
+diff --git a/apps/examples/e2e/tests/export-snapshots-data.tsx b/apps/examples/e2e/tests/export-snapshots-data.tsx
+index c5d61cc71880..a8cdc1e79d4d 100644
+--- a/apps/examples/e2e/tests/export-snapshots-data.tsx
++++ b/apps/examples/e2e/tests/export-snapshots-data.tsx
+@@ -1,7 +1,86 @@
+ /* eslint-disable react/no-string-refs, local/no-internal-imports */
+-import { degreesToRadians, TLShapeCrop, toRichText } from 'tldraw'
++import { b64Vecs, degreesToRadians, TLShapeCrop, toRichText, VecModel } from 'tldraw'
+ import { TL } from 'tldraw/src/test/test-jsx'
+ 
++const convexPoints: VecModel[] = [
++	{ x: 0, y: 0, z: 0.5 },
++	{ x: 0.1, y: 0, z: 0.5 },
++	{ x: 0.47, y: 0, z: 0.5 },
++	{ x: 1.61, y: 0, z: 0.5 },
++	{ x: 3.9, y: 0, z: 0.5 },
++	{ x: 7.09, y: 0, z: 0.5 },
++	{ x: 10.66, y: 0, z: 0.5 },
++	{ x: 14.15, y: 0, z: 0.5 },
++	{ x: 17.3, y: 0, z: 0.5 },
++	{ x: 20.28, y: 0, z: 0.5 },
++	{ x: 23.43, y: 0.01, z: 0.5 },
++	{ x: 26.21, y: 0.33, z: 0.5 },
++	{ x: 28.78, y: 1.22, z: 0.5 },
++	{ x: 31.52, y: 2.42, z: 0.5 },
++	{ x: 34.2, y: 3.92, z: 0.5 },
++	{ x: 36.52, y: 5.72, z: 0.5 },
++	{ x: 38.36, y: 7.62, z: 0.5 },
++	{ x: 40.26, y: 10.03, z: 0.5 },
++	{ x: 42.18, y: 12.96, z: 0.5 },
++	{ x: 44.04, y: 16.13, z: 0.5 },
++	{ x: 45.89, y: 19.87, z: 0.5 },
++	{ x: 47.5, y: 24.12, z: 0.5 },
++	{ x: 48.77, y: 28.45, z: 0.5 },
++	{ x: 49.75, y: 32.78, z: 0.5 },
++	{ x: 50.36, y: 36.93, z: 0.5 },
++	{ x: 50.72, y: 41.07, z: 0.5 },
++	{ x: 50.84, y: 45.22, z: 0.5 },
++	{ x: 50.84, y: 48.58, z: 0.5 },
++	{ x: 50.84, y: 52.02, z: 0.5 },
++	{ x: 50.79, y: 55.21, z: 0.5 },
++	{ x: 50.45, y: 57.41, z: 0.5 },
++	{ x: 49.83, y: 59.48, z: 0.5 },
++	{ x: 49.09, y: 61.37, z: 0.5 },
++	{ x: 48.22, y: 63.04, z: 0.5 },
++	{ x: 47.28, y: 64.65, z: 0.5 },
++	{ x: 46.22, y: 66.3, z: 0.5 },
++	{ x: 45.03, y: 68.03, z: 0.5 },
++	{ x: 43.81, y: 69.72, z: 0.5 },
++	{ x: 42.48, y: 71.36, z: 0.5 },
++	{ x: 40.85, y: 73.1, z: 0.5 },
++	{ x: 39.24, y: 74.55, z: 0.5 },
++	{ x: 37.4, y: 75.93, z: 0.5 },
++	{ x: 35.5, y: 77.19, z: 0.5 },
++	{ x: 33.64, y: 78.12, z: 0.5 },
++	{ x: 31.66, y: 79.04, z: 0.5 },
++	{ x: 29.82, y: 79.77, z: 0.5 },
++	{ x: 27.93, y: 80.3, z: 0.5 },
++	{ x: 25.85, y: 80.75, z: 0.5 },
++	{ x: 23.56, y: 81.14, z: 0.5 },
++	{ x: 21.35, y: 81.52, z: 0.5 },
++	{ x: 19.18, y: 81.81, z: 0.5 },
++	{ x: 17.08, y: 81.95, z: 0.5 },
++	{ x: 15.18, y: 81.99, z: 0.5 },
++	{ x: 13.43, y: 81.99, z: 0.5 },
++	{ x: 11.91, y: 81.99, z: 0.5 },
++	{ x: 10.63, y: 81.99, z: 0.5 },
++	{ x: 9.47, y: 81.99, z: 0.5 },
++	{ x: 8.43, y: 81.99, z: 0.5 },
++	{ x: 7.57, y: 81.99, z: 0.5 },
++	{ x: 6.81, y: 81.99, z: 0.5 },
++	{ x: 6.05, y: 81.99, z: 0.5 },
++	{ x: 5.31, y: 81.99, z: 0.5 },
++	{ x: 4.67, y: 81.99, z: 0.5 },
++	{ x: 4.17, y: 81.99, z: 0.5 },
++	{ x: 3.71, y: 81.99, z: 0.5 },
++	{ x: 3.26, y: 81.99, z: 0.5 },
++	{ x: 2.85, y: 81.99, z: 0.5 },
++	{ x: 2.46, y: 81.99, z: 0.5 },
++	{ x: 2.13, y: 81.99, z: 0.5 },
++	{ x: 1.77, y: 81.99, z: 0.5 },
++	{ x: 1.37, y: 81.99, z: 0.5 },
++	{ x: 0.96, y: 81.99, z: 0.5 },
++	{ x: 0.46, y: 81.99, z: 0.5 },
++	{ x: -0.03, y: 81.99, z: 0.5 },
++	{ x: -0.37, y: 81.99, z: 0.5 },
++	{ x: -0.62, y: 82.01, z: 0.5 },
++]
++
+ export const frameContent = (
+ 	<>
+ 		<TL.geo
+@@ -146,84 +225,7 @@ export const convexDrawShape = (
+ 		segments={[
+ 			{
+ 				type: 'free',
+-				points: [
+-					{ x: 0, y: 0, z: 0.5 },
+-					{ x: 0.1, y: 0, z: 0.5 },
+-					{ x: 0.47, y: 0, z: 0.5 },
+-					{ x: 1.61, y: 0, z: 0.5 },
+-					{ x: 3.9, y: 0, z: 0.5 },
+-					{ x: 7.09, y: 0, z: 0.5 },
+-					{ x: 10.66, y: 0, z: 0.5 },
+-					{ x: 14.15, y: 0, z: 0.5 },
+-					{ x: 17.3, y: 0, z: 0.5 },
+-					{ x: 20.28, y: 0, z: 0.5 },
+-					{ x: 23.43, y: 0.01, z: 0.5 },
+-					{ x: 26.21, y: 0.33, z: 0.5 },
+-					{ x: 28.78, y: 1.22, z: 0.5 },
+-					{ x: 31.52, y: 2.42, z: 0.5 },
+-					{ x: 34.2, y: 3.92, z: 0.5 },
+-					{ x: 36.52, y: 5.72, z: 0.5 },
+-					{ x: 38.36, y: 7.62, z: 0.5 },
+-					{ x: 40.26, y: 10.03, z: 0.5 },
+-					{ x: 42.18, y: 12.96, z: 0.5 },
+-					{ x: 44.04, y: 16.13, z: 0.5 },
+-					{ x: 45.89, y: 19.87, z: 0.5 },
+-					{ x: 47.5, y: 24.12, z: 0.5 },
+-					{ x: 48.77, y: 28.45, z: 0.5 },
+-					{ x: 49.75, y: 32.78, z: 0.5 },
+-					{ x: 50.36, y: 36.93, z: 0.5 },
+-					{ x: 50.72, y: 41.07, z: 0.5 },
+-					{ x: 50.84, y: 45.22, z: 0.5 },
+-					{ x: 50.84, y: 48.58, z: 0.5 },
+-					{ x: 50.84, y: 52.02, z: 0.5 },
+-					{ x: 50.79, y: 55.21, z: 0.5 },
+-					{ x: 50.45, y: 57.41, z: 0.5 },
+-					{ x: 49.83, y: 59.48, z: 0.5 },
+-					{ x: 49.09, y: 61.37, z: 0.5 },
+-					{ x: 48.22, y: 63.04, z: 0.5 },
+-					{ x: 47.28, y: 64.65, z: 0.5 },
+-					{ x: 46.22, y: 66.3, z: 0.5 },
+-					{ x: 45.03, y: 68.03, z: 0.5 },
+-					{ x: 43.81, y: 69.72, z: 0.5 },
+-					{ x: 42.48, y: 71.36, z: 0.5 },
+-					{ x: 40.85, y: 73.1, z: 0.5 },
+-					{ x: 39.24, y: 74.55, z: 0.5 },
+-					{ x: 37.4, y: 75.93, z: 0.5 },
+-					{ x: 35.5, y: 77.19, z: 0.5 },
+-					{ x: 33.64, y: 78.12, z: 0.5 },
+-					{ x: 31.66, y: 79.04, z: 0.5 },
+-					{ x: 29.82, y: 79.77, z: 0.5 },
+-					{ x: 27.93, y: 80.3, z: 0.5 },
+-					{ x: 25.85, y: 80.75, z: 0.5 },
+-					{ x: 23.56, y: 81.14, z: 0.5 },
+-					{ x: 21.35, y: 81.52, z: 0.5 },
+-					{ x: 19.18, y: 81.81, z: 0.5 },
+-					{ x: 17.08, y: 81.95, z: 0.5 },
+-					{ x: 15.18, y: 81.99, z: 0.5 },
+-					{ x: 13.43, y: 81.99, z: 0.5 },
+-					{ x: 11.91, y: 81.99, z: 0.5 },
+-					{ x: 10.63, y: 81.99, z: 0.5 },
+-					{ x: 9.47, y: 81.99, z: 0.5 },
+-					{ x: 8.43, y: 81.99, z: 0.5 },
+-					{ x: 7.57, y: 81.99, z: 0.5 },
+-					{ x: 6.81, y: 81.99, z: 0.5 },
+-					{ x: 6.05, y: 81.99, z: 0.5 },
+-					{ x: 5.31, y: 81.99, z: 0.5 },
+-					{ x: 4.67, y: 81.99, z: 0.5 },
+-					{ x: 4.17, y: 81.99, z: 0.5 },
+-					{ x: 3.71, y: 81.99, z: 0.5 },
+-					{ x: 3.26, y: 81.99, z: 0.5 },
+-					{ x: 2.85, y: 81.99, z: 0.5 },
+-					{ x: 2.46, y: 81.99, z: 0.5 },
+-					{ x: 2.13, y: 81.99, z: 0.5 },
+-					{ x: 1.77, y: 81.99, z: 0.5 },
+-					{ x: 1.37, y: 81.99, z: 0.5 },
+-					{ x: 0.96, y: 81.99, z: 0.5 },
+-					{ x: 0.46, y: 81.99, z: 0.5 },
+-					{ x: -0.03, y: 81.99, z: 0.5 },
+-					{ x: -0.37, y: 81.99, z: 0.5 },
+-					{ x: -0.62, y: 82.01, z: 0.5 },
+-				],
++				points: b64Vecs.encodePoints(convexPoints),
+ 			},
+ 		]}
+ 	/>
+@@ -243,7 +245,7 @@ export const heyDrawShape = (
+ 		segments={[
+ 			{
+ 				type: 'free',
+-				points: [
++				points: b64Vecs.encodePoints([
+ 					{ x: 0, y: 0, z: 0.5 },
+ 					{ x: 0.12, y: 0, z: 0.5 },
+ 					{ x: 0.91, y: -0.18, z: 0.5 },
+@@ -573,7 +575,7 @@ export const heyDrawShape = (
+ 					{ x: 74.43, y: -26.26, z: 0.5 },
+ 					{ x: 74.43, y: -26.34, z: 0.5 },
+ 					{ x: 74.43, y: -26.4, z: 0.5 },
+-				],
++				]),
+ 			},
+ 		]}
+ 	/>
+diff --git a/apps/examples/e2e/tests/export-snapshots.spec.tsx b/apps/examples/e2e/tests/export-snapshots.spec.tsx
+index 0c4fb4a54abc..d851c6544266 100644
+--- a/apps/examples/e2e/tests/export-snapshots.spec.tsx
++++ b/apps/examples/e2e/tests/export-snapshots.spec.tsx
+@@ -18,7 +18,7 @@ import {
+ 	mockUniqueId,
+ 	toRichText,
+ } from 'tldraw'
+-import { TL, shapesFromJsx } from 'tldraw/src/test/test-jsx'
++import { TL, createDrawSegments, shapesFromJsx } from 'tldraw/src/test/test-jsx'
+ import { EndToEndApi } from '../../src/misc/EndToEndApi'
+ import test, { ApiFixture } from '../fixtures/fixtures'
+ import { hardResetEditor, setup } from '../shared-e2e'
+@@ -95,37 +95,28 @@ const snapshots: Snapshots = {
+ 					<TL.draw
+ 						fill={fill}
+ 						color="light-violet"
+-						segments={[
+-							{ type: 'straight', points: [{ x: 0, y: 0 }] },
+-							{
+-								type: 'straight',
+-								points: [
++						segments={createDrawSegments(
++							[
++								[{ x: 0, y: 0 }],
++								[
+ 									{ x: 0, y: 0 },
+ 									{ x: 100, y: 0 },
+ 								],
+-							},
+-							{
+-								type: 'straight',
+-								points: [
++								[
+ 									{ x: 100, y: 0 },
+ 									{ x: 0, y: 100 },
+ 								],
+-							},
+-							{
+-								type: 'straight',
+-								points: [
++								[
+ 									{ x: 0, y: 100 },
+ 									{ x: 100, y: 100 },
+ 								],
+-							},
+-							{
+-								type: 'straight',
+-								points: [
++								[
+ 									{ x: 100, y: 100 },
+ 									{ x: 0, y: 0 },
+ 								],
+-							},
+-						]}
++							],
++							'straight'
++						)}
+ 						isClosed
+ 						isComplete
+ 					/>
+diff --git a/apps/examples/e2e/tests/test-routes.spec.ts b/apps/examples/e2e/tests/test-routes.spec.ts
+index a484828ef07b..f9718eb1475a 100644
+--- a/apps/examples/e2e/tests/test-routes.spec.ts
++++ b/apps/examples/e2e/tests/test-routes.spec.ts
+@@ -18,10 +18,10 @@ const examplesWithoutCanvas = [
+ 	// starts by asking the user to select a pdf (built on pdf-editor)
+ 	'exam-marking',
+ ]
+-const exampelsToTest = examplesFolderList.filter((route) => !examplesWithoutCanvas.includes(route))
++const examplesToTest = examplesFolderList.filter((route) => !examplesWithoutCanvas.includes(route))
+ 
+ test.describe('Routes', () => {
+-	for (const example of exampelsToTest) {
++	for (const example of examplesToTest) {
+ 		test(example, async ({ page }) => {
+ 			await page.goto(`http://localhost:5420/${example}/full`)
+ 			await page.waitForSelector('.tl-canvas')
+diff --git a/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx b/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx
+index 8069034d3112..88ccfd96b963 100644
+--- a/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx
++++ b/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx
+@@ -1,5 +1,5 @@
+ import { useLayoutEffect, useRef } from 'react'
+-import { getColorValue, getDefaultColorTheme, useEditor } from 'tldraw'
++import { getColorValue, getDefaultColorTheme, getPointsFromDrawSegment, useEditor } from 'tldraw'
+ 
+ export function CustomRenderer() {
+ 	const editor = useEditor()
+@@ -61,11 +61,12 @@ export function CustomRenderer() {
+ 				if (editor.isShapeOfType(shape, 'draw')) {
+ 					// Draw a freehand shape
+ 					for (const segment of shape.props.segments) {
+-						ctx.moveTo(segment.points[0].x, segment.points[0].y)
++						const points = getPointsFromDrawSegment(segment, shape.props.scaleX, shape.props.scaleY)
++						ctx.moveTo(points[0].x, points[0].y)
+ 						if (segment.type === 'straight') {
+-							ctx.lineTo(segment.points[1].x, segment.points[1].y)
++							ctx.lineTo(points[1].x, points[1].y)
+ 						} else {
+-							for (const point of segment.points.slice(1)) {
++							for (const point of points.slice(1)) {
+ 								ctx.lineTo(point.x, point.y)
+ 							}
+ 						}
+diff --git a/internal/config/vitest/setup.ts b/internal/config/vitest/setup.ts
+index 56e6f6d4b563..7d7ec18d80a5 100644
+--- a/internal/config/vitest/setup.ts
++++ b/internal/config/vitest/setup.ts
+@@ -102,7 +102,6 @@ expect.extend({
+ 
+ 		const message = pass
+ 			? () =>
+-					// eslint-disable-next-line prefer-template
+ 					matcherHint(matcherName, undefined, undefined, options) +
+ 					'\n\n' +
+ 					`Expected: not ${printExpected(expected)}` +
+@@ -110,7 +109,6 @@ expect.extend({
+ 						? `\nReceived:     ${printReceived(actual)}`
+ 						: '')
+ 			: () =>
+-					// eslint-disable-next-line prefer-template
+ 					matcherHint(matcherName, undefined, undefined, options) +
+ 					'\n\n' +
+ 					printDiffOrStringify(
+diff --git a/packages/fairy-shared/src/format/convertFocusedShapeToTldrawShape.ts b/packages/fairy-shared/src/format/convertFocusedShapeToTldrawShape.ts
+index 99fe37727783..30e86a635e1b 100644
+--- a/packages/fairy-shared/src/format/convertFocusedShapeToTldrawShape.ts
++++ b/packages/fairy-shared/src/format/convertFocusedShapeToTldrawShape.ts
+@@ -614,6 +614,8 @@ function convertDrawShapeToTldrawShape(
+ 				isClosed: defaultDrawShape.props?.isClosed ?? false,
+ 				isPen: defaultDrawShape.props?.isPen ?? false,
+ 				scale: defaultDrawShape.props?.scale ?? 1,
++				scaleX: defaultDrawShape.props?.scaleX ?? 1,
++				scaleY: defaultDrawShape.props?.scaleY ?? 1,
+ 				color: asColor(focusedShape.color ?? defaultDrawShape.props?.color ?? 'black'),
+ 				fill,
+ 			},
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index f4e8d7b2bee4..35b62ac4b403 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -1187,7 +1187,8 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+     // (undocumented)
+     onResize(shape: TLDrawShape, info: TLResizeInfo<TLDrawShape>): {
+         props: {
+-            segments: TLDrawShapeSegment[];
++            scaleX: number;
++            scaleY: number;
+         };
+     };
+     // (undocumented)
+@@ -1801,6 +1802,12 @@ export function getHitShapeOnCanvasPointerDown(editor: Editor, hitLabels?: boole
+ // @public (undocumented)
+ export function getMediaAssetInfoPartial(file: File, assetId: TLAssetId, isImageType: boolean, isVideoType: boolean, maxImageDimension?: number): Promise<TLImageAsset | TLVideoAsset>;
+ 
++// @public (undocumented)
++export function getPointsFromDrawSegment(segment: TLDrawShapeSegment, scaleX: number, scaleY: number, points?: Vec[]): Vec[];
++
++// @public (undocumented)
++export function getPointsFromDrawSegments(segments: TLDrawShapeSegment[], scaleX?: number, scaleY?: number): Vec[];
++
+ // @public
+ export function getStrokePoints(rawInputPoints: VecLike[], options?: StrokeOptions): StrokePoint[];
+ 
+@@ -1904,7 +1911,8 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+     // (undocumented)
+     onResize(shape: TLHighlightShape, info: TLResizeInfo<TLHighlightShape>): {
+         props: {
+-            segments: TLDrawShapeSegment[];
++            scaleX: number;
++            scaleY: number;
+         };
+     };
+     // (undocumented)
+diff --git a/packages/tldraw/src/index.ts b/packages/tldraw/src/index.ts
+index c75ee3f45bda..f99fbe9f7c5e 100644
+--- a/packages/tldraw/src/index.ts
++++ b/packages/tldraw/src/index.ts
+@@ -1,6 +1,7 @@
+ /// <reference types="react" />
+ 
+ import { registerTldrawLibraryVersion } from '@tldraw/editor'
++export { getPointsFromDrawSegment, getPointsFromDrawSegments } from './lib/shapes/draw/getPath'
+ export {
+ 	PathBuilder,
+ 	PathBuilderGeometry2d,
+diff --git a/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx b/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
+index d72d56768784..3ff634617001 100644
+--- a/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
+@@ -8,7 +8,6 @@ import {
+ 	SvgExportContext,
+ 	TLDrawShape,
+ 	TLDrawShapeProps,
+-	TLDrawShapeSegment,
+ 	TLResizeInfo,
+ 	TLShapeUtilCanvasSvgDef,
+ 	VecLike,
+@@ -18,7 +17,6 @@ import {
+ 	last,
+ 	lerp,
+ 	rng,
+-	toFixed,
+ 	useEditor,
+ 	useValue,
+ } from '@tldraw/editor'
+@@ -31,7 +29,11 @@ import { getSvgPathFromStrokePoints } from '../shared/freehand/svg'
+ import { svgInk } from '../shared/freehand/svgInk'
+ import { interpolateSegments } from '../shared/interpolate-props'
+ import { useDefaultColorTheme } from '../shared/useDefaultColorTheme'
+-import { getDrawShapeStrokeDashArray, getFreehandOptions, getPointsFromSegments } from './getPath'
++import {
++	getDrawShapeStrokeDashArray,
++	getFreehandOptions,
++	getPointsFromDrawSegments,
++} from './getPath'
+ 
+ /** @public */
+ export interface DrawShapeOptions {
+@@ -73,11 +75,17 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+ 			isClosed: false,
+ 			isPen: false,
+ 			scale: 1,
++			scaleX: 1,
++			scaleY: 1,
+ 		}
+ 	}
+ 
+ 	getGeometry(shape: TLDrawShape) {
+-		const points = getPointsFromSegments(shape.props.segments)
++		const points = getPointsFromDrawSegments(
++			shape.props.segments,
++			shape.props.scaleX,
++			shape.props.scaleY
++		)
+ 
+ 		const sw = (STROKE_SIZES[shape.props.size] + 1) * shape.props.scale
+ 
+@@ -131,7 +139,11 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+ 	}
+ 
+ 	indicator(shape: TLDrawShape) {
+-		const allPointsFromSegments = getPointsFromSegments(shape.props.segments)
++		const allPointsFromSegments = getPointsFromDrawSegments(
++			shape.props.segments,
++			shape.props.scaleX,
++			shape.props.scaleY
++		)
+ 
+ 		let sw = (STROKE_SIZES[shape.props.size] + 1) * shape.props.scale
+ 
+@@ -182,24 +194,10 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+ 	override onResize(shape: TLDrawShape, info: TLResizeInfo<TLDrawShape>) {
+ 		const { scaleX, scaleY } = info
+ 
+-		const newSegments: TLDrawShapeSegment[] = []
+-
+-		for (const segment of shape.props.segments) {
+-			newSegments.push({
+-				...segment,
+-				points: segment.points.map(({ x, y, z }) => {
+-					return {
+-						x: toFixed(scaleX * x),
+-						y: toFixed(scaleY * y),
+-						z,
+-					}
+-				}),
+-			})
+-		}
+-
+ 		return {
+ 			props: {
+-				segments: newSegments,
++				scaleX: scaleX * shape.props.scaleX,
++				scaleY: scaleY * shape.props.scaleY,
+ 			},
+ 		}
+ 	}
+@@ -236,7 +234,11 @@ function DrawShapeSvg({ shape, zoomOverride }: { shape: TLDrawShape; zoomOverrid
+ 	const theme = useDefaultColorTheme()
+ 	const editor = useEditor()
+ 
+-	const allPointsFromSegments = getPointsFromSegments(shape.props.segments)
++	const allPointsFromSegments = getPointsFromDrawSegments(
++		shape.props.segments,
++		shape.props.scaleX,
++		shape.props.scaleY
++	)
+ 
+ 	const showAsComplete = shape.props.isComplete || last(shape.props.segments)?.type === 'straight'
+ 
+diff --git a/packages/tldraw/src/lib/shapes/draw/getPath.ts b/packages/tldraw/src/lib/shapes/draw/getPath.ts
+index 8543553e68e0..31196d11a8ac 100644
+--- a/packages/tldraw/src/lib/shapes/draw/getPath.ts
++++ b/packages/tldraw/src/lib/shapes/draw/getPath.ts
+@@ -6,6 +6,7 @@ import {
+ 	TLDrawShape,
+ 	TLDrawShapeSegment,
+ 	Vec,
++	b64Vecs,
+ 	modulate,
+ } from '@tldraw/editor'
+ import { StrokeOptions } from '../shared/freehand/types'
+@@ -101,19 +102,39 @@ export function getFreehandOptions(
+ 	return { ...solidSettings(strokeWidth), last }
+ }
+ 
+-export function getPointsFromSegments(segments: TLDrawShapeSegment[]) {
++/** @public */
++export function getPointsFromDrawSegment(
++	segment: TLDrawShapeSegment,
++	scaleX: number,
++	scaleY: number,
++	points: Vec[] = []
++) {
++	const _points = b64Vecs.decodePoints(segment.points)
++
++	// Apply scale factors (used for lazy resize and flipping)
++	if (scaleX !== 1 || scaleY !== 1) {
++		for (const point of _points) {
++			point.x *= scaleX
++			point.y *= scaleY
++		}
++	}
++
++	if (segment.type === 'free' || _points.length < 2) {
++		points.push(..._points.map(Vec.From))
++	} else {
++		const pointsToInterpolate = Math.max(4, Math.floor(Vec.Dist(_points[0], _points[1]) / 16))
++		points.push(...Vec.PointsBetween(_points[0], _points[1], pointsToInterpolate))
++	}
++
++	return points
++}
++
++/** @public */
++export function getPointsFromDrawSegments(segments: TLDrawShapeSegment[], scaleX = 1, scaleY = 1) {
+ 	const points: Vec[] = []
+ 
+ 	for (const segment of segments) {
+-		if (segment.type === 'free' || segment.points.length < 2) {
+-			points.push(...segment.points.map(Vec.Cast))
+-		} else {
+-			const pointsToInterpolate = Math.max(
+-				4,
+-				Math.floor(Vec.Dist(segment.points[0], segment.points[1]) / 16)
+-			)
+-			points.push(...Vec.PointsBetween(segment.points[0], segment.points[1], pointsToInterpolate))
+-		}
++		getPointsFromDrawSegment(segment, scaleX, scaleY, points)
+ 	}
+ 
+ 	return points
+diff --git a/packages/tldraw/src/lib/shapes/draw/toolStates/Drawing.ts b/packages/tldraw/src/lib/shapes/draw/toolStates/Drawing.ts
+index 824e230a6e16..e2ccca9d2306 100644
+--- a/packages/tldraw/src/lib/shapes/draw/toolStates/Drawing.ts
++++ b/packages/tldraw/src/lib/shapes/draw/toolStates/Drawing.ts
+@@ -10,6 +10,7 @@ import {
+ 	TLShapePartial,
+ 	Vec,
+ 	VecModel,
++	b64Vecs,
+ 	createShapeId,
+ 	last,
+ 	snapAngle,
+@@ -49,6 +50,9 @@ export class Drawing extends StateNode {
+ 	mergeNextPoint = false
+ 	currentLineLength = 0
+ 
++	// Cache for current segment's points to avoid repeated b64 decode/encode
++	currentSegmentPoints: Vec[] = []
++
+ 	markId = null as null | string
+ 
+ 	override onEnter(info: TLPointerEventInfo) {
+@@ -141,11 +145,13 @@ export class Drawing extends StateNode {
+ 		if (!this.canClose()) return false
+ 
+ 		const strokeWidth = STROKE_SIZES[size]
+-		const firstPoint = segments[0].points[0]
++		const firstPoint = b64Vecs.decodeFirstPoint(segments[0].points)
+ 		const lastSegment = segments[segments.length - 1]
+-		const lastPoint = lastSegment.points[lastSegment.points.length - 1]
++		const lastPoint = b64Vecs.decodeLastPoint(lastSegment.points)
+ 
+ 		return (
++			firstPoint !== null &&
++			lastPoint !== null &&
+ 			firstPoint !== lastPoint &&
+ 			this.currentLineLength > strokeWidth * 4 * scale &&
+ 			Vec.DistMin(firstPoint, lastPoint, strokeWidth * 2 * scale)
+@@ -187,25 +193,17 @@ export class Drawing extends StateNode {
+ 
+ 				const prevSegment = last(shape.props.segments)
+ 				if (!prevSegment) throw Error('Expected a previous segment!')
+-				const prevPoint = last(prevSegment.points)
++				const prevPoint = b64Vecs.decodeLastPoint(prevSegment.points)
+ 				if (!prevPoint) throw Error('Expected a previous point!')
+ 
+ 				const { x, y } = this.editor.getPointInShapeSpace(shape, originPagePoint).toFixed()
+ 
+ 				const newSegment: TLDrawShapeSegment = {
+ 					type: this.segmentMode,
+-					points: [
+-						{
+-							x: prevPoint.x,
+-							y: prevPoint.y,
+-							z: +pressure.toFixed(2),
+-						},
+-						{
+-							x,
+-							y,
+-							z: +pressure.toFixed(2),
+-						},
+-					],
++					points: b64Vecs.encodePoints([
++						{ x: prevPoint.x, y: prevPoint.y, z: +pressure.toFixed(2) },
++						{ x, y, z: +pressure.toFixed(2) },
++					]),
+ 				}
+ 
+ 				// Convert prevPoint to page space
+@@ -248,6 +246,10 @@ export class Drawing extends StateNode {
+ 		this.pagePointWhereCurrentSegmentChanged = originPagePoint.clone()
+ 		const id = createShapeId()
+ 
++		// Initialize the segment points cache
++		const initialPoint = new Vec(0, 0, +pressure.toFixed(2))
++		this.currentSegmentPoints = [initialPoint]
++
+ 		// Allow this to trigger the max shapes reached alert
+ 		this.editor.createShape({
+ 			id,
+@@ -260,13 +262,7 @@ export class Drawing extends StateNode {
+ 				segments: [
+ 					{
+ 						type: this.segmentMode,
+-						points: [
+-							{
+-								x: 0,
+-								y: 0,
+-								z: +pressure.toFixed(2),
+-							},
+-						],
++						points: b64Vecs.encodePoints([initialPoint]),
+ 					},
+ 				],
+ 			},
+@@ -328,7 +324,7 @@ export class Drawing extends StateNode {
+ 					const prevSegment = last(segments)
+ 					if (!prevSegment) throw Error('Expected a previous segment!')
+ 
+-					const prevLastPoint = last(prevSegment.points)
++					const prevLastPoint = b64Vecs.decodeLastPoint(prevSegment.points)
+ 					if (!prevLastPoint) throw Error('Expected a previous last point!')
+ 
+ 					let newSegment: TLDrawShapeSegment
+@@ -343,7 +339,7 @@ export class Drawing extends StateNode {
+ 
+ 						newSegment = {
+ 							type: 'straight',
+-							points: [{ ...prevLastPoint }, newLastPoint],
++							points: b64Vecs.encodePoints([prevLastPoint, newLastPoint]),
+ 						}
+ 
+ 						const transform = this.editor.getShapePageTransform(shape)!
+@@ -352,7 +348,7 @@ export class Drawing extends StateNode {
+ 					} else {
+ 						newSegment = {
+ 							type: 'straight',
+-							points: [newLastPoint, newPoint],
++							points: b64Vecs.encodePoints([newLastPoint, newPoint]),
+ 						}
+ 					}
+ 
+@@ -400,7 +396,7 @@ export class Drawing extends StateNode {
+ 
+ 					const newSegments = segments.slice()
+ 					const prevStraightSegment = newSegments[newSegments.length - 1]
+-					const prevPoint = last(prevStraightSegment.points)
++					const prevPoint = b64Vecs.decodeLastPoint(prevStraightSegment.points)
+ 
+ 					if (!prevPoint) {
+ 						throw Error('No previous point!')
+@@ -408,15 +404,15 @@ export class Drawing extends StateNode {
+ 
+ 					// Create the new free segment and interpolate the points between where the last line
+ 					// ended and where the pointer is now
++					const interpolatedPoints = Vec.PointsBetween(prevPoint, newPoint, 6).map(
++						(p) => new Vec(toFixed(p.x), toFixed(p.y), toFixed(p.z))
++					)
++					// Initialize cache for the new free segment
++					this.currentSegmentPoints = interpolatedPoints
++
+ 					const newFreeSegment: TLDrawShapeSegment = {
+ 						type: 'free',
+-						points: [
+-							...Vec.PointsBetween(prevPoint, newPoint, 6).map((p) => ({
+-								x: toFixed(p.x),
+-								y: toFixed(p.y),
+-								z: toFixed(p.z),
+-							})),
+-						],
++						points: b64Vecs.encodePoints(interpolatedPoints),
+ 					}
+ 
+ 					const finalSegments = [...newSegments, newFreeSegment]
+@@ -491,8 +487,8 @@ export class Drawing extends StateNode {
+ 							if (!segment) break
+ 							if (segment.type === 'free') continue
+ 
+-							const first = segment.points[0]
+-							const lastPoint = last(segment.points)
++							const first = b64Vecs.decodeFirstPoint(segment.points)
++							const lastPoint = b64Vecs.decodeLastPoint(segment.points)
+ 							if (!(first && lastPoint)) continue
+ 
+ 							// Snap to the nearest point on the segment, if it's closer than the previous snapped point
+@@ -519,9 +515,9 @@ export class Drawing extends StateNode {
+ 
+ 				if (didSnap && snapSegment) {
+ 					const transform = this.editor.getShapePageTransform(shape)!
+-					const first = snapSegment.points[0]
+-					const lastPoint = last(snapSegment.points)
+-					if (!lastPoint) throw Error('Expected a last point!')
++					const first = b64Vecs.decodeFirstPoint(snapSegment.points)
++					const lastPoint = b64Vecs.decodeLastPoint(snapSegment.points)
++					if (!first || !lastPoint) throw Error('Expected a last point!')
+ 
+ 					const A = Mat.applyToPoint(transform, first)
+ 
+@@ -561,12 +557,18 @@ export class Drawing extends StateNode {
+ 				// then the user just did a click-and-immediately-press-shift to create a new straight line
+ 				// without continuing the previous line. In this case, we want to remove the previous segment.
+ 
+-				this.currentLineLength += Vec.Dist(newSegment.points[0], newPoint)
++				this.currentLineLength +=
++					newSegments.length && b64Vecs.decodeFirstPoint(newSegment.points)
++						? Vec.Dist(b64Vecs.decodeFirstPoint(newSegment.points)!, Vec.From(newPoint))
++						: 0
+ 
+ 				newSegments[newSegments.length - 1] = {
+ 					...newSegment,
+ 					type: 'straight',
+-					points: [newSegment.points[0], newPoint],
++					points: b64Vecs.encodePoints([
++						b64Vecs.decodeFirstPoint(newSegment.points)!,
++						Vec.From(newPoint),
++					]),
+ 				}
+ 
+ 				const shapePartial: TLShapePartial<DrawableShape> = {
+@@ -590,27 +592,28 @@ export class Drawing extends StateNode {
+ 				break
+ 			}
+ 			case 'free': {
+-				const newSegments = segments.slice()
+-				const newSegment = newSegments[newSegments.length - 1]
+-				const newPoints = [...newSegment.points]
+-
+-				if (newPoints.length && this.mergeNextPoint) {
+-					const { z } = newPoints[newPoints.length - 1]
+-					newPoints[newPoints.length - 1] = {
+-						x: newPoint.x,
+-						y: newPoint.y,
+-						z: z ? Math.max(z, newPoint.z) : newPoint.z,
+-					}
++				// Use cached points instead of decoding from b64 on every update
++				const cachedPoints = this.currentSegmentPoints
++
++				if (cachedPoints.length && this.mergeNextPoint) {
++					const lastPoint = cachedPoints[cachedPoints.length - 1]
++					lastPoint.x = newPoint.x
++					lastPoint.y = newPoint.y
++					lastPoint.z = lastPoint.z ? Math.max(lastPoint.z, newPoint.z) : newPoint.z
+ 					// Note: we could recompute the line length here, but it's not really necessary
+ 					// this.currentLineLength = this.getLineLength(newSegments)
+ 				} else {
+-					this.currentLineLength += Vec.Dist(newPoints[newPoints.length - 1], newPoint)
+-					newPoints.push(newPoint)
++					this.currentLineLength += cachedPoints.length
++						? Vec.Dist(cachedPoints[cachedPoints.length - 1], newPoint)
++						: 0
++					cachedPoints.push(new Vec(newPoint.x, newPoint.y, newPoint.z))
+ 				}
+ 
++				const newSegments = segments.slice()
++				const newSegment = newSegments[newSegments.length - 1]
+ 				newSegments[newSegments.length - 1] = {
+ 					...newSegment,
+-					points: newPoints,
++					points: b64Vecs.encodePoints(cachedPoints),
+ 				}
+ 
+ 				if (this.currentLineLength < STROKE_SIZES[shape.props.size] * 4) {
+@@ -636,7 +639,7 @@ export class Drawing extends StateNode {
+ 				this.editor.updateShapes([shapePartial])
+ 
+ 				// Set a maximum length for the lines array; after 200 points, complete the line.
+-				if (newPoints.length > this.util.options.maxPointsPerShape) {
++				if (cachedPoints.length > this.util.options.maxPointsPerShape) {
+ 					this.editor.updateShapes([{ id, type: this.shapeType, props: { isComplete: true } }])
+ 
+ 					const newShapeId = createShapeId()
+@@ -645,6 +648,11 @@ export class Drawing extends StateNode {
+ 
+ 					if (!this.editor.canCreateShapes([newShapeId])) return this.cancel()
+ 					const currentPagePoint = inputs.getCurrentPagePoint()
++
++					// Reset cache for the new shape's segment
++					const initialPoint = new Vec(0, 0, this.isPenOrStylus ? +(z! * 1.25).toFixed() : 0.5)
++					this.currentSegmentPoints = [initialPoint]
++
+ 					this.editor.createShape({
+ 						id: newShapeId,
+ 						type: this.shapeType,
+@@ -656,7 +664,7 @@ export class Drawing extends StateNode {
+ 							segments: [
+ 								{
+ 									type: 'free',
+-									points: [{ x: 0, y: 0, z: this.isPenOrStylus ? +(z! * 1.25).toFixed() : 0.5 }],
++									points: b64Vecs.encodePoints([initialPoint]),
+ 								},
+ 							],
+ 						},
+@@ -684,11 +692,10 @@ export class Drawing extends StateNode {
+ 	private getLineLength(segments: TLDrawShapeSegment[]) {
+ 		let length = 0
+ 
+-		for (const segment of segments) {
+-			for (let i = 0; i < segment.points.length - 1; i++) {
+-				const A = segment.points[i]
+-				const B = segment.points[i + 1]
+-				length += Vec.Dist2(B, A)
++		for (let j = 0; j < segments.length; j++) {
++			const points = b64Vecs.decodePoints(segments[j].points)
++			for (let i = 0; i < points.length - 1; i++) {
++				length += Vec.Dist2(points[i], points[i + 1])
+ 			}
+ 		}
+ 
+diff --git a/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx b/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
+index ab38c593ba94..9ec1c10d4f6b 100644
+--- a/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
+@@ -5,7 +5,6 @@ import {
+ 	Polygon2d,
+ 	SVGContainer,
+ 	ShapeUtil,
+-	TLDrawShapeSegment,
+ 	TLHighlightShape,
+ 	TLHighlightShapeProps,
+ 	TLResizeInfo,
+@@ -19,7 +18,7 @@ import {
+ 	useValue,
+ } from '@tldraw/editor'
+ 
+-import { getHighlightFreehandSettings, getPointsFromSegments } from '../draw/getPath'
++import { getHighlightFreehandSettings, getPointsFromDrawSegments } from '../draw/getPath'
+ import { FONT_SIZES } from '../shared/default-shape-constants'
+ import { getStrokeOutlinePoints } from '../shared/freehand/getStrokeOutlinePoints'
+ import { getStrokePoints } from '../shared/freehand/getStrokePoints'
+@@ -70,6 +69,8 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+ 			isComplete: false,
+ 			isPen: false,
+ 			scale: 1,
++			scaleX: 1,
++			scaleY: 1,
+ 		}
+ 	}
+ 
+@@ -130,7 +131,11 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+ 		const strokeWidth = getStrokeWidth(shape)
+ 
+ 		const { strokePoints, sw } = getHighlightStrokePoints(shape, strokeWidth, forceSolid)
+-		const allPointsFromSegments = getPointsFromSegments(shape.props.segments)
++		const allPointsFromSegments = getPointsFromDrawSegments(
++			shape.props.segments,
++			shape.props.scaleX,
++			shape.props.scaleY
++		)
+ 
+ 		let strokePath
+ 		if (strokePoints.length < 2) {
+@@ -177,24 +182,10 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+ 	override onResize(shape: TLHighlightShape, info: TLResizeInfo<TLHighlightShape>) {
+ 		const { scaleX, scaleY } = info
+ 
+-		const newSegments: TLDrawShapeSegment[] = []
+-
+-		for (const segment of shape.props.segments) {
+-			newSegments.push({
+-				...segment,
+-				points: segment.points.map(({ x, y, z }) => {
+-					return {
+-						x: scaleX * x,
+-						y: scaleY * y,
+-						z,
+-					}
+-				}),
+-			})
+-		}
+-
+ 		return {
+ 			props: {
+-				segments: newSegments,
++				scaleX: scaleX * shape.props.scaleX,
++				scaleY: scaleY * shape.props.scaleY,
+ 			},
+ 		}
+ 	}
+@@ -231,7 +222,11 @@ function getHighlightStrokePoints(
+ 	strokeWidth: number,
+ 	forceSolid: boolean
+ ) {
+-	const allPointsFromSegments = getPointsFromSegments(shape.props.segments)
++	const allPointsFromSegments = getPointsFromDrawSegments(
++		shape.props.segments,
++		shape.props.scaleX,
++		shape.props.scaleY
++	)
+ 	const showAsComplete = shape.props.isComplete || last(shape.props.segments)?.type === 'straight'
+ 
+ 	let sw = strokeWidth
+@@ -270,7 +265,11 @@ function HighlightRenderer({
+ }) {
+ 	const theme = useDefaultColorTheme()
+ 
+-	const allPointsFromSegments = getPointsFromSegments(shape.props.segments)
++	const allPointsFromSegments = getPointsFromDrawSegments(
++		shape.props.segments,
++		shape.props.scaleX,
++		shape.props.scaleY
++	)
+ 
+ 	let sw = strokeWidth
+ 	if (!forceSolid && !shape.props.isPen && allPointsFromSegments.length === 1) {
+@@ -287,7 +286,7 @@ function HighlightRenderer({
+ 	const solidStrokePath =
+ 		strokePoints.length > 1
+ 			? getSvgPathFromStrokePoints(strokePoints, false)
+-			: getShapeDot(shape.props.segments[0].points[0])
++			: getShapeDot(allPointsFromSegments[0])
+ 
+ 	const colorSpace = useColorSpace()
+ 
+diff --git a/packages/tldraw/src/lib/shapes/shared/interpolate-props.ts b/packages/tldraw/src/lib/shapes/shared/interpolate-props.ts
+index e53cd56c6ed0..76d44f474b46 100644
+--- a/packages/tldraw/src/lib/shapes/shared/interpolate-props.ts
++++ b/packages/tldraw/src/lib/shapes/shared/interpolate-props.ts
+@@ -1,4 +1,4 @@
+-import { TLDrawShapeSegment, VecModel, lerp } from '@tldraw/editor'
++import { TLDrawShapeSegment, VecModel, b64Vecs, lerp } from '@tldraw/editor'
+ 
+ /** @public */
+ export const interpolateSegments = (
+@@ -10,8 +10,8 @@ export const interpolateSegments = (
+ 	const endPoints: VecModel[] = []
+ 
+ 	// Extract all points from startSegments and endSegments
+-	startSegments.forEach((segment) => startPoints.push(...segment.points))
+-	endSegments.forEach((segment) => endPoints.push(...segment.points))
++	startSegments.forEach((segment) => startPoints.push(...b64Vecs.decodePoints(segment.points)))
++	endSegments.forEach((segment) => endPoints.push(...b64Vecs.decodePoints(segment.points)))
+ 
+ 	const maxLength = Math.max(startPoints.length, endPoints.length)
+ 	const pointsToUseStart: VecModel[] = []
+@@ -39,7 +39,7 @@ export const interpolateSegments = (
+ 	return [
+ 		{
+ 			type: 'free',
+-			points: interpolatedPoints,
++			points: b64Vecs.encodePoints(interpolatedPoints),
+ 		},
+ 	]
+ }
+diff --git a/packages/tldraw/src/lib/utils/excalidraw/__snapshots__/putExcalidrawContent.test.tsx.snap b/packages/tldraw/src/lib/utils/excalidraw/__snapshots__/putExcalidrawContent.test.tsx.snap
+index a373b3abf6c6..4b9ebb1f4e3e 100644
+--- a/packages/tldraw/src/lib/utils/excalidraw/__snapshots__/putExcalidrawContent.test.tsx.snap
++++ b/packages/tldraw/src/lib/utils/excalidraw/__snapshots__/putExcalidrawContent.test.tsx.snap
+@@ -730,20 +730,11 @@ exports[`putExcalidrawContent test fixtures > line-drawing.json 1`] = `
+       "isComplete": false,
+       "isPen": false,
+       "scale": 1,
++      "scaleX": 1,
++      "scaleY": 1,
+       "segments": [
+         {
+-          "points": [
+-            {
+-              "x": 0,
+-              "y": 0,
+-              "z": 0.5,
+-            },
+-            {
+-              "x": 0.0001,
+-              "y": 0.0001,
+-              "z": 0.5,
+-            },
+-          ],
++          "points": "AAAAAAA4jgaOBgA4",
+           "type": "free",
+         },
+       ],
+@@ -770,20 +761,11 @@ exports[`putExcalidrawContent test fixtures > line-drawing.json 1`] = `
+       "isComplete": false,
+       "isPen": false,
+       "scale": 1,
++      "scaleX": 1,
++      "scaleY": 1,
+       "segments": [
+         {
+-          "points": [
+-            {
+-              "x": 0,
+-              "y": 0,
+-              "z": 0.5,
+-            },
+-            {
+-              "x": 0.0001,
+-              "y": 0.0001,
+-              "z": 0.5,
+-            },
+-          ],
++          "points": "AAAAAAA4jgaOBgA4",
+           "type": "free",
+         },
+       ],
+@@ -1393,20 +1375,11 @@ exports[`putExcalidrawContent test fixtures > line-drawing.json 1`] = `
+       "isComplete": false,
+       "isPen": false,
+       "scale": 1,
++      "scaleX": 1,
++      "scaleY": 1,
+       "segments": [
+         {
+-          "points": [
+-            {
+-              "x": 0,
+-              "y": 0,
+-              "z": 0.5,
+-            },
+-            {
+-              "x": 0.0001,
+-              "y": 0.0001,
+-              "z": 0.5,
+-            },
+-          ],
++          "points": "AAAAAAA4jgaOBgA4",
+           "type": "free",
+         },
+       ],
+@@ -1433,20 +1406,11 @@ exports[`putExcalidrawContent test fixtures > line-drawing.json 1`] = `
+       "isComplete": false,
+       "isPen": false,
+       "scale": 1,
++      "scaleX": 1,
++      "scaleY": 1,
+       "segments": [
+         {
+-          "points": [
+-            {
+-              "x": 0,
+-              "y": 0,
+-              "z": 0.5,
+-            },
+-            {
+-              "x": 0.0001,
+-              "y": 0.0001,
+-              "z": 0.5,
+-            },
+-          ],
++          "points": "AAAAAAA4jgaOBgA4",
+           "type": "free",
+         },
+       ],
+diff --git a/packages/tldraw/src/lib/utils/excalidraw/putExcalidrawContent.ts b/packages/tldraw/src/lib/utils/excalidraw/putExcalidrawContent.ts
+index 2ffca41f0c31..85d90beb4cae 100644
+--- a/packages/tldraw/src/lib/utils/excalidraw/putExcalidrawContent.ts
++++ b/packages/tldraw/src/lib/utils/excalidraw/putExcalidrawContent.ts
+@@ -16,7 +16,9 @@ import {
+ 	TLShapeId,
+ 	Vec,
+ 	VecLike,
++	VecModel,
+ 	ZERO_INDEX_KEY,
++	b64Vecs,
+ 	compact,
+ 	createBindingId,
+ 	createShapeId,
+@@ -149,6 +151,13 @@ export async function putExcalidrawContent(
+ 				break
+ 			}
+ 			case 'freedraw': {
++				const points: VecModel[] = element.points.map(([x, y, z = 0.5]: number[]) => ({
++					x,
++					y,
++					z,
++				}))
++				const base64Points = b64Vecs.encodePoints(points)
++
+ 				tldrawContent.shapes.push({
+ 					...base,
+ 					type: 'draw',
+@@ -160,11 +169,7 @@ export async function putExcalidrawContent(
+ 						segments: [
+ 							{
+ 								type: 'free',
+-								points: element.points.map(([x, y, z = 0.5]: number[]) => ({
+-									x,
+-									y,
+-									z,
+-								})),
++								points: base64Points,
+ 							},
+ 						],
+ 					},
+diff --git a/packages/tldraw/src/lib/utils/test-helpers.ts b/packages/tldraw/src/lib/utils/test-helpers.ts
+new file mode 100644
+index 000000000000..24ae476a0bec
+--- /dev/null
++++ b/packages/tldraw/src/lib/utils/test-helpers.ts
+@@ -0,0 +1,60 @@
++import type { TLDrawShapeSegment, VecModel } from '@tldraw/editor'
++import { b64Vecs, compressLegacySegments } from '@tldraw/editor'
++
++/**
++ * Helper function to convert draw shape points from VecModel[] to base64 string.
++ * This is useful for tests that create draw shapes with the legacy array format.
++ *
++ * @example
++ * ```ts
++ * const segments = [{ type: 'free', points: pointsToBase64([{x: 0, y: 0, z: 0.5}]) }]
++ * ```
++ *
++ * @public
++ */
++export function pointsToBase64(points: VecModel[]): string {
++	return b64Vecs.encodePoints(points)
++}
++
++/**
++ * Helper function to convert base64 string back to VecModel[] points.
++ * This is useful for tests that need to inspect draw shape points.
++ *
++ * @example
++ * ```ts
++ * const points = base64ToPoints(shape.props.segments[0].points)
++ * expect(points[0].x).toBe(0)
++ * ```
++ *
++ * @public
++ */
++export function base64ToPoints(base64: string): VecModel[] {
++	return b64Vecs.decodePoints(base64)
++}
++
++/**
++ * Helper function to create draw shape segments from legacy array format.
++ * This allows tests to use the old format while the shape uses the new base64 format.
++ *
++ * @example
++ * ```ts
++ * editor.createShapes([{
++ *   type: 'draw',
++ *   props: {
++ *     segments: createDrawSegments([[{x: 0, y: 0}, {x: 10, y: 10}]])
++ *   }
++ * }])
++ * ```
++ * @public
++ */
++export function createDrawSegments(
++	pointArrays: VecModel[][],
++	type: 'free' | 'straight' = 'free'
++): TLDrawShapeSegment[] {
++	return compressLegacySegments(
++		pointArrays.map((points) => ({
++			type,
++			points,
++		}))
++	)
++}
+diff --git a/packages/tldraw/src/lib/utils/tldr/buildFromV1Document.ts b/packages/tldraw/src/lib/utils/tldr/buildFromV1Document.ts
+index 425dcf6839d0..c12a553214b4 100644
+--- a/packages/tldraw/src/lib/utils/tldr/buildFromV1Document.ts
++++ b/packages/tldraw/src/lib/utils/tldr/buildFromV1Document.ts
+@@ -17,6 +17,7 @@ import {
+ 	TLShapeId,
+ 	Vec,
+ 	VecModel,
++	b64Vecs,
+ 	clamp,
+ 	createShapeId,
+ 	fetch,
+@@ -370,6 +371,9 @@ export function buildFromV1Document(editor: Editor, _document: unknown) {
+ 								break
+ 							}
+ 
++							const points = v1Shape.points.map(getV2Point)
++							const base64Points = b64Vecs.encodePoints(points)
++
+ 							editor.createShapes([
+ 								{
+ 									...inCommon,
+@@ -381,7 +385,10 @@ export function buildFromV1Document(editor: Editor, _document: unknown) {
+ 										dash: getV2Dash(v1Shape.style.dash),
+ 										isPen: false,
+ 										isComplete: v1Shape.isComplete,
+-										segments: [{ type: 'free', points: v1Shape.points.map(getV2Point) }],
++										segments: [{ type: 'free', points: base64Points }],
++										scale: 1,
++										scaleX: 1,
++										scaleY: 1,
+ 									},
+ 								},
+ 							])
+diff --git a/packages/tldraw/src/test/EraserTool.test.ts b/packages/tldraw/src/test/EraserTool.test.ts
+index 10658cf0c091..320fee3d2325 100644
+--- a/packages/tldraw/src/test/EraserTool.test.ts
++++ b/packages/tldraw/src/test/EraserTool.test.ts
+@@ -1,5 +1,6 @@
+ import { createShapeId } from '@tldraw/editor'
+ import { vi } from 'vitest'
++import { createDrawSegments } from './test-jsx'
+ import { TestEditor } from './TestEditor'
+ 
+ let editor: TestEditor
+@@ -72,18 +73,15 @@ beforeEach(() => {
+ 			x: 0,
+ 			y: 300,
+ 			props: {
+-				segments: [
+-					{
+-						type: 'free',
+-						points: [
+-							{ x: 0, y: 0 },
+-							{ x: 2, y: 50 },
+-							{ x: 10, y: 100 },
+-							{ x: 48, y: 100 },
+-							{ x: 100, y: 100 },
+-						],
+-					},
+-				],
++				segments: createDrawSegments([
++					[
++						{ x: 0, y: 0 },
++						{ x: 2, y: 50 },
++						{ x: 10, y: 100 },
++						{ x: 48, y: 100 },
++						{ x: 100, y: 100 },
++					],
++				]),
+ 			},
+ 		},
+ 	])
+diff --git a/packages/tldraw/src/test/TldrawEditor.test.tsx b/packages/tldraw/src/test/TldrawEditor.test.tsx
+index e4aec202ee4d..90304e9feafd 100644
+--- a/packages/tldraw/src/test/TldrawEditor.test.tsx
++++ b/packages/tldraw/src/test/TldrawEditor.test.tsx
+@@ -19,6 +19,7 @@ import { vi } from 'vitest'
+ import { defaultShapeUtils } from '../lib/defaultShapeUtils'
+ import { defaultTools } from '../lib/defaultTools'
+ import { defaultAddFontsFromNode, tipTapDefaultExtensions } from '../lib/utils/text/richText'
++import { createDrawSegments } from './test-jsx'
+ import {
+ 	renderTldrawComponent,
+ 	renderTldrawComponentWithEditor,
+@@ -193,14 +194,14 @@ describe('<TldrawEditor />', () => {
+ 			{ type: 'bookmark' as const, props: { w: 100, h: 100, url: 'https://example.com' } },
+ 			{
+ 				type: 'draw' as const,
+-				props: { segments: [{ type: 'free' as const, points: [{ x: 0, y: 0, z: 0.5 }] }] },
++				props: { segments: createDrawSegments([[{ x: 0, y: 0, z: 0.5 }]]) },
+ 			},
+ 			{ type: 'embed' as const, props: { w: 100, h: 100, url: 'https://example.com' } },
+ 			{ type: 'frame' as const, props: { w: 100, h: 100 } },
+ 			{ type: 'geo' as const, props: { w: 100, h: 100, geo: 'rectangle' as const } },
+ 			{
+ 				type: 'highlight' as const,
+-				props: { segments: [{ type: 'free' as const, points: [{ x: 0, y: 0, z: 0.5 }] }] },
++				props: { segments: createDrawSegments([[{ x: 0, y: 0, z: 0.5 }]]) },
+ 			},
+ 			{ type: 'image' as const, props: { w: 100, h: 100 } },
+ 			{
+diff --git a/packages/tldraw/src/test/__snapshots__/drawing.test.ts.snap b/packages/tldraw/src/test/__snapshots__/drawing.test.ts.snap
+index 1ede9a756dd7..661660668750 100644
+--- a/packages/tldraw/src/test/__snapshots__/drawing.test.ts.snap
++++ b/packages/tldraw/src/test/__snapshots__/drawing.test.ts.snap
+@@ -15,1265 +15,11 @@ exports[`Draws a bunch > draw shape 1`] = `
+     "isComplete": true,
+     "isPen": false,
+     "scale": 1,
++    "scaleX": 1,
++    "scaleY": 1,
+     "segments": [
+       {
+-        "points": [
+-          {
+-            "x": 0,
+-            "y": 0,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 1,
+-            "y": 0,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 4,
+-            "y": 0,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 10,
+-            "y": -1,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 19,
+-            "y": -4,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 30,
+-            "y": -10,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 46,
+-            "y": -20,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 61,
+-            "y": -30,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 74,
+-            "y": -43,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 89,
+-            "y": -59,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 102,
+-            "y": -77,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 108,
+-            "y": -90,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 112,
+-            "y": -103,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 117,
+-            "y": -119,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 118,
+-            "y": -131,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 119,
+-            "y": -137,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 119,
+-            "y": -145,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 120,
+-            "y": -152,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 119,
+-            "y": -158,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 117,
+-            "y": -163,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 114,
+-            "y": -167,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 109,
+-            "y": -169,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 103,
+-            "y": -170,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 97,
+-            "y": -170,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 89,
+-            "y": -170,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 80,
+-            "y": -166,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 71,
+-            "y": -159,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 62,
+-            "y": -150,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 54,
+-            "y": -138,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 50,
+-            "y": -126,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 47,
+-            "y": -113,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 46,
+-            "y": -99,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 46,
+-            "y": -82,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 47,
+-            "y": -61,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 53,
+-            "y": -41,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 60,
+-            "y": -24,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 68,
+-            "y": -7,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 79,
+-            "y": 12,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 88,
+-            "y": 32,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 96,
+-            "y": 50,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 103,
+-            "y": 69,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 106,
+-            "y": 86,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 107,
+-            "y": 102,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 107,
+-            "y": 120,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 102,
+-            "y": 136,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 90,
+-            "y": 146,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 74,
+-            "y": 154,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 43,
+-            "y": 163,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 32,
+-            "y": 164,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 21,
+-            "y": 164,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 11,
+-            "y": 164,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 2,
+-            "y": 164,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": -7,
+-            "y": 162,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": -13,
+-            "y": 159,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": -15,
+-            "y": 153,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": -15,
+-            "y": 147,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": -11,
+-            "y": 138,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 1,
+-            "y": 127,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 15,
+-            "y": 112,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 34,
+-            "y": 96,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 56,
+-            "y": 79,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 81,
+-            "y": 58,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 107,
+-            "y": 33,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 126,
+-            "y": 12,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 145,
+-            "y": -10,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 160,
+-            "y": -30,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 172,
+-            "y": -50,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 185,
+-            "y": -73,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 194,
+-            "y": -93,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 199,
+-            "y": -112,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 202,
+-            "y": -127,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 203,
+-            "y": -138,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 203,
+-            "y": -146,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 201,
+-            "y": -152,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 196,
+-            "y": -155,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 191,
+-            "y": -156,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 186,
+-            "y": -157,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 178,
+-            "y": -156,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 170,
+-            "y": -150,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 164,
+-            "y": -140,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 158,
+-            "y": -128,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 151,
+-            "y": -110,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 144,
+-            "y": -89,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 139,
+-            "y": -64,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 135,
+-            "y": -36,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 132,
+-            "y": -7,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 132,
+-            "y": 22,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 132,
+-            "y": 49,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 133,
+-            "y": 74,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 140,
+-            "y": 97,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 148,
+-            "y": 113,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 156,
+-            "y": 124,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 166,
+-            "y": 137,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 175,
+-            "y": 145,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 183,
+-            "y": 150,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 191,
+-            "y": 152,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 197,
+-            "y": 152,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 205,
+-            "y": 151,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 214,
+-            "y": 146,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 223,
+-            "y": 136,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 230,
+-            "y": 125,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 236,
+-            "y": 112,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 242,
+-            "y": 95,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 247,
+-            "y": 78,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 250,
+-            "y": 61,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 252,
+-            "y": 46,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 253,
+-            "y": 37,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 253,
+-            "y": 31,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 253,
+-            "y": 24,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 251,
+-            "y": 20,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 248,
+-            "y": 16,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 246,
+-            "y": 16,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 243,
+-            "y": 16,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 240,
+-            "y": 17,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 238,
+-            "y": 19,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 236,
+-            "y": 26,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 234,
+-            "y": 34,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 233,
+-            "y": 45,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 232,
+-            "y": 56,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 232,
+-            "y": 66,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 235,
+-            "y": 79,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 241,
+-            "y": 91,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 247,
+-            "y": 100,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 255,
+-            "y": 109,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 260,
+-            "y": 113,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 266,
+-            "y": 116,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 274,
+-            "y": 118,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 280,
+-            "y": 118,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 286,
+-            "y": 115,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 291,
+-            "y": 105,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 296,
+-            "y": 93,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 298,
+-            "y": 83,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 301,
+-            "y": 70,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 303,
+-            "y": 58,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 305,
+-            "y": 48,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 306,
+-            "y": 38,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 307,
+-            "y": 31,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 25,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 22,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 20,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 19,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 22,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 27,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 35,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 44,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 51,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 56,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 308,
+-            "y": 61,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 309,
+-            "y": 66,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 312,
+-            "y": 71,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 314,
+-            "y": 74,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 317,
+-            "y": 75,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 320,
+-            "y": 76,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 324,
+-            "y": 76,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 329,
+-            "y": 73,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 333,
+-            "y": 69,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 336,
+-            "y": 66,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 339,
+-            "y": 62,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 342,
+-            "y": 59,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 344,
+-            "y": 57,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 346,
+-            "y": 55,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 348,
+-            "y": 55,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 348,
+-            "y": 55,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 349,
+-            "y": 55,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 349,
+-            "y": 56,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 350,
+-            "y": 57,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 351,
+-            "y": 59,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 351,
+-            "y": 61,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 352,
+-            "y": 62,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 352,
+-            "y": 63,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 353,
+-            "y": 64,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 354,
+-            "y": 64,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 355,
+-            "y": 64,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 356,
+-            "y": 58,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 358,
+-            "y": 49,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 360,
+-            "y": 40,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 363,
+-            "y": 32,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 365,
+-            "y": 26,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 367,
+-            "y": 19,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 369,
+-            "y": 13,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 373,
+-            "y": 7,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 376,
+-            "y": 3,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 380,
+-            "y": 2,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 385,
+-            "y": 2,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 390,
+-            "y": 2,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 397,
+-            "y": 3,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 410,
+-            "y": 11,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 424,
+-            "y": 23,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 434,
+-            "y": 34,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 446,
+-            "y": 49,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 456,
+-            "y": 64,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 464,
+-            "y": 81,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 468,
+-            "y": 95,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 470,
+-            "y": 116,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 472,
+-            "y": 142,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 472,
+-            "y": 162,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 468,
+-            "y": 178,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 458,
+-            "y": 195,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 442,
+-            "y": 213,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 423,
+-            "y": 230,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 407,
+-            "y": 240,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 393,
+-            "y": 245,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 377,
+-            "y": 250,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 364,
+-            "y": 252,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 354,
+-            "y": 252,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 346,
+-            "y": 248,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 340,
+-            "y": 239,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 339,
+-            "y": 225,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 339,
+-            "y": 198,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 349,
+-            "y": 165,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 372,
+-            "y": 130,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 403,
+-            "y": 89,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 432,
+-            "y": 54,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 467,
+-            "y": 16,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 504,
+-            "y": -21,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 551,
+-            "y": -68,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 597,
+-            "y": -115,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 619,
+-            "y": -138,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 641,
+-            "y": -162,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 663,
+-            "y": -188,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 675,
+-            "y": -203,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 684,
+-            "y": -219,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 692,
+-            "y": -237,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 693,
+-            "y": -244,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 691,
+-            "y": -250,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 682,
+-            "y": -254,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 664,
+-            "y": -256,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 642,
+-            "y": -256,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 621,
+-            "y": -253,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 589,
+-            "y": -240,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 554,
+-            "y": -221,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 526,
+-            "y": -201,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 502,
+-            "y": -182,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 484,
+-            "y": -165,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 467,
+-            "y": -146,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 456,
+-            "y": -131,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 450,
+-            "y": -120,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 448,
+-            "y": -112,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 448,
+-            "y": -107,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 449,
+-            "y": -104,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 452,
+-            "y": -103,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 458,
+-            "y": -102,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 462,
+-            "y": -102,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 465,
+-            "y": -103,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 470,
+-            "y": -104,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 472,
+-            "y": -105,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 474,
+-            "y": -106,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 475,
+-            "y": -106,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 476,
+-            "y": -107,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 476,
+-            "y": -107,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 477,
+-            "y": -107,
+-            "z": 0.5,
+-          },
+-        ],
++        "points": "AAAAAAA4ADwAAAA4AEQAAAA4AEkAvAA4wEwAxAA4gE8AyQA4wFEAzQA4oFOAzwA4oFRg0QA4kFVg0wA4YFbQ1AA4wFag1QA4AFdw1gA4UFdw1wA4YFcY2AA4cFdI2AA4cFeI2AA4gFfA2AA4cFfw2AA4UFcY2QA4IFc42QA40FZI2QA4cFZQ2QA4EFZQ2QA4kFVQ2QA4AFUw2QA4cFT42AA4wFOw2AA4wFJQ2AA4QFLg1wA44FEQ1wA4wFEw1gA4wFEg1QA44FGg0wA4oFIg0QA4gFMAzgA4QFQAxwA48FQASgA4gFUAUAA4AFZAUgA4cFZQVAA4oFZgVQA4sFZgVgA4sFaAVwA4YFZAWAA4oFWQWAA4oFTQWAA4YFEYWQA4AFAgWQA4QE0gWQA4gEkgWQA4AEAgWQA4AMcQWQA4gMr4WAA4gMvIWAA4gMuYWAA4gMlQWAA4ADzwVwA4gEsAVwA4QFAAVgA4AFPwVAA4EFVAUwA4sFYgUAA44FcASgA4iFgAyQA4AFmAzwA4YFlA0gA4yFmQ1AA4EFrQ1QA4OFoA1wA4UFrw1wA4WFpQ2AA4WFqQ2AA4SFrA2AA4IFrY2AA4+Fng2AA40Fno2AA4kFng2AA4UFmw2AA4IFlg2AA48FgA2AA4uFjg1gA4gFiQ1QA4WFgA1AA4OFiA0AA4IFgAxwA4IFiATQA4IFggUgA4KFigVAA4YFgQVgA4oFgQVwA44FjAVwA4MFlIWAA4eFmIWAA4uFmwWAA4+FnAWAA4KFrAWAA4aFq4WAA4sFqQWAA4+FpAWAA4MFvQVwA4YFsAVwA4kFvwVQA4uFvgVAA40FugUwA44FvAUQA46FugUAA46FvATwA46FsATgA42FsATQA4wFsATAA4sFsATAA4mFsATAA4gFtATAA4cFvATAA4YFuATgA4UFtAUAA4SFugUQA4QFsAUwA4QFsgVAA4WFvwVAA4iFuwVQA4uFtAVgA4+FvQVgA4EFwQVwA4KFxAVwA4SFxgVwA4YFxgVwA4eFwwVwA4jFyQVgA4oFzQVQA4qFwwVQA4tFxgVAA4vFxAUwA4xFwAUgA4yFzAUAA4zFzATwA40FxATgA40FyATQA40FwATQA40FzATAA40FyATQA40FzATgA40FxgUAA40FyAUQA40FxgUgA40FwAUwA40FygUwA41FwgVAA44FxwVAA46FygVAA49FywVAA4AF3AVAA4EF3AVAA4JF2QVAA4NF1QVAA4QF0gVAA4TF3AUwA4WF1gUwA4YF0gUwA4aF3gUgA4cF3gUgA4cF3gUgA4dF3gUgA4dF0AUwA4eF0gUwA4fF1gUwA4fF2gUwA4gF3AUwA4gF3gUwA4hF0AVAA4iF0AVAA4jF0AVAA4kF1AUwA4mF0gUgA4oF0AUQA4rF0AUAA4tF2ATgA4vF3ATAA4xF2ASgA41F0ARwA44F0AQgA48F0AQAA4BF4AQAA4GF4AQAA4NF4AQgA4aF6ASQA4oF7ATQA4yF5AUAA4+F4gUgA4IF8AVAA4QF8QVQA4UF/wVQA4WF9AVwA4YF9wWAA4YF8QWQA4UF+QWQA4KF8YWgA46F6oWgA4nF4wWwA4XF6AWwA4JF6oWwA45F3QWwA4sF3gWwA4iF3gWwA4aF3AWwA4UF14WwA4TF0IWwA4TF0wWgA4dF0oWQA40F0QWAA4TF6QVQA4wF7AUgA4TF8ATAA44F9AzQA4TmBA1AA4qmAw1wA41mBQ2AA4AmEQ2QA4LmHg2QA4RmFY2gA4WGHY2gA4aGFo2wA4amGg2wA4ZmHQ2wA4VGHw2wA4MGEA3AA4BGEA3AA42mDo2wA4mmCA2wA4VGDo2gA4HGBI2gA42F+w2QA4kF8o2QA4TF+Q2AA4IF8Y2AA4CF+A1wA4AF8A1wA4AF+w1gA4BF+A1gA4EF9w1gA4KF9g1gA4OF9g1gA4RF9w1gA4WF+A1gA4YF+Q1gA4aF+g1gA4bF+g1gA4cF+w1gA4cF+w1gA4dF+w1gA4",
+         "type": "free",
+       },
+     ],
+diff --git a/packages/tldraw/src/test/__snapshots__/resizing.test.ts.snap b/packages/tldraw/src/test/__snapshots__/resizing.test.ts.snap
+index 7424c4603739..bc9b57a812d8 100644
+--- a/packages/tldraw/src/test/__snapshots__/resizing.test.ts.snap
++++ b/packages/tldraw/src/test/__snapshots__/resizing.test.ts.snap
+@@ -16,20 +16,11 @@ exports[`When resizing a shape with children > Resizes a rotated draw shape > dr
+     "isComplete": false,
+     "isPen": false,
+     "scale": 1,
++    "scaleX": 1.1,
++    "scaleY": 1.1,
+     "segments": [
+       {
+-        "points": [
+-          {
+-            "x": 0,
+-            "y": 0,
+-            "z": 0.5,
+-          },
+-          {
+-            "x": 110,
+-            "y": 110,
+-            "z": 0.5,
+-          },
+-        ],
++        "points": "AAAAAAA4QFZAVgA4",
+         "type": "free",
+       },
+     ],
+diff --git a/packages/tldraw/src/test/drawing.test.ts b/packages/tldraw/src/test/drawing.test.ts
+index 47ae0704774a..b4e4f6f57393 100644
+--- a/packages/tldraw/src/test/drawing.test.ts
++++ b/packages/tldraw/src/test/drawing.test.ts
+@@ -1,7 +1,8 @@
+ import { TLDrawShape, TLHighlightShape, last } from '@tldraw/editor'
+ import { vi } from 'vitest'
+-import { TestEditor } from './TestEditor'
+ import { TEST_DRAW_SHAPE_SCREEN_POINTS } from './drawing.data'
++import { base64ToPoints } from './test-jsx'
++import { TestEditor } from './TestEditor'
+ 
+ vi.useFakeTimers()
+ 
+@@ -77,7 +78,7 @@ for (const toolType of ['draw', 'highlight'] as const) {
+ 			const segment = shape.props.segments[0]
+ 			expect(segment.type).toBe('straight')
+ 
+-			const points = segment.points
++			const points = base64ToPoints(segment.points)
+ 			expect(points.length).toBe(2)
+ 		})
+ 
+@@ -176,8 +177,9 @@ for (const toolType of ['draw', 'highlight'] as const) {
+ 
+ 			const shape = editor.getCurrentPageShapes()[0] as DrawableShape
+ 			const segment = shape.props.segments[0]
+-			expect(segment.points[1].x).toBeCloseTo(snappedX)
+-			expect(segment.points[1].y).toBeCloseTo(snappedY)
++			const points = base64ToPoints(segment.points)
++			expect(points[1].x).toBeCloseTo(snappedX)
++			expect(points[1].y).toBeCloseTo(snappedY)
+ 		})
+ 
+ 		it('Doesnt snap to 15 degree angle when cmd is held', () => {
+@@ -190,8 +192,9 @@ for (const toolType of ['draw', 'highlight'] as const) {
+ 
+ 			const shape = editor.getCurrentPageShapes()[0] as DrawableShape
+ 			const segment = shape.props.segments[0]
+-			expect(segment.points[1].x).toBeCloseTo(x)
+-			expect(segment.points[1].y).toBeCloseTo(y)
++			const points = base64ToPoints(segment.points)
++			expect(points[1].x).toBeCloseTo(x)
++			expect(points[1].y).toBeCloseTo(y)
+ 		})
+ 
+ 		it('Snaps to start or end of straight segments in self when shift + cmd is held', () => {
+@@ -209,13 +212,15 @@ for (const toolType of ['draw', 'highlight'] as const) {
+ 
+ 			const shape1 = editor.getCurrentPageShapes()[0] as DrawableShape
+ 			const segment1 = last(shape1.props.segments)!
+-			const point1 = last(segment1.points)!
++			const points1 = base64ToPoints(segment1.points)
++			const point1 = last(points1)!
+ 			expect(point1.x).toBe(1)
+ 
+ 			editor.keyDown('Meta')
+ 			const shape2 = editor.getCurrentPageShapes()[0] as DrawableShape
+ 			const segment2 = last(shape2.props.segments)!
+-			const point2 = last(segment2.points)!
++			const points2 = base64ToPoints(segment2.points)
++			const point2 = last(points2)!
+ 			expect(point2.x).toBe(0)
+ 		})
+ 
+@@ -234,13 +239,15 @@ for (const toolType of ['draw', 'highlight'] as const) {
+ 
+ 			const shape1 = editor.getCurrentPageShapes()[0] as DrawableShape
+ 			const segment1 = last(shape1.props.segments)!
+-			const point1 = last(segment1.points)!
++			const points1 = base64ToPoints(segment1.points)
++			const point1 = last(points1)!
+ 			expect(point1.x).toBe(1)
+ 
+ 			editor.keyDown('Meta')
+ 			const shape2 = editor.getCurrentPageShapes()[0] as DrawableShape
+ 			const segment2 = last(shape2.props.segments)!
+-			const point2 = last(segment2.points)!
++			const points2 = base64ToPoints(segment2.points)
++			const point2 = last(points2)!
+ 			expect(point2.x).toBe(0)
+ 		})
+ 
+diff --git a/packages/tldraw/src/test/flipShapes.test.ts b/packages/tldraw/src/test/flipShapes.test.ts
+index 5b017499508b..32c2ecde9115 100644
+--- a/packages/tldraw/src/test/flipShapes.test.ts
++++ b/packages/tldraw/src/test/flipShapes.test.ts
+@@ -652,6 +652,7 @@ it('Restores flipped shape positions when shape is rotated', () => {
+ 
+ it('Restores flipped shape positions with draw shapes when shape is rotated', () => {
+ 	editor
++		.cancel()
+ 		.setCurrentTool('draw')
+ 		.pointerDown(0, 0)
+ 		.pointerMove(-100, -100)
+diff --git a/packages/tldraw/src/test/resizing.test.ts b/packages/tldraw/src/test/resizing.test.ts
+index dacb31f0c50c..1c990337336f 100644
+--- a/packages/tldraw/src/test/resizing.test.ts
++++ b/packages/tldraw/src/test/resizing.test.ts
+@@ -20,6 +20,7 @@ import { NoteShapeUtil } from '../lib/shapes/note/NoteShapeUtil'
+ import { TestEditor } from './TestEditor'
+ import { getSnapLines } from './getSnapLines'
+ import { roundedBox } from './roundedBox'
++import { createDrawSegments } from './test-jsx'
+ 
+ vi.useFakeTimers()
+ 
+@@ -904,15 +905,12 @@ describe('When resizing a shape with children', () => {
+ 					x: 100,
+ 					y: 100,
+ 					props: {
+-						segments: [
+-							{
+-								type: 'free',
+-								points: [
+-									{ x: 0, y: 0, z: 0.5 },
+-									{ x: 100, y: 100, z: 0.5 },
+-								],
+-							},
+-						],
++						segments: createDrawSegments([
++							[
++								{ x: 0, y: 0, z: 0.5 },
++								{ x: 100, y: 100, z: 0.5 },
++							],
++						]),
+ 					},
+ 				},
+ 			])
+diff --git a/packages/tldraw/src/test/test-jsx.tsx b/packages/tldraw/src/test/test-jsx.tsx
+index 59b202187143..b12d07cb0e3f 100644
+--- a/packages/tldraw/src/test/test-jsx.tsx
++++ b/packages/tldraw/src/test/test-jsx.tsx
+@@ -19,6 +19,9 @@ import {
+ } from '@tldraw/editor'
+ import React, { Fragment } from 'react'
+ 
++// Re-export test helpers from their new location
++export { base64ToPoints, createDrawSegments, pointsToBase64 } from '../lib/utils/test-helpers'
++
+ const shapeTypeSymbol = Symbol('shapeJsx')
+ const assetTypeSymbol = Symbol('assetJsx')
+ const bindingTypeSymbol = Symbol('bindingJsx')
+diff --git a/packages/tlschema/api-report.api.md b/packages/tlschema/api-report.api.md
+index 9872a368259c..9527b9e30428 100644
+--- a/packages/tlschema/api-report.api.md
++++ b/packages/tlschema/api-report.api.md
+@@ -73,6 +73,17 @@ export const AssetRecordType: RecordType<TLAsset, "props" | "type">;
+ // @public
+ export const assetValidator: T.Validator<TLAsset>;
+ 
++// @public
++export class b64Vecs {
++    static decodeFirstPoint(b64Points: string): null | VecModel;
++    static decodeLastPoint(b64Points: string): null | VecModel;
++    // @internal
++    static decodePointAt(b64Points: string, charOffset: number): VecModel;
++    static decodePoints(base64: string): VecModel[];
++    static encodePoint(x: number, y: number, z: number): string;
++    static encodePoints(points: VecModel[]): string;
++}
++
+ // @public
+ export const bindingIdValidator: T.Validator<TLBindingId>;
+ 
+@@ -103,6 +114,12 @@ export const CameraRecordType: RecordType<TLCamera, never>;
+ // @public
+ export const canvasUiColorTypeValidator: T.Validator<"accent" | "black" | "laser" | "muted-1" | "selection-fill" | "selection-stroke" | "white">;
+ 
++// @public
++export function compressLegacySegments(segments: {
++    points: VecModel[];
++    type: 'free' | 'straight';
++}[]): TLDrawShapeSegment[];
++
+ // @public
+ export function createAssetValidator<Type extends string, Props extends JsonObject>(type: Type, props: T.Validator<Props>): T.ObjectValidator<Expand<    { [P in "id" | "meta" | "typeName" | (undefined extends Props ? never : "props") | (undefined extends Type ? never : "type")]: {
+ id: TLAssetId;
+@@ -278,7 +295,7 @@ export const DocumentRecordType: RecordType<TLDocument, never>;
+ // @public
+ export const drawShapeMigrations: TLPropsMigrations;
+ 
+-// @public
++// @public (undocumented)
+ export const drawShapeProps: RecordProps<TLDrawShape>;
+ 
+ // @public
+@@ -371,7 +388,7 @@ export const groupShapeProps: RecordProps<TLGroupShape>;
+ // @public
+ export const highlightShapeMigrations: TLPropsMigrations;
+ 
+-// @public
++// @public (undocumented)
+ export const highlightShapeProps: RecordProps<TLHighlightShape>;
+ 
+ // @public
+@@ -1000,13 +1017,15 @@ export interface TLDrawShapeProps {
+     isComplete: boolean;
+     isPen: boolean;
+     scale: number;
++    scaleX: number;
++    scaleY: number;
+     segments: TLDrawShapeSegment[];
+     size: TLDefaultSizeStyle;
+ }
+ 
+ // @public
+ export interface TLDrawShapeSegment {
+-    points: VecModel[];
++    points: string;
+     type: 'free' | 'straight';
+ }
+ 
+@@ -1097,6 +1116,8 @@ export interface TLHighlightShapeProps {
+     isComplete: boolean;
+     isPen: boolean;
+     scale: number;
++    scaleX: number;
++    scaleY: number;
+     segments: TLDrawShapeSegment[];
+     size: TLDefaultSizeStyle;
+ }
+diff --git a/packages/tlschema/src/index.ts b/packages/tlschema/src/index.ts
+index a7dc8189d0db..390a7dee8dec 100644
+--- a/packages/tlschema/src/index.ts
++++ b/packages/tlschema/src/index.ts
+@@ -191,6 +191,7 @@ export {
+ 	type TLBookmarkShapeProps,
+ } from './shapes/TLBookmarkShape'
+ export {
++	compressLegacySegments,
+ 	drawShapeMigrations,
+ 	drawShapeProps,
+ 	type TLDrawShape,
+@@ -313,3 +314,5 @@ registerTldrawLibraryVersion(
+ 	(globalThis as any).TLDRAW_LIBRARY_VERSION,
+ 	(globalThis as any).TLDRAW_LIBRARY_MODULES
+ )
++
++export { b64Vecs } from './misc/b64Vecs'
+diff --git a/packages/tlschema/src/migrations.test.ts b/packages/tlschema/src/migrations.test.ts
+index be23559dbcc5..77ce03a60ded 100644
+--- a/packages/tlschema/src/migrations.test.ts
++++ b/packages/tlschema/src/migrations.test.ts
+@@ -16,7 +16,7 @@ import { instancePresenceVersions } from './records/TLPresence'
+ import { TLShape, rootShapeVersions } from './records/TLShape'
+ import { arrowShapeVersions } from './shapes/TLArrowShape'
+ import { bookmarkShapeVersions } from './shapes/TLBookmarkShape'
+-import { drawShapeVersions } from './shapes/TLDrawShape'
++import { compressLegacySegments, drawShapeVersions } from './shapes/TLDrawShape'
+ import { embedShapeVersions } from './shapes/TLEmbedShape'
+ import { frameShapeVersions } from './shapes/TLFrameShape'
+ import { geoShapeVersions } from './shapes/TLGeoShape'
+@@ -2242,6 +2242,128 @@ describe('TLVideoAsset AddAutoplay', () => {
+ 	})
+ })
+ 
++describe('Add scaleX, scaleY, and new base64 format to draw shape', () => {
++	const { up, down } = getTestMigration(drawShapeVersions.Base64)
++
++	test('up works as expected', () => {
++		const legacySegments = [
++			{
++				type: 'free',
++				points: [
++					{ x: 0, y: 0, z: 0.5 },
++					{ x: 10, y: 10, z: 0.6 },
++					{ x: 20, y: 20, z: 0.7 },
++				],
++			},
++			{
++				type: 'straight',
++				points: [
++					{ x: 20, y: 20, z: 0.7 },
++					{ x: 30, y: 30, z: 0.8 },
++				],
++			},
++		]
++		expect(
++			up({
++				props: {
++					segments: legacySegments,
++				},
++			})
++		).toEqual({
++			props: {
++				scaleX: 1,
++				scaleY: 1,
++				segments: compressLegacySegments(legacySegments as any),
++			},
++		})
++	})
++
++	test('down works as expected', () => {
++		const legacySegments = [
++			{
++				type: 'free',
++				points: [
++					{ x: 0, y: 0, z: 0.5 },
++					{ x: 10, y: 10, z: 0.6 },
++				],
++			},
++		]
++		const compressed = compressLegacySegments(legacySegments as any)
++		const result = down({
++			props: {
++				scaleX: 1,
++				scaleY: 1,
++				segments: compressed,
++			},
++		})
++		expect(result.props.scaleX).toBeUndefined()
++		expect(result.props.scaleY).toBeUndefined()
++		expect(Array.isArray(result.props.segments[0].points)).toBe(true)
++		expect(result.props.segments[0].points.length).toBe(2)
++	})
++})
++
++describe('Add scaleX, scaleY, and new base64 format to highlight shape', () => {
++	const { up, down } = getTestMigration(highlightShapeVersions.Base64)
++
++	test('up works as expected', () => {
++		const legacySegments = [
++			{
++				type: 'free',
++				points: [
++					{ x: 0, y: 0, z: 0.5 },
++					{ x: 10, y: 10, z: 0.6 },
++					{ x: 20, y: 20, z: 0.7 },
++				],
++			},
++			{
++				type: 'straight',
++				points: [
++					{ x: 20, y: 20, z: 0.7 },
++					{ x: 30, y: 30, z: 0.8 },
++				],
++			},
++		]
++		expect(
++			up({
++				props: {
++					segments: legacySegments,
++				},
++			})
++		).toEqual({
++			props: {
++				scaleX: 1,
++				scaleY: 1,
++				segments: compressLegacySegments(legacySegments as any),
++			},
++		})
++	})
++
++	test('down works as expected', () => {
++		const legacySegments = [
++			{
++				type: 'free',
++				points: [
++					{ x: 0, y: 0, z: 0.5 },
++					{ x: 10, y: 10, z: 0.6 },
++				],
++			},
++		]
++		const compressed = compressLegacySegments(legacySegments as any)
++		const result = down({
++			props: {
++				scaleX: 1,
++				scaleY: 1,
++				segments: compressed,
++			},
++		})
++		expect(result.props.scaleX).toBeUndefined()
++		expect(result.props.scaleY).toBeUndefined()
++		expect(Array.isArray(result.props.segments[0].points)).toBe(true)
++		expect(result.props.segments[0].points.length).toBe(2)
++	})
++})
++
+ /* ---  PUT YOUR MIGRATIONS TESTS ABOVE HERE --- */
+ 
+ // check that all migrator fns were called at least once
+diff --git a/packages/tlschema/src/misc/b64Vecs.ts b/packages/tlschema/src/misc/b64Vecs.ts
+new file mode 100644
+index 000000000000..87e197675b0f
+--- /dev/null
++++ b/packages/tlschema/src/misc/b64Vecs.ts
+@@ -0,0 +1,297 @@
++import { VecModel } from './geometry-types'
++
++// Each point = 3 Float16s = 6 bytes = 8 base64 chars
++const POINT_B64_LENGTH = 8
++
++// O(1) lookup table for base64 decoding (maps char code -> 6-bit value)
++const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
++const B64_LOOKUP = new Uint8Array(128)
++for (let i = 0; i < 64; i++) {
++	B64_LOOKUP[BASE64_CHARS.charCodeAt(i)] = i
++}
++
++// Precomputed powers of 2 for Float16 exponents (exp - 15, so indices 0-30 map to 2^-15 to 2^15)
++const POW2 = new Float64Array(31)
++for (let i = 0; i < 31; i++) {
++	POW2[i] = Math.pow(2, i - 15)
++}
++const POW2_SUBNORMAL = Math.pow(2, -14) / 1024 // For subnormal numbers
++
++// Precomputed mantissa values: 1 + frac/1024 for all 1024 possible frac values
++// Avoids division in hot path
++const MANTISSA = new Float64Array(1024)
++for (let i = 0; i < 1024; i++) {
++	MANTISSA[i] = 1 + i / 1024
++}
++
++/**
++ * Convert a Uint16Array (containing Float16 bits) to base64.
++ * Processes bytes in groups of 3 to produce 4 base64 characters.
++ *
++ * @internal
++ */
++function uint16ArrayToBase64(uint16Array: Uint16Array): string {
++	const uint8Array = new Uint8Array(
++		uint16Array.buffer,
++		uint16Array.byteOffset,
++		uint16Array.byteLength
++	)
++	let result = ''
++
++	// Process bytes in groups of 3 -> 4 base64 chars
++	for (let i = 0; i < uint8Array.length; i += 3) {
++		const byte1 = uint8Array[i]
++		const byte2 = uint8Array[i + 1] // Always exists for our use case (multiple of 6 bytes)
++		const byte3 = uint8Array[i + 2]
++
++		const bitmap = (byte1 << 16) | (byte2 << 8) | byte3
++		result +=
++			BASE64_CHARS[(bitmap >> 18) & 63] +
++			BASE64_CHARS[(bitmap >> 12) & 63] +
++			BASE64_CHARS[(bitmap >> 6) & 63] +
++			BASE64_CHARS[bitmap & 63]
++	}
++
++	return result
++}
++
++/**
++ * Convert a base64 string to Uint16Array containing Float16 bits.
++ * The base64 string must have a length that is a multiple of 4.
++ *
++ * @param base64 - The base64-encoded string to decode
++ * @returns A Uint16Array containing the decoded Float16 bit values
++ * @public
++ */
++function base64ToUint16Array(base64: string): Uint16Array {
++	// Calculate exact number of bytes (4 base64 chars = 3 bytes)
++	const numBytes = Math.floor((base64.length * 3) / 4)
++	const bytes = new Uint8Array(numBytes)
++	let byteIndex = 0
++
++	// Process in groups of 4 base64 characters
++	for (let i = 0; i < base64.length; i += 4) {
++		const c0 = B64_LOOKUP[base64.charCodeAt(i)]
++		const c1 = B64_LOOKUP[base64.charCodeAt(i + 1)]
++		const c2 = B64_LOOKUP[base64.charCodeAt(i + 2)]
++		const c3 = B64_LOOKUP[base64.charCodeAt(i + 3)]
++
++		const bitmap = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3
++
++		bytes[byteIndex++] = (bitmap >> 16) & 255
++		bytes[byteIndex++] = (bitmap >> 8) & 255
++		bytes[byteIndex++] = bitmap & 255
++	}
++
++	return new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2)
++}
++
++/**
++ * Convert Float16 bits to a number using optimized lookup tables.
++ * Handles normal numbers, subnormal numbers, zero, infinity, and NaN.
++ *
++ * @param bits - The 16-bit Float16 value to decode
++ * @returns The decoded number value
++ */
++function float16BitsToNumber(bits: number): number {
++	const sign = bits >> 15
++	const exp = (bits >> 10) & 0x1f
++	const frac = bits & 0x3ff
++
++	if (exp === 0) {
++		// Subnormal or zero - rare case
++		return sign ? -frac * POW2_SUBNORMAL : frac * POW2_SUBNORMAL
++	}
++	if (exp === 31) {
++		// Infinity or NaN - very rare
++		return frac ? NaN : sign ? -Infinity : Infinity
++	}
++	// Normal case - two table lookups, one multiply, no division
++	const magnitude = POW2[exp] * MANTISSA[frac]
++	return sign ? -magnitude : magnitude
++}
++
++/**
++ * Convert a number to Float16 bits.
++ * Handles normal numbers, subnormal numbers, zero, infinity, and NaN.
++ *
++ * @param value - The number to encode as Float16
++ * @returns The 16-bit Float16 representation of the number
++ * @internal
++ */
++function numberToFloat16Bits(value: number): number {
++	if (value === 0) return Object.is(value, -0) ? 0x8000 : 0
++	if (!Number.isFinite(value)) {
++		if (Number.isNaN(value)) return 0x7e00
++		return value > 0 ? 0x7c00 : 0xfc00
++	}
++
++	const sign = value < 0 ? 1 : 0
++	value = Math.abs(value)
++
++	// Find exponent and mantissa
++	const exp = Math.floor(Math.log2(value))
++	const expBiased = exp + 15
++
++	if (expBiased >= 31) {
++		// Overflow to infinity
++		return (sign << 15) | 0x7c00
++	}
++	if (expBiased <= 0) {
++		// Subnormal or underflow
++		const frac = Math.round(value * Math.pow(2, 14) * 1024)
++		return (sign << 15) | (frac & 0x3ff)
++	}
++
++	// Normal number
++	const mantissa = value / Math.pow(2, exp) - 1
++	const frac = Math.round(mantissa * 1024)
++	return (sign << 15) | (expBiased << 10) | (frac & 0x3ff)
++}
++
++/**
++ * Utilities for encoding and decoding points using base64 and Float16 encoding.
++ * Provides functions for converting between VecModel arrays and compact base64 strings,
++ * as well as individual point encoding/decoding operations.
++ *
++ * @public
++ */
++export class b64Vecs {
++	/**
++	 * Encode a single point (x, y, z) to 8 base64 characters.
++	 * Each coordinate is encoded as a Float16 value, resulting in 6 bytes total.
++	 *
++	 * @param x - The x coordinate
++	 * @param y - The y coordinate
++	 * @param z - The z coordinate
++	 * @returns An 8-character base64 string representing the point
++	 */
++	static encodePoint(x: number, y: number, z: number): string {
++		const xBits = numberToFloat16Bits(x)
++		const yBits = numberToFloat16Bits(y)
++		const zBits = numberToFloat16Bits(z)
++
++		// Convert Float16 bits to 6 bytes (little-endian)
++		const b0 = xBits & 0xff
++		const b1 = (xBits >> 8) & 0xff
++		const b2 = yBits & 0xff
++		const b3 = (yBits >> 8) & 0xff
++		const b4 = zBits & 0xff
++		const b5 = (zBits >> 8) & 0xff
++
++		// Convert 6 bytes to 8 base64 chars
++		const bitmap1 = (b0 << 16) | (b1 << 8) | b2
++		const bitmap2 = (b3 << 16) | (b4 << 8) | b5
++
++		return (
++			BASE64_CHARS[(bitmap1 >> 18) & 0x3f] +
++			BASE64_CHARS[(bitmap1 >> 12) & 0x3f] +
++			BASE64_CHARS[(bitmap1 >> 6) & 0x3f] +
++			BASE64_CHARS[bitmap1 & 0x3f] +
++			BASE64_CHARS[(bitmap2 >> 18) & 0x3f] +
++			BASE64_CHARS[(bitmap2 >> 12) & 0x3f] +
++			BASE64_CHARS[(bitmap2 >> 6) & 0x3f] +
++			BASE64_CHARS[bitmap2 & 0x3f]
++		)
++	}
++
++	/**
++	 * Convert an array of VecModels to a base64 string for compact storage.
++	 * Uses Float16 encoding for each coordinate (x, y, z). If a point's z value is
++	 * undefined, it defaults to 0.5.
++	 *
++	 * @param points - An array of VecModel objects to encode
++	 * @returns A base64-encoded string containing all points
++	 */
++	static encodePoints(points: VecModel[]): string {
++		const uint16s = new Uint16Array(points.length * 3)
++		for (let i = 0; i < points.length; i++) {
++			const p = points[i]
++			uint16s[i * 3] = numberToFloat16Bits(p.x)
++			uint16s[i * 3 + 1] = numberToFloat16Bits(p.y)
++			uint16s[i * 3 + 2] = numberToFloat16Bits(p.z ?? 0.5)
++		}
++		return uint16ArrayToBase64(uint16s)
++	}
++
++	/**
++	 * Convert a base64 string back to an array of VecModels.
++	 * Decodes Float16-encoded coordinates (x, y, z) from the base64 string.
++	 *
++	 * @param base64 - The base64-encoded string containing point data
++	 * @returns An array of VecModel objects decoded from the string
++	 */
++	static decodePoints(base64: string): VecModel[] {
++		const uint16s = base64ToUint16Array(base64)
++		const result: VecModel[] = []
++		for (let i = 0; i < uint16s.length; i += 3) {
++			result.push({
++				x: float16BitsToNumber(uint16s[i]),
++				y: float16BitsToNumber(uint16s[i + 1]),
++				z: float16BitsToNumber(uint16s[i + 2]),
++			})
++		}
++		return result
++	}
++
++	/**
++	 * Decode a single point (8 base64 chars) starting at the given offset.
++	 * Each point is encoded as 3 Float16 values (x, y, z) in 8 base64 characters.
++	 *
++	 * @param b64Points - The base64-encoded string containing point data
++	 * @param charOffset - The character offset where the point starts (must be a multiple of 8)
++	 * @returns A VecModel object with x, y, and z coordinates
++	 * @internal
++	 */
++	static decodePointAt(b64Points: string, charOffset: number): VecModel {
++		// Decode 8 base64 chars -> 6 bytes -> 3 Float16s using O(1) lookup
++		const c0 = B64_LOOKUP[b64Points.charCodeAt(charOffset)]
++		const c1 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 1)]
++		const c2 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 2)]
++		const c3 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 3)]
++		const c4 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 4)]
++		const c5 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 5)]
++		const c6 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 6)]
++		const c7 = B64_LOOKUP[b64Points.charCodeAt(charOffset + 7)]
++
++		// 4 base64 chars -> 24 bits -> 3 bytes
++		const bitmap1 = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3
++		const bitmap2 = (c4 << 18) | (c5 << 12) | (c6 << 6) | c7
++
++		// Extract Float16 bits directly (little-endian byte order)
++		// bitmap1 = [byte0:8][byte1:8][byte2:8], bitmap2 = [byte3:8][byte4:8][byte5:8]
++		// xBits = byte0 | (byte1 << 8), yBits = byte2 | (byte3 << 8), zBits = byte4 | (byte5 << 8)
++		const xBits = ((bitmap1 >> 16) & 0xff) | (bitmap1 & 0xff00)
++		const yBits = (bitmap1 & 0xff) | ((bitmap2 >> 8) & 0xff00)
++		const zBits = ((bitmap2 >> 8) & 0xff) | ((bitmap2 << 8) & 0xff00)
++
++		return {
++			x: float16BitsToNumber(xBits),
++			y: float16BitsToNumber(yBits),
++			z: float16BitsToNumber(zBits),
++		}
++	}
++
++	/**
++	 * Get the first point from a base64-encoded string of points.
++	 *
++	 * @param b64Points - The base64-encoded string containing point data
++	 * @returns The first point as a VecModel, or null if the string is too short
++	 * @public
++	 */
++	static decodeFirstPoint(b64Points: string): VecModel | null {
++		if (b64Points.length < POINT_B64_LENGTH) return null
++		return b64Vecs.decodePointAt(b64Points, 0)
++	}
++
++	/**
++	 * Get the last point from a base64-encoded string of points.
++	 *
++	 * @param b64Points - The base64-encoded string containing point data
++	 * @returns The last point as a VecModel, or null if the string is too short
++	 */
++	static decodeLastPoint(b64Points: string): VecModel | null {
++		if (b64Points.length < POINT_B64_LENGTH) return null
++		return b64Vecs.decodePointAt(b64Points, b64Points.length - POINT_B64_LENGTH)
++	}
++}
+diff --git a/packages/tlschema/src/shapes/TLDrawShape.ts b/packages/tlschema/src/shapes/TLDrawShape.ts
+index e56f44503629..11bd62003550 100644
+--- a/packages/tlschema/src/shapes/TLDrawShape.ts
++++ b/packages/tlschema/src/shapes/TLDrawShape.ts
+@@ -1,5 +1,6 @@
+ import { T } from '@tldraw/validate'
+-import { VecModel, vecModelValidator } from '../misc/geometry-types'
++import { b64Vecs } from '../misc/b64Vecs'
++import { VecModel } from '../misc/geometry-types'
+ import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '../records/TLShape'
+ import { RecordProps } from '../recordsWithProps'
+ import { DefaultColorStyle, TLDefaultColorStyle } from '../styles/TLColorStyle'
+@@ -16,26 +17,18 @@ import { TLBaseShape } from './TLBaseShape'
+ export interface TLDrawShapeSegment {
+ 	/** Type of drawing segment - 'free' for freehand curves, 'straight' for line segments */
+ 	type: 'free' | 'straight'
+-	/** Array of points defining the segment path with x, y coordinates and pressure (z) */
+-	points: VecModel[]
++	/** Base64-encoded points (x, y, z triplets stored as Float16) */
++	points: string
+ }
+ 
+ /**
+  * Validator for draw shape segments ensuring proper structure and data types.
+  *
+  * @public
+- * @example
+- * ```ts
+- * const segment: TLDrawShapeSegment = {
+- *   type: 'free',
+- *   points: [{ x: 0, y: 0, z: 0.5 }, { x: 10, y: 10, z: 0.7 }]
+- * }
+- * const isValid = DrawShapeSegment.isValid(segment)
+- * ```
+  */
+ export const DrawShapeSegment: T.ObjectValidator<TLDrawShapeSegment> = T.object({
+ 	type: T.literalEnum('free', 'straight'),
+-	points: T.arrayOf(vecModelValidator),
++	points: T.string,
+ })
+ 
+ /**
+@@ -62,6 +55,10 @@ export interface TLDrawShapeProps {
+ 	isPen: boolean
+ 	/** Scale factor applied to the drawing */
+ 	scale: number
++	/** Horizontal scale factor for lazy resize */
++	scaleX: number
++	/** Vertical scale factor for lazy resize */
++	scaleY: number
+ }
+ 
+ /**
+@@ -118,6 +115,12 @@ export type TLDrawShape = TLBaseShape<'draw', TLDrawShapeProps>
+  * const isValid = drawShapeProps.color.isValid(props.color)
+  * ```
+  */
++// Validator for scaleX/scaleY that allows negative values (for flipping) but not zero
++const nonZeroNumberAllowNegative = T.number.check((value) => {
++	if (value === 0) throw new Error('Expected a non-zero number, got 0')
++})
++
++/** @public */
+ export const drawShapeProps: RecordProps<TLDrawShape> = {
+ 	color: DefaultColorStyle,
+ 	fill: DefaultFillStyle,
+@@ -128,11 +131,14 @@ export const drawShapeProps: RecordProps<TLDrawShape> = {
+ 	isClosed: T.boolean,
+ 	isPen: T.boolean,
+ 	scale: T.nonZeroNumber,
++	scaleX: nonZeroNumberAllowNegative,
++	scaleY: nonZeroNumberAllowNegative,
+ }
+ 
+ const Versions = createShapePropsMigrationIds('draw', {
+ 	AddInPen: 1,
+ 	AddScale: 2,
++	Base64: 3,
+ })
+ 
+ /**
+@@ -184,5 +190,42 @@ export const drawShapeMigrations = createShapePropsMigrationSequence({
+ 				delete props.scale
+ 			},
+ 		},
++		{
++			id: Versions.Base64,
++			up: (props) => {
++				props.segments = props.segments.map((segment: any) => ({
++					...segment,
++					points: b64Vecs.encodePoints(segment.points),
++				}))
++				props.scaleX = 1
++				props.scaleY = 1
++			},
++			down: (props) => {
++				props.segments = props.segments.map((segment: any) => ({
++					...segment,
++					points: b64Vecs.decodePoints(segment.points),
++				}))
++				delete props.scaleX
++				delete props.scaleY
++			},
++		},
+ 	],
+ })
++
++/**
++ * Compress legacy draw shape segments by converting VecModel[] points to base64 format.
++ * This function is useful for converting old draw shape data to the new compressed format.
++ *
++ * @public
++ */
++export function compressLegacySegments(
++	segments: {
++		type: 'free' | 'straight'
++		points: VecModel[]
++	}[]
++): TLDrawShapeSegment[] {
++	return segments.map((segment) => ({
++		...segment,
++		points: b64Vecs.encodePoints(segment.points),
++	}))
++}
+diff --git a/packages/tlschema/src/shapes/TLHighlightShape.ts b/packages/tlschema/src/shapes/TLHighlightShape.ts
+index df1c57090879..e9830cbaed5e 100644
+--- a/packages/tlschema/src/shapes/TLHighlightShape.ts
++++ b/packages/tlschema/src/shapes/TLHighlightShape.ts
+@@ -1,4 +1,5 @@
+ import { T } from '@tldraw/validate'
++import { b64Vecs } from '../misc/b64Vecs'
+ import { createShapePropsMigrationIds, createShapePropsMigrationSequence } from '../records/TLShape'
+ import { RecordProps } from '../recordsWithProps'
+ import { DefaultColorStyle, TLDefaultColorStyle } from '../styles/TLColorStyle'
+@@ -36,6 +37,10 @@ export interface TLHighlightShapeProps {
+ 	isPen: boolean
+ 	/** Scale factor applied to the highlight shape for display */
+ 	scale: number
++	/** Horizontal scale factor for lazy resize */
++	scaleX: number
++	/** Vertical scale factor for lazy resize */
++	scaleY: number
+ }
+ 
+ /**
+@@ -84,6 +89,12 @@ export type TLHighlightShape = TLBaseShape<'highlight', TLHighlightShapeProps>
+  * const validatedProps = validator.validate(someHighlightProps)
+  * ```
+  */
++// Validator for scaleX/scaleY that allows negative values (for flipping) but not zero
++const nonZeroNumberAllowNegative = T.number.check((value) => {
++	if (value === 0) throw new Error('Expected a non-zero number, got 0')
++})
++
++/** @public */
+ export const highlightShapeProps: RecordProps<TLHighlightShape> = {
+ 	color: DefaultColorStyle,
+ 	size: DefaultSizeStyle,
+@@ -91,10 +102,13 @@ export const highlightShapeProps: RecordProps<TLHighlightShape> = {
+ 	isComplete: T.boolean,
+ 	isPen: T.boolean,
+ 	scale: T.nonZeroNumber,
++	scaleX: nonZeroNumberAllowNegative,
++	scaleY: nonZeroNumberAllowNegative,
+ }
+ 
+ const Versions = createShapePropsMigrationIds('highlight', {
+ 	AddScale: 1,
++	Base64: 2,
+ })
+ 
+ /**
+@@ -122,5 +136,24 @@ export const highlightShapeMigrations = createShapePropsMigrationSequence({
+ 				delete props.scale
+ 			},
+ 		},
++		{
++			id: Versions.Base64,
++			up: (props) => {
++				props.segments = props.segments.map((segment: any) => ({
++					...segment,
++					points: b64Vecs.encodePoints(segment.points),
++				}))
++				props.scaleX = 1
++				props.scaleY = 1
++			},
++			down: (props) => {
++				props.segments = props.segments.map((segment: any) => ({
++					...segment,
++					points: b64Vecs.decodePoints(segment.points),
++				}))
++				delete props.scaleX
++				delete props.scaleY
++			},
++		},
+ 	],
+ })
+diff --git a/templates/agent/shared/actions/PenActionUtil.ts b/templates/agent/shared/actions/PenActionUtil.ts
+index f7dc05f431a6..8cda60f997a1 100644
+--- a/templates/agent/shared/actions/PenActionUtil.ts
++++ b/templates/agent/shared/actions/PenActionUtil.ts
+@@ -1,4 +1,4 @@
+-import { createShapeId, TLDrawShapeSegment, Vec, VecModel } from 'tldraw'
++import { compressLegacySegments, createShapeId, Vec, VecModel } from 'tldraw'
+ import z from 'zod'
+ import { AgentHelpers } from '../AgentHelpers'
+ import { asColor, SimpleColor } from '../format/SimpleColor'
+@@ -100,7 +100,7 @@ export class PenActionUtil extends AgentActionUtil<PenAction> {
+ 			return
+ 		}
+ 
+-		const segments: TLDrawShapeSegment[] = [
++		const segments = compressLegacySegments([
+ 			{
+ 				type: 'free',
+ 				points: points.map((point) => ({
+@@ -109,7 +109,7 @@ export class PenActionUtil extends AgentActionUtil<PenAction> {
+ 					z: 0.75,
+ 				})),
+ 			},
+-		]
++		])
+ 
+ 		this.agent.editor.createShape({
+ 			id: createShapeId(),

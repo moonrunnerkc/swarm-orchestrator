@@ -1,0 +1,379 @@
+diff --git a/packages/expo-modules-jsi/apple/.gitignore b/packages/expo-modules-jsi/apple/.gitignore
+index 1c26cabb813b07..0671944f2f3d45 100644
+--- a/packages/expo-modules-jsi/apple/.gitignore
++++ b/packages/expo-modules-jsi/apple/.gitignore
+@@ -9,5 +9,8 @@
+ # Staged slices for incremental xcframework builds
+ .xcframework-slices
+ 
++# Symlinks to host-app xcframeworks used by the test target (written by scripts/test.sh)
++.test-frameworks
++
+ # Built xcframework output
+ Products
+diff --git a/packages/expo-modules-jsi/apple/Package.swift b/packages/expo-modules-jsi/apple/Package.swift
+index d02f4722b157a0..951bed943a0632 100644
+--- a/packages/expo-modules-jsi/apple/Package.swift
++++ b/packages/expo-modules-jsi/apple/Package.swift
+@@ -4,11 +4,8 @@
+ import PackageDescription
+ import Foundation
+ 
+-// Resolve PODS_ROOT from the environment. The build is driven from a CocoaPods
+-// build phase that always sets PODS_ROOT before invoking xcodebuild. If it's
+-// missing, fall back to a placeholder so `swift package describe` and IDE
+-// indexing don't crash — actual compilation will fail loudly.
+-let podsRoot = ProcessInfo.processInfo.environment["PODS_ROOT"] ?? "PODS_ROOT_NOT_SET"
++let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
++let podsRoot = resolvePodsRoot()
+ 
+ // Header roots needed by ExpoModulesJSI and ExpoModulesJSI-Cxx. The same paths
+ // exist in both prebuilt and source-built React Native layouts, so we don't
+@@ -38,17 +35,19 @@ let headerSearchPaths = [
+   "\(publicHeaders)/fast_float",
+ ]
+ 
+-// Path to the generated module map for the `jsi` Clang module. The build
+-// script writes this file at build time so the absolute header path can be
+-// resolved against the runtime PODS_ROOT. Lives outside `.build/` so the
+-// build script can wipe SwiftPM state without losing the modulemap.
+-let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
++// Path to the generated module map for the `jsi` Clang module. The
++// `scripts/generate-modulemap.sh` script writes this file at build time so
++// the absolute header path can be resolved against the runtime PODS_ROOT.
++// Lives outside `.build/` so SwiftPM state can be wiped without losing this
++// file.
+ let generatedModuleMap = "\(packageDir)/.generated/module.modulemap"
+ let apiNotesPath = "\(packageDir)/APINotes"
+ 
+ let cxxIncludeFlags = headerSearchPaths.map({ "-I\($0)" })
+ let swiftIncludeFlags = headerSearchPaths.flatMap({ ["-Xcc", "-I\($0)"] })
+ 
++let testFrameworks = resolveTestFrameworks()
++
+ let package = Package(
+   name: "ExpoModulesJSI",
+   platforms: [
+@@ -120,9 +119,47 @@ let package = Package(
+     // Tests
+     .testTarget(
+       name: "Tests",
+-      dependencies: ["ExpoModulesJSI"],
++      dependencies: testFrameworks.dependencies,
+     ),
+-  ],
++  ] + testFrameworks.binaryTargets,
+   swiftLanguageModes: [.v6],
+   cxxLanguageStandard: .cxx20
+ )
++
++// Resolve PODS_ROOT from the environment. CocoaPods build phases always set
++// it; otherwise fall back to bare-expo's Pods so headers resolve for
++// indexing and direct script invocations. The manifest sandbox blocks
++// `fileExists` outside the package — fail loudly later if Pods aren't there.
++func resolvePodsRoot() -> String {
++  let env = ProcessInfo.processInfo.environment
++  if let explicit = env["PODS_ROOT"] {
++    return explicit
++  }
++  let repoRoot = env["EXPO_ROOT_DIR"] ?? URL(fileURLWithPath: packageDir)
++    .deletingLastPathComponent() // expo-modules-jsi
++    .deletingLastPathComponent() // packages
++    .deletingLastPathComponent() // repo root
++    .path
++  return "\(repoRoot)/apps/bare-expo/ios/Pods"
++}
++
++// Prebuilt xcframeworks the test bundle links against so JSI, Hermes, and
++// React symbols resolve at load time. The production xcframework build leaves
++// these unresolved (`-undefined dynamic_lookup`) because the host app provides
++// them — but a unit-test bundle has no such host.
++//
++// SwiftPM requires `binaryTarget` paths to be relative to the package root,
++// so the test wrapper script (`scripts/test.sh`) symlinks each xcframework
++// from $PODS_ROOT into `.test-frameworks/` before invoking xcodebuild.
++func resolveTestFrameworks() -> (binaryTargets: [Target], dependencies: [Target.Dependency]) {
++  let names = ["React", "hermesvm", "ReactNativeDependencies"]
++  let available = names.filter({
++    FileManager.default.fileExists(atPath: "\(packageDir)/.test-frameworks/\($0).xcframework")
++  })
++  let binaryTargets: [Target] = available.map({
++    .binaryTarget(name: $0, path: ".test-frameworks/\($0).xcframework")
++  })
++  let dependencies: [Target.Dependency] = ["ExpoModulesJSI"]
++    + available.map({ .target(name: $0) })
++  return (binaryTargets, dependencies)
++}
+diff --git a/packages/expo-modules-jsi/apple/scripts/build-xcframework.sh b/packages/expo-modules-jsi/apple/scripts/build-xcframework.sh
+index 8512216e08cf77..e31caf336ff226 100755
+--- a/packages/expo-modules-jsi/apple/scripts/build-xcframework.sh
++++ b/packages/expo-modules-jsi/apple/scripts/build-xcframework.sh
+@@ -216,8 +216,16 @@ assemble_xcframework() {
+ 
+ # --- Main ---
+ 
++# PODS_ROOT is set by the CocoaPods build phase; fall back to bare-expo's
++# Pods (via direnv's EXPO_ROOT_DIR, with a script-relative computation as a
++# last resort) so manual / npm-script invocations also work.
+ if [[ -z "${PODS_ROOT:-}" ]]; then
+-  log "error: PODS_ROOT is not set. Run this script as a CocoaPods build phase or set PODS_ROOT manually."
++  : "${EXPO_ROOT_DIR:=$(cd "${PACKAGE_DIR}/../../.." && pwd)}"
++  PODS_ROOT="${EXPO_ROOT_DIR}/apps/bare-expo/ios/Pods"
++fi
++if [[ ! -d "$PODS_ROOT" ]]; then
++  log "error: PODS_ROOT does not exist: $PODS_ROOT"
++  log "       Run \`pod install\` in apps/bare-expo/ios first, or set PODS_ROOT explicitly."
+   exit 1
+ fi
+ 
+@@ -232,22 +240,9 @@ if [[ -f "${PODS_ROOT}/Local Podspecs/React-Core.podspec.json" ]]; then
+   SOURCE_FILES+=("${PODS_ROOT}/Local Podspecs/React-Core.podspec.json")
+ fi
+ 
+-# Generate the module map for the `jsi` Clang module. The umbrella header is
+-# referenced by absolute path so this works regardless of where Pods lives.
+-# The same Pods/Headers/Public/React-jsi/jsi/jsi.h path exists in both prebuilt
+-# and source-built React Native layouts. Stored outside `.build/` so we can
+-# wipe SwiftPM state freely without losing this file.
+-GENERATED_DIR="${PACKAGE_DIR}/.generated"
+-GENERATED_MODULE_MAP="${GENERATED_DIR}/module.modulemap"
+-mkdir -p "$GENERATED_DIR"
+-cat > "$GENERATED_MODULE_MAP" <<EOF
+-module jsi {
+-  umbrella header "${PODS_ROOT}/Headers/Public/React-jsi/jsi/jsi.h"
+-
+-  export *
+-  module * { export * }
+-}
+-EOF
++# Generate the module map for the `jsi` Clang module.
++env PODS_ROOT="$PODS_ROOT" "${PACKAGE_DIR}/scripts/generate-modulemap.sh"
++GENERATED_MODULE_MAP="${PACKAGE_DIR}/.generated/module.modulemap"
+ SOURCE_FILES+=("$GENERATED_MODULE_MAP")
+ 
+ if [[ "$CLEAN" == true ]]; then
+diff --git a/packages/expo-modules-jsi/apple/scripts/generate-modulemap.sh b/packages/expo-modules-jsi/apple/scripts/generate-modulemap.sh
+new file mode 100755
+index 00000000000000..f1b8115bdf7f29
+--- /dev/null
++++ b/packages/expo-modules-jsi/apple/scripts/generate-modulemap.sh
+@@ -0,0 +1,47 @@
++#!/bin/bash
++#
++# Writes `.generated/module.modulemap` for the `jsi` Clang module.
++#
++# The umbrella header is referenced by absolute path so the modulemap works
++# regardless of where Pods lives. The same Pods/Headers/Public/React-jsi/jsi/jsi.h
++# path exists in both prebuilt and source-built React Native layouts. Stored
++# outside `.build/` so SwiftPM state can be wiped without losing this file.
++#
++# Idempotent: re-running with the same PODS_ROOT rewrites identical content.
++# Switching PODS_ROOT updates the umbrella header path.
++#
++# Used by build-xcframework.sh and test.sh; can also be run manually before
++# opening the package in Xcode.
++#
++# Usage:
++#   PODS_ROOT=/path/to/Pods scripts/generate-modulemap.sh
++
++set -eo pipefail
++
++PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++
++if [[ -z "${PODS_ROOT:-}" ]]; then
++  echo "error: PODS_ROOT is not set" >&2
++  exit 1
++fi
++if [[ ! -d "$PODS_ROOT" ]]; then
++  echo "error: PODS_ROOT does not exist: $PODS_ROOT" >&2
++  exit 1
++fi
++PODS_ROOT="$(cd "$PODS_ROOT" && pwd)"
++
++GENERATED_DIR="${PACKAGE_DIR}/.generated"
++GENERATED_MODULE_MAP="${GENERATED_DIR}/module.modulemap"
++mkdir -p "$GENERATED_DIR"
++
++# Avoid touching the file when contents would be identical, so the xcframework
++# hash cache and Xcode don't see a spurious change when PODS_ROOT is unchanged.
++NEW_CONTENT="module jsi {
++  umbrella header \"${PODS_ROOT}/Headers/Public/React-jsi/jsi/jsi.h\"
++
++  export *
++  module * { export * }
++}"
++if [[ ! -f "$GENERATED_MODULE_MAP" ]] || [[ "$(cat "$GENERATED_MODULE_MAP")" != "$NEW_CONTENT" ]]; then
++  printf '%s\n' "$NEW_CONTENT" > "$GENERATED_MODULE_MAP"
++fi
+diff --git a/packages/expo-modules-jsi/apple/scripts/test.sh b/packages/expo-modules-jsi/apple/scripts/test.sh
+new file mode 100755
+index 00000000000000..046f7844b28268
+--- /dev/null
++++ b/packages/expo-modules-jsi/apple/scripts/test.sh
+@@ -0,0 +1,123 @@
++#!/bin/bash
++#
++# Runs the ExpoModulesJSI test suite against a host app's Pods.
++#
++# Tests need an iOS Simulator destination because the package's headers and
++# prebuilt xcframeworks (React, hermesvm, ReactNativeDependencies) only ship
++# iOS slices; macOS won't link.
++#
++# This script wires up a host-free test run by:
++#   1. Pointing PODS_ROOT at an installed app (defaults to apps/bare-expo).
++#   2. Symlinking React/hermesvm/ReactNativeDependencies xcframeworks from
++#      Pods into `.test-frameworks/` so SwiftPM can register them as
++#      relative-path binary targets (Package.swift picks them up).
++#   3. Generating the `jsi` Clang module map against PODS_ROOT.
++#   4. Invoking `xcodebuild test` against an iOS Simulator destination. Extra
++#      args are forwarded to xcodebuild (e.g. `-only-testing TestName`).
++#
++# Usage:
++#   scripts/test.sh [extra xcodebuild args...]
++#
++# Environment:
++#   PODS_ROOT       Path to a Pods directory with prebuilt React Native.
++#                   Defaults to $EXPO_ROOT_DIR/apps/bare-expo/ios/Pods.
++#   DESTINATION     xcodebuild -destination value. Defaults to the booted
++#                   simulator, or an iPhone on the highest-versioned
++#                   available iOS runtime.
++
++set -eo pipefail
++
++PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++
++# --- PODS_ROOT ---
++#
++# Prefer an explicit PODS_ROOT (e.g. to test against a different app's Pods).
++# Otherwise fall back to bare-expo under EXPO_ROOT_DIR (set by the repo's
++# direnv config). Without either, point at a likely repo root computed from
++# this script's location so the script still works outside a direnv shell.
++
++if [[ -z "${PODS_ROOT:-}" ]]; then
++  : "${EXPO_ROOT_DIR:=$(cd "${PACKAGE_DIR}/../../.." && pwd)}"
++  PODS_ROOT="${EXPO_ROOT_DIR}/apps/bare-expo/ios/Pods"
++fi
++if [[ ! -d "$PODS_ROOT" ]]; then
++  echo "error: PODS_ROOT does not exist: $PODS_ROOT" >&2
++  echo "       Run \`pod install\` in apps/bare-expo/ios first, or set PODS_ROOT explicitly." >&2
++  exit 1
++fi
++PODS_ROOT="$(cd "$PODS_ROOT" && pwd)"
++# Export so xcodebuild forwards it to SwiftPM's manifest evaluation, where
++# Package.swift reads it via resolvePodsRoot().
++export PODS_ROOT
++
++# --- Symlink xcframeworks for SwiftPM binary targets ---
++
++TEST_FRAMEWORKS_DIR="${PACKAGE_DIR}/.test-frameworks"
++mkdir -p "$TEST_FRAMEWORKS_DIR"
++
++link_xcframework() {
++  local name="$1"
++  local source="$2"
++  local link="${TEST_FRAMEWORKS_DIR}/${name}.xcframework"
++
++  if [[ ! -d "$source" ]]; then
++    echo "warning: missing $source — tests may fail to link" >&2
++    return
++  fi
++
++  # Recreate the symlink unconditionally so it tracks the current PODS_ROOT.
++  rm -f "$link"
++  ln -s "$source" "$link"
++}
++
++link_xcframework "React" \
++  "${PODS_ROOT}/React-Core-prebuilt/React.xcframework"
++link_xcframework "hermesvm" \
++  "${PODS_ROOT}/hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework"
++link_xcframework "ReactNativeDependencies" \
++  "${PODS_ROOT}/ReactNativeDependencies/framework/packages/react-native/ReactNativeDependencies.xcframework"
++
++# --- Generate the jsi module map ---
++
++"${PACKAGE_DIR}/scripts/generate-modulemap.sh"
++
++# --- Pick a simulator destination ---
++
++if [[ -z "${DESTINATION:-}" ]]; then
++  # Prefer a booted simulator if one's already running; otherwise pick an
++  # iPhone on the highest-versioned available iOS runtime.
++  # `|| true` keeps `set -e -o pipefail` from aborting when grep finds nothing.
++  BOOTED_ID=$( { xcrun simctl list devices booted 2>/dev/null \
++    | grep -oE '\(([0-9A-F-]{36})\)' | head -1 | tr -d '()'; } || true)
++  if [[ -n "$BOOTED_ID" ]]; then
++    DESTINATION="platform=iOS Simulator,id=$BOOTED_ID"
++  else
++    LATEST_ID=$( { xcrun simctl list devices available 2>/dev/null \
++      | awk '
++        /^-- iOS [0-9]/ { runtime = $3; next }
++        runtime && /iPhone / && match($0, /\([0-9A-F-]+\)/) {
++          print runtime, substr($0, RSTART + 1, RLENGTH - 2)
++        }
++      ' \
++      | sort -V -r \
++      | head -1 \
++      | awk '{ print $2 }'; } || true)
++    if [[ -z "$LATEST_ID" ]]; then
++      echo "error: no iOS Simulator available; boot one or set DESTINATION" >&2
++      exit 1
++    fi
++    DESTINATION="platform=iOS Simulator,id=$LATEST_ID"
++  fi
++fi
++
++# --- Run the tests ---
++
++cd "$PACKAGE_DIR"
++exec xcodebuild test \
++  -scheme ExpoModulesJSI \
++  -destination "$DESTINATION" \
++  -derivedDataPath "${PACKAGE_DIR}/.DerivedData" \
++  -disableAutomaticPackageResolution \
++  -skipPackagePluginValidation \
++  -skipMacroValidation \
++  "$@"
+diff --git a/packages/expo-modules-jsi/package.json b/packages/expo-modules-jsi/package.json
+index b934a088d38b2c..09b7f7acb9fc74 100644
+--- a/packages/expo-modules-jsi/package.json
++++ b/packages/expo-modules-jsi/package.json
+@@ -11,7 +11,10 @@
+       "default": "./index.js"
+     }
+   },
+-  "scripts": {},
++  "scripts": {
++    "build": "apple/scripts/build-xcframework.sh",
++    "test": "apple/scripts/test.sh"
++  },
+   "keywords": [
+     "expo",
+     "modules",
+diff --git a/tools/src/check-packages/checkPackageAsync.ts b/tools/src/check-packages/checkPackageAsync.ts
+index f560e5c6821c1b..8ff8d83d69484c 100644
+--- a/tools/src/check-packages/checkPackageAsync.ts
++++ b/tools/src/check-packages/checkPackageAsync.ts
+@@ -10,6 +10,11 @@ import { Package } from '../Packages';
+ 
+ const { green } = chalk;
+ 
++/**
++ * Native-only packages that shouldn't go through these checks.
++ */
++const NATIVE_ONLY_PACKAGES = ['expo-modules-jsi'];
++
+ /**
+  * Known packages that fail to test on Windows.
+  * TODO: Fix breaking tests on Windows and remove packages from this list.
+@@ -40,6 +45,10 @@ export default async function checkPackageAsync(
+   pkg: Package,
+   options: ActionOptions
+ ): Promise<boolean> {
++  if (NATIVE_ONLY_PACKAGES.includes(pkg.packageName)) {
++    logger.warn(`🚫 Skipping checks for ${green.bold(pkg.packageName)} (native-only package)`);
++    return true;
++  }
+   try {
+     switch (options.checkPackageType) {
+       case 'package':

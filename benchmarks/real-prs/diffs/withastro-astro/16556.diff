@@ -1,0 +1,332 @@
+diff --git a/.changeset/reject-double-encoded-paths.md b/.changeset/reject-double-encoded-paths.md
+new file mode 100644
+index 000000000000..d904898ec86a
+--- /dev/null
++++ b/.changeset/reject-double-encoded-paths.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Rejects double-encoded URL paths with a 400 response instead of silently falling back to partial decoding
+diff --git a/packages/astro/src/core/app/base.ts b/packages/astro/src/core/app/base.ts
+index f5fc8166ea91..528d9d22f0dc 100644
+--- a/packages/astro/src/core/app/base.ts
++++ b/packages/astro/src/core/app/base.ts
+@@ -22,6 +22,7 @@ import { appSymbol } from '../constants.js';
+ import { DefaultErrorHandler } from '../errors/default-handler.js';
+ import type { ErrorHandler } from '../errors/handler.js';
+ import { setRenderOptions } from './render-options.js';
++import { MultiLevelEncodingError } from '../util/pathname.js';
+ import type { WaitUntilHook } from '../wait-until.js';
+ import type { AppPipeline } from './pipeline.js';
+ import type { SSRManifest } from './types.js';
+@@ -448,15 +449,24 @@ export abstract class BaseApp<P extends Pipeline = AppPipeline> {
+ 		};
+ 
+ 		let response: Response;
+-		if (this.#fetchHandler instanceof DefaultFetchHandler) {
+-			// Fast path: pass options directly, skip Reflect.set/get round-trip
+-			Reflect.set(request, appSymbol, this);
+-			response = await this.#fetchHandler.renderWithOptions(request, resolvedOptions);
+-		} else {
+-			// User-provided fetch handler: stamp options + app on the request
+-			setRenderOptions(request, resolvedOptions);
+-			Reflect.set(request, appSymbol, this);
+-			response = await this.#fetchHandler.fetch(request);
++		try {
++			if (this.#fetchHandler instanceof DefaultFetchHandler) {
++				// Fast path: pass options directly, skip Reflect.set/get round-trip
++				Reflect.set(request, appSymbol, this);
++				response = await this.#fetchHandler.renderWithOptions(request, resolvedOptions);
++			} else {
++				// User-provided fetch handler: stamp options + app on the request
++				setRenderOptions(request, resolvedOptions);
++				Reflect.set(request, appSymbol, this);
++				response = await this.#fetchHandler.fetch(request);
++			}
++		} catch (err: any) {
++			// Multi-level encoding (e.g., %2561 → %61) is rejected during URL
++			// normalization in FetchState. Return 400 without rendering an error page.
++			if (err instanceof MultiLevelEncodingError) {
++				return new Response('Bad Request', { status: 400 });
++			}
++			throw err;
+ 		}
+ 		this.#warnMissingFeatures();
+ 		if (response.headers.get(ASTRO_ERROR_HEADER)) {
+diff --git a/packages/astro/src/core/util/normalized-url.ts b/packages/astro/src/core/util/normalized-url.ts
+index 49f32a2c344c..455d7adb7490 100644
+--- a/packages/astro/src/core/util/normalized-url.ts
++++ b/packages/astro/src/core/util/normalized-url.ts
+@@ -1,5 +1,5 @@
+ import { collapseDuplicateSlashes } from '@astrojs/internal-helpers/path';
+-import { validateAndDecodePathname } from './pathname.js';
++import { MultiLevelEncodingError, validateAndDecodePathname } from './pathname.js';
+ 
+ /**
+  * Creates a normalized URL from a request URL string.
+@@ -16,7 +16,13 @@ export function createNormalizedUrl(requestUrl: string): URL {
+ export function normalizeUrl(url: URL): URL {
+ 	try {
+ 		url.pathname = validateAndDecodePathname(url.pathname);
+-	} catch {
++	} catch (e) {
++		// Multi-level encoding (e.g., %2561 → %61) must be rejected, not silently decoded.
++		// Let this error propagate so the caller can return a 400 response.
++		if (e instanceof MultiLevelEncodingError) {
++			throw e;
++		}
++		// For other decoding failures (truly malformed URLs), fall back gracefully.
+ 		try {
+ 			url.pathname = decodeURI(url.pathname);
+ 		} catch {
+diff --git a/packages/astro/src/core/util/pathname.ts b/packages/astro/src/core/util/pathname.ts
+index ed79de2c1a9a..f8ebf98ffee7 100644
+--- a/packages/astro/src/core/util/pathname.ts
++++ b/packages/astro/src/core/util/pathname.ts
+@@ -1,3 +1,15 @@
++/**
++ * Error thrown when multi-level URL encoding is detected in a pathname.
++ * This is a distinct error type so callers can handle it specifically
++ * (e.g., returning a 400 response) rather than falling back to partial decoding.
++ */
++export class MultiLevelEncodingError extends Error {
++	constructor() {
++		super('Multi-level URL encoding is not allowed');
++		this.name = 'MultiLevelEncodingError';
++	}
++}
++
+ /**
+  * Validates that a pathname is not multi-level encoded.
+  * Detects if a pathname contains encoding that was encoded again (e.g., %2561dmin where %25 decodes to %).
+@@ -5,7 +17,8 @@
+  *
+  * @param pathname - The pathname to validate
+  * @returns The decoded pathname if valid
+- * @throws Error if multi-level encoding is detected
++ * @throws MultiLevelEncodingError if multi-level encoding is detected
++ * @throws Error if the pathname contains invalid URL encoding
+  */
+ export function validateAndDecodePathname(pathname: string): string {
+ 	let decoded: string;
+@@ -24,7 +37,7 @@ export function validateAndDecodePathname(pathname: string): string {
+ 	const decodedStillHasEncoding = /%[0-9a-fA-F]{2}/.test(decoded);
+ 
+ 	if (hasDecoding && decodedStillHasEncoding) {
+-		throw new Error('Multi-level URL encoding is not allowed');
++		throw new MultiLevelEncodingError();
+ 	}
+ 
+ 	return decoded;
+diff --git a/packages/astro/test/middleware.test.ts b/packages/astro/test/middleware.test.ts
+index e391938e03d1..e6919fca6967 100644
+--- a/packages/astro/test/middleware.test.ts
++++ b/packages/astro/test/middleware.test.ts
+@@ -23,14 +23,14 @@ describe('Middleware in DEV mode', () => {
+ 	});
+ 
+ 	describe('Path encoding in middleware', () => {
+-		it('should reject double-encoded paths with 404', async () => {
++		it('should reject double-encoded paths with 400', async () => {
+ 			const res = await fixture.fetch('/%2561dmin', { redirect: 'manual' });
+-			assert.equal(res.status, 404);
++			assert.equal(res.status, 400);
+ 		});
+ 
+-		it('should reject triple-encoded paths with 404', async () => {
++		it('should reject triple-encoded paths with 400', async () => {
+ 			const res = await fixture.fetch('/%252561dmin', { redirect: 'manual' });
+-			assert.equal(res.status, 404);
++			assert.equal(res.status, 400);
+ 		});
+ 	});
+ 
+@@ -132,16 +132,16 @@ describe('Middleware API in PROD mode, SSR', () => {
+ 	});
+ 
+ 	describe('Path encoding in middleware', () => {
+-		it('should reject double-encoded paths with 404', async () => {
++		it('should reject double-encoded paths with 400', async () => {
+ 			const request = new Request('http://example.com/%2561dmin');
+ 			const response = await app.render(request);
+-			assert.equal(response.status, 404);
++			assert.equal(response.status, 400);
+ 		});
+ 
+-		it('should reject triple-encoded paths with 404', async () => {
++		it('should reject triple-encoded paths with 400', async () => {
+ 			const request = new Request('http://example.com/%252561dmin');
+ 			const response = await app.render(request);
+-			assert.equal(response.status, 404);
++			assert.equal(response.status, 400);
+ 		});
+ 	});
+ 
+diff --git a/packages/astro/test/units/app/double-encoding-bypass.test.ts b/packages/astro/test/units/app/double-encoding-bypass.test.ts
+new file mode 100644
+index 000000000000..ab61e300f5f3
+--- /dev/null
++++ b/packages/astro/test/units/app/double-encoding-bypass.test.ts
+@@ -0,0 +1,160 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import { App } from '../../../dist/core/app/app.js';
++import { parseRoute } from '../../../dist/core/routing/parse-route.js';
++import { createComponent, render } from '../../../dist/runtime/server/index.js';
++import type { MiddlewareHandler } from '../../../dist/types/public/common.js';
++import { createManifest, createRouteInfo } from './test-helpers.ts';
++
++/**
++ * Tests that double-URL-encoded paths do not bypass middleware authorization.
++ *
++ * When a path like /api/%2561dmin/users is received, validateAndDecodePathname
++ * detects the multi-level encoding and must reject the request rather than
++ * silently falling back to a single decodeURI() that leaves middleware
++ * seeing a half-decoded pathname (/api/%61dmin/users) that doesn't match
++ * its authorization checks.
++ */
++
++const routeOptions: Parameters<typeof parseRoute>[1] = {
++	config: { base: '/', trailingSlash: 'ignore' },
++	pageExtensions: [],
++} as any;
++
++// Catch-all API endpoint: /api/[...path]
++// Represents a typical BFF or API proxy behind middleware auth.
++const apiCatchAllRouteData = parseRoute('api/[...path].ts', routeOptions, {
++	component: 'src/pages/api/[...path].ts',
++	type: 'endpoint',
++});
++
++const publicRouteData = parseRoute('index.astro', routeOptions, {
++	component: 'src/pages/index.astro',
++});
++
++const publicPage = createComponent((_result: any, _props: any, _slots: any) => {
++	return render`<h1>Public</h1>`;
++});
++
++const pageMap = new Map<string, any>([
++	[
++		apiCatchAllRouteData.component,
++		async () => ({
++			page: async () => ({
++				GET: async ({ params, url }: { params: Record<string, any>; url: URL }) =>
++					new Response(
++						JSON.stringify({
++							path: params.path,
++							url_pathname: url.pathname,
++						}),
++						{ headers: { 'Content-Type': 'application/json' } },
++					),
++			}),
++		}),
++	],
++	[
++		publicRouteData.component,
++		async () => ({
++			page: async () => ({
++				default: publicPage,
++			}),
++		}),
++	],
++]);
++
++/**
++ * Middleware that blocks access to /api/admin, as documented in Astro's
++ * middleware guide for path-based authorization.
++ */
++function createAuthMiddleware() {
++	return (async () => ({
++		onRequest: (async (context, next) => {
++			if (context.url.pathname.startsWith('/api/admin')) {
++				return new Response(JSON.stringify({ error: 'Unauthorized' }), {
++					status: 401,
++					headers: { 'Content-Type': 'application/json' },
++				});
++			}
++			return next();
++		}) satisfies MiddlewareHandler,
++	})) as () => Promise<{ onRequest: MiddlewareHandler }>;
++}
++
++function createApp(middleware: ReturnType<typeof createAuthMiddleware>) {
++	return new App(
++		createManifest({
++			routes: [createRouteInfo(apiCatchAllRouteData), createRouteInfo(publicRouteData)],
++			pageMap: pageMap as any,
++			middleware: middleware as any,
++		}) as any,
++	);
++}
++
++describe('URL normalization: double-encoding middleware bypass', () => {
++	it('middleware blocks /api/admin/users', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/api/admin/users');
++		const response = await app.render(request);
++		assert.equal(response.status, 401, '/api/admin/users should be blocked by middleware');
++	});
++
++	it('middleware blocks single-encoded /api/%61dmin/users', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/api/%61dmin/users');
++		const response = await app.render(request);
++		assert.equal(
++			response.status,
++			401,
++			'/api/%61dmin/users should be blocked (single encoding decodes to /api/admin/users)',
++		);
++	});
++
++	it('rejects double-encoded /api/%2561dmin/users with 400', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/api/%2561dmin/users');
++		const response = await app.render(request);
++		assert.equal(
++			response.status,
++			400,
++			'/api/%2561dmin/users should be rejected as a bad request, not served',
++		);
++	});
++
++	it('rejects double-encoded paths with multiple encoded segments', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/api/%2561dmin/%75sers');
++		const response = await app.render(request);
++		assert.equal(
++			response.status,
++			400,
++			'/api/%2561dmin/%75sers should be rejected as a bad request',
++		);
++	});
++
++	it('public route is still accessible', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/');
++		const response = await app.render(request);
++		assert.equal(response.status, 200, '/ should be accessible');
++		const html = await response.text();
++		assert.match(html, /Public/);
++	});
++
++	it('non-protected API routes are still accessible', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/api/public/data');
++		const response = await app.render(request);
++		assert.equal(response.status, 200, '/api/public/data should be accessible');
++		const body = await response.json();
++		assert.equal(body.path, 'public/data');
++	});
++
++	it('single-encoded non-admin API routes still work', async () => {
++		const app = createApp(createAuthMiddleware());
++		const request = new Request('http://example.com/api/us%65rs/list');
++		const response = await app.render(request);
++		assert.equal(response.status, 200, '/api/us%65rs/list should be accessible');
++		const body = await response.json();
++		assert.equal(body.path, 'users/list');
++	});
++});

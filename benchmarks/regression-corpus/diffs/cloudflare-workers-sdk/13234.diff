@@ -1,0 +1,1266 @@
+diff --git a/.changeset/stream-local-video-serving.md b/.changeset/stream-local-video-serving.md
+new file mode 100644
+index 0000000000..65c33cba63
+--- /dev/null
++++ b/.changeset/stream-local-video-serving.md
+@@ -0,0 +1,13 @@
++---
++"miniflare": minor
++---
++
++Support serving videos locally, add `publicUrl` option for stable stream preview URLs, and add caption upload support via ReadableStream
++
++Videos uploaded while in local mode are now served at `/cdn-cgi/mf/stream/<video-id>/watch`. The `preview` field in `StreamVideo` is now directly fetchable during development.
++
++A new `publicUrl` option on `MiniflareOptions` allows callers (e.g. Wrangler, the Vite plugin) to advertise a stable, externally-reachable URL for the Miniflare instance. When set, Stream preview URLs use this value instead of the runtime entry URL, so they remain valid across runtime restarts and port changes. The same value is also exposed as a mutable `miniflare.publicUrl` property.
++
++The helper functions `buildPublicUrl` and `getLocallyAccessibleHost` are now exported from `miniflare`, enabling consumers to construct client-reachable URLs that correctly handle IPv6 addresses (bracketing) and wildcard listen addresses (`0.0.0.0`, `::`, `*` → `127.0.0.1`).
++
++Caption uploads via `ReadableStream` are now supported in local mode. They no longer throw a "not supported in local mode" error.
+diff --git a/packages/miniflare/src/index.ts b/packages/miniflare/src/index.ts
+index 8a617b8559..139d84650b 100644
+--- a/packages/miniflare/src/index.ts
++++ b/packages/miniflare/src/index.ts
+@@ -178,6 +178,35 @@ function maybeGetLocallyAccessibleHost(
+ 	if (h === "::1") return "[::1]";
+ }
+ 
++/**
++ * Normalizes a hostname for use in a client-reachable URL.
++ *
++ * - Maps wildcard/listen-all addresses to `127.0.0.1`.
++ * - Brackets IPv6 addresses (e.g. `::1` -> `[::1]`, `fe80::1` -> `[fe80::1]`).
++ * - Leaves hostnames and IPv4 addresses unchanged.
++ */
++export function getLocallyAccessibleHost(host: string): string {
++	if (host === "0.0.0.0" || host === "::" || host === "*") {
++		return "127.0.0.1";
++	}
++	return getURLSafeHost(host);
++}
++
++/**
++ * Builds a client-reachable URL for a local server given host, port, and
++ * secure flag. Handles IPv6 bracketing and wildcard-address normalization
++ * so the resulting string is always a valid URL.
++ */
++export function buildPublicUrl(options: {
++	hostname?: string;
++	port: number;
++	secure?: boolean;
++}): string {
++	const host = getLocallyAccessibleHost(options.hostname ?? "localhost");
++	const protocol = options.secure ? "https" : "http";
++	return `${protocol}://${host}:${options.port}`;
++}
++
+ function getServerPort(server: http.Server) {
+ 	const address = server.address();
+ 	// Note address would be string with unix socket
+@@ -911,6 +940,7 @@ export class Miniflare {
+ 	readonly #runtime?: Runtime;
+ 	readonly #removeExitHook?: () => void;
+ 	#runtimeEntryURL?: URL;
++	publicUrl?: string;
+ 	#socketPorts?: SocketPorts;
+ 	#runtimeDispatcher?: Dispatcher;
+ 	#proxyClient?: ProxyClient;
+@@ -1576,6 +1606,14 @@ export class Miniflare {
+ 				const registryPath = this.#devRegistry.getRegistryPath();
+ 				const registry = registryPath ? getWorkerRegistry(registryPath) : {};
+ 				response = Response.json(registry);
++			} else if (url.pathname === "/core/public-url") {
++				// Returns the public URL for this Miniflare instance. If a publicUrl
++				// has been set (e.g. the Vite dev server URL), use that; otherwise
++				// fall back to the runtime entry URL. This allows workers (e.g. the
++				// stream binding) to construct externally-reachable URLs.
++				response = Response.json(
++					this.publicUrl ?? this.#runtimeEntryURL?.toString() ?? null
++				);
+ 			}
+ 		} catch (e: any) {
+ 			this.#log.error(e);
+@@ -2002,6 +2040,11 @@ export class Miniflare {
+ 			const unsafeStickyBlobs = sharedOpts.core.unsafeStickyBlobs ?? false;
+ 			const unsafeEphemeralDurableObjects =
+ 				workerOpts.core.unsafeEphemeralDurableObjects ?? false;
++			// Store publicUrl so the /core/public-url loopback route can return it.
++			// This is set here (rather than only via the setter) so that the initial
++			// value from MiniflareOptions is picked up on first startup.
++			this.publicUrl = sharedOpts.core.publicUrl;
++
+ 			const pluginServicesOptionsBase: Omit<
+ 				PluginServicesOptions<z.ZodTypeAny, undefined>,
+ 				"options" | "sharedOptions"
+@@ -2015,6 +2058,7 @@ export class Miniflare {
+ 				workerNames,
+ 				loopbackHost,
+ 				loopbackPort,
++				publicUrl: sharedOpts.core.publicUrl,
+ 				unsafeStickyBlobs,
+ 				wrappedBindingNames,
+ 				durableObjectClassNames,
+diff --git a/packages/miniflare/src/plugins/core/index.ts b/packages/miniflare/src/plugins/core/index.ts
+index 766a52e11e..58fe7ffaff 100644
+--- a/packages/miniflare/src/plugins/core/index.ts
++++ b/packages/miniflare/src/plugins/core/index.ts
+@@ -19,6 +19,7 @@ import { RPC_PROXY_SERVICE_NAME } from "../assets/constants";
+ import { getCacheServiceName } from "../cache";
+ import { DURABLE_OBJECTS_STORAGE_SERVICE_NAME } from "../do";
+ import {
++	getUserBindingServiceName,
+ 	kUnsafeEphemeralUniqueKey,
+ 	parseRoutes,
+ 	ProxyNodeBinding,
+@@ -26,6 +27,7 @@ import {
+ 	SERVICE_LOOPBACK,
+ 	WORKER_BINDING_SERVICE_LOOPBACK,
+ } from "../shared";
++import { STREAM_PLUGIN_NAME } from "../stream";
+ import {
+ 	CUSTOM_SERVICE_KNOWN_OUTBOUND,
+ 	CustomServiceKind,
+@@ -321,6 +323,12 @@ export const CoreSharedOptionsSchema = z
+ 				deviceId: z.string().optional(),
+ 			})
+ 			.default({ enabled: false }),
++
++		// The stable, externally-reachable URL for this Miniflare instance
++		// (e.g. the Wrangler proxy URL or Vite dev server URL). Used by
++		// plugins like Stream to generate preview URLs that outlive runtime
++		// restarts. If not set, plugins fall back to the runtime entry URL.
++		publicUrl: z.string().url().optional(),
+ 	})
+ 	.refine(
+ 		({ structuredWorkerdLogs, handleStructuredLogs }) => {
+@@ -1057,6 +1065,20 @@ export function getGlobalServices({
+ 			},
+ 		});
+ 	}
++	const streamServiceEnabled = allWorkerOpts?.some(
++		(worker) =>
++			worker.stream?.stream !== undefined &&
++			!worker.stream.stream.remoteProxyConnectionString
++	);
++	if (streamServiceEnabled) {
++		serviceEntryBindings.push({
++			name: CoreBindings.SERVICE_STREAM,
++			service: {
++				name: getUserBindingServiceName(STREAM_PLUGIN_NAME, "service"),
++				entrypoint: "StreamBinding",
++			},
++		});
++	}
+ 	if (sharedOptions.upstream !== undefined) {
+ 		serviceEntryBindings.push({
+ 			name: CoreBindings.TEXT_UPSTREAM_URL,
+diff --git a/packages/miniflare/src/plugins/shared/index.ts b/packages/miniflare/src/plugins/shared/index.ts
+index f8cef6816e..0ba71c3b62 100644
+--- a/packages/miniflare/src/plugins/shared/index.ts
++++ b/packages/miniflare/src/plugins/shared/index.ts
+@@ -81,6 +81,7 @@ export interface PluginServicesOptions<
+ 	workerNames: string[];
+ 	loopbackHost: string;
+ 	loopbackPort: number;
++	publicUrl: string | undefined;
+ 	unsafeStickyBlobs: boolean;
+ 
+ 	// ~~Leaky abstractions~~ "Plugin specific options" :)
+diff --git a/packages/miniflare/src/plugins/stream/index.ts b/packages/miniflare/src/plugins/stream/index.ts
+index a921cbe154..a1fa78bfd0 100644
+--- a/packages/miniflare/src/plugins/stream/index.ts
++++ b/packages/miniflare/src/plugins/stream/index.ts
+@@ -10,6 +10,7 @@ import {
+ 	PersistenceSchema,
+ 	ProxyNodeBinding,
+ 	remoteProxyClientWorker,
++	WORKER_BINDING_SERVICE_LOOPBACK,
+ } from "../shared";
+ import type { Service } from "../../runtime";
+ import type { Plugin, RemoteProxyConnectionString } from "../shared";
+@@ -53,7 +54,7 @@ export const STREAM_PLUGIN: Plugin<
+ 				service: {
+ 					name: getUserBindingServiceName(
+ 						STREAM_PLUGIN_NAME,
+-						options.stream.binding,
++						"service",
+ 						options.stream.remoteProxyConnectionString
+ 					),
+ 					entrypoint: options.stream.remoteProxyConnectionString
+@@ -82,13 +83,13 @@ export const STREAM_PLUGIN: Plugin<
+ 			return [];
+ 		}
+ 
+-		const serviceName = getUserBindingServiceName(
+-			STREAM_PLUGIN_NAME,
+-			options.stream.binding,
+-			options.stream.remoteProxyConnectionString
+-		);
+-
+ 		if (options.stream.remoteProxyConnectionString) {
++			const serviceName = getUserBindingServiceName(
++				STREAM_PLUGIN_NAME,
++				"service",
++				options.stream.remoteProxyConnectionString
++			);
++
+ 			return [
+ 				{
+ 					name: serviceName,
+@@ -148,7 +149,11 @@ export const STREAM_PLUGIN: Plugin<
+ 
+ 		// Entrypoint with RPC
+ 		const bindingService = {
+-			name: serviceName,
++			name: getUserBindingServiceName(
++				STREAM_PLUGIN_NAME,
++				"service",
++				options.stream.remoteProxyConnectionString
++			),
+ 			worker: {
+ 				compatibilityDate: STREAM_COMPAT_DATE,
+ 				compatibilityFlags: ["nodejs_compat", "experimental"],
+@@ -166,6 +171,7 @@ export const STREAM_PLUGIN: Plugin<
+ 							serviceName: STREAM_OBJECT_SERVICE_NAME,
+ 						},
+ 					},
++					WORKER_BINDING_SERVICE_LOOPBACK,
+ 				],
+ 				// Allow the binding worker to send outbound HTTP requests
+ 				// (e.g. fetching video from URL in upload fn)
+diff --git a/packages/miniflare/src/workers/core/constants.ts b/packages/miniflare/src/workers/core/constants.ts
+index 21dba37550..6087425c02 100644
+--- a/packages/miniflare/src/workers/core/constants.ts
++++ b/packages/miniflare/src/workers/core/constants.ts
+@@ -17,6 +17,8 @@ export const CorePaths = {
+ 	EXPLORER: "/cdn-cgi/explorer",
+ 	/** Legacy way to trigger scheduled event handlers */
+ 	LEGACY_SCHEDULED: "/cdn-cgi/mf/scheduled",
++	/** Stream video serving endpoint */
++	STREAM_VIDEO: "/cdn-cgi/mf/stream",
+ } as const;
+ 
+ export const CoreHeaders = {
+@@ -75,6 +77,7 @@ export const CoreBindings = {
+ 	SERVICE_DEV_REGISTRY_PROXY: "MINIFLARE_DEV_REGISTRY_PROXY",
+ 	JSON_TELEMETRY_CONFIG: "MINIFLARE_TELEMETRY_CONFIG",
+ 	DEV_REGISTRY_DEBUG_PORT: "DEV_REGISTRY_DEBUG_PORT",
++	SERVICE_STREAM: "MINIFLARE_STREAM",
+ } as const;
+ 
+ export const ProxyOps = {
+diff --git a/packages/miniflare/src/workers/core/entry.worker.ts b/packages/miniflare/src/workers/core/entry.worker.ts
+index 5ca9ce126c..dcb0ae72c1 100644
+--- a/packages/miniflare/src/workers/core/entry.worker.ts
++++ b/packages/miniflare/src/workers/core/entry.worker.ts
+@@ -13,7 +13,7 @@ type Env = {
+ 	[CoreBindings.SERVICE_LOOPBACK]: Fetcher;
+ 	[CoreBindings.SERVICE_USER_FALLBACK]: Fetcher;
+ 	[CoreBindings.SERVICE_LOCAL_EXPLORER]: Fetcher;
+-
++	[CoreBindings.SERVICE_STREAM]?: Fetcher;
+ 	[CoreBindings.TEXT_CUSTOM_SERVICE]: string;
+ 	[CoreBindings.TEXT_UPSTREAM_URL]?: string;
+ 	[CoreBindings.JSON_CF_BLOB]: IncomingRequestCfProperties;
+@@ -579,6 +579,15 @@ export default <ExportedHandler<Env>>{
+ 				}
+ 			}
+ 
++			const streamService = env[CoreBindings.SERVICE_STREAM];
++			if (
++				(url.pathname === CorePaths.STREAM_VIDEO ||
++					url.pathname.startsWith(`${CorePaths.STREAM_VIDEO}/`)) &&
++				streamService
++			) {
++				return await streamService.fetch(request);
++			}
++
+ 			let response = await service.fetch(request);
+ 			if (!disablePrettyErrorPage) {
+ 				response = await maybePrettifyError(request, response, env);
+diff --git a/packages/miniflare/src/workers/stream/binding.worker.ts b/packages/miniflare/src/workers/stream/binding.worker.ts
+index 7d78b4e0ed..c498de6236 100644
+--- a/packages/miniflare/src/workers/stream/binding.worker.ts
++++ b/packages/miniflare/src/workers/stream/binding.worker.ts
+@@ -10,6 +10,7 @@ import type { StreamObject } from "./object.worker";
+ 
+ interface Env {
+ 	store: DurableObjectNamespace<StreamObject>;
++	MINIFLARE_LOOPBACK: Fetcher;
+ }
+ 
+ function getStub(env: Env): DurableObjectStub<StreamObject> {
+@@ -17,6 +18,24 @@ function getStub(env: Env): DurableObjectStub<StreamObject> {
+ 	return env.store.get(id);
+ }
+ 
++async function getEntryUrl(env: Env): Promise<URL> {
++	// Fetches the public URL from the Miniflare loopback. This returns
++	// the publicUrl if one was set (e.g. Vite dev server URL), otherwise
++	// falls back to the runtime entry URL. Using the loopback means the
++	// stream binding always sees the latest value — even if the URL was
++	// updated after workerd started (e.g. when Vite bumps the port).
++	const resp = await env.MINIFLARE_LOOPBACK.fetch(
++		"http://localhost/core/public-url"
++	);
++	const url = (await resp.json()) as string | null;
++	if (!url) {
++		throw new Error(
++			"Runtime entry URL is not available. This may be because the worker is not yet ready to accept requests."
++		);
++	}
++	return new URL(url);
++}
++
+ function rowsToDownloadResponse(
+ 	rows: { type: StreamDownloadType; download: StreamDownload }[]
+ ): StreamDownloadGetResponse {
+@@ -28,6 +47,30 @@ function rowsToDownloadResponse(
+ }
+ 
+ export class StreamBinding extends WorkerEntrypoint<Env> {
++	async fetch(request: Request): Promise<Response> {
++		const url = new URL(request.url);
++		const match = url.pathname.match(/^\/cdn-cgi\/mf\/stream\/([^/]+)\/watch$/);
++		if (!match) {
++			return new Response("Not found", { status: 404 });
++		}
++
++		const videoId = match[1];
++		const stub = getStub(this.env);
++
++		// Get video blob from Durable Object
++		const result = await stub.getVideoBlob(videoId);
++		if (result === null) {
++			return new Response("Video not found", { status: 404 });
++		}
++
++		return new Response(result.stream, {
++			headers: {
++				"Content-Type": "video/mp4",
++				"Content-Length": result.size.toString(),
++			},
++		});
++	}
++
+ 	async upload(
+ 		urlOrBody: string | ReadableStream<Uint8Array>,
+ 		params?: StreamUrlUploadParams
+@@ -46,7 +89,8 @@ export class StreamBinding extends WorkerEntrypoint<Env> {
+ 		}
+ 		const stub = getStub(this.env);
+ 		const row = await stub.createVideo(body, params ?? {});
+-		return rowToStreamVideo(row);
++		const entryUrl = await getEntryUrl(this.env);
++		return rowToStreamVideo(row, entryUrl);
+ 	}
+ 
+ 	// Not supported in local mode yet
+@@ -85,10 +129,12 @@ class StreamScopedCaptionsImpl
+ 	}
+ 
+ 	async upload(
+-		_language: string,
+-		_input: ReadableStream
++		language: string,
++		input: ReadableStream
+ 	): Promise<StreamCaption> {
+-		throw new BadRequestError("caption upload is not supported in local mode");
++		const stub = getStub(this.#env);
++		const row = await stub.uploadCaption(this.#videoId, language, input);
++		return rowToStreamCaption(row);
+ 	}
+ 
+ 	async generate(language: string): Promise<StreamCaption> {
+@@ -155,13 +201,15 @@ class StreamVideoHandleImpl extends RpcTarget implements StreamVideoHandle {
+ 	async details(): Promise<StreamVideo> {
+ 		const stub = getStub(this.#env);
+ 		const row = await stub.getVideo(this.id);
+-		return rowToStreamVideo(row);
++		const entryUrl = await getEntryUrl(this.#env);
++		return rowToStreamVideo(row, entryUrl);
+ 	}
+ 
+ 	async update(params: StreamUpdateVideoParams): Promise<StreamVideo> {
+ 		const stub = getStub(this.#env);
+ 		const row = await stub.updateVideo(this.id, params);
+-		return rowToStreamVideo(row);
++		const entryUrl = await getEntryUrl(this.#env);
++		return rowToStreamVideo(row, entryUrl);
+ 	}
+ 
+ 	async delete(): Promise<void> {
+@@ -194,7 +242,8 @@ class StreamVideosImpl extends RpcTarget implements StreamVideos {
+ 	async list(params?: StreamVideosListParams): Promise<StreamVideo[]> {
+ 		const stub = getStub(this.#env);
+ 		const rows = await stub.listVideos(params);
+-		return rows.map(rowToStreamVideo);
++		const entryUrl = await getEntryUrl(this.#env);
++		return rows.map((row) => rowToStreamVideo(row, entryUrl));
+ 	}
+ }
+ 
+diff --git a/packages/miniflare/src/workers/stream/object.worker.ts b/packages/miniflare/src/workers/stream/object.worker.ts
+index 178c8bd659..7e9b264767 100644
+--- a/packages/miniflare/src/workers/stream/object.worker.ts
++++ b/packages/miniflare/src/workers/stream/object.worker.ts
+@@ -188,12 +188,59 @@ export class StreamObject extends DurableObject<Env> {
+ 			new Intl.DisplayNames(["en"], { type: "language" }).of(language) ??
+ 			language;
+ 
++		// Delete old blob if caption already exists
++		const existing = get(
++			this.#stmts.getCaption({ video_id: videoId, language })
++		);
++		if (existing?.blob_id !== undefined && existing.blob_id !== null) {
++			await this.#blob.delete(existing.blob_id);
++		}
++
+ 		this.#stmts.upsertCaption({
+ 			video_id: videoId,
+ 			language,
+ 			generated: 1,
+ 			label,
+ 			status: "ready",
++			blob_id: null,
++		});
++
++		const row = get(this.#stmts.getCaption({ video_id: videoId, language }));
++		if (row === undefined)
++			throw new NotFoundError(`Caption not found: ${videoId}/${language}`);
++		return row;
++	}
++
++	async uploadCaption(
++		videoId: string,
++		language: string,
++		input: ReadableStream
++	): Promise<CaptionRow> {
++		const video = get(this.#stmts.getVideo({ id: videoId }));
++		if (video === undefined)
++			throw new NotFoundError(`Video not found: ${videoId}`);
++
++		const label =
++			new Intl.DisplayNames(["en"], { type: "language" }).of(language) ??
++			language;
++
++		// Delete old blob if caption already exists
++		const existing = get(
++			this.#stmts.getCaption({ video_id: videoId, language })
++		);
++		if (existing?.blob_id !== undefined && existing.blob_id !== null) {
++			await this.#blob.delete(existing.blob_id);
++		}
++
++		const blobId = await this.#blob.put(input);
++
++		this.#stmts.upsertCaption({
++			video_id: videoId,
++			language,
++			generated: 0,
++			label,
++			status: "ready",
++			blob_id: blobId,
+ 		});
+ 
+ 		const row = get(this.#stmts.getCaption({ video_id: videoId, language }));
+@@ -339,6 +386,20 @@ export class StreamObject extends DurableObject<Env> {
+ 		}
+ 	}
+ 
++	async getVideoBlob(
++		videoId: string
++	): Promise<{ stream: ReadableStream<Uint8Array>; size: number } | null> {
++		const row = get(this.#stmts.getVideo({ id: videoId }));
++		if (row === undefined || row.blob_id === null) {
++			return null;
++		}
++		const stream = await this.#blob.get(row.blob_id);
++		if (stream === null) {
++			return null;
++		}
++		return { stream, size: row.size };
++	}
++
+ 	async fetch(
+ 		req: Request<
+ 			unknown,
+@@ -462,13 +523,17 @@ function sqlStmts(db: TypedSql, now: () => string) {
+ 	);
+ 
+ 	const stmtUpsertCaption = db.stmt<
+-		Pick<CaptionRow, "video_id" | "language" | "generated" | "label" | "status">
+-	>(`INSERT INTO _mf_stream_captions (video_id, language, generated, label, status)
+-		VALUES (:video_id, :language, :generated, :label, :status)
++		Pick<
++			CaptionRow,
++			"video_id" | "language" | "generated" | "label" | "status" | "blob_id"
++		>
++	>(`INSERT INTO _mf_stream_captions (video_id, language, generated, label, status, blob_id)
++		VALUES (:video_id, :language, :generated, :label, :status, :blob_id)
+ 		ON CONFLICT (video_id, language) DO UPDATE SET
+ 			generated = excluded.generated,
+ 			label = excluded.label,
+-			status = excluded.status`);
++			status = excluded.status,
++			blob_id = excluded.blob_id`);
+ 
+ 	const stmtListCaptionsByVideo = db.stmt<
+ 		Pick<CaptionRow, "video_id">,
+diff --git a/packages/miniflare/src/workers/stream/schemas.ts b/packages/miniflare/src/workers/stream/schemas.ts
+index d5f016e38c..61f09831a7 100644
+--- a/packages/miniflare/src/workers/stream/schemas.ts
++++ b/packages/miniflare/src/workers/stream/schemas.ts
+@@ -128,12 +128,13 @@ export type DownloadRow = {
+ 	url: string | null;
+ };
+ 
+-export function rowToStreamVideo(row: VideoRow): StreamVideo {
+-	const baseUrl = `https://customer-placeholder.cloudflarestream.com/${row.id}`;
++export function rowToStreamVideo(row: VideoRow, entryUrl: URL): StreamVideo {
++	const placeholderUrl = `https://customer-placeholder.cloudflarestream.com/${row.id}`;
++	const videoUrl = `${entryUrl.origin}/cdn-cgi/mf/stream/${row.id}/watch`;
+ 	return {
+ 		id: row.id,
+ 		creator: row.creator,
+-		thumbnail: row.thumbnail || `${baseUrl}/thumbnails/thumbnail.jpg`,
++		thumbnail: row.thumbnail || `${placeholderUrl}/thumbnails/thumbnail.jpg`,
+ 		thumbnailTimestampPct: row.thumbnail_timestamp_pct,
+ 		readyToStream: row.ready_to_stream === 1,
+ 		readyToStreamAt: row.ready_to_stream_at,
+@@ -148,7 +149,7 @@ export function rowToStreamVideo(row: VideoRow): StreamVideo {
+ 		modified: row.modified,
+ 		scheduledDeletion: row.scheduled_deletion,
+ 		size: row.size,
+-		preview: `${baseUrl}/watch`,
++		preview: videoUrl,
+ 		allowedOrigins: JSON.parse(row.allowed_origins) as string[],
+ 		requireSignedURLs:
+ 			row.require_signed_urls === null ? null : row.require_signed_urls === 1,
+@@ -158,8 +159,8 @@ export function rowToStreamVideo(row: VideoRow): StreamVideo {
+ 		maxDurationSeconds: row.max_duration_seconds,
+ 		duration: row.duration,
+ 		input: { width: row.input_width, height: row.input_height },
+-		hlsPlaybackUrl: `${baseUrl}/manifest/video.m3u8`,
+-		dashPlaybackUrl: `${baseUrl}/manifest/video.mpd`,
++		hlsPlaybackUrl: `${placeholderUrl}/manifest/video.m3u8`,
++		dashPlaybackUrl: `${placeholderUrl}/manifest/video.mpd`,
+ 		watermark: null,
+ 		liveInputId: row.live_input_id,
+ 		clippedFromId: row.clipped_from_id,
+diff --git a/packages/miniflare/test/plugins/stream/index.spec.ts b/packages/miniflare/test/plugins/stream/index.spec.ts
+index fc8af70285..33ed4a1a9a 100644
+--- a/packages/miniflare/test/plugins/stream/index.spec.ts
++++ b/packages/miniflare/test/plugins/stream/index.spec.ts
+@@ -210,6 +210,9 @@ describe("Stream videos", () => {
+ 		expect(video.modified).toBeTruthy();
+ 		expect(video.hlsPlaybackUrl).toContain(video.id);
+ 		expect(video.dashPlaybackUrl).toContain(video.id);
++		expect(video.preview).toMatch(
++			new RegExp(`^http://.*?/cdn-cgi/mf/stream/${video.id}/watch$`)
++		);
+ 
+ 		const details = (await sendCmdToWorker(mf, "video.details", {
+ 			id: video.id,
+@@ -642,6 +645,59 @@ describe("Stream videos list", () => {
+ 	});
+ });
+ 
++describe("Stream video serving", () => {
++	test("serve video via /cdn-cgi/mf/stream/:id/watch", async ({ expect }) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++
++		// Fetch the video via the preview URL path and consume body immediately
++		const resp = await mf.dispatchFetch(
++			`http://placeholder/cdn-cgi/mf/stream/${video.id}/watch`
++		);
++		const bytes = new Uint8Array(await resp.arrayBuffer());
++		expect(resp.status).toBe(200);
++		expect(bytes).toEqual(TEST_VIDEO_BYTES);
++	});
++
++	test("serve video returns 404 for unknown video", async ({ expect }) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++
++		const resp = await mf.dispatchFetch(
++			"http://placeholder/cdn-cgi/mf/stream/00000000-0000-0000-0000-000000000000/watch"
++		);
++		await resp.arrayBuffer(); // consume body to avoid dispatchFetch error
++		expect(resp.status).toBe(404);
++	});
++
++	test("preview URL from upload is directly fetchable over HTTP", async ({
++		expect,
++	}) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++
++		expect(video.preview).toBeDefined();
++		const resp = await fetch(video.preview as string);
++		expect(resp.status).toBe(200);
++		const bytes = new Uint8Array(await resp.arrayBuffer());
++		expect(bytes).toEqual(TEST_VIDEO_BYTES);
++	});
++});
++
+ describe("Stream reloads", () => {
+ 	test("keeps in-memory data across setOptions reloads", async ({ expect }) => {
+ 		const { http: videoUrl } = await useServer(
+@@ -865,9 +921,28 @@ describe("Stream captions", () => {
+ 		).rejects.toThrow("Video not found");
+ 	});
+ 
+-	test("caption upload via ReadableStream is not supported in local mode", async ({
+-		expect,
+-	}) => {
++	test("caption upload via ReadableStream", async ({ expect }) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++
++		const caption = (await sendCmdToWorker(mf, "captions.upload", {
++			id: video.id,
++			language: "en",
++		})) as Caption;
++
++		expect(caption.language).toBe("en");
++		expect(caption.generated).toBe(false);
++		expect(caption.status).toBe("ready");
++	});
++
++	test("caption upload throws for non-existent video", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+ 
+@@ -876,7 +951,35 @@ describe("Stream captions", () => {
+ 				id: "00000000-0000-0000-0000-000000000000",
+ 				language: "en",
+ 			})
+-		).rejects.toThrow("caption upload is not supported in local mode");
++		).rejects.toThrow("Video not found");
++	});
++
++	test("upload caption is idempotent (upsert)", async ({ expect }) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++
++		// Upload the same caption twice
++		await sendCmdToWorker(mf, "captions.upload", {
++			id: video.id,
++			language: "en",
++		});
++		await sendCmdToWorker(mf, "captions.upload", {
++			id: video.id,
++			language: "en",
++		});
++
++		// Should still only have one caption, not two
++		const captions = (await sendCmdToWorker(mf, "captions.list", {
++			id: video.id,
++		})) as Caption[];
++		expect(captions.filter((c) => c.language === "en")).toHaveLength(1);
+ 	});
+ 
+ 	test("generate caption is idempotent (upsert)", async ({ expect }) => {
+@@ -1507,3 +1610,72 @@ describe("Stream deletes clean up properly", () => {
+ 		expect(downloadsB.default).toBeDefined();
+ 	});
+ });
++
++describe("Stream publicUrl", () => {
++	test("preview URLs use publicUrl when set", async ({ expect }) => {
++		const mf = createMiniflare({
++			publicUrl: "http://my-proxy.example.com:8080",
++		});
++		useDispose(mf);
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++
++		expect(video.preview).toBe(
++			`http://my-proxy.example.com:8080/cdn-cgi/mf/stream/${video.id}/watch`
++		);
++	});
++
++	test("preview URLs use runtime entry URL when publicUrl is not set", async ({
++		expect,
++	}) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++
++		// Without publicUrl, the preview URL should use the runtime entry URL
++		// (http://127.0.0.1:<port>) rather than any external proxy URL
++		expect(video.preview).toMatch(
++			new RegExp(
++				`^http://127\\.0\\.0\\.1:\\d+/cdn-cgi/mf/stream/${video.id}/watch$`
++			)
++		);
++	});
++
++	test("preview URLs update when publicUrl is changed via setter", async ({
++		expect,
++	}) => {
++		const { http: videoUrl } = await useServer(
++			staticBytesListener(TEST_VIDEO_BYTES)
++		);
++		const mf = createMiniflare({
++			publicUrl: "http://first-proxy.example.com:3000",
++		});
++		useDispose(mf);
++
++		const video = (await sendCmdToWorker(mf, "upload", {
++			url: videoUrl.toString(),
++		})) as Video;
++		expect(video.preview).toMatch(/^http:\/\/first-proxy\.example\.com:3000\//);
++
++		// Update publicUrl via the lightweight setter (no workerd restart)
++		mf.publicUrl = "http://second-proxy.example.com:4000";
++
++		const details = (await sendCmdToWorker(mf, "video.details", {
++			id: video.id,
++		})) as Video;
++		expect(details.preview).toMatch(
++			/^http:\/\/second-proxy\.example\.com:4000\//
++		);
++	});
++});
+diff --git a/packages/miniflare/test/public-url.spec.ts b/packages/miniflare/test/public-url.spec.ts
+new file mode 100644
+index 0000000000..fb227652b5
+--- /dev/null
++++ b/packages/miniflare/test/public-url.spec.ts
+@@ -0,0 +1,61 @@
++import { buildPublicUrl, getLocallyAccessibleHost } from "miniflare";
++import { test } from "vitest";
++
++test("getLocallyAccessibleHost: returns hostnames and IPv4 addresses unchanged", ({
++	expect,
++}) => {
++	expect(getLocallyAccessibleHost("localhost")).toBe("localhost");
++	expect(getLocallyAccessibleHost("127.0.0.1")).toBe("127.0.0.1");
++	expect(getLocallyAccessibleHost("example.com")).toBe("example.com");
++});
++
++test("getLocallyAccessibleHost: normalizes wildcard listen addresses to 127.0.0.1", ({
++	expect,
++}) => {
++	expect(getLocallyAccessibleHost("0.0.0.0")).toBe("127.0.0.1");
++	expect(getLocallyAccessibleHost("::")).toBe("127.0.0.1");
++	expect(getLocallyAccessibleHost("*")).toBe("127.0.0.1");
++});
++
++test("getLocallyAccessibleHost: brackets IPv6 addresses", ({ expect }) => {
++	expect(getLocallyAccessibleHost("::1")).toBe("[::1]");
++	expect(getLocallyAccessibleHost("fe80::1")).toBe("[fe80::1]");
++});
++
++test("buildPublicUrl: brackets IPv6 hosts and produces a URL parseable by new URL()", ({
++	expect,
++}) => {
++	const url = buildPublicUrl({ hostname: "::1", port: 8787 });
++	expect(url).toBe("http://[::1]:8787");
++	expect(() => new URL(url)).not.toThrow();
++});
++
++test("buildPublicUrl: uses https when `secure` is true", ({ expect }) => {
++	const url = buildPublicUrl({
++		hostname: "::1",
++		port: 8787,
++		secure: true,
++	});
++	expect(url).toBe("https://[::1]:8787");
++	expect(url.startsWith("https://")).toBe(true);
++});
++
++test("buildPublicUrl: defaults to localhost when no hostname is provided", ({
++	expect,
++}) => {
++	expect(buildPublicUrl({ port: 8787 })).toBe("http://localhost:8787");
++});
++
++test("buildPublicUrl: normalizes wildcard listen addresses to 127.0.0.1", ({
++	expect,
++}) => {
++	expect(buildPublicUrl({ hostname: "0.0.0.0", port: 1234 })).toBe(
++		"http://127.0.0.1:1234"
++	);
++	expect(buildPublicUrl({ hostname: "::", port: 1234 })).toBe(
++		"http://127.0.0.1:1234"
++	);
++	expect(buildPublicUrl({ hostname: "*", port: 1234 })).toBe(
++		"http://127.0.0.1:1234"
++	);
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/__tests__/serve.ts b/packages/vite-plugin-cloudflare/playground/stream-binding/__tests__/serve.ts
+new file mode 100644
+index 0000000000..aac0858dd8
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/__tests__/serve.ts
+@@ -0,0 +1,51 @@
++import http from "node:http";
++import path from "node:path";
++import { cloudflare } from "@cloudflare/vite-plugin";
++import { createServer } from "vite";
++import type { ViteDevServer } from "vite";
++
++export let viteServer: ViteDevServer;
++export let viteTestUrl: string;
++
++// Dummy server that occupies a port so that Vite must bump to the next one
++let blocker: http.Server;
++export const CONFIGURED_PORT = 15_173;
++
++export async function preServe() {
++	// Occupy the port that Vite is configured to use on 127.0.0.1.
++	// The Vite server config below also specifies host: "127.0.0.1" so
++	// both compete for the exact same address, guaranteeing a conflict
++	// regardless of platform or IPv4/IPv6 dual-stack behaviour.
++	blocker = http.createServer((_req, res) => {
++		res.writeHead(200);
++		res.end();
++	});
++	await new Promise<void>((resolve) =>
++		blocker.listen(CONFIGURED_PORT, "127.0.0.1", resolve)
++	);
++}
++
++export async function serve() {
++	const rootDir = path.resolve(__dirname, "..");
++	// Don't use configFile to avoid duplicate cloudflare plugins
++	const server = await createServer({
++		root: rootDir,
++		logLevel: "silent",
++		configFile: false,
++		server: {
++			// Pin to the same address as the blocker so Vite must bump the port
++			host: "127.0.0.1",
++			port: CONFIGURED_PORT,
++			strictPort: false,
++		},
++		plugins: [cloudflare({ inspectorPort: false, persistState: false })],
++	});
++	viteServer = await server.listen();
++	// oxlint-disable-next-line typescript/no-non-null-assertion
++	viteTestUrl = viteServer.resolvedUrls!.local[0]!.replace(/\/$/, "");
++	return viteServer;
++}
++
++export async function postServe() {
++	blocker?.close();
++}
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/__tests__/worker.spec.ts b/packages/vite-plugin-cloudflare/playground/stream-binding/__tests__/worker.spec.ts
+new file mode 100644
+index 0000000000..2c851f2785
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/__tests__/worker.spec.ts
+@@ -0,0 +1,30 @@
++import { test } from "vitest";
++import { fetchJson, viteTestUrl } from "../../__test-utils__";
++import { CONFIGURED_PORT } from "./serve";
++
++test("stream upload returns a valid preview URL", async ({ expect }) => {
++	const result = (await fetchJson("/upload")) as {
++		preview: string;
++		id: string;
++	};
++	expect(result.id).toBeTruthy();
++	expect(result.preview).toContain("/cdn-cgi/mf/stream/");
++	expect(result.preview).toContain("/watch");
++});
++
++test("stream preview URL port matches actual server port after port bump", async ({
++	expect,
++}) => {
++	// Verify that Vite actually bumped the port (the blocker occupies CONFIGURED_PORT)
++	const serverUrl = new URL(viteTestUrl);
++	expect(Number(serverUrl.port)).not.toBe(CONFIGURED_PORT);
++
++	const result = (await fetchJson("/upload")) as {
++		preview: string;
++		id: string;
++	};
++	const previewUrl = new URL(result.preview);
++
++	expect(previewUrl.hostname).toBe(serverUrl.hostname);
++	expect(previewUrl.port).toBe(serverUrl.port);
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/package.json b/packages/vite-plugin-cloudflare/playground/stream-binding/package.json
+new file mode 100644
+index 0000000000..e7a0bcee3a
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/package.json
+@@ -0,0 +1,19 @@
++{
++	"name": "@playground/stream-binding",
++	"private": true,
++	"type": "module",
++	"scripts": {
++		"cf-typegen": "wrangler types --include-runtime=false",
++		"check:type": "tsc --build",
++		"dev": "vite dev",
++		"preview": "vite preview"
++	},
++	"devDependencies": {
++		"@cloudflare/vite-plugin": "workspace:*",
++		"@cloudflare/workers-tsconfig": "workspace:*",
++		"@cloudflare/workers-types": "catalog:default",
++		"typescript": "catalog:default",
++		"vite": "catalog:default",
++		"wrangler": "workspace:*"
++	}
++}
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/src/index.ts b/packages/vite-plugin-cloudflare/playground/stream-binding/src/index.ts
+new file mode 100644
+index 0000000000..cbe0bb9e35
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/src/index.ts
+@@ -0,0 +1,23 @@
++// Small test video bytes served at /video-asset for the stream upload to fetch
++const TEST_VIDEO_BYTES = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
++
++export default {
++	async fetch(request, env) {
++		const url = new URL(request.url);
++
++		if (url.pathname === "/video-asset") {
++			return new Response(TEST_VIDEO_BYTES, {
++				headers: { "Content-Type": "application/octet-stream" },
++			});
++		}
++
++		if (url.pathname === "/upload") {
++			// Upload by URL: the stream binding will fetch /video-asset to get the bytes
++			const videoAssetUrl = `${url.origin}/video-asset`;
++			const video = await env.STREAM.upload(videoAssetUrl);
++			return Response.json({ preview: video.preview, id: video.id });
++		}
++
++		return new Response("Stream binding playground");
++	},
++} satisfies ExportedHandler<Env>;
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.json b/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.json
+new file mode 100644
+index 0000000000..b52af703bd
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.json
+@@ -0,0 +1,7 @@
++{
++	"files": [],
++	"references": [
++		{ "path": "./tsconfig.node.json" },
++		{ "path": "./tsconfig.worker.json" }
++	]
++}
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.node.json b/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.node.json
+new file mode 100644
+index 0000000000..773be9834a
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.node.json
+@@ -0,0 +1,4 @@
++{
++	"extends": ["@cloudflare/workers-tsconfig/base.json"],
++	"include": ["vite.config.ts", "__tests__"]
++}
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.worker.json b/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.worker.json
+new file mode 100644
+index 0000000000..ac6f48265f
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/tsconfig.worker.json
+@@ -0,0 +1,4 @@
++{
++	"extends": ["@cloudflare/workers-tsconfig/worker.json"],
++	"include": ["src", "./worker-configuration.d.ts"]
++}
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/vite.config.ts b/packages/vite-plugin-cloudflare/playground/stream-binding/vite.config.ts
+new file mode 100644
+index 0000000000..9c6b158cb5
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/vite.config.ts
+@@ -0,0 +1,6 @@
++import { cloudflare } from "@cloudflare/vite-plugin";
++import { defineConfig } from "vite";
++
++export default defineConfig({
++	plugins: [cloudflare({ inspectorPort: false, persistState: false })],
++});
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/worker-configuration.d.ts b/packages/vite-plugin-cloudflare/playground/stream-binding/worker-configuration.d.ts
+new file mode 100644
+index 0000000000..8e1bd834f0
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/worker-configuration.d.ts
+@@ -0,0 +1,11 @@
++/* eslint-disable */
++// Generated by Wrangler by running `wrangler types --include-runtime=false` (hash: f62552032abb9af39e39e7868e87aa5f)
++declare namespace Cloudflare {
++	interface GlobalProps {
++		mainModule: typeof import("./src/index");
++	}
++	interface Env {
++		STREAM: StreamBinding;
++	}
++}
++interface Env extends Cloudflare.Env {}
+diff --git a/packages/vite-plugin-cloudflare/playground/stream-binding/wrangler.jsonc b/packages/vite-plugin-cloudflare/playground/stream-binding/wrangler.jsonc
+new file mode 100644
+index 0000000000..0653608cea
+--- /dev/null
++++ b/packages/vite-plugin-cloudflare/playground/stream-binding/wrangler.jsonc
+@@ -0,0 +1,9 @@
++{
++	"$schema": "./node_modules/wrangler/config-schema.json",
++	"name": "stream-binding-worker",
++	"main": "./src/index.ts",
++	"compatibility_date": "2026-03-23",
++	"stream": {
++		"binding": "STREAM",
++	},
++}
+diff --git a/packages/vite-plugin-cloudflare/src/miniflare-options.ts b/packages/vite-plugin-cloudflare/src/miniflare-options.ts
+index 578761142e..6160918250 100644
+--- a/packages/vite-plugin-cloudflare/src/miniflare-options.ts
++++ b/packages/vite-plugin-cloudflare/src/miniflare-options.ts
+@@ -12,6 +12,7 @@ import {
+ 	getLocalExplorerEnabledFromEnv,
+ } from "@cloudflare/workers-utils";
+ import {
++	buildPublicUrl,
+ 	getDefaultDevRegistryPath,
+ 	kUnsafeEphemeralUniqueKey,
+ 	Log,
+@@ -445,9 +446,18 @@ export async function getDevMiniflareOptions(
+ 
+ 	const logger = new ViteMiniflareLogger(resolvedViteConfig);
+ 
++	const serverConfig = viteDevServer.config.server;
++	const publicUrl = buildPublicUrl({
++		hostname:
++			typeof serverConfig.host === "string" ? serverConfig.host : undefined,
++		port: serverConfig.port,
++		secure: !!serverConfig.https,
++	});
++
+ 	return {
+ 		miniflareOptions: {
+ 			log: logger,
++			publicUrl,
+ 			unsafeProxySharedSecret: PROXY_SHARED_SECRET,
+ 			logRequests: false,
+ 			inspectorPort:
+@@ -636,9 +646,18 @@ export async function getPreviewMiniflareOptions(
+ 
+ 	const logger = new ViteMiniflareLogger(resolvedViteConfig);
+ 
++	const serverConfig = vitePreviewServer.config.preview;
++	const publicUrl = buildPublicUrl({
++		hostname:
++			typeof serverConfig.host === "string" ? serverConfig.host : undefined,
++		port: serverConfig.port,
++		secure: !!serverConfig.https,
++	});
++
+ 	return {
+ 		miniflareOptions: {
+ 			log: logger,
++			publicUrl,
+ 			unsafeProxySharedSecret: PROXY_SHARED_SECRET,
+ 			inspectorPort:
+ 				inputInspectorPort === false ? undefined : inputInspectorPort,
+diff --git a/packages/vite-plugin-cloudflare/src/plugins/dev.ts b/packages/vite-plugin-cloudflare/src/plugins/dev.ts
+index f8161cc2a7..359a792309 100644
+--- a/packages/vite-plugin-cloudflare/src/plugins/dev.ts
++++ b/packages/vite-plugin-cloudflare/src/plugins/dev.ts
+@@ -2,7 +2,7 @@ import assert from "node:assert";
+ import { prepareContainerImagesForDev } from "@cloudflare/containers-shared";
+ import { cleanupContainers } from "@cloudflare/containers-shared/src/utils";
+ import { generateStaticRoutingRuleMatcher } from "@cloudflare/workers-shared/asset-worker/src/utils/rules-engine";
+-import { CoreHeaders } from "miniflare";
++import { buildPublicUrl, CoreHeaders } from "miniflare";
+ import colors from "picocolors";
+ import { initRunners } from "../cloudflare-environment";
+ import {
+@@ -70,6 +70,26 @@ export const devPlugin = createPlugin("dev", (ctx) => {
+ 
+ 			await ctx.startOrUpdateMiniflare(initialOptions.miniflareOptions);
+ 
++			// Once the HTTP server is listening, update Miniflare's publicUrl with
++			// the actual address. This ensures "Cloudflare Stream" preview URLs always reflect
++			// the real server URL — even if Vite bumped the port.
++			if (viteDevServer.httpServer) {
++				viteDevServer.httpServer.on("listening", () => {
++					const addr = viteDevServer.httpServer?.address();
++					if (typeof addr === "object" && addr !== null) {
++						const serverConfig = viteDevServer.config.server;
++						ctx.miniflare.publicUrl = buildPublicUrl({
++							hostname:
++								typeof serverConfig.host === "string"
++									? serverConfig.host
++									: undefined,
++							port: addr.port,
++							secure: !!serverConfig.https,
++						});
++					}
++				});
++			}
++
+ 			if (ctx.resolvedPluginConfig.type === "workers") {
+ 				debuglog("Initializing the Vite module runners");
+ 				await initRunners(
+diff --git a/packages/vite-plugin-cloudflare/src/plugins/preview.ts b/packages/vite-plugin-cloudflare/src/plugins/preview.ts
+index de4ddbb40a..1be66021ae 100644
+--- a/packages/vite-plugin-cloudflare/src/plugins/preview.ts
++++ b/packages/vite-plugin-cloudflare/src/plugins/preview.ts
+@@ -1,5 +1,6 @@
+ import { prepareContainerImagesForDev } from "@cloudflare/containers-shared";
+ import { cleanupContainers } from "@cloudflare/containers-shared/src/utils";
++import { buildPublicUrl } from "miniflare";
+ import colors from "picocolors";
+ import { getDockerPath } from "../containers";
+ import { assertIsPreview } from "../context";
+@@ -33,6 +34,26 @@ export const previewPlugin = createPlugin("preview", (ctx) => {
+ 
+ 			await ctx.startOrUpdateMiniflare(miniflareOptions);
+ 
++			// Once the HTTP server is listening, update Miniflare's publicUrl with
++			// the actual address. This ensures "Cloudflare Stream" preview URLs always reflect
++			// the real server URL — even if Vite bumped the port.
++			if (vitePreviewServer.httpServer) {
++				vitePreviewServer.httpServer.on("listening", () => {
++					const addr = vitePreviewServer.httpServer?.address();
++					if (typeof addr === "object" && addr !== null) {
++						const serverConfig = vitePreviewServer.config.preview;
++						ctx.miniflare.publicUrl = buildPublicUrl({
++							hostname:
++								typeof serverConfig.host === "string"
++									? serverConfig.host
++									: undefined,
++							port: addr.port,
++							secure: !!serverConfig.https,
++						});
++					}
++				});
++			}
++
+ 			if (containerTagToOptionsMap.size) {
+ 				const dockerPath = getDockerPath();
+ 
+diff --git a/packages/wrangler/src/api/startDevWorker/LocalRuntimeController.ts b/packages/wrangler/src/api/startDevWorker/LocalRuntimeController.ts
+index f0982b9f14..cb948a19b5 100644
+--- a/packages/wrangler/src/api/startDevWorker/LocalRuntimeController.ts
++++ b/packages/wrangler/src/api/startDevWorker/LocalRuntimeController.ts
+@@ -9,7 +9,7 @@ import {
+ } from "@cloudflare/containers-shared";
+ import { getDockerPath } from "@cloudflare/workers-utils";
+ import chalk from "chalk";
+-import { Miniflare, Mutex } from "miniflare";
++import { buildPublicUrl, Miniflare, Mutex } from "miniflare";
+ import * as MF from "../../dev/miniflare";
+ import { logger } from "../../logger";
+ import { RuntimeController } from "./BaseController";
+@@ -147,6 +147,13 @@ export async function convertToConfigBundle(
+ 		// Zone for CF-Worker header - extracted from routes/host configuration
+ 		zone: event.config.dev?.origin?.hostname,
+ 		sendMetrics: event.config.sendMetrics,
++		publicUrl: event.config.dev?.server?.port
++			? buildPublicUrl({
++					hostname: event.config.dev.server.hostname,
++					port: event.config.dev.server.port,
++					secure: event.config.dev.server.secure,
++				})
++			: undefined,
+ 	};
+ }
+ 
+diff --git a/packages/wrangler/src/dev/miniflare/index.ts b/packages/wrangler/src/dev/miniflare/index.ts
+index 60598fd90f..bca593cdcc 100644
+--- a/packages/wrangler/src/dev/miniflare/index.ts
++++ b/packages/wrangler/src/dev/miniflare/index.ts
+@@ -102,6 +102,9 @@ export interface ConfigBundle {
+ 	// Zone to use for the CF-Worker header in outbound fetches
+ 	zone: string | undefined;
+ 	sendMetrics: boolean | undefined;
++	// The stable, externally-reachable URL of the proxy server in front of
++	// this Miniflare instance (e.g. Wrangler's ProxyWorker URL).
++	publicUrl: string | undefined;
+ }
+ 
+ export class WranglerLog extends Log {
+@@ -1033,6 +1036,7 @@ export async function buildMiniflareOptions(
+ 	const options: MiniflareOptions = {
+ 		host: config.initialIp,
+ 		port: config.initialPort,
++		publicUrl: config.publicUrl,
+ 		inspectorPort: config.inspect ? config.inspectorPort : undefined,
+ 		inspectorHost: config.inspect ? config.inspectorHost : undefined,
+ 		liveReload: config.liveReload,
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index a65e0587f0..082bf4a7b4 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -3399,6 +3399,27 @@ importers:
+         specifier: workspace:*
+         version: link:../../../wrangler
+ 
++  packages/vite-plugin-cloudflare/playground/stream-binding:
++    devDependencies:
++      '@cloudflare/vite-plugin':
++        specifier: workspace:*
++        version: link:../..
++      '@cloudflare/workers-tsconfig':
++        specifier: workspace:*
++        version: link:../../../workers-tsconfig
++      '@cloudflare/workers-types':
++        specifier: catalog:default
++        version: 4.20260420.1
++      typescript:
++        specifier: catalog:default
++        version: 5.8.3
++      vite:
++        specifier: catalog:default
++        version: 8.0.1(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1)
++      wrangler:
++        specifier: workspace:*
++        version: link:../../../wrangler
++
+   packages/vite-plugin-cloudflare/playground/streaming:
+     devDependencies:
+       '@cloudflare/vite-plugin':

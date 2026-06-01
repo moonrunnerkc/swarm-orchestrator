@@ -1,0 +1,1050 @@
+diff --git a/apps/examples/e2e/tests/test-context-menu.spec.ts b/apps/examples/e2e/tests/test-context-menu.spec.ts
+index 45405bd09499..6585cf51eae2 100644
+--- a/apps/examples/e2e/tests/test-context-menu.spec.ts
++++ b/apps/examples/e2e/tests/test-context-menu.spec.ts
+@@ -2,11 +2,26 @@ import test, { Page, expect } from '@playwright/test'
+ import { hardResetEditor, setupPage, setupPageWithShapes, withMenu } from '../shared-e2e'
+ 
+ declare const __tldraw_ui_event: { name: string }
++// `editor` is a global exposed on the page, not imported at test-runner level.
++// Importing from 'tldraw' (even as `type`) breaks Node's --no-strip-types because
++// the tldraw package re-exports PointerEvent from react, which doesn't exist in Node.
++declare const editor: {
++	inputs: any
++	getCamera(): { x: number; y: number; z: number }
++	getCurrentToolId(): string
++	getPath(): string
++	getSelectedShapeIds(): string[]
++}
+ 
+ // We're just testing the events, not the actual results.
+ 
+ let page: Page
+ 
++// Mobile emulation in Playwright dispatches touch events for `mouse.click/down/up`,
++// so it can't simulate a real right-mouse-button sequence. Tests that depend on
++// right-click pointer events only run on desktop (Chromium).
++const isMobileProject = () => test.info().project.name.includes('Mobile')
++
+ test.describe('Context menu', async () => {
+ 	test.beforeEach(async ({ browser }) => {
+ 		if (!page) {
+@@ -41,4 +56,243 @@ test.describe('Context menu', async () => {
+ 			data: { operation: 'vertical', source: 'context-menu' },
+ 		})
+ 	})
++
++	test('reopens after moving and right-clicking again', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		await page.mouse.move(600, 400)
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.up({ button: 'right' })
++
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++		expect(
++			await page.evaluate(() => ({
++				isRightPointing: editor.inputs.getIsRightPointing(),
++				isPanning: editor.inputs.getIsPanning(),
++			}))
++		).toMatchObject({
++			isRightPointing: false,
++			isPanning: false,
++		})
++	})
++
++	test('static right-click on plain canvas opens context menu', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		// Right-click on empty canvas (no menu already open)
++		await page.mouse.click(600, 400, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Wait for any async events (native contextmenu follows pointerup)
++		await page.waitForTimeout(100)
++
++		// Menu should still be visible — a leaked native contextmenu must not toggle it closed
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++		expect(
++			await page.evaluate(() => ({
++				isRightPointing: editor.inputs.getIsRightPointing(),
++				isPanning: editor.inputs.getIsPanning(),
++			}))
++		).toMatchObject({
++			isRightPointing: false,
++			isPanning: false,
++		})
++	})
++
++	test('right-click drag on plain canvas pans without opening context menu', async () => {
++		const initialCamera = await page.evaluate(() => {
++			const camera = editor.getCamera()
++			return { x: camera.x, y: camera.y, z: camera.z }
++		})
++
++		await page.mouse.move(300, 300)
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.move(500, 500, { steps: 5 })
++
++		expect(
++			await page.evaluate(() => ({
++				isPanning: editor.inputs.getIsPanning(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			isPanning: true,
++			isRightPointing: true,
++		})
++
++		await page.mouse.up({ button: 'right' })
++
++		// Context menu should NOT open after a drag
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		// Camera should have moved
++		expect(
++			await page.evaluate((initialCamera) => {
++				const camera = editor.getCamera()
++				return camera.x !== initialCamera.x || camera.y !== initialCamera.y
++			}, initialCamera)
++		).toBe(true)
++
++		// Input state should be clean
++		expect(
++			await page.evaluate(() => ({
++				isPanning: editor.inputs.getIsPanning(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			isPanning: false,
++			isRightPointing: false,
++		})
++	})
++
++	test('can begin a right-click drag after closing the menu', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		await page.mouse.move(600, 400)
++		const initialCamera = await page.evaluate(() => {
++			const camera = editor.getCamera()
++			return { x: camera.x, y: camera.y, z: camera.z }
++		})
++
++		await page.mouse.down({ button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		await page.mouse.move(700, 500, { steps: 5 })
++
++		expect(
++			await page.evaluate(() => ({
++				camera: editor.getCamera(),
++				isPanning: editor.inputs.getIsPanning(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			isPanning: true,
++			isRightPointing: true,
++		})
++
++		await page.mouse.up({ button: 'right' })
++
++		expect(
++			await page.evaluate((initialCamera) => {
++				const camera = editor.getCamera()
++				return {
++					cameraChanged:
++						camera.x !== initialCamera.x ||
++						camera.y !== initialCamera.y ||
++						camera.z !== initialCamera.z,
++					isPanning: editor.inputs.getIsPanning(),
++					isRightPointing: editor.inputs.getIsRightPointing(),
++				}
++			}, initialCamera)
++		).toMatchObject({
++			cameraChanged: true,
++			isPanning: false,
++			isRightPointing: false,
++		})
++	})
++
++	test('left-click closes menu and leaves editor idle', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		// Move to a clearly empty spot so the right-click doesn't select or hover a shape
++		await page.mouse.move(800, 600)
++		await page.mouse.click(800, 600, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Left-click elsewhere on empty canvas — should close the menu
++		await page.mouse.click(900, 700)
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		// Tool state clean, pointer released — regardless of selection state
++		expect(
++			await page.evaluate(() => ({
++				path: editor.getPath(),
++				isPointing: editor.inputs.getIsPointing(),
++				isRightPointing: editor.inputs.getIsRightPointing(),
++			}))
++		).toMatchObject({
++			path: 'select.idle',
++			isPointing: false,
++			isRightPointing: false,
++		})
++	})
++
++	test('left-click drag with menu open starts brush selection', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.move(800, 600)
++		await page.mouse.click(800, 600, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Left-click + drag entirely on empty canvas
++		await page.mouse.move(900, 100)
++		await page.mouse.down({ button: 'left' })
++		await page.mouse.move(1100, 300, { steps: 10 })
++
++		// Menu closes, editor enters brushing state
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++		expect(await page.evaluate(() => editor.getPath())).toBe('select.brushing')
++
++		await page.mouse.up({ button: 'left' })
++
++		// After release: brush ended, editor idle, pointer released
++		expect(
++			await page.evaluate(() => ({
++				path: editor.getPath(),
++				isPointing: editor.inputs.getIsPointing(),
++			}))
++		).toMatchObject({
++			path: 'select.idle',
++			isPointing: false,
++		})
++	})
++
++	test('consecutive right-clicks keep menu continuously visible', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Right-click at a new location — observe visibility frequently during the transition
++		// to catch any hidden flash between the old menu closing and the new one opening.
++		await page.mouse.move(600, 400)
++		const menu = page.getByTestId('context-menu')
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.up({ button: 'right' })
++
++		// Poll visibility for ~300ms; it must never be hidden during the transition.
++		const samples = await page.evaluate(async () => {
++			const results: boolean[] = []
++			const el = () => document.querySelector('[data-testid="context-menu"]')
++			for (let i = 0; i < 30; i++) {
++				results.push(!!el())
++				await new Promise((r) => setTimeout(r, 10))
++			}
++			return results
++		})
++		expect(samples.every((v) => v === true)).toBe(true)
++		await expect(menu).toBeVisible()
++	})
++
++	test('left-click drag works after a right-click drag with menu open', async () => {
++		test.skip(isMobileProject(), 'Mobile emulation does not simulate right-click')
++		// Open a menu
++		await page.mouse.click(200, 200, { button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeVisible()
++
++		// Right-click + drag to pan; this should release all pointer capture cleanly
++		await page.mouse.move(600, 400)
++		await page.mouse.down({ button: 'right' })
++		await page.mouse.move(700, 500, { steps: 5 })
++		await page.mouse.up({ button: 'right' })
++		await expect(page.getByTestId('context-menu')).toBeHidden()
++
++		// Now a regular left-click drag must still work — if pointer capture
++		// leaked to the capture div or canvas, this brush would not engage.
++		await page.mouse.move(100, 100)
++		await page.mouse.down({ button: 'left' })
++		await page.mouse.move(400, 400, { steps: 10 })
++		expect(await page.evaluate(() => editor.getPath())).toBe('select.brushing')
++		await page.mouse.up({ button: 'left' })
++		expect(await page.evaluate(() => editor.getPath())).toBe('select.idle')
++	})
+ })
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 3a040101a386..010dae8a6161 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -784,6 +784,7 @@ export const defaultTldrawOptions: {
+     readonly onBeforePasteFromClipboard: undefined;
+     readonly onClipboardPasteRaw: undefined;
+     readonly quickZoomPreservesScreenBounds: true;
++    readonly rightClickPanning: true;
+     readonly snapThreshold: 8;
+     readonly spacebarPanning: true;
+     readonly temporaryAssetPreviewLifetimeMs: 180000;
+@@ -2197,6 +2198,7 @@ export class InputsManager {
+     getIsPen(): boolean;
+     getIsPinching(): boolean;
+     getIsPointing(): boolean;
++    getIsRightPointing(): boolean;
+     getIsSpacebarPanning(): boolean;
+     getMetaKey(): boolean;
+     getOriginPagePoint(): Vec;
+@@ -2256,6 +2258,8 @@ export class InputsManager {
+     // @internal (undocumented)
+     setIsPointing(isPointing: boolean): void;
+     // @internal (undocumented)
++    setIsRightPointing(isRightPointing: boolean): void;
++    // @internal (undocumented)
+     setIsSpacebarPanning(isSpacebarPanning: boolean): void;
+     // @internal (undocumented)
+     setMetaKey(metaKey: boolean): void;
+@@ -3799,6 +3803,7 @@ export interface TldrawOptions {
+     }): Awaitable<false | TLExternalContent<unknown> | void>;
+     onClipboardPasteRaw?(info: TLClipboardPasteRawInfo): false | void;
+     readonly quickZoomPreservesScreenBounds: boolean;
++    readonly rightClickPanning: boolean;
+     readonly snapThreshold: number;
+     readonly spacebarPanning: boolean;
+     readonly temporaryAssetPreviewLifetimeMs: number;
+diff --git a/packages/editor/src/lib/components/MenuClickCapture.tsx b/packages/editor/src/lib/components/MenuClickCapture.tsx
+index d433c5e61e8f..bc2d82caedaf 100644
+--- a/packages/editor/src/lib/components/MenuClickCapture.tsx
++++ b/packages/editor/src/lib/components/MenuClickCapture.tsx
+@@ -1,8 +1,10 @@
+ import { useValue } from '@tldraw/state-react'
+-import { PointerEvent, useCallback, useRef, useState } from 'react'
++import { type PointerEvent, useCallback, useEffect, useRef, useState } from 'react'
++import { flushSync } from 'react-dom'
+ import { useCanvasEvents } from '../hooks/useCanvasEvents'
+ import { useEditor } from '../hooks/useEditor'
+ import { Vec } from '../primitives/Vec'
++import { releasePointerCapture, setPointerCapture } from '../utils/dom'
+ import { getPointerInfo } from '../utils/getPointerInfo'
+ 
+ /**
+@@ -13,115 +15,173 @@ import { getPointerInfo } from '../utils/getPointerInfo'
+ export function MenuClickCapture() {
+ 	const editor = useEditor()
+ 
+-	// Whether any menus are open
+ 	const isMenuOpen = useValue('is menu open', () => editor.menus.hasAnyOpenMenus(), [editor])
+ 
+-	// Whether we're pointing or not—keep this component visible if we're pointing
++	// Keep this component mounted while the pointer is down so pointerup/move still
++	// land here after a synchronous clearOpenMenus() flips isMenuOpen to false.
+ 	const [isPointing, setIsPointing] = useState(false)
+-
+ 	const showElement = isMenuOpen || isPointing
+ 
+-	// Get the same events that we use on the canvas
+ 	const canvasEvents = useCanvasEvents()
+ 
+-	// Keep track of the pointer state
+ 	const rPointerState = useRef({
+ 		isDown: false,
+ 		isDragging: false,
++		button: 0,
+ 		start: new Vec(),
+ 	})
+ 
++	// Swallow the native contextmenu that follows a right-click pointerdown. Without
++	// this, Radix's trigger catches the native event and opens a menu at the pointer-
++	// DOWN position — then our own synthetic contextmenu (fired on pointerup) opens it
++	// again at the release position, producing a visible flash.
++	const rCancelContextMenuSwallow = useRef<null | (() => void)>(null)
++	useEffect(
++		() => () => {
++			rCancelContextMenuSwallow.current?.()
++			rCancelContextMenuSwallow.current = null
++		},
++		[]
++	)
++	const swallowNextNativeContextMenu = useCallback(() => {
++		rCancelContextMenuSwallow.current?.()
++		const doc = editor.getContainerDocument()
++		const onContextMenu = (event: MouseEvent) => {
++			// Skip our own synthetic contextmenu — only swallow the real browser one
++			if (!event.isTrusted) return
++			rCancelContextMenuSwallow.current?.()
++			rCancelContextMenuSwallow.current = null
++			event.preventDefault()
++			event.stopImmediatePropagation()
++		}
++		const cancel = () => doc.removeEventListener('contextmenu', onContextMenu, true)
++		rCancelContextMenuSwallow.current = cancel
++		doc.addEventListener('contextmenu', onContextMenu, true)
++		// Drop the listener on the next tick if it never fires (e.g. pointer moved off-screen)
++		doc.defaultView?.setTimeout(() => {
++			if (rCancelContextMenuSwallow.current === cancel) {
++				cancel()
++				rCancelContextMenuSwallow.current = null
++			}
++		}, 0)
++	}, [editor])
++
+ 	const handlePointerDown = useCallback(
+ 		(e: PointerEvent) => {
+-			if (e.button === 0) {
+-				setIsPointing(true)
+-				rPointerState.current = {
+-					isDown: true,
+-					isDragging: false,
+-					start: new Vec(e.clientX, e.clientY),
+-				}
+-				rDidAPointerDownAndDragWhileMenuWasOpen.current = false
++			if (e.button !== 0 && e.button !== 2) return
++
++			flushSync(() => setIsPointing(true))
++			setPointerCapture(e.currentTarget, e)
++			rPointerState.current = {
++				isDown: true,
++				isDragging: false,
++				button: e.button,
++				start: new Vec(e.clientX, e.clientY),
+ 			}
++
+ 			if (e.button === 2) {
+-				// Swallow the contextmenu event that follows this right-click pointerdown.
+-				// clearOpenMenus() below triggers a synchronous render that unmounts this
+-				// component, so our React onContextMenu handler won't be around to catch it.
+-				// Without this, the contextmenu event reaches the Radix Trigger and briefly
+-				// opens a new context menu (which then immediately dismisses — causing a flash).
+-				const ownerDocument = editor.getContainerDocument()
+-				ownerDocument.addEventListener(
+-					'contextmenu',
+-					(event) => {
+-						event.preventDefault()
+-						event.stopImmediatePropagation()
+-					},
+-					{ capture: true, once: true }
+-				)
++				if (!editor.options.rightClickPanning) {
++					// Right-click panning off: close the open menu and swallow the native
++					// contextmenu that would otherwise briefly open a new one (causing a flash).
++					swallowNextNativeContextMenu()
++					editor.menus.clearOpenMenus()
++					return
++				}
++				// Forward right-click pointerdown through the canvas's own handler so
++				// pointer capture is also set on the canvas (load-bearing: without this
++				// the context menu briefly flashes closed during consecutive right-clicks).
++				// We don't clearOpenMenus() — Radix's DismissableLayer closes the menu
++				// via outside-click detection, keeping its internal state in sync.
++				const canvas =
++					editor.getContainer().querySelector<HTMLDivElement>('.tl-canvas') ?? e.currentTarget
++				canvasEvents.onPointerDown?.({ ...e, currentTarget: canvas })
++				swallowNextNativeContextMenu()
++				return
+ 			}
++
+ 			editor.menus.clearOpenMenus()
+ 		},
+-		[editor]
++		[canvasEvents, editor, swallowNextNativeContextMenu]
+ 	)
+ 
+-	const rDidAPointerDownAndDragWhileMenuWasOpen = useRef(false)
+-
+ 	const handlePointerMove = useCallback(
+ 		(e: PointerEvent) => {
+-			// Do nothing unless we're pointing
+-			if (!rPointerState.current.isDown) return
++			const state = rPointerState.current
++			if (!state.isDown) return
+ 
+-			// call the onPointerDown with the original pointer position
+-			const { x, y } = rPointerState.current.start
+-
+-			if (!rDidAPointerDownAndDragWhileMenuWasOpen.current) {
++			// Left-click: wait for the drag threshold before forwarding anything, then
++			// replay pointerdown at the original start so the editor records the
++			// correct drag origin. Right-click forwards moves immediately (pointerdown
++			// was already dispatched in handlePointerDown).
++			if (state.button !== 2 && !state.isDragging) {
+ 				if (
+-					// We're pointing, but are we dragging?
+-					Vec.Dist2(rPointerState.current.start, new Vec(e.clientX, e.clientY)) >
++					Vec.Dist2(state.start, new Vec(e.clientX, e.clientY)) <=
+ 					editor.options.dragDistanceSquared
+ 				) {
+-					rDidAPointerDownAndDragWhileMenuWasOpen.current = true
+-					// Wehaddaeventitsadrag
+-					rPointerState.current = {
+-						...rPointerState.current,
+-						isDown: true,
+-						isDragging: true,
+-					}
+-					canvasEvents.onPointerDown?.({
+-						...e,
+-						clientX: x,
+-						clientY: y,
+-						button: 0,
+-					})
++					return
+ 				}
+-			}
+-
+-			if (rDidAPointerDownAndDragWhileMenuWasOpen.current) {
++				state.isDragging = true
+ 				editor.dispatch({
+ 					type: 'pointer',
+ 					target: 'canvas',
+-					name: 'pointer_move',
+-					...getPointerInfo(editor, e),
++					name: 'pointer_down',
++					...getPointerInfo(editor, { ...e, clientX: state.start.x, clientY: state.start.y }),
+ 				})
+ 			}
++
++			editor.dispatch({
++				type: 'pointer',
++				target: 'canvas',
++				name: 'pointer_move',
++				...getPointerInfo(editor, e),
++			})
+ 		},
+-		[canvasEvents, editor]
++		[editor]
+ 	)
+ 
+ 	const handlePointerUp = useCallback(
+ 		(e: PointerEvent) => {
+-			// Run the pointer up
+-			canvasEvents.onPointerUp?.(e)
+-			// Then turn off pointing
++			const isStaticRightClick = e.button === 2 && !rPointerState.current.isDragging
++
++			editor.dispatch({
++				type: 'pointer',
++				target: 'canvas',
++				name: 'pointer_up',
++				...getPointerInfo(editor, e),
++			})
++
++			if (isStaticRightClick && editor.options.rightClickPanning) {
++				// Dispatch contextmenu on the canvas's parent (Radix's trigger) so the
++				// menu opens at the release position. Bypassing the canvas avoids its
++				// own onContextMenu handler, which preventDefaults non-synthesized events.
++				const canvas = editor.getContainer().querySelector<HTMLDivElement>('.tl-canvas')
++				const trigger = canvas?.parentElement ?? e.currentTarget
++				editor.timers.requestAnimationFrame(() => {
++					trigger.dispatchEvent(
++						new PointerEvent('contextmenu', {
++							bubbles: true,
++							clientX: e.clientX,
++							clientY: e.clientY,
++							button: 2,
++							buttons: 0,
++							pointerId: e.pointerId,
++							pointerType: e.pointerType,
++							isPrimary: e.isPrimary,
++						})
++					)
++				})
++			}
++
++			releasePointerCapture(e.currentTarget, e)
+ 			setIsPointing(false)
+-			// Reset the pointer state
+ 			rPointerState.current = {
+ 				isDown: false,
+ 				isDragging: false,
++				button: 0,
+ 				start: new Vec(e.clientX, e.clientY),
+ 			}
+-			rDidAPointerDownAndDragWhileMenuWasOpen.current = false
+ 		},
+-		[canvasEvents]
++		[editor]
+ 	)
+ 
+ 	return (
+diff --git a/packages/editor/src/lib/editor/Editor.ts b/packages/editor/src/lib/editor/Editor.ts
+index a1d59c81eea1..c9277c2df07d 100644
+--- a/packages/editor/src/lib/editor/Editor.ts
++++ b/packages/editor/src/lib/editor/Editor.ts
+@@ -10,10 +10,10 @@ import {
+ import {
+ 	ComputedCache,
+ 	RecordType,
++	StoreSideEffects,
++	StoreSnapshot,
+ 	UnknownRecord,
+ 	reverseRecordsDiff,
+-	StoreSnapshot,
+-	StoreSideEffects,
+ } from '@tldraw/store'
+ import {
+ 	CameraRecordType,
+@@ -162,7 +162,7 @@ import { ScribbleManager } from './managers/ScribbleManager/ScribbleManager'
+ import { SnapManager } from './managers/SnapManager/SnapManager'
+ import { SpatialIndexManager } from './managers/SpatialIndexManager/SpatialIndexManager'
+ import { TextManager } from './managers/TextManager/TextManager'
+-import { resolveThemes, ThemeManager } from './managers/ThemeManager/ThemeManager'
++import { ThemeManager, resolveThemes } from './managers/ThemeManager/ThemeManager'
+ import { TickManager } from './managers/TickManager/TickManager'
+ import { UserPreferencesManager } from './managers/UserPreferencesManager/UserPreferencesManager'
+ import {
+@@ -11036,6 +11036,10 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 							}
+ 							this.inputs.setIsPanning(true)
+ 							clearTimeout(this._longPressTimeout)
++						} else if (info.button === RIGHT_MOUSE_BUTTON && this.options.rightClickPanning) {
++							this.inputs.setIsRightPointing(true)
++							clearTimeout(this._longPressTimeout)
++							return this
+ 						}
+ 
+ 						// We might be panning because we did a middle mouse click, or because we're holding spacebar and started a regular click
+@@ -11054,9 +11058,31 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 
+ 						const { x: cx, y: cy, z: cz } = unsafe__withoutCapture(() => this.getCamera())
+ 
++						// Right-click pointing: waiting to see if this becomes a drag
++						if (this.inputs.getIsRightPointing() && !this.inputs.getIsPanning()) {
++							const currentScreenPoint = this.inputs.getCurrentScreenPoint()
++							const originScreenPoint = this.inputs.getOriginScreenPoint()
++							if (
++								Vec.Dist2(originScreenPoint, currentScreenPoint) > this.options.dragDistanceSquared
++							) {
++								// Passed the drag threshold—transition to panning
++								this._prevCursor = this.getInstanceState().cursor.type
++								this.inputs.setIsPanning(true)
++								this.setCursor({ type: 'grabbing', rotation: 0 })
++								this.stopCameraAnimation()
++								// Apply the initial delta from the pointer down origin
++								const offset = Vec.Sub(currentScreenPoint, originScreenPoint)
++								this.setCamera(new Vec(cx + offset.x / cz, cy + offset.y / cz, cz), {
++									immediate: true,
++								})
++								this.maybeTrackPerformance('Panning')
++							}
++							return
++						}
++
+ 						// If we've started panning, then clear any long press timeout
+ 						if (this.inputs.getIsPanning() && this.inputs.getIsPointing()) {
+-							// Handle spacebar / middle mouse button panning
++							// Handle spacebar / middle mouse button / right-click panning
+ 							const currentScreenPoint = this.inputs.getCurrentScreenPoint()
+ 							const previousScreenPoint = this.inputs.getPreviousScreenPoint()
+ 							const offset = Vec.Sub(currentScreenPoint, previousScreenPoint)
+@@ -11089,13 +11115,24 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 						inputs.setIsDragging(false)
+ 						inputs.setIsPointing(false)
+ 						clearTimeout(this._longPressTimeout)
+-
+ 						// Remove the button from the buttons set
+ 						inputs.buttons.delete(info.button)
+ 
+ 						// If we're in pen mode and we're not using a pen, stop here
+ 						if (instanceState.isPenMode && !isPen) return
+ 
++						// Right-click pointing ended without dragging—this is a static
++						// right-click, so let it through to the state chart as right_click.
++						// Check isPanning first: if we transitioned to panning, isRightPointing
++						// is still true but we want the panning cleanup path instead.
++						if (this.inputs.getIsRightPointing() && !this.inputs.getIsPanning()) {
++							this.inputs.setIsRightPointing(false)
++							this._selectedShapeIdsAtPointerDown = []
++							break // fall through to state chart dispatch as right_click
++						}
++
++						this.inputs.setIsRightPointing(false)
++
+ 						// Firefox bug fix...
+ 						// If it's the same pointer that we stored earlier...
+ 						// ... then it's probably still a left-mouse-click!
+@@ -11118,11 +11155,26 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 									break
+ 								}
+ 								case MIDDLE_MOUSE_BUTTON: {
+-									if (this.inputs.keys.has(' ')) {
++									if (this.inputs.keys.has('Space')) {
+ 										this.setCursor({ type: 'grab', rotation: 0 })
+ 									} else {
+ 										this.setCursor({ type: this._prevCursor, rotation: 0 })
+ 									}
++									break
++								}
++								case RIGHT_MOUSE_BUTTON: {
++									if (this.inputs.keys.has('Space')) {
++										this.setCursor({ type: 'grab', rotation: 0 })
++									} else {
++										this.setCursor({ type: this._prevCursor, rotation: 0 })
++									}
++									// Don't pass right-click panning events to the state chart
++									// as it causes unintended shape selection on release
++									if (slideSpeed > 0) {
++										this.slideCamera({ speed: slideSpeed, direction: slideDirection })
++									}
++									this._selectedShapeIdsAtPointerDown = []
++									return this
+ 								}
+ 							}
+ 
+diff --git a/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts b/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
+index f2ade9825f9c..b85c43c6bd53 100644
+--- a/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
++++ b/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
+@@ -331,6 +331,18 @@ export class InputsManager {
+ 		this._isPointing.set(isPointing)
+ 	}
+ 
++	private _isRightPointing = atom<boolean>('isRightPointing', false)
++	/**
++	 * Whether the user is right-click pointing (before drag threshold).
++	 */
++	getIsRightPointing() {
++		return this._isRightPointing.get()
++	}
++	/** @internal */
++	setIsRightPointing(isRightPointing: boolean) {
++		this._isRightPointing.set(isRightPointing)
++	}
++
+ 	private _isPinching = atom<boolean>('isPinching', false)
+ 	/**
+ 	 * Whether the user is pinching.
+diff --git a/packages/editor/src/lib/hooks/useCanvasEvents.ts b/packages/editor/src/lib/hooks/useCanvasEvents.ts
+index 84de5da59752..136237b81e25 100644
+--- a/packages/editor/src/lib/hooks/useCanvasEvents.ts
++++ b/packages/editor/src/lib/hooks/useCanvasEvents.ts
+@@ -1,6 +1,5 @@
+ import { useValue } from '@tldraw/state-react'
+ import React, { useEffect, useMemo } from 'react'
+-import { RIGHT_MOUSE_BUTTON } from '../constants'
+ import { tlenv } from '../globals/environment'
+ import {
+ 	elementShouldCaptureKeys,
+@@ -21,7 +20,9 @@ export function useCanvasEvents() {
+ 			function onPointerDown(e: React.PointerEvent) {
+ 				if (editor.wasEventAlreadyHandled(e)) return
+ 
+-				if (e.button === RIGHT_MOUSE_BUTTON) {
++				// With right-click panning disabled, fire right_click on press and let the
++				// native contextmenu through so the menu opens at the pointer-down location.
++				if (e.button === 2 && !editor.options.rightClickPanning) {
+ 					editor.dispatch({
+ 						type: 'pointer',
+ 						target: 'canvas',
+@@ -31,7 +32,7 @@ export function useCanvasEvents() {
+ 					return
+ 				}
+ 
+-				if (e.button !== 0 && e.button !== 1 && e.button !== 5) return
++				if (e.button !== 0 && e.button !== 1 && e.button !== 2 && e.button !== 5) return
+ 
+ 				setPointerCapture(e.currentTarget, e)
+ 
+@@ -47,6 +48,11 @@ export function useCanvasEvents() {
+ 				if (editor.wasEventAlreadyHandled(e)) return
+ 				if (e.button !== 0 && e.button !== 1 && e.button !== 2 && e.button !== 5) return
+ 
++				const rightClickPanning = editor.options.rightClickPanning
++				// Check before dispatch (which resets isPanning)
++				const wasRightClickPanning =
++					rightClickPanning && e.button === 2 && editor.inputs.getIsPanning()
++
+ 				releasePointerCapture(e.currentTarget, e)
+ 
+ 				editor.dispatch({
+@@ -55,6 +61,21 @@ export function useCanvasEvents() {
+ 					name: 'pointer_up',
+ 					...getPointerInfo(editor, e),
+ 				})
++
++				// Static right-click: fire contextmenu at the pointer-up location
++				if (rightClickPanning && e.button === 2 && !wasRightClickPanning) {
++					const contextMenuEvent = new PointerEvent('contextmenu', {
++						bubbles: true,
++						clientX: e.clientX,
++						clientY: e.clientY,
++						button: 2,
++						buttons: 0,
++						pointerId: e.pointerId,
++						pointerType: e.pointerType,
++						isPrimary: e.isPrimary,
++					})
++					e.currentTarget.dispatchEvent(contextMenuEvent)
++				}
+ 			}
+ 
+ 			function onPointerEnter(e: React.PointerEvent) {
+@@ -143,6 +164,21 @@ export function useCanvasEvents() {
+ 				e.stopPropagation()
+ 			}
+ 
++			function onContextMenu(e: React.MouseEvent) {
++				// With right-click panning disabled, let the native contextmenu through so the
++				// menu opens on press.
++				if (!editor.options.rightClickPanning) return
++				// Synthetic events — our own dispatch from onPointerUp, or tests using
++				// fireEvent.contextMenu — pass through so Radix can open the menu. The real
++				// browser contextmenu is always suppressed: right-click behavior has
++				// already been decided by our pointer handling (either we dispatched a
++				// synthetic to open the menu at the release position, or we panned and
++				// don't want a menu at all).
++				if (e.nativeEvent.isTrusted) {
++					preventDefault(e)
++				}
++			}
++
+ 			return {
+ 				onPointerDown,
+ 				onPointerUp,
+@@ -153,6 +189,7 @@ export function useCanvasEvents() {
+ 				onTouchStart,
+ 				onTouchEnd,
+ 				onClick,
++				onContextMenu,
+ 			}
+ 		},
+ 		[editor]
+diff --git a/packages/editor/src/lib/options.ts b/packages/editor/src/lib/options.ts
+index 51acc5c8af72..62f3fd99f578 100644
+--- a/packages/editor/src/lib/options.ts
++++ b/packages/editor/src/lib/options.ts
+@@ -154,6 +154,12 @@ export interface TldrawOptions {
+ 	 * When false, the spacebar will not pan the camera.
+ 	 */
+ 	readonly spacebarPanning: boolean
++	/**
++	 * Whether to allow right-click + drag to pan the camera. When true, right-click + drag pans the
++	 * camera and a static right-click opens the context menu at the release position. When false,
++	 * right-click opens the context menu on press (no drag-to-pan).
++	 */
++	readonly rightClickPanning: boolean
+ 	/**
+ 	 * The default padding (in pixels) used when zooming to fit content in the viewport.
+ 	 * This affects methods like `zoomToFit()`, `zoomToSelection()`, and `zoomToBounds()`.
+@@ -326,6 +332,7 @@ export const defaultTldrawOptions = {
+ 	debouncedZoom: true,
+ 	debouncedZoomThreshold: 500,
+ 	spacebarPanning: true,
++	rightClickPanning: true,
+ 	zoomToFitPadding: 128,
+ 	snapThreshold: 8,
+ 	camera: DEFAULT_CAMERA_OPTIONS,
+diff --git a/packages/tldraw/src/index.ts b/packages/tldraw/src/index.ts
+index 14dc6a05d52b..0da86bebe0cf 100644
+--- a/packages/tldraw/src/index.ts
++++ b/packages/tldraw/src/index.ts
+@@ -1,7 +1,6 @@
+ /// <reference types="react" />
+ 
+ import { registerTldrawLibraryVersion } from '@tldraw/editor'
+-import { DefaultPeopleMenu } from './lib/ui/components/SharePanel/DefaultPeopleMenu'
+ export { getPointsFromDrawSegment, getPointsFromDrawSegments } from './lib/shapes/draw/getPath'
+ export {
+ 	PathBuilder,
+@@ -146,8 +145,8 @@ export {
+ export { createBookmarkFromUrl } from './lib/shapes/bookmark/bookmarks'
+ export {
+ 	BookmarkShapeUtil,
+-	type BookmarkShapeUtilDisplayValues,
+ 	type BookmarkShapeOptions,
++	type BookmarkShapeUtilDisplayValues,
+ } from './lib/shapes/bookmark/BookmarkShapeUtil'
+ export { DrawShapeTool } from './lib/shapes/draw/DrawShapeTool'
+ export {
+@@ -169,8 +168,8 @@ export {
+ export { GeoShapeTool } from './lib/shapes/geo/GeoShapeTool'
+ export {
+ 	GeoShapeUtil,
+-	type GeoShapeUtilDisplayValues,
+ 	type GeoShapeOptions,
++	type GeoShapeUtilDisplayValues,
+ } from './lib/shapes/geo/GeoShapeUtil'
+ export { HighlightShapeTool } from './lib/shapes/highlight/HighlightShapeTool'
+ export {
+@@ -180,20 +179,20 @@ export {
+ } from './lib/shapes/highlight/HighlightShapeUtil'
+ export {
+ 	ImageShapeUtil,
+-	type ImageShapeUtilDisplayValues,
+ 	type ImageShapeOptions,
++	type ImageShapeUtilDisplayValues,
+ } from './lib/shapes/image/ImageShapeUtil'
+ export { LineShapeTool } from './lib/shapes/line/LineShapeTool'
+ export {
+ 	LineShapeUtil,
+-	type LineShapeUtilDisplayValues,
+ 	type LineShapeOptions,
++	type LineShapeUtilDisplayValues,
+ } from './lib/shapes/line/LineShapeUtil'
+ export { NoteShapeTool } from './lib/shapes/note/NoteShapeTool'
+ export {
+ 	NoteShapeUtil,
+-	type NoteShapeUtilDisplayValues,
+ 	type NoteShapeOptions,
++	type NoteShapeUtilDisplayValues,
+ } from './lib/shapes/note/NoteShapeUtil'
+ export {
+ 	ASPECT_RATIO_OPTIONS,
+@@ -204,6 +203,7 @@ export {
+ 	type ASPECT_RATIO_OPTION,
+ 	type CropBoxOptions,
+ } from './lib/shapes/shared/crop'
++export { getFontFamily } from './lib/shapes/shared/default-shape-constants'
+ export {
+ 	allDefaultFontFaces,
+ 	DefaultFontFaces,
+@@ -246,7 +246,6 @@ export {
+ 	type VideoShapeOptions,
+ 	type VideoShapeUtilDisplayValues,
+ } from './lib/shapes/video/VideoShapeUtil'
+-export { getFontFamily } from './lib/shapes/shared/default-shape-constants'
+ export { getColorStyleItems, getFontStyleItems, type StyleValuesForUi } from './lib/styles'
+ export { Tldraw, type TLComponents, type TldrawBaseProps, type TldrawProps } from './lib/Tldraw'
+ export { TldrawImage, type TldrawImageProps } from './lib/TldrawImage'
+@@ -507,14 +506,17 @@ export {
+ 	type TLUiQuickActionsProps,
+ } from './lib/ui/components/QuickActions/DefaultQuickActions'
+ export { DefaultQuickActionsContent } from './lib/ui/components/QuickActions/DefaultQuickActionsContent'
+-export { DefaultSharePanel } from './lib/ui/components/SharePanel/DefaultSharePanel'
+ export {
+ 	DefaultPeopleMenu,
+-	type DefaultPeopleMenuProps,
+ 	// legacy
+ 	DefaultPeopleMenu as PeopleMenu,
++	type DefaultPeopleMenuProps,
+ 	type DefaultPeopleMenuProps as PeopleMenuProps,
+ } from './lib/ui/components/SharePanel/DefaultPeopleMenu'
++export {
++	DefaultPeopleMenuAvatar,
++	type TLUiPeopleMenuAvatarProps,
++} from './lib/ui/components/SharePanel/DefaultPeopleMenuAvatar'
+ export {
+ 	DefaultPeopleMenuContent,
+ 	type DefaultPeopleMenuContentProps,
+@@ -524,13 +526,10 @@ export {
+ 	type TLUiPeopleMenuFacePileProps,
+ } from './lib/ui/components/SharePanel/DefaultPeopleMenuFacePile'
+ export {
+-	type TLUiPeopleMenuAvatarProps,
+-	DefaultPeopleMenuAvatar,
+-} from './lib/ui/components/SharePanel/DefaultPeopleMenuAvatar'
+-export {
+-	type TLUiPeopleMenuItemProps,
+ 	DefaultPeopleMenuItem,
++	type TLUiPeopleMenuItemProps,
+ } from './lib/ui/components/SharePanel/DefaultPeopleMenuItem'
++export { DefaultSharePanel } from './lib/ui/components/SharePanel/DefaultSharePanel'
+ export { DefaultUserPresenceEditor } from './lib/ui/components/SharePanel/DefaultUserPresenceEditor'
+ export { Spinner } from './lib/ui/components/Spinner'
+ export {
+diff --git a/packages/tldraw/src/test/groups.test.tsx b/packages/tldraw/src/test/groups.test.tsx
+index a75fce55b0db..439f86e020b6 100644
+--- a/packages/tldraw/src/test/groups.test.tsx
++++ b/packages/tldraw/src/test/groups.test.tsx
+@@ -919,7 +919,7 @@ describe('right clicking in detail', () => {
+ 
+ 	// TODO: fix this
+ 	it('should select the group by right-clicking the margin of a hollow shape', () => {
+-		editor.pointerMove(4, 4).pointerDown(4, 4, { target: 'canvas', button: 2 }).pointerUp()
++		editor.pointerMove(4, 4).rightClick(4, 4)
+ 		expect(onlySelectedId()).toBe(groupId)
+ 	})
+ })
+@@ -967,21 +967,15 @@ describe('the select tool', () => {
+ 	it('should select the outermost non-selected group when you right-click on one of the shapes in that group', () => {
+ 		const boxA = editor.getShape(ids.boxA)
+ 
+-		editor
+-			.pointerDown(0, 0, { target: 'shape', shape: boxA, button: 2 })
+-			.pointerUp(0, 0, { button: 2 })
++		editor.rightClick(0, 0, { target: 'shape', shape: boxA })
+ 		expect(onlySelectedId()).toBe(groupCId)
+ 		expect(editor.getFocusedGroupId()).toBe(editor.getCurrentPageId())
+-		editor
+-			.pointerDown(0, 0, { target: 'shape', shape: boxA, button: 2 })
+-			.pointerUp(0, 0, { button: 2 })
++		editor.rightClick(0, 0, { target: 'shape', shape: boxA })
+ 		expect(onlySelectedId()).toBe(groupCId)
+ 		expect(editor.getFocusedGroupId()).toBe(editor.getCurrentPageId())
+ 		editor.select(groupAId)
+ 		expect(editor.getFocusedGroupId()).toBe(groupCId)
+-		editor
+-			.pointerDown(0, 0, { target: 'shape', shape: boxA, button: 2 })
+-			.pointerUp(0, 0, { button: 2 })
++		editor.rightClick(0, 0, { target: 'shape', shape: boxA })
+ 		expect(onlySelectedId()).toBe(groupAId)
+ 		expect(editor.getFocusedGroupId()).toBe(groupCId)
+ 	})
+diff --git a/packages/tldraw/src/test/rightClickPanning.test.ts b/packages/tldraw/src/test/rightClickPanning.test.ts
+new file mode 100644
+index 000000000000..16fa4c4d3815
+--- /dev/null
++++ b/packages/tldraw/src/test/rightClickPanning.test.ts
+@@ -0,0 +1,42 @@
++import { TestEditor } from './TestEditor'
++
++describe('with rightClickPanning enabled (default)', () => {
++	let editor: TestEditor
++
++	beforeEach(() => {
++		editor = new TestEditor()
++	})
++
++	it('pans the camera when right-click dragging past the drag threshold', () => {
++		editor.expectCameraToBe(0, 0, 1)
++		editor.pointerDown(100, 100, { button: 2 })
++		editor.pointerMove(200, 200)
++		expect(editor.inputs.getIsPanning()).toBe(true)
++		editor.expectCameraToBe(100, 100, 1)
++		editor.pointerUp(200, 200, { button: 2 })
++		expect(editor.inputs.getIsPanning()).toBe(false)
++	})
++
++	it('does not pan on a static right-click', () => {
++		editor.pointerDown(100, 100, { button: 2 })
++		editor.pointerUp(100, 100, { button: 2 })
++		expect(editor.inputs.getIsPanning()).toBe(false)
++		editor.expectCameraToBe(0, 0, 1)
++	})
++})
++
++describe('with rightClickPanning disabled', () => {
++	let editor: TestEditor
++
++	beforeEach(() => {
++		editor = new TestEditor({ options: { rightClickPanning: false } })
++	})
++
++	it('does not pan on right-click drag', () => {
++		editor.pointerDown(100, 100, { button: 2 })
++		editor.pointerMove(200, 200)
++		expect(editor.inputs.getIsPanning()).toBe(false)
++		editor.expectCameraToBe(0, 0, 1)
++		editor.pointerUp(200, 200, { button: 2 })
++	})
++})
+diff --git a/packages/tldraw/src/test/selection-omnibus.test.ts b/packages/tldraw/src/test/selection-omnibus.test.ts
+index 72e6aba2d0ee..17099106e2f9 100644
+--- a/packages/tldraw/src/test/selection-omnibus.test.ts
++++ b/packages/tldraw/src/test/selection-omnibus.test.ts
+@@ -1781,8 +1781,7 @@ describe('right clicking', () => {
+ 		editor.createShapes([{ id: ids.box1, type: 'geo' }])
+ 		expect(editor.getSelectedShapeIds()).toEqual([])
+ 		editor.pointerMove(4, 4)
+-		editor.pointerDown(4, 4, { target: 'canvas', button: 2 })
+-		editor.pointerUp()
++		editor.rightClick(4, 4)
+ 		expect(editor.getSelectedShapeIds()).toEqual([ids.box1])
+ 	})
+ 
+@@ -1835,8 +1834,7 @@ describe('right clicking', () => {
+ 		// Not inside of the shape but inside of the selection bounds
+ 		editor.pointerMove(510, 590)
+ 		expect(editor.getHoveredShapeId()).toBe(null)
+-		editor.pointerDown(30, 30, { target: 'canvas', button: 2 })
+-		editor.pointerUp()
++		editor.rightClick(30, 30)
+ 		expect(editor.getSelectedShapeIds()).toEqual([])
+ 	})
+ })

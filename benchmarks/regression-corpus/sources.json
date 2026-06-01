@@ -1,0 +1,1626 @@
+{
+  "fetchedAt": "2026-06-01T21:11:42.646Z",
+  "windowMonths": 12,
+  "repos": [
+    "vitejs/vite",
+    "vercel/next.js",
+    "withastro/astro",
+    "nrwl/nx",
+    "trpc/trpc",
+    "prisma/prisma",
+    "expo/expo",
+    "cloudflare/workers-sdk",
+    "tldraw/tldraw",
+    "getsentry/sentry-javascript",
+    "TanStack/query",
+    "mui/material-ui"
+  ],
+  "shortRepos": [
+    {
+      "repo": "trpc/trpc",
+      "found": 1,
+      "reason": "1 signals, 1 qualified"
+    },
+    {
+      "repo": "prisma/prisma",
+      "found": 2,
+      "reason": "3 signals, 2 qualified"
+    },
+    {
+      "repo": "getsentry/sentry-javascript",
+      "found": 2,
+      "reason": "3 signals, 2 qualified"
+    },
+    {
+      "repo": "TanStack/query",
+      "found": 2,
+      "reason": "4 signals, 2 qualified"
+    }
+  ],
+  "prs": [
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 10546,
+      "headSha": "2b41912d1f79216c48d7378d8b78bb3d3b0e1180",
+      "title": "feat: tag services and environments",
+      "bodyExcerpt": "This PR adds tagging behavior that applies appropriate service and environment tags to Workers with multiple environments when deploying or uploading a new version. If any environments are detected in the Wrangler config file, running `wrangler deploy` or `wrangler version upload` will apply a `cf:service=${topLevelName}` and (if a `--env` was specified) a `cf:environment=${environmentName}` tag. This metadata will be used by the Cloudflare Dashboard to group these Workers together in a more user-friendly way.\n\nThis PR also adds a new `definedEnvironments` computed field to Wrangler config tha…",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/10546",
+      "mergedAt": "2025-09-14T20:15:12Z",
+      "additions": 994,
+      "deletions": 11,
+      "files": 13,
+      "diffPath": "diffs/cloudflare-workers-sdk/10546.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/10706",
+          "sha": null,
+          "mentionedInBody": "introduced in #10546"
+        }
+      ]
+    },
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 11285,
+      "headSha": "12b99a714709f11abfdaf706598cc235031367e0",
+      "title": "implement r2 bulk put",
+      "bodyExcerpt": "Add support for `wrangler r2 bulk put bucket-name --filename list.json`\n\n```jsonc\n// list.json\n[\n  { \"key\": \"/path/to/obj\", \"file\": \"/path/to/file\"},\n  // ...\n]\n```\n\nIt supports the same options as `wrangler r2 object put`, minus `--file` and `--pipe` and plus `--concurrency`\n\nNotes for reviewers:\n- `r2/helpers.ts` has been splitted into different files  `r2/helpers/<what.ts>`\n- helpers outside of `object.ts` (used by the bulk command) are unchanged\n- there is one new helper `bulk.ts`\n\nFuture work (will create issues before merging this PR)\n- allow to override metadata for individual object\n- …",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/11285",
+      "mergedAt": "2025-11-17T14:02:48Z",
+      "additions": 2536,
+      "deletions": 1770,
+      "files": 31,
+      "diffPath": "diffs/cloudflare-workers-sdk/11285.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/11344",
+          "sha": null,
+          "mentionedInBody": "introduced in #11285"
+        }
+      ]
+    },
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 11896,
+      "headSha": "9380adbecaef02bb236e68fd8e53a8023d53d962",
+      "title": "[wrangler] Surface remote proxy session errors",
+      "bodyExcerpt": "Fixes #11098.\n\n_Describe your change..._\n- Include controller reason and root cause in startRemoteProxySession errors so Access/cloudflared issues are visible.\n- Update remote bindings tests to match the richer error message.\n- Add wrangler changeset.\n\nTests: pnpm test:ci -F wrangler -- remote-bindings-errors\nE2E tests not run (requires Cloudflare credentials).\n\n---\n\n- Tests\n  - [x] Tests included/updated\n  - [ ] Automated tests not possible - manual testing has been completed as follows:\n  - [ ] Additional testing not necessary because:\n- Public documentation\n  - [ ] Cloudflare docs PR(s):\n  …",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/11896",
+      "mergedAt": "2026-05-15T15:12:52Z",
+      "additions": 62,
+      "deletions": 10,
+      "files": 6,
+      "diffPath": "diffs/cloudflare-workers-sdk/11896.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/13935",
+          "sha": null,
+          "mentionedInBody": "introduced by #11896"
+        }
+      ]
+    },
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 12543,
+      "headSha": "6232b3b7b5142153c03e666de6a8ede997056d08",
+      "title": "Fix AI Search rpc binding",
+      "bodyExcerpt": "Fixes #[insert GH or internal issue link(s)].\n\nAI Search binding is of type RPC, and with current implementation it did not work\n\n---\n\n<!--\nPlease don't delete the checkboxes <3\nThe following selections do not need to be completed if this PR only contains changes to .md files\n-->\n\n- Tests\n  - [x] Tests included/updated\n  - [ ] Automated tests not possible - manual testing has been completed as follows:\n  - [ ] Additional testing not necessary because:\n- Public documentation\n  - [ ] Cloudflare docs PR(s): <!--e.g. <https://github.com/cloudflare/cloudflare-docs/pull/>...-->\n  - [x] Documentation…",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/12543",
+      "mergedAt": "2026-02-16T09:41:32Z",
+      "additions": 238,
+      "deletions": 2,
+      "files": 6,
+      "diffPath": "diffs/cloudflare-workers-sdk/12543.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/12691",
+          "sha": null,
+          "mentionedInBody": "introduced in #12543"
+        }
+      ]
+    },
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 12852,
+      "headSha": "3d1a39199b8bc41bae78970bb2d31ea7f6e97d81",
+      "title": "[wrangler] add validation to actions that could affect r2 data catalog state with override option",
+      "bodyExcerpt": "Data catalog errors are difficult to recover from, and users sometimes aren't aware that an action could delete or overwrite files from their buckets that could cause them. This change ensures R2 object and lifecycle commands now validate by default on actions that could leave data catalog-enabled buckets in an invalid state. By default, Wrangler will perform the catalog check with the header set, handle a 409 with an interactive prompt, and then if the user confirms, the request will be executed without the header/if user cancels, the request will be cancelled. Wrangler also has a `--force` f…",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/12852",
+      "mergedAt": "2026-03-25T20:12:05Z",
+      "additions": 981,
+      "deletions": 42,
+      "files": 10,
+      "diffPath": "diffs/cloudflare-workers-sdk/12852.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/13059",
+          "sha": null,
+          "mentionedInBody": "broken by #12852"
+        }
+      ]
+    },
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 13234,
+      "headSha": "40306e296257cde436d52539ca774600ba25a420",
+      "title": "[Stream] Add support for serving videos locally + watermark/caption upload support",
+      "bodyExcerpt": "This PR adds local video serving support to the Stream binding, allowing users to fetch uploaded video blobs via preview URLs. It also adds support for caption and watermark uploads.\n\n## Architecture\n\nThe local Stream binding runs as three workerd services:\n\n1. **Storage service** -- disk-backed persistence for the Durable Object\n2. **Object service** (`object.worker.ts`) -- a Durable Object that stores video metadata in SQLite and video/watermark/caption blobs in blob storage\n3. **Binding service** (`binding.worker.ts`) -- a `WorkerEntrypoint` that exposes the Stream RPC API (`upload`, `video…",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/13234",
+      "mergedAt": "2026-04-21T18:38:29Z",
+      "additions": 734,
+      "deletions": 32,
+      "files": 28,
+      "diffPath": "diffs/cloudflare-workers-sdk/13234.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/13348",
+          "sha": null,
+          "mentionedInBody": "introduced in #13234"
+        }
+      ]
+    },
+    {
+      "repo": "cloudflare/workers-sdk",
+      "prNumber": 13667,
+      "headSha": "578b1f3895067a235039e014a4b5ae663cb8a126",
+      "title": "fix: correctly save auth from previous remote sessions ",
+      "bodyExcerpt": "`preExistingRemoteProxySessionData.auth` was always undefined because `maybeStartOrUpdateRemoteProxySession` never included auth in its return value. This caused the `authSameAsBefore` check to always return false, triggering a full session dispose + recreate on every reload in LocalRuntimeController.\n\nThis only affects the LocalRuntimeController afaict, since both auth values are always undefined in every other place `maybeStartOrUpdateRemoteProxySession` is called. I'm a bit confused by that, but I don't know this code very well and this appears to fix the problem.\n\nI've tested this manually…",
+      "url": "https://github.com/cloudflare/workers-sdk/pull/13667",
+      "mergedAt": "2026-04-27T12:28:10Z",
+      "additions": 55,
+      "deletions": 1,
+      "files": 5,
+      "diffPath": "diffs/cloudflare-workers-sdk/13667.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/cloudflare/workers-sdk/pull/13700",
+          "sha": null,
+          "mentionedInBody": "broken by #13667"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 35036,
+      "headSha": "cf80d527bb5029d5239999f06a17b68ce157bd9e",
+      "title": "chore: Drop fs-extra for fs",
+      "bodyExcerpt": "Related #23431\n\n# Why\n\nWe're never using any functionality in `fs-extra` that doesn't exist in Node.js' `node:fs` module already, especially assuming Node 18+ support. It also is a package that's duplicate excessively across the monorepo and on `main` we're currently installing **five** different versions of it. While we can align most of these, since no functionality in `fs-extra` cannot be replaced with a 1–3 line change, it's easier to just drop it.\n\nThis removes **three** copies of `fs-extra` from typical expo projects.\nIncluding transitive dependencies it'll remove 7–8 packages from a typ…",
+      "url": "https://github.com/expo/expo/pull/35036",
+      "mergedAt": "2025-02-21T10:53:13Z",
+      "additions": 680,
+      "deletions": 678,
+      "files": 108,
+      "diffPath": "diffs/expo-expo/35036.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/37923",
+          "sha": null,
+          "mentionedInBody": "regression from #35036"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 37209,
+      "headSha": "e2eade6e8b0ab56ef64ada3604f885c19e6dec90",
+      "title": "[fingerprint] include edge-to-edge autolinking",
+      "bodyExcerpt": "# Why\n\nresolve sdk53 expo-updates fingerprint runtime version resolving issue: https://expo.dev/accounts/kudochien/projects/sdk53/builds/7cb6d24c-ebdb-4735-b337-13f127b4610a\n\nfor CNG projects, local fingerprint is generated without gradle.properties. on eas, fingerprint is generated after prebuild. the inconsistent autolinking behavior causes the inconsistent fingerprint output\n\n```\n\nRuntime version mismatch:\n- Runtime version calculated on local machine: c3ef84e90fb2d4a8d2c1fe822b350a9bd83b673c\n- Runtime version calculated on EAS: 9c28d2d6542887a1c6a74763bd7e8251a4b09ca3\n\nThis may be due to o…",
+      "url": "https://github.com/expo/expo/pull/37209",
+      "mergedAt": "2025-06-07T10:24:34Z",
+      "additions": 51,
+      "deletions": 23,
+      "files": 8,
+      "diffPath": "diffs/expo-expo/37209.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/expo/expo/pull/38637",
+          "sha": null,
+          "mentionedInBody": "Reverts #37209"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 37558,
+      "headSha": "91ef9b792dfa4ec63394d4e1d19165ef9b9ca778",
+      "title": "[CI] Convert Updates E2E disabled tests to Maestro",
+      "bodyExcerpt": "# Why\n\n- Continue with converting E2E tests to Maestro\n- Fix regression in all updates E2E tests caused by #37415\n\n# How\n\n- Changes are similar to those in #37492 for the updates E2E enabled tests\n- Change the manifest types in expo-constants to fix regression\n- Use common shell script test harness to drive all E2E tests\n\n# Test Plan\n\nCI should pass",
+      "url": "https://github.com/expo/expo/pull/37558",
+      "mergedAt": "2025-06-21T22:18:37Z",
+      "additions": 128,
+      "deletions": 37,
+      "files": 11,
+      "diffPath": "diffs/expo-expo/37558.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/37570",
+          "sha": null,
+          "mentionedInBody": "introduced in #37558"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 38074,
+      "headSha": "2592fd83f55b2c535ccb2333269ed209ac7cda9c",
+      "title": "[updates] Introduce ReloadingView",
+      "bodyExcerpt": "# Why\nCloses ENG-15542\nAdd support for a customizable `ReloadingView` that is displayed after a call to `reloadAsync`\n\n# How\nAdded new api to the updates module. \nUsers can use:\n`setReloadScreenOptions` to customize how the screen looks\n`show/hide` are useful for debugging how the screen looks. \n\nWe will call `show` during the relaunch procedure and use a similar method that `expo-splash-screen` uses to detect when the app has loaded to hide it again. On Android, we use `ReactMarker` and on iOS we listen for the `RCTContentDidAppearNotification`. \n\n# Test Plan\nAdded new screen to ncl and also …",
+      "url": "https://github.com/expo/expo/pull/38074",
+      "mergedAt": "2025-07-23T12:06:19Z",
+      "additions": 1372,
+      "deletions": 22,
+      "files": 35,
+      "diffPath": "diffs/expo-expo/38074.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/38335",
+          "sha": null,
+          "mentionedInBody": "regression from #38074"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 38563,
+      "headSha": "37ac0b873258942002341fb8fc00cb4159e1f708",
+      "title": "feat(expo-audio): Add downloadFirst option for audio playback and update related documentation",
+      "bodyExcerpt": "# Why\n\n- Users asked for option to fully download the audio file before playback.\n- Deep import not allowed anymore - resolveAssetSource causing warning\n\nFixes #37871\nCloses ENG-16755\n\n<!--\nPlease describe the motivation for this PR, and link to relevant GitHub issues, forums posts, or feature requests.\n-->\n\n# How\n\n- Introduced a new `downloadFirst` in useAudioPlayer and createAudioPlayer hook to allow pre-downloading of audio files before playback, enhancing performance and reducing buffering. (uses expo-asset for native like in expo-av, and fetch+blob+createObjectURL on web)\n- Updated the `u…",
+      "url": "https://github.com/expo/expo/pull/38563",
+      "mergedAt": "2025-08-05T20:32:11Z",
+      "additions": 670,
+      "deletions": 74,
+      "files": 29,
+      "diffPath": "diffs/expo-expo/38563.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/40642",
+          "sha": null,
+          "mentionedInBody": "regression from #38563"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 38612,
+      "headSha": "f74da65cb4eae4861854f8c237665c3935ba4475",
+      "title": "[audio][android][ios][web] Fix recordForDuration status updates and add new record() options API",
+      "bodyExcerpt": "# Why\n\n<!--\nPlease describe the motivation for this PR, and link to relevant GitHub issues, forums posts, or feature requests.\n-->\n\n  - recordForDuration() and startRecordingAtTime() methods had inconsistent behavior across platforms\n  - No unified API for recording options - required separate method calls\n  - iOS atTime parameter was incorrectly treated as relative delay instead of absolute device time\n  - Android and Web didn't emit completion events, causing demo UI to not show \"last recording\"\n  - Android required manual re-preparation between recordings, unlike iOS/Web\n  - Manual recordin…",
+      "url": "https://github.com/expo/expo/pull/38612",
+      "mergedAt": "2025-08-07T17:40:46Z",
+      "additions": 299,
+      "deletions": 53,
+      "files": 26,
+      "diffPath": "diffs/expo-expo/38612.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/39788",
+          "sha": null,
+          "mentionedInBody": "regression introduced in #38612"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 39603,
+      "headSha": "5502dcfe6ced4b9fe4adea90b0bed3ada6391449",
+      "title": "fix(metro-runtime): Prevent version skew for `@expo/metro-runtime` and allow auto-installs",
+      "bodyExcerpt": "# Why\n\nWe don't want users to have to install `@expo/metro-runtime` explicitly. It's already installed in `expo-router` and mostly optional otherwise. The requirements for web exports have moved into expo/CLI (e.g. `async-require`)\n\n# How\n\nMove it into `expo-router`'s peers.\n\nSince we can move this to be an (auto-installed) peer dependency in `expo-router`, it'll now be guaranteed to be installed in `expo-router` projects, and since it's an optional peer dependency in `expo`, we can resolve it from there as needed. Fallback resolution was added to `@expo/metro-config` to capture this behaviour…",
+      "url": "https://github.com/expo/expo/pull/39603",
+      "mergedAt": "2025-09-12T12:14:35Z",
+      "additions": 51,
+      "deletions": 10,
+      "files": 8,
+      "diffPath": "diffs/expo-expo/39603.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/39644",
+          "sha": null,
+          "mentionedInBody": "regression from #39603"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 39617,
+      "headSha": "d9a86dfa1131f229e0dea64532d36cd54a761f1a",
+      "title": "[ios][expo-ui] Add LabeledContent View",
+      "bodyExcerpt": "# Why\n\n[LabeledContent](https://developer.apple.com/documentation/swiftui/labeledcontent) allows adding a label to custom views inside a Form\n\n# How\n\n- Created a new Swift view similar to Section view.\n- Kept modifiers props \n- Added label optional prop with `\"\"` fallback\n\n# Test Plan\n\nTested on Expo Bare app.\n\nhttps://github.com/user-attachments/assets/555674c2-9ebf-4d86-90da-570e74a21aca\n\n# Checklist\n\n<!--\nPlease check the appropriate items below if they apply to your diff.\n-->\n\n- [x] I added a `changelog.md` entry and rebuilt the package sources according to [this short guide](https://githu…",
+      "url": "https://github.com/expo/expo/pull/39617",
+      "mergedAt": "2025-09-13T21:43:58Z",
+      "additions": 96,
+      "deletions": 1,
+      "files": 10,
+      "diffPath": "diffs/expo-expo/39617.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/39694",
+          "sha": null,
+          "mentionedInBody": "broken by #39617"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 39826,
+      "headSha": "ca0ecec2227de57ae64376aeea88832eaeee2359",
+      "title": "chore: Bump `@expo/metro@54.1.0` for `metro@0.83.2`",
+      "bodyExcerpt": "# Why\n\nMaintenance release to move Expo over to [`metro@0.83.2`](https://github.com/facebook/metro/releases/tag/v0.83.2)\n\n# How\n\nEdit by @kitten:\n\n- Update import paths for types (several internals `/types.flow` paths changes to `/types`)\n- Update `hmrJSBundle` fork to support non-ASCII paths (`packages/@expo/metro-config/src/serializer/fork/hmrJSBundle.ts`)\n- `clientUrl` is now parsed as `URL` (`new URL`) rather than with `node:url` (deprecated)\n- Added `globalPrefix` parameter which is passed to `getRunModuleStatement` in serializer options\n- The `hot` parameter has been removed and is now a…",
+      "url": "https://github.com/expo/expo/pull/39826",
+      "mergedAt": "2025-10-20T14:44:03Z",
+      "additions": 393,
+      "deletions": 496,
+      "files": 92,
+      "diffPath": "diffs/expo-expo/39826.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/40774",
+          "sha": null,
+          "mentionedInBody": "regression from #39826"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 40748,
+      "headSha": "d387c243f2a5639daf15ccf5498171f0fa21a015",
+      "title": "[ui][ios] - add shape in background and label improvements",
+      "bodyExcerpt": "# Why\n\nThis PR adds shape support in `background` modifier and fixes `foregroundStyle` modifier in `Label`.\n\n@betomoedano reported some issues when building button component with label. \n\n<!--\nPlease describe the motivation for this PR, and link to relevant GitHub issues, forums posts, or feature requests.\n-->\n\n# How\n\nCreated a common ShapeType and used it for background and containerShape modifier\n<!--\nHow did you build this feature or fix this bug and why?\n-->\n\n# Test Plan\n\nAdded new examples\n<!--\nPlease describe how you tested this change and how a reviewer could reproduce your test, especi…",
+      "url": "https://github.com/expo/expo/pull/40748",
+      "mergedAt": "2025-11-03T16:34:41Z",
+      "additions": 304,
+      "deletions": 92,
+      "files": 26,
+      "diffPath": "diffs/expo-expo/40748.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/43158",
+          "sha": null,
+          "mentionedInBody": "introduced in #40748"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 42887,
+      "headSha": "4220cc5ac70d07e6aa1e5b2786bca83de0b87469",
+      "title": "[file-system][android] Fix copy/move support for SAF/content URIs",
+      "bodyExcerpt": "# Why\n\nLegacy FileSystem supported copying from SAF and other `content://` URIs. This is very limited or missing in the new file system - it relies heavily on `javaFile` which is usually not available for content URIs.\n\n# How\n\n- Added non-SAF `ContentProviderFile` implementation of `UnifiedFileInterface` to let FileSystem support some subset of common operations\n- Created a delegate to the unified interface that handles copying and moving between JavaFile, SAF, Asset and ContentProviderFile\n  - handled edge cases and optimizations (assets stay read-only; JavaFiles are atomically copied using n…",
+      "url": "https://github.com/expo/expo/pull/42887",
+      "mergedAt": "2026-03-04T12:16:40Z",
+      "additions": 1655,
+      "deletions": 21,
+      "files": 18,
+      "diffPath": "diffs/expo-expo/42887.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/42979",
+          "sha": null,
+          "mentionedInBody": "introduced in #42887"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 42981,
+      "headSha": "1a50a78a3237a1682ab2235e180461c6c0c0fb41",
+      "title": "[expo-updates-interface] Full native interface for updates",
+      "bodyExcerpt": "# Why\n\nFor observability/metrics, and for other use cases, we would like to have a more full featured native interface, so that third party modules can get information on the state of updates in a consistent way.\n\nPart of this work was added to `expo-updates-interface` earlier to support metrics. This PR adds to that, and provides a unified interface that works whether updates is enabled or disabled. The old interface used by dev launcher is renamed, and now inherits from the new unified interface.\n\nIn addition to providing information like the IDs of the running or the embedded update, the ne…",
+      "url": "https://github.com/expo/expo/pull/42981",
+      "mergedAt": "2026-02-14T02:20:13Z",
+      "additions": 611,
+      "deletions": 104,
+      "files": 37,
+      "diffPath": "diffs/expo-expo/42981.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/43230",
+          "sha": null,
+          "mentionedInBody": "introduced in #42981"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 44432,
+      "headSha": "20f2a772bb5cff6159c10f8b3d372ee58f15a3c9",
+      "title": "[media-library][next] Add presentPermissionsPicker",
+      "bodyExcerpt": "# Why\nAdd `presentPermissionsPicker` similar to the existing method in the legacy module.\n\nThis method is added without the Async suffix. I plan to follow up with a separate PR to remove the suffix from `getPermissionsAsync` and `requestPermissionsAsync`.\n\n# How\nAdd `presentPermissionsPicker()`\n\n# Test Plan\nTested on Bare Expo.",
+      "url": "https://github.com/expo/expo/pull/44432",
+      "mergedAt": "2026-04-24T14:42:56Z",
+      "additions": 105,
+      "deletions": 14,
+      "files": 24,
+      "diffPath": "diffs/expo-expo/44432.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/45071",
+          "sha": null,
+          "mentionedInBody": "introduced in #44432"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 45205,
+      "headSha": "564941c969ad2e078a72fa81710af68154d8a632",
+      "title": "[ui] Universal `TextInput`",
+      "bodyExcerpt": "# Why\n\nAdds a universal `TextInput` to `@expo/ui` that mirrors RN's [TextInput](https://reactnative.dev/docs/textinput) API but routes to SwiftUI TextField on iOS, Compose TextField on Android, and RN's `TextInput` on web.\n\n<!--\nPlease describe the motivation for this PR, and link to relevant GitHub issues, forums posts, or feature requests.\n-->\n\n# How\n\nBuilt on top of the existing `@expo/ui/swift-ui` and `@expo/ui/jetpack-compose` `TextField` / `SecureField` components. Most props pass through; a few needed new native plumbing (selection observable, `onGeometryChange` / `onSizeChanged` modifi…",
+      "url": "https://github.com/expo/expo/pull/45205",
+      "mergedAt": "2026-05-04T18:07:03Z",
+      "additions": 2612,
+      "deletions": 162,
+      "files": 65,
+      "diffPath": "diffs/expo-expo/45205.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/45571",
+          "sha": null,
+          "mentionedInBody": "introduced in #45205"
+        }
+      ]
+    },
+    {
+      "repo": "expo/expo",
+      "prNumber": 45249,
+      "headSha": "1fe293917e1cdf6d1ab63adbcd8b70c0a458e532",
+      "title": "[JSI] Add pnpm build and test scripts",
+      "bodyExcerpt": "## Why\n\n`expo-modules-jsi` had no straightforward way to run its Swift Testing suite — `swift test` failed because the package defers JSI/Hermes/React symbols to the host app, and there was no wrapper that wired everything up.\n\n## What\n\n- **`pnpm test`** — runs the full 447-test suite via `apple/scripts/test.sh`. Symlinks React / hermesvm / ReactNativeDependencies xcframeworks from `$PODS_ROOT` into `.test-frameworks/` so SwiftPM can register them as binary-target deps for the test target, then runs `xcodebuild test` against an iOS Simulator destination.\n- **`pnpm build`** — runs `apple/script…",
+      "url": "https://github.com/expo/expo/pull/45249",
+      "mergedAt": "2026-05-04T08:20:01Z",
+      "additions": 247,
+      "deletions": 30,
+      "files": 7,
+      "diffPath": "diffs/expo-expo/45249.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/expo/expo/pull/45253",
+          "sha": null,
+          "mentionedInBody": "introduced in #45249"
+        }
+      ]
+    },
+    {
+      "repo": "getsentry/sentry-javascript",
+      "prNumber": 12721,
+      "headSha": "e4ffdfd9493fbb1a7d34d3a8004906e9d7af3240",
+      "title": "feat(nestjs): Add function-level span decorator to nestjs",
+      "bodyExcerpt": "Adds a decorator @SentryTraced() to the nestjs sdk that can be used on functions to wrap them in a span.\n\nManual test from my sample application see screenshot below.\n\n![Screenshot 2024-07-02 at 13 58 51](https://github.com/getsentry/sentry-javascript/assets/29484629/c739077d-1b07-4d46-bdf1-16b8e7fcc9dc)\n\n+ e2e test\n+ README update with short example demonstrating how to use this feature",
+      "url": "https://github.com/getsentry/sentry-javascript/pull/12721",
+      "mergedAt": "2024-07-04T13:50:47Z",
+      "additions": 149,
+      "deletions": 0,
+      "files": 6,
+      "diffPath": "diffs/getsentry-sentry-javascript/12721.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/getsentry/sentry-javascript/pull/12879",
+          "sha": null,
+          "mentionedInBody": "introduced in #12721"
+        }
+      ]
+    },
+    {
+      "repo": "getsentry/sentry-javascript",
+      "prNumber": 17539,
+      "headSha": "0dc5c8bbca505a9cda43380a3b3ff11dc5d8cc26",
+      "title": "feat(cloudflare): Introduce lock instrumentation for `context.waitUntil` to prevent multiple instrumentation",
+      "bodyExcerpt": "fixes #17514 \nP.S.: It would be better to avoid \"side effects\" of instrumentation process. But it will require more changes and deeply tested.",
+      "url": "https://github.com/getsentry/sentry-javascript/pull/17539",
+      "mergedAt": "2025-09-16T08:47:12Z",
+      "additions": 300,
+      "deletions": 158,
+      "files": 14,
+      "diffPath": "diffs/getsentry-sentry-javascript/17539.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/getsentry/sentry-javascript/pull/17666",
+          "sha": null,
+          "mentionedInBody": "reverts #17539"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 41666,
+      "headSha": "fb89ea9051f6dacd9e3e7118e3c2f14da49e6d52",
+      "title": "[material-ui][ButtonGroup] Convert to support CSS extraction",
+      "bodyExcerpt": "<!-- Thanks so much for your PR, your contribution is appreciated! ❤️ -->\n\n- [x] I have followed (at least) the [PR section of the contributing guide](https://github.com/mui/material-ui/blob/HEAD/CONTRIBUTING.md#sending-a-pull-request).\n\nPart of https://github.com/mui/material-ui/issues/41273\n\n![image](https://github.com/mui/material-ui/assets/37222944/cf19c594-f584-4659-8a07-158a77e00b30)",
+      "url": "https://github.com/mui/material-ui/pull/41666",
+      "mergedAt": "2024-03-29T03:56:54Z",
+      "additions": 282,
+      "deletions": 110,
+      "files": 6,
+      "diffPath": "diffs/mui-material-ui/41666.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/mui/material-ui/pull/47499",
+          "sha": null,
+          "mentionedInBody": "regression from #41666"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 44254,
+      "headSha": "b6b60f085652396b9cbad3e6d9ccb7f81fc13a7c",
+      "title": "[internal] perf: sx",
+      "bodyExcerpt": "Improve `sx` performance by removing allocations.\n\n\n[Example user code](https://gist.github.com/romgrk/03bd148e5e93e5a166b3f195e86562fd):\n```\nBefore: 23.4ms +-1.6\nAfter:  15.2ms +-1.1\n\nn=100\n```\n\nWe get roughly **35% less rendering time** for the example above which makes heavy use of the `sx` prop, so I guess user-code would see something in the 0-40% less rendering time depending on how much they use that prop.\n\nWe can still get a lot more improvement by eliminating more memory allocations (I think we can get that example to at least 50% less rendering time), but the remaining changes would …",
+      "url": "https://github.com/mui/material-ui/pull/44254",
+      "mergedAt": "2026-03-25T06:10:17Z",
+      "additions": 680,
+      "deletions": 413,
+      "files": 25,
+      "diffPath": "diffs/mui-material-ui/44254.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/mui/material-ui/pull/48266",
+          "sha": null,
+          "mentionedInBody": "Regression from #44254"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 45596,
+      "headSha": "e7de780482d9060bf9e041130bf3ed6fdbef56d0",
+      "title": "[material-nextjs] Add option to enable CSS layers for pages router",
+      "bodyExcerpt": "<!-- Thanks so much for your PR, your contribution is appreciated! ❤️ -->\n\n**Docs**: https://deploy-preview-45596--material-ui.netlify.app/material-ui/integrations/nextjs/#pages-router\n\ncloses #45220\n\npart of #44700\n\n## Motivation\n\nTo unblock Tailwind CSS v4 integration. Only pages router is missing this option.\n\n> Next.js App router and Vite (via `StyledEngineProvider`) are already supported.\n\n## Changes for `@mui/material-nextjs`\n\n### export `createEmotionCache`\n\nAdd option `enableCssLayer` to pages router `createEmotionCache` and reexport it.\nThe logic of CSS layer wrapping is the same as A…",
+      "url": "https://github.com/mui/material-ui/pull/45596",
+      "mergedAt": "2025-04-11T03:21:01Z",
+      "additions": 464,
+      "deletions": 199,
+      "files": 12,
+      "diffPath": "diffs/mui-material-ui/45596.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/mui/material-ui/pull/46408",
+          "sha": null,
+          "mentionedInBody": "regression from #45596"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 46489,
+      "headSha": "91a5b21cedc38dc13dc7e2f5358923d9eaae9d28",
+      "title": "[autocomplete] Fix auto highlight when options change but not the length",
+      "bodyExcerpt": "<!-- Thanks so much for your PR, your contribution is appreciated! ❤️ -->\n\n- [x] I have followed (at least) the [PR section of the contributing guide](https://github.com/mui/material-ui/blob/HEAD/CONTRIBUTING.md#sending-a-pull-request).\n\nFixes #33634\n\nBefore: https://stackblitz.com/edit/github-cfngmona-qpp5b5ev\nAfter: https://stackblitz.com/edit/github-cfngmona-urwg9d2g\n\n----\n\nFixes #45279\n\nBefore: https://stackblitz.com/edit/github-cfngmona\nAfter: https://stackblitz.com/edit/github-cfngmona-azw9frdq\n\n----\nI think it is due to the dependency [filteredOptions.length of syncHighlightedIndex](htt…",
+      "url": "https://github.com/mui/material-ui/pull/46489",
+      "mergedAt": "2025-08-04T02:37:38Z",
+      "additions": 75,
+      "deletions": 4,
+      "files": 2,
+      "diffPath": "diffs/mui-material-ui/46489.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/mui/material-ui/pull/46894",
+          "sha": null,
+          "mentionedInBody": "introduced in #46489"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 46869,
+      "headSha": "186b877a047c9687934c8df9e6fcc99d7d1823dd",
+      "title": "[Tabs] Fix not scrolling to correct tab after refresh when auto scrollable",
+      "bodyExcerpt": "- [x] I have followed (at least) the [PR section of the contributing guide](https://github.com/mui/material-ui/blob/HEAD/CONTRIBUTING.md#sending-a-pull-request).\n\nFixes #44211 \nFixes #40692\n\nRoot cause - \nWhen the scroll happened the calculation for the position was not accounting for the width/height of the tab\n\nThe fix includes ltr, since rtl has lot of issues that needs to fixed alongside the current fix\n\n\n## Original issue - \n![issue](https://github.com/user-attachments/assets/e6ee400c-632a-49cd-8980-31d144fa8aff)\n\n\n\n\n\n## Resolved - \n![fix](https://github.com/user-attachments/assets/0c7ec4…",
+      "url": "https://github.com/mui/material-ui/pull/46869",
+      "mergedAt": "2025-09-28T10:23:04Z",
+      "additions": 123,
+      "deletions": 1,
+      "files": 6,
+      "diffPath": "diffs/mui-material-ui/46869.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/mui/material-ui/pull/47014",
+          "sha": null,
+          "mentionedInBody": "Revert #46869"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 47380,
+      "headSha": "e4a0c5f044a9dd520ce083892cfc4d2b92c595ee",
+      "title": "[select] Fix keyboard navigation while rendering in shadow DOM",
+      "bodyExcerpt": "<!-- Thanks so much for your PR, your contribution is appreciated! ❤️ -->\n\n- [x] I have followed (at least) the [PR section of the contributing guide](https://github.com/mui/material-ui/blob/HEAD/CONTRIBUTING.md#sending-a-pull-request).\n\nThis pull request fixes issues with focus handling and keyboard navigation in the Select component, when used within a ShadowDOM. It ensures that keyboard interactions work as expected.\n\nAlso, this PR is based on work from #46775, and I want to give a shoutout to the original author. That PR was unfortunately closed, and since it became inactive, I decided to …",
+      "url": "https://github.com/mui/material-ui/pull/47380",
+      "mergedAt": "2025-12-01T07:21:10Z",
+      "additions": 71,
+      "deletions": 13,
+      "files": 3,
+      "diffPath": "diffs/mui-material-ui/47380.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/mui/material-ui/pull/47566",
+          "sha": null,
+          "mentionedInBody": "Regression from #47380"
+        }
+      ]
+    },
+    {
+      "repo": "mui/material-ui",
+      "prNumber": 47685,
+      "headSha": "9da3f78ced31d67ff902d353be252fa8af43de93",
+      "title": "[code-infra] Upgrade react-docgen to v8",
+      "bodyExcerpt": "- Remove unnecessary types\n- Small fixes for changes in v6, v7 and v8\n- Should support newer typescript\n- Most stuff done by claude\n- There is a lot of `prop?.` that are needed, we weren't taking that they were undefined before, current types should be better as they come from the lib\n- There is also an issue where the actual typedocs are duplicated if the props of an object are declared multiple times. [hover on the prop value](https://www.typescriptlang.org/play/?#code/C4TwDgpgBAglC8UDeAoK6oHoBU20amygE0IJh8MjL0iABAEwgDMBDAVwBtgoBGGwphpgATgHswALigA7dgFsARhBEBuFAF8UKUJCgAhBMho48BQiTFiK56raiMWH…",
+      "url": "https://github.com/mui/material-ui/pull/47685",
+      "mergedAt": "2026-02-24T12:23:56Z",
+      "additions": 609,
+      "deletions": 620,
+      "files": 30,
+      "diffPath": "diffs/mui-material-ui/47685.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/mui/material-ui/pull/48304",
+          "sha": null,
+          "mentionedInBody": "introduced in #47685"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 23147,
+      "headSha": "b212ad00f53506e91c7ec1470f339c17a2407a2c",
+      "title": "fix(linter): fix migrating projects with the eslint plugin",
+      "bodyExcerpt": "<!-- Please make sure you have read the submission guidelines before posting an PR -->\n<!-- https://github.com/nrwl/nx/blob/master/CONTRIBUTING.md#-submitting-a-pr -->\n\n<!-- Please make sure that your commit message follows our format -->\n<!-- Example: `fix(nx): must begin with lowercase` -->\n\n## Current Behavior\n<!-- This is the behavior we have today -->\n\nCreating a new project with ESLint is mistakenly creating a `eslint.base.config.js`.\n\n## Expected Behavior\n<!-- This is the behavior we should expect with the changes in this PR -->\n\nCreating a new project with ESLint only creates a `eslint…",
+      "url": "https://github.com/nrwl/nx/pull/23147",
+      "mergedAt": "2024-05-13T18:27:56Z",
+      "additions": 39,
+      "deletions": 31,
+      "files": 4,
+      "diffPath": "diffs/nrwl-nx/23147.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/35296",
+          "sha": null,
+          "mentionedInBody": "introduced in #23147"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 32947,
+      "headSha": "ab33bbc8e97ebfc1e38776ba36be551ea3b99002",
+      "title": "feat(maven): introduce maven plugin",
+      "bodyExcerpt": "<!-- Please make sure you have read the submission guidelines before posting an PR -->\n<!-- https://github.com/nrwl/nx/blob/master/CONTRIBUTING.md#-submitting-a-pr -->\n\n<!-- Please make sure that your commit message follows our format -->\n<!-- Example: `fix(nx): must begin with lowercase` -->\n\n<!-- If this is a particularly complex change or feature addition, you can request a dedicated Nx release for this pull request branch. Mention someone from the Nx team or the `@nrwl/nx-pipelines-reviewers` and they will confirm if the PR warrants its own release for testing purposes, and generate it for…",
+      "url": "https://github.com/nrwl/nx/pull/32947",
+      "mergedAt": "2025-10-20T22:52:31Z",
+      "additions": 6462,
+      "deletions": 363,
+      "files": 76,
+      "diffPath": "diffs/nrwl-nx/32947.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/33157",
+          "sha": null,
+          "mentionedInBody": "introduced in #32947"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 34446,
+      "headSha": "e7a9491f28a076c984fee123b440863ddb46bae7",
+      "title": "fix(core): batch-safe hashing for maven and gradle",
+      "bodyExcerpt": "## Current Behavior\n\nIn batch mode (Maven/Gradle), all task hashes are computed upfront in `processScheduledBatch` before the batch executor runs any tasks. Tasks with `dependentTasksOutputFiles` (aka `depsOutputs`) get hashed using whatever dependency outputs happen to be on disk from a previous run. This leads to:\n\n- **False cache hits**: If a dependency's sources changed but its old outputs are still on disk, the dependent task's hash matches a stale cache entry and wrong results are served.\n- **False cache misses**: On cold runs with no outputs on disk, the hash is computed without depende…",
+      "url": "https://github.com/nrwl/nx/pull/34446",
+      "mergedAt": "2026-03-06T22:28:37Z",
+      "additions": 176,
+      "deletions": 83,
+      "files": 10,
+      "diffPath": "diffs/nrwl-nx/34446.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/34764",
+          "sha": null,
+          "mentionedInBody": "regression from #34446"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 34623,
+      "headSha": "f2fcb1efb89dc645c8587a5ccaf10de85e298690",
+      "title": "fix(core): ensure postTasksExecution fires on SIGINT for continuous tasks",
+      "bodyExcerpt": "## Current Behavior\n\nWhen pressing Ctrl+C on continuous tasks (e.g., `nx run app:serve`), `postTasksExecution` never fires or fires with incomplete task results. This affects any plugin or custom lifecycle hook relying on `postTasksExecution` to perform cleanup, reporting, or post-run logic.\n\nThe issue manifests in non-TUI mode (`NX_TUI=false`) and in setups where nx runs as a child of a package manager (pnpm/npm), which sends SIGTERM shortly after SIGINT.\n\n## Expected Behavior\n\n`postTasksExecution` fires reliably on Ctrl+C with complete task results, regardless of whether TUI is enabled or ho…",
+      "url": "https://github.com/nrwl/nx/pull/34623",
+      "mergedAt": "2026-03-16T15:52:27Z",
+      "additions": 77,
+      "deletions": 47,
+      "files": 2,
+      "diffPath": "diffs/nrwl-nx/34623.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/nrwl/nx/pull/34869",
+          "sha": null,
+          "mentionedInBody": "reverts #34623"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 34669,
+      "headSha": "4ea931deb04d97750b91e2ee8cca9bdc5b09be6a",
+      "title": "feat(nx-dev): add YouTube channel callout to courses page",
+      "bodyExcerpt": "## Current Behavior\n\n[The courses page](https://deploy-preview-34669--nx-dev.netlify.app/courses) has a hero section with title and subtitle but no mention of the YouTube channel for one-off educational videos.\n\n## Expected Behavior\n\nA subtle callout link with a YouTube icon appears below the hero subtitle, directing users to the Nx YouTube channel for one-off educational videos.\n\n## Related Issue(s)\n\nN/A",
+      "url": "https://github.com/nrwl/nx/pull/34669",
+      "mergedAt": "2026-03-05T16:31:46Z",
+      "additions": 13,
+      "deletions": 0,
+      "files": 2,
+      "diffPath": "diffs/nrwl-nx/34669.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/34730",
+          "sha": null,
+          "mentionedInBody": "introduced by #34669"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 34850,
+      "headSha": "51041b9a9f534b354a978a09d7be7f37f312e508",
+      "title": "fix(vite): add support for Vite 8",
+      "bodyExcerpt": "## Current Behavior\n\nThe `@nx/vite` plugin only supports Vite 5, 6, and 7. Users on Vite 8 get peer dependency errors:\n\n```\npeer vite@\"^5.0.0 || ^6.0.0 || ^7.0.0\" from @nx/vite\n```\n\n## Expected Behavior\n\nFull Vite 8 support for new and existing workspaces:\n\n**Nx plugin support:**\n- Update peer deps to include `^8.0.0` in `@nx/vite` and `@nx/vitest`\n- Default new workspaces to Vite 8 (`viteVersion = '^8.0.0'`)\n- Bump `@vitejs/plugin-react` to `^6.0.0` (required for Vite 8, uses Oxc instead of Babel)\n- Add `useViteV7` backward compatibility flag (follows existing `useViteV5`/`useViteV6` pattern)…",
+      "url": "https://github.com/nrwl/nx/pull/34850",
+      "mergedAt": "2026-03-25T19:58:44Z",
+      "additions": 1299,
+      "deletions": 478,
+      "files": 46,
+      "diffPath": "diffs/nrwl-nx/34850.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/35586",
+          "sha": null,
+          "mentionedInBody": "introduced in #34850"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 34968,
+      "headSha": "124e7ed92534f87e72d15a513b72b21fbed63e9b",
+      "title": "fix(js): add input on .d.ts files within dependency projects",
+      "bodyExcerpt": "This pull request makes a targeted improvement to how TypeScript dependency tracking is handled in the build system. Specifically, it ensures that all `*.d.ts` files from dependent projects are included as inputs, improving type safety and correctness in incremental builds.\n\nDependency tracking improvements:\n\n* Updated the `getInputs` function in `plugin.ts` to add all `*.d.ts` files from dependencies as tracked inputs, ensuring that changes to type definition files in dependent projects are properly detected and trigger rebuilds.",
+      "url": "https://github.com/nrwl/nx/pull/34968",
+      "mergedAt": "2026-03-25T15:55:59Z",
+      "additions": 370,
+      "deletions": 1,
+      "files": 2,
+      "diffPath": "diffs/nrwl-nx/34968.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/35037",
+          "sha": null,
+          "mentionedInBody": "regression from #34968"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 35172,
+      "headSha": "2133b83634ae497eb74c3fbee24fcdbdbd110783",
+      "title": "fix(core): optimize warm cache performance for task execution",
+      "bodyExcerpt": "## Current Behavior\n\nRunning cached tasks in a large workspace takes much longer than the work actually warrants. The task orchestrator hashes, cache-checks, schedules, and reports each task individually:\n\n- Per-task JS→Rust→SQLite cache lookups (~N boundary crossings).\n- Per-task daemon IPC calls for recording/matching output hashes (~2N sequential round-trips).\n- Per-task filesystem scans for output expansion.\n- `TasksSchedule` re-sorts the full schedule array on every insert (O(n²·log n)).\n- The coordinator awaits each worker one at a time via a single-task dispatch path.\n\nOn a 1,110-projec…",
+      "url": "https://github.com/nrwl/nx/pull/35172",
+      "mergedAt": "2026-04-15T21:50:28Z",
+      "additions": 1204,
+      "deletions": 450,
+      "files": 33,
+      "diffPath": "diffs/nrwl-nx/35172.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/35322",
+          "sha": null,
+          "mentionedInBody": "introduced by #35172"
+        }
+      ]
+    },
+    {
+      "repo": "nrwl/nx",
+      "prNumber": 35638,
+      "headSha": "117a1662edbb0832624b7fe3ec5f53f8d309f840",
+      "title": "feat(core): support `prompt` field in migration entries",
+      "bodyExcerpt": "## Current Behavior\n\nMigration entries in a plugin's `migrations.json` can only declare an `implementation` or `factory` pointing at TypeScript code. To ship a Markdown prompt as the migration content, plugins currently have to write a small generator that calls `tree.write(...)` to drop the `.md` file into the workspace, which adds boilerplate and an extra layer for every prompt-based migration.\n\n## Expected Behavior\n\nA migration entry can declare a `prompt` field — the relative path to a Markdown file shipped with the plugin (resolved from the directory of `migrations.json`) — as an alternat…",
+      "url": "https://github.com/nrwl/nx/pull/35638",
+      "mergedAt": "2026-05-14T14:51:20Z",
+      "additions": 731,
+      "deletions": 21,
+      "files": 4,
+      "diffPath": "diffs/nrwl-nx/35638.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/nrwl/nx/pull/35700",
+          "sha": null,
+          "mentionedInBody": "introduced in #35638"
+        }
+      ]
+    },
+    {
+      "repo": "prisma/prisma",
+      "prNumber": 24554,
+      "headSha": "bcb05f6b4df48e8c2f2354963056bd5efee1df4a",
+      "title": "feat(client): provide a workaround for Vitest's struggles with `getQueryEngineWasmModule`",
+      "bodyExcerpt": "This PR fixes https://github.com/prisma/prisma/issues/23911.\n\n---\n\nIt seems that `vitest` is incompatible with conditional dynamic module imports, which we use to resolve `import('#wasm-engine-loader')` to different modules depending on the JavaScript runtime that loads the module itself.\nWhen `@prisma/client` (with Wasm `driverAdapters`) is run through `vitest`, we get a runtime error:\n> \"No such module .prisma/client/#wasm-engine-loader\".\n\nIt looks like `#wasm-engine-loader` is interpreted as a physical file to load, rather than an abstract dynamic import tag. This is inconsistent with how N…",
+      "url": "https://github.com/prisma/prisma/pull/24554",
+      "mergedAt": "2024-06-25T09:52:45Z",
+      "additions": 22,
+      "deletions": 7,
+      "files": 1,
+      "diffPath": "diffs/prisma-prisma/24554.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/prisma/prisma/pull/24730",
+          "sha": null,
+          "mentionedInBody": "introduced in #24554"
+        }
+      ]
+    },
+    {
+      "repo": "prisma/prisma",
+      "prNumber": 29182,
+      "headSha": "255bc727fd5a94e563e1e0669cb0939f507e39fc",
+      "title": "fix: add missing deserialization for JSON values",
+      "bodyExcerpt": "[TML-1901](https://linear.app/prisma-company/issue/TML-1901/investigate-and-fix-jsonb-regression-in-74)\nFixes https://github.com/prisma/prisma/issues/29174\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Bug Fixes**\n  * Fixed JSON date deserialization in JSONB parameter fields to preserve date formatting and custom type info.\n\n* **Refactor**\n  * Renamed exported deserialization function for clearer naming.\n  * Raw JSON values are now preserved during deserialization.\n  * Changed default behavior to wrap raw values during JSON serializat…",
+      "url": "https://github.com/prisma/prisma/pull/29182",
+      "mergedAt": "2026-02-18T12:14:55Z",
+      "additions": 135,
+      "deletions": 26,
+      "files": 10,
+      "diffPath": "diffs/prisma-prisma/29182.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/prisma/prisma/pull/29268",
+          "sha": null,
+          "mentionedInBody": "introduced in #29182"
+        }
+      ]
+    },
+    {
+      "repo": "TanStack/query",
+      "prNumber": 8521,
+      "headSha": "2b07bbeba8230b0e4bae6d9154d5402691ff8725",
+      "title": "feat(types): support typing `QueryKey` and `MutationKey` via `Register`",
+      "bodyExcerpt": "Follow-on from https://github.com/TanStack/query/discussions/8495\n\nThis PR extends the use of the `Register` interface so that it can narrow the type of `QueryKey` and `MutationKey`, for situations where users of the library want to enforce a hierarchy of keys at the lowest-level possible.",
+      "url": "https://github.com/TanStack/query/pull/8521",
+      "mergedAt": "2025-01-10T15:47:08Z",
+      "additions": 38,
+      "deletions": 2,
+      "files": 2,
+      "diffPath": "diffs/TanStack-query/8521.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/TanStack/query/pull/10601",
+          "sha": null,
+          "mentionedInBody": "introduced in #8521"
+        }
+      ]
+    },
+    {
+      "repo": "TanStack/query",
+      "prNumber": 10452,
+      "headSha": "0649ccb030238f990ada9274cba6706dc0716efa",
+      "title": "fix(vue-query): fix type of queryOptions to allow plain properies or getters",
+      "bodyExcerpt": "## 🎯 Changes\n\n<!-- What changes are made in this PR? Describe the change and its motivation. -->\nFixes: https://github.com/TanStack/query/issues/7892\n\n## ✅ Checklist\n\n- [ ] I have followed the steps in the [Contributing guide](https://github.com/TanStack/query/blob/main/CONTRIBUTING.md).\n- [ ] I have tested this code locally with `pnpm run test:pr`.\n\n## 🚀 Release Impact\n\n- [ ] This change affects published code, and I have generated a [changeset](https://github.com/changesets/changesets/blob/main/docs/adding-a-changeset.md).\n- [ ] This change is docs/CI/dev-only (no release).\n\n\n<!-- This is …",
+      "url": "https://github.com/TanStack/query/pull/10452",
+      "mergedAt": "2026-04-11T16:01:35Z",
+      "additions": 186,
+      "deletions": 20,
+      "files": 9,
+      "diffPath": "diffs/TanStack-query/10452.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/TanStack/query/pull/10465",
+          "sha": null,
+          "mentionedInBody": "regression from #10452"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 4863,
+      "headSha": "0f01fbc8ec02c3531ae5587796a932ced05c5455",
+      "title": "fix(dotcom): only cache assets from the current deploy",
+      "bodyExcerpt": "We keep getting these weird 'Failed to fetch dynamically imported module' errors after deploys. From some debugging this time around, it looks like this is maybe related to cloudflare caching 404 responses, then continuing to server 404s long after they're no longer valid.\n\nThis was happening because we were setting an immutable cache-control header on all requests to /assets/ regardless of whether or not they were successful. This diff removes that blanket header, and instead only applies it to assets that we know definitely exist.\n\n### Change type\n\n- [x] `other` (or improvement, feature, api…",
+      "url": "https://github.com/tldraw/tldraw/pull/4863",
+      "mergedAt": "2024-11-07T18:43:40Z",
+      "additions": 47,
+      "deletions": 5,
+      "files": 3,
+      "diffPath": "diffs/tldraw-tldraw/4863.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/8291",
+          "sha": null,
+          "mentionedInBody": "introduced in #4863"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 6466,
+      "headSha": "185a84ef25515afe477c714e0c49441c0c24b1e5",
+      "title": "refactor: flatten color theme object and add getColorValue",
+      "bodyExcerpt": "This PR flattens the color theme object and introduces a new helper, `getColorValue`, that helps pull a color from the theme. This should actually make #6462 (and other color-related work) much more practical.\n\n## Flattening `DefaultColorThemePalette`\n\nThis PR flattens the `DefaultColorThemePalette`, removing the nested properties and renaming them instead.\n\n```ts\ntheme.black.frame.fill\n```\n\nBecomes\n\n```ts\ntheme.black.frameFill\n```\n\n## `getColorValue`\n\nThis pull request standardizes and simplifies how color values are accessed throughout the codebase by introducing and consistently using the n…",
+      "url": "https://github.com/tldraw/tldraw/pull/6466",
+      "mergedAt": "2025-08-08T20:21:27Z",
+      "additions": 367,
+      "deletions": 476,
+      "files": 21,
+      "diffPath": "diffs/tldraw-tldraw/6466.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/6587",
+          "sha": null,
+          "mentionedInBody": "Introduced in #6466"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 7364,
+      "headSha": "5de63571b8132032a903a4010170a4c241cc5038",
+      "title": "feat(tlschema)!: compress draw shape points with base64/Float16",
+      "bodyExcerpt": "This PR reduces the storage size of draw and highlight shapes by encoding point data as base64 strings using Float16 representation instead of JSON arrays of VecModel objects.\n\nEach point (x, y, z) is now encoded as 6 bytes (3 Float16 values) = 8 base64 characters, compared to approximately 40+ bytes per point in the previous JSON format. This results in roughly 80% smaller storage for freehand drawings.\n\n**Key changes:**\n\n1. **b64Vecs encoding utilities** - New class with optimized lookup tables for O(1) Float16/base64 conversion\n\n2. **Schema changes** - TLDrawShapeSegment.points is now a bas…",
+      "url": "https://github.com/tldraw/tldraw/pull/7364",
+      "mergedAt": "2025-12-12T23:05:15Z",
+      "additions": 962,
+      "deletions": 1619,
+      "files": 35,
+      "diffPath": "diffs/tldraw-tldraw/7364.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/7365",
+          "sha": null,
+          "mentionedInBody": "introduced in #7364"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 7681,
+      "headSha": "b8651045841130e48da93d975be8e06e0a89592f",
+      "title": "feature(laser): implement telestrator pattern for laser pointer",
+      "bodyExcerpt": "In order to make the laser pointer behave like a telestrator (where all annotations remain visible until the user stops drawing), this PR adds session management to the ScribbleManager. Closes #7579.\n\nPreviously, each laser stroke segment would fade independently after a delay, creating a \"trailing\" effect. Now, all laser strokes in a drawing session persist together and fade simultaneously when the user stops drawing.\n\n## Before\n![2026-01-12 at 17 32 13 - Olive Possum](https://github.com/user-attachments/assets/a5a14497-eb8a-460e-8cd7-c0f1f01e09cb)\n\n## After\n![2026-01-12 at 17 30 30 - Yellow …",
+      "url": "https://github.com/tldraw/tldraw/pull/7681",
+      "mergedAt": "2026-01-26T22:04:03Z",
+      "additions": 1422,
+      "deletions": 770,
+      "files": 11,
+      "diffPath": "diffs/tldraw-tldraw/7681.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/7760",
+          "sha": null,
+          "mentionedInBody": "introduced in #7681"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 7708,
+      "headSha": "0eabd14fcb029b49005436fb0e6649d559df52c3",
+      "title": "feat: add 2D canvas rendering for shape indicators",
+      "bodyExcerpt": "Implements canvas-based rendering for shape indicators with indicator2d methods across all shape utilities.\n\n* I've also added some throwaway logging (enabled with the debug menu) for those reviewing to see the per improvements. I'm seeing around 25x increases as well as the time we save mounting/unmounting on page load.\n* I've added a new method to the `ShapeUtil` and a new type to allow for more complex shape drawing (arrows require clip paths for the label etc)\n\nI've also appended a snippet that you can run in the console which will create a bunch of shapes to test out the new feature too.\n…",
+      "url": "https://github.com/tldraw/tldraw/pull/7708",
+      "mergedAt": "2026-01-27T21:20:53Z",
+      "additions": 720,
+      "deletions": 26,
+      "files": 26,
+      "diffPath": "diffs/tldraw-tldraw/7708.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/8573",
+          "sha": null,
+          "mentionedInBody": "introduced in #7708"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 7880,
+      "headSha": "4cb539be6c90113d98dc660298b03d35c8c700be",
+      "title": "feat(tldraw): sanitize SVG content with DOMPurify",
+      "bodyExcerpt": "Closes #7876\n\nSVG files pasted/dropped into tldraw had no sanitization. The main risk is `defaultHandleExternalSvgTextContent()` which parses SVG with DOMParser, temporarily appends to `document.body` for measurement (potential script execution), and stores raw SVG text as an asset. While `<img>` rendering sandboxes scripts, SVGs served from the same origin as the host app (e.g. via a same-domain asset store) can bypass this and execute arbitrary code. This PR adds defense-in-depth sanitization using [DOMPurify](https://github.com/cure53/DOMPurify) — the industry-standard XSS sanitizer with fi…",
+      "url": "https://github.com/tldraw/tldraw/pull/7880",
+      "mergedAt": "2026-02-11T13:36:30Z",
+      "additions": 407,
+      "deletions": 10,
+      "files": 3,
+      "diffPath": "diffs/tldraw-tldraw/7880.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/tldraw/tldraw/pull/7886",
+          "sha": null,
+          "mentionedInBody": "Reverts #7880"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 7885,
+      "headSha": "fbc1addd6f11659cdd0c3a95e00e6c30260aa3b0",
+      "title": "feat(ui): add fill styles dropdown to style panel",
+      "bodyExcerpt": "In order to expose additional fill styles (pattern, fill, lined-fill) that were previously hidden from the UI, this PR replaces the 4th fill button with a dropdown picker. The first three fill options (none, semi, solid) remain as inline buttons, following the same pattern used by the vertical alignment dropdown.\n\nCloses #7578\n\nhttps://github.com/user-attachments/assets/13b1969f-2719-422d-8023-61ca21272c35\n\n### Change type\n\n- [x] `improvement`\n\n### Test plan\n\n1. Select a shape that supports fill (e.g. geo shape)\n2. Verify none, semi, solid buttons appear as inline buttons in the style panel\n3.…",
+      "url": "https://github.com/tldraw/tldraw/pull/7885",
+      "mergedAt": "2026-02-11T19:03:34Z",
+      "additions": 54,
+      "deletions": 24,
+      "files": 13,
+      "diffPath": "diffs/tldraw-tldraw/7885.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/7889",
+          "sha": null,
+          "mentionedInBody": "introduced in #7885"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 8306,
+      "headSha": "469f19783e5140d3eb288aae49e312504eb38d4c",
+      "title": "feat(embeds): support pasting arbitrary iframe embed codes",
+      "bodyExcerpt": "This PR allows pasting any `<iframe>` embed code onto the canvas to create an embed shape. Previously, only iframe URLs that matched a known embed definition (YouTube, Google Maps, etc.) would work, and the iframe had to be the only element in the pasted content. Now any valid iframe with an HTTP(S) src creates an embed directly.\n\n<img width=\"1456\" height=\"712\" alt=\"Screenshot 2026-03-20 at 18 11 27\" src=\"https://github.com/user-attachments/assets/df1cc534-04d7-4cd2-babf-6664c540a360\" />\n\n\nExamples that now work:\n- OpenStreetMap: `<iframe width=\"425\" height=\"350\" src=\"https://www.openstreetmap…",
+      "url": "https://github.com/tldraw/tldraw/pull/8306",
+      "mergedAt": "2026-04-01T09:44:23Z",
+      "additions": 296,
+      "deletions": 48,
+      "files": 3,
+      "diffPath": "diffs/tldraw-tldraw/8306.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/8404",
+          "sha": null,
+          "mentionedInBody": "introduced by #8306"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 8347,
+      "headSha": "8ab917bda673bfd377ab3bd41654963f84cabcee",
+      "title": "feat(paste): add Cmd+Shift+V to paste as plain text",
+      "bodyExcerpt": "Adds the standard `Cmd+Shift+V` / `Ctrl+Shift+V` shortcut to paste clipboard content as plain text, skipping HTML and rich content.\n\n**Breaking behavior change:** Previously, `Cmd+Shift+V` toggled paste-at-cursor positioning (added in #4088 for Autodesk). Since the \"Paste at cursor\" preference (#4066) now covers that use case, this repurposes `Cmd+Shift+V` for plain text paste — the standard shortcut in most apps. Users who relied on `Cmd+Shift+V` for paste-at-cursor should use the preference toggle instead.\n\n- **Preference off:** `Cmd+V` pastes at center, `Cmd+Shift+V` pastes plain text at ce…",
+      "url": "https://github.com/tldraw/tldraw/pull/8347",
+      "mergedAt": "2026-04-03T08:57:29Z",
+      "additions": 203,
+      "deletions": 13,
+      "files": 4,
+      "diffPath": "diffs/tldraw-tldraw/8347.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/8513",
+          "sha": null,
+          "mentionedInBody": "regression from #8347"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 8378,
+      "headSha": "57d204d9fc57af7002f45d5ba15c46d130c82bf6",
+      "title": "fix(shapes): fix shadow artifact and oversized caret on notes/geo at high zoom in dynamic size mode",
+      "bodyExcerpt": "In order to fix visual glitches with sticky notes and geo shapes in dynamic size mode at high zoom levels, this PR clamps the note shadow offset and switches both note and geo shape labels to use CSS `transform: scale()` instead of direct fontSize/padding multiplication.\n\n<img width=\"455\" height=\"328\" alt=\"image\" src=\"https://github.com/user-attachments/assets/c8a02fcd-5b26-4cd2-ad71-6be7bf445a75\" />\n<img width=\"272\" height=\"315\" alt=\"image\" src=\"https://github.com/user-attachments/assets/976ee4a2-d7f2-4200-a8b3-9a601697a6af\" />\n\n\nCloses #8377\n\n### Change type\n\n- [x] `bugfix`\n\n### Test plan\n\n1…",
+      "url": "https://github.com/tldraw/tldraw/pull/8378",
+      "mergedAt": "2026-04-04T10:09:23Z",
+      "additions": 18,
+      "deletions": 5,
+      "files": 2,
+      "diffPath": "diffs/tldraw-tldraw/8378.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/8570",
+          "sha": null,
+          "mentionedInBody": "introduced by #8378"
+        }
+      ]
+    },
+    {
+      "repo": "tldraw/tldraw",
+      "prNumber": 8501,
+      "headSha": "ae2d91d30f2cf1537d4c6c8683b82a2d8526ae9b",
+      "title": "feat(editor): right-click and drag to pan the camera",
+      "bodyExcerpt": "In order to support a common panning interaction from tools like Figma, this PR lets users pan the canvas with right-click + drag while keeping a static right-click as the trigger for the context menu. Enabled by default via the new `rightClickPanning` editor option (mirroring `spacebarPanning`) — set it to `false` to restore the old behavior where right-click opens the context menu on press with no drag-to-pan. Relates to #5808. Clean reimplementation of #7376.\n\nKey pieces:\n\n- Added `rightClickPanning` to `TldrawOptions` (defaults to `true`) and gated the right-click drag logic on it in `Edit…",
+      "url": "https://github.com/tldraw/tldraw/pull/8501",
+      "mergedAt": "2026-04-16T20:37:36Z",
+      "additions": 561,
+      "deletions": 101,
+      "files": 11,
+      "diffPath": "diffs/tldraw-tldraw/8501.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/tldraw/tldraw/pull/8772",
+          "sha": null,
+          "mentionedInBody": "introduced by #8501"
+        }
+      ]
+    },
+    {
+      "repo": "trpc/trpc",
+      "prNumber": 6098,
+      "headSha": "7eaf190ba75eb578742581a908907f3f144d4211",
+      "title": "fix(server): handle bad urls",
+      "bodyExcerpt": "Closes #6094\n\n## 🎯 Changes\n\nMakes all base HTTP handlers sync rather than async and handle exceptions\n\n\n- [x] Add regression test\n- [x] Fix regression test",
+      "url": "https://github.com/trpc/trpc/pull/6098",
+      "mergedAt": "2024-10-11T00:49:44Z",
+      "additions": 351,
+      "deletions": 153,
+      "files": 10,
+      "diffPath": "diffs/trpc-trpc/6098.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/trpc/trpc/pull/6140",
+          "sha": null,
+          "mentionedInBody": "introduced in #6098"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 55978,
+      "headSha": "22d75aa29c08a3b43bca8e8827742f52fb7926b5",
+      "title": "Fix stale revalidate stream handling",
+      "bodyExcerpt": "This ensures we don't block sending the stream down when handling stale revalidates, in edge runtime we leverage the existing `waitUntil` handling and in node.js runtime we couple this into our pipe readable handling to wait to close the writable until after the promise resolves. \n\nFixes: https://github.com/vercel/next.js/issues/54193",
+      "url": "https://github.com/vercel/next.js/pull/55978",
+      "mergedAt": "2023-09-25T20:50:01Z",
+      "additions": 158,
+      "deletions": 13,
+      "files": 13,
+      "diffPath": "diffs/vercel-next.js/55978.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vercel/next.js/pull/93189",
+          "sha": null,
+          "mentionedInBody": "introduced in #55978"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 81085,
+      "headSha": "a9ab76c2bb41f0e45b760af1c0bcd0c231831ec5",
+      "title": "[devtool] merge segment explorer flag into panel ui flag",
+      "bodyExcerpt": "- Using the same flag for enabling the new design of devtool\n- Fix the issue where the indicator was not showing up when error overlay popped up. The segment explorer used to enable on both legacy ui under a flag and the new ui. Since the new panel is ready to have the segment explorer with full feature, the legacy version with new UI can be dropped.\n\nCloses NEXT-4586",
+      "url": "https://github.com/vercel/next.js/pull/81085",
+      "mergedAt": "2025-07-01T13:35:21Z",
+      "additions": 50,
+      "deletions": 91,
+      "files": 20,
+      "diffPath": "diffs/vercel-next.js/81085.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/vercel/next.js/pull/81131",
+          "sha": null,
+          "mentionedInBody": "Reverts #81085"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 82069,
+      "headSha": "e1b42f5cbb6e1b5bd2dbef0f1f092f86f0250c4a",
+      "title": "[CacheComponents] Use fallback params when validating dynamic routes in dev",
+      "bodyExcerpt": "When validating a dynamic route in dev with Cache Components we must not use more params than would be know at build time because we want to ensure dev acts as an appropriate debug environment for build validation issues. Any time a validation fails for reasons other than fallback params it would have failed as well with fallback params. So we find the smallest set of fallback params that would be used during the build (which might be empty if you provide a complete set through generateStaticParams) and we use that.",
+      "url": "https://github.com/vercel/next.js/pull/82069",
+      "mergedAt": "2025-07-28T23:13:21Z",
+      "additions": 764,
+      "deletions": 15,
+      "files": 25,
+      "diffPath": "diffs/vercel-next.js/82069.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vercel/next.js/pull/82173",
+          "sha": null,
+          "mentionedInBody": "introduced in #82069"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 83944,
+      "headSha": "7a31d80e97ea8245fa6781d8eacb7d1b9f635db2",
+      "title": "[Breaking] Remove deprecated `publicRuntimeConfig` and `serverRuntimeConfig`",
+      "bodyExcerpt": "This PR removed the deprecated runtime configs.\n\nhttps://github.com/vercel/next.js/blob/74b226fe4afc7149901affc3c005476e9e592315/docs/02-pages/04-api-reference/04-config/01-next-config-js/runtime-configuration.mdx#L6-L8\n\nThis way, we can use the serialized next config for the prod server.",
+      "url": "https://github.com/vercel/next.js/pull/83944",
+      "mergedAt": "2025-09-22T18:11:58Z",
+      "additions": 12,
+      "deletions": 477,
+      "files": 48,
+      "diffPath": "diffs/vercel-next.js/83944.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "revert",
+          "url": "https://github.com/vercel/next.js/pull/84167",
+          "sha": null,
+          "mentionedInBody": "reverts #83944"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 84088,
+      "headSha": "d398571efcb391ffe5da43d3fb36e8f0c862564e",
+      "title": "[Cache Components] Dev - restart render on cache miss",
+      "bodyExcerpt": "This PR replaces the previous approach to the dev-time cache warmup. On full-page requests, we\n1. We attempt an initial RSC render. It uses a RequestStore, but includes a `cacheSignal` and a `prerenderResumeDataCache` to be filled\n  1. if there's no cache misses, we use the RSC render as is, and move onto SSR\n  2. If there's any cache misses in the static stage (i.e. during the first timeout), we treat the inital render as a prospective render, use it only for filling caches, and discard the result\n  3. Once caches are filled, we render RSC again (using a fresh RequestStore, with a filled `ren…",
+      "url": "https://github.com/vercel/next.js/pull/84088",
+      "mergedAt": "2025-10-14T14:33:05Z",
+      "additions": 1179,
+      "deletions": 414,
+      "files": 31,
+      "diffPath": "diffs/vercel-next.js/84088.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vercel/next.js/pull/89171",
+          "sha": null,
+          "mentionedInBody": "introduced in #84088"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 88487,
+      "headSha": "5d70ae5e9c14677394e37d4d66c8af85f4dc6a90",
+      "title": "Turbopack: retain loader tree order for metadata",
+      "bodyExcerpt": "This appears to basically be a regression from https://github.com/vercel/next.js/pull/83115\n\nCloses https://github.com/vercel/next.js/issues/87322\n\nThe app-page template was looking like this, cause the METADATA imports to be hoisted before the other ones:\n```js\nconst __TURBOPACK__layout__$23$0__ = () => require(\"MODULE_0\");\nconst __TURBOPACK__not$2d$found__$23$1__ = () => require(\"MODULE_1\");\nconst __TURBOPACK__forbidden__$23$2__ = () => require(\"MODULE_2\");\nconst __TURBOPACK__unauthorized__$23$3__ = () => require(\"MODULE_3\");\nconst __TURBOPACK__global$2d$error__$23$4__ = () => require(\"MODUL…",
+      "url": "https://github.com/vercel/next.js/pull/88487",
+      "mergedAt": "2026-01-14T09:19:13Z",
+      "additions": 157,
+      "deletions": 16,
+      "files": 11,
+      "diffPath": "diffs/vercel-next.js/88487.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vercel/next.js/pull/91705",
+          "sha": null,
+          "mentionedInBody": "regression from #88487"
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prNumber": 89370,
+      "headSha": "fd0d12104f016b23ab82c82413af8c5f817f4e9a",
+      "title": "Optimize how we track data for persistence",
+      "bodyExcerpt": "## Summary\n\nReworks how the turbo-tasks backend tracks modified tasks for persistence snapshots, reducing overhead and simplifying the snapshot lifecycle.\n\n**Key changes:**\n\n- **Replace `modified` DashMap with per-shard atomic counters + inline flags.** Instead of maintaining a separate `FxDashMap<TaskId, ModifiedState>` that mirrors every modification, track modifications via flags already on `TaskStorage` and use per-shard `AtomicU64` counters to skip unmodified shards during snapshot iteration. This eliminates a major source of  memory overhead.\n    - The downside here is needing to scan th…",
+      "url": "https://github.com/vercel/next.js/pull/89370",
+      "mergedAt": "2026-04-07T16:25:28Z",
+      "additions": 539,
+      "deletions": 570,
+      "files": 16,
+      "diffPath": "diffs/vercel-next.js/89370.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vercel/next.js/pull/92658",
+          "sha": null,
+          "mentionedInBody": "introduced by #89370"
+        }
+      ]
+    },
+    {
+      "repo": "vitejs/vite",
+      "prNumber": 19057,
+      "headSha": "78e15513a94d007a48c34a5507a34606e31f2f35",
+      "title": "feat(client): ping from SharedWorker",
+      "bodyExcerpt": "### Description\n\nNo more log spamming with `WebSocket connection to * failed:` 🙂\n\nI came up with an idea to eliminate the WebSocket pinging in the network tab and the connection error logs and this PR implements that idea.\n\nThis PR moves the pinging logic to a shared worker. This makes the connection error log and the network request to be output in a different location (at least for Chrome, haven't checked with other browsers). Except for that, everything should work the same.\nSince the error log and the network requests won't be output in the (main) devtools, I guess this would reduce the m…",
+      "url": "https://github.com/vitejs/vite/pull/19057",
+      "mergedAt": "2025-07-28T02:44:07Z",
+      "additions": 131,
+      "deletions": 19,
+      "files": 1,
+      "diffPath": "diffs/vitejs-vite/19057.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vitejs/vite/pull/20595",
+          "sha": null,
+          "mentionedInBody": "introduced in #19057"
+        }
+      ]
+    },
+    {
+      "repo": "vitejs/vite",
+      "prNumber": 20358,
+      "headSha": "4d1745d25c6c99160c7fd1d987ee780c6d45d1a2",
+      "title": "refactor: use hook filters in internal plugins",
+      "bodyExcerpt": "### Description\n\nUse hook filters in the internal plugins to reduce the diff with rolldown-vite and simplify the code in some places.\n\n<!-- What is this PR solving? Write a clear description or reference the issues it solves (e.g. `fixes #123`). What other alternatives have you explored? Are there any parts you think require more attention from reviewers? -->\n\n<!----------------------------------------------------------------------\nBefore creating the pull request, please make sure you do the following:\n\n- Read the Contributing Guidelines at https://github.com/vitejs/vite/blob/main/CONTRIBUTIN…",
+      "url": "https://github.com/vitejs/vite/pull/20358",
+      "mergedAt": "2025-07-25T03:04:15Z",
+      "additions": 707,
+      "deletions": 703,
+      "files": 14,
+      "diffPath": "diffs/vitejs-vite/20358.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vitejs/vite/pull/20644",
+          "sha": null,
+          "mentionedInBody": "introduced in #20358"
+        }
+      ]
+    },
+    {
+      "repo": "vitejs/vite",
+      "prNumber": 21103,
+      "headSha": "66cb5987573079503e900331dcdb4c9fa62cdffe",
+      "title": "fix: allow multiple `bindCLIShortcuts` calls with shortcut merging",
+      "bodyExcerpt": "Fixes #15781.\nCloses #15881.\n\nThis fixes an issue where calling `bindCLIShortcuts()` multiple times would create duplicate readline instances and lose custom shortcuts from previous calls. This is useful for plugins adding their own shortcuts while Vite CLI continues to print the help message.\n\nNow when you bind shortcuts multiple times, they are properly merged, with new custom shortcuts taking priority:\n\n```ts\nserver.bindCLIShortcuts({\n  customShortcuts: [\n    { key: 's', description: 'My shortcut', action: () => console.log('foo') },\n    { key: 'g', description: 'Greeting', action: () => co…",
+      "url": "https://github.com/vitejs/vite/pull/21103",
+      "mergedAt": "2025-11-12T11:50:52Z",
+      "additions": 110,
+      "deletions": 7,
+      "files": 4,
+      "diffPath": "diffs/vitejs-vite/21103.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vitejs/vite/pull/21166",
+          "sha": null,
+          "mentionedInBody": "regression from #21103"
+        }
+      ]
+    },
+    {
+      "repo": "vitejs/vite",
+      "prNumber": 21381,
+      "headSha": "f7a07b4234e6aec1114a83721bbda63d12ae812a",
+      "title": "feat(dev): detect port conflicts on wildcard hosts",
+      "bodyExcerpt": "## What is this PR solving?\n\nWhen another dev server listens on `0.0.0.0:3000`, Vite doesn't detect the conflict and binds to `localhost:3000`. Both servers bind to the same port, causing unexpected behavior.\n\nThis happens because Node.js treats `0.0.0.0` and `localhost` as different addresses, so no `EADDRINUSE` error is thrown.\n\n**Solution:** Before starting the HTTP server, check if the port is already in use on wildcard addresses (`0.0.0.0`, `::`). If blocked, Vite logs \"Port X is in use, trying another one...\" and automatically tries the next available port.\n\nFixes #10638\nclose #21419\n\n##…",
+      "url": "https://github.com/vitejs/vite/pull/21381",
+      "mergedAt": "2026-01-19T11:15:12Z",
+      "additions": 243,
+      "deletions": 20,
+      "files": 2,
+      "diffPath": "diffs/vitejs-vite/21381.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vitejs/vite/pull/21642",
+          "sha": null,
+          "mentionedInBody": "regression from #21381"
+        }
+      ]
+    },
+    {
+      "repo": "vitejs/vite",
+      "prNumber": 22151,
+      "headSha": "a061f460e5ed172ba96053acf01e68838f803856",
+      "title": "perf: early return in `getLocalhostAddressIfDiffersFromDNS` when DNS order is `verbatim`",
+      "bodyExcerpt": "When `dns.getDefaultResultOrder()` returns `'verbatim'`, Node's `dns.lookup` already resolves in verbatim order — the two lookups can never differ, so there's no reason to schedule them.\n\n## Changes\n\n- **Early sync return**: Check `dns.getDefaultResultOrder() === 'verbatim'` synchronously at the top; return `undefined` immediately, skipping both DNS lookups and all async overhead\n- **Remove `async`**: Function is no longer `async`; return type becomes `Promise<string | undefined> | undefined`. All call sites use `await`, which handles a plain `undefined` return transparently\n- **Non-verbatim p…",
+      "url": "https://github.com/vitejs/vite/pull/22151",
+      "mergedAt": "2026-04-07T05:02:17Z",
+      "additions": 13,
+      "deletions": 9,
+      "files": 1,
+      "diffPath": "diffs/vitejs-vite/22151.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/vitejs/vite/pull/22185",
+          "sha": null,
+          "mentionedInBody": "introduced in #22151"
+        }
+      ]
+    },
+    {
+      "repo": "withastro/astro",
+      "prNumber": 14269,
+      "headSha": "85d8eb65e65d3090bcaf350de190427bb380aca5",
+      "title": "feat(netlify): dev context",
+      "bodyExcerpt": "## Changes\n\n- Refreshes the lockfile to get the latest types\n- Discovered in #14154\n- I had to override undici's version because cheerio pulls undici@7, which requires node 20 so it was failing in node 18 tests\n- I also had to pin wrangler to the latest compatible node 18 version\n- Overall this should help with other renovate PRs\n\n## Testing\n\nShould pass\n\n<!-- How was this change tested? -->\n<!-- DON'T DELETE THIS SECTION! If no tests added, explain why. -->\n\n## Docs\n\nChangeset\n\n<!-- Could this affect a user’s behavior? We probably need to update docs! -->\n<!-- If docs will be needed or you’re…",
+      "url": "https://github.com/withastro/astro/pull/14269",
+      "mergedAt": "2025-08-27T08:56:50Z",
+      "additions": 3044,
+      "deletions": 3413,
+      "files": 12,
+      "diffPath": "diffs/withastro-astro/14269.diff",
+      "category": "code-change-missed-bug",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/withastro/astro/pull/14278",
+          "sha": null,
+          "mentionedInBody": "regression from #14269"
+        }
+      ]
+    },
+    {
+      "repo": "withastro/astro",
+      "prNumber": 16277,
+      "headSha": "074e29afbb683de41297e1b3dd6cdd26eb21df03",
+      "title": "fix(cloudflare): fix static assets and prerendered pages 404ing when `base` is configured.",
+      "bodyExcerpt": "## Changes\n\n- fix #16276\n\n## Testing\n\ntests were added\n\n## Docs\n\njust a patch to make the cloudflare adapter work in the expected manner",
+      "url": "https://github.com/withastro/astro/pull/16277",
+      "mergedAt": "2026-05-01T15:32:43Z",
+      "additions": 67,
+      "deletions": 5,
+      "files": 6,
+      "diffPath": "diffs/withastro-astro/16277.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/withastro/astro/pull/16607",
+          "sha": null,
+          "mentionedInBody": "regression from #16277"
+        }
+      ]
+    },
+    {
+      "repo": "withastro/astro",
+      "prNumber": 16366,
+      "headSha": "63f5566ddb81daef463ba7abe3b394ce0333e5a7",
+      "title": "Advanced Routing - Experimental",
+      "bodyExcerpt": "## Changes\n\nOverview of the changes:\n\n### Architecture\n\nThis change reflects an new architectural approach to request handling in Astro, with the goal of breaking up Astro features like redirects, i18n, and middleware, to be written as composable *handlers* for those features.\n\nThe old architecture looked something like this:\n\nApp#render -> RenderContext -> runtime render\n\nWith much of the logic for these features either within App#render or RenderContext#render.\n\nThe new architecture keeps App as a *thin layer* for compatibility with the adapter APIs. Adapters can still create instances of Ap…",
+      "url": "https://github.com/withastro/astro/pull/16366",
+      "mergedAt": "2026-05-06T10:50:12Z",
+      "additions": 5107,
+      "deletions": 1976,
+      "files": 81,
+      "diffPath": "diffs/withastro-astro/16366.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/withastro/astro/pull/16675",
+          "sha": null,
+          "mentionedInBody": "regression introduced in #16366"
+        }
+      ]
+    },
+    {
+      "repo": "withastro/astro",
+      "prNumber": 16555,
+      "headSha": "bc0a0ecb44f2755ca8d046ddce93d98cbb8e1fb4",
+      "title": "fix(cloudflare): preserve existing KV namespace bindings when injecting SESSION",
+      "bodyExcerpt": "## Changes\n\n- Fixes a bug in `@astrojs/cloudflare` where custom KV namespace bindings (e.g. `MY_KV`, `CACHE`) were silently removed when Astro's session functionality was enabled.\n- The root cause was in `packages/integrations/cloudflare/src/wrangler.ts`: when injecting the `SESSION` KV binding, the code returned a fresh single-item array instead of merging with the user's existing `kv_namespaces`.\n- Extracted a `withSessionKVBinding` helper that copies existing namespaces and appends the SESSION binding, preserving all user-defined bindings.\n- Fix applies to both the top-level config and the …",
+      "url": "https://github.com/withastro/astro/pull/16555",
+      "mergedAt": "2026-05-01T14:53:36Z",
+      "additions": 31,
+      "deletions": 7,
+      "files": 2,
+      "diffPath": "diffs/withastro-astro/16555.diff",
+      "category": "covered-behavior-regressed",
+      "proofs": [
+        {
+          "kind": "fix-pr",
+          "url": "https://github.com/withastro/astro/pull/16652",
+          "sha": null,
+          "mentionedInBody": "regression introduced in #16555"
+        }
+      ]
+    }
+  ]
+}

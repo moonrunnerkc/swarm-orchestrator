@@ -1,0 +1,2429 @@
+diff --git a/docs/data/material/components/chips/ChipMaterialYouPlayground.js b/docs/data/material/components/chips/ChipMaterialYouPlayground.js
+new file mode 100644
+index 00000000000000..98f10568e8fcb0
+--- /dev/null
++++ b/docs/data/material/components/chips/ChipMaterialYouPlayground.js
+@@ -0,0 +1,59 @@
++import * as React from 'react';
++import Box from '@mui/material/Box';
++import Chip from '@mui/material-next/Chip';
++import MaterialYouUsageDemo from 'docs/src/modules/components/MaterialYouUsageDemo';
++
++export default function ChipMaterialYouPlayground() {
++  return (
++    <MaterialYouUsageDemo
++      componentName="Chip"
++      data={[
++        {
++          propName: 'variant',
++          knob: 'select',
++          defaultValue: 'filled',
++          options: ['filled', 'outlined', 'elevated'],
++        },
++        {
++          propName: 'color',
++          knob: 'select',
++          options: [
++            'error',
++            'info',
++            'warning',
++            'success',
++            'primary',
++            'secondary',
++            'tertiary',
++          ],
++        },
++        {
++          propName: 'size',
++          knob: 'select',
++          options: ['small', 'medium'],
++          defaultValue: 'medium',
++        },
++        {
++          propName: 'disabled',
++          knob: 'switch',
++          defaultValue: false,
++        },
++      ]}
++      renderDemo={(props) => (
++        <Box sx={{ display: 'flex', gap: 2 }}>
++          <Chip {...props} label="Basic chip" />
++          <Chip
++            {...props}
++            label="Clickable chip"
++            onClick={() => alert('Clicked Material You Chip')}
++          />
++          <Chip
++            {...props}
++            label="Deletable chip"
++            onDelete={() => alert('Deleted Material You Chip')}
++          />
++        </Box>
++      )}
++    />
++  );
++}
+diff --git a/docs/data/material/components/chips/chips.md b/docs/data/material/components/chips/chips.md
+index b13cd2f6e33570..48106b6da5a52b 100644
+--- a/docs/data/material/components/chips/chips.md
++++ b/docs/data/material/components/chips/chips.md
+@@ -97,6 +97,19 @@ gain depth while clicked or touched.
+ 
+ {{"demo": "ChipsPlayground.js", "hideToolbar": true}}
+ 
++## Experimental API
++
++### Material You version
++
++The default Chip component follows the Material Design 2 specs.
++For the Material Design 3 ([Material You](https://m3.material.io/)) version, you can use the new experimental `@mui/material-next` package:
++
++```js
++import Chip from '@mui/material-next/Chip';
++```
++
++{{"demo": "ChipMaterialYouPlayground.js", "hideToolbar": true}}
++
+ ## Accessibility
+ 
+ If the Chip is deletable or clickable then it is a button in tab order. When the Chip is focused (e.g. when tabbing) releasing (`keyup` event) `Backspace` or `Delete` will call the `onDelete` handler while releasing `Escape` will blur the Chip.
+diff --git a/docs/pages/experiments/md3/index.tsx b/docs/pages/experiments/md3/index.tsx
+index cb784397491ab5..03a1467d38ac28 100644
+--- a/docs/pages/experiments/md3/index.tsx
++++ b/docs/pages/experiments/md3/index.tsx
+@@ -292,6 +292,7 @@ const customPalette = {
+     '90': '#ebe0e1',
+     '92': '#f1e5e6',
+     '95': '#faeef0',
++    '96': '#f7f2fa',
+     '99': '#fffbff',
+     '100': '#ffffff',
+   },
+diff --git a/packages/mui-material-next/migration.md b/packages/mui-material-next/migration.md
+index 8c0392f6968044..72cf55bcbd6e24 100644
+--- a/packages/mui-material-next/migration.md
++++ b/packages/mui-material-next/migration.md
+@@ -28,6 +28,14 @@ Here's an example of the change using the Badge component:
+  </Badge>
+ ```
+ 
++### Remove composed CSS classes and `styleOverrides` keys
++
++Classes composed of two or more existing classes are removed in v6.
++For example, the `MuiChip-filledPrimary` class is removed in favor of the `MuiChip-filled` and `MuiChip-colorPrimary` classes.
++Composed `styleOverrides` keys are also removed.
++Following the example above, the chip component's `filledPrimary` `styleOverrides` key is removed.
++The specific classes and keys removed are listed in each component's section, as well as instructions on how to replace them.
++
+ ## Badge
+ 
+ ### Changed default color
+@@ -156,6 +164,146 @@ The `inputComponent` is deprecated in favor of `slots.input`:
+  />
+ ```
+ 
++## Chip
++
++### Removed the "default" color option
++
++The `"default"` option is no longer accepted for the color prop.
++
++### Removed combined styleOverrides keys
++
++The following `styleOverrides` `MuiChip` keys were removed:
++
++- `clickableColorPrimary`
++- `clickableColorSecondary`
++- `deletableColorPrimary`
++- `deletableColorSecondary`
++- `outlinedPrimary`
++- `outlinedSecondary`
++- `filledPrimary`
++- `filledSecondary`
++- `avatarSmall`
++- `avatarMedium`
++- `avatarColorPrimary`
++- `avatarColorSecondary`
++- `iconSmall`
++- `iconMedium`
++- `iconColorPrimary`
++- `iconColorSecondary`
++- `labelSmall`
++- `labelMedium`
++- `deleteIconSmall`
++- `deleteIconMedium`
++- `deleteIconColorPrimary`
++- `deleteIconColorSecondary`
++- `deleteIconOutlinedColorPrimary`
++- `deleteIconOutlinedColorSecondary`
++- `deleteIconFilledColorPrimary`
++- `deleteIconFilledColorSecondary`
++
++You can replace them by using the variants API and CSS Selectors.
++The following example replaces the usage of `filledPrimary` with the variants API:
++
++```diff
++ const theme = extendTheme({
++   components: {
++     MuiBadge: {
++-      styleOverrides: {
++-       filledPrimary: {
++-            background: "fuchsia"
++-          }
++-        }
+++      variants: [
+++        {
+++          props: { variant: 'filled', color: 'primary' },
+++          style: {
+++            background: "fuchsia"
+++          },
+++        },
+++      ],
++     }
++   }
++ });
++```
++
++### Removed combined classes
++
++The following classes were removed:
++
++- `MuiChip-clickableColorPrimary`
++- `MuiChip-clickableColorSecondary`
++- `MuiChip-deletableColorPrimary`
++- `MuiChip-deletableColorSecondary`
++- `MuiChip-outlinedPrimary`
++- `MuiChip-outlinedSecondary`
++- `MuiChip-filledPrimary`
++- `MuiChip-filledSecondary`
++- `MuiChip-avatarSmall`
++- `MuiChip-avatarMedium`
++- `MuiChip-avatarColorPrimary`
++- `MuiChip-avatarColorSecondary`
++- `MuiChip-iconSmall`
++- `MuiChip-iconMedium`
++- `MuiChip-iconColorPrimary`
++- `MuiChip-iconColorSecondary`
++- `MuiChip-labelSmall`
++- `MuiChip-labelMedium`
++- `MuiChip-deleteIconSmall`
++- `MuiChip-deleteIconMedium`
++- `MuiChip-deleteIconColorPrimary`
++- `MuiChip-deleteIconColorSecondary`
++- `MuiChip-deleteIconOutlinedColorPrimary`
++- `MuiChip-deleteIconOutlinedColorSecondary`
++- `MuiChip-deleteIconFilledColorPrimary`
++- `MuiChip-deleteIconFilledColorSecondary`
++
++You can replace them by combining classes with a CSS selector.
++The following example replaces the `MuiChip-filledPrimary` class using `MuiChip-filled` and `MuiChip-colorPrimary`:
++
++```diff
++- .MuiChip-filledPrimary
+++ .MuiChip-filled.MuiChip-colorPrimary
++```
++
++### `skipFocusWhenDisabled` replaced with `focusableWhenDisabled`
++
++The `skipFocusWhenDisabled` prop was replaced with `focusableWhenDisabled`, which is `false` by default.
++Because of this, the default behavior changed:
++
++- In v5, disabled chips were focusable by default
++- In v6, disabled chips are not focusable by default
++
++If you were using the `skipFocusWhenDisabled` prop to make disabled chips not focusable (which is v6's default behavior), then you can remove the prop as follows:
++
++```diff
++ <Chip
++   label="Clickable"
++   onClick={handleClick}
++-  skipFocusWhenDisabled={true}
++ />
++```
++
++If you wish to maintain v5's default behavior, then you can achieve that as follows:
++
++```diff
++ <Chip
++   label="Clickable"
++   onClick={handleClick}
+++  focusableWhenDisabled={true}
++ />
++```
++
++If you were using the `skipFocusWhenDisabled` prop to explicitly make disabled chips focusable, then you can replace it with `focusableWhenDisabled` as follows:
++
++```diff
++ <Chip
++   label="Clickable"
++   onClick={handleClick}
++-  skipFocusWhenDisabled={false}
+++  focusableWhenDisabled={true}
++ />
++```
++
+ ## Slider
+ 
+ ### Thumb and Value Label slots must accept refs
+diff --git a/packages/mui-material-next/src/Chip/Chip.js b/packages/mui-material-next/src/Chip/Chip.js
+deleted file mode 100644
+index 63c4a2a7ab2ace..00000000000000
+--- a/packages/mui-material-next/src/Chip/Chip.js
++++ /dev/null
+@@ -1,587 +0,0 @@
+-'use client';
+-import * as React from 'react';
+-import PropTypes from 'prop-types';
+-import clsx from 'clsx';
+-import { unstable_composeClasses as composeClasses } from '@mui/base';
+-import {
+-  unstable_capitalize as capitalize,
+-  unstable_useForkRef as useForkRef,
+-  unstable_unsupportedProp as unsupportedProp,
+-} from '@mui/utils';
+-import { alpha } from '@mui/system';
+-import ButtonBase from '@mui/material/ButtonBase';
+-import CancelIcon from '../internal/svg-icons/Cancel';
+-import { useThemeProps, styled } from '../styles';
+-import chipClasses, { getChipUtilityClass } from './chipClasses';
+-
+-const useUtilityClasses = (ownerState) => {
+-  const { classes, disabled, size, color, iconColor, onDelete, clickable, variant } = ownerState;
+-
+-  const slots = {
+-    root: [
+-      'root',
+-      variant,
+-      disabled && 'disabled',
+-      `size${capitalize(size)}`,
+-      `color${capitalize(color)}`,
+-      clickable && 'clickable',
+-      clickable && `clickableColor${capitalize(color)}`,
+-      onDelete && 'deletable',
+-      onDelete && `deletableColor${capitalize(color)}`,
+-      `${variant}${capitalize(color)}`,
+-    ],
+-    label: ['label', `label${capitalize(size)}`],
+-    avatar: ['avatar', `avatar${capitalize(size)}`, `avatarColor${capitalize(color)}`],
+-    icon: ['icon', `icon${capitalize(size)}`, `iconColor${capitalize(iconColor)}`],
+-    deleteIcon: [
+-      'deleteIcon',
+-      `deleteIcon${capitalize(size)}`,
+-      `deleteIconColor${capitalize(color)}`,
+-      `deleteIcon${capitalize(variant)}Color${capitalize(color)}`,
+-    ],
+-  };
+-
+-  return composeClasses(slots, getChipUtilityClass, classes);
+-};
+-
+-const ChipRoot = styled('div', {
+-  name: 'MuiChip',
+-  slot: 'Root',
+-  overridesResolver: (props, styles) => {
+-    const { ownerState } = props;
+-    const { color, iconColor, clickable, onDelete, size, variant } = ownerState;
+-
+-    return [
+-      { [`& .${chipClasses.avatar}`]: styles.avatar },
+-      { [`& .${chipClasses.avatar}`]: styles[`avatar${capitalize(size)}`] },
+-      { [`& .${chipClasses.avatar}`]: styles[`avatarColor${capitalize(color)}`] },
+-      { [`& .${chipClasses.icon}`]: styles.icon },
+-      { [`& .${chipClasses.icon}`]: styles[`icon${capitalize(size)}`] },
+-      { [`& .${chipClasses.icon}`]: styles[`iconColor${capitalize(iconColor)}`] },
+-      { [`& .${chipClasses.deleteIcon}`]: styles.deleteIcon },
+-      { [`& .${chipClasses.deleteIcon}`]: styles[`deleteIcon${capitalize(size)}`] },
+-      { [`& .${chipClasses.deleteIcon}`]: styles[`deleteIconColor${capitalize(color)}`] },
+-      {
+-        [`& .${chipClasses.deleteIcon}`]:
+-          styles[`deleteIcon${capitalize(variant)}Color${capitalize(color)}`],
+-      },
+-      styles.root,
+-      styles[`size${capitalize(size)}`],
+-      styles[`color${capitalize(color)}`],
+-      clickable && styles.clickable,
+-      clickable && color !== 'default' && styles[`clickableColor${capitalize(color)})`],
+-      onDelete && styles.deletable,
+-      onDelete && color !== 'default' && styles[`deletableColor${capitalize(color)}`],
+-      styles[variant],
+-      styles[`${variant}${capitalize(color)}`],
+-    ];
+-  },
+-})(
+-  ({ theme, ownerState }) => {
+-    const textColor = theme.vars.palette.grey[700];
+-    return {
+-      maxWidth: '100%',
+-      fontFamily: theme.typography.fontFamily,
+-      fontSize: theme.typography.pxToRem(13),
+-      display: 'inline-flex',
+-      alignItems: 'center',
+-      justifyContent: 'center',
+-      height: 32,
+-      color: (theme.vars || theme).palette.text.primary,
+-      backgroundColor: (theme.vars || theme).palette.action.selected,
+-      borderRadius: 32 / 2,
+-      whiteSpace: 'nowrap',
+-      transition: theme.transitions.create(['background-color', 'box-shadow']),
+-      // label will inherit this from root, then `clickable` class overrides this for both
+-      cursor: 'default',
+-      // We disable the focus ring for mouse, touch and keyboard users.
+-      outline: 0,
+-      textDecoration: 'none',
+-      border: 0, // Remove `button` border
+-      padding: 0, // Remove `button` padding
+-      verticalAlign: 'middle',
+-      boxSizing: 'border-box',
+-      [`&.${chipClasses.disabled}`]: {
+-        opacity: (theme.vars || theme).palette.action.disabledOpacity,
+-        pointerEvents: 'none',
+-      },
+-      [`& .${chipClasses.avatar}`]: {
+-        marginLeft: 5,
+-        marginRight: -6,
+-        width: 24,
+-        height: 24,
+-        color: theme.vars ? theme.vars.palette.Chip.defaultAvatarColor : textColor,
+-        fontSize: theme.typography.pxToRem(12),
+-      },
+-      [`& .${chipClasses.avatarColorPrimary}`]: {
+-        color: (theme.vars || theme).palette.primary.contrastText,
+-        backgroundColor: (theme.vars || theme).palette.primary.dark,
+-      },
+-      [`& .${chipClasses.avatarColorSecondary}`]: {
+-        color: (theme.vars || theme).palette.secondary.contrastText,
+-        backgroundColor: (theme.vars || theme).palette.secondary.dark,
+-      },
+-      [`& .${chipClasses.avatarSmall}`]: {
+-        marginLeft: 4,
+-        marginRight: -4,
+-        width: 18,
+-        height: 18,
+-        fontSize: theme.typography.pxToRem(10),
+-      },
+-      [`& .${chipClasses.icon}`]: {
+-        marginLeft: 5,
+-        marginRight: -6,
+-        ...(ownerState.size === 'small' && {
+-          fontSize: 18,
+-          marginLeft: 4,
+-          marginRight: -4,
+-        }),
+-        ...(ownerState.iconColor === ownerState.color && {
+-          color: theme.vars ? theme.vars.palette.Chip.defaultIconColor : textColor,
+-          ...(ownerState.color !== 'default' && {
+-            color: 'inherit',
+-          }),
+-        }),
+-      },
+-      [`& .${chipClasses.deleteIcon}`]: {
+-        WebkitTapHighlightColor: 'transparent',
+-        color: theme.vars
+-          ? `rgba(${theme.vars.palette.text.primaryChannel} / 0.26)`
+-          : alpha(theme.palette.text.primary, 0.26),
+-        fontSize: 22,
+-        cursor: 'pointer',
+-        margin: '0 5px 0 -6px',
+-        '&:hover': {
+-          color: theme.vars
+-            ? `rgba(${theme.vars.palette.text.primaryChannel} / 0.4)`
+-            : alpha(theme.palette.text.primary, 0.4),
+-        },
+-        ...(ownerState.size === 'small' && {
+-          fontSize: 16,
+-          marginRight: 4,
+-          marginLeft: -4,
+-        }),
+-        ...(ownerState.color !== 'default' && {
+-          color: theme.vars
+-            ? `rgba(${theme.vars.palette[ownerState.color].contrastTextChannel} / 0.7)`
+-            : alpha(theme.palette[ownerState.color].contrastText, 0.7),
+-          '&:hover, &:active': {
+-            color: (theme.vars || theme).palette[ownerState.color].contrastText,
+-          },
+-        }),
+-      },
+-      ...(ownerState.size === 'small' && {
+-        height: 24,
+-      }),
+-      ...(ownerState.color !== 'default' && {
+-        backgroundColor: (theme.vars || theme).palette[ownerState.color].main,
+-        color: (theme.vars || theme).palette[ownerState.color].contrastText,
+-      }),
+-      ...(ownerState.onDelete && {
+-        [`&.${chipClasses.focusVisible}`]: {
+-          backgroundColor: theme.vars
+-            ? `rgba(${theme.vars.palette.action.selectedChannel} / calc(${theme.vars.palette.action.selectedOpacity} + ${theme.vars.palette.action.focusOpacity}))`
+-            : alpha(
+-                theme.palette.action.selected,
+-                theme.palette.action.selectedOpacity + theme.palette.action.focusOpacity,
+-              ),
+-        },
+-      }),
+-      ...(ownerState.onDelete &&
+-        ownerState.color !== 'default' && {
+-          [`&.${chipClasses.focusVisible}`]: {
+-            backgroundColor: (theme.vars || theme).palette[ownerState.color].dark,
+-          },
+-        }),
+-    };
+-  },
+-  ({ theme, ownerState }) => ({
+-    ...(ownerState.clickable && {
+-      userSelect: 'none',
+-      WebkitTapHighlightColor: 'transparent',
+-      cursor: 'pointer',
+-      '&:hover': {
+-        backgroundColor: theme.vars
+-          ? `rgba(${theme.vars.palette.action.selectedChannel} / calc(${theme.vars.palette.action.selectedOpacity} + ${theme.vars.palette.action.hoverOpacity}))`
+-          : alpha(
+-              theme.palette.action.selected,
+-              theme.palette.action.selectedOpacity + theme.palette.action.hoverOpacity,
+-            ),
+-      },
+-      [`&.${chipClasses.focusVisible}`]: {
+-        backgroundColor: theme.vars
+-          ? `rgba(${theme.vars.palette.action.selectedChannel} / calc(${theme.vars.palette.action.selectedOpacity} + ${theme.vars.palette.action.focusOpacity}))`
+-          : alpha(
+-              theme.palette.action.selected,
+-              theme.palette.action.selectedOpacity + theme.palette.action.focusOpacity,
+-            ),
+-      },
+-      '&:active': {
+-        boxShadow: (theme.vars || theme).shadows[1],
+-      },
+-    }),
+-    ...(ownerState.clickable &&
+-      ownerState.color !== 'default' && {
+-        [`&:hover, &.${chipClasses.focusVisible}`]: {
+-          backgroundColor: (theme.vars || theme).palette[ownerState.color].dark,
+-        },
+-      }),
+-  }),
+-  ({ theme, ownerState }) => ({
+-    ...(ownerState.variant === 'outlined' && {
+-      backgroundColor: 'transparent',
+-      border: theme.vars
+-        ? `1px solid ${theme.vars.palette.Chip.defaultBorder}`
+-        : `1px solid ${theme.palette.grey[400]}`,
+-      [`&.${chipClasses.clickable}:hover`]: {
+-        backgroundColor: (theme.vars || theme).palette.action.hover,
+-      },
+-      [`&.${chipClasses.focusVisible}`]: {
+-        backgroundColor: (theme.vars || theme).palette.action.focus,
+-      },
+-      [`& .${chipClasses.avatar}`]: {
+-        marginLeft: 4,
+-      },
+-      [`& .${chipClasses.avatarSmall}`]: {
+-        marginLeft: 2,
+-      },
+-      [`& .${chipClasses.icon}`]: {
+-        marginLeft: 4,
+-      },
+-      [`& .${chipClasses.iconSmall}`]: {
+-        marginLeft: 2,
+-      },
+-      [`& .${chipClasses.deleteIcon}`]: {
+-        marginRight: 5,
+-      },
+-      [`& .${chipClasses.deleteIconSmall}`]: {
+-        marginRight: 3,
+-      },
+-    }),
+-    ...(ownerState.variant === 'outlined' &&
+-      ownerState.color !== 'default' && {
+-        color: (theme.vars || theme).palette[ownerState.color].main,
+-        border: `1px solid ${
+-          theme.vars
+-            ? `rgba(${theme.vars.palette[ownerState.color].mainChannel} / 0.7)`
+-            : alpha(theme.palette[ownerState.color].main, 0.7)
+-        }`,
+-        [`&.${chipClasses.clickable}:hover`]: {
+-          backgroundColor: theme.vars
+-            ? `rgba(${theme.vars.palette[ownerState.color].mainChannel} / ${
+-                theme.vars.palette.action.hoverOpacity
+-              })`
+-            : alpha(theme.palette[ownerState.color].main, theme.palette.action.hoverOpacity),
+-        },
+-        [`&.${chipClasses.focusVisible}`]: {
+-          backgroundColor: theme.vars
+-            ? `rgba(${theme.vars.palette[ownerState.color].mainChannel} / ${
+-                theme.vars.palette.action.focusOpacity
+-              })`
+-            : alpha(theme.palette[ownerState.color].main, theme.palette.action.focusOpacity),
+-        },
+-        [`& .${chipClasses.deleteIcon}`]: {
+-          color: theme.vars
+-            ? `rgba(${theme.vars.palette[ownerState.color].mainChannel} / 0.7)`
+-            : alpha(theme.palette[ownerState.color].main, 0.7),
+-          '&:hover, &:active': {
+-            color: (theme.vars || theme).palette[ownerState.color].main,
+-          },
+-        },
+-      }),
+-  }),
+-);
+-
+-const ChipLabel = styled('span', {
+-  name: 'MuiChip',
+-  slot: 'Label',
+-  overridesResolver: (props, styles) => {
+-    const { ownerState } = props;
+-    const { size } = ownerState;
+-
+-    return [styles.label, styles[`label${capitalize(size)}`]];
+-  },
+-})(({ ownerState }) => ({
+-  overflow: 'hidden',
+-  textOverflow: 'ellipsis',
+-  paddingLeft: 12,
+-  paddingRight: 12,
+-  whiteSpace: 'nowrap',
+-  ...(ownerState.size === 'small' && {
+-    paddingLeft: 8,
+-    paddingRight: 8,
+-  }),
+-}));
+-
+-function isDeleteKeyboardEvent(keyboardEvent) {
+-  return keyboardEvent.key === 'Backspace' || keyboardEvent.key === 'Delete';
+-}
+-
+-/**
+- * Chips represent complex entities in small blocks, such as a contact.
+- */
+-const Chip = React.forwardRef(function Chip(inProps, ref) {
+-  const props = useThemeProps({ props: inProps, name: 'MuiChip' });
+-  const {
+-    avatar: avatarProp,
+-    className,
+-    clickable: clickableProp,
+-    color = 'default',
+-    component: ComponentProp,
+-    deleteIcon: deleteIconProp,
+-    disabled = false,
+-    icon: iconProp,
+-    label,
+-    onClick,
+-    onDelete,
+-    onKeyDown,
+-    onKeyUp,
+-    size = 'medium',
+-    variant = 'filled',
+-    tabIndex,
+-    skipFocusWhenDisabled = false, // TODO v6: Rename to `focusableWhenDisabled`.
+-    ...other
+-  } = props;
+-
+-  const chipRef = React.useRef(null);
+-  const handleRef = useForkRef(chipRef, ref);
+-
+-  const handleDeleteIconClick = (event) => {
+-    // Stop the event from bubbling up to the `Chip`
+-    event.stopPropagation();
+-    if (onDelete) {
+-      onDelete(event);
+-    }
+-  };
+-
+-  const handleKeyDown = (event) => {
+-    // Ignore events from children of `Chip`.
+-    if (event.currentTarget === event.target && isDeleteKeyboardEvent(event)) {
+-      // Will be handled in keyUp, otherwise some browsers
+-      // might init navigation
+-      event.preventDefault();
+-    }
+-
+-    if (onKeyDown) {
+-      onKeyDown(event);
+-    }
+-  };
+-
+-  const handleKeyUp = (event) => {
+-    // Ignore events from children of `Chip`.
+-    if (event.currentTarget === event.target) {
+-      if (onDelete && isDeleteKeyboardEvent(event)) {
+-        onDelete(event);
+-      } else if (event.key === 'Escape' && chipRef.current) {
+-        chipRef.current.blur();
+-      }
+-    }
+-
+-    if (onKeyUp) {
+-      onKeyUp(event);
+-    }
+-  };
+-
+-  const clickable = clickableProp !== false && onClick ? true : clickableProp;
+-
+-  const component = clickable || onDelete ? ButtonBase : ComponentProp || 'div';
+-
+-  const ownerState = {
+-    ...props,
+-    component,
+-    disabled,
+-    size,
+-    color,
+-    iconColor: React.isValidElement(iconProp) ? iconProp.props.color || color : color,
+-    onDelete: !!onDelete,
+-    clickable,
+-    variant,
+-  };
+-
+-  const classes = useUtilityClasses(ownerState);
+-
+-  const moreProps =
+-    component === ButtonBase
+-      ? {
+-          component: ComponentProp || 'div',
+-          focusVisibleClassName: classes.focusVisible,
+-          ...(onDelete && { disableRipple: true }),
+-        }
+-      : {};
+-
+-  let deleteIcon = null;
+-  if (onDelete) {
+-    deleteIcon =
+-      deleteIconProp && React.isValidElement(deleteIconProp) ? (
+-        React.cloneElement(deleteIconProp, {
+-          className: clsx(deleteIconProp.props.className, classes.deleteIcon),
+-          onClick: handleDeleteIconClick,
+-        })
+-      ) : (
+-        <CancelIcon className={clsx(classes.deleteIcon)} onClick={handleDeleteIconClick} />
+-      );
+-  }
+-
+-  let avatar = null;
+-  if (avatarProp && React.isValidElement(avatarProp)) {
+-    avatar = React.cloneElement(avatarProp, {
+-      className: clsx(classes.avatar, avatarProp.props.className),
+-    });
+-  }
+-
+-  let icon = null;
+-  if (iconProp && React.isValidElement(iconProp)) {
+-    icon = React.cloneElement(iconProp, {
+-      className: clsx(classes.icon, iconProp.props.className),
+-    });
+-  }
+-
+-  if (process.env.NODE_ENV !== 'production') {
+-    if (avatar && icon) {
+-      console.error(
+-        'MUI: The Chip component can not handle the avatar ' +
+-          'and the icon prop at the same time. Pick one.',
+-      );
+-    }
+-  }
+-
+-  return (
+-    <ChipRoot
+-      as={component}
+-      className={clsx(classes.root, className)}
+-      disabled={clickable && disabled ? true : undefined}
+-      onClick={onClick}
+-      onKeyDown={handleKeyDown}
+-      onKeyUp={handleKeyUp}
+-      ref={handleRef}
+-      tabIndex={skipFocusWhenDisabled && disabled ? -1 : tabIndex}
+-      ownerState={ownerState}
+-      {...moreProps}
+-      {...other}
+-    >
+-      {avatar || icon}
+-      <ChipLabel className={clsx(classes.label)} ownerState={ownerState}>
+-        {label}
+-      </ChipLabel>
+-      {deleteIcon}
+-    </ChipRoot>
+-  );
+-});
+-
+-Chip.propTypes /* remove-proptypes */ = {
+-  // ----------------------------- Warning --------------------------------
+-  // | These PropTypes are generated from the TypeScript type definitions |
+-  // |     To update them edit the d.ts file and run "yarn proptypes"     |
+-  // ----------------------------------------------------------------------
+-  /**
+-   * The Avatar element to display.
+-   */
+-  avatar: PropTypes.element,
+-  /**
+-   * This prop isn't supported.
+-   * Use the `component` prop if you need to change the children structure.
+-   */
+-  children: unsupportedProp,
+-  /**
+-   * Override or extend the styles applied to the component.
+-   */
+-  classes: PropTypes.object,
+-  /**
+-   * @ignore
+-   */
+-  className: PropTypes.string,
+-  /**
+-   * If `true`, the chip will appear clickable, and will raise when pressed,
+-   * even if the onClick prop is not defined.
+-   * If `false`, the chip will not appear clickable, even if onClick prop is defined.
+-   * This can be used, for example,
+-   * along with the component prop to indicate an anchor Chip is clickable.
+-   * Note: this controls the UI and does not affect the onClick event.
+-   */
+-  clickable: PropTypes.bool,
+-  /**
+-   * The color of the component.
+-   * It supports both default and custom theme colors, which can be added as shown in the
+-   * [palette customization guide](https://mui.com/material-ui/customization/palette/#adding-new-colors).
+-   * @default 'default'
+-   */
+-  color: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
+-    PropTypes.oneOf(['default', 'primary', 'secondary', 'error', 'info', 'success', 'warning']),
+-    PropTypes.string,
+-  ]),
+-  /**
+-   * The component used for the root node.
+-   * Either a string to use a HTML element or a component.
+-   */
+-  component: PropTypes.elementType,
+-  /**
+-   * Override the default delete icon element. Shown only if `onDelete` is set.
+-   */
+-  deleteIcon: PropTypes.element,
+-  /**
+-   * If `true`, the component is disabled.
+-   * @default false
+-   */
+-  disabled: PropTypes.bool,
+-  /**
+-   * Icon element.
+-   */
+-  icon: PropTypes.element,
+-  /**
+-   * The content of the component.
+-   */
+-  label: PropTypes.node,
+-  /**
+-   * @ignore
+-   */
+-  onClick: PropTypes.func,
+-  /**
+-   * Callback fired when the delete icon is clicked.
+-   * If set, the delete icon will be shown.
+-   */
+-  onDelete: PropTypes.func,
+-  /**
+-   * @ignore
+-   */
+-  onKeyDown: PropTypes.func,
+-  /**
+-   * @ignore
+-   */
+-  onKeyUp: PropTypes.func,
+-  /**
+-   * The size of the component.
+-   * @default 'medium'
+-   */
+-  size: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
+-    PropTypes.oneOf(['medium', 'small']),
+-    PropTypes.string,
+-  ]),
+-  /**
+-   * If `true`, allows the disabled chip to escape focus.
+-   * If `false`, allows the disabled chip to receive focus.
+-   * @default false
+-   */
+-  skipFocusWhenDisabled: PropTypes.bool,
+-  /**
+-   * The system prop that allows defining system overrides as well as additional CSS styles.
+-   */
+-  sx: PropTypes.oneOfType([
+-    PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.func, PropTypes.object, PropTypes.bool])),
+-    PropTypes.func,
+-    PropTypes.object,
+-  ]),
+-  /**
+-   * @ignore
+-   */
+-  tabIndex: PropTypes.number,
+-  /**
+-   * The variant to use.
+-   * @default 'filled'
+-   */
+-  variant: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
+-    PropTypes.oneOf(['filled', 'outlined']),
+-    PropTypes.string,
+-  ]),
+-};
+-
+-export default Chip;
+diff --git a/packages/mui-material-next/src/Chip/Chip.test.js b/packages/mui-material-next/src/Chip/Chip.test.tsx
+similarity index 71%
+rename from packages/mui-material-next/src/Chip/Chip.test.js
+rename to packages/mui-material-next/src/Chip/Chip.test.tsx
+index 72362765fb4688..5656832e68678d 100644
+--- a/packages/mui-material-next/src/Chip/Chip.test.js
++++ b/packages/mui-material-next/src/Chip/Chip.test.tsx
+@@ -1,6 +1,7 @@
+ import * as React from 'react';
+ import { expect } from 'chai';
+ import { spy, stub } from 'sinon';
++import userEvent from '@testing-library/user-event';
+ import {
+   describeConformance,
+   act,
+@@ -11,24 +12,27 @@ import {
+   programmaticFocusTriggersFocusVisible,
+ } from '@mui-internal/test-utils';
+ import { hexToRgb } from '@mui/system';
++import { unstable_capitalize as capitalize } from '@mui/utils';
+ import { createTheme } from '@mui/material/styles';
+ import Avatar from '@mui/material/Avatar';
+ import Chip, { chipClasses as classes } from '@mui/material-next/Chip';
+ import { CssVarsProvider, extendTheme } from '@mui/material-next/styles';
+ import CheckBox from '../internal/svg-icons/CheckBox';
++import { ChipProps } from './Chip.types';
+ 
+-// TODO: remove after implementing Material You Chip's style
++// TODO: remove after migrating SvgICon to support Material You colors
+ const MaterialV5DefaultTheme = createTheme();
+ 
+ describe('<Chip />', () => {
+-  let originalMatchmedia;
++  let originalMatchmedia: typeof window.matchMedia;
+ 
+   beforeEach(() => {
+     originalMatchmedia = window.matchMedia;
+-    window.matchMedia = () => ({
+-      addListener: () => {},
+-      removeListener: () => {},
+-    });
++    window.matchMedia = () =>
++      ({
++        addListener: () => {},
++        removeListener: () => {},
++      } as unknown as MediaQueryList);
+   });
+   afterEach(() => {
+     window.matchMedia = originalMatchmedia;
+@@ -45,10 +49,10 @@ describe('<Chip />', () => {
+     muiName: 'MuiChip',
+     testDeepOverrides: { slotName: 'label', slotClassName: classes.label },
+     testVariantProps: { variant: 'outlined' },
+-    testStatOverrides: { prop: 'size', value: 'small', styleKey: 'sizeSmall' },
++    testStateOverrides: { prop: 'size', value: 'small', styleKey: 'sizeSmall' },
+     refInstanceof: window.HTMLDivElement,
+     testComponentPropWith: 'span',
+-    skip: ['slots', 'componentsProp'],
++    skip: ['componentsProp'],
+   }));
+ 
+   describe('text only', () => {
+@@ -71,20 +75,22 @@ describe('<Chip />', () => {
+       expect(chip).not.to.have.class(classes.colorPrimary);
+       expect(chip).not.to.have.class(classes.colorSecondary);
+       expect(chip).not.to.have.class(classes.clickable);
+-      expect(chip).not.to.have.class(classes.clickableColorPrimary);
+-      expect(chip).not.to.have.class(classes.clickableColorSecondary);
+       expect(chip).not.to.have.class(classes.deletable);
+-      expect(chip).not.to.have.class(classes.deletableColorPrimary);
+-      expect(chip).not.to.have.class(classes.deletableColorSecondary);
+     });
+ 
+     it('should render with the color class name based on the color prop', () => {
+-      const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
+-
+-      ['primary', 'secondary', 'info', 'error', 'warning', 'success'].forEach((color) => {
++      const colorOptions: NonNullable<ChipProps['color']>[] = [
++        'primary',
++        'secondary',
++        'info',
++        'error',
++        'warning',
++        'success',
++      ];
++      colorOptions.forEach((color) => {
+         const { container } = render(<Chip color={color} />);
+         const chip = container.querySelector(`.${classes.root}`);
+-        expect(chip).to.have.class(classes[`color${capitalize(color)}`]);
++        expect(chip).to.have.class(classes[`color${capitalize(color)}` as keyof typeof classes]);
+       });
+     });
+   });
+@@ -99,11 +105,24 @@ describe('<Chip />', () => {
+     });
+ 
+     it('should render link with the button base', () => {
+-      const { container } = render(<Chip component="a" clickable label="My text Chip" />);
++      const { getByTestId } = render(
++        <Chip data-testid="root" component="a" clickable label="My text Chip" />,
++      );
+ 
+-      expect(container.firstChild).to.have.class('MuiButtonBase-root');
+-      expect(container.firstChild).to.have.tagName('a');
+-      expect(container.firstChild.querySelector('.MuiTouchRipple-root')).not.to.equal(null);
++      const chipRoot = getByTestId('root');
++
++      expect(chipRoot).to.have.class('MuiButtonBase-root');
++      expect(chipRoot).to.have.tagName('a');
++    });
++
++    it('should render ripple', () => {
++      const { getByTestId } = render(
++        <Chip data-testid="root" component="a" clickable label="My text Chip" />,
++      );
++
++      const chipRoot = getByTestId('root');
++
++      expect(chipRoot.querySelector('.MuiTouchRipple-root')).not.to.equal(null);
+     });
+ 
+     it('should disable ripple when MuiButtonBase has disableRipple in theme', () => {
+@@ -117,14 +136,16 @@ describe('<Chip />', () => {
+         },
+       });
+ 
+-      const { container } = render(
++      const { getByTestId } = render(
+         <CssVarsProvider theme={theme}>
+-          <Chip clickable label="My Chip" />
++          <Chip data-testid="root" clickable label="My Chip" />
+         </CssVarsProvider>,
+       );
+ 
+-      expect(container.firstChild).to.have.class('MuiButtonBase-root');
+-      expect(container.firstChild.querySelector('.MuiTouchRipple-root')).to.equal(null);
++      const chipRoot = getByTestId('root');
++
++      expect(chipRoot).to.have.class('MuiButtonBase-root');
++      expect(chipRoot.querySelector('.MuiTouchRipple-root')).to.equal(null);
+     });
+ 
+     it('should apply user value of tabIndex', () => {
+@@ -141,17 +162,16 @@ describe('<Chip />', () => {
+       expect(chip).to.have.class(classes.clickable);
+     });
+ 
+-    it('should render with the root and clickable primary class', () => {
++    it('should render with the root, clickable, and colorPrimary class', () => {
+       const { getByRole } = render(<Chip label="My Chip" onClick={() => {}} color="primary" />);
+ 
+       const button = getByRole('button');
+       expect(button).to.have.class(classes.root);
+       expect(button).to.have.class(classes.colorPrimary);
+       expect(button).to.have.class(classes.clickable);
+-      expect(button).to.have.class(classes.clickableColorPrimary);
+     });
+ 
+-    it('should render with the root and outlined clickable primary class', () => {
++    it('should render with the root, outlined, clickable, and colorPrimary class', () => {
+       const { container } = render(
+         <Chip color="primary" label="My Chip" onClick={() => {}} variant="outlined" />,
+       );
+@@ -160,12 +180,10 @@ describe('<Chip />', () => {
+       expect(chip).to.have.class(classes.root);
+       expect(chip).to.have.class(classes.colorPrimary);
+       expect(chip).to.have.class(classes.clickable);
+-      expect(chip).to.have.class(classes.clickableColorPrimary);
+       expect(chip).to.have.class(classes.outlined);
+-      expect(chip).to.have.class(classes.outlinedPrimary);
+     });
+ 
+-    it('should render with the root and outlined clickable secondary class', () => {
++    it('should render with the root, outlined, clickable, and colorSecondary class', () => {
+       const { getByRole } = render(
+         <Chip color="secondary" label="My Chip" onClick={() => {}} variant="outlined" />,
+       );
+@@ -174,12 +192,10 @@ describe('<Chip />', () => {
+       expect(button).to.have.class(classes.root);
+       expect(button).to.have.class(classes.colorSecondary);
+       expect(button).to.have.class(classes.clickable);
+-      expect(button).to.have.class(classes.clickableColorSecondary);
+       expect(button).to.have.class(classes.outlined);
+-      expect(button).to.have.class(classes.outlinedSecondary);
+     });
+ 
+-    it('should render with the root and filled clickable primary class', () => {
++    it('should render with the root, filled, clickable, and colorPrimary class', () => {
+       const { getByRole } = render(
+         <Chip color="primary" label="My Chip" onClick={() => {}} variant="filled" />,
+       );
+@@ -188,20 +204,12 @@ describe('<Chip />', () => {
+       expect(chip).to.have.class(classes.root);
+       expect(chip).to.have.class(classes.colorPrimary);
+       expect(chip).to.have.class(classes.clickable);
+-      expect(chip).to.have.class(classes.clickableColorPrimary);
+       expect(chip).to.have.class(classes.filled);
+-      expect(chip).to.have.class(classes.filledPrimary);
+     });
+ 
+-    it('should not be focused when a deletable chip is disabled and skipFocusWhenDisabled is true', () => {
++    it('should not be focused when a deletable chip is disabled', () => {
+       const { getByTestId } = render(
+-        <Chip
+-          label="My Chip"
+-          disabled
+-          data-testid="chip"
+-          skipFocusWhenDisabled
+-          onDelete={() => {}}
+-        />,
++        <Chip label="My Chip" disabled data-testid="chip" onDelete={() => {}} />,
+       );
+ 
+       const chip = getByTestId('chip');
+@@ -212,11 +220,10 @@ describe('<Chip />', () => {
+       });
+ 
+       expect(chip).to.have.class(classes.root);
+-      expect(chip).to.have.property('tabIndex', -1);
+       expect(chip).not.to.have.class(classes.focusVisible);
+     });
+ 
+-    it('should render with the root and filled clickable secondary class', () => {
++    it('should render with the root, filled, clickable, and colorSecondary class', () => {
+       const { getByRole } = render(
+         <Chip color="secondary" label="My Chip" onClick={() => {}} variant="filled" />,
+       );
+@@ -225,9 +232,7 @@ describe('<Chip />', () => {
+       expect(chip).to.have.class(classes.root);
+       expect(chip).to.have.class(classes.colorSecondary);
+       expect(chip).to.have.class(classes.clickable);
+-      expect(chip).to.have.class(classes.clickableColorSecondary);
+       expect(chip).to.have.class(classes.filled);
+-      expect(chip).to.have.class(classes.filledSecondary);
+     });
+   });
+ 
+@@ -246,11 +251,13 @@ describe('<Chip />', () => {
+     });
+ 
+     it('should not create ripples', () => {
+-      const { container } = render(
+-        <Chip avatar={<Avatar id="avatar">MB</Avatar>} onDelete={() => {}} />,
++      const { getByTestId } = render(
++        <Chip data-testid="root" avatar={<Avatar id="avatar">MB</Avatar>} onDelete={() => {}} />,
+       );
+ 
+-      expect(container.firstChild.querySelector('.MuiTouchRipple-root')).to.equal(null);
++      const chipRoot = getByTestId('root');
++
++      expect(chipRoot.querySelector('.MuiTouchRipple-root')).to.equal(null);
+     });
+ 
+     it('should apply user value of tabIndex', () => {
+@@ -265,7 +272,7 @@ describe('<Chip />', () => {
+ 
+       expect(getByRole('button')).to.have.property('tabIndex', 5);
+       const elementsInTabOrder = Array.from(container.querySelectorAll('[tabIndex]')).filter(
+-        (element) => element.tabIndex >= 0,
++        (element) => (element as HTMLElement).tabIndex >= 0,
+       );
+       expect(elementsInTabOrder).to.have.length(1);
+     });
+@@ -318,7 +325,7 @@ describe('<Chip />', () => {
+       expect(chip).to.have.class(classes.deletable);
+     });
+ 
+-    it('should render with the root, deletable and avatar primary classes', () => {
++    it('should render with the root, deletable, and colorPrimary classes', () => {
+       const { container } = render(
+         <Chip
+           avatar={<Avatar className="my-Avatar">MB</Avatar>}
+@@ -331,12 +338,9 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.colorPrimary);
+       expect(chip).to.have.class(classes.deletable);
+-      expect(chip).to.have.class(classes.deletableColorPrimary);
+-      const avatar = container.querySelector(`.${classes.avatar}`);
+-      expect(avatar).to.have.class(classes.avatarColorPrimary);
+     });
+ 
+-    it('should render with the root, deletable and avatar secondary classes', () => {
++    it('should render with the root, deletable, and colorSecondary classes', () => {
+       const { container } = render(
+         <Chip
+           avatar={<Avatar>MB</Avatar>}
+@@ -349,9 +353,6 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.colorSecondary);
+       expect(chip).to.have.class(classes.deletable);
+-      expect(chip).to.have.class(classes.deletableColorSecondary);
+-      const avatar = container.querySelector(`.${classes.avatar}`);
+-      expect(avatar).to.have.class(classes.avatarColorSecondary);
+     });
+   });
+ 
+@@ -362,14 +363,14 @@ describe('<Chip />', () => {
+       );
+ 
+       const chip = getByRole('button');
+-      const icon = getByTestId('CancelIcon');
++      const icon = getByTestId('ClearIcon');
+ 
+       expect(chip).to.have.class(classes.deletable);
+       expect(chip).to.contain(icon);
+       expect(icon).to.have.class(classes.deleteIcon);
+     });
+ 
+-    it('should render default icon with the root, deletable and deleteIcon primary class', () => {
++    it('should render default icon with the root, deletable, colorPrimary, and deleteIcon classes', () => {
+       const { container, getByTestId } = render(
+         <Chip label="Custom delete icon Chip" onDelete={() => {}} color="primary" />,
+       );
+@@ -377,13 +378,11 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.colorPrimary);
+       expect(chip).to.have.class(classes.deletable);
+-      expect(chip).to.have.class(classes.deletableColorPrimary);
+-      const icon = getByTestId('CancelIcon');
++      const icon = getByTestId('ClearIcon');
+       expect(icon).to.have.class(classes.deleteIcon);
+-      expect(icon).to.have.class(classes.deleteIconColorPrimary);
+     });
+ 
+-    it('should render a default icon with the root, deletable, deleteIcon secondary class', () => {
++    it('should render default icon with the root, deletable, colorSecondary, and deleteIcon classes', () => {
+       const { container, getByTestId } = render(
+         <Chip label="Custom delete icon Chip" onDelete={() => {}} color="secondary" />,
+       );
+@@ -391,10 +390,8 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.colorSecondary);
+       expect(chip).to.have.class(classes.deletable);
+-      expect(chip).to.have.class(classes.deletableColorSecondary);
+-      const icon = getByTestId('CancelIcon');
++      const icon = getByTestId('ClearIcon');
+       expect(icon).to.have.class(classes.deleteIcon);
+-      expect(icon).to.have.class(classes.deleteIconColorSecondary);
+     });
+ 
+     it('should render default icon with the root, deletable, deleteIcon primary class and deleteIcon filled primary class', () => {
+@@ -410,11 +407,8 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.colorPrimary);
+       expect(chip).to.have.class(classes.deletable);
+-      expect(chip).to.have.class(classes.deletableColorPrimary);
+-      const icon = getByTestId('CancelIcon');
++      const icon = getByTestId('ClearIcon');
+       expect(icon).to.have.class(classes.deleteIcon);
+-      expect(icon).to.have.class(classes.deleteIconColorPrimary);
+-      expect(icon).to.have.class(classes.deleteIconFilledColorPrimary);
+     });
+ 
+     it('should render default icon with the root, deletable, deleteIcon primary class and deleteIcon outlined primary class', () => {
+@@ -430,11 +424,8 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.colorPrimary);
+       expect(chip).to.have.class(classes.deletable);
+-      expect(chip).to.have.class(classes.deletableColorPrimary);
+-      const icon = getByTestId('CancelIcon');
++      const icon = getByTestId('ClearIcon');
+       expect(icon).to.have.class(classes.deleteIcon);
+-      expect(icon).to.have.class(classes.deleteIconColorPrimary);
+-      expect(icon).to.have.class(classes.deleteIconOutlinedColorPrimary);
+     });
+ 
+     it('accepts a custom icon', () => {
+@@ -478,7 +469,15 @@ describe('<Chip />', () => {
+       expect(chip).not.toHaveFocus();
+     });
+ 
+-    it('should call onClick when `space` is released ', () => {
++    it('should call onClick when `space` is released ', async function test() {
++      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
++      // userEvent.setup() requires Safari 14 or up to work
++      // We can remove this check once we drop support for Safari 13
++      if (isSafari) {
++        this.skip();
++      }
++
++      const user = userEvent.setup();
+       const handleClick = spy();
+       const { getByRole } = render(<Chip onClick={handleClick} />);
+       const chip = getByRole('button');
+@@ -486,12 +485,16 @@ describe('<Chip />', () => {
+         chip.focus();
+       });
+ 
+-      fireEvent.keyUp(chip, { key: ' ' });
++      await user.keyboard('{ >}'); // press space without releasing
++
++      expect(handleClick.callCount).to.equal(0);
++
++      await user.keyboard('{/ }'); // release space
+ 
+       expect(handleClick.callCount).to.equal(1);
+     });
+ 
+-    it('should call onClick when `enter` is pressed ', () => {
++    it('should call onClick when `enter` is pressed ', async () => {
+       const handleClick = spy();
+       const { getByRole } = render(<Chip onClick={handleClick} />);
+       const chip = getByRole('button');
+@@ -499,7 +502,7 @@ describe('<Chip />', () => {
+         chip.focus();
+       });
+ 
+-      fireEvent.keyDown(chip, { key: 'Enter' });
++      await userEvent.keyboard('{enter}');
+ 
+       expect(handleClick.callCount).to.equal(1);
+     });
+@@ -532,8 +535,10 @@ describe('<Chip />', () => {
+ 
+       it('should not prevent default on input', () => {
+         const handleKeyDown = spy();
+-        const { container } = render(<Chip label={<input />} onKeyDown={handleKeyDown} />);
+-        const input = container.querySelector('input');
++        const { getByTestId } = render(
++          <Chip label={<input data-testid="input" />} onKeyDown={handleKeyDown} />,
++        );
++        const input = getByTestId('input');
+ 
+         act(() => {
+           input.focus();
+@@ -550,14 +555,21 @@ describe('<Chip />', () => {
+         it(`should not call onDelete for child keyup event when '${key}' is released`, () => {
+           const handleDelete = spy();
+           const handleKeyUp = spy();
+-          render(
++          const { getByTestId } = render(
+             <Chip
+               onDelete={handleDelete}
+-              label={<input autoFocus className="child-input" onKeyUp={handleKeyUp} />}
++              label={
++                <input
++                  data-testid="input"
++                  autoFocus
++                  className="child-input"
++                  onKeyUp={handleKeyUp}
++                />
++              }
+             />,
+           );
+ 
+-          fireEvent.keyUp(document.querySelector('input'), { key });
++          fireEvent.keyUp(getByTestId('input'), { key });
+ 
+           expect(handleKeyUp.callCount).to.equal(1);
+           expect(handleDelete.callCount).to.equal(0);
+@@ -567,14 +579,16 @@ describe('<Chip />', () => {
+       it(`should not call onClick for child keyup event when 'Space' is released`, () => {
+         const handleClick = spy();
+         const handleKeyUp = spy();
+-        render(
++        const { getByTestId } = render(
+           <Chip
+             onClick={handleClick}
+-            label={<input autoFocus className="child-input" onKeyUp={handleKeyUp} />}
++            label={
++              <input data-testid="input" autoFocus className="child-input" onKeyUp={handleKeyUp} />
++            }
+           />,
+         );
+ 
+-        fireEvent.keyUp(document.querySelector('input'), { key: ' ' });
++        fireEvent.keyUp(getByTestId('input'), { key: ' ' });
+         expect(handleKeyUp.callCount).to.equal(1);
+         expect(handleClick.callCount).to.equal(0);
+       });
+@@ -582,14 +596,21 @@ describe('<Chip />', () => {
+       it(`should not call onClick for child keydown event when 'Enter' is pressed`, () => {
+         const handleClick = spy();
+         const handleKeyDown = spy();
+-        render(
++        const { getByTestId } = render(
+           <Chip
+             onClick={handleClick}
+-            label={<input autoFocus className="child-input" onKeyDown={handleKeyDown} />}
++            label={
++              <input
++                data-testid="input"
++                autoFocus
++                className="child-input"
++                onKeyDown={handleKeyDown}
++              />
++            }
+           />,
+         );
+ 
+-        fireEvent.keyDown(document.querySelector('input'), { key: 'Enter' });
++        fireEvent.keyDown(getByTestId('input'), { key: 'Enter' });
+         expect(handleKeyDown.callCount).to.equal(1);
+         expect(handleClick.callCount).to.equal(0);
+       });
+@@ -597,14 +618,16 @@ describe('<Chip />', () => {
+       it('should not call onClick for child event when `space` is released', () => {
+         const handleClick = spy();
+         const handleKeyUp = spy();
+-        render(
++        const { getByTestId } = render(
+           <Chip
+             onClick={handleClick}
+-            label={<input autoFocus className="child-input" onKeyUp={handleKeyUp} />}
++            label={
++              <input data-testid="input" autoFocus className="child-input" onKeyUp={handleKeyUp} />
++            }
+           />,
+         );
+ 
+-        fireEvent.keyUp(document.querySelector('input'), { key: ' ' });
++        fireEvent.keyUp(getByTestId('input'), { key: ' ' });
+ 
+         expect(handleClick.callCount).to.equal(0);
+         expect(handleKeyUp.callCount).to.equal(1);
+@@ -613,14 +636,21 @@ describe('<Chip />', () => {
+       it('should not call onClick for child event when `enter` is pressed', () => {
+         const handleClick = spy();
+         const handleKeyDown = spy();
+-        render(
++        const { getByTestId } = render(
+           <Chip
+             onClick={handleClick}
+-            label={<input autoFocus className="child-input" onKeyDown={handleKeyDown} />}
++            label={
++              <input
++                data-testid="input"
++                autoFocus
++                className="child-input"
++                onKeyDown={handleKeyDown}
++              />
++            }
+           />,
+         );
+ 
+-        fireEvent.keyDown(document.querySelector('input'), { key: 'Enter' });
++        fireEvent.keyDown(getByTestId('input'), { key: 'Enter' });
+ 
+         expect(handleClick.callCount).to.equal(0);
+         expect(handleKeyDown.callCount).to.equal(1);
+@@ -643,8 +673,6 @@ describe('<Chip />', () => {
+         </React.Fragment>,
+       );
+ 
+-      expect(getByTestId('test-icon')).to.have.class('MuiChip-iconColorSuccess');
+-      expect(getByTestId('test-icon2')).to.have.class('MuiChip-iconColorSuccess');
+       expect(getByTestId('test-icon')).toHaveComputedStyle({
+         color: hexToRgb(MaterialV5DefaultTheme.palette.success.main),
+       });
+@@ -661,45 +689,14 @@ describe('<Chip />', () => {
+       const chip = container.querySelector(`.${classes.root}`);
+       expect(chip).to.have.class(classes.sizeSmall);
+     });
+-
+-    it('should render the label with the labelSmall class', () => {
+-      const { container } = render(<Chip size="small" label="small chip" />);
+-
+-      const label = container.querySelector(`.${classes.label}`);
+-      expect(label).to.have.class(classes.labelSmall);
+-    });
+-
+-    it('should render an avatar with the avatarSmall class', () => {
+-      const { container } = render(
+-        <Chip size="small" avatar={<Avatar className="my-Avatar">MB</Avatar>} />,
+-      );
+-
+-      const avatar = container.querySelector('.my-Avatar');
+-      expect(avatar).to.have.class(classes.avatar);
+-      expect(avatar).to.have.class(classes.avatarSmall);
+-    });
+-
+-    it('should render an icon with the icon and iconSmall classes', () => {
+-      const { container } = render(<Chip size="small" icon={<span id="test-icon" />} />);
+-
+-      const icon = container.querySelector('#test-icon');
+-      expect(icon).to.have.class(classes.icon);
+-      expect(icon).to.have.class(classes.iconSmall);
+-    });
+-
+-    it('should render the delete icon with the deleteIcon and deleteIconSmall classes', () => {
+-      const { getByTestId } = render(<Chip size="small" onDelete={() => {}} />);
+-
+-      const icon = getByTestId('CancelIcon');
+-      expect(icon).to.have.class(classes.deleteIcon);
+-      expect(icon).to.have.class(classes.deleteIconSmall);
+-    });
+   });
+ 
+   describe('event: focus', () => {
+     it('has a focus-visible polyfill', () => {
+-      const { container } = render(<Chip label="Test Chip" onClick={() => {}} />);
+-      const chip = container.querySelector(`.${classes.root}`);
++      const { getByTestId } = render(
++        <Chip data-testid="root" label="Test Chip" onClick={() => {}} />,
++      );
++      const chip = getByTestId('root');
+       simulatePointerDevice();
+ 
+       expect(chip).not.to.have.class(classes.focusVisible);
+@@ -720,8 +717,10 @@ describe('<Chip />', () => {
+     });
+ 
+     it('should reset the focused state', () => {
+-      const { container, setProps } = render(<Chip label="Test Chip" onClick={() => {}} />);
+-      const chip = container.querySelector(`.${classes.root}`);
++      const { getByTestId, setProps } = render(
++        <Chip data-testid="root" label="Test Chip" onClick={() => {}} />,
++      );
++      const chip = getByTestId('root');
+ 
+       simulatePointerDevice();
+       focusVisible(chip);
+diff --git a/packages/mui-material-next/src/Chip/Chip.tsx b/packages/mui-material-next/src/Chip/Chip.tsx
+new file mode 100644
+index 00000000000000..9e8bb009b46ebe
+--- /dev/null
++++ b/packages/mui-material-next/src/Chip/Chip.tsx
+@@ -0,0 +1,560 @@
++'use client';
++import * as React from 'react';
++import PropTypes from 'prop-types';
++import clsx from 'clsx';
++import { EventHandlers, unstable_composeClasses as composeClasses, useSlotProps } from '@mui/base';
++import {
++  unstable_capitalize as capitalize,
++  unstable_useForkRef as useForkRef,
++  unstable_unsupportedProp as unsupportedProp,
++} from '@mui/utils';
++import { OverridableComponent } from '@mui/types';
++import ClearIcon from '../internal/svg-icons/Clear';
++import { useThemeProps, styled, MD3ColorSchemeTokens } from '../styles';
++import ButtonBase from '../ButtonBase';
++import chipClasses, { getChipUtilityClass } from './chipClasses';
++import { ChipOwnerState, ChipProps, ChipTypeMap } from './Chip.types';
++
++const useUtilityClasses = (ownerState: ChipOwnerState) => {
++  const { classes, disabled, size, color, hasDeleteIcon, clickable, variant } = ownerState;
++
++  const slots = {
++    root: [
++      'root',
++      variant,
++      disabled && 'disabled',
++      `size${capitalize(size)}`,
++      color && `color${capitalize(color)}`,
++      clickable && 'clickable',
++      hasDeleteIcon && 'deletable',
++    ],
++    label: ['label'],
++    avatar: ['avatar'],
++    icon: ['icon'],
++    deleteIcon: ['deleteIcon'],
++  };
++
++  const composedClasses = composeClasses(slots, getChipUtilityClass, classes);
++
++  return {
++    ...classes, // forward the focused, disabled, etc. classes to the ButtonBase
++    ...composedClasses,
++  };
++};
++
++const ChipRoot = styled('div', {
++  name: 'MuiChip',
++  slot: 'Root',
++  overridesResolver: (props, styles) => {
++    const { ownerState } = props;
++    const { color, clickable, hasDeleteIcon, size, variant } = ownerState;
++
++    return [
++      { [`& .${chipClasses.avatar}`]: styles.avatar },
++      { [`& .${chipClasses.icon}`]: styles.icon },
++      { [`& .${chipClasses.deleteIcon}`]: styles.deleteIcon },
++      styles.root,
++      styles[`size${capitalize(size)}`],
++      color && styles[`color${capitalize(color)}`],
++      clickable && styles.clickable,
++      hasDeleteIcon && styles.deletable,
++      styles[variant],
++    ];
++  },
++})<{ ownerState: ChipOwnerState }>(({ theme, ownerState }) => {
++  const { vars: tokens } = theme;
++
++  const containerColor = {
++    filled:
++      tokens.sys.color[`${ownerState.color ?? 'secondary'}Container` as keyof MD3ColorSchemeTokens],
++    outlined: 'transparent',
++    elevated:
++      tokens.sys.color[
++        (ownerState.color
++          ? `${ownerState.color}Container`
++          : 'surfaceContainerLow') as keyof MD3ColorSchemeTokens
++      ],
++  };
++
++  const labelTextColor = {
++    filled:
++      tokens.sys.color[
++        `on${capitalize(ownerState.color ?? 'secondary')}Container` as keyof MD3ColorSchemeTokens
++      ],
++    outlined: tokens.sys.color.onSurface,
++    elevated:
++      tokens.sys.color[
++        (ownerState.color
++          ? `on${capitalize(ownerState.color)}Container`
++          : 'onSurface') as keyof MD3ColorSchemeTokens
++      ],
++  };
++
++  const containerElevation = {
++    filled: tokens.sys.elevation[0],
++    outlined: tokens.sys.elevation[0],
++    elevated: tokens.sys.elevation[1],
++  };
++
++  const disabledContainerColor = {
++    filled: `rgba(${tokens.sys.color.onSurfaceChannel} / 0.12)`,
++    outlined: 'transparent',
++    elevated: `rgba(${tokens.sys.color.onSurfaceChannel} / 0.12)`,
++  };
++
++  const disabledContainerBorder = {
++    filled: null,
++    outlined: `1px solid rgba(${tokens.sys.color.onSurfaceChannel} / 0.12)`,
++    elevated: null,
++  };
++
++  const disabledElevation = {
++    filled: tokens.sys.elevation[0],
++    outlined: tokens.sys.elevation[0],
++    elevated: tokens.sys.elevation[0],
++  };
++
++  const stateLayerBackgroundColor = {
++    filled: tokens.sys.color.onSecondaryContainer,
++    outlined: tokens.sys.color.onSurfaceVariant,
++    elevated: tokens.sys.color.onSurfaceVariant,
++  };
++
++  const hoveredContainerElevation = {
++    filled: tokens.sys.elevation[1],
++    outlined: tokens.sys.elevation[0],
++    elevated: tokens.sys.elevation[2],
++  };
++
++  const focusedContainerElevation = {
++    filled: tokens.sys.elevation[0],
++    outlined: tokens.sys.elevation[0],
++    elevated: tokens.sys.elevation[1],
++  };
++
++  const pressedContainerElevation = {
++    filled: tokens.sys.elevation[1],
++    outlined: tokens.sys.elevation[0],
++    elevated: tokens.sys.elevation[1],
++  };
++
++  const letterSpacing = `${
++    theme.sys.typescale.label.large.tracking / theme.sys.typescale.label.large.size
++  }rem`;
++
++  return {
++    '--md-comp-chip-container-color': containerColor[ownerState.variant],
++    '--md-comp-chip-label-padding-y': '16px',
++    '--md-comp-chip-label-padding-left': 'var(--md-comp-chip-label-padding-y)',
++    '--md-comp-chip-label-padding-right': 'var(--md-comp-chip-label-padding-y)',
++    '--md-comp-chip-icon-size': '18px',
++    position: 'relative',
++    maxWidth: '100%',
++    fontFamily: tokens.sys.typescale.label.large.family,
++    fontSize: theme.typography.pxToRem(theme.sys.typescale.label.large.size), // the pxToRem should be moved to typescale in the future
++    fontWeight: tokens.sys.typescale.label.large.weight,
++    lineHeight: `calc(${tokens.sys.typescale.label.large.lineHeight} / ${theme.sys.typescale.label.large.size})`,
++    letterSpacing,
++    display: 'inline-flex',
++    alignItems: 'center',
++    justifyContent: 'center',
++    height: 32,
++    color: labelTextColor[ownerState.variant],
++    backgroundColor: 'var(--md-comp-chip-container-color)',
++    borderRadius: tokens.sys.shape.corner.small,
++    whiteSpace: 'nowrap',
++    overflow: 'hidden',
++    transition: theme.transitions.create(['background-color', 'box-shadow']),
++    boxSizing: 'border-box',
++    boxShadow: containerElevation[ownerState.variant],
++    ...(ownerState.size === 'small' && {
++      '--md-comp-chip-label-padding-y': '10px',
++      '--md-comp-chip-icon-size': '16px',
++      height: 24,
++    }),
++    ...(ownerState.variant === 'outlined' && {
++      border: `1px solid ${tokens.sys.color[ownerState.color ?? 'outline']}`,
++      '--md-comp-chip-label-padding-left': 'calc(var(--md-comp-chip-label-padding-y) - 1px)',
++      '--md-comp-chip-label-padding-right': 'calc(var(--md-comp-chip-label-padding-y) - 1px)',
++    }),
++    ...((ownerState.hasIcon || ownerState.hasAvatar) && {
++      '--md-comp-chip-label-padding-left': ownerState.size === 'small' ? '6px' : '8px',
++    }),
++    ...(ownerState.hasDeleteIcon && {
++      '--md-comp-chip-label-padding-right': '5px',
++      cursor: 'auto',
++    }),
++    [`&.${chipClasses.disabled}`]: {
++      backgroundColor: disabledContainerColor[ownerState.variant],
++      border: disabledContainerBorder[ownerState.variant],
++      color: `rgba(${tokens.sys.color.onSurfaceChannel} / 0.38)`,
++      boxShadow: disabledElevation[ownerState.variant],
++      pointerEvents: 'none',
++    },
++    ...((ownerState.clickable || ownerState.hasDeleteIcon) && {
++      [`&.${chipClasses.focusVisible}`]: {
++        boxShadow: focusedContainerElevation[ownerState.variant],
++        '--md-comp-chip-container-color': `color-mix(in srgb, ${
++          stateLayerBackgroundColor[ownerState.variant]
++        } calc(${tokens.sys.state.focus.stateLayerOpacity} * 100%), ${
++          containerColor[ownerState.variant]
++        })`,
++      },
++    }),
++    ...(ownerState.clickable && {
++      WebkitTapHighlightColor: 'transparent',
++      cursor: 'pointer',
++      '&:hover': {
++        boxShadow: hoveredContainerElevation[ownerState.variant],
++        backgroundColor: `color-mix(in srgb, ${
++          stateLayerBackgroundColor[ownerState.variant]
++        } calc(${
++          tokens.sys.state.hover.stateLayerOpacity
++        } * 100%), var(--md-comp-chip-container-color))`,
++      },
++      '&:active': {
++        boxShadow: pressedContainerElevation[ownerState.variant],
++      },
++    }),
++    [`& .${chipClasses.avatar}`]: {
++      width: 24,
++      height: 24,
++      marginLeft: 4,
++      color:
++        tokens.sys.color[
++          `on${capitalize(ownerState.color ?? 'secondary')}` as keyof MD3ColorSchemeTokens
++        ],
++      backgroundColor: tokens.sys.color[ownerState.color ?? 'secondary'],
++      fontSize: theme.typography.pxToRem(theme.sys.typescale.label.large.size), // the pxToRem should be moved to typescale in the future
++      ...(ownerState.size === 'small' && {
++        height: 18,
++        width: 18,
++        fontSize: theme.typography.pxToRem(theme.sys.typescale.label.small.size), // the pxToRem should be moved to typescale in the future
++      }),
++    },
++    [`& .${chipClasses.icon}`]: {
++      height: 'var(--md-comp-chip-icon-size)',
++      width: 'var(--md-comp-chip-icon-size)',
++      marginLeft: 8,
++    },
++    [`& .${chipClasses.deleteIcon}`]: {
++      boxSizing: 'content-box',
++      zIndex: 1,
++      height: 'var(--md-comp-chip-icon-size)',
++      width: 'var(--md-comp-chip-icon-size)',
++      padding: 3,
++      marginRight: 5,
++      ...(ownerState.size === 'small' && {
++        padding: 1,
++      }),
++      WebkitTapHighlightColor: 'transparent',
++      cursor: 'pointer',
++      borderRadius: tokens.sys.shape.corner.full,
++      '&:hover': {
++        backgroundColor: `color-mix(in srgb, ${
++          stateLayerBackgroundColor[ownerState.variant]
++        } calc(${
++          tokens.sys.state.hover.stateLayerOpacity
++        } * 100%), var(--md-comp-chip-container-color))`,
++      },
++    },
++  };
++});
++
++const ChipLabel = styled('span', {
++  name: 'MuiChip',
++  slot: 'Label',
++})<{ ownerState: ChipOwnerState }>({
++  overflow: 'hidden',
++  textOverflow: 'ellipsis',
++  whiteSpace: 'nowrap',
++  paddingLeft: 'var(--md-comp-chip-label-padding-left)',
++  paddingRight: 'var(--md-comp-chip-label-padding-right)',
++});
++
++function isDeleteKeyboardEvent(keyboardEvent: React.KeyboardEvent<HTMLDivElement>) {
++  return keyboardEvent.key === 'Backspace' || keyboardEvent.key === 'Delete';
++}
++
++/**
++ * Chips represent complex entities in small blocks, such as a contact.
++ *
++ * Demos:
++ *
++ * - [Chip](https://mui.com/material-ui/react-chip/)
++ *
++ * API:
++ *
++ * - [Chip API](https://mui.com/material-ui/api/chip/)
++ */
++const Chip = React.forwardRef(function Chip<
++  BaseComponentType extends React.ElementType = ChipTypeMap['defaultComponent'],
++>(inProps: ChipProps<BaseComponentType>, ref: React.ForwardedRef<Element>) {
++  const props = useThemeProps<typeof inProps & ChipProps>({ props: inProps, name: 'MuiChip' });
++  const {
++    avatar: avatarProp,
++    className,
++    clickable: clickableProp,
++    color,
++    component: ComponentProp,
++    deleteIcon: deleteIconProp,
++    disabled = false,
++    icon: iconProp,
++    label,
++    onClick,
++    onDelete,
++    onKeyDown,
++    onKeyUp,
++    size = 'medium',
++    variant = 'filled',
++    ...other
++  } = props;
++
++  const chipRef = React.useRef<HTMLDivElement | null>(null);
++  const handleRef = useForkRef(chipRef, ref);
++
++  const handleDeleteIconClick = (event: React.MouseEvent<SVGSVGElement>) => {
++    // Stop the event from bubbling up to the `Chip`
++    event.stopPropagation();
++    if (onDelete) {
++      onDelete(event);
++    }
++  };
++
++  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
++    // Ignore events from children of `Chip`.
++    if (event.currentTarget === event.target && isDeleteKeyboardEvent(event)) {
++      // Will be handled in keyUp, otherwise some browsers
++      // might init navigation
++      event.preventDefault();
++    }
++
++    if (onKeyDown) {
++      onKeyDown(event);
++    }
++  };
++
++  const handleKeyUp = (event: React.KeyboardEvent<HTMLDivElement>) => {
++    // Ignore events from children of `Chip`.
++    if (event.currentTarget === event.target) {
++      if (onDelete && isDeleteKeyboardEvent(event)) {
++        onDelete(event);
++      } else if (event.key === 'Escape' && chipRef.current) {
++        chipRef.current.blur();
++      }
++    }
++
++    if (onKeyUp) {
++      onKeyUp(event);
++    }
++  };
++
++  const clickable = clickableProp !== false && onClick ? true : clickableProp;
++  const isButton = clickable || !!onDelete;
++
++  const component = isButton ? ButtonBase : ComponentProp || 'div';
++
++  const hasIcon = !!iconProp && React.isValidElement(iconProp);
++  const hasDeleteIcon = !!onDelete;
++  const hasAvatar = !!avatarProp && React.isValidElement(avatarProp);
++
++  const ownerState: ChipOwnerState = {
++    ...props,
++    component,
++    disabled,
++    size,
++    color,
++    clickable,
++    variant,
++    hasIcon,
++    hasDeleteIcon,
++    hasAvatar,
++  };
++
++  const classes = useUtilityClasses(ownerState);
++
++  const buttonProps = {
++    disabled: clickable && disabled,
++    component: ComponentProp,
++    focusVisibleClassName: chipClasses.focusVisible,
++    ...(onDelete && { disableRipple: true }),
++  };
++
++  let deleteIcon = null;
++  if (onDelete) {
++    deleteIcon =
++      deleteIconProp && React.isValidElement(deleteIconProp) ? (
++        React.cloneElement(deleteIconProp as React.ReactElement, {
++          className: clsx((deleteIconProp.props as any)?.className, classes.deleteIcon),
++          onClick: handleDeleteIconClick,
++        })
++      ) : (
++        <ClearIcon className={clsx(classes.deleteIcon)} onClick={handleDeleteIconClick} />
++      );
++  }
++
++  let avatar = null;
++  if (hasAvatar) {
++    avatar = React.cloneElement(avatarProp as React.ReactElement, {
++      className: clsx(classes.avatar, (avatarProp.props as any)?.className),
++    });
++  }
++
++  let icon = null;
++  if (hasIcon) {
++    icon = React.cloneElement(iconProp as React.ReactElement, {
++      className: clsx(classes.icon, (iconProp.props as any)?.className),
++    });
++  }
++
++  if (process.env.NODE_ENV !== 'production') {
++    if (avatar && icon) {
++      console.error(
++        'MUI: The Chip component can not handle the avatar ' +
++          'and the icon prop at the same time. Pick one.',
++      );
++    }
++  }
++
++  const rootProps = useSlotProps({
++    elementType: ChipRoot,
++    getSlotProps: (otherHandlers: EventHandlers) => ({
++      ...otherHandlers,
++      onKeyDown: handleKeyDown,
++      onKeyUp: handleKeyUp,
++    }),
++    externalForwardedProps: {
++      onClick,
++      ...other,
++    },
++    externalSlotProps: {},
++    additionalProps: {
++      as: component,
++      ref: handleRef,
++      ...(isButton && buttonProps),
++    },
++    ownerState,
++    className: [classes.root, className],
++  });
++
++  return (
++    <ChipRoot {...rootProps}>
++      {avatar || icon}
++      <ChipLabel className={clsx(classes.label)} ownerState={ownerState}>
++        {label}
++      </ChipLabel>
++      {deleteIcon}
++    </ChipRoot>
++  );
++}) as OverridableComponent<ChipTypeMap>;
++
++Chip.propTypes /* remove-proptypes */ = {
++  // ----------------------------- Warning --------------------------------
++  // | These PropTypes are generated from the TypeScript type definitions |
++  // |     To update them edit TypeScript types and run "yarn proptypes"  |
++  // ----------------------------------------------------------------------
++  /**
++   * The Avatar element to display.
++   */
++  avatar: PropTypes.element,
++  /**
++   * This prop isn't supported.
++   * Use the `component` prop if you need to change the children structure.
++   */
++  children: unsupportedProp,
++  /**
++   * Override or extend the styles applied to the component.
++   */
++  classes: PropTypes.object,
++  /**
++   * @ignore
++   */
++  className: PropTypes.string,
++  /**
++   * If `true`, the chip will appear clickable, and will raise when pressed,
++   * even if the onClick prop is not defined.
++   * If `false`, the chip will not appear clickable, even if onClick prop is defined.
++   * This can be used, for example,
++   * along with the component prop to indicate an anchor Chip is clickable.
++   * Note: this controls the UI and does not affect the onClick event.
++   */
++  clickable: PropTypes.bool,
++  /**
++   * The color of the component.
++   * It supports both default and custom theme colors, which can be added as shown in the
++   * [palette customization guide](https://mui.com/material-ui/customization/palette/#adding-new-colors).
++   */
++  color: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
++    PropTypes.oneOf(['primary', 'secondary', 'tertiary', 'error', 'info', 'success', 'warning']),
++    PropTypes.string,
++  ]),
++  /**
++   * The component used for the root node.
++   * Either a string to use a HTML element or a component.
++   */
++  component: PropTypes.elementType,
++  /**
++   * Override the default delete icon element. Shown only if `onDelete` is set.
++   */
++  deleteIcon: PropTypes.element,
++  /**
++   * If `true`, the component is disabled.
++   * @default false
++   */
++  disabled: PropTypes.bool,
++  /**
++   * Icon element.
++   */
++  icon: PropTypes.element,
++  /**
++   * The content of the component.
++   */
++  label: PropTypes.node,
++  /**
++   * @ignore
++   */
++  onClick: PropTypes.func,
++  /**
++   * Callback fired when the delete icon is clicked.
++   * If set, the delete icon will be shown.
++   */
++  onDelete: PropTypes.func,
++  /**
++   * @ignore
++   */
++  onKeyDown: PropTypes.func,
++  /**
++   * @ignore
++   */
++  onKeyUp: PropTypes.func,
++  /**
++   * The size of the component.
++   * @default 'medium'
++   */
++  size: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
++    PropTypes.oneOf(['medium', 'small']),
++    PropTypes.string,
++  ]),
++  /**
++   * The system prop that allows defining system overrides as well as additional CSS styles.
++   */
++  sx: PropTypes.oneOfType([
++    PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.func, PropTypes.object, PropTypes.bool])),
++    PropTypes.func,
++    PropTypes.object,
++  ]),
++  /**
++   * @ignore
++   */
++  tabIndex: PropTypes.number,
++  /**
++   * The variant to use.
++   * @default 'filled'
++   */
++  variant: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
++    PropTypes.oneOf(['filled', 'outlined', 'elevated']),
++    PropTypes.string,
++  ]),
++} as any;
++
++export default Chip;
+diff --git a/packages/mui-material-next/src/Chip/Chip.d.ts b/packages/mui-material-next/src/Chip/Chip.types.ts
+similarity index 74%
+rename from packages/mui-material-next/src/Chip/Chip.d.ts
+rename to packages/mui-material-next/src/Chip/Chip.types.ts
+index 6050f86081318b..6c40f132a0195e 100644
+--- a/packages/mui-material-next/src/Chip/Chip.d.ts
++++ b/packages/mui-material-next/src/Chip/Chip.types.ts
+@@ -1,7 +1,6 @@
+ import * as React from 'react';
+-import { OverridableStringUnion, OverridableComponent, OverrideProps } from '@mui/types';
+-import { SxProps } from '@mui/system';
+-import { Theme } from '..';
++import { OverridableStringUnion, OverrideProps } from '@mui/types';
++import { SxProps } from '../styles/Theme.types';
+ import { ChipClasses } from './chipClasses';
+ 
+ export interface ChipPropsVariantOverrides {}
+@@ -41,10 +40,9 @@ export interface ChipTypeMap<
+      * The color of the component.
+      * It supports both default and custom theme colors, which can be added as shown in the
+      * [palette customization guide](https://mui.com/material-ui/customization/palette/#adding-new-colors).
+-     * @default 'default'
+      */
+     color?: OverridableStringUnion<
+-      'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning',
++      'primary' | 'secondary' | 'tertiary' | 'error' | 'info' | 'success' | 'warning',
+       ChipPropsColorOverrides
+     >;
+     /**
+@@ -74,16 +72,10 @@ export interface ChipTypeMap<
+      * @default 'medium'
+      */
+     size?: OverridableStringUnion<'small' | 'medium', ChipPropsSizeOverrides>;
+-    /**
+-     * If `true`, allows the disabled chip to escape focus.
+-     * If `false`, allows the disabled chip to receive focus.
+-     * @default false
+-     */
+-    skipFocusWhenDisabled?: boolean;
+     /**
+      * The system prop that allows defining system overrides as well as additional CSS styles.
+      */
+-    sx?: SxProps<Theme>;
++    sx?: SxProps;
+     /**
+      *  @ignore
+      */
+@@ -92,27 +84,25 @@ export interface ChipTypeMap<
+      * The variant to use.
+      * @default 'filled'
+      */
+-    variant?: OverridableStringUnion<'filled' | 'outlined', ChipPropsVariantOverrides>;
++    variant?: OverridableStringUnion<'filled' | 'outlined' | 'elevated', ChipPropsVariantOverrides>;
+   };
+   defaultComponent: RootComponent;
+ }
+ 
+-/**
+- * Chips represent complex entities in small blocks, such as a contact.
+- *
+- * Demos:
+- *
+- * - [Chip](https://mui.com/material-ui/react-chip/)
+- *
+- * API:
+- *
+- * - [Chip API](https://mui.com/material-ui/api/chip/)
+- */
+-declare const Chip: OverridableComponent<ChipTypeMap>;
+-
+ export type ChipProps<
+   RootComponent extends React.ElementType = ChipTypeMap['defaultComponent'],
+   AdditionalProps = {},
+-> = OverrideProps<ChipTypeMap<AdditionalProps, RootComponent>, RootComponent>;
++> = OverrideProps<ChipTypeMap<AdditionalProps, RootComponent>, RootComponent> & {
++  component?: React.ElementType;
++};
+ 
+-export default Chip;
++export interface ChipOwnerState extends ChipProps {
++  variant: NonNullable<ChipProps['variant']>;
++  size: NonNullable<ChipProps['size']>;
++  /**
++   * color for the icon component
++   */
++  hasIcon: boolean;
++  hasDeleteIcon: boolean;
++  hasAvatar: boolean;
++}
+diff --git a/packages/mui-material-next/src/Chip/chipClasses.ts b/packages/mui-material-next/src/Chip/chipClasses.ts
+index 40673cd0885b25..7c4f1fc48e5bd9 100644
+--- a/packages/mui-material-next/src/Chip/chipClasses.ts
++++ b/packages/mui-material-next/src/Chip/chipClasses.ts
+@@ -18,6 +18,8 @@ export interface ChipClasses {
+   colorPrimary: string;
+   /** Styles applied to the root element if `color="secondary"`. */
+   colorSecondary: string;
++  /** Styles applied to the root element if `color="tertiary"`. */
++  colorTertiary: string;
+   /** Styles applied to the root element if `color="success"`. */
+   colorSuccess: string;
+   /** Styles applied to the root element if `color="warning"`. */
+@@ -26,72 +28,20 @@ export interface ChipClasses {
+   disabled: string;
+   /** Styles applied to the root element if `onClick` is defined or `clickable={true}`. */
+   clickable: string;
+-  /** Styles applied to the root element if `onClick` and `color="primary"` is defined or `clickable={true}`. */
+-  clickableColorPrimary: string;
+-  /** Styles applied to the root element if `onClick` and `color="secondary"` is defined or `clickable={true}`. */
+-  clickableColorSecondary: string;
+   /** Styles applied to the root element if `onDelete` is defined. */
+   deletable: string;
+-  /** Styles applied to the root element if `onDelete` and `color="primary"` is defined. */
+-  deletableColorPrimary: string;
+-  /** Styles applied to the root element if `onDelete` and `color="secondary"` is defined. */
+-  deletableColorSecondary: string;
+   /** Styles applied to the root element if `variant="outlined"`. */
+   outlined: string;
+   /** Styles applied to the root element if `variant="filled"`. */
+   filled: string;
+-  /** Styles applied to the root element if `variant="outlined"` and `color="primary"`. */
+-  outlinedPrimary: string;
+-  /** Styles applied to the root element if `variant="outlined"` and `color="secondary"`. */
+-  outlinedSecondary: string;
+-  /** Styles applied to the root element if `variant="filled"` and `color="primary"`. */
+-  filledPrimary: string;
+-  /** Styles applied to the root element if `variant="filled"` and `color="secondary"`. */
+-  filledSecondary: string;
+   /** Styles applied to the avatar element. */
+   avatar: string;
+-  /** Styles applied to the avatar element if `size="small"`. */
+-  avatarSmall: string;
+-  /** Styles applied to the avatar element if `size="medium"`. */
+-  avatarMedium: string;
+-  /** Styles applied to the avatar element if `color="primary"`. */
+-  avatarColorPrimary: string;
+-  /** Styles applied to the avatar element if `color="secondary"`. */
+-  avatarColorSecondary: string;
+   /** Styles applied to the icon element. */
+   icon: string;
+-  /** Styles applied to the icon element if `size="small"`. */
+-  iconSmall: string;
+-  /** Styles applied to the icon element if `size="medium"`. */
+-  iconMedium: string;
+-  /** Styles applied to the icon element if `color="primary"`. */
+-  iconColorPrimary: string;
+-  /** Styles applied to the icon element if `color="secondary"`. */
+-  iconColorSecondary: string;
+   /** Styles applied to the label `span` element. */
+   label: string;
+-  /** Styles applied to the label `span` element if `size="small"`. */
+-  labelSmall: string;
+-  /** Styles applied to the label `span` element if `size="medium"`. */
+-  labelMedium: string;
+   /** Styles applied to the deleteIcon element. */
+   deleteIcon: string;
+-  /** Styles applied to the deleteIcon element if `size="small"`. */
+-  deleteIconSmall: string;
+-  /** Styles applied to the deleteIcon element if `size="medium"`. */
+-  deleteIconMedium: string;
+-  /** Styles applied to the deleteIcon element if `color="primary"` and `variant="filled"`. */
+-  deleteIconColorPrimary: string;
+-  /** Styles applied to the deleteIcon element if `color="secondary"` and `variant="filled"`. */
+-  deleteIconColorSecondary: string;
+-  /** Styles applied to the deleteIcon element if `color="primary"` and `variant="outlined"`. */
+-  deleteIconOutlinedColorPrimary: string;
+-  /** Styles applied to the deleteIcon element if `color="secondary"` and `variant="outlined"`. */
+-  deleteIconOutlinedColorSecondary: string;
+-  /** Styles applied to the deleteIcon element if `color="primary"` and `variant="filled"`. */
+-  deleteIconFilledColorPrimary: string;
+-  /** Styles applied to the deleteIcon element if `color="secondary"` and `variant="filled"`. */
+-  deleteIconFilledColorSecondary: string;
+   /** State class applied to the root element if keyboard focused. */
+   focusVisible: string;
+ }
+@@ -110,43 +60,18 @@ const chipClasses: ChipClasses = generateUtilityClasses('MuiChip', [
+   'colorInfo',
+   'colorPrimary',
+   'colorSecondary',
++  'colorTertiary',
+   'colorSuccess',
+   'colorWarning',
+   'disabled',
+   'clickable',
+-  'clickableColorPrimary',
+-  'clickableColorSecondary',
+   'deletable',
+-  'deletableColorPrimary',
+-  'deletableColorSecondary',
+   'outlined',
+   'filled',
+-  'outlinedPrimary',
+-  'outlinedSecondary',
+-  'filledPrimary',
+-  'filledSecondary',
+   'avatar',
+-  'avatarSmall',
+-  'avatarMedium',
+-  'avatarColorPrimary',
+-  'avatarColorSecondary',
+   'icon',
+-  'iconSmall',
+-  'iconMedium',
+-  'iconColorPrimary',
+-  'iconColorSecondary',
+   'label',
+-  'labelSmall',
+-  'labelMedium',
+   'deleteIcon',
+-  'deleteIconSmall',
+-  'deleteIconMedium',
+-  'deleteIconColorPrimary',
+-  'deleteIconColorSecondary',
+-  'deleteIconOutlinedColorPrimary',
+-  'deleteIconOutlinedColorSecondary',
+-  'deleteIconFilledColorPrimary',
+-  'deleteIconFilledColorSecondary',
+   'focusVisible',
+ ]);
+ 
+diff --git a/packages/mui-material-next/src/Chip/index.d.ts b/packages/mui-material-next/src/Chip/index.d.ts
+deleted file mode 100644
+index 142aa252697363..00000000000000
+--- a/packages/mui-material-next/src/Chip/index.d.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-export { default } from './Chip';
+-export * from './Chip';
+-
+-export { default as chipClasses } from './chipClasses';
+-export * from './chipClasses';
+diff --git a/packages/mui-material-next/src/Chip/index.js b/packages/mui-material-next/src/Chip/index.ts
+similarity index 100%
+rename from packages/mui-material-next/src/Chip/index.js
+rename to packages/mui-material-next/src/Chip/index.ts
+diff --git a/packages/mui-material-next/src/internal/svg-icons/Cancel.js b/packages/mui-material-next/src/internal/svg-icons/Cancel.js
+deleted file mode 100644
+index 0aeeb5f9c36cbe..00000000000000
+--- a/packages/mui-material-next/src/internal/svg-icons/Cancel.js
++++ /dev/null
+@@ -1,11 +0,0 @@
+-'use client';
+-import * as React from 'react';
+-import createSvgIcon from '../../utils/createSvgIcon';
+-
+-/**
+- * @ignore - internal component.
+- */
+-export default createSvgIcon(
+-  <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z" />,
+-  'Cancel',
+-);
+diff --git a/packages/mui-material-next/src/internal/svg-icons/CheckBox.js b/packages/mui-material-next/src/internal/svg-icons/CheckBox.tsx
+similarity index 100%
+rename from packages/mui-material-next/src/internal/svg-icons/CheckBox.js
+rename to packages/mui-material-next/src/internal/svg-icons/CheckBox.tsx
+diff --git a/packages/mui-material-next/src/internal/svg-icons/Clear.tsx b/packages/mui-material-next/src/internal/svg-icons/Clear.tsx
+new file mode 100644
+index 00000000000000..5a8831dd4aee69
+--- /dev/null
++++ b/packages/mui-material-next/src/internal/svg-icons/Clear.tsx
+@@ -0,0 +1,11 @@
++'use client';
++import * as React from 'react';
++import createSvgIcon from '../../utils/createSvgIcon';
++
++/**
++ * @ignore - internal component.
++ */
++export default createSvgIcon(
++  <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />,
++  'Clear',
++);
+diff --git a/packages/mui-material-next/src/styles/Theme.types.ts b/packages/mui-material-next/src/styles/Theme.types.ts
+index f6079bc72a75e1..16f00d4d3b73bf 100644
+--- a/packages/mui-material-next/src/styles/Theme.types.ts
++++ b/packages/mui-material-next/src/styles/Theme.types.ts
+@@ -26,6 +26,7 @@ export interface MD3NeutralTones extends MD3Tones {
+   17: string;
+   22: string;
+   92: string;
++  96: string;
+ }
+ export interface MD3Palettes {
+   primary: MD3Tones;
+@@ -66,12 +67,18 @@ export interface MD3ColorSchemeTokens {
+ 
+   info: string;
+   onInfo: string;
++  infoContainer: string;
++  onInfoContainer: string;
+ 
+   warning: string;
+   onWarning: string;
++  warningContainer: string;
++  onWarningContainer: string;
+ 
+   success: string;
+   onSuccess: string;
++  successContainer: string;
++  onSuccessContainer: string;
+ 
+   background: string;
+   onBackground: string;
+@@ -80,6 +87,7 @@ export interface MD3ColorSchemeTokens {
+   onSurface: string;
+   surfaceVariant: string;
+   onSurfaceVariant: string;
++  surfaceContainerLow: string;
+   surfaceContainerHigh: string;
+   surfaceContainerHighest: string;
+ 
+diff --git a/packages/mui-material-next/src/styles/createDarkColorScheme.ts b/packages/mui-material-next/src/styles/createDarkColorScheme.ts
+index 58427cc023da02..4699f0e3c42eda 100644
+--- a/packages/mui-material-next/src/styles/createDarkColorScheme.ts
++++ b/packages/mui-material-next/src/styles/createDarkColorScheme.ts
+@@ -5,7 +5,7 @@ const createDarkColorScheme = (
+   palette: MD3Palettes,
+ ) => ({
+   surfaceTint: getCssVar('ref-palette-primary-40', palette.primary[40]),
+-  onErrorContainer: getCssVar('ref-palette-error-80', palette.error[80]),
++  onErrorContainer: getCssVar('ref-palette-error-90', palette.error[90]),
+   onError: getCssVar('ref-palette-error-20', palette.error[20]),
+   errorContainer: getCssVar('ref-palette-error-30', palette.error[30]),
+   onTertiaryContainer: getCssVar('ref-palette-tertiary-90', palette.tertiary[90]),
+@@ -23,6 +23,7 @@ const createDarkColorScheme = (
+   onSurface: getCssVar('ref-palette-neutral-90', palette.neutral[90]),
+   surfaceVariant: getCssVar('ref-palette-neutralVariant-30', palette.neutralVariant[30]),
+   surface: getCssVar('ref-palette-neutral-10', palette.neutral[10]),
++  surfaceContainerLow: getCssVar('ref-palette-neutral-10', palette.neutral[10]),
+   surfaceContainerHigh: getCssVar('ref-palette-neutral-17', palette.neutral[17]),
+   surfaceContainerHighest: getCssVar('ref-palette-neutral-22', palette.neutral[22]),
+   onSecondaryContainer: getCssVar('ref-palette-secondary-90', palette.secondary[90]),
+@@ -36,10 +37,16 @@ const createDarkColorScheme = (
+   primary: getCssVar('ref-palette-primary-80', palette.primary[80]),
+   info: getCssVar('ref-palette-info-80', palette.info[80]),
+   onInfo: getCssVar('ref-palette-info-20', palette.info[20]),
++  infoContainer: getCssVar('ref-palette-info-30', palette.info[30]),
++  onInfoContainer: getCssVar('ref-palette-info-90', palette.info[90]),
+   warning: getCssVar('ref-palette-warning-80', palette.warning[80]),
+   onWarning: getCssVar('ref-palette-warning-20', palette.warning[20]),
++  warningContainer: getCssVar('ref-palette-warning-30', palette.warning[30]),
++  onWarningContainer: getCssVar('ref-palette-warning-90', palette.warning[90]),
+   success: getCssVar('ref-palette-success-80', palette.success[80]),
+   onSuccess: getCssVar('ref-palette-success-20', palette.success[20]),
++  successContainer: getCssVar('ref-palette-success-30', palette.success[30]),
++  onSuccessContainer: getCssVar('ref-palette-success-90', palette.success[90]),
+ });
+ 
+ export default createDarkColorScheme;
+diff --git a/packages/mui-material-next/src/styles/createLightColorScheme.ts b/packages/mui-material-next/src/styles/createLightColorScheme.ts
+index 0eaa4f8696f2cc..85b2a621630828 100644
+--- a/packages/mui-material-next/src/styles/createLightColorScheme.ts
++++ b/packages/mui-material-next/src/styles/createLightColorScheme.ts
+@@ -23,6 +23,7 @@ const createLightColorScheme = (
+   onSurface: getCssVar('ref-palette-neutral-10', palette.neutral[10]),
+   surfaceVariant: getCssVar('ref-palette-neutralVariant-90', palette.neutralVariant[90]),
+   surface: getCssVar('ref-palette-neutral-99', palette.neutral[99]),
++  surfaceContainerLow: getCssVar('ref-palette-neutral-96', palette.neutral[96]),
+   surfaceContainerHigh: getCssVar('ref-palette-neutral-92', palette.neutral[92]),
+   surfaceContainerHighest: getCssVar('ref-palette-neutral-90', palette.neutral[90]),
+   onSecondaryContainer: getCssVar('ref-palette-secondary-10', palette.secondary[10]),
+@@ -36,10 +37,16 @@ const createLightColorScheme = (
+   primary: getCssVar('ref-palette-primary-40', palette.primary[40]),
+   info: getCssVar('ref-palette-info-40', palette.info[40]),
+   onInfo: getCssVar('ref-palette-info-100', palette.info[100]),
++  infoContainer: getCssVar('ref-palette-info-90', palette.info[90]),
++  onInfoContainer: getCssVar('ref-palette-info-10', palette.info[10]),
+   warning: getCssVar('ref-palette-warning-40', palette.warning[40]),
+   onWarning: getCssVar('ref-palette-warning-100', palette.warning[100]),
++  warningContainer: getCssVar('ref-palette-warning-90', palette.warning[90]),
++  onWarningContainer: getCssVar('ref-palette-warning-10', palette.warning[10]),
+   success: getCssVar('ref-palette-success-40', palette.success[40]),
+   onSuccess: getCssVar('ref-palette-success-100', palette.success[100]),
++  successContainer: getCssVar('ref-palette-success-90', palette.success[90]),
++  onSuccessContainer: getCssVar('ref-palette-success-10', palette.success[10]),
+ });
+ 
+ export default createLightColorScheme;
+diff --git a/packages/mui-material-next/src/styles/palette.ts b/packages/mui-material-next/src/styles/palette.ts
+index 6c5d9525b89fb8..bc0cfcc9bc770a 100644
+--- a/packages/mui-material-next/src/styles/palette.ts
++++ b/packages/mui-material-next/src/styles/palette.ts
+@@ -134,6 +134,7 @@ const mdRefPalette = {
+     90: '#e6e1e5',
+     92: '#ece6f0',
+     95: '#f4eff4',
++    96: '#f7f2fa',
+     99: '#fffbfe',
+     100: '#ffffff',
+   },

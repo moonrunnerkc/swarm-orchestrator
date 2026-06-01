@@ -1,0 +1,860 @@
+diff --git a/.changeset/unstable-dev-remove-test-mode.md b/.changeset/unstable-dev-remove-test-mode.md
+new file mode 100644
+index 0000000000..92c034fecb
+--- /dev/null
++++ b/.changeset/unstable-dev-remove-test-mode.md
+@@ -0,0 +1,9 @@
++---
++"wrangler": minor
++---
++
++Remove the deprecated `experimental.testMode` option from `unstable_dev`
++
++`experimental.testMode` previously only affected the default `logLevel` (`warn` when `testMode: true`, `log` otherwise) and has been flagged for removal in its type-definition comment since it landed. It is now removed, and `unstable_dev`'s default log level matches `wrangler dev`'s (`log`).
++
++Callers that explicitly passed `testMode: true` to get quieter logs should now set `logLevel: "warn"` directly.
+diff --git a/.changeset/wrangler-bundler-initial.md b/.changeset/wrangler-bundler-initial.md
+new file mode 100644
+index 0000000000..a810db2566
+--- /dev/null
++++ b/.changeset/wrangler-bundler-initial.md
+@@ -0,0 +1,5 @@
++---
++"@cloudflare/wrangler-bundler": minor
++---
++
++Add `@cloudflare/wrangler-bundler` — an experimental internal package. Not intended for external use.
+diff --git a/packages/wrangler-bundler/AGENTS.md b/packages/wrangler-bundler/AGENTS.md
+new file mode 100644
+index 0000000000..3305cbdfba
+--- /dev/null
++++ b/packages/wrangler-bundler/AGENTS.md
+@@ -0,0 +1,91 @@
++# AGENTS.md — @cloudflare/wrangler-bundler
++
++## Overview
++
++esbuild-based dev server for Cloudflare Workers, extracted from
++`wrangler dev` for projects that can't migrate to Vite. This is a
++thin adapter on top of wrangler's `unstable_dev` API — it is NOT a
++fork of wrangler internals.
++
++The package ships a `cf-wrangler` delegate binary that dispatches on
++a leading subcommand verb. Today the only verb is `dev`
++(long-running esbuild + Miniflare + workerd dev server); future verbs
++(`build`, `deploy`, etc.) will follow the same shape.
++
++A parent process invokes `<pkgRoot>/bin/cf-wrangler dev [argv...]`,
++the binary runs the dev server until Ctrl+C.
++
++## Structure
++
++- `bin/cf-wrangler` — executable shim; dispatches on the first argv
++  token (`dev` today) and delegates to the matching handler.
++- `src/index.ts` — programmatic API (`runDev`, `DevArgs`).
++- `src/cli.ts` — `runDev` main loop: build `Unstable_DevOptions`,
++  call `wrangler.unstable_dev`, block on `waitUntilExit`, wire signals.
++- `src/args.ts` — argv parser for the `dev` verb. Built on
++  `node:util.parseArgs` (strict mode → unknown flags throw; no
++  third-party dependency).
++
++## Conventions
++
++- **Delegate to `unstable_dev`, not `unstable_DevEnv`.** `unstable_dev`
++  wraps `startDev`, which already wires the remote-bindings auth
++  hook (`requireAuth`/`requireApiToken`), `registerDevHotKeys`, and
++  the DevEnv lifecycle. Building on the lower-level `unstable_DevEnv`
++  would force us to duplicate that plumbing. The one wart: `host`
++  is accepted at runtime by `startDev` but not declared on the
++  public `Unstable_DevOptions` type, so the options object is
++  type-cast at the `unstable_dev` call site. Tracked as a follow-up
++  for wrangler to widen `Unstable_DevOptions`.
++- **Remote bindings are supported.** Per-resource `remote = true` in
++  `wrangler.jsonc` works out of the box because `unstable_dev`
++  invokes the standard auth hook. Whole-worker remote dev
++  (`wrangler dev --remote`) is NOT supported — there's no `--remote`
++  flag here, and any attempt to pass it falls into the generic
++  "unknown flag" error from the parser.
++- **Hotkeys are enabled.** `experimental.showInteractiveDevSession:
++true` turns on the standard wrangler hotkey UI
++  (`b`/`d`/`e`/`r`/`l`/`c`/`x`/`q`). `unstable_dev` defaults this
++  to `false` (suits its test-harness origin); we override to match
++  `wrangler dev`. `startDev` only renders the UI when stdin is a
++  TTY (`isInteractive()` check at `start-dev.ts:108`/`118`), so
++  non-interactive parent processes (e.g. cf-dev with piped stdio)
++  see no hotkey overlay. The bundler installs its own
++  SIGINT/SIGTERM handlers as the teardown path for those cases.
++- **Containers are enabled.** `experimental.enableContainers: true`,
++  again to match `wrangler dev`'s default (`unstable_dev` defaults
++  it to `false`). Cloudchamber-pulled `image_uri` containers work
++  via the same auth flow that powers remote bindings.
++- **`--mode` not `--env`.** Named environments are surfaced as
++  `--mode <name>` to align with the cf-dev parent process's flag
++  vocabulary; internally this maps to `unstable_dev`'s `env` option.
++- **Minimal accepted flags.** Only `--config`, `--mode`, `--port`,
++  `--host`, `--local` are recognised. Everything else belongs in
++  the user's `wrangler.jsonc`. Do not mirror `wrangler dev`'s full
++  surface — add flags here only when the cf-dev parent process
++  needs to pass them through.
++
++## Out of scope (v1)
++
++- Pages assets shim (`enablePagesAssetsServiceBinding`).
++- Cloudflare Sites (`legacy.site`).
++- Multi-worker dev sessions (`MultiworkerRuntimeController`).
++- Tunnel sharing (`startTunnel`).
++
++## Build
++
++- `tsdown` to ESM (`.mjs`) in `dist/`. Same bundler as `vite-plugin-cloudflare`.
++- `pnpm build` for one-shot, `pnpm dev` for watch.
++- The `bin/cf-wrangler` shim imports from `../dist/index.mjs`
++  directly — it's NOT processed by tsdown (it's a tiny entry that
++  doesn't need bundling and we want it readable for debugging).
++- Only `wrangler` is externalized; everything else is bundled. See
++  `scripts/deps.ts` for the allowlist (validated by the monorepo's
++  `validate-package-dependencies` script).
++
++## Testing
++
++- `vitest` (default config, no special harness yet).
++- Integration testing happens out-of-package via a parent process
++  that spawns the `cf-wrangler` binary against a fixture project;
++  that coverage is tracked separately from this repo.
+diff --git a/packages/wrangler-bundler/README.md b/packages/wrangler-bundler/README.md
+new file mode 100644
+index 0000000000..17de820511
+--- /dev/null
++++ b/packages/wrangler-bundler/README.md
+@@ -0,0 +1,80 @@
++# @cloudflare/wrangler-bundler
++
++esbuild-based dev server for Cloudflare Workers — extracted from
++`wrangler dev` for projects that can't migrate to Vite.
++
++> **Use [`@cloudflare/vite-plugin`](https://www.npmjs.com/package/@cloudflare/vite-plugin)
++> instead** if your project uses Vite. The Vite plugin is the
++> recommended JavaScript/TypeScript dev-server impl going forward.
++> `@cloudflare/wrangler-bundler` is provided for legacy projects whose
++> build pipeline depends on esbuild semantics.
++
++## What this package is
++
++A thin adapter on top of wrangler's `unstable_dev` API. It ships a
++`cf-wrangler` delegate binary that exposes a small CLI dispatched on
++a leading subcommand verb. Today it accepts only `dev` (long-running
++esbuild + Miniflare); future verbs (`build`, `deploy`) will follow
++the same shape.
++
++A parent CLI (typically a project's chosen tool) is expected to
++discover this package in `devDependencies` and spawn the
++`cf-wrangler dev` subcommand on its behalf. You can also invoke
++`./node_modules/.bin/cf-wrangler dev` directly.
++
++## Installation
++
++```sh
++npm install --save-dev @cloudflare/wrangler-bundler
++```
++
++## CLI
++
++```sh
++cf-wrangler dev [flags]
++```
++
++The accepted flag set is deliberately minimal. Everything else
++belongs in your `wrangler.jsonc` / `wrangler.toml`.
++
++| Flag       | Description                                                                                          |
++| ---------- | ---------------------------------------------------------------------------------------------------- |
++| `--config` | Path to `wrangler.jsonc` / `wrangler.toml`. Defaults to wrangler's standard config-discovery search. |
++| `--mode`   | Named environment (`[env.X]` in your config). Maps to wrangler's `env` option.                       |
++| `--port`   | Listen port for the dev server. Integer 0–65535 (0 = OS-assigned).                                   |
++| `--host`   | Acts-as-origin hostname override (the `Host` header your Worker sees).                               |
++| `--local`  | Force local execution even if `dev.remote` is set in config.                                         |
++
++Unknown flags are rejected at parse time with a clear error.
++
++## What it supports
++
++- `wrangler.jsonc` / `wrangler.toml` config files (incl. named
++  environments via `--mode`)
++- esbuild-based bundling (via wrangler's internals)
++- Miniflare + workerd local runtime
++- Dev registry registration (multi-session dev)
++- **Remote bindings** — set `remote = true` on individual resources
++  in your wrangler config to access remote Cloudflare resources from
++  local code. Uses the standard wrangler auth flow
++  (`wrangler login` / `CLOUDFLARE_API_TOKEN`).
++- **Interactive hotkeys** in a TTY session
++  (`b`/`d`/`e`/`r`/`l`/`c`/`x`/`q`) — same as `wrangler dev`.
++- **Containers** — both `image = "..."` (local build) and
++  `image_uri = "..."` (Cloudchamber-pulled) work, via the same
++  auth flow as remote bindings.
++
++## What it does NOT support
++
++- **Whole-worker remote dev** (`wrangler dev --remote`). For remote
++  bindings, use the per-resource `remote = true` field instead — no
++  flag needed.
++- `--tunnel` (use `wrangler dev --tunnel` directly).
++- Cloudflare Pages and Sites.
++- Multi-worker dev sessions.
++- The rest of `wrangler dev`'s flag surface (`--var`, `--define`,
++  `--assets`, `--tsconfig`, `--persist-to`, `--live-reload`, etc.).
++  These all have equivalents in `wrangler.jsonc` — configure them
++  there.
++
++For any of these, run `wrangler dev` directly.
+diff --git a/packages/wrangler-bundler/bin/cf-wrangler b/packages/wrangler-bundler/bin/cf-wrangler
+new file mode 100755
+index 0000000000..78f82d147c
+--- /dev/null
++++ b/packages/wrangler-bundler/bin/cf-wrangler
+@@ -0,0 +1,31 @@
++#!/usr/bin/env node
++// `cf-wrangler` — delegate binary for `@cloudflare/wrangler-bundler`.
++//
++// Invoked as `<binary> <verb> [user-argv...]`. The leading verb is the
++// subcommand discriminator the parent process inserts; strip it before
++// delegating to the verb's handler.
++//
++// We deliberately do NOT use a yargs-style "command" router here —
++// this binary exposes exactly one verb today (`dev`), and the
++// unknown-subcommand error doubles as the version-detection signal
++// the parent uses to feature-test the impl. Future verbs (`build`,
++// `deploy`, etc.) will follow the same shape.
++import { runDev } from "../dist/index.mjs";
++
++const argv = process.argv.slice(2);
++const verb = argv[0];
++if (verb !== "dev") {
++	process.stderr.write(
++		`Error: unknown subcommand "${verb ?? ""}".\n` +
++			`Usage: cf-wrangler dev [args]\n`
++	);
++	process.exit(2);
++}
++const rest = argv.slice(1);
++
++runDev(rest)
++	.then((code) => process.exit(code))
++	.catch((err) => {
++		process.stderr.write(`${(err && err.stack) || err}\n`);
++		process.exit(1);
++	});
+diff --git a/packages/wrangler-bundler/package.json b/packages/wrangler-bundler/package.json
+new file mode 100644
+index 0000000000..b8b00bffec
+--- /dev/null
++++ b/packages/wrangler-bundler/package.json
+@@ -0,0 +1,59 @@
++{
++	"name": "@cloudflare/wrangler-bundler",
++	"version": "0.0.0",
++	"description": "esbuild-based dev server for Cloudflare Workers, extracted from `wrangler dev`",
++	"license": "MIT OR Apache-2.0",
++	"repository": {
++		"type": "git",
++		"url": "https://github.com/cloudflare/workers-sdk.git",
++		"directory": "packages/wrangler-bundler"
++	},
++	"bin": {
++		"cf-wrangler": "./bin/cf-wrangler"
++	},
++	"files": [
++		"bin",
++		"dist"
++	],
++	"type": "module",
++	"main": "./dist/index.mjs",
++	"types": "./dist/index.d.mts",
++	"exports": {
++		".": {
++			"types": "./dist/index.d.mts",
++			"import": "./dist/index.mjs"
++		}
++	},
++	"scripts": {
++		"build": "tsdown",
++		"dev": "tsdown --watch",
++		"check:type": "tsc --build",
++		"test": "vitest run",
++		"test:ci": "vitest run",
++		"test:watch": "vitest"
++	},
++	"dependencies": {
++		"wrangler": "workspace:*"
++	},
++	"devDependencies": {
++		"@cloudflare/workers-tsconfig": "workspace:*",
++		"@types/node": "catalog:default",
++		"tsdown": "0.16.3",
++		"typescript": "catalog:default",
++		"vitest": "catalog:default"
++	},
++	"peerDependencies": {
++		"@cloudflare/workers-types": "catalog:default"
++	},
++	"peerDependenciesMeta": {
++		"@cloudflare/workers-types": {
++			"optional": true
++		}
++	},
++	"engines": {
++		"node": ">=22.0.0"
++	},
++	"workers-sdk": {
++		"prerelease": true
++	}
++}
+diff --git a/packages/wrangler-bundler/src/__tests__/args.test.ts b/packages/wrangler-bundler/src/__tests__/args.test.ts
+new file mode 100644
+index 0000000000..5e9040418b
+--- /dev/null
++++ b/packages/wrangler-bundler/src/__tests__/args.test.ts
+@@ -0,0 +1,148 @@
++import { describe, it } from "vitest";
++import { ArgParseError, parseArgs } from "../args.js";
++
++describe("parseArgs", () => {
++	describe("happy paths", () => {
++		it("parses all flags in --flag value form", ({ expect }) => {
++			const out = parseArgs([
++				"--config",
++				"wrangler.jsonc",
++				"--mode",
++				"production",
++				"--port",
++				"8788",
++				"--host",
++				"example.com",
++				"--local",
++			]);
++			expect(out).toEqual({
++				config: "wrangler.jsonc",
++				mode: "production",
++				port: 8788,
++				host: "example.com",
++				local: true,
++			});
++		});
++
++		it("parses all flags in --flag=value form", ({ expect }) => {
++			const out = parseArgs([
++				"--config=wrangler.jsonc",
++				"--mode=production",
++				"--port=8788",
++				"--host=example.com",
++				"--local",
++			]);
++			expect(out).toEqual({
++				config: "wrangler.jsonc",
++				mode: "production",
++				port: 8788,
++				host: "example.com",
++				local: true,
++			});
++		});
++
++		it("returns an empty object for no flags", ({ expect }) => {
++			expect(parseArgs([])).toEqual({});
++		});
++
++		it("omits unset flags from the output", ({ expect }) => {
++			const out = parseArgs(["--port", "8788"]);
++			expect(out).toEqual({ port: 8788 });
++			expect(out.config).toBeUndefined();
++			expect(out.local).toBeUndefined();
++		});
++
++		it("accepts port 0 (OS-assigned)", ({ expect }) => {
++			expect(parseArgs(["--port", "0"])).toEqual({ port: 0 });
++		});
++
++		it("accepts port 65535 (max)", ({ expect }) => {
++			expect(parseArgs(["--port", "65535"])).toEqual({ port: 65535 });
++		});
++	});
++
++	describe("port validation", () => {
++		// `--port -1` is rejected by `node:util.parseArgs` itself
++		// (it reads `-1` as a flag, not a value). Negative ports
++		// pass through to our coercion only via `--port=-N`.
++		it("rejects negative ports (--port=-1 form)", ({ expect }) => {
++			expect(() => parseArgs(["--port=-1"])).toThrow(ArgParseError);
++			expect(() => parseArgs(["--port=-1"])).toThrow(
++				/integer between 0 and 65535/
++			);
++		});
++
++		it("rejects ports above 65535", ({ expect }) => {
++			expect(() => parseArgs(["--port", "99999"])).toThrow(
++				/integer between 0 and 65535/
++			);
++		});
++
++		it("rejects fractional ports", ({ expect }) => {
++			expect(() => parseArgs(["--port", "1.5"])).toThrow(
++				/integer between 0 and 65535/
++			);
++		});
++
++		it("rejects non-numeric ports", ({ expect }) => {
++			expect(() => parseArgs(["--port", "abc"])).toThrow(
++				/integer between 0 and 65535/
++			);
++		});
++	});
++
++	describe("rejected flags (allowNegative disabled)", () => {
++		it("rejects --no-local with an unknown-flag error", ({ expect }) => {
++			expect(() => parseArgs(["--no-local"])).toThrow(ArgParseError);
++			expect(() => parseArgs(["--no-local"])).toThrow(/Unknown option/);
++		});
++
++		it("rejects --remote (whole-worker remote dev is out of scope)", ({
++			expect,
++		}) => {
++			expect(() => parseArgs(["--remote"])).toThrow(/Unknown option/);
++		});
++
++		it("rejects other wrangler dev flags we don't support", ({ expect }) => {
++			expect(() => parseArgs(["--var", "FOO:bar"])).toThrow(/Unknown option/);
++			expect(() => parseArgs(["--define", "X=1"])).toThrow(/Unknown option/);
++			expect(() => parseArgs(["--tsconfig", "tsconfig.json"])).toThrow(
++				/Unknown option/
++			);
++			expect(() => parseArgs(["--assets", "./public"])).toThrow(
++				/Unknown option/
++			);
++		});
++
++		it("rejects --env (must use --mode)", ({ expect }) => {
++			expect(() => parseArgs(["--env", "production"])).toThrow(
++				/Unknown option/
++			);
++		});
++	});
++
++	describe("structural rejections", () => {
++		it("rejects positional arguments", ({ expect }) => {
++			expect(() => parseArgs(["./worker.ts"])).toThrow(ArgParseError);
++			expect(() => parseArgs(["./worker.ts"])).toThrow(/positional/);
++		});
++
++		it("rejects unknown flags", ({ expect }) => {
++			expect(() => parseArgs(["--definitely-not-a-flag"])).toThrow(
++				/Unknown option/
++			);
++		});
++	});
++
++	describe("ArgParseError", () => {
++		it("wraps node:util.parseArgs errors", ({ expect }) => {
++			try {
++				parseArgs(["--remote"]);
++				expect.fail("should have thrown");
++			} catch (err) {
++				expect(err).toBeInstanceOf(ArgParseError);
++				expect((err as Error).name).toBe("ArgParseError");
++			}
++		});
++	});
++});
+diff --git a/packages/wrangler-bundler/src/args.ts b/packages/wrangler-bundler/src/args.ts
+new file mode 100644
+index 0000000000..2c9babecbe
+--- /dev/null
++++ b/packages/wrangler-bundler/src/args.ts
+@@ -0,0 +1,84 @@
++/**
++ * Argv parser for `cf-wrangler dev [args...]`.
++ *
++ * Deliberately minimal: only the five flags the cf-dev parent
++ * process needs to pass through are accepted. Everything else
++ * belongs in the user's `wrangler.jsonc`. Built on `node:util`'s
++ * built-in `parseArgs` (strict mode → unknown flags throw).
++ */
++import { parseArgs as nodeParseArgs } from "node:util";
++
++export interface DevArgs {
++	// Path to wrangler.jsonc / wrangler.toml.
++	config?: string;
++	// Named environment from wrangler.jsonc (`[env.X]`). Surfaced as
++	// `--mode` rather than `--env` to align with the cf-dev parent
++	// process's flag vocabulary; maps to wrangler's `env` option.
++	mode?: string;
++	// Listen port for the dev server.
++	port?: number;
++	// Acts-as-origin hostname override. Maps to wrangler's `--host`
++	// (`dev.origin.hostname`).
++	host?: string;
++	// Force local execution even when `dev.remote` is set in config.
++	local?: boolean;
++}
++
++export class ArgParseError extends Error {
++	constructor(message: string) {
++		super(message);
++		this.name = "ArgParseError";
++	}
++}
++
++export function parseArgs(argv: string[]): DevArgs {
++	let parsed;
++	try {
++		parsed = nodeParseArgs({
++			args: argv,
++			options: {
++				config: { type: "string" },
++				mode: { type: "string" },
++				host: { type: "string" },
++				// `node:util.parseArgs` has no `number` type; coerce below.
++				port: { type: "string" },
++				local: { type: "boolean" },
++			},
++			strict: true,
++			allowPositionals: false,
++			// Deliberately NOT enabling `allowNegative`: `--no-local`
++			// would map to `local: false`, which `unstable_dev` reads
++			// as whole-worker remote dev — out of scope here. Falling
++			// into the generic "unknown flag" error is the right UX.
++		});
++	} catch (err) {
++		throw new ArgParseError(err instanceof Error ? err.message : String(err));
++	}
++
++	const out: DevArgs = {};
++	if (parsed.values.config !== undefined) {
++		out.config = parsed.values.config;
++	}
++	if (parsed.values.mode !== undefined) {
++		out.mode = parsed.values.mode;
++	}
++	if (parsed.values.host !== undefined) {
++		out.host = parsed.values.host;
++	}
++	if (parsed.values.port !== undefined) {
++		const raw = parsed.values.port;
++		const n = Number(raw);
++		// TCP port range. `0` means "let the OS pick" — valid.
++		if (!Number.isInteger(n) || n < 0 || n > 65535) {
++			throw new ArgParseError(
++				`--port expects an integer between 0 and 65535, got "${raw}"`
++			);
++		}
++		out.port = n;
++	}
++	if (parsed.values.local !== undefined) {
++		out.local = parsed.values.local;
++	}
++
++	return out;
++}
+diff --git a/packages/wrangler-bundler/src/cli.ts b/packages/wrangler-bundler/src/cli.ts
+new file mode 100644
+index 0000000000..7c02413797
+--- /dev/null
++++ b/packages/wrangler-bundler/src/cli.ts
+@@ -0,0 +1,113 @@
++/**
++ * `dev` verb handler for the `cf-wrangler` delegate binary.
++ *
++ * Thin adapter over `wrangler.unstable_dev` (which wraps `startDev` —
++ * giving us DevEnv lifecycle, remote-bindings auth, and hotkeys for
++ * free). Accepts only the five flags cf-dev passes through; the rest
++ * comes from the user's wrangler config.
++ */
++import { unstable_dev } from "wrangler";
++import { ArgParseError, parseArgs } from "./args.js";
++import type { DevArgs } from "./args.js";
++import type { Unstable_DevOptions, Unstable_DevWorker } from "wrangler";
++
++/**
++ * Run the bundler-based dev server until the user (or the parent
++ * process) terminates it.
++ *
++ * Parses argv, calls `wrangler.unstable_dev`, blocks on the dev
++ * session's lifetime, and translates SIGINT/SIGTERM into a clean
++ * teardown. Returns the desired exit code; the bin shim is
++ * responsible for `process.exit()`.
++ *
++ * @param argv argv slice **without** the `dev` subcommand token
++ *   (e.g. `["--config", "wrangler.jsonc", "--port", "8788"]`).
++ * @returns the process exit code: `0` on clean teardown, `2` on an
++ *   argv parse error, `130` on SIGINT, `143` on SIGTERM.
++ *
++ * @example
++ * ```ts
++ * import { runDev } from "@cloudflare/wrangler-bundler";
++ *
++ * const code = await runDev(["--mode", "production", "--port", "8788"]);
++ * process.exit(code);
++ * ```
++ */
++export async function runDev(argv: string[]): Promise<number> {
++	let parsed: DevArgs;
++	try {
++		parsed = parseArgs(argv);
++	} catch (err) {
++		if (err instanceof ArgParseError) {
++			process.stderr.write(`Error: ${err.message}\n`);
++			return 2;
++		}
++		throw err;
++	}
++
++	// SIGINT/SIGTERM fallback for non-TTY parents — hotkeys handle
++	// the TTY case. Tracks both the signal AND a reference to the
++	// server (which arrives asynchronously) so signals received during
++	// `unstable_dev`'s startup phase don't get swallowed.
++	let signalled: NodeJS.Signals | null = null;
++	let server: Unstable_DevWorker | undefined;
++	const onSignal = (sig: NodeJS.Signals) => {
++		signalled = sig;
++		// If startup has already produced a server, tear it down now.
++		// Otherwise the post-await check below handles it.
++		void server?.stop().catch((err) => {
++			process.stderr.write(`teardown error: ${err}\n`);
++		});
++	};
++	const onSigInt = () => onSignal("SIGINT");
++	const onSigTerm = () => onSignal("SIGTERM");
++	process.on("SIGINT", onSigInt);
++	process.on("SIGTERM", onSigTerm);
++
++	try {
++		const options = {
++			config: parsed.config,
++			env: parsed.mode,
++			port: parsed.port,
++			local: parsed.local,
++			host: parsed.host,
++			experimental: {
++				disableExperimentalWarning: true,
++				// Both default to false in `unstable_dev` (suits its
++				// test-harness origin); `wrangler dev` effectively
++				// defaults both to true. Match `wrangler dev`.
++				showInteractiveDevSession: true,
++				enableContainers: true,
++			},
++		} as Unstable_DevOptions;
++
++		// Entrypoint comes from `main` in wrangler config.
++		server = await unstable_dev("", options);
++
++		// Signal arrived during startup. Tear down immediately and
++		// skip `waitUntilExit`.
++		if (signalled !== null) {
++			await server.stop().catch(() => {});
++		} else {
++			await server.waitUntilExit();
++		}
++	} finally {
++		process.off("SIGINT", onSigInt);
++		process.off("SIGTERM", onSigTerm);
++		if (server) {
++			try {
++				await server.stop();
++			} catch {
++				// already torn down
++			}
++		}
++	}
++
++	if (signalled === "SIGINT") {
++		return 130;
++	}
++	if (signalled === "SIGTERM") {
++		return 143;
++	}
++	return 0;
++}
+diff --git a/packages/wrangler-bundler/src/index.ts b/packages/wrangler-bundler/src/index.ts
+new file mode 100644
+index 0000000000..211e58842d
+--- /dev/null
++++ b/packages/wrangler-bundler/src/index.ts
+@@ -0,0 +1,10 @@
++/**
++ * Public API for `@cloudflare/wrangler-bundler`.
++ *
++ * The primary entry point is the `cf-wrangler` delegate binary in
++ * `bin/cf-wrangler`, which dispatches on a leading subcommand verb
++ * (today: `dev`). Programmatic use is supported but is not the main
++ * use case.
++ */
++export { runDev } from "./cli.js";
++export type { DevArgs } from "./args.js";
+diff --git a/packages/wrangler-bundler/tsconfig.json b/packages/wrangler-bundler/tsconfig.json
+new file mode 100644
+index 0000000000..2d140659c9
+--- /dev/null
++++ b/packages/wrangler-bundler/tsconfig.json
+@@ -0,0 +1,14 @@
++{
++	"extends": "@cloudflare/workers-tsconfig/base.json",
++	"include": ["src/**/*", "bin/**/*"],
++	"exclude": ["dist", "node_modules"],
++	"compilerOptions": {
++		"outDir": "dist",
++		"module": "esnext",
++		"moduleResolution": "bundler",
++		"rootDir": ".",
++		"noEmit": false,
++		"declaration": true,
++		"emitDeclarationOnly": true
++	}
++}
+diff --git a/packages/wrangler-bundler/tsdown.config.ts b/packages/wrangler-bundler/tsdown.config.ts
+new file mode 100644
+index 0000000000..bd4e7f5174
+--- /dev/null
++++ b/packages/wrangler-bundler/tsdown.config.ts
+@@ -0,0 +1,14 @@
++import { defineConfig } from "tsdown";
++
++export default defineConfig({
++	entry: "src/index.ts",
++	platform: "node",
++	format: "esm",
++	outDir: "dist",
++	target: "node22",
++	dts: true,
++	clean: true,
++	sourcemap: process.env.NODE_ENV !== "production",
++	minify: process.env.NODE_ENV === "production",
++	external: ["wrangler"],
++});
+diff --git a/packages/wrangler-bundler/turbo.json b/packages/wrangler-bundler/turbo.json
+new file mode 100644
+index 0000000000..60b2ca4c31
+--- /dev/null
++++ b/packages/wrangler-bundler/turbo.json
+@@ -0,0 +1,11 @@
++{
++	"$schema": "http://turbo.build/schema.json",
++	"extends": ["//"],
++	"tasks": {
++		"build": {
++			"inputs": ["$TURBO_DEFAULT$", "!**/__tests__/**"],
++			"outputs": ["dist/**"],
++			"env": ["NODE_ENV"]
++		}
++	}
++}
+diff --git a/packages/wrangler-bundler/vitest.config.ts b/packages/wrangler-bundler/vitest.config.ts
+new file mode 100644
+index 0000000000..4d6bc60dbd
+--- /dev/null
++++ b/packages/wrangler-bundler/vitest.config.ts
+@@ -0,0 +1,11 @@
++import { defineConfig, mergeConfig } from "vitest/config";
++import sharedConfig from "../../vitest.shared";
++
++export default mergeConfig(
++	sharedConfig,
++	defineConfig({
++		test: {
++			include: ["src/__tests__/**/*.test.ts"],
++		},
++	})
++);
+diff --git a/packages/wrangler/src/api/dev.ts b/packages/wrangler/src/api/dev.ts
+index 68481267d4..848c79accc 100644
+--- a/packages/wrangler/src/api/dev.ts
++++ b/packages/wrangler/src/api/dev.ts
+@@ -77,9 +77,8 @@ export interface Unstable_DevOptions {
+ 		forceLocal?: boolean;
+ 		liveReload?: boolean; // Auto reload HTML pages when change is detected in local mode
+ 		showInteractiveDevSession?: boolean;
+-		testMode?: boolean; // This option shouldn't be used - We plan on removing it eventually
+ 		testScheduled?: boolean; // Test scheduled events by visiting /__scheduled in browser
+-		watch?: boolean; // unstable_dev doesn't support watch-mode yet in testMode
++		watch?: boolean; // unstable_dev doesn't support watch-mode yet
+ 		fileBasedRegistry?: boolean;
+ 		enableIpc?: boolean;
+ 		enableContainers?: boolean; // Whether to build and connect to containers in dev mode. Defaults to true.
+@@ -110,7 +109,6 @@ export async function unstable_dev(
+ 		disableDevRegistry: false,
+ 		disableExperimentalWarning: false,
+ 		showInteractiveDevSession: false,
+-		testMode: true,
+ 		// Override all options, including overwriting with "undefined"
+ 		...options?.experimental,
+ 	};
+@@ -125,7 +123,6 @@ export async function unstable_dev(
+ 		forceLocal,
+ 		liveReload,
+ 		showInteractiveDevSession,
+-		testMode,
+ 		testScheduled,
+ 		// 2. options for alpha/beta products/libs
+ 		d1Databases,
+@@ -153,7 +150,6 @@ export async function unstable_dev(
+ 		readyResolve = resolve;
+ 	});
+ 
+-	const defaultLogLevel = testMode ? "warn" : "log";
+ 	const local = options?.local ?? true;
+ 
+ 	const dockerPath = options?.experimental?.dockerPath ?? getDockerPath();
+@@ -213,7 +209,7 @@ export async function unstable_dev(
+ 		minify: undefined,
+ 		legacyEnv: undefined,
+ 		...options,
+-		logLevel: options?.logLevel ?? defaultLogLevel,
++		logLevel: options?.logLevel,
+ 		port: options?.port ?? 0,
+ 		experimentalProvision: undefined,
+ 		experimentalAutoCreate: false,
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 2ce01f65f0..bee2343536 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -4282,6 +4282,31 @@ importers:
+         specifier: ~2.3.2
+         version: 2.3.3
+ 
++  packages/wrangler-bundler:
++    dependencies:
++      '@cloudflare/workers-types':
++        specifier: catalog:default
++        version: 4.20260528.1
++      wrangler:
++        specifier: workspace:*
++        version: link:../wrangler
++    devDependencies:
++      '@cloudflare/workers-tsconfig':
++        specifier: workspace:*
++        version: link:../workers-tsconfig
++      '@types/node':
++        specifier: ^22.10.1
++        version: 22.15.17
++      tsdown:
++        specifier: 0.16.3
++        version: 0.16.3(ms@2.1.3)(synckit@0.11.12)(typescript@5.8.3)
++      typescript:
++        specifier: catalog:default
++        version: 5.8.3
++      vitest:
++        specifier: catalog:default
++        version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@22.15.17)(@vitest/ui@4.1.0)(msw@2.12.4(@types/node@22.15.17)(typescript@5.8.3))(vite@8.0.13(@types/node@22.15.17)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.1))
++
+   tools:
+     devDependencies:
+       '@actions/core':
+diff --git a/tools/deployments/__tests__/validate-changesets.test.ts b/tools/deployments/__tests__/validate-changesets.test.ts
+index 81ee3c5efb..b1d96abc0e 100644
+--- a/tools/deployments/__tests__/validate-changesets.test.ts
++++ b/tools/deployments/__tests__/validate-changesets.test.ts
+@@ -45,6 +45,7 @@ describe("findPackageNames()", () => {
+ 				"@cloudflare/workers-shared",
+ 				"@cloudflare/workers-utils",
+ 				"@cloudflare/workflows-shared",
++				"@cloudflare/wrangler-bundler",
+ 				"create-cloudflare",
+ 				"miniflare",
+ 				"solarflare-theme",

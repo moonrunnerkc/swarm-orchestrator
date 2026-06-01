@@ -1,0 +1,1426 @@
+diff --git a/astro-docs/src/content/docs/features/CI Features/affected.mdoc b/astro-docs/src/content/docs/features/CI Features/affected.mdoc
+index 0935049c71e..6471eebf9a7 100644
+--- a/astro-docs/src/content/docs/features/CI Features/affected.mdoc	
++++ b/astro-docs/src/content/docs/features/CI Features/affected.mdoc	
+@@ -269,7 +269,7 @@ Nx provides two methods to exclude glob patterns (files and folders) from `affec
+ 
+ ## Marking projects affected by dependency updates
+ 
+-By default, Nx will mark all projects as affected whenever your package manager's lock file changes. This behavior is a failsafe in case Nx misses a project that should be affected by a dependency update. If you'd like to opt into smarter behavior, you can configure Nx to only mark projects as affected if they actually depend on the updated packages.
++By default, Nx will mark **all** projects as affected whenever your package manager's lock file changes. This behavior is a failsafe in case Nx misses a project that should be affected by a dependency update. You can configure this behavior with the `projectsAffectedByDependencyUpdates` option in `nx.json`:
+ 
+ ```json
+ // nx.json
+@@ -282,7 +282,21 @@ By default, Nx will mark all projects as affected whenever your package manager'
+ }
+ ```
+ 
+-The flag `projectsAffectedByDependencyUpdates` can be set to `auto`, `all`, or an array that contains project specifiers. The default value is `all`.
++The `projectsAffectedByDependencyUpdates` option accepts the following values:
++
++| Value      | Description                                                                                                                                                                                                                                  |
++| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
++| `"all"`    | **(default)** Every project in the workspace is marked as affected when the lock file changes. This is the safest option but may result in unnecessary CI work.                                                                              |
++| `"auto"`   | Only projects whose dependencies actually changed in the lock file are marked as affected. Nx inspects the lock file structure to determine which workspace projects had their resolved dependencies change. See the note below for details. |
++| `string[]` | An array of project names or glob patterns (e.g., `["app-*", "shared-lib"]`). Only the matching projects are marked as affected when the lock file changes.                                                                                  |
++
++{% aside type="note" title="How 'auto' works per package manager" %}
++In `"auto"` mode, Nx parses both the base and head revisions of your lock file using the same parsers it uses to build the project graph, diffs the resolved package metadata to find which dependencies changed, then maps those packages back to the workspace projects that depend on them.
++
++Nx supports the following lock files: `pnpm-lock.yaml`, `pnpm-lock.yml`, `package-lock.json`, `yarn.lock`, `bun.lock`, and `bun.lockb`.
++
++For binary Bun lockfiles (`bun.lockb`), Nx asks Bun to render the lockfile before diffing it, so Bun needs to be available in the environment that runs `nx affected`.
++{% /aside %}
+ 
+ ## Not using git
+ 
+diff --git a/e2e/nx/src/affected-auto-lockfile.test.ts b/e2e/nx/src/affected-auto-lockfile.test.ts
+new file mode 100644
+index 00000000000..6ea9479fba4
+--- /dev/null
++++ b/e2e/nx/src/affected-auto-lockfile.test.ts
+@@ -0,0 +1,141 @@
++import {
++  cleanupProject,
++  getPackageManagerCommand,
++  newProject,
++  packageManagerLockFile,
++  readFile,
++  runCLI,
++  runCommand,
++  uniq,
++  updateFile,
++  updateJson,
++} from '@nx/e2e-utils';
++
++describe('nx affected -- projectsAffectedByDependencyUpdates (e2e)', () => {
++  describe.each([['pnpm'], ['yarn'], ['npm'], ['bun']] as const)(
++    'package manager %s',
++    (packageManager) => {
++      let libA: string;
++      let libB: string;
++      let baselineSha: string;
++
++      const setMode = (value: 'all' | 'auto') => {
++        updateJson('nx.json', (json) => {
++          json.pluginsConfig ??= {};
++          json.pluginsConfig['@nx/js'] ??= {};
++          json.pluginsConfig['@nx/js'].projectsAffectedByDependencyUpdates =
++            value;
++          return json;
++        });
++      };
++
++      beforeAll(() => {
++        newProject({ packages: ['@nx/js'], packageManager });
++
++        libA = uniq('lib-a');
++        libB = uniq('lib-b');
++        runCLI(
++          `generate @nx/js:lib libs/${libA} --bundler=none --unitTestRunner=none`
++        );
++        // Yarn v4 requires the lockfile to be refreshed after a new workspace
++        // package is created; without this, subsequent yarn operations fail
++        // with "This package doesn't seem to be present in your lockfile".
++        runCommand(getPackageManagerCommand({ packageManager }).install);
++        runCLI(
++          `generate @nx/js:lib libs/${libB} --bundler=none --unitTestRunner=none`
++        );
++
++        updateFile(
++          `libs/${libA}/src/index.ts`,
++          `import isOdd from 'is-odd';\nexport default isOdd;\n`
++        );
++        updateFile(
++          `libs/${libB}/src/index.ts`,
++          `import leftPad from 'left-pad';\nexport default leftPad;\n`
++        );
++
++        updateJson('package.json', (json) => {
++          json.dependencies ??= {};
++          json.dependencies['is-odd'] = '3.0.0';
++          json.dependencies['left-pad'] = '1.3.0';
++          return json;
++        });
++
++        runCommand(getPackageManagerCommand({ packageManager }).install);
++        runCommand(`git add . && git commit -am "chore: baseline"`);
++        baselineSha = runCommand(`git rev-parse HEAD`).trim();
++      });
++
++      afterAll(() => cleanupProject());
++
++      describe('default "all" mode', () => {
++        beforeAll(() => {
++          runCommand(`git reset --hard ${baselineSha}`);
++          setMode('all');
++          runCommand(`git add nx.json && git commit -m "chore: set mode=all"`);
++
++          updateJson('package.json', (json) => {
++            json.dependencies['is-odd'] = '3.0.1';
++            return json;
++          });
++          runCommand(getPackageManagerCommand({ packageManager }).install);
++          runCommand(
++            `git add . && git commit -am "chore: bump is-odd (all mode)"`
++          );
++        });
++
++        it('marks every project affected when any lock-file entry changes', () => {
++          const out = runCLI(
++            `show projects --affected --base=HEAD~1 --head=HEAD`
++          );
++          expect(out).toContain(libA);
++          expect(out).toContain(libB);
++        });
++      });
++
++      describe('"auto" mode', () => {
++        beforeAll(() => {
++          runCommand(`git reset --hard ${baselineSha}`);
++          setMode('auto');
++          runCommand(`git add nx.json && git commit -m "chore: set mode=auto"`);
++        });
++
++        it('reports no affected projects when the lock file is unchanged', () => {
++          const out = runCLI(
++            `show projects --affected --base=HEAD --head=HEAD`
++          );
++          expect(out).not.toContain(libA);
++          expect(out).not.toContain(libB);
++        });
++
++        const lockfileOnlyTest =
++          packageManagerLockFile[packageManager] === 'bun.lockb' ? it.skip : it;
++
++        lockfileOnlyTest(
++          'marks only the dependent project affected when a single lockfile entry changes',
++          () => {
++            const lockFile = packageManagerLockFile[packageManager];
++            const currentLockFile = readFile(lockFile);
++            const updatedLockFile = currentLockFile.replace(
++              /\b3\.0\.0\b/g,
++              '3.0.1'
++            );
++
++            expect(updatedLockFile).not.toEqual(currentLockFile);
++
++            updateFile(lockFile, updatedLockFile);
++            runCommand(
++              `git add ${lockFile} && git commit -m "chore: bump is-odd in lockfile (auto mode)"`
++            );
++
++            const out = runCLI(
++              `show projects --affected --base=HEAD~1 --head=HEAD`
++            );
++            expect(out).toContain(libA);
++            expect(out).not.toContain(libB);
++          }
++        );
++      });
++    }
++  );
++});
+diff --git a/packages/nx/src/plugins/js/lock-file/lock-file.ts b/packages/nx/src/plugins/js/lock-file/lock-file.ts
+index 9e570ff9e10..57a99c88b9f 100644
+--- a/packages/nx/src/plugins/js/lock-file/lock-file.ts
++++ b/packages/nx/src/plugins/js/lock-file/lock-file.ts
+@@ -51,6 +51,7 @@ import {
+ const YARN_LOCK_FILE = 'yarn.lock';
+ const NPM_LOCK_FILE = 'package-lock.json';
+ const PNPM_LOCK_FILE = 'pnpm-lock.yaml';
++const PNPM_LOCK_FILE_LEGACY = 'pnpm-lock.yml';
+ 
+ export const LOCKFILES = [
+   YARN_LOCK_FILE,
+@@ -60,6 +61,15 @@ export const LOCKFILES = [
+   BUN_TEXT_LOCK_FILE,
+ ];
+ 
++export const AUTO_AFFECTED_LOCK_FILES = [
++  YARN_LOCK_FILE,
++  NPM_LOCK_FILE,
++  PNPM_LOCK_FILE,
++  PNPM_LOCK_FILE_LEGACY,
++  BUN_LOCK_FILE,
++  BUN_TEXT_LOCK_FILE,
++] as const;
++
+ const YARN_LOCK_PATH = join(workspaceRoot, YARN_LOCK_FILE);
+ const NPM_LOCK_PATH = join(workspaceRoot, NPM_LOCK_FILE);
+ const PNPM_LOCK_PATH = join(workspaceRoot, PNPM_LOCK_FILE);
+@@ -79,32 +89,17 @@ export function getLockFileNodes(
+   keyMap: Map<string, any>;
+ } {
+   try {
+-    if (packageManager === 'yarn') {
+-      const packageJson = readJsonFile(
+-        join(context.workspaceRoot, 'package.json')
+-      );
+-      return getYarnLockfileNodes(contents, lockFileHash, packageJson);
+-    }
+-    if (packageManager === 'pnpm') {
+-      return getPnpmLockfileNodes(contents, lockFileHash);
+-    }
+-    if (packageManager === 'npm') {
+-      return getNpmLockfileNodes(contents, lockFileHash);
+-    }
+-    if (packageManager === 'bun') {
+-      const lockFilePath = getLockFilePath(packageManager);
+-      if (lockFilePath.endsWith(BUN_TEXT_LOCK_FILE)) {
+-        // Use new text-based parser
+-        const nodes = getBunTextLockfileNodes(contents, lockFileHash);
+-        return { nodes, keyMap: new Map() };
+-      } else {
+-        // Fallback to yarn parser for binary format
+-        const packageJson = readJsonFile(
+-          join(context.workspaceRoot, 'package.json')
+-        );
+-        return getYarnLockfileNodes(contents, lockFileHash, packageJson);
+-      }
+-    }
++    const packageJson =
++      packageManager === 'yarn' || packageManager === 'bun'
++        ? readJsonFile(join(context.workspaceRoot, 'package.json'))
++        : undefined;
++
++    return getLockFileNodesForName(
++      getLockFileName(packageManager),
++      contents,
++      lockFileHash,
++      packageJson
++    );
+   } catch (e) {
+     if (!isPostInstallProcess()) {
+       output.error({
+@@ -117,6 +112,38 @@ export function getLockFileNodes(
+   throw new Error(`Unknown package manager: ${packageManager}`);
+ }
+ 
++export function getLockFileNodesForName(
++  lockFile: string,
++  contents: string,
++  lockFileHash: string,
++  packageJson?: PackageJson
++): {
++  nodes: Record<string, ProjectGraphExternalNode>;
++  keyMap: Map<string, any>;
++} {
++  if (lockFile === YARN_LOCK_FILE || lockFile === BUN_LOCK_FILE) {
++    // yarn-parser only reads optional fields plus an unused `name` for the
++    // synthetic root workspace node, which is identical across base/head and
++    // therefore irrelevant for affected diffing.
++    return getYarnLockfileNodes(
++      contents,
++      lockFileHash,
++      packageJson ?? ({} as PackageJson)
++    );
++  }
++  if (lockFile === PNPM_LOCK_FILE || lockFile === PNPM_LOCK_FILE_LEGACY) {
++    return getPnpmLockfileNodes(contents, lockFileHash);
++  }
++  if (lockFile === NPM_LOCK_FILE) {
++    return getNpmLockfileNodes(contents, lockFileHash);
++  }
++  if (lockFile === BUN_TEXT_LOCK_FILE) {
++    const nodes = getBunTextLockfileNodes(contents, lockFileHash);
++    return { nodes, keyMap: new Map() };
++  }
++  throw new Error(`Unknown lock file: ${lockFile}`);
++}
++
+ /**
+  * Parses lock file and maps dependencies and metadata to {@link LockFileGraph}
+  */
+diff --git a/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.spec.ts b/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.spec.ts
+index 7f95bdedf94..fbafd3c07e1 100644
+--- a/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.spec.ts
++++ b/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.spec.ts
+@@ -1,15 +1,15 @@
+ import { ProjectGraph } from '../../../../config/project-graph';
+-import { WholeFileChange } from '../../../../project-graph/file-utils';
+ import {
+-  getTouchedProjectsFromLockFile,
+-  PNPM_LOCK_FILES,
+-} from './lock-file-changes';
++  LockFileChange,
++  WholeFileChange,
++} from '../../../../project-graph/file-utils';
++import { getTouchedProjectsFromLockFile } from './lock-file-changes';
+ import { TempFs } from '../../../../internal-testing-utils/temp-fs';
+-import { JsonDiffType } from '../../../../utils/json-diff';
++import { output } from '../../../../utils/output';
+ 
+ describe('getTouchedProjectsFromLockFile', () => {
+   let graph: ProjectGraph;
+-  let allNodes = [];
++  let allNodes: string[] = [];
+   let tempFs: TempFs;
+ 
+   beforeEach(() => {
+@@ -37,6 +37,35 @@ describe('getTouchedProjectsFromLockFile', () => {
+           },
+         },
+       },
++      externalNodes: {
++        'npm:some-external-package': {
++          type: 'npm',
++          name: 'npm:some-external-package',
++          data: {
++            version: '0.0.2',
++            packageName: 'some-external-package',
++            hash: 'abc123',
++          },
++        },
++        'npm:some-other-external-package': {
++          type: 'npm',
++          name: 'npm:some-other-external-package',
++          data: {
++            version: '4.0.1',
++            packageName: 'some-other-external-package',
++            hash: 'def456',
++          },
++        },
++        'npm:unrelated-package': {
++          type: 'npm',
++          name: 'npm:unrelated-package',
++          data: {
++            version: '1.0.0',
++            packageName: 'unrelated-package',
++            hash: 'ghi789',
++          },
++        },
++      },
+       dependencies: {},
+     };
+     allNodes = Object.keys(graph.nodes);
+@@ -50,7 +79,7 @@ describe('getTouchedProjectsFromLockFile', () => {
+     'bun.lockb',
+     'bun.lock',
+   ].forEach((lockFile) => {
+-    describe(`"${lockFile}"`, () => {
++    describe(`"${lockFile}" in default ("all") mode`, () => {
+       it(`should not return changes when "${lockFile}" is not touched`, () => {
+         const result = getTouchedProjectsFromLockFile(
+           [
+@@ -79,105 +108,483 @@ describe('getTouchedProjectsFromLockFile', () => {
+     });
+   });
+ 
+-  PNPM_LOCK_FILES.forEach((lockFile) => {
+-    describe(`"${lockFile} with projectsAffectedByDependencyUpdates set to auto"`, () => {
+-      beforeAll(async () => {
+-        tempFs = new TempFs('lock-file-changes-test');
+-        await tempFs.createFiles({
+-          './nx.json': JSON.stringify({
+-            pluginsConfig: {
+-              '@nx/js': {
+-                projectsAffectedByDependencyUpdates: 'auto',
++  describe('auto mode', () => {
++    const autoNxJson = {
++      pluginsConfig: {
++        '@nx/js': {
++          projectsAffectedByDependencyUpdates: 'auto' as const,
++        },
++      },
++    };
++
++    // Real lock file fragments for each package manager. Each "base"
++    // and "head" pair is parsed by the matching Nx lock file parser;
++    // auto mode extracts changed package names by diffing the resulting
++    // external-node maps.
++
++    // pnpm v9 lockfile with two packages. The head content bumps
++    // some-external-package to 0.0.2 and adds some-other-external-package.
++    const pnpmBase = `lockfileVersion: '9.0'
++
++settings:
++  autoInstallPeers: true
++  excludeLinksFromLockfile: false
++
++importers:
++
++  .:
++    dependencies:
++      some-external-package:
++        specifier: ^0.0.1
++        version: 0.0.1
++
++packages:
++
++  some-external-package@0.0.1:
++    resolution: {integrity: sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa==}
++
++snapshots:
++
++  some-external-package@0.0.1: {}
++
++`;
++
++    const pnpmHead = `lockfileVersion: '9.0'
++
++settings:
++  autoInstallPeers: true
++  excludeLinksFromLockfile: false
++
++importers:
++
++  .:
++    dependencies:
++      some-external-package:
++        specifier: ^0.0.2
++        version: 0.0.2
++      some-other-external-package:
++        specifier: ^4.0.1
++        version: 4.0.1
++
++packages:
++
++  some-external-package@0.0.2:
++    resolution: {integrity: sha512-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb==}
++
++  some-other-external-package@4.0.1:
++    resolution: {integrity: sha512-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc==}
++
++snapshots:
++
++  some-external-package@0.0.2: {}
++
++  some-other-external-package@4.0.1: {}
++
++`;
++
++    // package-lock.json v3 (lockfileVersion: 3) with root and transitive entries
++    const npmBase = JSON.stringify({
++      name: 'test',
++      version: '1.0.0',
++      lockfileVersion: 3,
++      requires: true,
++      packages: {
++        '': {
++          name: 'test',
++          version: '1.0.0',
++          dependencies: {
++            'some-external-package': '^0.0.1',
++          },
++        },
++        'node_modules/some-external-package': {
++          version: '0.0.1',
++          resolved:
++            'https://registry.npmjs.org/some-external-package/-/some-external-package-0.0.1.tgz',
++          integrity:
++            'sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa==',
++        },
++      },
++    });
++
++    const npmHead = JSON.stringify({
++      name: 'test',
++      version: '1.0.0',
++      lockfileVersion: 3,
++      requires: true,
++      packages: {
++        '': {
++          name: 'test',
++          version: '1.0.0',
++          dependencies: {
++            'some-external-package': '^0.0.2',
++            'some-other-external-package': '^4.0.1',
++          },
++        },
++        'node_modules/some-external-package': {
++          version: '0.0.2',
++          resolved:
++            'https://registry.npmjs.org/some-external-package/-/some-external-package-0.0.2.tgz',
++          integrity:
++            'sha512-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb==',
++        },
++        'node_modules/some-other-external-package': {
++          version: '4.0.1',
++          resolved:
++            'https://registry.npmjs.org/some-other-external-package/-/some-other-external-package-4.0.1.tgz',
++          integrity:
++            'sha512-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc==',
++        },
++      },
++    });
++
++    // yarn classic lockfile format
++    const yarnBase = `# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
++# yarn lockfile v1
++
++
++some-external-package@^0.0.1:
++  version "0.0.1"
++  resolved "https://registry.yarnpkg.com/some-external-package/-/some-external-package-0.0.1.tgz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
++  integrity sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa==
++`;
++
++    const yarnHead = `# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
++# yarn lockfile v1
++
++
++some-external-package@^0.0.2:
++  version "0.0.2"
++  resolved "https://registry.yarnpkg.com/some-external-package/-/some-external-package-0.0.2.tgz#bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
++  integrity sha512-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb==
++
++some-other-external-package@^4.0.1:
++  version "4.0.1"
++  resolved "https://registry.yarnpkg.com/some-other-external-package/-/some-other-external-package-4.0.1.tgz#cccccccccccccccccccccccccccccccccccccccc"
++  integrity sha512-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc==
++`;
++
++    // bun text-format lockfile
++    const bunBase = `{
++  "lockfileVersion": 1,
++  "workspaces": {
++    "": {
++      "name": "test",
++      "dependencies": {
++        "some-external-package": "^0.0.1"
++      }
++    }
++  },
++  "packages": {
++    "some-external-package": ["some-external-package@0.0.1", "", {}, "sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=="]
++  }
++}`;
++
++    const bunHead = `{
++  "lockfileVersion": 1,
++  "workspaces": {
++    "": {
++      "name": "test",
++      "dependencies": {
++        "some-external-package": "^0.0.2",
++        "some-other-external-package": "^4.0.1"
++      }
++    }
++  },
++  "packages": {
++    "some-external-package": ["some-external-package@0.0.2", "", {}, "sha512-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=="],
++    "some-other-external-package": ["some-other-external-package@4.0.1", "", {}, "sha512-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc=="]
++  }
++}`;
++
++    type AutoModeCase = {
++      lockFile: string;
++      base: string;
++      head: string;
++    };
++
++    const AUTO_CASES: AutoModeCase[] = [
++      { lockFile: 'pnpm-lock.yaml', base: pnpmBase, head: pnpmHead },
++      { lockFile: 'pnpm-lock.yml', base: pnpmBase, head: pnpmHead },
++      { lockFile: 'package-lock.json', base: npmBase, head: npmHead },
++      { lockFile: 'yarn.lock', base: yarnBase, head: yarnHead },
++      // bun.lockb is normalized through the existing Bun lockfile
++      // reader, which today feeds the shared Yarn-style parser path.
++      { lockFile: 'bun.lockb', base: yarnBase, head: yarnHead },
++      { lockFile: 'bun.lock', base: bunBase, head: bunHead },
++    ];
++
++    beforeAll(async () => {
++      tempFs = new TempFs('lock-file-changes-test');
++      await tempFs.createFiles({
++        // pnpm-parser v9 code path reads this at parse time; provide
++        // a minimal empty hoisted definition so parsing succeeds.
++        './node_modules/.modules.yaml': `hoistedDependencies: {}\n`,
++      });
++    });
++
++    afterAll(() => {
++      tempFs.cleanup();
++    });
++
++    AUTO_CASES.forEach(({ lockFile, base, head }) => {
++      describe(`"${lockFile}"`, () => {
++        it('should not return changes when the lock file is untouched', () => {
++          const result = getTouchedProjectsFromLockFile(
++            [
++              {
++                file: 'source.ts',
++                getChanges: () => [new WholeFileChange()],
+               },
++            ],
++            graph.nodes,
++            autoNxJson,
++            undefined,
++            graph
++          );
++          expect(result).toStrictEqual([]);
++        });
++
++        it('should return all projects when the full lock file changed (WholeFileChange)', () => {
++          const result = getTouchedProjectsFromLockFile(
++            [
++              {
++                file: lockFile,
++                getChanges: () => [new WholeFileChange()],
++              },
++            ],
++            graph.nodes,
++            autoNxJson,
++            undefined,
++            graph
++          );
++          expect(result).toStrictEqual(allNodes);
++        });
++
++        it('should return no projects when base and head contents are identical', () => {
++          const result = getTouchedProjectsFromLockFile(
++            [
++              {
++                file: lockFile,
++                getChanges: () => [new LockFileChange(base, base)],
++              },
++            ],
++            graph.nodes,
++            autoNxJson,
++            undefined,
++            graph
++          );
++          expect(result).toStrictEqual([]);
++        });
++
++        it('should return external nodes for packages whose versions changed or were added', () => {
++          const result = getTouchedProjectsFromLockFile(
++            [
++              {
++                file: lockFile,
++                getChanges: () => [new LockFileChange(base, head)],
++              },
++            ],
++            graph.nodes,
++            autoNxJson,
++            undefined,
++            graph
++          );
++          expect(result.sort()).toStrictEqual(
++            [
++              'npm:some-external-package',
++              'npm:some-other-external-package',
++            ].sort()
++          );
++        });
++
++        it('should return all projects when all changed packages are removed (not in external nodes)', () => {
++          // head has no packages at all; base had some-external-package.
++          // The parser may produce no nodes for an empty lockfile, so
++          // the removed package is the only "changed" one and it will
++          // not map to an external node -- fall back to all projects.
++          const emptyHead =
++            lockFile === 'yarn.lock'
++              ? '# yarn lockfile v1\n\n\n'
++              : lockFile === 'package-lock.json'
++                ? JSON.stringify({
++                    name: 'test',
++                    version: '1.0.0',
++                    lockfileVersion: 3,
++                    requires: true,
++                    packages: {
++                      '': { name: 'test', version: '1.0.0' },
++                    },
++                  })
++                : lockFile === 'bun.lock'
++                  ? `{
++  "lockfileVersion": 1,
++  "workspaces": { "": { "name": "test" } },
++  "packages": {}
++}`
++                  : `lockfileVersion: '9.0'
++
++importers:
++
++  .: {}
++
++`;
++
++          // Mutate the graph so the removed package has no matching
++          // external node -- forcing the "fall back to all projects"
++          // branch.
++          const prunedGraph: ProjectGraph = {
++            ...graph,
++            externalNodes: {
++              'npm:unrelated-package':
++                graph.externalNodes['npm:unrelated-package']!,
+             },
+-          }),
++          };
++
++          const result = getTouchedProjectsFromLockFile(
++            [
++              {
++                file: lockFile,
++                getChanges: () => [new LockFileChange(base, emptyHead)],
++              },
++            ],
++            prunedGraph.nodes,
++            autoNxJson,
++            undefined,
++            prunedGraph
++          );
++          expect(result).toStrictEqual(allNodes);
+         });
+-      });
+ 
+-      afterAll(() => {
+-        tempFs.cleanup();
++        it('should return all projects when only some changed packages exist in the current external node graph', () => {
++          const partiallyMappedGraph: ProjectGraph = {
++            ...graph,
++            externalNodes: {
++              'npm:some-external-package':
++                graph.externalNodes['npm:some-external-package']!,
++            },
++          };
++
++          const result = getTouchedProjectsFromLockFile(
++            [
++              {
++                file: lockFile,
++                getChanges: () => [new LockFileChange(base, head)],
++              },
++            ],
++            partiallyMappedGraph.nodes,
++            autoNxJson,
++            undefined,
++            partiallyMappedGraph
++          );
++
++          expect(result).toStrictEqual(allNodes);
++        });
+       });
++    });
++
++    describe('same-version lockfile changes', () => {
++      it('should return touched packages when only the resolved artifact hash changes', () => {
++        const base = JSON.stringify({
++          name: 'test',
++          version: '1.0.0',
++          lockfileVersion: 3,
++          requires: true,
++          packages: {
++            '': {
++              name: 'test',
++              version: '1.0.0',
++              dependencies: {
++                'some-external-package': '^0.0.1',
++              },
++            },
++            'node_modules/some-external-package': {
++              version: '0.0.1',
++              resolved:
++                'https://registry.npmjs.org/some-external-package/-/some-external-package-0.0.1.tgz',
++              integrity:
++                'sha512-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa==',
++            },
++          },
++        });
++
++        const head = JSON.stringify({
++          name: 'test',
++          version: '1.0.0',
++          lockfileVersion: 3,
++          requires: true,
++          packages: {
++            '': {
++              name: 'test',
++              version: '1.0.0',
++              dependencies: {
++                'some-external-package': '^0.0.1',
++              },
++            },
++            'node_modules/some-external-package': {
++              version: '0.0.1',
++              resolved:
++                'https://registry.npmjs.org/some-external-package/-/some-external-package-0.0.1.tgz',
++              integrity:
++                'sha512-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz==',
++            },
++          },
++        });
+ 
+-      it(`should not return changes when "${lockFile}" is not touched`, () => {
+         const result = getTouchedProjectsFromLockFile(
+           [
+             {
+-              file: 'source.ts',
+-              getChanges: () => [new WholeFileChange()],
++              file: 'package-lock.json',
++              getChanges: () => [new LockFileChange(base, head)],
+             },
+           ],
+-          graph.nodes
++          graph.nodes,
++          autoNxJson,
++          undefined,
++          graph
+         );
+-        expect(result).toStrictEqual([]);
++
++        expect(result).toStrictEqual(['npm:some-external-package']);
+       });
++    });
+ 
+-      it(`should not return changes when whole lock file "${lockFile}" is changed`, () => {
++    describe('unrecognized lock file', () => {
++      it('should not return changes -- unknown files are not recognized as lock files', () => {
+         const result = getTouchedProjectsFromLockFile(
+           [
+             {
+-              file: lockFile,
++              file: 'unknown.lock',
+               getChanges: () => [new WholeFileChange()],
+             },
+           ],
+-          graph.nodes
++          graph.nodes,
++          autoNxJson,
++          undefined,
++          graph
+         );
+         expect(result).toStrictEqual([]);
+       });
++    });
+ 
+-      it(`should return only changed projects when "${lockFile}" is touched`, () => {
++    describe('malformed lock file', () => {
++      it('should return all projects when parsing the lock file fails', () => {
++        const warnSpy = jest.spyOn(output, 'warn').mockImplementation();
+         const result = getTouchedProjectsFromLockFile(
+           [
+             {
+-              file: lockFile,
++              file: 'package-lock.json',
+               getChanges: () => [
+-                {
+-                  type: JsonDiffType.Modified,
+-                  path: [
+-                    'importers',
+-                    'libs/proj1',
+-                    'dependencies',
+-                    'some-external-package',
+-                    'version',
+-                  ],
+-                  value: {
+-                    lhs: '0.0.1',
+-                    rhs: '0.0.2',
+-                  },
+-                },
+-                {
+-                  type: JsonDiffType.Added,
+-                  path: [
+-                    'importers',
+-                    'apps/app1',
+-                    'devDependencies',
+-                    'some-other-external-package',
+-                    'version',
+-                  ],
+-                  value: {
+-                    lhs: undefined,
+-                    rhs: '4.0.1',
+-                  },
+-                },
+-                {
+-                  type: JsonDiffType.Deleted,
+-                  path: [
+-                    'importers',
+-                    'apps/app-that-was-deleted',
+-                    'devDependencies',
+-                    'some-other-external-package',
+-                    'version',
+-                  ],
+-                  value: {
+-                    lhs: '4.0.1',
+-                    rhs: undefined,
+-                  },
+-                },
++                new LockFileChange('not json at all', 'still not json'),
+               ],
+             },
+           ],
+-          graph.nodes
++          graph.nodes,
++          autoNxJson,
++          undefined,
++          graph
+         );
+-        expect(result).toStrictEqual(['proj1', 'app1']);
++        expect(result).toStrictEqual(allNodes);
++        expect(warnSpy).toHaveBeenCalled();
++        warnSpy.mockRestore();
+       });
+     });
+   });
+diff --git a/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.ts b/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.ts
+index 9d6b4b9d3c2..b7ad60bdcff 100644
+--- a/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.ts
++++ b/packages/nx/src/plugins/js/project-graph/affected/lock-file-changes.ts
+@@ -1,42 +1,49 @@
+-import { readNxJson } from '../../../../config/configuration';
+ import { TouchedProjectLocator } from '../../../../project-graph/affected/affected-project-graph-models';
+ import {
+   FileChange,
++  isLockFileChange,
++  LockFileChange,
+   WholeFileChange,
+ } from '../../../../project-graph/file-utils';
+-import { isJsonChange, JsonChange } from '../../../../utils/json-diff';
+ import { jsPluginConfig as readJsPluginConfig } from '../../utils/config';
+ import { findMatchingProjects } from '../../../../utils/find-matching-projects';
+-import { ProjectGraphProjectNode } from '../../../../config/project-graph';
+-
+-export const PNPM_LOCK_FILES = ['pnpm-lock.yaml', 'pnpm-lock.yml'];
+-
+-const ALL_LOCK_FILES = [
+-  ...PNPM_LOCK_FILES,
+-  'package-lock.json',
+-  'yarn.lock',
+-  'bun.lockb',
+-  'bun.lock',
+-];
++import {
++  ProjectGraph,
++  ProjectGraphExternalNode,
++  ProjectGraphProjectNode,
++} from '../../../../config/project-graph';
++import { hashArray } from '../../../../hasher/file-hasher';
++import { output } from '../../../../utils/output';
++import { PackageJson } from '../../../../utils/package-json';
++import {
++  AUTO_AFFECTED_LOCK_FILES,
++  getLockFileNodesForName,
++} from '../../lock-file/lock-file';
+ 
+ export const getTouchedProjectsFromLockFile: TouchedProjectLocator<
+-  WholeFileChange | JsonChange
+-> = (fileChanges, projectGraphNodes): string[] => {
+-  const nxJson = readNxJson();
++  WholeFileChange | LockFileChange
++> = (
++  fileChanges,
++  projectGraphNodes,
++  nxJson,
++  packageJson,
++  projectGraph
++): string[] => {
+   const { projectsAffectedByDependencyUpdates } = readJsPluginConfig(nxJson);
+ 
+   const changedLockFile = fileChanges.find((f) =>
+-    ALL_LOCK_FILES.includes(f.file)
++    AUTO_AFFECTED_LOCK_FILES.includes(
++      f.file as (typeof AUTO_AFFECTED_LOCK_FILES)[number]
++    )
+   );
+ 
+   if (projectsAffectedByDependencyUpdates === 'auto') {
+-    const changedProjectPaths =
+-      getProjectPathsAffectedByDependencyUpdates(changedLockFile);
+-    const changedProjectNames = getProjectsNamesFromPaths(
++    return getAutoAffected(
++      changedLockFile,
+       projectGraphNodes,
+-      changedProjectPaths
++      projectGraph,
++      packageJson
+     );
+-    return changedProjectNames;
+   } else if (Array.isArray(projectsAffectedByDependencyUpdates)) {
+     return findMatchingProjects(
+       projectsAffectedByDependencyUpdates,
+@@ -51,53 +58,176 @@ export const getTouchedProjectsFromLockFile: TouchedProjectLocator<
+ };
+ 
+ /**
+- * For pnpm projects, check lock file for changes to importers and return the project paths that have changes.
++ * In auto mode, parse the lock file at the base and head revisions
++ * using Nx's existing lock file parsers, then diff the resulting
++ * external-node maps to determine which packages actually changed.
++ *
++ * Returns external node names (e.g. "npm:lodash@4.17.21") so the
++ * graph reversal in filterAffected can walk back to workspace projects.
+  */
+-const getProjectPathsAffectedByDependencyUpdates = (
+-  changedLockFile?: FileChange<WholeFileChange | JsonChange>
+-): string[] => {
++function getAutoAffected(
++  changedLockFile: FileChange<WholeFileChange | LockFileChange> | undefined,
++  projectGraphNodes: Record<string, ProjectGraphProjectNode>,
++  projectGraph: ProjectGraph,
++  packageJson: PackageJson | undefined
++): string[] {
++  const allProjectNames = Object.values(projectGraphNodes).map((p) => p.name);
++
+   if (!changedLockFile) {
+     return [];
+   }
+-  const changedProjectPaths = new Set<string>();
+-  if (PNPM_LOCK_FILES.includes(changedLockFile.file)) {
+-    for (const change of changedLockFile.getChanges()) {
+-      if (
+-        isJsonChange(change) &&
+-        change.path[0] === 'importers' &&
+-        change.path[1] !== undefined
+-      ) {
+-        changedProjectPaths.add(change.path[1]);
+-      }
+-    }
++
++  const changes = changedLockFile.getChanges();
++
++  // A WholeFileChange means we were unable to read both revisions of
++  // the lock file (e.g. missing base revision, git error). Fall back
++  // to marking all projects affected.
++  if (!changes.every(isLockFileChange)) {
++    return allProjectNames;
+   }
+-  return Array.from(changedProjectPaths);
+-};
+ 
+-const getProjectsNamesFromPaths = (
+-  projectGraphNodes: Record<string, ProjectGraphProjectNode>,
+-  projectPaths: string[]
+-): string[] => {
+-  if (!projectPaths.length) {
++  const changedPackageNames = getChangedPackageNames(
++    changedLockFile.file,
++    changes,
++    packageJson
++  );
++
++  if (changedPackageNames === null) {
++    return allProjectNames;
++  }
++
++  if (changedPackageNames.size === 0) {
+     return [];
+   }
+-  const lookup = new RootPathLookup(projectGraphNodes);
+-  return projectPaths
+-    .map((path) => lookup.findNodeNameByRoot(path))
+-    .filter(Boolean);
+-};
+ 
+-class RootPathLookup {
+-  private rootToNameMap: Map<string, string>;
++  // Look up the changed packages in the project graph's external nodes
++  // and return the external node names. The graph reversal in
++  // filterAffected walks from these nodes to workspace projects.
++  const { touchedNodeNames, missingPackageNames } =
++    findExternalNodesByPackageName(
++      changedPackageNames,
++      projectGraph.externalNodes ?? {}
++    );
++
++  if (missingPackageNames.size > 0) {
++    return allProjectNames;
++  }
+ 
+-  constructor(nodes: Record<string, ProjectGraphProjectNode>) {
+-    this.rootToNameMap = new Map();
+-    Object.entries(nodes).forEach(([name, node]) => {
+-      this.rootToNameMap.set(node.data.root, name);
++  return touchedNodeNames;
++}
++
++/**
++ * Parse the base and head revisions of the lock file with Nx's
++ * existing parsers and diff the resulting package -> version maps.
++ *
++ * Returns the set of changed package names, or null if parsing
++ * failed (in which case the caller should fall back to all projects).
++ */
++function getChangedPackageNames(
++  file: string,
++  changes: LockFileChange[],
++  packageJson: PackageJson | undefined
++): Set<string> | null {
++  try {
++    const changed = new Set<string>();
++    // calculateFileChanges emits a single LockFileChange per lock file, but
++    // the iteration keeps the contract open in case multiple ranges are ever
++    // emitted for the same file.
++    for (const change of changes) {
++      const baseFingerprints = collectPackageFingerprints(
++        getLockFileNodesForName(
++          file,
++          change.baseContent,
++          hashArray([change.baseContent]),
++          packageJson
++        ).nodes
++      );
++      const headFingerprints = collectPackageFingerprints(
++        getLockFileNodesForName(
++          file,
++          change.headContent,
++          hashArray([change.headContent]),
++          packageJson
++        ).nodes
++      );
++
++      for (const [name, fingerprints] of headFingerprints) {
++        const baseSet = baseFingerprints.get(name);
++        if (!baseSet || !setsEqual(baseSet, fingerprints)) {
++          changed.add(name);
++        }
++      }
++      for (const name of baseFingerprints.keys()) {
++        if (!headFingerprints.has(name)) {
++          changed.add(name);
++        }
++      }
++    }
++    return changed;
++  } catch (e) {
++    output.warn({
++      title: `Failed to parse "${file}" for projectsAffectedByDependencyUpdates "auto" mode. All projects will be marked as affected.`,
++      bodyLines: [e instanceof Error ? e.message : String(e)],
++    });
++    return null;
++  }
++}
++
++/**
++ * Build a map of packageName -> set of versions present in the
++ * external-node record returned by a lock-file parser. We include both
++ * version and hash so patched/tarball/integrity-only changes still
++ * count as lockfile changes even when the semver stays the same.
++ */
++function collectPackageFingerprints(
++  nodes: Record<string, ProjectGraphExternalNode>
++): Map<string, Set<string>> {
++  const fingerprints = new Map<string, Set<string>>();
++  for (const node of Object.values(nodes ?? {})) {
++    const name = node.data?.packageName;
++    if (!name) continue;
++    const fingerprint = JSON.stringify({
++      version: node.data.version ?? '',
++      hash: node.data.hash ?? '',
+     });
++    let set = fingerprints.get(name);
++    if (!set) {
++      set = new Set<string>();
++      fingerprints.set(name, set);
++    }
++    set.add(fingerprint);
+   }
++  return fingerprints;
++}
+ 
+-  findNodeNameByRoot(root: string): string | undefined {
+-    return this.rootToNameMap.get(root);
++function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
++  if (a.size !== b.size) return false;
++  for (const value of a) {
++    if (!b.has(value)) return false;
++  }
++  return true;
++}
++
++/**
++ * Given a set of package names, find all matching external node names
++ * in the project graph.
++ */
++function findExternalNodesByPackageName(
++  packageNames: Set<string>,
++  externalNodes: Record<string, ProjectGraphExternalNode>
++): { touchedNodeNames: string[]; missingPackageNames: Set<string> } {
++  const touchedNodeNames: string[] = [];
++  const matchedPackageNames = new Set<string>();
++  for (const [name, node] of Object.entries(externalNodes)) {
++    if (packageNames.has(node.data.packageName)) {
++      touchedNodeNames.push(name);
++      matchedPackageNames.add(node.data.packageName);
++    }
+   }
++  return {
++    touchedNodeNames,
++    missingPackageNames: new Set(
++      Array.from(packageNames).filter((name) => !matchedPackageNames.has(name))
++    ),
++  };
+ }
+diff --git a/packages/nx/src/project-graph/file-utils.spec.ts b/packages/nx/src/project-graph/file-utils.spec.ts
+index eab8daf1d77..e0aa7002d36 100644
+--- a/packages/nx/src/project-graph/file-utils.spec.ts
++++ b/packages/nx/src/project-graph/file-utils.spec.ts
+@@ -10,6 +10,7 @@ jest.mock('fs', () => {
+ import {
+   calculateFileChanges,
+   DeletedFileChange,
++  LockFileChange,
+   WholeFileChange,
+ } from './file-utils';
+ import * as fs from 'fs';
+@@ -96,6 +97,22 @@ describe('calculateFileChanges', () => {
+     expect(changes[0].getChanges()).toEqual([new DeletedFileChange()]);
+   });
+ 
++  it('should return lock file changes for bun.lockb files', () => {
++    jest.spyOn(fs, 'existsSync').mockReturnValue(true);
++    const changes = calculateFileChanges(
++      ['bun.lockb'],
++      {
++        base: 'sha1',
++        head: 'sha2',
++      },
++      (_, revision) => (revision === 'sha1' ? 'base-lockfile' : 'head-lockfile')
++    );
++
++    expect(changes[0].getChanges()).toEqual([
++      new LockFileChange('base-lockfile', 'head-lockfile'),
++    ]);
++  });
++
+   it('should ignore *.md changes', () => {
+     const ig = ignore();
+     ig.add('*.md');
+diff --git a/packages/nx/src/project-graph/file-utils.ts b/packages/nx/src/project-graph/file-utils.ts
+index 10ebd7b872f..6336cb7a31b 100644
+--- a/packages/nx/src/project-graph/file-utils.ts
++++ b/packages/nx/src/project-graph/file-utils.ts
+@@ -1,5 +1,12 @@
+-import { execSync } from 'child_process';
+-import { existsSync, readFileSync } from 'fs';
++import { execFileSync, execSync } from 'child_process';
++import {
++  existsSync,
++  mkdtempSync,
++  readFileSync,
++  rmSync,
++  writeFileSync,
++} from 'fs';
++import { tmpdir } from 'os';
+ import { extname, join, relative, sep } from 'path';
+ import type { FileData } from '../config/project-graph';
+ import type { NxArgs } from '../utils/command-line-utils';
+@@ -25,6 +32,14 @@ export class DeletedFileChange implements Change {
+   type = 'WholeFileDeleted';
+ }
+ 
++export class LockFileChange implements Change {
++  type = 'LockFileChange';
++  constructor(
++    public baseContent: string,
++    public headContent: string
++  ) {}
++}
++
+ export function isWholeFileChange(change: Change): change is WholeFileChange {
+   return change.type === 'WholeFileChange';
+ }
+@@ -35,6 +50,19 @@ export function isDeletedFileChange(
+   return change.type === 'WholeFileDeleted';
+ }
+ 
++export function isLockFileChange(change: Change): change is LockFileChange {
++  return change.type === 'LockFileChange';
++}
++
++const TEXT_LOCK_FILES = new Set([
++  'yarn.lock',
++  'package-lock.json',
++  'pnpm-lock.yaml',
++  'pnpm-lock.yml',
++  'bun.lock',
++]);
++const BINARY_LOCK_FILES = new Set(['bun.lockb']);
++
+ export function calculateFileChanges(
+   files: string[],
+   nxArgs?: NxArgs,
+@@ -47,6 +75,7 @@ export function calculateFileChanges(
+ 
+   return files.map((f) => {
+     const ext = extname(f);
++    const basename = f.split('/').pop() ?? f;
+ 
+     return {
+       file: f,
+@@ -62,6 +91,27 @@ export function calculateFileChanges(
+         if (nxArgs.files && nxArgs.files.includes(f)) {
+           return [new WholeFileChange()];
+         }
++
++        if (TEXT_LOCK_FILES.has(basename) || BINARY_LOCK_FILES.has(basename)) {
++          try {
++            const atBase = readLockFileAtRevision(
++              f,
++              basename,
++              nxArgs.base,
++              readFileAtRevision
++            );
++            const atHead = readLockFileAtRevision(
++              f,
++              basename,
++              nxArgs.head,
++              readFileAtRevision
++            );
++            return [new LockFileChange(atBase, atHead)];
++          } catch {
++            return [new WholeFileChange()];
++          }
++        }
++
+         switch (ext) {
+           case '.json':
+             try {
+@@ -89,6 +139,22 @@ export function calculateFileChanges(
+   });
+ }
+ 
++function readLockFileAtRevision(
++  file: string,
++  lockFileName: string,
++  revision: void | string,
++  readFileAtRevision: (f: string, r: string | void) => string
++): string {
++  if (
++    lockFileName === 'bun.lockb' &&
++    readFileAtRevision === defaultReadFileAtRevision
++  ) {
++    return defaultReadBunLockFileAtRevision(file, revision);
++  }
++
++  return readFileAtRevision(file, revision);
++}
++
+ export const TEN_MEGABYTES = 1024 * 10000;
+ 
+ function defaultReadFileAtRevision(
+@@ -96,15 +162,7 @@ function defaultReadFileAtRevision(
+   revision: void | string
+ ): string {
+   try {
+-    const fileFullPath = `${workspaceRoot}${sep}${file}`;
+-    const gitRepositoryPath = execSync('git rev-parse --show-toplevel', {
+-      windowsHide: true,
+-    })
+-      .toString()
+-      .trim();
+-    const filePathInGitRepository = relative(gitRepositoryPath, fileFullPath)
+-      .split(sep)
+-      .join('/');
++    const filePathInGitRepository = getFilePathInGitRepository(file);
+     return !revision
+       ? readFileSync(file, 'utf-8')
+       : execSync(`git show ${revision}:${filePathInGitRepository}`, {
+@@ -119,6 +177,56 @@ function defaultReadFileAtRevision(
+   }
+ }
+ 
++function defaultReadBunLockFileAtRevision(
++  file: string,
++  revision: void | string
++): string {
++  if (!revision) {
++    return execFileSync('bun', [join(workspaceRoot, file)], {
++      encoding: 'utf-8',
++      maxBuffer: TEN_MEGABYTES,
++      windowsHide: true,
++    }).trim();
++  }
++
++  const filePathInGitRepository = getFilePathInGitRepository(file);
++  const tempDirectory = mkdtempSync(join(tmpdir(), 'nx-bun-lock-'));
++  const tempLockfilePath = join(tempDirectory, 'bun.lockb');
++
++  try {
++    const lockFileContents = execFileSync(
++      'git',
++      ['show', `${revision}:${filePathInGitRepository}`],
++      {
++        maxBuffer: TEN_MEGABYTES,
++        stdio: ['pipe', 'pipe', 'ignore'],
++        windowsHide: true,
++      }
++    );
++
++    writeFileSync(tempLockfilePath, lockFileContents);
++
++    return execFileSync('bun', [tempLockfilePath], {
++      encoding: 'utf-8',
++      maxBuffer: TEN_MEGABYTES,
++      windowsHide: true,
++    }).trim();
++  } finally {
++    rmSync(tempDirectory, { force: true, recursive: true });
++  }
++}
++
++function getFilePathInGitRepository(file: string): string {
++  const fileFullPath = `${workspaceRoot}${sep}${file}`;
++  const gitRepositoryPath = execSync('git rev-parse --show-toplevel', {
++    windowsHide: true,
++  })
++    .toString()
++    .trim();
++
++  return relative(gitRepositoryPath, fileFullPath).split(sep).join('/');
++}
++
+ export function defaultFileRead(filePath: string): string | null {
+   return readFileSync(join(workspaceRoot, filePath), 'utf-8');
+ }

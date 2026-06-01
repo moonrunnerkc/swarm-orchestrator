@@ -1,0 +1,763 @@
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index d8ff3f0b337c..61667560ed58 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -1592,11 +1592,17 @@ async function generateDynamicFlightRenderResultWithStagesInDev(
+       // for the full stream to finish accumulating so we also catch errors from
+       // the dynamic stage.
+       void accumulatedChunksPromise.then(() => {
+-        if (workStore.invalidDynamicUsageError) {
+-          logMessagesAndSendErrorsToBrowser(
+-            [workStore.invalidDynamicUsageError],
+-            ctx
+-          )
++        const { invalidDynamicUsageError } = workStore
++        // Forward only if userland caught the rejection. If userland didn't
++        // catch, the rejection propagated into the React render and React's
++        // `serverComponentsErrorHandler` already stamped a digest on the error
++        // and emitted it as a Flight error chunk — surfacing it again here
++        // would duplicate the entry in the dev overlay.
++        if (
++          invalidDynamicUsageError &&
++          !(invalidDynamicUsageError as { digest?: unknown }).digest
++        ) {
++          logMessagesAndSendErrorsToBrowser([invalidDynamicUsageError], ctx)
+         }
+       })
+     }
+@@ -3060,11 +3066,27 @@ async function renderToHTMLOrFlightImpl(
+       fallbackParams
+     )
+ 
+-    // Invalid dynamic usages should only error the request in development.
+-    // In production, it's better to produce a result.
+-    // (the dynamic error will still be thrown inside the component tree, but it's catchable by error boundaries)
+-    if (workStore.invalidDynamicUsageError && process.env.__NEXT_DEV_SERVER) {
+-      throw workStore.invalidDynamicUsageError
++    // Forward an invalid-dynamic-usage error recorded by `'use cache'` only
++    // when userland caught it (try/catch around the cache call). If userland
++    // didn't catch, the rejection propagated into the React render, and React's
++    // `serverComponentsErrorHandler` already stamped a digest on the error and
++    // emitted it as a Flight error chunk — surfacing it again here would
++    // duplicate the entry in the dev overlay.
++    //
++    // The cacheComponents paths forward this themselves via
++    // `spawnStaticShellValidationInDev` and the validation-skipped fallback in
++    // `generateDynamicFlightRenderResultWithStagesInDev`. Here we cover the
++    // non-cacheComponents dev path where neither runs.
++    if (
++      process.env.__NEXT_DEV_SERVER &&
++      !cacheComponents &&
++      workStore.invalidDynamicUsageError &&
++      !(workStore.invalidDynamicUsageError as { digest?: unknown }).digest
++    ) {
++      void logMessagesAndSendErrorsToBrowser(
++        [workStore.invalidDynamicUsageError],
++        ctx
++      )
+     }
+ 
+     // If we have pending revalidates, wait until they are all resolved.
+@@ -5591,11 +5613,19 @@ async function spawnStaticShellValidationInDevImpl(
+ 
+   const hmrRefreshHash = getHmrRefreshHash(requestStore)
+ 
+-  // We don't need to continue the prerender process if we already
+-  // detected invalid dynamic usage in the initial prerender phase.
+   const { invalidDynamicUsageError } = workStore
+   if (invalidDynamicUsageError) {
+-    return logMessagesAndSendErrorsToBrowser([invalidDynamicUsageError], ctx)
++    // We don't need to continue the prerender process if we already detected
++    // invalid dynamic usage in the initial prerender phase. Forward the error
++    // to the dev overlay only when userland caught the rejection. If userland
++    // didn't catch, the rejection propagated into the React render and React's
++    // `serverComponentsErrorHandler` already stamped a digest on the error and
++    // emitted it as a Flight error chunk — surfacing it again here would
++    // duplicate the entry in the dev overlay.
++    if (!(invalidDynamicUsageError as { digest?: unknown }).digest) {
++      return logMessagesAndSendErrorsToBrowser([invalidDynamicUsageError], ctx)
++    }
++    return
+   }
+ 
+   if (syncInterruptReason) {
+diff --git a/packages/next/src/server/use-cache/use-cache-errors.ts b/packages/next/src/server/use-cache/use-cache-errors.ts
+index e547e20eeaaf..1215ebb50d68 100644
+--- a/packages/next/src/server/use-cache/use-cache-errors.ts
++++ b/packages/next/src/server/use-cache/use-cache-errors.ts
+@@ -1,9 +1,4 @@
+-const USE_CACHE_TIMEOUT_ERROR_CODE = 'USE_CACHE_TIMEOUT'
+-const USE_CACHE_DEADLOCK_ERROR_CODE = 'USE_CACHE_DEADLOCK'
+-
+ export class UseCacheTimeoutError extends Error {
+-  digest: typeof USE_CACHE_TIMEOUT_ERROR_CODE = USE_CACHE_TIMEOUT_ERROR_CODE
+-
+   constructor() {
+     super(
+       'Filling a cache during prerender timed out, likely because request-specific arguments such as params, searchParams, cookies() or dynamic data were used inside "use cache".'
+@@ -12,41 +7,9 @@ export class UseCacheTimeoutError extends Error {
+ }
+ 
+ export class UseCacheDeadlockError extends Error {
+-  digest: typeof USE_CACHE_DEADLOCK_ERROR_CODE = USE_CACHE_DEADLOCK_ERROR_CODE
+-
+   constructor() {
+     super(
+       'Filling a "use cache" entry appears to be stuck on shared state from the outer render scope. The same function completed when run in isolation, which usually means a module-scoped value (for example a top-level Map used to dedupe fetches) is joining a promise created outside the cache. "use cache" already dedupes calls with the same arguments — within a request and across requests on the same server instance — so the surrounding dedupe layer is both unnecessary and the likely cause. Remove it and rely on "use cache" alone for deduping.'
+     )
+   }
+ }
+-
+-export function isUseCacheTimeoutError(
+-  err: unknown
+-): err is UseCacheTimeoutError {
+-  if (
+-    typeof err !== 'object' ||
+-    err === null ||
+-    !('digest' in err) ||
+-    typeof err.digest !== 'string'
+-  ) {
+-    return false
+-  }
+-
+-  return err.digest === USE_CACHE_TIMEOUT_ERROR_CODE
+-}
+-
+-export function isUseCacheDeadlockError(
+-  err: unknown
+-): err is UseCacheDeadlockError {
+-  if (
+-    typeof err !== 'object' ||
+-    err === null ||
+-    !('digest' in err) ||
+-    typeof err.digest !== 'string'
+-  ) {
+-    return false
+-  }
+-
+-  return err.digest === USE_CACHE_DEADLOCK_ERROR_CODE
+-}
+diff --git a/packages/next/src/server/use-cache/use-cache-wrapper.ts b/packages/next/src/server/use-cache/use-cache-wrapper.ts
+index ec190e23982f..ce8dc61112dd 100644
+--- a/packages/next/src/server/use-cache/use-cache-wrapper.ts
++++ b/packages/next/src/server/use-cache/use-cache-wrapper.ts
+@@ -1221,7 +1221,16 @@ async function generateCacheEntryImpl(
+               filterStackFrame,
+               signal: devRenderAbortController.signal,
+               temporaryReferences,
+-              onError: handleError,
++              onError(error) {
++                if (
++                  devRenderAbortController.signal.aborted &&
++                  devRenderAbortController.signal.reason === error
++                ) {
++                  return undefined
++                }
++
++                return handleError(error)
++              },
+             }
+           )
+ 
+diff --git a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+index a25b7fe09431..1fcdb7581d92 100644
+--- a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
++++ b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+@@ -2308,7 +2308,7 @@ describe('Cache Components Errors', () => {
+              {
+                "code": "E831",
+                "description": "Route /use-cache-cookies used \`cookies()\` inside "use cache". Accessing Dynamic data sources inside a cache scope is not supported. If you need this data inside a cached function use \`cookies()\` outside of the cached function and pass the required dynamic data in as an argument. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-               "environmentLabel": null,
++               "environmentLabel": "Prerender",
+                "label": "Runtime Error",
+                "source": "app/use-cache-cookies/page.tsx (22:18) @ CookiesReadingComponent
+              > 22 |     await cookies()
+@@ -2417,7 +2417,7 @@ describe('Cache Components Errors', () => {
+              {
+                "code": "E829",
+                "description": "Route /use-cache-draft-mode used "draftMode().enable()" inside "use cache". The enabled status of \`draftMode()\` can be read in caches but you must not enable or disable \`draftMode()\` inside a cache. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-               "environmentLabel": null,
++               "environmentLabel": "Prerender",
+                "label": "Runtime Error",
+                "source": "app/use-cache-draft-mode/page.tsx (20:26) @ DraftModeEnablingComponent
+              > 20 |     ;(await draftMode()).enable()
+@@ -2525,7 +2525,7 @@ describe('Cache Components Errors', () => {
+              {
+                "code": "E833",
+                "description": "Route /use-cache-headers used \`headers()\` inside "use cache". Accessing Dynamic data sources inside a cache scope is not supported. If you need this data inside a cached function use \`headers()\` outside of the cached function and pass the required dynamic data in as an argument. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-               "environmentLabel": null,
++               "environmentLabel": "Prerender",
+                "label": "Runtime Error",
+                "source": "app/use-cache-headers/page.tsx (21:18) @ HeadersReadingComponent
+              > 21 |     await headers()
+@@ -2632,7 +2632,7 @@ describe('Cache Components Errors', () => {
+              {
+                "code": "E841",
+                "description": "Route /use-cache-connection used \`connection()\` inside "use cache". The \`connection()\` function is used to indicate the subsequent code must only run when there is an actual request, but caches must be able to be produced before a request, so this function is not allowed in this scope. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-               "environmentLabel": null,
++               "environmentLabel": "Prerender",
+                "label": "Runtime Error",
+                "source": "app/use-cache-connection/page.tsx (21:21) @ ConnectionCallingComponent
+              > 21 |     await connection()
+@@ -3058,17 +3058,17 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+             it('should show a redbox error', async () => {
+               const browser = await next.browser('/use-cache-low-expire/nested')
+ 
+-              await expect(browser).toDisplayRedbox(`
++              await expect(browser).toDisplayCollapsedRedbox(`
+                {
+                  "code": "E1009",
+                  "description": "A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
+-                 "environmentLabel": null,
+-                 "label": "Runtime Error",
+-                 "source": "app/use-cache-low-expire/nested/page.tsx (20:14) @ async Page
++                 "environmentLabel": "Server",
++                 "label": "Console Error",
++                 "source": "app/use-cache-low-expire/nested/page.tsx (20:14) @ Page
+                > 20 |     result = await outerCache()
+                     |              ^",
+                  "stack": [
+-                   "async Page app/use-cache-low-expire/nested/page.tsx (20:14)",
++                   "Page app/use-cache-low-expire/nested/page.tsx (20:14)",
+                  ],
+                }
+               `)
+@@ -3487,17 +3487,17 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                 '/use-cache-revalidate-0/nested'
+               )
+ 
+-              await expect(browser).toDisplayRedbox(`
++              await expect(browser).toDisplayCollapsedRedbox(`
+                {
+                  "code": "E1000",
+                  "description": "A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
+-                 "environmentLabel": null,
+-                 "label": "Runtime Error",
+-                 "source": "app/use-cache-revalidate-0/nested/page.tsx (20:14) @ async Page
++                 "environmentLabel": "Server",
++                 "label": "Console Error",
++                 "source": "app/use-cache-revalidate-0/nested/page.tsx (20:14) @ Page
+                > 20 |     result = await outerCache()
+                     |              ^",
+                  "stack": [
+-                   "async Page app/use-cache-revalidate-0/nested/page.tsx (20:14)",
++                   "Page app/use-cache-revalidate-0/nested/page.tsx (20:14)",
+                  ],
+                }
+               `)
+@@ -3886,7 +3886,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                {
+                  "code": "E831",
+                  "description": "Route /use-cache-cookies-third-party used \`cookies()\` inside "use cache". Accessing Dynamic data sources inside a cache scope is not supported. If you need this data inside a cached function use \`cookies()\` outside of the cached function and pass the required dynamic data in as an argument. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-                 "environmentLabel": null,
++                 "environmentLabel": "Prerender",
+                  "label": "Runtime Error",
+                  "source": "app/use-cache-cookies-third-party/page.tsx (10:7) @ Page
+                > 10 |       <CachedCookiesReader />
+@@ -3985,7 +3985,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                {
+                  "code": "E829",
+                  "description": "Route /use-cache-draft-mode-third-party used "draftMode().enable()" inside "use cache". The enabled status of \`draftMode()\` can be read in caches but you must not enable or disable \`draftMode()\` inside a cache. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-                 "environmentLabel": null,
++                 "environmentLabel": "Prerender",
+                  "label": "Runtime Error",
+                  "source": "app/use-cache-draft-mode-third-party/page.tsx (10:7) @ Page
+                > 10 |       <CachedDraftModeEnabler />
+@@ -4083,7 +4083,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                {
+                  "code": "E833",
+                  "description": "Route /use-cache-headers-third-party used \`headers()\` inside "use cache". Accessing Dynamic data sources inside a cache scope is not supported. If you need this data inside a cached function use \`headers()\` outside of the cached function and pass the required dynamic data in as an argument. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-                 "environmentLabel": null,
++                 "environmentLabel": "Prerender",
+                  "label": "Runtime Error",
+                  "source": "app/use-cache-headers-third-party/page.tsx (10:7) @ Page
+                > 10 |       <CachedHeadersReader />
+@@ -4182,7 +4182,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                {
+                  "code": "E841",
+                  "description": "Route /use-cache-connection-third-party used \`connection()\` inside "use cache". The \`connection()\` function is used to indicate the subsequent code must only run when there is an actual request, but caches must be able to be produced before a request, so this function is not allowed in this scope. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-                 "environmentLabel": null,
++                 "environmentLabel": "Prerender",
+                  "label": "Runtime Error",
+                  "source": "app/use-cache-connection-third-party/page.tsx (10:7) @ Page
+                > 10 |       <CachedConnectionCaller />
+@@ -4285,14 +4285,14 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                {
+                  "code": "E1016",
+                  "description": ""use cache: private" must not be used within \`unstable_cache()\`.",
+-                 "environmentLabel": null,
++                 "environmentLabel": "Server",
+                  "label": "Runtime Error",
+-                 "source": "app/use-cache-private-in-unstable-cache/page.tsx (21:38) @ <unknown>
++                 "source": "app/use-cache-private-in-unstable-cache/page.tsx (21:38) @ <anonymous>
+                > 21 | const getCachedData = unstable_cache(async () => {
+                     |                                      ^",
+                  "stack": [
+-                   "<unknown> app/use-cache-private-in-unstable-cache/page.tsx (21:38)",
+-                   "async ComponentWithCachedData app/use-cache-private-in-unstable-cache/page.tsx (16:16)",
++                   "<anonymous> app/use-cache-private-in-unstable-cache/page.tsx (21:38)",
++                   "ComponentWithCachedData app/use-cache-private-in-unstable-cache/page.tsx (16:16)",
+                  ],
+                }
+               `)
+@@ -4301,14 +4301,14 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                {
+                  "code": "E1016",
+                  "description": ""use cache: private" must not be used within \`unstable_cache()\`.",
+-                 "environmentLabel": null,
++                 "environmentLabel": "Server",
+                  "label": "Runtime Error",
+                  "source": "app/use-cache-private-in-unstable-cache/page.tsx (21:38) @ eval
+                > 21 | const getCachedData = unstable_cache(async () => {
+                     |                                      ^",
+                  "stack": [
+                    "eval app/use-cache-private-in-unstable-cache/page.tsx (21:38)",
+-                   "async ComponentWithCachedData app/use-cache-private-in-unstable-cache/page.tsx (16:16)",
++                   "ComponentWithCachedData app/use-cache-private-in-unstable-cache/page.tsx (16:16)",
+                  ],
+                }
+               `)
+@@ -4413,14 +4413,13 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              {
+                "code": "E1001",
+                "description": ""use cache: private" must not be used within "use cache". It can only be nested inside of another "use cache: private".",
+-               "environmentLabel": null,
++               "environmentLabel": "Prerender",
+                "label": "Runtime Error",
+                "source": "app/use-cache-private-in-use-cache/page.tsx (15:1) @ Private
+              > 15 | async function Private() {
+                   | ^",
+                "stack": [
+                  "Private app/use-cache-private-in-use-cache/page.tsx (15:1)",
+-                 "stringify <anonymous>",
+                ],
+              }
+             `)
+diff --git a/test/e2e/app-dir/use-cache-configured-timeout/use-cache-configured-timeout.test.ts b/test/e2e/app-dir/use-cache-configured-timeout/use-cache-configured-timeout.test.ts
+index 66cd685d14c8..0a0885d1a8b5 100644
+--- a/test/e2e/app-dir/use-cache-configured-timeout/use-cache-configured-timeout.test.ts
++++ b/test/e2e/app-dir/use-cache-configured-timeout/use-cache-configured-timeout.test.ts
+@@ -40,7 +40,7 @@ describe('use-cache-configured-timeout', () => {
+          {
+            "code": "E236",
+            "description": "Filling a cache during prerender timed out, likely because request-specific arguments such as params, searchParams, cookies() or dynamic data were used inside "use cache".",
+-           "environmentLabel": null,
++           "environmentLabel": "Prerender",
+            "label": "Runtime Error",
+            "source": "app/above-dev-timeout/page.tsx (4:1) @ getCachedData
+          > 4 | async function getCachedData(): Promise<string> {
+diff --git a/test/e2e/app-dir/use-cache-deadlock-probe/use-cache-deadlock-probe.test.ts b/test/e2e/app-dir/use-cache-deadlock-probe/use-cache-deadlock-probe.test.ts
+index dcfb1366fcf5..40061aeeaafd 100644
+--- a/test/e2e/app-dir/use-cache-deadlock-probe/use-cache-deadlock-probe.test.ts
++++ b/test/e2e/app-dir/use-cache-deadlock-probe/use-cache-deadlock-probe.test.ts
+@@ -31,12 +31,12 @@ describe('use-cache-deadlock-probe', () => {
+       const outputIndex = next.cliOutput.length
+       const browser = await next.browser('/static')
+ 
+-      await expect(browser).toDisplayRedbox(`
++      await expect(browser).toDisplayCollapsedRedbox(`
+        {
+          "code": "E1181",
+          "description": "Filling a "use cache" entry appears to be stuck on shared state from the outer render scope. The same function completed when run in isolation, which usually means a module-scoped value (for example a top-level Map used to dedupe fetches) is joining a promise created outside the cache. "use cache" already dedupes calls with the same arguments — within a request and across requests on the same server instance — so the surrounding dedupe layer is both unnecessary and the likely cause. Remove it and rely on "use cache" alone for deduping.",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
++         "environmentLabel": "Server",
++         "label": "Console Error",
+          "source": "app/static/page.tsx (6:1) @ getCachedData
+        > 6 | async function getCachedData(): Promise<string> {
+            | ^",
+@@ -59,12 +59,12 @@ describe('use-cache-deadlock-probe', () => {
+       const outputIndex = next.cliOutput.length
+       const browser = await next.browser('/runtime')
+ 
+-      await expect(browser).toDisplayRedbox(`
++      await expect(browser).toDisplayCollapsedRedbox(`
+        {
+          "code": "E1181",
+          "description": "Filling a "use cache" entry appears to be stuck on shared state from the outer render scope. The same function completed when run in isolation, which usually means a module-scoped value (for example a top-level Map used to dedupe fetches) is joining a promise created outside the cache. "use cache" already dedupes calls with the same arguments — within a request and across requests on the same server instance — so the surrounding dedupe layer is both unnecessary and the likely cause. Remove it and rely on "use cache" alone for deduping.",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
++         "environmentLabel": "Server",
++         "label": "Console Error",
+          "source": "app/runtime/page.tsx (8:1) @ getCachedData
+        >  8 | async function getCachedData(): Promise<string> {
+             | ^",
+@@ -170,12 +170,12 @@ describe('use-cache-deadlock-probe', () => {
+       // 30s default `page.goto` timeout.
+       const browser = await next.browser('/also-hangs', { waitUntil: 'commit' })
+ 
+-      await expect(browser).toDisplayRedbox(`
++      await expect(browser).toDisplayCollapsedRedbox(`
+        {
+          "code": "E236",
+          "description": "Filling a cache during prerender timed out, likely because request-specific arguments such as params, searchParams, cookies() or dynamic data were used inside "use cache".",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
++         "environmentLabel": "Server",
++         "label": "Console Error",
+          "source": "app/also-hangs/page.tsx (5:1) @ getCachedData
+        > 5 | async function getCachedData(): Promise<string> {
+            | ^",
+@@ -228,12 +228,12 @@ describe('use-cache-deadlock-probe', () => {
+         waitUntil: 'commit',
+       })
+ 
+-      await expect(browser).toDisplayRedbox(`
++      await expect(browser).toDisplayCollapsedRedbox(`
+        {
+          "code": "E1181",
+          "description": "Filling a "use cache" entry appears to be stuck on shared state from the outer render scope. The same function completed when run in isolation, which usually means a module-scoped value (for example a top-level Map used to dedupe fetches) is joining a promise created outside the cache. "use cache" already dedupes calls with the same arguments — within a request and across requests on the same server instance — so the surrounding dedupe layer is both unnecessary and the likely cause. Remove it and rely on "use cache" alone for deduping.",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
++         "environmentLabel": "Server",
++         "label": "Console Error",
+          "source": "app/recovery-stuck/page.tsx (24:1) @ getCachedData
+        > 24 | async function getCachedData() {
+             | ^",
+@@ -257,12 +257,12 @@ describe('use-cache-deadlock-probe', () => {
+       const outputIndex = next.cliOutput.length
+       const browser = await next.browser('/private-cookies')
+ 
+-      await expect(browser).toDisplayRedbox(`
++      await expect(browser).toDisplayCollapsedRedbox(`
+        {
+          "code": "E1181",
+          "description": "Filling a "use cache" entry appears to be stuck on shared state from the outer render scope. The same function completed when run in isolation, which usually means a module-scoped value (for example a top-level Map used to dedupe fetches) is joining a promise created outside the cache. "use cache" already dedupes calls with the same arguments — within a request and across requests on the same server instance — so the surrounding dedupe layer is both unnecessary and the likely cause. Remove it and rely on "use cache" alone for deduping.",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
++         "environmentLabel": "Server",
++         "label": "Console Error",
+          "source": "app/private-cookies/page.tsx (20:1) @ getCachedData
+        > 20 | async function getCachedData(): Promise<string> {
+             | ^",
+diff --git a/test/e2e/app-dir/use-cache-hanging/use-cache-hanging.test.ts b/test/e2e/app-dir/use-cache-hanging/use-cache-hanging.test.ts
+index d52767eef0f8..29d82e0d07b4 100644
+--- a/test/e2e/app-dir/use-cache-hanging/use-cache-hanging.test.ts
++++ b/test/e2e/app-dir/use-cache-hanging/use-cache-hanging.test.ts
+@@ -22,12 +22,12 @@ describe('use-cache-hanging', () => {
+         const outputIndex = next.cliOutput.length
+         const browser = await next.browser('/static')
+ 
+-        await expect(browser).toDisplayRedbox(`
++        await expect(browser).toDisplayCollapsedRedbox(`
+          {
+            "code": "E236",
+            "description": "Filling a cache during prerender timed out, likely because request-specific arguments such as params, searchParams, cookies() or dynamic data were used inside "use cache".",
+-           "environmentLabel": null,
+-           "label": "Runtime Error",
++           "environmentLabel": "Server",
++           "label": "Console Error",
+            "source": "app/static/page.tsx (6:1) @ getCachedData
+          > 6 | async function getCachedData(): Promise<string> {
+              | ^",
+@@ -51,12 +51,12 @@ describe('use-cache-hanging', () => {
+         const outputIndex = next.cliOutput.length
+         const browser = await next.browser('/runtime')
+ 
+-        await expect(browser).toDisplayRedbox(`
++        await expect(browser).toDisplayCollapsedRedbox(`
+          {
+            "code": "E236",
+            "description": "Filling a cache during prerender timed out, likely because request-specific arguments such as params, searchParams, cookies() or dynamic data were used inside "use cache".",
+-           "environmentLabel": null,
+-           "label": "Runtime Error",
++           "environmentLabel": "Server",
++           "label": "Console Error",
+            "source": "app/runtime/page.tsx (8:1) @ getCachedData
+          >  8 | async function getCachedData(): Promise<string> {
+               | ^",
+diff --git a/test/e2e/app-dir/use-cache-search-params/use-cache-search-params.test.ts b/test/e2e/app-dir/use-cache-search-params/use-cache-search-params.test.ts
+index 98c3bd5ff9db..b601d4dc7561 100644
+--- a/test/e2e/app-dir/use-cache-search-params/use-cache-search-params.test.ts
++++ b/test/e2e/app-dir/use-cache-search-params/use-cache-search-params.test.ts
+@@ -1,16 +1,12 @@
+ import { nextTestSetup } from 'e2e-utils'
+-import {
+-  waitForRedbox,
+-  assertNoConsoleErrors,
+-  waitForNoRedbox,
+-  getRedboxDescription,
+-  getRedboxSource,
+-} from 'next-test-utils'
++import { assertNoConsoleErrors, waitForNoRedbox } from 'next-test-utils'
+ import stripAnsi from 'strip-ansi'
+ 
+ const getExpectedErrorMessage = (route: string) =>
+   `Route ${route} used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache`
+ 
++const isCacheComponentsEnabled = process.env.__NEXT_CACHE_COMPONENTS === 'true'
++
+ describe('use-cache-search-params', () => {
+   const { next, isNextDev, skipped } = nextTestSetup({
+     files: __dirname,
+@@ -34,29 +30,41 @@ describe('use-cache-search-params', () => {
+         const outputIndex = next.cliOutput.length
+         const browser = await next.browser(`${route}?foo=1`)
+ 
+-        await waitForRedbox(browser)
+-
+-        const errorDescription = await getRedboxDescription(browser)
+-        const errorSource = await getRedboxSource(browser)
+-        const expectedErrorMessage = getExpectedErrorMessage(route)
+-
+-        expect(errorDescription).toBe(expectedErrorMessage)
++        if (isCacheComponentsEnabled) {
++          await expect(browser).toDisplayRedbox(`
++           {
++             "code": "E842",
++             "description": "Route /search-params-used used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++             "environmentLabel": "Prerender",
++             "label": "Runtime Error",
++             "source": "app/search-params-used/page.tsx (8:17) @ Page
++           >  8 |   const param = (await searchParams).foo
++                |                 ^",
++             "stack": [
++               "Page app/search-params-used/page.tsx (8:17)",
++             ],
++           }
++          `)
++        } else {
++          await expect(browser).toDisplayRedbox(`
++           {
++             "code": "E842",
++             "description": "Route /search-params-used used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++             "environmentLabel": "Cache",
++             "label": "Runtime Error",
++             "source": "app/search-params-used/page.tsx (8:17) @ Page
++           >  8 |   const param = (await searchParams).foo
++                |                 ^",
++             "stack": [
++               "Page app/search-params-used/page.tsx (8:17)",
++             ],
++           }
++          `)
++        }
+ 
+         const cliOutput = stripAnsi(next.cliOutput.slice(outputIndex))
+ 
+-        expect(errorSource).toMatchInlineSnapshot(`
+-         "app/search-params-used/page.tsx (8:17) @ Page
+-
+-            6 |   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+-            7 | }) {
+-         >  8 |   const param = (await searchParams).foo
+-              |                 ^
+-            9 |
+-           10 |   return <p>param: {param}</p>
+-           11 | }"
+-        `)
+-
+-        expect(cliOutput).toContain(`Error: ${expectedErrorMessage}
++        expect(cliOutput).toContain(`Error: ${getExpectedErrorMessage(route)}
+     at Page (app/search-params-used/page.tsx:8:17)`)
+       })
+     })
+@@ -70,29 +78,41 @@ describe('use-cache-search-params', () => {
+         const outputIndex = next.cliOutput.length
+         const browser = await next.browser(`${route}?foo=1`)
+ 
+-        await waitForRedbox(browser)
+-
+-        const errorDescription = await getRedboxDescription(browser)
+-        const errorSource = await getRedboxSource(browser)
+-        const expectedErrorMessage = getExpectedErrorMessage(route)
+-
+-        expect(errorDescription).toBe(expectedErrorMessage)
++        if (isCacheComponentsEnabled) {
++          await expect(browser).toDisplayRedbox(`
++           {
++             "code": "E842",
++             "description": "Route /search-params-caught used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++             "environmentLabel": "Prerender",
++             "label": "Runtime Error",
++             "source": "app/search-params-caught/page.tsx (11:5) @ Page
++           > 11 |     param = (await searchParams).foo
++                |     ^",
++             "stack": [
++               "Page app/search-params-caught/page.tsx (11:5)",
++             ],
++           }
++          `)
++        } else {
++          await expect(browser).toDisplayCollapsedRedbox(`
++           {
++             "code": "E842",
++             "description": "Route /search-params-caught used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++             "environmentLabel": "Server",
++             "label": "Console Error",
++             "source": "app/search-params-caught/page.tsx (11:5) @ Page
++           > 11 |     param = (await searchParams).foo
++                |     ^",
++             "stack": [
++               "Page app/search-params-caught/page.tsx (11:5)",
++             ],
++           }
++          `)
++        }
+ 
+         const cliOutput = stripAnsi(next.cliOutput.slice(outputIndex))
+ 
+-        expect(errorSource).toMatchInlineSnapshot(`
+-         "app/search-params-caught/page.tsx (11:5) @ Page
+-
+-            9 |
+-           10 |   try {
+-         > 11 |     param = (await searchParams).foo
+-              |     ^
+-           12 |   } catch {}
+-           13 |
+-           14 |   return <p>param: {param}</p>"
+-        `)
+-
+-        expect(cliOutput).toContain(`Error: ${expectedErrorMessage}
++        expect(cliOutput).toContain(`Error: ${getExpectedErrorMessage(route)}
+     at Page (app/search-params-caught/page.tsx:11:5)`)
+       })
+ 
+@@ -104,11 +124,37 @@ describe('use-cache-search-params', () => {
+         await browser.refresh()
+         await browser.refresh()
+ 
+-        await waitForRedbox(browser)
+-
+-        const errorDescription = await getRedboxDescription(browser)
+-
+-        expect(errorDescription).toBe(getExpectedErrorMessage(route))
++        if (isCacheComponentsEnabled) {
++          await expect(browser).toDisplayRedbox(`
++           {
++             "code": "E842",
++             "description": "Route /search-params-caught used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++             "environmentLabel": "Prerender",
++             "label": "Runtime Error",
++             "source": "app/search-params-caught/page.tsx (11:5) @ Page
++           > 11 |     param = (await searchParams).foo
++                |     ^",
++             "stack": [
++               "Page app/search-params-caught/page.tsx (11:5)",
++             ],
++           }
++          `)
++        } else {
++          await expect(browser).toDisplayCollapsedRedbox(`
++           {
++             "code": "E842",
++             "description": "Route /search-params-caught used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++             "environmentLabel": "Server",
++             "label": "Console Error",
++             "source": "app/search-params-caught/page.tsx (11:5) @ Page
++           > 11 |     param = (await searchParams).foo
++                |     ^",
++             "stack": [
++               "Page app/search-params-caught/page.tsx (11:5)",
++             ],
++           }
++          `)
++        }
+       })
+     })
+ 
+@@ -134,20 +180,37 @@ describe('use-cache-search-params', () => {
+         '/search-params-used-generate-metadata?title=foo'
+       )
+ 
+-      await expect(browser).toDisplayRedbox(`
+-       {
+-         "code": "E842",
+-         "description": "Route /search-params-used-generate-metadata used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
+-         "source": "app/search-params-used-generate-metadata/page.tsx (9:17) @ generateMetadata
+-       >  9 |   const title = (await searchParams).title
+-            |                 ^",
+-         "stack": [
+-           "generateMetadata app/search-params-used-generate-metadata/page.tsx (9:17)",
+-         ],
+-       }
+-      `)
++      if (isCacheComponentsEnabled) {
++        await expect(browser).toDisplayRedbox(`
++         {
++           "code": "E842",
++           "description": "Route /search-params-used-generate-metadata used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++           "environmentLabel": "Prerender",
++           "label": "Runtime Error",
++           "source": "app/search-params-used-generate-metadata/page.tsx (9:17) @ generateMetadata
++         >  9 |   const title = (await searchParams).title
++              |                 ^",
++           "stack": [
++             "generateMetadata app/search-params-used-generate-metadata/page.tsx (9:17)",
++           ],
++         }
++        `)
++      } else {
++        await expect(browser).toDisplayRedbox(`
++         {
++           "code": "E842",
++           "description": "Route /search-params-used-generate-metadata used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++           "environmentLabel": "Cache",
++           "label": "Runtime Error",
++           "source": "app/search-params-used-generate-metadata/page.tsx (9:17) @ generateMetadata
++         >  9 |   const title = (await searchParams).title
++              |                 ^",
++           "stack": [
++             "generateMetadata app/search-params-used-generate-metadata/page.tsx (9:17)",
++           ],
++         }
++        `)
++      }
+     })
+ 
+     it('should show an error when searchParams are used inside of a cached generateViewport', async () => {
+@@ -155,20 +218,37 @@ describe('use-cache-search-params', () => {
+         '/search-params-used-generate-viewport?color=red'
+       )
+ 
+-      await expect(browser).toDisplayRedbox(`
+-       {
+-         "code": "E842",
+-         "description": "Route /search-params-used-generate-viewport used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
+-         "environmentLabel": null,
+-         "label": "Runtime Error",
+-         "source": "app/search-params-used-generate-viewport/page.tsx (9:17) @ generateViewport
+-       >  9 |   const color = (await searchParams).color
+-            |                 ^",
+-         "stack": [
+-           "generateViewport app/search-params-used-generate-viewport/page.tsx (9:17)",
+-         ],
+-       }
+-      `)
++      if (isCacheComponentsEnabled) {
++        await expect(browser).toDisplayRedbox(`
++         {
++           "code": "E842",
++           "description": "Route /search-params-used-generate-viewport used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++           "environmentLabel": "Prerender",
++           "label": "Runtime Error",
++           "source": "app/search-params-used-generate-viewport/page.tsx (9:17) @ generateViewport
++         >  9 |   const color = (await searchParams).color
++              |                 ^",
++           "stack": [
++             "generateViewport app/search-params-used-generate-viewport/page.tsx (9:17)",
++           ],
++         }
++        `)
++      } else {
++        await expect(browser).toDisplayRedbox(`
++         {
++           "code": "E842",
++           "description": "Route /search-params-used-generate-viewport used \`searchParams\` inside "use cache". Accessing dynamic request data inside a cache scope is not supported. If you need some search params inside a cached function await \`searchParams\` outside of the cached function and pass only the required search params as arguments to the cached function. See more info here: https://nextjs.org/docs/messages/next-request-in-use-cache",
++           "environmentLabel": "Cache",
++           "label": "Runtime Error",
++           "source": "app/search-params-used-generate-viewport/page.tsx (9:17) @ generateViewport
++         >  9 |   const color = (await searchParams).color
++              |                 ^",
++           "stack": [
++             "generateViewport app/search-params-used-generate-viewport/page.tsx (9:17)",
++           ],
++         }
++        `)
++      }
+     })
+   } else {
+     afterEach(async () => {

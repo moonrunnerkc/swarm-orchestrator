@@ -1,0 +1,625 @@
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts b/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts
+index a712ddcdfc43..e5bc3a9c412a 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/src/routes.ts
+@@ -44,6 +44,39 @@ export function addRoutes(app: HonoType<{ Bindings?: { E2E_TEST_DSN: string } }>
+   // Inline middleware patterns: direct method, .all(), .on() with inline/separate middleware
+   app.route('/test-inline-middleware', subAppWithInlineMiddleware);
+ 
++  // Inline middleware on the main app via HTTP method registration (not .use()).
++  app.get(
++    '/test-main-inline/get',
++    async function mainInlineGet(_c, next) {
++      await next();
++    },
++    c => c.text('main inline get'),
++  );
++  app.post(
++    '/test-main-inline/post',
++    async function mainInlinePost(_c, next) {
++      await next();
++    },
++    c => c.text('main inline post'),
++  );
++  app.all(
++    '/test-main-inline/all',
++    async function mainInlineAll(_c, next) {
++      await next();
++    },
++    c => c.text('main inline all'),
++  );
++
++  // Combined: .use() middleware + inline middleware via .get() on the same path.
++  app.use('/test-main-inline/combined/*', middlewareA);
++  app.get(
++    '/test-main-inline/combined/resource',
++    async function combinedInlineMw(_c, next) {
++      await next();
++    },
++    c => c.text('combined response'),
++  );
++
+   // Route patterns: HTTP methods, .all(), .on(), sync/async, errors
+   app.route('/test-routes', routePatterns);
+ 
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts b/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts
+index 8ee1f13f0c0a..0ce4a186c621 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/tests/errors.test.ts
+@@ -32,6 +32,7 @@ test.describe('route handler errors', () => {
+     expect(errorEvent.transaction).toBe('GET /error/:cause');
+     expect(errorEvent.request?.method).toBe('GET');
+     expect(errorEvent.request?.url).toContain('/error/test-cause');
++    expect(errorEvent.request?.headers).toBeDefined();
+ 
+     expect(errorEvent.contexts?.trace?.trace_id).toBe(transactionEvent.contexts?.trace?.trace_id);
+   });
+@@ -217,7 +218,9 @@ test.describe('nested sub-app errors', () => {
+       handled: false,
+       type: 'auto.http.hono.context_error',
+     });
++    expect(errorEvent.request?.method).toBe('GET');
+     expect(errorEvent.request?.url).toContain('/test-errors/nested/child/error');
++    expect(errorEvent.request?.headers).toBeDefined();
+   });
+ });
+ 
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts b/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts
+index c4bf34874f2b..fffcf6a63f25 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/tests/middleware.test.ts
+@@ -248,3 +248,70 @@ test.describe('inline middleware spans (sub-app)', () => {
+     }
+   }
+ });
++
++const MAIN_INLINE_PREFIX = '/test-main-inline';
++
++const MAIN_INLINE_CASES = [
++  { name: '.get()', path: '/get', method: 'GET', expectedMiddlewareName: 'mainInlineGet' },
++  { name: '.post()', path: '/post', method: 'POST', expectedMiddlewareName: 'mainInlinePost' },
++  { name: '.all()', path: '/all', method: 'GET', expectedMiddlewareName: 'mainInlineAll' },
++] as const;
++
++test.describe('inline middleware spans (main app)', () => {
++  MAIN_INLINE_CASES.forEach(({ name, path, method, expectedMiddlewareName }) => {
++    test(`creates middleware span for inline middleware via ${name}`, async ({ baseURL }) => {
++      const fullPath = `${MAIN_INLINE_PREFIX}${path}`;
++
++      const transactionPromise = waitForTransaction(APP_NAME, event => {
++        return event.contexts?.trace?.op === 'http.server' && event.transaction === `${method} ${fullPath}`;
++      });
++
++      const response = await fetch(`${baseURL}${fullPath}`, { method });
++      expect(response.status).toBe(200);
++
++      const transaction = await transactionPromise;
++      expect(transaction.transaction).toBe(`${method} ${fullPath}`);
++
++      const spans = transaction.spans || [];
++      const inlineSpan = spans.find(s => s.description === expectedMiddlewareName);
++
++      expect(inlineSpan).toBeDefined();
++      expect(inlineSpan?.op).toBe('middleware.hono');
++      expect(inlineSpan?.origin).toBe('auto.middleware.hono');
++      expect(inlineSpan?.status).not.toBe('internal_error');
++
++      const middlewareSpans = spans.filter(s => s.op === 'middleware.hono');
++      expect(middlewareSpans).toHaveLength(1);
++    });
++  });
++
++  test('creates spans for both .use() middleware and inline middleware via .get()', async ({ baseURL }) => {
++    const fullPath = `${MAIN_INLINE_PREFIX}/combined/resource`;
++
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === `GET ${fullPath}`;
++    });
++
++    const response = await fetch(`${baseURL}${fullPath}`);
++    expect(response.status).toBe(200);
++
++    const transaction = await transactionPromise;
++    expect(transaction.transaction).toBe(`GET ${fullPath}`);
++
++    const spans = transaction.spans || [];
++    const middlewareSpans = spans.filter(s => s.op === 'middleware.hono');
++
++    expect(middlewareSpans).toHaveLength(2);
++
++    const [spanA, spanB] = middlewareSpans.sort((a, b) => (a.description ?? '').localeCompare(b.description ?? ''));
++    expect(spanA?.description).toBe('combinedInlineMw');
++    expect(spanA?.op).toBe('middleware.hono');
++    expect(spanA?.origin).toBe('auto.middleware.hono');
++    expect(spanA?.status).not.toBe('internal_error');
++
++    expect(spanB?.description).toBe('middlewareA');
++    expect(spanB?.op).toBe('middleware.hono');
++    expect(spanB?.origin).toBe('auto.middleware.hono');
++    expect(spanB?.status).not.toBe('internal_error');
++  });
++});
+diff --git a/dev-packages/e2e-tests/test-applications/hono-4/tests/route-patterns.test.ts b/dev-packages/e2e-tests/test-applications/hono-4/tests/route-patterns.test.ts
+index decd1049b6c9..d74b5060dcdc 100644
+--- a/dev-packages/e2e-tests/test-applications/hono-4/tests/route-patterns.test.ts
++++ b/dev-packages/e2e-tests/test-applications/hono-4/tests/route-patterns.test.ts
+@@ -11,10 +11,10 @@ const REGISTRATION_STYLES = [
+ ] as const;
+ 
+ test.describe('HTTP methods', () => {
+-  ['POST', 'PUT', 'DELETE', 'PATCH'].forEach(method => {
++  ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].forEach(method => {
+     test(`sends transaction for ${method}`, async ({ baseURL }) => {
+       const transactionPromise = waitForTransaction(APP_NAME, event => {
+-        return event.contexts?.trace?.op === 'http.server' && !!event.transaction?.includes(PREFIX);
++        return event.contexts?.trace?.op === 'http.server' && event.transaction === `${method} ${PREFIX}`;
+       });
+ 
+       const response = await fetch(`${baseURL}${PREFIX}`, { method });
+@@ -23,15 +23,20 @@ test.describe('HTTP methods', () => {
+       const transaction = await transactionPromise;
+       expect(transaction.transaction).toBe(`${method} ${PREFIX}`);
+       expect(transaction.contexts?.trace?.op).toBe('http.server');
++      expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++
++      const spans = transaction.spans || [];
++      const middlewareSpans = spans.filter(s => s.op === 'middleware.hono');
++      expect(middlewareSpans).toEqual([]);
+     });
+   });
+ });
+ 
+ test.describe('route registration styles', () => {
+   REGISTRATION_STYLES.forEach(({ name, path }) => {
+-    test(`${name} sends transaction`, async ({ baseURL }) => {
++    test(`${name} sends transaction with route source`, async ({ baseURL }) => {
+       const transactionPromise = waitForTransaction(APP_NAME, event => {
+-        return event.contexts?.trace?.op === 'http.server' && !!event.transaction?.includes(`${PREFIX}${path}`);
++        return event.contexts?.trace?.op === 'http.server' && event.transaction === `GET ${PREFIX}${path}`;
+       });
+ 
+       const response = await fetch(`${baseURL}${PREFIX}${path}`);
+@@ -40,6 +45,11 @@ test.describe('route registration styles', () => {
+       const transaction = await transactionPromise;
+       expect(transaction.transaction).toBe(`GET ${PREFIX}${path}`);
+       expect(transaction.contexts?.trace?.op).toBe('http.server');
++      expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++
++      const spans = transaction.spans || [];
++      const middlewareSpans = spans.filter(s => s.op === 'middleware.hono');
++      expect(middlewareSpans).toEqual([]);
+     });
+   });
+ 
+@@ -49,7 +59,7 @@ test.describe('route registration styles', () => {
+   ].forEach(({ name, path }) => {
+     test(`${name} responds to POST`, async ({ baseURL }) => {
+       const transactionPromise = waitForTransaction(APP_NAME, event => {
+-        return event.contexts?.trace?.op === 'http.server' && !!event.transaction?.includes(`${PREFIX}${path}`);
++        return event.contexts?.trace?.op === 'http.server' && event.transaction === `POST ${PREFIX}${path}`;
+       });
+ 
+       const response = await fetch(`${baseURL}${PREFIX}${path}`, { method: 'POST' });
+@@ -57,13 +67,66 @@ test.describe('route registration styles', () => {
+ 
+       const transaction = await transactionPromise;
+       expect(transaction.transaction).toBe(`POST ${PREFIX}${path}`);
++      expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++
++      const spans = transaction.spans || [];
++      const middlewareSpans = spans.filter(s => s.op === 'middleware.hono');
++      expect(middlewareSpans).toEqual([]);
++    });
++  });
++});
++
++test.describe('request data extraction', () => {
++  test('includes method, url, and headers on transaction', async ({ baseURL }) => {
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === `GET ${PREFIX}`;
++    });
++
++    const response = await fetch(`${baseURL}${PREFIX}`);
++    expect(response.status).toBe(200);
++
++    const transaction = await transactionPromise;
++    expect(transaction.request?.method).toBe('GET');
++    expect(transaction.request?.url).toContain(PREFIX);
++    expect(transaction.request?.headers).toBeDefined();
++  });
++
++  test('includes query_string when present', async ({ baseURL }) => {
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === `GET ${PREFIX}`;
+     });
++
++    const response = await fetch(`${baseURL}${PREFIX}?foo=bar&baz=42`);
++    expect(response.status).toBe(200);
++
++    const transaction = await transactionPromise;
++
++    expect(transaction.request?.method).toBe('GET');
++    expect(transaction.request?.url).toContain(PREFIX);
++    expect(transaction.request?.query_string).toBe('foo=bar&baz=42');
++  });
++
++  test('includes request data for POST with headers', async ({ baseURL }) => {
++    const transactionPromise = waitForTransaction(APP_NAME, event => {
++      return event.contexts?.trace?.op === 'http.server' && event.transaction === `POST ${PREFIX}`;
++    });
++
++    const response = await fetch(`${baseURL}${PREFIX}`, {
++      method: 'POST',
++      headers: { 'X-Custom-Header': 'test-value' },
++    });
++    expect(response.status).toBe(200);
++
++    const transaction = await transactionPromise;
++    expect(transaction.request?.method).toBe('POST');
++    expect(transaction.request?.url).toContain(PREFIX);
++    expect(transaction.request?.headers?.['x-custom-header']).toBe('test-value');
+   });
+ });
+ 
+ test('async handler sends transaction', async ({ baseURL }) => {
+   const transactionPromise = waitForTransaction(APP_NAME, event => {
+-    return event.contexts?.trace?.op === 'http.server' && !!event.transaction?.includes(`${PREFIX}/async`);
++    return event.contexts?.trace?.op === 'http.server' && event.transaction === `GET ${PREFIX}/async`;
+   });
+ 
+   const response = await fetch(`${baseURL}${PREFIX}/async`);
+@@ -72,4 +135,9 @@ test('async handler sends transaction', async ({ baseURL }) => {
+   const transaction = await transactionPromise;
+   expect(transaction.transaction).toBe(`GET ${PREFIX}/async`);
+   expect(transaction.contexts?.trace?.op).toBe('http.server');
++  expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++
++  const spans = transaction.spans || [];
++  const middlewareSpans = spans.filter(s => s.op === 'middleware.hono');
++  expect(middlewareSpans).toEqual([]);
+ });
+diff --git a/packages/hono/src/shared/applyPatches.ts b/packages/hono/src/shared/applyPatches.ts
+index a0683a5be2c6..190b2fcd93ce 100644
+--- a/packages/hono/src/shared/applyPatches.ts
++++ b/packages/hono/src/shared/applyPatches.ts
+@@ -2,7 +2,7 @@ import { debug } from '@sentry/core';
+ import type { Env, Hono } from 'hono';
+ import { DEBUG_BUILD } from '../debug-build';
+ import { patchAppRequest } from './patchAppRequest';
+-import { patchAppUse } from './patchAppUse';
++import { patchAppUse, patchHttpMethodHandlers } from './patchAppUse';
+ import { type HonoRoute, type RouteHookHandle, installRouteHookOnPrototype, wrapSubAppMiddleware } from './patchRoute';
+ 
+ // Lazily set by the first call to earlyPatchHono or applyPatches.
+@@ -31,6 +31,9 @@ export function applyPatches<E extends Env>(app: Hono<E>): void {
+   // `app.use` (instance own property) — wraps middleware at registration time on this instance.
+   patchAppUse(app);
+ 
++  // `app.get`, `app.post`, … (instance own properties) — wraps inline middleware (all-but-last handler).
++  patchHttpMethodHandlers(app);
++
+   patchAppRequest(app);
+ 
+   _routeHook.activate();
+diff --git a/packages/hono/src/shared/patchAppUse.ts b/packages/hono/src/shared/patchAppUse.ts
+index 4daa84ae0c24..9fabe86c852c 100644
+--- a/packages/hono/src/shared/patchAppUse.ts
++++ b/packages/hono/src/shared/patchAppUse.ts
+@@ -4,7 +4,11 @@ import { DEBUG_BUILD } from '../debug-build';
+ import { wrapMiddlewareWithSpan } from './wrapMiddlewareSpan';
+ 
+ // oxlint-disable-next-line typescript/no-explicit-any
+-const patchedInstances = new WeakSet<Hono<any>>();
++const patchedUseInstances = new WeakSet<Hono<any>>();
++// oxlint-disable-next-line typescript/no-explicit-any
++const patchedMethodInstances = new WeakSet<Hono<any>>();
++
++const HTTP_METHODS = ['get', 'post', 'put', 'delete', 'options', 'patch', 'all'] as const;
+ 
+ /**
+  * Patches `app.use` (instance own property) on a Hono instance to instrument middleware at registration time.
+@@ -13,12 +17,12 @@ const patchedInstances = new WeakSet<Hono<any>>();
+  * Idempotent.
+  */
+ export function patchAppUse<E extends Env>(app: Hono<E>): void {
+-  if (patchedInstances.has(app)) {
++  if (patchedUseInstances.has(app)) {
+     DEBUG_BUILD && debug.log('[hono] app.use already patched — skipping.');
+     return;
+   }
+ 
+-  patchedInstances.add(app);
++  patchedUseInstances.add(app);
+ 
+   app.use = new Proxy(app.use, {
+     apply(target: typeof app.use, thisArg: typeof app, args: Parameters<typeof app.use>): ReturnType<typeof app.use> {
+@@ -34,3 +38,54 @@ export function patchAppUse<E extends Env>(app: Hono<E>): void {
+     },
+   });
+ }
++
++/**
++ * Patches HTTP method class fields (get, post, put, delete, options, patch, all) to instrument inline middleware at registration time.
++ *
++ * For `app.get('/path', mw1, mw2, handler)`, all handlers except the last are middleware and get wrapped with spans.
++ * The final handler (the route handler) is already covered by the root http.server transaction.
++ */
++export function patchHttpMethodHandlers<E extends Env>(app: Hono<E>): void {
++  if (patchedMethodInstances.has(app)) {
++    DEBUG_BUILD && debug.log('[hono] HTTP method handlers already patched - skipping.');
++    return;
++  }
++
++  patchedMethodInstances.add(app);
++
++  for (const method of HTTP_METHODS) {
++    app[method] = new Proxy(app[method], {
++      apply(target, thisArg, args: unknown[]) {
++        return Reflect.apply(target, thisArg, wrapInlineMiddleware(args));
++      },
++    });
++  }
++
++  app.on = new Proxy(app.on, {
++    apply(target, thisArg, args: unknown[]) {
++      // .on(method, path, ...handlers) — first two args are method and path
++      const [method, path, ...handlers] = args;
++      return Reflect.apply(target, thisArg, [method, path, ...wrapInlineMiddleware(handlers)]);
++    },
++  });
++}
++
++/**
++ * Given `[path?, ...handlers]` or `[...handlers]`, wraps all handlers except the last one with spans.
++ * The last handler is the route handler and is left as-is.
++ */
++function wrapInlineMiddleware(args: unknown[]): unknown[] {
++  const hasPathPrefix = typeof args[0] === 'string';
++  const handlersStart = hasPathPrefix ? 1 : 0;
++  const handlers = args.slice(handlersStart) as MiddlewareHandler[];
++
++  if (handlers.length <= 1) {
++    return args;
++  }
++
++  const wrapped = [...args];
++  for (let i = handlersStart; i < wrapped.length - 1; i++) {
++    wrapped[i] = wrapMiddlewareWithSpan(wrapped[i] as MiddlewareHandler);
++  }
++  return wrapped;
++}
+diff --git a/packages/hono/test/shared/patchAppUse.test.ts b/packages/hono/test/shared/patchAppUse.test.ts
+index 4fcdc277e794..f504612fc177 100644
+--- a/packages/hono/test/shared/patchAppUse.test.ts
++++ b/packages/hono/test/shared/patchAppUse.test.ts
+@@ -1,7 +1,7 @@
+ import * as SentryCore from '@sentry/core';
+ import { Hono } from 'hono';
+ import { beforeEach, describe, expect, it, vi } from 'vitest';
+-import { patchAppUse } from '../../src/shared/patchAppUse';
++import { patchAppUse, patchHttpMethodHandlers } from '../../src/shared/patchAppUse';
+ 
+ vi.mock('@sentry/core', async () => {
+   const actual = await vi.importActual('@sentry/core');
+@@ -202,3 +202,221 @@ describe('patchAppUse (middleware spans)', () => {
+     expect(fakeApp._capturedThis).toBe(fakeApp);
+   });
+ });
++
++describe('patchHttpMethodHandlers (inline middleware spans on main app)', () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it.each(['get', 'post', 'put', 'delete', 'options', 'patch', 'all'] as const)(
++    'wraps inline middleware in app.%s(path, mw, handler)',
++    async method => {
++      const app = new Hono();
++      patchHttpMethodHandlers(app);
++
++      app[method](
++        '/test',
++        async function inlineMw(_c: unknown, next: () => Promise<void>) {
++          await next();
++        },
++        () => new Response('ok'),
++      );
++
++      const fetchMethod = method === 'all' ? 'GET' : method.toUpperCase();
++      await app.fetch(new Request('http://localhost/test', { method: fetchMethod }));
++
++      expect(startInactiveSpanMock).toHaveBeenCalledTimes(1);
++      expect(startInactiveSpanMock).toHaveBeenCalledWith({
++        name: 'inlineMw',
++        op: 'middleware.hono',
++        onlyIfParent: true,
++        parentSpan: undefined,
++        attributes: {
++          'sentry.op': 'middleware.hono',
++          'sentry.origin': 'auto.middleware.hono',
++        },
++      });
++    },
++  );
++
++  it('does not wrap the sole handler when only one handler is passed', async () => {
++    const app = new Hono();
++    patchHttpMethodHandlers(app);
++
++    app.get('/test', async function onlyHandler() {
++      return new Response('ok');
++    });
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    expect(startInactiveSpanMock).not.toHaveBeenCalled();
++  });
++
++  it('wraps all handlers except the last when multiple handlers are passed', async () => {
++    const app = new Hono();
++    patchHttpMethodHandlers(app);
++
++    app.get(
++      '/test',
++      async function mw1(_c: unknown, next: () => Promise<void>) {
++        await next();
++      },
++      async function mw2(_c: unknown, next: () => Promise<void>) {
++        await next();
++      },
++      async function routeHandler() {
++        return new Response('ok');
++      },
++    );
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    const spanNames = startInactiveSpanMock.mock.calls.map((c: unknown[]) => (c[0] as { name: string }).name);
++    expect(spanNames).toHaveLength(2);
++    expect(spanNames).toContain('mw1');
++    expect(spanNames).toContain('mw2');
++    expect(spanNames).not.toContain('routeHandler');
++  });
++
++  it('wraps inline middleware in app.on(method, path, mw, handler)', async () => {
++    const app = new Hono();
++    patchHttpMethodHandlers(app);
++
++    app.on(
++      'GET',
++      '/test',
++      async function onMw(_c: unknown, next: () => Promise<void>) {
++        await next();
++      },
++      async function onHandler() {
++        return new Response('ok');
++      },
++    );
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    const spanNames = startInactiveSpanMock.mock.calls.map((c: unknown[]) => (c[0] as { name: string }).name);
++    expect(spanNames).toHaveLength(1);
++    expect(spanNames).toContain('onMw');
++    expect(spanNames).not.toContain('onHandler');
++  });
++
++  it('does not wrap sole handler in app.on(method, path, handler)', async () => {
++    const app = new Hono();
++    patchHttpMethodHandlers(app);
++
++    app.on('GET', '/test', async function soleHandler() {
++      return new Response('ok');
++    });
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    expect(startInactiveSpanMock).not.toHaveBeenCalled();
++  });
++
++  it('does not double-wrap handlers already wrapped by patchAppUse', async () => {
++    const app = new Hono();
++    patchAppUse(app);
++    patchHttpMethodHandlers(app);
++
++    app.use(async function useMw(_c: unknown, next: () => Promise<void>) {
++      await next();
++    });
++    app.get('/test', () => new Response('ok'));
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    expect(startInactiveSpanMock).toHaveBeenCalledTimes(1);
++    expect((startInactiveSpanMock.mock.calls[0]![0] as { name: string }).name).toBe('useMw');
++  });
++
++  it('produces exactly one span per middleware and does not stack Proxy layers when called multiple times on the same instance', async () => {
++    const app = new Hono();
++    patchHttpMethodHandlers(app);
++    const firstGet = app.get;
++    const firstOn = app.on;
++
++    patchHttpMethodHandlers(app);
++    expect(app.get).toBe(firstGet);
++    expect(app.on).toBe(firstOn);
++
++    patchHttpMethodHandlers(app);
++    expect(app.get).toBe(firstGet);
++    expect(app.on).toBe(firstOn);
++
++    app.get(
++      '/test',
++      async function inlineMw(_c: unknown, next: () => Promise<void>) {
++        await next();
++      },
++      async function routeHandler() {
++        return new Response('ok');
++      },
++    );
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    const spanNames = startInactiveSpanMock.mock.calls.map((c: unknown[]) => (c[0] as { name: string }).name);
++    expect(spanNames).toHaveLength(1);
++    expect(spanNames[0]).toBe('inlineMw');
++  });
++
++  it('creates spans for both app.use middleware and inline middleware in app.get', async () => {
++    const app = new Hono();
++    patchAppUse(app);
++    patchHttpMethodHandlers(app);
++
++    app.use('/test', async function globalMw(_c: unknown, next: () => Promise<void>) {
++      await next();
++    });
++    app.get(
++      '/test',
++      async function inlineMw(_c: unknown, next: () => Promise<void>) {
++        await next();
++      },
++      () => new Response('ok'),
++    );
++
++    await app.fetch(new Request('http://localhost/test'));
++
++    const spanNames = startInactiveSpanMock.mock.calls.map((c: unknown[]) => (c[0] as { name: string }).name);
++    expect(spanNames).toContain('globalMw');
++    expect(spanNames).toContain('inlineMw');
++    expect(spanNames).toHaveLength(2);
++  });
++
++  it('preserves return value and chaining', () => {
++    const app = new Hono();
++    patchHttpMethodHandlers(app);
++
++    const result = app.get('/test', () => new Response('ok'));
++
++    expect(result).toBe(app);
++  });
++
++  it('forwards thisArg to the original method', () => {
++    let capturedThis: unknown = null;
++    const fakeMethod = function (this: unknown) {
++      // oxlint-disable-next-line @typescript-eslint/no-this-alias
++      capturedThis = this;
++      return this;
++    };
++    const fakeApp = {
++      get: fakeMethod,
++      post: fakeMethod,
++      put: fakeMethod,
++      delete: fakeMethod,
++      options: fakeMethod,
++      patch: fakeMethod,
++      all: fakeMethod,
++      on: fakeMethod,
++    };
++
++    patchHttpMethodHandlers(fakeApp as unknown as Parameters<typeof patchHttpMethodHandlers>[0]);
++
++    // @ts-expect-error - we're only testing that thisArg is forwarded, so the args don't need to be correct
++    fakeApp.get('/test', () => new Response('ok'));
++
++    expect(capturedThis).toBe(fakeApp);
++  });
++});

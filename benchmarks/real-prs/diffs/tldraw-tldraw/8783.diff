@@ -1,0 +1,381 @@
+diff --git a/apps/docs/app/layout.tsx b/apps/docs/app/layout.tsx
+index b7ee5df5fa57..21ad926aa66f 100644
+--- a/apps/docs/app/layout.tsx
++++ b/apps/docs/app/layout.tsx
+@@ -42,9 +42,21 @@ export const metadata: Metadata = {
+ 		{ rel: 'icon', url: assetUrl('/favicon-32x32.svg'), sizes: '32x32' },
+ 		{ rel: 'icon', url: assetUrl('/favicon-16x16.svg'), sizes: '16x16' },
+ 		{ rel: 'apple-touch-icon', url: assetUrl('/apple-touch-icon.png') },
+-		{ rel: 'apple-touch-icon', url: assetUrl('/apple-touch-icon-152x152.svg'), sizes: '152x152' },
+-		{ rel: 'apple-touch-icon', url: assetUrl('/apple-touch-icon-180x180.svg'), sizes: '180x180' },
+-		{ rel: 'apple-touch-icon', url: assetUrl('/apple-touch-icon-167x167.svg'), sizes: '167x167' },
++		{
++			rel: 'apple-touch-icon',
++			url: assetUrl('/apple-touch-icon-152x152.svg'),
++			sizes: '152x152',
++		},
++		{
++			rel: 'apple-touch-icon',
++			url: assetUrl('/apple-touch-icon-180x180.svg'),
++			sizes: '180x180',
++		},
++		{
++			rel: 'apple-touch-icon',
++			url: assetUrl('/apple-touch-icon-167x167.svg'),
++			sizes: '167x167',
++		},
+ 	],
+ }
+ 
+diff --git a/apps/docs/components/content/index.tsx b/apps/docs/components/content/index.tsx
+index 732edd9f6118..6c11cc197a6f 100644
+--- a/apps/docs/components/content/index.tsx
++++ b/apps/docs/components/content/index.tsx
+@@ -12,6 +12,7 @@ import { Code, CodeLinks, FocusLines } from '@/components/content/code'
+ import { Embed, StarterKitEmbed } from '@/components/content/embed'
+ import { Feature } from '@/components/content/feature'
+ import { Image } from '@/components/content/image'
++import { MaskedArticleImage } from '@/components/content/masked-article-image'
+ import { ParametersTable } from '@/components/content/parameters-table'
+ import { ParametersTableDescription } from '@/components/content/parameters-table-description'
+ import { ParametersTableName } from '@/components/content/parameters-table-name'
+@@ -58,8 +59,10 @@ export function Content({
+ 					StarterKitEmbed,
+ 					pre: Pre,
+ 					code: Code,
++					// Markdown images and `<Image />` — both resolve `/…` static URLs via `assetUrl` in `image.tsx`.
+ 					Image,
+ 					img: Image,
++					MaskedArticleImage,
+ 					ApiHeading,
+ 					StarterKitBento,
+ 					Feature,
+diff --git a/apps/docs/components/content/masked-article-image.tsx b/apps/docs/components/content/masked-article-image.tsx
+new file mode 100644
+index 000000000000..6f0f0c6cd5d8
+--- /dev/null
++++ b/apps/docs/components/content/masked-article-image.tsx
+@@ -0,0 +1,17 @@
++import { assetUrl } from '@/utils/asset-url'
++
++/**
++ * Hero image with CSS mask — MDX cannot run `assetUrl` inside inline `style` strings, so paths in
++ * `mask: url(/images/…)` would stay root-relative and break when docs use `ASSET_PREFIX`.
++ */
++export function MaskedArticleImage(props: { gifSrc: string; maskSrc: string; alt: string }) {
++	const gif = assetUrl(props.gifSrc)
++	const mask = assetUrl(props.maskSrc)
++	const maskCss = `url(${mask}) luminance center 100% / 100% no-repeat`
++
++	return (
++		<div className="article__image" style={{ border: 'none' }}>
++			<img alt={props.alt} src={gif} style={{ mask: maskCss, WebkitMask: maskCss }} />
++		</div>
++	)
++}
+diff --git a/apps/docs/content/docs/collaboration.mdx b/apps/docs/content/docs/collaboration.mdx
+index 8168c167c6c0..530f4a955a19 100644
+--- a/apps/docs/content/docs/collaboration.mdx
++++ b/apps/docs/content/docs/collaboration.mdx
+@@ -17,16 +17,11 @@ keywords:
+ 
+ The tldraw SDK supports real-time collaboration. Add collaboration to your project with our [tldraw sync](/docs/sync) library, or use our low-level data APIs to integrate other backends.
+ 
+-<div className="article__image" style={{ border: 'none' }}>
+-	<img
+-		alt="Multiplayer example using tldraw sync"
+-		src="/images/multiplayer.gif"
+-		style={{
+-			mask: 'url(/images/multiplayer_mask.png) luminance center 100% / 100% no-repeat',
+-			WebkitMask: 'url(/images/multiplayer_mask.png) luminance center 100% / 100% no-repeat',
+-		}}
+-	/>
+-</div>
++<MaskedArticleImage
++	gifSrc="/images/multiplayer.gif"
++	maskSrc="/images/multiplayer_mask.png"
++	alt="Multiplayer example using tldraw sync"
++/>
+ 
+ ## Quick start
+ 
+diff --git a/apps/docs/next.config.js b/apps/docs/next.config.js
+index 1fe257fb6b1c..316ec40b206c 100644
+--- a/apps/docs/next.config.js
++++ b/apps/docs/next.config.js
+@@ -3,12 +3,19 @@
+ // Configurable domain for rewrites
+ const REWRITE_DOMAIN = 'tldrawdotdev.framer.website'
+ 
++/** Keep in sync with `utils/asset-url.ts` (`resolveAssetOrigin`). */
+ function resolveAssetOrigin() {
+-	const explicit = process.env.ASSET_PREFIX?.trim()
++	const explicit =
++		process.env.ASSET_PREFIX?.trim() ||
++		process.env.NEXT_PUBLIC_ASSET_PREFIX?.trim() ||
++		process.env.NEXT_PUBLIC_DOCS_ASSET_PREFIX?.trim()
+ 	if (explicit) return explicit.replace(/\/$/, '')
+ 
+-	const vercelUrl = process.env.VERCEL_URL?.trim()
+-	if (vercelUrl) return `https://${vercelUrl}`
++	const vercelUrl = process.env.VERCEL_URL?.trim() || process.env.NEXT_PUBLIC_VERCEL_URL?.trim()
++	if (vercelUrl) {
++		const host = vercelUrl.replace(/^https?:\/\//, '')
++		return `https://${host}`
++	}
+ 
+ 	return undefined
+ }
+diff --git a/apps/docs/utils/asset-url.test.ts b/apps/docs/utils/asset-url.test.ts
+index 7aac3c208288..0424b26a8184 100644
+--- a/apps/docs/utils/asset-url.test.ts
++++ b/apps/docs/utils/asset-url.test.ts
+@@ -2,97 +2,164 @@ import { describe, expect, it } from 'vitest'
+ import { assetUrl } from './asset-url'
+ 
+ describe('assetUrl', () => {
+-	it('returns the original path when ASSET_PREFIX is unset', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++	it('returns the original path when no origin env is set', () => {
++		const prev = saveEnv()
+ 		try {
+-			delete process.env.ASSET_PREFIX
+-			delete process.env.VERCEL_URL
++			clearAssetEnv()
+ 			expect(assetUrl('/favicon.svg')).toBe('/favicon.svg')
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
+ 		}
+ 	})
+ 
+ 	it('returns the original path when ASSET_PREFIX is empty/whitespace', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++		const prev = saveEnv()
+ 		try {
++			clearAssetEnv()
+ 			process.env.ASSET_PREFIX = '   '
+-			delete process.env.VERCEL_URL
+ 			expect(assetUrl('/favicon.svg')).toBe('/favicon.svg')
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
+ 		}
+ 	})
+ 
+-	it('prefixes root-relative paths', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++	it('prefixes root-relative paths with ASSET_PREFIX', () => {
++		const prev = saveEnv()
+ 		try {
++			clearAssetEnv()
+ 			process.env.ASSET_PREFIX = 'https://docs.example.com'
+-			delete process.env.VERCEL_URL
+ 			expect(assetUrl('/images/foo.png')).toBe('https://docs.example.com/images/foo.png')
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
+ 		}
+ 	})
+ 
+ 	it('strips a trailing slash from the prefix', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++		const prev = saveEnv()
+ 		try {
++			clearAssetEnv()
+ 			process.env.ASSET_PREFIX = 'https://docs.example.com/'
+-			delete process.env.VERCEL_URL
+ 			expect(assetUrl('/images/foo.png')).toBe('https://docs.example.com/images/foo.png')
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
+ 		}
+ 	})
+ 
+ 	it('uses VERCEL_URL when ASSET_PREFIX is unset', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++		const prev = saveEnv()
+ 		try {
+-			delete process.env.ASSET_PREFIX
++			clearAssetEnv()
+ 			process.env.VERCEL_URL = 'tldraw-docs-abc123.vercel.app'
+ 			expect(assetUrl('/images/foo.png')).toBe(
+ 				'https://tldraw-docs-abc123.vercel.app/images/foo.png'
+ 			)
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
++		}
++	})
++
++	it('uses NEXT_PUBLIC_VERCEL_URL when other origins unset', () => {
++		const prev = saveEnv()
++		try {
++			clearAssetEnv()
++			process.env.NEXT_PUBLIC_VERCEL_URL = 'preview.vercel.app'
++			expect(assetUrl('/x')).toBe('https://preview.vercel.app/x')
++		} finally {
++			restoreEnv(prev)
++		}
++	})
++
++	it('prefers ASSET_PREFIX over NEXT_PUBLIC_DOCS_ASSET_PREFIX', () => {
++		const prev = saveEnv()
++		try {
++			clearAssetEnv()
++			process.env.ASSET_PREFIX = 'https://primary.example.com'
++			process.env.NEXT_PUBLIC_DOCS_ASSET_PREFIX = 'https://ignored.example.com'
++			expect(assetUrl('/favicon.svg')).toBe('https://primary.example.com/favicon.svg')
++		} finally {
++			restoreEnv(prev)
++		}
++	})
++
++	it('uses NEXT_PUBLIC_DOCS_ASSET_PREFIX when ASSET_PREFIX unset', () => {
++		const prev = saveEnv()
++		try {
++			clearAssetEnv()
++			process.env.NEXT_PUBLIC_DOCS_ASSET_PREFIX = 'https://docs-public.example.com'
++			expect(assetUrl('/images/a.png')).toBe('https://docs-public.example.com/images/a.png')
++		} finally {
++			restoreEnv(prev)
++		}
++	})
++
++	it('uses NEXT_PUBLIC_ASSET_PREFIX when earlier keys unset', () => {
++		const prev = saveEnv()
++		try {
++			clearAssetEnv()
++			process.env.NEXT_PUBLIC_ASSET_PREFIX = 'https://np.example.com'
++			expect(assetUrl('/b.png')).toBe('https://np.example.com/b.png')
++		} finally {
++			restoreEnv(prev)
+ 		}
+ 	})
+ 
+ 	it('prefers ASSET_PREFIX over VERCEL_URL', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++		const prev = saveEnv()
+ 		try {
++			clearAssetEnv()
+ 			process.env.ASSET_PREFIX = 'https://explicit.example.com'
+ 			process.env.VERCEL_URL = 'tldraw-docs-abc123.vercel.app'
+ 			expect(assetUrl('/favicon.svg')).toBe('https://explicit.example.com/favicon.svg')
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
+ 		}
+ 	})
+ 
+-	it('does not change non-root-relative paths', () => {
+-		const prevPrefix = process.env.ASSET_PREFIX
+-		const prevVercel = process.env.VERCEL_URL
++	it('does not change https URLs or relative filenames', () => {
++		const prev = saveEnv()
+ 		try {
++			clearAssetEnv()
+ 			process.env.ASSET_PREFIX = 'https://docs.example.com'
+-			delete process.env.VERCEL_URL
+ 			expect(assetUrl('https://cdn.example.com/a.png')).toBe('https://cdn.example.com/a.png')
+ 			expect(assetUrl('relative.png')).toBe('relative.png')
+ 		} finally {
+-			process.env.ASSET_PREFIX = prevPrefix
+-			process.env.VERCEL_URL = prevVercel
++			restoreEnv(prev)
++		}
++	})
++
++	it('does not prefix protocol-relative URLs', () => {
++		const prev = saveEnv()
++		try {
++			clearAssetEnv()
++			process.env.ASSET_PREFIX = 'https://docs.example.com'
++			expect(assetUrl('//cdn.example.com/x.png')).toBe('//cdn.example.com/x.png')
++		} finally {
++			restoreEnv(prev)
+ 		}
+ 	})
+ })
++
++function saveEnv() {
++	return {
++		ASSET_PREFIX: process.env.ASSET_PREFIX,
++		NEXT_PUBLIC_ASSET_PREFIX: process.env.NEXT_PUBLIC_ASSET_PREFIX,
++		NEXT_PUBLIC_DOCS_ASSET_PREFIX: process.env.NEXT_PUBLIC_DOCS_ASSET_PREFIX,
++		VERCEL_URL: process.env.VERCEL_URL,
++		NEXT_PUBLIC_VERCEL_URL: process.env.NEXT_PUBLIC_VERCEL_URL,
++	}
++}
++
++function restoreEnv(prev: ReturnType<typeof saveEnv>) {
++	for (const [k, v] of Object.entries(prev)) {
++		if (v === undefined) delete process.env[k as keyof typeof prev]
++		else process.env[k as keyof typeof prev] = v
++	}
++}
++
++function clearAssetEnv() {
++	delete process.env.ASSET_PREFIX
++	delete process.env.NEXT_PUBLIC_ASSET_PREFIX
++	delete process.env.NEXT_PUBLIC_DOCS_ASSET_PREFIX
++	delete process.env.VERCEL_URL
++	delete process.env.NEXT_PUBLIC_VERCEL_URL
++}
+diff --git a/apps/docs/utils/asset-url.ts b/apps/docs/utils/asset-url.ts
+index f0715fd49f51..9d18fc52facb 100644
+--- a/apps/docs/utils/asset-url.ts
++++ b/apps/docs/utils/asset-url.ts
+@@ -1,14 +1,38 @@
++/**
++ * Resolves root-relative static URLs (`/images/...`, `/favicon.svg`) to absolute URLs when the
++ * docs app is deployed with `assetPrefix` (e.g. proxied via tldraw.dev per RUNBOOK). Next applies
++ * `assetPrefix` to `/_next/*` automatically; strings in MDX remain plain paths unless we prefix them.
++ *
++ * Precedence (first hit wins):
++ * 1. `ASSET_PREFIX` — server/build (Vercel / CI)
++ * 2. `NEXT_PUBLIC_ASSET_PREFIX` — same value inlined for client bundles when needed
++ * 3. `NEXT_PUBLIC_DOCS_ASSET_PREFIX` — alias for ops clarity (same behavior as #2)
++ * 4. `VERCEL_URL` — preview deployments
++ * 5. `NEXT_PUBLIC_VERCEL_URL` — client-side fallback for preview hostname
++ */
+ function resolveAssetOrigin(): string | undefined {
+-	const explicit = process.env.ASSET_PREFIX?.trim()
++	const explicit =
++		process.env.ASSET_PREFIX?.trim() ||
++		process.env.NEXT_PUBLIC_ASSET_PREFIX?.trim() ||
++		process.env.NEXT_PUBLIC_DOCS_ASSET_PREFIX?.trim()
+ 	if (explicit) return explicit.replace(/\/$/, '')
+ 
+-	const vercelUrl = process.env.VERCEL_URL?.trim()
+-	if (vercelUrl) return `https://${vercelUrl}`
++	const vercelUrl = process.env.VERCEL_URL?.trim() || process.env.NEXT_PUBLIC_VERCEL_URL?.trim()
++	if (vercelUrl) {
++		const host = vercelUrl.replace(/^https?:\/\//, '')
++		return `https://${host}`
++	}
+ 
+ 	return undefined
+ }
+ 
++/**
++ * Prefix a root-relative public/static path for the current docs deployment.
++ * Use for MDX images, icons in metadata, and any `/…` URL that must load from the docs origin
++ * when the site is served behind a proxy or alternate host.
++ */
+ export function assetUrl(path: string): string {
++	if (path.startsWith('//')) return path
+ 	if (!path.startsWith('/')) return path
+ 	const origin = resolveAssetOrigin()
+ 	if (!origin) return path

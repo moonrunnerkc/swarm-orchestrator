@@ -1,0 +1,1281 @@
+diff --git a/astro-docs/netlify.toml b/astro-docs/netlify.toml
+index 7b4aa563afb..993ca2b1a0c 100644
+--- a/astro-docs/netlify.toml
++++ b/astro-docs/netlify.toml
+@@ -16,6 +16,7 @@
+ [build.environment]
+ NX_GRADLE_DISABLE = "true"
+ NX_MAVEN_DISABLE = "true"
++NX_DOTNET_DISABLE = "true"
+ 
+ # Edge functions are auto-discovered from netlify/edge-functions/
+ # Path configuration is in each function's inline `config` export
+diff --git a/e2e/dotnet/src/dotnet-advanced-msbuild.test.ts b/e2e/dotnet/src/dotnet-advanced-msbuild.test.ts
+index 55d1bb2e6da..2617bd0cb24 100644
+--- a/e2e/dotnet/src/dotnet-advanced-msbuild.test.ts
++++ b/e2e/dotnet/src/dotnet-advanced-msbuild.test.ts
+@@ -3,6 +3,7 @@ import {
+   checkFilesMatchingPatternExist,
+   cleanupProject,
+   newProject,
++  removeFile,
+   runCLI,
+   tmpProjPath,
+   uniq,
+@@ -374,6 +375,89 @@ describe('.NET Plugin - Advanced MSBuild Features', () => {
+     });
+   });
+ 
++  describe('Directory.Build.* Inputs', () => {
++    beforeAll(() => {
++      createDotNetProject({
++        name: 'DirBuildInputsApp',
++        type: 'console',
++      });
++
++      // Workspace-root Directory.Build.props — exists.
++      updateFile(
++        'Directory.Build.props',
++        `<Project>
++  <PropertyGroup>
++  </PropertyGroup>
++</Project>`
++      );
++
++      // Project-level Directory.Build.targets — also exists, at a different ancestor.
++      updateFile(
++        'DirBuildInputsApp/Directory.Build.targets',
++        `<Project>
++</Project>`
++      );
++
++      // Workspace-root Directory.Packages.props — Central Package Management.
++      updateFile(
++        'Directory.Packages.props',
++        `<Project>
++  <PropertyGroup>
++    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
++  </PropertyGroup>
++</Project>`
++      );
++    });
++
++    afterAll(() => {
++      // The mere presence of a workspace-root Directory.Packages.props enables
++      // Central Package Management workspace-wide, which makes `dotnet restore`
++      // fail (NU1008) for every other project that pins versions inline. Remove
++      // the files this block wrote so later blocks (which restore/build other
++      // projects) aren't poisoned by leaked state.
++      removeFile('Directory.Packages.props');
++      removeFile('DirBuildInputsApp/Directory.Build.targets');
++    });
++
++    it('should declare only existing Directory.* files as inputs', () => {
++      const projectDetails = runCLI(`show project DirBuildInputsApp --json`);
++      const details = JSON.parse(projectDetails);
++
++      const buildInputs = details.targets.build.inputs as unknown[];
++
++      // The closest ancestor that defines each filename is declared as an input.
++      expect(buildInputs).toContain('{workspaceRoot}/Directory.Build.props');
++      expect(buildInputs).toContain(
++        '{workspaceRoot}/DirBuildInputsApp/Directory.Build.targets'
++      );
++      expect(buildInputs).toContain('{workspaceRoot}/Directory.Packages.props');
++
++      // Files that do NOT exist anywhere must not be declared — that was the point
++      // of moving from the always-declare design to exists-only inputs.
++      expect(buildInputs).not.toContain('{workspaceRoot}/Directory.Build.rsp');
++      expect(buildInputs).not.toContain(
++        '{workspaceRoot}/Directory.Solution.props'
++      );
++      expect(buildInputs).not.toContain(
++        '{workspaceRoot}/Directory.Solution.targets'
++      );
++
++      // Cacheable targets other than build (publish here) get the same inputs.
++      const publishInputs = details.targets.publish.inputs as unknown[];
++      expect(publishInputs).toContain('{workspaceRoot}/Directory.Build.props');
++      expect(publishInputs).toContain(
++        '{workspaceRoot}/DirBuildInputsApp/Directory.Build.targets'
++      );
++      expect(publishInputs).toContain(
++        '{workspaceRoot}/Directory.Packages.props'
++      );
++
++      // Targets without a declared inputs array (e.g. restore) are left untouched
++      // so we don't accidentally narrow Nx's default-input fallback.
++      expect(details.targets.restore.inputs).toBeUndefined();
++    });
++  });
++
+   describe('Publish with Artifacts', () => {
+     beforeAll(() => {
+       createDotNetProject({
+@@ -390,6 +474,12 @@ describe('.NET Plugin - Advanced MSBuild Features', () => {
+   </PropertyGroup>
+ </Project>`
+       );
++
++      // Restore after switching to the artifacts layout so the artifacts/obj
++      // assets file exists for the `--no-restore` build below. The other
++      // artifacts blocks in this file do the same; relying on a prior block to
++      // have left UseArtifactsOutput enabled is brittle (test ordering).
++      runCLI('run-many -t restore');
+     });
+ 
+     it('should use artifacts path for publish output', () => {
+diff --git a/packages/dotnet/analyzer.Tests/ProjectUtilitiesDirectoryBuildInputsTests.cs b/packages/dotnet/analyzer.Tests/ProjectUtilitiesDirectoryBuildInputsTests.cs
+new file mode 100644
+index 00000000000..b33f900e24c
+--- /dev/null
++++ b/packages/dotnet/analyzer.Tests/ProjectUtilitiesDirectoryBuildInputsTests.cs
+@@ -0,0 +1,218 @@
++using MsbuildAnalyzer.Utilities;
++using Xunit;
++
++namespace MsbuildAnalyzer.Tests;
++
++/// <summary>
++/// Unit tests for <see cref="ProjectUtilities.GetDirectoryBuildInputs"/>. The function
++/// walks ancestors of a project file and returns the closest existing occurrence of each
++/// canonical Directory.* filename — mirroring MSBuild's "first ancestor wins" import rule
++/// for Directory.Build.props/.targets/.rsp, Directory.Solution.{props,targets}, and
++/// Directory.Packages.props. Inputs are returned as "{workspaceRoot}/..."-prefixed paths
++/// so Nx hashes the right files for sandboxed task execution.
++/// </summary>
++public class ProjectUtilitiesDirectoryBuildInputsTests
++{
++    private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), "nx-dotnet-ws");
++
++    /// <summary>
++    /// Build the directory→filenames index the same way Analyzer.AnalyzeWorkspace does
++    /// when it sees Directory.* files come in over stdin (workspace-root-relative paths,
++    /// forward-slashed; "." denotes the workspace root itself).
++    /// </summary>
++    private static Dictionary<string, HashSet<string>> IndexByDir(params string[] relativePaths)
++    {
++        var index = new Dictionary<string, HashSet<string>>();
++        foreach (var rel in relativePaths)
++        {
++            var normalized = rel.Replace('\\', '/');
++            var lastSlash = normalized.LastIndexOf('/');
++            var dir = lastSlash < 0 ? "." : normalized.Substring(0, lastSlash);
++            var name = lastSlash < 0 ? normalized : normalized.Substring(lastSlash + 1);
++            if (!index.TryGetValue(dir, out var set))
++            {
++                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++                index[dir] = set;
++            }
++            set.Add(name);
++        }
++        return index;
++    }
++
++    private static string ProjectPath(params string[] segments) =>
++        Path.Combine(new[] { WorkspaceRoot }.Concat(segments).ToArray());
++
++    [Fact]
++    public void ReturnsEmpty_WhenNoDirectoryFilesIndexed()
++    {
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: new Dictionary<string, HashSet<string>>());
++
++        Assert.Empty(inputs);
++    }
++
++    [Fact]
++    public void ReturnsWorkspaceRootFile_WhenOnlyRootHasOne()
++    {
++        var index = IndexByDir("Directory.Build.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Equal(new[] { "{workspaceRoot}/Directory.Build.props" }, inputs);
++    }
++
++    [Fact]
++    public void ClosestAncestorWins_PerFileName()
++    {
++        // The same filename exists at two depths. MSBuild stops at the first
++        // ancestor it finds (closest to the project), so we should too.
++        var index = IndexByDir(
++            "Directory.Build.props",
++            "apps/Directory.Build.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Equal(new[] { "{workspaceRoot}/apps/Directory.Build.props" }, inputs);
++    }
++
++    [Fact]
++    public void DifferentFileNames_PickedUpFromDifferentAncestors()
++    {
++        // props sits at the project directory, targets only exists at the root.
++        // Each filename is resolved independently to its own closest ancestor.
++        var index = IndexByDir(
++            "apps/foo/Directory.Build.props",
++            "Directory.Build.targets");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Contains("{workspaceRoot}/apps/foo/Directory.Build.props", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Build.targets", inputs);
++        Assert.Equal(2, inputs.Count);
++    }
++
++    [Fact]
++    public void ProjectAtWorkspaceRoot_FindsRootLevelFiles()
++    {
++        // A project file living at the workspace root still needs its sibling
++        // Directory.* files declared as inputs.
++        var index = IndexByDir(
++            "Directory.Build.props",
++            "Directory.Packages.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("root.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Packages.props", inputs);
++        Assert.Equal(2, inputs.Count);
++    }
++
++    [Fact]
++    public void MissingIntermediateAncestor_IsTransparentlySkipped()
++    {
++        // Project at apps/foo/bar/bar.csproj with files only at the workspace root
++        // and at apps/foo (gap at apps/foo/bar and apps/). The walk should keep
++        // climbing past empty levels rather than stopping at the first one.
++        var index = IndexByDir(
++            "apps/foo/Directory.Build.targets",
++            "Directory.Build.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "bar", "bar.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Contains("{workspaceRoot}/apps/foo/Directory.Build.targets", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", inputs);
++        Assert.Equal(2, inputs.Count);
++    }
++
++    [Fact]
++    public void OnlyCanonicalFileNames_ArePicked()
++    {
++        // The index could theoretically contain extra entries (e.g. an unrelated
++        // file in the same directory). The walker should ignore anything that
++        // isn't in the canonical list.
++        var index = IndexByDir(
++            "Directory.Build.props",
++            "Directory.Build.targets",
++            "Directory.Build.rsp",
++            "Directory.Solution.props",
++            "Directory.Solution.targets",
++            "Directory.Packages.props",
++            "Directory.NotRecognized.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Equal(6, inputs.Count);
++        Assert.DoesNotContain(
++            inputs,
++            i => i.Contains("Directory.NotRecognized.props"));
++    }
++
++    [Fact]
++    public void AllSixCanonicalFileNames_AreSupportedAtSameDirectory()
++    {
++        var index = IndexByDir(
++            "Directory.Build.props",
++            "Directory.Build.targets",
++            "Directory.Build.rsp",
++            "Directory.Solution.props",
++            "Directory.Solution.targets",
++            "Directory.Packages.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Build.targets", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Build.rsp", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Solution.props", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Solution.targets", inputs);
++        Assert.Contains("{workspaceRoot}/Directory.Packages.props", inputs);
++    }
++
++    [Fact]
++    public void StopsWalkingOnceAllFileNamesFound()
++    {
++        // Every canonical filename exists at the project's own directory. The
++        // walker should NOT continue to ancestors and pick up shadowed copies.
++        var index = IndexByDir(
++            "apps/foo/Directory.Build.props",
++            "apps/foo/Directory.Build.targets",
++            "apps/foo/Directory.Build.rsp",
++            "apps/foo/Directory.Solution.props",
++            "apps/foo/Directory.Solution.targets",
++            "apps/foo/Directory.Packages.props",
++            // These ancestors should be shadowed and NOT included:
++            "apps/Directory.Build.props",
++            "Directory.Build.props");
++
++        var inputs = ProjectUtilities.GetDirectoryBuildInputs(
++            projectPath: ProjectPath("apps", "foo", "foo.csproj"),
++            workspaceRoot: WorkspaceRoot,
++            filesByDir: index);
++
++        Assert.All(inputs, i => Assert.StartsWith("{workspaceRoot}/apps/foo/", i));
++        Assert.Equal(6, inputs.Count);
++    }
++}
+diff --git a/packages/dotnet/analyzer.Tests/TargetBuilderDirectoryBuildInputsTests.cs b/packages/dotnet/analyzer.Tests/TargetBuilderDirectoryBuildInputsTests.cs
+new file mode 100644
+index 00000000000..7cd8a3b81a3
+--- /dev/null
++++ b/packages/dotnet/analyzer.Tests/TargetBuilderDirectoryBuildInputsTests.cs
+@@ -0,0 +1,168 @@
++using MsbuildAnalyzer.Models;
++using MsbuildAnalyzer.Utilities;
++using Xunit;
++
++namespace MsbuildAnalyzer.Tests;
++
++/// <summary>
++/// Unit tests verifying that the per-project Directory.* input list passed into
++/// <see cref="TargetBuilder.BuildTargets"/> is appended to the Inputs of every
++/// cacheable .NET target (build, build:release, test, publish, pack) while leaving
++/// targets without an Inputs array (restore, clean, watch, run) untouched.
++///
++/// The intent is to lock in two pieces of behavior:
++///   1. The analyzer is the single place where these inputs are written, so plugin
++///      callers don't have to think about per-target injection.
++///   2. We don't accidentally narrow Nx's default-input fallback for non-cacheable
++///      targets, in case a user later enables caching on them via plugin options.
++/// </summary>
++public class TargetBuilderDirectoryBuildInputsTests
++{
++    private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), "nx-dotnet-ws");
++
++    private static string ProjectDir(params string[] segments) =>
++        Path.Combine(new[] { WorkspaceRoot }.Concat(segments).ToArray());
++
++    private static Dictionary<string, Target> BuildTargets(
++        bool isExe,
++        bool isTest,
++        List<string>? directoryBuildInputs = null,
++        Dictionary<string, string>? properties = null) =>
++        TargetBuilder.BuildTargets(
++            projectName: "MyProj",
++            fileName: "MyProj.csproj",
++            isTest: isTest,
++            isExe: isExe,
++            packageRefs: new List<PackageReference>(),
++            properties: properties ?? new Dictionary<string, string>(),
++            projectDirectory: ProjectDir("apps", "MyProj"),
++            workspaceRoot: WorkspaceRoot,
++            options: new PluginOptions(),
++            nxJson: null,
++            directoryBuildInputs: directoryBuildInputs ?? new List<string>());
++
++    private static IEnumerable<string> StringInputs(Target t) =>
++        t.Inputs?.OfType<string>() ?? Enumerable.Empty<string>();
++
++    [Fact]
++    public void BuildAndBuildRelease_AppendDirectoryBuildInputs()
++    {
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Build.props",
++            "{workspaceRoot}/apps/Directory.Build.targets",
++        };
++
++        var targets = BuildTargets(isExe: false, isTest: false, directoryBuildInputs: directoryBuildInputs);
++
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", StringInputs(targets["build"]));
++        Assert.Contains("{workspaceRoot}/apps/Directory.Build.targets", StringInputs(targets["build"]));
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", StringInputs(targets["build:release"]));
++        Assert.Contains("{workspaceRoot}/apps/Directory.Build.targets", StringInputs(targets["build:release"]));
++    }
++
++    [Fact]
++    public void TestTarget_AppendsDirectoryBuildInputs()
++    {
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Packages.props",
++        };
++
++        var targets = BuildTargets(isExe: false, isTest: true, directoryBuildInputs: directoryBuildInputs);
++
++        Assert.Contains("{workspaceRoot}/Directory.Packages.props", StringInputs(targets["test"]));
++    }
++
++    [Fact]
++    public void PublishTarget_AppendsDirectoryBuildInputs_WhenIsExe()
++    {
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Build.props",
++        };
++
++        var targets = BuildTargets(isExe: true, isTest: false, directoryBuildInputs: directoryBuildInputs);
++
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", StringInputs(targets["publish"]));
++    }
++
++    [Fact]
++    public void PackTarget_AppendsDirectoryBuildInputs_WhenLibrary()
++    {
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Build.props",
++        };
++
++        var targets = BuildTargets(isExe: false, isTest: false, directoryBuildInputs: directoryBuildInputs);
++
++        Assert.Contains("{workspaceRoot}/Directory.Build.props", StringInputs(targets["pack"]));
++    }
++
++    [Fact]
++    public void Restore_Clean_Watch_HaveNoInputsArray()
++    {
++        // These targets don't declare Inputs today, and we explicitly want to keep
++        // it that way so Nx's "default named input" fallback applies if a user
++        // turns caching on for them via plugin options.
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Build.props",
++        };
++
++        var targets = BuildTargets(isExe: false, isTest: false, directoryBuildInputs: directoryBuildInputs);
++
++        Assert.Null(targets["restore"].Inputs);
++        Assert.Null(targets["clean"].Inputs);
++        Assert.Null(targets["watch"].Inputs);
++    }
++
++    [Fact]
++    public void RunTarget_HasNoInputsArray_WhenIsExe()
++    {
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Build.props",
++        };
++
++        var targets = BuildTargets(isExe: true, isTest: false, directoryBuildInputs: directoryBuildInputs);
++
++        Assert.Null(targets["run"].Inputs);
++    }
++
++    [Fact]
++    public void EmptyDirectoryBuildInputs_LeavesExistingInputsIntact()
++    {
++        // No Directory.* files for this project. The base inputs the analyzer
++        // always emits (productionInput, ^productionInput, .editorconfig, etc.)
++        // must still be there.
++        var targets = BuildTargets(isExe: false, isTest: false, directoryBuildInputs: new List<string>());
++
++        var buildInputs = StringInputs(targets["build"]).ToList();
++        Assert.Contains("default", buildInputs);
++        Assert.Contains("^default", buildInputs);
++        Assert.Contains("{workspaceRoot}/.editorconfig", buildInputs);
++        // No Directory.* files leaked in.
++        Assert.DoesNotContain(buildInputs, i => i.Contains("Directory."));
++    }
++
++    [Fact]
++    public void DirectoryBuildInputs_AreAppendedAfterBaseInputs()
++    {
++        // Ordering matters less for correctness than for human readability, but
++        // we want the Directory.* paths to live at the tail of the array so the
++        // existing "default" / "^production" / "{workingDirectory}" entries stay
++        // visually near the top. Lock that in.
++        var directoryBuildInputs = new List<string>
++        {
++            "{workspaceRoot}/Directory.Build.props",
++        };
++
++        var targets = BuildTargets(isExe: false, isTest: false, directoryBuildInputs: directoryBuildInputs);
++
++        var inputs = targets["build"].Inputs!;
++        var lastInput = inputs[^1] as string;
++        Assert.Equal("{workspaceRoot}/Directory.Build.props", lastInput);
++    }
++}
+diff --git a/packages/dotnet/analyzer.Tests/TargetBuilderOutputPathsTests.cs b/packages/dotnet/analyzer.Tests/TargetBuilderOutputPathsTests.cs
+index cfcd34e5d54..ddf8449ceed 100644
+--- a/packages/dotnet/analyzer.Tests/TargetBuilderOutputPathsTests.cs
++++ b/packages/dotnet/analyzer.Tests/TargetBuilderOutputPathsTests.cs
+@@ -34,7 +34,8 @@ private static Dictionary<string, Target> BuildTargets(
+         string projectDirectory,
+         string projectName = "MyProj",
+         bool isExe = false,
+-        bool isTest = false) =>
++        bool isTest = false,
++        List<string>? directoryBuildInputs = null) =>
+         TargetBuilder.BuildTargets(
+             projectName: projectName,
+             fileName: $"{projectName}.csproj",
+@@ -45,7 +46,8 @@ private static Dictionary<string, Target> BuildTargets(
+             projectDirectory: projectDirectory,
+             workspaceRoot: WorkspaceRoot,
+             options: new PluginOptions(),
+-            nxJson: null);
++            nxJson: null,
++            directoryBuildInputs: directoryBuildInputs ?? new List<string>());
+ 
+     // --- Original #33971: Microsoft.NET.Sdk.Web ---------------------------
+ 
+@@ -202,4 +204,60 @@ public void Build_ArtifactsOutput_WithCustomArtifactsPath_EmitsWorkspaceRootOutp
+             },
+             targets["build"].Outputs);
+     }
++
++    // --- Publish output: configuration is rewritten to match the target -----
++
++    [Fact]
++    public void Publish_RewritesEvaluatedDebugPublishDirToRelease()
++    {
++        // MSBuild evaluates PublishDir at the default (Debug) configuration, but
++        // the publish target runs --configuration Release. The declared output
++        // must point at bin/Release/publish (where the publish actually lands),
++        // not the evaluated bin/Debug/publish.
++        var projectDirectory = ProjectDir("apps", "foo");
++        var properties = new Dictionary<string, string>
++        {
++            ["PublishDir"] = "bin\\Debug\\publish\\",
++        };
++
++        var targets = BuildTargets(properties, projectDirectory, projectName: "foo", isExe: true);
++
++        Assert.Equal(
++            new[] { "{projectRoot}/bin/Release/publish" },
++            targets["publish"].Outputs);
++    }
++
++    [Fact]
++    public void Publish_LeavesCustomPublishDirWithoutConfigurationSegmentAlone()
++    {
++        // A custom PublishDir that has no Debug/Release segment is passed through
++        // unchanged (only configuration segments are rewritten).
++        var projectDirectory = ProjectDir("apps", "foo");
++        var properties = new Dictionary<string, string>
++        {
++            ["PublishDir"] = "dist-publish",
++        };
++
++        var targets = BuildTargets(properties, projectDirectory, projectName: "foo", isExe: true);
++
++        Assert.Equal(
++            new[] { "{projectRoot}/dist-publish" },
++            targets["publish"].Outputs);
++    }
++
++    [Fact]
++    public void Publish_ArtifactsLayout_EmitsWorkspaceRootPublishPath()
++    {
++        var projectDirectory = ProjectDir("apps", "foo");
++        var properties = new Dictionary<string, string>
++        {
++            ["UseArtifactsOutput"] = "true",
++        };
++
++        var targets = BuildTargets(properties, projectDirectory, projectName: "foo", isExe: true);
++
++        Assert.Equal(
++            new[] { "{workspaceRoot}/artifacts/publish/foo" },
++            targets["publish"].Outputs);
++    }
+ }
+diff --git a/packages/dotnet/analyzer/Analyzer.cs b/packages/dotnet/analyzer/Analyzer.cs
+index 25aa5e7c260..10656931ded 100644
+--- a/packages/dotnet/analyzer/Analyzer.cs
++++ b/packages/dotnet/analyzer/Analyzer.cs
+@@ -20,9 +20,27 @@ public static class Analyzer
+     /// <returns>Analysis results containing node configurations and project references.</returns>
+     public static AnalysisResult AnalyzeWorkspace(
+         List<string> projectFiles,
++        List<string> directoryFiles,
+         string workspaceRoot,
+         PluginOptions pluginOptions)
+     {
++        // Index Directory.Build.* / Directory.Solution.* matches by their containing directory
++        // (workspace-root-relative, forward-slashed; "." for the workspace root itself). Built
++        // once up-front so per-project ancestor lookup is O(depth) instead of O(directoryFiles).
++        var directoryFilesByDir = new Dictionary<string, HashSet<string>>();
++        foreach (var rel in directoryFiles)
++        {
++            var normalized = rel.Replace('\\', '/');
++            var lastSlash = normalized.LastIndexOf('/');
++            var dir = lastSlash < 0 ? "." : normalized.Substring(0, lastSlash);
++            var name = lastSlash < 0 ? normalized : normalized.Substring(lastSlash + 1);
++            if (!directoryFilesByDir.TryGetValue(dir, out var set))
++            {
++                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++                directoryFilesByDir[dir] = set;
++            }
++            set.Add(name);
++        }
+         // Read nx.json from workspace root
+         NxJsonConfig? nxJson = null;
+         using (PerfLogger.Start("analyze workspace > read nx.json"))
+@@ -72,6 +90,14 @@ public static AnalysisResult AnalyzeWorkspace(
+                 continue;
+             }
+             var path = node.ProjectInstance.FullPath;
++            // Only real project files become Nx projects. Depending on the MSBuild/SDK version,
++            // imported files (e.g. Directory.Build.props) can appear as graph nodes; treating one
++            // as a project would emit a phantom project named after the file (e.g. "Directory.Build")
++            // whose targets run dotnet against a directory with no project to build.
++            if (!ProjectUtilities.IsProjectFile(path))
++            {
++                continue;
++            }
+             if (!nodesByPath.TryGetValue(path, out var nodes))
+             {
+                 nodes = new List<ProjectGraphNode>();
+@@ -122,6 +148,16 @@ public static AnalysisResult AnalyzeWorkspace(
+                     // Build targets
+                     var projectName = ProjectUtilities.GetProjectName(primaryNode.ProjectInstance);
+                     var projectDirectory = Path.GetDirectoryName(projectPath)!;
++
++                    // The closest Directory.Build.* / Directory.Solution.* ancestors that exist
++                    // for this project — declared as inputs on every target that already has an
++                    // Inputs array, so Nx invalidates downstream caches when they change.
++                    var directoryBuildInputs = ProjectUtilities.GetDirectoryBuildInputs(
++                        projectPath,
++                        workspaceRoot,
++                        directoryFilesByDir
++                    );
++
+                     var targets = TargetBuilder.BuildTargets(
+                         projectName,
+                         Path.GetFileName(projectPath),
+@@ -132,7 +168,8 @@ public static AnalysisResult AnalyzeWorkspace(
+                         projectDirectory,
+                         workspaceRoot,
+                         pluginOptions,
+-                        nxJson
++                        nxJson,
++                        directoryBuildInputs
+                     );
+ 
+                     nodesByFile[relativeProjectFile] = new NxProjectGraphNode
+diff --git a/packages/dotnet/analyzer/Program.cs b/packages/dotnet/analyzer/Program.cs
+index 2c733188940..a1c16a3d3e5 100644
+--- a/packages/dotnet/analyzer/Program.cs
++++ b/packages/dotnet/analyzer/Program.cs
+@@ -6,13 +6,22 @@
+ using MsbuildAnalyzer.Utilities;
+ 
+ // Parse input - either from stdin or command line arguments
+-// Format (stdin): Read newline-separated list of project files from stdin
++// Format (stdin): newline-separated file paths. Files are partitioned here by name:
++//   .csproj/.fsproj/.vbproj go to projectFiles, the canonical Directory.* files go to
++//   directoryFiles. MSBuild evaluation finds those directory files on its own; we need
++//   them in this process to declare the right per-project inputs back to Nx.
+ // Args: MsbuildAnalyzer <workspace-root> [plugin-options-json]
+ 
+ string workspaceRoot;
+ List<string> projectFiles;
++List<string> directoryFiles = new();
+ PluginOptions? pluginOptions = null;
+ 
++var directoryFileNameSet = new HashSet<string>(
++    ProjectUtilities.DirectoryBuildFileNames,
++    StringComparer.OrdinalIgnoreCase
++);
++
+ // Check if stdin has data for project files
+ if (Console.IsInputRedirected)
+ {
+@@ -51,10 +60,22 @@
+     while ((line = Console.ReadLine()) != null)
+     {
+         line = line.Trim();
+-        if (!string.IsNullOrEmpty(line))
++        if (string.IsNullOrEmpty(line))
++        {
++            continue;
++        }
++
++        var fileName = Path.GetFileName(line);
++        if (ProjectUtilities.IsProjectFile(line))
+         {
+             projectFiles.Add(line);
+         }
++        else if (directoryFileNameSet.Contains(fileName))
++        {
++            directoryFiles.Add(line);
++        }
++        // Anything else is silently dropped; the glob shouldn't surface unrelated files,
++        // but we don't want a stray path to abort the run.
+     }
+ }
+ else
+@@ -152,7 +173,7 @@
+ AnalysisResult result;
+ using (var analyzePerf = PerfLogger.Start("analyze workspace"))
+ {
+-    result = Analyzer.AnalyzeWorkspace(projectFiles, workspaceRoot, pluginOptions);
++    result = Analyzer.AnalyzeWorkspace(projectFiles, directoryFiles, workspaceRoot, pluginOptions);
+ }
+ 
+ // Serialize and output results
+diff --git a/packages/dotnet/analyzer/Utilities/ProjectUtilities.cs b/packages/dotnet/analyzer/Utilities/ProjectUtilities.cs
+index a5eda481e08..ff89ce35820 100644
+--- a/packages/dotnet/analyzer/Utilities/ProjectUtilities.cs
++++ b/packages/dotnet/analyzer/Utilities/ProjectUtilities.cs
+@@ -58,6 +58,113 @@ public static string GetProjectName(ProjectInstance project)
+         return msbuildProjectName;
+     }
+ 
++    /// <summary>
++    /// Directory.Build.props/.targets are auto-imported by Microsoft.Common.props/.targets, walking
++    /// up from the project to the first ancestor that defines them. Directory.Build.rsp is read by
++    /// the dotnet CLI from the same walk. Directory.Solution.props/.targets apply for .sln builds.
++    /// Directory.Packages.props is read by the Central Package Management SDK import to source
++    /// PackageVersion items. We mirror MSBuild's "first ancestor wins" rule so the inputs match
++    /// what the build actually reads — over-declaring would let unrelated shadowed parents bust
++    /// the cache.
++    /// </summary>
++    public static readonly string[] DirectoryBuildFileNames =
++    {
++        "Directory.Build.props",
++        "Directory.Build.targets",
++        "Directory.Build.rsp",
++        "Directory.Solution.props",
++        "Directory.Solution.targets",
++        "Directory.Packages.props",
++    };
++
++    /// <summary>
++    /// .NET project file extensions. Used both to partition stdin input and to filter the MSBuild
++    /// project graph — imported files such as Directory.Build.props can surface as graph nodes
++    /// depending on the SDK version, and they must never be treated as buildable projects.
++    /// </summary>
++    public static bool IsProjectFile(string path)
++    {
++        var ext = Path.GetExtension(path);
++        return ext.Equals(".csproj", StringComparison.OrdinalIgnoreCase)
++            || ext.Equals(".fsproj", StringComparison.OrdinalIgnoreCase)
++            || ext.Equals(".vbproj", StringComparison.OrdinalIgnoreCase);
++    }
++
++    /// <summary>
++    /// For a given project, find the closest ancestor occurrence of each Directory.* filename
++    /// using the pre-built directory→filename-set index. Returns paths suitable for use as Nx
++    /// inputs (prefixed with "{workspaceRoot}/...").
++    /// </summary>
++    public static List<string> GetDirectoryBuildInputs(
++        string projectPath,
++        string workspaceRoot,
++        Dictionary<string, HashSet<string>> filesByDir)
++    {
++        if (filesByDir.Count == 0)
++        {
++            return new List<string>();
++        }
++
++        var workspaceRootFull = Path.GetFullPath(workspaceRoot)
++            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
++        var dir = Path.GetDirectoryName(Path.GetFullPath(projectPath));
++
++        var found = new Dictionary<string, string>();
++        var inputs = new List<string>();
++
++        while (!string.IsNullOrEmpty(dir))
++        {
++            var normalizedDir = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
++            if (!IsSameOrUnder(normalizedDir, workspaceRootFull))
++            {
++                break;
++            }
++
++            var relativeDir = string.Equals(normalizedDir, workspaceRootFull, StringComparison.OrdinalIgnoreCase)
++                ? "."
++                : Path.GetRelativePath(workspaceRootFull, normalizedDir).Replace('\\', '/');
++
++            if (filesByDir.TryGetValue(relativeDir, out var filesInDir))
++            {
++                foreach (var fileName in DirectoryBuildFileNames)
++                {
++                    if (!found.ContainsKey(fileName) && filesInDir.Contains(fileName))
++                    {
++                        var path = relativeDir == "."
++                            ? fileName
++                            : $"{relativeDir}/{fileName}";
++                        found[fileName] = path;
++                        inputs.Add($"{{workspaceRoot}}/{path}");
++                    }
++                }
++            }
++
++            if (found.Count == DirectoryBuildFileNames.Length)
++            {
++                break;
++            }
++
++            if (string.Equals(normalizedDir, workspaceRootFull, StringComparison.OrdinalIgnoreCase))
++            {
++                break;
++            }
++
++            dir = Directory.GetParent(normalizedDir)?.FullName;
++        }
++
++        return inputs;
++    }
++
++    private static bool IsSameOrUnder(string path, string root)
++    {
++        if (string.Equals(path, root, StringComparison.OrdinalIgnoreCase))
++        {
++            return true;
++        }
++        var rootWithSep = root + Path.DirectorySeparatorChar;
++        return path.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase);
++    }
++
+     /// <summary>
+     /// Gets the list of technologies for a project based on its file type and characteristics.
+     /// </summary>
+diff --git a/packages/dotnet/analyzer/Utilities/TargetBuilder.Build.cs b/packages/dotnet/analyzer/Utilities/TargetBuilder.Build.cs
+index 2d07790ffed..3737c27caf5 100644
+--- a/packages/dotnet/analyzer/Utilities/TargetBuilder.Build.cs
++++ b/packages/dotnet/analyzer/Utilities/TargetBuilder.Build.cs
+@@ -20,7 +20,8 @@ private static Target CreateBuildTarget(
+         PluginOptions options,
+         string productionInput,
+         string defaultConfiguration,
+-        string description)
++        string description,
++        List<string> directoryBuildInputs)
+     {
+         var outputPath = GetOutputPath(properties, projectName, projectDirectory, workspaceRoot);
+         var intermediatePath = GetIntermediateOutputPath(properties, projectName, projectDirectory, workspaceRoot);
+@@ -58,6 +59,7 @@ private static Target CreateBuildTarget(
+                 "{workspaceRoot}/.editorconfig",
+                 new { workingDirectory = "absolute" },
+                 new { dependentTasksOutputFiles = "**/*" },
++                .. directoryBuildInputs
+             ],
+             Outputs = new[] { outputPath, intermediatePath }
+                 .Where(p => p is not null)
+@@ -79,7 +81,8 @@ private static void AddBuildTarget(
+         string projectDirectory,
+         string workspaceRoot,
+         PluginOptions options,
+-        string productionInput)
++        string productionInput,
++        List<string> directoryBuildInputs)
+     {
+         var targetName = options.BuildTargetName;
+         targets[targetName] = CreateBuildTarget(
+@@ -92,7 +95,8 @@ private static void AddBuildTarget(
+             options,
+             productionInput,
+             "Debug",
+-            "Build the .NET project");
++            "Build the .NET project",
++            directoryBuildInputs);
+     }
+ 
+     private static void AddBuildReleaseTarget(
+@@ -104,7 +108,8 @@ private static void AddBuildReleaseTarget(
+         string projectDirectory,
+         string workspaceRoot,
+         PluginOptions options,
+-        string productionInput)
++        string productionInput,
++        List<string> directoryBuildInputs)
+     {
+         var releaseTargetName = $"{options.BuildTargetName}:release";
+         targets[releaseTargetName] = CreateBuildTarget(
+@@ -117,6 +122,7 @@ private static void AddBuildReleaseTarget(
+             options,
+             productionInput,
+             "Release",
+-            "Build the .NET project in Release configuration");
++            "Build the .NET project in Release configuration",
++            directoryBuildInputs);
+     }
+ }
+diff --git a/packages/dotnet/analyzer/Utilities/TargetBuilder.Pack.cs b/packages/dotnet/analyzer/Utilities/TargetBuilder.Pack.cs
+index 8f0d8ad709c..f95624efdc9 100644
+--- a/packages/dotnet/analyzer/Utilities/TargetBuilder.Pack.cs
++++ b/packages/dotnet/analyzer/Utilities/TargetBuilder.Pack.cs
+@@ -15,7 +15,8 @@ private static void AddPackTarget(
+         string projectDirectory,
+         string workspaceRoot,
+         PluginOptions options,
+-        string productionInput)
++        string productionInput,
++        List<string> directoryBuildInputs)
+     {
+         // Create a copy of properties with Configuration=Release
+         var releaseProperties = new Dictionary<string, string>(properties)
+@@ -54,6 +55,7 @@ private static void AddPackTarget(
+                 "{workspaceRoot}/.editorconfig",
+                 new { workingDirectory = "absolute" },
+                 new { dependentTasksOutputFiles = "**/*" },
++                .. directoryBuildInputs
+             ],
+             Outputs = packageOutputPath is null
+                 ? []
+diff --git a/packages/dotnet/analyzer/Utilities/TargetBuilder.PathHelpers.cs b/packages/dotnet/analyzer/Utilities/TargetBuilder.PathHelpers.cs
+index 624f481ced4..df1b64951f4 100644
+--- a/packages/dotnet/analyzer/Utilities/TargetBuilder.PathHelpers.cs
++++ b/packages/dotnet/analyzer/Utilities/TargetBuilder.PathHelpers.cs
+@@ -214,16 +214,47 @@ private static string StripConfiguration(string path)
+             return artifactsPath is null ? null : $"{{workspaceRoot}}/{artifactsPath}/publish/{projectName}";
+         }
+ 
++        // PublishDir (e.g. "bin/Debug/publish") is evaluated by MSBuild at the
++        // project's default Configuration, but the publish target runs with the
++        // Configuration in `properties` (Release). Rewrite the configuration
++        // segment so the declared output matches where the publish actually lands.
+         var publishDir = properties.GetValueOrDefault("PublishDir");
+         if (!string.IsNullOrEmpty(publishDir))
+         {
+-            return ResolvePath(publishDir, projectDirectory, workspaceRoot);
++            var resolved = ResolvePath(publishDir, projectDirectory, workspaceRoot);
++            return ApplyConfiguration(resolved, properties.GetValueOrDefault("Configuration"));
+         }
+ 
+         var outputPath = GetOutputPath(properties, projectName, projectDirectory, workspaceRoot);
+         return outputPath is null ? null : $"{outputPath.TrimEnd('/')}/publish";
+     }
+ 
++    /// <summary>
++    /// Rewrites any <c>Debug</c>/<c>Release</c> path segment to the given
++    /// configuration. Used for paths (like PublishDir) that MSBuild evaluates at
++    /// the default configuration but a target consumes at another. A no-op when
++    /// the configuration is empty or the path contains no configuration segment.
++    /// </summary>
++    private static string? ApplyConfiguration(string? path, string? configuration)
++    {
++        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(configuration))
++        {
++            return path;
++        }
++
++        var segments = path.Split('/');
++        for (var i = 0; i < segments.Length; i++)
++        {
++            if (segments[i].Equals("Debug", StringComparison.OrdinalIgnoreCase) ||
++                segments[i].Equals("Release", StringComparison.OrdinalIgnoreCase))
++            {
++                segments[i] = configuration;
++            }
++        }
++
++        return string.Join('/', segments);
++    }
++
+     /// <summary>
+     /// Gets the package output directory path, as a fully-qualified Nx-prefixed
+     /// string. Returns <c>null</c> when the path lives outside the workspace.
+diff --git a/packages/dotnet/analyzer/Utilities/TargetBuilder.Publish.cs b/packages/dotnet/analyzer/Utilities/TargetBuilder.Publish.cs
+index 2fec08142ea..72a4194ab10 100644
+--- a/packages/dotnet/analyzer/Utilities/TargetBuilder.Publish.cs
++++ b/packages/dotnet/analyzer/Utilities/TargetBuilder.Publish.cs
+@@ -16,7 +16,8 @@ private static void AddPublishTarget(
+         string projectDirectory,
+         string workspaceRoot,
+         PluginOptions options,
+-        string productionInput)
++        string productionInput,
++        List<string> directoryBuildInputs)
+     {
+         // Create a copy of properties with Configuration=Release
+         var releaseProperties = new Dictionary<string, string>(properties)
+@@ -57,6 +58,7 @@ private static void AddPublishTarget(
+                 "{workspaceRoot}/.editorconfig",
+                 new { workingDirectory = "absolute" },
+                 new { dependentTasksOutputFiles = "**/*" },
++                .. directoryBuildInputs
+             ],
+             Outputs = publishDir is null ? [] : [publishDir],
+             Metadata = new TargetMetadata
+diff --git a/packages/dotnet/analyzer/Utilities/TargetBuilder.Test.cs b/packages/dotnet/analyzer/Utilities/TargetBuilder.Test.cs
+index 7db3afbd18f..6e1f477569d 100644
+--- a/packages/dotnet/analyzer/Utilities/TargetBuilder.Test.cs
++++ b/packages/dotnet/analyzer/Utilities/TargetBuilder.Test.cs
+@@ -16,7 +16,8 @@ private static void AddTestTarget(
+         string projectDirectory,
+         string workspaceRoot,
+         PluginOptions options,
+-        string productionInput)
++        string productionInput,
++        List<string> directoryBuildInputs)
+     {
+         // TODO(@AgentEnder): We should add this back in after external deps
+         // support is fleshed out.
+@@ -44,6 +45,7 @@ private static void AddTestTarget(
+                 new { workingDirectory = "absolute" },
+                 new { dependentTasksOutputFiles = "**/*" },
+                 // new { externalDependencies = externalDeps }
++                .. directoryBuildInputs
+             ],
+             Outputs = testResultsDir is null ? [] : [testResultsDir],
+             Metadata = new TargetMetadata
+diff --git a/packages/dotnet/analyzer/Utilities/TargetBuilder.cs b/packages/dotnet/analyzer/Utilities/TargetBuilder.cs
+index e3c2b808316..fd7b6a8a3ec 100644
+--- a/packages/dotnet/analyzer/Utilities/TargetBuilder.cs
++++ b/packages/dotnet/analyzer/Utilities/TargetBuilder.cs
+@@ -20,34 +20,38 @@ public static Dictionary<string, Target> BuildTargets(
+         string projectDirectory,
+         string workspaceRoot,
+         PluginOptions options,
+-        NxJsonConfig? nxJson)
++        NxJsonConfig? nxJson,
++        List<string> directoryBuildInputs)
+     {
+         var targets = new Dictionary<string, Target>();
+ 
+         // Determine the appropriate input for production builds
+         var productionInput = GetProductionInput(nxJson);
+ 
+-        AddBuildTarget(targets, projectName, fileName, isTest, properties, projectDirectory, workspaceRoot, options, productionInput);
+-        AddBuildReleaseTarget(targets, projectName, fileName, isTest, properties, projectDirectory, workspaceRoot, options, productionInput);
++        AddBuildTarget(targets, projectName, fileName, isTest, properties, projectDirectory, workspaceRoot, options, productionInput, directoryBuildInputs);
++        AddBuildReleaseTarget(targets, projectName, fileName, isTest, properties, projectDirectory, workspaceRoot, options, productionInput, directoryBuildInputs);
+ 
+         if (isTest)
+         {
+-            AddTestTarget(targets, projectName, fileName, packageRefs, properties, projectDirectory, workspaceRoot, options, productionInput);
++            AddTestTarget(targets, projectName, fileName, packageRefs, properties, projectDirectory, workspaceRoot, options, productionInput, directoryBuildInputs);
+         }
+ 
++        // restore/clean/watch/run intentionally omit Directory.* inputs — they don't declare an
++        // Inputs array, and adding one here would narrow Nx's default-input fallback should a
++        // user enable caching on them later.
+         AddRestoreTarget(targets, fileName, options);
+         AddCleanTarget(targets, fileName, isTest, options);
+         AddWatchTarget(targets, fileName, options);
+ 
+         if (isExe)
+         {
+-            AddPublishTarget(targets, projectName, fileName, isTest, properties, projectDirectory, workspaceRoot, options, productionInput);
++            AddPublishTarget(targets, projectName, fileName, isTest, properties, projectDirectory, workspaceRoot, options, productionInput, directoryBuildInputs);
+             AddRunTarget(targets, fileName, options);
+         }
+ 
+         if (!isExe && !isTest)
+         {
+-            AddPackTarget(targets, projectName, fileName, properties, projectDirectory, workspaceRoot, options, productionInput);
++            AddPackTarget(targets, projectName, fileName, properties, projectDirectory, workspaceRoot, options, productionInput, directoryBuildInputs);
+         }
+ 
+         return targets;
+diff --git a/packages/dotnet/analyzer/project.json b/packages/dotnet/analyzer/project.json
+index f52e12c88d8..36e0a4e82b6 100644
+--- a/packages/dotnet/analyzer/project.json
++++ b/packages/dotnet/analyzer/project.json
+@@ -8,6 +8,9 @@
+     },
+     "run": {
+       "executor": "nx:noop"
++    },
++    "publish": {
++      "outputs": ["{projectRoot}/bin/Release/publish"]
+     }
+   }
+ }
+diff --git a/packages/dotnet/assets.json b/packages/dotnet/assets.json
+index 567403addbe..f914c6fa50f 100644
+--- a/packages/dotnet/assets.json
++++ b/packages/dotnet/assets.json
+@@ -8,7 +8,7 @@
+     { "glob": "**/schema.d.ts", "input": "packages/dotnet/src" },
+     {
+       "glob": "**/*",
+-      "input": "dist/msbuild-analyzer",
++      "input": "packages/dotnet/analyzer/bin/Release/publish",
+       "output": "/lib/",
+       "includeIgnoredFiles": true
+     }
+diff --git a/packages/dotnet/project.json b/packages/dotnet/project.json
+index d9d51638591..87be933f577 100644
+--- a/packages/dotnet/project.json
++++ b/packages/dotnet/project.json
+@@ -17,31 +17,6 @@
+       "inputs": ["copyReadme"],
+       "cache": true
+     },
+-    "build-analyzer": {
+-      "command": "node ./scripts/run-native-target.js _build-analyzer dotnet",
+-      "cache": true,
+-      "outputs": ["{workspaceRoot}/dist/msbuild-analyzer"],
+-      "inputs": [
+-        "{projectRoot}/analyzer/**",
+-        "{workspaceRoot}/scripts/run-native-target.js",
+-        {
+-          "env": "SKIP_ANALYZER_BUILD"
+-        }
+-      ]
+-    },
+-    "_build-analyzer": {
+-      "executor": "nx:run-commands",
+-      "outputs": ["{workspaceRoot}/dist/msbuild-analyzer"],
+-      "inputs": ["{projectRoot}/analyzer/**"],
+-      "cache": true,
+-      "options": {
+-        "commands": [
+-          "dotnet publish {projectRoot}/analyzer/MsbuildAnalyzer.csproj -c Release -o dist/msbuild-analyzer --self-contained false",
+-          "node scripts/chmod.js dist/msbuild-analyzer/MsbuildAnalyzer"
+-        ],
+-        "parallel": false
+-      }
+-    },
+     "format-native": {
+       "command": "node ./scripts/run-native-target.js _format-native dotnet"
+     },
+@@ -57,7 +32,7 @@
+       }
+     },
+     "copy-assets": {
+-      "dependsOn": ["build-analyzer"]
++      "dependsOn": [{ "projects": ["MsbuildAnalyzer"], "target": "publish" }]
+     },
+     "nx-release-publish": {
+       "executor": "@nx/js:release-publish",
+diff --git a/packages/dotnet/src/analyzer/analyzer-client.ts b/packages/dotnet/src/analyzer/analyzer-client.ts
+index 186282817e9..91d059775b4 100644
+--- a/packages/dotnet/src/analyzer/analyzer-client.ts
++++ b/packages/dotnet/src/analyzer/analyzer-client.ts
+@@ -62,22 +62,17 @@ function getAnalyzerPath(): string {
+   }
+ 
+   throw new Error(
+-    `msbuild-analyzer not found at any expected location. Please build it first with: nx run dotnet:build-analyzer`
++    `msbuild-analyzer not found at any expected location. Please build it first with: nx run dotnet:copy-assets`
+   );
+ }
+ 
+ /**
+- * Calculate a hash of all project files and Directory.Build.* files to determine if we need to re-analyze
++ * Hash every file that affects MSBuild evaluation — project files plus the Directory.*
++ * matches surfaced by the createNodesV2 glob. The analyzer partitions the same list on
++ * its side, so we don't classify it here.
+  */
+-async function calculateProjectFilesHash(
+-  projectFiles: string[]
+-): Promise<string> {
+-  const hash = await hashWithWorkspaceContext(
+-    workspaceRoot,
+-    projectFiles.concat('Directory.Build.*', '**/Directory.Build.*')
+-  );
+-
+-  return hash;
++async function calculateProjectFilesHash(files: string[]): Promise<string> {
++  return await hashWithWorkspaceContext(workspaceRoot, files);
+ }
+ 
+ /**
+@@ -85,10 +80,10 @@ async function calculateProjectFilesHash(
+  * Uses stdin for large file lists to avoid ARG_MAX issues.
+  */
+ function runAnalyzer(
+-  projectFiles: string[],
++  files: string[],
+   options?: DotNetAnalyzerOptions
+ ): AnalysisSuccessResult {
+-  if (projectFiles.length === 0) {
++  if (files.length === 0) {
+     return { nodesByFile: {}, referencesByRoot: {} };
+   }
+ 
+@@ -135,8 +130,9 @@ function runAnalyzer(
+       args.push(JSON.stringify(options));
+     }
+ 
+-    // Use stdin mode for large file lists to avoid ARG_MAX issues
+-    const input = projectFiles.join('\n');
++    // Use stdin mode for large file lists to avoid ARG_MAX issues. The analyzer
++    // partitions paths by filename, so we just stream everything in one block.
++    const input = files.join('\n');
+     const result = spawnSync('dotnet', args, {
+       input,
+       encoding: 'utf-8',
+@@ -183,10 +179,10 @@ function runAnalyzer(
+  * This should be called by createNodes to populate the cache.
+  */
+ export async function analyzeProjects(
+-  projectFiles: string[],
++  files: string[],
+   options?: DotNetAnalyzerOptions
+ ): Promise<AnalysisResult> {
+-  const filesHash = await calculateProjectFilesHash(projectFiles);
++  const filesHash = await calculateProjectFilesHash(files);
+ 
+   // Return cached results if the hash matches
+   if (
+@@ -216,7 +212,7 @@ export async function analyzeProjects(
+ 
+   // Run the analyzer
+   try {
+-    const result = runAnalyzer(projectFiles, options);
++    const result = runAnalyzer(files, options);
+ 
+     // Update local cache
+     cache = {
+diff --git a/packages/dotnet/src/plugins/create-nodes.ts b/packages/dotnet/src/plugins/create-nodes.ts
+index 350c329f592..15698324ebd 100644
+--- a/packages/dotnet/src/plugins/create-nodes.ts
++++ b/packages/dotnet/src/plugins/create-nodes.ts
+@@ -92,7 +92,16 @@ export interface DotNetPluginOptions {
+   run?: TargetConfigurationWithName | false;
+ }
+ 
+-const dotnetProjectGlob = '**/*.{csproj,fsproj,vbproj}';
++// MSBuild auto-imports Directory.Build.props/.targets from each ancestor of a project file,
++// reads Directory.Build.rsp from ancestors during CLI builds, applies Directory.Solution.*
++// when building a .sln, and reads Directory.Packages.props from the nearest ancestor when
++// Central Package Management is in use. Matching them here causes createNodesV2 to re-run
++// (and the analyzer's cache to invalidate) when any of them change, and gives us the file
++// list to hand to the analyzer so it can declare per-project ancestor inputs.
++// The analyzer partitions matched paths into project vs directory files by filename, so we
++// don't have to repeat that classification on this side.
++const dotnetProjectGlob =
++  '**/{*.{csproj,fsproj,vbproj},Directory.Build.{props,targets,rsp},Directory.Solution.{props,targets},Directory.Packages.props}';
+ 
+ /**
+  * Merge user-specified target configurations with the generated targets from the analyzer
+@@ -216,10 +225,13 @@ export const createNodesV2: CreateNodesV2<DotNetPluginOptions> = [
+       return configFilePaths.map((configFile) => {
+         const node = nodesByFile[configFile];
+         if (!node) {
++          // Directory.Build.* / Directory.Solution.* files contribute no projects of
++          // their own; returning an empty config is the conventional "skip" response.
+           return [configFile, {}];
+         }
+ 
+-        // Merge user-specified target configurations with generated targets
++        // Merge user-specified target configurations with generated targets. The analyzer
++        // has already written the Directory.* inputs onto each cacheable target's Inputs.
+         const mergedNode = mergeUserTargetConfigurations(
+           node,
+           normalizedOptions

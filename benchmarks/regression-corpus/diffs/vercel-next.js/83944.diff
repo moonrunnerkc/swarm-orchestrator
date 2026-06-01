@@ -1,0 +1,1204 @@
+diff --git a/crates/next-build-test/nextConfig.json b/crates/next-build-test/nextConfig.json
+index 6341127ae3a3..13142e8a57d2 100644
+--- a/crates/next-build-test/nextConfig.json
++++ b/crates/next-build-test/nextConfig.json
+@@ -53,8 +53,6 @@
+   "productionBrowserSourceMaps": false,
+   "optimizeFonts": true,
+   "excludeDefaultMomentLocales": true,
+-  "serverRuntimeConfig": {},
+-  "publicRuntimeConfig": {},
+   "reactProductionProfiling": false,
+   "reactStrictMode": true,
+   "httpAgentOptions": {
+diff --git a/docs/01-app/02-guides/environment-variables.mdx b/docs/01-app/02-guides/environment-variables.mdx
+index 809d4871cd99..83917914232f 100644
+--- a/docs/01-app/02-guides/environment-variables.mdx
++++ b/docs/01-app/02-guides/environment-variables.mdx
+@@ -228,7 +228,6 @@ This allows you to use a singular Docker image that can be promoted through mult
+ **Good to know:**
+ 
+ - You can run code on server startup using the [`register` function](/docs/app/guides/instrumentation).
+-- We do not recommend using the [`runtimeConfig`](/docs/pages/api-reference/config/next-config-js/runtime-configuration) option, as this does not work with the standalone output mode. Instead, we recommend [incrementally adopting](/docs/app/guides/migrating/app-router-migration) the App Router if you need this feature.
+ 
+ ## Test Environment Variables
+ 
+diff --git a/docs/01-app/02-guides/self-hosting.mdx b/docs/01-app/02-guides/self-hosting.mdx
+index c09f87d05010..9e161028cded 100644
+--- a/docs/01-app/02-guides/self-hosting.mdx
++++ b/docs/01-app/02-guides/self-hosting.mdx
+@@ -79,7 +79,6 @@ This allows you to use a singular Docker image that can be promoted through mult
+ > **Good to know:**
+ >
+ > - You can run code on server startup using the [`register` function](/docs/app/guides/instrumentation).
+-> - We do not recommend using the [runtimeConfig](/docs/pages/api-reference/config/next-config-js/runtime-configuration) option, as this does not work with the standalone output mode. Instead, we recommend [incrementally adopting](/docs/app/guides/migrating/app-router-migration) the App Router.
+ 
+ ## Caching and ISR
+ 
+diff --git a/docs/01-app/03-api-reference/05-config/01-next-config-js/output.mdx b/docs/01-app/03-api-reference/05-config/01-next-config-js/output.mdx
+index 4d068fa1bba8..ee010ca94702 100644
+--- a/docs/01-app/03-api-reference/05-config/01-next-config-js/output.mdx
++++ b/docs/01-app/03-api-reference/05-config/01-next-config-js/output.mdx
+@@ -59,7 +59,7 @@ node .next/standalone/server.js
+ 
+ > **Good to know**:
+ >
+-> - `next.config.js` is read during `next build` and serialized into the `server.js` output file. If the legacy [`serverRuntimeConfig` or `publicRuntimeConfig` options](/docs/pages/api-reference/config/next-config-js/runtime-configuration) are being used, the values will be specific to values at build time.
++> - `next.config.js` is read during `next build` and serialized into the `server.js` output file.
+ > - If your project needs to listen to a specific port or hostname, you can define `PORT` or `HOSTNAME` environment variables before running `server.js`. For example, run `PORT=8080 HOSTNAME=0.0.0.0 node server.js` to start the server on `http://0.0.0.0:8080`.
+ 
+ </PagesOnly>
+diff --git a/docs/02-pages/04-api-reference/04-config/01-next-config-js/runtime-configuration.mdx b/docs/02-pages/04-api-reference/04-config/01-next-config-js/runtime-configuration.mdx
+deleted file mode 100644
+index 879394ea38dd..000000000000
+--- a/docs/02-pages/04-api-reference/04-config/01-next-config-js/runtime-configuration.mdx
++++ /dev/null
+@@ -1,60 +0,0 @@
+----
+-title: Runtime Config
+-description: Add client and server runtime configuration to your Next.js app.
+----
+-
+-> **Warning:**
+->
+-> - **This feature is deprecated.** We recommend using [environment variables](/docs/pages/guides/environment-variables) instead, which also can support reading runtime values.
+-> - You can run code on server startup using the [`register` function](/docs/app/guides/instrumentation).
+-> - This feature does not work with [Automatic Static Optimization](/docs/pages/building-your-application/rendering/automatic-static-optimization), [Output File Tracing](/docs/pages/api-reference/config/next-config-js/output#automatically-copying-traced-files), or [React Server Components](/docs/app/getting-started/server-and-client-components).
+-
+-To add runtime configuration to your app, open `next.config.js` and add the `publicRuntimeConfig` and `serverRuntimeConfig` configs:
+-
+-```js filename="next.config.js"
+-module.exports = {
+-  serverRuntimeConfig: {
+-    // Will only be available on the server side
+-    mySecret: 'secret',
+-    secondSecret: process.env.SECOND_SECRET, // Pass through env variables
+-  },
+-  publicRuntimeConfig: {
+-    // Will be available on both server and client
+-    staticFolder: '/static',
+-  },
+-}
+-```
+-
+-Place any server-only runtime config under `serverRuntimeConfig`.
+-
+-Anything accessible to both client and server-side code should be under `publicRuntimeConfig`.
+-
+-> A page that relies on `publicRuntimeConfig` **must** use `getInitialProps` or `getServerSideProps` or your application must have a [Custom App](/docs/pages/building-your-application/routing/custom-app) with `getInitialProps` to opt-out of [Automatic Static Optimization](/docs/pages/building-your-application/rendering/automatic-static-optimization). Runtime configuration won't be available to any page (or component in a page) without being server-side rendered.
+-
+-To get access to the runtime configs in your app use `next/config`, like so:
+-
+-```jsx
+-import getConfig from 'next/config'
+-import Image from 'next/image'
+-
+-// Only holds serverRuntimeConfig and publicRuntimeConfig
+-const { serverRuntimeConfig, publicRuntimeConfig } = getConfig()
+-// Will only be available on the server-side
+-console.log(serverRuntimeConfig.mySecret)
+-// Will be available on both server-side and client-side
+-console.log(publicRuntimeConfig.staticFolder)
+-
+-function MyImage() {
+-  return (
+-    <div>
+-      <Image
+-        src={`${publicRuntimeConfig.staticFolder}/logo.png`}
+-        alt="logo"
+-        layout="fill"
+-      />
+-    </div>
+-  )
+-}
+-
+-export default MyImage
+-```
+diff --git a/packages/next/config.d.ts b/packages/next/config.d.ts
+deleted file mode 100644
+index 20c292fb467e..000000000000
+--- a/packages/next/config.d.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import getConfig from './dist/shared/lib/runtime-config.external'
+-export * from './dist/shared/lib/runtime-config.external'
+-export default getConfig
+diff --git a/packages/next/config.js b/packages/next/config.js
+deleted file mode 100644
+index 668ee7c54f0e..000000000000
+--- a/packages/next/config.js
++++ /dev/null
+@@ -1 +0,0 @@
+-module.exports = require('./dist/shared/lib/runtime-config.external')
+diff --git a/packages/next/index.d.ts b/packages/next/index.d.ts
+index 8e7cf5d71b9b..ab2ddbddb0c5 100644
+--- a/packages/next/index.d.ts
++++ b/packages/next/index.d.ts
+@@ -4,7 +4,6 @@
+ /// <reference path="./amp.d.ts" />
+ /// <reference path="./app.d.ts" />
+ /// <reference path="./cache.d.ts" />
+-/// <reference path="./config.d.ts" />
+ /// <reference path="./document.d.ts" />
+ /// <reference path="./dynamic.d.ts" />
+ /// <reference path="./error.d.ts" />
+diff --git a/packages/next/src/build/index.ts b/packages/next/src/build/index.ts
+index 68c7034f998f..c72704951a51 100644
+--- a/packages/next/src/build/index.ts
++++ b/packages/next/src/build/index.ts
+@@ -1903,9 +1903,7 @@ export default async function build(
+           }
+         }
+ 
+-        const { configFileName, publicRuntimeConfig, serverRuntimeConfig } =
+-          config
+-        const runtimeEnvConfig = { publicRuntimeConfig, serverRuntimeConfig }
++        const { configFileName } = config
+         const sriEnabled = Boolean(config.experimental.sri?.algorithm)
+ 
+         const nonStaticErrorPageSpan = staticCheckSpan.traceChild(
+@@ -1918,7 +1916,6 @@ export default async function build(
+               (await worker.hasCustomGetInitialProps({
+                 page: '/_error',
+                 distDir,
+-                runtimeEnvConfig,
+                 checkingApp: false,
+                 sriEnabled,
+               }))
+@@ -1932,7 +1929,6 @@ export default async function build(
+               page: '/_error',
+               distDir,
+               configFileName,
+-              runtimeEnvConfig,
+               cacheComponents: isAppCacheComponentsEnabled,
+               authInterrupts: isAuthInterruptsEnabled,
+               httpAgentOptions: config.httpAgentOptions,
+@@ -1952,7 +1948,6 @@ export default async function build(
+           ? worker.hasCustomGetInitialProps({
+               page: appPageToCheck,
+               distDir,
+-              runtimeEnvConfig,
+               checkingApp: true,
+               sriEnabled,
+             })
+@@ -1962,7 +1957,6 @@ export default async function build(
+           ? worker.getDefinedNamedExports({
+               page: appPageToCheck,
+               distDir,
+-              runtimeEnvConfig,
+               sriEnabled,
+             })
+           : Promise.resolve([])
+@@ -2149,7 +2143,6 @@ export default async function build(
+                             originalAppPath,
+                             distDir,
+                             configFileName,
+-                            runtimeEnvConfig,
+                             httpAgentOptions: config.httpAgentOptions,
+                             locales: config.i18n?.locales,
+                             defaultLocale: config.i18n?.defaultLocale,
+diff --git a/packages/next/src/build/templates/edge-ssr.ts b/packages/next/src/build/templates/edge-ssr.ts
+index f1002b14b846..3aad16017f99 100644
+--- a/packages/next/src/build/templates/edge-ssr.ts
++++ b/packages/next/src/build/templates/edge-ssr.ts
+@@ -155,12 +155,6 @@ async function requestHandler(
+       distDir: '',
+       crossOrigin: nextConfig.crossOrigin ? nextConfig.crossOrigin : undefined,
+       largePageDataBytes: nextConfig.experimental.largePageDataBytes,
+-      // Only the `publicRuntimeConfig` key is exposed to the client side
+-      // It'll be rendered as part of __NEXT_DATA__ on the client side
+-      runtimeConfig:
+-        Object.keys(nextConfig.publicRuntimeConfig).length > 0
+-          ? nextConfig.publicRuntimeConfig
+-          : undefined,
+ 
+       isExperimentalCompile: nextConfig.experimental.isExperimentalCompile,
+       // `htmlLimitedBots` is passed to server as serialized config in string format
+diff --git a/packages/next/src/build/utils.ts b/packages/next/src/build/utils.ts
+index 5a53f8cb914e..3eea128cd5f4 100644
+--- a/packages/next/src/build/utils.ts
++++ b/packages/next/src/build/utils.ts
+@@ -568,7 +568,6 @@ export async function isPageStatic({
+   page,
+   distDir,
+   configFileName,
+-  runtimeEnvConfig,
+   httpAgentOptions,
+   locales,
+   defaultLocale,
+@@ -595,7 +594,6 @@ export async function isPageStatic({
+   cacheComponents: boolean
+   authInterrupts: boolean
+   configFileName: string
+-  runtimeEnvConfig: any
+   httpAgentOptions: NextConfigComplete['httpAgentOptions']
+   locales?: readonly string[]
+   defaultLocale?: string
+@@ -645,9 +643,6 @@ export async function isPageStatic({
+   const isPageStaticSpan = trace('is-page-static-utils', parentId)
+   return isPageStaticSpan
+     .traceAsyncFn(async (): Promise<PageIsStaticResult> => {
+-      ;(
+-        require('../shared/lib/runtime-config.external') as typeof import('../shared/lib/runtime-config.external')
+-      ).setConfig(runtimeEnvConfig)
+       setHttpClientAndAgentOptions({
+         httpAgentOptions,
+       })
+@@ -956,20 +951,14 @@ export function reduceAppConfig(
+ export async function hasCustomGetInitialProps({
+   page,
+   distDir,
+-  runtimeEnvConfig,
+   checkingApp,
+   sriEnabled,
+ }: {
+   page: string
+   distDir: string
+-  runtimeEnvConfig: any
+   checkingApp: boolean
+   sriEnabled: boolean
+ }): Promise<boolean> {
+-  ;(
+-    require('../shared/lib/runtime-config.external') as typeof import('../shared/lib/runtime-config.external')
+-  ).setConfig(runtimeEnvConfig)
+-
+   const { ComponentMod } = await loadComponents({
+     distDir,
+     page: page,
+@@ -992,17 +981,12 @@ export async function hasCustomGetInitialProps({
+ export async function getDefinedNamedExports({
+   page,
+   distDir,
+-  runtimeEnvConfig,
+   sriEnabled,
+ }: {
+   page: string
+   distDir: string
+-  runtimeEnvConfig: any
+   sriEnabled: boolean
+ }): Promise<ReadonlyArray<string>> {
+-  ;(
+-    require('../shared/lib/runtime-config.external') as typeof import('../shared/lib/runtime-config.external')
+-  ).setConfig(runtimeEnvConfig)
+   const { ComponentMod } = await loadComponents({
+     distDir,
+     page: page,
+diff --git a/packages/next/src/client/index.tsx b/packages/next/src/client/index.tsx
+index d63875b6b059..81fdc33f88e9 100644
+--- a/packages/next/src/client/index.tsx
++++ b/packages/next/src/client/index.tsx
+@@ -20,7 +20,6 @@ import {
+   urlQueryToSearchParams,
+   assign,
+ } from '../shared/lib/router/utils/querystring'
+-import { setConfig } from '../shared/lib/runtime-config.external'
+ import { getURL, loadGetInitialProps, ST } from '../shared/lib/utils'
+ import type { NextWebVitalsMetric, NEXT_DATA } from '../shared/lib/utils'
+ import { Portal } from './portal'
+@@ -212,12 +211,6 @@ export async function initialize(opts: { devClient?: any } = {}): Promise<{
+   // So, this is how we do it in the client side at runtime
+   ;(self as any).__next_set_public_path__(`${prefix}/_next/`) //eslint-disable-line
+ 
+-  // Initialize next/config with the environment configuration
+-  setConfig({
+-    serverRuntimeConfig: {},
+-    publicRuntimeConfig: initialData.runtimeConfig || {},
+-  })
+-
+   asPath = getURL()
+ 
+   // make sure not to attempt stripping basePath for 404s
+diff --git a/packages/next/src/export/index.ts b/packages/next/src/export/index.ts
+index d3a2b5aaec02..d6a15330c1d0 100644
+--- a/packages/next/src/export/index.ts
++++ b/packages/next/src/export/index.ts
+@@ -422,12 +422,6 @@ async function exportAppImpl(
+       nextConfig.experimental.enablePrerenderSourceMaps === true,
+   }
+ 
+-  const { publicRuntimeConfig } = nextConfig
+-
+-  if (Object.keys(publicRuntimeConfig).length > 0) {
+-    renderOpts.runtimeConfig = publicRuntimeConfig
+-  }
+-
+   // We need this for server rendering the Link component.
+   ;(globalThis as any).__NEXT_DATA__ = {
+     nextExport: true,
+diff --git a/packages/next/src/export/types.ts b/packages/next/src/export/types.ts
+index 795202731dd4..8a27f76b269e 100644
+--- a/packages/next/src/export/types.ts
++++ b/packages/next/src/export/types.ts
+@@ -54,7 +54,6 @@ export interface ExportPageInput {
+   ampValidatorPath?: string
+   trailingSlash?: boolean
+   buildExport?: boolean
+-  serverRuntimeConfig: { [key: string]: any }
+   subFolders?: boolean
+   optimizeCss: any
+   disableOptimizedLoading: any
+diff --git a/packages/next/src/export/worker.ts b/packages/next/src/export/worker.ts
+index 2a7f0d265aa0..c29ad8f1eae0 100644
+--- a/packages/next/src/export/worker.ts
++++ b/packages/next/src/export/worker.ts
+@@ -50,10 +50,6 @@ import type { PagesRenderContext, PagesSharedContext } from '../server/render'
+ import type { AppSharedContext } from '../server/app-render/app-render'
+ import { MultiFileWriter } from '../lib/multi-file-writer'
+ import { createRenderResumeDataCache } from '../server/resume-data-cache/resume-data-cache'
+-
+-const envConfig =
+-  require('../shared/lib/runtime-config.external') as typeof import('../shared/lib/runtime-config.external')
+-
+ ;(globalThis as any).__NEXT_DATA__ = {
+   nextExport: true,
+ }
+@@ -75,7 +71,6 @@ async function exportPageImpl(
+     distDir,
+     pagesDataDir,
+     buildExport = false,
+-    serverRuntimeConfig,
+     subFolders = false,
+     optimizeCss,
+     disableOptimizedLoading,
+@@ -196,11 +191,6 @@ async function exportPageImpl(
+     addRequestMeta(req, 'isLocaleDomain', true)
+   }
+ 
+-  envConfig.setConfig({
+-    serverRuntimeConfig,
+-    publicRuntimeConfig: commonRenderOpts.runtimeConfig,
+-  })
+-
+   const getHtmlFilename = (p: string) =>
+     subFolders ? `${p}${sep}index.html` : `${p}.html`
+ 
+@@ -416,7 +406,6 @@ export async function exportPages(
+             ampValidatorPath:
+               nextConfig.experimental.amp?.validator || undefined,
+             trailingSlash: nextConfig.trailingSlash,
+-            serverRuntimeConfig: nextConfig.serverRuntimeConfig,
+             subFolders: nextConfig.trailingSlash && !options.buildExport,
+             buildExport: options.buildExport,
+             optimizeCss: nextConfig.experimental.optimizeCss,
+diff --git a/packages/next/src/server/base-server.ts b/packages/next/src/server/base-server.ts
+index 2c5bd0438d00..35f7ee4a76b0 100644
+--- a/packages/next/src/server/base-server.ts
++++ b/packages/next/src/server/base-server.ts
+@@ -57,7 +57,6 @@ import {
+   UNDERSCORE_NOT_FOUND_ROUTE_ENTRY,
+ } from '../shared/lib/constants'
+ import { isDynamicRoute } from '../shared/lib/router/utils'
+-import { setConfig } from '../shared/lib/runtime-config.external'
+ import { execOnce } from '../shared/lib/utils'
+ import { isBlockedPage } from './utils'
+ import { getBotType, isBot } from '../shared/lib/router/utils/is-bot'
+@@ -475,14 +474,7 @@ export default abstract class Server<
+       ? new LocaleRouteNormalizer(this.i18nProvider)
+       : undefined
+ 
+-    // Only serverRuntimeConfig needs the default
+-    // publicRuntimeConfig gets it's default in client/index.js
+-    const {
+-      serverRuntimeConfig = {},
+-      publicRuntimeConfig,
+-      assetPrefix,
+-      generateEtags,
+-    } = this.nextConfig
++    const { assetPrefix, generateEtags } = this.nextConfig
+ 
+     this.buildId = this.getBuildId()
+     // this is a hack to avoid Webpack knowing this is equal to this.minimalMode
+@@ -551,12 +543,6 @@ export default abstract class Server<
+         ? this.nextConfig.crossOrigin
+         : undefined,
+       largePageDataBytes: this.nextConfig.experimental.largePageDataBytes,
+-      // Only the `publicRuntimeConfig` key is exposed to the client side
+-      // It'll be rendered as part of __NEXT_DATA__ on the client side
+-      runtimeConfig:
+-        Object.keys(publicRuntimeConfig).length > 0
+-          ? publicRuntimeConfig
+-          : undefined,
+ 
+       isExperimentalCompile: this.nextConfig.experimental.isExperimentalCompile,
+       // `htmlLimitedBots` is passed to server as serialized config in string format
+@@ -583,12 +569,6 @@ export default abstract class Server<
+       reactMaxHeadersLength: this.nextConfig.reactMaxHeadersLength,
+     }
+ 
+-    // Initialize next/config with the environment configuration
+-    setConfig({
+-      serverRuntimeConfig,
+-      publicRuntimeConfig,
+-    })
+-
+     this.pagesManifest = this.getPagesManifest()
+     this.appPathsManifest = this.getAppPathsManifest()
+     this.appPathRoutes = this.getAppPathRoutes()
+diff --git a/packages/next/src/server/config-schema.ts b/packages/next/src/server/config-schema.ts
+index 3459d3fcba47..e7769094cd1c 100644
+--- a/packages/next/src/server/config-schema.ts
++++ b/packages/next/src/server/config-schema.ts
+@@ -685,7 +685,6 @@ export const configSchema: zod.ZodType<NextConfig> = z.lazy(() =>
+     pageExtensions: z.array(z.string()).min(1).optional(),
+     poweredByHeader: z.boolean().optional(),
+     productionBrowserSourceMaps: z.boolean().optional(),
+-    publicRuntimeConfig: z.record(z.string(), z.any()).optional(),
+     reactProductionProfiling: z.boolean().optional(),
+     reactStrictMode: z.boolean().nullable().optional(),
+     reactMaxHeadersLength: z.number().nonnegative().int().optional(),
+@@ -718,7 +717,6 @@ export const configSchema: zod.ZodType<NextConfig> = z.lazy(() =>
+       .catchall(z.any())
+       .optional(),
+     serverExternalPackages: z.array(z.string()).optional(),
+-    serverRuntimeConfig: z.record(z.string(), z.any()).optional(),
+     skipMiddlewareUrlNormalize: z.boolean().optional(),
+     skipTrailingSlashRedirect: z.boolean().optional(),
+     staticPageGenerationTimeout: z.number().optional(),
+diff --git a/packages/next/src/server/config-shared.ts b/packages/next/src/server/config-shared.ts
+index 59ccc2249c89..d95a27c8a2ac 100644
+--- a/packages/next/src/server/config-shared.ts
++++ b/packages/next/src/server/config-shared.ts
+@@ -1129,20 +1129,6 @@ export interface NextConfig extends Record<string, any> {
+    */
+   reactMaxHeadersLength?: number
+ 
+-  /**
+-   * Add public (in browser) runtime configuration to your app
+-   *
+-   * @see [Runtime configuration](https://nextjs.org/docs/pages/api-reference/config/next-config-js/runtime-configuration
+-   */
+-  publicRuntimeConfig?: { [key: string]: any }
+-
+-  /**
+-   * Add server runtime configuration to your app
+-   *
+-   * @see [Runtime configuration](https://nextjs.org/docs/pages/api-reference/config/next-config-js/runtime-configuration
+-   */
+-  serverRuntimeConfig?: { [key: string]: any }
+-
+   /**
+    * Next.js enables HTTP Keep-Alive by default.
+    * You may want to disable HTTP Keep-Alive for certain `fetch()` calls or globally.
+@@ -1361,8 +1347,6 @@ export const defaultConfig = Object.freeze({
+   i18n: null,
+   productionBrowserSourceMaps: false,
+   excludeDefaultMomentLocales: true,
+-  serverRuntimeConfig: {},
+-  publicRuntimeConfig: {},
+   reactProductionProfiling: false,
+   reactStrictMode: null,
+   reactMaxHeadersLength: 6000,
+diff --git a/packages/next/src/server/dev/next-dev-server.ts b/packages/next/src/server/dev/next-dev-server.ts
+index df7f323082e5..e3febaca236c 100644
+--- a/packages/next/src/server/dev/next-dev-server.ts
++++ b/packages/next/src/server/dev/next-dev-server.ts
+@@ -804,12 +804,7 @@ export default class DevServer extends Server {
+     // from waiting on them for the page to load in dev mode
+ 
+     const __getStaticPaths = async () => {
+-      const {
+-        configFileName,
+-        publicRuntimeConfig,
+-        serverRuntimeConfig,
+-        httpAgentOptions,
+-      } = this.nextConfig
++      const { configFileName, httpAgentOptions } = this.nextConfig
+       const { locales, defaultLocale } = this.nextConfig.i18n || {}
+       const staticPathsWorker = this.getStaticPathsWorker()
+ 
+@@ -821,8 +816,6 @@ export default class DevServer extends Server {
+           config: {
+             pprConfig: this.nextConfig.experimental.ppr,
+             configFileName,
+-            publicRuntimeConfig,
+-            serverRuntimeConfig,
+             cacheComponents: Boolean(
+               this.nextConfig.experimental.cacheComponents
+             ),
+diff --git a/packages/next/src/server/dev/static-paths-worker.ts b/packages/next/src/server/dev/static-paths-worker.ts
+index 227933c08fe2..72023e2e42a7 100644
+--- a/packages/next/src/server/dev/static-paths-worker.ts
++++ b/packages/next/src/server/dev/static-paths-worker.ts
+@@ -25,8 +25,6 @@ import type { AppRouteRouteModule } from '../route-modules/app-route/module'
+ type RuntimeConfig = {
+   pprConfig: ExperimentalPPRConfig | undefined
+   configFileName: string
+-  publicRuntimeConfig: { [key: string]: any }
+-  serverRuntimeConfig: { [key: string]: any }
+   cacheComponents: boolean
+ }
+ 
+@@ -92,9 +90,6 @@ export async function loadStaticPaths({
+   })
+ 
+   // update work memory runtime-config
+-  ;(
+-    require('../../shared/lib/runtime-config.external') as typeof import('../../shared/lib/runtime-config.external')
+-  ).setConfig(config)
+   setHttpClientAndAgentOptions({
+     httpAgentOptions,
+   })
+diff --git a/packages/next/src/server/lib/router-utils/router-server-context.ts b/packages/next/src/server/lib/router-utils/router-server-context.ts
+index 568be2acae75..eaeafcc6eb56 100644
+--- a/packages/next/src/server/lib/router-utils/router-server-context.ts
++++ b/packages/next/src/server/lib/router-utils/router-server-context.ts
+@@ -28,8 +28,6 @@ export type RouterServerContext = Record<
+       parsedUrl?: UrlWithParsedQuery,
+       setHeaders?: boolean
+     ) => Promise<void>
+-    // current loaded public runtime config
+-    publicRuntimeConfig?: NextConfigComplete['publicRuntimeConfig']
+     // exposing nextConfig for dev mode specifically
+     nextConfig?: NextConfigComplete
+     // whether running in custom server mode
+diff --git a/packages/next/src/server/render.tsx b/packages/next/src/server/render.tsx
+index 6d9df62d3bf9..5a93b9bb0c01 100644
+--- a/packages/next/src/server/render.tsx
++++ b/packages/next/src/server/render.tsx
+@@ -243,7 +243,6 @@ function renderPageTree(
+ 
+ export type RenderOptsPartial = {
+   canonicalBase: string
+-  runtimeConfig?: { [key: string]: any }
+   assetPrefix?: string
+   err?: Error | null
+   nextExport?: boolean
+@@ -1491,7 +1490,6 @@ export async function renderToHTMLImpl(
+     domainLocales,
+     locale,
+     locales,
+-    runtimeConfig,
+   } = renderOpts
+   const htmlProps: HtmlProps = {
+     __NEXT_DATA__: {
+@@ -1500,7 +1498,6 @@ export async function renderToHTMLImpl(
+       query, // querystring parsed / passed by the user
+       buildId: sharedContext.buildId,
+       assetPrefix: assetPrefix === '' ? undefined : assetPrefix, // send assetPrefix to the client side when configured, otherwise don't sent in the resulting HTML
+-      runtimeConfig, // runtimeConfig if provided, otherwise don't sent in the resulting HTML
+       nextExport: nextExport === true ? true : undefined, // If this is a page exported by `next export`
+       autoExport: isAutoExport === true ? true : undefined, // If this is an auto exported page
+       isFallback,
+diff --git a/packages/next/src/server/route-modules/pages/pages-handler.ts b/packages/next/src/server/route-modules/pages/pages-handler.ts
+index 686fcc80b3de..a113676e97c4 100644
+--- a/packages/next/src/server/route-modules/pages/pages-handler.ts
++++ b/packages/next/src/server/route-modules/pages/pages-handler.ts
+@@ -204,10 +204,6 @@ export const getHandler = ({
+         query: hasStaticProps ? {} : originalQuery,
+       })
+ 
+-      const publicRuntimeConfig: Record<string, string> =
+-        routerServerContext?.publicRuntimeConfig ||
+-        nextConfig.publicRuntimeConfig
+-
+       const handleResponse = async (span?: Span) => {
+         const responseGenerator: ResponseGenerator = async ({
+           previousCacheEntry,
+@@ -282,12 +278,6 @@ export const getHandler = ({
+                       nextConfig.experimental.disableOptimizedLoading,
+                     largePageDataBytes:
+                       nextConfig.experimental.largePageDataBytes,
+-                    // Only the `publicRuntimeConfig` key is exposed to the client side
+-                    // It'll be rendered as part of __NEXT_DATA__ on the client side
+-                    runtimeConfig:
+-                      Object.keys(publicRuntimeConfig).length > 0
+-                        ? publicRuntimeConfig
+-                        : undefined,
+ 
+                     isExperimentalCompile,
+ 
+diff --git a/packages/next/src/shared/lib/runtime-config.external.ts b/packages/next/src/shared/lib/runtime-config.external.ts
+deleted file mode 100644
+index b4a48a362d63..000000000000
+--- a/packages/next/src/shared/lib/runtime-config.external.ts
++++ /dev/null
+@@ -1,9 +0,0 @@
+-let runtimeConfig: any
+-
+-export default () => {
+-  return runtimeConfig
+-}
+-
+-export function setConfig(configValue: any): void {
+-  runtimeConfig = configValue
+-}
+diff --git a/packages/next/src/shared/lib/utils.ts b/packages/next/src/shared/lib/utils.ts
+index abc5d6da627f..7a5ff10744ae 100644
+--- a/packages/next/src/shared/lib/utils.ts
++++ b/packages/next/src/shared/lib/utils.ts
+@@ -91,7 +91,6 @@ export type NEXT_DATA = {
+   query: ParsedUrlQuery
+   buildId: string
+   assetPrefix?: string
+-  runtimeConfig?: { [key: string]: any }
+   nextExport?: boolean
+   autoExport?: boolean
+   isFallback?: boolean
+diff --git a/test/integration/config-mjs/next.config.mjs b/test/integration/config-mjs/next.config.mjs
+index 84b5831fc866..a26eb8fbda65 100644
+--- a/test/integration/config-mjs/next.config.mjs
++++ b/test/integration/config-mjs/next.config.mjs
+@@ -4,12 +4,6 @@ export default {
+     maxInactiveAge: 1000 * 60 * 60,
+   },
+   poweredByHeader: false,
+-  serverRuntimeConfig: {
+-    mySecret: 'secret',
+-  },
+-  publicRuntimeConfig: {
+-    staticFolder: '/static',
+-  },
+   env: {
+     customVar: 'hello',
+   },
+diff --git a/test/integration/config-mjs/pages/next-config.js b/test/integration/config-mjs/pages/next-config.js
+index 945aeba52da3..da615fabbe42 100644
+--- a/test/integration/config-mjs/pages/next-config.js
++++ b/test/integration/config-mjs/pages/next-config.js
+@@ -1,10 +1,5 @@
+-import getConfig from 'next/config'
+-const { serverRuntimeConfig, publicRuntimeConfig } = getConfig()
+-
+ export default () => (
+   <div>
+-    <p id="server-only">server-only: {serverRuntimeConfig.mySecret || '***'}</p>
+-    <p id="server-and-client">{publicRuntimeConfig.staticFolder}</p>
+     <p id="env">{process.env.customVar}</p>
+   </div>
+ )
+diff --git a/test/integration/config-mjs/test/index.test.ts b/test/integration/config-mjs/test/index.test.ts
+index 16a13738f99f..5d66d3f2c442 100644
+--- a/test/integration/config-mjs/test/index.test.ts
++++ b/test/integration/config-mjs/test/index.test.ts
+@@ -44,32 +44,16 @@ describe('Configuration', () => {
+     expect(header).not.toBe('Next.js')
+   })
+ 
+-  test('renders server config on the server only', async () => {
+-    const $ = await get$('/next-config')
+-    expect($('#server-only').text()).toBe('server-only: secret')
+-  })
+-
+-  test('renders public config on the server only', async () => {
+-    const $ = await get$('/next-config')
+-    expect($('#server-and-client').text()).toBe('/static')
+-  })
+-
+   test('correctly imports a package that defines `module` but no `main` in package.json', async () => {
+     const $ = await get$('/module-only-content')
+     expect($('#messageInAPackage').text()).toBe('OK')
+   })
+ 
+-  it('should have config available on the client', async () => {
++  it('should have env variables available on the client', async () => {
+     const browser = await webdriver(context.appPort, '/next-config')
+ 
+-    const serverText = await browser.elementByCss('#server-only').text()
+-    const serverClientText = await browser
+-      .elementByCss('#server-and-client')
+-      .text()
+     const envValue = await browser.elementByCss('#env').text()
+ 
+-    expect(serverText).toBe('server-only: ***')
+-    expect(serverClientText).toBe('/static')
+     expect(envValue).toBe('hello')
+     await browser.close()
+   })
+diff --git a/test/integration/config/next.config.js b/test/integration/config/next.config.js
+index e71caf99a7fe..b0e531387538 100644
+--- a/test/integration/config/next.config.js
++++ b/test/integration/config/next.config.js
+@@ -4,12 +4,6 @@ module.exports = {
+     maxInactiveAge: 1000 * 60 * 60,
+   },
+   poweredByHeader: false,
+-  serverRuntimeConfig: {
+-    mySecret: 'secret',
+-  },
+-  publicRuntimeConfig: {
+-    staticFolder: '/static',
+-  },
+   env: {
+     customVar: 'hello',
+   },
+diff --git a/test/integration/config/pages/next-config.js b/test/integration/config/pages/next-config.js
+index 945aeba52da3..da615fabbe42 100644
+--- a/test/integration/config/pages/next-config.js
++++ b/test/integration/config/pages/next-config.js
+@@ -1,10 +1,5 @@
+-import getConfig from 'next/config'
+-const { serverRuntimeConfig, publicRuntimeConfig } = getConfig()
+-
+ export default () => (
+   <div>
+-    <p id="server-only">server-only: {serverRuntimeConfig.mySecret || '***'}</p>
+-    <p id="server-and-client">{publicRuntimeConfig.staticFolder}</p>
+     <p id="env">{process.env.customVar}</p>
+   </div>
+ )
+diff --git a/test/integration/config/test/index.test.js b/test/integration/config/test/index.test.js
+index 2bad399016e6..a178283dc0f9 100644
+--- a/test/integration/config/test/index.test.js
++++ b/test/integration/config/test/index.test.js
+@@ -44,32 +44,16 @@ describe('Configuration', () => {
+     expect(header).not.toBe('Next.js')
+   })
+ 
+-  test('renders server config on the server only', async () => {
+-    const $ = await get$('/next-config')
+-    expect($('#server-only').text()).toBe('server-only: secret')
+-  })
+-
+-  test('renders public config on the server only', async () => {
+-    const $ = await get$('/next-config')
+-    expect($('#server-and-client').text()).toBe('/static')
+-  })
+-
+   test('correctly imports a package that defines `module` but no `main` in package.json', async () => {
+     const $ = await get$('/module-only-content')
+     expect($('#messageInAPackage').text()).toBe('OK')
+   })
+ 
+-  it('should have config available on the client', async () => {
++  it('should have env variables available on the client', async () => {
+     const browser = await webdriver(context.appPort, '/next-config')
+ 
+-    const serverText = await browser.elementByCss('#server-only').text()
+-    const serverClientText = await browser
+-      .elementByCss('#server-and-client')
+-      .text()
+     const envValue = await browser.elementByCss('#env').text()
+ 
+-    expect(serverText).toBe('server-only: ***')
+-    expect(serverClientText).toBe('/static')
+     expect(envValue).toBe('hello')
+     await browser.close()
+   })
+diff --git a/test/integration/development-runtime-config/components/Layout.js b/test/integration/development-runtime-config/components/Layout.js
+deleted file mode 100644
+index 75cc04d8d65d..000000000000
+--- a/test/integration/development-runtime-config/components/Layout.js
++++ /dev/null
+@@ -1,15 +0,0 @@
+-import getConfig from 'next/config'
+-
+-const { serverRuntimeConfig, publicRuntimeConfig } = getConfig()
+-
+-const Layout = ({ children }) => {
+-  return (
+-    <div>
+-      <p id="server-runtime-config">{JSON.stringify(serverRuntimeConfig)}</p>
+-      <p id="public-runtime-config">{JSON.stringify(publicRuntimeConfig)}</p>
+-      <div>{children}</div>
+-    </div>
+-  )
+-}
+-
+-export default Layout
+diff --git a/test/integration/development-runtime-config/pages/_app.js b/test/integration/development-runtime-config/pages/_app.js
+deleted file mode 100644
+index f76402f3025c..000000000000
+--- a/test/integration/development-runtime-config/pages/_app.js
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import Layout from './../components/Layout'
+-
+-const App = ({ Component, pageProps }) => {
+-  return (
+-    <Layout>
+-      <Component {...pageProps} />
+-    </Layout>
+-  )
+-}
+-
+-export default App
+diff --git a/test/integration/development-runtime-config/pages/index.js b/test/integration/development-runtime-config/pages/index.js
+deleted file mode 100644
+index f40492ac06d8..000000000000
+--- a/test/integration/development-runtime-config/pages/index.js
++++ /dev/null
+@@ -1 +0,0 @@
+-export default () => 'test'
+diff --git a/test/integration/development-runtime-config/pages/post/[pid].js b/test/integration/development-runtime-config/pages/post/[pid].js
+deleted file mode 100644
+index d5aa21f76fe9..000000000000
+--- a/test/integration/development-runtime-config/pages/post/[pid].js
++++ /dev/null
+@@ -1,22 +0,0 @@
+-const Post = () => {
+-  return (
+-    <div>
+-      <h2>POST</h2>
+-    </div>
+-  )
+-}
+-
+-export const getStaticProps = async () => {
+-  return {
+-    props: {},
+-  }
+-}
+-
+-export const getStaticPaths = async () => {
+-  return {
+-    paths: ['/post/1', '/post/2'],
+-    fallback: true,
+-  }
+-}
+-
+-export default Post
+diff --git a/test/integration/development-runtime-config/test/index.test.js b/test/integration/development-runtime-config/test/index.test.js
+deleted file mode 100644
+index 12245e02d9d0..000000000000
+--- a/test/integration/development-runtime-config/test/index.test.js
++++ /dev/null
+@@ -1,77 +0,0 @@
+-/* eslint-env jest */
+-
+-import fs from 'fs-extra'
+-import { join } from 'path'
+-import cheerio from 'cheerio'
+-import {
+-  findPort,
+-  renderViaHTTP,
+-  launchApp,
+-  waitFor,
+-  killApp,
+-} from 'next-test-utils'
+-
+-const appDir = join(__dirname, '../')
+-const nextConfig = join(appDir, 'next.config.js')
+-
+-const runApp = async (config) => {
+-  const port = await findPort()
+-
+-  let stderr = ''
+-  const app = await launchApp(appDir, port, {
+-    onStderr(err) {
+-      stderr += err
+-    },
+-  })
+-
+-  const html = await renderViaHTTP(port, '/post/1')
+-  const $ = cheerio.load(html)
+-  await waitFor(1000)
+-
+-  await killApp(app)
+-  await fs.remove(nextConfig)
+-
+-  expect(stderr).not.toMatch(
+-    /Cannot read property 'serverRuntimeConfig' of undefined/i
+-  )
+-  expect(JSON.parse($('#server-runtime-config').text())).toEqual(
+-    config.serverRuntimeConfig || {}
+-  )
+-  expect(JSON.parse($('#public-runtime-config').text())).toEqual(
+-    config.publicRuntimeConfig || {}
+-  )
+-}
+-
+-describe('should work with runtime-config in next.config.js', () => {
+-  test('empty runtime-config', async () => {
+-    await fs.writeFile(
+-      nextConfig,
+-      `
+-      module.exports = {
+-      }
+-    `
+-    )
+-
+-    await runApp({})
+-  })
+-
+-  test('with runtime-config', async () => {
+-    const config = {
+-      serverRuntimeConfig: {
+-        mySecret: '**********',
+-      },
+-      publicRuntimeConfig: {
+-        staticFolder: '/static',
+-      },
+-    }
+-
+-    await fs.writeFile(
+-      nextConfig,
+-      `
+-      module.exports = ${JSON.stringify(config)}
+-    `
+-    )
+-
+-    await runApp(config)
+-  })
+-})
+diff --git a/test/production/export/index.test.ts b/test/production/export/index.test.ts
+index 336de74d7711..7c649137f423 100644
+--- a/test/production/export/index.test.ts
++++ b/test/production/export/index.test.ts
+@@ -185,7 +185,7 @@ describe('static export', () => {
+         .elementByCss('#about-page p')
+         .text()
+ 
+-      expect(text).toBe('This is the About page foo')
++      expect(text).toBe('This is the About page')
+       await browser.close()
+     })
+ 
+@@ -198,7 +198,7 @@ describe('static export', () => {
+         .elementByCss('#about-page p')
+         .text()
+ 
+-      expect(text).toBe('This is the About page foo')
++      expect(text).toBe('This is the About page')
+       await browser.close()
+     })
+ 
+@@ -396,7 +396,7 @@ describe('static export', () => {
+ 
+     it('should render the about page', async () => {
+       const html = await renderViaHTTP(port, '/about')
+-      expect(html).toMatch(/This is the About page foobar/)
++      expect(html).toMatch(/This is the About page/)
+     })
+ 
+     it('should render links correctly', async () => {
+@@ -456,7 +456,7 @@ describe('static export', () => {
+     it('Should serve public files', async () => {
+       const html = await renderViaHTTP(port, '/about')
+       const data = await renderViaHTTP(port, '/about/data.txt')
+-      expect(html).toMatch(/This is the About page foobar/)
++      expect(html).toMatch(/This is the About page/)
+       expect(data).toBe('data')
+     })
+ 
+diff --git a/test/production/export/next.config.js b/test/production/export/next.config.js
+index 65a64af92c9c..ae6fca6d4790 100644
+--- a/test/production/export/next.config.js
++++ b/test/production/export/next.config.js
+@@ -2,12 +2,6 @@ module.exports = (phase) => {
+   return {
+     output: 'export',
+     distDir: 'out',
+-    publicRuntimeConfig: {
+-      foo: 'foo',
+-    },
+-    serverRuntimeConfig: {
+-      bar: 'bar',
+-    },
+     trailingSlash: true,
+     exportPathMap: function () {
+       return {
+diff --git a/test/production/export/pages/about.js b/test/production/export/pages/about.js
+index 409d9407ca92..4db3d07cdaa5 100644
+--- a/test/production/export/pages/about.js
++++ b/test/production/export/pages/about.js
+@@ -1,18 +1,12 @@
+ import Link from 'next/link'
+-import getConfig from 'next/config'
+-const { publicRuntimeConfig, serverRuntimeConfig } = getConfig()
+ 
+-const About = ({ bar }) => (
++const About = () => (
+   <div id="about-page">
+     <div>
+       <Link href="/">Go Back</Link>
+     </div>
+-    <p>{`This is the About page ${publicRuntimeConfig.foo}${bar || ''}`}</p>
++    <p>This is the About page</p>
+   </div>
+ )
+ 
+-About.getInitialProps = async (ctx) => {
+-  return { bar: serverRuntimeConfig.bar }
+-}
+-
+ export default About
+diff --git a/test/production/next-server-nft/next-server-nft.test.ts b/test/production/next-server-nft/next-server-nft.test.ts
+index 14a181d150bc..8650e16a783d 100644
+--- a/test/production/next-server-nft/next-server-nft.test.ts
++++ b/test/production/next-server-nft/next-server-nft.test.ts
+@@ -309,7 +309,6 @@ const isReact18 = parseInt(process.env.NEXT_TEST_REACT_VERSION) === 18
+          "/node_modules/next/dist/shared/lib/is-plain-object.js",
+          "/node_modules/next/dist/shared/lib/is-thenable.js",
+          "/node_modules/next/dist/shared/lib/no-fallback-error.external.js",
+-         "/node_modules/next/dist/shared/lib/runtime-config.external.js",
+          "/node_modules/next/dist/shared/lib/server-reference-info.js",
+          "/node_modules/react/cjs/react.production.js",
+          "/node_modules/react/index.js",
+diff --git a/test/production/pages-dir/production/fixture/pages/runtime-config.js b/test/production/pages-dir/production/fixture/pages/runtime-config.js
+deleted file mode 100644
+index dae6b687bc25..000000000000
+--- a/test/production/pages-dir/production/fixture/pages/runtime-config.js
++++ /dev/null
+@@ -1,16 +0,0 @@
+-import getConfig from 'next/config'
+-
+-const page = () => {
+-  const { publicRuntimeConfig, serverRuntimeConfig } = getConfig()
+-
+-  return (
+-    <>
+-      {publicRuntimeConfig && <p>found public config</p>}
+-      {serverRuntimeConfig && <p>found server config</p>}
+-    </>
+-  )
+-}
+-
+-page.getInitialProps = () => ({})
+-
+-export default page
+diff --git a/test/production/pages-dir/production/test/index.test.ts b/test/production/pages-dir/production/test/index.test.ts
+index 7746950814ca..8e28e31f8cf6 100644
+--- a/test/production/pages-dir/production/test/index.test.ts
++++ b/test/production/pages-dir/production/test/index.test.ts
+@@ -938,19 +938,6 @@ describe('Production Usage', () => {
+       })
+     }
+ 
+-    it('should have default runtime values when not defined', async () => {
+-      const html = await renderViaHTTP(next.appPort, '/runtime-config')
+-      expect(html).toMatch(/found public config/)
+-      expect(html).toMatch(/found server config/)
+-    })
+-
+-    it('should not have runtimeConfig in __NEXT_DATA__', async () => {
+-      const html = await renderViaHTTP(next.appPort, '/runtime-config')
+-      const $ = cheerio.load(html)
+-      const script = $('#__NEXT_DATA__').html()
+-      expect(script).not.toMatch(/runtimeConfig/)
+-    })
+-
+     it('should add autoExport for auto pre-rendered pages', async () => {
+       for (const page of ['/about']) {
+         const html = await renderViaHTTP(next.appPort, page)
+diff --git a/test/production/typescript-basic/typechecking/index.ts b/test/production/typescript-basic/typechecking/index.ts
+index 69404ba3014e..cf488af24c4d 100644
+--- a/test/production/typescript-basic/typechecking/index.ts
++++ b/test/production/typescript-basic/typechecking/index.ts
+@@ -4,7 +4,6 @@ import 'next/app'
+ // import 'next/babel';
+ import 'next/cache'
+ import 'next/client'
+-import 'next/config'
+ import 'next/constants'
+ import 'next/document'
+ import 'next/dynamic'
+diff --git a/test/rspack-build-tests-manifest.json b/test/rspack-build-tests-manifest.json
+index 850a48c2c04c..7afb3fecf423 100644
+--- a/test/rspack-build-tests-manifest.json
++++ b/test/rspack-build-tests-manifest.json
+@@ -12377,16 +12377,6 @@
+     "flakey": [],
+     "runtimeError": false
+   },
+-  "test/integration/development-runtime-config/test/index.test.js": {
+-    "passed": [
+-      "should work with runtime-config in next.config.js empty runtime-config",
+-      "should work with runtime-config in next.config.js with runtime-config"
+-    ],
+-    "failed": [],
+-    "pending": [],
+-    "flakey": [],
+-    "runtimeError": false
+-  },
+   "test/integration/disable-js/test/index.test.js": {
+     "passed": [
+       "disabled runtime JS production mode should not have __NEXT_DATA__ script",
+@@ -20965,7 +20955,6 @@
+       "Production Usage Misc should handle already finished responses",
+       "Production Usage Misc should have default runtime values when not defined",
+       "Production Usage Misc should not add autoExport for non pre-rendered pages",
+-      "Production Usage Misc should not have runtimeConfig in __NEXT_DATA__",
+       "Production Usage Misc should reload the page on page script error",
+       "Production Usage Misc should reload the page on page script error with prefetch",
+       "Production Usage Runtime errors should call getInitialProps on _error page during a client side component error",
+diff --git a/test/rspack-dev-tests-manifest.json b/test/rspack-dev-tests-manifest.json
+index 9e578befbf2f..cafb842835a8 100644
+--- a/test/rspack-dev-tests-manifest.json
++++ b/test/rspack-dev-tests-manifest.json
+@@ -14115,16 +14115,6 @@
+     "flakey": [],
+     "runtimeError": false
+   },
+-  "test/integration/development-runtime-config/test/index.test.js": {
+-    "passed": [
+-      "should work with runtime-config in next.config.js empty runtime-config",
+-      "should work with runtime-config in next.config.js with runtime-config"
+-    ],
+-    "failed": [],
+-    "pending": [],
+-    "flakey": [],
+-    "runtimeError": false
+-  },
+   "test/integration/disable-js/test/index.test.js": {
+     "passed": [
+       "disabled runtime JS development mode should have a script for each preload link",
+diff --git a/test/turbopack-build-tests-manifest.json b/test/turbopack-build-tests-manifest.json
+index 19d1eed4bf81..b1437fd2e5d8 100644
+--- a/test/turbopack-build-tests-manifest.json
++++ b/test/turbopack-build-tests-manifest.json
+@@ -11002,16 +11002,6 @@
+     "flakey": [],
+     "runtimeError": false
+   },
+-  "test/integration/development-runtime-config/test/index.test.js": {
+-    "passed": [
+-      "should work with runtime-config in next.config.js empty runtime-config",
+-      "should work with runtime-config in next.config.js with runtime-config"
+-    ],
+-    "failed": [],
+-    "pending": [],
+-    "flakey": [],
+-    "runtimeError": false
+-  },
+   "test/integration/disable-js/test/index.test.js": {
+     "passed": [
+       "disabled runtime JS production mode should not have __NEXT_DATA__ script",
+@@ -19416,7 +19406,6 @@
+       "Production Usage Misc should handle already finished responses",
+       "Production Usage Misc should have default runtime values when not defined",
+       "Production Usage Misc should not add autoExport for non pre-rendered pages",
+-      "Production Usage Misc should not have runtimeConfig in __NEXT_DATA__",
+       "Production Usage Misc should reload the page on page script error",
+       "Production Usage Misc should reload the page on page script error with prefetch",
+       "Production Usage Runtime errors should call getInitialProps on _error page during a client side component error",
+diff --git a/test/turbopack-dev-tests-manifest.json b/test/turbopack-dev-tests-manifest.json
+index f97e93e183f2..5be96a962eea 100644
+--- a/test/turbopack-dev-tests-manifest.json
++++ b/test/turbopack-dev-tests-manifest.json
+@@ -14549,16 +14549,6 @@
+     "flakey": [],
+     "runtimeError": false
+   },
+-  "test/integration/development-runtime-config/test/index.test.js": {
+-    "passed": [
+-      "should work with runtime-config in next.config.js empty runtime-config",
+-      "should work with runtime-config in next.config.js with runtime-config"
+-    ],
+-    "failed": [],
+-    "pending": [],
+-    "flakey": [],
+-    "runtimeError": false
+-  },
+   "test/integration/disable-js/test/index.test.js": {
+     "passed": [
+       "disabled runtime JS development mode should have a script for each preload link",
+diff --git a/turbopack/crates/turbopack-tracing/tests/node-file-trace/test/unit/webpack-wrapper-strs-namespaces-large/input.js b/turbopack/crates/turbopack-tracing/tests/node-file-trace/test/unit/webpack-wrapper-strs-namespaces-large/input.js
+index b1699cce82ad..770b95f55bcd 100644
+--- a/turbopack/crates/turbopack-tracing/tests/node-file-trace/test/unit/webpack-wrapper-strs-namespaces-large/input.js
++++ b/turbopack/crates/turbopack-tracing/tests/node-file-trace/test/unit/webpack-wrapper-strs-namespaces-large/input.js
+@@ -2735,7 +2735,6 @@ module.exports = /******/ (function (modules) {
+       const { processEnv } = __webpack_require__('4VNc')
+       processEnv([])
+ 
+-      const runtimeConfig = {}
+       const { parse } = __webpack_require__('bzos')
+       const { parse: parseQs } = __webpack_require__('8xkj')
+       const { renderToHTML } = __webpack_require__('KK5V')
+@@ -2822,7 +2821,6 @@ module.exports = /******/ (function (modules) {
+           canonicalBase: '',
+           buildId: 'xXPgpxsbhoEyVP2leRiec',
+           assetPrefix: '',
+-          runtimeConfig: runtimeConfig.publicRuntimeConfig || {},
+           previewProps: {
+             previewModeId: '9e0f19a11fe1be22878bdb16da136d9e',
+             previewModeSigningKey:

@@ -1,0 +1,1755 @@
+diff --git a/.github/workflows/build-engine-branch.yml b/.github/workflows/build-engine-branch.yml
+index 3fa5b0d06a9e..50794b60596c 100644
+--- a/.github/workflows/build-engine-branch.yml
++++ b/.github/workflows/build-engine-branch.yml
+@@ -120,7 +120,7 @@ jobs:
+           fi
+ 
+       - name: Install Binaryen (includes wasm-opt)
+-        uses: jaxxstorm/action-install-gh-release@v2
++        uses: jaxxstorm/action-install-gh-release@v2.1.0
+         with:
+           repo: WebAssembly/binaryen
+           tag: version_122
+diff --git a/README.md b/README.md
+index 9f3d2f431832..ba010b22ca1a 100644
+--- a/README.md
++++ b/README.md
+@@ -252,15 +252,7 @@ Once the Prisma Client is generated, you can import it in your code and send que
+ 
+ ##### Import and instantiate Prisma Client
+ 
+-You can import and instantiate Prisma Client from the output path specified in your generator configuration:
+-
+-```ts
+-import { PrismaClient } from './generated/client'
+-
+-const prisma = new PrismaClient()
+-```
+-
+-**Note**: As of [Prisma 7](https://www.prisma.io/docs/orm/more/upgrade-guides/upgrading-versions/upgrading-to-prisma-7#driver-adapters-and-client-instantiation), you will need to use a [driver adapter](https://www.prisma.io/docs/orm/overview/databases/database-drivers#driver-adapters). For example, when using PostgreSQL with a driver adapter:
++You can import and instantiate Prisma Client from the output path specified in your generator configuration. When instantiating the Client, you need to provide a [driver adapter](https://www.prisma.io/docs/orm/core-concepts/supported-databases/database-drivers#how-to-use-driver-adapters) to its constructor. For example, when using PostgreSQL with a driver adapter:
+ 
+ ```ts
+ import { PrismaClient } from './generated/client'
+diff --git a/packages/adapter-mariadb/src/conversion.ts b/packages/adapter-mariadb/src/conversion.ts
+index 8b7daca414cb..fa133c12da9b 100644
+--- a/packages/adapter-mariadb/src/conversion.ts
++++ b/packages/adapter-mariadb/src/conversion.ts
+@@ -2,7 +2,8 @@ import { ArgType, ColumnType, ColumnTypeEnum, ResultValue } from '@prisma/driver
+ import * as mariadb from 'mariadb'
+ 
+ const UNSIGNED_FLAG = 1 << 5
+-const BINARY_FLAG = 1 << 7
++// https://github.com/mariadb-corporation/mariadb-connector-nodejs/blob/be72ebf9fee6e0bd153b6ff6e0bb252f794dbf0e/lib/const/collations.js#L150
++const BINARY_COLLATION_INDEX = 63
+ 
+ const enum MariaDbColumnType {
+   DECIMAL = 'DECIMAL',
+@@ -83,7 +84,10 @@ export function mapColumnType(field: mariadb.FieldInfo): ColumnType {
+       // https://github.com/mariadb-corporation/mariadb-connector-nodejs/blob/1bbbb41e92d2123948c2322a4dbb5021026f2d05/lib/cmd/column-definition.js#L27
+       if (field['dataTypeFormat'] === 'json') {
+         return ColumnTypeEnum.Json
+-      } else if (field.flags.valueOf() & BINARY_FLAG) {
++      }
++      // The Binary flag of column definition applies to both text and binary data. To distinguish them, check if collation == 'binary' instead of checking the flag.
++      // https://github.com/mariadb-corporation/mariadb-connector-nodejs/blob/be72ebf9fee6e0bd153b6ff6e0bb252f794dbf0e/lib/cmd/decoder/text-decoder.js#L44
++      else if (field.collation.index === BINARY_COLLATION_INDEX) {
+         return ColumnTypeEnum.Bytes
+       } else {
+         return ColumnTypeEnum.Text
+diff --git a/packages/adapter-mariadb/src/mariadb.test.ts b/packages/adapter-mariadb/src/mariadb.test.ts
+index 7c5e8559d022..1503729cc5e4 100644
+--- a/packages/adapter-mariadb/src/mariadb.test.ts
++++ b/packages/adapter-mariadb/src/mariadb.test.ts
+@@ -5,6 +5,9 @@ import { inferCapabilities, PrismaMariaDbAdapterFactory, rewriteConnectionString
+ describe.each([
+   ['8.0.12', { supportsRelationJoins: false }],
+   ['8.0.13', { supportsRelationJoins: true }],
++  ['8.1.0', { supportsRelationJoins: true }],
++  ['8.4.5', { supportsRelationJoins: true }],
++  ['8.4.13', { supportsRelationJoins: true }],
+   ['11.4.7-MariaDB-ubu2404', { supportsRelationJoins: false }],
+ ])('infer capabilities for %s', (version, capabilities) => {
+   test(`inferCapabilities(${version})`, () => {
+diff --git a/packages/adapter-mariadb/src/mariadb.ts b/packages/adapter-mariadb/src/mariadb.ts
+index 5bd797216fa0..67f9b0e0b4b8 100644
+--- a/packages/adapter-mariadb/src/mariadb.ts
++++ b/packages/adapter-mariadb/src/mariadb.ts
+@@ -243,8 +243,8 @@ export function inferCapabilities(version: unknown): Capabilities {
+ 
+   // No relation-joins support for mysql < 8.0.13 or mariadb.
+   const isMariaDB = suffix?.toLowerCase()?.includes('mariadb') ?? false
+-  const supportsRelationJoins = !isMariaDB && (major > 8 || (major === 8 && minor >= 0 && patch >= 13))
+-
++  const supportsRelationJoins =
++    !isMariaDB && (major > 8 || (major === 8 && (minor > 0 || (minor === 0 && patch >= 13))))
+   return { supportsRelationJoins }
+ }
+ 
+diff --git a/packages/adapter-planetscale/src/conversion.ts b/packages/adapter-planetscale/src/conversion.ts
+index b96a89664b6b..bcdd14ac8e55 100644
+--- a/packages/adapter-planetscale/src/conversion.ts
++++ b/packages/adapter-planetscale/src/conversion.ts
+@@ -1,10 +1,13 @@
+-import { cast as defaultCast } from '@planetscale/database'
++import { cast as defaultCast, type Field } from '@planetscale/database'
+ import { ArgType, type ColumnType, ColumnTypeEnum } from '@prisma/driver-adapter-utils'
+ 
+ import { decodeUtf8 } from './text'
+ 
++// https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_character_set.html
++const BINARY_COLLATION_INDEX = 63
++
+ // See: https://github.com/planetscale/vitess-types/blob/06235e372d2050b4c0fff49972df8111e696c564/src/vitess/query/v16/query.proto#L108-L218
+-export type PlanetScaleColumnType =
++type PlanetScaleColumnType =
+   | 'NULL'
+   | 'INT8'
+   | 'UINT8'
+@@ -46,8 +49,9 @@ export type PlanetScaleColumnType =
+  * module to see how other attributes of the field packet such as the field length are used to infer
+  * the correct quaint::Value variant.
+  */
+-export function fieldToColumnType(field: PlanetScaleColumnType): ColumnType {
+-  switch (field) {
++export function fieldToColumnType(field: Field): ColumnType {
++  const type = field.type as PlanetScaleColumnType
++  switch (type) {
+     case 'INT8':
+     case 'UINT8':
+     case 'INT16':
+@@ -85,6 +89,14 @@ export function fieldToColumnType(field: PlanetScaleColumnType): ColumnType {
+     case 'BLOB':
+     case 'BINARY':
+     case 'VARBINARY':
++      // vitess converts CHAR/VARCHAR/TEXT columns with a binary collation to BINARY/VARBINARY/BLOB respectively before returning them to @planetscale/database driver.
++      // https://github.com/vitessio/vitess/blob/a94fa13f2ab53c98aad07a56eb15fe20b5ea7ade/go/sqltypes/type.go#L269
++      // Therefore, we check the collation to distinguish between text and binary data.
++      // https://github.com/planetscale/database-js/blob/de78eebfaec8cd88c670b8c644fc5a3fd69e664c/src/cast.ts#L92
++      if (field.charset && field.charset !== BINARY_COLLATION_INDEX) {
++        return ColumnTypeEnum.Text
++      }
++      return ColumnTypeEnum.Bytes
+     case 'BIT':
+     case 'BITNUM':
+     case 'HEXNUM':
+@@ -95,7 +107,7 @@ export function fieldToColumnType(field: PlanetScaleColumnType): ColumnType {
+       // Fall back to Int32 for consistency with quaint.
+       return ColumnTypeEnum.Int32
+     default:
+-      throw new Error(`Unsupported column type: ${field}`)
++      throw new Error(`Unsupported column type: ${type}`)
+   }
+ }
+ 
+diff --git a/packages/adapter-planetscale/src/planetscale.ts b/packages/adapter-planetscale/src/planetscale.ts
+index fe25dc9cc4f1..0308ec3704b0 100644
+--- a/packages/adapter-planetscale/src/planetscale.ts
++++ b/packages/adapter-planetscale/src/planetscale.ts
+@@ -18,7 +18,7 @@ import { Debug, DriverAdapterError } from '@prisma/driver-adapter-utils'
+ import { Mutex } from 'async-mutex'
+ 
+ import { name as packageName } from '../package.json'
+-import { cast, fieldToColumnType, mapArg, type PlanetScaleColumnType } from './conversion'
++import { cast, fieldToColumnType, mapArg } from './conversion'
+ import { createDeferred, Deferred } from './deferred'
+ import { convertDriverError } from './errors'
+ 
+@@ -54,7 +54,7 @@ class PlanetScaleQueryable<ClientT extends planetScale.Client | planetScale.Tran
+     const columns = fields.map((field) => field.name)
+     return {
+       columnNames: columns,
+-      columnTypes: fields.map((field) => fieldToColumnType(field.type as PlanetScaleColumnType)),
++      columnTypes: fields.map((field) => fieldToColumnType(field)),
+       rows: rows as SqlResultSet['rows'],
+       lastInsertId,
+     }
+diff --git a/packages/client-engine-runtime/bench/sample-query-plans.ts b/packages/client-engine-runtime/bench/sample-query-plans.ts
+index 6098ae1a2a6f..b0a96c7895ed 100644
+--- a/packages/client-engine-runtime/bench/sample-query-plans.ts
++++ b/packages/client-engine-runtime/bench/sample-query-plans.ts
+@@ -111,6 +111,7 @@ export const JOIN_PLAN: QueryPlanNode = {
+             isRelationUnique: false,
+           },
+         ],
++        canAssumeStrictEquality: true,
+       },
+     },
+     structure: {
+@@ -231,6 +232,7 @@ export const DEEP_JOIN_PLAN: QueryPlanNode = {
+                 isRelationUnique: true,
+               },
+             ],
++            canAssumeStrictEquality: true,
+           },
+         },
+         children: [
+@@ -278,6 +280,7 @@ export const DEEP_JOIN_PLAN: QueryPlanNode = {
+                     isRelationUnique: false,
+                   },
+                 ],
++                canAssumeStrictEquality: true,
+               },
+             },
+             on: [['id', 'authorId']],
+@@ -285,6 +288,7 @@ export const DEEP_JOIN_PLAN: QueryPlanNode = {
+             isRelationUnique: false,
+           },
+         ],
++        canAssumeStrictEquality: true,
+       },
+     },
+     structure: {
+diff --git a/packages/client-engine-runtime/src/events.ts b/packages/client-engine-runtime/src/events.ts
+index e87fe630cfc1..b5cae9e8ec6b 100644
+--- a/packages/client-engine-runtime/src/events.ts
++++ b/packages/client-engine-runtime/src/events.ts
+@@ -1,6 +1,6 @@
+ export type QueryEvent = {
+   timestamp: Date
+   query: string
+-  params: unknown[]
++  params: readonly unknown[]
+   duration: number
+ }
+diff --git a/packages/client-engine-runtime/src/interpreter/in-memory-processing.ts b/packages/client-engine-runtime/src/interpreter/in-memory-processing.ts
+index 9da17a174f5c..afd7dc5fb9a5 100644
+--- a/packages/client-engine-runtime/src/interpreter/in-memory-processing.ts
++++ b/packages/client-engine-runtime/src/interpreter/in-memory-processing.ts
+@@ -111,6 +111,9 @@ function paginateSingleList(list: {}[], { cursor, skip, take }: Pagination): {}[
+ /*
+  * Generate a key string for a record based on the values of the specified fields.
+  */
+-export function getRecordKey(record: {}, fields: string[]): string {
+-  return JSON.stringify(fields.map((field) => record[field]))
++export function getRecordKey(record: {}, fields: readonly string[], mappers?: ((value: unknown) => unknown)[]): string {
++  const array = fields.map((field, index) =>
++    mappers?.[index] ? (record[field] !== null ? mappers[index](record[field]) : null) : record[field],
++  )
++  return JSON.stringify(array)
+ }
+diff --git a/packages/client-engine-runtime/src/interpreter/query-interpreter.ts b/packages/client-engine-runtime/src/interpreter/query-interpreter.ts
+index b2c25ac4eda4..f63fd9cb271c 100644
+--- a/packages/client-engine-runtime/src/interpreter/query-interpreter.ts
++++ b/packages/client-engine-runtime/src/interpreter/query-interpreter.ts
+@@ -1,5 +1,6 @@
+ import { ConnectionInfo, SqlQuery, SqlQueryable, SqlResultSet } from '@prisma/driver-adapter-utils'
+ import type { SqlCommenterPlugin, SqlCommenterQueryInfo } from '@prisma/sqlcommenter'
++import { klona } from 'klona'
+ 
+ import { QueryEvent } from '../events'
+ import { FieldInitializer, FieldOperation, InMemoryOps, JoinExpression, QueryPlanNode } from '../query-plan'
+@@ -8,7 +9,7 @@ import { appendSqlComment, buildSqlComment } from '../sql-commenter'
+ import { type TracingHelper, withQuerySpanAndEvent } from '../tracing'
+ import { type TransactionManager } from '../transaction-manager/transaction-manager'
+ import { rethrowAsUserFacing, rethrowAsUserFacingRawError } from '../user-facing-error'
+-import { assertNever } from '../utils'
++import { assertNever, DeepReadonly, DeepUnreadonly } from '../utils'
+ import { applyDataMap } from './data-mapper'
+ import { GeneratorRegistry, GeneratorRegistrySnapshot } from './generators'
+ import { getRecordKey, processRecords } from './in-memory-processing'
+@@ -89,7 +90,7 @@ export class QueryInterpreter {
+     })
+   }
+ 
+-  async run(queryPlan: QueryPlanNode, options: QueryRuntimeOptions): Promise<unknown> {
++  async run(queryPlan: DeepReadonly<QueryPlanNode>, options: QueryRuntimeOptions): Promise<unknown> {
+     const { value } = await this.interpretNode(queryPlan, {
+       ...options,
+       generators: this.#generators.snapshot(),
+@@ -98,7 +99,10 @@ export class QueryInterpreter {
+     return value
+   }
+ 
+-  private async interpretNode(node: QueryPlanNode, context: QueryRuntimeContext): Promise<IntermediateValue> {
++  private async interpretNode(
++    node: DeepReadonly<QueryPlanNode>,
++    context: QueryRuntimeContext,
++  ): Promise<IntermediateValue> {
+     switch (node.type) {
+       case 'value': {
+         return {
+@@ -163,7 +167,7 @@ export class QueryInterpreter {
+           const commentedQuery = applyComments(query, context.sqlCommenter)
+           sum += await this.#withQuerySpanAndEvent(commentedQuery, context.queryable, () =>
+             context.queryable
+-              .executeRaw(commentedQuery)
++              .executeRaw(cloneObject(commentedQuery))
+               .catch((err) =>
+                 node.args.type === 'rawSql' ? rethrowAsUserFacingRawError(err) : rethrowAsUserFacing(err),
+               ),
+@@ -181,7 +185,7 @@ export class QueryInterpreter {
+           const commentedQuery = applyComments(query, context.sqlCommenter)
+           const result = await this.#withQuerySpanAndEvent(commentedQuery, context.queryable, () =>
+             context.queryable
+-              .queryRaw(commentedQuery)
++              .queryRaw(cloneObject(commentedQuery))
+               .catch((err) =>
+                 node.args.type === 'rawSql' ? rethrowAsUserFacingRawError(err) : rethrowAsUserFacing(err),
+               ),
+@@ -236,14 +240,14 @@ export class QueryInterpreter {
+           return { value: null, lastInsertId }
+         }
+ 
+-        const children = (await Promise.all(
++        const children = await Promise.all(
+           node.args.children.map(async (joinExpr) => ({
+             joinExpr,
+             childRecords: (await this.interpretNode(joinExpr.child, context)).value,
+           })),
+-        )) satisfies JoinExpressionWithRecords[]
++        )
+ 
+-        return { value: attachChildrenToParents(parent, children), lastInsertId }
++        return { value: attachChildrenToParents(parent, children, node.args.canAssumeStrictEquality), lastInsertId }
+       }
+ 
+       case 'transaction': {
+@@ -301,8 +305,9 @@ export class QueryInterpreter {
+ 
+       case 'process': {
+         const { value, lastInsertId } = await this.interpretNode(node.args.expr, context)
+-        evaluateProcessingParameters(node.args.operations, context.scope, context.generators)
+-        return { value: processRecords(value, node.args.operations), lastInsertId }
++        const ops = cloneObject(node.args.operations)
++        evaluateProcessingParameters(ops, context.scope, context.generators)
++        return { value: processRecords(value, ops), lastInsertId }
+       }
+ 
+       case 'initializeRecord': {
+@@ -360,7 +365,11 @@ export class QueryInterpreter {
+     }
+   }
+ 
+-  #withQuerySpanAndEvent<T>(query: SqlQuery, queryable: SqlQueryable, execute: () => Promise<T>): Promise<T> {
++  #withQuerySpanAndEvent<T>(
++    query: DeepReadonly<SqlQuery>,
++    queryable: SqlQueryable,
++    execute: () => Promise<T>,
++  ): Promise<T> {
+     return withQuerySpanAndEvent({
+       query,
+       execute,
+@@ -420,13 +429,20 @@ type JoinExpressionWithRecords = {
+   childRecords: Value
+ }
+ 
+-function attachChildrenToParents(parentRecords: unknown, children: JoinExpressionWithRecords[]) {
++type KeyCast = (value: Value) => Value
++
++function attachChildrenToParents(
++  parentRecords: unknown,
++  children: DeepReadonly<JoinExpressionWithRecords[]>,
++  canAssumeStrictEquality: boolean,
++) {
+   for (const { joinExpr, childRecords } of children) {
+     const parentKeys = joinExpr.on.map(([k]) => k)
+     const childKeys = joinExpr.on.map(([, k]) => k)
+     const parentMap = {}
+ 
+-    for (const parent of Array.isArray(parentRecords) ? parentRecords : [parentRecords]) {
++    const parentArray = Array.isArray(parentRecords) ? parentRecords : [parentRecords]
++    for (const parent of parentArray) {
+       const parentRecord = asRecord(parent)
+       const key = getRecordKey(parentRecord, parentKeys)
+       if (!parentMap[key]) {
+@@ -441,12 +457,13 @@ function attachChildrenToParents(parentRecords: unknown, children: JoinExpressio
+       }
+     }
+ 
++    const mappers = canAssumeStrictEquality ? undefined : inferKeyCasts(parentArray, parentKeys)
+     for (const childRecord of Array.isArray(childRecords) ? childRecords : [childRecords]) {
+       if (childRecord === null) {
+         continue
+       }
+ 
+-      const key = getRecordKey(asRecord(childRecord), childKeys)
++      const key = getRecordKey(asRecord(childRecord), childKeys, mappers)
+       for (const parentRecord of parentMap[key] ?? []) {
+         if (joinExpr.isRelationUnique) {
+           parentRecord[joinExpr.parentField] = childRecord
+@@ -460,8 +477,45 @@ function attachChildrenToParents(parentRecords: unknown, children: JoinExpressio
+   return parentRecords
+ }
+ 
++function inferKeyCasts(rows: unknown[], keys: string[]): KeyCast[] {
++  function getKeyCast(type: string): KeyCast | undefined {
++    switch (type) {
++      case 'number':
++        return Number
++      case 'string':
++        return String
++      case 'boolean':
++        return Boolean
++      case 'bigint':
++        return BigInt as KeyCast
++      default:
++        return
++    }
++  }
++
++  const keyCasts: KeyCast[] = Array.from({ length: keys.length })
++  let keysFound = 0
++  for (const parent of rows) {
++    const parentRecord = asRecord(parent)
++    for (const [i, key] of keys.entries()) {
++      if (parentRecord[key] !== null && keyCasts[i] === undefined) {
++        const keyCast = getKeyCast(typeof parentRecord[key])
++        if (keyCast !== undefined) {
++          keyCasts[i] = keyCast
++        }
++        keysFound++
++      }
++    }
++    if (keysFound === keys.length) {
++      break
++    }
++  }
++
++  return keyCasts
++}
++
+ function evalFieldInitializer(
+-  initializer: FieldInitializer,
++  initializer: DeepReadonly<FieldInitializer>,
+   lastInsertId: string | undefined,
+   scope: ScopeBindings,
+   generators: GeneratorRegistrySnapshot,
+@@ -477,7 +531,7 @@ function evalFieldInitializer(
+ }
+ 
+ function evalFieldOperation(
+-  op: FieldOperation,
++  op: DeepReadonly<FieldOperation>,
+   value: Value,
+   scope: ScopeBindings,
+   generators: GeneratorRegistrySnapshot,
+@@ -508,7 +562,10 @@ function evalFieldOperation(
+   }
+ }
+ 
+-function applyComments(query: SqlQuery, sqlCommenter?: QueryInterpreterSqlCommenter): SqlQuery {
++function applyComments(
++  query: DeepReadonly<SqlQuery>,
++  sqlCommenter?: QueryInterpreterSqlCommenter,
++): DeepReadonly<SqlQuery> {
+   if (!sqlCommenter || sqlCommenter.plugins.length === 0) {
+     return query
+   }
+@@ -543,3 +600,7 @@ function evaluateProcessingParameters(
+     evaluateProcessingParameters(nested, scope, generators)
+   }
+ }
++
++function cloneObject<T>(value: T): DeepUnreadonly<T> {
++  return klona(value) as DeepUnreadonly<T>
++}
+diff --git a/packages/client-engine-runtime/src/interpreter/render-query.test.ts b/packages/client-engine-runtime/src/interpreter/render-query.test.ts
+index d72226af45e7..fd2572453f01 100644
+--- a/packages/client-engine-runtime/src/interpreter/render-query.test.ts
++++ b/packages/client-engine-runtime/src/interpreter/render-query.test.ts
+@@ -70,7 +70,7 @@ test('transforms IN template', () => {
+         type: 'templateSql',
+         fragments: [
+           { type: 'stringChunk', chunk: 'SELECT * FROM users WHERE "userId" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' OFFSET ' },
+           { type: 'parameter' },
+         ],
+@@ -104,7 +104,7 @@ test('transforms IN template with empty list', () => {
+         type: 'templateSql',
+         fragments: [
+           { type: 'stringChunk', chunk: 'SELECT * FROM users WHERE "userId" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' OFFSET ' },
+           { type: 'parameter' },
+         ],
+@@ -138,7 +138,7 @@ test('handles singleton list in IN template', () => {
+         type: 'templateSql',
+         fragments: [
+           { type: 'stringChunk', chunk: 'SELECT * FROM users WHERE "userId" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' OFFSET ' },
+           { type: 'parameter' },
+         ],
+@@ -169,7 +169,7 @@ test('treats non-array element as a singleton list in IN template', () => {
+         type: 'templateSql',
+         fragments: [
+           { type: 'stringChunk', chunk: 'SELECT * FROM users WHERE "userId" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' OFFSET ' },
+           { type: 'parameter' },
+         ],
+@@ -200,7 +200,7 @@ test("transforms IN template, doesn't touch scalar list", () => {
+         type: 'templateSql',
+         fragments: [
+           { type: 'stringChunk', chunk: 'SELECT * FROM users WHERE "userId" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' AND numbers = ' },
+           { type: 'parameter' },
+           { type: 'stringChunk', chunk: ' OFFSET ' },
+@@ -404,7 +404,7 @@ test('chunking a SELECT..IN with a large parameterTuple', () => {
+           { type: 'stringChunk', chunk: 'SELECT FROM "public"."User" WHERE "banned" = ' },
+           { type: 'parameter' },
+           { type: 'stringChunk', chunk: ' AND "id" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' AND "name" = ' },
+           { type: 'parameter' },
+         ],
+@@ -457,11 +457,9 @@ test('chunking a SELECT..IN with multiple parameterTuples', () => {
+         type: 'templateSql',
+         fragments: [
+           { type: 'stringChunk', chunk: 'SELECT FROM "public"."User" WHERE "id" IN ' },
+-          {
+-            type: 'parameterTuple',
+-          },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' AND "age" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+         ],
+         placeholderFormat: {
+           prefix: '$',
+@@ -506,7 +504,7 @@ test('a SELECT..IN with a large parameterTuple that is not chunkable', () => {
+           { type: 'stringChunk', chunk: 'SELECT FROM "public"."User" WHERE "banned" = ' },
+           { type: 'parameter' },
+           { type: 'stringChunk', chunk: ' AND "id" IN ' },
+-          { type: 'parameterTuple' },
++          { type: 'parameterTuple', itemPrefix: '', itemSeparator: ',', itemSuffix: '' },
+           { type: 'stringChunk', chunk: ' AND "name" = ' },
+           { type: 'parameter' },
+         ],
+diff --git a/packages/client-engine-runtime/src/interpreter/render-query.ts b/packages/client-engine-runtime/src/interpreter/render-query.ts
+index 4f3f531aa6fb..cbb4441e9ba9 100644
+--- a/packages/client-engine-runtime/src/interpreter/render-query.ts
++++ b/packages/client-engine-runtime/src/interpreter/render-query.ts
+@@ -11,16 +11,16 @@ import {
+   type QueryPlanDbQuery,
+ } from '../query-plan'
+ import { UserFacingError } from '../user-facing-error'
+-import { assertNever } from '../utils'
++import { assertNever, DeepReadonly } from '../utils'
+ import { GeneratorRegistrySnapshot } from './generators'
+ import { ScopeBindings } from './scope'
+ 
+ export function renderQuery(
+-  dbQuery: QueryPlanDbQuery,
++  dbQuery: DeepReadonly<QueryPlanDbQuery>,
+   scope: ScopeBindings,
+   generators: GeneratorRegistrySnapshot,
+   maxChunkSize?: number,
+-): SqlQuery[] {
++): DeepReadonly<SqlQuery>[] {
+   const args = dbQuery.args.map((arg) => evaluateArg(arg, scope, generators))
+ 
+   switch (dbQuery.type) {
+@@ -69,10 +69,10 @@ export function evaluateArg(arg: unknown, scope: ScopeBindings, generators: Gene
+ }
+ 
+ function renderTemplateSql(
+-  fragments: Fragment[],
++  fragments: DeepReadonly<Fragment[]>,
+   placeholderFormat: PlaceholderFormat,
+   params: unknown[],
+-  argTypes: DynamicArgType[],
++  argTypes: DeepReadonly<DynamicArgType[]>,
+ ): SqlQuery {
+   let sql = ''
+   const ctx = { placeholderNumber: 1 }
+@@ -112,7 +112,7 @@ function renderTemplateSql(
+   }
+ }
+ 
+-function renderFragment<Type extends DynamicArgType | undefined>(
++function renderFragment<Type extends DeepReadonly<DynamicArgType> | undefined>(
+   fragment: FragmentWithParams<Type>,
+   placeholderFormat: PlaceholderFormat,
+   ctx: { placeholderNumber: number },
+@@ -129,7 +129,12 @@ function renderFragment<Type extends DynamicArgType | undefined>(
+       const placeholders =
+         fragment.value.length == 0
+           ? 'NULL'
+-          : fragment.value.map(() => formatPlaceholder(placeholderFormat, ctx.placeholderNumber++)).join(',')
++          : fragment.value
++              .map(() => {
++                const item = formatPlaceholder(placeholderFormat, ctx.placeholderNumber++)
++                return `${fragment.itemPrefix}${item}${fragment.itemSuffix}`
++              })
++              .join(fragment.itemSeparator)
+       return `(${placeholders})`
+     }
+ 
+@@ -153,10 +158,14 @@ function formatPlaceholder(placeholderFormat: PlaceholderFormat, placeholderNumb
+   return placeholderFormat.hasNumbering ? `${placeholderFormat.prefix}${placeholderNumber}` : placeholderFormat.prefix
+ }
+ 
+-function renderRawSql(sql: string, args: unknown[], argTypes: ArgType[]): SqlQuery {
++function renderRawSql(
++  sql: string,
++  args: readonly unknown[],
++  argTypes: DeepReadonly<ArgType[]>,
++): DeepReadonly<SqlQuery> {
+   return {
+     sql,
+-    args: args,
++    args,
+     argTypes,
+   }
+ }
+@@ -165,7 +174,7 @@ function doesRequireEvaluation(param: unknown): param is PrismaValuePlaceholder
+   return isPrismaValuePlaceholder(param) || isPrismaValueGenerator(param)
+ }
+ 
+-type FragmentWithParams<Type extends DynamicArgType | undefined = undefined> = Fragment &
++type FragmentWithParams<Type extends DeepReadonly<DynamicArgType> | undefined = undefined> = Fragment &
+   (
+     | { type: 'stringChunk' }
+     | { type: 'parameter'; value: unknown; argType: Type }
+@@ -174,10 +183,12 @@ type FragmentWithParams<Type extends DynamicArgType | undefined = undefined> = F
+   )
+ 
+ function* pairFragmentsWithParams<Types>(
+-  fragments: Fragment[],
++  fragments: DeepReadonly<Fragment[]>,
+   params: unknown[],
+   argTypes: Types,
+-): Generator<FragmentWithParams<Types extends DynamicArgType[] ? DynamicArgType : undefined>> {
++): Generator<
++  FragmentWithParams<Types extends DeepReadonly<DynamicArgType[]> ? DeepReadonly<DynamicArgType> : undefined>
++> {
+   let index = 0
+ 
+   for (const fragment of fragments) {
+@@ -234,7 +245,7 @@ function* pairFragmentsWithParams<Types>(
+   }
+ }
+ 
+-function* flattenedFragmentParams<Type extends DynamicArgType | undefined>(
++function* flattenedFragmentParams<Type extends DeepReadonly<DynamicArgType> | undefined>(
+   fragment: FragmentWithParams<Type>,
+ ): Generator<unknown, undefined, undefined> {
+   switch (fragment.type) {
+@@ -254,7 +265,7 @@ function* flattenedFragmentParams<Type extends DynamicArgType | undefined>(
+   }
+ }
+ 
+-function chunkParams(fragments: Fragment[], params: unknown[], maxChunkSize?: number): unknown[][] {
++function chunkParams(fragments: DeepReadonly<Fragment[]>, params: unknown[], maxChunkSize?: number): unknown[][] {
+   // Find out the total number of parameters once flattened and what the maximum number of
+   // parameters in a single fragment is.
+   let totalParamCount = 0
+diff --git a/packages/client-engine-runtime/src/interpreter/validation.ts b/packages/client-engine-runtime/src/interpreter/validation.ts
+index 0af7d8a16f19..87c47d387d51 100644
+--- a/packages/client-engine-runtime/src/interpreter/validation.ts
++++ b/packages/client-engine-runtime/src/interpreter/validation.ts
+@@ -1,8 +1,8 @@
+ import { DataRule, ValidationError } from '../query-plan'
+ import { UserFacingError } from '../user-facing-error'
+-import { assertNever } from '../utils'
++import { assertNever, DeepReadonly } from '../utils'
+ 
+-export function performValidation(data: unknown, rules: DataRule[], error: ValidationError) {
++export function performValidation(data: unknown, rules: DeepReadonly<DataRule[]>, error: ValidationError) {
+   if (!rules.every((rule) => doesSatisfyRule(data, rule))) {
+     const message = renderMessage(data, error)
+     const code = getErrorCode(error)
+@@ -42,7 +42,7 @@ export function doesSatisfyRule(data: unknown, rule: DataRule): boolean {
+ }
+ 
+ function renderMessage(data: unknown, error: ValidationError): string {
+-  switch (error.error_identifier) {
++  switch (error.errorIdentifier) {
+     case 'RELATION_VIOLATION':
+       return `The change you are trying to make would violate the required relation '${error.context.relation}' between the \`${error.context.modelA}\` and \`${error.context.modelB}\` models.`
+     case 'MISSING_RECORD':
+@@ -70,7 +70,7 @@ function renderMessage(data: unknown, error: ValidationError): string {
+ }
+ 
+ function getErrorCode(error: ValidationError): string {
+-  switch (error.error_identifier) {
++  switch (error.errorIdentifier) {
+     case 'RELATION_VIOLATION':
+       return 'P2014'
+     case 'RECORDS_NOT_CONNECTED':
+diff --git a/packages/client-engine-runtime/src/query-plan.ts b/packages/client-engine-runtime/src/query-plan.ts
+index 93b2829641b3..751a56e3dab3 100644
+--- a/packages/client-engine-runtime/src/query-plan.ts
++++ b/packages/client-engine-runtime/src/query-plan.ts
+@@ -67,7 +67,12 @@ export type DynamicArgType = ArgType | { arity: 'tuple'; elements: ArgType[] }
+ export type Fragment =
+   | { type: 'stringChunk'; chunk: string }
+   | { type: 'parameter' }
+-  | { type: 'parameterTuple' }
++  | {
++      type: 'parameterTuple'
++      itemPrefix: string
++      itemSeparator: string
++      itemSuffix: string
++    }
+   | {
+       type: 'parameterTupleList'
+       itemPrefix: string
+@@ -149,6 +154,7 @@ export type QueryPlanNode =
+       args: {
+         parent: QueryPlanNode
+         children: JoinExpression[]
++        canAssumeStrictEquality: boolean
+       }
+     }
+   | {
+@@ -261,7 +267,7 @@ export type DataRule =
+ 
+ export type ValidationError =
+   | {
+-      error_identifier: 'RELATION_VIOLATION'
++      errorIdentifier: 'RELATION_VIOLATION'
+       context: {
+         relation: string
+         modelA: string
+@@ -269,7 +275,7 @@ export type ValidationError =
+       }
+     }
+   | {
+-      error_identifier: 'MISSING_RELATED_RECORD'
++      errorIdentifier: 'MISSING_RELATED_RECORD'
+       context: {
+         model: string
+         relation: string
+@@ -279,19 +285,19 @@ export type ValidationError =
+       }
+     }
+   | {
+-      error_identifier: 'MISSING_RECORD'
++      errorIdentifier: 'MISSING_RECORD'
+       context: {
+         operation: string
+       }
+     }
+   | {
+-      error_identifier: 'INCOMPLETE_CONNECT_INPUT'
++      errorIdentifier: 'INCOMPLETE_CONNECT_INPUT'
+       context: {
+         expectedRows: number
+       }
+     }
+   | {
+-      error_identifier: 'INCOMPLETE_CONNECT_OUTPUT'
++      errorIdentifier: 'INCOMPLETE_CONNECT_OUTPUT'
+       context: {
+         expectedRows: number
+         relation: string
+@@ -299,7 +305,7 @@ export type ValidationError =
+       }
+     }
+   | {
+-      error_identifier: 'RECORDS_NOT_CONNECTED'
++      errorIdentifier: 'RECORDS_NOT_CONNECTED'
+       context: {
+         relation: string
+         parent: string
+diff --git a/packages/client-engine-runtime/src/tracing.ts b/packages/client-engine-runtime/src/tracing.ts
+index 82234c641572..5be434403c3d 100644
+--- a/packages/client-engine-runtime/src/tracing.ts
++++ b/packages/client-engine-runtime/src/tracing.ts
+@@ -3,7 +3,7 @@ import type { SqlQuery } from '@prisma/driver-adapter-utils'
+ 
+ import { QueryEvent } from './events'
+ import type { SchemaProvider } from './schema'
+-import { assertNever } from './utils'
++import { assertNever, DeepReadonly } from './utils'
+ 
+ export type SpanCallback<R> = (span?: Span, context?: Context) => R
+ 
+@@ -51,7 +51,7 @@ export async function withQuerySpanAndEvent<T>({
+   onQuery,
+   execute,
+ }: {
+-  query: SqlQuery
++  query: DeepReadonly<SqlQuery>
+   tracingHelper: TracingHelper
+   provider: SchemaProvider
+   onQuery?: (event: QueryEvent) => void
+diff --git a/packages/client-engine-runtime/src/utils.ts b/packages/client-engine-runtime/src/utils.ts
+index 744333c245ef..a5948f1d2739 100644
+--- a/packages/client-engine-runtime/src/utils.ts
++++ b/packages/client-engine-runtime/src/utils.ts
+@@ -1,5 +1,21 @@
+ import { Decimal } from '@prisma/client-runtime-utils'
+ 
++export type DeepReadonly<T> = T extends undefined | null | boolean | string | number | symbol | Function | Date
++  ? T
++  : T extends Array<infer U>
++    ? ReadonlyArray<DeepReadonly<U>>
++    : unknown extends T
++      ? unknown
++      : { readonly [K in keyof T]: DeepReadonly<T[K]> }
++
++export type DeepUnreadonly<T> = T extends undefined | null | boolean | string | number | symbol | Function | Date
++  ? T
++  : T extends ReadonlyArray<infer U>
++    ? Array<DeepUnreadonly<U>>
++    : unknown extends T
++      ? unknown
++      : { -readonly [K in keyof T]: DeepUnreadonly<T[K]> }
++
+ // Copied over to avoid the heavy dependency on `@prisma/internals` with its
+ // transitive dependencies that are not needed for other query plan executor
+ // implementations outside of Prisma Client (e.g. test executor for query
+diff --git a/packages/client-generator-js/package.json b/packages/client-generator-js/package.json
+index 611c372f6c10..e90d0be6982d 100644
+--- a/packages/client-generator-js/package.json
++++ b/packages/client-generator-js/package.json
+@@ -28,7 +28,7 @@
+     "@prisma/client-common": "workspace:*",
+     "@prisma/debug": "workspace:*",
+     "@prisma/dmmf": "workspace:*",
+-    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/engines-version": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+diff --git a/packages/client-generator-js/src/TSClient/PrismaClient.ts b/packages/client-generator-js/src/TSClient/PrismaClient.ts
+index f03b904ab10b..d3f130adf45a 100644
+--- a/packages/client-generator-js/src/TSClient/PrismaClient.ts
++++ b/packages/client-generator-js/src/TSClient/PrismaClient.ts
+@@ -401,7 +401,9 @@ export class PrismaClientClass implements Generable {
+  * Type-safe database client for TypeScript & Node.js
+  * @example
+  * \`\`\`
+- * const prisma = new PrismaClient()
++ * const prisma = new PrismaClient({
++ *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
++ * })
+  * // Fetch zero or more ${capitalize(example.plural)}
+  * const ${uncapitalize(example.plural)} = await prisma.${uncapitalize(example.model)}.findMany()
+  * \`\`\`
+diff --git a/packages/client-generator-ts/package.json b/packages/client-generator-ts/package.json
+index d1dba468fadd..b8e7b093397d 100644
+--- a/packages/client-generator-ts/package.json
++++ b/packages/client-generator-ts/package.json
+@@ -28,7 +28,7 @@
+     "@prisma/client-common": "workspace:*",
+     "@prisma/debug": "workspace:*",
+     "@prisma/dmmf": "workspace:*",
+-    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/engines-version": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+diff --git a/packages/client-generator-ts/src/TSClient/PrismaClient.ts b/packages/client-generator-ts/src/TSClient/PrismaClient.ts
+index 06f6723d8198..14f4441d3986 100644
+--- a/packages/client-generator-ts/src/TSClient/PrismaClient.ts
++++ b/packages/client-generator-ts/src/TSClient/PrismaClient.ts
+@@ -231,7 +231,9 @@ export function getPrismaClientClassDocComment({ dmmf }: GenerateContext): ts.Do
+     Type-safe database client for TypeScript
+     @example
+     \`\`\`
+-    const prisma = new PrismaClient()
++    const prisma = new PrismaClient({
++      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
++    })
+     // Fetch zero or more ${capitalize(example.plural)}
+     const ${uncapitalize(example.plural)} = await prisma.${uncapitalize(example.model)}.findMany()
+     \`\`\`
+diff --git a/packages/client/package.json b/packages/client/package.json
+index 5734413a35ca..a86e9cd4fa18 100644
+--- a/packages/client/package.json
++++ b/packages/client/package.json
+@@ -198,7 +198,7 @@
+     "@prisma/dmmf": "workspace:*",
+     "@prisma/driver-adapter-utils": "workspace:*",
+     "@prisma/engines": "workspace:*",
+-    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/engines-version": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/generator-helper": "workspace:*",
+@@ -210,7 +210,7 @@
+     "@prisma/migrate": "workspace:*",
+     "@prisma/param-graph": "workspace:*",
+     "@prisma/param-graph-builder": "workspace:*",
+-    "@prisma/query-compiler-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/query-compiler-wasm": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/query-plan-executor": "workspace:*",
+     "@prisma/sqlcommenter": "workspace:*",
+     "@prisma/sqlcommenter-trace-context": "workspace:*",
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+index 9619b487ce0b..3edb3402b18a 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
++++ b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+@@ -6,7 +6,7 @@
+  * both schema rules and runtime value types agree.
+  */
+ 
+-import { deserializeJsonObject } from '@prisma/client-engine-runtime'
++import { deserializeJsonObject, safeJsonStringify } from '@prisma/client-engine-runtime'
+ import type {
+   JsonArgumentValue,
+   JsonBatchQuery,
+@@ -273,7 +273,7 @@ class Parameterizer {
+    */
+   #handleArray(items: unknown[], originalValue: unknown, edge: InputEdge): unknown {
+     if (hasFlag(edge, EdgeFlag.ParamScalar) && getScalarMask(edge) & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(deserializeJsonObject(items))
++      const jsonValue = safeJsonStringify(deserializeJsonObject(items))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+@@ -324,7 +324,7 @@ class Parameterizer {
+ 
+     const mask = getScalarMask(edge)
+     if (mask & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(deserializeJsonObject(obj))
++      const jsonValue = safeJsonStringify(deserializeJsonObject(obj))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+diff --git a/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/_matrix.ts b/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/_matrix.ts
+new file mode 100644
+index 000000000000..3585f7b579f9
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [[{ provider: Providers.MYSQL }]])
+diff --git a/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/prisma/_schema.ts b/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/prisma/_schema.ts
+new file mode 100644
+index 000000000000..8bbbc863390e
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/prisma/_schema.ts
+@@ -0,0 +1,36 @@
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++      previewFeatures = ["views"]
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model users {
++      id              Int                 @id @default(autoincrement())
++      posts           posts[]
++      userPostSummary user_post_summary[]
++    }
++
++    model posts {
++      id              Int                 @id @default(autoincrement())
++      user_id         Int
++      users           users               @relation(fields: [user_id], references: [id])
++      userPostSummary user_post_summary[]
++
++      @@index([user_id])
++    }
++
++    view user_post_summary {
++      user_id      Int       @unique
++      last_post_id Int?
++      users        users?    @relation(fields: [user_id], references: [id])
++      last_post    posts?    @relation(fields: [last_post_id], references: [id])
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/tests.ts b/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/tests.ts
+new file mode 100644
+index 000000000000..946fbd414347
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29122-mysql-bigint-view-relation/tests.ts
+@@ -0,0 +1,62 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    test('correctly handles an integer key returned from a view relation in MySQL', async () => {
++      await prisma.$executeRawUnsafe(`
++        CREATE OR REPLACE VIEW user_post_summary AS
++        SELECT users.id AS user_id,
++            (
++                SELECT posts.id
++                FROM posts
++                WHERE posts.user_id = users.id
++                ORDER BY posts.id DESC
++                LIMIT 1
++            ) AS last_post_id
++            FROM users
++      `)
++
++      await prisma.users.create({
++        data: {
++          id: 1,
++          posts: {
++            create: [
++              {
++                id: 1,
++              },
++            ],
++          },
++        },
++      })
++
++      const result = await prisma.user_post_summary.findMany({
++        include: {
++          last_post: true,
++        },
++      })
++
++      expect(result).toMatchInlineSnapshot(`
++      [
++        {
++          "last_post": {
++            "id": 1,
++            "user_id": 1,
++          },
++          "last_post_id": 1,
++          "user_id": 1,
++        },
++      ]
++    `)
++    })
++  },
++  {
++    optOut: {
++      from: ['postgresql', 'sqlite', 'cockroachdb', 'sqlserver', 'mongodb'],
++      reason: 'This test is only relevant for MySQL, as it tests a MySQL specific regression.',
++    },
++  },
++)
+diff --git a/packages/client/tests/functional/issues/29212-array-push-regression/_matrix.ts b/packages/client/tests/functional/issues/29212-array-push-regression/_matrix.ts
+new file mode 100644
+index 000000000000..4002505d9f7a
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29212-array-push-regression/_matrix.ts
+@@ -0,0 +1,8 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders, Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [
++  allProviders.filter(
++    ({ provider }) => provider !== Providers.MYSQL && provider !== Providers.SQLITE && provider !== Providers.SQLSERVER,
++  ),
++])
+diff --git a/packages/client/tests/functional/issues/29212-array-push-regression/prisma/_schema.ts b/packages/client/tests/functional/issues/29212-array-push-regression/prisma/_schema.ts
+new file mode 100644
+index 000000000000..ee79bf95663e
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29212-array-push-regression/prisma/_schema.ts
+@@ -0,0 +1,20 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model Item {
++      id ${idForProvider(provider, { includeDefault: true })}
++      name String
++      tags String[]
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29212-array-push-regression/tests.ts b/packages/client/tests/functional/issues/29212-array-push-regression/tests.ts
+new file mode 100644
+index 000000000000..847b7ac2b1ba
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29212-array-push-regression/tests.ts
+@@ -0,0 +1,35 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    test('correctly pushes to array field', async () => {
++      const item = await prisma.item.create({
++        data: {
++          name: 'Test',
++          tags: ['a', 'b', 'c'],
++        },
++      })
++
++      const updated = await prisma.item.update({
++        where: { id: item.id },
++        data: { tags: { push: ['foo', 'bar'] } },
++      })
++
++      expect(updated).toMatchObject({
++        id: item.id,
++        name: 'Test',
++        tags: ['a', 'b', 'c', 'foo', 'bar'],
++      })
++    })
++  },
++  {
++    optOut: {
++      from: ['mysql', 'sqlite', 'sqlserver'],
++      reason: 'Array push is not supported on these providers',
++    },
++  },
++)
+diff --git a/packages/client/tests/functional/issues/29215-case-insensitive-in/_matrix.ts b/packages/client/tests/functional/issues/29215-case-insensitive-in/_matrix.ts
+new file mode 100644
+index 000000000000..4002505d9f7a
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29215-case-insensitive-in/_matrix.ts
+@@ -0,0 +1,8 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders, Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [
++  allProviders.filter(
++    ({ provider }) => provider !== Providers.MYSQL && provider !== Providers.SQLITE && provider !== Providers.SQLSERVER,
++  ),
++])
+diff --git a/packages/client/tests/functional/issues/29215-case-insensitive-in/prisma/_schema.ts b/packages/client/tests/functional/issues/29215-case-insensitive-in/prisma/_schema.ts
+new file mode 100644
+index 000000000000..a347cdd98305
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29215-case-insensitive-in/prisma/_schema.ts
+@@ -0,0 +1,21 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model Attachment {
++      id ${idForProvider(provider, { includeDefault: true })}
++      fileName String
++
++      @@index([fileName])
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29215-case-insensitive-in/tests.ts b/packages/client/tests/functional/issues/29215-case-insensitive-in/tests.ts
+new file mode 100644
+index 000000000000..e459ffb0a95e
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29215-case-insensitive-in/tests.ts
+@@ -0,0 +1,70 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    afterEach(async () => {
++      await prisma.attachment.deleteMany()
++    })
++
++    test('correctly handles a case insensitive IN filter', async () => {
++      await prisma.attachment.createMany({
++        data: [{ fileName: 'abc.jpg' }, { fileName: 'DEF.txt' }, { fileName: 'ghi.png' }],
++      })
++
++      const results = await prisma.attachment.findMany({
++        where: {
++          fileName: {
++            in: ['AbC.jpg', 'DEF.txt'],
++            mode: 'insensitive',
++          },
++        },
++        select: {
++          id: true,
++          fileName: true,
++        },
++      })
++
++      expect(results).toHaveLength(2)
++      expect(results).toEqual(
++        expect.arrayContaining([
++          expect.objectContaining({ fileName: 'abc.jpg' }),
++          expect.objectContaining({ fileName: 'DEF.txt' }),
++        ]),
++      )
++    })
++
++    test('correctly handles a case insensitive NOT IN filter', async () => {
++      await prisma.attachment.createMany({
++        data: [{ fileName: 'bcd.jpg' }, { fileName: 'efg.txt' }, { fileName: 'hij.png' }],
++      })
++      const results = await prisma.attachment.findMany({
++        where: {
++          fileName: {
++            notIn: ['BcD.jpg', 'efg.txt'],
++            mode: 'insensitive',
++          },
++        },
++        select: {
++          id: true,
++          fileName: true,
++        },
++      })
++
++      expect(results).toEqual([
++        expect.objectContaining({
++          fileName: 'hij.png',
++        }),
++      ])
++    })
++  },
++  {
++    optOut: {
++      from: ['mysql', 'sqlite', 'sqlserver'],
++      reason: 'Case-insensitive filters are not supported in MySQL, SQLite, and SQL Server',
++    },
++  },
++)
+diff --git a/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/_matrix.ts b/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/_matrix.ts
+new file mode 100644
+index 000000000000..d56f2f6b7702
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders } from '../../_utils/providers'
++
++export default defineMatrix(() => [allProviders])
+diff --git a/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/prisma/_schema.ts b/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/prisma/_schema.ts
+new file mode 100644
+index 000000000000..624eedad7a1a
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/prisma/_schema.ts
+@@ -0,0 +1,19 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model Item {
++      id ${idForProvider(provider, { includeDefault: true })}
++      price Float?
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/tests.ts b/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/tests.ts
+new file mode 100644
+index 000000000000..35f536a00e87
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29254-query-plan-cache-mutation/tests.ts
+@@ -0,0 +1,47 @@
++import { faker } from '@snaplet/copycat'
++
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(() => {
++  const id1 = faker.database.mongodbObjectId()
++  const id2 = faker.database.mongodbObjectId()
++  const id3 = faker.database.mongodbObjectId()
++
++  afterEach(async () => {
++    await prisma.item.deleteMany()
++  })
++
++  beforeEach(async () => {
++    await prisma.item.createMany({
++      data: [
++        { id: id1, price: 10 },
++        { id: id2, price: 20 },
++        { id: id3, price: 30 },
++      ],
++    })
++  })
++
++  test('correctly handles two subsequent queries with a different cursor', async () => {
++    const ORDER_BY_NULLABLE = [{ price: 'asc' as const }, { id: 'asc' as const }]
++
++    const result1 = await prisma.item.findMany({
++      orderBy: ORDER_BY_NULLABLE,
++      cursor: { id: id1 },
++      skip: 1,
++      take: 1,
++    })
++    expect(result1).toEqual([{ id: id2, price: 20 }])
++
++    const result2 = await prisma.item.findMany({
++      orderBy: ORDER_BY_NULLABLE,
++      cursor: { id: id2 },
++      skip: 1,
++      take: 1,
++    })
++    expect(result2).toEqual([{ id: id3, price: 30 }])
++  })
++})
+diff --git a/packages/client/tests/functional/issues/29267-uint8array-in-json/_matrix.ts b/packages/client/tests/functional/issues/29267-uint8array-in-json/_matrix.ts
+new file mode 100644
+index 000000000000..169663a76317
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29267-uint8array-in-json/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders, Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [allProviders.filter(({ provider }) => provider !== Providers.SQLSERVER)])
+diff --git a/packages/client/tests/functional/issues/29267-uint8array-in-json/prisma/_schema.ts b/packages/client/tests/functional/issues/29267-uint8array-in-json/prisma/_schema.ts
+new file mode 100644
+index 000000000000..04ec2a7bf437
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29267-uint8array-in-json/prisma/_schema.ts
+@@ -0,0 +1,19 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model TestRecord {
++      id ${idForProvider(provider)}
++      data Json
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29267-uint8array-in-json/tests.ts b/packages/client/tests/functional/issues/29267-uint8array-in-json/tests.ts
+new file mode 100644
+index 000000000000..d4665451d2fb
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29267-uint8array-in-json/tests.ts
+@@ -0,0 +1,68 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    test('serializes Uint8Array nested in object as base64', async () => {
++      const uint8 = new Uint8Array([72, 101, 108, 108, 111])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: { payload: uint8, label: 'test' } as any,
++        },
++      })
++
++      expect(record.data).toEqual({
++        payload: 'SGVsbG8=',
++        label: 'test',
++      })
++    })
++
++    test('serializes Uint8Array nested in array as base64', async () => {
++      const uint8 = new Uint8Array([72, 101, 108, 108, 111])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: [uint8, 'hello'] as any,
++        },
++      })
++
++      expect(record.data).toEqual(['SGVsbG8=', 'hello'])
++    })
++
++    test('serializes Uint8Array directly as base64', async () => {
++      const uint8 = new Uint8Array([72, 101, 108, 108, 111])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: uint8 as any,
++        },
++      })
++
++      expect(record.data).toBe('SGVsbG8=')
++    })
++
++    test('serializes deeply nested Uint8Array as base64', async () => {
++      const uint8 = new Uint8Array([1, 2, 3])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: { outer: { inner: uint8 } } as any,
++        },
++      })
++
++      expect(record.data).toEqual({
++        outer: { inner: 'AQID' },
++      })
++    })
++  },
++  {
++    optOut: {
++      from: ['sqlserver'],
++      reason: 'SQL Server does not support JSON fields',
++    },
++  },
++)
+diff --git a/packages/client/tests/functional/raw-queries/mysql-column-type/_matrix.ts b/packages/client/tests/functional/raw-queries/mysql-column-type/_matrix.ts
+new file mode 100644
+index 000000000000..3585f7b579f9
+--- /dev/null
++++ b/packages/client/tests/functional/raw-queries/mysql-column-type/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [[{ provider: Providers.MYSQL }]])
+diff --git a/packages/client/tests/functional/raw-queries/mysql-column-type/prisma/_schema.ts b/packages/client/tests/functional/raw-queries/mysql-column-type/prisma/_schema.ts
+new file mode 100644
+index 000000000000..f65abf2a17a9
+--- /dev/null
++++ b/packages/client/tests/functional/raw-queries/mysql-column-type/prisma/_schema.ts
+@@ -0,0 +1,22 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++      generator client {
++        provider = "prisma-client-js"
++        output   = "../generated/prisma/client"
++      }
++      
++      datasource db {
++        provider = "${provider}"
++      }
++      
++      model User {
++        id ${idForProvider(provider)}
++        char_bin_collation String @db.Char(191)
++        varchar_bin_collation String @db.VarChar(191)
++        text_bin_collation String @db.Text
++      }
++      `
++})
+diff --git a/packages/client/tests/functional/raw-queries/mysql-column-type/test.ts b/packages/client/tests/functional/raw-queries/mysql-column-type/test.ts
+new file mode 100644
+index 000000000000..e3933b09476f
+--- /dev/null
++++ b/packages/client/tests/functional/raw-queries/mysql-column-type/test.ts
+@@ -0,0 +1,47 @@
++import { Providers } from '../../_utils/providers'
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    beforeAll(async () => {
++      // Prisma Schema does not support specifying column collation
++      await prisma.$executeRaw`ALTER TABLE \`User\` MODIFY \`char_bin_collation\` CHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL`
++      await prisma.$executeRaw`ALTER TABLE \`User\` MODIFY \`varchar_bin_collation\` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL`
++      await prisma.$executeRaw`ALTER TABLE \`User\` MODIFY \`text_bin_collation\` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL`
++    })
++
++    beforeEach(async () => {
++      await prisma.user.deleteMany()
++    })
++
++    test('columns with _bin collation return strings, not Uint8Array', async () => {
++      await prisma.user.create({
++        data: {
++          char_bin_collation: 'hello',
++          varchar_bin_collation: 'hello',
++          text_bin_collation: 'hello',
++        },
++      })
++
++      const result =
++        (await prisma.$queryRaw`SELECT \`char_bin_collation\`, \`varchar_bin_collation\`, \`text_bin_collation\` FROM \`User\``) as Array<
++          Record<string, unknown>
++        >
++
++      expect(result).toHaveLength(1)
++      expect(result[0].char_bin_collation).toBe('hello')
++      expect(result[0].varchar_bin_collation).toBe('hello')
++      expect(result[0].text_bin_collation).toBe('hello')
++    })
++  },
++  {
++    optOut: {
++      from: [Providers.POSTGRESQL, Providers.SQLITE, Providers.MONGODB, Providers.COCKROACHDB, Providers.SQLSERVER],
++      reason: 'This test is for MySQL-specific column type detection',
++    },
++  },
++)
+diff --git a/packages/engines/package.json b/packages/engines/package.json
+index b122913de485..14788f3c30ab 100644
+--- a/packages/engines/package.json
++++ b/packages/engines/package.json
+@@ -22,7 +22,7 @@
+   },
+   "dependencies": {
+     "@prisma/debug": "workspace:*",
+-    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/engines-version": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/get-platform": "workspace:*"
+   },
+diff --git a/packages/fetch-engine/package.json b/packages/fetch-engine/package.json
+index 838f1d1a7a1a..3d85667e9756 100644
+--- a/packages/fetch-engine/package.json
++++ b/packages/fetch-engine/package.json
+@@ -37,7 +37,7 @@
+   },
+   "dependencies": {
+     "@prisma/debug": "workspace:*",
+-    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/engines-version": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/get-platform": "workspace:*"
+   },
+   "scripts": {
+diff --git a/packages/internals/package.json b/packages/internals/package.json
+index 64e26fd97171..249d62913c57 100644
+--- a/packages/internals/package.json
++++ b/packages/internals/package.json
+@@ -81,8 +81,8 @@
+     "@prisma/generator": "workspace:*",
+     "@prisma/generator-helper": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+-    "@prisma/prisma-schema-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+-    "@prisma/schema-engine-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/prisma-schema-wasm": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
++    "@prisma/schema-engine-wasm": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/schema-files-loader": "workspace:*",
+     "arg": "5.0.2",
+     "prompts": "2.4.2"
+diff --git a/packages/migrate/package.json b/packages/migrate/package.json
+index 409d696c3c91..6bb1d153752e 100644
+--- a/packages/migrate/package.json
++++ b/packages/migrate/package.json
+@@ -54,7 +54,7 @@
+     "@prisma/config": "workspace:*",
+     "@prisma/debug": "workspace:*",
+     "@prisma/driver-adapter-utils": "workspace:*",
+-    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/engines-version": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "@prisma/generator": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+     "@prisma/internals": "workspace:*",
+diff --git a/packages/schema-files-loader/package.json b/packages/schema-files-loader/package.json
+index 293cb80afa14..3ab27ce258a2 100644
+--- a/packages/schema-files-loader/package.json
++++ b/packages/schema-files-loader/package.json
+@@ -22,7 +22,7 @@
+   ],
+   "sideEffects": false,
+   "dependencies": {
+-    "@prisma/prisma-schema-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/prisma-schema-wasm": "7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919",
+     "fs-extra": "11.3.0"
+   }
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 638a6eb5e6ab..29320e076e75 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -730,8 +730,8 @@ importers:
+         specifier: workspace:*
+         version: link:../engines
+       '@prisma/engines-version':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -766,8 +766,8 @@ importers:
+         specifier: workspace:*
+         version: link:../param-graph-builder
+       '@prisma/query-compiler-wasm':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/query-plan-executor':
+         specifier: workspace:*
+         version: link:../query-plan-executor
+@@ -1019,8 +1019,8 @@ importers:
+         specifier: workspace:*
+         version: link:../dmmf
+       '@prisma/engines-version':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -1099,8 +1099,8 @@ importers:
+         specifier: workspace:*
+         version: link:../dmmf
+       '@prisma/engines-version':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -1237,8 +1237,8 @@ importers:
+         specifier: workspace:*
+         version: link:../debug
+       '@prisma/engines-version':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -1274,8 +1274,8 @@ importers:
+         specifier: workspace:*
+         version: link:../debug
+       '@prisma/engines-version':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/get-platform':
+         specifier: workspace:*
+         version: link:../get-platform
+@@ -1563,11 +1563,11 @@ importers:
+         specifier: workspace:*
+         version: link:../get-platform
+       '@prisma/prisma-schema-wasm':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/schema-engine-wasm':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/schema-files-loader':
+         specifier: workspace:*
+         version: link:../schema-files-loader
+@@ -1728,8 +1728,8 @@ importers:
+         specifier: workspace:*
+         version: link:../driver-adapter-utils
+       '@prisma/engines-version':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       '@prisma/generator':
+         specifier: workspace:*
+         version: link:../generator
+@@ -1893,8 +1893,8 @@ importers:
+   packages/schema-files-loader:
+     dependencies:
+       '@prisma/prisma-schema-wasm':
+-        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+-        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        specifier: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
++        version: 7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919
+       fs-extra:
+         specifier: 11.3.0
+         version: 11.3.0
+@@ -3667,8 +3667,8 @@ packages:
+   '@prisma/dev@0.20.0':
+     resolution: {integrity: sha512-ovlBYwWor0OzG+yH4J3Ot+AneD818BttLA+Ii7wjbcLHUrnC4tbUPVGyNd3c/+71KETPKZfjhkTSpdS15dmXNQ==}
+ 
+-  '@prisma/engines-version@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
+-    resolution: {integrity: sha512-fUxVd1TjOW8K4XsZ8dAm88sDW5Ry7AxWDfsYEWwScS6Fjo3caKC6hgNumUfsmsy0Il9LjDn5X0PpVXNt3iwayw==}
++  '@prisma/engines-version@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919':
++    resolution: {integrity: sha512-5FIKY3KoYQlBuZC2yc16EXfVRQ8HY+fLqgxkYfWCtKhRb3ajCRzP/rPeoSx11+NueJDANdh4hjY36mdmrTcGSg==}
+ 
+   '@prisma/get-platform@7.2.0':
+     resolution: {integrity: sha512-k1V0l0Td1732EHpAfi2eySTezyllok9dXb6UQanajkJQzPUGi3vO2z7jdkz67SypFTdmbnyGYxvEvYZdZsMAVA==}
+@@ -3679,17 +3679,17 @@ packages:
+   '@prisma/ppg@1.0.1':
+     resolution: {integrity: sha512-rRRXuPPerXwNWjSA3OE0e/bqXSTfsE82EsMvoiluc0fN0DizQSe3937/Tnl5+DPbxY5rdAOlYjWXG0A2wwTbKA==}
+ 
+-  '@prisma/prisma-schema-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
+-    resolution: {integrity: sha512-7J7kF0YCsY4blgM+VFq3rG1+mgFS8drZiKRKah1wsLN77t4ZS+6VwI89qTN6SlMakzlkd3giwQqDxr/utPgFXw==}
++  '@prisma/prisma-schema-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919':
++    resolution: {integrity: sha512-DV5lGaN01UD4t9kilHXekw7oruBvigjkvYspaCq+D961zAYJrXuSDVXe4wM0EDVml0ujoa3apNf/QRxv0ecVuA==}
+ 
+-  '@prisma/query-compiler-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
+-    resolution: {integrity: sha512-U+H1YH6kMotxdz1QaQjTlcN0nfcpOzbzRryQBHb01gexGua4MScvEhcKAZHKD7OORXvnbmQJKxOzY6uGfWHYvA==}
++  '@prisma/query-compiler-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919':
++    resolution: {integrity: sha512-kjrNCKHwoEWp+5TNDPJPYtkjnA23QQaqiOnxb04Tq31fDd1d17ilMnq9nDjxzx7//WgGXONbXQBHvnLG5+GZSw==}
+ 
+   '@prisma/query-plan-executor@7.2.0':
+     resolution: {integrity: sha512-EOZmNzcV8uJ0mae3DhTsiHgoNCuu1J9mULQpGCh62zN3PxPTd+qI9tJvk5jOst8WHKQNwJWR3b39t0XvfBB0WQ==}
+ 
+-  '@prisma/schema-engine-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
+-    resolution: {integrity: sha512-R95Js2Kk+iPVEAan8D+aBQgSSJJIrvsDzNVwBNjsYuTd42YRoZJnJP6YJ/YNBMfNyWnjx7ulQ20Ol1ubA72xGg==}
++  '@prisma/schema-engine-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919':
++    resolution: {integrity: sha512-v7E/pxOvzJyILTK5ZvBs7fLjcoFPG2t6BdnAsfKIZtQZlQz7TyTC3kkZvcigtnV/6/ktVOsd0RQFIk0rD4e5lg==}
+ 
+   '@prisma/studio-core@0.13.1':
+     resolution: {integrity: sha512-agdqaPEePRHcQ7CexEfkX1RvSH9uWDb6pXrZnhCRykhDFAV0/0P3d07WtfiY8hZWb7oRU4v+NkT4cGFHkQJIPg==}
+@@ -10338,7 +10338,7 @@ snapshots:
+     transitivePeerDependencies:
+       - typescript
+ 
+-  '@prisma/engines-version@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
++  '@prisma/engines-version@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919': {}
+ 
+   '@prisma/get-platform@7.2.0':
+     dependencies:
+@@ -10355,13 +10355,13 @@ snapshots:
+       - bufferutil
+       - utf-8-validate
+ 
+-  '@prisma/prisma-schema-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
++  '@prisma/prisma-schema-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919': {}
+ 
+-  '@prisma/query-compiler-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
++  '@prisma/query-compiler-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919': {}
+ 
+   '@prisma/query-plan-executor@7.2.0': {}
+ 
+-  '@prisma/schema-engine-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
++  '@prisma/schema-engine-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919': {}
+ 
+   '@prisma/studio-core@0.13.1': {}
+ 

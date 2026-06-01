@@ -1,0 +1,368 @@
+diff --git a/packages/bun/src/integrations/bunserver.ts b/packages/bun/src/integrations/bunserver.ts
+index 11c12da37218..6e383465f9e4 100644
+--- a/packages/bun/src/integrations/bunserver.ts
++++ b/packages/bun/src/integrations/bunserver.ts
+@@ -207,9 +207,10 @@ function wrapRequestHandler<T extends RouteHandler = RouteHandler>(
+       routeName = route;
+     }
+ 
+-    const sendDefaultPii = getClient()?.getOptions().sendDefaultPii ?? false;
++    const client = getClient();
++    const dataCollection = client?.getDataCollectionOptions();
+ 
+-    Object.assign(attributes, httpHeadersToSpanAttributes(request.headers.toJSON(), sendDefaultPii));
++    Object.assign(attributes, httpHeadersToSpanAttributes(request.headers.toJSON(), dataCollection));
+ 
+     isolationScope.setSDKProcessingMetadata({
+       normalizedRequest: {
+@@ -242,7 +243,7 @@ function wrapRequestHandler<T extends RouteHandler = RouteHandler>(
+                   status_code: response.status,
+                 });
+ 
+-                span.setAttributes(httpHeadersToSpanAttributes(response.headers.toJSON(), sendDefaultPii, 'response'));
++                span.setAttributes(httpHeadersToSpanAttributes(response.headers.toJSON(), dataCollection, 'response'));
+               }
+               return response;
+             } catch (e) {
+diff --git a/packages/bun/test/integrations/bunserver.test.ts b/packages/bun/test/integrations/bunserver.test.ts
+index 1605d7c0be90..a4774ada9ed7 100644
+--- a/packages/bun/test/integrations/bunserver.test.ts
++++ b/packages/bun/test/integrations/bunserver.test.ts
+@@ -1,7 +1,8 @@
+ import * as SentryCore from '@sentry/core';
+ import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
++import { init } from '../../src';
+ import { instrumentBunServe } from '../../src/integrations/bunserver';
+-import type { Span } from '@sentry/core';
++import type { DataCollection, Span } from '@sentry/core';
+ 
+ describe('Bun Serve Integration', () => {
+   const mockSpan = SentryCore.startInactiveSpan({ name: 'test span' });
+@@ -471,4 +472,108 @@ describe('Bun Serve Integration', () => {
+       await server.stop();
+     });
+   });
++
++  describe('data collection', () => {
++    const setupClient = (dataCollection: DataCollection): void => {
++      init({
++        dsn: 'https://username@domain/123',
++        defaultIntegrations: false,
++        transport: () =>
++          SentryCore.createTransport({ recordDroppedEvent: () => undefined }, () => SentryCore.resolvedSyncPromise({})),
++        dataCollection,
++      });
++    };
++
++    afterEach(() => {
++      SentryCore.getCurrentScope().setClient(undefined);
++    });
++
++    test('keeps PII request headers when dataCollection enables full header collection', async () => {
++      setupClient({ httpHeaders: { request: true, response: true } });
++
++      const server = Bun.serve({
++        async fetch(_req) {
++          return new Response('Bun!');
++        },
++        port,
++      });
++
++      await fetch(`http://localhost:${port}/`, {
++        headers: { 'X-Forwarded-For': '203.0.113.7' },
++      });
++
++      await server.stop();
++
++      expect(startSpanSpy).toHaveBeenCalledTimes(1);
++      const attributes = startSpanSpy.mock.calls[0]?.[0]?.attributes;
++      expect(attributes?.['http.request.header.x_forwarded_for']).toBe('203.0.113.7');
++    });
++
++    test('filters request headers according to the dataCollection deny list', async () => {
++      // Deny a header that is not part of the built-in sensitive snippets, so the assertion proves
++      // the deny list is applied (the header would otherwise be collected by default).
++      setupClient({ httpHeaders: { request: { deny: ['x-internal'] } } });
++
++      const server = Bun.serve({
++        async fetch(_req) {
++          return new Response('Bun!');
++        },
++        port,
++      });
++
++      await fetch(`http://localhost:${port}/`, {
++        headers: { 'X-Internal': 'internal-value', 'X-Public': 'public-value' },
++      });
++
++      await server.stop();
++
++      expect(startSpanSpy).toHaveBeenCalledTimes(1);
++      const attributes = startSpanSpy.mock.calls[0]?.[0]?.attributes;
++      expect(attributes?.['http.request.header.x_internal']).toBe('[Filtered]');
++      expect(attributes?.['http.request.header.x_public']).toBe('public-value');
++    });
++
++    test('filters always-sensitive request headers even when collection is permissive', async () => {
++      setupClient({ httpHeaders: { request: true } });
++
++      const server = Bun.serve({
++        async fetch(_req) {
++          return new Response('Bun!');
++        },
++        port,
++      });
++
++      await fetch(`http://localhost:${port}/`, {
++        headers: { Authorization: 'Bearer supersecret-token' },
++      });
++
++      await server.stop();
++
++      expect(startSpanSpy).toHaveBeenCalledTimes(1);
++      const attributes = startSpanSpy.mock.calls[0]?.[0]?.attributes;
++      expect(attributes?.['http.request.header.authorization']).toBe('[Filtered]');
++    });
++
++    test('applies the dataCollection response header collection behavior', async () => {
++      setupClient({ httpHeaders: { response: { deny: ['x-internal'] } } });
++
++      const server = Bun.serve({
++        async fetch(_req) {
++          return new Response('Bun!', {
++            headers: new Headers({ 'x-internal': 'internal-value', 'x-public': 'public-value' }),
++          });
++        },
++        port,
++      });
++
++      await fetch(`http://localhost:${port}/`);
++
++      await server.stop();
++
++      expect(setAttributesSpy).toHaveBeenCalledTimes(1);
++      const responseAttributes = setAttributesSpy.mock.calls[0]?.[0];
++      expect(responseAttributes?.['http.response.header.x_internal']).toBe('[Filtered]');
++      expect(responseAttributes?.['http.response.header.x_public']).toBe('public-value');
++    });
++  });
+ });
+diff --git a/packages/deno/src/wrap-deno-request-handler.ts b/packages/deno/src/wrap-deno-request-handler.ts
+index 510b903dc722..f6b9ccb7de78 100644
+--- a/packages/deno/src/wrap-deno-request-handler.ts
++++ b/packages/deno/src/wrap-deno-request-handler.ts
+@@ -63,8 +63,8 @@ export const wrapDenoRequestHandler = <Addr extends Deno.Addr = Deno.Addr>(
+     assignIfSet(attributes, 'http.request.body.size', contentLength && parseInt(contentLength, 10));
+     assignIfSet(attributes, 'user_agent.original', request.headers.get('user-agent'));
+ 
+-    const sendDefaultPii = client.getOptions().sendDefaultPii ?? false;
+-    if (sendDefaultPii) {
++    const dataCollection = client.getDataCollectionOptions();
++    if (dataCollection.userInfo) {
+       assignIfSet(
+         attributes,
+         'client.address',
+@@ -73,7 +73,7 @@ export const wrapDenoRequestHandler = <Addr extends Deno.Addr = Deno.Addr>(
+       assignIfSet(attributes, 'client.port', (info?.remoteAddr as Deno.NetAddr)?.port);
+     }
+ 
+-    Object.assign(attributes, httpHeadersToSpanAttributes(winterCGHeadersToDict(request.headers), sendDefaultPii));
++    Object.assign(attributes, httpHeadersToSpanAttributes(winterCGHeadersToDict(request.headers), dataCollection));
+     attributes[SEMANTIC_ATTRIBUTE_SENTRY_OP] = 'http.server';
+     isolationScope.setSDKProcessingMetadata({
+       normalizedRequest: winterCGRequestToRequestData(request),
+@@ -95,7 +95,7 @@ export const wrapDenoRequestHandler = <Addr extends Deno.Addr = Deno.Addr>(
+               status_code: res.status,
+             });
+             span.setAttributes(
+-              httpHeadersToSpanAttributes(Object.fromEntries(res.headers), sendDefaultPii, 'response'),
++              httpHeadersToSpanAttributes(Object.fromEntries(res.headers), dataCollection, 'response'),
+             );
+           } catch (e) {
+             span.end();
+diff --git a/packages/deno/test/deno-serve.test.ts b/packages/deno/test/deno-serve.test.ts
+index 6f76ce2781ab..840321e4088e 100644
+--- a/packages/deno/test/deno-serve.test.ts
++++ b/packages/deno/test/deno-serve.test.ts
+@@ -321,6 +321,181 @@ Deno.test('Deno.serve should capture request headers and set response context',
+   assertEquals(transaction?.contexts?.trace?.data?.['http.response.header.x_custom_header'], 'test');
+ });
+ 
++Deno.test('Deno.serve should capture client address and port when userInfo data collection is enabled', async () => {
++  resetGlobals();
++  const transactionEvents: TransactionEvent[] = [];
++
++  init({
++    dsn: 'https://username@domain/123',
++    tracesSampleRate: 1,
++    dataCollection: { userInfo: true },
++    beforeSendTransaction: (event: TransactionEvent) => {
++      transactionEvents.push(event);
++      return null;
++    },
++  }) as DenoClient;
++
++  const abortController = new AbortController();
++  let onListen: ((_: unknown) => void) | undefined = undefined;
++  const p = new Promise(resolve => (onListen = resolve));
++  const server = Deno.serve({ port: 0, signal: abortController.signal, onListen }, () => {
++    return new Response('OK');
++  });
++  await p;
++
++  const res = await fetch(`http://localhost:${server.addr.port}/test`);
++  assertEquals(await res.text(), 'OK');
++
++  abortController.abort();
++  await server.finished;
++
++  assertEquals(transactionEvents.length, 1);
++  const [transaction] = transactionEvents;
++
++  assertExists(transaction?.contexts?.trace?.data?.['client.address']);
++  assertExists(transaction?.contexts?.trace?.data?.['client.port']);
++});
++
++Deno.test('Deno.serve should capture client address and port when sendDefaultPii is enabled', async () => {
++  resetGlobals();
++  const transactionEvents: TransactionEvent[] = [];
++
++  init({
++    dsn: 'https://username@domain/123',
++    tracesSampleRate: 1,
++    sendDefaultPii: true,
++    beforeSendTransaction: (event: TransactionEvent) => {
++      transactionEvents.push(event);
++      return null;
++    },
++  }) as DenoClient;
++
++  const abortController = new AbortController();
++  let onListen: ((_: unknown) => void) | undefined = undefined;
++  const p = new Promise(resolve => (onListen = resolve));
++  const server = Deno.serve({ port: 0, signal: abortController.signal, onListen }, () => {
++    return new Response('OK');
++  });
++  await p;
++
++  const res = await fetch(`http://localhost:${server.addr.port}/test`);
++  assertEquals(await res.text(), 'OK');
++
++  abortController.abort();
++  await server.finished;
++
++  assertEquals(transactionEvents.length, 1);
++  const [transaction] = transactionEvents;
++
++  assertExists(transaction?.contexts?.trace?.data?.['client.address']);
++  assertExists(transaction?.contexts?.trace?.data?.['client.port']);
++});
++
++Deno.test('Deno.serve should not capture client address by default', async () => {
++  resetGlobals();
++  const transactionEvents: TransactionEvent[] = [];
++
++  init({
++    dsn: 'https://username@domain/123',
++    tracesSampleRate: 1,
++    beforeSendTransaction: (event: TransactionEvent) => {
++      transactionEvents.push(event);
++      return null;
++    },
++  }) as DenoClient;
++
++  const abortController = new AbortController();
++  let onListen: ((_: unknown) => void) | undefined = undefined;
++  const p = new Promise(resolve => (onListen = resolve));
++  const server = Deno.serve({ port: 0, signal: abortController.signal, onListen }, () => {
++    return new Response('OK');
++  });
++  await p;
++
++  const res = await fetch(`http://localhost:${server.addr.port}/test`);
++  assertEquals(await res.text(), 'OK');
++
++  abortController.abort();
++  await server.finished;
++
++  assertEquals(transactionEvents.length, 1);
++  const [transaction] = transactionEvents;
++
++  assertEquals(transaction?.contexts?.trace?.data?.['client.address'], undefined);
++  assertEquals(transaction?.contexts?.trace?.data?.['client.port'], undefined);
++});
++
++Deno.test('Deno.serve should keep PII request headers when dataCollection enables header collection', async () => {
++  resetGlobals();
++  const transactionEvents: TransactionEvent[] = [];
++
++  init({
++    dsn: 'https://username@domain/123',
++    tracesSampleRate: 1,
++    dataCollection: { httpHeaders: { request: true } },
++    beforeSendTransaction: (event: TransactionEvent) => {
++      transactionEvents.push(event);
++      return null;
++    },
++  }) as DenoClient;
++
++  const abortController = new AbortController();
++  let onListen: ((_: unknown) => void) | undefined = undefined;
++  const p = new Promise(resolve => (onListen = resolve));
++  const server = Deno.serve({ port: 0, signal: abortController.signal, onListen }, () => {
++    return new Response('OK');
++  });
++  await p;
++
++  const res = await fetch(`http://localhost:${server.addr.port}/test`, {
++    headers: { 'X-Forwarded-For': '203.0.113.7' },
++  });
++  assertEquals(await res.text(), 'OK');
++
++  abortController.abort();
++  await server.finished;
++
++  assertEquals(transactionEvents.length, 1);
++  const [transaction] = transactionEvents;
++
++  assertEquals(transaction?.contexts?.trace?.data?.['http.request.header.x_forwarded_for'], '203.0.113.7');
++});
++
++Deno.test('Deno.serve should filter PII request headers by default', async () => {
++  resetGlobals();
++  const transactionEvents: TransactionEvent[] = [];
++
++  init({
++    dsn: 'https://username@domain/123',
++    tracesSampleRate: 1,
++    beforeSendTransaction: (event: TransactionEvent) => {
++      transactionEvents.push(event);
++      return null;
++    },
++  }) as DenoClient;
++
++  const abortController = new AbortController();
++  let onListen: ((_: unknown) => void) | undefined = undefined;
++  const p = new Promise(resolve => (onListen = resolve));
++  const server = Deno.serve({ port: 0, signal: abortController.signal, onListen }, () => {
++    return new Response('OK');
++  });
++  await p;
++
++  const res = await fetch(`http://localhost:${server.addr.port}/test`, {
++    headers: { 'X-Forwarded-For': '203.0.113.7' },
++  });
++  assertEquals(await res.text(), 'OK');
++
++  abortController.abort();
++  await server.finished;
++
++  assertEquals(transactionEvents.length, 1);
++  const [transaction] = transactionEvents;
++
++  assertEquals(transaction?.contexts?.trace?.data?.['http.request.header.x_forwarded_for'], '[Filtered]');
++});
++
+ Deno.test('Deno.serve should support distributed tracing with sentry-trace header', async () => {
+   resetGlobals();
+   const transactionEvents: TransactionEvent[] = [];

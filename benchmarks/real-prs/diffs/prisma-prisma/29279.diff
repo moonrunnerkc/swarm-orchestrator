@@ -1,0 +1,1107 @@
+diff --git a/packages/get-platform/src/test-utils/vitest-snapshot-serializer.ts b/packages/get-platform/src/test-utils/vitest-snapshot-serializer.ts
+new file mode 100644
+index 000000000000..716c32d2f837
+--- /dev/null
++++ b/packages/get-platform/src/test-utils/vitest-snapshot-serializer.ts
+@@ -0,0 +1,166 @@
++'use strict'
++import path from 'node:path'
++import { stripVTControlCharacters } from 'node:util'
++
++import { binaryTargetRegex } from './binaryTargetRegex'
++
++// Pipe utility
++const pipe =
++  (...fns) =>
++  (x) =>
++    fns.reduce((v, f) => f(v), x)
++
++function normalizePrismaPaths(str) {
++  return str
++    .replace(/prisma\\([\w-]+)\.prisma/g, 'prisma/$1.prisma')
++    .replace(/prisma\\seed\.ts/g, 'prisma/seed.ts')
++    .replace(/custom-folder\\seed\.js/g, 'custom-folder/seed.js')
++}
++
++function normalizeLogs(str) {
++  return str
++    .replace(
++      /Started query engine http server on http:\/\/127\.0\.0\.1:\d{1,5}/g,
++      'Started query engine http server on http://127.0.0.1:00000',
++    )
++    .replace(/Starting a postgresql pool with \d+ connections./g, 'Starting a postgresql pool with XX connections.')
++}
++
++function normalizeTmpDir(str) {
++  const tempDirRegexes = [
++    // Linux
++    /\/tmp\/([a-z0-9]+)/g,
++    // macOS
++    /\/private\/var\/folders\/[^/]+\/[^/]+\/T\/[a-z0-9]+/g,
++  ]
++
++  // Windows
++  if (process.env.TEMP) {
++    const escapedPath = process.env.TEMP.replaceAll('\\', '\\\\')
++    tempDirRegexes.push(new RegExp(`${escapedPath}\\\\[a-z0-9]+`, 'g'))
++  }
++
++  for (const regex of tempDirRegexes) {
++    str = str.replace(regex, '/tmp/dir')
++  }
++
++  return str
++}
++
++function trimErrorPaths(str) {
++  const parentDir = path.dirname(path.dirname(path.dirname(__dirname)))
++
++  return str.replaceAll(parentDir, '')
++}
++
++function normalizeToUnixPaths(str) {
++  // TODO: Windows: this breaks some tests by replacing backslashes outside of file names.
++  return str.replaceAll(path.sep, '/')
++}
++
++function normalizeGitHubLinks(str) {
++  return str.replace(/https:\/\/github.com\/prisma\/prisma(-client-js)?\/issues\/new\S+/, 'TEST_GITHUB_LINK')
++}
++
++function normalizeTsClientStackTrace(str) {
++  return str
++    .replace(/([/\\]client[/\\]src[/\\]__tests__[/\\].*test\.ts)(:\d*:\d*)/, '$1:0:0')
++    .replace(/([/\\]client[/\\]tests[/\\]functional[/\\].*\.ts)(:\d*:\d*)/, '$1:0:0')
++}
++
++function removePlatforms(str) {
++  return str.replace(binaryTargetRegex, 'TEST_PLATFORM')
++}
++
++function normalizeBinaryFilePath(str) {
++  // write a regex expression that matches strings ending with ".exe" followed by any number of space characters with an empty string:
++  return str.replace(/\.exe(\s+)?(\W.*)/g, '$1$2').replace(/\.exe$/g, '')
++}
++
++function normalizeMigrateTimestamps(str) {
++  return str.replace(/(?<!\d)\d{14}(?!\d)/g, '20201231000000')
++}
++
++function normalizeDbUrl(str) {
++  return str.replace(/(localhost|postgres|mysql|mssql|mongodb_migrate|cockroachdb):(\d+)/g, 'localhost:$2')
++}
++
++function normalizeRustError(str) {
++  return str.replace(/\/rustc\/(.+)\//g, '/rustc/hash/').replace(/(\[.*)(:\d*:\d*)(\])/g, '[/some/rust/path:0:0$3')
++}
++
++function normalizeRustCodeLocation(str) {
++  // replaces strings like 'prisma-fmt/src/get_dmmf.rs:17:13' to 'prisma-fmt/src/get_dmmf.rs:0:0'
++  return str.replace(/(\w+\.rs):(\d+):(\d+)/g, '$1:0:0')
++}
++
++function normalizeArtificialPanic(str) {
++  return str.replace(/(Command failed with exit code 101:) (.+) /g, '$1 prisma-engines-path ')
++}
++
++function normalizeTime(str) {
++  // sometimes something can take a few seconds when usually it's less than 1s or a few ms
++  return str.replace(/ \d+ms/g, ' XXXms').replace(/ \d+(\.\d+)?s/g, ' XXXms')
++}
++
++/**
++ * Replace dynamic variable bits of Prisma schema with static strings.
++ * Only for integration-tests
++ */
++function prepareSchemaForSnapshot(str) {
++  if (!str.includes('tmp/prisma-tests/integration-test')) return str
++
++  const urlRegex = /url\s*=\s*.+/
++  const outputRegex = /output\s*=\s*.+/
++  return str
++    .split('\n')
++    .map((line) => {
++      const urlMatch = urlRegex.exec(line)
++      if (urlMatch) {
++        return `${line.slice(0, urlMatch.index)}url = "***"`
++      }
++      const outputMatch = outputRegex.exec(line)
++      if (outputMatch) {
++        return `${line.slice(0, outputMatch.index)}output = "***"`
++      }
++      return line
++    })
++    .join('\n')
++}
++
++// needed for jest to correctly handle indentation on multiline snapshot updates
++function wrapWithQuotes(str) {
++  return `"${str}"`
++}
++
++export function serialize(value) {
++  const message = typeof value === 'string' ? value : value instanceof Error ? value.message : ''
++
++  // order is important
++  return pipe(
++    stripVTControlCharacters,
++    // integration-tests pkg
++    prepareSchemaForSnapshot,
++    // Generic
++    normalizeTmpDir,
++    normalizeTime,
++    // From Client package
++    normalizeGitHubLinks,
++    removePlatforms,
++    normalizeBinaryFilePath,
++    normalizeTsClientStackTrace,
++    trimErrorPaths,
++    normalizePrismaPaths,
++    normalizeLogs,
++    // remove windows \\
++    normalizeToUnixPaths,
++    // From Migrate/CLI package
++    normalizeDbUrl,
++    normalizeRustError,
++    normalizeRustCodeLocation,
++    normalizeMigrateTimestamps,
++    // artificial panic
++    normalizeArtificialPanic,
++    wrapWithQuotes,
++  )(message)
++}
+diff --git a/packages/internals/.prettierrc.yml b/packages/internals/.prettierrc.yml
+deleted file mode 100644
+index f0beb50a2167..000000000000
+--- a/packages/internals/.prettierrc.yml
++++ /dev/null
+@@ -1,5 +0,0 @@
+-tabWidth: 2
+-trailingComma: all
+-singleQuote: true
+-semi: false
+-printWidth: 120
+diff --git a/packages/internals/jest.config.js b/packages/internals/jest.config.js
+deleted file mode 100644
+index a1a5fa911c5b..000000000000
+--- a/packages/internals/jest.config.js
++++ /dev/null
+@@ -1,4 +0,0 @@
+-module.exports = {
+-  preset: '../../helpers/test/presets/default.js',
+-  prettierPath: '../../node_modules/prettier2',
+-}
+diff --git a/packages/internals/package.json b/packages/internals/package.json
+index 6140e802d16d..f012dd2c64aa 100644
+--- a/packages/internals/package.json
++++ b/packages/internals/package.json
+@@ -16,7 +16,7 @@
+   "scripts": {
+     "dev": "DEV=true tsx helpers/build.ts",
+     "build": "tsx helpers/build.ts",
+-    "test": "dotenv -e ../../.db.env -- jest --silent",
++    "test": "dotenv -e ../../.db.env -- vitest run --silent",
+     "prepublishOnly": "pnpm run build"
+   },
+   "files": [
+@@ -28,10 +28,7 @@
+   "devDependencies": {
+     "@babel/helper-validator-identifier": "7.25.9",
+     "@opentelemetry/api": "1.9.0",
+-    "@swc/core": "1.11.5",
+-    "@swc/jest": "0.2.37",
+     "@types/babel__helper-validator-identifier": "7.15.2",
+-    "@types/jest": "29.5.14",
+     "@types/node": "~20.19.24",
+     "@types/resolve": "1.20.6",
+     "checkpoint-client": "1.1.33",
+@@ -48,8 +45,6 @@
+     "indent-string": "4.0.0",
+     "is-windows": "1.0.2",
+     "is-wsl": "3.1.0",
+-    "jest": "29.7.0",
+-    "jest-junit": "16.0.0",
+     "kleur": "4.1.5",
+     "mock-stdin": "1.0.0",
+     "new-github-issue-url": "0.2.1",
+diff --git a/packages/internals/src/__tests__/__snapshots__/convertCredentials.test.ts.snap b/packages/internals/src/__tests__/__snapshots__/convertCredentials.test.ts.snap
+index 745638e1c44e..e12bde5b3b52 100644
+--- a/packages/internals/src/__tests__/__snapshots__/convertCredentials.test.ts.snap
++++ b/packages/internals/src/__tests__/__snapshots__/convertCredentials.test.ts.snap
+@@ -1,4 +1,4 @@
+-// Jest Snapshot v1, https://goo.gl/fbAQLP
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+ 
+ exports[`Convert file: 1`] = `
+ {
+diff --git a/packages/internals/src/__tests__/__snapshots__/handlePanic.test.ts.snap b/packages/internals/src/__tests__/__snapshots__/handlePanic.test.ts.snap
+index dd8879b63758..35239a3e2b22 100644
+--- a/packages/internals/src/__tests__/__snapshots__/handlePanic.test.ts.snap
++++ b/packages/internals/src/__tests__/__snapshots__/handlePanic.test.ts.snap
+@@ -1,6 +1,6 @@
+-// Jest Snapshot v1, https://goo.gl/fbAQLP
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+ 
+-exports[`handlePanic when sendPanic fails, the user should be alerted by a reportFailedMessage 1`] = `
++exports[`handlePanic > when sendPanic fails, the user should be alerted by a reportFailedMessage 1`] = `
+ "Oops, an unexpected error occurred!
+ 
+ 
+diff --git a/packages/internals/src/__tests__/__utils__/fixtures.ts b/packages/internals/src/__tests__/__utils__/fixtures.ts
+index f2778b532c3a..e099d9f27c01 100644
+--- a/packages/internals/src/__tests__/__utils__/fixtures.ts
++++ b/packages/internals/src/__tests__/__utils__/fixtures.ts
+@@ -1,3 +1,3 @@
+-import path from 'path'
++import path from 'node:path'
+ 
+ export const fixturesPath = path.join(__dirname, '../__fixtures__/')
+diff --git a/packages/internals/src/__tests__/checkpointClient.test.ts b/packages/internals/src/__tests__/checkpointClient.test.ts
+index 7a15b93c88e5..f1a85729c16a 100644
+--- a/packages/internals/src/__tests__/checkpointClient.test.ts
++++ b/packages/internals/src/__tests__/checkpointClient.test.ts
+@@ -1,4 +1,5 @@
+ import * as checkpoint from 'checkpoint-client'
++import { describe, expect, test } from 'vitest'
+ 
+ describe('checkpointClient', () => {
+   test('check async signature', async () => {
+diff --git a/packages/internals/src/__tests__/convertCredentials.test.ts b/packages/internals/src/__tests__/convertCredentials.test.ts
+index 35c9b164e917..ba998d68c7cc 100644
+--- a/packages/internals/src/__tests__/convertCredentials.test.ts
++++ b/packages/internals/src/__tests__/convertCredentials.test.ts
+@@ -1,3 +1,5 @@
++import { expect, test } from 'vitest'
++
+ import { credentialsToUri, uriToCredentials } from '../convertCredentials'
+ 
+ const uris = [
+diff --git a/packages/internals/src/__tests__/directoryConfig.test.ts b/packages/internals/src/__tests__/directoryConfig.test.ts
+index 2de64ae5161c..ae71b74475a5 100644
+--- a/packages/internals/src/__tests__/directoryConfig.test.ts
++++ b/packages/internals/src/__tests__/directoryConfig.test.ts
+@@ -1,8 +1,11 @@
+ import path from 'node:path'
+ 
+ import { defineConfig, loadConfigFromFile, type PrismaConfigInternal } from '@prisma/config'
+-import { createSchemaPathInput, inferDirectoryConfig, loadSchemaContext } from '@prisma/internals'
++import { describe, expect, it } from 'vitest'
+ 
++import { inferDirectoryConfig } from '../cli/directoryConfig'
++import { createSchemaPathInput } from '../cli/getSchema'
++import { loadSchemaContext } from '../cli/schemaContext'
+ import { fixturesPath } from './__utils__/fixtures'
+ 
+ const FIXTURE_CWD = path.resolve(fixturesPath, 'directoryConfig')
+diff --git a/packages/internals/src/__tests__/engine-commands/__snapshots__/formatSchema.test.ts.snap b/packages/internals/src/__tests__/engine-commands/__snapshots__/formatSchema.test.ts.snap
+index fdd9854faae7..c038c1d74994 100644
+--- a/packages/internals/src/__tests__/engine-commands/__snapshots__/formatSchema.test.ts.snap
++++ b/packages/internals/src/__tests__/engine-commands/__snapshots__/formatSchema.test.ts.snap
+@@ -1,6 +1,6 @@
+-// Jest Snapshot v1, https://goo.gl/fbAQLP
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+ 
+-exports[`format valid blog schema 1`] = `
++exports[`format > valid blog schema 1`] = `
+ "datasource db {
+   provider = "sqlite"
+ }
+@@ -42,7 +42,7 @@ model Like {
+ "
+ `;
+ 
+-exports[`format valid blog schemaPath 1`] = `
++exports[`format > valid blog schemaPath 1`] = `
+ "datasource db {
+   provider = "sqlite"
+ }
+@@ -83,7 +83,7 @@ model Like {
+ "
+ `;
+ 
+-exports[`format valid schema with 1 preview feature flag warning 1`] = `
++exports[`format > valid schema with 1 preview feature flag warning 1`] = `
+ "generator client {
+   provider        = "prisma-client-js"
+   previewFeatures = ["cockroachdb"]
+@@ -99,7 +99,7 @@ model SomeUser {
+ "
+ `;
+ 
+-exports[`format valid schema with 3 preview feature flag warnings 1`] = `
++exports[`format > valid schema with 3 preview feature flag warnings 1`] = `
+ "generator client {
+   provider        = "prisma-client-js"
+   previewFeatures = ["cockroachdb", "mongoDb", "microsoftSqlServer"]
+diff --git a/packages/internals/src/__tests__/engine-commands/__snapshots__/getConfig.test.ts.snap b/packages/internals/src/__tests__/engine-commands/__snapshots__/getConfig.test.ts.snap
+index 1618b715171f..05c5805bb5c0 100644
+--- a/packages/internals/src/__tests__/engine-commands/__snapshots__/getConfig.test.ts.snap
++++ b/packages/internals/src/__tests__/engine-commands/__snapshots__/getConfig.test.ts.snap
+@@ -1,6 +1,6 @@
+-// Jest Snapshot v1, https://goo.gl/fbAQLP
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+ 
+-exports[`getConfig datasource with env var 1`] = `
++exports[`getConfig > datasource with env var 1`] = `
+ ""{
+   "generators": [],
+   "datasources": [
+@@ -16,7 +16,7 @@ exports[`getConfig datasource with env var 1`] = `
+ }""
+ `;
+ 
+-exports[`getConfig empty config 1`] = `
++exports[`getConfig > empty config 1`] = `
+ ""{
+   "generators": [],
+   "datasources": [
+@@ -32,7 +32,7 @@ exports[`getConfig empty config 1`] = `
+ }""
+ `;
+ 
+-exports[`getConfig with generator and datasource 1`] = `
++exports[`getConfig > with generator and datasource 1`] = `
+ ""{
+   "generators": [
+     {
+diff --git a/packages/internals/src/__tests__/engine-commands/__snapshots__/getDmmf.test.ts.snap b/packages/internals/src/__tests__/engine-commands/__snapshots__/getDmmf.test.ts.snap
+index dfbedba9f155..bef22eed4b02 100644
+--- a/packages/internals/src/__tests__/engine-commands/__snapshots__/getDmmf.test.ts.snap
++++ b/packages/internals/src/__tests__/engine-commands/__snapshots__/getDmmf.test.ts.snap
+@@ -1,6 +1,6 @@
+-// Jest Snapshot v1, https://goo.gl/fbAQLP
++// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+ 
+-exports[`getDMMF success @@id model 1`] = `
++exports[`getDMMF > success > @@id model 1`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -8894,7 +8894,7 @@ exports[`getDMMF success @@id model 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success @@map model 1`] = `
++exports[`getDMMF > success > @@map model 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -8958,7 +8958,7 @@ exports[`getDMMF success @@map model 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success @@map model 2`] = `
++exports[`getDMMF > success > @@map model 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -13719,7 +13719,7 @@ exports[`getDMMF success @@map model 2`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success @@unique model 1`] = `
++exports[`getDMMF > success > @@unique model 1`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -30383,11 +30383,11 @@ exports[`getDMMF success @@unique model 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success big schema read 1`] = `178601452`;
++exports[`getDMMF > success > big schema read 1`] = `178601452`;
+ 
+-exports[`getDMMF success chinook introspected schema 1`] = `1106509`;
++exports[`getDMMF > success > chinook introspected schema 1`] = `1106509`;
+ 
+-exports[`getDMMF success if a datamodel is provided, succeeds even when a non-existing datamodel path is given 2`] = `
++exports[`getDMMF > success > if a datamodel is provided, succeeds even when a non-existing datamodel path is given 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -30509,7 +30509,7 @@ exports[`getDMMF success if a datamodel is provided, succeeds even when a non-ex
+ }
+ `;
+ 
+-exports[`getDMMF success multiple files 1`] = `
++exports[`getDMMF > success > multiple files 1`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -37132,9 +37132,9 @@ exports[`getDMMF success multiple files 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success odoo introspected schema 1`] = `150655492`;
++exports[`getDMMF > success > odoo introspected schema 1`] = `150655492`;
+ 
+-exports[`getDMMF success simple model, mongodb 1`] = `
++exports[`getDMMF > success > simple model, mongodb 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -37195,7 +37195,7 @@ exports[`getDMMF success simple model, mongodb 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, mongodb 2`] = `
++exports[`getDMMF > success > simple model, mongodb 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -41647,7 +41647,7 @@ exports[`getDMMF success simple model, mongodb 2`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, mysql 1`] = `
++exports[`getDMMF > success > simple model, mysql 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -41707,7 +41707,7 @@ exports[`getDMMF success simple model, mysql 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, mysql 2`] = `
++exports[`getDMMF > success > simple model, mysql 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -46182,7 +46182,7 @@ exports[`getDMMF success simple model, mysql 2`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, no datasource 1`] = `
++exports[`getDMMF > success > simple model, no datasource 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -46242,7 +46242,7 @@ exports[`getDMMF success simple model, no datasource 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, no datasource 2`] = `
++exports[`getDMMF > success > simple model, no datasource 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -50263,7 +50263,7 @@ exports[`getDMMF success simple model, no datasource 2`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, postgresql 1`] = `
++exports[`getDMMF > success > simple model, postgresql 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -50323,7 +50323,7 @@ exports[`getDMMF success simple model, postgresql 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, postgresql 2`] = `
++exports[`getDMMF > success > simple model, postgresql 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -55080,7 +55080,7 @@ exports[`getDMMF success simple model, postgresql 2`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, sql server 1`] = `
++exports[`getDMMF > success > simple model, sql server 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -55140,7 +55140,7 @@ exports[`getDMMF success simple model, sql server 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, sql server 2`] = `
++exports[`getDMMF > success > simple model, sql server 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+@@ -59472,7 +59472,7 @@ exports[`getDMMF success simple model, sql server 2`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, sqlite 1`] = `
++exports[`getDMMF > success > simple model, sqlite 1`] = `
+ {
+   "enums": [],
+   "indexes": [
+@@ -59532,7 +59532,7 @@ exports[`getDMMF success simple model, sqlite 1`] = `
+ }
+ `;
+ 
+-exports[`getDMMF success simple model, sqlite 2`] = `
++exports[`getDMMF > success > simple model, sqlite 2`] = `
+ {
+   "datamodel": {
+     "enums": [],
+diff --git a/packages/internals/src/__tests__/engine-commands/formatSchema.test.ts b/packages/internals/src/__tests__/engine-commands/formatSchema.test.ts
+index f71fbda89636..f486f95b54fc 100644
+--- a/packages/internals/src/__tests__/engine-commands/formatSchema.test.ts
++++ b/packages/internals/src/__tests__/engine-commands/formatSchema.test.ts
+@@ -1,7 +1,8 @@
+ import path from 'node:path'
+ import { stripVTControlCharacters } from 'node:util'
+ 
+-import { jestConsoleContext, jestContext } from '@prisma/get-platform'
++import { vitestConsoleContext, vitestContext } from '@prisma/get-platform/src/test-utils/vitestContext'
++import { describe, expect, test, vi } from 'vitest'
+ 
+ import { getCliProvidedSchemaFile } from '../../cli/getSchema'
+ import { formatSchema } from '../../engine-commands'
+@@ -9,10 +10,10 @@ import { extractSchemaContent, type MultipleSchemas } from '../../utils/schemaFi
+ import { fixturesPath } from '../__utils__/fixtures'
+ 
+ if (process.env.CI) {
+-  jest.setTimeout(20_000)
++  vi.setConfig({ testTimeout: 20_000 })
+ }
+ 
+-const ctx = jestContext.new().add(jestConsoleContext()).assemble()
++const ctx = vitestContext.new().add(vitestConsoleContext()).assemble()
+ 
+ describe('schema wasm', () => {
+   describe('diff', () => {
+diff --git a/packages/internals/src/__tests__/engine-commands/getConfig.test.ts b/packages/internals/src/__tests__/engine-commands/getConfig.test.ts
+index e6cdd4bc7a03..64b76ebd8b56 100644
+--- a/packages/internals/src/__tests__/engine-commands/getConfig.test.ts
++++ b/packages/internals/src/__tests__/engine-commands/getConfig.test.ts
+@@ -1,4 +1,5 @@
+-import { serialize } from '@prisma/get-platform/src/test-utils/jestSnapshotSerializer'
++import { serialize } from '@prisma/get-platform/src/test-utils/vitest-snapshot-serializer'
++import { describe, expect, test } from 'vitest'
+ 
+ import { getConfig, isRustPanic } from '../..'
+ 
+diff --git a/packages/internals/src/__tests__/engine-commands/getDmmf.test.ts b/packages/internals/src/__tests__/engine-commands/getDmmf.test.ts
+index 9f70006a347c..3f8a3a438e07 100644
+--- a/packages/internals/src/__tests__/engine-commands/getDmmf.test.ts
++++ b/packages/internals/src/__tests__/engine-commands/getDmmf.test.ts
+@@ -2,11 +2,11 @@ import fs from 'node:fs'
+ import path from 'node:path'
+ import { stripVTControlCharacters } from 'node:util'
+ 
++import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
++
+ import { getDMMF, MultipleSchemas } from '../..'
+ import { fixturesPath } from '../__utils__/fixtures'
+ 
+-jest.setTimeout(10_000)
+-
+ function restoreEnvSnapshot(snapshot: NodeJS.ProcessEnv) {
+   for (const key of Object.keys(process.env)) {
+     if (!(key in snapshot)) {
+@@ -25,7 +25,7 @@ function restoreEnvSnapshot(snapshot: NodeJS.ProcessEnv) {
+ 
+ if (process.env.CI) {
+   // 10s is not always enough for the "big schema" test on macOS CI.
+-  jest.setTimeout(60_000)
++  vi.setConfig({ testTimeout: 60_000 })
+ }
+ 
+ describe('getDMMF', () => {
+diff --git a/packages/internals/src/__tests__/engine-commands/getEngineVersion.test.ts b/packages/internals/src/__tests__/engine-commands/getEngineVersion.test.ts
+index 1705524a4b9b..0d1708e4c055 100644
+--- a/packages/internals/src/__tests__/engine-commands/getEngineVersion.test.ts
++++ b/packages/internals/src/__tests__/engine-commands/getEngineVersion.test.ts
+@@ -1,4 +1,5 @@
+ import { enginesVersion } from '@prisma/engines'
++import { describe, expect, test } from 'vitest'
+ 
+ import { BinaryType, getEngineVersion } from '../..'
+ 
+diff --git a/packages/internals/src/__tests__/engine-commands/lintSchema.test.ts b/packages/internals/src/__tests__/engine-commands/lintSchema.test.ts
+index 4cfc61424ecf..70396592b73b 100644
+--- a/packages/internals/src/__tests__/engine-commands/lintSchema.test.ts
++++ b/packages/internals/src/__tests__/engine-commands/lintSchema.test.ts
+@@ -1,10 +1,11 @@
+-import { jestConsoleContext, jestContext } from '@prisma/get-platform'
++import { vitestConsoleContext, vitestContext } from '@prisma/get-platform/src/test-utils/vitestContext'
++import { describe, expect, test } from 'vitest'
+ 
+ import { lintSchema } from '../../engine-commands'
+ import { getLintWarnings, LintError, LintWarning } from '../../engine-commands/lintSchema'
+ import { type MultipleSchemas } from '../../utils/schemaFileInput'
+ 
+-const ctx = jestContext.new().add(jestConsoleContext()).assemble()
++const ctx = vitestContext.new().add(vitestConsoleContext()).assemble()
+ 
+ describe('lint valid schema with a deprecated preview feature', () => {
+   const schema = /* prisma */ `
+diff --git a/packages/internals/src/__tests__/engine-commands/validate.test.ts b/packages/internals/src/__tests__/engine-commands/validate.test.ts
+index 9f9dcc53adb7..f3155e09b89f 100644
+--- a/packages/internals/src/__tests__/engine-commands/validate.test.ts
++++ b/packages/internals/src/__tests__/engine-commands/validate.test.ts
+@@ -1,15 +1,14 @@
++import path from 'node:path'
+ import { stripVTControlCharacters } from 'node:util'
+ 
+-import { serialize } from '@prisma/get-platform/src/test-utils/jestSnapshotSerializer'
+-import path from 'path'
++import { serialize } from '@prisma/get-platform/src/test-utils/vitest-snapshot-serializer'
++import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+ 
+ import { isRustPanic, validate } from '../..'
+ import { getCliProvidedSchemaFile } from '../../cli/getSchema'
+ import type { MultipleSchemas, SchemaFileInput } from '../../utils/schemaFileInput'
+ import { fixturesPath } from '../__utils__/fixtures'
+ 
+-jest.setTimeout(10_000)
+-
+ function restoreEnvSnapshot(snapshot: NodeJS.ProcessEnv) {
+   for (const key of Object.keys(process.env)) {
+     if (!(key in snapshot)) {
+@@ -26,10 +25,9 @@ function restoreEnvSnapshot(snapshot: NodeJS.ProcessEnv) {
+   }
+ }
+ 
+-if (process.env.CI) {
+-  // 10s is not always enough for the "big schema" test on macOS CI.
+-  jest.setTimeout(60_000)
+-}
++vi.setConfig({
++  testTimeout: process.env.CI ? 60_000 : 10_000,
++})
+ 
+ describe('validate', () => {
+   // Note: to run these tests locally, prepend the env vars `FORCE_COLOR=0` and `CI=1` to your test command,
+diff --git a/packages/internals/src/__tests__/formatTable.test.ts b/packages/internals/src/__tests__/formatTable.test.ts
+index 7d0888cbea4d..79ef779f6498 100644
+--- a/packages/internals/src/__tests__/formatTable.test.ts
++++ b/packages/internals/src/__tests__/formatTable.test.ts
+@@ -1,3 +1,5 @@
++import { describe, expect, it } from 'vitest'
++
+ import { formatTable } from '../utils/formatTable'
+ 
+ describe('formatTable', () => {
+diff --git a/packages/internals/src/__tests__/getGenerators/getGenerators.test.ts b/packages/internals/src/__tests__/getGenerators/getGenerators.test.ts
+index c892337af0b3..f797131d35e3 100644
+--- a/packages/internals/src/__tests__/getGenerators/getGenerators.test.ts
++++ b/packages/internals/src/__tests__/getGenerators/getGenerators.test.ts
+@@ -1,21 +1,20 @@
++import path from 'node:path'
+ import { stripVTControlCharacters } from 'node:util'
+ 
+-import { getBinaryTargetForCurrentPlatform, jestConsoleContext, jestContext } from '@prisma/get-platform'
+-import path from 'path'
++import { getBinaryTargetForCurrentPlatform } from '@prisma/get-platform'
++import { vitestConsoleContext, vitestContext } from '@prisma/get-platform/src/test-utils/vitestContext'
++import { afterEach, describe, expect, it, test, vi } from 'vitest'
+ 
+ import { loadSchemaContext } from '../../cli/schemaContext'
+ import { GeneratorRegistry, getGenerators } from '../../get-generators/getGenerators'
+ import { omit } from '../../utils/omit'
+ import { pick } from '../../utils/pick'
+ 
+-const ctx = jestContext.new().add(jestConsoleContext()).assemble()
++const ctx = vitestContext.new().add(vitestConsoleContext()).assemble()
+ 
+-if (process.env.CI) {
+-  // 20s is often not enough on CI, especially on macOS.
+-  jest.setTimeout(60_000)
+-} else {
+-  jest.setTimeout(20_000)
+-}
++vi.setConfig({
++  testTimeout: process.env.CI ? 60_000 : 20_000,
++})
+ 
+ let generatorPath = path.join(__dirname, 'generator')
+ 
+@@ -763,7 +762,9 @@ describe('getGenerators', () => {
+       allowNoModels: true,
+     })
+ 
+-    generators.forEach((g) => g.stop())
++    for (const generator of generators) {
++      generator.stop()
++    }
+ 
+     return expect(generators.length).toBeGreaterThanOrEqual(1)
+   })
+diff --git a/packages/internals/src/__tests__/getGitHubIssueUrl.test.ts b/packages/internals/src/__tests__/getGitHubIssueUrl.test.ts
+index 260989009f1b..77e39890c377 100644
+--- a/packages/internals/src/__tests__/getGitHubIssueUrl.test.ts
++++ b/packages/internals/src/__tests__/getGitHubIssueUrl.test.ts
+@@ -1,5 +1,7 @@
+ import { stripVTControlCharacters } from 'node:util'
+ 
++import { describe, expect, test } from 'vitest'
++
+ import { getGitHubIssueUrl } from '../utils/getGitHubIssueUrl'
+ 
+ describe('getErrorMessageWithLink', () => {
+diff --git a/packages/internals/src/__tests__/getPackedPackage.test.ts b/packages/internals/src/__tests__/getPackedPackage.test.ts
+index ecb851d9df4e..dbe7e00e2c7f 100644
+--- a/packages/internals/src/__tests__/getPackedPackage.test.ts
++++ b/packages/internals/src/__tests__/getPackedPackage.test.ts
+@@ -1,14 +1,14 @@
+-import fs from 'fs'
+-import path from 'path'
++import fs from 'node:fs'
++import path from 'node:path'
++
++import { describe, expect, it, vi } from 'vitest'
+ 
+ import { getPackedPackage } from './../getPackedPackage'
+ 
+ const isMacOrWindowsCI = Boolean(process.env.CI) && ['darwin', 'win32'].includes(process.platform)
+-if (isMacOrWindowsCI) {
+-  jest.setTimeout(60_000)
+-} else {
+-  jest.setTimeout(20_000)
+-}
++vi.setConfig({
++  testTimeout: isMacOrWindowsCI ? 60_000 : 20_000,
++})
+ 
+ describe('getPackedPackage', () => {
+   it('test argument vulnerability', async () => {
+diff --git a/packages/internals/src/__tests__/getSchema.test.ts b/packages/internals/src/__tests__/getSchema.test.ts
+index c0a3f875d0ce..059d6aaf91fb 100644
+--- a/packages/internals/src/__tests__/getSchema.test.ts
++++ b/packages/internals/src/__tests__/getSchema.test.ts
+@@ -1,13 +1,15 @@
+ import path from 'node:path'
+ import { stripVTControlCharacters } from 'node:util'
+ 
++import { expect, it, vi } from 'vitest'
++
+ import { createSchemaPathInput, getSchemaWithPath } from '../cli/getSchema'
+ import { fixturesPath } from './__utils__/fixtures'
+ 
+ if (process.env.CI) {
+   // 5s is often not enough for the "finds the schema path in the root
+   // package.json of a yarn workspace from a child package" test on macOS CI.
+-  jest.setTimeout(60_000)
++  vi.setConfig({ testTimeout: 60_000 })
+ }
+ 
+ process.env.npm_config_user_agent = 'yarn/1.22.4 npm/? node/v12.18.3 darwin x64'
+diff --git a/packages/internals/src/__tests__/handlePanic.test.ts b/packages/internals/src/__tests__/handlePanic.test.ts
+index 53d1c1f9b13d..f703bc049504 100644
+--- a/packages/internals/src/__tests__/handlePanic.test.ts
++++ b/packages/internals/src/__tests__/handlePanic.test.ts
+@@ -1,16 +1,19 @@
+ import { stripVTControlCharacters } from 'node:util'
+ 
+-import { jestConsoleContext, jestContext } from '@prisma/get-platform'
++import { vitestConsoleContext, vitestContext } from '@prisma/get-platform/src/test-utils/vitestContext'
+ import { ensureDir } from 'fs-extra'
+ import { stdin } from 'mock-stdin'
+ import prompt from 'prompts'
+ import tempy from 'tempy'
++import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+ 
+ import { ErrorArea, RustPanic } from '..'
+ import { sendPanic } from '../sendPanic'
+ import { wouldYouLikeToCreateANewIssue } from '../utils/getGitHubIssueUrl'
+ import { handlePanic } from '../utils/handlePanic'
+ 
++const ctx = vitestContext.new().add(vitestConsoleContext()).assemble()
++
+ const keys = {
+   up: '\x1B\x5B\x41',
+   down: '\x1B\x5B\x42',
+@@ -32,18 +35,16 @@ const oldProcessCwd = process.cwd
+ 
+ const sendPanicTag = 'send-panic-failed'
+ 
+-jest.mock('../sendPanic', () => ({
+-  ...jest.requireActual('../sendPanic'),
+-  sendPanic: jest.fn().mockImplementation(() => Promise.reject(new Error(sendPanicTag))),
++vi.mock('../sendPanic', async () => ({
++  ...(await vi.importActual('../sendPanic')),
++  sendPanic: vi.fn().mockImplementation(() => Promise.reject(new Error(sendPanicTag))),
+ }))
+ 
+-jest.mock('../utils/getGitHubIssueUrl', () => ({
+-  ...jest.requireActual('../utils/getGitHubIssueUrl'),
+-  wouldYouLikeToCreateANewIssue: jest.fn().mockImplementation(() => Promise.resolve()),
++vi.mock('../utils/getGitHubIssueUrl', async () => ({
++  ...(await vi.importActual('../utils/getGitHubIssueUrl')),
++  wouldYouLikeToCreateANewIssue: vi.fn().mockImplementation(() => Promise.resolve()),
+ }))
+ 
+-const ctx = jestContext.new().add(jestConsoleContext()).assemble()
+-
+ function restoreEnvSnapshot(snapshot: NodeJS.ProcessEnv) {
+   for (const key of Object.keys(process.env)) {
+     if (!(key in snapshot)) {
+@@ -68,8 +69,8 @@ describe('handlePanic', () => {
+   const getDatabaseVersionSafe = () => Promise.resolve(undefined)
+ 
+   beforeEach(async () => {
+-    jest.resetModules() // most important - it clears the cache
+-    jest.clearAllMocks()
++    vi.resetModules()
++    vi.clearAllMocks()
+ 
+     restoreEnvSnapshot(OLD_ENV)
+     process.env.GITHUB_ACTIONS = 'true' // simulate CI environment
+@@ -144,7 +145,8 @@ describe('handlePanic', () => {
+     const rustStackTrace = 'test-rustStack'
+     const command = 'test-command'
+ 
+-    const mockExit = jest.spyOn(process, 'exit').mockImplementation()
++    // @ts-expect-error
++    const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {})
+ 
+     const rustPanic = new RustPanic(
+       'test-message',
+@@ -170,5 +172,6 @@ describe('handlePanic', () => {
+       new RegExp(`^Error report submission failed due to:?`),
+     )
+     expect(mockExit).toHaveBeenCalledWith(1)
++    mockExit.mockRestore()
+   })
+ })
+diff --git a/packages/internals/src/__tests__/schemaEngineCommands.test.ts b/packages/internals/src/__tests__/schemaEngineCommands.test.ts
+index e56928d263a3..cde744eff882 100644
+--- a/packages/internals/src/__tests__/schemaEngineCommands.test.ts
++++ b/packages/internals/src/__tests__/schemaEngineCommands.test.ts
+@@ -1,12 +1,13 @@
+-import { serialize } from '@prisma/get-platform/src/test-utils/jestSnapshotSerializer'
++import { serialize } from '@prisma/get-platform/src/test-utils/vitest-snapshot-serializer'
+ import tempy from 'tempy'
++import { describe, expect, test, vi } from 'vitest'
+ 
+ import { credentialsToUri, uriToCredentials } from '../convertCredentials'
+ import { canConnectToDatabase, createDatabase, dropDatabase, execaCommand } from '../schemaEngineCommands'
+ 
+ if (process.env.CI) {
+   // 5s is often not enough for the "postgresql - create database" test on macOS CI.
+-  jest.setTimeout(60_000)
++  vi.setConfig({ testTimeout: 60_000 })
+ }
+ 
+ const testIf = (condition: boolean) => (condition ? test : test.skip)
+@@ -94,10 +95,10 @@ describe('createDatabase', () => {
+   test('postgresql - server does not exist', async () => {
+     await expect(createDatabase('postgresql://johndoe:randompassword@doesnotexist:5432/mydb?schema=public', __dirname))
+       .rejects.toThrowErrorMatchingInlineSnapshot(`
+-            "P1001: Can't reach database server at \`doesnotexist:5432\`
++      [Error: P1001: Can't reach database server at \`doesnotexist:5432\`
+ 
+-            Please make sure your database server is running at \`doesnotexist:5432\`."
+-          `)
++      Please make sure your database server is running at \`doesnotexist:5432\`.]
++    `)
+   }, 30_000)
+ 
+   test('postgresql - database already exists', async () => {
+@@ -153,13 +154,13 @@ describe('createDatabase', () => {
+ 
+   test('invalid database type', async () => {
+     await expect(createDatabase('invalid:somedburl')).rejects.toThrowErrorMatchingInlineSnapshot(
+-      `"P1013: The provided database string is invalid. The scheme is not recognized in database URL. Please refer to the documentation in https://pris.ly/d/config-url for constructing a correct connection string. In some cases, certain characters must be escaped. Please check the string for any illegal characters."`,
++      `[Error: P1013: The provided database string is invalid. The scheme is not recognized in database URL. Please refer to the documentation in https://pris.ly/d/config-url for constructing a correct connection string. In some cases, certain characters must be escaped. Please check the string for any illegal characters.]`,
+     )
+   })
+ 
+   test('empty connection string', async () => {
+     await expect(createDatabase('')).rejects.toThrowErrorMatchingInlineSnapshot(
+-      `"Connection url is empty. See https://pris.ly/d/config-url"`,
++      `[Error: Connection url is empty. See https://pris.ly/d/config-url]`,
+     )
+   })
+ })
+diff --git a/packages/internals/src/__tests__/sendPanic.test.ts b/packages/internals/src/__tests__/sendPanic.test.ts
+index 6cc25578d8f0..c02f091ca865 100644
+--- a/packages/internals/src/__tests__/sendPanic.test.ts
++++ b/packages/internals/src/__tests__/sendPanic.test.ts
+@@ -1,4 +1,5 @@
+ import { enginesVersion } from '@prisma/engines'
++import { beforeEach, describe, expect, test, vi } from 'vitest'
+ 
+ import { createErrorReport } from '../errorReporting'
+ import { ErrorArea, RustPanic } from '../panic'
+@@ -6,10 +7,12 @@ import { sendPanic } from '../sendPanic'
+ 
+ const createErrorReportTag = 'error-report-creation-failed'
+ 
+-jest.mock('../errorReporting', () => ({
+-  ...jest.requireActual('../errorReporting'),
+-  createErrorReport: jest.fn().mockImplementation(() => Promise.reject(new Error(createErrorReportTag))),
+-}))
++vi.mock('../errorReporting', async () => {
++  return {
++    ...(await vi.importActual('../errorReporting')),
++    createErrorReport: vi.fn().mockImplementation(() => Promise.reject(new Error(createErrorReportTag))),
++  }
++})
+ 
+ describe('sendPanic should fail when the error report creation fails', () => {
+   const cliVersion = 'test-cli-version'
+@@ -19,7 +22,7 @@ describe('sendPanic should fail when the error report creation fails', () => {
+   const getDatabaseVersionSafe = () => Promise.resolve(undefined)
+ 
+   beforeEach(() => {
+-    jest.clearAllMocks()
++    vi.clearAllMocks()
+   })
+ 
+   test("shouldn't mask any schema if no valid schema appears in RustPanic", async () => {
+diff --git a/packages/internals/src/get-generators/getGenerators.ts b/packages/internals/src/get-generators/getGenerators.ts
+index 9da30e0b8fc6..53094f36e504 100644
+--- a/packages/internals/src/get-generators/getGenerators.ts
++++ b/packages/internals/src/get-generators/getGenerators.ts
+@@ -15,7 +15,8 @@ import pMap from 'p-map'
+ import path from 'path'
+ import { match } from 'ts-pattern'
+ 
+-import { getDMMF, loadSchemaContext, mergeSchemas, SchemaContext } from '..'
++import { loadSchemaContext, SchemaContext } from '../cli/schemaContext'
++import { getDMMF, mergeSchemas } from '../engine-commands'
+ import { Generator, InProcessGenerator, JsonRpcGenerator } from '../Generator'
+ import { resolveOutput } from '../resolveOutput'
+ import { extractPreviewFeatures } from '../utils/extractPreviewFeatures'
+diff --git a/packages/internals/src/utils/__tests__/isCi.test.ts b/packages/internals/src/utils/__tests__/isCi.test.ts
+index ac1a2234d675..46d644c07668 100644
+--- a/packages/internals/src/utils/__tests__/isCi.test.ts
++++ b/packages/internals/src/utils/__tests__/isCi.test.ts
+@@ -1,3 +1,5 @@
++import { afterAll, beforeEach, describe, expect, test } from 'vitest'
++
+ import { isCi } from '../isCi'
+ 
+ const originalEnv = { ...process.env }
+diff --git a/packages/internals/src/utils/__tests__/isInteractive.test.ts b/packages/internals/src/utils/__tests__/isInteractive.test.ts
+index 7f9e08143bbd..a7b8f724f9c0 100644
+--- a/packages/internals/src/utils/__tests__/isInteractive.test.ts
++++ b/packages/internals/src/utils/__tests__/isInteractive.test.ts
+@@ -1,3 +1,5 @@
++import { afterAll, beforeEach, describe, expect, test } from 'vitest'
++
+ import { isInteractive } from '../isInteractive'
+ 
+ const originalEnv = { ...process.env }
+diff --git a/packages/internals/src/utils/callOnce.test.ts b/packages/internals/src/utils/callOnce.test.ts
+index 1e8b4b3a8999..1396e3f9dcf5 100644
+--- a/packages/internals/src/utils/callOnce.test.ts
++++ b/packages/internals/src/utils/callOnce.test.ts
+@@ -1,7 +1,9 @@
++import { expect, test, vi } from 'vitest'
++
+ import { callOnceOnSuccess } from './callOnce'
+ 
+ test('returns the result correctly', async () => {
+-  const wrapper = callOnceOnSuccess(jest.fn().mockResolvedValue('hello'))
++  const wrapper = callOnceOnSuccess(vi.fn().mockResolvedValue('hello'))
+   await expect(wrapper()).resolves.toBe('hello')
+ })
+ 
+@@ -11,7 +13,7 @@ test('forwards the arguments correctly', async () => {
+ })
+ 
+ test('сalls wrapped function only once before promise resolves', async () => {
+-  const wrapped = jest.fn().mockResolvedValue('hello')
++  const wrapped = vi.fn().mockResolvedValue('hello')
+   const wrapper = callOnceOnSuccess(wrapped)
+   void wrapper()
+   void wrapper()
+@@ -21,7 +23,7 @@ test('сalls wrapped function only once before promise resolves', async () => {
+ })
+ 
+ test('caches the result when it succeeds', async () => {
+-  const wrapped = jest.fn().mockResolvedValue('hello')
++  const wrapped = vi.fn().mockResolvedValue('hello')
+   const wrapper = callOnceOnSuccess(wrapped)
+   await wrapper()
+   await wrapper()
+@@ -32,7 +34,7 @@ test('caches the result when it succeeds', async () => {
+ })
+ 
+ test('does not cache the result when it fails', async () => {
+-  const wrapped = jest.fn().mockRejectedValue(new Error('hello'))
++  const wrapped = vi.fn().mockRejectedValue(new Error('hello'))
+   const wrapper = callOnceOnSuccess(wrapped)
+ 
+   await Promise.allSettled([wrapper(), wrapper()])
+diff --git a/packages/internals/src/utils/max.test.ts b/packages/internals/src/utils/max.test.ts
+index 877a42cd43e9..e69173fced79 100644
+--- a/packages/internals/src/utils/max.test.ts
++++ b/packages/internals/src/utils/max.test.ts
+@@ -1,3 +1,5 @@
++import { describe, expect, test } from 'vitest'
++
+ import { maxBy, maxWithComparator } from './max'
+ 
+ describe('maxWithComparator', () => {
+diff --git a/packages/internals/src/utils/path.test.ts b/packages/internals/src/utils/path.test.ts
+index 5c142986e5aa..ea4ec4cdbf55 100644
+--- a/packages/internals/src/utils/path.test.ts
++++ b/packages/internals/src/utils/path.test.ts
+@@ -1,3 +1,5 @@
++import { describe, expect, test } from 'vitest'
++
+ import { longestCommonPathPrefix, pathToPosix } from './path'
+ 
+ const testIf = (condition: boolean) => (condition ? test : test.skip)
+@@ -37,7 +39,6 @@ describe('longestCommonPathPrefix', () => {
+   })
+ 
+   describeIf(process.platform === 'win32')('windows', () => {
+-    // eslint-disable-next-line jest/no-identical-title
+     test('common ancestor directory', () => {
+       expect(longestCommonPathPrefix('C:\\Common\\A\\Prisma', 'C:\\Common\\B\\Prisma')).toBe('C:\\Common')
+     })
+@@ -46,7 +47,6 @@ describe('longestCommonPathPrefix', () => {
+       expect(longestCommonPathPrefix('C:\\A\\Prisma', 'C:\\B\\Prisma')).toBe('C:\\')
+     })
+ 
+-    // eslint-disable-next-line jest/no-identical-title
+     test('substring is not treated as a path component', () => {
+       expect(longestCommonPathPrefix('C:\\Prisma', 'C:\\Pri')).toBe('C:\\')
+     })
+diff --git a/packages/internals/src/utils/prismaPostgres.test.ts b/packages/internals/src/utils/prismaPostgres.test.ts
+index fe3d3b0c6754..bb64f1c8cafe 100644
+--- a/packages/internals/src/utils/prismaPostgres.test.ts
++++ b/packages/internals/src/utils/prismaPostgres.test.ts
+@@ -1,3 +1,5 @@
++import { describe, expect, test } from 'vitest'
++
+ import { isPrismaPostgres, isPrismaPostgresDev, PRISMA_POSTGRES_PROTOCOL } from './prismaPostgres'
+ 
+ describe('isPrismaPostgres', () => {
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index cbeea4adb226..234723843b33 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1522,18 +1522,9 @@ importers:
+       '@opentelemetry/api':
+         specifier: 1.9.0
+         version: 1.9.0
+-      '@swc/core':
+-        specifier: 1.11.5
+-        version: 1.11.5
+-      '@swc/jest':
+-        specifier: 0.2.37
+-        version: 0.2.37(@swc/core@1.11.5)
+       '@types/babel__helper-validator-identifier':
+         specifier: 7.15.2
+         version: 7.15.2
+-      '@types/jest':
+-        specifier: 29.5.14
+-        version: 29.5.14
+       '@types/node':
+         specifier: ~20.19.24
+         version: 20.19.25
+@@ -1582,12 +1573,6 @@ importers:
+       is-wsl:
+         specifier: 3.1.0
+         version: 3.1.0
+-      jest:
+-        specifier: 29.7.0
+-        version: 29.7.0(@types/node@20.19.25)(ts-node@10.9.2(@swc/core@1.11.5)(@types/node@20.19.25)(typescript@5.4.5))
+-      jest-junit:
+-        specifier: 16.0.0
+-        version: 16.0.0
+       kleur:
+         specifier: 4.1.5
+         version: 4.1.5

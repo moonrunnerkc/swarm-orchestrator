@@ -1,0 +1,76 @@
+diff --git a/docs/framework/react/typescript.md b/docs/framework/react/typescript.md
+index cc2249dae02..76d5423365f 100644
+--- a/docs/framework/react/typescript.md
++++ b/docs/framework/react/typescript.md
+@@ -172,6 +172,28 @@ declare module '@tanstack/react-query' {
+ ```
+ 
+ [//]: # 'TypingMeta'
++[//]: # 'TypingQueryAndMutationKeys'
++
++## Typing query and mutation keys
++
++### Registering the query and mutation key types
++
++Also similarly to registering a [global error type](#registering-a-global-error), you can also register a global `QueryKey` and `MutationKey` type. This allows you to provide more structure to your keys, that matches your application's hierarchy, and have them be typed across all of the library's surface area. Note that the registered type must extend the `Array` type, so that your keys remain an array.
++
++```ts
++import '@tanstack/react-query'
++
++type QueryKey = ['dashboard' | 'marketing', ...ReadonlyArray<unknown>]
++
++declare module '@tanstack/react-query' {
++  interface Register {
++    queryKey: QueryKey
++    mutationKey: QueryKey
++  }
++}
++```
++
++[//]: # 'TypingQueryAndMutationKeys'
+ [//]: # 'TypingQueryOptions'
+ 
+ ## Typing Query Options
+diff --git a/packages/query-core/src/types.ts b/packages/query-core/src/types.ts
+index ce139b04d9a..5014cfbf1fa 100644
+--- a/packages/query-core/src/types.ts
++++ b/packages/query-core/src/types.ts
+@@ -32,6 +32,8 @@ export interface Register {
+   // defaultError: Error
+   // queryMeta: Record<string, unknown>
+   // mutationMeta: Record<string, unknown>
++  // queryKey: ReadonlyArray<unknown>
++  // mutationKey: ReadonlyArray<unknown>
+ }
+ 
+ export type DefaultError = Register extends {
+@@ -40,7 +42,13 @@ export type DefaultError = Register extends {
+   ? TError
+   : Error
+ 
+-export type QueryKey = ReadonlyArray<unknown>
++export type QueryKey = Register extends {
++  queryKey: infer TQueryKey
++}
++  ? TQueryKey extends Array<unknown>
++    ? TQueryKey
++    : ReadonlyArray<unknown>
++  : ReadonlyArray<unknown>
+ 
+ export const dataTagSymbol = Symbol('dataTagSymbol')
+ export type dataTagSymbol = typeof dataTagSymbol
+@@ -996,7 +1004,13 @@ export type InfiniteQueryObserverResult<
+   | InfiniteQueryObserverLoadingResult<TData, TError>
+   | InfiniteQueryObserverPendingResult<TData, TError>
+ 
+-export type MutationKey = ReadonlyArray<unknown>
++export type MutationKey = Register extends {
++  mutationKey: infer TMutationKey
++}
++  ? TMutationKey extends Array<unknown>
++    ? TMutationKey
++    : ReadonlyArray<unknown>
++  : ReadonlyArray<unknown>
+ 
+ export type MutationStatus = 'idle' | 'pending' | 'success' | 'error'
+ 

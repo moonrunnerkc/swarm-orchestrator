@@ -1,0 +1,326 @@
+diff --git a/crates/next-api/src/app.rs b/crates/next-api/src/app.rs
+index 4f2a4346a821..749ead09cf7f 100644
+--- a/crates/next-api/src/app.rs
++++ b/crates/next-api/src/app.rs
+@@ -29,6 +29,7 @@ use next_core::{
+     next_server::{
+         ServerContextType, get_server_module_options_context, get_server_resolve_options_context,
+     },
++    next_server_component::NextServerComponentTransition,
+     next_server_utility::{NEXT_SERVER_UTILITY_MERGE_TAG, NextServerUtilityTransition},
+     parse_segment_config_from_source,
+     segment_config::{NextSegmentConfig, ParseSegmentMode},
+@@ -375,6 +376,10 @@ impl AppProject {
+                     rcstr!("next-server-utility"),
+                     ResolvedVc::upcast(NextServerUtilityTransition::new().to_resolved().await?),
+                 ),
++                (
++                    rcstr!("next-server-component"),
++                    ResolvedVc::upcast(NextServerComponentTransition::new().to_resolved().await?),
++                ),
+             ]
+             .into_iter()
+             .collect(),
+diff --git a/crates/next-core/src/app_page_loader_tree.rs b/crates/next-core/src/app_page_loader_tree.rs
+index 0a58e9f0da32..8d608d32c073 100644
+--- a/crates/next-core/src/app_page_loader_tree.rs
++++ b/crates/next-core/src/app_page_loader_tree.rs
+@@ -184,9 +184,12 @@ impl AppPageLoaderTreeBuilder {
+                 let identifier = magic_identifier::mangle(&format!("{name} #{i}"));
+                 let inner_module_id = format!("METADATA_{i}");
+ 
++                // This should use the same importing mechanism as create_module_tuple_code, so that
++                // the relative order of items is retained (which isn't the case
++                // when mixing ESM imports and requires).
+                 self.base
+                     .imports
+-                    .push(format!("import {identifier} from \"{inner_module_id}\";").into());
++                    .push(format!("const {identifier} = require(\"{inner_module_id}\");").into());
+ 
+                 let source = dynamic_image_metadata_source(
+                     *ResolvedVc::upcast(self.base.module_asset_context),
+@@ -201,7 +204,7 @@ impl AppPageLoaderTreeBuilder {
+                     .insert(inner_module_id.into(), module);
+ 
+                 let s = "      ";
+-                writeln!(self.loader_tree_code, "{s}{identifier},")?;
++                writeln!(self.loader_tree_code, "{s}{identifier}.default,")?;
+             }
+         }
+         Ok(())
+@@ -228,9 +231,12 @@ impl AppPageLoaderTreeBuilder {
+             self.base.imports.push(helper_import);
+         }
+ 
++        // This should use the same importing mechanism as create_module_tuple_code, so that the
++        // relative order of items is retained (which isn't the case when mixing ESM imports and
++        // requires).
+         self.base
+             .imports
+-            .push(format!("import {identifier} from \"{inner_module_id}\";").into());
++            .push(format!("const {identifier} = require(\"{inner_module_id}\");").into());
+         let module = StructuredImageModuleType::create_module(
+             Vc::upcast(FileSource::new(path.clone())),
+             BlurPlaceholderMode::None,
+@@ -252,15 +258,21 @@ impl AppPageLoaderTreeBuilder {
+         writeln!(
+             self.loader_tree_code,
+             "{s}  url: fillMetadataSegment({}, await props.params, {}, true) + \
+-             `?${{{identifier}.src.split(\"/\").splice(-1)[0]}}`,",
++             `?${{{identifier}.default.src.split(\"/\").splice(-1)[0]}}`,",
+             StringifyJs(&pathname_prefix),
+             StringifyJs(metadata_route),
+         )?;
+ 
+         let numeric_sizes = name == "twitter" || name == "openGraph";
+         if numeric_sizes {
+-            writeln!(self.loader_tree_code, "{s}  width: {identifier}.width,")?;
+-            writeln!(self.loader_tree_code, "{s}  height: {identifier}.height,")?;
++            writeln!(
++                self.loader_tree_code,
++                "{s}  width: {identifier}.default.width,"
++            )?;
++            writeln!(
++                self.loader_tree_code,
++                "{s}  height: {identifier}.default.height,"
++            )?;
+         } else {
+             // For SVGs, skip sizes and use "any" to let it scale automatically based on viewport,
+             // For the images doesn't provide the size properly, use "any" as well.
+@@ -268,7 +280,7 @@ impl AppPageLoaderTreeBuilder {
+             let sizes = if path.has_extension(".svg") {
+                 "any".to_string()
+             } else {
+-                format!("${{{identifier}.width}}x${{{identifier}.height}}")
++                format!("${{{identifier}.default.width}}x${{{identifier}.default.height}}")
+             };
+             writeln!(self.loader_tree_code, "{s}  sizes: `{sizes}`,")?;
+         }
+@@ -280,9 +292,12 @@ impl AppPageLoaderTreeBuilder {
+             let identifier = magic_identifier::mangle(&format!("{name} alt text #{i}"));
+             let inner_module_id = format!("METADATA_ALT_{i}");
+ 
++            // This should use the same importing mechanism as create_module_tuple_code, so that the
++            // relative order of items is retained (which isn't the case when mixing ESM imports and
++            // requires).
+             self.base
+                 .imports
+-                .push(format!("import {identifier} from \"{inner_module_id}\";").into());
++                .push(format!("const {identifier} = require(\"{inner_module_id}\");").into());
+ 
+             let module = self
+                 .base
+@@ -296,7 +311,7 @@ impl AppPageLoaderTreeBuilder {
+                 .inner_assets
+                 .insert(inner_module_id.into(), module);
+ 
+-            writeln!(self.loader_tree_code, "{s}  alt: {identifier},")?;
++            writeln!(self.loader_tree_code, "{s}  alt: {identifier}.default,")?;
+         }
+ 
+         writeln!(self.loader_tree_code, "{s}}}]),")?;
+diff --git a/packages/next/src/build/templates/app-page.ts b/packages/next/src/build/templates/app-page.ts
+index ebcb9c4a5f45..701d9ee902ba 100644
+--- a/packages/next/src/build/templates/app-page.ts
++++ b/packages/next/src/build/templates/app-page.ts
+@@ -75,18 +75,18 @@ import {
+  */
+ declare const tree: LoaderTree
+ 
+-// We inject the tree and pages here so that we can use them in the route
+-// module.
+-// INJECT:tree
+-
+-import GlobalError from 'VAR_MODULE_GLOBAL_ERROR' with { 'turbopack-transition': 'next-server-utility' }
+-
++// TODO this should ideally be read from the loader tree instead, where it's always inserted already anyway.
++import GlobalError from 'VAR_MODULE_GLOBAL_ERROR' with { 'turbopack-transition': 'next-server-component' }
+ export { GlobalError }
+ 
+ // These are injected by the loader afterwards.
+ declare const __next_app_require__: (id: string | number) => unknown
+ declare const __next_app_load_chunk__: (id: string | number) => Promise<unknown>
+ 
++// We inject the tree and pages here so that we can use them in the route
++// module.
++// INJECT:tree
++
+ // INJECT:__next_app_require__
+ // INJECT:__next_app_load_chunk__
+ 
+diff --git a/packages/next/src/lib/metadata/resolve-metadata.ts b/packages/next/src/lib/metadata/resolve-metadata.ts
+index f64d76c24925..a644ffcef2dd 100644
+--- a/packages/next/src/lib/metadata/resolve-metadata.ts
++++ b/packages/next/src/lib/metadata/resolve-metadata.ts
+@@ -559,7 +559,7 @@ async function collectStaticImagesFiles(
+ 
+   const iconPromises = metadata[type as 'icon' | 'apple'].map(
+     async (imageModule: (p: any) => Promise<MetadataImageModule[]>) =>
+-      interopDefault(await imageModule(props))
++      await interopDefault(imageModule)(props)
+   )
+ 
+   return iconPromises?.length > 0
+diff --git a/test/e2e/app-dir/client-reference-chunking/app/issue/layout.tsx b/test/e2e/app-dir/client-reference-chunking/app/issue/layout.tsx
+new file mode 100644
+index 000000000000..76a2e95b824c
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/app/issue/layout.tsx
+@@ -0,0 +1,7 @@
++export default function SubLayout({
++  children,
++}: Readonly<{
++  children: React.ReactNode
++}>) {
++  return <div>{children}</div>
++}
+diff --git a/test/e2e/app-dir/client-reference-chunking/app/issue/opengraph-image.tsx b/test/e2e/app-dir/client-reference-chunking/app/issue/opengraph-image.tsx
+new file mode 100644
+index 000000000000..5e967faa7e41
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/app/issue/opengraph-image.tsx
+@@ -0,0 +1,32 @@
++import { ImageResponse } from 'next/og'
++
++// Image metadata
++export const size = {
++  width: 516,
++  height: 271,
++}
++
++export const contentType = 'image/png'
++
++export default async function Image() {
++  return new ImageResponse(
++    (
++      <div
++        style={{
++          fontSize: 48,
++          background: 'white',
++          width: '100%',
++          height: '100%',
++          display: 'flex',
++          alignItems: 'center',
++          justifyContent: 'center',
++        }}
++      >
++        Issue page opengraph image
++      </div>
++    ),
++    {
++      ...size,
++    }
++  )
++}
+diff --git a/test/e2e/app-dir/client-reference-chunking/app/issue/page.tsx b/test/e2e/app-dir/client-reference-chunking/app/issue/page.tsx
+new file mode 100644
+index 000000000000..84c026f5e4ce
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/app/issue/page.tsx
+@@ -0,0 +1,8 @@
++/** Add your relevant code here for the issue to reproduce */
++export default function IssuePage() {
++  return (
++    <div>
++      <h1 className="">Welcome to the Issue Page</h1>
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/client-reference-chunking/app/layout.tsx b/test/e2e/app-dir/client-reference-chunking/app/layout.tsx
+new file mode 100644
+index 000000000000..114750e34e49
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/app/layout.tsx
+@@ -0,0 +1,20 @@
++export default function RootLayout({
++  children,
++}: Readonly<{
++  children: React.ReactNode
++}>) {
++  return (
++    <html lang="en">
++      <body>
++        <header>
++          <nav>
++            <a href="/" className="inline-block border px-4 py-2">
++              Home
++            </a>
++          </nav>
++        </header>
++        <main>{children}</main>
++      </body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/client-reference-chunking/app/page.tsx b/test/e2e/app-dir/client-reference-chunking/app/page.tsx
+new file mode 100644
+index 000000000000..367e646032d8
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/app/page.tsx
+@@ -0,0 +1,10 @@
++/** Add your relevant code here for the issue to reproduce */
++export default function Home() {
++  return (
++    <div>
++      <a href="/issue" className="inline-block border px-4 py-2">
++        Issue
++      </a>
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/client-reference-chunking/client-reference-chunking.test.ts b/test/e2e/app-dir/client-reference-chunking/client-reference-chunking.test.ts
+new file mode 100644
+index 000000000000..610810173b9d
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/client-reference-chunking.test.ts
+@@ -0,0 +1,38 @@
++import { type NextInstance, nextTestSetup } from 'e2e-utils'
++import { type ClientReferenceManifest } from 'next/dist/build/webpack/plugins/flight-manifest-plugin'
++
++async function loadClientReferenceManifest(
++  next: NextInstance,
++  page: string
++): Promise<ClientReferenceManifest> {
++  return JSON.parse(
++    (
++      await next.readFile(
++        `${next.distDir}/server/app${page}page_client-reference-manifest.js`
++      )
++    ).match(/]\s*=\s*([\S\s]+)$/)[1]
++  )
++}
++
++describe('client-reference-chunking', () => {
++  const { next } = nextTestSetup({
++    files: __dirname,
++    skipDeployment: true,
++  })
++
++  it('should use the same chunks for client references across routes', async () => {
++    const browser = await next.browser('/')
++    await browser.elementByCss('a[href="/issue"]').click()
++
++    expect(await browser.elementByCss('body').text()).toContain(
++      'Welcome to the Issue Page'
++    )
++
++    let rootManifest = await loadClientReferenceManifest(next, '/')
++    let issueManifest = await loadClientReferenceManifest(next, '/issue/')
++
++    // These two routes have the same client component references, so these should be exactly the
++    // same (especially the `chunks` field)
++    expect(rootManifest.clientModules).toEqual(issueManifest.clientModules)
++  })
++})
+diff --git a/test/e2e/app-dir/client-reference-chunking/next.config.js b/test/e2e/app-dir/client-reference-chunking/next.config.js
+new file mode 100644
+index 000000000000..807126e4cf0b
+--- /dev/null
++++ b/test/e2e/app-dir/client-reference-chunking/next.config.js
+@@ -0,0 +1,6 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {}
++
++module.exports = nextConfig

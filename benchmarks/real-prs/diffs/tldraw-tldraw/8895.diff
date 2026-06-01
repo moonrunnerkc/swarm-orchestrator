@@ -1,0 +1,451 @@
+diff --git a/.vscode/extensions.json b/.vscode/extensions.json
+index 64dbfece4963..9879019dcb2d 100644
+--- a/.vscode/extensions.json
++++ b/.vscode/extensions.json
+@@ -1,3 +1,3 @@
+ {
+-	"recommendations": ["esbenp.prettier-vscode"]
++	"recommendations": ["oxc.oxc-vscode"]
+ }
+diff --git a/packages/editor/src/lib/editor/Editor.ts b/packages/editor/src/lib/editor/Editor.ts
+index 70b0eb19437c..ad11434935b3 100644
+--- a/packages/editor/src/lib/editor/Editor.ts
++++ b/packages/editor/src/lib/editor/Editor.ts
+@@ -10370,11 +10370,7 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 	 */
+ 	blur({ blurContainer = true } = {}): this {
+ 		if (!this.getIsFocused()) return this
+-		if (blurContainer) {
+-			this.focusManager.blur()
+-		} else {
+-			this.complete() // stop any interaction
+-		}
++		this.focusManager.blur({ blurContainer })
+ 		this.updateInstanceState({ isFocused: false })
+ 		return this
+ 	}
+diff --git a/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.test.ts b/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.test.ts
+new file mode 100644
+index 000000000000..1a35053521f5
+--- /dev/null
++++ b/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.test.ts
+@@ -0,0 +1,132 @@
++import { PageRecordType, type TLInstancePresence } from '@tldraw/tlschema'
++import { vi } from 'vitest'
++import type { Editor } from '../../Editor'
++import { CollaboratorsManager } from './CollaboratorsManager'
++
++const currentPageId = PageRecordType.createId('page')
++
++function createPresence(userId: string): TLInstancePresence {
++	return {
++		typeName: 'instance_presence',
++		id: `instance_presence:${userId}` as TLInstancePresence['id'],
++		userId,
++		userName: userId,
++		lastActivityTimestamp: Date.now(),
++		color: '#000000',
++		camera: null,
++		selectedShapeIds: [],
++		currentPageId,
++		brush: null,
++		scribbles: [],
++		screenBounds: null,
++		followingUserId: null,
++		cursor: null,
++		chatMessage: '',
++		meta: {},
++	}
++}
++
++function createEditor(presences: TLInstancePresence[] = []) {
++	const setInterval = vi.fn(() => 123)
++	const getInstanceState = vi.fn(() => ({
++		followingUserId: null,
++		highlightedUserIds: [],
++	}))
++	const userGetId = vi.fn(() => 'current-user')
++
++	const editor = {
++		options: {
++			collaboratorCheckIntervalMs: 1000,
++			collaboratorIdleTimeoutMs: 3000,
++			collaboratorInactiveTimeoutMs: 5000,
++		},
++		timers: {
++			setInterval,
++		},
++		user: {
++			getId: userGetId,
++		},
++		store: {
++			query: {
++				records: vi.fn(() => ({
++					get: () => presences,
++				})),
++			},
++		},
++		getInstanceState,
++		getCurrentPageId: vi.fn(() => currentPageId),
++	} as unknown as Editor
++
++	return { editor, setInterval, getInstanceState, userGetId }
++}
++
++describe(CollaboratorsManager, () => {
++	afterEach(() => {
++		vi.clearAllMocks()
++	})
++
++	it('starts the visibility clock on the first visible collaborators read', () => {
++		const { editor, setInterval } = createEditor()
++		const manager = new CollaboratorsManager(editor)
++
++		expect(setInterval).not.toHaveBeenCalled()
++
++		expect(manager.getVisibleCollaborators()).toEqual([])
++
++		expect(setInterval).toHaveBeenCalledTimes(1)
++		expect(setInterval).toHaveBeenCalledWith(expect.any(Function), 1000)
++	})
++
++	it('only starts the visibility clock once across repeated reads', () => {
++		const { editor, setInterval } = createEditor()
++		const manager = new CollaboratorsManager(editor)
++
++		manager.getVisibleCollaborators()
++		manager.getVisibleCollaborators()
++		manager.getVisibleCollaborators()
++
++		expect(setInterval).toHaveBeenCalledTimes(1)
++	})
++
++	it('reads instance state once when filtering visible collaborators', () => {
++		const { editor, getInstanceState } = createEditor([
++			createPresence('user-1'),
++			createPresence('user-2'),
++		])
++		const manager = new CollaboratorsManager(editor)
++
++		expect(manager.getVisibleCollaborators()).toHaveLength(2)
++
++		expect(getInstanceState).toHaveBeenCalledTimes(1)
++	})
++
++	it('hides idle collaborators that are following us', () => {
++		const presence = createPresence('peer')
++		presence.lastActivityTimestamp = Date.now() - 4000
++		presence.followingUserId = 'current-user'
++		const { editor } = createEditor([presence])
++		const manager = new CollaboratorsManager(editor)
++
++		expect(manager.getVisibleCollaborators()).toEqual([])
++	})
++
++	it('shows idle collaborators that are following us when they have a chat message', () => {
++		const presence = createPresence('peer')
++		presence.lastActivityTimestamp = Date.now() - 4000
++		presence.followingUserId = 'current-user'
++		presence.chatMessage = 'hi'
++		const { editor } = createEditor([presence])
++		const manager = new CollaboratorsManager(editor)
++
++		expect(manager.getVisibleCollaborators()).toHaveLength(1)
++	})
++
++	it('shows idle collaborators that are not following us', () => {
++		const presence = createPresence('peer')
++		presence.lastActivityTimestamp = Date.now() - 4000
++		const { editor } = createEditor([presence])
++		const manager = new CollaboratorsManager(editor)
++
++		expect(manager.getVisibleCollaborators()).toHaveLength(1)
++	})
++})
+diff --git a/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.ts b/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.ts
+index 658ca7a0c377..d70b023ec732 100644
+--- a/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.ts
++++ b/packages/editor/src/lib/editor/managers/CollaboratorsManager/CollaboratorsManager.ts
+@@ -1,10 +1,6 @@
+ import { EMPTY_ARRAY, atom, computed } from '@tldraw/state'
+-import { TLInstancePresence } from '@tldraw/tlschema'
++import type { TLInstancePresence } from '@tldraw/tlschema'
+ import { maxBy } from '@tldraw/utils'
+-import {
+-	getCollaboratorStateFromElapsedTime,
+-	shouldShowCollaborator,
+-} from '../../../utils/collaboratorState'
+ import type { Editor } from '../../Editor'
+ 
+ /**
+@@ -17,12 +13,19 @@ import type { Editor } from '../../Editor'
+  * @public
+  */
+ export class CollaboratorsManager {
+-	constructor(private readonly editor: Editor) {
++	constructor(private readonly editor: Editor) {}
++
++	private _visibilityClockStarted = false
++
++	private _startVisibilityClock() {
++		if (this._visibilityClockStarted) return
++		this._visibilityClockStarted = true
++
+ 		// Editor disposes `editor.timers` on its own teardown, so the interval is
+ 		// automatically cleared when the editor is disposed.
+-		editor.timers.setInterval(() => {
++		this.editor.timers.setInterval(() => {
+ 			this._visibilityClock.set(Date.now())
+-		}, editor.options.collaboratorCheckIntervalMs)
++		}, this.editor.options.collaboratorCheckIntervalMs)
+ 	}
+ 
+ 	/**
+@@ -75,14 +78,39 @@ export class CollaboratorsManager {
+ 	 */
+ 	@computed
+ 	getVisibleCollaborators(): TLInstancePresence[] {
++		const { editor } = this
++		const { collaboratorInactiveTimeoutMs, collaboratorIdleTimeoutMs } = editor.options
++
++		this._startVisibilityClock()
+ 		this._visibilityClock.get()
+ 		const now = Date.now()
+-		return this.getCollaborators().filter((presence) => {
++		const collaborators = this.getCollaborators()
++		if (!collaborators.length) return EMPTY_ARRAY
++
++		const { followingUserId, highlightedUserIds } = this.editor.getInstanceState()
++		const currentUserId = this.editor.user.getId()
++
++		return collaborators.filter((presence) => {
++			const { lastActivityTimestamp, userId, chatMessage } = presence
++
+ 			// Treat a missing `lastActivityTimestamp` as "active right now" (elapsed = 0)
+ 			// so newly-joined peers aren't immediately classified as idle/inactive.
+-			const elapsed = Math.max(0, now - (presence.lastActivityTimestamp ?? now))
+-			const state = getCollaboratorStateFromElapsedTime(this.editor, elapsed)
+-			return shouldShowCollaborator(this.editor, presence, state)
++			const elapsed = Math.max(0, now - (lastActivityTimestamp ?? now))
++
++			if (elapsed > collaboratorInactiveTimeoutMs) {
++				// Inactive: If they're inactive, only show if we're following them or they're highlighted
++				return followingUserId === userId || highlightedUserIds.includes(userId)
++			}
++
++			if (elapsed > collaboratorIdleTimeoutMs) {
++				// Idle: If they're idle and following us, hide them unless they have a chat message or are highlighted
++				if (presence.followingUserId === currentUserId) {
++					return !!(chatMessage || highlightedUserIds.includes(userId))
++				}
++			}
++
++			// Active
++			return true
+ 		})
+ 	}
+ 
+diff --git a/packages/editor/src/lib/editor/managers/EdgeScrollManager/EdgeScrollManager.ts b/packages/editor/src/lib/editor/managers/EdgeScrollManager/EdgeScrollManager.ts
+index faf08e49a85a..9815026543de 100644
+--- a/packages/editor/src/lib/editor/managers/EdgeScrollManager/EdgeScrollManager.ts
++++ b/packages/editor/src/lib/editor/managers/EdgeScrollManager/EdgeScrollManager.ts
+@@ -2,6 +2,10 @@ import { EASINGS } from '../../../primitives/easings'
+ import { Vec } from '../../../primitives/Vec'
+ import type { Editor } from '../../Editor'
+ 
++// Tuned for touch/small-screen feel; adjust together with coarsePointerWidth.
++const EDGE_SCROLL_SMALL_SCREEN_THRESHOLD_PX = 1000
++const EDGE_SCROLL_SMALL_SCREEN_SPEED_FACTOR = 0.612
++
+ /** @public */
+ export class EdgeScrollManager {
+ 	constructor(public editor: Editor) {}
+@@ -115,8 +119,14 @@ export class EdgeScrollManager {
+ 		const screenBounds = editor.getViewportScreenBounds()
+ 
+ 		// Determines how much the speed is affected by the screen size
+-		const screenSizeFactorX = screenBounds.w < 1000 ? 0.612 : 1
+-		const screenSizeFactorY = screenBounds.h < 1000 ? 0.612 : 1
++		const screenSizeFactorX =
++			screenBounds.w < EDGE_SCROLL_SMALL_SCREEN_THRESHOLD_PX
++				? EDGE_SCROLL_SMALL_SCREEN_SPEED_FACTOR
++				: 1
++		const screenSizeFactorY =
++			screenBounds.h < EDGE_SCROLL_SMALL_SCREEN_THRESHOLD_PX
++				? EDGE_SCROLL_SMALL_SCREEN_SPEED_FACTOR
++				: 1
+ 
+ 		// Determines the base speed of the scroll
+ 		const zoomLevel = editor.getZoomLevel()
+diff --git a/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.test.ts b/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.test.ts
+index 4e84003950a8..dd4cd7a0f466 100644
+--- a/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.test.ts
++++ b/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.test.ts
+@@ -334,6 +334,13 @@ describe('FocusManager', () => {
+ 
+ 			expect(callOrder).toEqual(['complete', 'blur'])
+ 		})
++
++		it('should complete without blurring the container when blurContainer is false', () => {
++			focusManager.blur({ blurContainer: false })
++
++			expect(editor.complete).toHaveBeenCalled()
++			expect(mockContainer.blur).not.toHaveBeenCalled()
++		})
+ 	})
+ 
+ 	describe('dispose', () => {
+diff --git a/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.ts b/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.ts
+index 11d664b76182..8d4730722b8c 100644
+--- a/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.ts
++++ b/packages/editor/src/lib/editor/managers/FocusManager/FocusManager.ts
+@@ -80,9 +80,9 @@ export class FocusManager {
+ 		this.editor.getContainer().focus()
+ 	}
+ 
+-	blur() {
++	blur({ blurContainer = true } = {}) {
+ 		this.editor.complete() // stop any interaction
+-		this.editor.getContainer().blur() // blur the container
++		if (blurContainer) this.editor.getContainer().blur() // blur the container
+ 	}
+ 
+ 	dispose() {
+diff --git a/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts b/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
+index b85c43c6bd53..af203c47ef6c 100644
+--- a/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
++++ b/packages/editor/src/lib/editor/managers/InputsManager/InputsManager.ts
+@@ -7,6 +7,9 @@ import { isAccelKey } from '../../../utils/keyboard'
+ import type { Editor } from '../../Editor'
+ import { TLPinchEventInfo, TLPointerEventInfo, TLWheelEventInfo } from '../../types/event-types'
+ 
++const POINTER_VELOCITY_REFERENCE_INTERVAL_MS = 16
++const POINTER_VELOCITY_REFERENCE_SMOOTHING = 0.5
++
+ /** @public */
+ export class InputsManager {
+ 	constructor(private readonly editor: Editor) {}
+@@ -473,8 +476,14 @@ export class InputsManager {
+ 		const length = delta.len()
+ 		const direction = length ? delta.div(length) : new Vec(0, 0)
+ 
+-		// consider adjusting this with an easing rather than a linear interpolation
+-		const next = pointerVelocity.clone().lrp(direction.mul(length / elapsed), 0.5)
++		// Preserve the old 16ms smoothing with alpha = 1 - (1 - 0.5)^(elapsed / 16).
++		const smoothing =
++			1 -
++			Math.pow(
++				1 - POINTER_VELOCITY_REFERENCE_SMOOTHING,
++				elapsed / POINTER_VELOCITY_REFERENCE_INTERVAL_MS
++			)
++		const next = pointerVelocity.clone().lrp(direction.mul(length / elapsed), smoothing)
+ 
+ 		// if the velocity is very small, just set it to 0
+ 		if (Math.abs(next.x) < 0.01) next.x = 0
+diff --git a/packages/editor/src/lib/hooks/usePeerIds.ts b/packages/editor/src/lib/hooks/usePeerIds.ts
+index 583fe42cea04..90c522f3fc2d 100644
+--- a/packages/editor/src/lib/hooks/usePeerIds.ts
++++ b/packages/editor/src/lib/hooks/usePeerIds.ts
+@@ -4,6 +4,7 @@ import { useEditor } from './useEditor'
+ 
+ /**
+  * Reactive list of peer user IDs for collaborators currently shown in the UI.
++ * This list includes user ids who are not on the user's current page.
+  * Mirrors {@link Editor.getVisibleCollaborators} — peers fade out as they
+  * transition to idle/inactive, without requiring a manual re-render.
+  *
+diff --git a/packages/editor/src/lib/utils/collaboratorState.ts b/packages/editor/src/lib/utils/collaboratorState.ts
+deleted file mode 100644
+index 5c767bd14f4e..000000000000
+--- a/packages/editor/src/lib/utils/collaboratorState.ts
++++ /dev/null
+@@ -1,54 +0,0 @@
+-import { TLInstancePresence } from '@tldraw/tlschema'
+-import { Editor } from '../editor/Editor'
+-
+-/** The activity state of a collaborator */
+-export type CollaboratorState = 'active' | 'idle' | 'inactive'
+-
+-/**
+- * Get the activity state of a collaborator based on elapsed time since their last activity.
+- *
+- * @param editor - The editor instance
+- * @param elapsed - Time in milliseconds since the collaborator's last activity
+- * @returns The collaborator's activity state
+- */
+-export function getCollaboratorStateFromElapsedTime(
+-	editor: Editor,
+-	elapsed: number
+-): CollaboratorState {
+-	return elapsed > editor.options.collaboratorInactiveTimeoutMs
+-		? 'inactive'
+-		: elapsed > editor.options.collaboratorIdleTimeoutMs
+-			? 'idle'
+-			: 'active'
+-}
+-
+-/**
+- * Determine whether a collaborator should be shown based on their activity state
+- * and the current instance state (following, highlighted users, etc.).
+- *
+- * @param editor - The editor instance
+- * @param presence - The collaborator's presence data
+- * @param state - The collaborator's activity state
+- * @returns Whether the collaborator should be shown
+- */
+-export function shouldShowCollaborator(
+-	editor: Editor,
+-	presence: TLInstancePresence,
+-	state: CollaboratorState
+-): boolean {
+-	const { followingUserId, highlightedUserIds } = editor.getInstanceState()
+-
+-	switch (state) {
+-		case 'inactive':
+-			// If they're inactive, only show if we're following them or they're highlighted
+-			return followingUserId === presence.userId || highlightedUserIds.includes(presence.userId)
+-		case 'idle':
+-			// If they're idle and following us, hide them unless they have a chat message or are highlighted
+-			if (presence.followingUserId === editor.user.getId()) {
+-				return !!(presence.chatMessage || highlightedUserIds.includes(presence.userId))
+-			}
+-			return true
+-		case 'active':
+-			return true
+-	}
+-}
+diff --git a/packages/tldraw/src/test/Editor.test.tsx b/packages/tldraw/src/test/Editor.test.tsx
+index 5716359409c0..8e0e843aef96 100644
+--- a/packages/tldraw/src/test/Editor.test.tsx
++++ b/packages/tldraw/src/test/Editor.test.tsx
+@@ -325,6 +325,30 @@ describe('Editor.TickManager', () => {
+ 			y: 0.23437,
+ 		})
+ 	})
++
++	it('smooths pointer velocity consistently across frame rates', () => {
++		const getVelocityAfterMoving = (elapsed: number, frameCount: number) => {
++			const testEditor = new TestEditor({})
++			try {
++				for (let i = 1; i <= frameCount; i++) {
++					testEditor.pointerMove((10 * i) / frameCount, (10 * i) / frameCount)
++					testEditor.inputs.updatePointerVelocity(elapsed)
++				}
++				return testEditor.inputs.getPointerVelocity().toJson()
++			} finally {
++				testEditor.dispose()
++			}
++		}
++
++		expect(getVelocityAfterMoving(16, 1)).toCloselyMatchObject({
++			x: 0.3125,
++			y: 0.3125,
++		})
++		expect(getVelocityAfterMoving(8, 2)).toCloselyMatchObject({
++			x: 0.3125,
++			y: 0.3125,
++		})
++	})
+ })
+ 
+ describe("App's default tool", () => {

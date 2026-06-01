@@ -1,0 +1,274 @@
+diff --git a/.github/workflows/preview-release.yml b/.github/workflows/preview-release.yml
+index bfa62cae9dcb..054db4b02974 100644
+--- a/.github/workflows/preview-release.yml
++++ b/.github/workflows/preview-release.yml
+@@ -23,7 +23,7 @@ env:
+   NODE_OPTIONS: --max-old-space-size=6144
+ 
+ jobs:
+-  build:
++  preview:
+     # Only allow preview releases from branches in the same repo (not forks)
+     if: >-
+       github.repository_owner == 'withastro' &&
+@@ -34,7 +34,8 @@ jobs:
+       contents: read
+       issues: write
+       pull-requests: write
+-    name: Build preview
++      id-token: write
++    name: Build & publish preview
+     timeout-minutes: 5
+     steps:
+       - name: Disable git crlf
+@@ -52,7 +53,10 @@ jobs:
+         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+         with:
+           node-version: 24.15.0
+-          cache: "pnpm"
++          # Explicitly disable cache — a fresh install on every run avoids
++          # the risk of a poisoned cache being used during the publish step
++          # which has access to the OIDC id-token.
++          package-manager-cache: false
+ 
+       - name: Install dependencies
+         run: pnpm install
+@@ -93,52 +97,11 @@ jobs:
+         with:
+           labels: "pr preview"
+ 
+-      - name: Stage publish artifact
+-        env:
+-          AFFECTED_PACKAGES: ${{ steps.compute-affected-packages.outputs.affected-packages }}
+-        run: node scripts/stage-preview-publish.ts /tmp/preview-publish
+-
+-      - name: Upload publish artifact
+-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+-        with:
+-          name: preview-build
+-          path: /tmp/preview-publish/
+-          retention-days: 1
+-
+-  publish:
+-    needs: build
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: read
+-      id-token: write
+-    name: Publish preview release
+-    timeout-minutes: 5
+-    steps:
+-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+-        with:
+-          sparse-checkout: package.json
+-          sparse-checkout-cone-mode: false
+-
+-      - name: Download publish artifact
+-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+-        with:
+-          name: preview-build
+-          path: workspace
+-
+-      - name: Setup PNPM
+-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+-
+-      - name: Setup Node
+-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+-        with:
+-          node-version: 24.15.0
+-
+       - name: Publish packages
+-        working-directory: workspace
+         run: |
+-          packages=$(cat affected-packages.json | jq -r '.[]' | tr '\n' ' ')
++          packages=$(echo '${{ steps.compute-affected-packages.outputs.affected-packages }}' | jq -r '.[]' | tr '\n' ' ')
+           if [ -n "$packages" ]; then
+-            pnpm dlx pkg-pr-new@0.0.71 publish --compact --no-template $packages
++            pnpm exec pkg-pr-new publish --pnpm --compact --no-template $packages
+           else
+             echo "No affected packages to publish"
+           fi
+diff --git a/knip.js b/knip.js
+index d0658bcf682d..9e08e67c53d2 100644
+--- a/knip.js
++++ b/knip.js
+@@ -88,8 +88,5 @@ export default {
+ 		'packages/upgrade': {
+ 			entry: ['src/index.ts', testEntry],
+ 		},
+-		scripts: {
+-			entry: ['index.js', 'cmd/*.js', '**/*.test.{js,ts,mjs}'],
+-		},
+ 	},
+ };
+diff --git a/scripts/stage-preview-publish.test.ts b/scripts/stage-preview-publish.test.ts
+deleted file mode 100644
+index 7459e564752c..000000000000
+--- a/scripts/stage-preview-publish.test.ts
++++ /dev/null
+@@ -1,96 +0,0 @@
+-import { execSync } from 'node:child_process';
+-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+-import { join } from 'node:path';
+-import { after, before, describe, test } from 'node:test';
+-import assert from 'node:assert/strict';
+-
+-const fixtureDir: string = join(import.meta.dirname, '_test-fixture-preview');
+-const outputDir: string = join(import.meta.dirname, '_test-output-preview');
+-const scriptPath: string = join(import.meta.dirname, 'stage-preview-publish.ts');
+-
+-describe('stage-preview-publish', () => {
+-	before(() => {
+-		// Create a fake workspace with a package
+-		rmSync(fixtureDir, { recursive: true, force: true });
+-		rmSync(outputDir, { recursive: true, force: true });
+-
+-		mkdirSync(join(fixtureDir, 'packages', 'astro', 'dist'), { recursive: true });
+-		mkdirSync(join(fixtureDir, 'packages', 'astro', 'test'), { recursive: true });
+-		mkdirSync(join(fixtureDir, 'packages', 'astro', 'src'), { recursive: true });
+-		mkdirSync(join(fixtureDir, 'packages', 'astro', 'node_modules'), { recursive: true });
+-		writeFileSync(
+-			join(fixtureDir, 'packages', 'astro', 'package.json'),
+-			JSON.stringify({ name: 'astro', version: '1.0.0' }),
+-		);
+-		writeFileSync(join(fixtureDir, 'packages', 'astro', 'dist', 'index.js'), '// built');
+-		writeFileSync(join(fixtureDir, 'packages', 'astro', 'test', 'test.js'), '// test');
+-		writeFileSync(join(fixtureDir, 'packages', 'astro', 'src', 'index.ts'), '// src');
+-		writeFileSync(join(fixtureDir, 'packages', 'astro', 'node_modules', 'dep.js'), '// dep');
+-	});
+-
+-	after(() => {
+-		rmSync(fixtureDir, { recursive: true, force: true });
+-		rmSync(outputDir, { recursive: true, force: true });
+-	});
+-
+-	test('stages affected packages with synthetic configs', () => {
+-		execSync(`node ${scriptPath} ${outputDir}`, {
+-			cwd: fixtureDir,
+-			env: {
+-				...process.env,
+-				AFFECTED_PACKAGES: JSON.stringify(['packages/astro']),
+-			},
+-		});
+-
+-		// Synthetic package.json exists and has no workspace:* deps
+-		const pkg = JSON.parse(readFileSync(join(outputDir, 'package.json'), 'utf8'));
+-		assert.equal(pkg.name, 'root');
+-		assert.equal(pkg.private, true);
+-		assert.equal(pkg.dependencies, undefined);
+-
+-		// Synthetic pnpm-workspace.yaml exists with just the packages glob
+-		const workspace: string = readFileSync(join(outputDir, 'pnpm-workspace.yaml'), 'utf8');
+-		assert.ok(workspace.includes('packages:'));
+-		assert.ok(workspace.includes('packages/**/*'));
+-		assert.ok(!workspace.includes('patchedDependencies'));
+-
+-		// Affected package was copied
+-		const astroPkg = JSON.parse(
+-			readFileSync(join(outputDir, 'packages', 'astro', 'package.json'), 'utf8'),
+-		);
+-		assert.equal(astroPkg.name, 'astro');
+-
+-		// Built output was copied
+-		assert.ok(existsSync(join(outputDir, 'packages', 'astro', 'dist', 'index.js')));
+-
+-		// Excluded directories were not copied
+-		assert.ok(!existsSync(join(outputDir, 'packages', 'astro', 'test')));
+-		assert.ok(!existsSync(join(outputDir, 'packages', 'astro', 'src')));
+-		assert.ok(!existsSync(join(outputDir, 'packages', 'astro', 'node_modules')));
+-
+-		// affected-packages.json was written
+-		const affected: string[] = JSON.parse(
+-			readFileSync(join(outputDir, 'affected-packages.json'), 'utf8'),
+-		);
+-		assert.deepEqual(affected, ['packages/astro']);
+-	});
+-
+-	test('exits with error when no staging dir provided', () => {
+-		assert.throws(
+-			() => execSync(`node ${scriptPath}`, { cwd: fixtureDir, stdio: 'pipe' }),
+-			(err: any) => err.status === 1,
+-		);
+-	});
+-
+-	test('exits with error when AFFECTED_PACKAGES is empty', () => {
+-		assert.throws(
+-			() =>
+-				execSync(`node ${scriptPath} ${outputDir}`, {
+-					cwd: fixtureDir,
+-					env: { ...process.env, AFFECTED_PACKAGES: '[]' },
+-					stdio: 'pipe',
+-				}),
+-			(err: any) => err.status === 1,
+-		);
+-	});
+-});
+diff --git a/scripts/stage-preview-publish.ts b/scripts/stage-preview-publish.ts
+deleted file mode 100644
+index eba2cf14393b..000000000000
+--- a/scripts/stage-preview-publish.ts
++++ /dev/null
+@@ -1,63 +0,0 @@
+-/**
+- * Stages a minimal workspace artifact for the preview release publish job.
+- *
+- * The publish job runs in a separate CI job that only has the artifact — no full
+- * repo checkout. We generate synthetic root config files instead of copying the
+- * real ones because the real workspace has workspace:* deps, patchedDependencies,
+- * trustPolicy, etc. that all require files/packages not present in the artifact.
+- *
+- * Usage: node scripts/stage-preview-publish.ts <staging-dir>
+- *
+- * Expects AFFECTED_PACKAGES env var as a JSON array of relative package paths.
+- */
+-
+-import { cpSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+-import { join } from 'node:path';
+-
+-const stagingDir: string | undefined = process.argv[2];
+-if (!stagingDir) {
+-	console.error('Usage: node scripts/stage-preview-publish.ts <staging-dir>');
+-	process.exit(1);
+-}
+-
+-const affectedPackages: string[] = JSON.parse(process.env.AFFECTED_PACKAGES || '[]');
+-if (affectedPackages.length === 0) {
+-	console.error('AFFECTED_PACKAGES env var is empty or not set');
+-	process.exit(1);
+-}
+-
+-mkdirSync(stagingDir, { recursive: true });
+-
+-// Generate a minimal root package.json. The real one has workspace:* deps
+-// (e.g. astro-benchmark) that reference packages not present in the artifact.
+-writeFileSync(
+-	join(stagingDir, 'package.json'),
+-	JSON.stringify({ name: 'root', private: true }, null, '\t') + '\n',
+-);
+-
+-// Generate a minimal pnpm-workspace.yaml with just the packages glob.
+-// The real one includes patchedDependencies, trustPolicy, onlyBuiltDependencies,
+-// etc. that require files/config not present in this minimal workspace.
+-writeFileSync(join(stagingDir, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/**/*"\n');
+-
+-// Copy each affected package directory, excluding directories that are never
+-// part of the published tarball. This keeps the artifact small enough for
+-// upload-artifact to handle without timing out.
+-const EXCLUDE_DIRS = new Set(['test', 'e2e', 'src', 'node_modules', '.turbo']);
+-
+-for (const pkg of affectedPackages) {
+-	const dest = join(stagingDir, pkg);
+-	mkdirSync(dest, { recursive: true });
+-
+-	for (const entry of readdirSync(pkg, { withFileTypes: true })) {
+-		const srcPath = join(pkg, entry.name);
+-		const destPath = join(dest, entry.name);
+-		if (entry.isDirectory() && EXCLUDE_DIRS.has(entry.name)) continue;
+-		cpSync(srcPath, destPath, { recursive: true });
+-	}
+-}
+-
+-// Save the affected packages list for the publish job
+-writeFileSync(join(stagingDir, 'affected-packages.json'), JSON.stringify(affectedPackages));
+-
+-console.info(`Staged ${affectedPackages.length} package(s) to ${stagingDir}`);

@@ -1,0 +1,3048 @@
+diff --git a/packages/astro/src/vite-plugin-astro-server/route-guard.ts b/packages/astro/src/vite-plugin-astro-server/route-guard.ts
+index 9f921e2544c7..65ca3d9a0114 100644
+--- a/packages/astro/src/vite-plugin-astro-server/route-guard.ts
++++ b/packages/astro/src/vite-plugin-astro-server/route-guard.ts
+@@ -15,6 +15,78 @@ const VITE_INTERNAL_PREFIXES = [
+ 	'/.astro/',
+ ];
+ 
++/**
++ * Outcome of the route guard evaluation for a dev-server request.
++ *
++ * - **`next`** — Allow the request through to downstream middleware.
++ * - **`block`** — The file exists at the project root but outside srcDir/publicDir.
++ *   Respond with a 404.
++ */
++export type RouteGuardDecision = { action: 'next' } | { action: 'block'; pathname: string };
++
++/**
++ * Filesystem query results needed by the route guard decision function.
++ * Callers resolve these from the real filesystem; tests can provide them directly.
++ */
++export interface RouteGuardFsInfo {
++	/** Whether the resolved pathname exists inside the project's `publicDir` (e.g. `public/robots.txt`). */
++	existsInPublic: boolean;
++	/** Whether the resolved pathname exists inside the project's `srcDir` (e.g. `src/pages/index.astro`). */
++	existsInSrc: boolean;
++	/** Whether the resolved pathname exists at the project root as a **file** (not a directory). Directories are allowed through because they may share names with valid page routes. */
++	existsAtRootAsFile: boolean;
++}
++
++/**
++ * Pure decision function for the route guard middleware.
++ *
++ * Determines whether a request should be blocked (file exists at project root
++ * but outside srcDir/publicDir) or allowed through. The filesystem lookups are
++ * injected via `fsInfo` so this function remains pure and unit-testable.
++ */
++export function evaluateRouteGuard(
++	url: string,
++	acceptHeader: string,
++	fsInfo: RouteGuardFsInfo,
++): RouteGuardDecision {
++	// Only intercept requests that look like browser navigation (HTML requests)
++	if (!acceptHeader.includes('text/html')) {
++		return { action: 'next' };
++	}
++
++	let pathname: string;
++	try {
++		pathname = decodeURI(new URL(url, 'http://localhost').pathname);
++	} catch {
++		// Malformed URI, let other middleware handle it
++		return { action: 'next' };
++	}
++
++	// Always allow Vite internal paths through
++	if (VITE_INTERNAL_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
++		return { action: 'next' };
++	}
++
++	// Always allow requests with query params (Vite transform requests like ?url, ?raw)
++	if (url.includes('?')) {
++		return { action: 'next' };
++	}
++
++	// Allow if file exists in publicDir or srcDir
++	if (fsInfo.existsInPublic || fsInfo.existsInSrc) {
++		return { action: 'next' };
++	}
++
++	// Block files that exist at project root but not in srcDir or publicDir
++	// Directories are allowed — they may share names with valid page routes
++	if (fsInfo.existsAtRootAsFile) {
++		return { action: 'block', pathname };
++	}
++
++	// File doesn't exist anywhere, let other middleware handle it
++	return { action: 'next' };
++}
++
+ /**
+  * Middleware that prevents Vite from serving files that exist outside
+  * of srcDir and publicDir when accessed via direct URL navigation.
+@@ -31,58 +103,45 @@ export function routeGuardMiddleware(settings: AstroSettings): vite.Connect.Next
+ 			return next();
+ 		}
+ 
+-		// Only intercept requests that look like browser navigation (HTML requests)
+-		// Let all other requests through (JS modules, assets, Vite transforms, etc.)
+ 		const accept = req.headers.accept || '';
+-		if (!accept.includes('text/html')) {
+-			return next();
+-		}
+ 
+ 		let pathname: string;
+ 		try {
+ 			pathname = decodeURI(new URL(url, 'http://localhost').pathname);
+ 		} catch {
+-			// Malformed URI, let other middleware handle it
+ 			return next();
+ 		}
+ 
+-		// Always allow Vite internal paths through
+-		if (VITE_INTERNAL_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+-			return next();
+-		}
+-
+-		// Always allow requests with query params (Vite transform requests like ?url, ?raw)
+-		if (url.includes('?')) {
+-			return next();
+-		}
++		const fsInfo: RouteGuardFsInfo = {
++			existsInPublic: fs.existsSync(new URL('.' + pathname, config.publicDir)),
++			existsInSrc: fs.existsSync(new URL('.' + pathname, config.srcDir)),
++			existsAtRootAsFile: false,
++		};
+ 
+-		// Check if the file exists in publicDir - allow if so
+-		const publicFilePath = new URL('.' + pathname, config.publicDir);
+-		if (fs.existsSync(publicFilePath)) {
+-			return next();
++		// Only check root filesystem for non-Vite, non-query, HTML requests
++		// (the pure function handles the early returns for those cases)
++		if (
++			accept.includes('text/html') &&
++			!url.includes('?') &&
++			!VITE_INTERNAL_PREFIXES.some((prefix) => pathname.startsWith(prefix))
++		) {
++			try {
++				const stat = fs.statSync(new URL('.' + pathname, config.root));
++				fsInfo.existsAtRootAsFile = stat.isFile();
++			} catch {
++				// Path doesn't exist
++			}
+ 		}
+ 
+-		// Check if the file exists in srcDir - allow if so (potential route)
+-		const srcFilePath = new URL('.' + pathname, config.srcDir);
+-		if (fs.existsSync(srcFilePath)) {
+-			return next();
+-		}
++		const decision = evaluateRouteGuard(url, accept, fsInfo);
+ 
+-		// Check if a file exists at project root (outside srcDir/publicDir)
+-		// Only block files, not directories — directories may share names with valid page routes
+-		const rootFilePath = new URL('.' + pathname, config.root);
+-		try {
+-			const stat = fs.statSync(rootFilePath);
+-			if (stat.isFile()) {
+-				// File exists at root but not in srcDir or publicDir - block it
+-				const html = notFoundTemplate(pathname);
++		switch (decision.action) {
++			case 'block': {
++				const html = notFoundTemplate(decision.pathname);
+ 				return writeHtmlResponse(res, 404, html);
+ 			}
+-		} catch {
+-			// Path doesn't exist, continue to next middleware
++			case 'next':
++				return next();
+ 		}
+-
+-		// File doesn't exist anywhere, let other middleware handle it
+-		return next();
+ 	};
+ }
+diff --git a/packages/astro/test/astro-get-static-paths.test.ts b/packages/astro/test/astro-get-static-paths.test.ts
+index c590c38b3144..ea1d6eba041c 100644
+--- a/packages/astro/test/astro-get-static-paths.test.ts
++++ b/packages/astro/test/astro-get-static-paths.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { after, before, describe, it } from 'node:test';
+ import * as cheerio from 'cheerio';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
++import { type Fixture, loadFixture } from './test-utils.ts';
+ 
+ const root = new URL('./fixtures/astro-get-static-paths/', import.meta.url);
+ 
+@@ -27,119 +27,6 @@ describe('getStaticPaths - build calls', () => {
+ 	});
+ });
+ 
+-describe('getStaticPaths - dev calls', () => {
+-	let fixture: Fixture;
+-	let devServer: DevServer;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root,
+-			site: 'https://mysite.dev/',
+-			outDir: './dist/astro-get-static-paths-getstaticpaths-dev-calls/',
+-		});
+-		devServer = await fixture.startDevServer();
+-	});
+-
+-	after(async () => {
+-		await devServer.stop();
+-	});
+-
+-	// Caching behavior has been moved to unit tests
+-	// See: test/units/routing/getstaticpaths-cache.test.js
+-
+-	describe('404 behavior', () => {
+-		it('resolves 200 on matching static path - named params', async () => {
+-			const res = await fixture.fetch('/pizza/provolone-sausage');
+-			assert.equal(res.status, 200);
+-		});
+-
+-		it('resolves 404 on pattern match without static path - named params', async () => {
+-			const res = await fixture.fetch('/pizza/provolone-pineapple');
+-			assert.equal(res.status, 404);
+-		});
+-
+-		it('resolves 200 on matching static path - rest params', async () => {
+-			const res = await fixture.fetch('/pizza/grimaldis/new-york');
+-			assert.equal(res.status, 200);
+-		});
+-
+-		it('resolves 404 on pattern match without static path - rest params', async () => {
+-			const res = await fixture.fetch('/pizza/pizza-hut');
+-			assert.equal(res.status, 404);
+-		});
+-	});
+-
+-	describe('route params type validation', () => {
+-		it('resolves 200 on matching static path - string params', async () => {
+-			// route provided with { params: { year: "2022", slug: "post-2" }}
+-			const res = await fixture.fetch('/blog/2022/post-1');
+-			assert.equal(res.status, 200);
+-		});
+-
+-		it('resolves 200 on matching static path - numeric params', async () => {
+-			// route provided with { params: { year: "2022", slug: "post-2" }}
+-			const res = await fixture.fetch('/blog/2022/post-2');
+-			assert.equal(res.status, 200);
+-		});
+-	});
+-
+-	it('provides routePattern', async () => {
+-		const res = await fixture.fetch('/blog/2022/post-1');
+-		assert.equal(res.status, 200);
+-
+-		const html = await res.text();
+-		const $ = cheerio.load(html);
+-
+-		assert.equal($('#route-pattern').text(), '/blog/[year]/[slug]');
+-	});
+-
+-	it('resolves 200 on matching static paths', async () => {
+-		// routes params provided for pages /posts/1, /posts/2, and /posts/3
+-		for (const page of [1, 2, 3]) {
+-			let res = await fixture.fetch(`/posts/${page}`);
+-			assert.equal(res.status, 200);
+-
+-			const html = await res.text();
+-			const $ = cheerio.load(html);
+-
+-			const canonical = $('link[rel=canonical]');
+-			assert.equal(
+-				canonical.attr('href'),
+-				`https://mysite.dev/posts/${page}`,
+-				`doesn't trim the /${page} route param`,
+-			);
+-		}
+-	});
+-
+-	it('properly handles hyphenation in getStaticPaths', async () => {
+-		const res = await fixture.fetch('/pizza/parmesan-and-olives');
+-		assert.equal(res.status, 200);
+-	});
+-
+-	it('warns if Astro.generator or Astro.site is accessed', async () => {
+-		const originalWarn = console.warn;
+-		const logs: Array<string> = [];
+-		console.warn = (...args) => {
+-			logs.push(...args);
+-			return originalWarn(...args);
+-		};
+-		const res = await fixture.fetch('/food/tacos');
+-		console.warn = originalWarn;
+-		assert.equal(res.status, 200);
+-		assert.deepStrictEqual(logs, [
+-			'Astro.generator inside getStaticPaths is deprecated and will be removed in a future major version of Astro.',
+-			'Astro.site inside getStaticPaths is deprecated and will be removed in a future major version of Astro. Use import.meta.env.SITE instead',
+-		]);
+-
+-		const html = await res.text();
+-		const $ = cheerio.load(html);
+-
+-		assert.equal($('#generator').text().startsWith('Astro v'), true);
+-		// For some reason site is always undefined
+-		assert.equal($('#site').text(), 'https://mysite.dev/');
+-	});
+-});
+-
+ describe('throws if an invalid Astro property is accessed', () => {
+ 	let fixture: Fixture;
+ 
+diff --git a/packages/astro/test/custom-404-html.test.ts b/packages/astro/test/custom-404-html.test.ts
+deleted file mode 100644
+index adb2d4e17fad..000000000000
+--- a/packages/astro/test/custom-404-html.test.ts
++++ /dev/null
+@@ -1,47 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { loadFixture, type Fixture, type DevServer } from './test-utils.ts';
+-
+-describe('Custom 404.html', () => {
+-	let fixture: Fixture;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root: './fixtures/custom-404-html/',
+-			site: 'http://example.com',
+-			outDir: './dist/custom-404-html/',
+-		});
+-	});
+-
+-	describe('dev', () => {
+-		let devServer: DevServer;
+-		let $;
+-
+-		before(async () => {
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders /', async () => {
+-			const html = await fixture.fetch('/').then((res) => res.text());
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Home');
+-		});
+-
+-		it('renders 404 for /a', async () => {
+-			const res = await fixture.fetch('/a');
+-			assert.equal(res.status, 404);
+-
+-			const html = await res.text();
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Page not found');
+-			assert.equal($('p').text(), 'This 404 is a static HTML file.');
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/custom-404-implicit-rerouting.test.ts b/packages/astro/test/custom-404-implicit-rerouting.test.ts
+deleted file mode 100644
+index 56b6e600d0b5..000000000000
+--- a/packages/astro/test/custom-404-implicit-rerouting.test.ts
++++ /dev/null
+@@ -1,67 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import testAdapter from './test-adapter.ts';
+-import { loadFixture, type Fixture, type DevServer, type App } from './test-utils.ts';
+-
+-for (const caseNumber of [1, 2, 3, 4, 5]) {
+-	describe(`Custom 404 with implicit rerouting - Case #${caseNumber}`, () => {
+-		let fixture: Fixture;
+-
+-		before(async () => {
+-			fixture = await loadFixture({
+-				output: 'server',
+-				root: `./fixtures/custom-404-loop-case-${caseNumber}/`,
+-				site: 'http://example.com',
+-				adapter: testAdapter(),
+-				outDir: './dist/custom-404-implicit-rerouting/',
+-			});
+-		});
+-
+-		describe('dev server', () => {
+-			let devServer: DevServer;
+-
+-			before(async () => {
+-				await fixture.build();
+-				devServer = await fixture.startDevServer();
+-			});
+-
+-			// sanity check
+-			it('dev server handles normal requests', { timeout: 3000 }, async () => {
+-				const response = await fixture.fetch('/');
+-				assert.equal(response.status, 200);
+-			});
+-
+-			// IMPORTANT: never skip
+-			it('dev server stays responsive', { timeout: 3000 }, async () => {
+-				const response = await fixture.fetch('/alvsibdlvjks');
+-				assert.equal(response.status, 404);
+-			});
+-
+-			after(async () => {
+-				await devServer.stop();
+-			});
+-		});
+-
+-		describe('prod server', () => {
+-			let app: App;
+-
+-			before(async () => {
+-				app = await fixture.loadTestAdapterApp();
+-			});
+-
+-			// sanity check
+-			it('prod server handles normal requests', { timeout: 3000 }, async () => {
+-				const response = await app.render(new Request('https://example.com/'));
+-				assert.equal(response.status, 200);
+-			});
+-
+-			// IMPORTANT: never skip
+-			it('prod server stays responsive for case number ' + caseNumber, {
+-				timeout: 3000,
+-			}, async () => {
+-				const response = await app.render(new Request('https://example.com/alvsibdlvjks'));
+-				assert.equal(response.status, 404);
+-			});
+-		});
+-	});
+-}
+diff --git a/packages/astro/test/custom-404-injected.test.ts b/packages/astro/test/custom-404-injected.test.ts
+deleted file mode 100644
+index 61385da01b82..000000000000
+--- a/packages/astro/test/custom-404-injected.test.ts
++++ /dev/null
+@@ -1,47 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { loadFixture, type Fixture, type DevServer } from './test-utils.ts';
+-
+-describe('Custom 404 with injectRoute', () => {
+-	let fixture: Fixture;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root: './fixtures/custom-404-injected/',
+-			site: 'http://example.com',
+-			outDir: './dist/custom-404-injected/',
+-		});
+-	});
+-
+-	describe('dev', () => {
+-		let devServer: DevServer;
+-		let $;
+-
+-		before(async () => {
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders /', async () => {
+-			const html = await fixture.fetch('/').then((res) => res.text());
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Home');
+-		});
+-
+-		it('renders 404 for /a', async () => {
+-			const res = await fixture.fetch('/a');
+-			assert.equal(res.status, 404);
+-
+-			const html = await res.text();
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Page not found');
+-			assert.equal($('p').text(), '/a');
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/custom-404-locals.test.ts b/packages/astro/test/custom-404-locals.test.ts
+deleted file mode 100644
+index c86b4e2ca496..000000000000
+--- a/packages/astro/test/custom-404-locals.test.ts
++++ /dev/null
+@@ -1,60 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { loadFixture, type Fixture, type DevServer } from './test-utils.ts';
+-
+-describe('Custom 404 locals', () => {
+-	let fixture: Fixture;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root: './fixtures/custom-404-locals/',
+-			site: 'http://example.com',
+-			outDir: './dist/custom-404-locals/',
+-		});
+-	});
+-
+-	describe('dev', () => {
+-		let devServer: DevServer;
+-		let $;
+-
+-		before(async () => {
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders /', async () => {
+-			const html = await fixture.fetch('/').then((res) => res.text());
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Home');
+-		});
+-
+-		it('renders 404 for /a', async () => {
+-			const res = await fixture.fetch('/a');
+-			assert.equal(res.status, 404);
+-
+-			const html = await res.text();
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Page not found');
+-			assert.equal($('p.message').text(), 'This 404 is a dynamic HTML file.');
+-			assert.equal($('p.runtime').text(), 'locals');
+-		});
+-
+-		it('renders 404 for /404-return', async () => {
+-			const res = await fixture.fetch('/404-return');
+-			assert.equal(res.status, 404);
+-
+-			const html = await res.text();
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Page not found');
+-			assert.equal($('p.message').text(), 'This 404 is a dynamic HTML file.');
+-			assert.equal($('p.runtime').text(), 'locals');
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/custom-404-md.test.ts b/packages/astro/test/custom-404-md.test.ts
+deleted file mode 100644
+index f8cbecc1daba..000000000000
+--- a/packages/astro/test/custom-404-md.test.ts
++++ /dev/null
+@@ -1,45 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { loadFixture, type Fixture, type DevServer } from './test-utils.ts';
+-
+-describe('Custom 404 Markdown', () => {
+-	let fixture: Fixture;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root: './fixtures/custom-404-md/',
+-			outDir: './dist/custom-404-md/',
+-		});
+-	});
+-
+-	describe('dev', () => {
+-		let devServer: DevServer;
+-		let $;
+-
+-		before(async () => {
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders /', async () => {
+-			const html = await fixture.fetch('/').then((res) => res.text());
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Home');
+-		});
+-
+-		it('renders 404 for /abc', async () => {
+-			const res = await fixture.fetch('/a');
+-			assert.equal(res.status, 404);
+-
+-			const html = await res.text();
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Page not found');
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/custom-404-static.test.ts b/packages/astro/test/custom-404-static.test.ts
+deleted file mode 100644
+index 64434cc5268c..000000000000
+--- a/packages/astro/test/custom-404-static.test.ts
++++ /dev/null
+@@ -1,59 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { loadFixture, type Fixture, type DevServer } from './test-utils.ts';
+-
+-describe('Custom 404 with Static', () => {
+-	let fixture: Fixture;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root: './fixtures/custom-404-static/',
+-			site: 'http://example.com',
+-			outDir: './dist/custom-404-static/',
+-		});
+-	});
+-
+-	describe('dev', () => {
+-		let devServer: DevServer;
+-		let $;
+-
+-		before(async () => {
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders /', async () => {
+-			const html = await fixture.fetch('/').then((res) => res.text());
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Home');
+-		});
+-
+-		it('renders 404 for /a', async () => {
+-			const res = await fixture.fetch('/a');
+-			assert.equal(res.status, 404);
+-			assert.equal(res.statusText, 'Not Found');
+-
+-			const html = await res.text();
+-			$ = cheerio.load(html);
+-
+-			assert.equal($('h1').text(), 'Page not found');
+-			assert.equal($('p').text(), '/a');
+-		});
+-	});
+-
+-	describe('build', () => {
+-		before(async () => {
+-			await fixture.build();
+-		});
+-
+-		it('builds to 404.html', async () => {
+-			const html = await fixture.readFile('/404.html');
+-			assert.ok(html);
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/dev-base.test.ts b/packages/astro/test/dev-base.test.ts
+deleted file mode 100644
+index ee3255b66b48..000000000000
+--- a/packages/astro/test/dev-base.test.ts
++++ /dev/null
+@@ -1,48 +0,0 @@
+-import * as assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
+-
+-describe('base configuration', () => {
+-	describe('with trailingSlash: "never"', () => {
+-		let fixture: Fixture;
+-		let devServer: DevServer;
+-
+-		before(async () => {
+-			fixture = await loadFixture({
+-				root: './fixtures/dev-render/',
+-				base: '/docs',
+-				trailingSlash: 'never',
+-				outDir: './dist/dev-base/',
+-			});
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		describe('index route', () => {
+-			it('Requests that include a trailing slash 404', async () => {
+-				const res = await fixture.fetch('/docs/');
+-				assert.equal(res.status, 404);
+-			});
+-
+-			it('Requests that exclude a trailing slash 200', async () => {
+-				const res = await fixture.fetch('/docs');
+-				assert.equal(res.status, 200);
+-			});
+-		});
+-
+-		describe('sub route', () => {
+-			it('Requests that include a trailing slash 404', async () => {
+-				const res = await fixture.fetch('/docs/sub/');
+-				assert.equal(res.status, 404);
+-			});
+-
+-			it('Requests that exclude a trailing slash 200', async () => {
+-				const res = await fixture.fetch('/docs/sub');
+-				assert.equal(res.status, 200);
+-			});
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/dev-error-pages.test.ts b/packages/astro/test/dev-error-pages.test.ts
+deleted file mode 100644
+index 40a19c6c22c3..000000000000
+--- a/packages/astro/test/dev-error-pages.test.ts
++++ /dev/null
+@@ -1,71 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
+-
+-describe('Dev pipeline - error pages', () => {
+-	describe('Custom 404', () => {
+-		let fixture: Fixture;
+-		let devServer: DevServer;
+-
+-		before(async () => {
+-			fixture = await loadFixture({
+-				root: './fixtures/dev-error-pages/',
+-				outDir: './dist/dev-error-pages-custom-404/',
+-			});
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders the custom 404.astro page for unmatched routes', async () => {
+-			const res = await fixture.fetch('/does-not-exist');
+-			assert.equal(res.status, 404);
+-			const html = await res.text();
+-			const $ = cheerio.load(html);
+-			assert.equal($('h1').text(), 'Custom 404');
+-		});
+-
+-		it('renders the built-in Astro 404 page when requesting a truly unmatched route', async () => {
+-			// With a custom 404.astro present, it always serves that
+-			const res = await fixture.fetch('/does-not-exist');
+-			assert.equal(res.status, 404);
+-		});
+-
+-		it('serves the custom 404 page for the /404 path itself', async () => {
+-			const res = await fixture.fetch('/404');
+-			assert.equal(res.status, 404);
+-			const html = await res.text();
+-			const $ = cheerio.load(html);
+-			assert.equal($('h1').text(), 'Custom 404');
+-		});
+-	});
+-
+-	describe('Custom 500', () => {
+-		let fixture: Fixture;
+-		let devServer: DevServer;
+-
+-		before(async () => {
+-			fixture = await loadFixture({
+-				root: './fixtures/dev-error-pages/',
+-				output: 'server',
+-				outDir: './dist/dev-error-pages-custom-500/',
+-			});
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('renders the custom 500.astro page when a route throws', async () => {
+-			const res = await fixture.fetch('/throwing');
+-			assert.equal(res.status, 500);
+-			const html = await res.text();
+-			const $ = cheerio.load(html);
+-			assert.equal($('h1').text(), 'Server Error');
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/dynamic-endpoint-collision.test.ts b/packages/astro/test/dynamic-endpoint-collision.test.ts
+index 82045d79f815..fc3c38d26f8d 100644
+--- a/packages/astro/test/dynamic-endpoint-collision.test.ts
++++ b/packages/astro/test/dynamic-endpoint-collision.test.ts
+@@ -1,7 +1,6 @@
+ import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import { load as cheerioLoad } from 'cheerio';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
++import { before, describe, it } from 'node:test';
++import { type Fixture, loadFixture } from './test-utils.ts';
+ 
+ describe('Dynamic endpoint collision', () => {
+ 	describe('build', () => {
+@@ -23,38 +22,4 @@ describe('Dynamic endpoint collision', () => {
+ 			assert.equal(errorMsg!.name, 'PrerenderDynamicEndpointPathCollide');
+ 		});
+ 	});
+-
+-	describe('dev', () => {
+-		let fixture: Fixture;
+-		let devServer: DevServer;
+-
+-		before(async () => {
+-			fixture = await loadFixture({
+-				root: './fixtures/dynamic-endpoint-collision/',
+-				outDir: './dist/dynamic-endpoint-collision-dev/',
+-			});
+-
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('throw error when dynamic endpoint has path collision', async () => {
+-			const html = await fixture.fetch('/api/catch').then((res) => res.text());
+-			const $ = cheerioLoad(html);
+-			assert.equal($('title').text(), 'PrerenderDynamicEndpointPathCollide');
+-		});
+-
+-		it("don't throw error when dynamic endpoint doesn't load the colliding path", async () => {
+-			const res = await fixture.fetch('/api/catch/one').then((r) => r.text());
+-			assert.equal(res, '{"slug":"one"}');
+-		});
+-
+-		it('returns 404 when user visits dynamic endpoint that has collision but not specified in getStaticPaths', async () => {
+-			const res = await fixture.fetch('/api/safe');
+-			assert.equal(res.status, 404);
+-		});
+-	});
+ });
+diff --git a/packages/astro/test/fixtures/custom-404-html/astro.config.mjs b/packages/astro/test/fixtures/custom-404-html/astro.config.mjs
+deleted file mode 100644
+index 882e6515a67e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-html/astro.config.mjs
++++ /dev/null
+@@ -1,4 +0,0 @@
+-import { defineConfig } from 'astro/config';
+-
+-// https://astro.build/config
+-export default defineConfig({});
+diff --git a/packages/astro/test/fixtures/custom-404-html/package.json b/packages/astro/test/fixtures/custom-404-html/package.json
+deleted file mode 100644
+index b137ab07695b..000000000000
+--- a/packages/astro/test/fixtures/custom-404-html/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-html",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-html/src/pages/404.html b/packages/astro/test/fixtures/custom-404-html/src/pages/404.html
+deleted file mode 100644
+index 50051bbc0b4c..000000000000
+--- a/packages/astro/test/fixtures/custom-404-html/src/pages/404.html
++++ /dev/null
+@@ -1,9 +0,0 @@
+-<html lang="en">
+-<head>
+-  <title>Not Found - Custom 404</title>
+-</head>
+-<body>
+-  <h1>Page not found</h1>
+-	<p>This 404 is a static HTML file.</p>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-html/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-html/src/pages/index.astro
+deleted file mode 100644
+index cf5ef9b586c6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-html/src/pages/index.astro
++++ /dev/null
+@@ -1,11 +0,0 @@
+----
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Custom 404</title>
+-</head>
+-<body>
+-  <h1>Home</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-injected/astro.config.mjs b/packages/astro/test/fixtures/custom-404-injected/astro.config.mjs
+deleted file mode 100644
+index ae0d4e111a2e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-injected/astro.config.mjs
++++ /dev/null
+@@ -1,18 +0,0 @@
+-import { defineConfig } from 'astro/config';
+-
+-// https://astro.build/config
+-export default defineConfig({
+-  integrations: [
+-    {
+-      name: '404-integration',
+-      hooks: {
+-        'astro:config:setup': ({ injectRoute }) => {
+-          injectRoute({
+-            pattern: '404',
+-            entrypoint: 'src/404.astro',
+-          });
+-        },
+-      },
+-    },
+-  ],
+-});
+diff --git a/packages/astro/test/fixtures/custom-404-injected/package.json b/packages/astro/test/fixtures/custom-404-injected/package.json
+deleted file mode 100644
+index 855088a9f754..000000000000
+--- a/packages/astro/test/fixtures/custom-404-injected/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-injected",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-injected/src/404.astro b/packages/astro/test/fixtures/custom-404-injected/src/404.astro
+deleted file mode 100644
+index 63d560b0fb91..000000000000
+--- a/packages/astro/test/fixtures/custom-404-injected/src/404.astro
++++ /dev/null
+@@ -1,13 +0,0 @@
+----
+-const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Not Found - Custom 404</title>
+-</head>
+-<body>
+-  <h1>Page not found</h1>
+-	<p>{canonicalURL.pathname}</p>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-injected/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-injected/src/pages/index.astro
+deleted file mode 100644
+index cf5ef9b586c6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-injected/src/pages/index.astro
++++ /dev/null
+@@ -1,11 +0,0 @@
+----
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Custom 404</title>
+-</head>
+-<body>
+-  <h1>Home</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-locals/astro.config.mjs b/packages/astro/test/fixtures/custom-404-locals/astro.config.mjs
+deleted file mode 100644
+index 8e5335b3d5c6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-locals/astro.config.mjs
++++ /dev/null
+@@ -1,19 +0,0 @@
+-import { defineConfig } from 'astro/config';
+-
+-// https://astro.build/config
+-export default defineConfig({
+-	integrations: [{
+-		name: 'locals-integration',
+-		hooks: {
+-			'astro:server:setup': ({ server }) => {
+-				server.middlewares.use(async function middleware(req, res, next) {
+-						const clientLocalsSymbol = Symbol.for('astro.locals');
+-						Reflect.set(req, clientLocalsSymbol, {
+-							runtime: 'locals'
+-					});
+-					next();
+-				});
+-			},
+-		},
+-	}]
+-});
+diff --git a/packages/astro/test/fixtures/custom-404-locals/package.json b/packages/astro/test/fixtures/custom-404-locals/package.json
+deleted file mode 100644
+index 6fe4651b3a6c..000000000000
+--- a/packages/astro/test/fixtures/custom-404-locals/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-locals",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-locals/src/pages/404-return.astro b/packages/astro/test/fixtures/custom-404-locals/src/pages/404-return.astro
+deleted file mode 100644
+index 85c7644717e6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-locals/src/pages/404-return.astro
++++ /dev/null
+@@ -1,5 +0,0 @@
+----
+-return new Response(null, { status: 404 });
+----
+-
+-I should never load
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-locals/src/pages/404.astro b/packages/astro/test/fixtures/custom-404-locals/src/pages/404.astro
+deleted file mode 100644
+index 867ca600c980..000000000000
+--- a/packages/astro/test/fixtures/custom-404-locals/src/pages/404.astro
++++ /dev/null
+@@ -1,13 +0,0 @@
+----
+-const runtime = Astro.locals.runtime
+----
+-<html lang="en">
+-<head>
+-  <title>Not Found - Custom 404</title>
+-</head>
+-<body>
+-  <h1>Page not found</h1>
+-	<p class="message">This 404 is a dynamic HTML file.</p>
+-  <p class="runtime">{runtime}</p>
+-</body>
+-</html>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-locals/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-locals/src/pages/index.astro
+deleted file mode 100644
+index cf5ef9b586c6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-locals/src/pages/index.astro
++++ /dev/null
+@@ -1,11 +0,0 @@
+----
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Custom 404</title>
+-</head>
+-<body>
+-  <h1>Home</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-1/astro.config.mjs b/packages/astro/test/fixtures/custom-404-loop-case-1/astro.config.mjs
+deleted file mode 100644
+index 56004c9f9e06..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-1/astro.config.mjs
++++ /dev/null
+@@ -1 +0,0 @@
+-export default {}
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-1/package.json b/packages/astro/test/fixtures/custom-404-loop-case-1/package.json
+deleted file mode 100644
+index cbc4f22ed083..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-1/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-loop-case-1",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-1/src/pages/404.astro b/packages/astro/test/fixtures/custom-404-loop-case-1/src/pages/404.astro
+deleted file mode 100644
+index ff217453dd8e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-1/src/pages/404.astro
++++ /dev/null
+@@ -1,4 +0,0 @@
+----
+-Astro.response.status = 404
+----
+-<p>four oh four route</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-1/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-loop-case-1/src/pages/index.astro
+deleted file mode 100644
+index a65c81fdb2f1..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-1/src/pages/index.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>all good here... or is it?</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-2/astro.config.mjs b/packages/astro/test/fixtures/custom-404-loop-case-2/astro.config.mjs
+deleted file mode 100644
+index 56004c9f9e06..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-2/astro.config.mjs
++++ /dev/null
+@@ -1 +0,0 @@
+-export default {}
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-2/package.json b/packages/astro/test/fixtures/custom-404-loop-case-2/package.json
+deleted file mode 100644
+index 2c5d3be559c8..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-2/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-loop-case-2",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-2/src/pages/404.astro b/packages/astro/test/fixtures/custom-404-loop-case-2/src/pages/404.astro
+deleted file mode 100644
+index 0c079adca040..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-2/src/pages/404.astro
++++ /dev/null
+@@ -1,4 +0,0 @@
+----
+-return new Response(null, { status: 404 })
+----
+-<p>four oh four route</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-2/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-loop-case-2/src/pages/index.astro
+deleted file mode 100644
+index a65c81fdb2f1..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-2/src/pages/index.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>all good here... or is it?</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-3/astro.config.mjs b/packages/astro/test/fixtures/custom-404-loop-case-3/astro.config.mjs
+deleted file mode 100644
+index 56004c9f9e06..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-3/astro.config.mjs
++++ /dev/null
+@@ -1 +0,0 @@
+-export default {}
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-3/package.json b/packages/astro/test/fixtures/custom-404-loop-case-3/package.json
+deleted file mode 100644
+index 51b90b3cb5a4..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-3/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-loop-case-3",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-3/src/middleware.js b/packages/astro/test/fixtures/custom-404-loop-case-3/src/middleware.js
+deleted file mode 100644
+index 992ca1de8d10..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-3/src/middleware.js
++++ /dev/null
+@@ -1,7 +0,0 @@
+-export async function onRequest(ctx, next) {
+-    if (ctx.url.pathname !== '/') {
+-        const response = await next()
+-        return new Response(response.body, { ...response, status: 404 })
+-    }
+-    return next();
+-}
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-3/src/pages/404.astro b/packages/astro/test/fixtures/custom-404-loop-case-3/src/pages/404.astro
+deleted file mode 100644
+index af3c5ef0ae3f..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-3/src/pages/404.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>four oh four route</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-3/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-loop-case-3/src/pages/index.astro
+deleted file mode 100644
+index a65c81fdb2f1..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-3/src/pages/index.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>all good here... or is it?</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-4/astro.config.mjs b/packages/astro/test/fixtures/custom-404-loop-case-4/astro.config.mjs
+deleted file mode 100644
+index 56004c9f9e06..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-4/astro.config.mjs
++++ /dev/null
+@@ -1 +0,0 @@
+-export default {}
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-4/package.json b/packages/astro/test/fixtures/custom-404-loop-case-4/package.json
+deleted file mode 100644
+index 0fb69f5139e0..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-4/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-loop-case-4",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-4/src/middleware.js b/packages/astro/test/fixtures/custom-404-loop-case-4/src/middleware.js
+deleted file mode 100644
+index 6ab0cac69279..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-4/src/middleware.js
++++ /dev/null
+@@ -1,6 +0,0 @@
+-export function onRequest(ctx, next) {
+-    if (ctx.url.pathname !== '/') {
+-        return new Response(null, { status: 404 });
+-    }
+-    return next();
+-}
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-4/src/pages/404.astro b/packages/astro/test/fixtures/custom-404-loop-case-4/src/pages/404.astro
+deleted file mode 100644
+index af3c5ef0ae3f..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-4/src/pages/404.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>four oh four route</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-4/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-loop-case-4/src/pages/index.astro
+deleted file mode 100644
+index a65c81fdb2f1..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-4/src/pages/index.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>all good here... or is it?</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-5/astro.config.mjs b/packages/astro/test/fixtures/custom-404-loop-case-5/astro.config.mjs
+deleted file mode 100644
+index 97e67349d4fa..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-5/astro.config.mjs
++++ /dev/null
+@@ -1,3 +0,0 @@
+-export default {
+-    output: "server"
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-5/package.json b/packages/astro/test/fixtures/custom-404-loop-case-5/package.json
+deleted file mode 100644
+index 1c0718c1db24..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-5/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-loop-case-5",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-5/src/pages/[x].astro b/packages/astro/test/fixtures/custom-404-loop-case-5/src/pages/[x].astro
+deleted file mode 100644
+index ff217453dd8e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-5/src/pages/[x].astro
++++ /dev/null
+@@ -1,4 +0,0 @@
+----
+-Astro.response.status = 404
+----
+-<p>four oh four route</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-loop-case-5/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-loop-case-5/src/pages/index.astro
+deleted file mode 100644
+index a65c81fdb2f1..000000000000
+--- a/packages/astro/test/fixtures/custom-404-loop-case-5/src/pages/index.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<p>all good here... or is it?</p>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/custom-404-md/astro.config.mjs b/packages/astro/test/fixtures/custom-404-md/astro.config.mjs
+deleted file mode 100644
+index 882e6515a67e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-md/astro.config.mjs
++++ /dev/null
+@@ -1,4 +0,0 @@
+-import { defineConfig } from 'astro/config';
+-
+-// https://astro.build/config
+-export default defineConfig({});
+diff --git a/packages/astro/test/fixtures/custom-404-md/package.json b/packages/astro/test/fixtures/custom-404-md/package.json
+deleted file mode 100644
+index 4f6a0b25faf8..000000000000
+--- a/packages/astro/test/fixtures/custom-404-md/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404-md",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-md/src/layouts/Base.astro b/packages/astro/test/fixtures/custom-404-md/src/layouts/Base.astro
+deleted file mode 100644
+index 971e10ff1d77..000000000000
+--- a/packages/astro/test/fixtures/custom-404-md/src/layouts/Base.astro
++++ /dev/null
+@@ -1,12 +0,0 @@
+----
+-const { content } = Astro.props;
+----
+-
+-<html lang="en">
+-<head>
+-  <title>{content.title}</title>
+-</head>
+-<body>
+-	<slot />
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-md/src/pages/404.md b/packages/astro/test/fixtures/custom-404-md/src/pages/404.md
+deleted file mode 100644
+index c165ec9c3d3e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-md/src/pages/404.md
++++ /dev/null
+@@ -1,6 +0,0 @@
+----
+-layout: '../layouts/Base.astro'
+-title: 'Not Found - Custom 404'
+----
+-
+-# Page not found
+diff --git a/packages/astro/test/fixtures/custom-404-md/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-md/src/pages/index.astro
+deleted file mode 100644
+index cf5ef9b586c6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-md/src/pages/index.astro
++++ /dev/null
+@@ -1,11 +0,0 @@
+----
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Custom 404</title>
+-</head>
+-<body>
+-  <h1>Home</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-static/astro.config.mjs b/packages/astro/test/fixtures/custom-404-static/astro.config.mjs
+deleted file mode 100644
+index 882e6515a67e..000000000000
+--- a/packages/astro/test/fixtures/custom-404-static/astro.config.mjs
++++ /dev/null
+@@ -1,4 +0,0 @@
+-import { defineConfig } from 'astro/config';
+-
+-// https://astro.build/config
+-export default defineConfig({});
+diff --git a/packages/astro/test/fixtures/custom-404-static/package.json b/packages/astro/test/fixtures/custom-404-static/package.json
+deleted file mode 100644
+index 73ef4171b3a9..000000000000
+--- a/packages/astro/test/fixtures/custom-404-static/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/custom-404",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/custom-404-static/src/pages/404.astro b/packages/astro/test/fixtures/custom-404-static/src/pages/404.astro
+deleted file mode 100644
+index 63d560b0fb91..000000000000
+--- a/packages/astro/test/fixtures/custom-404-static/src/pages/404.astro
++++ /dev/null
+@@ -1,13 +0,0 @@
+----
+-const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Not Found - Custom 404</title>
+-</head>
+-<body>
+-  <h1>Page not found</h1>
+-	<p>{canonicalURL.pathname}</p>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/custom-404-static/src/pages/index.astro b/packages/astro/test/fixtures/custom-404-static/src/pages/index.astro
+deleted file mode 100644
+index cf5ef9b586c6..000000000000
+--- a/packages/astro/test/fixtures/custom-404-static/src/pages/index.astro
++++ /dev/null
+@@ -1,11 +0,0 @@
+----
+----
+-
+-<html lang="en">
+-<head>
+-  <title>Custom 404</title>
+-</head>
+-<body>
+-  <h1>Home</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/dev-error-pages/package.json b/packages/astro/test/fixtures/dev-error-pages/package.json
+deleted file mode 100644
+index 273f2ede8caf..000000000000
+--- a/packages/astro/test/fixtures/dev-error-pages/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-	"name": "@test/dev-error-pages",
+-	"version": "0.0.0",
+-	"private": true,
+-	"dependencies": {
+-		"astro": "workspace:*"
+-	}
+-}
+diff --git a/packages/astro/test/fixtures/dev-error-pages/src/pages/404.astro b/packages/astro/test/fixtures/dev-error-pages/src/pages/404.astro
+deleted file mode 100644
+index 5b971b2701e3..000000000000
+--- a/packages/astro/test/fixtures/dev-error-pages/src/pages/404.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<h1>Custom 404</h1>
+diff --git a/packages/astro/test/fixtures/dev-error-pages/src/pages/500.astro b/packages/astro/test/fixtures/dev-error-pages/src/pages/500.astro
+deleted file mode 100644
+index 17b8f9c06000..000000000000
+--- a/packages/astro/test/fixtures/dev-error-pages/src/pages/500.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<h1>Server Error</h1>
+diff --git a/packages/astro/test/fixtures/dev-error-pages/src/pages/index.astro b/packages/astro/test/fixtures/dev-error-pages/src/pages/index.astro
+deleted file mode 100644
+index f95bef307333..000000000000
+--- a/packages/astro/test/fixtures/dev-error-pages/src/pages/index.astro
++++ /dev/null
+@@ -1 +0,0 @@
+-<h1>Home</h1>
+diff --git a/packages/astro/test/fixtures/dev-error-pages/src/pages/throwing.astro b/packages/astro/test/fixtures/dev-error-pages/src/pages/throwing.astro
+deleted file mode 100644
+index b4f6926b94d1..000000000000
+--- a/packages/astro/test/fixtures/dev-error-pages/src/pages/throwing.astro
++++ /dev/null
+@@ -1,3 +0,0 @@
+----
+-throw new Error('boom');
+----
+diff --git a/packages/astro/test/fixtures/public-base-404/package.json b/packages/astro/test/fixtures/public-base-404/package.json
+deleted file mode 100644
+index d8fe64b7c674..000000000000
+--- a/packages/astro/test/fixtures/public-base-404/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/public-base-404",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/public-base-404/public/twitter.png b/packages/astro/test/fixtures/public-base-404/public/twitter.png
+deleted file mode 100644
+index 8ffef69d61b3..000000000000
+Binary files a/packages/astro/test/fixtures/public-base-404/public/twitter.png and /dev/null differ
+diff --git a/packages/astro/test/fixtures/public-base-404/src/pages/404.astro b/packages/astro/test/fixtures/public-base-404/src/pages/404.astro
+deleted file mode 100644
+index d5dfb7c7421f..000000000000
+--- a/packages/astro/test/fixtures/public-base-404/src/pages/404.astro
++++ /dev/null
+@@ -1,8 +0,0 @@
+-<html lang="en">
+-<head>
+-  <title>Not Found</title>
+-</head>
+-<body>
+-  <h1>404</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/public-base-404/src/pages/index.astro b/packages/astro/test/fixtures/public-base-404/src/pages/index.astro
+deleted file mode 100644
+index 810c3b673e3e..000000000000
+--- a/packages/astro/test/fixtures/public-base-404/src/pages/index.astro
++++ /dev/null
+@@ -1,8 +0,0 @@
+-<html lang="en">
+-<head>
+-  <title>This Site</title>
+-</head>
+-<body>
+-  <img src="/twitter.png"  />
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/redirects/astro.config.mjs b/packages/astro/test/fixtures/redirects/astro.config.mjs
+deleted file mode 100644
+index 1ddc69dcc089..000000000000
+--- a/packages/astro/test/fixtures/redirects/astro.config.mjs
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig } from "astro/config";
+-
+-export default defineConfig({
+-	security: {
+-		checkOrigin: false
+-	}
+-})
+diff --git a/packages/astro/test/fixtures/redirects/package.json b/packages/astro/test/fixtures/redirects/package.json
+deleted file mode 100644
+index 9017715ce70a..000000000000
+--- a/packages/astro/test/fixtures/redirects/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/ssr-redirect",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/redirects/src/components/redirect.astro b/packages/astro/test/fixtures/redirects/src/components/redirect.astro
+deleted file mode 100644
+index f8fc808e7ade..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/components/redirect.astro
++++ /dev/null
+@@ -1,3 +0,0 @@
+----
+-return Astro.redirect('/login');
+----
+diff --git a/packages/astro/test/fixtures/redirects/src/middleware.ts b/packages/astro/test/fixtures/redirects/src/middleware.ts
+deleted file mode 100644
+index 57ce556781a8..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/middleware.ts
++++ /dev/null
+@@ -1,13 +0,0 @@
+-import { defineMiddleware } from 'astro:middleware';
+-
+-export const onRequest = defineMiddleware(({ request }, next) => {
+-	if(new URL(request.url).pathname === '/middleware-redirect/') {
+-		return new Response(null, {
+-			status: 301,
+-			headers: {
+-				'Location': '/test'
+-			}
+-		});
+-	}
+-	return next();
+-});
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/articles/[...slug].astro b/packages/astro/test/fixtures/redirects/src/pages/articles/[...slug].astro
+deleted file mode 100644
+index 716d3bd5d4af..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/articles/[...slug].astro
++++ /dev/null
+@@ -1,25 +0,0 @@
+----
+-export const getStaticPaths = (async () => {
+-  const posts = [
+-		{ slug: 'one', data: {draft: false, title: 'One'} },
+-		{ slug: 'two', data: {draft: false, title: 'Two'} }
+-	];
+-  return posts.map((post) => {
+-    return {
+-      params: { slug: post.slug },
+-      props: { draft: post.data.draft, title: post.data.title },
+-    };
+-  });
+-})
+-
+-const { slug } = Astro.params;
+-const { title } = Astro.props;
+----
+-<html>
+-	<head>
+-		<title>{ title }</title>
+-	</head>
+-	<body>
+-		<h1>{ title }</h1>
+-	</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/categories/[category]/[page].astro b/packages/astro/test/fixtures/redirects/src/pages/categories/[category]/[page].astro
+deleted file mode 100644
+index c77d30116d75..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/categories/[category]/[page].astro
++++ /dev/null
+@@ -1,20 +0,0 @@
+----
+-export function getStaticPaths() {
+-	return [
+-		{ params: { category: 'food', page: '1' } },
+-		{ params: { category: 'food', page: '2' } },
+-		{ params: { category: 'technology', page: '1' } },
+-	];
+-}
+-
+-const { category, page } = Astro.params;
+----
+-<html>
+-	<head>
+-		<title>{category} - Page {page}</title>
+-	</head>
+-	<body>
+-		<h1>{category}</h1>
+-		<p>Page {page}</p>
+-	</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/late.astro b/packages/astro/test/fixtures/redirects/src/pages/late.astro
+deleted file mode 100644
+index d6854dba0fd2..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/late.astro
++++ /dev/null
+@@ -1,15 +0,0 @@
+----
+-import Redirect from '../components/redirect.astro';
+-const staticMode = !!import.meta.env.STATIC_MODE;
+----
+-<html>
+-	<head>
+-		<title>Testing</title>
+-	</head>
+-	<body>
+-		<h1>Testing</h1>
+-		{ !staticMode ? (
+-			<Redirect />
+-		) : <div></div>}
+-	</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/middleware-redirect.astro b/packages/astro/test/fixtures/redirects/src/pages/middleware-redirect.astro
+deleted file mode 100644
+index 04f62cd89d45..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/middleware-redirect.astro
++++ /dev/null
+@@ -1,10 +0,0 @@
+----
+----
+-<html>
+-	<head>
+-		<title>This page should have been redirected</title>
+-	</head>
+-	<body>
+-		<h1>This page should have been redirected</h1>
+-	</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic].astro b/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic].astro
+deleted file mode 100644
+index f980c25baa68..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic].astro
++++ /dev/null
+@@ -1,8 +0,0 @@
+----
+-export function getStaticPaths() {
+-  return [{ params: { dynamic:'hello' } }]
+-}
+----
+-{JSON.stringify(Astro.params)}
+-
+-<a href="/">home</a>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic]/[prerender].astro b/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic]/[prerender].astro
+deleted file mode 100644
+index 76bc0aa8c1f6..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic]/[prerender].astro
++++ /dev/null
+@@ -1,10 +0,0 @@
+----
+-export const prerender = true;
+-
+-export function getStaticPaths() {
+-  return [{ params: { dynamic:'hello', prerender:'world' } }]
+-}
+----
+-{JSON.stringify(Astro.params)}
+-
+-<a href="/">home</a>
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic]/[route].astro b/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic]/[route].astro
+deleted file mode 100644
+index 94ccb545ff9b..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/more/[dynamic]/[route].astro
++++ /dev/null
+@@ -1,8 +0,0 @@
+----
+-export function getStaticPaths() {
+-  return [{ params: { dynamic:'hello', route:'world' } }]
+-}
+----
+-{JSON.stringify(Astro.params)}
+-
+-<a href="/">home</a>
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/more/new/[...spread].astro b/packages/astro/test/fixtures/redirects/src/pages/more/new/[...spread].astro
+deleted file mode 100644
+index f34bb28f64a8..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/more/new/[...spread].astro
++++ /dev/null
+@@ -1,8 +0,0 @@
+----
+-export function getStaticPaths() {
+-  return [{ params: {spread:'welcome/world'} }]
+-}
+----
+-{JSON.stringify(Astro.params)}
+-
+-<a href="/">home</a>
+\ No newline at end of file
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/secret.astro b/packages/astro/test/fixtures/redirects/src/pages/secret.astro
+deleted file mode 100644
+index f8fc808e7ade..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/secret.astro
++++ /dev/null
+@@ -1,3 +0,0 @@
+----
+-return Astro.redirect('/login');
+----
+diff --git a/packages/astro/test/fixtures/redirects/src/pages/test.astro b/packages/astro/test/fixtures/redirects/src/pages/test.astro
+deleted file mode 100644
+index e06d49b853b1..000000000000
+--- a/packages/astro/test/fixtures/redirects/src/pages/test.astro
++++ /dev/null
+@@ -1,10 +0,0 @@
+----
+----
+-<html>
+-	<head>
+-		<title>Testing</title>
+-	</head>
+-	<body>
+-		<h1>Testing</h1>
+-	</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/route-guard/LICENSE b/packages/astro/test/fixtures/route-guard/LICENSE
+deleted file mode 100644
+index 469528672895..000000000000
+--- a/packages/astro/test/fixtures/route-guard/LICENSE
++++ /dev/null
+@@ -1 +0,0 @@
+-MIT License - This file should NOT be accessible via /LICENSE
+diff --git a/packages/astro/test/fixtures/route-guard/README.md b/packages/astro/test/fixtures/route-guard/README.md
+deleted file mode 100644
+index cea3c84ef5fb..000000000000
+--- a/packages/astro/test/fixtures/route-guard/README.md
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# Test README
+-
+-This file should NOT be accessible via /README.md
+diff --git a/packages/astro/test/fixtures/route-guard/config.json b/packages/astro/test/fixtures/route-guard/config.json
+deleted file mode 100644
+index 2cafaff8f272..000000000000
+--- a/packages/astro/test/fixtures/route-guard/config.json
++++ /dev/null
+@@ -1,3 +0,0 @@
+-{
+-  "secret": "this-should-not-be-served"
+-}
+diff --git a/packages/astro/test/fixtures/route-guard/package.json b/packages/astro/test/fixtures/route-guard/package.json
+deleted file mode 100644
+index cd7fa55f6dd0..000000000000
+--- a/packages/astro/test/fixtures/route-guard/package.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "name": "@test/route-guard",
+-  "version": "0.0.0",
+-  "private": true,
+-  "dependencies": {
+-    "astro": "workspace:*"
+-  }
+-}
+diff --git a/packages/astro/test/fixtures/route-guard/public/robots.txt b/packages/astro/test/fixtures/route-guard/public/robots.txt
+deleted file mode 100644
+index c2a49f4fb82f..000000000000
+--- a/packages/astro/test/fixtures/route-guard/public/robots.txt
++++ /dev/null
+@@ -1,2 +0,0 @@
+-User-agent: *
+-Allow: /
+diff --git a/packages/astro/test/fixtures/route-guard/src/pages/about.md b/packages/astro/test/fixtures/route-guard/src/pages/about.md
+deleted file mode 100644
+index 39cb724cbb7b..000000000000
+--- a/packages/astro/test/fixtures/route-guard/src/pages/about.md
++++ /dev/null
+@@ -1,5 +0,0 @@
+----
+----
+-# About Page
+-
+-This is a valid markdown page.
+diff --git a/packages/astro/test/fixtures/route-guard/src/pages/index.astro b/packages/astro/test/fixtures/route-guard/src/pages/index.astro
+deleted file mode 100644
+index 9ec7bb657b10..000000000000
+--- a/packages/astro/test/fixtures/route-guard/src/pages/index.astro
++++ /dev/null
+@@ -1,6 +0,0 @@
+----
+----
+-<html>
+-  <head><title>Home</title></head>
+-  <body><h1>Home Page</h1></body>
+-</html>
+diff --git a/packages/astro/test/fixtures/route-guard/src/pages/test.astro b/packages/astro/test/fixtures/route-guard/src/pages/test.astro
+deleted file mode 100644
+index 2fe331eb897a..000000000000
+--- a/packages/astro/test/fixtures/route-guard/src/pages/test.astro
++++ /dev/null
+@@ -1,8 +0,0 @@
+----
+----
+-<html>
+-<head><title>Test Page</title></head>
+-<body>
+-  <h1>Test Page</h1>
+-</body>
+-</html>
+diff --git a/packages/astro/test/fixtures/route-guard/test-1/.gitkeep b/packages/astro/test/fixtures/route-guard/test-1/.gitkeep
+deleted file mode 100644
+index e69de29bb2d1..000000000000
+diff --git a/packages/astro/test/fixtures/route-guard/test/.gitkeep b/packages/astro/test/fixtures/route-guard/test/.gitkeep
+deleted file mode 100644
+index e69de29bb2d1..000000000000
+diff --git a/packages/astro/test/public-base-404.test.ts b/packages/astro/test/public-base-404.test.ts
+deleted file mode 100644
+index 9d98eec2fcbd..000000000000
+--- a/packages/astro/test/public-base-404.test.ts
++++ /dev/null
+@@ -1,68 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import * as cheerio from 'cheerio';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
+-
+-describe('Public dev with base', () => {
+-	let fixture: Fixture;
+-	let $: cheerio.CheerioAPI;
+-	let devServer: DevServer;
+-
+-	before(async () => {
+-		fixture = await loadFixture({
+-			root: './fixtures/public-base-404/',
+-			site: 'http://example.com/',
+-			base: '/blog',
+-			outDir: './dist/public-base-404/',
+-		});
+-		devServer = await fixture.startDevServer();
+-	});
+-
+-	after(async () => {
+-		await devServer.stop();
+-	});
+-
+-	it('200 when loading /@vite/client', async () => {
+-		const response = await fixture.fetch('/@vite/client', {
+-			redirect: 'manual',
+-		});
+-		assert.equal(response.status, 200);
+-		const content = await response.text();
+-		assert.equal(content.includes('vite'), true);
+-	});
+-
+-	it('200 when loading /blog/twitter.png', async () => {
+-		const response = await fixture.fetch('/blog/twitter.png', {
+-			redirect: 'manual',
+-		});
+-		assert.equal(response.status, 200);
+-	});
+-
+-	it('custom 404 page when loading /blog/blog/', async () => {
+-		const response = await fixture.fetch('/blog/blog/');
+-		const html = await response.text();
+-		$ = cheerio.load(html);
+-		assert.equal($('h1').text(), '404');
+-	});
+-
+-	it('default 404 hint page when loading /', async () => {
+-		const response = await fixture.fetch('/');
+-		assert.equal(response.status, 404);
+-		const html = await response.text();
+-		$ = cheerio.load(html);
+-		assert.equal($('a').first().text(), '/blog');
+-	});
+-
+-	it('default 404 page when loading /none/', async () => {
+-		const response = await fixture.fetch('/none/', {
+-			headers: {
+-				accept: 'text/html,*/*',
+-			},
+-		});
+-		assert.equal(response.status, 404);
+-		const html = await response.text();
+-		$ = cheerio.load(html);
+-		assert.equal($('h1').text(), '404:  Not found');
+-		assert.equal($('pre').text(), 'Path: /none/');
+-	});
+-});
+diff --git a/packages/astro/test/redirects.test.ts b/packages/astro/test/redirects.test.ts
+deleted file mode 100644
+index 3070bfdaf494..000000000000
+--- a/packages/astro/test/redirects.test.ts
++++ /dev/null
+@@ -1,61 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
+-
+-describe('Astro.redirect output: "static"', () => {
+-	let fixture: Fixture;
+-
+-	describe('dev', () => {
+-		let devServer: DevServer;
+-		before(async () => {
+-			process.env.STATIC_MODE = 'true';
+-			fixture = await loadFixture({
+-				root: './fixtures/redirects/',
+-				output: 'static',
+-				redirects: {
+-					'/one': '/',
+-					'/more/old/[dynamic]': '/more/[dynamic]',
+-					'/more/old/[dynamic]/[route]': '/more/[dynamic]/[route]',
+-					'/more/old/[...spread]': '/more/new/[...spread]',
+-				},
+-				outDir: './dist/redirects/',
+-			});
+-			devServer = await fixture.startDevServer();
+-		});
+-
+-		after(async () => {
+-			await devServer.stop();
+-		});
+-
+-		it('performs simple redirects', async () => {
+-			let res = await fixture.fetch('/one', {
+-				redirect: 'manual',
+-			});
+-			assert.equal(res.status, 301);
+-			assert.equal(res.headers.get('Location'), '/');
+-		});
+-
+-		it('performs dynamic redirects', async () => {
+-			const response = await fixture.fetch('/more/old/hello', { redirect: 'manual' });
+-			assert.equal(response.status, 301);
+-			assert.equal(response.headers.get('Location'), '/more/hello');
+-		});
+-
+-		it('performs dynamic redirects with special characters', async () => {
+-			// encodeURI("/more/old/’")
+-			const response = await fixture.fetch('/more/old/%E2%80%99', { redirect: 'manual' });
+-			assert.equal(response.status, 301);
+-			assert.equal(response.headers.get('Location'), '/more/%E2%80%99');
+-		});
+-
+-		it('performs dynamic redirects with multiple params', async () => {
+-			const response = await fixture.fetch('/more/old/hello/world', { redirect: 'manual' });
+-			assert.equal(response.headers.get('Location'), '/more/hello/world');
+-		});
+-
+-		it.skip('falls back to spread rule when dynamic rules should not match', async () => {
+-			const response = await fixture.fetch('/more/old/welcome/world', { redirect: 'manual' });
+-			assert.equal(response.headers.get('Location'), '/more/new/welcome/world');
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/route-guard.test.ts b/packages/astro/test/route-guard.test.ts
+deleted file mode 100644
+index 4ca22690bb27..000000000000
+--- a/packages/astro/test/route-guard.test.ts
++++ /dev/null
+@@ -1,101 +0,0 @@
+-import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
+-
+-describe('Route Guard - Dev Server', () => {
+-	let fixture: Fixture;
+-	let devServer: DevServer;
+-
+-	before(async () => {
+-		fixture = await loadFixture({ root: './fixtures/route-guard/', outDir: './dist/route-guard/' });
+-		devServer = await fixture.startDevServer();
+-	});
+-
+-	after(async () => {
+-		await devServer.stop();
+-	});
+-
+-	describe('Files at project root should return 404 for browser requests', () => {
+-		// Browser navigation sends Accept: text/html - these should be blocked
+-		const browserHeaders = { headers: { Accept: 'text/html' } };
+-
+-		it('404 when loading /README.md (file exists at project root)', async () => {
+-			const response = await fixture.fetch('/README.md', browserHeaders);
+-			assert.equal(response.status, 404);
+-		});
+-
+-		it('404 when loading /LICENSE (file exists at project root)', async () => {
+-			const response = await fixture.fetch('/LICENSE', browserHeaders);
+-			assert.equal(response.status, 404);
+-		});
+-
+-		it('404 when loading /config.json (file exists at project root)', async () => {
+-			const response = await fixture.fetch('/config.json', browserHeaders);
+-			assert.equal(response.status, 404);
+-		});
+-
+-		it('404 when loading /package.json (file exists at project root)', async () => {
+-			const response = await fixture.fetch('/package.json', browserHeaders);
+-			assert.equal(response.status, 404);
+-		});
+-	});
+-
+-	describe('Valid routes should work', () => {
+-		it('200 when loading / (index page)', async () => {
+-			const response = await fixture.fetch('/');
+-			assert.equal(response.status, 200);
+-		});
+-
+-		it('200 when loading /about (markdown page in src/pages)', async () => {
+-			const response = await fixture.fetch('/about');
+-			assert.equal(response.status, 200);
+-		});
+-	});
+-
+-	describe('Public directory files should be served', () => {
+-		it('200 when loading /robots.txt (file in public directory)', async () => {
+-			const response = await fixture.fetch('/robots.txt');
+-			assert.equal(response.status, 200);
+-			const text = await response.text();
+-			assert.match(text, /User-agent/);
+-		});
+-	});
+-
+-	describe('Directories at project root should not conflict with routes', () => {
+-		const browserHeaders = { headers: { Accept: 'text/html' } };
+-
+-		it('200 when loading /test (route exists and directory exists at project root)', async () => {
+-			const response = await fixture.fetch('/test', browserHeaders);
+-			assert.equal(response.status, 200);
+-			const html = await response.text();
+-			assert.match(html, /Test Page/);
+-		});
+-
+-		it('404 when loading /test-1 (no route exists and directory exists at project root)', async () => {
+-			const response = await fixture.fetch('/test-1', browserHeaders);
+-			assert.equal(response.status, 404);
+-		});
+-	});
+-
+-	describe('Nonexistent files should 404 normally', () => {
+-		it('404 when loading /nonexistent.md (file does not exist)', async () => {
+-			const response = await fixture.fetch('/nonexistent.md');
+-			assert.equal(response.status, 404);
+-		});
+-
+-		it('404 when loading /does-not-exist (no file, no route)', async () => {
+-			const response = await fixture.fetch('/does-not-exist');
+-			assert.equal(response.status, 404);
+-		});
+-	});
+-
+-	describe('Vite internal paths should still work', () => {
+-		it('allows /@vite/ prefixed requests', async () => {
+-			// This tests that we don't block Vite internals
+-			// The actual response may vary, but it shouldn't be our custom 404
+-			const response = await fixture.fetch('/@vite/client');
+-			// Vite client should return 200 or handle it appropriately
+-			assert.notEqual(response.status, 404);
+-		});
+-	});
+-});
+diff --git a/packages/astro/test/ssr-prerender-get-static-paths.test.ts b/packages/astro/test/ssr-prerender-get-static-paths.test.ts
+index e089bddda89d..49082cb3aa6b 100644
+--- a/packages/astro/test/ssr-prerender-get-static-paths.test.ts
++++ b/packages/astro/test/ssr-prerender-get-static-paths.test.ts
+@@ -3,7 +3,7 @@ import { after, afterEach, before, describe, it } from 'node:test';
+ import * as cheerio from 'cheerio';
+ import type { Plugin } from 'vite';
+ import testAdapter from './test-adapter.ts';
+-import { type DevServer, type Fixture, loadFixture } from './test-utils.ts';
++import { type Fixture, loadFixture } from './test-utils.ts';
+ 
+ describe('Prerender', () => {
+ 	let fixture: Fixture;
+@@ -43,85 +43,6 @@ describe('Prerender', () => {
+ 				assert.equal($('#url').text(), '/blog/food/tacos/');
+ 			});
+ 		});
+-
+-		describe('getStaticPaths - dev calls', () => {
+-			let devServer: DevServer;
+-
+-			before(async () => {
+-				(globalThis as any).isCalledOnce = false;
+-				devServer = await fixture.startDevServer();
+-			});
+-
+-			afterEach(() => {
+-				// reset the flag used by [...calledTwiceTest].astro between each test
+-				(globalThis as any).isCalledOnce = false;
+-			});
+-
+-			after(async () => {
+-				await devServer.stop();
+-			});
+-
+-			it('only calls prerender getStaticPaths once', async function () {
+-				// Sometimes this fail in CI as the chokidar watcher triggers an update and invalidates the route cache,
+-				// causing getStaticPaths to be called twice. Workaround this with 2 retries for now.
+-				// it was used in the original test using chai, but it's not available in the current version of node:test
+-				// this.retries(2);
+-
+-				let res = await fixture.fetch('/blog/a');
+-				assert.equal(res.status, 200);
+-
+-				res = await fixture.fetch('/blog/b');
+-				assert.equal(res.status, 200);
+-
+-				res = await fixture.fetch('/blog/c');
+-				assert.equal(res.status, 200);
+-			});
+-
+-			describe('404 behavior', () => {
+-				it('resolves 200 on matching static path - named params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/provolone-sausage');
+-					assert.equal(res.status, 200);
+-				});
+-
+-				it('resolves 404 on pattern match without static path - named params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/provolone-pineapple');
+-					const html = await res.text();
+-					assert.equal(res.status, 404);
+-					assert.match(html, /404/);
+-				});
+-
+-				it('resolves 200 on matching static path - rest params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/grimaldis/new-york');
+-					assert.equal(res.status, 200);
+-				});
+-
+-				it('resolves 404 on pattern match without static path - rest params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/pizza-hut');
+-					const html = await res.text();
+-
+-					assert.equal(res.status, 404);
+-					assert.match(html, /404/);
+-				});
+-			});
+-
+-			it('resolves 200 on matching static paths', async () => {
+-				// routes params provided for pages /posts/1, /posts/2, and /posts/3
+-				for (const page of [1, 2, 3]) {
+-					let res = await fixture.fetch(`/blog/posts/${page}`);
+-					assert.equal(res.status, 200);
+-
+-					const html = await res.text();
+-					const $ = cheerio.load(html);
+-
+-					const canonical = $('link[rel=canonical]');
+-					assert.equal(
+-						canonical.attr('href'),
+-						`https://mysite.dev/blog/posts/${page}`,
+-						`doesn't trim the /${page} route param`,
+-					);
+-				}
+-			});
+-		});
+ 	});
+ 
+ 	describe('output: "static" with server output', () => {
+@@ -163,80 +84,6 @@ describe('Prerender', () => {
+ 				assert.equal($('#url').text(), '/blog/food/tacos/');
+ 			});
+ 		});
+-
+-		describe('getStaticPaths - dev calls', () => {
+-			let devServer: DevServer;
+-
+-			before(async () => {
+-				(globalThis as any).isCalledOnce = false;
+-				devServer = await fixture.startDevServer();
+-			});
+-
+-			afterEach(() => {
+-				// reset the flag used by [...calledTwiceTest].astro between each test
+-				(globalThis as any).isCalledOnce = false;
+-			});
+-
+-			after(async () => {
+-				await devServer.stop();
+-			});
+-
+-			it('only calls hybrid getStaticPaths once', async () => {
+-				let res = await fixture.fetch('/blog/a');
+-				assert.equal(res.status, 200);
+-
+-				res = await fixture.fetch('/blog/b');
+-				assert.equal(res.status, 200);
+-
+-				res = await fixture.fetch('/blog/c');
+-				assert.equal(res.status, 200);
+-			});
+-
+-			describe('404 behavior', () => {
+-				it('resolves 200 on matching static path - named params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/provolone-sausage');
+-					assert.equal(res.status, 200);
+-				});
+-
+-				it('resolves 404 on pattern match without static path - named params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/provolone-pineapple');
+-					const html = await res.text();
+-					assert.equal(res.status, 404);
+-					assert.match(html, /404/);
+-				});
+-
+-				it('resolves 200 on matching static path - rest params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/grimaldis/new-york');
+-					assert.equal(res.status, 200);
+-				});
+-
+-				it('resolves 404 on pattern match without static path - rest params', async () => {
+-					const res = await fixture.fetch('/blog/pizza/pizza-hut');
+-					const html = await res.text();
+-
+-					assert.equal(res.status, 404);
+-					assert.match(html, /404/);
+-				});
+-			});
+-
+-			it('resolves 200 on matching static paths', async () => {
+-				// routes params provided for pages /posts/1, /posts/2, and /posts/3
+-				for (const page of [1, 2, 3]) {
+-					let res = await fixture.fetch(`/blog/posts/${page}`);
+-					assert.equal(res.status, 200);
+-
+-					const html = await res.text();
+-					const $ = cheerio.load(html);
+-
+-					const canonical = $('link[rel=canonical]');
+-					assert.equal(
+-						canonical.attr('href'),
+-						`https://mysite.dev/blog/posts/${page}`,
+-						`doesn't trim the /${page} route param`,
+-					);
+-				}
+-			});
+-		});
+ 	});
+ });
+ 
+diff --git a/packages/astro/test/units/dev/4xx-templates.test.ts b/packages/astro/test/units/dev/4xx-templates.test.ts
+new file mode 100644
+index 000000000000..7916933edd59
+--- /dev/null
++++ b/packages/astro/test/units/dev/4xx-templates.test.ts
+@@ -0,0 +1,71 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import * as cheerio from 'cheerio';
++import { notFoundTemplate, subpathNotUsedTemplate } from '../../../dist/template/4xx.js';
++
++describe('notFoundTemplate', () => {
++	it('produces valid HTML with 404 status code', () => {
++		const html = notFoundTemplate('/some-path');
++		const $ = cheerio.load(html);
++		assert.match($('.statusCode').text(), /404/);
++	});
++
++	it('includes the pathname in the output', () => {
++		const html = notFoundTemplate('/my/page');
++		const $ = cheerio.load(html);
++		assert.match($('pre').text(), /\/my\/page/);
++	});
++
++	it('uses custom message when provided', () => {
++		const html = notFoundTemplate('/test', 'Custom message');
++		const $ = cheerio.load(html);
++		assert.match($('.statusMessage').text(), /Custom message/);
++	});
++
++	it('defaults message to "Not found"', () => {
++		const html = notFoundTemplate('/test');
++		const $ = cheerio.load(html);
++		assert.match($('.statusMessage').text(), /Not found/);
++	});
++
++	it('escapes HTML in pathname', () => {
++		const html = notFoundTemplate('/<script>alert(1)</script>');
++		assert.ok(!html.includes('<script>alert(1)</script>'));
++		assert.ok(html.includes('&lt;script&gt;'));
++	});
++
++	it('sets correct tab title', () => {
++		const html = notFoundTemplate('/test');
++		const $ = cheerio.load(html);
++		assert.equal($('title').text(), '404: Not found');
++	});
++});
++
++describe('subpathNotUsedTemplate', () => {
++	it('produces valid HTML with 404 status code', () => {
++		const html = subpathNotUsedTemplate('/blog', '/');
++		const $ = cheerio.load(html);
++		assert.match($('.statusCode').text(), /404/);
++	});
++
++	it('includes a link to the base path', () => {
++		const html = subpathNotUsedTemplate('/blog', '/');
++		const $ = cheerio.load(html);
++		const link = $('a').first();
++		assert.equal(link.attr('href'), '/blog');
++		assert.equal(link.text(), '/blog');
++	});
++
++	it('includes the base path in the explanation text', () => {
++		const html = subpathNotUsedTemplate('/docs/', '/');
++		const $ = cheerio.load(html);
++		const bodyText = $('body').text();
++		assert.ok(bodyText.includes('/docs/'));
++	});
++
++	it('sets correct tab title', () => {
++		const html = subpathNotUsedTemplate('/blog', '/');
++		const $ = cheerio.load(html);
++		assert.equal($('title').text(), '404: Not Found');
++	});
++});
+diff --git a/packages/astro/test/units/dev/route-guard-decision.test.ts b/packages/astro/test/units/dev/route-guard-decision.test.ts
+new file mode 100644
+index 000000000000..60bd2443fee1
+--- /dev/null
++++ b/packages/astro/test/units/dev/route-guard-decision.test.ts
+@@ -0,0 +1,216 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import {
++	evaluateRouteGuard,
++	type RouteGuardFsInfo,
++} from '../../../dist/vite-plugin-astro-server/route-guard.js';
++
++const NO_FILES: RouteGuardFsInfo = {
++	existsInPublic: false,
++	existsInSrc: false,
++	existsAtRootAsFile: false,
++};
++
++// #region non-HTML requests pass through
++describe('evaluateRouteGuard — non-HTML requests', () => {
++	it('passes through requests without text/html accept', () => {
++		const result = evaluateRouteGuard('/README.md', 'application/json', {
++			...NO_FILES,
++			existsAtRootAsFile: true,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through image requests', () => {
++		const result = evaluateRouteGuard('/logo.png', 'image/*', {
++			...NO_FILES,
++			existsAtRootAsFile: true,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through requests with empty accept header', () => {
++		const result = evaluateRouteGuard('/README.md', '', {
++			...NO_FILES,
++			existsAtRootAsFile: true,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region Vite internal prefixes
++describe('evaluateRouteGuard — Vite internal prefixes', () => {
++	it('passes through /@vite/client', () => {
++		const result = evaluateRouteGuard('/@vite/client', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through /@fs/ paths', () => {
++		const result = evaluateRouteGuard('/@fs/project/src/main.ts', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through /@id/ paths', () => {
++		const result = evaluateRouteGuard('/@id/module', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through /__vite paths', () => {
++		const result = evaluateRouteGuard('/__vite/hmr', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through /@react-refresh', () => {
++		const result = evaluateRouteGuard('/@react-refresh', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through /node_modules/ paths', () => {
++		const result = evaluateRouteGuard('/node_modules/foo/bar.js', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through /.astro/ paths', () => {
++		const result = evaluateRouteGuard('/.astro/types.d.ts', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region query params
++describe('evaluateRouteGuard — query params', () => {
++	it('passes through URLs with query params', () => {
++		const result = evaluateRouteGuard('/README.md?raw', 'text/html', {
++			...NO_FILES,
++			existsAtRootAsFile: true,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through URLs with ?url transform', () => {
++		const result = evaluateRouteGuard('/style.css?url', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region public and src directory files
++describe('evaluateRouteGuard — public and src files', () => {
++	it('passes through files that exist in publicDir', () => {
++		const result = evaluateRouteGuard('/robots.txt', 'text/html', {
++			existsInPublic: true,
++			existsInSrc: false,
++			existsAtRootAsFile: false,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through files that exist in srcDir', () => {
++		const result = evaluateRouteGuard('/pages/index.astro', 'text/html', {
++			existsInPublic: false,
++			existsInSrc: true,
++			existsAtRootAsFile: false,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('public takes precedence even when root file exists', () => {
++		const result = evaluateRouteGuard('/robots.txt', 'text/html', {
++			existsInPublic: true,
++			existsInSrc: false,
++			existsAtRootAsFile: true,
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region blocking root files
++describe('evaluateRouteGuard — blocking root files', () => {
++	it('blocks README.md that exists only at root', () => {
++		const result = evaluateRouteGuard('/README.md', 'text/html', {
++			existsInPublic: false,
++			existsInSrc: false,
++			existsAtRootAsFile: true,
++		});
++		assert.equal(result.action, 'block');
++		if (result.action === 'block') {
++			assert.equal(result.pathname, '/README.md');
++		}
++	});
++
++	it('blocks LICENSE that exists only at root', () => {
++		const result = evaluateRouteGuard('/LICENSE', 'text/html', {
++			existsInPublic: false,
++			existsInSrc: false,
++			existsAtRootAsFile: true,
++		});
++		assert.equal(result.action, 'block');
++		if (result.action === 'block') {
++			assert.equal(result.pathname, '/LICENSE');
++		}
++	});
++
++	it('blocks package.json that exists only at root', () => {
++		const result = evaluateRouteGuard('/package.json', 'text/html', {
++			existsInPublic: false,
++			existsInSrc: false,
++			existsAtRootAsFile: true,
++		});
++		assert.equal(result.action, 'block');
++		if (result.action === 'block') {
++			assert.equal(result.pathname, '/package.json');
++		}
++	});
++});
++// #endregion
++
++// #region directories at root are not blocked
++describe('evaluateRouteGuard — directories at root', () => {
++	it('passes through when root path is a directory (not a file)', () => {
++		const result = evaluateRouteGuard('/test', 'text/html', {
++			existsInPublic: false,
++			existsInSrc: false,
++			existsAtRootAsFile: false, // directory, not file
++		});
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region nonexistent files pass through
++describe('evaluateRouteGuard — nonexistent files', () => {
++	it('passes through when file does not exist anywhere', () => {
++		const result = evaluateRouteGuard('/does-not-exist', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++
++	it('passes through for paths with .md extension that do not exist', () => {
++		const result = evaluateRouteGuard('/nonexistent.md', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region malformed URI
++describe('evaluateRouteGuard — malformed URI', () => {
++	it('passes through malformed URIs', () => {
++		const result = evaluateRouteGuard('/%E0%A4%A', 'text/html', NO_FILES);
++		assert.deepEqual(result, { action: 'next' });
++	});
++});
++// #endregion
++
++// #region accept header variations
++describe('evaluateRouteGuard — accept header variations', () => {
++	it('blocks when accept includes text/html among others', () => {
++		const result = evaluateRouteGuard('/README.md', 'text/html,application/xhtml+xml,*/*', {
++			existsInPublic: false,
++			existsInSrc: false,
++			existsAtRootAsFile: true,
++		});
++		assert.equal(result.action, 'block');
++	});
++});
++// #endregion
+diff --git a/packages/astro/test/units/routing/routing-app.test.ts b/packages/astro/test/units/routing/routing-app.test.ts
+new file mode 100644
+index 000000000000..7f2bd857343c
+--- /dev/null
++++ b/packages/astro/test/units/routing/routing-app.test.ts
+@@ -0,0 +1,345 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import * as cheerio from 'cheerio';
++import { createComponent, render } from '../../../dist/runtime/server/index.js';
++import { createTestApp, createPage, createRedirect, createEndpoint } from '../mocks.ts';
++import type { APIContext } from '../../../dist/types/public/context.js';
++import type { MiddlewareNext } from '../../../dist/types/public/common.js';
++
++// #region Shared page components
++
++const indexPage = createComponent(() => {
++	return render`<html><body><h1>Home</h1></body></html>`;
++});
++
++const custom404Page = createComponent((result: any, props: any, slots: any) => {
++	const Astro = result.createAstro(props, slots);
++	return render`<html><body><h1>Page not found</h1><p>${Astro.url.pathname}</p></body></html>`;
++});
++
++const custom500Page = createComponent((result: any, props: any, slots: any) => {
++	const Astro = result.createAstro(props, slots);
++	const error = Astro.props.error;
++	return render`<html><body><h1>Server Error</h1><p>${error?.message ?? 'Unknown'}</p></body></html>`;
++});
++
++const throwingPage = createComponent(() => {
++	throw new Error('Intentional test error');
++});
++
++// #endregion
++
++// #region Custom 404 page rendering
++
++describe('Custom 404 via App — basic', () => {
++	const app = createTestApp([
++		createPage(indexPage, { route: '/', isIndex: true }),
++		createPage(custom404Page, { route: '/404' }),
++	]);
++
++	it('renders the index page at /', async () => {
++		const res = await app.render(new Request('http://example.com/'));
++		assert.equal(res.status, 200);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Home');
++	});
++
++	it('renders custom 404 for unmatched routes', async () => {
++		const res = await app.render(new Request('http://example.com/nonexistent'));
++		assert.equal(res.status, 404);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Page not found');
++	});
++
++	it('returns 404 status code', async () => {
++		const res = await app.render(new Request('http://example.com/does-not-exist'));
++		assert.equal(res.status, 404);
++	});
++});
++
++describe('Custom 404 via App — with middleware and locals', () => {
++	const localsMiddleware = async (ctx: APIContext, next: MiddlewareNext) => {
++		(ctx.locals as any).message = 'from middleware';
++		return next();
++	};
++
++	const notFoundWithLocals = createComponent((result: any, props: any, slots: any) => {
++		const Astro = result.createAstro(props, slots);
++		return render`<html><body><h1>Page not found</h1><p class="message">${Astro.locals.message}</p></body></html>`;
++	});
++
++	const app = createTestApp(
++		[
++			createPage(indexPage, { route: '/', isIndex: true }),
++			createPage(notFoundWithLocals, { route: '/404' }),
++		],
++		{ middleware: () => ({ onRequest: localsMiddleware }) },
++	);
++
++	it('custom 404 page receives middleware locals', async () => {
++		const res = await app.render(new Request('http://example.com/unknown'));
++		assert.equal(res.status, 404);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Page not found');
++		assert.equal($('.message').text(), 'from middleware');
++	});
++});
++
++describe('Custom 404 via App — page returning 404 Response', () => {
++	const returnsNotFound = createComponent(() => {
++		return new Response(null, { status: 404 });
++	});
++
++	const app = createTestApp([
++		createPage(indexPage, { route: '/', isIndex: true }),
++		createPage(returnsNotFound, { route: '/trigger-404' }),
++		createPage(custom404Page, { route: '/404' }),
++	]);
++
++	it('route returning 404 Response triggers custom 404 page', async () => {
++		const res = await app.render(new Request('http://example.com/trigger-404'));
++		assert.equal(res.status, 404);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Page not found');
++	});
++});
++
++// #endregion
++
++// #region Custom 500 error page
++
++describe('Custom 500 via App', () => {
++	const app = createTestApp([
++		createPage(indexPage, { route: '/', isIndex: true }),
++		createPage(throwingPage, { route: '/throwing' }),
++		createPage(custom500Page, { route: '/500' }),
++	]);
++
++	it('route that throws renders custom 500 page', async () => {
++		const res = await app.render(new Request('http://example.com/throwing'));
++		assert.equal(res.status, 500);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Server Error');
++	});
++});
++
++// #endregion
++
++// #region 404 reroute loop prevention
++
++describe('404 reroute loop prevention', () => {
++	it('does not loop when 404 page sets response status 404 with body', async () => {
++		// Case 1: 404.astro renders content but with status 404
++		// The body is non-null so AstroHandler should not reroute
++		const custom404WithBody = createComponent((result: any, props: any, slots: any) => {
++			const Astro = result.createAstro(props, slots);
++			Astro.response.status = 404;
++			return render`<html><body><h1>Custom 404</h1></body></html>`;
++		});
++
++		const app = createTestApp([
++			createPage(indexPage, { route: '/', isIndex: true }),
++			createPage(custom404WithBody, { route: '/404' }),
++		]);
++
++		const res = await app.render(new Request('http://example.com/nonexistent'));
++		assert.equal(res.status, 404);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Custom 404');
++	});
++
++	it('does not loop when 404 page returns null-body 404 Response', async () => {
++		// Case 2: 404.astro returns new Response(null, { status: 404 })
++		// PagesHandler stamps REROUTE_DIRECTIVE_HEADER = 'no' on /404 routes
++		const custom404NullBody = createComponent(() => {
++			return new Response(null, { status: 404 });
++		});
++
++		const app = createTestApp([
++			createPage(indexPage, { route: '/', isIndex: true }),
++			createPage(custom404NullBody, { route: '/404' }),
++		]);
++
++		const res = await app.render(new Request('http://example.com/nonexistent'));
++		// Should return 404 without hanging
++		assert.equal(res.status, 404);
++	});
++
++	it('does not loop when middleware wraps response with 404 status', async () => {
++		// Case 3: Middleware rewrites responses with 404 status
++		const middleware404 = async (ctx: APIContext, next: MiddlewareNext) => {
++			const response = await next();
++			if (ctx.url.pathname !== '/') {
++				return new Response(response.body, { status: 404, headers: response.headers });
++			}
++			return response;
++		};
++
++		const app = createTestApp(
++			[
++				createPage(indexPage, { route: '/', isIndex: true }),
++				createPage(custom404Page, { route: '/404' }),
++			],
++			{ middleware: () => ({ onRequest: middleware404 }) },
++		);
++
++		const res = await app.render(new Request('http://example.com/'));
++		assert.equal(res.status, 200);
++
++		const res404 = await app.render(new Request('http://example.com/nonexistent'));
++		assert.equal(res404.status, 404);
++	});
++
++	it('does not loop when middleware returns null-body 404 for non-root paths', async () => {
++		// Case 4: Middleware returns new Response(null, { status: 404 }) for non-/ paths
++		const middleware404Null = async (ctx: APIContext, next: MiddlewareNext) => {
++			if (ctx.url.pathname !== '/') {
++				return new Response(null, { status: 404 });
++			}
++			return next();
++		};
++
++		const app = createTestApp(
++			[
++				createPage(indexPage, { route: '/', isIndex: true }),
++				createPage(custom404Page, { route: '/404' }),
++			],
++			{ middleware: () => ({ onRequest: middleware404Null }) },
++		);
++
++		const res = await app.render(new Request('http://example.com/'));
++		assert.equal(res.status, 200);
++
++		const res404 = await app.render(new Request('http://example.com/anything'));
++		assert.equal(res404.status, 404);
++	});
++});
++
++// #endregion
++
++// #region Redirects
++
++describe('Redirects via App', () => {
++	const destinationPage = createComponent(() => {
++		return render`<html><body><h1>Destination</h1></body></html>`;
++	});
++
++	const app = createTestApp([
++		createPage(indexPage, { route: '/', isIndex: true }),
++		createPage(destinationPage, { route: '/destination' }),
++		createRedirect({
++			route: '/old',
++			redirect: '/',
++		}),
++		createRedirect({
++			route: '/old-page',
++			redirect: { destination: '/destination', status: 301 },
++		}),
++		createRedirect({
++			route: '/temp-redirect',
++			redirect: { destination: '/destination', status: 302 },
++		}),
++	]);
++
++	it('redirect returns 301 with Location header by default', async () => {
++		const res = await app.render(new Request('http://example.com/old'));
++		assert.equal(res.status, 301);
++		assert.equal(res.headers.get('location'), '/');
++	});
++
++	it('redirect with explicit 301 returns correct Location', async () => {
++		const res = await app.render(new Request('http://example.com/old-page'));
++		assert.equal(res.status, 301);
++		assert.equal(res.headers.get('location'), '/destination');
++	});
++
++	it('redirect with explicit status still redirects with Location', async () => {
++		const res = await app.render(new Request('http://example.com/temp-redirect'));
++		// Static redirects produce 301; the status in config is the _target_ not the redirect code
++		assert.ok([301, 302].includes(res.status));
++		assert.equal(res.headers.get('location'), '/destination');
++	});
++});
++
++// #endregion
++
++// #region Base + trailingSlash
++
++describe('Routing via App — base path', () => {
++	const aboutPage = createComponent(() => {
++		return render`<html><body><h1>About</h1></body></html>`;
++	});
++
++	// In App (production), the Router strips the base prefix during matching,
++	// so routes are defined without base and requests include the base prefix.
++	const app = createTestApp(
++		[
++			createPage(indexPage, { route: '/', isIndex: true }),
++			createPage(aboutPage, { route: '/about' }),
++		],
++		{ base: '/docs/' },
++	);
++
++	it('matches index under base path', async () => {
++		const res = await app.render(new Request('http://example.com/docs/'));
++		assert.equal(res.status, 200);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'Home');
++	});
++
++	it('matches subpages under base path', async () => {
++		const res = await app.render(new Request('http://example.com/docs/about'));
++		assert.equal(res.status, 200);
++		const $ = cheerio.load(await res.text());
++		assert.equal($('h1').text(), 'About');
++	});
++});
++
++describe('Routing via App — trailingSlash never', () => {
++	const aboutPage = createComponent(() => {
++		return render`<html><body><h1>About</h1></body></html>`;
++	});
++
++	const app = createTestApp(
++		[
++			createPage(indexPage, { route: '/', isIndex: true, trailingSlash: 'never' }),
++			createPage(aboutPage, { route: '/about', trailingSlash: 'never' }),
++		],
++		{ trailingSlash: 'never' },
++	);
++
++	it('matches without trailing slash', async () => {
++		const res = await app.render(new Request('http://example.com/about'));
++		assert.equal(res.status, 200);
++	});
++});
++
++// #endregion
++
++// #region Endpoint returning 404
++
++describe('Endpoint returning 404 via App', () => {
++	const app = createTestApp([
++		createPage(indexPage, { route: '/', isIndex: true }),
++		createEndpoint(
++			{
++				GET: (_ctx: APIContext) =>
++					new Response('{"error":"not found"}', {
++						status: 404,
++						headers: { 'Content-Type': 'application/json' },
++					}),
++			},
++			{ route: '/api/data' },
++		),
++		createPage(custom404Page, { route: '/404' }),
++	]);
++
++	it('endpoint 404 is not rerouted to custom 404 page', async () => {
++		const res = await app.render(new Request('http://example.com/api/data'));
++		assert.equal(res.status, 404);
++		// Endpoint should return its own response, not the custom 404 page
++		const body = await res.text();
++		assert.ok(body.includes('"error"'));
++	});
++});
++// #endregion
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index ad724d1f0c9a..5df9da73e5b3 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -3066,18 +3066,6 @@ importers:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/custom-404-html:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-injected:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/custom-404-injected-from-dep:
+     dependencies:
+       '@test/custom-404-pkg':
+@@ -3087,60 +3075,12 @@ importers:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/custom-404-locals:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-loop-case-1:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-loop-case-2:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-loop-case-3:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-loop-case-4:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-loop-case-5:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+-  packages/astro/test/fixtures/custom-404-md:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/custom-404-pkg:
+     dependencies:
+       astro:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/custom-404-static:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/custom-500:
+     dependencies:
+       astro:
+@@ -3198,12 +3138,6 @@ importers:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/dev-error-pages:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/dev-render:
+     dependencies:
+       astro:
+@@ -3741,12 +3675,6 @@ importers:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/public-base-404:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/queue-rendering:
+     dependencies:
+       '@astrojs/react':
+@@ -3799,12 +3727,6 @@ importers:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/redirects:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/reexport-astro-containing-client-component:
+     dependencies:
+       '@astrojs/preact':
+@@ -3874,12 +3796,6 @@ importers:
+         specifier: workspace:*
+         version: link:../../..
+ 
+-  packages/astro/test/fixtures/route-guard:
+-    dependencies:
+-      astro:
+-        specifier: workspace:*
+-        version: link:../../..
+-
+   packages/astro/test/fixtures/scoped-style-strategy:
+     dependencies:
+       astro:

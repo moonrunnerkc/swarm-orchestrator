@@ -1,0 +1,607 @@
+diff --git a/apps/native-component-list/src/screens/AgeRangeScreen.tsx b/apps/native-component-list/src/screens/AgeRangeScreen.tsx
+index 2bdc5849445e15..76a18067802057 100644
+--- a/apps/native-component-list/src/screens/AgeRangeScreen.tsx
++++ b/apps/native-component-list/src/screens/AgeRangeScreen.tsx
+@@ -1,6 +1,6 @@
+ import * as AgeRange from 'expo-age-range';
+ import { useState } from 'react';
+-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
++import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+ 
+ import { BodyText } from '../components/BodyText';
+ import Button from '../components/Button';
+@@ -53,6 +53,37 @@ export default function AgeRangeScreen() {
+     }
+   };
+ 
++  const showSignificantUpdate = async () => {
++    setError(null);
++    setResult(null);
++
++    try {
++      await AgeRange.showSignificantUpdateAcknowledgmentAsync(
++        'This is a developer-specified message.'
++      );
++    } catch (err: any) {
++      setError(err.message || 'Unknown error occurred');
++      Alert.alert('Error', err.message || 'Unknown error occurred');
++    }
++  };
++
++  const getRequiredRegulatoryFeatures = async () => {
++    setError(null);
++    setResult(null);
++
++    try {
++      const features = await AgeRange.getRequiredRegulatoryFeaturesAsync();
++      setResult(
++        features === null
++          ? 'null (unsupported on this OS / platform)'
++          : `Required regulatory features: ${JSON.stringify(features, null, 2)}`
++      );
++    } catch (err: any) {
++      setError(err.message || 'Unknown error occurred');
++      Alert.alert('Error', err.message || 'Unknown error occurred');
++    }
++  };
++
+   const faultyRequestAgeRange = async () => {
+     setError(null);
+     setResult(null);
+@@ -80,16 +111,22 @@ export default function AgeRangeScreen() {
+         thresholds at 13, 16, and 18 years old.
+       </BodyText>
+ 
+-      {Platform.OS === 'ios' && (
+-        <Text style={styles.warning}>Note: This API requires iOS 26.0 or later.</Text>
+-      )}
+-
+       <Button
+         onPress={checkEligibility}
+         title="Check Age Features Eligibility (iOS 26.2+)"
+         style={styles.button}
+       />
+       <Button onPress={requestAgeRange} title="Request Age Range" style={styles.button} />
++      <Button
++        onPress={showSignificantUpdate}
++        title="Show Significant Update Acknowledgment (iOS 26.4+)"
++        style={styles.button}
++      />
++      <Button
++        onPress={getRequiredRegulatoryFeatures}
++        title="Get Required Regulatory Features (iOS 26.4+)"
++        style={styles.button}
++      />
+       <Button
+         onPress={faultyRequestAgeRange}
+         title="Request Faulty Age Range"
+diff --git a/docs/public/static/data/unversioned/expo-age-range.json b/docs/public/static/data/unversioned/expo-age-range.json
+index 5d524e14fce910..9e0f716408cc5d 100644
+--- a/docs/public/static/data/unversioned/expo-age-range.json
++++ b/docs/public/static/data/unversioned/expo-age-range.json
+@@ -1 +1 @@
+-{"schemaVersion":"2.0","name":"expo-age-range","variant":"project","kind":1,"children":[{"name":"AgeRangeRequest","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Options for requesting age range information from the user."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"children":[{"name":"threshold1","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The required minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold2","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold3","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}}]},{"name":"AgeRangeResponse","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Response containing the user's age range information.\n\nContains age boundaries and platform-specific metadata."}]},"children":[{"name":"activeParentalControls","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"List of parental controls enabled and shared as a part of age range declaration."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"array","elementType":{"type":"intrinsic","name":"string"}}},{"name":"ageRangeDeclaration","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"Indicates whether the age range was declared by the user themselves or someone else (parent, guardian, or Family Organizer in a Family Sharing group)."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"selfDeclared"},{"type":"literal","value":"guardianDeclared"},{"type":"literal","value":null}]}},{"name":"installId","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An ID assigned to supervised user installs by Google Play, used to notify you of revoked app approval."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"string"},{"type":"literal","value":null}]}},{"name":"lowerBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The lower limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"mostRecentApprovalDate","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The effective date (timestamp) of the most recent significant change that was approved."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"upperBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The upper limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"userStatus","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The user's age verification or supervision status."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"VERIFIED"},{"type":"literal","value":"SUPERVISED"},{"type":"literal","value":"SUPERVISED_APPROVAL_PENDING"},{"type":"literal","value":"SUPERVISED_APPROVAL_DENIED"},{"type":"literal","value":"DECLARED"},{"type":"literal","value":"UNKNOWN"},{"type":"literal","value":null}]}}]},{"name":"isEligibleForAgeFeaturesAsync","variant":"declaration","kind":64,"signatures":[{"name":"isEligibleForAgeFeaturesAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Asks the OS whether age-assurance regulation applies to the current user. Apple\nuses this to signal that the account region is covered by a law such as\nUtah's or Louisiana's age-assurance requirements, so apps can avoid gating\nusers in jurisdictions where the rules do not apply.\n\n- Resolves with "},{"kind":"code","text":"`true`"},{"kind":"text","text":" only when Apple confirms regulation applies.\n- Resolves with "},{"kind":"code","text":"`false`"},{"kind":"text","text":" when the OS confirms regulation does not apply.\n- Resolves with "},{"kind":"code","text":"`null`"},{"kind":"text","text":" on iOS earlier than 26.2, and on Android and web.\n  Treat "},{"kind":"code","text":"`null`"},{"kind":"text","text":" as \"unknown\" rather than a definitive "},{"kind":"code","text":"`false`"},{"kind":"text","text":".\n- Rejects when the request fails — see [AgeRangeService.Error](https://developer.apple.com/documentation/declaredagerange/agerangeservice/error)\n  for more information. Treat rejection as \"unknown\" and fall through to ["},{"kind":"code","text":"`requestAgeRangeAsync`"},{"kind":"text","text":"](#agerangerequestagerangeasyncoptions)\n  or your own gating logic.\n\nRecommended pattern: call this first and only prompt the user for their age\nrange when the result is not "},{"kind":"code","text":"`false`"},{"kind":"text","text":". When it is "},{"kind":"code","text":"`false`"},{"kind":"text","text":", the user is outside\na regulated jurisdiction and you can skip the age gate entirely."}],"blockTags":[{"tag":"@example","content":[{"kind":"code","text":"```ts\ntry {\n  const eligible = await isEligibleForAgeFeaturesAsync();\n  if (eligible === false) {\n    // Regulation does not apply — no age gate needed.\n    return;\n  }\n} catch {\n  // Treat errors as \"unknown\" and fall through to the prompt below or your own gating logic.\n}\n\nconst ageRange = await requestAgeRangeAsync({ threshold1: 18 });\n```"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.2+"}]}]},"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"union","types":[{"type":"intrinsic","name":"boolean"},{"type":"literal","value":null}]}],"name":"Promise","package":"typescript"}}]},{"name":"requestAgeRangeAsync","variant":"declaration","kind":64,"signatures":[{"name":"requestAgeRangeAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests."}],"blockTags":[{"tag":"@returns","content":[{"kind":"text","text":"A promise that resolves with user's age range response, or rejects with an error.\nThe user needs to be signed in on the device to get a valid response.\nWhen not supported (earlier than iOS 26 and web), the call returns "},{"kind":"code","text":"`lowerBound: 18`"},{"kind":"text","text":", which is equivalent to the response of an adult user."}]},{"tag":"@platform","content":[{"kind":"text","text":"android"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.0+"}]}]},"parameters":[{"name":"options","variant":"param","kind":32768,"type":{"type":"reference","name":"AgeRangeRequest","package":"expo-age-range"}}],"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"reference","name":"AgeRangeResponse","package":"expo-age-range"}],"name":"Promise","package":"typescript"}}]}],"packageName":"expo-age-range"}
+\ No newline at end of file
++{"schemaVersion":"2.0","name":"expo-age-range","variant":"project","kind":1,"children":[{"name":"AgeRangeRegulatoryFeature","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"A regulatory feature that your app may need to support for the current user.\n\nMirrors ["},{"kind":"code","text":"`AgeRangeService.RegulatoryFeature`"},{"kind":"text","text":"](https://developer.apple.com/documentation/declaredagerange/agerangeservice/regulatoryfeature)."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios 26.4+"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"declaredAgeRangeRequired"},{"type":"literal","value":"significantAppChangeRequiresAdultNotification"},{"type":"literal","value":"significantAppChangeRequiresParentalConsent"}]}},{"name":"AgeRangeRequest","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Options for requesting age range information from the user."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"children":[{"name":"threshold1","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The required minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold2","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold3","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}}]},{"name":"AgeRangeResponse","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Response containing the user's age range information.\n\nContains age boundaries and platform-specific metadata."}]},"children":[{"name":"activeParentalControls","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"List of parental controls enabled and shared as a part of age range declaration."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"array","elementType":{"type":"intrinsic","name":"string"}}},{"name":"ageRangeDeclaration","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"Indicates whether the age range was declared by the user themselves or someone else (parent, guardian, or Family Organizer in a Family Sharing group)."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"selfDeclared"},{"type":"literal","value":"guardianDeclared"},{"type":"literal","value":null}]}},{"name":"installId","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An ID assigned to supervised user installs by Google Play, used to notify you of revoked app approval."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"string"},{"type":"literal","value":null}]}},{"name":"lowerBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The lower limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"mostRecentApprovalDate","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The effective date (timestamp) of the most recent significant change that was approved."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"upperBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The upper limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"userStatus","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The user's age verification or supervision status."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"VERIFIED"},{"type":"literal","value":"SUPERVISED"},{"type":"literal","value":"SUPERVISED_APPROVAL_PENDING"},{"type":"literal","value":"SUPERVISED_APPROVAL_DENIED"},{"type":"literal","value":"DECLARED"},{"type":"literal","value":"UNKNOWN"},{"type":"literal","value":null}]}}]},{"name":"getRequiredRegulatoryFeaturesAsync","variant":"declaration","kind":64,"signatures":[{"name":"getRequiredRegulatoryFeaturesAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Returns the set of regulatory features that the OS reports as required for the current user.\n\nUse this to discover which age-assurance obligations apply.\n\nResolves with "},{"kind":"code","text":"`null`"},{"kind":"text","text":" on iOS earlier than 26.4 and on Android and web — treat\n"},{"kind":"code","text":"`null`"},{"kind":"text","text":" as \"unknown\" rather than \"no features required\"."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios 26.4+"}]}]},"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"union","types":[{"type":"array","elementType":{"type":"reference","name":"AgeRangeRegulatoryFeature","package":"expo-age-range"}},{"type":"literal","value":null}]}],"name":"Promise","package":"typescript"}}]},{"name":"isEligibleForAgeFeaturesAsync","variant":"declaration","kind":64,"signatures":[{"name":"isEligibleForAgeFeaturesAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Asks the OS whether age-assurance regulation applies to the current user. Apple\nuses this to signal that the account region is covered by a law such as\nUtah's or Louisiana's age-assurance requirements, so apps can avoid gating\nusers in jurisdictions where the rules do not apply.\n\n- Resolves with "},{"kind":"code","text":"`true`"},{"kind":"text","text":" only when Apple confirms regulation applies.\n- Resolves with "},{"kind":"code","text":"`false`"},{"kind":"text","text":" when the OS confirms regulation does not apply.\n- Resolves with "},{"kind":"code","text":"`null`"},{"kind":"text","text":" on iOS earlier than 26.2, and on Android and web.\n  Treat "},{"kind":"code","text":"`null`"},{"kind":"text","text":" as \"unknown\" rather than a definitive "},{"kind":"code","text":"`false`"},{"kind":"text","text":".\n- Rejects when the request fails — see [AgeRangeService.Error](https://developer.apple.com/documentation/declaredagerange/agerangeservice/error)\n  for more information. Treat rejection as \"unknown\" and fall through to ["},{"kind":"code","text":"`requestAgeRangeAsync`"},{"kind":"text","text":"](#agerangerequestagerangeasyncoptions)\n  or your own gating logic.\n\nRecommended pattern: call this first and only prompt the user for their age\nrange when the result is not "},{"kind":"code","text":"`false`"},{"kind":"text","text":". When it is "},{"kind":"code","text":"`false`"},{"kind":"text","text":", the user is outside\na regulated jurisdiction and you can skip the age gate entirely."}],"blockTags":[{"tag":"@example","content":[{"kind":"code","text":"```ts\ntry {\n  const eligible = await isEligibleForAgeFeaturesAsync();\n  if (eligible === false) {\n    // Regulation does not apply — no age gate needed.\n    return;\n  }\n} catch {\n  // Treat errors as \"unknown\" and fall through to the prompt below or your own gating logic.\n}\n\nconst ageRange = await requestAgeRangeAsync({ threshold1: 18 });\n```"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.2+"}]}]},"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"union","types":[{"type":"intrinsic","name":"boolean"},{"type":"literal","value":null}]}],"name":"Promise","package":"typescript"}}]},{"name":"requestAgeRangeAsync","variant":"declaration","kind":64,"signatures":[{"name":"requestAgeRangeAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests."}],"blockTags":[{"tag":"@returns","content":[{"kind":"text","text":"A promise that resolves with user's age range response, or rejects with an error.\nThe user needs to be signed in on the device to get a valid response.\nWhen not supported (earlier than iOS 26 and web), the call returns "},{"kind":"code","text":"`lowerBound: 18`"},{"kind":"text","text":", which is equivalent to the response of an adult user."}]},{"tag":"@platform","content":[{"kind":"text","text":"android"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.0+"}]}]},"parameters":[{"name":"options","variant":"param","kind":32768,"type":{"type":"reference","name":"AgeRangeRequest","package":"expo-age-range"}}],"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"reference","name":"AgeRangeResponse","package":"expo-age-range"}],"name":"Promise","package":"typescript"}}]},{"name":"showSignificantUpdateAcknowledgmentAsync","variant":"declaration","kind":64,"signatures":[{"name":"showSignificantUpdateAcknowledgmentAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Displays a system-provided interface for people to acknowledge a significant app update.\n\nOnly on iOS 26.4+, this presents an update acknowledgement dialog and resolves once the user confirms it, or rejects with an error.\nOn unsupported platforms this resolves immediately without showing any UI.\n\nCall ["},{"kind":"code","text":"`getRequiredRegulatoryFeaturesAsync`"},{"kind":"text","text":"](#agerangegetrequiredregulatoryfeaturesasync) first to\ndetermine whether the user actually needs to acknowledge a significant change — only invoke\nthis function when the returned features include "},{"kind":"code","text":"`'significantAppChangeRequiresAdultNotification'`"},{"kind":"text","text":".\nDoing so avoids prompting users who are not subject to the regulation."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios 26.4+"}]}]},"parameters":[{"name":"updateDescription","variant":"param","kind":32768,"comment":{"summary":[{"kind":"text","text":"A description of the significant update to show to the user."}]},"type":{"type":"intrinsic","name":"string"}}],"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"intrinsic","name":"void"}],"name":"Promise","package":"typescript"}}]}],"packageName":"expo-age-range"}
+\ No newline at end of file
+diff --git a/docs/public/static/data/v56.0.0/expo-age-range.json b/docs/public/static/data/v56.0.0/expo-age-range.json
+index 5d524e14fce910..9e0f716408cc5d 100644
+--- a/docs/public/static/data/v56.0.0/expo-age-range.json
++++ b/docs/public/static/data/v56.0.0/expo-age-range.json
+@@ -1 +1 @@
+-{"schemaVersion":"2.0","name":"expo-age-range","variant":"project","kind":1,"children":[{"name":"AgeRangeRequest","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Options for requesting age range information from the user."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"children":[{"name":"threshold1","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The required minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold2","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold3","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}}]},{"name":"AgeRangeResponse","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Response containing the user's age range information.\n\nContains age boundaries and platform-specific metadata."}]},"children":[{"name":"activeParentalControls","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"List of parental controls enabled and shared as a part of age range declaration."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"array","elementType":{"type":"intrinsic","name":"string"}}},{"name":"ageRangeDeclaration","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"Indicates whether the age range was declared by the user themselves or someone else (parent, guardian, or Family Organizer in a Family Sharing group)."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"selfDeclared"},{"type":"literal","value":"guardianDeclared"},{"type":"literal","value":null}]}},{"name":"installId","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An ID assigned to supervised user installs by Google Play, used to notify you of revoked app approval."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"string"},{"type":"literal","value":null}]}},{"name":"lowerBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The lower limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"mostRecentApprovalDate","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The effective date (timestamp) of the most recent significant change that was approved."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"upperBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The upper limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"userStatus","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The user's age verification or supervision status."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"VERIFIED"},{"type":"literal","value":"SUPERVISED"},{"type":"literal","value":"SUPERVISED_APPROVAL_PENDING"},{"type":"literal","value":"SUPERVISED_APPROVAL_DENIED"},{"type":"literal","value":"DECLARED"},{"type":"literal","value":"UNKNOWN"},{"type":"literal","value":null}]}}]},{"name":"isEligibleForAgeFeaturesAsync","variant":"declaration","kind":64,"signatures":[{"name":"isEligibleForAgeFeaturesAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Asks the OS whether age-assurance regulation applies to the current user. Apple\nuses this to signal that the account region is covered by a law such as\nUtah's or Louisiana's age-assurance requirements, so apps can avoid gating\nusers in jurisdictions where the rules do not apply.\n\n- Resolves with "},{"kind":"code","text":"`true`"},{"kind":"text","text":" only when Apple confirms regulation applies.\n- Resolves with "},{"kind":"code","text":"`false`"},{"kind":"text","text":" when the OS confirms regulation does not apply.\n- Resolves with "},{"kind":"code","text":"`null`"},{"kind":"text","text":" on iOS earlier than 26.2, and on Android and web.\n  Treat "},{"kind":"code","text":"`null`"},{"kind":"text","text":" as \"unknown\" rather than a definitive "},{"kind":"code","text":"`false`"},{"kind":"text","text":".\n- Rejects when the request fails — see [AgeRangeService.Error](https://developer.apple.com/documentation/declaredagerange/agerangeservice/error)\n  for more information. Treat rejection as \"unknown\" and fall through to ["},{"kind":"code","text":"`requestAgeRangeAsync`"},{"kind":"text","text":"](#agerangerequestagerangeasyncoptions)\n  or your own gating logic.\n\nRecommended pattern: call this first and only prompt the user for their age\nrange when the result is not "},{"kind":"code","text":"`false`"},{"kind":"text","text":". When it is "},{"kind":"code","text":"`false`"},{"kind":"text","text":", the user is outside\na regulated jurisdiction and you can skip the age gate entirely."}],"blockTags":[{"tag":"@example","content":[{"kind":"code","text":"```ts\ntry {\n  const eligible = await isEligibleForAgeFeaturesAsync();\n  if (eligible === false) {\n    // Regulation does not apply — no age gate needed.\n    return;\n  }\n} catch {\n  // Treat errors as \"unknown\" and fall through to the prompt below or your own gating logic.\n}\n\nconst ageRange = await requestAgeRangeAsync({ threshold1: 18 });\n```"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.2+"}]}]},"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"union","types":[{"type":"intrinsic","name":"boolean"},{"type":"literal","value":null}]}],"name":"Promise","package":"typescript"}}]},{"name":"requestAgeRangeAsync","variant":"declaration","kind":64,"signatures":[{"name":"requestAgeRangeAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests."}],"blockTags":[{"tag":"@returns","content":[{"kind":"text","text":"A promise that resolves with user's age range response, or rejects with an error.\nThe user needs to be signed in on the device to get a valid response.\nWhen not supported (earlier than iOS 26 and web), the call returns "},{"kind":"code","text":"`lowerBound: 18`"},{"kind":"text","text":", which is equivalent to the response of an adult user."}]},{"tag":"@platform","content":[{"kind":"text","text":"android"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.0+"}]}]},"parameters":[{"name":"options","variant":"param","kind":32768,"type":{"type":"reference","name":"AgeRangeRequest","package":"expo-age-range"}}],"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"reference","name":"AgeRangeResponse","package":"expo-age-range"}],"name":"Promise","package":"typescript"}}]}],"packageName":"expo-age-range"}
+\ No newline at end of file
++{"schemaVersion":"2.0","name":"expo-age-range","variant":"project","kind":1,"children":[{"name":"AgeRangeRegulatoryFeature","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"A regulatory feature that your app may need to support for the current user.\n\nMirrors ["},{"kind":"code","text":"`AgeRangeService.RegulatoryFeature`"},{"kind":"text","text":"](https://developer.apple.com/documentation/declaredagerange/agerangeservice/regulatoryfeature)."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios 26.4+"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"declaredAgeRangeRequired"},{"type":"literal","value":"significantAppChangeRequiresAdultNotification"},{"type":"literal","value":"significantAppChangeRequiresParentalConsent"}]}},{"name":"AgeRangeRequest","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Options for requesting age range information from the user."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"children":[{"name":"threshold1","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The required minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold2","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}},{"name":"threshold3","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An optional additional minimum age for your app."}]},"type":{"type":"intrinsic","name":"number"}}]},{"name":"AgeRangeResponse","variant":"declaration","kind":2097152,"comment":{"summary":[{"kind":"text","text":"Response containing the user's age range information.\n\nContains age boundaries and platform-specific metadata."}]},"children":[{"name":"activeParentalControls","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"List of parental controls enabled and shared as a part of age range declaration."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"array","elementType":{"type":"intrinsic","name":"string"}}},{"name":"ageRangeDeclaration","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"Indicates whether the age range was declared by the user themselves or someone else (parent, guardian, or Family Organizer in a Family Sharing group)."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"selfDeclared"},{"type":"literal","value":"guardianDeclared"},{"type":"literal","value":null}]}},{"name":"installId","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"An ID assigned to supervised user installs by Google Play, used to notify you of revoked app approval."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"string"},{"type":"literal","value":null}]}},{"name":"lowerBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The lower limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"mostRecentApprovalDate","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The effective date (timestamp) of the most recent significant change that was approved."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"upperBound","variant":"declaration","kind":1024,"comment":{"summary":[{"kind":"text","text":"The upper limit of the person’s age range."}]},"type":{"type":"union","types":[{"type":"intrinsic","name":"number"},{"type":"literal","value":null}]}},{"name":"userStatus","variant":"declaration","kind":1024,"flags":{"isOptional":true},"comment":{"summary":[{"kind":"text","text":"The user's age verification or supervision status."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"android"}]}]},"type":{"type":"union","types":[{"type":"literal","value":"VERIFIED"},{"type":"literal","value":"SUPERVISED"},{"type":"literal","value":"SUPERVISED_APPROVAL_PENDING"},{"type":"literal","value":"SUPERVISED_APPROVAL_DENIED"},{"type":"literal","value":"DECLARED"},{"type":"literal","value":"UNKNOWN"},{"type":"literal","value":null}]}}]},{"name":"getRequiredRegulatoryFeaturesAsync","variant":"declaration","kind":64,"signatures":[{"name":"getRequiredRegulatoryFeaturesAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Returns the set of regulatory features that the OS reports as required for the current user.\n\nUse this to discover which age-assurance obligations apply.\n\nResolves with "},{"kind":"code","text":"`null`"},{"kind":"text","text":" on iOS earlier than 26.4 and on Android and web — treat\n"},{"kind":"code","text":"`null`"},{"kind":"text","text":" as \"unknown\" rather than \"no features required\"."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios 26.4+"}]}]},"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"union","types":[{"type":"array","elementType":{"type":"reference","name":"AgeRangeRegulatoryFeature","package":"expo-age-range"}},{"type":"literal","value":null}]}],"name":"Promise","package":"typescript"}}]},{"name":"isEligibleForAgeFeaturesAsync","variant":"declaration","kind":64,"signatures":[{"name":"isEligibleForAgeFeaturesAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Asks the OS whether age-assurance regulation applies to the current user. Apple\nuses this to signal that the account region is covered by a law such as\nUtah's or Louisiana's age-assurance requirements, so apps can avoid gating\nusers in jurisdictions where the rules do not apply.\n\n- Resolves with "},{"kind":"code","text":"`true`"},{"kind":"text","text":" only when Apple confirms regulation applies.\n- Resolves with "},{"kind":"code","text":"`false`"},{"kind":"text","text":" when the OS confirms regulation does not apply.\n- Resolves with "},{"kind":"code","text":"`null`"},{"kind":"text","text":" on iOS earlier than 26.2, and on Android and web.\n  Treat "},{"kind":"code","text":"`null`"},{"kind":"text","text":" as \"unknown\" rather than a definitive "},{"kind":"code","text":"`false`"},{"kind":"text","text":".\n- Rejects when the request fails — see [AgeRangeService.Error](https://developer.apple.com/documentation/declaredagerange/agerangeservice/error)\n  for more information. Treat rejection as \"unknown\" and fall through to ["},{"kind":"code","text":"`requestAgeRangeAsync`"},{"kind":"text","text":"](#agerangerequestagerangeasyncoptions)\n  or your own gating logic.\n\nRecommended pattern: call this first and only prompt the user for their age\nrange when the result is not "},{"kind":"code","text":"`false`"},{"kind":"text","text":". When it is "},{"kind":"code","text":"`false`"},{"kind":"text","text":", the user is outside\na regulated jurisdiction and you can skip the age gate entirely."}],"blockTags":[{"tag":"@example","content":[{"kind":"code","text":"```ts\ntry {\n  const eligible = await isEligibleForAgeFeaturesAsync();\n  if (eligible === false) {\n    // Regulation does not apply — no age gate needed.\n    return;\n  }\n} catch {\n  // Treat errors as \"unknown\" and fall through to the prompt below or your own gating logic.\n}\n\nconst ageRange = await requestAgeRangeAsync({ threshold1: 18 });\n```"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.2+"}]}]},"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"union","types":[{"type":"intrinsic","name":"boolean"},{"type":"literal","value":null}]}],"name":"Promise","package":"typescript"}}]},{"name":"requestAgeRangeAsync","variant":"declaration","kind":64,"signatures":[{"name":"requestAgeRangeAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests."}],"blockTags":[{"tag":"@returns","content":[{"kind":"text","text":"A promise that resolves with user's age range response, or rejects with an error.\nThe user needs to be signed in on the device to get a valid response.\nWhen not supported (earlier than iOS 26 and web), the call returns "},{"kind":"code","text":"`lowerBound: 18`"},{"kind":"text","text":", which is equivalent to the response of an adult user."}]},{"tag":"@platform","content":[{"kind":"text","text":"android"}]},{"tag":"@platform","content":[{"kind":"text","text":"ios 26.0+"}]}]},"parameters":[{"name":"options","variant":"param","kind":32768,"type":{"type":"reference","name":"AgeRangeRequest","package":"expo-age-range"}}],"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"reference","name":"AgeRangeResponse","package":"expo-age-range"}],"name":"Promise","package":"typescript"}}]},{"name":"showSignificantUpdateAcknowledgmentAsync","variant":"declaration","kind":64,"signatures":[{"name":"showSignificantUpdateAcknowledgmentAsync","variant":"signature","kind":4096,"comment":{"summary":[{"kind":"text","text":"Displays a system-provided interface for people to acknowledge a significant app update.\n\nOnly on iOS 26.4+, this presents an update acknowledgement dialog and resolves once the user confirms it, or rejects with an error.\nOn unsupported platforms this resolves immediately without showing any UI.\n\nCall ["},{"kind":"code","text":"`getRequiredRegulatoryFeaturesAsync`"},{"kind":"text","text":"](#agerangegetrequiredregulatoryfeaturesasync) first to\ndetermine whether the user actually needs to acknowledge a significant change — only invoke\nthis function when the returned features include "},{"kind":"code","text":"`'significantAppChangeRequiresAdultNotification'`"},{"kind":"text","text":".\nDoing so avoids prompting users who are not subject to the regulation."}],"blockTags":[{"tag":"@platform","content":[{"kind":"text","text":"ios 26.4+"}]}]},"parameters":[{"name":"updateDescription","variant":"param","kind":32768,"comment":{"summary":[{"kind":"text","text":"A description of the significant update to show to the user."}]},"type":{"type":"intrinsic","name":"string"}}],"type":{"type":"reference","target":{"packageName":"typescript","packagePath":"lib/lib.es5.d.ts","qualifiedName":"Promise"},"typeArguments":[{"type":"intrinsic","name":"void"}],"name":"Promise","package":"typescript"}}]}],"packageName":"expo-age-range"}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/CHANGELOG.md b/packages/expo-age-range/CHANGELOG.md
+index b01ad6469a91d2..ff49a5edc8d2a3 100644
+--- a/packages/expo-age-range/CHANGELOG.md
++++ b/packages/expo-age-range/CHANGELOG.md
+@@ -6,6 +6,8 @@
+ 
+ ### 🎉 New features
+ 
++- [iOS] Add `showSignificantUpdateAcknowledgmentAsync` and `getRequiredRegulatoryFeaturesAsync` to expose Apple's significant app change acknowledgment flow and required regulatory features (iOS 26.4+). ([#43519](https://github.com/expo/expo/pull/43519) by [@vonovak](https://github.com/vonovak))
++
+ ### 🐛 Bug fixes
+ 
+ ### 💡 Others
+diff --git a/packages/expo-age-range/README.md b/packages/expo-age-range/README.md
+index f260dd57a2db99..96f900d0fbd4e8 100644
+--- a/packages/expo-age-range/README.md
++++ b/packages/expo-age-range/README.md
+@@ -35,23 +35,9 @@ Add `com.apple.developer.declared-age-range` entitlement according to [app.json
+ }
+ ```
+ 
+-# Checking age-assurance eligibility (iOS 26.2+)
++# Docs
+ 
+-Apple exposes `AgeRangeService.isEligibleForAgeFeatures` so apps can determine whether the current Apple Account is in scope of an age-assurance regulation (e.g. Utah, Louisiana). Use it to short-circuit your age gate in jurisdictions where the rules do not apply, without implementing custom geo-tracking.
+-
+-```ts
+-import { isEligibleForAgeFeaturesAsync, requestAgeRangeAsync } from 'expo-age-range';
+-
+-const eligible = await isEligibleForAgeFeaturesAsync();
+-
+-// `null` means "unknown / not supported" (iOS < 26.2, Android, or web). Treat
+-// it the same as your default policy — do not assume it implies `false`.
+-if (eligible === false) {
+-  return;
+-}
+-
+-const range = await requestAgeRangeAsync({ threshold1: 18 });
+-```
++Learn more in the [reference docs](https://docs.expo.dev/versions/latest/sdk/age-range/).
+ 
+ # Contributing
+ 
+diff --git a/packages/expo-age-range/build/AgeRange.d.ts b/packages/expo-age-range/build/AgeRange.d.ts
+index b92dcbe2f7b17e..2b8ce176ba7893 100644
+--- a/packages/expo-age-range/build/AgeRange.d.ts
++++ b/packages/expo-age-range/build/AgeRange.d.ts
+@@ -1,4 +1,4 @@
+-import type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';
++import type { AgeRangeRequest, AgeRangeResponse, AgeRangeRegulatoryFeature } from './ExpoAgeRange.types';
+ /**
+  * Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests.
+  * @return A promise that resolves with user's age range response, or rejects with an error.
+@@ -46,4 +46,31 @@ export declare function requestAgeRangeAsync(options: AgeRangeRequest): Promise<
+  * @platform ios 26.2+
+  */
+ export declare function isEligibleForAgeFeaturesAsync(): Promise<boolean | null>;
++/**
++ * Displays a system-provided interface for people to acknowledge a significant app update.
++ *
++ * Only on iOS 26.4+, this presents an update acknowledgement dialog and resolves once the user confirms it, or rejects with an error.
++ * On unsupported platforms this resolves immediately without showing any UI.
++ *
++ * Call [`getRequiredRegulatoryFeaturesAsync`](#agerangegetrequiredregulatoryfeaturesasync) first to
++ * determine whether the user actually needs to acknowledge a significant change — only invoke
++ * this function when the returned features include `'significantAppChangeRequiresAdultNotification'`.
++ * Doing so avoids prompting users who are not subject to the regulation.
++ *
++ * @param updateDescription A description of the significant update to show to the user.
++ *
++ * @platform ios 26.4+
++ */
++export declare function showSignificantUpdateAcknowledgmentAsync(updateDescription: string): Promise<void>;
++/**
++ * Returns the set of regulatory features that the OS reports as required for the current user.
++ *
++ * Use this to discover which age-assurance obligations apply.
++ *
++ * Resolves with `null` on iOS earlier than 26.4 and on Android and web — treat
++ * `null` as "unknown" rather than "no features required".
++ *
++ * @platform ios 26.4+
++ */
++export declare function getRequiredRegulatoryFeaturesAsync(): Promise<AgeRangeRegulatoryFeature[] | null>;
+ //# sourceMappingURL=AgeRange.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.d.ts.map b/packages/expo-age-range/build/AgeRange.d.ts.map
+index 22f28ec41db994..ba583469ab0b03 100644
+--- a/packages/expo-age-range/build/AgeRange.d.ts.map
++++ b/packages/expo-age-range/build/AgeRange.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"AgeRange.d.ts","sourceRoot":"","sources":["../src/AgeRange.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,eAAe,EAAE,gBAAgB,EAAE,MAAM,sBAAsB,CAAC;AAE9E;;;;;;;;;GASG;AACH,wBAAsB,oBAAoB,CAAC,OAAO,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAE9F;AAED;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAkCG;AACH,wBAAsB,6BAA6B,IAAI,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,CAE7E"}
+\ No newline at end of file
++{"version":3,"file":"AgeRange.d.ts","sourceRoot":"","sources":["../src/AgeRange.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EACV,eAAe,EACf,gBAAgB,EAChB,yBAAyB,EAC1B,MAAM,sBAAsB,CAAC;AAE9B;;;;;;;;;GASG;AACH,wBAAsB,oBAAoB,CAAC,OAAO,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAE9F;AAED;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAkCG;AACH,wBAAsB,6BAA6B,IAAI,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,CAE7E;AAED;;;;;;;;;;;;;;GAcG;AACH,wBAAsB,wCAAwC,CAC5D,iBAAiB,EAAE,MAAM,GACxB,OAAO,CAAC,IAAI,CAAC,CAIf;AAED;;;;;;;;;GASG;AACH,wBAAsB,kCAAkC,IAAI,OAAO,CACjE,yBAAyB,EAAE,GAAG,IAAI,CACnC,CAKA"}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.js b/packages/expo-age-range/build/AgeRange.js
+index 7b946170780d95..54e8e214c4f3fa 100644
+--- a/packages/expo-age-range/build/AgeRange.js
++++ b/packages/expo-age-range/build/AgeRange.js
+@@ -1,3 +1,4 @@
++import { Platform } from 'react-native';
+ import ExpoAgeRange from './ExpoAgeRange';
+ /**
+  * Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests.
+@@ -50,4 +51,40 @@ export async function requestAgeRangeAsync(options) {
+ export async function isEligibleForAgeFeaturesAsync() {
+     return ExpoAgeRange.isEligibleForAgeFeaturesAsync();
+ }
++/**
++ * Displays a system-provided interface for people to acknowledge a significant app update.
++ *
++ * Only on iOS 26.4+, this presents an update acknowledgement dialog and resolves once the user confirms it, or rejects with an error.
++ * On unsupported platforms this resolves immediately without showing any UI.
++ *
++ * Call [`getRequiredRegulatoryFeaturesAsync`](#agerangegetrequiredregulatoryfeaturesasync) first to
++ * determine whether the user actually needs to acknowledge a significant change — only invoke
++ * this function when the returned features include `'significantAppChangeRequiresAdultNotification'`.
++ * Doing so avoids prompting users who are not subject to the regulation.
++ *
++ * @param updateDescription A description of the significant update to show to the user.
++ *
++ * @platform ios 26.4+
++ */
++export async function showSignificantUpdateAcknowledgmentAsync(updateDescription) {
++    if (Platform.OS === 'ios') {
++        return ExpoAgeRange.showSignificantUpdateAcknowledgmentAsync(updateDescription);
++    }
++}
++/**
++ * Returns the set of regulatory features that the OS reports as required for the current user.
++ *
++ * Use this to discover which age-assurance obligations apply.
++ *
++ * Resolves with `null` on iOS earlier than 26.4 and on Android and web — treat
++ * `null` as "unknown" rather than "no features required".
++ *
++ * @platform ios 26.4+
++ */
++export async function getRequiredRegulatoryFeaturesAsync() {
++    if (Platform.OS === 'ios') {
++        return ExpoAgeRange.getRequiredRegulatoryFeaturesAsync();
++    }
++    return null;
++}
+ //# sourceMappingURL=AgeRange.js.map
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.js.map b/packages/expo-age-range/build/AgeRange.js.map
+index 929b688ee1acb8..14dc18877a9408 100644
+--- a/packages/expo-age-range/build/AgeRange.js.map
++++ b/packages/expo-age-range/build/AgeRange.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"AgeRange.js","sourceRoot":"","sources":["../src/AgeRange.ts"],"names":[],"mappings":"AAAA,OAAO,YAAY,MAAM,gBAAgB,CAAC;AAG1C;;;;;;;;;GASG;AACH,MAAM,CAAC,KAAK,UAAU,oBAAoB,CAAC,OAAwB;IACjE,OAAO,YAAY,CAAC,oBAAoB,CAAC,OAAO,CAAC,CAAC;AACpD,CAAC;AAED;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAkCG;AACH,MAAM,CAAC,KAAK,UAAU,6BAA6B;IACjD,OAAO,YAAY,CAAC,6BAA6B,EAAE,CAAC;AACtD,CAAC","sourcesContent":["import ExpoAgeRange from './ExpoAgeRange';\nimport type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';\n\n/**\n * Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests.\n * @return A promise that resolves with user's age range response, or rejects with an error.\n * The user needs to be signed in on the device to get a valid response.\n * When not supported (earlier than iOS 26 and web), the call returns `lowerBound: 18`, which is equivalent to the response of an adult user.\n *\n *\n * @platform android\n * @platform ios 26.0+\n */\nexport async function requestAgeRangeAsync(options: AgeRangeRequest): Promise<AgeRangeResponse> {\n  return ExpoAgeRange.requestAgeRangeAsync(options);\n}\n\n/**\n * Asks the OS whether age-assurance regulation applies to the current user. Apple\n * uses this to signal that the account region is covered by a law such as\n * Utah's or Louisiana's age-assurance requirements, so apps can avoid gating\n * users in jurisdictions where the rules do not apply.\n *\n * - Resolves with `true` only when Apple confirms regulation applies.\n * - Resolves with `false` when the OS confirms regulation does not apply.\n * - Resolves with `null` on iOS earlier than 26.2, and on Android and web.\n *   Treat `null` as \"unknown\" rather than a definitive `false`.\n * - Rejects when the request fails — see [AgeRangeService.Error](https://developer.apple.com/documentation/declaredagerange/agerangeservice/error)\n *   for more information. Treat rejection as \"unknown\" and fall through to [`requestAgeRangeAsync`](#agerangerequestagerangeasyncoptions)\n *   or your own gating logic.\n *\n * Recommended pattern: call this first and only prompt the user for their age\n * range when the result is not `false`. When it is `false`, the user is outside\n * a regulated jurisdiction and you can skip the age gate entirely.\n *\n * @example\n * ```ts\n * try {\n *   const eligible = await isEligibleForAgeFeaturesAsync();\n *   if (eligible === false) {\n *     // Regulation does not apply — no age gate needed.\n *     return;\n *   }\n * } catch {\n *   // Treat errors as \"unknown\" and fall through to the prompt below or your own gating logic.\n * }\n *\n * const ageRange = await requestAgeRangeAsync({ threshold1: 18 });\n * ```\n *\n * @platform ios 26.2+\n */\nexport async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {\n  return ExpoAgeRange.isEligibleForAgeFeaturesAsync();\n}\n"]}
+\ No newline at end of file
++{"version":3,"file":"AgeRange.js","sourceRoot":"","sources":["../src/AgeRange.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,cAAc,CAAC;AAExC,OAAO,YAAY,MAAM,gBAAgB,CAAC;AAO1C;;;;;;;;;GASG;AACH,MAAM,CAAC,KAAK,UAAU,oBAAoB,CAAC,OAAwB;IACjE,OAAO,YAAY,CAAC,oBAAoB,CAAC,OAAO,CAAC,CAAC;AACpD,CAAC;AAED;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAkCG;AACH,MAAM,CAAC,KAAK,UAAU,6BAA6B;IACjD,OAAO,YAAY,CAAC,6BAA6B,EAAE,CAAC;AACtD,CAAC;AAED;;;;;;;;;;;;;;GAcG;AACH,MAAM,CAAC,KAAK,UAAU,wCAAwC,CAC5D,iBAAyB;IAEzB,IAAI,QAAQ,CAAC,EAAE,KAAK,KAAK,EAAE,CAAC;QAC1B,OAAO,YAAY,CAAC,wCAAwC,CAAC,iBAAiB,CAAC,CAAC;IAClF,CAAC;AACH,CAAC;AAED;;;;;;;;;GASG;AACH,MAAM,CAAC,KAAK,UAAU,kCAAkC;IAGtD,IAAI,QAAQ,CAAC,EAAE,KAAK,KAAK,EAAE,CAAC;QAC1B,OAAO,YAAY,CAAC,kCAAkC,EAAE,CAAC;IAC3D,CAAC;IACD,OAAO,IAAI,CAAC;AACd,CAAC","sourcesContent":["import { Platform } from 'react-native';\n\nimport ExpoAgeRange from './ExpoAgeRange';\nimport type {\n  AgeRangeRequest,\n  AgeRangeResponse,\n  AgeRangeRegulatoryFeature,\n} from './ExpoAgeRange.types';\n\n/**\n * Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests.\n * @return A promise that resolves with user's age range response, or rejects with an error.\n * The user needs to be signed in on the device to get a valid response.\n * When not supported (earlier than iOS 26 and web), the call returns `lowerBound: 18`, which is equivalent to the response of an adult user.\n *\n *\n * @platform android\n * @platform ios 26.0+\n */\nexport async function requestAgeRangeAsync(options: AgeRangeRequest): Promise<AgeRangeResponse> {\n  return ExpoAgeRange.requestAgeRangeAsync(options);\n}\n\n/**\n * Asks the OS whether age-assurance regulation applies to the current user. Apple\n * uses this to signal that the account region is covered by a law such as\n * Utah's or Louisiana's age-assurance requirements, so apps can avoid gating\n * users in jurisdictions where the rules do not apply.\n *\n * - Resolves with `true` only when Apple confirms regulation applies.\n * - Resolves with `false` when the OS confirms regulation does not apply.\n * - Resolves with `null` on iOS earlier than 26.2, and on Android and web.\n *   Treat `null` as \"unknown\" rather than a definitive `false`.\n * - Rejects when the request fails — see [AgeRangeService.Error](https://developer.apple.com/documentation/declaredagerange/agerangeservice/error)\n *   for more information. Treat rejection as \"unknown\" and fall through to [`requestAgeRangeAsync`](#agerangerequestagerangeasyncoptions)\n *   or your own gating logic.\n *\n * Recommended pattern: call this first and only prompt the user for their age\n * range when the result is not `false`. When it is `false`, the user is outside\n * a regulated jurisdiction and you can skip the age gate entirely.\n *\n * @example\n * ```ts\n * try {\n *   const eligible = await isEligibleForAgeFeaturesAsync();\n *   if (eligible === false) {\n *     // Regulation does not apply — no age gate needed.\n *     return;\n *   }\n * } catch {\n *   // Treat errors as \"unknown\" and fall through to the prompt below or your own gating logic.\n * }\n *\n * const ageRange = await requestAgeRangeAsync({ threshold1: 18 });\n * ```\n *\n * @platform ios 26.2+\n */\nexport async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {\n  return ExpoAgeRange.isEligibleForAgeFeaturesAsync();\n}\n\n/**\n * Displays a system-provided interface for people to acknowledge a significant app update.\n *\n * Only on iOS 26.4+, this presents an update acknowledgement dialog and resolves once the user confirms it, or rejects with an error.\n * On unsupported platforms this resolves immediately without showing any UI.\n *\n * Call [`getRequiredRegulatoryFeaturesAsync`](#agerangegetrequiredregulatoryfeaturesasync) first to\n * determine whether the user actually needs to acknowledge a significant change — only invoke\n * this function when the returned features include `'significantAppChangeRequiresAdultNotification'`.\n * Doing so avoids prompting users who are not subject to the regulation.\n *\n * @param updateDescription A description of the significant update to show to the user.\n *\n * @platform ios 26.4+\n */\nexport async function showSignificantUpdateAcknowledgmentAsync(\n  updateDescription: string\n): Promise<void> {\n  if (Platform.OS === 'ios') {\n    return ExpoAgeRange.showSignificantUpdateAcknowledgmentAsync(updateDescription);\n  }\n}\n\n/**\n * Returns the set of regulatory features that the OS reports as required for the current user.\n *\n * Use this to discover which age-assurance obligations apply.\n *\n * Resolves with `null` on iOS earlier than 26.4 and on Android and web — treat\n * `null` as \"unknown\" rather than \"no features required\".\n *\n * @platform ios 26.4+\n */\nexport async function getRequiredRegulatoryFeaturesAsync(): Promise<\n  AgeRangeRegulatoryFeature[] | null\n> {\n  if (Platform.OS === 'ios') {\n    return ExpoAgeRange.getRequiredRegulatoryFeaturesAsync();\n  }\n  return null;\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.web.d.ts b/packages/expo-age-range/build/AgeRange.web.d.ts
+index 5be7a6110a1a1a..858e28d2d9f0ae 100644
+--- a/packages/expo-age-range/build/AgeRange.web.d.ts
++++ b/packages/expo-age-range/build/AgeRange.web.d.ts
+@@ -1,4 +1,6 @@
+-import type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';
++import type { AgeRangeRequest, AgeRangeResponse, AgeRangeRegulatoryFeature } from './ExpoAgeRange.types';
+ export declare function requestAgeRangeAsync(_: AgeRangeRequest): Promise<AgeRangeResponse>;
+ export declare function isEligibleForAgeFeaturesAsync(): Promise<boolean | null>;
++export declare function showSignificantUpdateAcknowledgmentAsync(_updateDescription: string): Promise<void>;
++export declare function getRequiredRegulatoryFeaturesAsync(): Promise<AgeRangeRegulatoryFeature[] | null>;
+ //# sourceMappingURL=AgeRange.web.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.web.d.ts.map b/packages/expo-age-range/build/AgeRange.web.d.ts.map
+index 10ec9838c0661f..c92da98847f54e 100644
+--- a/packages/expo-age-range/build/AgeRange.web.d.ts.map
++++ b/packages/expo-age-range/build/AgeRange.web.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"AgeRange.web.d.ts","sourceRoot":"","sources":["../src/AgeRange.web.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,gBAAgB,EAAE,MAAM,sBAAsB,CAAC;AAE9E,wBAAsB,oBAAoB,CAAC,CAAC,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAExF;AAED,wBAAsB,6BAA6B,IAAI,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,CAE7E"}
+\ No newline at end of file
++{"version":3,"file":"AgeRange.web.d.ts","sourceRoot":"","sources":["../src/AgeRange.web.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EACf,gBAAgB,EAChB,yBAAyB,EAC1B,MAAM,sBAAsB,CAAC;AAE9B,wBAAsB,oBAAoB,CAAC,CAAC,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAExF;AAED,wBAAsB,6BAA6B,IAAI,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,CAE7E;AAED,wBAAsB,wCAAwC,CAC5D,kBAAkB,EAAE,MAAM,GACzB,OAAO,CAAC,IAAI,CAAC,CAEf;AAED,wBAAsB,kCAAkC,IAAI,OAAO,CACjE,yBAAyB,EAAE,GAAG,IAAI,CACnC,CAEA"}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.web.js b/packages/expo-age-range/build/AgeRange.web.js
+index d70084979db67f..accc7935b26e0b 100644
+--- a/packages/expo-age-range/build/AgeRange.web.js
++++ b/packages/expo-age-range/build/AgeRange.web.js
+@@ -4,4 +4,10 @@ export async function requestAgeRangeAsync(_) {
+ export async function isEligibleForAgeFeaturesAsync() {
+     return null;
+ }
++export async function showSignificantUpdateAcknowledgmentAsync(_updateDescription) {
++    // no-op on web
++}
++export async function getRequiredRegulatoryFeaturesAsync() {
++    return null;
++}
+ //# sourceMappingURL=AgeRange.web.js.map
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/AgeRange.web.js.map b/packages/expo-age-range/build/AgeRange.web.js.map
+index b08e5c5fa8d7ed..9df4c5db205d9d 100644
+--- a/packages/expo-age-range/build/AgeRange.web.js.map
++++ b/packages/expo-age-range/build/AgeRange.web.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"AgeRange.web.js","sourceRoot":"","sources":["../src/AgeRange.web.ts"],"names":[],"mappings":"AAEA,MAAM,CAAC,KAAK,UAAU,oBAAoB,CAAC,CAAkB;IAC3D,OAAO,EAAE,UAAU,EAAE,EAAE,EAAE,UAAU,EAAE,IAAI,EAAE,CAAC;AAC9C,CAAC;AAED,MAAM,CAAC,KAAK,UAAU,6BAA6B;IACjD,OAAO,IAAI,CAAC;AACd,CAAC","sourcesContent":["import type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';\n\nexport async function requestAgeRangeAsync(_: AgeRangeRequest): Promise<AgeRangeResponse> {\n  return { lowerBound: 18, upperBound: null };\n}\n\nexport async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {\n  return null;\n}\n"]}
+\ No newline at end of file
++{"version":3,"file":"AgeRange.web.js","sourceRoot":"","sources":["../src/AgeRange.web.ts"],"names":[],"mappings":"AAMA,MAAM,CAAC,KAAK,UAAU,oBAAoB,CAAC,CAAkB;IAC3D,OAAO,EAAE,UAAU,EAAE,EAAE,EAAE,UAAU,EAAE,IAAI,EAAE,CAAC;AAC9C,CAAC;AAED,MAAM,CAAC,KAAK,UAAU,6BAA6B;IACjD,OAAO,IAAI,CAAC;AACd,CAAC;AAED,MAAM,CAAC,KAAK,UAAU,wCAAwC,CAC5D,kBAA0B;IAE1B,eAAe;AACjB,CAAC;AAED,MAAM,CAAC,KAAK,UAAU,kCAAkC;IAGtD,OAAO,IAAI,CAAC;AACd,CAAC","sourcesContent":["import type {\n  AgeRangeRequest,\n  AgeRangeResponse,\n  AgeRangeRegulatoryFeature,\n} from './ExpoAgeRange.types';\n\nexport async function requestAgeRangeAsync(_: AgeRangeRequest): Promise<AgeRangeResponse> {\n  return { lowerBound: 18, upperBound: null };\n}\n\nexport async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {\n  return null;\n}\n\nexport async function showSignificantUpdateAcknowledgmentAsync(\n  _updateDescription: string\n): Promise<void> {\n  // no-op on web\n}\n\nexport async function getRequiredRegulatoryFeaturesAsync(): Promise<\n  AgeRangeRegulatoryFeature[] | null\n> {\n  return null;\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/ExpoAgeRange.types.d.ts b/packages/expo-age-range/build/ExpoAgeRange.types.d.ts
+index f63827959e9cc9..0fd986445269fe 100644
+--- a/packages/expo-age-range/build/ExpoAgeRange.types.d.ts
++++ b/packages/expo-age-range/build/ExpoAgeRange.types.d.ts
+@@ -53,8 +53,18 @@ export type AgeRangeResponse = {
+      */
+     mostRecentApprovalDate?: number | null;
+ };
++/**
++ * A regulatory feature that your app may need to support for the current user.
++ *
++ * Mirrors [`AgeRangeService.RegulatoryFeature`](https://developer.apple.com/documentation/declaredagerange/agerangeservice/regulatoryfeature).
++ *
++ * @platform ios 26.4+
++ */
++export type AgeRangeRegulatoryFeature = 'declaredAgeRangeRequired' | 'significantAppChangeRequiresAdultNotification' | 'significantAppChangeRequiresParentalConsent';
+ export interface ExpoAgeRangeModule extends NativeModule {
+     requestAgeRangeAsync(options: AgeRangeRequest): Promise<AgeRangeResponse>;
+     isEligibleForAgeFeaturesAsync(): Promise<boolean | null>;
++    showSignificantUpdateAcknowledgmentAsync(updateDescription: string): Promise<void>;
++    getRequiredRegulatoryFeaturesAsync(): Promise<AgeRangeRegulatoryFeature[] | null>;
+ }
+ //# sourceMappingURL=ExpoAgeRange.types.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/ExpoAgeRange.types.d.ts.map b/packages/expo-age-range/build/ExpoAgeRange.types.d.ts.map
+index fa8d44548394fc..f6f1cd3ed94720 100644
+--- a/packages/expo-age-range/build/ExpoAgeRange.types.d.ts.map
++++ b/packages/expo-age-range/build/ExpoAgeRange.types.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"ExpoAgeRange.types.d.ts","sourceRoot":"","sources":["../src/ExpoAgeRange.types.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,yBAAyB,CAAC;AAE5D;;;;GAIG;AACH,MAAM,MAAM,eAAe,GAAG;IAC5B,6CAA6C;IAC7C,UAAU,EAAE,MAAM,CAAC;IACnB,uDAAuD;IACvD,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB,uDAAuD;IACvD,UAAU,CAAC,EAAE,MAAM,CAAC;CACrB,CAAC;AAEF;;;;GAIG;AACH,MAAM,MAAM,gBAAgB,GAAG;IAC7B,iDAAiD;IACjD,UAAU,EAAE,MAAM,GAAG,IAAI,CAAC;IAC1B,iDAAiD;IACjD,UAAU,EAAE,MAAM,GAAG,IAAI,CAAC;IAC1B;;;;OAIG;IACH,mBAAmB,CAAC,EAAE,cAAc,GAAG,kBAAkB,GAAG,IAAI,CAAC;IACjE;;;;OAIG;IACH,sBAAsB,CAAC,EAAE,MAAM,EAAE,CAAC;IAClC;;;;OAIG;IACH,SAAS,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;IAC1B;;;;OAIG;IACH,UAAU,CAAC,EACP,UAAU,GACV,YAAY,GACZ,6BAA6B,GAC7B,4BAA4B,GAC5B,UAAU,GACV,SAAS,GACT,IAAI,CAAC;IACT;;;;OAIG;IACH,sBAAsB,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;CACxC,CAAC;AAEF,MAAM,WAAW,kBAAmB,SAAQ,YAAY;IACtD,oBAAoB,CAAC,OAAO,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAAC;IAC1E,6BAA6B,IAAI,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,CAAC;CAC1D"}
+\ No newline at end of file
++{"version":3,"file":"ExpoAgeRange.types.d.ts","sourceRoot":"","sources":["../src/ExpoAgeRange.types.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,yBAAyB,CAAC;AAE5D;;;;GAIG;AACH,MAAM,MAAM,eAAe,GAAG;IAC5B,6CAA6C;IAC7C,UAAU,EAAE,MAAM,CAAC;IACnB,uDAAuD;IACvD,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB,uDAAuD;IACvD,UAAU,CAAC,EAAE,MAAM,CAAC;CACrB,CAAC;AAEF;;;;GAIG;AACH,MAAM,MAAM,gBAAgB,GAAG;IAC7B,iDAAiD;IACjD,UAAU,EAAE,MAAM,GAAG,IAAI,CAAC;IAC1B,iDAAiD;IACjD,UAAU,EAAE,MAAM,GAAG,IAAI,CAAC;IAC1B;;;;OAIG;IACH,mBAAmB,CAAC,EAAE,cAAc,GAAG,kBAAkB,GAAG,IAAI,CAAC;IACjE;;;;OAIG;IACH,sBAAsB,CAAC,EAAE,MAAM,EAAE,CAAC;IAClC;;;;OAIG;IACH,SAAS,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;IAC1B;;;;OAIG;IACH,UAAU,CAAC,EACP,UAAU,GACV,YAAY,GACZ,6BAA6B,GAC7B,4BAA4B,GAC5B,UAAU,GACV,SAAS,GACT,IAAI,CAAC;IACT;;;;OAIG;IACH,sBAAsB,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;CACxC,CAAC;AAEF;;;;;;GAMG;AACH,MAAM,MAAM,yBAAyB,GACjC,0BAA0B,GAC1B,+CAA+C,GAC/C,6CAA6C,CAAC;AAElD,MAAM,WAAW,kBAAmB,SAAQ,YAAY;IACtD,oBAAoB,CAAC,OAAO,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC,CAAC;IAC1E,6BAA6B,IAAI,OAAO,CAAC,OAAO,GAAG,IAAI,CAAC,CAAC;IACzD,wCAAwC,CAAC,iBAAiB,EAAE,MAAM,GAAG,OAAO,CAAC,IAAI,CAAC,CAAC;IACnF,kCAAkC,IAAI,OAAO,CAAC,yBAAyB,EAAE,GAAG,IAAI,CAAC,CAAC;CACnF"}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/ExpoAgeRange.types.js.map b/packages/expo-age-range/build/ExpoAgeRange.types.js.map
+index 3a382fc480773c..23d3c3e2c786ae 100644
+--- a/packages/expo-age-range/build/ExpoAgeRange.types.js.map
++++ b/packages/expo-age-range/build/ExpoAgeRange.types.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"ExpoAgeRange.types.js","sourceRoot":"","sources":["../src/ExpoAgeRange.types.ts"],"names":[],"mappings":"","sourcesContent":["import type { NativeModule } from 'expo-modules-core/types';\n\n/**\n * Options for requesting age range information from the user.\n *\n * @platform ios\n */\nexport type AgeRangeRequest = {\n  /** The required minimum age for your app. */\n  threshold1: number;\n  /** An optional additional minimum age for your app. */\n  threshold2?: number;\n  /** An optional additional minimum age for your app. */\n  threshold3?: number;\n};\n\n/**\n * Response containing the user's age range information.\n *\n * Contains age boundaries and platform-specific metadata.\n */\nexport type AgeRangeResponse = {\n  /** The lower limit of the person’s age range. */\n  lowerBound: number | null;\n  /** The upper limit of the person’s age range. */\n  upperBound: number | null;\n  /**\n   * Indicates whether the age range was declared by the user themselves or someone else (parent, guardian, or Family Organizer in a Family Sharing group).\n   *\n   * @platform ios\n   */\n  ageRangeDeclaration?: 'selfDeclared' | 'guardianDeclared' | null;\n  /**\n   * List of parental controls enabled and shared as a part of age range declaration.\n   *\n   * @platform ios\n   */\n  activeParentalControls?: string[];\n  /**\n   * An ID assigned to supervised user installs by Google Play, used to notify you of revoked app approval.\n   *\n   * @platform android\n   */\n  installId?: string | null;\n  /**\n   * The user's age verification or supervision status.\n   *\n   * @platform android\n   */\n  userStatus?:\n    | 'VERIFIED'\n    | 'SUPERVISED'\n    | 'SUPERVISED_APPROVAL_PENDING'\n    | 'SUPERVISED_APPROVAL_DENIED'\n    | 'DECLARED'\n    | 'UNKNOWN'\n    | null;\n  /**\n   * The effective date (timestamp) of the most recent significant change that was approved.\n   *\n   * @platform android\n   */\n  mostRecentApprovalDate?: number | null;\n};\n\nexport interface ExpoAgeRangeModule extends NativeModule {\n  requestAgeRangeAsync(options: AgeRangeRequest): Promise<AgeRangeResponse>;\n  isEligibleForAgeFeaturesAsync(): Promise<boolean | null>;\n}\n"]}
+\ No newline at end of file
++{"version":3,"file":"ExpoAgeRange.types.js","sourceRoot":"","sources":["../src/ExpoAgeRange.types.ts"],"names":[],"mappings":"","sourcesContent":["import type { NativeModule } from 'expo-modules-core/types';\n\n/**\n * Options for requesting age range information from the user.\n *\n * @platform ios\n */\nexport type AgeRangeRequest = {\n  /** The required minimum age for your app. */\n  threshold1: number;\n  /** An optional additional minimum age for your app. */\n  threshold2?: number;\n  /** An optional additional minimum age for your app. */\n  threshold3?: number;\n};\n\n/**\n * Response containing the user's age range information.\n *\n * Contains age boundaries and platform-specific metadata.\n */\nexport type AgeRangeResponse = {\n  /** The lower limit of the person’s age range. */\n  lowerBound: number | null;\n  /** The upper limit of the person’s age range. */\n  upperBound: number | null;\n  /**\n   * Indicates whether the age range was declared by the user themselves or someone else (parent, guardian, or Family Organizer in a Family Sharing group).\n   *\n   * @platform ios\n   */\n  ageRangeDeclaration?: 'selfDeclared' | 'guardianDeclared' | null;\n  /**\n   * List of parental controls enabled and shared as a part of age range declaration.\n   *\n   * @platform ios\n   */\n  activeParentalControls?: string[];\n  /**\n   * An ID assigned to supervised user installs by Google Play, used to notify you of revoked app approval.\n   *\n   * @platform android\n   */\n  installId?: string | null;\n  /**\n   * The user's age verification or supervision status.\n   *\n   * @platform android\n   */\n  userStatus?:\n    | 'VERIFIED'\n    | 'SUPERVISED'\n    | 'SUPERVISED_APPROVAL_PENDING'\n    | 'SUPERVISED_APPROVAL_DENIED'\n    | 'DECLARED'\n    | 'UNKNOWN'\n    | null;\n  /**\n   * The effective date (timestamp) of the most recent significant change that was approved.\n   *\n   * @platform android\n   */\n  mostRecentApprovalDate?: number | null;\n};\n\n/**\n * A regulatory feature that your app may need to support for the current user.\n *\n * Mirrors [`AgeRangeService.RegulatoryFeature`](https://developer.apple.com/documentation/declaredagerange/agerangeservice/regulatoryfeature).\n *\n * @platform ios 26.4+\n */\nexport type AgeRangeRegulatoryFeature =\n  | 'declaredAgeRangeRequired'\n  | 'significantAppChangeRequiresAdultNotification'\n  | 'significantAppChangeRequiresParentalConsent';\n\nexport interface ExpoAgeRangeModule extends NativeModule {\n  requestAgeRangeAsync(options: AgeRangeRequest): Promise<AgeRangeResponse>;\n  isEligibleForAgeFeaturesAsync(): Promise<boolean | null>;\n  showSignificantUpdateAcknowledgmentAsync(updateDescription: string): Promise<void>;\n  getRequiredRegulatoryFeaturesAsync(): Promise<AgeRangeRegulatoryFeature[] | null>;\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/index.d.ts b/packages/expo-age-range/build/index.d.ts
+index 65fd48191a2375..322b3f664faf37 100644
+--- a/packages/expo-age-range/build/index.d.ts
++++ b/packages/expo-age-range/build/index.d.ts
+@@ -1,3 +1,3 @@
+ export * from './AgeRange';
+-export type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';
++export type { AgeRangeRequest, AgeRangeResponse, AgeRangeRegulatoryFeature, } from './ExpoAgeRange.types';
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/index.d.ts.map b/packages/expo-age-range/build/index.d.ts.map
+index 7ac9a82dae0c07..e40e92a488ce66 100644
+--- a/packages/expo-age-range/build/index.d.ts.map
++++ b/packages/expo-age-range/build/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAAA,cAAc,YAAY,CAAC;AAC3B,YAAY,EAAE,eAAe,EAAE,gBAAgB,EAAE,MAAM,sBAAsB,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAAA,cAAc,YAAY,CAAC;AAC3B,YAAY,EACV,eAAe,EACf,gBAAgB,EAChB,yBAAyB,GAC1B,MAAM,sBAAsB,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/build/index.js.map b/packages/expo-age-range/build/index.js.map
+index 0929e323a190be..a0574bfc3fd0a6 100644
+--- a/packages/expo-age-range/build/index.js.map
++++ b/packages/expo-age-range/build/index.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAAA,cAAc,YAAY,CAAC","sourcesContent":["export * from './AgeRange';\nexport type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';\n"]}
+\ No newline at end of file
++{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAAA,cAAc,YAAY,CAAC","sourcesContent":["export * from './AgeRange';\nexport type {\n  AgeRangeRequest,\n  AgeRangeResponse,\n  AgeRangeRegulatoryFeature,\n} from './ExpoAgeRange.types';\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-age-range/ios/AgeRangeExceptions.swift b/packages/expo-age-range/ios/AgeRangeExceptions.swift
+index 986be51fa6053a..0d3071f9e64610 100644
+--- a/packages/expo-age-range/ios/AgeRangeExceptions.swift
++++ b/packages/expo-age-range/ios/AgeRangeExceptions.swift
+@@ -31,7 +31,7 @@ final class AgeRangeUserDeclinedException: Exception, @unchecked Sendable {
+ 
+ final class AgeRangeNoViewControllerException: Exception, @unchecked Sendable {
+   override var reason: String {
+-    "No current view controller available"
++    "No current view controller or window scene available to present the Age Range UI"
+   }
+ }
+ 
+diff --git a/packages/expo-age-range/ios/AgeRangeModule.swift b/packages/expo-age-range/ios/AgeRangeModule.swift
+index 8b99e5251187ab..8dafec66500fe7 100644
+--- a/packages/expo-age-range/ios/AgeRangeModule.swift
++++ b/packages/expo-age-range/ios/AgeRangeModule.swift
+@@ -46,5 +46,44 @@ public class AgeRangeModule: Module, @unchecked Sendable {
+         throw AgeRangeNotAvailableException()
+       }
+     }
++
++    AsyncFunction("showSignificantUpdateAcknowledgmentAsync") { (updateDescription: String) in
++      guard #available(iOS 26.4, *) else {
++        return
++      }
++
++      let windowScene: UIWindowScene? = await MainActor.run { [appContext] in
++        appContext?.utilities?.currentViewController()?.view?.window?.windowScene
++      }
++
++      guard let windowScene else {
++        throw AgeRangeNoViewControllerException()
++      }
++
++      do {
++        try await AgeRangeService.shared.showSignificantUpdateAcknowledgment(in: windowScene, updateDescription: updateDescription)
++      } catch AgeRangeService.Error.notAvailable {
++        throw AgeRangeNotAvailableException()
++      }
++    }
++
++    AsyncFunction("getRequiredRegulatoryFeaturesAsync") { () -> [String]? in
++      guard #available(iOS 26.4, *) else {
++        return nil
++      }
++      do {
++        let features = try await AgeRangeService.shared.requiredRegulatoryFeatures
++        return features.compactMap { feature -> String? in
++          switch feature {
++          case .declaredAgeRangeRequired: "declaredAgeRangeRequired"
++          case .significantAppChangeRequiresAdultNotification: "significantAppChangeRequiresAdultNotification"
++          case .significantAppChangeRequiresParentalConsent: "significantAppChangeRequiresParentalConsent"
++          @unknown default: nil
++          }
++        }
++      } catch AgeRangeService.Error.notAvailable {
++        throw AgeRangeNotAvailableException()
++      }
++    }
+   }
+ }
+diff --git a/packages/expo-age-range/mocks/ExpoAgeRange.ts b/packages/expo-age-range/mocks/ExpoAgeRange.ts
+index 74d26aa755c3ad..d20d202b48c985 100644
+--- a/packages/expo-age-range/mocks/ExpoAgeRange.ts
++++ b/packages/expo-age-range/mocks/ExpoAgeRange.ts
+@@ -4,7 +4,7 @@
+  * This autogenerated file provides a mock for native Expo module,
+  * and works out of the box with the expo jest preset.
+  *  */
+-import type { AgeRangeRequest, AgeRangeResponse } from '../src/index';
++import type { AgeRangeRequest, AgeRangeResponse, AgeRangeRegulatoryFeature } from '../src/index';
+ 
+ export async function requestAgeRangeAsync(opts: AgeRangeRequest): Promise<AgeRangeResponse> {
+   return {
+@@ -19,3 +19,13 @@ export async function requestAgeRangeAsync(opts: AgeRangeRequest): Promise<AgeRa
+ export async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {
+   return null;
+ }
++
++export async function showSignificantUpdateAcknowledgmentAsync(
++  _updateDescription: string
++): Promise<void> {}
++
++export async function getRequiredRegulatoryFeaturesAsync(): Promise<
++  AgeRangeRegulatoryFeature[] | null
++> {
++  return null;
++}
+diff --git a/packages/expo-age-range/src/AgeRange.ts b/packages/expo-age-range/src/AgeRange.ts
+index e71ea9add7d912..30458ef5633ad6 100644
+--- a/packages/expo-age-range/src/AgeRange.ts
++++ b/packages/expo-age-range/src/AgeRange.ts
+@@ -1,5 +1,11 @@
++import { Platform } from 'react-native';
++
+ import ExpoAgeRange from './ExpoAgeRange';
+-import type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';
++import type {
++  AgeRangeRequest,
++  AgeRangeResponse,
++  AgeRangeRegulatoryFeature,
++} from './ExpoAgeRange.types';
+ 
+ /**
+  * Prompts the user to share their age range with the app. Responses may be cached by the OS for future requests.
+@@ -53,3 +59,45 @@ export async function requestAgeRangeAsync(options: AgeRangeRequest): Promise<Ag
+ export async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {
+   return ExpoAgeRange.isEligibleForAgeFeaturesAsync();
+ }
++
++/**
++ * Displays a system-provided interface for people to acknowledge a significant app update.
++ *
++ * Only on iOS 26.4+, this presents an update acknowledgement dialog and resolves once the user confirms it, or rejects with an error.
++ * On unsupported platforms this resolves immediately without showing any UI.
++ *
++ * Call [`getRequiredRegulatoryFeaturesAsync`](#agerangegetrequiredregulatoryfeaturesasync) first to
++ * determine whether the user actually needs to acknowledge a significant change — only invoke
++ * this function when the returned features include `'significantAppChangeRequiresAdultNotification'`.
++ * Doing so avoids prompting users who are not subject to the regulation.
++ *
++ * @param updateDescription A description of the significant update to show to the user.
++ *
++ * @platform ios 26.4+
++ */
++export async function showSignificantUpdateAcknowledgmentAsync(
++  updateDescription: string
++): Promise<void> {
++  if (Platform.OS === 'ios') {
++    return ExpoAgeRange.showSignificantUpdateAcknowledgmentAsync(updateDescription);
++  }
++}
++
++/**
++ * Returns the set of regulatory features that the OS reports as required for the current user.
++ *
++ * Use this to discover which age-assurance obligations apply.
++ *
++ * Resolves with `null` on iOS earlier than 26.4 and on Android and web — treat
++ * `null` as "unknown" rather than "no features required".
++ *
++ * @platform ios 26.4+
++ */
++export async function getRequiredRegulatoryFeaturesAsync(): Promise<
++  AgeRangeRegulatoryFeature[] | null
++> {
++  if (Platform.OS === 'ios') {
++    return ExpoAgeRange.getRequiredRegulatoryFeaturesAsync();
++  }
++  return null;
++}
+diff --git a/packages/expo-age-range/src/AgeRange.web.ts b/packages/expo-age-range/src/AgeRange.web.ts
+index 9661f5426ace0d..d91b64ed3c69d8 100644
+--- a/packages/expo-age-range/src/AgeRange.web.ts
++++ b/packages/expo-age-range/src/AgeRange.web.ts
+@@ -1,4 +1,8 @@
+-import type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';
++import type {
++  AgeRangeRequest,
++  AgeRangeResponse,
++  AgeRangeRegulatoryFeature,
++} from './ExpoAgeRange.types';
+ 
+ export async function requestAgeRangeAsync(_: AgeRangeRequest): Promise<AgeRangeResponse> {
+   return { lowerBound: 18, upperBound: null };
+@@ -7,3 +11,15 @@ export async function requestAgeRangeAsync(_: AgeRangeRequest): Promise<AgeRange
+ export async function isEligibleForAgeFeaturesAsync(): Promise<boolean | null> {
+   return null;
+ }
++
++export async function showSignificantUpdateAcknowledgmentAsync(
++  _updateDescription: string
++): Promise<void> {
++  // no-op on web
++}
++
++export async function getRequiredRegulatoryFeaturesAsync(): Promise<
++  AgeRangeRegulatoryFeature[] | null
++> {
++  return null;
++}
+diff --git a/packages/expo-age-range/src/ExpoAgeRange.types.ts b/packages/expo-age-range/src/ExpoAgeRange.types.ts
+index ab63f4cdc19bba..4362232e75a8b4 100644
+--- a/packages/expo-age-range/src/ExpoAgeRange.types.ts
++++ b/packages/expo-age-range/src/ExpoAgeRange.types.ts
+@@ -63,7 +63,21 @@ export type AgeRangeResponse = {
+   mostRecentApprovalDate?: number | null;
+ };
+ 
++/**
++ * A regulatory feature that your app may need to support for the current user.
++ *
++ * Mirrors [`AgeRangeService.RegulatoryFeature`](https://developer.apple.com/documentation/declaredagerange/agerangeservice/regulatoryfeature).
++ *
++ * @platform ios 26.4+
++ */
++export type AgeRangeRegulatoryFeature =
++  | 'declaredAgeRangeRequired'
++  | 'significantAppChangeRequiresAdultNotification'
++  | 'significantAppChangeRequiresParentalConsent';
++
+ export interface ExpoAgeRangeModule extends NativeModule {
+   requestAgeRangeAsync(options: AgeRangeRequest): Promise<AgeRangeResponse>;
+   isEligibleForAgeFeaturesAsync(): Promise<boolean | null>;
++  showSignificantUpdateAcknowledgmentAsync(updateDescription: string): Promise<void>;
++  getRequiredRegulatoryFeaturesAsync(): Promise<AgeRangeRegulatoryFeature[] | null>;
+ }
+diff --git a/packages/expo-age-range/src/__tests__/ExpoAgeRange-test.ts b/packages/expo-age-range/src/__tests__/ExpoAgeRange-test.ts
+index 5fd09e7453c0f2..00c0696a544295 100644
+--- a/packages/expo-age-range/src/__tests__/ExpoAgeRange-test.ts
++++ b/packages/expo-age-range/src/__tests__/ExpoAgeRange-test.ts
+@@ -16,4 +16,15 @@ describe('ExpoAgeRange', () => {
+     // The mock represents the unsupported / unknown case (iOS < 26.2, Android, web).
+     await expect(ExpoAgeRange.isEligibleForAgeFeaturesAsync()).resolves.toBeNull();
+   });
++
++  it(`invokes showSignificantUpdateAcknowledgmentAsync`, async () => {
++    await expect(
++      ExpoAgeRange.showSignificantUpdateAcknowledgmentAsync('test update')
++    ).resolves.toBeUndefined();
++  });
++
++  it(`invokes getRequiredRegulatoryFeaturesAsync and resolves with null on unsupported platforms`, async () => {
++    // The mock represents the unsupported / unknown case (iOS < 26.4, Android, web).
++    await expect(ExpoAgeRange.getRequiredRegulatoryFeaturesAsync()).resolves.toBeNull();
++  });
+ });
+diff --git a/packages/expo-age-range/src/index.ts b/packages/expo-age-range/src/index.ts
+index 9dc9661b6f8933..d1106af4a21fdf 100644
+--- a/packages/expo-age-range/src/index.ts
++++ b/packages/expo-age-range/src/index.ts
+@@ -1,2 +1,6 @@
+ export * from './AgeRange';
+-export type { AgeRangeRequest, AgeRangeResponse } from './ExpoAgeRange.types';
++export type {
++  AgeRangeRequest,
++  AgeRangeResponse,
++  AgeRangeRegulatoryFeature,
++} from './ExpoAgeRange.types';

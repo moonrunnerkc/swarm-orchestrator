@@ -1,0 +1,538 @@
+diff --git a/packages/core/src/tracing/ai/utils.ts b/packages/core/src/tracing/ai/utils.ts
+index 31d11d4d84c4..2c152b3fd8f2 100644
+--- a/packages/core/src/tracing/ai/utils.ts
++++ b/packages/core/src/tracing/ai/utils.ts
+@@ -45,15 +45,15 @@ export interface InstrumentedMethodEntry {
+ export type InstrumentedMethodRegistry = Record<string, InstrumentedMethodEntry>;
+ 
+ /**
+- * Resolves AI recording options by falling back to the client's `sendDefaultPii` setting.
+- * Precedence: explicit option > sendDefaultPii > false
++ * Resolves AI recording options by falling back to the client's `dataCollection.genAI` settings.
++ * Precedence: explicit option > dataCollection.genAI > sendDefaultPii > false
+  */
+ export function resolveAIRecordingOptions<T extends AIRecordingOptions>(options?: T): T & Required<AIRecordingOptions> {
+-  const sendDefaultPii = Boolean(getClient()?.getOptions().sendDefaultPii);
++  const genAI = getClient()?.getDataCollectionOptions().genAI;
+   return {
+     ...options,
+-    recordInputs: options?.recordInputs ?? sendDefaultPii,
+-    recordOutputs: options?.recordOutputs ?? sendDefaultPii,
++    recordInputs: options?.recordInputs ?? genAI?.inputs ?? false,
++    recordOutputs: options?.recordOutputs ?? genAI?.outputs ?? false,
+   } as T & Required<AIRecordingOptions>;
+ }
+ 
+diff --git a/packages/core/test/lib/tracing/ai/utils.test.ts b/packages/core/test/lib/tracing/ai/utils.test.ts
+index 43f16e70c0f2..c310bd4a0475 100644
+--- a/packages/core/test/lib/tracing/ai/utils.test.ts
++++ b/packages/core/test/lib/tracing/ai/utils.test.ts
+@@ -16,27 +16,71 @@ describe('resolveAIRecordingOptions', () => {
+     getGlobalScope().clear();
+   });
+ 
+-  function setup(sendDefaultPii: boolean): void {
++  function setupWithSendDefaultPii(sendDefaultPii: boolean): void {
+     const options = getDefaultTestClientOptions({ tracesSampleRate: 1, sendDefaultPii });
+     const client = new TestClient(options);
+     setCurrentClient(client);
+     client.init();
+   }
+ 
+-  it('defaults to false when sendDefaultPii is false', () => {
+-    setup(false);
++  function setupWithDataCollection(genAI: { inputs?: boolean; outputs?: boolean }): void {
++    const options = getDefaultTestClientOptions({ tracesSampleRate: 1, dataCollection: { genAI } });
++    const client = new TestClient(options);
++    setCurrentClient(client);
++    client.init();
++  }
++
++  it('defaults to false when no client is set', () => {
++    expect(resolveAIRecordingOptions()).toEqual({ recordInputs: false, recordOutputs: false });
++  });
++
++  it('defaults to false when sendDefaultPii is false (bridge)', () => {
++    setupWithSendDefaultPii(false);
+     expect(resolveAIRecordingOptions()).toEqual({ recordInputs: false, recordOutputs: false });
+   });
+ 
+-  it('respects sendDefaultPii: true', () => {
+-    setup(true);
++  it('defaults to true when sendDefaultPii is true (bridge)', () => {
++    setupWithSendDefaultPii(true);
++    expect(resolveAIRecordingOptions()).toEqual({ recordInputs: true, recordOutputs: true });
++  });
++
++  it('explicit options override sendDefaultPii bridge', () => {
++    setupWithSendDefaultPii(true);
++    expect(resolveAIRecordingOptions({ recordInputs: false })).toEqual({ recordInputs: false, recordOutputs: true });
++  });
++
++  it('respects dataCollection.genAI.inputs and outputs', () => {
++    setupWithDataCollection({ inputs: true, outputs: true });
+     expect(resolveAIRecordingOptions()).toEqual({ recordInputs: true, recordOutputs: true });
+   });
+ 
+-  it('explicit options override sendDefaultPii', () => {
+-    setup(true);
++  it('respects dataCollection.genAI.inputs: false, outputs: false', () => {
++    setupWithDataCollection({ inputs: false, outputs: false });
++    expect(resolveAIRecordingOptions()).toEqual({ recordInputs: false, recordOutputs: false });
++  });
++
++  it('supports asymmetric dataCollection.genAI (inputs: true, outputs: false)', () => {
++    setupWithDataCollection({ inputs: true, outputs: false });
++    expect(resolveAIRecordingOptions()).toEqual({ recordInputs: true, recordOutputs: false });
++  });
++
++  it('supports asymmetric dataCollection.genAI (inputs: false, outputs: true)', () => {
++    setupWithDataCollection({ inputs: false, outputs: true });
++    expect(resolveAIRecordingOptions()).toEqual({ recordInputs: false, recordOutputs: true });
++  });
++
++  it('explicit options override dataCollection.genAI', () => {
++    setupWithDataCollection({ inputs: true, outputs: true });
+     expect(resolveAIRecordingOptions({ recordInputs: false })).toEqual({ recordInputs: false, recordOutputs: true });
+   });
++
++  it('explicit false overrides dataCollection.genAI.inputs: true', () => {
++    setupWithDataCollection({ inputs: true, outputs: true });
++    expect(resolveAIRecordingOptions({ recordInputs: false, recordOutputs: false })).toEqual({
++      recordInputs: false,
++      recordOutputs: false,
++    });
++  });
+ });
+ 
+ describe('wrapPromiseWithMethods', () => {
+diff --git a/packages/node/src/integrations/tracing/anthropic-ai/index.ts b/packages/node/src/integrations/tracing/anthropic-ai/index.ts
+index 65b7d72a869a..479e9a356c28 100644
+--- a/packages/node/src/integrations/tracing/anthropic-ai/index.ts
++++ b/packages/node/src/integrations/tracing/anthropic-ai/index.ts
+@@ -37,18 +37,18 @@ const _anthropicAIIntegration = ((options: AnthropicAiOptions = {}) => {
+  *
+  * ## Options
+  *
+- * - `recordInputs`: Whether to record prompt messages (default: respects `sendDefaultPii` client option)
+- * - `recordOutputs`: Whether to record response text (default: respects `sendDefaultPii` client option)
++ * - `recordInputs`: Whether to record prompt messages (default: follows `sendDefaultPii` or `dataCollection.genAI.inputs`)
++ * - `recordOutputs`: Whether to record response text (default: follows `sendDefaultPii` or `dataCollection.genAI.outputs`)
+  *
+  * ### Default Behavior
+  *
+  * By default, the integration will:
+- * - Record inputs and outputs ONLY if `sendDefaultPii` is set to `true` in your Sentry client options
+- * - Otherwise, inputs and outputs are NOT recorded unless explicitly enabled
++ * - Record inputs and outputs based on `sendDefaultPii` or `dataCollection.genAI` in your Sentry client options
++ * - Integration-level `recordInputs`/`recordOutputs` options take precedence over global config
+  *
+  * @example
+  * ```javascript
+- * // Record inputs and outputs when sendDefaultPii is false
++ * // Always record inputs and outputs regardless of global dataCollection config
+  * Sentry.init({
+  *   integrations: [
+  *     Sentry.anthropicAIIntegration({
+@@ -58,9 +58,9 @@ const _anthropicAIIntegration = ((options: AnthropicAiOptions = {}) => {
+  *   ],
+  * });
+  *
+- * // Never record inputs/outputs regardless of sendDefaultPii
++ * // Never record inputs/outputs regardless of global dataCollection config
+  * Sentry.init({
+- *   sendDefaultPii: true,
++ *   dataCollection: { genAI: { inputs: true, outputs: true } },
+  *   integrations: [
+  *     Sentry.anthropicAIIntegration({
+  *       recordInputs: false,
+diff --git a/packages/node/src/integrations/tracing/langgraph/index.ts b/packages/node/src/integrations/tracing/langgraph/index.ts
+index c302582e5908..68c324e6815a 100644
+--- a/packages/node/src/integrations/tracing/langgraph/index.ts
++++ b/packages/node/src/integrations/tracing/langgraph/index.ts
+@@ -36,18 +36,18 @@ const _langGraphIntegration = ((options: LangGraphOptions = {}) => {
+  *
+  * ## Options
+  *
+- * - `recordInputs`: Whether to record input messages (default: respects `sendDefaultPii` client option)
+- * - `recordOutputs`: Whether to record response text (default: respects `sendDefaultPii` client option)
++ * - `recordInputs`: Whether to record prompt messages (default: follows `sendDefaultPii` or `dataCollection.genAI.inputs`)
++ * - `recordOutputs`: Whether to record response text (default: follows `sendDefaultPii` or `dataCollection.genAI.outputs`)
+  *
+  * ### Default Behavior
+  *
+  * By default, the integration will:
+- * - Record inputs and outputs ONLY if `sendDefaultPii` is set to `true` in your Sentry client options
+- * - Otherwise, inputs and outputs are NOT recorded unless explicitly enabled
++ * - Record inputs and outputs based on `sendDefaultPii` or `dataCollection.genAI` in your Sentry client options
++ * - Integration-level `recordInputs`/`recordOutputs` options take precedence over global config
+  *
+  * @example
+  * ```javascript
+- * // Record inputs and outputs when sendDefaultPii is false
++ * // Always record inputs and outputs regardless of global dataCollection config
+  * Sentry.init({
+  *   integrations: [
+  *     Sentry.langGraphIntegration({
+@@ -57,9 +57,9 @@ const _langGraphIntegration = ((options: LangGraphOptions = {}) => {
+  *   ],
+  * });
+  *
+- * // Never record inputs/outputs regardless of sendDefaultPii
++ * // Never record inputs/outputs regardless of global dataCollection config
+  * Sentry.init({
+- *   sendDefaultPii: true,
++ *   dataCollection: { genAI: { inputs: true, outputs: true } },
+  *   integrations: [
+  *     Sentry.langGraphIntegration({
+  *       recordInputs: false,
+diff --git a/packages/node/src/integrations/tracing/langgraph/instrumentation.ts b/packages/node/src/integrations/tracing/langgraph/instrumentation.ts
+index f1e87e1c8c4c..c9c56cb018d6 100644
+--- a/packages/node/src/integrations/tracing/langgraph/instrumentation.ts
++++ b/packages/node/src/integrations/tracing/langgraph/instrumentation.ts
+@@ -91,10 +91,11 @@ export class SentryLangGraphInstrumentation extends InstrumentationBase<LangGrap
+    */
+   private _patch(exports: PatchedModuleExports): PatchedModuleExports | void {
+     const client = getClient();
++    const genAI = client?.getDataCollectionOptions().genAI;
+     const options = {
+       ...this.getConfig(),
+-      recordInputs: this.getConfig().recordInputs ?? client?.getOptions().sendDefaultPii,
+-      recordOutputs: this.getConfig().recordOutputs ?? client?.getOptions().sendDefaultPii,
++      recordInputs: this.getConfig().recordInputs ?? genAI?.inputs ?? false,
++      recordOutputs: this.getConfig().recordOutputs ?? genAI?.outputs ?? false,
+     };
+ 
+     // Patch StateGraph.compile to instrument both compile() and invoke()
+diff --git a/packages/node/src/integrations/tracing/openai/index.ts b/packages/node/src/integrations/tracing/openai/index.ts
+index e7f4171f87fa..11e72a93ffbc 100644
+--- a/packages/node/src/integrations/tracing/openai/index.ts
++++ b/packages/node/src/integrations/tracing/openai/index.ts
+@@ -36,18 +36,18 @@ const _openAiIntegration = ((options: OpenAiOptions = {}) => {
+  *
+  * ## Options
+  *
+- * - `recordInputs`: Whether to record prompt messages (default: respects `sendDefaultPii` client option)
+- * - `recordOutputs`: Whether to record response text (default: respects `sendDefaultPii` client option)
++ * - `recordInputs`: Whether to record prompt messages (default: follows `sendDefaultPii` or `dataCollection.genAI.inputs`)
++ * - `recordOutputs`: Whether to record response text (default: follows `sendDefaultPii` or `dataCollection.genAI.outputs`)
+  *
+  * ### Default Behavior
+  *
+  * By default, the integration will:
+- * - Record inputs and outputs ONLY if `sendDefaultPii` is set to `true` in your Sentry client options
+- * - Otherwise, inputs and outputs are NOT recorded unless explicitly enabled
++ * - Record inputs and outputs based on `sendDefaultPii` or `dataCollection.genAI` in your Sentry client options
++ * - Integration-level `recordInputs`/`recordOutputs` options take precedence over global config
+  *
+  * @example
+  * ```javascript
+- * // Record inputs and outputs when sendDefaultPii is false
++ * // Always record inputs and outputs regardless of global dataCollection config
+  * Sentry.init({
+  *   integrations: [
+  *     Sentry.openAIIntegration({
+@@ -57,9 +57,9 @@ const _openAiIntegration = ((options: OpenAiOptions = {}) => {
+  *   ],
+  * });
+  *
+- * // Never record inputs/outputs regardless of sendDefaultPii
++ * // Never record inputs/outputs regardless of global dataCollection config
+  * Sentry.init({
+- *   sendDefaultPii: true,
++ *   dataCollection: { genAI: { inputs: true, outputs: true } },
+  *   integrations: [
+  *     Sentry.openAIIntegration({
+  *       recordInputs: false,
+diff --git a/packages/node/src/integrations/tracing/vercelai/instrumentation.ts b/packages/node/src/integrations/tracing/vercelai/instrumentation.ts
+index 2dfa8657bd4c..7b3deb2b820f 100644
+--- a/packages/node/src/integrations/tracing/vercelai/instrumentation.ts
++++ b/packages/node/src/integrations/tracing/vercelai/instrumentation.ts
+@@ -158,13 +158,14 @@ export function cleanupToolCallSpanContexts(content: Array<object>): void {
+  * 1. The vercel ai integration options
+  * 2. The experimental_telemetry options in the vercel ai method calls
+  * 3. When telemetry is explicitly enabled (isEnabled: true), default to recording
+- * 4. Otherwise, use the sendDefaultPii option from client options
++ * 4. Otherwise, use the dataCollection.genAI settings from client options
+  */
+ export function determineRecordingSettings(
+   integrationRecordingOptions: RecordingOptions | undefined,
+   methodTelemetryOptions: RecordingOptions,
+   telemetryExplicitlyEnabled: boolean | undefined,
+-  defaultRecordingEnabled: boolean,
++  defaultInputsEnabled: boolean,
++  defaultOutputsEnabled: boolean,
+ ): { recordInputs: boolean; recordOutputs: boolean } {
+   const recordInputs =
+     integrationRecordingOptions?.recordInputs !== undefined
+@@ -173,7 +174,7 @@ export function determineRecordingSettings(
+         ? methodTelemetryOptions.recordInputs
+         : telemetryExplicitlyEnabled === true
+           ? true // When telemetry is explicitly enabled, default to recording inputs
+-          : defaultRecordingEnabled;
++          : defaultInputsEnabled;
+ 
+   const recordOutputs =
+     integrationRecordingOptions?.recordOutputs !== undefined
+@@ -181,8 +182,8 @@ export function determineRecordingSettings(
+       : methodTelemetryOptions.recordOutputs !== undefined
+         ? methodTelemetryOptions.recordOutputs
+         : telemetryExplicitlyEnabled === true
+-          ? true // When telemetry is explicitly enabled, default to recording inputs
+-          : defaultRecordingEnabled;
++          ? true // When telemetry is explicitly enabled, default to recording outputs
++          : defaultOutputsEnabled;
+ 
+   return { recordInputs, recordOutputs };
+ }
+@@ -239,13 +240,14 @@ export class SentryVercelAiInstrumentation extends InstrumentationBase {
+           const client = getClient();
+           const integration = client?.getIntegrationByName<VercelAiIntegration>(INTEGRATION_NAME);
+           const integrationOptions = integration?.options;
+-          const shouldRecordInputsAndOutputs = integration ? Boolean(client?.getOptions().sendDefaultPii) : false;
++          const genAI = integration ? client?.getDataCollectionOptions().genAI : undefined;
+ 
+           const { recordInputs, recordOutputs } = determineRecordingSettings(
+             integrationOptions,
+             existingExperimentalTelemetry,
+             isEnabled,
+-            shouldRecordInputsAndOutputs,
++            Boolean(genAI?.inputs),
++            Boolean(genAI?.outputs),
+           );
+ 
+           args[0].experimental_telemetry = {
+diff --git a/packages/node/src/integrations/tracing/vercelai/types.ts b/packages/node/src/integrations/tracing/vercelai/types.ts
+index 624212f9f7bd..6c120cd06cb1 100644
+--- a/packages/node/src/integrations/tracing/vercelai/types.ts
++++ b/packages/node/src/integrations/tracing/vercelai/types.ts
+@@ -47,13 +47,15 @@ export declare type AttributeValue =
+ 
+ export interface VercelAiOptions {
+   /**
+-   * Enable or disable input recording. Enabled if `sendDefaultPii` is `true`
+-   * or if you set `isEnabled` to `true` in your ai SDK method telemetry settings
++   * Enable or disable input recording. Enabled if `sendDefaultPii` or `dataCollection.genAI.inputs` is `true`
++   * or if you set `isEnabled` to `true` in your ai SDK method telemetry settings.
++   * Integration-level options take precedence over global `dataCollection` config.
+    */
+   recordInputs?: boolean;
+   /**
+-   * Enable or disable output recording. Enabled if `sendDefaultPii` is `true`
+-   * or if you set `isEnabled` to `true` in your ai SDK method telemetry settings
++   * Enable or disable output recording. Enabled if `sendDefaultPii` or `dataCollection.genAI.outputs` is `true`
++   * or if you set `isEnabled` to `true` in your ai SDK method telemetry settings.
++   * Integration-level options take precedence over global `dataCollection` config.
+    */
+   recordOutputs?: boolean;
+ 
+diff --git a/packages/node/test/integrations/tracing/vercelai/instrumentation.test.ts b/packages/node/test/integrations/tracing/vercelai/instrumentation.test.ts
+index c63efb8e2d0a..f27098cfe138 100644
+--- a/packages/node/test/integrations/tracing/vercelai/instrumentation.test.ts
++++ b/packages/node/test/integrations/tracing/vercelai/instrumentation.test.ts
+@@ -11,7 +11,8 @@ describe('determineRecordingSettings', () => {
+       { recordInputs: true, recordOutputs: false }, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       undefined, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -25,7 +26,8 @@ describe('determineRecordingSettings', () => {
+       { recordInputs: false, recordOutputs: true }, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       true, // telemetryExplicitlyEnabled
+-      true, // defaultRecordingEnabled
++      true, // defaultInputsEnabled
++      true, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -39,7 +41,8 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       { recordInputs: true, recordOutputs: false }, // methodTelemetryOptions
+       undefined, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -53,7 +56,8 @@ describe('determineRecordingSettings', () => {
+       { recordInputs: false, recordOutputs: false }, // integrationRecordingOptions
+       { recordInputs: true, recordOutputs: true }, // methodTelemetryOptions
+       undefined, // telemetryExplicitlyEnabled
+-      true, // defaultRecordingEnabled
++      true, // defaultInputsEnabled
++      true, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -67,7 +71,8 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       true, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -81,7 +86,8 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       false, // telemetryExplicitlyEnabled
+-      true, // defaultRecordingEnabled
++      true, // defaultInputsEnabled
++      true, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -95,7 +101,8 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       undefined, // telemetryExplicitlyEnabled
+-      true, // defaultRecordingEnabled
++      true, // defaultInputsEnabled
++      true, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -109,7 +116,8 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       undefined, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -123,12 +131,13 @@ describe('determineRecordingSettings', () => {
+       { recordInputs: true }, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       false, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+       recordInputs: true,
+-      recordOutputs: false, // falls back to defaultRecordingEnabled
++      recordOutputs: false, // falls back to defaultOutputsEnabled
+     });
+   });
+ 
+@@ -137,11 +146,12 @@ describe('determineRecordingSettings', () => {
+       { recordOutputs: true }, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       false, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+-      recordInputs: false, // falls back to defaultRecordingEnabled
++      recordInputs: false, // falls back to defaultInputsEnabled
+       recordOutputs: true,
+     });
+   });
+@@ -151,12 +161,13 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       { recordInputs: true }, // methodTelemetryOptions
+       false, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+       recordInputs: true,
+-      recordOutputs: false, // falls back to defaultRecordingEnabled
++      recordOutputs: false, // falls back to defaultOutputsEnabled
+     });
+   });
+ 
+@@ -165,11 +176,12 @@ describe('determineRecordingSettings', () => {
+       {}, // integrationRecordingOptions
+       { recordOutputs: true }, // methodTelemetryOptions
+       false, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled
++      false, // defaultInputsEnabled
++      false, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+-      recordInputs: false, // falls back to defaultRecordingEnabled
++      recordInputs: false, // falls back to defaultInputsEnabled
+       recordOutputs: true,
+     });
+   });
+@@ -179,7 +191,8 @@ describe('determineRecordingSettings', () => {
+       { recordInputs: false }, // integrationRecordingOptions
+       { recordInputs: true, recordOutputs: true }, // methodTelemetryOptions
+       false, // telemetryExplicitlyEnabled
+-      true, // defaultRecordingEnabled
++      true, // defaultInputsEnabled
++      true, // defaultOutputsEnabled
+     );
+ 
+     expect(result).toEqual({
+@@ -188,12 +201,13 @@ describe('determineRecordingSettings', () => {
+     });
+   });
+ 
+-  test('complex scenario: sendDefaultPii enabled, telemetry enablement undefined, mixed options', () => {
++  test('complex scenario: dataCollection.genAI enabled, telemetry enablement undefined, mixed options', () => {
+     const result = determineRecordingSettings(
+       { recordOutputs: false }, // integrationRecordingOptions
+       { recordInputs: false }, // methodTelemetryOptions
+       undefined, // telemetryExplicitlyEnabled
+-      true, // defaultRecordingEnabled (sendDefaultPii: true)
++      true, // defaultInputsEnabled (dataCollection.genAI.inputs: true)
++      true, // defaultOutputsEnabled (dataCollection.genAI.outputs: true)
+     );
+ 
+     expect(result).toEqual({
+@@ -202,12 +216,13 @@ describe('determineRecordingSettings', () => {
+     });
+   });
+ 
+-  test('complex scenario: explicit telemetry enabled overrides sendDefaultPii disabled', () => {
++  test('complex scenario: explicit telemetry enabled overrides dataCollection.genAI disabled', () => {
+     const result = determineRecordingSettings(
+       {}, // integrationRecordingOptions
+       {}, // methodTelemetryOptions
+       true, // telemetryExplicitlyEnabled
+-      false, // defaultRecordingEnabled (sendDefaultPii: false)
++      false, // defaultInputsEnabled (dataCollection.genAI.inputs: false)
++      false, // defaultOutputsEnabled (dataCollection.genAI.outputs: false)
+     );
+ 
+     expect(result).toEqual({
+@@ -215,6 +230,21 @@ describe('determineRecordingSettings', () => {
+       recordOutputs: true,
+     });
+   });
++
++  test('supports asymmetric defaults: inputs enabled, outputs disabled', () => {
++    const result = determineRecordingSettings(
++      {}, // integrationRecordingOptions
++      {}, // methodTelemetryOptions
++      undefined, // telemetryExplicitlyEnabled
++      true, // defaultInputsEnabled (dataCollection.genAI.inputs: true)
++      false, // defaultOutputsEnabled (dataCollection.genAI.outputs: false)
++    );
++
++    expect(result).toEqual({
++      recordInputs: true,
++      recordOutputs: false,
++    });
++  });
+ });
+ 
+ describe('cleanupToolCallSpanContexts', () => {

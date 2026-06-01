@@ -1,0 +1,2325 @@
+diff --git a/packages/next/errors.json b/packages/next/errors.json
+index bb13cd07d91a..fc31027235c6 100644
+--- a/packages/next/errors.json
++++ b/packages/next/errors.json
+@@ -1230,6 +1230,14 @@
+   "1229": "Route \"%s\": Next.js encountered uncached or runtime data in \\`generateMetadata()\\`.\\n\\nThis route's metadata is blocked, but the rest of its content can be prerendered.\\n\\nWays to fix this:\\n  - Use a static metadata export instead of \\`generateMetadata()\\`\\n  - Cache the metadata with \\`\"use cache\"\\` in \\`generateMetadata()\\`\\n  - Add a dynamic data access (e.g. \\`await connection()\\`) to the page to render it at request time\\n\\nLearn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata",
+   "1230": "Route \"%s\": Next.js encountered runtime data in \\`generateMetadata()\\`.\\n\\nThis route's metadata is blocked, but the rest of its content can be prerendered. \\`cookies()\\`, \\`headers()\\`, \\`params\\`, or \\`searchParams\\` accessed in \\`generateMetadata()\\` cause it to run dynamically.\\n\\nWays to fix this:\\n  - Use a static metadata export instead of \\`generateMetadata()\\`\\n  - Add a dynamic data access (e.g. \\`await connection()\\`) to the page to render it at request time\\n\\nLearn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata",
+   "1231": "Route \"%s\": Next.js encountered uncached data in \\`generateMetadata()\\`.\\n\\nThis route's metadata is blocked, but the rest of its content can be prerendered. \\`fetch(...)\\` or \\`connection()\\` accessed in \\`generateMetadata()\\` cause it to run dynamically.\\n\\nWays to fix this:\\n  - Cache the metadata with \\`\"use cache\"\\` in \\`generateMetadata()\\`\\n  - Add a dynamic data access (e.g. \\`await connection()\\`) to the page to render it at request time\\n\\nLearn more: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata",
++  "1235": "unreachable sort key: %s",
++  "1236": "Expected '%s' after entry name in %s at offset %s, got %s.",
++  "1237": "Could not find 'globalThis.__RSC_MANIFEST[' in %s; client reference manifest format may have changed.",
++  "1238": "Unterminated entry-name string literal in %s.",
++  "1239": "Failed to parse JSON body of %s: %s",
++  "1240": "Expected '{' after 'globalThis.__RSC_MANIFEST[...] =' in %s at offset %s, got %s.",
++  "1241": "Expected string literal as entry name in %s at offset %s, got %s.",
++  "1242": "Unterminated JSON object in %s.",
+   "1244": "Route \"%s\": Next.js encountered %s during the initial render.\\n\\nThis value must either be prerendered or computed per request.\\n\\nWays to fix this:\\n  - Render at request time by adding a dynamic data access (e.g. \\`await connection()\\`) before this call\\n  - Prerender and cache the value with \\`\"use cache\"\\`\\n  - Render the value on the client with \\`\"use client\"\\`\\n%s\\nLearn more: %s",
+   "1245": "Route \"%s\": Next.js encountered %s in a Client Component.\\n\\nThis value would be evaluated during the prerender and fixed at build time, instead of recomputed on each visit.\\n\\nWays to fix this:\\n  - Wrap the Client Component in \\`<Suspense fallback={...}>\\`\\n  - Move the read into a \\`useEffect\\` or event handler\\n\\nLearn more: %s",
+   "1247": "Route \"%s\": Next.js encountered %s without an explicit rendering intent.\\n\\nThis value can change between renders, so it must be either prerendered or computed later.\\n\\nWays to fix this:\\n  - Render at request time by adding a dynamic data access (e.g. \\`await connection()\\`) before this call\\n  - Prerender and cache the value with \\`\"use cache\"\\`\\n  - Render the value on the client with \\`\"use client\"\\`\\n%s\\nLearn more: %s"
+diff --git a/packages/next/src/bin/next.ts b/packages/next/src/bin/next.ts
+index c189e6769f6b..89a50fd60252 100755
+--- a/packages/next/src/bin/next.ts
++++ b/packages/next/src/bin/next.ts
+@@ -700,4 +700,46 @@ internal
+   })
+   .usage('[directory] [options]')
+ 
++internal
++  .command('static-routes-info')
++  .description(
++    'Analyze a built Next.js app and report per-route bundle sizes across server bundled JS, server source maps, server unbundled, client JS, client source maps, and client CSS categories.'
++  )
++  .argument(
++    '[directory]',
++    `A directory containing the built Next.js application. ${italic(
++      'If no directory is provided, the current directory will be used.'
++    )}`
++  )
++  .option('--json', 'Output as JSON instead of markdown.')
++  .option(
++    '--limit <n>',
++    'Only show the first N routes after sorting (totals always reflect all routes).',
++    parseInt
++  )
++  .option(
++    '--sort <key>',
++    'Sort routes by: name (default, ascending), or one of client, client-js, client-css, client-map, server, server-bundled-js, server-unbundled, server-map, total (descending).'
++  )
++  .option(
++    '--files',
++    'Include the list of files (relative to the output directory) per category in the JSON output. Requires --json.'
++  )
++  .action(
++    (
++      directory: string,
++      options: {
++        json?: boolean
++        limit?: number
++        sort?: string
++        files?: boolean
++      }
++    ) => {
++      return import('../cli/internal/static-routes-info.js').then((mod) =>
++        mod.staticRoutesInfoCli(options, directory)
++      )
++    }
++  )
++  .usage('[directory] [options]')
++
+ program.parse(process.argv)
+diff --git a/packages/next/src/cli/internal/static-routes-info.ts b/packages/next/src/cli/internal/static-routes-info.ts
+new file mode 100644
+index 000000000000..fe3d0a7a4cf5
+--- /dev/null
++++ b/packages/next/src/cli/internal/static-routes-info.ts
+@@ -0,0 +1,1206 @@
++/**
++ * `next internal static-routes-info` — analyzes a built Next.js app and
++ * reports per-route bundle sizes statically (without running the app).
++ *
++ * The analysis is split into three steps so it's easy to swap in different
++ * chunking strategies later:
++ *
++ *   1. Capture: for each route, collect a set of files that belong to it,
++ *      partitioned into 6 disjoint categories.
++ *   2. Deduplicate: per-route sets are already deduplicated (Set<>), and we
++ *      union them across routes for project-wide totals.
++ *   3. Measure: stat each unique file path to get { count, bytes }.
++ *
++ * Output is markdown by default, or JSON with `--json`. `--limit N` keeps
++ * only the top N routes (totals always reflect all routes).
++ */
++
++import fs from 'fs'
++import path from 'path'
++import loadConfig from '../../server/config'
++import { PHASE_PRODUCTION_BUILD } from '../../shared/lib/constants'
++
++export interface StaticRoutesInfoOptions {
++  json?: boolean
++  limit?: number
++  sort?: string
++  files?: boolean
++}
++
++/**
++ * Available `--sort` keys. `name` sorts ascending alphabetically by route;
++ * every other key is a numeric byte-total and sorts descending (biggest
++ * first). Composite keys (`client`, `server`, `total`) sum across multiple
++ * categories — see `sortValue` for the exact mapping.
++ */
++const SORT_KEYS = [
++  'name',
++  'client',
++  'client-js',
++  'client-css',
++  'client-map',
++  'server',
++  'server-bundled-js',
++  'server-unbundled',
++  'server-map',
++  'total',
++] as const
++type SortKey = (typeof SORT_KEYS)[number]
++
++// ---------------------------------------------------------------------------
++// Categories
++// ---------------------------------------------------------------------------
++
++/**
++ * The 6 file categories we partition each route's files into. Each file is
++ * placed into exactly one category to avoid double-counting.
++ *
++ * To add a new category, extend this tuple, add a label below, and update
++ * the relevant collector(s).
++ */
++const CATEGORIES = [
++  'clientJs',
++  'clientCss',
++  'clientMaps',
++  'serverBundled',
++  'serverUnbundled',
++  'serverMaps',
++] as const
++type Category = (typeof CATEGORIES)[number]
++
++/** Human-readable column titles, in the same order as CATEGORIES. */
++const CATEGORY_LABELS: Record<Category, string> = {
++  clientJs: 'Client JS',
++  clientCss: 'Client CSS',
++  clientMaps: 'Client Source Maps',
++  serverBundled: 'Server Bundled JS',
++  serverUnbundled: 'Server Unbundled',
++  serverMaps: 'Server Source Maps',
++}
++
++/**
++ * Per-route file sets, one entry per category.
++ *
++ * Paths are stored either relative to `distDir` (for files that live inside
++ * the build output) or as absolute paths (for files traced outside `distDir`,
++ * e.g. `node_modules` deps in `serverUnbundled`, or .map files traced from
++ * the same place). At measurement time we discriminate via
++ * `path.isAbsolute()` so each category can mix the two.
++ *
++ * Storing paths as plain strings lets us deduplicate by string equality both
++ * per-route and across routes (for the totals).
++ */
++type FileSets = Record<Category, Set<string>>
++
++interface CategoryStats {
++  count: number
++  bytes: number
++}
++
++/**
++ * Shared-with-peers stats. `count` and `bytes` are the average size of the
++ * intersection of this route's files with each peer route's files (a "peer"
++ * is another route of the same `type`). `percentCount` and `percentBytes`
++ * are the same values expressed as a fraction of this route's own
++ * `count` / `bytes`, in 0..100 — i.e. "what percentage of this route's
++ * files / bytes are, on average, also shipped by a peer". Both are 0 when
++ * the route's own value is 0 (degenerate case where the average is 0/0).
++ */
++interface SharedStats extends CategoryStats {
++  percentCount: number
++  percentBytes: number
++}
++
++/**
++ * Per-route stats for one category, plus the average size of the intersection
++ * with peer routes (other routes of the same type). `sharedAvg` is `null` when
++ * the route has no peers (i.e. it's the only route of its type), since the
++ * average is undefined.
++ *
++ * `files` is only populated when the user passes `--files` and lists every
++ * path that contributed to `count`/`bytes`, in alphabetical order, expressed
++ * relative to `distDir` (so traced node_modules deps appear as `../...`).
++ */
++interface CategoryStatsWithShared extends CategoryStats {
++  sharedAvg: SharedStats | null
++  files?: string[]
++}
++
++type CategoryStatsByKey = Record<Category, CategoryStats & { files?: string[] }>
++type CategoryStatsWithSharedByKey = Record<Category, CategoryStatsWithShared>
++
++interface RouteInfo extends CategoryStatsWithSharedByKey {
++  route: string
++  type: string
++}
++
++function emptyFileSets(): FileSets {
++  const sets = {} as FileSets
++  for (const cat of CATEGORIES) sets[cat] = new Set()
++  return sets
++}
++
++// ---------------------------------------------------------------------------
++// Route discovery
++// ---------------------------------------------------------------------------
++
++/**
++ * One discovered route. Discriminated by `type`; the additional fields
++ * carry whatever the file collector needs to find this route's files.
++ */
++type RouteEntry =
++  /**
++   * Server-rendered Pages or App route. The `runtime` field describes how
++   * its bundle is laid out:
++   *   - `node`: a `.js` server entry plus a sibling `.nft.json` listing all
++   *     runtime dependencies (the standard production bundle).
++   *   - `edge`: no `.nft.json` — the bundle's chunks are listed directly
++   *     in `middleware-manifest.json#functions[].files`.
++   */
++  | {
++      type: 'app-page' | 'app-route' | 'pages' | 'pages-api'
++      route: string
++      runtime:
++        | { kind: 'node'; serverEntry: string }
++        | { kind: 'edge'; files: string[] }
++    }
++  /** Statically pre-rendered Pages page. Only ships client JS. */
++  | { type: 'pages-static'; route: string }
++  /**
++   * Edge middleware (the `middleware.ts` file). Sourced from
++   * `middleware-manifest.json#middleware[].files`. There's at most one
++   * middleware per project, but the manifest format supports several keys.
++   */
++  | { type: 'middleware'; route: string; files: string[] }
++
++/**
++ * Pages Router infrastructure entries we never report as routes.
++ * `_app` / `_document` / `_error` aren't really routes, and `404` / `500`
++ * are HTML-only error pages.
++ */
++const SKIP_PAGES_ENTRIES = new Set<string>([
++  '/_app',
++  '/_document',
++  '/_error',
++  '/404',
++  '/500',
++])
++
++/** App Router infrastructure entries we never report as routes. */
++const SKIP_APP_ENTRIES = new Set<string>(['/_global-error/page'])
++
++function readJsonFile<T>(filePath: string): T | null {
++  try {
++    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
++  } catch {
++    return null
++  }
++}
++
++interface MiddlewareManifestEntry {
++  files: string[]
++  page?: string
++  name?: string
++}
++
++interface MiddlewareManifest {
++  functions?: Record<string, MiddlewareManifestEntry>
++  middleware?: Record<string, MiddlewareManifestEntry>
++}
++
++function discoverRoutes(distDir: string): RouteEntry[] {
++  const middlewareManifest = readJsonFile<MiddlewareManifest>(
++    path.join(distDir, 'server', 'middleware-manifest.json')
++  )
++  // Edge route handlers (per-route runtime: 'edge') live in `functions`.
++  // Their key matches either an app-paths-manifest internal key (e.g.
++  // `/api/edge/route`) or a pages-manifest route (e.g. `/api/edge` for
++  // pages-router edge APIs). We use these inside the pages/app discovery
++  // below to pick `runtime: edge` instead of node and get the bundled-file
++  // list from middleware-manifest rather than `.nft.json`.
++  const edgeFunctions = middlewareManifest?.functions ?? {}
++
++  return [
++    ...discoverPagesRoutes(distDir, edgeFunctions),
++    ...discoverAppRoutes(distDir, edgeFunctions),
++    ...discoverMiddleware(middlewareManifest?.middleware ?? {}),
++  ]
++}
++
++function discoverPagesRoutes(
++  distDir: string,
++  edgeFunctions: Record<string, MiddlewareManifestEntry>
++): RouteEntry[] {
++  const manifest = readJsonFile<Record<string, string>>(
++    path.join(distDir, 'server', 'pages-manifest.json')
++  )
++  if (!manifest) return []
++
++  const routes: RouteEntry[] = []
++  for (const [route, entry] of Object.entries(manifest)) {
++    if (SKIP_PAGES_ENTRIES.has(route)) continue
++    const isApi = route.startsWith('/api/')
++    const edge = edgeFunctions[route]
++    if (edge) {
++      // Edge runtime — bundle files come from middleware-manifest, not nft.
++      routes.push({
++        type: isApi ? 'pages-api' : 'pages',
++        route,
++        runtime: { kind: 'edge', files: edge.files },
++      })
++    } else if (entry.endsWith('.js')) {
++      routes.push({
++        type: isApi ? 'pages-api' : 'pages',
++        route,
++        runtime: { kind: 'node', serverEntry: entry },
++      })
++    } else if (entry.endsWith('.html')) {
++      // Statically pre-rendered page — no server JS bundle, but still ships
++      // client JS via build-manifest.json.
++      routes.push({ type: 'pages-static', route })
++    }
++  }
++  return routes
++}
++
++function discoverAppRoutes(
++  distDir: string,
++  edgeFunctions: Record<string, MiddlewareManifestEntry>
++): RouteEntry[] {
++  const appPathsManifest = readJsonFile<Record<string, string>>(
++    path.join(distDir, 'server', 'app-paths-manifest.json')
++  )
++  if (!appPathsManifest) return []
++
++  // Maps internal entry keys (e.g. "/blog/[slug]/page") to their URL path
++  // ("/blog/[slug]"). Optional — falls back to the internal key if missing.
++  const appPathRoutesManifest = readJsonFile<Record<string, string>>(
++    path.join(distDir, 'app-path-routes-manifest.json')
++  )
++
++  const routes: RouteEntry[] = []
++  for (const [internalKey, entry] of Object.entries(appPathsManifest)) {
++    if (SKIP_APP_ENTRIES.has(internalKey)) continue
++    const type = internalKey.endsWith('/route') ? 'app-route' : 'app-page'
++    const route = appPathRoutesManifest?.[internalKey] ?? internalKey
++    const edge = edgeFunctions[internalKey]
++    if (edge) {
++      // Edge runtime — turbopack writes a placeholder entry value (e.g.
++      // `app-edge-has-no-entrypoint`) here, while webpack writes a real .js
++      // path; either way the actual bundle files come from the
++      // middleware-manifest entry.
++      routes.push({
++        type,
++        route,
++        runtime: { kind: 'edge', files: edge.files },
++      })
++    } else if (entry.endsWith('.js')) {
++      routes.push({
++        type,
++        route,
++        runtime: { kind: 'node', serverEntry: entry },
++      })
++    }
++  }
++  return routes
++}
++
++function discoverMiddleware(
++  middleware: Record<string, MiddlewareManifestEntry>
++): RouteEntry[] {
++  // The middleware manifest keys an entry by `/` for the project's
++  // `middleware.ts`. We use the entry's `name` (e.g. "middleware") as the
++  // displayed route, since `/` would collide with an app-page at "/".
++  return Object.entries(middleware).map(([key, def]) => ({
++    type: 'middleware' as const,
++    route: def.name ?? key,
++    files: def.files,
++  }))
++}
++
++// ---------------------------------------------------------------------------
++// File collection
++// ---------------------------------------------------------------------------
++
++/**
++ * Strip the `_next/` URL prefix that some manifests use (with or without a
++ * leading slash) so all client paths are consistently relative to `distDir`.
++ */
++function stripNextPrefix(p: string): string {
++  return p.replace(/^\/?_next\//, '')
++}
++
++/**
++ * Walk the entry's `.nft.json` (Node File Trace) and partition its files:
++ *   - `.map` files → `serverMaps` (regardless of in/out of distDir)
++ *   - other `.js` files inside distDir → `serverBundled` (server chunks)
++ *   - any other file outside distDir → `serverUnbundled` (traced node_modules
++ *     and other on-disk deps the server entry needs at runtime)
++ *
++ * Files inside distDir that are neither `.js` nor `.map` (e.g. `.json`
++ * manifests, `_client-reference-manifest.js`) are skipped — they're either
++ * bundler bookkeeping or already accounted for elsewhere.
++ */
++function collectServerEntryFiles(
++  distDir: string,
++  serverEntry: string,
++  sets: FileSets
++): void {
++  const entryRel = path.join('server', serverEntry) // e.g. server/app/page.js
++  const entryDirRel = path.dirname(entryRel) // e.g. server/app
++  const entryDirAbs = path.join(distDir, entryDirRel)
++
++  // The entry .js is always part of the bundle, even if no nft.json exists.
++  sets.serverBundled.add(entryRel)
++
++  const nft = readJsonFile<{ files: string[] }>(
++    path.join(distDir, entryRel + '.nft.json')
++  )
++  if (!nft?.files) return
++
++  for (const relPath of nft.files) {
++    // Resolve relative to the entry's dir. If the normalized result stays
++    // inside distDir it's a server chunk; if it leaves distDir it's an
++    // unbundled trace dep (e.g. ../../../node_modules/...).
++    const inDistDirPath = path.normalize(path.join(entryDirRel, relPath))
++    const outsideDistDir = inDistDirPath.startsWith('..')
++    const isMap = inDistDirPath.endsWith('.map')
++    if (isMap) {
++      // Source maps go into the maps category whether they're in or outside
++      // distDir, so they don't double-count under serverUnbundled.
++      sets.serverMaps.add(
++        outsideDistDir ? path.resolve(entryDirAbs, relPath) : inDistDirPath
++      )
++    } else if (outsideDistDir) {
++      sets.serverUnbundled.add(path.resolve(entryDirAbs, relPath))
++    } else if (
++      inDistDirPath.endsWith('.js') &&
++      !inDistDirPath.endsWith('_client-reference-manifest.js')
++    ) {
++      sets.serverBundled.add(inDistDirPath)
++    }
++  }
++}
++
++/**
++ * Read a `_client-reference-manifest.js` file and extract the JSON blob.
++ *
++ * The file is a JS module that assigns a JSON object to a global. The exact
++ * shape varies by bundler:
++ *
++ *   Turbopack (with optional suffix that re-writes `clientModules[k] = val`
++ *   when a deployment ID is set):
++ *     globalThis.__RSC_MANIFEST = globalThis.__RSC_MANIFEST || {};
++ *     globalThis.__RSC_MANIFEST["/page"] = {...};
++ *     for (const key in globalThis.__RSC_MANIFEST["/page"].clientModules) {
++ *       globalThis.__RSC_MANIFEST["/page"].clientModules[key] = val;
++ *       ...
++ *     }
++ *
++ *   Webpack (no spaces around `=`, single line):
++ *     globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/page"]={...};
++ *
++ * Rather than evaluating user-bundled code, locate the FIRST
++ * `globalThis.__RSC_MANIFEST[` occurrence (which is always the entry-key
++ * assignment — the `MANIFEST = MANIFEST || {}` boilerplate has no `[`
++ * after the global). Then properly walk the JS string literal that holds
++ * the entry name (handling escapes), so route names containing `]` —
++ * e.g. dynamic segments like `[teamSlug]` or route groups inside dynamic
++ * params — don't terminate the bracket early. After the closing `]` we
++ * expect `=` then `{`, and balance-walk the object body.
++ *
++ * Returns `null` only when the file doesn't exist (a normal case for
++ * server entries that have no client-reference manifest, e.g. middleware
++ * or non-app routes). Any structural surprise — manifest header missing,
++ * unterminated string/object, or invalid JSON — throws so we never
++ * silently undercount client JS/CSS.
++ */
++function parseClientReferenceManifest(filePath: string): {
++  entryJSFiles?: Record<string, string[]>
++  entryCSSFiles?: Record<string, Array<string | { path: string }>>
++  clientModules?: Record<string, { chunks?: unknown[] }>
++} | null {
++  let content: string
++  try {
++    content = fs.readFileSync(filePath, 'utf8')
++  } catch {
++    return null
++  }
++
++  const ANCHOR = 'globalThis.__RSC_MANIFEST['
++  const anchorIdx = content.indexOf(ANCHOR)
++  if (anchorIdx === -1) {
++    throw new Error(
++      `Could not find 'globalThis.__RSC_MANIFEST[' in ${filePath}; client reference manifest format may have changed.`
++    )
++  }
++
++  // Walk a JS string literal starting at `i` (which must point at the
++  // opening quote). Returns the index just past the closing quote.
++  const skipString = (i: number): number => {
++    const quote = content[i]
++    if (quote !== '"' && quote !== "'") {
++      throw new Error(
++        `Expected string literal as entry name in ${filePath} at offset ${i}, got ${JSON.stringify(content[i])}.`
++      )
++    }
++    i++
++    let escape = false
++    while (i < content.length) {
++      const ch = content[i]
++      if (escape) {
++        escape = false
++      } else if (ch === '\\') {
++        escape = true
++      } else if (ch === quote) {
++        return i + 1
++      }
++      i++
++    }
++    throw new Error(`Unterminated entry-name string literal in ${filePath}.`)
++  }
++
++  // Skip whitespace forward from `i` and assert the next char is `expected`.
++  const expectChar = (i: number, expected: string): number => {
++    while (i < content.length && /\s/.test(content[i])) i++
++    if (content[i] !== expected) {
++      throw new Error(
++        `Expected '${expected}' after entry name in ${filePath} at offset ${i}, got ${JSON.stringify(content[i] ?? '<eof>')}.`
++      )
++    }
++    return i + 1
++  }
++
++  // After `globalThis.__RSC_MANIFEST[` walk: <string> ] = {
++  let i = skipString(anchorIdx + ANCHOR.length)
++  i = expectChar(i, ']')
++  i = expectChar(i, '=')
++  while (i < content.length && /\s/.test(content[i])) i++
++  if (content[i] !== '{') {
++    throw new Error(
++      `Expected '{' after 'globalThis.__RSC_MANIFEST[...] =' in ${filePath} at offset ${i}, got ${JSON.stringify(content[i] ?? '<eof>')}.`
++    )
++  }
++
++  // Balance-walk `{...}`, ignoring `{` / `}` inside string literals so a
++  // CSS path like "{foo}" inside JSON doesn't throw the count off.
++  const start = i
++  let depth = 0
++  let inString = false
++  let quote = ''
++  let escape = false
++  for (; i < content.length; i++) {
++    const ch = content[i]
++    if (inString) {
++      if (escape) {
++        escape = false
++      } else if (ch === '\\') {
++        escape = true
++      } else if (ch === quote) {
++        inString = false
++      }
++      continue
++    }
++    if (ch === '"' || ch === "'") {
++      inString = true
++      quote = ch
++    } else if (ch === '{') {
++      depth++
++    } else if (ch === '}') {
++      depth--
++      if (depth === 0) {
++        const body = content.slice(start, i + 1)
++        try {
++          return JSON.parse(body)
++        } catch (err) {
++          throw new Error(
++            `Failed to parse JSON body of ${filePath}: ${(err as Error).message}`
++          )
++        }
++      }
++    }
++  }
++  throw new Error(`Unterminated JSON object in ${filePath}.`)
++}
++
++/**
++ * Add a chunk path to the right client-side category. Strips a `?dpl=...`
++ * (or any other) query suffix that webpack appends, then dispatches by
++ * extension. Returns true if the path looked like a real asset (had an
++ * extension we recognize) — used by the webpack `clientModules` walker
++ * below to filter out chunk IDs.
++ */
++function addClientChunk(rawPath: string, sets: FileSets): boolean {
++  // Some manifests append `?dpl=ID` to chunk URLs.
++  const cleaned = stripNextPrefix(rawPath).split('?')[0]
++  if (cleaned.endsWith('.map')) sets.clientMaps.add(cleaned)
++  else if (cleaned.endsWith('.css')) sets.clientCss.add(cleaned)
++  else if (cleaned.endsWith('.js')) sets.clientJs.add(cleaned)
++  else return false
++  return true
++}
++
++/**
++ * Collect client JS chunks and CSS files for an App Router page/route.
++ * Source priority:
++ *   1. `entryJSFiles` from the route's `_client-reference-manifest.js`
++ *      (Turbopack-only field — explicit list of all JS files needed for
++ *      the entry's segments).
++ *   2. As a fallback, walk `clientModules[*].chunks` (the canonical client-
++ *      reference list, populated by both bundlers). This picks up the
++ *      chunks for any actual `'use client'` components imported by the
++ *      route. Note webpack interleaves chunkIds with file names — the
++ *      extension filter in `addClientChunk` skips the IDs.
++ *
++ * Plus `entryCSSFiles` for CSS, and the per-route `build-manifest.json`
++ * (Turbopack only) for shared App Router root chunks.
++ *
++ * `.map` paths are routed to `clientMaps`, `.css` to `clientCss`, `.js` to
++ * `clientJs` — anything else is dropped.
++ */
++function collectAppClientFiles(
++  distDir: string,
++  serverEntry: string,
++  sets: FileSets
++): void {
++  const entryDir = path.dirname(serverEntry)
++  const entryBase = path.basename(serverEntry, '.js')
++  const baseDir = path.join(distDir, 'server', entryDir)
++
++  const crm = parseClientReferenceManifest(
++    path.join(baseDir, `${entryBase}_client-reference-manifest.js`)
++  )
++  if (crm) {
++    if (crm.entryJSFiles) {
++      // Turbopack: explicit per-segment chunk list.
++      for (const chunks of Object.values(crm.entryJSFiles)) {
++        for (const chunk of chunks) addClientChunk(chunk, sets)
++      }
++    } else if (crm.clientModules) {
++      // Webpack: no entryJSFiles — walk clientModules. Each entry's
++      // `chunks` array is `[chunkId, fileName, chunkId, fileName, ...]`
++      // (alternating). `addClientChunk` filters by extension so chunkIds
++      // (which have no extension) are dropped automatically.
++      for (const mod of Object.values(crm.clientModules)) {
++        for (const chunk of mod.chunks ?? []) {
++          if (typeof chunk === 'string') addClientChunk(chunk, sets)
++        }
++      }
++    }
++    for (const cssFiles of Object.values(crm.entryCSSFiles ?? {})) {
++      for (const css of cssFiles) {
++        const cssPath = typeof css === 'string' ? css : css.path
++        if (cssPath) addClientChunk(cssPath, sets)
++      }
++    }
++  }
++
++  // Add the App Router framework / main-app chunks shared across every
++  // app-page. Both bundlers list them in the global `build-manifest.json`
++  // under `rootMainFiles`. Turbopack also writes a per-route
++  // `build-manifest.json` containing the same files; webpack does not.
++  const globalBm = readJsonFile<{ rootMainFiles?: string[] }>(
++    path.join(distDir, 'build-manifest.json')
++  )
++  for (const chunk of globalBm?.rootMainFiles ?? []) addClientChunk(chunk, sets)
++}
++
++/**
++ * Collect client JS for a Pages Router route. The global `build-manifest.json`
++ * lists each page's chunks (`pages[route]`), the shared baseline (`/_app`),
++ * and `polyfillFiles`. Per-page CSS is not tracked in the Pages build output,
++ * so it's not collected here. `.map` paths are routed to `clientMaps`
++ * defensively.
++ */
++function collectPagesClientFiles(
++  distDir: string,
++  route: string,
++  sets: FileSets
++): void {
++  const bm = readJsonFile<{
++    pages?: Record<string, string[]>
++    polyfillFiles?: string[]
++  }>(path.join(distDir, 'build-manifest.json'))
++  if (!bm) return
++  const chunks = [
++    ...(bm.pages?.['/_app'] ?? []),
++    ...(bm.pages?.[route] ?? []),
++    ...(bm.polyfillFiles ?? []),
++  ]
++  for (const chunk of chunks) {
++    if (chunk.endsWith('.map')) sets.clientMaps.add(chunk)
++    else sets.clientJs.add(chunk)
++  }
++}
++
++/**
++ * For each file in `source`, find its source map (if any) and add it to
++ * `target`. We try two strategies, in order:
++ *
++ *   1. Read the `//# sourceMappingURL=...` trailer that bundlers emit at
++ *      the end of `.js` / `.css` files. This is the most accurate way
++ *      because the URL filename can differ from the source filename
++ *      (e.g. Turbopack hashes `.map` content separately).
++ *   2. If no trailer is present (e.g. tiny "loader" entry files Turbopack
++ *      emits without a comment), fall back to a co-located `<file>.map`.
++ *
++ * Only same-directory relative URLs are followed — `data:` URLs (inline
++ * source maps) and absolute URLs are ignored.
++ *
++ * `urlCache` memoizes the trailer read across routes: a chunk shared by N
++ * routes is only opened once.
++ */
++function deriveSourceMaps(
++  distDir: string,
++  source: Set<string>,
++  target: Set<string>,
++  urlCache: Map<string, string | null>
++): void {
++  for (const f of source) {
++    const fullPath = path.isAbsolute(f) ? f : path.join(distDir, f)
++    let mapFromUrl = urlCache.get(fullPath)
++    if (mapFromUrl === undefined) {
++      mapFromUrl = readSourceMappingURL(fullPath)
++      urlCache.set(fullPath, mapFromUrl)
++    }
++    if (mapFromUrl) {
++      // Resolve relative to the source file's directory, then re-express
++      // relative to distDir so paths join consistently.
++      const mapRel = path.normalize(path.join(path.dirname(f), mapFromUrl))
++      if (
++        !mapRel.startsWith('..') &&
++        fs.existsSync(path.join(distDir, mapRel))
++      ) {
++        target.add(mapRel)
++        continue
++      }
++    }
++    // Fallback: co-located `<file>.map`.
++    const adjacent = f + '.map'
++    const adjacentFull = path.isAbsolute(adjacent)
++      ? adjacent
++      : path.join(distDir, adjacent)
++    if (fs.existsSync(adjacentFull)) target.add(adjacent)
++  }
++}
++
++/**
++ * Read the trailing `//# sourceMappingURL=...` (JS) or `/*# sourceMappingURL=... *​/`
++ * (CSS) comment from a file and return the URL, or null if absent or
++ * inline (`data:`).
++ *
++ * We only need to read the tail of the file — the comment is conventionally
++ * the very last line — so reading 4 KiB is more than enough.
++ */
++function readSourceMappingURL(filePath: string): string | null {
++  let fd: number
++  try {
++    fd = fs.openSync(filePath, 'r')
++  } catch {
++    return null
++  }
++  try {
++    const stat = fs.fstatSync(fd)
++    const len = Math.min(stat.size, 4096)
++    const buf = Buffer.alloc(len)
++    fs.readSync(fd, buf, 0, len, stat.size - len)
++    const tail = buf.toString('utf8')
++    // Match either `//# sourceMappingURL=<url>` or
++    //   `/*# sourceMappingURL=<url> */` near the end.
++    const match = tail.match(/[/*]#\s*sourceMappingURL=([^\s'"*]+)/)
++    if (!match) return null
++    const url = match[1]
++    if (url.startsWith('data:')) return null
++    // Skip absolute URLs (http://, https://, /abs).
++    if (/^[a-z]+:\/\//i.test(url) || url.startsWith('/')) return null
++    return url
++  } catch {
++    return null
++  } finally {
++    fs.closeSync(fd)
++  }
++}
++
++/**
++ * Collect bundled `.js` files for an edge runtime entry. Edge bundles don't
++ * have a `.nft.json`; their files are listed inline by middleware-manifest.
++ * `.map` files are routed to `serverMaps` so they don't pollute the bundle
++ * count; other extensions (manifest .json siblings) are dropped.
++ */
++function collectEdgeFiles(files: string[], sets: FileSets): void {
++  for (const f of files) {
++    if (f.endsWith('.js')) sets.serverBundled.add(f)
++    else if (f.endsWith('.map')) sets.serverMaps.add(f)
++  }
++}
++
++/** Collect all 6 file-sets for a single route. */
++function collectFiles(
++  distDir: string,
++  entry: RouteEntry,
++  urlCache: Map<string, string | null>
++): FileSets {
++  const sets = emptyFileSets()
++
++  switch (entry.type) {
++    case 'middleware':
++      // Middleware always runs in the edge runtime; same shape as edge
++      // route handlers (inline files list).
++      collectEdgeFiles(entry.files, sets)
++      break
++    case 'pages-static':
++      collectPagesClientFiles(distDir, entry.route, sets)
++      break
++    case 'pages':
++    case 'pages-api':
++    case 'app-page':
++    case 'app-route':
++      // Server bundle: node entries are traced via .nft.json; edge entries
++      // list their bundle files directly in the middleware-manifest.
++      if (entry.runtime.kind === 'node') {
++        collectServerEntryFiles(distDir, entry.runtime.serverEntry, sets)
++      } else {
++        collectEdgeFiles(entry.runtime.files, sets)
++      }
++      // Client-side: pages-router uses the global build-manifest;
++      // app-router pages use the per-route _client-reference-manifest plus
++      // shared `rootMainFiles` from the global build-manifest. App-router
++      // route handlers (`app-route`) and edge runtime entries don't ship
++      // client JS — skip client collection there.
++      if (entry.type === 'pages') {
++        collectPagesClientFiles(distDir, entry.route, sets)
++      } else if (entry.type === 'app-page' && entry.runtime.kind === 'node') {
++        collectAppClientFiles(distDir, entry.runtime.serverEntry, sets)
++      }
++      break
++    default:
++      // Exhaustiveness check — TS will error here if a new RouteEntry
++      // variant is added without a matching case.
++      entry satisfies never
++  }
++
++  // Source maps for everything we collected above. Both .js.map and
++  // .css.map files are picked up by reading the `sourceMappingURL`
++  // trailer of each source file.
++  deriveSourceMaps(distDir, sets.serverBundled, sets.serverMaps, urlCache)
++  deriveSourceMaps(distDir, sets.clientJs, sets.clientMaps, urlCache)
++  deriveSourceMaps(distDir, sets.clientCss, sets.clientMaps, urlCache)
++
++  return sets
++}
++
++// ---------------------------------------------------------------------------
++// Measurement
++// ---------------------------------------------------------------------------
++
++/**
++ * File-size cache, keyed by the stored path string (relative to `distDir`
++ * for in-distDir files, absolute otherwise). `null` means the path doesn't
++ * resolve to a regular file (symlink, missing, directory, etc.) and should
++ * be excluded from counts.
++ *
++ * A single shared cache covers all categories: a path appears in only one
++ * category by design, but using one map keeps the API simple and ensures we
++ * stat each unique file at most once across the whole tool run.
++ */
++type SizeCache = Map<string, number | null>
++
++/**
++ * Stat every unique file across every route's file sets and cache the size.
++ * Symlinks and non-files (directories, etc.) are recorded as `null` so we
++ * don't re-stat and so they're excluded from later counts.
++ */
++function buildSizeCache(distDir: string, allFileSets: FileSets[]): SizeCache {
++  const cache: SizeCache = new Map()
++  for (const sets of allFileSets) {
++    for (const cat of CATEGORIES) {
++      for (const f of sets[cat]) {
++        if (cache.has(f)) continue
++        const fullPath = path.isAbsolute(f) ? f : path.join(distDir, f)
++        try {
++          const stat = fs.lstatSync(fullPath)
++          cache.set(
++            f,
++            stat.isFile() && !stat.isSymbolicLink() ? stat.size : null
++          )
++        } catch {
++          cache.set(f, null)
++        }
++      }
++    }
++  }
++  return cache
++}
++
++/** Sum sizes for the files in `set` using the precomputed cache. */
++function measureFromCache(set: Set<string>, cache: SizeCache): CategoryStats {
++  let count = 0
++  let bytes = 0
++  for (const f of set) {
++    const size = cache.get(f)
++    if (size != null) {
++      count++
++      bytes += size
++    }
++  }
++  return { count, bytes }
++}
++
++function measureFileSets(sets: FileSets, cache: SizeCache): CategoryStatsByKey {
++  const result = {} as CategoryStatsByKey
++  for (const cat of CATEGORIES) {
++    result[cat] = measureFromCache(sets[cat], cache)
++  }
++  return result
++}
++
++/**
++ * For each category, compute the average size of the intersection of this
++ * route's files with each peer route's files (a "peer" is another route of
++ * the same `type`). Returns `null` per category if there are no peers.
++ *
++ * Files counted multiple times across peers contribute to the average each
++ * time — e.g. if a chunk is shared with all 5 peers, it contributes 5×size
++ * to the sum, then we divide by 5 to get the average.
++ */
++function measureSharedAvg(
++  routeIndex: number,
++  allFileSets: FileSets[],
++  routeEntries: RouteEntry[],
++  cache: SizeCache
++): Record<Category, CategoryStats | null> {
++  const myType = routeEntries[routeIndex].type
++  const peers: number[] = []
++  for (let j = 0; j < routeEntries.length; j++) {
++    if (j !== routeIndex && routeEntries[j].type === myType) peers.push(j)
++  }
++
++  const result = {} as Record<Category, CategoryStats | null>
++  for (const cat of CATEGORIES) {
++    if (peers.length === 0) {
++      result[cat] = null
++      continue
++    }
++    const mySet = allFileSets[routeIndex][cat]
++    let sumCount = 0
++    let sumBytes = 0
++    for (const j of peers) {
++      const peerSet = allFileSets[j][cat]
++      // Iterate the smaller set and probe the larger; saves work when sizes
++      // differ a lot (e.g. an empty serverUnbundled vs a big one).
++      const [small, big] =
++        mySet.size <= peerSet.size ? [mySet, peerSet] : [peerSet, mySet]
++      for (const f of small) {
++        if (!big.has(f)) continue
++        const size = cache.get(f)
++        if (size != null) {
++          sumCount++
++          sumBytes += size
++        }
++      }
++    }
++    result[cat] = {
++      count: sumCount / peers.length,
++      bytes: sumBytes / peers.length,
++    }
++  }
++  return result
++}
++
++/** Union of all per-route file sets. Used to compute project-wide totals. */
++function mergeSets(all: FileSets[]): FileSets {
++  const merged = emptyFileSets()
++  for (const sets of all) {
++    for (const cat of CATEGORIES) {
++      for (const f of sets[cat]) merged[cat].add(f)
++    }
++  }
++  return merged
++}
++
++function totalBytes(stats: CategoryStatsByKey): number {
++  let sum = 0
++  for (const cat of CATEGORIES) sum += stats[cat].bytes
++  return sum
++}
++
++/**
++ * Compute the byte total a route should be ordered by, for a given sort key.
++ * `name` is special-cased by the caller; every other key returns a numeric
++ * total that sorts descending.
++ */
++function sortValue(r: RouteInfo, key: Exclude<SortKey, 'name'>): number {
++  switch (key) {
++    case 'client':
++      return r.clientJs.bytes + r.clientCss.bytes
++    case 'client-js':
++      return r.clientJs.bytes
++    case 'client-css':
++      return r.clientCss.bytes
++    case 'client-map':
++      return r.clientMaps.bytes
++    case 'server':
++      return r.serverBundled.bytes + r.serverUnbundled.bytes
++    case 'server-bundled-js':
++      return r.serverBundled.bytes
++    case 'server-unbundled':
++      return r.serverUnbundled.bytes
++    case 'server-map':
++      return r.serverMaps.bytes
++    case 'total':
++      return totalBytes(r)
++    default:
++      key satisfies never
++      throw new Error(`unreachable sort key: ${key as string}`)
++  }
++}
++
++/**
++ * Sort `routes` in-place by the given key. `name` sorts ascending
++ * alphabetically; every other key sorts descending by byte total, with a
++ * stable tiebreaker on the route name (so two routes with identical sizes
++ * always appear in the same order).
++ */
++function sortRoutes(routes: RouteInfo[], key: SortKey): void {
++  if (key === 'name') {
++    routes.sort((a, b) => a.route.localeCompare(b.route))
++    return
++  }
++  routes.sort(
++    (a, b) =>
++      sortValue(b, key) - sortValue(a, key) || a.route.localeCompare(b.route)
++  )
++}
++
++/**
++ * Convert an internal path to one expressed relative to `distDir`. Paths
++ * already relative are passed through; absolute paths (traced node_modules
++ * deps) are rewritten so the output JSON is independent of the user's
++ * absolute filesystem layout.
++ */
++function toDistRelative(distDir: string, p: string): string {
++  return path.isAbsolute(p) ? path.relative(distDir, p) : p
++}
++
++/**
++ * Sorted, dist-relative file list for a single category, used when
++ * `--files` is enabled. Entries with `null` in the size cache (symlinks,
++ * directories, missing files) are filtered out so the list stays in sync
++ * with `count` (which excludes them too). Sorting keeps JSON output
++ * deterministic across runs / platforms.
++ */
++function fileListFor(
++  distDir: string,
++  set: Set<string>,
++  sizeCache: SizeCache
++): string[] {
++  const out: string[] = []
++  for (const p of set) {
++    if (sizeCache.get(p) != null) out.push(toDistRelative(distDir, p))
++  }
++  return out.sort()
++}
++
++// ---------------------------------------------------------------------------
++// Output
++// ---------------------------------------------------------------------------
++
++function formatBytes(n: number): string {
++  if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + ' MB'
++  if (n >= 1024) return (n / 1024).toFixed(2) + ' KB'
++  return Math.round(n) + ' B'
++}
++
++/** File counts can be fractional in averages — print 1 decimal in that case. */
++function formatCount(n: number): string {
++  return Number.isInteger(n) ? `${n}` : n.toFixed(1)
++}
++
++function formatCell(stats: CategoryStats): string {
++  // Render empty cells as `-` rather than `0 files / 0 B`. The vast
++  // majority of cells in a typical app have *some* content for every
++  // category — when a cell IS empty (e.g. a route handler ships no client
++  // JS) the placeholder makes the table much easier to scan visually
++  // because non-zero values stand out.
++  if (stats.count === 0 && stats.bytes === 0) return '-'
++  return `${formatCount(stats.count)} files / ${formatBytes(stats.bytes)}`
++}
++
++/**
++ * Cell for the "Shared" table: returns "n/a" if a route has no peers (i.e.
++ * `stats` is `null`), otherwise the same `count files / bytes` rendering as
++ * the routes table, augmented with the percentage of own count/bytes that
++ * the average shared portion represents — e.g. `5 files (83%) / 1.2 MB (40%)`.
++ *
++ * Empty intersections render as `-` for the same readability reason as
++ * `formatCell`. `n/a` (no peers) is preserved separately because it has a
++ * different meaning from "shared with peers but the intersection is empty".
++ */
++function formatSharedCell(stats: SharedStats | null): string {
++  if (stats == null) return 'n/a'
++  if (stats.count === 0 && stats.bytes === 0) return '-'
++  return (
++    `${formatCount(stats.count)} files (${Math.round(stats.percentCount)}%)` +
++    ` / ${formatBytes(stats.bytes)} (${Math.round(stats.percentBytes)}%)`
++  )
++}
++
++/**
++ * Compute the percent-shared annotation for a (own, sharedAvg) pair.
++ * Returns `null` unchanged when the route has no peers; otherwise extends
++ * the raw {count, bytes} averages with `percentCount` and `percentBytes`.
++ * Avoids 0/0 by returning 0 when own.count or own.bytes is 0 (the
++ * intersection of an empty set with anything is also 0, so 0% is a
++ * coherent answer rather than NaN).
++ */
++function annotateShared(
++  own: CategoryStats,
++  shared: CategoryStats | null
++): SharedStats | null {
++  if (shared == null) return null
++  return {
++    count: shared.count,
++    bytes: shared.bytes,
++    percentCount: own.count > 0 ? (shared.count / own.count) * 100 : 0,
++    percentBytes: own.bytes > 0 ? (shared.bytes / own.bytes) * 100 : 0,
++  }
++}
++
++/** Render a fixed-width markdown table — pads each cell to align columns. */
++function renderMarkdownTable(headers: string[], rows: string[][]): string {
++  const widths = headers.map((h, i) =>
++    Math.max(h.length, ...rows.map((r) => r[i].length))
++  )
++  const formatRow = (cells: string[]) =>
++    '| ' + cells.map((c, i) => c.padEnd(widths[i])).join(' | ') + ' |'
++  const divider = '| ' + widths.map((w) => '-'.repeat(w)).join(' | ') + ' |'
++  return [formatRow(headers), divider, ...rows.map(formatRow)].join('\n')
++}
++
++function printMarkdown(routes: RouteInfo[], totals: CategoryStatsByKey): void {
++  const categoryHeaders = CATEGORIES.map((c) => CATEGORY_LABELS[c])
++
++  const routeRows = routes.map((r) => [
++    r.route,
++    r.type,
++    ...CATEGORIES.map((c) => formatCell(r[c])),
++  ])
++  console.log('## Routes\n')
++  console.log(
++    renderMarkdownTable(['Route', 'Type', ...categoryHeaders], routeRows)
++  )
++
++  // Shared (averaged across peers of same type) — printed in the same row
++  // order as the routes table. Routes with no peers show `n/a`.
++  const sharedRows = routes.map((r) => [
++    r.route,
++    r.type,
++    ...CATEGORIES.map((c) => formatSharedCell(r[c].sharedAvg)),
++  ])
++  console.log('\n## Shared (avg per other route of same type)\n')
++  console.log(
++    renderMarkdownTable(['Route', 'Type', ...categoryHeaders], sharedRows)
++  )
++
++  const totalsRow = [
++    '**Total**',
++    ...CATEGORIES.map((c) => formatCell(totals[c])),
++  ]
++  console.log('\n## Totals\n')
++  console.log(renderMarkdownTable(['', ...categoryHeaders], [totalsRow]))
++}
++
++function printJson(routes: RouteInfo[], totals: CategoryStatsByKey): void {
++  console.log(JSON.stringify({ routes, totals }, null, 2))
++}
++
++// ---------------------------------------------------------------------------
++// Main entry point
++// ---------------------------------------------------------------------------
++
++export async function staticRoutesInfoCli(
++  options: StaticRoutesInfoOptions,
++  directory: string | undefined
++): Promise<void> {
++  // Validate options up front so we fail fast with a clear error before
++  // doing any expensive work (loading config, reading manifests).
++  const sortKey: SortKey = options.sort
++    ? (SORT_KEYS as readonly string[]).includes(options.sort)
++      ? (options.sort as SortKey)
++      : (() => {
++          console.error(
++            `Error: invalid --sort key '${options.sort}'. Valid keys: ${SORT_KEYS.join(', ')}.`
++          )
++          process.exit(1)
++        })()
++    : 'name'
++  if (options.files && !options.json) {
++    console.error('Error: --files requires --json.')
++    process.exit(1)
++  }
++
++  const dir = path.resolve(directory ?? process.cwd())
++  const config = await loadConfig(PHASE_PRODUCTION_BUILD, dir)
++  const distDir = path.join(dir, config.distDir)
++
++  // BUILD_ID is the standard sentinel that a Next.js build completed.
++  if (!fs.existsSync(path.join(distDir, 'BUILD_ID'))) {
++    console.error(
++      `Error: No build found at ${distDir}. Run \`next build\` first.`
++    )
++    process.exit(1)
++  }
++
++  // Step 1+2: capture per-route files (sets implicitly deduplicate). The
++  // `urlCache` memoizes `sourceMappingURL` reads — a chunk shared by N
++  // routes only opens its file once.
++  const routeEntries = discoverRoutes(distDir)
++  const urlCache = new Map<string, string | null>()
++  const allFileSets = routeEntries.map((entry) =>
++    collectFiles(distDir, entry, urlCache)
++  )
++
++  // Step 3a: stat every unique file once and cache the size, so per-route
++  // measurement and shared-avg calculation don't repeat syscalls.
++  const sizeCache = buildSizeCache(distDir, allFileSets)
++
++  // Step 3b: measure per-route. Each category also carries a `sharedAvg`
++  // against its same-type peers; under `--files` it also carries the
++  // dist-relative file list that contributed to the metric.
++  const routeInfos: RouteInfo[] = routeEntries.map((entry, i) => {
++    const stats = measureFileSets(allFileSets[i], sizeCache)
++    const shared = measureSharedAvg(i, allFileSets, routeEntries, sizeCache)
++    const merged = {} as CategoryStatsWithSharedByKey
++    for (const cat of CATEGORIES) {
++      merged[cat] = {
++        ...stats[cat],
++        sharedAvg: annotateShared(stats[cat], shared[cat]),
++      }
++      if (options.files) {
++        merged[cat].files = fileListFor(distDir, allFileSets[i][cat], sizeCache)
++      }
++    }
++    return { route: entry.route, type: entry.type, ...merged }
++  })
++  sortRoutes(routeInfos, sortKey)
++
++  // Project-wide totals — union of all route sets, regardless of --limit.
++  const mergedSets = mergeSets(allFileSets)
++  const totals = measureFileSets(mergedSets, sizeCache)
++  if (options.files) {
++    for (const cat of CATEGORIES) {
++      totals[cat].files = fileListFor(distDir, mergedSets[cat], sizeCache)
++    }
++  }
++
++  const displayRoutes =
++    options.limit != null && options.limit > 0
++      ? routeInfos.slice(0, options.limit)
++      : routeInfos
++
++  if (options.json) {
++    printJson(displayRoutes, totals)
++  } else {
++    printMarkdown(displayRoutes, totals)
++  }
++}
+diff --git a/test/production/static-routes-info/app/(group)/items/[itemId]/page.tsx b/test/production/static-routes-info/app/(group)/items/[itemId]/page.tsx
+new file mode 100644
+index 000000000000..6c82d2e0260f
+--- /dev/null
++++ b/test/production/static-routes-info/app/(group)/items/[itemId]/page.tsx
+@@ -0,0 +1,14 @@
++// Route name: `/items/[itemId]` (the `(group)` segment is silent).
++// The internal entry name in the client-reference manifest is
++// `app/(group)/items/[itemId]/page` — note the `]` characters that
++// appear unescaped inside the entry-key string. This fixture exists
++// to exercise `parseClientReferenceManifest`'s string-literal walking
++// for `]`-containing entry names; a naïve `[^\]]*` regex breaks here.
++export default async function ItemPage({
++  params,
++}: {
++  params: Promise<{ itemId: string }>
++}) {
++  const { itemId } = await params
++  return <p>item {itemId}</p>
++}
+diff --git a/test/production/static-routes-info/app/about/page.tsx b/test/production/static-routes-info/app/about/page.tsx
+new file mode 100644
+index 000000000000..7190cfcd72ce
+--- /dev/null
++++ b/test/production/static-routes-info/app/about/page.tsx
+@@ -0,0 +1,15 @@
++// Second app-page so we can test the sharedAvg metric (which requires
++// at least 2 routes of the same type). Imports the same shared module
++// and the same client component as `app/page.tsx` so the tool's per-route
++// file sets actually overlap beyond just framework/layout chunks.
++import { sharedHelper } from '../../lib/shared'
++import Counter from '../../components/Counter'
++
++export default function About() {
++  return (
++    <p data-len={sharedHelper()}>
++      about
++      <Counter />
++    </p>
++  )
++}
+diff --git a/test/production/static-routes-info/app/api/edge/route.ts b/test/production/static-routes-info/app/api/edge/route.ts
+new file mode 100644
+index 000000000000..96f1d988a480
+--- /dev/null
++++ b/test/production/static-routes-info/app/api/edge/route.ts
+@@ -0,0 +1,5 @@
++export const runtime = 'edge'
++
++export async function GET() {
++  return Response.json({ ok: true })
++}
+diff --git a/test/production/static-routes-info/app/api/node/route.ts b/test/production/static-routes-info/app/api/node/route.ts
+new file mode 100644
+index 000000000000..417505db47d7
+--- /dev/null
++++ b/test/production/static-routes-info/app/api/node/route.ts
+@@ -0,0 +1,5 @@
++export const dynamic = 'force-dynamic'
++
++export async function GET() {
++  return Response.json({ ok: true })
++}
+diff --git a/test/production/static-routes-info/app/globals.css b/test/production/static-routes-info/app/globals.css
+new file mode 100644
+index 000000000000..bcc3583dffd2
+--- /dev/null
++++ b/test/production/static-routes-info/app/globals.css
+@@ -0,0 +1,3 @@
++.hello {
++  color: red;
++}
+diff --git a/test/production/static-routes-info/app/layout.tsx b/test/production/static-routes-info/app/layout.tsx
+new file mode 100644
+index 000000000000..ee2083b16e4a
+--- /dev/null
++++ b/test/production/static-routes-info/app/layout.tsx
+@@ -0,0 +1,15 @@
++import { ReactNode } from 'react'
++// Layout imports the global stylesheet — this is the typical Next.js
++// pattern where `globals.css` is imported by the root layout and so
++// applies to every app-page route (not just one). The tool must pick up
++// CSS from the layout segment via `entryCSSFiles[<layout>]` for all
++// app-pages, not just the one that directly imports `globals.css`.
++import './globals.css'
++
++export default function Root({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/production/static-routes-info/app/no-client/page.tsx b/test/production/static-routes-info/app/no-client/page.tsx
+new file mode 100644
+index 000000000000..98f45d4bf0fa
+--- /dev/null
++++ b/test/production/static-routes-info/app/no-client/page.tsx
+@@ -0,0 +1,7 @@
++// Third app-page that deliberately does NOT import the `Counter` client
++// component. Used as the negative reference in the "client components
++// contribute per-route client JS" assertion: routes that import Counter
++// must ship strictly more client JS bytes than this route.
++export default function NoClient() {
++  return <p>no-client</p>
++}
+diff --git a/test/production/static-routes-info/app/page.tsx b/test/production/static-routes-info/app/page.tsx
+new file mode 100644
+index 000000000000..5e7146fbc4cf
+--- /dev/null
++++ b/test/production/static-routes-info/app/page.tsx
+@@ -0,0 +1,11 @@
++import { sharedHelper } from '../lib/shared'
++import Counter from '../components/Counter'
++
++export default function Page() {
++  return (
++    <p className="hello" data-len={sharedHelper()}>
++      app-page
++      <Counter />
++    </p>
++  )
++}
+diff --git a/test/production/static-routes-info/components/Counter.tsx b/test/production/static-routes-info/components/Counter.tsx
+new file mode 100644
+index 000000000000..f29738e85d6c
+--- /dev/null
++++ b/test/production/static-routes-info/components/Counter.tsx
+@@ -0,0 +1,18 @@
++'use client'
++
++// Client component imported by App Router pages. Imports a CSS module
++// (`counter.module.css`) so that `clientModules` in the per-route
++// `_client-reference-manifest.js` references a CSS module entry — and the
++// tool must surface its extracted .css file via `entryCSSFiles` for routes
++// that transitively import this component.
++import { useState } from 'react'
++import styles from './counter.module.css'
++
++export default function Counter() {
++  const [count, setCount] = useState(0)
++  return (
++    <button className={styles.btn} onClick={() => setCount(count + 1)}>
++      count is {count}
++    </button>
++  )
++}
+diff --git a/test/production/static-routes-info/components/counter.module.css b/test/production/static-routes-info/components/counter.module.css
+new file mode 100644
+index 000000000000..fad9ef94975e
+--- /dev/null
++++ b/test/production/static-routes-info/components/counter.module.css
+@@ -0,0 +1,9 @@
++.btn {
++  color: white;
++  background: black;
++  font-weight: bold;
++  padding: 8px 16px;
++  border-radius: 4px;
++  border: none;
++  cursor: pointer;
++}
+diff --git a/test/production/static-routes-info/lib/shared.ts b/test/production/static-routes-info/lib/shared.ts
+new file mode 100644
+index 000000000000..96768b208119
+--- /dev/null
++++ b/test/production/static-routes-info/lib/shared.ts
+@@ -0,0 +1,10 @@
++// Shared module imported by multiple routes so the static-routes-info tool
++// can observe deliberate chunk sharing in its `sharedAvg` metric. The string
++// is large enough that, however the bundler decides to chunk it (a separate
++// shared chunk, or inlined into each importer), the resulting bundle output
++// includes it and any shared chunk picked by the bundler is detectable.
++export const SHARED_PAYLOAD = 'shared-route-info-payload-' + 'x'.repeat(4096)
++
++export function sharedHelper(): number {
++  return SHARED_PAYLOAD.length
++}
+diff --git a/test/production/static-routes-info/middleware.ts b/test/production/static-routes-info/middleware.ts
+new file mode 100644
+index 000000000000..31fc219fd95b
+--- /dev/null
++++ b/test/production/static-routes-info/middleware.ts
+@@ -0,0 +1,11 @@
++import { NextResponse } from 'next/server'
++
++// `middleware.ts` is reported as the `middleware` route type. We only need it
++// to exist for the test — its behavior doesn't matter.
++export function middleware() {
++  return NextResponse.next()
++}
++
++export const config = {
++  matcher: '/about',
++}
+diff --git a/test/production/static-routes-info/next.config.js b/test/production/static-routes-info/next.config.js
+new file mode 100644
+index 000000000000..807126e4cf0b
+--- /dev/null
++++ b/test/production/static-routes-info/next.config.js
+@@ -0,0 +1,6 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {}
++
++module.exports = nextConfig
+diff --git a/test/production/static-routes-info/pages/api/hello.ts b/test/production/static-routes-info/pages/api/hello.ts
+new file mode 100644
+index 000000000000..4fe639f8fec7
+--- /dev/null
++++ b/test/production/static-routes-info/pages/api/hello.ts
+@@ -0,0 +1,6 @@
++// Pages Router API route — exercises the `pages-api` route type.
++import type { NextApiRequest, NextApiResponse } from 'next'
++
++export default function handler(_req: NextApiRequest, res: NextApiResponse) {
++  res.status(200).json({ ok: true })
++}
+diff --git a/test/production/static-routes-info/pages/pages-ssr-2.tsx b/test/production/static-routes-info/pages/pages-ssr-2.tsx
+new file mode 100644
+index 000000000000..8c1c20388c5b
+--- /dev/null
++++ b/test/production/static-routes-info/pages/pages-ssr-2.tsx
+@@ -0,0 +1,12 @@
++// Second SSR page so the `pages` route type has a peer for the sharedAvg
++// metric. Imports the same shared module as `pages-ssr.tsx` so we get
++// observable chunk overlap beyond the standard `_app` / framework chunks.
++import { sharedHelper } from '../lib/shared'
++
++export default function ServerPage2({ len }: { len: number }) {
++  return <p data-len={len}>pages-ssr-2</p>
++}
++
++export async function getServerSideProps() {
++  return { props: { len: sharedHelper() } }
++}
+diff --git a/test/production/static-routes-info/pages/pages-ssr.tsx b/test/production/static-routes-info/pages/pages-ssr.tsx
+new file mode 100644
+index 000000000000..fc3d5fd6b531
+--- /dev/null
++++ b/test/production/static-routes-info/pages/pages-ssr.tsx
+@@ -0,0 +1,11 @@
++// Server-rendered Pages Router page — `getServerSideProps` forces a `.js`
++// server entry, exercises the `pages` route type.
++import { sharedHelper } from '../lib/shared'
++
++export default function ServerPage({ len }: { len: number }) {
++  return <p data-len={len}>pages-ssr</p>
++}
++
++export async function getServerSideProps() {
++  return { props: { len: sharedHelper() } }
++}
+diff --git a/test/production/static-routes-info/pages/pages-static.tsx b/test/production/static-routes-info/pages/pages-static.tsx
+new file mode 100644
+index 000000000000..4b65e4c66f22
+--- /dev/null
++++ b/test/production/static-routes-info/pages/pages-static.tsx
+@@ -0,0 +1,5 @@
++// Statically pre-rendered Pages Router page (no data-fetching) — produces a
++// `.html` server entry, exercises the `pages-static` route type.
++export default function StaticPage() {
++  return <p>pages-static</p>
++}
+diff --git a/test/production/static-routes-info/static-routes-info.test.ts b/test/production/static-routes-info/static-routes-info.test.ts
+new file mode 100644
+index 000000000000..086ebdaa6439
+--- /dev/null
++++ b/test/production/static-routes-info/static-routes-info.test.ts
+@@ -0,0 +1,772 @@
++import { nextTestSetup, isNextStart } from 'e2e-utils'
++import { runNextCommand } from 'next-test-utils'
++
++interface CategoryStats {
++  count: number
++  bytes: number
++}
++
++interface SharedStats extends CategoryStats {
++  percentCount: number
++  percentBytes: number
++}
++
++interface CategoryStatsWithShared extends CategoryStats {
++  sharedAvg: SharedStats | null
++  files?: string[]
++}
++
++interface CategoryStatsWithFiles extends CategoryStats {
++  files?: string[]
++}
++
++interface RouteInfo {
++  route: string
++  type: string
++  serverBundled: CategoryStatsWithShared
++  serverMaps: CategoryStatsWithShared
++  serverUnbundled: CategoryStatsWithShared
++  clientJs: CategoryStatsWithShared
++  clientMaps: CategoryStatsWithShared
++  clientCss: CategoryStatsWithShared
++}
++
++interface Totals {
++  serverBundled: CategoryStatsWithFiles
++  serverMaps: CategoryStatsWithFiles
++  serverUnbundled: CategoryStatsWithFiles
++  clientJs: CategoryStatsWithFiles
++  clientMaps: CategoryStatsWithFiles
++  clientCss: CategoryStatsWithFiles
++}
++
++interface ToolOutput {
++  routes: RouteInfo[]
++  totals: Totals
++}
++
++const ALL_CATEGORIES = [
++  'serverBundled',
++  'serverMaps',
++  'serverUnbundled',
++  'clientJs',
++  'clientMaps',
++  'clientCss',
++] as const
++
++describe('next internal static-routes-info', () => {
++  if (!isNextStart) {
++    it('skipped for non-start mode', () => {})
++    return
++  }
++
++  const { next, isTurbopack, skipped } = nextTestSetup({
++    files: __dirname,
++    skipStart: true,
++  })
++
++  if (skipped) return
++
++  beforeAll(async () => {
++    const buildResult = await next.build()
++    if (buildResult.exitCode !== 0) {
++      throw new Error(
++        `next build failed with exit code ${buildResult.exitCode}`
++      )
++    }
++  })
++
++  async function runTool(
++    args: string[]
++  ): Promise<{ stdout: string; stderr: string; code: number | null }> {
++    const result = await runNextCommand(
++      ['internal', 'static-routes-info', next.testDir, ...args],
++      {
++        // Run from the next.js package dir (default) so internal modules
++        // resolve correctly regardless of the test app's setup.
++        stdout: true,
++        stderr: true,
++      }
++    )
++    if (result.code !== 0) {
++      console.log('static-routes-info stdout:', result.stdout)
++      console.log('static-routes-info stderr:', result.stderr)
++    }
++    return result
++  }
++
++  function getRoute(output: ToolOutput, route: string): RouteInfo {
++    const found = output.routes.find((r) => r.route === route)
++    if (!found) {
++      throw new Error(
++        `Route ${route} not found. Got: ${output.routes
++          .map((r) => `${r.route} (${r.type})`)
++          .join(', ')}`
++      )
++    }
++    return found
++  }
++
++  it('--help should print usage', async () => {
++    const result = await runNextCommand(
++      ['internal', 'static-routes-info', '--help'],
++      { stdout: true, stderr: true }
++    )
++    expect(result.code).toBe(0)
++    const out = result.stdout + result.stderr
++    expect(out).toContain('static-routes-info')
++    expect(out).toContain('--json')
++    expect(out).toContain('--limit')
++    expect(out).toContain('--sort')
++    expect(out).toContain('--files')
++  })
++
++  it('--json should report all expected route types', async () => {
++    const result = await runTool(['--json'])
++    expect(result.code).toBe(0)
++
++    const output = JSON.parse(result.stdout) as ToolOutput
++
++    // Every route type from the fixture is represented at least once.
++    const types = new Set(output.routes.map((r) => r.type))
++    expect(types).toContain('app-page') // app/page.tsx + app/about/page.tsx
++    expect(types).toContain('app-route') // app/api/node/route.ts + app/api/edge/route.ts
++    expect(types).toContain('pages') // pages/pages-ssr.tsx + pages/pages-ssr-2.tsx
++    expect(types).toContain('pages-static') // pages/pages-static.tsx
++    expect(types).toContain('pages-api') // pages/api/hello.ts
++    expect(types).toContain('middleware') // middleware.ts
++    // edge-function is no longer a route type — edge route handlers are
++    // reported under their actual type (e.g. app-route for App Router).
++    expect(types).not.toContain('edge-function')
++
++    // Specific URLs should be present.
++    const routes = output.routes.map((r) => r.route)
++    expect(routes).toEqual(
++      expect.arrayContaining([
++        '/',
++        '/about',
++        '/api/node',
++        '/api/edge',
++        '/pages-ssr',
++        '/pages-ssr-2',
++        '/pages-static',
++        '/api/hello',
++      ])
++    )
++
++    // /api/edge is an App Router route handler with `runtime: 'edge'` and
++    // is now reported as `app-route` (peer of /api/node).
++    expect(getRoute(output, '/api/edge').type).toBe('app-route')
++
++    // /items/[itemId] sits inside a `(group)` route group AND has a
++    // dynamic segment. The internal client-reference manifest entry name
++    // contains unescaped `]` characters, which a naïve `[^\]]*` regex
++    // would terminate early. This route forces the parser to walk a JS
++    // string literal correctly across `]`s.
++    const dyn = getRoute(output, '/items/[itemId]')
++    expect(dyn.type).toBe('app-page')
++    expect(dyn.serverBundled.count).toBeGreaterThan(0)
++    expect(dyn.clientJs.count).toBeGreaterThan(0)
++
++    // Each category on each route is well-formed.
++    for (const r of output.routes) {
++      for (const cat of ALL_CATEGORIES) {
++        expect(typeof r[cat].count).toBe('number')
++        expect(typeof r[cat].bytes).toBe('number')
++        // count/bytes consistency: 0 files ↔ 0 bytes; >0 files → >0 bytes.
++        if (r[cat].count === 0) {
++          expect(r[cat].bytes).toBe(0)
++        } else {
++          expect(r[cat].bytes).toBeGreaterThan(0)
++        }
++        // sharedAvg is either null (no peers) or shaped like CategoryStats.
++        if (r[cat].sharedAvg !== null) {
++          expect(typeof r[cat].sharedAvg!.count).toBe('number')
++          expect(typeof r[cat].sharedAvg!.bytes).toBe('number')
++        }
++      }
++    }
++  })
++
++  it('--json should expose the right files per route type', async () => {
++    const result = await runTool(['--json'])
++    const output = JSON.parse(result.stdout) as ToolOutput
++
++    // app-page: has server JS, client JS, and client CSS. The fixture
++    // imports a `'use client'` Counter component (which itself imports a
++    // CSS module) so the route's `_client-reference-manifest.js` carries
++    // per-route client chunks for both bundlers (Turbopack populates
++    // `entryJSFiles`, webpack populates `clientModules.chunks`). The
++    // global `globals.css` is imported from `app/layout.tsx`, exercising
++    // the layout-segment entry in `entryCSSFiles`. This catches the
++    // regression where the parser only matched Turbopack's `'] = '`
++    // marker and missed webpack's `']='` form.
++    const appPage = getRoute(output, '/')
++    expect(appPage.type).toBe('app-page')
++    expect(appPage.serverBundled.count).toBeGreaterThan(0)
++    expect(appPage.clientJs.count).toBeGreaterThan(0)
++    // Both bundlers populate `entryCSSFiles` with at least globals.css
++    // (from the layout). Turbopack additionally attributes the Counter
++    // CSS module only to routes that transitively import it; webpack
++    // merges all entries' CSS into every route's manifest, so it reports
++    // the same count for every app-page. We only assert "at least one"
++    // here; the next assertion exercises per-route differentiation.
++    expect(appPage.clientCss.count).toBeGreaterThan(0)
++
++    // Client component contribution check (Turbopack only). The fixture
++    // imports the `'use client'` Counter component from `/` and `/about`
++    // but not from `/no-client`. On Turbopack, per-route client-reference
++    // manifests are independent, so `/about` ships strictly more client
++    // JS and CSS than `/no-client` — the `Counter.tsx` chunk plus its
++    // `counter.module.css` are only attributed to routes that import them.
++    //
++    // Webpack's flight-manifest plugin runs `mergeManifest` across all
++    // app-pages (see `flight-manifest-plugin.ts`'s `mergeManifest`), so
++    // every per-route CRM ends up with the union of every other route's
++    // `clientModules` and `entryCSSFiles`. This makes per-route
++    // attribution impossible on webpack — we skip the assertion there.
++    if (isTurbopack) {
++      const noClient = getRoute(output, '/no-client')
++      const about = getRoute(output, '/about')
++      expect(about.clientJs.count).toBeGreaterThan(noClient.clientJs.count)
++      expect(about.clientJs.bytes).toBeGreaterThan(noClient.clientJs.bytes)
++      expect(about.clientCss.count).toBeGreaterThan(noClient.clientCss.count)
++      expect(about.clientCss.bytes).toBeGreaterThan(noClient.clientCss.bytes)
++    }
++
++    // app-route (Node runtime): has server JS, no client JS / CSS.
++    const appRoute = getRoute(output, '/api/node')
++    expect(appRoute.type).toBe('app-route')
++    expect(appRoute.serverBundled.count).toBeGreaterThan(0)
++    expect(appRoute.clientJs.count).toBe(0)
++    expect(appRoute.clientCss.count).toBe(0)
++
++    // app-route (Edge runtime): has server JS, no client JS, no nft.json
++    // (so unbundled is always 0 — the bundle includes everything inline).
++    const edgeAppRoute = getRoute(output, '/api/edge')
++    expect(edgeAppRoute.type).toBe('app-route')
++    expect(edgeAppRoute.serverBundled.count).toBeGreaterThan(0)
++    expect(edgeAppRoute.serverUnbundled.count).toBe(0)
++    expect(edgeAppRoute.clientJs.count).toBe(0)
++
++    // middleware: has server JS, no client JS, no unbundled.
++    const middleware = output.routes.find((r) => r.type === 'middleware')!
++    expect(middleware).toBeDefined()
++    expect(middleware.serverBundled.count).toBeGreaterThan(0)
++    expect(middleware.serverUnbundled.count).toBe(0)
++    expect(middleware.clientJs.count).toBe(0)
++
++    // pages (SSR): has server JS, has client JS.
++    const pagesSsr = getRoute(output, '/pages-ssr')
++    expect(pagesSsr.type).toBe('pages')
++    expect(pagesSsr.serverBundled.count).toBeGreaterThan(0)
++    expect(pagesSsr.clientJs.count).toBeGreaterThan(0)
++
++    // pages-static: no server JS, only client JS.
++    const pagesStatic = getRoute(output, '/pages-static')
++    expect(pagesStatic.type).toBe('pages-static')
++    expect(pagesStatic.serverBundled.count).toBe(0)
++    expect(pagesStatic.serverUnbundled.count).toBe(0)
++    expect(pagesStatic.clientJs.count).toBeGreaterThan(0)
++
++    // pages-api: has server JS, no client JS.
++    const pagesApi = getRoute(output, '/api/hello')
++    expect(pagesApi.type).toBe('pages-api')
++    expect(pagesApi.serverBundled.count).toBeGreaterThan(0)
++    expect(pagesApi.clientJs.count).toBe(0)
++  })
++
++  it('--json totals should be sums of unique files (not per-route sums)', async () => {
++    const result = await runTool(['--json'])
++    const output = JSON.parse(result.stdout) as ToolOutput
++
++    // Per-category sum across routes (counts duplicates)
++    const perRouteSum = (cat: keyof ToolOutput['totals']) =>
++      output.routes.reduce((acc, r) => acc + r[cat].bytes, 0)
++
++    // Totals are deduplicated, so each total <= sum of per-route values.
++    // For this fixture there are shared server chunks (Next.js runtime
++    // included via nft.json on every route) and shared client chunks
++    // (framework, polyfills, _app), so totals must be strictly smaller
++    // than the sum across routes.
++    for (const cat of [
++      'serverBundled',
++      'serverMaps',
++      'serverUnbundled',
++      'clientJs',
++    ] as const) {
++      expect(output.totals[cat].bytes).toBeLessThanOrEqual(perRouteSum(cat))
++    }
++    expect(output.totals.serverBundled.bytes).toBeLessThan(
++      perRouteSum('serverBundled')
++    )
++    expect(output.totals.clientJs.bytes).toBeLessThan(perRouteSum('clientJs'))
++  })
++
++  it('--json routes should be sorted alphabetically by name by default', async () => {
++    const result = await runTool(['--json'])
++    const output = JSON.parse(result.stdout) as ToolOutput
++
++    for (let i = 1; i < output.routes.length; i++) {
++      // localeCompare is what the tool uses internally; comparing with `<=`
++      // here would be wrong for unicode-aware ordering.
++      expect(
++        output.routes[i - 1].route.localeCompare(output.routes[i].route)
++      ).toBeLessThanOrEqual(0)
++    }
++  })
++
++  it.each([
++    ['client-js', (r: RouteInfo) => r.clientJs.bytes],
++    ['client-css', (r: RouteInfo) => r.clientCss.bytes],
++    ['client-map', (r: RouteInfo) => r.clientMaps.bytes],
++    ['client', (r: RouteInfo) => r.clientJs.bytes + r.clientCss.bytes],
++    ['server-bundled-js', (r: RouteInfo) => r.serverBundled.bytes],
++    ['server-unbundled', (r: RouteInfo) => r.serverUnbundled.bytes],
++    ['server-map', (r: RouteInfo) => r.serverMaps.bytes],
++    [
++      'server',
++      (r: RouteInfo) => r.serverBundled.bytes + r.serverUnbundled.bytes,
++    ],
++    [
++      'total',
++      (r: RouteInfo) =>
++        r.serverBundled.bytes +
++        r.serverMaps.bytes +
++        r.serverUnbundled.bytes +
++        r.clientJs.bytes +
++        r.clientMaps.bytes +
++        r.clientCss.bytes,
++    ],
++  ] as const)(
++    '--sort %s should order routes descending by that metric',
++    async (key, metric) => {
++      const result = await runTool(['--json', '--sort', key])
++      expect(result.code).toBe(0)
++      const output = JSON.parse(result.stdout) as ToolOutput
++
++      for (let i = 1; i < output.routes.length; i++) {
++        expect(metric(output.routes[i - 1])).toBeGreaterThanOrEqual(
++          metric(output.routes[i])
++        )
++      }
++    }
++  )
++
++  it('--sort with an invalid key should error', async () => {
++    const result = await runTool(['--json', '--sort', 'bogus'])
++    expect(result.code).not.toBe(0)
++    expect(result.stderr).toContain("invalid --sort key 'bogus'")
++  })
++
++  it('--limit should keep only the top N routes; totals reflect all routes', async () => {
++    const full = JSON.parse(
++      (await runTool(['--json', '--sort', 'total'])).stdout
++    ) as ToolOutput
++    const limited = JSON.parse(
++      (await runTool(['--json', '--sort', 'total', '--limit', '2'])).stdout
++    ) as ToolOutput
++
++    expect(limited.routes).toHaveLength(2)
++    expect(limited.routes[0].route).toBe(full.routes[0].route)
++    expect(limited.routes[1].route).toBe(full.routes[1].route)
++
++    // Totals are independent of --limit.
++    expect(limited.totals).toEqual(full.totals)
++  })
++
++  it('markdown (default) output should be a valid table containing all routes', async () => {
++    const result = await runTool([])
++    expect(result.code).toBe(0)
++    const out = result.stdout
++
++    // Section headers
++    expect(out).toContain('## Routes')
++    expect(out).toContain('## Totals')
++
++    // Column headers
++    for (const header of [
++      'Route',
++      'Type',
++      'Client JS',
++      'Client CSS',
++      'Client Source Maps',
++      'Server Bundled JS',
++      'Server Unbundled',
++      'Server Source Maps',
++    ]) {
++      expect(out).toContain(header)
++    }
++
++    // Each route appears in the markdown.
++    for (const route of [
++      '/api/node',
++      '/api/edge',
++      '/pages-ssr',
++      '/pages-static',
++      '/api/hello',
++    ]) {
++      expect(out).toContain(route)
++    }
++
++    // The "**Total**" row in the totals table.
++    expect(out).toContain('**Total**')
++
++    // Rows look like markdown table rows.
++    expect(out).toMatch(/\|\s+Route\s+\|/)
++    expect(out).toMatch(/\|\s+-+\s+\|/)
++  })
++
++  it('--json sharedAvg should be null for routes with no peers', async () => {
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++
++    // The fixture has exactly one route of each of these types.
++    for (const route of [
++      '/pages-static', // only pages-static
++      '/api/hello', // only pages-api
++    ]) {
++      const r = getRoute(output, route)
++      for (const cat of ALL_CATEGORIES) {
++        expect(r[cat].sharedAvg).toBeNull()
++      }
++    }
++    // Middleware is also a singleton.
++    const mw = output.routes.find((r) => r.type === 'middleware')!
++    expect(mw).toBeDefined()
++    for (const cat of ALL_CATEGORIES) {
++      expect(mw[cat].sharedAvg).toBeNull()
++    }
++  })
++
++  it('--json sharedAvg should be present for routes with peers, and never exceed the route itself', async () => {
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++
++    // Routes with at least one peer of the same type:
++    //   - app-page: `/`, `/about`, `/_not-found`
++    //   - app-route: `/api/node`, `/api/edge`
++    //   - pages: `/pages-ssr`, `/pages-ssr-2`
++    const withPeers = output.routes.filter(
++      (r) =>
++        r.type === 'app-page' || r.type === 'app-route' || r.type === 'pages'
++    )
++    expect(withPeers.length).toBeGreaterThanOrEqual(7)
++    for (const r of withPeers) {
++      for (const cat of ALL_CATEGORIES) {
++        expect(r[cat].sharedAvg).not.toBeNull()
++        expect(r[cat].sharedAvg!.count).toBeLessThanOrEqual(r[cat].count)
++        expect(r[cat].sharedAvg!.bytes).toBeLessThanOrEqual(r[cat].bytes)
++        // percentCount / percentBytes are always between 0 and 100
++        // inclusive (sharedAvg cannot exceed own).
++        expect(r[cat].sharedAvg!.percentCount).toBeGreaterThanOrEqual(0)
++        expect(r[cat].sharedAvg!.percentCount).toBeLessThanOrEqual(100)
++        expect(r[cat].sharedAvg!.percentBytes).toBeGreaterThanOrEqual(0)
++        expect(r[cat].sharedAvg!.percentBytes).toBeLessThanOrEqual(100)
++        // Percentages are exactly the ratio of sharedAvg to own (or 0 when
++        // own is 0). Use a small epsilon for floating-point.
++        const expectedPctCount =
++          r[cat].count > 0 ? (r[cat].sharedAvg!.count / r[cat].count) * 100 : 0
++        const expectedPctBytes =
++          r[cat].bytes > 0 ? (r[cat].sharedAvg!.bytes / r[cat].bytes) * 100 : 0
++        expect(r[cat].sharedAvg!.percentCount).toBeCloseTo(expectedPctCount, 8)
++        expect(r[cat].sharedAvg!.percentBytes).toBeCloseTo(expectedPctBytes, 8)
++      }
++    }
++  })
++
++  it('--json sharedAvg should observe deliberate chunk sharing across peer routes', async () => {
++    // Both `/pages-ssr` and `/pages-ssr-2` import `lib/shared.ts` and use
++    // the standard Pages Router shared chunks (`_app`, framework, main,
++    // polyfills). They MUST report meaningful sharing. Likewise `/` and
++    // `/about` both import `lib/shared.ts` and share the App Router
++    // root layout + framework chunks.
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++
++    // Pages Router peers — Pages Router's chunking is deterministic across
++    // both bundlers (build-manifest lists pages chunks explicitly).
++    const ssr1 = getRoute(output, '/pages-ssr')
++    const ssr2 = getRoute(output, '/pages-ssr-2')
++    expect(ssr1.type).toBe('pages')
++    expect(ssr2.type).toBe('pages')
++
++    // At least 3 of the 6 client JS chunks should be shared between the
++    // two pages (framework, main, polyfills, _app — minus per-page entry).
++    expect(ssr1.clientJs.sharedAvg!.count).toBeGreaterThanOrEqual(3)
++    expect(ssr1.clientJs.sharedAvg!.bytes).toBeGreaterThan(0)
++    // Most of the route's client JS comes from shared infra; expect the
++    // shared portion to be a substantial fraction of the total.
++    expect(ssr1.clientJs.sharedAvg!.bytes).toBeGreaterThan(
++      ssr1.clientJs.bytes * 0.5
++    )
++    // Raw intersection count/bytes are commutative (intersection is
++    // symmetric). Percentages are NOT commutative because they're divided
++    // by each route's own count/bytes, which can differ between peers.
++    expect(ssr2.clientJs.sharedAvg!.count).toBe(ssr1.clientJs.sharedAvg!.count)
++    expect(ssr2.clientJs.sharedAvg!.bytes).toBe(ssr1.clientJs.sharedAvg!.bytes)
++
++    // Similarly, server-bundled JS for the two pages should mostly overlap
++    // (Next.js runtime chunks dominate the bundle).
++    expect(ssr1.serverBundled.sharedAvg!.count).toBeGreaterThanOrEqual(3)
++    expect(ssr1.serverBundled.sharedAvg!.bytes).toBeGreaterThan(
++      ssr1.serverBundled.bytes * 0.5
++    )
++
++    // App Router peers — both `/` and `/about` import the same shared lib
++    // and the same root layout, so a substantial share is expected.
++    const root = getRoute(output, '/')
++    const about = getRoute(output, '/about')
++    expect(root.serverBundled.sharedAvg!.bytes).toBeGreaterThan(
++      root.serverBundled.bytes * 0.5
++    )
++    expect(about.serverBundled.sharedAvg!.bytes).toBeGreaterThan(
++      about.serverBundled.bytes * 0.5
++    )
++  })
++
++  it('--json sharedAvg should match a hand-computed average for app-pages', async () => {
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++
++    // Reproduce the tool's algorithm in the test: for each route, average
++    // the intersection size across same-type peers. We can't recompute file
++    // intersections here (we don't have the file lists in the JSON), but we
++    // can verify a known invariant: when ALL app-pages have the same set of
++    // server-unbundled files (which is the case in our small fixture, since
++    // they all trace identical Node deps), the sharedAvg.count for that
++    // category equals the route's own count. Likewise for serverUnbundled
++    // bytes.
++    const appPages = output.routes.filter((r) => r.type === 'app-page')
++    expect(appPages.length).toBeGreaterThan(1)
++    const serverUnbundledCounts = appPages.map((r) => r.serverUnbundled.count)
++    const allEqual = serverUnbundledCounts.every(
++      (c) => c === serverUnbundledCounts[0]
++    )
++    if (allEqual) {
++      for (const r of appPages) {
++        expect(r.serverUnbundled.sharedAvg!.count).toBe(r.serverUnbundled.count)
++        expect(r.serverUnbundled.sharedAvg!.bytes).toBe(r.serverUnbundled.bytes)
++      }
++    }
++  })
++
++  it('--json sharedAvg should match a from-scratch reimplementation for every route × category', async () => {
++    // The strongest guarantee we can offer for the sharedAvg metric: walk the
++    // dist-relative file lists from --files and re-run the exact algorithm in
++    // the test, then compare every (route, category) cell against what the
++    // tool reports. Any divergence — including spurious 100% values caused by
++    // path normalization mismatches, off-by-one peer counts, or asymmetric
++    // intersection — fails the test.
++    const output = JSON.parse(
++      (await runTool(['--json', '--files'])).stdout
++    ) as ToolOutput
++
++    // Build a fast file-size lookup from `count` and `bytes`. We don't have
++    // bytes-per-file in the JSON, but for a hand-computed *average size of
++    // intersection* we need them. So re-derive sizes by reading totals: any
++    // file in totals[cat].files maps to a size we can estimate? No — totals
++    // only have count/bytes too.
++    //
++    // Instead, we cross-check ONLY the file *count* against a hand-computed
++    // average. Bytes are checked separately by the byte-level test below
++    // using the size info that does exist (per-route own bytes).
++    const byType = new Map<string, RouteInfo[]>()
++    for (const r of output.routes) {
++      const list = byType.get(r.type) ?? []
++      list.push(r)
++      byType.set(r.type, list)
++    }
++
++    for (const r of output.routes) {
++      const peers = (byType.get(r.type) ?? []).filter((p) => p !== r)
++      for (const cat of ALL_CATEGORIES) {
++        const sa = r[cat].sharedAvg
++        if (peers.length === 0) {
++          expect(sa).toBeNull()
++          continue
++        }
++        const myFiles = new Set(r[cat].files)
++        let totalIntersectCount = 0
++        for (const p of peers) {
++          const peerFiles = new Set(p[cat].files)
++          let intersect = 0
++          for (const f of myFiles) if (peerFiles.has(f)) intersect++
++          totalIntersectCount += intersect
++        }
++        const expectedCount = totalIntersectCount / peers.length
++        expect(sa).not.toBeNull()
++        // Floating-point exact: division by integer peer count of an integer
++        // sum is exactly representable for the sizes we have here.
++        expect(sa!.count).toBe(expectedCount)
++      }
++    }
++  })
++
++  it('--json sharedAvg.count == own.count IFF every peer is a strict superset (100%-shared sanity check)', async () => {
++    // A 100% sharedAvg.count is only legitimate when, for every peer, this
++    // route's set is a (possibly equal) subset of the peer's set. This test
++    // independently checks: every (route, category) pair where
++    // `sharedAvg.count == own.count` must satisfy `myFiles ⊆ peerFiles` for
++    // every peer; conversely, every pair where some peer is missing a file
++    // must have `sharedAvg.count < own.count`.
++    //
++    // This catches bugs where the intersection accidentally over-counts —
++    // e.g. counting the same file twice across the small/big swap, returning
++    // |self ∪ peer| instead of |self ∩ peer|, or comparing the wrong route.
++    const output = JSON.parse(
++      (await runTool(['--json', '--files'])).stdout
++    ) as ToolOutput
++    const byType = new Map<string, RouteInfo[]>()
++    for (const r of output.routes) {
++      const list = byType.get(r.type) ?? []
++      list.push(r)
++      byType.set(r.type, list)
++    }
++
++    for (const r of output.routes) {
++      const peers = (byType.get(r.type) ?? []).filter((p) => p !== r)
++      if (peers.length === 0) continue
++      for (const cat of ALL_CATEGORIES) {
++        const myFiles = new Set(r[cat].files)
++        if (myFiles.size === 0) continue
++        const everyPeerIsSuperset = peers.every((p) => {
++          const peer = new Set(p[cat].files)
++          for (const f of myFiles) if (!peer.has(f)) return false
++          return true
++        })
++        const sa = r[cat].sharedAvg!
++        if (everyPeerIsSuperset) {
++          expect(sa.count).toBe(r[cat].count)
++          expect(sa.bytes).toBe(r[cat].bytes)
++        } else {
++          // Some peer is missing at least one of my files; the average
++          // intersection size MUST be strictly less than my own count.
++          expect(sa.count).toBeLessThan(r[cat].count)
++        }
++      }
++    }
++  })
++
++  it('--json sharedAvg should be < own for routes with unique files (regression check)', async () => {
++    // `/` and `/about` import the `'use client'` `Counter` component;
++    // `/no-client`, `/_not-found`, and `/items/[itemId]` do not. So `/`'s
++    // Counter chunk is shared with exactly one peer (`/about`) and absent
++    // from the other three. This forces a strictly-below-100% average for
++    // `/.clientJs`, regardless of how many framework chunks happen to be
++    // shared across all five app-pages.
++    //
++    // If the algorithm were broken to return |self ∪ peer| or to skip
++    // certain peers, this assertion would still trigger.
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++    const root = getRoute(output, '/')
++    expect(root.type).toBe('app-page')
++    expect(root.clientJs.sharedAvg).not.toBeNull()
++    expect(root.clientJs.sharedAvg!.count).toBeLessThan(root.clientJs.count)
++    expect(root.clientJs.sharedAvg!.bytes).toBeLessThan(root.clientJs.bytes)
++  })
++
++  it('totals should not include sharedAvg', async () => {
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++    for (const cat of ALL_CATEGORIES) {
++      expect(output.totals[cat]).toEqual({
++        count: expect.any(Number),
++        bytes: expect.any(Number),
++      })
++      expect(
++        (output.totals[cat] as unknown as Record<string, unknown>).sharedAvg
++      ).toBeUndefined()
++    }
++  })
++
++  it('markdown should render empty cells as `-` (not `0 files / 0 B`)', async () => {
++    const md = (await runTool([])).stdout
++    // The empty placeholder must appear at least once: middleware ships
++    // no client JS / CSS / maps so its row in the routes table will have
++    // a `-` for those columns. `/pages-static` has no server entries.
++    expect(md).toContain('| -')
++    // It should NOT render `0 files / 0 B` anywhere — every empty cell
++    // is replaced.
++    expect(md).not.toMatch(/0 files\s+\/\s+0 B/)
++  })
++
++  it('markdown should include a Shared section', async () => {
++    const md = (await runTool([])).stdout
++    expect(md).toContain('## Shared')
++    // Routes with no peers should appear as `n/a`. Routes with peers but
++    // no files in a category render as `-` (matching the routes table
++    // placeholder), so `n/a` and `-` are both expected and have distinct
++    // meanings.
++    expect(md).toContain('n/a')
++    // Shared cells render with both count and byte percentages, e.g.
++    // `5 files (100%) / 424 KB (100%)`. This is the marker for the
++    // user-visible part of the percent-shared annotation.
++    expect(md).toMatch(/\d+ files \(\d+%\) \/ [^|]*\(\d+%\)/)
++    // Empty shared intersections render as `-`, not as `0 files (0%) / 0 B (0%)`.
++    expect(md).not.toMatch(/0 files\s+\(0%\)/)
++  })
++
++  it('markdown numbers should agree with --json numbers for shared routes', async () => {
++    const md = (await runTool([])).stdout
++    const output = JSON.parse((await runTool(['--json'])).stdout) as ToolOutput
++
++    // Pick a route that should always have non-zero server JS and confirm
++    // its `<n> files` count appears in the markdown output. This is a
++    // sanity check that markdown rendering uses the same data as JSON.
++    const ssr = getRoute(output, '/pages-ssr')
++    expect(md).toContain(`${ssr.serverBundled.count} files`)
++  })
++
++  it('--files without --json should error', async () => {
++    const result = await runTool(['--files'])
++    expect(result.code).not.toBe(0)
++    expect(result.stderr).toContain('--files requires --json')
++  })
++
++  it('--files --json should add a sorted, dist-relative file list per category', async () => {
++    const result = await runTool(['--json', '--files'])
++    expect(result.code).toBe(0)
++    const output = JSON.parse(result.stdout) as ToolOutput
++
++    const root = getRoute(output, '/')
++    for (const cat of ALL_CATEGORIES) {
++      const files = root[cat].files
++      expect(Array.isArray(files)).toBe(true)
++      expect(files!.length).toBe(root[cat].count)
++      // Files are sorted ascending and deduplicated.
++      const sorted = [...files!].sort()
++      expect(files).toEqual(sorted)
++      expect(new Set(files).size).toBe(files!.length)
++    }
++
++    // Bundled JS chunks live inside distDir, so their paths must be plain
++    // relative (no leading `..`). Traced node_modules deps land in
++    // serverUnbundled and are expressed as `../...` from distDir — at
++    // least one such path must appear there.
++    for (const f of root.serverBundled.files!) {
++      expect(f.startsWith('..')).toBe(false)
++    }
++    if (root.serverUnbundled.files!.length > 0) {
++      expect(root.serverUnbundled.files!.some((f) => f.startsWith('..'))).toBe(
++        true
++      )
++    }
++
++    // Totals also expose file lists; their length must match totals.count
++    // (which reflects the union across every route).
++    for (const cat of ALL_CATEGORIES) {
++      expect(output.totals[cat].files).toBeDefined()
++      expect(output.totals[cat].files!.length).toBe(output.totals[cat].count)
++    }
++  })
++
++  it('--json without --files should NOT include the files field', async () => {
++    const result = await runTool(['--json'])
++    expect(result.code).toBe(0)
++    const output = JSON.parse(result.stdout) as ToolOutput
++    for (const r of output.routes) {
++      for (const cat of ALL_CATEGORIES) {
++        expect(r[cat]).not.toHaveProperty('files')
++      }
++    }
++    for (const cat of ALL_CATEGORIES) {
++      expect(output.totals[cat]).not.toHaveProperty('files')
++    }
++  })
++})

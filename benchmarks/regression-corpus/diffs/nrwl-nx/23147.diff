@@ -1,0 +1,166 @@
+diff --git a/packages/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11.spec.ts b/packages/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11.spec.ts
+index 64b69802000..ae5a7debfb0 100644
+--- a/packages/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11.spec.ts
++++ b/packages/cypress/src/generators/migrate-to-cypress-11/migrate-to-cypress-11.spec.ts
+@@ -34,7 +34,7 @@ describe('convertToCypressTen', () => {
+     mockedInstalledCypressVersion.mockReturnValue(9);
+   });
+ 
+-  afterEach(() => {
++  afterAll(() => {
+     jest.resetAllMocks();
+   });
+ 
+diff --git a/packages/eslint/src/generators/lint-project/lint-project.ts b/packages/eslint/src/generators/lint-project/lint-project.ts
+index f6babf10806..f0ae8529234 100644
+--- a/packages/eslint/src/generators/lint-project/lint-project.ts
++++ b/packages/eslint/src/generators/lint-project/lint-project.ts
+@@ -1,10 +1,10 @@
+-import type {
++import {
++  createProjectGraphAsync,
+   GeneratorCallback,
+   NxJsonConfiguration,
+   ProjectConfiguration,
++  ProjectGraph,
+   Tree,
+-} from '@nx/devkit';
+-import {
+   readNxJson,
+   formatFiles,
+   offsetFromRoot,
+@@ -134,7 +134,8 @@ export async function lintProjectGeneratorInternal(
+   if (!options.rootProject) {
+     const projects = {} as any;
+     getProjects(tree).forEach((v, k) => (projects[k] = v));
+-    if (isMigrationToMonorepoNeeded(projects, tree)) {
++    const graph = await createProjectGraphAsync();
++    if (isMigrationToMonorepoNeeded(tree, graph)) {
+       // we only migrate project configurations that have been created
+       const filteredProjects = [];
+       Object.entries(projects).forEach(([name, project]) => {
+@@ -295,10 +296,7 @@ function isBuildableLibraryProject(
+  * Detect based on the state of lint target configuration of the root project
+  * if we should migrate eslint configs to monorepo style
+  */
+-function isMigrationToMonorepoNeeded(
+-  projects: Record<string, ProjectConfiguration>,
+-  tree: Tree
+-): boolean {
++function isMigrationToMonorepoNeeded(tree: Tree, graph: ProjectGraph): boolean {
+   // the base config is already created, migration has been done
+   if (
+     tree.exists(baseEsLintConfigFile) ||
+@@ -307,25 +305,25 @@ function isMigrationToMonorepoNeeded(
+     return false;
+   }
+ 
+-  const configs = Object.values(projects);
+-  if (configs.length === 1) {
+-    return false;
+-  }
++  const nodes = Object.values(graph.nodes);
+ 
+   // get root project
+-  const rootProject = configs.find((p) => p.root === '.');
+-  if (!rootProject || !rootProject.targets) {
++  const rootProject = nodes.find((p) => p.data.root === '.');
++  if (!rootProject || !rootProject.data.targets) {
+     return false;
+   }
+-  // check if we're inferring lint target from `@nx/eslint/plugin`
+-  if (hasEslintPlugin(tree)) {
+-    for (const f of ESLINT_CONFIG_FILENAMES) {
+-      if (tree.exists(f)) {
+-        return true;
+-      }
++
++  for (const targetConfig of Object.values(rootProject.data.targets ?? {})) {
++    if (
++      ['@nx/eslint:lint', '@nrwl/linter:eslint', '@nx/linter:eslint'].includes(
++        targetConfig.executor
++      ) ||
++      (targetConfig.executor === 'nx:run-commands' &&
++        targetConfig.options?.command.startsWith('eslint '))
++    ) {
++      return true;
+     }
+   }
+-  // find if root project has lint target
+-  const lintTarget = findLintTarget(rootProject);
+-  return !!lintTarget;
++
++  return false;
+ }
+diff --git a/packages/plugin/src/generators/e2e-project/__snapshots__/e2e.spec.ts.snap b/packages/plugin/src/generators/e2e-project/__snapshots__/e2e.spec.ts.snap
+index eb654394a12..a560b0e5d99 100644
+--- a/packages/plugin/src/generators/e2e-project/__snapshots__/e2e.spec.ts.snap
++++ b/packages/plugin/src/generators/e2e-project/__snapshots__/e2e.spec.ts.snap
+@@ -2,7 +2,7 @@
+ 
+ exports[`NxPlugin e2e-project Generator should setup the eslint builder 1`] = `
+ "{
+-  "extends": ["../../.eslintrc.base.json"],
++  "extends": ["../../.eslintrc.json"],
+   "ignorePatterns": ["!**/*"],
+   "overrides": [
+     {
+diff --git a/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts b/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+index a2058bfe0d0..d2f7891941b 100644
+--- a/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
++++ b/packages/react/src/generators/cypress-component-configuration/cypress-component-configuration.spec.ts
+@@ -48,9 +48,14 @@ describe('React:CypressComponentTestConfiguration', () => {
+   });
+   beforeEach(() => {
+     tree = createTreeWithEmptyWorkspace();
++
++    projectGraph = {
++      nodes: {},
++      dependencies: {},
++    };
+   });
+ 
+-  afterEach(() => {
++  afterAll(() => {
+     jest.clearAllMocks();
+   });
+ 
+@@ -422,7 +427,7 @@ describe('React:CypressComponentTestConfiguration', () => {
+     ).toBeFalsy();
+   });
+ 
+-  it('should not throw error when an invalid --build-target is provided', async () => {
++  it('should throw error when an invalid --build-target is provided', async () => {
+     mockedAssertCypressVersion.mockReturnValue();
+     await applicationGenerator(tree, {
+       e2eTestRunner: 'none',
+@@ -446,6 +451,7 @@ describe('React:CypressComponentTestConfiguration', () => {
+     const appConfig = readProjectConfiguration(tree, 'my-app');
+     appConfig.targets['build'].executor = 'something/else';
+     updateProjectConfiguration(tree, 'my-app', appConfig);
++    jest.clearAllMocks();
+     projectGraph = {
+       nodes: {
+         'my-app': {
+@@ -465,13 +471,17 @@ describe('React:CypressComponentTestConfiguration', () => {
+       },
+       dependencies: {},
+     };
+-    await expect(async () => {
+-      await cypressComponentConfigGenerator(tree, {
++
++    await expect(
++      cypressComponentConfigGenerator(tree, {
+         project: 'some-lib',
+         generateTests: true,
+         buildTarget: 'my-app:build',
+-      });
+-    }).resolves;
++      })
++    ).rejects.toThrow();
++    expect(require('@nx/devkit').createProjectGraphAsync).toHaveBeenCalledTimes(
++      1
++    );
+   });
+ 
+   it('should setup cypress config files correctly', async () => {

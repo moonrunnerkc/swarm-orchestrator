@@ -1,0 +1,1594 @@
+diff --git a/packages/devkit/src/migrations/update-23-0-0/update-deep-imports.ts b/packages/devkit/src/migrations/update-23-0-0/update-deep-imports.ts
+index 5ee600d1f7c..397e72036dd 100644
+--- a/packages/devkit/src/migrations/update-23-0-0/update-deep-imports.ts
++++ b/packages/devkit/src/migrations/update-23-0-0/update-deep-imports.ts
+@@ -69,6 +69,8 @@ export const DEVKIT_INTERNAL_SYMBOLS: ReadonlySet<string> = new Set([
+   'capitalize',
+   'classify',
+   'dasherize',
++  'emitPluginWorkerLog',
++  'throwForUnsupportedVersion',
+ ]);
+ 
+ // Methods on `jest` and `vi` that take a module specifier as their first
+diff --git a/packages/playwright/src/executors/playwright/schema.json b/packages/playwright/src/executors/playwright/schema.json
+index 81fe50da7ac..2ed8e54c952 100644
+--- a/packages/playwright/src/executors/playwright/schema.json
++++ b/packages/playwright/src/executors/playwright/schema.json
+@@ -3,6 +3,7 @@
+   "version": 2,
+   "title": "Playwright executor",
+   "description": "Run Playwright tests.",
++  "x-deprecated": "The `@nx/playwright:playwright` executor is deprecated and will be removed in Nx v24. Run `nx g @nx/playwright:convert-to-inferred` to migrate to the `@nx/playwright/plugin` inferred targets. See https://nx.dev/docs/guides/tasks--caching/convert-to-inferred for details.",
+   "type": "object",
+   "properties": {
+     "browser": {
+diff --git a/packages/react/index.ts b/packages/react/index.ts
+index 085147abea4..e8f862ba90a 100644
+--- a/packages/react/index.ts
++++ b/packages/react/index.ts
+@@ -1,8 +1,3 @@
+-import { NxReactWebpackPlugin as _NxReactWebpackPlugin } from './plugins/nx-react-webpack-plugin/nx-react-webpack-plugin';
+-
+-/** @deprecated Use '@nx/react/webpack-plugin' instead, which can improve graph creation by 150-200ms per file. */
+-export const NxReactWebpackPlugin = _NxReactWebpackPlugin;
+-
+ export {
+   extraEslintDependencies,
+   extendReactEslintJson,
+diff --git a/packages/react/migrations.json b/packages/react/migrations.json
+index 22ccd481215..3bc91c3facb 100644
+--- a/packages/react/migrations.json
++++ b/packages/react/migrations.json
+@@ -35,6 +35,12 @@
+       "version": "22.0.0-beta.0",
+       "description": "Updates webpack configs using React to use the new withSvgr composable function instead of the svgr option in withReact or NxReactWebpackPlugin.",
+       "factory": "./src/migrations/update-22-0-0/add-svgr-to-webpack-config"
++    },
++    "update-23-0-0-remove-nx-react-webpack-plugin-import": {
++      "cli": "nx",
++      "version": "23.0.0-beta.10",
++      "description": "Rewrites imports of NxReactWebpackPlugin from '@nx/react' to the sub-path '@nx/react/webpack-plugin'.",
++      "factory": "./src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/react/src/generators/application/lib/bundlers/add-vite.ts b/packages/react/src/generators/application/lib/bundlers/add-vite.ts
+index 33d48e83518..4cf0206b5c0 100644
+--- a/packages/react/src/generators/application/lib/bundlers/add-vite.ts
++++ b/packages/react/src/generators/application/lib/bundlers/add-vite.ts
+@@ -58,7 +58,11 @@ export async function setupViteConfiguration(
+       includeLib: false,
+       includeVitest: options.unitTestRunner === 'vitest',
+       inSourceTests: options.inSourceTests,
+-      rollupOptionsExternal: ["'react'", "'react-dom'", "'react/jsx-runtime'"],
++      rolldownOptionsExternal: [
++        "'react'",
++        "'react-dom'",
++        "'react/jsx-runtime'",
++      ],
+       port: options.port,
+       previewPort: options.port,
+       useEsmExtension: true,
+@@ -98,7 +102,11 @@ export async function setupVitestConfiguration(
+       includeLib: false,
+       includeVitest: true,
+       inSourceTests: options.inSourceTests,
+-      rollupOptionsExternal: ["'react'", "'react-dom'", "'react/jsx-runtime'"],
++      rolldownOptionsExternal: [
++        "'react'",
++        "'react-dom'",
++        "'react/jsx-runtime'",
++      ],
+       imports: [
+         options.compiler === 'swc'
+           ? `import react from '@vitejs/plugin-react-swc'`
+diff --git a/packages/react/src/generators/library/__snapshots__/library.spec.ts.snap b/packages/react/src/generators/library/__snapshots__/library.spec.ts.snap
+index 9be955487b7..2c2129a2d3f 100644
+--- a/packages/react/src/generators/library/__snapshots__/library.spec.ts.snap
++++ b/packages/react/src/generators/library/__snapshots__/library.spec.ts.snap
+@@ -110,7 +110,7 @@ export default defineConfig(() => ({
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const],
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+       external: ['react', 'react-dom', 'react/jsx-runtime'],
+     },
+diff --git a/packages/react/src/generators/library/library.spec.ts b/packages/react/src/generators/library/library.spec.ts
+index 6d9e3796f95..240c84465f4 100644
+--- a/packages/react/src/generators/library/library.spec.ts
++++ b/packages/react/src/generators/library/library.spec.ts
+@@ -911,7 +911,7 @@ module.exports = withNx(
+               // Don't forget to update your package.json as well.
+               formats: ['es' as const]
+             },
+-            rollupOptions: {
++            rolldownOptions: {
+               // External packages that should not be bundled into your library.
+               external: ['react','react-dom','react/jsx-runtime']
+             },
+diff --git a/packages/react/src/generators/library/library.ts b/packages/react/src/generators/library/library.ts
+index 681772bec2e..d33c0c913ea 100644
+--- a/packages/react/src/generators/library/library.ts
++++ b/packages/react/src/generators/library/library.ts
+@@ -149,7 +149,7 @@ export async function libraryGeneratorInternal(host: Tree, schema: Schema) {
+         includeLib: true,
+         includeVitest: options.unitTestRunner === 'vitest',
+         inSourceTests: options.inSourceTests,
+-        rollupOptionsExternal: [
++        rolldownOptionsExternal: [
+           "'react'",
+           "'react-dom'",
+           "'react/jsx-runtime'",
+@@ -224,7 +224,7 @@ export async function libraryGeneratorInternal(host: Tree, schema: Schema) {
+         includeLib: true,
+         includeVitest: true,
+         inSourceTests: options.inSourceTests,
+-        rollupOptionsExternal: [
++        rolldownOptionsExternal: [
+           "'react'",
+           "'react-dom'",
+           "'react/jsx-runtime'",
+diff --git a/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.md b/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.md
+new file mode 100644
+index 00000000000..a5152f2c693
+--- /dev/null
++++ b/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.md
+@@ -0,0 +1,52 @@
++#### Rewrite `NxReactWebpackPlugin` Imports to the `@nx/react/webpack-plugin` Sub-path
++
++The deprecated re-export of `NxReactWebpackPlugin` from `@nx/react` is removed in v23. The migration rewrites both ES module imports and CJS `require()` calls to use the `@nx/react/webpack-plugin` sub-path. Imports that combine the deprecated symbol with other named imports are split into two declarations so the rest of the original import still resolves from `@nx/react`. Aliases (`as Plugin`, `: Plugin`) are preserved.
++
++#### Sample Code Changes
++
++ES module import.
++
++##### Before
++
++```ts title="apps/my-app/webpack.config.ts" {1}
++import { NxReactWebpackPlugin } from '@nx/react';
++
++export default { plugins: [new NxReactWebpackPlugin()] };
++```
++
++##### After
++
++```ts title="apps/my-app/webpack.config.ts"
++import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++
++export default { plugins: [new NxReactWebpackPlugin()] };
++```
++
++ES module import combined with other named imports.
++
++##### Before
++
++```ts title="apps/my-app/webpack.config.ts" {1}
++import { NxReactWebpackPlugin, withReact } from '@nx/react';
++```
++
++##### After
++
++```ts title="apps/my-app/webpack.config.ts"
++import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++import { withReact } from '@nx/react';
++```
++
++CJS `require()`.
++
++##### Before
++
++```js title="apps/my-app/webpack.config.js" {1}
++const { NxReactWebpackPlugin } = require('@nx/react');
++```
++
++##### After
++
++```js title="apps/my-app/webpack.config.js"
++const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
++```
+diff --git a/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.spec.ts b/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.spec.ts
+new file mode 100644
+index 00000000000..5e321f2db38
+--- /dev/null
++++ b/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.spec.ts
+@@ -0,0 +1,221 @@
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import removeNxReactWebpackPluginImport from './remove-nx-react-webpack-plugin-import';
++
++describe('remove-nx-react-webpack-plugin-import migration', () => {
++  it('rewrites single ES import to sub-path', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxReactWebpackPlugin } from '@nx/react';`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++      "
++    `);
++  });
++
++  it('moves only the deprecated symbol when import has multiple specifiers', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxReactWebpackPlugin, withReact } from '@nx/react';`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++      import { withReact } from '@nx/react';
++      "
++    `);
++  });
++
++  it('moves only the deprecated symbol when it is last in a multi-specifier import', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { withReact, NxReactWebpackPlugin } from '@nx/react';`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++      import { withReact } from '@nx/react';
++      "
++    `);
++  });
++
++  it('rewrites single require() to sub-path', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxReactWebpackPlugin } = require('@nx/react');`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
++      "
++    `);
++  });
++
++  it('moves only the deprecated symbol when require() has multiple bindings', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxReactWebpackPlugin, withReact } = require('@nx/react');`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
++      const { withReact } = require('@nx/react');
++      "
++    `);
++  });
++
++  it('does not touch files with no usage of the deprecated symbol', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    const original = `const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
++module.exports = { plugins: [new NxAppWebpackPlugin()] };
++`;
++    tree.write('apps/my-app/webpack.config.js', original);
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8')).toEqual(
++      original
++    );
++  });
++
++  it('is idempotent - running twice yields the same result', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxReactWebpackPlugin } = require('@nx/react');`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++    const afterFirst = tree.read('apps/my-app/webpack.config.js', 'utf-8');
++
++    await removeNxReactWebpackPluginImport(tree);
++    const afterSecond = tree.read('apps/my-app/webpack.config.js', 'utf-8');
++
++    expect(afterFirst).toEqual(afterSecond);
++  });
++
++  it('preserves alias when ES import has multiple specifiers', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxReactWebpackPlugin as Plugin, withReact } from '@nx/react';`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxReactWebpackPlugin as Plugin } from '@nx/react/webpack-plugin';
++      import { withReact } from '@nx/react';
++      "
++    `);
++  });
++
++  it('preserves alias when require() has multiple bindings', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxReactWebpackPlugin: Plugin, withReact } = require('@nx/react');`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const { NxReactWebpackPlugin: Plugin } = require('@nx/react/webpack-plugin');
++      const { withReact } = require('@nx/react');
++      "
++    `);
++  });
++
++  it('rewrites multiple matching imports/requires in the same file', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `import { NxReactWebpackPlugin } from '@nx/react';
++const { NxReactWebpackPlugin: P2 } = require('@nx/react');
++import { NxReactWebpackPlugin as P3, withReact } from '@nx/react';
++`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxReactWebpackPlugin as P3 } from '@nx/react/webpack-plugin';
++      import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++      const { NxReactWebpackPlugin: P2 } = require('@nx/react/webpack-plugin');
++      import { withReact } from '@nx/react';
++      "
++    `);
++  });
++
++  it('consumes whitespace before the trailing comma in ES imports', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxReactWebpackPlugin , withReact } from '@nx/react';`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxReactWebpackPlugin } from '@nx/react/webpack-plugin';
++      import { withReact } from '@nx/react';
++      "
++    `);
++  });
++
++  it('consumes whitespace before the trailing comma in CJS requires', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxReactWebpackPlugin , withReact } = require('@nx/react');`
++    );
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
++      const { withReact } = require('@nx/react');
++      "
++    `);
++  });
++
++  it('does not modify files already using the correct sub-path import', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    const original = `const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
++module.exports = { plugins: [new NxReactWebpackPlugin()] };
++`;
++    tree.write('apps/my-app/webpack.config.js', original);
++
++    await removeNxReactWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8')).toEqual(
++      original
++    );
++  });
++});
+diff --git a/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.ts b/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.ts
+new file mode 100644
+index 00000000000..f1ced399d7e
+--- /dev/null
++++ b/packages/react/src/migrations/update-23-0-0/remove-nx-react-webpack-plugin-import.ts
+@@ -0,0 +1,150 @@
++import { formatFiles, Tree, visitNotIgnoredFiles } from '@nx/devkit';
++import { ast, query } from '@phenomnomnominal/tsquery';
++
++const DEPRECATED_SYMBOL = 'NxReactWebpackPlugin';
++const DEPRECATED_PACKAGE = '@nx/react';
++const NEW_PACKAGE = '@nx/react/webpack-plugin';
++
++// ES module import: import { NxReactWebpackPlugin[, ...] } from '@nx/react'
++const ES_IMPORT_SELECTOR = `ImportDeclaration:has(StringLiteral[value=${DEPRECATED_PACKAGE}]):has(ImportClause ImportSpecifier > Identifier[name=${DEPRECATED_SYMBOL}])`;
++const IMPORT_SPECIFIERS_SELECTOR = `ImportClause ImportSpecifier`;
++const TARGET_IMPORT_SPECIFIER_SELECTOR = `ImportClause ImportSpecifier > Identifier[name=${DEPRECATED_SYMBOL}]`;
++const ES_MODULE_PATH_SELECTOR = `StringLiteral[value=${DEPRECATED_PACKAGE}]`;
++
++// CJS require: const { NxReactWebpackPlugin[, ...] } = require('@nx/react')
++const CJS_REQUIRE_STMT_SELECTOR = `VariableStatement:has(ObjectBindingPattern > BindingElement > Identifier[name=${DEPRECATED_SYMBOL}]):has(CallExpression:has(Identifier[name=require]) > StringLiteral[value=${DEPRECATED_PACKAGE}])`;
++const CJS_BINDING_ELEMENTS_SELECTOR = `ObjectBindingPattern > BindingElement`;
++const CJS_TARGET_BINDING_SELECTOR = `ObjectBindingPattern > BindingElement > Identifier[name=${DEPRECATED_SYMBOL}]`;
++const CJS_REQUIRE_PATH_SELECTOR = `CallExpression:has(Identifier[name=require]) > StringLiteral[value=${DEPRECATED_PACKAGE}]`;
++
++// Walk past whitespace from `fromIndex` to find a trailing comma. Returns the
++// position AFTER the comma if found, otherwise the original index. Handles
++// the `Foo , withReact` shape where the user wrote whitespace before the
++// comma — `node.getEnd()` stops at the identifier and the comma sits one
++// character past the whitespace.
++function endAfterTrailingComma(text: string, fromIndex: number): number {
++  let i = fromIndex;
++  while (i < text.length && /\s/.test(text.charAt(i))) i++;
++  return text.charAt(i) === ',' ? i + 1 : fromIndex;
++}
++
++export default async function removeNxReactWebpackPluginImport(tree: Tree) {
++  visitNotIgnoredFiles(tree, '', (filePath) => {
++    if (
++      !filePath.endsWith('.ts') &&
++      !filePath.endsWith('.tsx') &&
++      !filePath.endsWith('.js') &&
++      !filePath.endsWith('.jsx') &&
++      !filePath.endsWith('.cjs') &&
++      !filePath.endsWith('.mjs')
++    ) {
++      return;
++    }
++
++    let contents = tree.read(filePath, 'utf-8');
++    if (!contents) return;
++
++    // Quick check: must contain the deprecated symbol and the deprecated package path
++    if (
++      !contents.includes(DEPRECATED_SYMBOL) ||
++      (!contents.includes(`'${DEPRECATED_PACKAGE}'`) &&
++        !contents.includes(`"${DEPRECATED_PACKAGE}"`))
++    ) {
++      return;
++    }
++
++    let changed = false;
++
++    // Re-parse on every iteration so multiple matches in the same file work
++    // correctly. The multi-specifier branch prepends a new declaration which
++    // shifts every offset; collected AST positions go stale after one rewrite,
++    // so process one match at a time.
++    let didRewrite = true;
++    while (didRewrite) {
++      didRewrite = false;
++      const sourceFile = ast(contents);
++
++      const importNode = query(sourceFile, ES_IMPORT_SELECTOR)[0];
++      if (importNode) {
++        const specifiers = query(importNode, IMPORT_SPECIFIERS_SELECTOR);
++        const targetIdentifier = query(
++          importNode,
++          TARGET_IMPORT_SPECIFIER_SELECTOR
++        )[0];
++        if (targetIdentifier) {
++          // Walk to the ImportSpecifier to cover `Foo` and `Foo as Bar`.
++          const targetSpec = targetIdentifier.parent;
++          if (specifiers.length === 1) {
++            const modulePathNode = query(
++              importNode,
++              ES_MODULE_PATH_SELECTOR
++            )[0];
++            if (modulePathNode) {
++              contents =
++                contents.slice(0, modulePathNode.getStart()) +
++                `'${NEW_PACKAGE}'` +
++                contents.slice(modulePathNode.getEnd());
++              changed = true;
++              didRewrite = true;
++              continue;
++            }
++          } else {
++            // Extract target spec verbatim (preserves alias)
++            const end = endAfterTrailingComma(contents, targetSpec.getEnd());
++            contents =
++              `import { ${targetSpec.getText()} } from '${NEW_PACKAGE}';\n` +
++              contents.slice(0, targetSpec.getStart()) +
++              contents.slice(end);
++            changed = true;
++            didRewrite = true;
++            continue;
++          }
++        }
++      }
++
++      const stmtNode = query(sourceFile, CJS_REQUIRE_STMT_SELECTOR)[0];
++      if (stmtNode) {
++        const bindingElements = query(stmtNode, CJS_BINDING_ELEMENTS_SELECTOR);
++        const targetIdentifier = query(
++          stmtNode,
++          CJS_TARGET_BINDING_SELECTOR
++        )[0];
++        if (targetIdentifier) {
++          // Walk to the BindingElement to cover `Foo` and `Foo: Bar`.
++          const targetBinding = targetIdentifier.parent;
++          if (bindingElements.length === 1) {
++            const requirePathNode = query(
++              stmtNode,
++              CJS_REQUIRE_PATH_SELECTOR
++            )[0];
++            if (requirePathNode) {
++              contents =
++                contents.slice(0, requirePathNode.getStart()) +
++                `'${NEW_PACKAGE}'` +
++                contents.slice(requirePathNode.getEnd());
++              changed = true;
++              didRewrite = true;
++              continue;
++            }
++          } else {
++            // Extract target binding verbatim (preserves alias)
++            const end = endAfterTrailingComma(contents, targetBinding.getEnd());
++            contents =
++              `const { ${targetBinding.getText()} } = require('${NEW_PACKAGE}');\n` +
++              contents.slice(0, targetBinding.getStart()) +
++              contents.slice(end);
++            changed = true;
++            didRewrite = true;
++            continue;
++          }
++        }
++      }
++    }
++
++    if (changed) {
++      tree.write(filePath, contents);
++    }
++  });
++
++  await formatFiles(tree);
++}
+diff --git a/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.spec.ts b/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.spec.ts
+index 4ff9851e388..e611889f0a5 100644
+--- a/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.spec.ts
++++ b/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.spec.ts
+@@ -1,6 +1,8 @@
+ import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+ import {
+   Tree,
++  readJson,
++  updateJson,
+   readProjectConfiguration,
+   readNxJson,
+   updateNxJson,
+@@ -587,4 +589,46 @@ module.exports = withNx({
+       `);
+     });
+   });
++
++  it('should remove rollup-plugin-typescript2 from devDependencies when a legacy config was stripped', async () => {
++    addProjectConfiguration(tree, 'lib1', {
++      root: 'libs/lib1',
++      targets: {
++        build: {
++          executor: '@nx/rollup:rollup',
++          options: { useLegacyTypescriptPlugin: true },
++        },
++      },
++    });
++    updateJson(tree, 'package.json', (json) => {
++      json.devDependencies = {
++        ...json.devDependencies,
++        'rollup-plugin-typescript2': '^0.36.0',
++      };
++      return json;
++    });
++
++    await migration(tree);
++
++    const pkg = readJson(tree, 'package.json');
++    expect(pkg.devDependencies?.['rollup-plugin-typescript2']).toBeUndefined();
++  });
++
++  it('should preserve rollup-plugin-typescript2 when no legacy config was found', async () => {
++    // User may depend on rollup-plugin-typescript2 for their own custom rollup
++    // setup unrelated to @nx/rollup. Don't strip it unless we actually migrated
++    // a useLegacyTypescriptPlugin reference.
++    updateJson(tree, 'package.json', (json) => {
++      json.devDependencies = {
++        ...json.devDependencies,
++        'rollup-plugin-typescript2': '^0.36.0',
++      };
++      return json;
++    });
++
++    await migration(tree);
++
++    const pkg = readJson(tree, 'package.json');
++    expect(pkg.devDependencies?.['rollup-plugin-typescript2']).toBe('^0.36.0');
++  });
+ });
+diff --git a/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.ts b/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.ts
+index ab0b9bf8db6..381598f44a7 100644
+--- a/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.ts
++++ b/packages/rollup/src/migrations/update-23-0-0/remove-use-legacy-typescript-plugin.ts
+@@ -3,6 +3,7 @@ import {
+   getProjects,
+   readNxJson,
+   readProjectConfiguration,
++  removeDependenciesFromPackageJson,
+   Tree,
+   updateNxJson,
+   updateProjectConfiguration,
+@@ -26,6 +27,11 @@ const PROPERTY_NAME = 'useLegacyTypescriptPlugin';
+ export default async function (tree: Tree) {
+   const projects = getProjects(tree);
+ 
++  // Track whether the migration actually stripped any legacy config so we
++  // only strip the orphan devDep when it was needed (a user could have
++  // installed `rollup-plugin-typescript2` for their own custom rollup setup).
++  let anyChange = false;
++
+   for (const [projectName] of projects) {
+     const projectConfig = readProjectConfiguration(tree, projectName);
+ 
+@@ -63,12 +69,15 @@ export default async function (tree: Tree) {
+ 
+     if (projectJsonChanged) {
+       updateProjectConfiguration(tree, projectName, projectConfig);
++      anyChange = true;
+     }
+ 
+     visitNotIgnoredFiles(tree, projectConfig.root, (filePath) => {
+       const basename = filePath.split('/').pop();
+       if (!ROLLUP_CONFIG_NAMES.includes(basename)) return;
+-      stripFromRollupConfig(tree, filePath);
++      if (stripFromRollupConfig(tree, filePath)) {
++        anyChange = true;
++      }
+     });
+   }
+ 
+@@ -108,15 +117,22 @@ export default async function (tree: Tree) {
+ 
+     if (nxJsonChanged) {
+       updateNxJson(tree, nxJson);
++      anyChange = true;
+     }
+   }
+ 
++  // Only strip the orphan devDep when we actually stripped a legacy config.
++  // Skipping otherwise preserves a user's own dep on rollup-plugin-typescript2.
++  if (anyChange) {
++    removeDependenciesFromPackageJson(tree, [], ['rollup-plugin-typescript2']);
++  }
++
+   await formatFiles(tree);
+ }
+ 
+-function stripFromRollupConfig(tree: Tree, filePath: string) {
++function stripFromRollupConfig(tree: Tree, filePath: string): boolean {
+   const original = tree.read(filePath, 'utf-8');
+-  if (!original?.includes(PROPERTY_NAME)) return;
++  if (!original?.includes(PROPERTY_NAME)) return false;
+ 
+   // Filter by the property NAME (not any descendant Identifier) so we don't
+   // strip `{ alias: useLegacyTypescriptPlugin }` where the identifier appears as a value.
+@@ -128,7 +144,7 @@ function stripFromRollupConfig(tree: Tree, filePath: string) {
+       | ShorthandPropertyAssignment
+     )[]
+   ).filter((p) => p.name && (p.name as any).text === PROPERTY_NAME);
+-  if (matches.length === 0) return;
++  if (matches.length === 0) return false;
+ 
+   // Walk in reverse so each splice doesn't shift the offsets of remaining matches
+   // (a file may legitimately contain multiple withNx({...}) calls, e.g. multi-format
+@@ -155,4 +171,5 @@ function stripFromRollupConfig(tree: Tree, filePath: string) {
+   }
+ 
+   tree.write(filePath, updated);
++  return true;
+ }
+diff --git a/packages/vite/src/generators/configuration/__snapshots__/configuration.spec.ts.snap b/packages/vite/src/generators/configuration/__snapshots__/configuration.spec.ts.snap
+index 810e3047d46..ee7eb8d3a21 100644
+--- a/packages/vite/src/generators/configuration/__snapshots__/configuration.spec.ts.snap
++++ b/packages/vite/src/generators/configuration/__snapshots__/configuration.spec.ts.snap
+@@ -42,7 +42,7 @@ export default defineConfig(() => ({
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const],
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+       external: [],
+     },
+@@ -220,7 +220,7 @@ export default defineConfig(() => ({
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const],
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+       external: ['react', 'react-dom', 'react/jsx-runtime'],
+     },
+@@ -273,7 +273,7 @@ export default defineConfig(() => ({
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const],
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+       external: ['react', 'react-dom', 'react/jsx-runtime'],
+     },
+@@ -338,7 +338,7 @@ export default defineConfig(() => ({
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const],
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+       external: ['react', 'react-dom', 'react/jsx-runtime'],
+     },
+diff --git a/packages/vite/src/generators/configuration/configuration.ts b/packages/vite/src/generators/configuration/configuration.ts
+index 1cbb607a003..a7ce17a0914 100644
+--- a/packages/vite/src/generators/configuration/configuration.ts
++++ b/packages/vite/src/generators/configuration/configuration.ts
+@@ -153,7 +153,7 @@ export async function viteConfigurationGeneratorInternal(
+           includeLib: schema.includeLib,
+           includeVitest: schema.includeVitest,
+           inSourceTests: schema.inSourceTests,
+-          rollupOptionsExternal: [
++          rolldownOptionsExternal: [
+             "'react'",
+             "'react-dom'",
+             "'react/jsx-runtime'",
+diff --git a/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.spec.ts b/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.spec.ts
+index d07f3ed2883..060856328ed 100644
+--- a/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.spec.ts
++++ b/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.spec.ts
+@@ -168,6 +168,38 @@ export default defineConfig({
+     `);
+   });
+ 
++  it('should rename quoted-key form (single quotes)', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'vite.config.ts',
++      `import { defineConfig } from 'vite';
++
++export default defineConfig({
++  build: {
++    'rollupOptions': {
++      external: ['react'],
++    },
++  },
++});
++`
++    );
++
++    await renameRollupOptionsToRolldownOptions(tree);
++
++    expect(tree.read('vite.config.ts', 'utf-8')).toMatchInlineSnapshot(`
++      "import { defineConfig } from 'vite';
++
++      export default defineConfig({
++        build: {
++          rolldownOptions: {
++            external: ['react'],
++          },
++        },
++      });
++      "
++    `);
++  });
++
+   it('should be idempotent', async () => {
+     const tree = createTreeWithEmptyWorkspace();
+     tree.write(
+diff --git a/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.ts b/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.ts
+index fd568dcb782..64165716467 100644
+--- a/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.ts
++++ b/packages/vite/src/migrations/update-23-0-0/rename-rollup-options-to-rolldown-options.ts
+@@ -1,10 +1,12 @@
+ import { formatFiles, visitNotIgnoredFiles, type Tree } from '@nx/devkit';
+ import { ast, query } from '@phenomnomnominal/tsquery';
+-import type { Identifier } from 'typescript';
++import type { Identifier, StringLiteral } from 'typescript';
+ import picomatch = require('picomatch');
+ 
+-const ROLLUP_OPTIONS_IDENTIFIER_SELECTOR =
+-  'PropertyAssignment > Identifier[name=rollupOptions]';
++// Matches both bare-key form (rollupOptions: ...) and quoted-key form
++// ('rollupOptions': ...) so configs written with JSON-style quoting are caught.
++const ROLLUP_OPTIONS_SELECTOR =
++  'PropertyAssignment > :matches(Identifier[name=rollupOptions], StringLiteral[value=rollupOptions])';
+ 
+ const VITE_CONFIG_GLOB = '**/vite.*config*.{js,ts,mjs,mts,cjs,cts}';
+ 
+@@ -17,28 +19,37 @@ export default async function renameRollupOptionsToRolldownOptions(tree: Tree) {
+     }
+ 
+     const contents = tree.read(filePath, 'utf-8');
++    if (!contents) return;
+     if (!contents.includes('rollupOptions')) {
+       return;
+     }
+ 
+     const sourceFile = ast(contents);
+-    const identifiers = query<Identifier>(
++    // Extra .text filter guards against the outer-PropertyAssignment descendant
++    // trap: ensures the matched node's own name is `rollupOptions`, not a
++    // nested node that merely contains an identifier with that name.
++    const nodes = query<Identifier | StringLiteral>(
+       sourceFile,
+-      ROLLUP_OPTIONS_IDENTIFIER_SELECTOR
+-    );
++      ROLLUP_OPTIONS_SELECTOR
++    ).filter((node) => (node as any).text === 'rollupOptions');
+ 
+-    if (identifiers.length === 0) {
++    if (nodes.length === 0) {
+       return;
+     }
+ 
+     // Replace from end-to-start so positions stay valid as we mutate.
+     let updated = contents;
+-    for (let i = identifiers.length - 1; i >= 0; i--) {
+-      const node = identifiers[i];
+-      updated =
+-        updated.slice(0, node.getStart()) +
+-        'rolldownOptions' +
+-        updated.slice(node.getEnd());
++    for (let i = nodes.length - 1; i >= 0; i--) {
++      const node = nodes[i];
++      const start = node.getStart();
++      const end = node.getEnd();
++      // Preserve quote style for StringLiteral keys ('rollupOptions' or "rollupOptions").
++      const quoteChar = updated[start];
++      const replacement =
++        quoteChar === "'" || quoteChar === '"'
++          ? `${quoteChar}rolldownOptions${quoteChar}`
++          : 'rolldownOptions';
++      updated = updated.slice(0, start) + replacement + updated.slice(end);
+     }
+ 
+     tree.write(filePath, updated);
+diff --git a/packages/vite/src/utils/__snapshots__/vite-config-edit-utils.spec.ts.snap b/packages/vite/src/utils/__snapshots__/vite-config-edit-utils.spec.ts.snap
+index 7a66ef1d142..b2c9c431717 100644
+--- a/packages/vite/src/utils/__snapshots__/vite-config-edit-utils.spec.ts.snap
++++ b/packages/vite/src/utils/__snapshots__/vite-config-edit-utils.spec.ts.snap
+@@ -16,7 +16,7 @@ exports[`ensureViteConfigIsCorrect should add build options if it is using condi
+     ...{
+         my: 'option',
+     },
+-    ..."\\n    // Configuration for building your library.\\n    // See: https://vite.dev/guide/build.html#library-mode\\n    build: {\\n      lib: {\\n        // Could also be a dictionary or array of multiple entry points.\\n        entry: 'src/index.ts',\\n        name: 'my-app',\\n        fileName: 'index',\\n        // Change this to the formats you want to support.\\n        // Don't forget to update your package.json as well.\\n        formats: ['es']\\n      },\\n      rollupOptions: {\\n        // External packages that should not be bundled into your library.\\n        external: ['react', 'react-dom', 'react/jsx-runtime']\\n      }\\n    },"
++    ..."\\n    // Configuration for building your library.\\n    // See: https://vite.dev/guide/build.html#library-mode\\n    build: {\\n      lib: {\\n        // Could also be a dictionary or array of multiple entry points.\\n        entry: 'src/index.ts',\\n        name: 'my-app',\\n        fileName: 'index',\\n        // Change this to the formats you want to support.\\n        // Don't forget to update your package.json as well.\\n        formats: ['es']\\n      },\\n      rolldownOptions: {\\n        // External packages that should not be bundled into your library.\\n        external: ['react', 'react-dom', 'react/jsx-runtime']\\n      }\\n    },"
+ };
+       }
+     })
+diff --git a/packages/vite/src/utils/generator-utils.spec.ts b/packages/vite/src/utils/generator-utils.spec.ts
+index 6027cf02651..ac6533f4921 100644
+--- a/packages/vite/src/utils/generator-utils.spec.ts
++++ b/packages/vite/src/utils/generator-utils.spec.ts
+@@ -172,7 +172,7 @@ describe('generator utils', () => {
+               // Don't forget to update your package.json as well.
+               formats: ['es' as const]
+             },
+-            rollupOptions: {
++            rolldownOptions: {
+               // External packages that should not be bundled into your library.
+               external: []
+             },
+@@ -316,7 +316,7 @@ describe('generator utils', () => {
+               // Don't forget to update your package.json as well.
+               formats: ['es' as const]
+             },
+-            rollupOptions: {
++            rolldownOptions: {
+               // External packages that should not be bundled into your library.
+               external: []
+             },
+diff --git a/packages/vite/src/utils/generator-utils.ts b/packages/vite/src/utils/generator-utils.ts
+index 7b375959ce5..3033c85f87a 100644
+--- a/packages/vite/src/utils/generator-utils.ts
++++ b/packages/vite/src/utils/generator-utils.ts
+@@ -325,7 +325,7 @@ export interface ViteConfigFileOptions {
+   includeVitest?: boolean;
+   inSourceTests?: boolean;
+   testEnvironment?: 'node' | 'jsdom' | 'happy-dom' | 'edge-runtime' | string;
+-  rollupOptionsExternal?: string[];
++  rolldownOptionsExternal?: string[];
+   imports?: string[];
+   plugins?: string[];
+   coverageProvider?: 'v8' | 'istanbul' | 'custom';
+@@ -377,9 +377,9 @@ export function createOrEditViteConfig(
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const]
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+-      external: [${options.rollupOptionsExternal ?? ''}]
++      external: [${options.rolldownOptionsExternal ?? ''}]
+     },
+   },`
+       : `  build: {
+@@ -704,8 +704,8 @@ function handleViteConfigFileExists(
+           fileName: 'index',
+           formats: ['es'],
+         },
+-        rollupOptions: {
+-          external: options.rollupOptionsExternal ?? [],
++        rolldownOptions: {
++          external: options.rolldownOptionsExternal ?? [],
+         },
+         outDir: buildOutDir,
+         reportCompressedSize: true,
+diff --git a/packages/vite/src/utils/test-files/test-vite-configs.ts b/packages/vite/src/utils/test-files/test-vite-configs.ts
+index 1ab0285d0c8..54319a632b5 100644
+--- a/packages/vite/src/utils/test-files/test-vite-configs.ts
++++ b/packages/vite/src/utils/test-files/test-vite-configs.ts
+@@ -161,7 +161,7 @@ export const hasEverything = `
+           // Don't forget to update your package.json as well.
+           formats: ['es'],
+         },
+-        rollupOptions: {
++        rolldownOptions: {
+           // External packages that should not be bundled into your library.
+           external: ['react', 'react-dom', 'react/jsx-runtime'],
+         },
+@@ -188,7 +188,7 @@ export const buildOption = `
+         // Don't forget to update your package.json as well.
+         formats: ['es']
+       },
+-      rollupOptions: {
++      rolldownOptions: {
+         // External packages that should not be bundled into your library.
+         external: ['react', 'react-dom', 'react/jsx-runtime']
+       }
+@@ -200,7 +200,7 @@ export const buildOptionObject = {
+     fileName: 'index',
+     formats: ['es'],
+   },
+-  rollupOptions: {
++  rolldownOptions: {
+     external: ['react', 'react-dom', 'react/jsx-runtime'],
+   },
+ };
+diff --git a/packages/vite/src/utils/vite-config-edit-utils.spec.ts b/packages/vite/src/utils/vite-config-edit-utils.spec.ts
+index eda4a84f092..11f9b1d8cc5 100644
+--- a/packages/vite/src/utils/vite-config-edit-utils.spec.ts
++++ b/packages/vite/src/utils/vite-config-edit-utils.spec.ts
+@@ -66,7 +66,7 @@ describe('ensureViteConfigIsCorrect', () => {
+                   // Don't forget to update your package.json as well.
+                   formats: ['es']
+               },
+-              rollupOptions: {
++              rolldownOptions: {
+                   // External packages that should not be bundled into your library.
+                   external: ['react', 'react-dom', 'react/jsx-runtime']
+               }
+@@ -124,7 +124,7 @@ describe('ensureViteConfigIsCorrect', () => {
+                   'fileName': "index",
+                   'formats': ['es' as const],
+               },
+-              'rollupOptions': { "external": ["react", "react-dom", "react/jsx-runtime"] },
++              'rolldownOptions': { "external": ["react", "react-dom", "react/jsx-runtime"] },
+           }
+       });"
+     `);
+@@ -173,7 +173,7 @@ describe('ensureViteConfigIsCorrect', () => {
+               // Don't forget to update your package.json as well.
+               formats: ['es']
+             },
+-            rollupOptions: {
++            rolldownOptions: {
+               // External packages that should not be bundled into your library.
+               external: ['react', 'react-dom', 'react/jsx-runtime']
+             }
+@@ -250,7 +250,7 @@ describe('ensureViteConfigIsCorrect', () => {
+                   // Don't forget to update your package.json as well.
+                   formats: ['es']
+               },
+-              rollupOptions: {
++              rolldownOptions: {
+                   // External packages that should not be bundled into your library.
+                   external: ['react', 'react-dom', 'react/jsx-runtime']
+               }
+@@ -319,7 +319,7 @@ describe('ensureViteConfigIsCorrect', () => {
+                   // Don't forget to update your package.json as well.
+                   formats: ['es'],
+               },
+-              rollupOptions: {
++              rolldownOptions: {
+                   // External packages that should not be bundled into your library.
+                   external: ['react', 'react-dom', 'react/jsx-runtime'],
+               },
+@@ -367,7 +367,7 @@ describe('ensureViteConfigIsCorrect', () => {
+                   // Don't forget to update your package.json as well.
+                   formats: ['es']
+               },
+-              rollupOptions: {
++              rolldownOptions: {
+                   // External packages that should not be bundled into your library.
+                   external: ['react', 'react-dom', 'react/jsx-runtime']
+               }
+@@ -419,7 +419,7 @@ describe('ensureViteConfigIsCorrect', () => {
+                   'fileName': "index",
+                   'formats': ['es' as const],
+               },
+-              'rollupOptions': { "external": ["react", "react-dom", "react/jsx-runtime"] },
++              'rolldownOptions': { "external": ["react", "react-dom", "react/jsx-runtime"] },
+           }
+       });"
+     `);
+diff --git a/packages/vitest/src/generators/configuration/configuration.ts b/packages/vitest/src/generators/configuration/configuration.ts
+index 6918f88757a..8574a003ff1 100644
+--- a/packages/vitest/src/generators/configuration/configuration.ts
++++ b/packages/vitest/src/generators/configuration/configuration.ts
+@@ -199,7 +199,7 @@ getTestBed().initTestEnvironment(
+           includeLib: getProjectType(tree, root, projectType) === 'library',
+           includeVitest: true,
+           inSourceTests: schema.inSourceTests,
+-          rollupOptionsExternal: [
++          rolldownOptionsExternal: [
+             "'react'",
+             "'react-dom'",
+             "'react/jsx-runtime'",
+diff --git a/packages/vitest/src/utils/generator-utils.ts b/packages/vitest/src/utils/generator-utils.ts
+index b0032022747..a6d8189359a 100644
+--- a/packages/vitest/src/utils/generator-utils.ts
++++ b/packages/vitest/src/utils/generator-utils.ts
+@@ -85,7 +85,7 @@ export interface ViteConfigFileOptions {
+   includeVitest?: boolean;
+   inSourceTests?: boolean;
+   testEnvironment?: 'node' | 'jsdom' | 'happy-dom' | 'edge-runtime' | string;
+-  rollupOptionsExternal?: string[];
++  rolldownOptionsExternal?: string[];
+   imports?: string[];
+   plugins?: string[];
+   coverageProvider?: 'v8' | 'istanbul' | 'custom';
+@@ -140,9 +140,9 @@ export function createOrEditViteConfig(
+       // Don't forget to update your package.json as well.
+       formats: ['es' as const]
+     },
+-    rollupOptions: {
++    rolldownOptions: {
+       // External packages that should not be bundled into your library.
+-      external: [${options.rollupOptionsExternal ?? ''}]
++      external: [${options.rolldownOptionsExternal ?? ''}]
+     },
+   },`
+       : `  build: {
+@@ -351,8 +351,8 @@ function handleViteConfigFileExists(
+           fileName: 'index',
+           formats: ['es'],
+         },
+-        rollupOptions: {
+-          external: options.rollupOptionsExternal ?? [],
++        rolldownOptions: {
++          external: options.rolldownOptionsExternal ?? [],
+         },
+         outDir: buildOutDir,
+         reportCompressedSize: true,
+diff --git a/packages/webpack/index.ts b/packages/webpack/index.ts
+index 91adaed512c..2af7ffa71cd 100644
+--- a/packages/webpack/index.ts
++++ b/packages/webpack/index.ts
+@@ -1,6 +1,5 @@
+ import { configurationGenerator } from './src/generators/configuration/configuration';
+ import { NxAppWebpackPlugin } from './src/plugins/nx-webpack-plugin/nx-app-webpack-plugin';
+-import { NxTsconfigPathsWebpackPlugin as _NxTsconfigPathsWebpackPlugin } from './src/plugins/nx-typescript-webpack-plugin/nx-tsconfig-paths-webpack-plugin';
+ import { useLegacyNxPlugin } from './src/plugins/use-legacy-nx-plugin/use-legacy-nx-plugin';
+ 
+ // Lazy-loaded to avoid requiring typescript before it's installed.
+@@ -25,8 +24,6 @@ export const webpackProjectGenerator = configurationGenerator;
+ 
+ /** @deprecated Use NxAppWebpackPlugin from `@nx/webpack/app-plugin` instead, which can improve graph creation by 150-200ms per file. */
+ export const NxWebpackPlugin = NxAppWebpackPlugin;
+-/** @deprecated Use NxTsconfigPathsWebpackPlugin from `@nx/webpack/tsconfig-paths-plugin` instead. */
+-export const NxTsconfigPathsWebpackPlugin = _NxTsconfigPathsWebpackPlugin;
+ 
+ export * from './src/utils/create-copy-plugin';
+ export * from './src/utils/config';
+diff --git a/packages/webpack/migrations.json b/packages/webpack/migrations.json
+index 97608712f2a..b4a20a2433c 100644
+--- a/packages/webpack/migrations.json
++++ b/packages/webpack/migrations.json
+@@ -11,6 +11,12 @@
+       "version": "22.0.0-beta.0",
+       "description": "Remove deprecated deleteOutputPath and sassImplementation options from @nx/webpack:webpack",
+       "implementation": "./src/migrations/update-22-0-0/remove-deprecated-options"
++    },
++    "update-23-0-0-remove-nx-tsconfig-paths-webpack-plugin-import": {
++      "cli": "nx",
++      "version": "23.0.0-beta.10",
++      "description": "Rewrites imports of NxTsconfigPathsWebpackPlugin from '@nx/webpack' to the sub-path '@nx/webpack/tsconfig-paths-plugin'.",
++      "factory": "./src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.md b/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.md
+new file mode 100644
+index 00000000000..b6bb56cae99
+--- /dev/null
++++ b/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.md
+@@ -0,0 +1,54 @@
++#### Rewrite `NxTsconfigPathsWebpackPlugin` Imports to the `@nx/webpack/tsconfig-paths-plugin` Sub-path
++
++The deprecated re-export of `NxTsconfigPathsWebpackPlugin` from `@nx/webpack` is removed in v23. The migration rewrites both ES module imports and CJS `require()` calls to use the `@nx/webpack/tsconfig-paths-plugin` sub-path. Imports that combine the deprecated symbol with other named imports are split into two declarations so the rest of the original import still resolves from `@nx/webpack`. Aliases (`as Plugin`, `: Plugin`) are preserved.
++
++#### Sample Code Changes
++
++ES module import.
++
++##### Before
++
++```ts title="apps/my-app/webpack.config.ts" {1}
++import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack';
++
++export default { plugins: [new NxTsconfigPathsWebpackPlugin()] };
++```
++
++##### After
++
++```ts title="apps/my-app/webpack.config.ts"
++import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++
++export default { plugins: [new NxTsconfigPathsWebpackPlugin()] };
++```
++
++ES module import combined with other named imports.
++
++##### Before
++
++```ts title="apps/my-app/webpack.config.ts" {1}
++import { NxTsconfigPathsWebpackPlugin, NxAppWebpackPlugin } from '@nx/webpack';
++```
++
++##### After
++
++```ts title="apps/my-app/webpack.config.ts"
++import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++import { NxAppWebpackPlugin } from '@nx/webpack';
++```
++
++CJS `require()`.
++
++##### Before
++
++```js title="apps/my-app/webpack.config.js" {1}
++const { NxTsconfigPathsWebpackPlugin } = require('@nx/webpack');
++```
++
++##### After
++
++```js title="apps/my-app/webpack.config.js"
++const {
++  NxTsconfigPathsWebpackPlugin,
++} = require('@nx/webpack/tsconfig-paths-plugin');
++```
+diff --git a/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.spec.ts b/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.spec.ts
+new file mode 100644
+index 00000000000..af7708666c7
+--- /dev/null
++++ b/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.spec.ts
+@@ -0,0 +1,236 @@
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import removeNxTsconfigPathsWebpackPluginImport from './remove-nx-tsconfig-paths-webpack-plugin-import';
++
++describe('remove-nx-tsconfig-paths-webpack-plugin-import migration', () => {
++  it('rewrites single ES import to sub-path', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack';`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++      "
++    `);
++  });
++
++  it('moves only the deprecated symbol when import has multiple specifiers', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxTsconfigPathsWebpackPlugin, NxAppWebpackPlugin } from '@nx/webpack';`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++      import { NxAppWebpackPlugin } from '@nx/webpack';
++      "
++    `);
++  });
++
++  it('moves only the deprecated symbol when it is last in a multi-specifier import', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxAppWebpackPlugin, NxTsconfigPathsWebpackPlugin } from '@nx/webpack';`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++      import { NxAppWebpackPlugin } from '@nx/webpack';
++      "
++    `);
++  });
++
++  it('rewrites single require() to sub-path', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxTsconfigPathsWebpackPlugin } = require('@nx/webpack');`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    // prettier wraps the long symbol name to multi-line
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const {
++        NxTsconfigPathsWebpackPlugin,
++      } = require('@nx/webpack/tsconfig-paths-plugin');
++      "
++    `);
++  });
++
++  it('moves only the deprecated symbol when require() has multiple bindings', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxTsconfigPathsWebpackPlugin, NxAppWebpackPlugin } = require('@nx/webpack');`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    // prettier wraps the long symbol name to multi-line
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const {
++        NxTsconfigPathsWebpackPlugin,
++      } = require('@nx/webpack/tsconfig-paths-plugin');
++      const { NxAppWebpackPlugin } = require('@nx/webpack');
++      "
++    `);
++  });
++
++  it('does not touch files with no usage of the deprecated symbol', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    const original = `const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
++module.exports = { plugins: [new NxAppWebpackPlugin()] };
++`;
++    tree.write('apps/my-app/webpack.config.js', original);
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8')).toEqual(
++      original
++    );
++  });
++
++  it('is idempotent - running twice yields the same result', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxTsconfigPathsWebpackPlugin } = require('@nx/webpack');`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++    const afterFirst = tree.read('apps/my-app/webpack.config.js', 'utf-8');
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++    const afterSecond = tree.read('apps/my-app/webpack.config.js', 'utf-8');
++
++    expect(afterFirst).toEqual(afterSecond);
++  });
++
++  it('preserves alias when ES import has multiple specifiers', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxTsconfigPathsWebpackPlugin as Plugin, NxAppWebpackPlugin } from '@nx/webpack';`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxTsconfigPathsWebpackPlugin as Plugin } from '@nx/webpack/tsconfig-paths-plugin';
++      import { NxAppWebpackPlugin } from '@nx/webpack';
++      "
++    `);
++  });
++
++  it('preserves alias when require() has multiple bindings', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxTsconfigPathsWebpackPlugin: Plugin, NxAppWebpackPlugin } = require('@nx/webpack');`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const {
++        NxTsconfigPathsWebpackPlugin: Plugin,
++      } = require('@nx/webpack/tsconfig-paths-plugin');
++      const { NxAppWebpackPlugin } = require('@nx/webpack');
++      "
++    `);
++  });
++
++  it('rewrites multiple matching imports/requires in the same file', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack';
++const { NxTsconfigPathsWebpackPlugin: P2 } = require('@nx/webpack');
++import { NxTsconfigPathsWebpackPlugin as P3, NxAppWebpackPlugin } from '@nx/webpack';
++`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxTsconfigPathsWebpackPlugin as P3 } from '@nx/webpack/tsconfig-paths-plugin';
++      import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++      const {
++        NxTsconfigPathsWebpackPlugin: P2,
++      } = require('@nx/webpack/tsconfig-paths-plugin');
++      import { NxAppWebpackPlugin } from '@nx/webpack';
++      "
++    `);
++  });
++
++  it('consumes whitespace before the trailing comma in ES imports', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.ts',
++      `import { NxTsconfigPathsWebpackPlugin , NxAppWebpackPlugin } from '@nx/webpack';`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.ts', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "import { NxTsconfigPathsWebpackPlugin } from '@nx/webpack/tsconfig-paths-plugin';
++      import { NxAppWebpackPlugin } from '@nx/webpack';
++      "
++    `);
++  });
++
++  it('consumes whitespace before the trailing comma in CJS requires', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    tree.write(
++      'apps/my-app/webpack.config.js',
++      `const { NxTsconfigPathsWebpackPlugin , NxAppWebpackPlugin } = require('@nx/webpack');`
++    );
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8'))
++      .toMatchInlineSnapshot(`
++      "const {
++        NxTsconfigPathsWebpackPlugin,
++      } = require('@nx/webpack/tsconfig-paths-plugin');
++      const { NxAppWebpackPlugin } = require('@nx/webpack');
++      "
++    `);
++  });
++
++  it('does not modify files already using the correct sub-path import', async () => {
++    const tree = createTreeWithEmptyWorkspace();
++    // Use the already-prettier-formatted form so formatFiles does not change it
++    const original = `const {
++  NxTsconfigPathsWebpackPlugin,
++} = require('@nx/webpack/tsconfig-paths-plugin');
++module.exports = { plugins: [new NxTsconfigPathsWebpackPlugin()] };
++`;
++    tree.write('apps/my-app/webpack.config.js', original);
++
++    await removeNxTsconfigPathsWebpackPluginImport(tree);
++
++    expect(tree.read('apps/my-app/webpack.config.js', 'utf-8')).toEqual(
++      original
++    );
++  });
++});
+diff --git a/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.ts b/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.ts
+new file mode 100644
+index 00000000000..66bdde1a609
+--- /dev/null
++++ b/packages/webpack/src/migrations/update-23-0-0/remove-nx-tsconfig-paths-webpack-plugin-import.ts
+@@ -0,0 +1,152 @@
++import { formatFiles, Tree, visitNotIgnoredFiles } from '@nx/devkit';
++import { ast, query } from '@phenomnomnominal/tsquery';
++
++const DEPRECATED_SYMBOL = 'NxTsconfigPathsWebpackPlugin';
++const DEPRECATED_PACKAGE = '@nx/webpack';
++const NEW_PACKAGE = '@nx/webpack/tsconfig-paths-plugin';
++
++// ES module import: import { NxTsconfigPathsWebpackPlugin[, ...] } from '@nx/webpack'
++const ES_IMPORT_SELECTOR = `ImportDeclaration:has(StringLiteral[value=${DEPRECATED_PACKAGE}]):has(ImportClause ImportSpecifier > Identifier[name=${DEPRECATED_SYMBOL}])`;
++const IMPORT_SPECIFIERS_SELECTOR = `ImportClause ImportSpecifier`;
++const TARGET_IMPORT_SPECIFIER_SELECTOR = `ImportClause ImportSpecifier > Identifier[name=${DEPRECATED_SYMBOL}]`;
++const ES_MODULE_PATH_SELECTOR = `StringLiteral[value=${DEPRECATED_PACKAGE}]`;
++
++// CJS require: const { NxTsconfigPathsWebpackPlugin[, ...] } = require('@nx/webpack')
++const CJS_REQUIRE_STMT_SELECTOR = `VariableStatement:has(ObjectBindingPattern > BindingElement > Identifier[name=${DEPRECATED_SYMBOL}]):has(CallExpression:has(Identifier[name=require]) > StringLiteral[value=${DEPRECATED_PACKAGE}])`;
++const CJS_BINDING_ELEMENTS_SELECTOR = `ObjectBindingPattern > BindingElement`;
++const CJS_TARGET_BINDING_SELECTOR = `ObjectBindingPattern > BindingElement > Identifier[name=${DEPRECATED_SYMBOL}]`;
++const CJS_REQUIRE_PATH_SELECTOR = `CallExpression:has(Identifier[name=require]) > StringLiteral[value=${DEPRECATED_PACKAGE}]`;
++
++// Walk past whitespace from `fromIndex` to find a trailing comma. Returns the
++// position AFTER the comma if found, otherwise the original index. Handles
++// the `Foo , withReact` shape where the user wrote whitespace before the
++// comma — `node.getEnd()` stops at the identifier and the comma sits one
++// character past the whitespace.
++function endAfterTrailingComma(text: string, fromIndex: number): number {
++  let i = fromIndex;
++  while (i < text.length && /\s/.test(text.charAt(i))) i++;
++  return text.charAt(i) === ',' ? i + 1 : fromIndex;
++}
++
++export default async function removeNxTsconfigPathsWebpackPluginImport(
++  tree: Tree
++) {
++  visitNotIgnoredFiles(tree, '', (filePath) => {
++    if (
++      !filePath.endsWith('.ts') &&
++      !filePath.endsWith('.tsx') &&
++      !filePath.endsWith('.js') &&
++      !filePath.endsWith('.jsx') &&
++      !filePath.endsWith('.cjs') &&
++      !filePath.endsWith('.mjs')
++    ) {
++      return;
++    }
++
++    let contents = tree.read(filePath, 'utf-8');
++    if (!contents) return;
++
++    // Quick check: must contain the deprecated symbol and the deprecated package path
++    if (
++      !contents.includes(DEPRECATED_SYMBOL) ||
++      (!contents.includes(`'${DEPRECATED_PACKAGE}'`) &&
++        !contents.includes(`"${DEPRECATED_PACKAGE}"`))
++    ) {
++      return;
++    }
++
++    let changed = false;
++
++    // Re-parse on every iteration so multiple matches in the same file work
++    // correctly. The multi-specifier branch prepends a new declaration which
++    // shifts every offset; collected AST positions go stale after one rewrite,
++    // so process one match at a time.
++    let didRewrite = true;
++    while (didRewrite) {
++      didRewrite = false;
++      const sourceFile = ast(contents);
++
++      const importNode = query(sourceFile, ES_IMPORT_SELECTOR)[0];
++      if (importNode) {
++        const specifiers = query(importNode, IMPORT_SPECIFIERS_SELECTOR);
++        const targetIdentifier = query(
++          importNode,
++          TARGET_IMPORT_SPECIFIER_SELECTOR
++        )[0];
++        if (targetIdentifier) {
++          // Walk to the ImportSpecifier to cover `Foo` and `Foo as Bar`.
++          const targetSpec = targetIdentifier.parent;
++          if (specifiers.length === 1) {
++            const modulePathNode = query(
++              importNode,
++              ES_MODULE_PATH_SELECTOR
++            )[0];
++            if (modulePathNode) {
++              contents =
++                contents.slice(0, modulePathNode.getStart()) +
++                `'${NEW_PACKAGE}'` +
++                contents.slice(modulePathNode.getEnd());
++              changed = true;
++              didRewrite = true;
++              continue;
++            }
++          } else {
++            // Extract target spec verbatim (preserves alias)
++            const end = endAfterTrailingComma(contents, targetSpec.getEnd());
++            contents =
++              `import { ${targetSpec.getText()} } from '${NEW_PACKAGE}';\n` +
++              contents.slice(0, targetSpec.getStart()) +
++              contents.slice(end);
++            changed = true;
++            didRewrite = true;
++            continue;
++          }
++        }
++      }
++
++      const stmtNode = query(sourceFile, CJS_REQUIRE_STMT_SELECTOR)[0];
++      if (stmtNode) {
++        const bindingElements = query(stmtNode, CJS_BINDING_ELEMENTS_SELECTOR);
++        const targetIdentifier = query(
++          stmtNode,
++          CJS_TARGET_BINDING_SELECTOR
++        )[0];
++        if (targetIdentifier) {
++          // Walk to the BindingElement to cover `Foo` and `Foo: Bar`.
++          const targetBinding = targetIdentifier.parent;
++          if (bindingElements.length === 1) {
++            const requirePathNode = query(
++              stmtNode,
++              CJS_REQUIRE_PATH_SELECTOR
++            )[0];
++            if (requirePathNode) {
++              contents =
++                contents.slice(0, requirePathNode.getStart()) +
++                `'${NEW_PACKAGE}'` +
++                contents.slice(requirePathNode.getEnd());
++              changed = true;
++              didRewrite = true;
++              continue;
++            }
++          } else {
++            // Extract target binding verbatim (preserves alias)
++            const end = endAfterTrailingComma(contents, targetBinding.getEnd());
++            contents =
++              `const { ${targetBinding.getText()} } = require('${NEW_PACKAGE}');\n` +
++              contents.slice(0, targetBinding.getStart()) +
++              contents.slice(end);
++            changed = true;
++            didRewrite = true;
++            continue;
++          }
++        }
++      }
++    }
++
++    if (changed) {
++      tree.write(filePath, contents);
++    }
++  });
++
++  await formatFiles(tree);
++}

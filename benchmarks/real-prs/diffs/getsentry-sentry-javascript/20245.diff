@@ -1,0 +1,253 @@
+diff --git a/packages/core/src/logs/internal.ts b/packages/core/src/logs/internal.ts
+index 340302d451a0..84ee8890b562 100644
+--- a/packages/core/src/logs/internal.ts
++++ b/packages/core/src/logs/internal.ts
+@@ -1,3 +1,4 @@
++import type { Attributes } from '../attributes';
+ import { serializeAttributes } from '../attributes';
+ import { getGlobalSingleton } from '../carrier';
+ import type { Client } from '../client';
+@@ -161,14 +162,14 @@ export function _INTERNAL_captureLog(
+   const serializedLog: SerializedLog = {
+     timestamp,
+     level,
+-    body: message,
++    body: _removeLoneSurrogates(String(message)),
+     trace_id: traceContext?.trace_id,
+     severity_number: severityNumber ?? SEVERITY_TEXT_TO_SEVERITY_NUMBER[level],
+-    attributes: {
++    attributes: sanitizeLogAttributes({
+       ...serializeAttributes(scopeAttributes),
+       ...serializeAttributes(logAttributes, true),
+       [sequenceAttr.key]: sequenceAttr.value,
+-    },
++    }),
+   };
+ 
+   captureSerializedLog(client, serializedLog);
+@@ -226,3 +227,45 @@ function _getBufferMap(): WeakMap<Client, Array<SerializedLog>> {
+   // The reference to the Client <> LogBuffer map is stored on the carrier to ensure it's always the same
+   return getGlobalSingleton('clientToLogBufferMap', () => new WeakMap<Client, Array<SerializedLog>>());
+ }
++
++/**
++ * Sanitizes serialized log attributes by replacing lone surrogates in both
++ * keys and string values with U+FFFD.
++ */
++function sanitizeLogAttributes(attributes: Attributes): Attributes {
++  const sanitized: Attributes = {};
++  for (const [key, attr] of Object.entries(attributes)) {
++    const sanitizedKey = _removeLoneSurrogates(key);
++    if (attr.type === 'string') {
++      sanitized[sanitizedKey] = { ...attr, value: _removeLoneSurrogates(attr.value) };
++    } else {
++      sanitized[sanitizedKey] = attr;
++    }
++  }
++  return sanitized;
++}
++
++/**
++ * Replaces unpaired UTF-16 surrogates with U+FFFD (replacement character).
++ *
++ * Lone surrogates (U+D800–U+DFFF not part of a valid pair) cause `serde_json`
++ * on the server to reject the entire log batch when they appear in
++ * JSON-escaped form (e.g. `\uD800`). Replacing them at the SDK level ensures
++ * only the offending characters are lost instead of the whole payload.
++ *
++ * Uses the native `String.prototype.toWellFormed()` when available
++ * (Node 20+, Chrome 111+, Safari 15.4+, Firefox 119+, Hermes).
++ * On older runtimes without native support, returns the string as-is.
++ *
++ * Exported for testing
++ */
++export function _removeLoneSurrogates(str: string): string {
++  // isWellFormed/toWellFormed are ES2024 (not in our TS lib target), so we feature-detect via Object().
++  const strObj: Record<string, Function> = Object(str);
++  const isWellFormed = strObj['isWellFormed'];
++  const toWellFormed = strObj['toWellFormed'];
++  if (typeof isWellFormed === 'function' && typeof toWellFormed === 'function') {
++    return isWellFormed.call(str) ? str : toWellFormed.call(str);
++  }
++  return str;
++}
+diff --git a/packages/core/test/lib/logs/internal.test.ts b/packages/core/test/lib/logs/internal.test.ts
+index c1b69ba41522..608193b4a838 100644
+--- a/packages/core/test/lib/logs/internal.test.ts
++++ b/packages/core/test/lib/logs/internal.test.ts
+@@ -1,6 +1,11 @@
+ import { beforeEach, describe, expect, it, vi } from 'vitest';
+ import { fmt, Scope } from '../../../src';
+-import { _INTERNAL_captureLog, _INTERNAL_flushLogsBuffer, _INTERNAL_getLogBuffer } from '../../../src/logs/internal';
++import {
++  _INTERNAL_captureLog,
++  _INTERNAL_flushLogsBuffer,
++  _INTERNAL_getLogBuffer,
++  _removeLoneSurrogates,
++} from '../../../src/logs/internal';
+ import type { Log } from '../../../src/types/log';
+ import * as loggerModule from '../../../src/utils/debug-logger';
+ import * as timeModule from '../../../src/utils/time';
+@@ -9,6 +14,9 @@ import { getDefaultTestClientOptions, TestClient } from '../../mocks/client';
+ 
+ const PUBLIC_DSN = 'https://username@domain/123';
+ 
++// toWellFormed() is only available in Node 20+, Chrome 111+, Safari 15.4+, Firefox 119+, Hermes
++const hasToWellFormed = typeof ''.isWellFormed === 'function';
++
+ describe('_INTERNAL_captureLog', () => {
+   beforeEach(() => {
+     _INTERNAL_resetSequenceNumber();
+@@ -1269,4 +1277,152 @@ describe('_INTERNAL_captureLog', () => {
+       expect(buffer2?.[0]?.attributes?.['sentry.timestamp.sequence']).toEqual({ value: 0, type: 'integer' });
+     });
+   });
++
++  describe.runIf(hasToWellFormed)('lone surrogate sanitization', () => {
++    it('sanitizes lone surrogates in log message body', () => {
++      const options = getDefaultTestClientOptions({ dsn: PUBLIC_DSN, enableLogs: true });
++      const client = new TestClient(options);
++      const scope = new Scope();
++      scope.setClient(client);
++
++      _INTERNAL_captureLog({ level: 'error', message: 'bad surrogate \uD800 here' }, scope);
++
++      const logBuffer = _INTERNAL_getLogBuffer(client);
++      expect(logBuffer?.[0]?.body).toBe('bad surrogate \uFFFD here');
++    });
++
++    it('sanitizes lone surrogates in parameterized (fmt) log message body', () => {
++      const options = getDefaultTestClientOptions({ dsn: PUBLIC_DSN, enableLogs: true });
++      const client = new TestClient(options);
++      const scope = new Scope();
++      scope.setClient(client);
++
++      const badValue = 'bad\uD800value';
++      _INTERNAL_captureLog({ level: 'error', message: fmt`parameterized ${badValue} message` }, scope);
++
++      const logBuffer = _INTERNAL_getLogBuffer(client);
++      expect(logBuffer?.[0]?.body).toBe('parameterized bad\uFFFDvalue message');
++    });
++
++    it('sanitizes lone surrogates in log attribute values', () => {
++      const options = getDefaultTestClientOptions({ dsn: PUBLIC_DSN, enableLogs: true });
++      const client = new TestClient(options);
++      const scope = new Scope();
++      scope.setClient(client);
++
++      _INTERNAL_captureLog(
++        {
++          level: 'error',
++          message: 'test',
++          attributes: { bad: '{"a":"\uD800"}' },
++        },
++        scope,
++      );
++
++      const logBuffer = _INTERNAL_getLogBuffer(client);
++      expect(logBuffer?.[0]?.attributes?.['bad']).toEqual({
++        value: '{"a":"\uFFFD"}',
++        type: 'string',
++      });
++    });
++
++    it('sanitizes lone surrogates in log attribute keys', () => {
++      const options = getDefaultTestClientOptions({ dsn: PUBLIC_DSN, enableLogs: true });
++      const client = new TestClient(options);
++      const scope = new Scope();
++      scope.setClient(client);
++
++      _INTERNAL_captureLog(
++        {
++          level: 'error',
++          message: 'test',
++          attributes: { ['bad\uD800key']: 'value' },
++        },
++        scope,
++      );
++
++      const logBuffer = _INTERNAL_getLogBuffer(client);
++      expect(logBuffer?.[0]?.attributes?.['bad\uFFFDkey']).toEqual({
++        value: 'value',
++        type: 'string',
++      });
++    });
++
++    it('preserves valid emoji in log messages and attributes', () => {
++      const options = getDefaultTestClientOptions({ dsn: PUBLIC_DSN, enableLogs: true });
++      const client = new TestClient(options);
++      const scope = new Scope();
++      scope.setClient(client);
++
++      _INTERNAL_captureLog(
++        {
++          level: 'info',
++          message: 'hello 😀 world',
++          attributes: { emoji: '🎉 party' },
++        },
++        scope,
++      );
++
++      const logBuffer = _INTERNAL_getLogBuffer(client);
++      expect(logBuffer?.[0]?.body).toBe('hello 😀 world');
++      expect(logBuffer?.[0]?.attributes?.['emoji']).toEqual({
++        value: '🎉 party',
++        type: 'string',
++      });
++    });
++  });
++});
++
++describe('_removeLoneSurrogates', () => {
++  it('returns the same string when there are no surrogates', () => {
++    expect(_removeLoneSurrogates('hello world')).toBe('hello world');
++  });
++
++  it('returns the same string for empty input', () => {
++    expect(_removeLoneSurrogates('')).toBe('');
++  });
++
++  it('preserves valid surrogate pairs (emoji)', () => {
++    expect(_removeLoneSurrogates('hello 😀 world')).toBe('hello 😀 world');
++  });
++
++  it.runIf(hasToWellFormed)('replaces a lone high surrogate with U+FFFD', () => {
++    expect(_removeLoneSurrogates('before\uD800after')).toBe('before\uFFFDafter');
++  });
++
++  it.runIf(hasToWellFormed)('replaces a lone low surrogate with U+FFFD', () => {
++    expect(_removeLoneSurrogates('before\uDC00after')).toBe('before\uFFFDafter');
++  });
++
++  it.runIf(hasToWellFormed)('replaces lone high surrogate at end of string', () => {
++    expect(_removeLoneSurrogates('end\uD800')).toBe('end\uFFFD');
++  });
++
++  it.runIf(hasToWellFormed)('replaces lone low surrogate at start of string', () => {
++    expect(_removeLoneSurrogates('\uDC00start')).toBe('\uFFFDstart');
++  });
++
++  it.runIf(hasToWellFormed)('replaces multiple lone surrogates', () => {
++    expect(_removeLoneSurrogates('\uD800\uD801\uDC00')).toBe('\uFFFD\uD801\uDC00');
++  });
++
++  it.runIf(hasToWellFormed)('handles two consecutive lone high surrogates', () => {
++    expect(_removeLoneSurrogates('\uD800\uD800')).toBe('\uFFFD\uFFFD');
++  });
++
++  it.runIf(hasToWellFormed)('handles mixed valid pairs and lone surrogates', () => {
++    expect(_removeLoneSurrogates('\uD83D\uDE00\uD800')).toBe('😀\uFFFD');
++  });
++
++  it.runIf(hasToWellFormed)('handles the exact reproduction case from issue #5186', () => {
++    const badValue = '{"a":"\uD800"}';
++    const result = _removeLoneSurrogates(badValue);
++    expect(result).toBe('{"a":"\uFFFD"}');
++    expect(() => JSON.parse(result)).not.toThrow();
++  });
++
++  it('returns the string as-is when toWellFormed is not available', () => {
++    // Verify the function doesn't throw regardless of runtime support
++    expect(_removeLoneSurrogates('normal string')).toBe('normal string');
++  });
+ });

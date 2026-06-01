@@ -1,0 +1,674 @@
+diff --git a/.changeset/silly-coins-wash.md b/.changeset/silly-coins-wash.md
+new file mode 100644
+index 000000000000..a021e9cb0e73
+--- /dev/null
++++ b/.changeset/silly-coins-wash.md
+@@ -0,0 +1,45 @@
++---
++'@astrojs/cloudflare': minor
++---
++
++Adds `@astrojs/cloudflare/fetch` and `@astrojs/cloudflare/hono` exports for composing Cloudflare-specific setup with Astro's advanced routing handlers.
++
++#### `@astrojs/cloudflare/fetch`
++
++For use with `astro/fetch` in a custom fetch handler:
++
++```ts
++import { astro, FetchState } from 'astro/fetch';
++import { cf } from '@astrojs/cloudflare/fetch';
++
++export default {
++  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
++    const state = new FetchState(request);
++    const asset = await cf(state, env, ctx);
++    if (asset) return asset;
++    return astro(state);
++  }
++}
++```
++
++#### `@astrojs/cloudflare/hono`
++
++For use with `astro/hono` as Hono middleware:
++
++```ts
++import { Hono } from 'hono';
++import { actions, middleware, pages, i18n } from 'astro/hono';
++import { cf } from '@astrojs/cloudflare/hono';
++
++const app = new Hono<{ Bindings: Env }>();
++
++app.use(cf());
++app.use(actions());
++app.use(middleware());
++app.use(pages());
++app.use(i18n());
++
++export default app;
++```
++
++Both handlers configure SESSION KV bindings, static asset serving via the ASSETS binding, `locals.cfContext`, client address, `waitUntil`, and prerendered error page fetch.
+diff --git a/packages/integrations/cloudflare/package.json b/packages/integrations/cloudflare/package.json
+index 9462a01ab077..9402a132c3da 100644
+--- a/packages/integrations/cloudflare/package.json
++++ b/packages/integrations/cloudflare/package.json
+@@ -27,6 +27,8 @@
+     "./image-passthrough-endpoint": "./dist/entrypoints/image-passthrough-endpoint.js",
+     "./image-service-workerd": "./dist/entrypoints/image-service-workerd.js",
+     "./handler": "./dist/utils/handler.js",
++    "./fetch": "./dist/fetch.js",
++    "./hono": "./dist/hono.js",
+     "./types.d.ts": "./types.d.ts",
+     "./package.json": "./package.json"
+   },
+diff --git a/packages/integrations/cloudflare/src/fetch.ts b/packages/integrations/cloudflare/src/fetch.ts
+new file mode 100644
+index 000000000000..a46bec71a0f7
+--- /dev/null
++++ b/packages/integrations/cloudflare/src/fetch.ts
+@@ -0,0 +1,69 @@
++/**
++ * Cloudflare handler for use with `astro/fetch`.
++ *
++ * Usage in `src/app.ts`:
++ *
++ * ```ts
++ * import { astro, FetchState } from 'astro/fetch';
++ * import { cf } from '@astrojs/cloudflare/fetch';
++ *
++ * export default {
++ *   async fetch(request: Request) {
++ *     const state = new FetchState(request);
++ *     const asset = await cf(state, env, ctx);
++ *     if (asset) return asset;
++ *     return astro(state);
++ *   }
++ * }
++ * ```
++ */
++import { env as globalEnv } from 'cloudflare:workers';
++import type { FetchState } from 'astro/fetch';
++import { createApp } from 'astro/app/entrypoint';
++import { setGetEnv } from 'astro/env/setup';
++import { createGetEnv } from './utils/env.js';
++import {
++	injectSessionBinding,
++	matchStaticAsset,
++	fallbackToAssets,
++	createErrorPageFetch,
++	createLocals,
++	getClientAddress,
++} from './utils/cf.js';
++
++setGetEnv(createGetEnv(globalEnv));
++
++const app = createApp();
++
++/**
++ * Applies Cloudflare-specific setup to a `FetchState`:
++ * - Injects the SESSION KV binding
++ * - Serves static assets via the ASSETS binding
++ * - Sets `locals.cfContext`, client address, `waitUntil`, and error page fetch
++ *
++ * Returns a `Response` if the request was handled by the ASSETS binding
++ * (static file hit). Returns `undefined` when the caller should continue
++ * to Astro rendering.
++ */
++export async function cf(
++	state: FetchState,
++	env: Env,
++	ctx: ExecutionContext,
++): Promise<Response | undefined> {
++	injectSessionBinding(app.manifest, env);
++
++	const staticAsset = matchStaticAsset(app.manifest, state.request.url, env);
++	if (staticAsset) return staticAsset;
++
++	if (!state.routeData) {
++		const asset = await fallbackToAssets(state.request.url, env);
++		if (asset) return asset;
++	}
++
++	Object.assign(state.locals, createLocals(ctx));
++	state.clientAddress = getClientAddress(state.request);
++	state.renderOptions.waitUntil = ctx.waitUntil.bind(ctx);
++	state.renderOptions.prerenderedErrorPageFetch = createErrorPageFetch(env);
++
++	return undefined;
++}
+diff --git a/packages/integrations/cloudflare/src/hono.ts b/packages/integrations/cloudflare/src/hono.ts
+new file mode 100644
+index 000000000000..0f0cfc56a3dd
+--- /dev/null
++++ b/packages/integrations/cloudflare/src/hono.ts
+@@ -0,0 +1,73 @@
++/**
++ * Cloudflare middleware for use with `astro/hono`.
++ *
++ * Usage in `src/app.ts`:
++ *
++ * ```ts
++ * import { Hono } from 'hono';
++ * import { actions, middleware, pages, i18n } from 'astro/hono';
++ * import { cf } from '@astrojs/cloudflare/hono';
++ *
++ * const app = new Hono<{ Bindings: Env }>();
++ *
++ * app.use(cf());
++ * app.use(actions());
++ * app.use(middleware());
++ * app.use(pages());
++ * app.use(i18n());
++ *
++ * export default app;
++ * ```
++ */
++import { FetchState } from 'astro/fetch';
++import { cf as cfFetch } from './fetch.js';
++
++const FETCH_STATE_KEY = 'fetchState';
++
++/**
++ * Duck-typed Hono context — matches Hono's `Context` shape for
++ * Cloudflare Workers without importing from `hono` at runtime.
++ */
++type HonoCloudflareContextLike = {
++	req: {
++		raw: Request;
++	};
++	env: Env;
++	executionCtx: ExecutionContext;
++	get?: (key: string) => unknown;
++	set?: (key: string, value: unknown) => void;
++};
++
++type HonoMiddlewareHandler = (
++	context: HonoCloudflareContextLike,
++	next: () => Promise<void>,
++) => Promise<Response | void>;
++
++function getFetchState(context: HonoCloudflareContextLike): FetchState {
++	const state = context.get?.(FETCH_STATE_KEY) as FetchState | undefined;
++	if (state) return state;
++
++	const nextState = new FetchState(context.req.raw);
++	context.set?.(FETCH_STATE_KEY, nextState);
++	return nextState;
++}
++
++/**
++ * Hono middleware that applies Cloudflare-specific setup.
++ *
++ * Reads `env` and `executionCtx` from the Hono context (provided
++ * automatically by Hono on Cloudflare Workers). Handles static assets
++ * via the ASSETS binding, injects the SESSION KV binding, and sets
++ * `locals.cfContext`, client address, `waitUntil`, and error page fetch.
++ *
++ * If the request matches a static asset, returns the asset response
++ * directly. Otherwise calls `next()` to continue the middleware chain.
++ */
++export function cf(): HonoMiddlewareHandler {
++	return async (context, next) => {
++		const state = getFetchState(context);
++		const asset = await cfFetch(state, context.env, context.executionCtx);
++		if (asset) return asset;
++		await next();
++	};
++}
+diff --git a/packages/integrations/cloudflare/src/utils/cf-helpers.ts b/packages/integrations/cloudflare/src/utils/cf-helpers.ts
+new file mode 100644
+index 000000000000..17024e2a9d9a
+--- /dev/null
++++ b/packages/integrations/cloudflare/src/utils/cf-helpers.ts
+@@ -0,0 +1,98 @@
++/**
++ * Pure Cloudflare helpers with no virtual module dependencies.
++ * Shared by `handler.ts`, `@astrojs/cloudflare/fetch`, and `@astrojs/cloudflare/hono`.
++ * Testable without a Vite build context.
++ */
++import { getValidatedIpFromHeader } from '@astrojs/internal-helpers/request';
++
++export interface Runtime {
++	cfContext: ExecutionContext;
++}
++
++/** Minimal manifest shape needed by the Cloudflare helpers. */
++export interface ManifestLike {
++	assets: Set<string>;
++	sessionConfig?: { options?: Record<string, unknown> } | undefined;
++}
++
++/**
++ * Returns a `Response` from the ASSETS binding if the request pathname
++ * is a known static asset. Returns `undefined` otherwise.
++ */
++export function matchStaticAsset(
++	manifest: ManifestLike,
++	requestUrl: string,
++	env: Env,
++): Response | undefined {
++	const { pathname } = new URL(requestUrl);
++	if (manifest.assets.has(pathname)) {
++		return env.ASSETS.fetch(requestUrl.replace(/\.html$/, '')) as unknown as Response;
++	}
++	return undefined;
++}
++
++/**
++ * Tries the ASSETS binding as a fallback for an unmatched route.
++ * Returns the asset `Response` if found (non-404), `undefined` otherwise.
++ */
++export async function fallbackToAssets(requestUrl: string, env: Env): Promise<Response | undefined> {
++	const asset = await env.ASSETS.fetch(
++		requestUrl.replace(/index.html$/, '').replace(/\.html$/, ''),
++	);
++	if (asset.status !== 404) {
++		return asset as unknown as Response;
++	}
++	return undefined;
++}
++
++/**
++ * Creates a fetch function for prerendered error pages via the ASSETS binding.
++ */
++export function createErrorPageFetch(env: Env): (url: string) => Promise<Response> {
++	return async (url: string) => {
++		return env.ASSETS.fetch(url.replace(/\.html$/, '')) as unknown as Response;
++	};
++}
++
++/**
++ * Creates the Cloudflare-specific locals object with `cfContext`
++ * and deprecated `runtime` property getters.
++ */
++export function createLocals(ctx: ExecutionContext): Runtime {
++	const locals: Runtime = {
++		cfContext: ctx,
++	};
++	Object.defineProperty(locals, 'runtime', {
++		enumerable: false,
++		value: {
++			get env(): never {
++				throw new Error(
++					`Astro.locals.runtime.env has been removed in Astro v6. Use 'import { env } from "cloudflare:workers"' instead.`,
++				);
++			},
++			get cf(): never {
++				throw new Error(
++					`Astro.locals.runtime.cf has been removed in Astro v6. Use 'Astro.request.cf' instead.`,
++				);
++			},
++			get caches(): never {
++				throw new Error(
++					`Astro.locals.runtime.caches has been removed in Astro v6. Use the global 'caches' object instead.`,
++				);
++			},
++			get ctx(): never {
++				throw new Error(
++					`Astro.locals.runtime.ctx has been removed in Astro v6. Use 'Astro.locals.cfContext' instead.`,
++				);
++			},
++		},
++	});
++	return locals;
++}
++
++/**
++ * Extracts the client IP address from the `cf-connecting-ip` header.
++ */
++export function getClientAddress(request: Request): string | undefined {
++	return getValidatedIpFromHeader(request.headers.get('cf-connecting-ip'));
++}
+diff --git a/packages/integrations/cloudflare/src/utils/cf.ts b/packages/integrations/cloudflare/src/utils/cf.ts
+new file mode 100644
+index 000000000000..2c839c3345c5
+--- /dev/null
++++ b/packages/integrations/cloudflare/src/utils/cf.ts
+@@ -0,0 +1,31 @@
++/**
++ * Shared Cloudflare helpers used by `handler.ts` (the `handle()` entrypoint),
++ * `@astrojs/cloudflare/fetch`, and `@astrojs/cloudflare/hono`.
++ *
++ * Re-exports all pure helpers from `cf-helpers.ts` and adds
++ * `injectSessionBinding` which depends on the virtual module.
++ */
++import { sessionKVBindingName } from 'virtual:astro-cloudflare:config';
++import type { ManifestLike } from './cf-helpers.js';
++
++export type { Runtime, ManifestLike } from './cf-helpers.js';
++export {
++	matchStaticAsset,
++	fallbackToAssets,
++	createErrorPageFetch,
++	createLocals,
++	getClientAddress,
++} from './cf-helpers.js';
++
++/**
++ * Injects the SESSION KV binding into the app manifest's session config.
++ * Idempotent — safe to call on every request.
++ */
++export function injectSessionBinding(manifest: ManifestLike, env: Env): void {
++	if (env[sessionKVBindingName]) {
++		const sessionConfigOptions = manifest.sessionConfig?.options ?? {};
++		Object.assign(sessionConfigOptions, {
++			binding: env[sessionKVBindingName],
++		});
++	}
++}
+diff --git a/packages/integrations/cloudflare/src/utils/handler.ts b/packages/integrations/cloudflare/src/utils/handler.ts
+index f9cb6f5fc3e0..c5d8e68abeae 100644
+--- a/packages/integrations/cloudflare/src/utils/handler.ts
++++ b/packages/integrations/cloudflare/src/utils/handler.ts
+@@ -1,6 +1,5 @@
+ import { env as globalEnv } from 'cloudflare:workers';
+ import {
+-	sessionKVBindingName,
+ 	compileImageConfig,
+ 	isPrerender,
+ } from 'virtual:astro-cloudflare:config';
+@@ -17,13 +16,19 @@ import {
+ 	isStaticImagesRequest,
+ 	handleStaticImagesRequest,
+ } from './prerender.js';
+-import { getValidatedIpFromHeader } from '@astrojs/internal-helpers/request';
++import {
++	type Runtime,
++	injectSessionBinding,
++	matchStaticAsset,
++	fallbackToAssets,
++	createErrorPageFetch,
++	createLocals,
++	getClientAddress,
++} from './cf.js';
+ 
+-setGetEnv(createGetEnv(globalEnv));
++export type { Runtime };
+ 
+-export interface Runtime {
+-	cfContext: ExecutionContext;
+-}
++setGetEnv(createGetEnv(globalEnv));
+ 
+ declare global {
+ 	// This is not a real global, but is injected using Vite define to allow us to specify the Images binding name in the config.
+@@ -57,19 +62,11 @@ export async function handle(
+ 		}
+ 	}
+ 
+-	const { pathname: requestPathname } = new URL(request.url);
+-
+-	if (env[sessionKVBindingName]) {
+-		const sessionConfigOptions = app.manifest.sessionConfig?.options ?? {};
+-		Object.assign(sessionConfigOptions, {
+-			binding: env[sessionKVBindingName],
+-		});
+-	}
++	injectSessionBinding(app.manifest, env);
+ 
+ 	// NOTE this ASSETS binding path is needed for users who are using `run_worker_first` routing
+-	if (app.manifest.assets.has(requestPathname)) {
+-		return env.ASSETS.fetch(request.url.replace(/\.html$/, ''));
+-	}
++	const staticAsset = matchStaticAsset(app.manifest, request.url, env);
++	if (staticAsset) return staticAsset as CfResponse;
+ 
+ 	let routeData: RouteData | undefined = undefined;
+ 	if (app.isDev()) {
+@@ -83,54 +80,19 @@ export async function handle(
+ 
+ 	if (!routeData) {
+ 		// NOTE this ASSETS binding path is needed for users who are using `run_worker_first` routing
+-		const asset = await env.ASSETS.fetch(
+-			request.url.replace(/index.html$/, '').replace(/\.html$/, ''),
+-		);
+-		if (asset.status !== 404) {
+-			return asset;
+-		}
++		const asset = await fallbackToAssets(request.url, env);
++		if (asset) return asset as CfResponse;
+ 	}
+ 
+-	const locals: Runtime = {
+-		cfContext: context,
+-	};
+-	Object.defineProperty(locals, 'runtime', {
+-		enumerable: false,
+-		value: {
+-			get env(): never {
+-				throw new Error(
+-					`Astro.locals.runtime.env has been removed in Astro v6. Use 'import { env } from "cloudflare:workers"' instead.`,
+-				);
+-			},
+-			get cf(): never {
+-				throw new Error(
+-					`Astro.locals.runtime.cf has been removed in Astro v6. Use 'Astro.request.cf' instead.`,
+-				);
+-			},
+-			get caches(): never {
+-				throw new Error(
+-					`Astro.locals.runtime.caches has been removed in Astro v6. Use the global 'caches' object instead.`,
+-				);
+-			},
+-			get ctx(): never {
+-				throw new Error(
+-					`Astro.locals.runtime.ctx has been removed in Astro v6. Use 'Astro.locals.cfContext' instead.`,
+-				);
+-			},
+-		},
+-	});
+-
++	const locals = createLocals(context);
+ 	const waitUntil: RenderOptions['waitUntil'] = context.waitUntil.bind(context);
+ 
+ 	const response = await app.render(request, {
+ 		routeData,
+ 		locals,
+ 		waitUntil,
+-		prerenderedErrorPageFetch: async (url: string) => {
+-			// NOTE this ASSETS binding path is needed for users who are using `run_worker_first` routing
+-			return env.ASSETS.fetch(url.replace(/\.html$/, ''));
+-		},
+-		clientAddress: getValidatedIpFromHeader(request.headers.get('cf-connecting-ip')),
++		prerenderedErrorPageFetch: createErrorPageFetch(env),
++		clientAddress: getClientAddress(request),
+ 	});
+ 
+ 	if (app.setCookieHeaders) {
+diff --git a/packages/integrations/cloudflare/test/cf-helpers.test.ts b/packages/integrations/cloudflare/test/cf-helpers.test.ts
+new file mode 100644
+index 000000000000..6f98ef57db1f
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/cf-helpers.test.ts
+@@ -0,0 +1,190 @@
++import * as assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import {
++	createLocals,
++	getClientAddress,
++	matchStaticAsset,
++	fallbackToAssets,
++	createErrorPageFetch,
++} from '../dist/utils/cf-helpers.js';
++
++/**
++ * Creates a mock ASSETS binding with a configurable fetch response.
++ */
++function createMockEnv(
++	fetchResult: { status: number; body?: string } = { status: 200, body: 'asset' },
++) {
++	return {
++		ASSETS: {
++			fetch(url: string) {
++				return Promise.resolve(
++					new Response(fetchResult.body ?? null, {
++						status: fetchResult.status,
++						headers: { 'x-fetched-url': url },
++					}),
++				);
++			},
++		},
++	};
++}
++
++/**
++ * Creates a mock ExecutionContext.
++ */
++function createMockCtx() {
++	return {
++		waitUntil: () => {},
++		passThroughOnException: () => {},
++	};
++}
++
++// #region createLocals
++
++describe('createLocals', () => {
++	it('sets cfContext on the returned locals', () => {
++		const ctx = createMockCtx();
++		const locals = createLocals(ctx as any);
++		assert.equal(locals.cfContext, ctx);
++	});
++
++	it('defines a non-enumerable runtime property', () => {
++		const locals = createLocals(createMockCtx() as any);
++		const descriptor = Object.getOwnPropertyDescriptor(locals, 'runtime');
++		assert.ok(descriptor, 'runtime property should exist');
++		assert.equal(descriptor!.enumerable, false);
++	});
++
++	it('runtime.env throws with migration message', () => {
++		const locals = createLocals(createMockCtx() as any) as any;
++		assert.throws(() => locals.runtime.env, /removed in Astro v6/);
++		assert.throws(() => locals.runtime.env, /cloudflare:workers/);
++	});
++
++	it('runtime.cf throws with migration message', () => {
++		const locals = createLocals(createMockCtx() as any) as any;
++		assert.throws(() => locals.runtime.cf, /removed in Astro v6/);
++		assert.throws(() => locals.runtime.cf, /Astro\.request\.cf/);
++	});
++
++	it('runtime.caches throws with migration message', () => {
++		const locals = createLocals(createMockCtx() as any) as any;
++		assert.throws(() => locals.runtime.caches, /removed in Astro v6/);
++		assert.throws(() => locals.runtime.caches, /global 'caches'/);
++	});
++
++	it('runtime.ctx throws with migration message', () => {
++		const locals = createLocals(createMockCtx() as any) as any;
++		assert.throws(() => locals.runtime.ctx, /removed in Astro v6/);
++		assert.throws(() => locals.runtime.ctx, /Astro\.locals\.cfContext/);
++	});
++});
++
++// #endregion
++
++// #region getClientAddress
++
++describe('getClientAddress', () => {
++	it('returns the IP from cf-connecting-ip header', () => {
++		const request = new Request('http://example.com/', {
++			headers: { 'cf-connecting-ip': '203.0.113.50' },
++		});
++		assert.equal(getClientAddress(request), '203.0.113.50');
++	});
++
++	it('returns only the first IP from a multi-value header', () => {
++		const request = new Request('http://example.com/', {
++			headers: { 'cf-connecting-ip': '203.0.113.50, 70.41.3.18' },
++		});
++		assert.equal(getClientAddress(request), '203.0.113.50');
++	});
++
++	it('returns undefined when the header is missing', () => {
++		const request = new Request('http://example.com/');
++		assert.equal(getClientAddress(request), undefined);
++	});
++
++	it('returns undefined for invalid IP values', () => {
++		const request = new Request('http://example.com/', {
++			headers: { 'cf-connecting-ip': '<script>alert(1)</script>' },
++		});
++		assert.equal(getClientAddress(request), undefined);
++	});
++});
++
++// #endregion
++
++// #region matchStaticAsset
++
++describe('matchStaticAsset', () => {
++	it('returns a response when the pathname matches a known asset', async () => {
++		const manifest = { assets: new Set(['/style.css']) };
++		const env = createMockEnv();
++		const result = matchStaticAsset(manifest as any, 'http://example.com/style.css', env as any);
++		assert.ok(result != null);
++		const response = await result;
++		assert.equal(response.status, 200);
++	});
++
++	it('strips .html extension when fetching from ASSETS', async () => {
++		const manifest = { assets: new Set(['/page.html']) };
++		const env = createMockEnv();
++		const result = matchStaticAsset(manifest as any, 'http://example.com/page.html', env as any);
++		const response = await result!;
++		assert.equal(response.headers.get('x-fetched-url'), 'http://example.com/page');
++	});
++
++	it('returns undefined when the pathname is not a known asset', () => {
++		const manifest = { assets: new Set(['/style.css']) };
++		const env = createMockEnv();
++		const result = matchStaticAsset(manifest as any, 'http://example.com/other.js', env as any);
++		assert.equal(result, undefined);
++	});
++});
++
++// #endregion
++
++// #region fallbackToAssets
++
++describe('fallbackToAssets', () => {
++	it('returns the asset response when ASSETS returns non-404', async () => {
++		const env = createMockEnv({ status: 200, body: 'fallback asset' });
++		const result = await fallbackToAssets('http://example.com/unknown', env as any);
++		assert.ok(result);
++		assert.equal(result!.status, 200);
++	});
++
++	it('returns undefined when ASSETS returns 404', async () => {
++		const env = createMockEnv({ status: 404 });
++		const result = await fallbackToAssets('http://example.com/unknown', env as any);
++		assert.equal(result, undefined);
++	});
++
++	it('strips .html and index.html from the URL', async () => {
++		const env = createMockEnv({ status: 200 });
++		const result = await fallbackToAssets('http://example.com/about/index.html', env as any);
++		assert.ok(result);
++		assert.equal(result!.headers.get('x-fetched-url'), 'http://example.com/about/');
++	});
++});
++
++// #endregion
++
++// #region createErrorPageFetch
++
++describe('createErrorPageFetch', () => {
++	it('returns a function that fetches from ASSETS', async () => {
++		const env = createMockEnv({ status: 200, body: '404 page' });
++		const fetchFn = createErrorPageFetch(env as any);
++		const response = await fetchFn('http://example.com/404.html');
++		assert.equal(response.status, 200);
++	});
++
++	it('strips .html extension from the URL', async () => {
++		const env = createMockEnv({ status: 200 });
++		const fetchFn = createErrorPageFetch(env as any);
++		const response = await fetchFn('http://example.com/404.html');
++		assert.equal(response.headers.get('x-fetched-url'), 'http://example.com/404');
++	});
++});
++
++// #endregion

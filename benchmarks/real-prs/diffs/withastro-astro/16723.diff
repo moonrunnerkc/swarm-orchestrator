@@ -1,0 +1,498 @@
+diff --git a/.changeset/advanced-routing-fetchfile.md b/.changeset/advanced-routing-fetchfile.md
+new file mode 100644
+index 000000000000..e9d362d98cf8
+--- /dev/null
++++ b/.changeset/advanced-routing-fetchfile.md
+@@ -0,0 +1,15 @@
++---
++'astro': patch
++---
++
++Adds `fetchFile` option to `experimental.advancedRouting` to customize or disable the entrypoint file
++
++```js
++export default defineConfig({
++  experimental: {
++    advancedRouting: {
++      fetchFile: 'fetch.ts',
++    },
++  },
++});
++```
+diff --git a/.changeset/advanced-routing-hono-cache.md b/.changeset/advanced-routing-hono-cache.md
+new file mode 100644
+index 000000000000..6ee7667bd85d
+--- /dev/null
++++ b/.changeset/advanced-routing-hono-cache.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Fixes Hono `cache()` middleware to follow the standard wrapper pattern
+diff --git a/.changeset/advanced-routing-providers.md b/.changeset/advanced-routing-providers.md
+new file mode 100644
+index 000000000000..6f76fe67c04e
+--- /dev/null
++++ b/.changeset/advanced-routing-providers.md
+@@ -0,0 +1,13 @@
++---
++'astro': patch
++---
++
++Adds `App.Providers` interface for typing custom context providers on `Astro` and `ctx`
++
++```ts
++declare namespace App {
++  interface Providers {
++    oauth: import('./lib/oauth').OAuthSession;
++  }
++}
++```
+diff --git a/.changeset/advanced-routing-state-response.md b/.changeset/advanced-routing-state-response.md
+new file mode 100644
+index 000000000000..c02d2c172814
+--- /dev/null
++++ b/.changeset/advanced-routing-state-response.md
+@@ -0,0 +1,10 @@
++---
++'astro': patch
++---
++
++Adds `FetchState.response` property, set automatically after `pages()` or `middleware()` completes
++
++```ts
++const response = await middleware(state, (s) => pages(s));
++console.log(state.response === response); // true
++```
+diff --git a/.changeset/advanced-routing-types.md b/.changeset/advanced-routing-types.md
+new file mode 100644
+index 000000000000..75dd0ed8d4f1
+--- /dev/null
++++ b/.changeset/advanced-routing-types.md
+@@ -0,0 +1,15 @@
++---
++'astro': patch
++---
++
++Adds `Fetchable` type export for typing the advanced routing entrypoint
++
++```ts
++import type { Fetchable } from 'astro';
++
++export default {
++  async fetch(request) {
++    return new Response('ok');
++  },
++} satisfies Fetchable;
++```
+diff --git a/packages/astro/src/core/config/schemas/base.ts b/packages/astro/src/core/config/schemas/base.ts
+index d4951d109d92..6f876f3e289a 100644
+--- a/packages/astro/src/core/config/schemas/base.ts
++++ b/packages/astro/src/core/config/schemas/base.ts
+@@ -533,7 +533,12 @@ export const AstroConfigSchema = z.object({
+ 	experimental: z
+ 		.strictObject({
+ 			advancedRouting: z
+-				.boolean()
++				.union([
++					z.boolean(),
++					z.strictObject({
++						fetchFile: z.string().nullable().optional().default('app'),
++					}),
++				])
+ 				.optional()
+ 				.default(ASTRO_CONFIG_DEFAULTS.experimental.advancedRouting),
+ 			clientPrerender: z
+diff --git a/packages/astro/src/core/fetch/fetch-state.ts b/packages/astro/src/core/fetch/fetch-state.ts
+index e467a8529866..f98ffc78fcac 100644
+--- a/packages/astro/src/core/fetch/fetch-state.ts
++++ b/packages/astro/src/core/fetch/fetch-state.ts
+@@ -79,6 +79,8 @@ export interface AstroFetchState {
+ 	readonly locals: App.Locals;
+ 	/** Route params derived from routeData + pathname. */
+ 	readonly params: Params | undefined;
++	/** The `Response` produced by handlers, if any. Set after rendering. */
++	response: Response | undefined;
+ 	/** Default HTTP status for the rendered response. */
+ 	status: number;
+ 
+@@ -168,6 +170,11 @@ export class FetchState implements AstroFetchState {
+ 	 * allocate an empty object per request.
+ 	 */
+ 	slots: Record<string, any> | undefined;
++	/**
++	 * The `Response` produced by handlers, if any. Set after page
++	 * rendering or middleware completes.
++	 */
++	response: Response | undefined;
+ 	/**
+ 	 * Default HTTP status for the rendered response. Callers override
+ 	 * before rendering runs (e.g. `AstroHandler` sets this from
+diff --git a/packages/astro/src/core/fetch/index.ts b/packages/astro/src/core/fetch/index.ts
+index 698c4139d074..b4fe46292103 100644
+--- a/packages/astro/src/core/fetch/index.ts
++++ b/packages/astro/src/core/fetch/index.ts
+@@ -1,3 +1,11 @@
++/**
++ * Public `astro/fetch` API.
++ *
++ * Every exported function here is a thin wrapper that resolves the
++ * correct handler instance and delegates to it. **Do not add logic
++ * here** — keep behaviour inside the handler modules so it stays
++ * unit-testable without the virtual-module wiring.
++ */
+ import { ActionHandler } from '../../actions/handler.js';
+ import type { BaseApp } from '../app/base.js';
+ import type { Pipeline } from '../base-pipeline.js';
+diff --git a/packages/astro/src/core/fetch/types.ts b/packages/astro/src/core/fetch/types.ts
+index 47dff37cd0ea..43ad3bf78394 100644
+--- a/packages/astro/src/core/fetch/types.ts
++++ b/packages/astro/src/core/fetch/types.ts
+@@ -4,3 +4,23 @@
+  * lets handlers compose easily with other middleware systems later.
+  */
+ export type FetchHandler = (request: Request) => Promise<Response>;
++
++/**
++ * An object with a `fetch` method that handles incoming requests.
++ * This is the shape expected by `src/app.ts` and aligns with the
++ * convention used by Cloudflare Workers, Bun, and Hono.
++ *
++ * @example
++ * ```ts
++ * import type { Fetchable } from 'astro';
++ *
++ * export default {
++ *   async fetch(request) {
++ *     return new Response('ok');
++ *   }
++ * } satisfies Fetchable;
++ * ```
++ */
++export interface Fetchable {
++	fetch(request: Request): Response | Promise<Response>;
++}
+diff --git a/packages/astro/src/core/fetch/vite-plugin.ts b/packages/astro/src/core/fetch/vite-plugin.ts
+index 336f77bf2bd4..8ff2156ed931 100644
+--- a/packages/astro/src/core/fetch/vite-plugin.ts
++++ b/packages/astro/src/core/fetch/vite-plugin.ts
+@@ -20,14 +20,18 @@ import { ASTRO_VITE_ENVIRONMENT_NAMES } from '../constants.js';
+  */
+ const FETCHABLE_MODULE_ID = 'virtual:astro:fetchable';
+ const FETCHABLE_RESOLVED_MODULE_ID = '\0' + FETCHABLE_MODULE_ID;
+-// Segment under `srcDir` to probe for the user's handler module.
++// Default segment under `srcDir` to probe for the user's handler module.
+ // Matches how `vitePluginMiddleware` resolves `src/middleware`.
+-const APP_PATH_SEGMENT_NAME = 'app';
++const DEFAULT_FETCH_FILE = 'app';
+ 
+ export function vitePluginFetchable({ settings }: { settings: AstroSettings }): VitePlugin {
+ 	let resolvedUserAppId: string | undefined;
+ 	let userAppPresent = false;
+-	const advancedRoutingEnabled = settings.config.experimental.advancedRouting;
++	const advancedRoutingConfig = settings.config.experimental.advancedRouting;
++	const advancedRoutingEnabled = !!advancedRoutingConfig;
++	const fetchFile = (typeof advancedRoutingConfig === 'object' ? advancedRoutingConfig.fetchFile : undefined) ?? DEFAULT_FETCH_FILE;
++	// When fetchFile is null the feature is explicitly disabled.
++	const fetchFileDisabled = typeof advancedRoutingConfig === 'object' && advancedRoutingConfig.fetchFile === null;
+ 
+ 	const normalizedSrcDir = viteNormalizePath(fileURLToPath(settings.config.srcDir));
+ 
+@@ -44,9 +48,9 @@ export function vitePluginFetchable({ settings }: { settings: AstroSettings }):
+ 			server.watcher.on('change', (path) => {
+ 				const normalizedPath = viteNormalizePath(path);
+ 				if (!normalizedPath.startsWith(normalizedSrcDir)) return;
+-				const relativePath = normalizedPath.slice(normalizedSrcDir.length);
+-				// Dot-prefix guard: match `app.ts` but not e.g. `app-utils.ts`.
+-				if (!relativePath.startsWith(`${APP_PATH_SEGMENT_NAME}.`)) return;
++			const relativePath = normalizedPath.slice(normalizedSrcDir.length);
++			// Dot-prefix guard: match `app.ts` but not e.g. `app-utils.ts`.
++			if (!relativePath.startsWith(`${fetchFile}.`)) return;
+ 
+ 				for (const name of [
+ 					ASTRO_VITE_ENVIRONMENT_NAMES.ssr,
+@@ -66,8 +70,12 @@ export function vitePluginFetchable({ settings }: { settings: AstroSettings }):
+ 			filter: {
+ 				id: new RegExp(`^${FETCHABLE_MODULE_ID}$`),
+ 			},
+-			async handler() {
+-				const resolved = await this.resolve(`${normalizedSrcDir}${APP_PATH_SEGMENT_NAME}`);
++		async handler() {
++				if (fetchFileDisabled) {
++					userAppPresent = false;
++					return FETCHABLE_RESOLVED_MODULE_ID;
++				}
++				const resolved = await this.resolve(`${normalizedSrcDir}${fetchFile}`);
+ 				userAppPresent = advancedRoutingEnabled && !!resolved;
+ 				resolvedUserAppId = resolved?.id;
+ 				return FETCHABLE_RESOLVED_MODULE_ID;
+diff --git a/packages/astro/src/core/hono/index.ts b/packages/astro/src/core/hono/index.ts
+index a984ec2de590..454626c78f23 100644
+--- a/packages/astro/src/core/hono/index.ts
++++ b/packages/astro/src/core/hono/index.ts
+@@ -101,9 +101,12 @@ export function sessions(): HonoMiddlewareHandler {
+ 	};
+ }
+ 
+-export function cache(next: () => Promise<Response>): HonoMiddlewareHandler {
+-	return async (context, _honoNext) => {
+-		return fetchCache(getFetchState(context), next);
++export function cache(): HonoMiddlewareHandler {
++	return async (context, honoNext) => {
++		return fetchCache(getFetchState(context), async () => {
++			await honoNext();
++			return context.res;
++		});
+ 	};
+ }
+ 
+diff --git a/packages/astro/src/core/middleware/astro-middleware.ts b/packages/astro/src/core/middleware/astro-middleware.ts
+index 68e5e02da688..92959f9b10d5 100644
+--- a/packages/astro/src/core/middleware/astro-middleware.ts
++++ b/packages/astro/src/core/middleware/astro-middleware.ts
+@@ -71,7 +71,9 @@ export class AstroMiddleware {
+ 			const composed = sequence(...pipeline.internalMiddleware, pipelineMiddleware);
+ 			response = await callMiddleware(composed, apiContext, next);
+ 		}
+-		return this.#finalize(state, response);
++		response = this.#finalize(state, response);
++		state.response = response;
++		return response;
+ 	}
+ 
+ 	#finalize(state: FetchState, response: Response): Response {
+diff --git a/packages/astro/src/core/pages/handler.ts b/packages/astro/src/core/pages/handler.ts
+index 9fcaad2ec57b..3b035c0de89f 100644
+--- a/packages/astro/src/core/pages/handler.ts
++++ b/packages/astro/src/core/pages/handler.ts
+@@ -91,12 +91,13 @@ export class PagesHandler {
+ 				return new Response(null, { status: 500, headers: { [ROUTE_TYPE_HEADER]: 'fallback' } });
+ 			}
+ 		}
+-		// We need to merge the cookies from the response back into the cookies
+-		// because they may need to be passed along from a rewrite.
+-		const responseCookies = getCookiesFromResponse(response);
+-		if (responseCookies) {
+-			state.cookies!.merge(responseCookies);
+-		}
+-		return response;
++	// We need to merge the cookies from the response back into the cookies
++	// because they may need to be passed along from a rewrite.
++	const responseCookies = getCookiesFromResponse(response);
++	if (responseCookies) {
++		state.cookies!.merge(responseCookies);
++	}
++	state.response = response;
++	return response;
+ 	}
+ }
+diff --git a/packages/astro/src/types/public/config.ts b/packages/astro/src/types/public/config.ts
+index cd3939b1f197..4933621a0559 100644
+--- a/packages/astro/src/types/public/config.ts
++++ b/packages/astro/src/types/public/config.ts
+@@ -2793,21 +2793,38 @@ export interface AstroUserConfig<
+ 	experimental?: {
+ 		/**
+ 		 * @name experimental.advancedRouting
+-		 * @type {boolean}
++		 * @type {boolean | object}
+ 		 * @default `false`
+ 		 * @description
+ 		 * Enables `src/app.ts` as an advanced routing entrypoint, allowing you to
+ 		 * compose Astro's request pipeline with the Web Fetch standard or your own Hono middleware.
+ 		 *
++		 * Pass `true` to enable with default settings, or an object to customize:
++		 *
+ 		 * ```js
+ 		 * export default defineConfig({
+ 		 *   experimental: {
+-		 *     advancedRouting: true,
++		 *     advancedRouting: {
++		 *       fetchFile: 'fetch.ts',
++		 *     },
+ 		 *   },
+ 		 * });
+ 		 * ```
+ 		 */
+-		advancedRouting?: boolean;
++		advancedRouting?: boolean | {
++			/**
++			 * @name experimental.advancedRouting.fetchFile
++			 * @type {string | null}
++			 * @default 'app'
++			 * @description
++			 * 
++			 * Customizes the file used as the advanced routing entrypoint inside `srcDir`.
++			 * Defaults to `'app'`, meaning Astro looks for `src/app.ts`.
++			 * 
++			 * If you already have a `src/app.ts` file in use for other purposes, define a different filename or set the value to `null` to disable the entrypoint.
++			 */
++			fetchFile?: string | null;
++		};
+ 
+ 		/**
+ 		 *
+diff --git a/packages/astro/src/types/public/context.ts b/packages/astro/src/types/public/context.ts
+index 98ffd1724114..96fd9d196cf9 100644
+--- a/packages/astro/src/types/public/context.ts
++++ b/packages/astro/src/types/public/context.ts
+@@ -138,7 +138,7 @@ export interface AstroGlobal<
+ export interface APIContext<
+ 	Props extends Record<string, any> = Record<string, any>,
+ 	Params extends Record<string, string | undefined> = Record<string, string | undefined>,
+-> {
++> extends App.Providers {
+ 	/**
+ 	 * The site provided in the astro config, parsed as an instance of `URL`, without base.
+ 	 * `undefined` if the site is not provided in the config.
+diff --git a/packages/astro/src/types/public/extendables.ts b/packages/astro/src/types/public/extendables.ts
+index 8281328ef27b..213503e6485b 100644
+--- a/packages/astro/src/types/public/extendables.ts
++++ b/packages/astro/src/types/public/extendables.ts
+@@ -15,6 +15,25 @@ declare global {
+ 		 * Optionally type the data stored in the session
+ 		 */
+ 		export interface SessionData {}
++
++		/**
++		 * Declare custom context providers to get typed access on `Astro` and `ctx`.
++		 * Libraries and users register providers via `state.provide(key, { create, finalize? })`,
++		 * and the corresponding types are declared here using module augmentation.
++		 *
++		 * Built-in providers like `session` are already typed by Astro and don't
++		 * need to be declared here.
++		 *
++		 * @example
++		 * ```ts
++		 * declare namespace App {
++		 *   interface Providers {
++		 *     oauth: import('./lib/oauth').OAuthSession;
++		 *   }
++		 * }
++		 * ```
++		 */
++		export interface Providers {}
+ 	}
+ 
+ 	namespace Astro {
+diff --git a/packages/astro/src/types/public/index.ts b/packages/astro/src/types/public/index.ts
+index 654ac53ef797..16d5035806d8 100644
+--- a/packages/astro/src/types/public/index.ts
++++ b/packages/astro/src/types/public/index.ts
+@@ -37,6 +37,7 @@ export type { AstroIntegrationLogger } from '../../core/logger/core.js';
+ export type { AstroSession } from '../../core/session/runtime.js';
+ export type { ToolbarServerHelpers } from '../../runtime/client/dev-toolbar/helpers.js';
+ export type { AstroEnvironmentNames } from '../../core/constants.js';
++export type { Fetchable } from '../../core/fetch/types.js';
+ export type { SessionDriver, SessionDriverConfig } from '../../core/session/types.js';
+ export type {
+ 	CacheProvider,
+diff --git a/packages/astro/test/units/fetch/index.test.ts b/packages/astro/test/units/fetch/index.test.ts
+index 149ff342c409..907d0666e583 100644
+--- a/packages/astro/test/units/fetch/index.test.ts
++++ b/packages/astro/test/units/fetch/index.test.ts
+@@ -436,3 +436,103 @@ describe('Composed pipeline', () => {
+ });
+ 
+ // #endregion
++
++// #region state.response
++
++describe('state.response', () => {
++	it('is set after pages() renders', async () => {
++		const app = createTestApp([createPage(simplePage, { route: '/' })]);
++		const request = stampApp(new Request('http://example.com/'), app);
++		const state = new FetchState(request);
++
++		assert.equal(state.response, undefined, 'response should be undefined before rendering');
++
++		const response = await pages(state);
++
++		assert.ok(state.response, 'response should be set after pages()');
++		assert.equal(state.response, response, 'state.response should be the same object returned by pages()');
++	});
++
++	it('is set after middleware() completes', async () => {
++		const app = createTestApp([createPage(simplePage, { route: '/' })]);
++		const request = stampApp(new Request('http://example.com/'), app);
++		const state = new FetchState(request);
++
++		const response = await middleware(state, () => pages(state));
++
++		assert.ok(state.response, 'response should be set after middleware()');
++		assert.equal(state.response, response, 'state.response should be the same object returned by middleware()');
++	});
++});
++
++// #endregion
++
++// #region Context providers
++
++describe('Context providers', () => {
++	it('resolve returns undefined for an unregistered key', () => {
++		const app = createTestApp([createPage(simplePage, { route: '/' })]);
++		const request = stampApp(new Request('http://example.com/'), app);
++		const state = new FetchState(request);
++
++		assert.equal(state.resolve('missing'), undefined);
++	});
++
++	it('provide + resolve lazily creates and caches the value', () => {
++		const app = createTestApp([createPage(simplePage, { route: '/' })]);
++		const request = stampApp(new Request('http://example.com/'), app);
++		const state = new FetchState(request);
++
++		let createCalls = 0;
++		state.provide('counter', {
++			create() {
++				createCalls++;
++				return { count: 42 };
++			},
++		});
++
++		const first = state.resolve('counter');
++		const second = state.resolve('counter');
++
++		assert.deepEqual(first, { count: 42 });
++		assert.equal(first, second, 'resolve should return the cached instance');
++		assert.equal(createCalls, 1, 'create should only be called once');
++	});
++
++	it('finalizeAll runs finalize callbacks for resolved providers', async () => {
++		const app = createTestApp([createPage(simplePage, { route: '/' })]);
++		const request = stampApp(new Request('http://example.com/'), app);
++		const state = new FetchState(request);
++
++		let finalized = false;
++		state.provide('session', {
++			create: () => ({ data: 'test' }),
++			finalize: () => { finalized = true; },
++		});
++
++		// Resolve it so finalize will run
++		state.resolve('session');
++		await state.finalizeAll();
++
++		assert.ok(finalized, 'finalize should have been called');
++	});
++
++	it('finalizeAll skips providers that were never resolved', async () => {
++		const app = createTestApp([createPage(simplePage, { route: '/' })]);
++		const request = stampApp(new Request('http://example.com/'), app);
++		const state = new FetchState(request);
++
++		let finalized = false;
++		state.provide('unused', {
++			create: () => 'value',
++			finalize: () => { finalized = true; },
++		});
++
++		// Don't resolve — finalize should not run
++		await state.finalizeAll();
++
++		assert.equal(finalized, false, 'finalize should not run for unresolved providers');
++	});
++});
++
++// #endregion

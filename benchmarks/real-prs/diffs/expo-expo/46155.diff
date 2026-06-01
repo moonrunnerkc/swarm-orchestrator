@@ -1,0 +1,1276 @@
+diff --git a/packages/@expo/cli/CHANGELOG.md b/packages/@expo/cli/CHANGELOG.md
+index e233bd482d087a..e63c8fd82f4263 100644
+--- a/packages/@expo/cli/CHANGELOG.md
++++ b/packages/@expo/cli/CHANGELOG.md
+@@ -13,6 +13,7 @@
+ ### 💡 Others
+ 
+ - Disable sextant QR code rendering for Zed due to regression ([#46148](https://github.com/expo/expo/pull/46148) by [@kitten](https://github.com/kitten))
++- Offload Metro user config resolution to `@expo/metro-config`'s `loadUserConfig` ([#46155](https://github.com/expo/expo/pull/46155) by [@kitten](https://github.com/kitten))
+ 
+ ## 56.1.10 — 2026-05-21
+ 
+diff --git a/packages/@expo/cli/src/start/server/metro/instantiateMetro.ts b/packages/@expo/cli/src/start/server/metro/instantiateMetro.ts
+index ef3fecbea1a4d0..650f706dc1871e 100644
+--- a/packages/@expo/cli/src/start/server/metro/instantiateMetro.ts
++++ b/packages/@expo/cli/src/start/server/metro/instantiateMetro.ts
+@@ -9,13 +9,11 @@ import type MetroHmrServer from '@expo/metro/metro/HmrServer';
+ import RevisionNotFoundError from '@expo/metro/metro/IncrementalBundler/RevisionNotFoundError';
+ import type MetroServer from '@expo/metro/metro/Server';
+ import formatBundlingError from '@expo/metro/metro/lib/formatBundlingError';
+-import { mergeConfig, resolveConfig, type ConfigT } from '@expo/metro/metro-config';
+ import { Terminal } from '@expo/metro/metro-core';
+ import type { createStableModuleIdFactory } from '@expo/metro-config';
+-import { getDefaultConfig } from '@expo/metro-config';
++import { loadUserConfig } from '@expo/metro-config';
+ import { patchTransformFileForPackedMaps } from '@expo/metro-config/build/serializer/packedMap';
+ import { patchMetroSourceMapStringForPackedMaps } from '@expo/metro-config/build/serializer/sourceMap';
+-import { resolveBabelrcName } from '@expo/metro-config/exports';
+ import chalk from 'chalk';
+ import type http from 'http';
+ import path from 'path';
+@@ -218,20 +216,15 @@ export async function loadMetroConfigAsync(
+ 
+   const terminalReporter = new MetroTerminalReporter(serverRoot, terminal);
+ 
+-  // NOTE: Allow external tools to override the metro config. This is considered internal and unstable
+-  const configPath = env.EXPO_OVERRIDE_METRO_CONFIG ?? undefined;
+-  const resolvedConfig = await resolveConfig(configPath, projectRoot);
+-  const defaultConfig = getDefaultConfig(projectRoot);
+-
+-  let config: ConfigT = resolvedConfig.isEmpty
+-    ? defaultConfig
+-    : await mergeConfig(defaultConfig, resolvedConfig.config);
++  let config = await loadUserConfig({
++    projectRoot,
++    serverRoot,
++    // NOTE: Allow external tools to override the metro config. This is considered internal and unstable
++    overrideConfigPath: env.EXPO_OVERRIDE_METRO_CONFIG ?? undefined,
++  });
+ 
+-  // Set the watchfolders to include the projectRoot, as Metro assumes this
+-  // Force-override the reporter
+   config = {
+     ...config,
+-
+     // See: `overrideConfigWithArguments` https://github.com/facebook/metro/blob/5059e26/packages/metro-config/src/loadConfig.js#L274-L339
+     // Compare to `LoadOptions` type (disregard `reporter` as we don't expose this)
+     resetCache: !!options.resetCache,
+@@ -240,10 +233,7 @@ export async function loadMetroConfigAsync(
+       ...config.server,
+       port: options.port ?? config.server.port,
+     },
+-
+-    watchFolders: !config.watchFolders.includes(config.projectRoot)
+-      ? [config.projectRoot, ...config.watchFolders]
+-      : config.watchFolders,
++    // Force-override the reporter
+     reporter: {
+       update(event) {
+         terminalReporter.update(event);
+@@ -254,24 +244,11 @@ export async function loadMetroConfigAsync(
+     },
+   };
+ 
+-  // NOTE(@kitten): Pass a hint to the transformer on where to find the Babel config
+-  asWritable(config.transformer).extendsBabelConfigPath =
+-    config.transformer.enableBabelRCLookup !== false ? resolveBabelrcName(projectRoot) : undefined;
+-
+   // On-Demand Filesystem is enabled by default
+   // TODO(@kitten): Add to config-types JSON schema
+   const onDemandFilesystem = exp.experiments?.onDemandFilesystem ?? true;
+   asWritable(config.resolver).unstable_onDemandFilesystem = onDemandFilesystem;
+ 
+-  // NOTE(@kitten): `useWatchman` is currently enabled by default, but it also disables `forceNodeFilesystemAPI`.
+-  // If we instead set it to the special value `null`, it gets enables but also bypasses the "native find" codepath,
+-  // which is slower than just using the Node filesystem API
+-  // See: https://github.com/facebook/metro/blob/b9c243f/packages/metro-file-map/src/index.js#L326
+-  // See: https://github.com/facebook/metro/blob/b9c243f/packages/metro/src/node-haste/DependencyGraph/createFileMap.js#L109
+-  if (config.resolver.useWatchman === true) {
+-    asWritable(config.resolver).useWatchman = null as any;
+-  }
+-
+   globalThis.__requireCycleIgnorePatterns = config.resolver?.requireCycleIgnorePatterns;
+ 
+   if (isExporting) {
+diff --git a/packages/@expo/metro-config/CHANGELOG.md b/packages/@expo/metro-config/CHANGELOG.md
+index 73fb685796923e..071fdef35a13d3 100644
+--- a/packages/@expo/metro-config/CHANGELOG.md
++++ b/packages/@expo/metro-config/CHANGELOG.md
+@@ -6,10 +6,15 @@
+ 
+ ### 🎉 New features
+ 
++- Add `loadUserConfig`, abstracting Expo's loading of Metro configs ([#46155](https://github.com/expo/expo/pull/46155) by [@kitten](https://github.com/kitten))
++
+ ### 🐛 Bug fixes
+ 
+ ### 💡 Others
+ 
++- Switch Metro config resolution to `@expo/require-utils`, aligning with `@expo/config` and `@expo/config-plugins` ([#46155](https://github.com/expo/expo/pull/46155) by [@kitten](https://github.com/kitten))
++- Drop support for loading Metro configs outside the server root, from yaml files, and from `package.json:metro` outside the project root ([#46155](https://github.com/expo/expo/pull/46155) by [@kitten](https://github.com/kitten))
++
+ ## 56.0.11 — 2026-05-20
+ 
+ ### 🐛 Bug fixes
+diff --git a/packages/@expo/metro-config/build/config/loadUserConfig.d.ts b/packages/@expo/metro-config/build/config/loadUserConfig.d.ts
+new file mode 100644
+index 00000000000000..dee5dce001e8e0
+--- /dev/null
++++ b/packages/@expo/metro-config/build/config/loadUserConfig.d.ts
+@@ -0,0 +1,5 @@
++import { type ConfigT } from '@expo/metro/metro-config';
++import { type LoadMetroConfigParams } from './resolveMetroUserConfig';
++export type { LoadMetroConfigParams } from './resolveMetroUserConfig';
++/** Resolves a user Metro config from the given `params.projectRoot` */
++export declare function loadUserConfig(params: LoadMetroConfigParams): Promise<ConfigT>;
+diff --git a/packages/@expo/metro-config/build/config/loadUserConfig.js b/packages/@expo/metro-config/build/config/loadUserConfig.js
+new file mode 100644
+index 00000000000000..8311554cda60ea
+--- /dev/null
++++ b/packages/@expo/metro-config/build/config/loadUserConfig.js
+@@ -0,0 +1,40 @@
++"use strict";
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.loadUserConfig = loadUserConfig;
++const metro_config_1 = require("@expo/metro/metro-config");
++const ExpoMetroConfig_1 = require("../ExpoMetroConfig");
++const resolveMetroUserConfig_1 = require("./resolveMetroUserConfig");
++const loadBabelConfig_1 = require("../loadBabelConfig");
++function asWritable(input) {
++    return input;
++}
++/** Resolves a user Metro config from the given `params.projectRoot` */
++async function loadUserConfig(params) {
++    const defaultConfig = (0, ExpoMetroConfig_1.getDefaultConfig)(params.projectRoot);
++    const resolvedConfig = await (0, resolveMetroUserConfig_1.resolveMetroUserConfig)(params);
++    let config = resolvedConfig.isEmpty
++        ? defaultConfig
++        : await (0, metro_config_1.mergeConfig)(defaultConfig, resolvedConfig.config);
++    config = {
++        ...config,
++        // Set the watchFolders to include the projectRoot, as Metro assumes this
++        watchFolders: !config.watchFolders.includes(config.projectRoot)
++            ? [config.projectRoot, ...config.watchFolders]
++            : config.watchFolders,
++    };
++    // NOTE(@kitten): Pass a hint to the transformer on where to find the Babel config
++    asWritable(config.transformer).extendsBabelConfigPath =
++        config.transformer.enableBabelRCLookup !== false
++            ? (0, loadBabelConfig_1.resolveBabelrcName)(params.projectRoot)
++            : undefined;
++    // NOTE(@kitten): `useWatchman` is currently enabled by default, but it also disables `forceNodeFilesystemAPI`.
++    // If we instead set it to the special value `null`, it gets enables but also bypasses the "native find" codepath,
++    // which is slower than just using the Node filesystem API
++    // See: https://github.com/facebook/metro/blob/b9c243f/packages/metro-file-map/src/index.js#L326
++    // See: https://github.com/facebook/metro/blob/b9c243f/packages/metro/src/node-haste/DependencyGraph/createFileMap.js#L109
++    if (config.resolver.useWatchman === true) {
++        asWritable(config.resolver).useWatchman = null;
++    }
++    return config;
++}
++//# sourceMappingURL=loadUserConfig.js.map
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/build/config/loadUserConfig.js.map b/packages/@expo/metro-config/build/config/loadUserConfig.js.map
+new file mode 100644
+index 00000000000000..3bb2b662cd022c
+--- /dev/null
++++ b/packages/@expo/metro-config/build/config/loadUserConfig.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"loadUserConfig.js","sourceRoot":"","sources":["../../src/config/loadUserConfig.ts"],"names":[],"mappings":";;AAaA,wCAgCC;AA7CD,2DAAqE;AAErE,wDAAsD;AACtD,qEAA8F;AAC9F,wDAAwD;AAIxD,SAAS,UAAU,CAAI,KAAQ;IAC7B,OAAO,KAAK,CAAC;AACf,CAAC;AAED,uEAAuE;AAChE,KAAK,UAAU,cAAc,CAAC,MAA6B;IAChE,MAAM,aAAa,GAAG,IAAA,kCAAgB,EAAC,MAAM,CAAC,WAAW,CAAC,CAAC;IAC3D,MAAM,cAAc,GAAG,MAAM,IAAA,+CAAsB,EAAC,MAAM,CAAC,CAAC;IAE5D,IAAI,MAAM,GAAY,cAAc,CAAC,OAAO;QAC1C,CAAC,CAAC,aAAa;QACf,CAAC,CAAC,MAAM,IAAA,0BAAW,EAAC,aAAa,EAAE,cAAc,CAAC,MAAM,CAAC,CAAC;IAE5D,MAAM,GAAG;QACP,GAAG,MAAM;QACT,yEAAyE;QACzE,YAAY,EAAE,CAAC,MAAM,CAAC,YAAY,CAAC,QAAQ,CAAC,MAAM,CAAC,WAAW,CAAC;YAC7D,CAAC,CAAC,CAAC,MAAM,CAAC,WAAW,EAAE,GAAG,MAAM,CAAC,YAAY,CAAC;YAC9C,CAAC,CAAC,MAAM,CAAC,YAAY;KACxB,CAAC;IAEF,kFAAkF;IAClF,UAAU,CAAC,MAAM,CAAC,WAAW,CAAC,CAAC,sBAAsB;QACnD,MAAM,CAAC,WAAW,CAAC,mBAAmB,KAAK,KAAK;YAC9C,CAAC,CAAC,IAAA,oCAAkB,EAAC,MAAM,CAAC,WAAW,CAAC;YACxC,CAAC,CAAC,SAAS,CAAC;IAEhB,+GAA+G;IAC/G,kHAAkH;IAClH,0DAA0D;IAC1D,gGAAgG;IAChG,0HAA0H;IAC1H,IAAI,MAAM,CAAC,QAAQ,CAAC,WAAW,KAAK,IAAI,EAAE,CAAC;QACzC,UAAU,CAAC,MAAM,CAAC,QAAQ,CAAC,CAAC,WAAW,GAAG,IAAW,CAAC;IACxD,CAAC;IAED,OAAO,MAAM,CAAC;AAChB,CAAC"}
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/build/config/resolveMetroUserConfig.d.ts b/packages/@expo/metro-config/build/config/resolveMetroUserConfig.d.ts
+new file mode 100644
+index 00000000000000..16e4e1682d844a
+--- /dev/null
++++ b/packages/@expo/metro-config/build/config/resolveMetroUserConfig.d.ts
+@@ -0,0 +1,14 @@
++import type { ConfigT as MetroConfig } from '@expo/metro/metro-config';
++export interface LoadMetroConfigParams {
++    serverRoot: string;
++    projectRoot: string;
++    overrideConfigPath?: string | undefined;
++}
++type RawMetroConfig = ((baseConfig: MetroConfig) => Promise<MetroConfig>) | ((baseConfig: MetroConfig) => MetroConfig) | MetroConfig;
++export interface ResolveMetroConfigResult {
++    filepath: string;
++    isEmpty: boolean;
++    config: RawMetroConfig;
++}
++export declare function resolveMetroUserConfig(params: LoadMetroConfigParams): Promise<ResolveMetroConfigResult>;
++export {};
+diff --git a/packages/@expo/metro-config/build/config/resolveMetroUserConfig.js b/packages/@expo/metro-config/build/config/resolveMetroUserConfig.js
+new file mode 100644
+index 00000000000000..292391e2738a22
+--- /dev/null
++++ b/packages/@expo/metro-config/build/config/resolveMetroUserConfig.js
+@@ -0,0 +1,107 @@
++"use strict";
++var __importDefault = (this && this.__importDefault) || function (mod) {
++    return (mod && mod.__esModule) ? mod : { "default": mod };
++};
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.resolveMetroUserConfig = resolveMetroUserConfig;
++const json_file_1 = __importDefault(require("@expo/json-file"));
++const require_utils_1 = require("@expo/require-utils");
++const node_fs_1 = __importDefault(require("node:fs"));
++const node_path_1 = __importDefault(require("node:path"));
++function isPathInside(child, parent) {
++    const relative = node_path_1.default.relative(parent, child);
++    return !!relative && !relative.startsWith('..') && !node_path_1.default.isAbsolute(relative);
++}
++const configExtensions = ['.js', '.cjs', '.mjs', '.json', '.ts', '.cts', '.mts'];
++const resolveConfigFromPath = (filePath, projectRoot) => {
++    const inputPath = node_path_1.default.resolve(process.cwd(), filePath);
++    const normalized = `.${node_path_1.default.sep}${node_path_1.default.relative(projectRoot, inputPath)}`;
++    const resolved = (0, require_utils_1.resolveFrom)(projectRoot, normalized, { extensions: configExtensions });
++    return resolved ?? inputPath;
++};
++const resolvePackageJsonConfig = (searchPath) => {
++    const target = node_path_1.default.resolve(searchPath, 'package.json');
++    const stat = node_fs_1.default.lstatSync(target, { throwIfNoEntry: false });
++    if (!stat?.isFile()) {
++        return null;
++    }
++    const json = new json_file_1.default(target).read();
++    if (json.metro != null && typeof json.metro === 'object' && !Array.isArray(json.metro)) {
++        return {
++            filePath: target,
++            config: json.metro,
++        };
++    }
++    else {
++        return null;
++    }
++};
++const loadConfigFile = async (configPath) => {
++    if (configPath.endsWith('.json')) {
++        const json = new json_file_1.default(configPath).read();
++        return node_path_1.default.basename(configPath) === 'package.json' ? json.metro : json;
++    }
++    // Using sync variant to match Expo config/config-plugins
++    const mod = (0, require_utils_1.loadModuleSync)(configPath);
++    return await (mod.__esModule ? mod.default : mod);
++};
++const _resolutionCache = new Map();
++async function resolveMetroUserConfig(params) {
++    let configPath = null;
++    if (params.overrideConfigPath) {
++        configPath = resolveConfigFromPath(params.overrideConfigPath, params.projectRoot);
++    }
++    else if (_resolutionCache.has(params.projectRoot)) {
++        configPath = _resolutionCache.get(params.projectRoot);
++    }
++    else {
++        // NOTE(@kitten): Metro usually traverses beyond the server root, but we deem this unsafe
++        const startPath = node_path_1.default.resolve(params.projectRoot);
++        const stopPath = node_path_1.default.resolve(params.serverRoot);
++        // Search upwards until the server root
++        let searchPath = startPath;
++        while (configPath == null && (searchPath === stopPath || isPathInside(searchPath, stopPath))) {
++            configPath = (0, require_utils_1.resolveFrom)(searchPath, './metro.config', { extensions: configExtensions });
++            // Metro searches for .config/metro.[ext] next
++            if (configPath == null) {
++                configPath = (0, require_utils_1.resolveFrom)(searchPath, './.config/metro', { extensions: configExtensions });
++            }
++            if (configPath == null && searchPath === startPath) {
++                // At each level, also check the package.json for "metro" entry
++                // NOTE(@kitten): Metro actually searches in each package.json upwards, but we're dropping
++                // support for this, since this is very unexpected
++                const packageJsonResult = resolvePackageJsonConfig(searchPath);
++                if (packageJsonResult) {
++                    configPath = packageJsonResult.filePath;
++                    break;
++                }
++            }
++            // Protect against `serverRoot === '/'` edge case
++            const prevDir = searchPath;
++            searchPath = node_path_1.default.dirname(searchPath);
++            if (prevDir === searchPath) {
++                break;
++            }
++        }
++        // We want to avoid doing this whole search again since it's very expensive
++        if (configPath != null) {
++            _resolutionCache.set(params.projectRoot, configPath);
++        }
++    }
++    if (configPath == null) {
++        // No config file found, return a default
++        return {
++            isEmpty: true,
++            filepath: node_path_1.default.join(params.projectRoot, 'metro.config.stub.js'),
++            config: {},
++        };
++    }
++    else {
++        return {
++            isEmpty: false,
++            filepath: configPath,
++            config: await loadConfigFile(configPath),
++        };
++    }
++}
++//# sourceMappingURL=resolveMetroUserConfig.js.map
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/build/config/resolveMetroUserConfig.js.map b/packages/@expo/metro-config/build/config/resolveMetroUserConfig.js.map
+new file mode 100644
+index 00000000000000..a5c0e662ab2c66
+--- /dev/null
++++ b/packages/@expo/metro-config/build/config/resolveMetroUserConfig.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"resolveMetroUserConfig.js","sourceRoot":"","sources":["../../src/config/resolveMetroUserConfig.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/build/index.d.ts b/packages/@expo/metro-config/build/index.d.ts
+new file mode 100644
+index 00000000000000..0ff4de75a0762a
+--- /dev/null
++++ b/packages/@expo/metro-config/build/index.d.ts
+@@ -0,0 +1,2 @@
++export * from './config/loadUserConfig';
++export * from './ExpoMetroConfig';
+diff --git a/packages/@expo/metro-config/build/index.js b/packages/@expo/metro-config/build/index.js
+new file mode 100644
+index 00000000000000..c8a2d5f10adc0e
+--- /dev/null
++++ b/packages/@expo/metro-config/build/index.js
+@@ -0,0 +1,19 @@
++"use strict";
++var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
++    if (k2 === undefined) k2 = k;
++    var desc = Object.getOwnPropertyDescriptor(m, k);
++    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
++      desc = { enumerable: true, get: function() { return m[k]; } };
++    }
++    Object.defineProperty(o, k2, desc);
++}) : (function(o, m, k, k2) {
++    if (k2 === undefined) k2 = k;
++    o[k2] = m[k];
++}));
++var __exportStar = (this && this.__exportStar) || function(m, exports) {
++    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
++};
++Object.defineProperty(exports, "__esModule", { value: true });
++__exportStar(require("./config/loadUserConfig"), exports);
++__exportStar(require("./ExpoMetroConfig"), exports);
++//# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/build/index.js.map b/packages/@expo/metro-config/build/index.js.map
+new file mode 100644
+index 00000000000000..fd0c6c6baa0bed
+--- /dev/null
++++ b/packages/@expo/metro-config/build/index.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":";;;;;;;;;;;;;;;;AAAA,0DAAwC;AACxC,oDAAkC"}
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.d.ts b/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.d.ts
+index 61cb1496551451..b3436fada9dae4 100644
+--- a/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.d.ts
++++ b/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.d.ts
+@@ -1,13 +1,11 @@
+-declare module 'module' {
+-    namespace Module {
+-        function _resolveFilename(request: string, parent: {
+-            id: string;
+-            filename: string;
+-            paths: string[];
+-        } | string | null, isMain?: boolean, options?: {
+-            paths?: string[];
+-        }): string;
+-    }
++declare module 'node:module' {
++    function _resolveFilename(request: string, parent: {
++        id: string;
++        filename: string;
++        paths: string[];
++    } | string | null, isMain?: boolean, options?: {
++        paths?: string[];
++    }): string;
+ }
+ /** Returns a resolver function that given a request to a module returns that module's remapped path. */
+ export declare const createModuleMapper: () => (request: string) => string | null;
+diff --git a/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.js.map b/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.js.map
+index 637625e074084e..6fb98480e5b0a1 100644
+--- a/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.js.map
++++ b/packages/@expo/metro-config/build/transform-worker/utils/moduleMapper.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"moduleMapper.js","sourceRoot":"","sources":["../../../src/transform-worker/utils/moduleMapper.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"moduleMapper.js","sourceRoot":"","sources":["../../../src/transform-worker/utils/moduleMapper.ts"],"names":[],"mappings":";;;;;;AAAA,oDAAmC;AACnC,gDAAwB;AAcxB,MAAM,KAAK,GAAG,OAAO,CAAC,OAAO,CAAC,CAC5B,8DAA8D,CACzC,CAAC;AAExB,MAAM,sBAAsB,GAAG,CAAC,OAAe,EAAE,MAA6B,EAAE,EAAE,CAChF,cAAI,CAAC,OAAO,CAAC,OAAO,CAAC,OAAO,CAAC,GAAG,OAAO,eAAe,EAAE,MAAM,CAAC,CAAC,CAAC;AACnE,MAAM,iBAAiB,GAAG,sBAAsB,CAAC,aAAa,CAAC,CAAC;AAEhE;;;;;;;;;;;;GAYG;AACH,MAAM,kBAAkB,GAA2B;IACjD,KAAK,EAAE,iBAAiB;IACxB,yBAAyB,EAAE,iBAAiB;IAC5C,aAAa,EAAE,iBAAiB;IAChC,iBAAiB,EAAE,iBAAiB;IACpC,cAAc,EAAE,iBAAiB;IACjC,YAAY,EAAE,iBAAiB;IAC/B,gBAAgB,EAAE,iBAAiB;IACnC,gBAAgB,EAAE,iBAAiB;IACnC,eAAe,EAAE,iBAAiB;IAClC,kBAAkB,EAAE,iBAAiB;IACrC,yBAAyB,EAAE,iBAAiB;IAC5C,wBAAwB,EAAE,iBAAiB;IAC3C,oBAAoB,EAAE,sBAAsB,CAAC,MAAM,CAAC;CACrD,CAAC;AAEF,MAAM,oBAAoB,GAAG,CAAC,UAAkB,EAAE,EAAE,CAClD,UAAU,CAAC,OAAO,CAAC,aAAa,EAAE,CAAC,CAAC,EAAE,EAAE,CAAC,KAAK,CAAC,EAAE,CAAC,CAAC;AACrD,MAAM,mBAAmB,GAAG,CAAC,YAAsB,EAAE,EAAE,CACrD,IAAI,MAAM,CAAC,KAAK,YAAY,CAAC,GAAG,CAAC,oBAAoB,CAAC,CAAC,IAAI,CAAC,GAAG,CAAC,UAAU,CAAC,CAAC;AAE9E,wGAAwG;AACjG,MAAM,kBAAkB,GAAG,GAAG,EAAE;IACrC,yDAAyD;IACzD,MAAM,YAAY,GAAG,mBAAmB,CAAC,MAAM,CAAC,IAAI,CAAC,kBAAkB,CAAC,CAAC,CAAC;IAC1E,OAAO,CAAC,OAAe,EAAiB,EAAE;QACxC,MAAM,WAAW,GAAG,YAAY,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC;QAC/C,IAAI,WAAW,EAAE,CAAC;YAChB,kEAAkE;YAClE,sDAAsD;YACtD,MAAM,gBAAgB,GAAG,kBAAkB,CAAC,WAAW,CAAC,CAAC,CAAW,CAAC,CAAC;YACtE,IAAI,gBAAgB,EAAE,CAAC;gBACrB,oEAAoE;gBACpE,6BAA6B;gBAC7B,OAAO,OAAO,CAAC,OAAO,CAAC,OAAO,EAAE,EAAE,KAAK,EAAE,CAAC,gBAAgB,CAAC,EAAE,CAAC,CAAC;YACjE,CAAC;QACH,CAAC;QACD,OAAO,IAAI,CAAC;IACd,CAAC,CAAC;AACJ,CAAC,CAAC;AAjBW,QAAA,kBAAkB,sBAiB7B;AAEF,mEAAmE;AACnE,MAAM,iBAAiB,GAAG,GAAG,EAAE,CAC7B,CAAC,OAAO,CAAC,gBAAgB,CAAC,CAAC,YAAY,IAAI,OAAO,OAAO,CAAC,IAAI,KAAK,UAAU,CAAC;AAEhF,IAAI,4BAA4B,GAAG,KAAK,CAAC;AAEzC;;;;;;;;;;;;;;GAcG;AACI,MAAM,uBAAuB,GAAG,GAAG,EAAE;IAC1C,IAAI,4BAA4B,EAAE,CAAC;QACjC,OAAO;IACT,CAAC;SAAM,IAAI,CAAC,iBAAiB,EAAE,EAAE,CAAC;QAChC,oEAAoE;QACpE,oDAAoD;QACpD,gEAAgE;QAChE,gEAAgE;QAChE,4DAA4D;QAC5D,4BAA4B;QAC5B,KAAK,CAAC,uDAAuD,CAAC,CAAC;IACjE,CAAC;IACD,4BAA4B,GAAG,IAAI,CAAC;IACpC,MAAM,YAAY,GAAG,IAAA,0BAAkB,GAAE,CAAC;IAE1C,oGAAoG;IACpG,MAAM,MAAM,GACV,MAAM,CAAC,WAAW,CAAC,MAAM,GAAG,CAAC,CAAC,CAAC,CAAE,MAAM,CAAC,WAAmB,CAAC,CAAC,CAAC,gBAAa,CAAC;IAE9E,MAAM,uBAAuB,GAAG,MAAM,CAAC,gBAAgB,CAAC;IACxD,IAAI,kBAAkB,GAAG,KAAK,CAAC;IAC/B,MAAM,CAAC,gBAAgB,GAAG,UAAU,OAAO,EAAE,MAAM,EAAE,MAAM,EAAE,OAAO;QAClE,IAAI,CAAC,kBAAkB,EAAE,CAAC;YACxB,IAAI,CAAC;gBACH,kBAAkB,GAAG,IAAI,CAAC;gBAC1B,MAAM,QAAQ,GAAG,OAAO,MAAM,KAAK,QAAQ,CAAC,CAAC,CAAC,MAAM,CAAC,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC;gBAClE,IAAI,QAAQ,EAAE,CAAC;oBACb,uEAAuE;oBACvE,yDAAyD;oBACzD,oEAAoE;oBACpE,eAAe;oBACf,kEAAkE;oBAClE,kEAAkE;oBAClE,uCAAuC;oBACvC,gHAAgH;oBAChH,MAAM,iBAAiB,GAAG,YAAY,CAAC,OAAO,CAAC,CAAC;oBAChD,IAAI,iBAAiB,EAAE,CAAC;wBACtB,KAAK,CAAC,uBAAuB,OAAO,SAAS,iBAAiB,GAAG,CAAC,CAAC;wBACnE,OAAO,iBAAiB,CAAC;oBAC3B,CAAC;gBACH,CAAC;YACH,CAAC;YAAC,OAAO,KAAK,EAAE,CAAC;gBACf,KAAK,CAAC,+BAA+B,OAAO,MAAM,KAAK,EAAE,CAAC,CAAC;YAC7D,CAAC;oBAAS,CAAC;gBACT,yCAAyC;gBACzC,kBAAkB,GAAG,KAAK,CAAC;YAC7B,CAAC;QACH,CAAC;QACD,OAAO,uBAAuB,CAAC,IAAI,CAAC,IAAI,EAAE,OAAO,EAAE,MAAM,EAAE,MAAM,EAAE,OAAO,CAAC,CAAC;IAC9E,CAAC,CAAC;AACJ,CAAC,CAAC;AAlDW,QAAA,uBAAuB,2BAkDlC"}
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/package.json b/packages/@expo/metro-config/package.json
+index 9c07ad5e5617a0..e826bf7c62f203 100644
+--- a/packages/@expo/metro-config/package.json
++++ b/packages/@expo/metro-config/package.json
+@@ -2,13 +2,13 @@
+   "name": "@expo/metro-config",
+   "version": "56.0.11",
+   "description": "A Metro config for running React Native projects with the Metro bundler",
+-  "main": "build/ExpoMetroConfig.js",
+-  "types": "build/ExpoMetroConfig.d.ts",
++  "main": "build/index.js",
++  "types": "build/index.d.ts",
+   "exports": {
+     ".": {
+-      "types": "./build/ExpoMetroConfig.d.ts",
+-      "require": "./build/ExpoMetroConfig.js",
+-      "default": "./build/ExpoMetroConfig.js"
++      "types": "./build/index.d.ts",
++      "require": "./build/index.js",
++      "default": "./build/index.js"
+     },
+     "./exports": {
+       "types": "./build/exports.d.ts",
+@@ -69,6 +69,7 @@
+     "@expo/env": "workspace:~2.3.0",
+     "@expo/json-file": "workspace:~10.2.0",
+     "@expo/metro": "~56.0.0",
++    "@expo/require-utils": "workspace:^56.1.2",
+     "@expo/spawn-async": "^1.8.0",
+     "@jridgewell/gen-mapping": "^0.3.13",
+     "@jridgewell/remapping": "^2.3.5",
+diff --git a/packages/@expo/metro-config/src/config/__tests__/resolveMetroUserConfig.test.ts b/packages/@expo/metro-config/src/config/__tests__/resolveMetroUserConfig.test.ts
+new file mode 100644
+index 00000000000000..058aaf82ec77bd
+--- /dev/null
++++ b/packages/@expo/metro-config/src/config/__tests__/resolveMetroUserConfig.test.ts
+@@ -0,0 +1,242 @@
++import { vol } from 'memfs';
++import path from 'node:path';
++
++import { resolveMetroUserConfig } from '../resolveMetroUserConfig';
++
++// NOTE: Bypass `require()` so the test loader reads from memfs and evaluates inline.
++jest.mock('@expo/require-utils', () => {
++  const actual = jest.requireActual<typeof import('@expo/require-utils')>('@expo/require-utils');
++  return {
++    ...actual,
++    loadModuleSync(filename: string) {
++      const code = require('fs').readFileSync(filename, 'utf8');
++      return actual.evalModule(code, filename, { cache: false });
++    },
++  };
++});
++
++const cwdSpy = jest.spyOn(process, 'cwd');
++
++// NOTE: `resolveMetroUserConfig.ts` caches resolved paths by projectRoot at the module level.
++// Tests rely on a unique projectRoot per test to avoid cross-test cache pollution.
++let counter = 0;
++let serverRoot: string;
++let projectRoot: string;
++
++beforeEach(() => {
++  counter += 1;
++  serverRoot = `/t${counter}`;
++  projectRoot = serverRoot;
++});
++
++afterEach(() => {
++  vol.reset();
++  cwdSpy.mockReset();
++});
++
++describe(resolveMetroUserConfig, () => {
++  it('returns an empty result when no config is found', async () => {
++    vol.fromJSON({ [`${projectRoot}/package.json`]: '{}' });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.isEmpty).toBe(true);
++    expect(result.filepath).toBe(path.join(projectRoot, 'metro.config.stub.js'));
++    expect(result.config).toEqual({});
++  });
++
++  it('loads metro.config.js from projectRoot', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.js`]: 'module.exports = { cacheVersion: "js" };',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.isEmpty).toBe(false);
++    expect(result.filepath).toBe(path.join(projectRoot, 'metro.config.js'));
++    expect(result.config).toEqual({ cacheVersion: 'js' });
++  });
++
++  it('loads metro.config.json from projectRoot', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.json`]: JSON.stringify({ cacheVersion: 'json' }),
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.filepath).toBe(path.join(projectRoot, 'metro.config.json'));
++    expect(result.config).toEqual({ cacheVersion: 'json' });
++  });
++
++  it('loads metro.config.ts via TypeScript transpilation', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.ts`]:
++        'const cfg: { cacheVersion: string } = { cacheVersion: "ts" }; export default cfg;',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.config).toEqual({ cacheVersion: 'ts' });
++  });
++
++  it('unwraps __esModule default exports', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.js`]:
++        'Object.defineProperty(exports, "__esModule", { value: true }); exports.default = { cacheVersion: "esm" };',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.config).toEqual({ cacheVersion: 'esm' });
++  });
++
++  it('preserves function-style config exports', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.js`]: 'module.exports = (base) => ({ cacheVersion: "fn" });',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(typeof result.config).toBe('function');
++    expect((result.config as any)({})).toEqual({ cacheVersion: 'fn' });
++  });
++
++  it('loads .config/metro.[ext] when no metro.config.* exists', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/.config/metro.js`]: 'module.exports = { cacheVersion: "dotconfig" };',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.filepath).toBe(path.join(projectRoot, '.config', 'metro.js'));
++    expect(result.config).toEqual({ cacheVersion: 'dotconfig' });
++  });
++
++  it('loads package.json:metro when no metro.config.* exists', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/package.json`]: JSON.stringify({ metro: { cacheVersion: 'pkg' } }),
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.filepath).toBe(path.join(projectRoot, 'package.json'));
++    expect(result.config).toEqual({ cacheVersion: 'pkg' });
++  });
++
++  it('ignores package.json without a metro key', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/package.json`]: JSON.stringify({ name: 'app' }),
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.isEmpty).toBe(true);
++  });
++
++  it('prefers metro.config.js over metro.config.json at the same level', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.js`]: 'module.exports = { from: "js" };',
++      [`${projectRoot}/metro.config.json`]: JSON.stringify({ from: 'json' }),
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.config).toEqual({ from: 'js' });
++  });
++
++  it('prefers metro.config.* over .config/metro.*', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.js`]: 'module.exports = { from: "metro.config" };',
++      [`${projectRoot}/.config/metro.js`]: 'module.exports = { from: "dotconfig" };',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.config).toEqual({ from: 'metro.config' });
++  });
++
++  it('prefers metro.config.* over package.json:metro', async () => {
++    vol.fromJSON({
++      [`${projectRoot}/metro.config.js`]: 'module.exports = { from: "metro.config" };',
++      [`${projectRoot}/package.json`]: JSON.stringify({ metro: { from: 'pkg' } }),
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.config).toEqual({ from: 'metro.config' });
++  });
++
++  it('searches upward from projectRoot up to serverRoot', async () => {
++    projectRoot = `${serverRoot}/packages/app`;
++    vol.fromJSON({
++      [`${serverRoot}/metro.config.js`]: 'module.exports = { cacheVersion: "workspace" };',
++      [`${projectRoot}/package.json`]: '{}',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.filepath).toBe(path.join(serverRoot, 'metro.config.js'));
++    expect(result.config).toEqual({ cacheVersion: 'workspace' });
++  });
++
++  it('does not search above serverRoot', async () => {
++    const outer = serverRoot;
++    serverRoot = `${outer}/inner`;
++    projectRoot = `${serverRoot}/app`;
++    vol.fromJSON({
++      [`${outer}/metro.config.js`]: 'module.exports = { from: "outer" };',
++      [`${projectRoot}/package.json`]: '{}',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.isEmpty).toBe(true);
++  });
++
++  // NOTE: Diverges from Metro: package.json:metro is intentionally only honored at projectRoot.
++  it('does not search package.json:metro at parent levels', async () => {
++    projectRoot = `${serverRoot}/packages/app`;
++    vol.fromJSON({
++      [`${serverRoot}/package.json`]: JSON.stringify({ metro: { from: 'workspace-pkg' } }),
++      [`${projectRoot}/package.json`]: '{}',
++    });
++
++    const result = await resolveMetroUserConfig({ projectRoot, serverRoot });
++
++    expect(result.isEmpty).toBe(true);
++  });
++
++  describe('overrideConfigPath', () => {
++    it('loads from an absolute path', async () => {
++      vol.fromJSON({
++        '/elsewhere/custom.config.js': 'module.exports = { cacheVersion: "override-abs" };',
++        [`${projectRoot}/package.json`]: '{}',
++      });
++
++      const result = await resolveMetroUserConfig({
++        projectRoot,
++        serverRoot,
++        overrideConfigPath: '/elsewhere/custom.config.js',
++      });
++
++      expect(result.config).toEqual({ cacheVersion: 'override-abs' });
++    });
++
++    // NOTE: The env var is documented as cwd-relative; guards against the prior regression.
++    it('resolves a relative path against cwd, not projectRoot', async () => {
++      vol.fromJSON({
++        '/elsewhere/custom.config.js': 'module.exports = { cacheVersion: "override-cwd" };',
++        [`${projectRoot}/package.json`]: '{}',
++      });
++      cwdSpy.mockReturnValue('/elsewhere');
++
++      const result = await resolveMetroUserConfig({
++        projectRoot,
++        serverRoot,
++        overrideConfigPath: './custom.config.js',
++      });
++
++      expect(result.config).toEqual({ cacheVersion: 'override-cwd' });
++    });
++  });
++});
+diff --git a/packages/@expo/metro-config/src/config/loadUserConfig.ts b/packages/@expo/metro-config/src/config/loadUserConfig.ts
+new file mode 100644
+index 00000000000000..22813b4c131c29
+--- /dev/null
++++ b/packages/@expo/metro-config/src/config/loadUserConfig.ts
+@@ -0,0 +1,46 @@
++import { mergeConfig, type ConfigT } from '@expo/metro/metro-config';
++
++import { getDefaultConfig } from '../ExpoMetroConfig';
++import { type LoadMetroConfigParams, resolveMetroUserConfig } from './resolveMetroUserConfig';
++import { resolveBabelrcName } from '../loadBabelConfig';
++
++export type { LoadMetroConfigParams } from './resolveMetroUserConfig';
++
++function asWritable<T>(input: T): { -readonly [K in keyof T]: T[K] } {
++  return input;
++}
++
++/** Resolves a user Metro config from the given `params.projectRoot` */
++export async function loadUserConfig(params: LoadMetroConfigParams): Promise<ConfigT> {
++  const defaultConfig = getDefaultConfig(params.projectRoot);
++  const resolvedConfig = await resolveMetroUserConfig(params);
++
++  let config: ConfigT = resolvedConfig.isEmpty
++    ? defaultConfig
++    : await mergeConfig(defaultConfig, resolvedConfig.config);
++
++  config = {
++    ...config,
++    // Set the watchFolders to include the projectRoot, as Metro assumes this
++    watchFolders: !config.watchFolders.includes(config.projectRoot)
++      ? [config.projectRoot, ...config.watchFolders]
++      : config.watchFolders,
++  };
++
++  // NOTE(@kitten): Pass a hint to the transformer on where to find the Babel config
++  asWritable(config.transformer).extendsBabelConfigPath =
++    config.transformer.enableBabelRCLookup !== false
++      ? resolveBabelrcName(params.projectRoot)
++      : undefined;
++
++  // NOTE(@kitten): `useWatchman` is currently enabled by default, but it also disables `forceNodeFilesystemAPI`.
++  // If we instead set it to the special value `null`, it gets enables but also bypasses the "native find" codepath,
++  // which is slower than just using the Node filesystem API
++  // See: https://github.com/facebook/metro/blob/b9c243f/packages/metro-file-map/src/index.js#L326
++  // See: https://github.com/facebook/metro/blob/b9c243f/packages/metro/src/node-haste/DependencyGraph/createFileMap.js#L109
++  if (config.resolver.useWatchman === true) {
++    asWritable(config.resolver).useWatchman = null as any;
++  }
++
++  return config;
++}
+diff --git a/packages/@expo/metro-config/src/config/resolveMetroUserConfig.ts b/packages/@expo/metro-config/src/config/resolveMetroUserConfig.ts
+new file mode 100644
+index 00000000000000..2f0c6538bb17ba
+--- /dev/null
++++ b/packages/@expo/metro-config/src/config/resolveMetroUserConfig.ts
+@@ -0,0 +1,134 @@
++import JsonFile, { JSONObject } from '@expo/json-file';
++import type { ConfigT as MetroConfig } from '@expo/metro/metro-config';
++import { resolveFrom, loadModuleSync } from '@expo/require-utils';
++import fs from 'node:fs';
++import path from 'node:path';
++
++function isPathInside(child: string, parent: string): boolean {
++  const relative = path.relative(parent, child);
++  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
++}
++
++export interface LoadMetroConfigParams {
++  serverRoot: string;
++  projectRoot: string;
++  overrideConfigPath?: string | undefined;
++}
++
++interface ResolvePackageJsonResult {
++  filePath: string;
++  config: JSONObject;
++}
++
++const configExtensions = ['.js', '.cjs', '.mjs', '.json', '.ts', '.cts', '.mts'];
++
++const resolveConfigFromPath = (filePath: string, projectRoot: string): string | null => {
++  const inputPath = path.resolve(process.cwd(), filePath);
++  const normalized = `.${path.sep}${path.relative(projectRoot, inputPath)}`;
++  const resolved = resolveFrom(projectRoot, normalized, { extensions: configExtensions });
++  return resolved ?? inputPath;
++};
++
++const resolvePackageJsonConfig = (searchPath: string): ResolvePackageJsonResult | null => {
++  const target = path.resolve(searchPath, 'package.json');
++  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
++  if (!stat?.isFile()) {
++    return null;
++  }
++  const json = new JsonFile(target).read();
++  if (json.metro != null && typeof json.metro === 'object' && !Array.isArray(json.metro)) {
++    return {
++      filePath: target,
++      config: json.metro,
++    };
++  } else {
++    return null;
++  }
++};
++
++type RawMetroConfig =
++  | ((baseConfig: MetroConfig) => Promise<MetroConfig>)
++  | ((baseConfig: MetroConfig) => MetroConfig)
++  | MetroConfig;
++
++export interface ResolveMetroConfigResult {
++  filepath: string;
++  isEmpty: boolean;
++  config: RawMetroConfig;
++}
++
++const loadConfigFile = async (configPath: string): Promise<RawMetroConfig> => {
++  if (configPath.endsWith('.json')) {
++    const json = new JsonFile(configPath).read() as any;
++    return path.basename(configPath) === 'package.json' ? json.metro : json;
++  }
++  // Using sync variant to match Expo config/config-plugins
++  const mod = loadModuleSync(configPath);
++  return await (mod.__esModule ? mod.default : mod);
++};
++
++const _resolutionCache = new Map<string, string>();
++
++export async function resolveMetroUserConfig(
++  params: LoadMetroConfigParams
++): Promise<ResolveMetroConfigResult> {
++  let configPath: string | null = null;
++  if (params.overrideConfigPath) {
++    configPath = resolveConfigFromPath(params.overrideConfigPath, params.projectRoot);
++  } else if (_resolutionCache.has(params.projectRoot)) {
++    configPath = _resolutionCache.get(params.projectRoot)!;
++  } else {
++    // NOTE(@kitten): Metro usually traverses beyond the server root, but we deem this unsafe
++    const startPath = path.resolve(params.projectRoot);
++    const stopPath = path.resolve(params.serverRoot);
++
++    // Search upwards until the server root
++    let searchPath = startPath;
++    while (configPath == null && (searchPath === stopPath || isPathInside(searchPath, stopPath))) {
++      configPath = resolveFrom(searchPath, './metro.config', { extensions: configExtensions });
++
++      // Metro searches for .config/metro.[ext] next
++      if (configPath == null) {
++        configPath = resolveFrom(searchPath, './.config/metro', { extensions: configExtensions });
++      }
++
++      if (configPath == null && searchPath === startPath) {
++        // At each level, also check the package.json for "metro" entry
++        // NOTE(@kitten): Metro actually searches in each package.json upwards, but we're dropping
++        // support for this, since this is very unexpected
++        const packageJsonResult = resolvePackageJsonConfig(searchPath);
++        if (packageJsonResult) {
++          configPath = packageJsonResult.filePath;
++          break;
++        }
++      }
++
++      // Protect against `serverRoot === '/'` edge case
++      const prevDir = searchPath;
++      searchPath = path.dirname(searchPath);
++      if (prevDir === searchPath) {
++        break;
++      }
++    }
++
++    // We want to avoid doing this whole search again since it's very expensive
++    if (configPath != null) {
++      _resolutionCache.set(params.projectRoot, configPath);
++    }
++  }
++
++  if (configPath == null) {
++    // No config file found, return a default
++    return {
++      isEmpty: true,
++      filepath: path.join(params.projectRoot, 'metro.config.stub.js'),
++      config: {} as any,
++    };
++  } else {
++    return {
++      isEmpty: false,
++      filepath: configPath,
++      config: await loadConfigFile(configPath),
++    };
++  }
++}
+diff --git a/packages/@expo/metro-config/src/index.ts b/packages/@expo/metro-config/src/index.ts
+new file mode 100644
+index 00000000000000..0ff4de75a0762a
+--- /dev/null
++++ b/packages/@expo/metro-config/src/index.ts
+@@ -0,0 +1,2 @@
++export * from './config/loadUserConfig';
++export * from './ExpoMetroConfig';
+diff --git a/packages/@expo/metro-config/src/transform-worker/utils/moduleMapper.ts b/packages/@expo/metro-config/src/transform-worker/utils/moduleMapper.ts
+index 2e85169a66924f..37066e1aeedafe 100644
+--- a/packages/@expo/metro-config/src/transform-worker/utils/moduleMapper.ts
++++ b/packages/@expo/metro-config/src/transform-worker/utils/moduleMapper.ts
+@@ -1,18 +1,16 @@
+ import BuiltinModule from 'module';
+ import path from 'path';
+ 
+-declare module 'module' {
+-  namespace Module {
+-    // Internal Function of Node.js:
+-    // This is called when resolving a module,
+-    // e.g. `require('./my-module')` -> `_resolveFilename('./my-module', ...)` is called
+-    export function _resolveFilename(
+-      request: string,
+-      parent: { id: string; filename: string; paths: string[] } | string | null,
+-      isMain?: boolean,
+-      options?: { paths?: string[] }
+-    ): string;
+-  }
++declare module 'node:module' {
++  // Internal Function of Node.js:
++  // This is called when resolving a module,
++  // e.g. `require('./my-module')` -> `_resolveFilename('./my-module', ...)` is called
++  export function _resolveFilename(
++    request: string,
++    parent: { id: string; filename: string; paths: string[] } | string | null,
++    isMain?: boolean,
++    options?: { paths?: string[] }
++  ): string;
+ }
+ 
+ const debug = require('debug')(
+diff --git a/packages/@expo/require-utils/build/resolve.d.ts b/packages/@expo/require-utils/build/resolve.d.ts
+index d8b2a55dd24bf4..6e9e72a1ff986f 100644
+--- a/packages/@expo/require-utils/build/resolve.d.ts
++++ b/packages/@expo/require-utils/build/resolve.d.ts
+@@ -1,6 +1,12 @@
+ declare module 'node:module' {
+     function _nodeModulePaths(base: string): readonly string[];
+-    function _resolveFilename(mod: string, parent?: Partial<Module>): string;
++    function _resolveFilename(request: string, parent?: {
++        id: string;
++        filename: string;
++        paths: string[];
++    } | string | null, isMain?: boolean, options?: {
++        paths?: string[];
++    }): string;
+     const _extensions: Record<string, unknown>;
+ }
+ export interface ResolveFromParams {
+diff --git a/packages/@expo/require-utils/build/resolve.js.map b/packages/@expo/require-utils/build/resolve.js.map
+index ec5b6d50f7fe83..c254739429d15e 100644
+--- a/packages/@expo/require-utils/build/resolve.js.map
++++ b/packages/@expo/require-utils/build/resolve.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"resolve.js","names":["_nodeFs","data","_interopRequireDefault","require","_nodeModule","_nodePath","e","__esModule","default","resolveFrom","fromDirectory","moduleId","params","isJSON","endsWith","exts","extensions","Object","keys","Module","_extensions","skipNodePath","followSymlinks","resolved","path","resolve","resolveType","resolveTypeSync","ResolveType","FILE","ext","withExt","isFileSpecifier","test","isAbsolute","DIR","join","resolvedDir","moduleDirs","_nodeModulePaths","modulesDir","candidate","ENOENT","dirname","fs","existsSync","candidateWithExt","maybeResolve","nativeResolveFrom","fromFile","_resolveFilename","id","filename","paths","isRealpathFileSync","target","realpath","realpathSync","lstatSync","throwIfNoEntry","isFile","stat","isSymbolicLink","isDirectory","process","cwd"],"sources":["../src/resolve.ts"],"sourcesContent":["import fs from 'node:fs';\nimport Module from 'node:module';\nimport path from 'node:path';\n\ndeclare module 'node:module' {\n  export function _nodeModulePaths(base: string): readonly string[];\n  export function _resolveFilename(mod: string, parent?: Partial<Module>): string;\n  export const _extensions: Record<string, unknown>;\n}\n\nexport interface ResolveFromParams {\n  followSymlinks?: boolean;\n  skipNodePath?: boolean;\n  extensions?: readonly string[];\n}\n\nexport function resolveFrom(\n  fromDirectory: string,\n  moduleId: string,\n  params?: ResolveFromParams\n): string | null {\n  // We exclude extension resolution, if we're resolving a plain JSON file\n  const isJSON = moduleId.endsWith('.json');\n  const exts = !isJSON ? (params?.extensions ?? Object.keys(Module._extensions)) : [];\n\n  const skipNodePath = !!params?.skipNodePath;\n  const followSymlinks = params?.followSymlinks ?? skipNodePath;\n\n  let resolved = path.resolve(fromDirectory, moduleId);\n\n  // (1) check direct path / exact match\n  const resolveType = resolveTypeSync(resolved);\n  if (resolveType === ResolveType.FILE) {\n    return resolved;\n  }\n\n  // (2) check against direct path matches with extensions\n  for (let ext of exts) {\n    ext = ext[0] !== '.' ? `.${ext}` : ext;\n    const withExt = resolved + ext;\n    if (resolveTypeSync(withExt) === ResolveType.FILE) {\n      return withExt;\n    }\n  }\n\n  const isFileSpecifier = /^\\.\\.?(?:$|[/\\\\])/.test(moduleId) || path.isAbsolute(moduleId);\n\n  // (2.2) check against `/index` paths if we've disabled Node resolution or if we're resolving a relative path directly\n  if ((isFileSpecifier || skipNodePath) && !isJSON && resolveType === ResolveType.DIR) {\n    resolved = path.join(resolved, 'index');\n    for (let ext of exts) {\n      ext = ext[0] !== '.' ? `.${ext}` : ext;\n      const withExt = resolved + ext;\n      if (resolveTypeSync(withExt) === ResolveType.FILE) {\n        // NOTE(@kitten): Like above, we don't resolve symlinks when we're not in a node_modules resolution path\n        return withExt;\n      }\n    }\n  }\n\n  // We won't need to continue with Node resolution if we're only resolving paths\n  if (isFileSpecifier) {\n    return null;\n  }\n\n  // (3) if we're not following symlinks, we try to resolve against `node_modules` folders unresolved\n  if (!followSymlinks || skipNodePath) {\n    const resolvedDir = path.resolve(fromDirectory);\n    const moduleDirs = Module._nodeModulePaths(resolvedDir);\n    for (const modulesDir of moduleDirs) {\n      let candidate = path.join(modulesDir, moduleId);\n      const resolveType = resolveTypeSync(candidate);\n      // (3.1) direct match\n      if (resolveType === ResolveType.FILE) {\n        return candidate;\n      } else if (resolveType === ResolveType.ENOENT) {\n        // Optimization: If the directory itself doesn't exist, there's no point in us continuing\n        // to check for more files in this directory\n        const dirname = path.dirname(candidate);\n        if (dirname !== modulesDir && !fs.existsSync(dirname)) {\n          continue;\n        }\n      }\n      // (3.2) check against match with extensions\n      for (let ext of exts) {\n        ext = ext[0] !== '.' ? `.${ext}` : ext;\n        const candidateWithExt = candidate + ext;\n        if (resolveTypeSync(candidateWithExt) === ResolveType.FILE) {\n          return followSymlinks ? maybeResolve(candidateWithExt) : candidateWithExt;\n        }\n      }\n      // (3.3) check against `/index` paths\n      if (!isJSON && resolveType === ResolveType.DIR) {\n        candidate = path.join(candidate, 'index');\n        for (let ext of exts) {\n          ext = ext[0] !== '.' ? `.${ext}` : ext;\n          const candidateWithExt = candidate + ext;\n          if (resolveTypeSync(candidateWithExt) === ResolveType.FILE) {\n            return followSymlinks ? maybeResolve(candidateWithExt) : candidateWithExt;\n          }\n        }\n      }\n    }\n  }\n\n  // (4): Fallback to native Node resolution, if `skipNodePath` is disabled\n  return !skipNodePath ? nativeResolveFrom(fromDirectory, moduleId) : null;\n}\n\nfunction nativeResolveFrom(fromDirectory: string, moduleId: string): string | null {\n  try {\n    const resolvedDir = maybeResolve(fromDirectory);\n    const fromFile = path.join(resolvedDir, 'index.js');\n    return Module._resolveFilename(moduleId, {\n      id: fromFile,\n      filename: fromFile,\n      paths: [...Module._nodeModulePaths(resolvedDir)],\n    });\n  } catch {\n    return null;\n  }\n}\n\nfunction isRealpathFileSync(target: string): boolean {\n  try {\n    const realpath = fs.realpathSync(target);\n    return !!fs.lstatSync(realpath, { throwIfNoEntry: false })?.isFile();\n  } catch {\n    return false;\n  }\n}\n\nconst enum ResolveType {\n  FILE = 1,\n  DIR = 2,\n  ENOENT = 0,\n}\n\nfunction resolveTypeSync(target: string): ResolveType {\n  try {\n    const stat = fs.lstatSync(target, { throwIfNoEntry: false });\n    if (stat) {\n      if (stat.isSymbolicLink()) {\n        return isRealpathFileSync(target) ? ResolveType.FILE : ResolveType.ENOENT;\n      } else if (stat.isFile()) {\n        return ResolveType.FILE;\n      } else if (stat.isDirectory()) {\n        // NOTE(@kitten): We don't support symlinked directories for resolution\n        // Realistically, when we disable Node resolution, symlinked directory resolution\n        // for `/index` is rare, and can be used to exploit symlinks\n        return ResolveType.DIR;\n      } else {\n        return ResolveType.ENOENT;\n      }\n    } else {\n      return ResolveType.ENOENT;\n    }\n  } catch {\n    return ResolveType.ENOENT;\n  }\n}\n\nfunction maybeResolve(target: string): string {\n  target = path.resolve(process.cwd(), target);\n  try {\n    return fs.realpathSync(target);\n  } catch {\n    return target;\n  }\n}\n"],"mappings":"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","ignoreList":[]}
+\ No newline at end of file
++{"version":3,"file":"resolve.js","names":["_nodeFs","data","_interopRequireDefault","require","_nodeModule","_nodePath","e","__esModule","default","resolveFrom","fromDirectory","moduleId","params","isJSON","endsWith","exts","extensions","Object","keys","Module","_extensions","skipNodePath","followSymlinks","resolved","path","resolve","resolveType","resolveTypeSync","ResolveType","FILE","ext","withExt","isFileSpecifier","test","isAbsolute","DIR","join","resolvedDir","moduleDirs","_nodeModulePaths","modulesDir","candidate","ENOENT","dirname","fs","existsSync","candidateWithExt","maybeResolve","nativeResolveFrom","fromFile","_resolveFilename","id","filename","paths","isRealpathFileSync","target","realpath","realpathSync","lstatSync","throwIfNoEntry","isFile","stat","isSymbolicLink","isDirectory","process","cwd"],"sources":["../src/resolve.ts"],"sourcesContent":["import fs from 'node:fs';\nimport Module from 'node:module';\nimport path from 'node:path';\n\ndeclare module 'node:module' {\n  export function _nodeModulePaths(base: string): readonly string[];\n  export function _resolveFilename(\n    request: string,\n    parent?: { id: string; filename: string; paths: string[] } | string | null,\n    isMain?: boolean,\n    options?: { paths?: string[] }\n  ): string;\n  export const _extensions: Record<string, unknown>;\n}\n\nexport interface ResolveFromParams {\n  followSymlinks?: boolean;\n  skipNodePath?: boolean;\n  extensions?: readonly string[];\n}\n\nexport function resolveFrom(\n  fromDirectory: string,\n  moduleId: string,\n  params?: ResolveFromParams\n): string | null {\n  // We exclude extension resolution, if we're resolving a plain JSON file\n  const isJSON = moduleId.endsWith('.json');\n  const exts = !isJSON ? (params?.extensions ?? Object.keys(Module._extensions)) : [];\n\n  const skipNodePath = !!params?.skipNodePath;\n  const followSymlinks = params?.followSymlinks ?? skipNodePath;\n\n  let resolved = path.resolve(fromDirectory, moduleId);\n\n  // (1) check direct path / exact match\n  const resolveType = resolveTypeSync(resolved);\n  if (resolveType === ResolveType.FILE) {\n    return resolved;\n  }\n\n  // (2) check against direct path matches with extensions\n  for (let ext of exts) {\n    ext = ext[0] !== '.' ? `.${ext}` : ext;\n    const withExt = resolved + ext;\n    if (resolveTypeSync(withExt) === ResolveType.FILE) {\n      return withExt;\n    }\n  }\n\n  const isFileSpecifier = /^\\.\\.?(?:$|[/\\\\])/.test(moduleId) || path.isAbsolute(moduleId);\n\n  // (2.2) check against `/index` paths if we've disabled Node resolution or if we're resolving a relative path directly\n  if ((isFileSpecifier || skipNodePath) && !isJSON && resolveType === ResolveType.DIR) {\n    resolved = path.join(resolved, 'index');\n    for (let ext of exts) {\n      ext = ext[0] !== '.' ? `.${ext}` : ext;\n      const withExt = resolved + ext;\n      if (resolveTypeSync(withExt) === ResolveType.FILE) {\n        // NOTE(@kitten): Like above, we don't resolve symlinks when we're not in a node_modules resolution path\n        return withExt;\n      }\n    }\n  }\n\n  // We won't need to continue with Node resolution if we're only resolving paths\n  if (isFileSpecifier) {\n    return null;\n  }\n\n  // (3) if we're not following symlinks, we try to resolve against `node_modules` folders unresolved\n  if (!followSymlinks || skipNodePath) {\n    const resolvedDir = path.resolve(fromDirectory);\n    const moduleDirs = Module._nodeModulePaths(resolvedDir);\n    for (const modulesDir of moduleDirs) {\n      let candidate = path.join(modulesDir, moduleId);\n      const resolveType = resolveTypeSync(candidate);\n      // (3.1) direct match\n      if (resolveType === ResolveType.FILE) {\n        return candidate;\n      } else if (resolveType === ResolveType.ENOENT) {\n        // Optimization: If the directory itself doesn't exist, there's no point in us continuing\n        // to check for more files in this directory\n        const dirname = path.dirname(candidate);\n        if (dirname !== modulesDir && !fs.existsSync(dirname)) {\n          continue;\n        }\n      }\n      // (3.2) check against match with extensions\n      for (let ext of exts) {\n        ext = ext[0] !== '.' ? `.${ext}` : ext;\n        const candidateWithExt = candidate + ext;\n        if (resolveTypeSync(candidateWithExt) === ResolveType.FILE) {\n          return followSymlinks ? maybeResolve(candidateWithExt) : candidateWithExt;\n        }\n      }\n      // (3.3) check against `/index` paths\n      if (!isJSON && resolveType === ResolveType.DIR) {\n        candidate = path.join(candidate, 'index');\n        for (let ext of exts) {\n          ext = ext[0] !== '.' ? `.${ext}` : ext;\n          const candidateWithExt = candidate + ext;\n          if (resolveTypeSync(candidateWithExt) === ResolveType.FILE) {\n            return followSymlinks ? maybeResolve(candidateWithExt) : candidateWithExt;\n          }\n        }\n      }\n    }\n  }\n\n  // (4): Fallback to native Node resolution, if `skipNodePath` is disabled\n  return !skipNodePath ? nativeResolveFrom(fromDirectory, moduleId) : null;\n}\n\nfunction nativeResolveFrom(fromDirectory: string, moduleId: string): string | null {\n  try {\n    const resolvedDir = maybeResolve(fromDirectory);\n    const fromFile = path.join(resolvedDir, 'index.js');\n    return Module._resolveFilename(moduleId, {\n      id: fromFile,\n      filename: fromFile,\n      paths: [...Module._nodeModulePaths(resolvedDir)],\n    });\n  } catch {\n    return null;\n  }\n}\n\nfunction isRealpathFileSync(target: string): boolean {\n  try {\n    const realpath = fs.realpathSync(target);\n    return !!fs.lstatSync(realpath, { throwIfNoEntry: false })?.isFile();\n  } catch {\n    return false;\n  }\n}\n\nconst enum ResolveType {\n  FILE = 1,\n  DIR = 2,\n  ENOENT = 0,\n}\n\nfunction resolveTypeSync(target: string): ResolveType {\n  try {\n    const stat = fs.lstatSync(target, { throwIfNoEntry: false });\n    if (stat) {\n      if (stat.isSymbolicLink()) {\n        return isRealpathFileSync(target) ? ResolveType.FILE : ResolveType.ENOENT;\n      } else if (stat.isFile()) {\n        return ResolveType.FILE;\n      } else if (stat.isDirectory()) {\n        // NOTE(@kitten): We don't support symlinked directories for resolution\n        // Realistically, when we disable Node resolution, symlinked directory resolution\n        // for `/index` is rare, and can be used to exploit symlinks\n        return ResolveType.DIR;\n      } else {\n        return ResolveType.ENOENT;\n      }\n    } else {\n      return ResolveType.ENOENT;\n    }\n  } catch {\n    return ResolveType.ENOENT;\n  }\n}\n\nfunction maybeResolve(target: string): string {\n  target = path.resolve(process.cwd(), target);\n  try {\n    return fs.realpathSync(target);\n  } catch {\n    return target;\n  }\n}\n"],"mappings":"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","ignoreList":[]}
+\ No newline at end of file
+diff --git a/packages/@expo/require-utils/src/resolve.ts b/packages/@expo/require-utils/src/resolve.ts
+index b4ded23dd03517..09b7ee40d48acb 100644
+--- a/packages/@expo/require-utils/src/resolve.ts
++++ b/packages/@expo/require-utils/src/resolve.ts
+@@ -4,7 +4,12 @@ import path from 'node:path';
+ 
+ declare module 'node:module' {
+   export function _nodeModulePaths(base: string): readonly string[];
+-  export function _resolveFilename(mod: string, parent?: Partial<Module>): string;
++  export function _resolveFilename(
++    request: string,
++    parent?: { id: string; filename: string; paths: string[] } | string | null,
++    isMain?: boolean,
++    options?: { paths?: string[] }
++  ): string;
+   export const _extensions: Record<string, unknown>;
+ }
+ 
+diff --git a/packages/expo-doctor/CHANGELOG.md b/packages/expo-doctor/CHANGELOG.md
+index 7e4ae71d3b8e31..63fb600f48f2e9 100644
+--- a/packages/expo-doctor/CHANGELOG.md
++++ b/packages/expo-doctor/CHANGELOG.md
+@@ -10,6 +10,8 @@
+ 
+ ### 💡 Others
+ 
++- Switch Metro config loading to `expo/metro-config`'s `loadUserConfig` ([#46155](https://github.com/expo/expo/pull/46155) by [@kitten](https://github.com/kitten))
++
+ ## 1.19.7 — 2026-05-20
+ 
+ ### 🎉 New features
+diff --git a/packages/expo-doctor/src/checks/MetroConfigCheck.ts b/packages/expo-doctor/src/checks/MetroConfigCheck.ts
+index e82db9c5924c2a..6383ff247c869c 100644
+--- a/packages/expo-doctor/src/checks/MetroConfigCheck.ts
++++ b/packages/expo-doctor/src/checks/MetroConfigCheck.ts
+@@ -1,13 +1,10 @@
+ import path from 'path';
++import { resolveWorkspaceRoot } from 'resolve-workspace-root';
+ import semver from 'semver';
+ 
+ import type { DoctorCheck, DoctorCheckParams, DoctorCheckResult } from './checks.types';
+ import { learnMore } from '../utils/TerminalLink';
+-import {
+-  configExistsAsync,
+-  loadConfigAsync,
+-  loadExpoMetroConfig,
+-} from '../utils/metroConfigLoader';
++import { loadMetroUserConfigAsync, getDefaultMetroConfig } from '../utils/metroConfigLoader';
+ 
+ const isSubsetOf = (
+   defaultValues: readonly string[] | undefined,
+@@ -25,7 +22,10 @@ export class MetroConfigCheck implements DoctorCheck {
+ 
+   async runAsync({ projectRoot, exp }: DoctorCheckParams): Promise<DoctorCheckResult> {
+     const issues: string[] = [];
+-    if (!(await configExistsAsync(projectRoot))) {
++
++    const serverRoot = resolveWorkspaceRoot(projectRoot) ?? projectRoot;
++    const userConfig = await loadMetroUserConfigAsync(projectRoot, serverRoot);
++    if (!userConfig) {
+       return {
+         isSuccessful: true,
+         issues: [],
+@@ -33,8 +33,6 @@ export class MetroConfigCheck implements DoctorCheck {
+       };
+     }
+ 
+-    const userConfig = await loadConfigAsync(projectRoot);
+-
+     if (userConfig.transformer && !('_expoRelativeProjectRoot' in userConfig.transformer)) {
+       // If this Expo property isn't set, which is used for cache invalidation, we don't have an Expo-based config
+       return {
+@@ -54,8 +52,7 @@ export class MetroConfigCheck implements DoctorCheck {
+       userPaths: readonly string[] | undefined
+     ) => isSubsetOf(defaultPaths?.map(resolvePath), userPaths?.map(resolvePath) ?? []);
+ 
+-    const expoMetroConfig = await loadExpoMetroConfig(projectRoot);
+-    const defaultConfig = expoMetroConfig.getDefaultConfig(projectRoot);
++    const defaultConfig = getDefaultMetroConfig(projectRoot);
+ 
+     // From SDK 56+, the on-demand filesystem (experiments.onDemandFilesystem) makes `watchFolders`
+     // a non-critical configuration that doesn't block file discovery. There's still potential for
+diff --git a/packages/expo-doctor/src/checks/__tests__/MetroConfigCheck.test.ts b/packages/expo-doctor/src/checks/__tests__/MetroConfigCheck.test.ts
+index 204dd78931069c..c6bd05b882c4ba 100644
+--- a/packages/expo-doctor/src/checks/__tests__/MetroConfigCheck.test.ts
++++ b/packages/expo-doctor/src/checks/__tests__/MetroConfigCheck.test.ts
+@@ -1,15 +1,8 @@
+-import { getDefaultConfig } from 'expo/metro-config';
+-
+-import {
+-  configExistsAsync,
+-  loadConfigAsync,
+-  loadExpoMetroConfig,
+-} from '../../utils/metroConfigLoader';
++import { getDefaultMetroConfig, loadMetroUserConfigAsync } from '../../utils/metroConfigLoader';
+ import { MetroConfigCheck } from '../MetroConfigCheck';
+ 
+ jest.mock('../../utils/metroConfigLoader');
+ 
+-// required by runAsync
+ const additionalProjectProps = {
+   exp: {
+     name: 'name',
+@@ -35,21 +28,19 @@ const stubDefaultConfig = () =>
+     },
+   }) as any;
+ 
+-const mockExpoMetroConfig = (overrides: Record<string, unknown> = {}) => {
+-  jest.mocked(loadExpoMetroConfig).mockResolvedValueOnce({
+-    getDefaultConfig: () => ({ ...stubDefaultConfig(), ...overrides }),
+-  } as any);
++const mockDefaultConfig = (overrides: Record<string, unknown> = {}) => {
++  jest
++    .mocked(getDefaultMetroConfig)
++    .mockReturnValueOnce({ ...stubDefaultConfig(), ...overrides } as any);
+ };
+ 
+-describe('runAsync', () => {
+-  beforeEach(() => {
+-    jest.mocked(loadExpoMetroConfig).mockResolvedValueOnce({
+-      getDefaultConfig,
+-    } as any);
+-  });
++const mockUserConfig = (userConfig: Record<string, unknown> | null) => {
++  jest.mocked(loadMetroUserConfigAsync).mockResolvedValueOnce(userConfig as any);
++};
+ 
+-  it('returns result with isSuccessful = true if there is no custom metro config', async () => {
+-    jest.mocked(configExistsAsync).mockResolvedValueOnce(false);
++describe('runAsync', () => {
++  it('returns result with isSuccessful = true when no user config is found', async () => {
++    mockUserConfig(null);
+     const check = new MetroConfigCheck();
+     const result = await check.runAsync({
+       projectRoot: '/path/to/project',
+@@ -58,14 +49,13 @@ describe('runAsync', () => {
+     expect(result.isSuccessful).toBeTruthy();
+   });
+ 
+-  it('returns result with isSuccessful = true if there is a custom metro config and it includes `_expoRelativeProjectRoot`', async () => {
+-    jest.mocked(configExistsAsync).mockResolvedValueOnce(true);
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({
++  it('returns result with isSuccessful = true if a config includes `_expoRelativeProjectRoot`', async () => {
++    mockUserConfig({
+       transformer: {
+-        // @ts-ignore: we don't need to mock the entire config
+         _expoRelativeProjectRoot: '...',
+       },
+     });
++    mockDefaultConfig();
+     const check = new MetroConfigCheck();
+     const result = await check.runAsync({
+       projectRoot: '/path/to/project',
+@@ -74,10 +64,8 @@ describe('runAsync', () => {
+     expect(result.isSuccessful).toBeTruthy();
+   });
+ 
+-  it('returns result with isSuccessful = false if there is a custom metro config and it does not include `_expoRelativeProjectRoot`', async () => {
+-    jest.mocked(configExistsAsync).mockResolvedValueOnce(true);
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({
+-      // @ts-ignore: we don't need to mock the entire config
++  it('returns result with isSuccessful = false if a config does not include `_expoRelativeProjectRoot`', async () => {
++    mockUserConfig({
+       transformer: {},
+     });
+     const check = new MetroConfigCheck();
+@@ -90,20 +78,12 @@ describe('runAsync', () => {
+ });
+ 
+ describe('config-comparison checks', () => {
+-  beforeEach(() => {
+-    jest.mocked(configExistsAsync).mockResolvedValue(true);
+-  });
+-
+   const runWithUserConfig = async (
+     userConfig: Record<string, unknown>,
+     expOverrides: Record<string, unknown> = {}
+   ) => {
+-    jest.mocked(loadExpoMetroConfig).mockReset();
+-    mockExpoMetroConfig();
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({
+-      ...stubDefaultConfig(),
+-      ...userConfig,
+-    } as any);
++    mockDefaultConfig();
++    mockUserConfig({ ...stubDefaultConfig(), ...userConfig });
+     const check = new MetroConfigCheck();
+     return check.runAsync({
+       projectRoot: '/path/to/project',
+@@ -126,14 +106,8 @@ describe('config-comparison checks', () => {
+   });
+ 
+   it('runs watchFolders subset check on SDK 56+ when onDemandFilesystem is disabled', async () => {
+-    jest.mocked(loadExpoMetroConfig).mockReset();
+-    mockExpoMetroConfig({
+-      watchFolders: ['/path/to/project/packages/foo'],
+-    });
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({
+-      ...stubDefaultConfig(),
+-      watchFolders: [],
+-    } as any);
++    mockDefaultConfig({ watchFolders: ['/path/to/project/packages/foo'] });
++    mockUserConfig({ ...stubDefaultConfig(), watchFolders: [] });
+     const check = new MetroConfigCheck();
+     const result = await check.runAsync({
+       projectRoot: '/path/to/project',
+@@ -148,14 +122,8 @@ describe('config-comparison checks', () => {
+   });
+ 
+   it('runs watchFolders subset check on SDK <56 regardless of experiments', async () => {
+-    jest.mocked(loadExpoMetroConfig).mockReset();
+-    mockExpoMetroConfig({
+-      watchFolders: ['/path/to/project/packages/foo'],
+-    });
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({
+-      ...stubDefaultConfig(),
+-      watchFolders: [],
+-    } as any);
++    mockDefaultConfig({ watchFolders: ['/path/to/project/packages/foo'] });
++    mockUserConfig({ ...stubDefaultConfig(), watchFolders: [] });
+     const check = new MetroConfigCheck();
+     const result = await check.runAsync({
+       projectRoot: '/path/to/project',
+@@ -194,14 +162,13 @@ describe('config-comparison checks', () => {
+   });
+ 
+   it('flags nodeModulesPaths missing Expo defaults', async () => {
+-    jest.mocked(loadExpoMetroConfig).mockReset();
+-    mockExpoMetroConfig({
++    mockDefaultConfig({
+       resolver: { ...stubDefaultConfig().resolver, nodeModulesPaths: ['/expected/node_modules'] },
+     });
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({
++    mockUserConfig({
+       ...stubDefaultConfig(),
+       resolver: { ...stubDefaultConfig().resolver, nodeModulesPaths: ['/other/node_modules'] },
+-    } as any);
++    });
+     const check = new MetroConfigCheck();
+     const result = await check.runAsync({
+       projectRoot: '/path/to/project',
+@@ -212,11 +179,10 @@ describe('config-comparison checks', () => {
+   });
+ 
+   it('skips nodeModulesPaths check when user has not set any', async () => {
+-    jest.mocked(loadExpoMetroConfig).mockReset();
+-    mockExpoMetroConfig({
++    mockDefaultConfig({
+       resolver: { ...stubDefaultConfig().resolver, nodeModulesPaths: ['/expected/node_modules'] },
+     });
+-    jest.mocked(loadConfigAsync).mockResolvedValueOnce({ ...stubDefaultConfig() } as any);
++    mockUserConfig(stubDefaultConfig());
+     const check = new MetroConfigCheck();
+     const result = await check.runAsync({
+       projectRoot: '/path/to/project',
+diff --git a/packages/expo-doctor/src/utils/metroConfigLoader.ts b/packages/expo-doctor/src/utils/metroConfigLoader.ts
+index 51fdc82806b976..16af6def7a6ecd 100644
+--- a/packages/expo-doctor/src/utils/metroConfigLoader.ts
++++ b/packages/expo-doctor/src/utils/metroConfigLoader.ts
+@@ -35,33 +35,42 @@ function importMetroConfigFromProject(
+   }
+ }
+ 
+-export async function configExistsAsync(projectRoot: string): Promise<boolean> {
+-  try {
+-    const MetroConfig = importMetroConfigFromProject(projectRoot);
+-    const result = await MetroConfig.resolveConfig(undefined, projectRoot);
+-    return !result.isEmpty;
+-  } catch (err) {
+-    if (err instanceof MetroConfigPackageMissingError) {
+-      return false;
+-    } else {
+-      throw err;
+-    }
++let _expoMetroConfig: typeof import('expo/metro-config') | undefined;
++
++function loadExpoMetroConfig(projectDir: string): typeof import('expo/metro-config') {
++  if (_expoMetroConfig != null) {
++    return _expoMetroConfig;
++  }
++  const expoMetroConfigResolved = resolveFrom.silent(projectDir, 'expo/metro-config');
++  if (!expoMetroConfigResolved) {
++    throw notFoundError('expo');
+   }
++  _expoMetroConfig = require(expoMetroConfigResolved);
++  return _expoMetroConfig!;
+ }
+ 
+-export async function loadConfigAsync(projectDir: string): Promise<InputConfigT> {
+-  const MetroConfig = importMetroConfigFromProject(projectDir);
+-  return await MetroConfig.loadConfig({ cwd: projectDir }, {});
++export function getDefaultMetroConfig(projectRoot: string) {
++  const expoMetroConfig = loadExpoMetroConfig(projectRoot);
++  return expoMetroConfig.getDefaultConfig(projectRoot);
+ }
+ 
+-export async function loadExpoMetroConfig(
+-  projectDir: string
+-): Promise<typeof import('expo/metro-config')> {
+-  const expoMetroConfigResolved = resolveFrom.silent(projectDir, 'expo/metro-config');
+-  if (!expoMetroConfigResolved) {
+-    throw notFoundError('expo');
++export async function loadMetroUserConfigAsync(
++  projectRoot: string,
++  serverRoot: string
++): Promise<InputConfigT | null> {
++  const expoMetroConfig = loadExpoMetroConfig(projectRoot);
++  // NOTE(@kitten): This API was added later on
++  if ('loadUserConfig' in expoMetroConfig) {
++    return await expoMetroConfig.loadUserConfig({ projectRoot, serverRoot });
++  } else {
++    try {
++      const MetroConfig = importMetroConfigFromProject(projectRoot);
++      return await MetroConfig.loadConfig({ cwd: projectRoot }, {});
++    } catch {
++      // If we can't load the config, we assume it doesn't exist
++      return null;
++    }
+   }
+-  return require(expoMetroConfigResolved);
+ }
+ 
+ class MetroConfigPackageMissingError extends Error {}
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 7840f36e11588b..582ace2f69a3c8 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -2562,6 +2562,9 @@ importers:
+       '@expo/metro':
+         specifier: ~56.0.0
+         version: 56.0.0
++      '@expo/require-utils':
++        specifier: workspace:^56.1.2
++        version: link:../require-utils
+       '@expo/spawn-async':
+         specifier: ^1.8.0
+         version: 1.8.0

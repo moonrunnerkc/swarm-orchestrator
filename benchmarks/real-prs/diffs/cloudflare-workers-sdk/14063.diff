@@ -1,0 +1,1488 @@
+diff --git a/.changeset/move-fetch-helpers-workers-utils.md b/.changeset/move-fetch-helpers-workers-utils.md
+new file mode 100644
+index 0000000000..2a70b077a7
+--- /dev/null
++++ b/.changeset/move-fetch-helpers-workers-utils.md
+@@ -0,0 +1,9 @@
++---
++"@cloudflare/workers-utils": patch
++"@cloudflare/deploy-helpers": patch
++"wrangler": patch
++---
++
++Move fetch helpers into `@cloudflare/workers-utils`
++
++Shared Cloudflare API fetch helper types and plumbing now live in `@cloudflare/workers-utils` so Wrangler and other clients can use the same implementation.
+diff --git a/packages/deploy-helpers/src/shared/types.ts b/packages/deploy-helpers/src/shared/types.ts
+index 6a5e3741b3..fb88d6b823 100644
+--- a/packages/deploy-helpers/src/shared/types.ts
++++ b/packages/deploy-helpers/src/shared/types.ts
+@@ -5,11 +5,22 @@ import type {
+ 	CfPlacement,
+ 	Config,
+ 	EphemeralDirectory,
++	FetchResultFetcher,
++	Logger,
+ 	Route,
+ 	Entry,
+ } from "@cloudflare/workers-utils";
+ import type { NodeJSCompatMode } from "miniflare";
+ 
++/**
++ * client needs to handle logger and fetch/auth implementation
++ * these are passed into this package to handle any API requests/logs
++ */
++export type DeployHelpersContext = {
++	fetchResult: FetchResultFetcher;
++	logger: Logger;
++};
++
+ /**
+  * Shared fields produced by merging CLI args with wrangler config.
+  * After this point, no raw config/arg merging should happen.
+diff --git a/packages/wrangler/src/cfetch/errors.ts b/packages/workers-utils/src/cfetch/errors.ts
+similarity index 92%
+rename from packages/wrangler/src/cfetch/errors.ts
+rename to packages/workers-utils/src/cfetch/errors.ts
+index c16c262934..da2f40c9cc 100644
+--- a/packages/wrangler/src/cfetch/errors.ts
++++ b/packages/workers-utils/src/cfetch/errors.ts
+@@ -1,4 +1,4 @@
+-import { ParseError } from "@cloudflare/workers-utils";
++import { ParseError } from "../parse";
+ 
+ export interface FetchError {
+ 	code: number;
+diff --git a/packages/workers-utils/src/cfetch/index.ts b/packages/workers-utils/src/cfetch/index.ts
+new file mode 100644
+index 0000000000..758c093fbb
+--- /dev/null
++++ b/packages/workers-utils/src/cfetch/index.ts
+@@ -0,0 +1,477 @@
++import assert from "node:assert";
++import { URLSearchParams } from "node:url";
++import { fetch, FormData, Headers, Response } from "undici";
++import {
++	getCloudflareApiBaseUrl,
++	getTraceHeader,
++} from "../environment-variables/misc-variables";
++import { UserError } from "../errors";
++import { APIError, parseJSON } from "../parse";
++import { type FetchError, maybeThrowFriendlyError } from "./errors";
++import type { ComplianceConfig } from "../environment-variables/misc-variables";
++import type { Logger } from "../logger";
++import type { HeadersInit, RequestInit } from "undici";
++
++export type ApiCredentials =
++	| {
++			apiToken: string;
++	  }
++	| {
++			authKey: string;
++			authEmail: string;
++	  };
++
++export interface FetchResult<ResponseType = unknown> {
++	success: boolean;
++	result: ResponseType;
++	errors: FetchError[];
++	messages?: (string | { code?: number; message: string })[];
++	result_info?: unknown;
++}
++
++export type FetchResultFetcher = <ResponseType>(
++	complianceConfig: ComplianceConfig,
++	resource: string,
++	init?: RequestInit,
++	queryParams?: URLSearchParams,
++	abortSignal?: AbortSignal
++) => Promise<ResponseType>;
++
++function logHeaders(headers: Headers, logger: Logger): void {
++	const clone = cloneHeaders(headers);
++	clone.delete("Authorization");
++	logger.debugWithSanitization(
++		"HEADERS:",
++		JSON.stringify(Object.fromEntries(clone), null, 2)
++	);
++}
++
++/**
++ *
++ * Note this requires its caller to handle credentials
++ * (need to call requireLoggedIn and requireApiToken)
++ */
++export async function performApiFetchBase(
++	complianceConfig: ComplianceConfig,
++	resource: string,
++	init: RequestInit = {},
++	userAgent: string,
++	logger: Logger,
++	queryParams?: URLSearchParams,
++	abortSignal?: AbortSignal,
++	credentials?: ApiCredentials
++): Promise<Response> {
++	assert(credentials, "credentials are required for performApiFetch");
++	const method = init.method ?? "GET";
++	assert(
++		resource.startsWith("/"),
++		`CF API fetch - resource path must start with a "/" but got "${resource}"`
++	);
++	const headers = cloneHeaders(new Headers(init.headers));
++	addAuthorizationHeader(headers, credentials);
++	headers.set("User-Agent", userAgent);
++	maybeAddTraceHeader(headers);
++
++	const queryString = queryParams ? `?${queryParams.toString()}` : "";
++	logger.debug(
++		`-- START CF API REQUEST: ${method} ${getCloudflareApiBaseUrl(complianceConfig)}${resource}`
++	);
++	logger.debugWithSanitization("QUERY STRING:", queryString);
++	logHeaders(headers, logger);
++
++	logger.debugWithSanitization("INIT:", JSON.stringify({ ...init }, null, 2));
++	if (init.body instanceof FormData) {
++		logger.debugWithSanitization(
++			"BODY:",
++			await new Response(init.body).text(),
++			null,
++			2
++		);
++	}
++	logger.debug("-- END CF API REQUEST");
++	return await fetch(
++		`${getCloudflareApiBaseUrl(complianceConfig)}${resource}${queryString}`,
++		{
++			method,
++			...init,
++			headers,
++			signal: abortSignal,
++		}
++	);
++}
++
++export async function fetchInternalBase<ResponseType>(
++	complianceConfig: ComplianceConfig,
++	resource: string,
++	init: RequestInit = {},
++	userAgent: string,
++	logger: Logger,
++	queryParams?: URLSearchParams,
++	abortSignal?: AbortSignal,
++	credentials?: ApiCredentials
++): Promise<{ response: ResponseType; status: number }> {
++	const method = init.method ?? "GET";
++	const response = await performApiFetchBase(
++		complianceConfig,
++		resource,
++		init,
++		userAgent,
++		logger,
++		queryParams,
++		abortSignal,
++		credentials
++	);
++	const jsonText = await response.text();
++	logger.debug(
++		"-- START CF API RESPONSE:",
++		response.statusText,
++		response.status
++	);
++	logHeaders(response.headers, logger);
++	logger.debugWithSanitization("RESPONSE:", jsonText);
++	logger.debug("-- END CF API RESPONSE");
++
++	if (!jsonText && (response.status === 204 || response.status === 205)) {
++		return {
++			response: {
++				result: {},
++				success: true,
++				errors: [],
++				messages: [],
++			} as ResponseType,
++			status: response.status,
++		};
++	}
++
++	if (isWAFBlockResponse(response.headers)) {
++		throwWAFBlockError(
++			response.headers,
++			method,
++			resource,
++			response.status,
++			response.statusText
++		);
++	}
++
++	try {
++		const json = parseJSON(jsonText) as ResponseType;
++		return { response: json, status: response.status };
++	} catch {
++		const rayId = extractWAFBlockRayId(response.headers);
++
++		throw new APIError({
++			text: "Received a malformed response from the API",
++			notes: [
++				{
++					text: truncate(jsonText, 100),
++				},
++				{
++					text: `${method} ${resource} -> ${response.status} ${response.statusText}`,
++				},
++				...(rayId ? [{ text: `Cloudflare Ray ID: ${rayId}` }] : []),
++			],
++			status: response.status,
++			telemetryMessage: false,
++		});
++	}
++}
++
++export async function fetchResultBase<ResponseType>(
++	complianceConfig: ComplianceConfig,
++	resource: string,
++	init: RequestInit = {},
++	userAgent: string,
++	logger: Logger,
++	queryParams?: URLSearchParams,
++	abortSignal?: AbortSignal,
++	credentials?: ApiCredentials
++): Promise<ResponseType> {
++	const { response: json, status } = await fetchInternalBase<
++		FetchResult<ResponseType>
++	>(
++		complianceConfig,
++		resource,
++		init,
++		userAgent,
++		logger,
++		queryParams,
++		abortSignal,
++		credentials
++	);
++	if (json.success) {
++		return json.result;
++	} else {
++		throwFetchError(resource, json, status);
++	}
++}
++
++export async function fetchListResultBase<ResponseType>(
++	complianceConfig: ComplianceConfig,
++	resource: string,
++	init: RequestInit = {},
++	userAgent: string,
++	logger: Logger,
++	queryParams?: URLSearchParams,
++	credentials?: ApiCredentials
++): Promise<ResponseType[]> {
++	const results: ResponseType[] = [];
++	let getMoreResults = true;
++	let cursor: string | undefined;
++	while (getMoreResults) {
++		if (cursor) {
++			queryParams = new URLSearchParams(queryParams);
++			queryParams.set("cursor", cursor);
++		}
++		const { response: json, status } = await fetchInternalBase<
++			FetchResult<ResponseType[]>
++		>(
++			complianceConfig,
++			resource,
++			init,
++			userAgent,
++			logger,
++			queryParams,
++			undefined,
++			credentials
++		);
++		if (json.success) {
++			results.push(...json.result);
++			if (hasCursor(json.result_info)) {
++				cursor = json.result_info?.cursor;
++			} else {
++				getMoreResults = false;
++			}
++		} else {
++			throwFetchError(resource, json, status);
++		}
++	}
++	return results;
++}
++
++export function truncate(text: string, maxLength: number): string {
++	const { length } = text;
++	if (length <= maxLength) {
++		return text;
++	}
++	return `${text.substring(0, maxLength)}... (length = ${length})`;
++}
++
++export function isWAFBlockResponse(headers: Headers): boolean {
++	return headers.get("cf-mitigated") === "challenge";
++}
++
++export function extractWAFBlockRayId(headers: Headers): string | undefined {
++	return headers.get("cf-ray") ?? undefined;
++}
++
++export function extractAccountTag(resource: string): string | undefined {
++	const re = new RegExp("/accounts/([a-zA-Z0-9]+)/?");
++	const matches = re.exec(resource);
++	return matches?.[1];
++}
++
++interface PageResultInfo {
++	page: number;
++	per_page: number;
++	count: number;
++	total_count: number;
++}
++
++export function hasMorePages(
++	result_info: unknown
++): result_info is PageResultInfo {
++	const page = (result_info as PageResultInfo | undefined)?.page;
++	const per_page = (result_info as PageResultInfo | undefined)?.per_page;
++	const total = (result_info as PageResultInfo | undefined)?.total_count;
++
++	return (
++		page !== undefined &&
++		per_page !== undefined &&
++		total !== undefined &&
++		page * per_page < total
++	);
++}
++
++export function renderError(
++	err:
++		| FetchError
++		| { code?: number; message?: string; documentation_url?: string },
++	level = 0
++): string {
++	const indent = "  ".repeat(level);
++	const message = err.message ?? "";
++	const chainedMessages =
++		"error_chain" in err
++			? ((err as FetchError).error_chain
++					?.map(
++						(chainedError) =>
++							`\n\n${indent}- ${renderError(chainedError, level + 1)}`
++					)
++					.join("\n") ?? "")
++			: "";
++	return (
++		(err.code ? `${message} [code: ${err.code}]` : message) +
++		(err.documentation_url
++			? `\n${indent}To learn more about this error, visit: ${err.documentation_url}`
++			: "") +
++		chainedMessages
++	);
++}
++
++export function addAuthorizationHeader(
++	headers: Headers,
++	auth: ApiCredentials,
++	overrideExisting = false
++): void {
++	if (!headers.has("Authorization") || overrideExisting) {
++		if ("apiToken" in auth) {
++			const authorizationHeader = `Bearer ${auth.apiToken}`;
++			validateAuthorizationHeaderValue(authorizationHeader);
++			headers.set("Authorization", authorizationHeader);
++		} else {
++			headers.set("X-Auth-Key", auth.authKey);
++			headers.set("X-Auth-Email", auth.authEmail);
++		}
++	}
++}
++
++function validateAuthorizationHeaderValue(value: string): void {
++	for (const character of value) {
++		const codePoint = character.codePointAt(0);
++		if (codePoint === undefined || codePoint > 255) {
++			throw new UserError(
++				`The configured Cloudflare API token contains a character that cannot be used in an HTTP Authorization header: ${formatAuthorizationHeaderCharacter(character, codePoint)}. Recreate or copy the token again, making sure it does not include characters such as ellipses.`,
++				{
++					telemetryMessage: "cfetch auth invalid authorization header",
++				}
++			);
++		}
++	}
++}
++
++function formatAuthorizationHeaderCharacter(
++	character: string,
++	codePoint: number | undefined
++): string {
++	if (codePoint === undefined) {
++		return '"\\u{unknown}"';
++	}
++
++	const codePointLabel = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
++	const characterLabel = isPrintableCharacter(character)
++		? `"${character}"`
++		: `"${escapeCharacter(character)}"`;
++
++	return `${characterLabel} (${codePointLabel})`;
++}
++
++function isPrintableCharacter(character: string): boolean {
++	return !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(character);
++}
++
++function escapeCharacter(character: string): string {
++	return Array.from(character)
++		.map((c) => {
++			const codePoint = c.codePointAt(0);
++			if (codePoint === undefined) {
++				return "";
++			}
++			return codePoint <= 0xffff
++				? `\\u${codePoint.toString(16).toUpperCase().padStart(4, "0")}`
++				: `\\u{${codePoint.toString(16).toUpperCase()}}`;
++		})
++		.join("");
++}
++
++export function throwFetchError(
++	resource: string,
++	response: FetchResult<unknown>,
++	status: number
++): never {
++	const errors = response.errors ?? [];
++	for (const error of errors) {
++		maybeThrowFriendlyError(error);
++	}
++
++	// Some API endpoints return non-standard error envelopes (e.g. {code, error}
++	// instead of {errors: [...]}). Surface those as notes when errors is empty.
++	const notes = [
++		...errors.map((err) => ({ text: renderError(err) })),
++		...(response.messages?.map((msg) => ({
++			text: typeof msg === "string" ? msg : (msg.message ?? String(msg)),
++		})) ?? []),
++	];
++	if (notes.length === 0) {
++		const raw = response as unknown as Record<string, unknown>;
++		const fallbackMessage =
++			typeof raw.error === "string"
++				? `${raw.error}${raw.code ? ` [code: ${raw.code}]` : ""}`
++				: undefined;
++		if (fallbackMessage) {
++			notes.push({ text: fallbackMessage });
++		}
++	}
++
++	const error = new APIError({
++		text: `A request to the Cloudflare API (${resource}) failed.`,
++		notes,
++		status,
++		telemetryMessage: false,
++	});
++	// add the first error code directly to this error
++	// so consumers can use it for specific behaviour
++	const code = errors[0]?.code;
++	if (code) {
++		error.code = code;
++	}
++	// extract the account tag from the resource (if any)
++	error.accountTag = extractAccountTag(resource);
++	throw error;
++}
++
++function throwWAFBlockError(
++	headers: Headers,
++	method: string,
++	resource: string,
++	status: number,
++	statusText: string
++): never {
++	const rayId = extractWAFBlockRayId(headers);
++	throw new APIError({
++		text: "The Cloudflare API responded with a WAF block page instead of the expected JSON response",
++		notes: [
++			{
++				text: "Cloudflare's firewall (WAF) blocked this API request. This is usually a false positive.",
++			},
++			...(rayId ? [{ text: `Cloudflare Ray ID: ${rayId}` }] : []),
++			{
++				text: rayId
++					? "If the issue persists, please open a Cloudflare Support ticket and include the Ray ID above."
++					: "If the issue persists, please open a Cloudflare Support ticket. You can find the Cloudflare Ray ID on the block page in your browser.",
++			},
++			{
++				text: `${method} ${resource} -> ${status} ${statusText}`,
++			},
++		],
++		status,
++		telemetryMessage: false,
++	});
++}
++
++export function hasCursor(
++	result_info: unknown
++): result_info is { cursor: string } {
++	const cursor = (result_info as { cursor: string } | undefined)?.cursor;
++	return cursor !== undefined && cursor !== null && cursor !== "";
++}
++
++export function maybeAddTraceHeader(headers: Headers): void {
++	const traceHeader = getTraceHeader();
++	if (traceHeader) {
++		headers.set("Cf-Trace-Id", traceHeader);
++	}
++}
++
++function cloneHeaders(headers: HeadersInit | undefined): Headers {
++	return new Headers(headers);
++}
+diff --git a/packages/workers-utils/src/index.ts b/packages/workers-utils/src/index.ts
+index 3a7f08fd46..1d68fdaddf 100644
+--- a/packages/workers-utils/src/index.ts
++++ b/packages/workers-utils/src/index.ts
+@@ -111,5 +111,9 @@ export type { Tunnel, TunnelOptions } from "./tunnel";
+ export { startTunnel } from "./tunnel";
+ export { spawnCloudflared } from "./cloudflared";
+ 
++export * from "./cfetch";
++
+ export { fetchLatestNpmVersion } from "./update-check";
+ export type { NpmVersionCheckResult } from "./update-check";
++
++export type { Logger } from "./logger";
+diff --git a/packages/workers-utils/src/logger.ts b/packages/workers-utils/src/logger.ts
+new file mode 100644
+index 0000000000..60698de494
+--- /dev/null
++++ b/packages/workers-utils/src/logger.ts
+@@ -0,0 +1,8 @@
++export type Logger = {
++	debug: (...args: unknown[]) => void;
++	debugWithSanitization: (label: string, ...args: unknown[]) => void;
++	log: (...args: unknown[]) => void;
++	info: (...args: unknown[]) => void;
++	warn: (...args: unknown[]) => void;
++	error: (...args: unknown[]) => void;
++};
+diff --git a/packages/workers-utils/tests/cfetch-utils.test.ts b/packages/workers-utils/tests/cfetch-utils.test.ts
+new file mode 100644
+index 0000000000..5801c3e894
+--- /dev/null
++++ b/packages/workers-utils/tests/cfetch-utils.test.ts
+@@ -0,0 +1,59 @@
++import { describe, it } from "vitest";
++import { extractAccountTag, hasMorePages } from "../src/cfetch";
++
++/**
++ * hasMorePages is a function that returns a boolean based on the result_info
++ * object returned from the cloudflare v4 API - if the current page is less
++ * than the total number of pages, it returns true, otherwise false.
++ */
++describe("hasMorePages", () => {
++	it("should handle result_info not having enough results to paginate", ({
++		expect,
++	}) => {
++		expect(
++			hasMorePages({
++				page: 1,
++				per_page: 10,
++				count: 5,
++				total_count: 5,
++			})
++		).toBe(false);
++	});
++	it("should return true if the current page is less than the total number of pages", ({
++		expect,
++	}) => {
++		expect(
++			hasMorePages({
++				page: 1,
++				per_page: 10,
++				count: 10,
++				total_count: 100,
++			})
++		).toBe(true);
++	});
++	it("should return false if we are on the last page of results", ({
++		expect,
++	}) => {
++		expect(
++			hasMorePages({
++				page: 10,
++				per_page: 10,
++				count: 10,
++				total_count: 100,
++			})
++		).toBe(false);
++	});
++});
++
++describe("extractAccountTag", () => {
++	it("should return undefined when resource does not have it", ({ expect }) => {
++		expect(extractAccountTag("/accounts")).toBeUndefined();
++		expect(extractAccountTag("/accounts/")).toBeUndefined();
++		expect(extractAccountTag("/accounts//more")).toBeUndefined();
++	});
++	it("should return tag when resource has it", ({ expect }) => {
++		expect(extractAccountTag("/accounts/foo")).toBe("foo");
++		expect(extractAccountTag("/accounts/bar/")).toBe("bar");
++		expect(extractAccountTag("/accounts/baz/more")).toBe("baz");
++	});
++});
+diff --git a/packages/wrangler/src/__tests__/cfetch-internal.test.ts b/packages/wrangler/src/__tests__/cfetch-internal.test.ts
+index 1759807af6..757ffbbc48 100644
+--- a/packages/wrangler/src/__tests__/cfetch-internal.test.ts
++++ b/packages/wrangler/src/__tests__/cfetch-internal.test.ts
+@@ -1,12 +1,12 @@
+-import { COMPLIANCE_REGION_CONFIG_UNKNOWN } from "@cloudflare/workers-utils";
+-import { http, HttpResponse } from "msw";
+-import { describe, it } from "vitest";
+-import { fetchGraphqlResult } from "../cfetch";
+ import {
++	COMPLIANCE_REGION_CONFIG_UNKNOWN,
+ 	addAuthorizationHeader,
+ 	extractWAFBlockRayId,
+ 	isWAFBlockResponse,
+-} from "../cfetch/internal";
++} from "@cloudflare/workers-utils";
++import { http, HttpResponse } from "msw";
++import { describe, it } from "vitest";
++import { fetchGraphqlResult } from "../cfetch";
+ import { mockAccountId, mockApiToken } from "./helpers/mock-account-id";
+ import { msw } from "./helpers/msw";
+ 
+diff --git a/packages/wrangler/src/__tests__/cfetch-utils.test.ts b/packages/wrangler/src/__tests__/cfetch-utils.test.ts
+index eac224a246..ff3ab95fb6 100644
+--- a/packages/wrangler/src/__tests__/cfetch-utils.test.ts
++++ b/packages/wrangler/src/__tests__/cfetch-utils.test.ts
+@@ -1,55 +1,11 @@
+ import { runInTempDir } from "@cloudflare/workers-utils/test-helpers";
+ import { http, HttpResponse } from "msw";
+ import { describe, it } from "vitest";
+-import { extractAccountTag, hasMorePages } from "../cfetch";
+ import { mockAccountId, mockApiToken } from "./helpers/mock-account-id";
+ import { mockConsoleMethods } from "./helpers/mock-console";
+ import { createFetchResult, msw } from "./helpers/msw";
+ import { runWrangler } from "./helpers/run-wrangler";
+ 
+-/**
+-hasMorePages is a function that returns a boolean based on the result_info object returned from the cloudflare v4 API - if the current page is less than the total number of pages, it returns true, otherwise false.
+-*/
+-
+-describe("hasMorePages", () => {
+-	it("should handle result_info not having enough results to paginate", ({
+-		expect,
+-	}) => {
+-		expect(
+-			hasMorePages({
+-				page: 1,
+-				per_page: 10,
+-				count: 5,
+-				total_count: 5,
+-			})
+-		).toBe(false);
+-	});
+-	it("should return true if the current page is less than the total number of pages", ({
+-		expect,
+-	}) => {
+-		expect(
+-			hasMorePages({
+-				page: 1,
+-				per_page: 10,
+-				count: 10,
+-				total_count: 100,
+-			})
+-		).toBe(true);
+-	});
+-	it("should return false if we are on the last page of results", ({
+-		expect,
+-	}) => {
+-		expect(
+-			hasMorePages({
+-				page: 10,
+-				per_page: 10,
+-				count: 10,
+-				total_count: 100,
+-			})
+-		).toBe(false);
+-	});
+-});
+-
+ describe("throwFetchError", () => {
+ 	mockAccountId();
+ 	mockApiToken();
+@@ -221,16 +177,3 @@ describe("throwFetchError", () => {
+ 		});
+ 	});
+ });
+-
+-describe("extractAccountTag", () => {
+-	it("should return undefined when resource does not have it", ({ expect }) => {
+-		expect(extractAccountTag("/accounts")).toBeUndefined();
+-		expect(extractAccountTag("/accounts/")).toBeUndefined();
+-		expect(extractAccountTag("/accounts//more")).toBeUndefined();
+-	});
+-	it("should return tag when resource has it", ({ expect }) => {
+-		expect(extractAccountTag("/accounts/foo")).toBe("foo");
+-		expect(extractAccountTag("/accounts/bar/")).toBe("bar");
+-		expect(extractAccountTag("/accounts/baz/more")).toBe("baz");
+-	});
+-});
+diff --git a/packages/wrangler/src/__tests__/pipelines.test.ts b/packages/wrangler/src/__tests__/pipelines.test.ts
+index 16adf23b39..a66c3b5249 100644
+--- a/packages/wrangler/src/__tests__/pipelines.test.ts
++++ b/packages/wrangler/src/__tests__/pipelines.test.ts
+@@ -34,10 +34,19 @@ describe("wrangler pipelines", () => {
+ 					expect(body.sql).toBe(sql);
+ 
+ 					if (!isValid) {
+-						const error = {
+-							notes: [{ text: "Invalid SQL syntax near 'INVALID'" }],
+-						};
+-						throw error;
++						return HttpResponse.json(
++							{
++								success: false,
++								errors: [
++									{
++										message: "Invalid SQL syntax near 'INVALID'",
++									},
++								],
++								messages: [],
++								result: null,
++							},
++							{ status: 400 }
++						);
+ 					}
+ 
+ 					return HttpResponse.json({
+diff --git a/packages/wrangler/src/__tests__/r2/notification.test.ts b/packages/wrangler/src/__tests__/r2/notification.test.ts
+index f0c4e300cd..c23ef2a26f 100644
+--- a/packages/wrangler/src/__tests__/r2/notification.test.ts
++++ b/packages/wrangler/src/__tests__/r2/notification.test.ts
+@@ -7,7 +7,7 @@ import {
+ import formatLabelledValues from "../../utils/render-labelled-values";
+ import { mockConsoleMethods } from "../helpers/mock-console";
+ import type { GetNotificationConfigResponse } from "../../r2/helpers/notification";
+-import type { ApiCredentials } from "../../user";
++import type { ApiCredentials } from "@cloudflare/workers-utils";
+ 
+ describe("event notifications", () => {
+ 	const std = mockConsoleMethods();
+diff --git a/packages/wrangler/src/cfetch/index.ts b/packages/wrangler/src/cfetch/index.ts
+index 596f1d69ad..77846607e6 100644
+--- a/packages/wrangler/src/cfetch/index.ts
++++ b/packages/wrangler/src/cfetch/index.ts
+@@ -1,23 +1,23 @@
+ import { URLSearchParams } from "node:url";
+-import { APIError } from "@cloudflare/workers-utils";
+-import { maybeThrowFriendlyError } from "./errors";
+-import { fetchInternal } from "./internal";
+-import type { ApiCredentials } from "../user";
+-import type { FetchError } from "./errors";
+-import type { ComplianceConfig } from "@cloudflare/workers-utils";
+-import type { ErrorData } from "cloudflare/resources/shared";
++import {
++	throwFetchError,
++	hasCursor,
++	hasMorePages,
++	fetchResultBase,
++	fetchListResultBase,
++} from "@cloudflare/workers-utils";
++import { version as wranglerVersion } from "../../package.json";
++import { logger } from "../logger";
++import { fetchInternal, resolveCredentials } from "./internal";
++import type {
++	ComplianceConfig,
++	FetchResult,
++	ApiCredentials,
++} from "@cloudflare/workers-utils";
+ import type { RequestInit } from "undici";
+ 
+ // Check out https://api.cloudflare.com/ for API docs.
+ 
+-export interface FetchResult<ResponseType = unknown> {
+-	success: boolean;
+-	result: ResponseType;
+-	errors: FetchError[];
+-	messages?: (string | { code?: number; message: string })[];
+-	result_info?: unknown;
+-}
+-
+ export { fetchKVGetValue, performApiFetch } from "./internal";
+ 
+ /**
+@@ -31,14 +31,17 @@ export async function fetchResult<ResponseType>(
+ 	abortSignal?: AbortSignal,
+ 	apiToken?: ApiCredentials
+ ): Promise<ResponseType> {
+-	const { response: json, status } = await fetchInternal<
+-		FetchResult<ResponseType>
+-	>(complianceConfig, resource, init, queryParams, abortSignal, apiToken);
+-	if (json.success) {
+-		return json.result;
+-	} else {
+-		throwFetchError(resource, json, status);
+-	}
++	apiToken = await resolveCredentials(complianceConfig, apiToken);
++	return fetchResultBase(
++		complianceConfig,
++		resource,
++		init,
++		`wrangler/${wranglerVersion}`,
++		logger,
++		queryParams,
++		abortSignal,
++		apiToken
++	);
+ }
+ 
+ /**
+@@ -74,29 +77,16 @@ export async function fetchListResult<ResponseType>(
+ 	init: RequestInit = {},
+ 	queryParams?: URLSearchParams
+ ): Promise<ResponseType[]> {
+-	const results: ResponseType[] = [];
+-	let getMoreResults = true;
+-	let cursor: string | undefined;
+-	while (getMoreResults) {
+-		if (cursor) {
+-			queryParams = new URLSearchParams(queryParams);
+-			queryParams.set("cursor", cursor);
+-		}
+-		const { response: json, status } = await fetchInternal<
+-			FetchResult<ResponseType[]>
+-		>(complianceConfig, resource, init, queryParams);
+-		if (json.success) {
+-			results.push(...json.result);
+-			if (hasCursor(json.result_info)) {
+-				cursor = json.result_info?.cursor;
+-			} else {
+-				getMoreResults = false;
+-			}
+-		} else {
+-			throwFetchError(resource, json, status);
+-		}
+-	}
+-	return results;
++	const credentials = await resolveCredentials(complianceConfig);
++	return fetchListResultBase(
++		complianceConfig,
++		resource,
++		init,
++		`wrangler/${wranglerVersion}`,
++		logger,
++		queryParams,
++		credentials
++	);
+ }
+ 
+ /**
+@@ -184,106 +174,3 @@ export async function fetchCursorPage<ResponseType>(
+ 
+ 	return results;
+ }
+-
+-interface PageResultInfo {
+-	page: number;
+-	per_page: number;
+-	count: number;
+-	total_count: number;
+-}
+-
+-export function hasMorePages(
+-	result_info: unknown
+-): result_info is PageResultInfo {
+-	const page = (result_info as PageResultInfo | undefined)?.page;
+-	const per_page = (result_info as PageResultInfo | undefined)?.per_page;
+-	const total = (result_info as PageResultInfo | undefined)?.total_count;
+-
+-	return (
+-		page !== undefined &&
+-		per_page !== undefined &&
+-		total !== undefined &&
+-		page * per_page < total
+-	);
+-}
+-
+-function throwFetchError(
+-	resource: string,
+-	response: FetchResult<unknown>,
+-	status: number
+-): never {
+-	// This is an error from within an MSW handler
+-	if (typeof vitest !== "undefined" && !("errors" in response)) {
+-		throw response;
+-	}
+-	const errors = response.errors ?? [];
+-	for (const error of errors) {
+-		maybeThrowFriendlyError(error);
+-	}
+-
+-	// Some API endpoints return non-standard error envelopes (e.g. {code, error}
+-	// instead of {errors: [...]}). Surface those as notes when errors is empty.
+-	const notes = [
+-		...errors.map((err) => ({ text: renderError(err) })),
+-		...(response.messages?.map((msg) => ({
+-			text: typeof msg === "string" ? msg : (msg.message ?? String(msg)),
+-		})) ?? []),
+-	];
+-	if (notes.length === 0) {
+-		const raw = response as unknown as Record<string, unknown>;
+-		const fallbackMessage =
+-			typeof raw.error === "string"
+-				? `${raw.error}${raw.code ? ` [code: ${raw.code}]` : ""}`
+-				: undefined;
+-		if (fallbackMessage) {
+-			notes.push({ text: fallbackMessage });
+-		}
+-	}
+-
+-	const error = new APIError({
+-		text: `A request to the Cloudflare API (${resource}) failed.`,
+-		notes,
+-		status,
+-		telemetryMessage: false,
+-	});
+-	// add the first error code directly to this error
+-	// so consumers can use it for specific behaviour
+-	const code = errors[0]?.code;
+-	if (code) {
+-		error.code = code;
+-	}
+-	// extract the account tag from the resource (if any)
+-	error.accountTag = extractAccountTag(resource);
+-	throw error;
+-}
+-
+-export function extractAccountTag(resource: string) {
+-	const re = new RegExp("/accounts/([a-zA-Z0-9]+)/?");
+-	const matches = re.exec(resource);
+-	return matches?.[1];
+-}
+-
+-function hasCursor(result_info: unknown): result_info is { cursor: string } {
+-	const cursor = (result_info as { cursor: string } | undefined)?.cursor;
+-	return cursor !== undefined && cursor !== null && cursor !== "";
+-}
+-
+-export function renderError(err: FetchError | ErrorData, level = 0): string {
+-	const indent = "  ".repeat(level);
+-	const chainedMessages =
+-		"error_chain" in err
+-			? (err.error_chain
+-					?.map(
+-						(chainedError) =>
+-							`\n\n${indent}- ${renderError(chainedError, level + 1)}`
+-					)
+-					.join("\n") ?? "")
+-			: "";
+-	return (
+-		(err.code ? `${err.message} [code: ${err.code}]` : err.message) +
+-		(err.documentation_url
+-			? `\n${indent}To learn more about this error, visit: ${err.documentation_url}`
+-			: "") +
+-		chainedMessages
+-	);
+-}
+diff --git a/packages/wrangler/src/cfetch/internal.ts b/packages/wrangler/src/cfetch/internal.ts
+index 9a07d77210..1c751f8685 100644
+--- a/packages/wrangler/src/cfetch/internal.ts
++++ b/packages/wrangler/src/cfetch/internal.ts
+@@ -1,9 +1,9 @@
+-import assert from "node:assert";
+ import {
++	addAuthorizationHeader,
+ 	APIError,
++	fetchInternalBase,
+ 	getCloudflareApiBaseUrl,
+-	getTraceHeader,
+-	parseJSON,
++	performApiFetchBase,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+ import Cloudflare from "cloudflare";
+@@ -11,8 +11,11 @@ import { fetch, FormData, Headers, Request, Response } from "undici";
+ import { version as wranglerVersion } from "../../package.json";
+ import { logger } from "../logger";
+ import { loginOrRefreshIfRequired, requireApiToken } from "../user";
+-import type { ApiCredentials } from "../user";
+-import type { ComplianceConfig, Message } from "@cloudflare/workers-utils";
++import type {
++	ApiCredentials,
++	ComplianceConfig,
++	Message,
++} from "@cloudflare/workers-utils";
+ import type { URLSearchParams } from "node:url";
+ import type { HeadersInit, RequestInfo, RequestInit } from "undici";
+ 
+@@ -94,52 +97,16 @@ export async function performApiFetch(
+ 	abortSignal?: AbortSignal,
+ 	apiToken?: ApiCredentials
+ ) {
+-	const method = init.method ?? "GET";
+-	assert(
+-		resource.startsWith("/"),
+-		`CF API fetch - resource path must start with a "/" but got "${resource}"`
+-	);
+-	await requireLoggedIn(complianceConfig);
+-	apiToken ??= requireApiToken();
+-	const headers = cloneHeaders(new Headers(init.headers));
+-	addAuthorizationHeader(headers, apiToken);
+-	addUserAgent(headers);
+-	maybeAddTraceHeader(headers);
+-
+-	const queryString = queryParams ? `?${queryParams.toString()}` : "";
+-	logger.debug(
+-		`-- START CF API REQUEST: ${method} ${getCloudflareApiBaseUrl(complianceConfig)}${resource}`
+-	);
+-	logger.debugWithSanitization("QUERY STRING:", queryString);
+-	logHeaders(headers);
+-
+-	logger.debugWithSanitization("INIT:", JSON.stringify({ ...init }, null, 2));
+-	if (init.body instanceof FormData) {
+-		logger.debugWithSanitization(
+-			"BODY:",
+-			await new Response(init.body).text(),
+-			null,
+-			2
+-		);
+-	}
+-	logger.debug("-- END CF API REQUEST");
+-	return await fetch(
+-		`${getCloudflareApiBaseUrl(complianceConfig)}${resource}${queryString}`,
+-		{
+-			method,
+-			...init,
+-			headers,
+-			signal: abortSignal,
+-		}
+-	);
+-}
+-
+-function logHeaders(headers: Headers) {
+-	headers = cloneHeaders(headers);
+-	headers.delete("Authorization");
+-	logger.debugWithSanitization(
+-		"HEADERS:",
+-		JSON.stringify(Object.fromEntries(headers), null, 2)
++	apiToken = await resolveCredentials(complianceConfig, apiToken);
++	return performApiFetchBase(
++		complianceConfig,
++		resource,
++		init,
++		`wrangler/${wranglerVersion}`,
++		logger,
++		queryParams,
++		abortSignal,
++		apiToken
+ 	);
+ }
+ 
+@@ -160,147 +127,33 @@ export async function fetchInternal<ResponseType>(
+ 	abortSignal?: AbortSignal,
+ 	apiToken?: ApiCredentials
+ ): Promise<{ response: ResponseType; status: number }> {
+-	const method = init.method ?? "GET";
+-	const response = await performApiFetch(
++	apiToken = await resolveCredentials(complianceConfig, apiToken);
++	return fetchInternalBase(
+ 		complianceConfig,
+ 		resource,
+ 		init,
++		`wrangler/${wranglerVersion}`,
++		logger,
+ 		queryParams,
+ 		abortSignal,
+ 		apiToken
+ 	);
+-	const jsonText = await response.text();
+-	logger.debug(
+-		"-- START CF API RESPONSE:",
+-		response.statusText,
+-		response.status
+-	);
+-	logHeaders(response.headers);
+-	logger.debugWithSanitization("RESPONSE:", jsonText);
+-	logger.debug("-- END CF API RESPONSE");
+-
+-	// HTTP 204 and HTTP 205 responses do not return a body. We need to special-case this
+-	// as otherwise parseJSON will throw an error back to the user.
+-	if (!jsonText && (response.status === 204 || response.status === 205)) {
+-		return {
+-			response: {
+-				result: {},
+-				success: true,
+-				errors: [],
+-				messages: [],
+-			} as ResponseType,
+-			status: response.status,
+-		};
+-	}
+-
+-	// Detect Cloudflare WAF block pages via the cf-mitigated response header.
+-	// Without this check, the JSON parser throws a confusing "malformed response" error.
+-	if (isWAFBlockResponse(response.headers)) {
+-		throwWAFBlockError(
+-			response.headers,
+-			method,
+-			resource,
+-			response.status,
+-			response.statusText
+-		);
+-	}
+-
+-	try {
+-		const json = parseJSON(jsonText) as ResponseType;
+-		return { response: json, status: response.status };
+-	} catch {
+-		const rayId = extractWAFBlockRayId(response.headers);
+-
+-		throw new APIError({
+-			text: "Received a malformed response from the API",
+-			notes: [
+-				{
+-					text: truncate(jsonText, 100),
+-				},
+-				{
+-					text: `${method} ${resource} -> ${response.status} ${response.statusText}`,
+-				},
+-				...(rayId ? [{ text: `Cloudflare Ray ID: ${rayId}` }] : []),
+-			],
+-			status: response.status,
+-			telemetryMessage: false,
+-		});
+-	}
+-}
+-
+-export function truncate(text: string, maxLength: number): string {
+-	const { length } = text;
+-	if (length <= maxLength) {
+-		return text;
+-	}
+-	return `${text.substring(0, maxLength)}... (length = ${length})`;
+-}
+-
+-/**
+- * Checks whether the response was blocked by Cloudflare's WAF by inspecting
+- * the `cf-mitigated` response header. When the WAF blocks or challenges a
+- * request the response will include `cf-mitigated: challenge`.
+- *
+- * @see https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/
+- *
+- * @param headers - The response headers to inspect.
+- * @returns `true` if the response was mitigated by the WAF.
+- */
+-export function isWAFBlockResponse(headers: Headers): boolean {
+-	return headers.get("cf-mitigated") === "challenge";
+ }
+ 
+-/**
+- * Extracts the Cloudflare Ray ID from the `cf-ray` response header.
+- *
+- * @param headers - The response headers to inspect.
+- * @returns The Ray ID string, or `undefined` if the header is absent.
+- */
+-export function extractWAFBlockRayId(headers: Headers): string | undefined {
+-	return headers.get("cf-ray") ?? undefined;
++function cloneHeaders(headers: HeadersInit | undefined): Headers {
++	return new Headers(headers);
+ }
+ 
+ /**
+- * Throws a descriptive {@link APIError} for a WAF block response.
+  *
+- * @param headers - The response headers (used to extract the Ray ID).
+- * @param method - The HTTP method of the blocked request.
+- * @param resource - The URL or path that was requested.
+- * @param status - The HTTP status code returned.
+- * @param statusText - The HTTP status text returned.
+- * @throws {APIError} Always — this function never returns.
++ * Triggers a login or token refresh if necessary
+  */
+-function throwWAFBlockError(
+-	headers: Headers,
+-	method: string,
+-	resource: string,
+-	status: number,
+-	statusText: string
+-): never {
+-	const rayId = extractWAFBlockRayId(headers);
+-	throw new APIError({
+-		text: "The Cloudflare API responded with a WAF block page instead of the expected JSON response",
+-		notes: [
+-			{
+-				text: "Cloudflare's firewall (WAF) blocked this API request. This is usually a false positive.",
+-			},
+-			...(rayId ? [{ text: `Cloudflare Ray ID: ${rayId}` }] : []),
+-			{
+-				text: rayId
+-					? "If the issue persists, please open a Cloudflare Support ticket and include the Ray ID above."
+-					: "If the issue persists, please open a Cloudflare Support ticket. You can find the Cloudflare Ray ID on the block page in your browser.",
+-			},
+-			{
+-				text: `${method} ${resource} -> ${status} ${statusText}`,
+-			},
+-		],
+-		status,
+-		telemetryMessage: false,
+-	});
+-}
+-
+-function cloneHeaders(headers: HeadersInit | undefined): Headers {
+-	return new Headers(headers);
++export async function resolveCredentials(
++	complianceConfig: ComplianceConfig,
++	apiToken?: ApiCredentials
++): Promise<ApiCredentials> {
++	await requireLoggedIn(complianceConfig);
++	return apiToken ?? requireApiToken();
+ }
+ 
+ export async function requireLoggedIn(
+@@ -314,82 +167,10 @@ export async function requireLoggedIn(
+ 	}
+ }
+ 
+-export function addAuthorizationHeader(
+-	headers: Headers,
+-	auth: ApiCredentials,
+-	overrideExisting = false
+-): void {
+-	if (!headers.has("Authorization") || overrideExisting) {
+-		if ("apiToken" in auth) {
+-			const authorizationHeader = `Bearer ${auth.apiToken}`;
+-			validateAuthorizationHeaderValue(authorizationHeader);
+-			headers.set("Authorization", authorizationHeader);
+-		} else {
+-			headers.set("X-Auth-Key", auth.authKey);
+-			headers.set("X-Auth-Email", auth.authEmail);
+-		}
+-	}
+-}
+-
+-function validateAuthorizationHeaderValue(value: string): void {
+-	for (const character of value) {
+-		const codePoint = character.codePointAt(0);
+-		if (codePoint === undefined || codePoint > 255) {
+-			throw new UserError(
+-				`The configured Cloudflare API token contains a character that cannot be used in an HTTP Authorization header: ${formatAuthorizationHeaderCharacter(character, codePoint)}. Recreate or copy the token again, making sure it does not include characters such as ellipses.`,
+-				{
+-					telemetryMessage: "cfetch auth invalid authorization header",
+-				}
+-			);
+-		}
+-	}
+-}
+-
+-function formatAuthorizationHeaderCharacter(
+-	character: string,
+-	codePoint: number | undefined
+-): string {
+-	if (codePoint === undefined) {
+-		return '"\\u{unknown}"';
+-	}
+-
+-	const codePointLabel = `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+-	const characterLabel = isPrintableCharacter(character)
+-		? `"${character}"`
+-		: `"${escapeCharacter(character)}"`;
+-
+-	return `${characterLabel} (${codePointLabel})`;
+-}
+-
+-function isPrintableCharacter(character: string): boolean {
+-	return !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(character);
+-}
+-
+-function escapeCharacter(character: string): string {
+-	return Array.from(character)
+-		.map((c) => {
+-			const codePoint = c.codePointAt(0);
+-			if (codePoint === undefined) {
+-				return "";
+-			}
+-			return codePoint <= 0xffff
+-				? `\\u${codePoint.toString(16).toUpperCase().padStart(4, "0")}`
+-				: `\\u{${codePoint.toString(16).toUpperCase()}}`;
+-		})
+-		.join("");
+-}
+-
+ export function addUserAgent(headers: Headers): void {
+ 	headers.set("User-Agent", `wrangler/${wranglerVersion}`);
+ }
+ 
+-export function maybeAddTraceHeader(headers: Headers): void {
+-	const traceHeader = getTraceHeader();
+-	if (traceHeader) {
+-		headers.set("Cf-Trace-Id", traceHeader);
+-	}
+-}
+-
+ /**
+  * The implementation for fetching a kv value from the cloudflare API.
+  * We special-case this one call, because it's the only API call that
+diff --git a/packages/wrangler/src/cloudchamber/common.ts b/packages/wrangler/src/cloudchamber/common.ts
+index 09cd98b713..a95c418f66 100644
+--- a/packages/wrangler/src/cloudchamber/common.ts
++++ b/packages/wrangler/src/cloudchamber/common.ts
+@@ -10,11 +10,12 @@ import {
+ 	OpenAPI,
+ } from "@cloudflare/containers-shared";
+ import {
++	addAuthorizationHeader,
+ 	getCloudflareApiBaseUrl,
+ 	parseByteSize,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+-import { addAuthorizationHeader, addUserAgent } from "../cfetch/internal";
++import { addUserAgent } from "../cfetch/internal";
+ import { readConfig } from "../config";
+ import { constructStatusMessage } from "../core/CommandRegistry";
+ import { isNonInteractiveOrCI } from "../is-interactive";
+diff --git a/packages/wrangler/src/core/handle-errors.ts b/packages/wrangler/src/core/handle-errors.ts
+index 3bc66ea204..f6ce22f8d3 100644
+--- a/packages/wrangler/src/core/handle-errors.ts
++++ b/packages/wrangler/src/core/handle-errors.ts
+@@ -6,13 +6,13 @@ import {
+ 	COMPLIANCE_REGION_CONFIG_UNKNOWN,
+ 	JsonFriendlyFatalError,
+ 	ParseError,
++	renderError,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+ import chalk from "chalk";
+ import { Cloudflare } from "cloudflare";
+ import dedent from "ts-dedent";
+ import { createCLIParser } from "..";
+-import { renderError } from "../cfetch";
+ import { readConfig } from "../config";
+ import {
+ 	isBuildFailure,
+diff --git a/packages/wrangler/src/dev/create-worker-preview.ts b/packages/wrangler/src/dev/create-worker-preview.ts
+index 97a701c43d..f4c6b00f99 100644
+--- a/packages/wrangler/src/dev/create-worker-preview.ts
++++ b/packages/wrangler/src/dev/create-worker-preview.ts
+@@ -7,9 +7,9 @@ import { createWorkerUploadForm } from "../deployment-bundle/create-worker-uploa
+ import { logger } from "../logger";
+ import { getWorkersDevSubdomain } from "../routes";
+ import { getAccessHeaders } from "../user/access";
+-import type { ApiCredentials } from "../user";
+ import type { CfWorkerInitWithName } from "./remote";
+ import type {
++	ApiCredentials,
+ 	CfWorkerContext,
+ 	ComplianceConfig,
+ } from "@cloudflare/workers-utils";
+diff --git a/packages/wrangler/src/dev/remote.ts b/packages/wrangler/src/dev/remote.ts
+index 0dbda2ca04..1840a4b6fa 100644
+--- a/packages/wrangler/src/dev/remote.ts
++++ b/packages/wrangler/src/dev/remote.ts
+@@ -12,9 +12,9 @@ import { requireApiToken } from "../user";
+ import { isAbortError } from "../utils/isAbortError";
+ import { getZoneIdForPreview } from "../zones";
+ import type { StartDevWorkerInput } from "../api";
+-import type { ApiCredentials } from "../user";
+ import type { CfAccount } from "./create-worker-preview";
+ import type { EsbuildBundle } from "./use-esbuild";
++import type { ApiCredentials } from "@cloudflare/workers-utils";
+ import type {
+ 	AssetsOptions,
+ 	CfModule,
+diff --git a/packages/wrangler/src/r2/helpers/notification.ts b/packages/wrangler/src/r2/helpers/notification.ts
+index c80196b018..2a52418aca 100644
+--- a/packages/wrangler/src/r2/helpers/notification.ts
++++ b/packages/wrangler/src/r2/helpers/notification.ts
+@@ -1,8 +1,7 @@
+ import { fetchResult } from "../../cfetch";
+ import { logger } from "../../logger";
+ import { getQueue, getQueueById } from "../../queues/client";
+-import type { ApiCredentials } from "../../user";
+-import type { Config } from "@cloudflare/workers-utils";
++import type { Config, ApiCredentials } from "@cloudflare/workers-utils";
+ import type { HeadersInit } from "undici";
+ 
+ export type R2EventableOperation =
+diff --git a/packages/wrangler/src/r2/sql.ts b/packages/wrangler/src/r2/sql.ts
+index b0b9c79cbb..f50227f7e4 100644
+--- a/packages/wrangler/src/r2/sql.ts
++++ b/packages/wrangler/src/r2/sql.ts
+@@ -1,8 +1,12 @@
+ import { spinner } from "@cloudflare/cli-shared-helpers/interactive";
+-import { APIError, parseJSON, UserError } from "@cloudflare/workers-utils";
++import {
++	APIError,
++	parseJSON,
++	UserError,
++	truncate,
++} from "@cloudflare/workers-utils";
+ import prettyBytes from "pretty-bytes";
+ import { fetch } from "undici";
+-import { truncate } from "../cfetch/internal";
+ import { createCommand, createNamespace } from "../core/create-command";
+ import { logger } from "../logger";
+ import {
+diff --git a/packages/wrangler/src/routes.ts b/packages/wrangler/src/routes.ts
+index 93f2bf5062..d1854745e4 100644
+--- a/packages/wrangler/src/routes.ts
++++ b/packages/wrangler/src/routes.ts
+@@ -7,8 +7,10 @@ import chalk from "chalk";
+ import { fetchResult } from "./cfetch";
+ import { confirm, prompt } from "./dialogs";
+ import { logger } from "./logger";
+-import type { ApiCredentials } from "./user/user";
+-import type { ComplianceConfig } from "@cloudflare/workers-utils";
++import type {
++	ComplianceConfig,
++	ApiCredentials,
++} from "@cloudflare/workers-utils";
+ 
+ type WorkersDevSubdomainRegistrationContext = "workers_dev" | "workflows";
+ 
+diff --git a/packages/wrangler/src/user/user.ts b/packages/wrangler/src/user/user.ts
+index 93f4f82bfd..c7836d0d31 100644
+--- a/packages/wrangler/src/user/user.ts
++++ b/packages/wrangler/src/user/user.ts
+@@ -251,19 +251,13 @@ import { fetchAllAccounts } from "./fetch-accounts";
+ import { generateAuthUrl, OAUTH_CALLBACK_URL } from "./generate-auth-url";
+ import { generateRandomState } from "./generate-random-state";
+ import type { Account } from "./shared";
+-import type { ComplianceConfig } from "@cloudflare/workers-utils";
++import type {
++	ApiCredentials,
++	ComplianceConfig,
++} from "@cloudflare/workers-utils";
+ import type { ParsedUrlQuery } from "node:querystring";
+ import type { Response } from "undici";
+ 
+-export type ApiCredentials =
+-	| {
+-			apiToken: string;
+-	  }
+-	| {
+-			authKey: string;
+-			authEmail: string;
+-	  };
+-
+ /**
+  * Try to read API credentials from environment variables.
+  *
+diff --git a/packages/wrangler/src/user/whoami.ts b/packages/wrangler/src/user/whoami.ts
+index 94e39b1163..076a630954 100644
+--- a/packages/wrangler/src/user/whoami.ts
++++ b/packages/wrangler/src/user/whoami.ts
+@@ -10,8 +10,11 @@ import { formatMessage } from "../utils/format-message";
+ import { fetchAllAccounts } from "./fetch-accounts";
+ import { fetchMembershipRoles } from "./membership";
+ import { DefaultScopeKeys, getAPIToken, getAuthFromEnv, getScopes } from ".";
+-import type { ApiCredentials, Scope } from ".";
+-import type { ComplianceConfig } from "@cloudflare/workers-utils";
++import type { Scope } from ".";
++import type {
++	ComplianceConfig,
++	ApiCredentials,
++} from "@cloudflare/workers-utils";
+ 
+ /**
+  * Represents the JSON output of `wrangler whoami --json`.

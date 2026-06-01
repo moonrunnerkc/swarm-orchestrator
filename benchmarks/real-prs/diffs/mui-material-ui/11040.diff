@@ -1,0 +1,1059 @@
+diff --git a/docs/src/modules/components/withRoot.js b/docs/src/modules/components/withRoot.js
+index ecb111e318d9c7..3d8b7a25042309 100644
+--- a/docs/src/modules/components/withRoot.js
++++ b/docs/src/modules/components/withRoot.js
+@@ -186,6 +186,9 @@ const pages = [
+       {
+         pathname: '/lab/speed-dial',
+       },
++      {
++        pathname: '/lab/slider',
++      },
+       findPages[2].children[1],
+     ],
+   },
+diff --git a/docs/src/pages/getting-started/supported-components/supported-components.md b/docs/src/pages/getting-started/supported-components/supported-components.md
+index 19466330a981b1..bf160e472d55fa 100644
+--- a/docs/src/pages/getting-started/supported-components/supported-components.md
++++ b/docs/src/pages/getting-started/supported-components/supported-components.md
+@@ -80,9 +80,10 @@ to discuss the approach before submitting a PR.
+   - **[Checkbox](https://material.io/design/components/selection-controls.html#checkboxes) ✓**
+   - **[Radio button](https://material.io/design/components/selection-controls.html#radio-buttons) ✓**
+   - **[Switch](https://material.io/design/components/selection-controls.html#switches) ✓**
+-- [Sliders](https://material.io/design/components/sliders.html)
+-  - [Continuous](https://material.io/design/components/sliders.html#continuous-slider)
+-  - [Discrete](https://material.io/design/components/sliders.html#discrete-slider)
++- **[Sliders](https://material.io/design/components/sliders.html) ~
++     **([Lab](/lab/about))
++  - **[Continuous](https://material.io/design/components/sliders.html#continuous-slider) ✓**
++  - **[Discrete](https://material.io/design/components/sliders.html#discrete-slider) ~** (WIP)
+ - **[Snackbars](https://material.io/archive/guidelines/components/snackbars-toasts.html) ✓** (*Legacy Material v1*)
+ - **[Subheaders](https://material.io/archive/guidelines/components/subheaders.html) ✓** (*Legacy Material v1*)
+   - **[List](https://material.io/archive/guidelines/components/subheaders.html#subheaders-list-subheaders) ✓**
+diff --git a/docs/src/pages/lab/slider/DisabledSlider.js b/docs/src/pages/lab/slider/DisabledSlider.js
+new file mode 100644
+index 00000000000000..6ed0d28711ea96
+--- /dev/null
++++ b/docs/src/pages/lab/slider/DisabledSlider.js
+@@ -0,0 +1,26 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from 'material-ui/styles';
++import Slider from '@material-ui/lab/Slider';
++
++const styles = {
++  container: {
++    width: 300,
++  },
++};
++
++function DisabledSlider({ classes }) {
++  return (
++    <div className={classes.container}>
++      <Slider value={0} disabled />
++      <Slider value={50} disabled />
++      <Slider value={100} disabled />
++    </div>
++  );
++}
++
++DisabledSlider.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(DisabledSlider);
+diff --git a/docs/src/pages/lab/slider/ReverseSlider.js b/docs/src/pages/lab/slider/ReverseSlider.js
+new file mode 100644
+index 00000000000000..f0c55a9f1b2e9c
+--- /dev/null
++++ b/docs/src/pages/lab/slider/ReverseSlider.js
+@@ -0,0 +1,33 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from 'material-ui/styles';
++import Slider from '@material-ui/lab/Slider';
++
++const styles = {
++  container: {
++    width: 300,
++  },
++};
++
++class ReverseSlider extends React.Component {
++  state = { value: 50 };
++
++  handleChange = (event, value) => this.setState({ value });
++  render() {
++    const { classes } = this.props;
++    const { value } = this.state;
++
++    return (
++      <div className={classes.container}>
++        <Slider value={value} onChange={this.handleChange} />
++        <Slider value={value} onChange={this.handleChange} reverse />
++      </div>
++    );
++  }
++}
++
++ReverseSlider.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(ReverseSlider);
+diff --git a/docs/src/pages/lab/slider/SimpleSlider.js b/docs/src/pages/lab/slider/SimpleSlider.js
+new file mode 100644
+index 00000000000000..2cd21339ba38ed
+--- /dev/null
++++ b/docs/src/pages/lab/slider/SimpleSlider.js
+@@ -0,0 +1,35 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from 'material-ui/styles';
++import Typography from 'material-ui/Typography';
++import Slider from '@material-ui/lab/Slider';
++
++const styles = {
++  container: {
++    width: 300,
++  },
++};
++
++class SimpleSlider extends React.Component {
++  state = { value: 50 };
++
++  handleChange = (event, value) => this.setState({ value });
++
++  render() {
++    const { classes } = this.props;
++    const { value } = this.state;
++
++    return (
++      <div className={classes.container}>
++        <Typography id="label">Slider label</Typography>
++        <Slider value={value} aria-labelledby="label" onChange={this.handleChange} />
++      </div>
++    );
++  }
++}
++
++SimpleSlider.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(SimpleSlider);
+diff --git a/docs/src/pages/lab/slider/StepSlider.js b/docs/src/pages/lab/slider/StepSlider.js
+new file mode 100644
+index 00000000000000..63a2fa74ebbaa3
+--- /dev/null
++++ b/docs/src/pages/lab/slider/StepSlider.js
+@@ -0,0 +1,33 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from 'material-ui/styles';
++import Slider from '@material-ui/lab/Slider';
++
++const styles = {
++  container: {
++    width: 300,
++  },
++};
++
++class StepSlider extends React.Component {
++  state = { value: 3 };
++
++  handleChange = (event, value) => this.setState({ value });
++
++  render() {
++    const { classes } = this.props;
++    const { value } = this.state;
++
++    return (
++      <div className={classes.container}>
++        <Slider value={value} min={0} max={6} step={1} onChange={this.handleChange} />
++      </div>
++    );
++  }
++}
++
++StepSlider.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(StepSlider);
+diff --git a/docs/src/pages/lab/slider/VerticalSlider.js b/docs/src/pages/lab/slider/VerticalSlider.js
+new file mode 100644
+index 00000000000000..0bd1bdf69c3b76
+--- /dev/null
++++ b/docs/src/pages/lab/slider/VerticalSlider.js
+@@ -0,0 +1,33 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from 'material-ui/styles';
++import Slider from '@material-ui/lab/Slider';
++
++const styles = {
++  container: {
++    display: 'flex',
++    height: 300,
++  },
++};
++
++class VerticalSlider extends React.Component {
++  state = { value: 50 };
++  handleChange = (event, value) => this.setState({ value });
++  render() {
++    const { classes } = this.props;
++    const { value } = this.state;
++
++    return (
++      <div className={classes.container}>
++        <Slider value={value} onChange={this.handleChange} vertical />
++        <Slider value={value} onChange={this.handleChange} vertical reverse />
++      </div>
++    );
++  }
++}
++
++VerticalSlider.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(VerticalSlider);
+diff --git a/docs/src/pages/lab/slider/slider.md b/docs/src/pages/lab/slider/slider.md
+new file mode 100644
+index 00000000000000..877122c2b6e515
+--- /dev/null
++++ b/docs/src/pages/lab/slider/slider.md
+@@ -0,0 +1,22 @@
++---
++components: Slider
++---
++
++# Slider
++
++A [slider](https://material.io/guidelines/components/sliders.html) is an interface for users to input a value in a range. Sliders can be continuous or discrete and can be enabled or disabled.
++
++## Simple slider
++{{"demo": "pages/lab/slider/SimpleSlider.js"}}
++
++## Slider with steps
++{{"demo": "pages/lab/slider/StepSlider.js"}}
++
++## Disabled slider
++{{"demo": "pages/lab/slider/DisabledSlider.js"}}
++
++## Vertical slider
++{{"demo": "pages/lab/slider/VerticalSlider.js"}}
++
++## Reverse slider
++{{"demo": "pages/lab/slider/ReverseSlider.js"}}
+\ No newline at end of file
+diff --git a/packages/material-ui-lab/src/Slider/Slider.js b/packages/material-ui-lab/src/Slider/Slider.js
+new file mode 100644
+index 00000000000000..90c876a9212b86
+--- /dev/null
++++ b/packages/material-ui-lab/src/Slider/Slider.js
+@@ -0,0 +1,523 @@
++import React from 'react';
++import { findDOMNode } from 'react-dom';
++import PropTypes from 'prop-types';
++import keycode from 'keycode';
++import classNames from 'classnames';
++import withStyles from '@material-ui/core/styles/withStyles';
++import ButtonBase from '@material-ui/core/ButtonBase';
++import { fade } from '@material-ui/core/styles/colorManipulator';
++import clamp from '../utils/clamp';
++
++export const style = theme => {
++  const commonTransitionsOptions = {
++    duration: theme.transitions.duration.short,
++    easing: theme.transitions.easing.easeOut,
++  };
++
++  const commonTransitionsProperty = ['width', 'height', 'box-shadow', 'left', 'top'];
++
++  const commonTransitions = theme.transitions.create(
++    commonTransitionsProperty,
++    commonTransitionsOptions,
++  );
++
++  const colors = {
++    primary: theme.palette.primary.main,
++    secondary: theme.palette.grey[400],
++    focused: theme.palette.grey[500],
++    disabled: theme.palette.grey[400],
++  };
++
++  return {
++    /* Styles for wrapper container */
++    container: {
++      position: 'relative',
++      width: '100%',
++      margin: '10px 0',
++      padding: '6px 0',
++      cursor: 'pointer',
++      WebkitTapHighlightColor: 'transparent',
++      '&$disabled': {
++        cursor: 'no-drop',
++      },
++      '&$vertical': {
++        height: '100%',
++        margin: '0 10px',
++        padding: '0 6px',
++      },
++      '&$reverse': {
++        transform: 'scaleX(-1)',
++      },
++      '&$vertical$reverse': {
++        transform: 'scaleY(-1)',
++      },
++    },
++    /* Tracks styles */
++    track: {
++      position: 'absolute',
++      transform: 'translate(0, -50%)',
++      top: '50%',
++      height: 2,
++      '&$focused, &$activated': {
++        transition: 'none',
++        backgroundColor: colors.focused,
++      },
++      '&$disabled': {
++        backgroundColor: colors.secondary,
++      },
++      '&$vertical': {
++        transform: 'translate(-50%, 0)',
++        left: '50%',
++        top: 'initial',
++        width: 2,
++      },
++      '&$jumped': {
++        backgroundColor: colors.focused,
++      },
++    },
++    trackBefore: {
++      zIndex: 1,
++      left: 0,
++      backgroundColor: colors.primary,
++      transition: commonTransitions,
++      '&$focused, &$activated, &$jumped': {
++        backgroundColor: colors.primary,
++      },
++    },
++    trackAfter: {
++      right: 0,
++      backgroundColor: colors.secondary,
++      transition: commonTransitions,
++      '&$vertical': {
++        bottom: 0,
++      },
++    },
++    /* Thumb styles  */
++    thumb: {
++      position: 'absolute',
++      zIndex: 2,
++      transform: 'translate(-50%, -50%)',
++      width: 12,
++      height: 12,
++      borderRadius: '50%',
++      transition: commonTransitions,
++      backgroundColor: colors.primary,
++      '&$focused': {
++        boxShadow: `0px 0px 0px 9px ${fade(colors.primary, 0.16)}`,
++      },
++      '&$activated': {
++        width: 17,
++        height: 17,
++        transition: 'none',
++      },
++      '&$disabled': {
++        cursor: 'no-drop',
++        width: 9,
++        height: 9,
++        backgroundColor: colors.disabled,
++      },
++      '&$zero': {
++        border: `2px solid ${colors.disabled}`,
++        backgroundColor: 'transparent',
++      },
++      '&$focused$zero': {
++        border: `2px solid ${colors.focused}`,
++        backgroundColor: fade(colors.focused, 0.34),
++        boxShadow: `0px 0px 0px 9px ${fade(colors.focused, 0.34)}`,
++      },
++      '&$activated$zero': {
++        border: `2px solid ${colors.focused}`,
++      },
++      '&$jumped': {
++        width: 17,
++        height: 17,
++      },
++    },
++    focused: {},
++    activated: {},
++    disabled: {},
++    zero: {},
++    vertical: {},
++    reverse: {},
++    jumped: {},
++  };
++};
++
++function addEventListener(node, event, handler, capture) {
++  node.addEventListener(event, handler, capture);
++  return {
++    remove: function remove() {
++      node.removeEventListener(event, handler, capture);
++    },
++  };
++}
++
++function percentToValue(percent, min, max) {
++  return (max - min) * percent / 100 + min;
++}
++
++function roundToStep(number, step) {
++  return Math.round(number / step) * step;
++}
++
++function getOffset(node) {
++  const { scrollY, scrollX } = global;
++  const { left, top } = node.getBoundingClientRect();
++
++  return {
++    top: top + scrollY,
++    left: left + scrollX,
++  };
++}
++
++function getMousePosition(event) {
++  if (event.changedTouches && event.changedTouches[0]) {
++    return {
++      x: event.changedTouches[0].pageX,
++      y: event.changedTouches[0].pageY,
++    };
++  }
++
++  return {
++    x: event.pageX,
++    y: event.pageY,
++  };
++}
++
++function calculatePercent(node, event, isVertical, isReverted) {
++  const { width, height } = node.getBoundingClientRect();
++  const { top, left } = getOffset(node);
++  const { x, y } = getMousePosition(event);
++
++  const value = isVertical ? y - top : x - left;
++  const onePercent = (isVertical ? height : width) / 100;
++
++  return isReverted ? 100 - clamp(value / onePercent) : clamp(value / onePercent);
++}
++
++function preventPageScrolling(event) {
++  event.preventDefault();
++}
++
++class Slider extends React.Component {
++  static getDerivedStateFromProps(nextProps, prevState) {
++    if (nextProps.disabled) {
++      return { currentState: 'disabled' };
++    }
++
++    if (!nextProps.disabled && prevState.currentState === 'disabled') {
++      return { currentState: 'normal' };
++    }
++
++    return null;
++  }
++
++  state = { currentState: 'initial' };
++
++  componentDidMount() {
++    if (this.container) {
++      this.container.addEventListener('touchstart', preventPageScrolling, { passive: false });
++    }
++  }
++
++  componentWillUnmount() {
++    this.container.removeEventListener('touchstart', preventPageScrolling, { passive: false });
++  }
++
++  emitChange(event, rawValue, callback) {
++    const { step, value: previousValue, onChange } = this.props;
++    let value = rawValue;
++
++    if (step) {
++      value = roundToStep(rawValue, step);
++    } else {
++      value = Number(rawValue.toFixed(3));
++    }
++
++    if (typeof onChange === 'function' && value !== previousValue) {
++      onChange(event, value);
++
++      if (typeof callback === 'function') {
++        callback();
++      }
++    }
++  }
++
++  calculateTrackAfterStyles(percent) {
++    const { currentState } = this.state;
++
++    switch (currentState) {
++      case 'activated':
++        return `calc(100% - ${percent === 0 ? 7 : 5}px)`;
++      case 'disabled':
++        return `calc(${100 - percent}% - 6px)`;
++      default:
++        return 'calc(100% - 5px)';
++    }
++  }
++
++  calculateTrackBeforeStyles(percent) {
++    const { currentState } = this.state;
++
++    switch (currentState) {
++      case 'disabled':
++        return `calc(${percent}% - 6px)`;
++      default:
++        return `${percent}%`;
++    }
++  }
++
++  handleKeyDown = event => {
++    const { min, max, value: currentValue } = this.props;
++
++    const onePercent = Math.abs((max - min) / 100);
++    const step = this.props.step || onePercent;
++    let value;
++
++    switch (keycode(event)) {
++      case 'home':
++        value = min;
++        break;
++      case 'end':
++        value = max;
++        break;
++      case 'page up':
++        value = currentValue + onePercent * 10;
++        break;
++      case 'page down':
++        value = currentValue - onePercent * 10;
++        break;
++      case 'right':
++      case 'up':
++        value = currentValue + step;
++        break;
++      case 'left':
++      case 'down':
++        value = currentValue - step;
++        break;
++      default:
++        return;
++    }
++
++    event.preventDefault();
++
++    value = clamp(value, min, max);
++
++    this.emitChange(event, value);
++  };
++
++  handleFocus = () => {
++    this.setState({ currentState: 'focused' });
++  };
++
++  handleBlur = () => {
++    this.setState({ currentState: 'normal' });
++  };
++
++  handleClick = event => {
++    const { min, max, vertical, reverse } = this.props;
++    const percent = calculatePercent(this.container, event, vertical, reverse);
++    const value = percentToValue(percent, min, max);
++
++    this.emitChange(event, value, () => {
++      this.playJumpAnimation();
++    });
++  };
++
++  handleTouchStart = event => {
++    this.setState({ currentState: 'activated' });
++
++    this.globalMouseUpListener = addEventListener(document, 'touchend', this.handleMouseUp);
++
++    if (typeof this.props.onDragStart === 'function') {
++      this.props.onDragStart(event);
++    }
++  };
++
++  handleMouseDown = event => {
++    this.setState({ currentState: 'activated' });
++
++    this.globalMouseUpListener = addEventListener(document, 'mouseup', this.handleMouseUp);
++    this.globalMouseMoveListener = addEventListener(document, 'mousemove', this.handleMouseMove);
++
++    if (typeof this.props.onDragEnd === 'function') {
++      this.props.onDragEnd(event);
++    }
++  };
++
++  handleMouseUp = event => {
++    this.setState({ currentState: 'normal' });
++
++    if (this.globalMouseUpListener) {
++      this.globalMouseUpListener.remove();
++    }
++
++    if (this.globalMouseMoveListener) {
++      this.globalMouseMoveListener.remove();
++    }
++
++    if (typeof this.props.onDragEnd === 'function') {
++      this.props.onDragEnd(event);
++    }
++  };
++
++  handleMouseMove = event => {
++    const { min, max, vertical, reverse } = this.props;
++    const percent = calculatePercent(this.container, event, vertical, reverse);
++    const value = percentToValue(percent, min, max);
++
++    this.emitChange(event, value);
++  };
++
++  playJumpAnimation() {
++    this.setState({ currentState: 'jumped' }, () => {
++      setTimeout(() => {
++        this.setState({ currentState: 'normal' });
++      }, this.props.theme.transitions.duration.complex);
++    });
++  }
++
++  render() {
++    const { currentState } = this.state;
++    const {
++      component: Component,
++      classes,
++      value,
++      min,
++      max,
++      vertical,
++      reverse,
++      disabled,
++      ...otherProps
++    } = this.props;
++
++    const percent = clamp((value - min) * 100 / (max - min));
++
++    const commonClasses = {
++      [classes.disabled]: disabled,
++      [classes.jumped]: !disabled && currentState === 'jumped',
++      [classes.focused]: !disabled && currentState === 'focused',
++      [classes.activated]: !disabled && currentState === 'activated',
++    };
++
++    const containerClasses = classNames(classes.container, {
++      [classes.vertical]: vertical,
++      [classes.reverse]: reverse,
++      [classes.disabled]: disabled,
++    });
++
++    const trackBeforeClasses = classNames(classes.track, classes.trackBefore, commonClasses, {
++      [classes.vertical]: vertical,
++    });
++
++    const trackAfterClasses = classNames(classes.track, classes.trackAfter, commonClasses, {
++      [classes.vertical]: vertical,
++    });
++
++    const thumbClasses = classNames(classes.thumb, commonClasses, {
++      [classes.zero]: percent === 0,
++    });
++
++    const trackProperty = vertical ? 'height' : 'width';
++    const thumbProperty = vertical ? 'top' : 'left';
++    const inlineTrackBeforeStyles = { [trackProperty]: this.calculateTrackBeforeStyles(percent) };
++    const inlineTrackAfterStyles = { [trackProperty]: this.calculateTrackAfterStyles(percent) };
++    const inlineThumbStyles = { [thumbProperty]: `${percent}%` };
++
++    return (
++      <Component
++        role="slider"
++        className={containerClasses}
++        aria-valuenow={value}
++        aria-valuemin={min}
++        aria-valuemax={max}
++        aria-orientation={vertical ? 'vertical' : 'horizontal'}
++        onClick={this.handleClick}
++        ref={node => {
++          this.container = findDOMNode(node);
++        }}
++        {...otherProps}
++      >
++        <div className={trackBeforeClasses} style={inlineTrackBeforeStyles} />
++        <ButtonBase
++          className={thumbClasses}
++          disableRipple
++          style={inlineThumbStyles}
++          onBlur={this.handleBlur}
++          onKeyDown={this.handleKeyDown}
++          onMouseDown={this.handleMouseDown}
++          onTouchStartCapture={this.handleTouchStart}
++          onTouchMove={this.handleMouseMove}
++          onFocusVisible={this.handleFocus}
++        />
++        <div className={trackAfterClasses} style={inlineTrackAfterStyles} />
++      </Component>
++    );
++  }
++}
++
++Slider.propTypes = {
++  /**
++   * Useful to extend the style applied to components.
++   */
++  classes: PropTypes.object.isRequired,
++  /**
++   * @ignore
++   */
++  component: PropTypes.oneOfType([PropTypes.string, PropTypes.func]),
++  /**
++   * If `true`, the slider will be disabled.
++   */
++  disabled: PropTypes.bool,
++  /**
++   * The maximum allowed value of the slider.
++   * Should not be equal to min.
++   */
++  max: PropTypes.number,
++  /**
++   * The minimum allowed value of the slider.
++   * Should not be equal to max.
++   */
++  min: PropTypes.number,
++  /**
++   * Callback function that is fired when the slider's value changed.
++   */
++  onChange: PropTypes.func,
++  /**
++   * Callback function that is fired when the slide has stopped moving.
++   */
++  onDragEnd: PropTypes.func,
++  /**
++   * Callback function that is fired when the slider has begun to move.
++   */
++  onDragStart: PropTypes.func,
++  /**
++   * If `true`, the slider will be reversed.
++   */
++  reverse: PropTypes.bool,
++  /**
++   * The granularity the slider can step through values.
++   */
++  step: PropTypes.number,
++  /**
++   * @ignore
++   */
++  theme: PropTypes.object.isRequired,
++  /**
++   * The value of the slider.
++   */
++  value: PropTypes.number,
++  /**
++   * If `true`, the slider will be vertical.
++   */
++  vertical: PropTypes.bool,
++};
++
++Slider.defaultProps = {
++  min: 0,
++  max: 100,
++  value: 50,
++  component: 'div',
++};
++
++export default withStyles(style, { name: 'MuiSlider', withTheme: true })(Slider);
+diff --git a/packages/material-ui-lab/src/Slider/Slider.test.js b/packages/material-ui-lab/src/Slider/Slider.test.js
+new file mode 100644
+index 00000000000000..3b84838700d511
+--- /dev/null
++++ b/packages/material-ui-lab/src/Slider/Slider.test.js
+@@ -0,0 +1,146 @@
++import React from 'react';
++import { spy, useFakeTimers } from 'sinon';
++import { assert } from 'chai';
++import { createMount, createShallow, getClasses } from '@material-ui/core/test-utils';
++import Slider from './Slider';
++
++describe('<Slider />', () => {
++  let mount;
++  let shallow;
++  let classes;
++
++  before(() => {
++    shallow = createShallow({ dive: true });
++    classes = getClasses(<Slider />);
++    mount = createMount();
++  });
++
++  it('should render a div', () => {
++    const wrapper = shallow(<Slider />);
++    assert.strictEqual(wrapper.name(), 'div');
++  });
++
++  it('should render with the default classes', () => {
++    const wrapper = shallow(<Slider />);
++    assert.strictEqual(wrapper.hasClass(classes.container), true);
++  });
++
++  it('should call handlers', () => {
++    const handleChange = spy();
++    const handleDragStart = spy();
++    const handleDragEnd = spy();
++
++    const wrapper = mount(
++      <Slider onChange={handleChange} onDragStart={handleDragStart} onDragEnd={handleDragEnd} />,
++    );
++    const button = wrapper.find('button');
++
++    wrapper.simulate('click');
++    button.simulate('mousedown');
++    button.simulate('mouseup');
++
++    assert.strictEqual(handleChange.callCount, 1, 'should have called the handleChange cb');
++    assert.strictEqual(handleDragStart.callCount, 1, 'should have called the handleDragStart cb');
++    assert.strictEqual(handleDragEnd.callCount, 1, 'should have called the handleDragEnd cb');
++  });
++
++  describe('prop: vertical', () => {
++    it('should render with the default and vertical classes', () => {
++      const wrapper = shallow(<Slider vertical />);
++      assert.strictEqual(wrapper.hasClass(classes.container), true);
++      assert.strictEqual(wrapper.hasClass(classes.vertical), true);
++    });
++  });
++
++  describe('prop: reverse', () => {
++    it('should render with the default and reverse classes', () => {
++      const wrapper = shallow(<Slider reverse />);
++      assert.strictEqual(wrapper.hasClass(classes.container), true);
++      assert.strictEqual(wrapper.hasClass(classes.reverse), true);
++    });
++  });
++
++  describe('props: vertical & reverse', () => {
++    it('should render with the default, reverse and vertical classes', () => {
++      const wrapper = shallow(<Slider reverse vertical />);
++      assert.strictEqual(wrapper.hasClass(classes.container), true);
++      assert.strictEqual(wrapper.hasClass(classes.reverse), true);
++      assert.strictEqual(wrapper.hasClass(classes.vertical), true);
++    });
++  });
++
++  describe('prop: disabled', () => {
++    const handleChange = spy();
++    let wrapper;
++
++    before(() => {
++      wrapper = mount(<Slider onChange={handleChange} disabled />);
++    });
++
++    it('should render thumb with the disabled classes', () => {
++      const button = wrapper.find('button');
++
++      assert.strictEqual(button.hasClass(classes.thumb), true);
++      assert.strictEqual(button.hasClass(classes.disabled), true);
++    });
++
++    it('should render tracks with the disabled classes', () => {
++      const tracks = wrapper.find('div').filterWhere(n => n.hasClass(classes.track));
++
++      assert.strictEqual(tracks.everyWhere(n => n.hasClass(classes.disabled)), true);
++    });
++
++    it("should not call 'onChange' handler", () => {
++      wrapper.simulate('click');
++
++      assert.strictEqual(handleChange.callCount, 0);
++    });
++  });
++
++  describe('prop: value', () => {
++    const transitionComplexDuration = 375;
++    let wrapper;
++    let clock;
++
++    before(() => {
++      clock = useFakeTimers();
++      wrapper = mount(<Slider value={0} />);
++    });
++
++    after(() => {
++      clock.restore();
++    });
++
++    it('should render thumb in initial state', () => {
++      const button = wrapper.find('button');
++      assert.strictEqual(button.prop('style').left, '0%');
++    });
++
++    it('should render tracks in initial state', () => {
++      const tracks = wrapper.find('div').filterWhere(n => n.hasClass(classes.track));
++      const trackBefore = tracks.at(0);
++      const trackAfter = tracks.at(1);
++
++      assert.strictEqual(trackBefore.prop('style').width, 'calc(0% - 0px)');
++      assert.strictEqual(trackAfter.prop('style').width, 'calc(100% - 5px)');
++    });
++
++    it('after change value should change position of thumb', () => {
++      wrapper.setProps({ value: 0.5 });
++
++      clock.tick(transitionComplexDuration);
++
++      const button = wrapper.find('button');
++      assert.strictEqual(button.prop('style').left, '50%');
++    });
++
++    it('should render tracks in new state', () => {
++      const tracks = wrapper.find('div').filterWhere(n => n.hasClass(classes.track));
++      const trackBefore = tracks.at(0);
++      const trackAfter = tracks.at(1);
++
++      assert.strictEqual(trackBefore.prop('style').width, 'calc(50% - 0px)');
++      assert.strictEqual(trackAfter.prop('style').width, 'calc(50% - 7px)');
++    });
++  });
++});
+diff --git a/packages/material-ui-lab/src/Slider/index.js b/packages/material-ui-lab/src/Slider/index.js
+new file mode 100644
+index 00000000000000..9898d6a85d1d01
+--- /dev/null
++++ b/packages/material-ui-lab/src/Slider/index.js
+@@ -0,0 +1 @@
++export { default } from './Slider';
+diff --git a/packages/material-ui-lab/src/utils/clamp.js b/packages/material-ui-lab/src/utils/clamp.js
+new file mode 100644
+index 00000000000000..c0aa7667a1d1e6
+--- /dev/null
++++ b/packages/material-ui-lab/src/utils/clamp.js
+@@ -0,0 +1,3 @@
++export default function clamp(value, min = 0, max = 100) {
++  return Math.min(Math.max(value, min), max);
++}
+diff --git a/pages/lab/api/slider.js b/pages/lab/api/slider.js
+new file mode 100644
+index 00000000000000..c1fc1c5861e383
+--- /dev/null
++++ b/pages/lab/api/slider.js
+@@ -0,0 +1,10 @@
++import React from 'react';
++import withRoot from 'docs/src/modules/components/withRoot';
++import MarkdownDocs from 'docs/src/modules/components/MarkdownDocs';
++import markdown from './slider.md';
++
++function Page() {
++  return <MarkdownDocs markdown={markdown} />;
++}
++
++export default withRoot(Page);
+diff --git a/pages/lab/api/slider.md b/pages/lab/api/slider.md
+new file mode 100644
+index 00000000000000..1cd180064bf156
+--- /dev/null
++++ b/pages/lab/api/slider.md
+@@ -0,0 +1,32 @@
++---
++filename: /packages/material-ui-lab/src/Slider/Slider.js
++---
++
++<!--- This documentation is automatically generated, do not try to edit it. -->
++
++# Slider
++
++
++
++## Props
++
++| Name | Type | Default | Description |
++|:-----|:-----|:--------|:------------|
++| <span class="prop-name">classes</span> | <span class="prop-type">object |  | Useful to extend the style applied to components. |
++| <span class="prop-name">disabled</span> | <span class="prop-type">bool |  | If `true`, the slider will be disabled. |
++| <span class="prop-name">max</span> | <span class="prop-type">number | <span class="prop-default">100</span> | The maximum allowed value of the slider. Should not be equal to min. |
++| <span class="prop-name">min</span> | <span class="prop-type">number | <span class="prop-default">0</span> | The minimum allowed value of the slider. Should not be equal to max. |
++| <span class="prop-name">onChange</span> | <span class="prop-type">func |  | Callback function that is fired when the slider's value changed. |
++| <span class="prop-name">onDragEnd</span> | <span class="prop-type">func |  | Callback function that is fired when the slide has stopped moving. |
++| <span class="prop-name">onDragStart</span> | <span class="prop-type">func |  | Callback function that is fired when the slider has begun to move. |
++| <span class="prop-name">reverse</span> | <span class="prop-type">bool |  | If `true`, the slider will be reversed. |
++| <span class="prop-name">step</span> | <span class="prop-type">number |  | The granularity the slider can step through values. |
++| <span class="prop-name">value</span> | <span class="prop-type">number | <span class="prop-default">50</span> | The value of the slider. |
++| <span class="prop-name">vertical</span> | <span class="prop-type">bool |  | If `true`, the slider will be vertical. |
++
++Any other properties supplied will be [spread to the root element](/guides/api#spread).
++
++## Demos
++
++- [Slider](/lab/slider)
++
+diff --git a/pages/lab/slider.js b/pages/lab/slider.js
+new file mode 100644
+index 00000000000000..d482fb6a00c97a
+--- /dev/null
++++ b/pages/lab/slider.js
+@@ -0,0 +1,51 @@
++import React from 'react';
++import withRoot from 'docs/src/modules/components/withRoot';
++import MarkdownDocs from 'docs/src/modules/components/MarkdownDocs';
++import markdown from 'docs/src/pages/lab/slider/slider.md';
++
++function Page() {
++  return (
++    <MarkdownDocs
++      markdown={markdown}
++      demos={{
++        'pages/lab/slider/SimpleSlider.js': {
++          js: require('docs/src/pages/lab/slider/SimpleSlider').default,
++          raw: preval`
++module.exports = require('fs')
++  .readFileSync(require.resolve('docs/src/pages/lab/slider/SimpleSlider'), 'utf8')
++`,
++        },
++        'pages/lab/slider/StepSlider.js': {
++          js: require('docs/src/pages/lab/slider/StepSlider').default,
++          raw: preval`
++module.exports = require('fs')
++  .readFileSync(require.resolve('docs/src/pages/lab/slider/StepSlider'), 'utf8')
++`,
++        },
++        'pages/lab/slider/DisabledSlider.js': {
++          js: require('docs/src/pages/lab/slider/DisabledSlider').default,
++          raw: preval`
++module.exports = require('fs')
++  .readFileSync(require.resolve('docs/src/pages/lab/slider/DisabledSlider'), 'utf8')
++`,
++        },
++        'pages/lab/slider/VerticalSlider.js': {
++          js: require('docs/src/pages/lab/slider/VerticalSlider').default,
++          raw: preval`
++module.exports = require('fs')
++  .readFileSync(require.resolve('docs/src/pages/lab/slider/VerticalSlider'), 'utf8')
++`,
++        },
++        'pages/lab/slider/ReverseSlider.js': {
++          js: require('docs/src/pages/lab/slider/ReverseSlider').default,
++          raw: preval`
++module.exports = require('fs')
++  .readFileSync(require.resolve('docs/src/pages/lab/slider/ReverseSlider'), 'utf8')
++`,
++        },
++      }}
++    />
++  );
++}
++
++export default withRoot(Page);

@@ -1,0 +1,1243 @@
+diff --git a/packages/create-expo-module/src/__tests__/featureDetection-test.ts b/packages/create-expo-module/src/__tests__/featureDetection-test.ts
+index c125ea0f9b9321..7cdbb443448a0c 100644
+--- a/packages/create-expo-module/src/__tests__/featureDetection-test.ts
++++ b/packages/create-expo-module/src/__tests__/featureDetection-test.ts
+@@ -141,6 +141,57 @@ describe('detectFeaturesFromContent', () => {
+     expect(features).toContain('ViewEvent');
+     expect(features).not.toContain('Event');
+   });
++
++  it('detects SwiftUIView from Swift ExpoUIView registration', () => {
++    const { features } = detectFeaturesFromContent(`
++      ExpoUIView(MyModuleSwiftUIView.self)
++    `);
++    expect(features).toContain('SwiftUIView');
++    expect(features).not.toContain('ComposeView');
++    expect(features).not.toContain('View');
++  });
++
++  it('detects ComposeView from Kotlin ExpoUIView<Props>("Name") registration', () => {
++    const { features } = detectFeaturesFromContent(`
++      ExpoUIView<MyModuleComposeProps>("MyModuleComposeView") {
++        Content { props -> MyModuleComposeContent(props) }
++      }
++    `);
++    expect(features).toContain('ComposeView');
++    expect(features).not.toContain('SwiftUIView');
++  });
++
++  it('detects SwiftUIModifier from ViewModifierRegistry.register', () => {
++    const { features } = detectFeaturesFromContent(`
++      OnCreate {
++        ViewModifierRegistry.register("customBorder") { params, appContext, _ in
++          return try CustomBorderModifier(from: params, appContext: appContext)
++        }
++      }
++    `);
++    expect(features).toContain('SwiftUIModifier');
++    expect(features).not.toContain('ComposeModifier');
++  });
++
++  it('detects ComposeModifier from ModifierRegistry.register', () => {
++    const { features } = detectFeaturesFromContent(`
++      OnCreate {
++        ModifierRegistry.register("customBorder") { params, _, _, _ ->
++          recordFromMap<Params>(params).toModifier()
++        }
++      }
++    `);
++    expect(features).toContain('ComposeModifier');
++    expect(features).not.toContain('SwiftUIModifier');
++  });
++
++  it('does not double-detect ModifierRegistry inside ViewModifierRegistry', () => {
++    const { features } = detectFeaturesFromContent(`
++      ViewModifierRegistry.register("a") { _, _, _ in }
++    `);
++    expect(features).toContain('SwiftUIModifier');
++    expect(features).not.toContain('ComposeModifier');
++  });
+ });
+ 
+ describe('findModuleDefinitionFile', () => {
+diff --git a/packages/create-expo-module/src/__tests__/features-test.ts b/packages/create-expo-module/src/__tests__/features-test.ts
+index 06d445d9303f98..b2673dd47ae40d 100644
+--- a/packages/create-expo-module/src/__tests__/features-test.ts
++++ b/packages/create-expo-module/src/__tests__/features-test.ts
+@@ -1,17 +1,31 @@
+-import { resolveFeatures } from '../features';
++import {
++  filterFeaturesByPlatforms,
++  isComposeFeature,
++  isSwiftUIFeature,
++  resolveFeatures,
++} from '../features';
+ 
+ describe('resolveFeatures', () => {
+   it('returns empty array when no features provided in non-interactive mode', () => {
+     expect(resolveFeatures([])).toEqual([]);
+   });
+ 
+-  it('returns all features when fullExample is true', () => {
++  it('returns the core feature set when fullExample is true', () => {
+     const result = resolveFeatures([], true);
+     expect(result).toContain('Function');
+     expect(result).toContain('View');
++    expect(result).toContain('ViewEvent');
+     expect(result).toContain('SharedObject');
+   });
+ 
++  it('does not include SwiftUI or Compose features in fullExample', () => {
++    const result = resolveFeatures([], true);
++    expect(result).not.toContain('SwiftUIView');
++    expect(result).not.toContain('SwiftUIModifier');
++    expect(result).not.toContain('ComposeView');
++    expect(result).not.toContain('ComposeModifier');
++  });
++
+   it('auto-includes View when ViewEvent is selected', () => {
+     const result = resolveFeatures(['ViewEvent']);
+     expect(result).toContain('View');
+@@ -29,3 +43,61 @@ describe('resolveFeatures', () => {
+     expect(result).not.toContain('Unknown');
+   });
+ });
++
++describe('filterFeaturesByPlatforms', () => {
++  let logSpy: jest.SpyInstance;
++
++  beforeEach(() => {
++    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
++  });
++
++  afterEach(() => {
++    logSpy.mockRestore();
++  });
++
++  it('keeps SwiftUI and Compose features when both platforms selected', () => {
++    const result = filterFeaturesByPlatforms(['SwiftUIView', 'ComposeView'], ['apple', 'android']);
++    expect(result).toEqual(['SwiftUIView', 'ComposeView']);
++    expect(logSpy).not.toHaveBeenCalled();
++  });
++
++  it('drops SwiftUI features when apple is not selected', () => {
++    const result = filterFeaturesByPlatforms(
++      ['SwiftUIView', 'SwiftUIModifier', 'Function'],
++      ['android']
++    );
++    expect(result).toEqual(['Function']);
++    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('SwiftUIView, SwiftUIModifier'));
++  });
++
++  it('drops Compose features when android is not selected', () => {
++    const result = filterFeaturesByPlatforms(
++      ['ComposeView', 'ComposeModifier', 'Function'],
++      ['apple']
++    );
++    expect(result).toEqual(['Function']);
++    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('ComposeView, ComposeModifier'));
++  });
++
++  it('keeps platform-agnostic features regardless of platforms', () => {
++    const result = filterFeaturesByPlatforms(['Function', 'View', 'SharedObject'], ['apple']);
++    expect(result).toEqual(['Function', 'View', 'SharedObject']);
++    expect(logSpy).not.toHaveBeenCalled();
++  });
++});
++
++describe('feature classifiers', () => {
++  it('isSwiftUIFeature identifies SwiftUI features', () => {
++    expect(isSwiftUIFeature('SwiftUIView')).toBe(true);
++    expect(isSwiftUIFeature('SwiftUIModifier')).toBe(true);
++    expect(isSwiftUIFeature('ComposeView')).toBe(false);
++    expect(isSwiftUIFeature('View')).toBe(false);
++  });
++
++  it('isComposeFeature identifies Compose features', () => {
++    expect(isComposeFeature('ComposeView')).toBe(true);
++    expect(isComposeFeature('ComposeModifier')).toBe(true);
++    expect(isComposeFeature('SwiftUIView')).toBe(false);
++    expect(isComposeFeature('View')).toBe(false);
++  });
++});
+diff --git a/packages/create-expo-module/src/__tests__/snippets-test.ts b/packages/create-expo-module/src/__tests__/snippets-test.ts
+index ba21c775750994..69bd3dd0a1bcdd 100644
+--- a/packages/create-expo-module/src/__tests__/snippets-test.ts
++++ b/packages/create-expo-module/src/__tests__/snippets-test.ts
+@@ -20,6 +20,10 @@ const mockData = {
+     package: 'expo.modules.mymodule',
+     moduleName: 'MyModuleModule',
+     viewName: 'MyModuleView',
++    swiftUIViewName: 'MyModuleSwiftUIView',
++    swiftUIModifierName: 'MyModuleSwiftUIModifier',
++    composeViewName: 'MyModuleComposeView',
++    composeModifierName: 'MyModuleComposeModifier',
+     sharedObjectName: 'MyModuleModuleSharedObject',
+     platforms: ['apple', 'android'],
+     features: ['Function'],
+@@ -225,4 +229,62 @@ describe('copyFileSnippets', () => {
+       await fs.promises.rm(tmpDir, { recursive: true, force: true });
+     }
+   });
++
++  it('copies SwiftUIView swift and tsx files to expected paths', async () => {
++    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snippets-test-'));
++    try {
++      await copyFileSnippets(SNIPPETS_DIR, ['SwiftUIView'], mockData, tmpDir);
++      const swift = path.join(tmpDir, 'ios', `${mockData.project.swiftUIViewName}.swift`);
++      const tsx = path.join(tmpDir, 'src', `${mockData.project.swiftUIViewName}.tsx`);
++      await expect(fs.promises.access(swift)).resolves.toBeUndefined();
++      await expect(fs.promises.access(tsx)).resolves.toBeUndefined();
++    } finally {
++      await fs.promises.rm(tmpDir, { recursive: true, force: true });
++    }
++  });
++
++  it('copies ComposeView kt file to package-derived path and tsx to src', async () => {
++    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snippets-test-'));
++    try {
++      await copyFileSnippets(SNIPPETS_DIR, ['ComposeView'], mockData, tmpDir);
++      const kt = path.join(
++        tmpDir,
++        'android',
++        'src',
++        'main',
++        'java',
++        ...mockData.project.package.split('.'),
++        `${mockData.project.composeViewName}.kt`
++      );
++      const tsx = path.join(tmpDir, 'src', `${mockData.project.composeViewName}.tsx`);
++      await expect(fs.promises.access(kt)).resolves.toBeUndefined();
++      await expect(fs.promises.access(tsx)).resolves.toBeUndefined();
++    } finally {
++      await fs.promises.rm(tmpDir, { recursive: true, force: true });
++    }
++  });
++});
++
++describe('SwiftUIView and ComposeView module snippets', () => {
++  it('emits ExpoUIView(<Name>.self) for SwiftUIView in swift', async () => {
++    const result = await buildModuleSnippets(SNIPPETS_DIR, ['SwiftUIView'], mockData, 'swift');
++    expect(result).toContain(`ExpoUIView(${mockData.project.swiftUIViewName}.self)`);
++  });
++
++  it('emits ExpoUIView<Props>("Name") for ComposeView in kt', async () => {
++    const result = await buildModuleSnippets(SNIPPETS_DIR, ['ComposeView'], mockData, 'kt');
++    expect(result).toContain(`ExpoUIView<${mockData.project.composeViewName}Props>`);
++    expect(result).toContain(`"${mockData.project.composeViewName}"`);
++  });
++
++  it('emits ViewModifierRegistry.register for SwiftUIModifier', async () => {
++    const result = await buildModuleSnippets(SNIPPETS_DIR, ['SwiftUIModifier'], mockData, 'swift');
++    expect(result).toContain('ViewModifierRegistry.register');
++  });
++
++  it('emits ModifierRegistry.register for ComposeModifier', async () => {
++    const result = await buildModuleSnippets(SNIPPETS_DIR, ['ComposeModifier'], mockData, 'kt');
++    expect(result).toContain('ModifierRegistry.register');
++    expect(result).not.toContain('ViewModifierRegistry');
++  });
+ });
+diff --git a/packages/create-expo-module/src/addPlatformSupport.ts b/packages/create-expo-module/src/addPlatformSupport.ts
+index f2ed7d0b217bb0..e8916bbd6da309 100644
+--- a/packages/create-expo-module/src/addPlatformSupport.ts
++++ b/packages/create-expo-module/src/addPlatformSupport.ts
+@@ -5,7 +5,7 @@ import path from 'node:path';
+ import prompts from 'prompts';
+ 
+ import { detectFeaturesFromFile, findModuleDefinitionFile } from './featureDetection';
+-import { resolveFeatures, type Feature } from './features';
++import { filterFeaturesByPlatforms, resolveFeatures, type Feature } from './features';
+ import { formatRunCommand, resolvePackageManager } from './packageManager';
+ import { ALL_PLATFORMS, type Platform } from './prompts';
+ import { copyNativeFileSnippets, copyWebFileSnippets } from './snippets';
+@@ -230,6 +230,10 @@ function buildSubstitutionData(
+     package: info.packageName,
+     moduleName: info.moduleName,
+     viewName: handleSuffix(info.name, 'View'),
++    swiftUIViewName: handleSuffix(info.name, 'SwiftUIView'),
++    swiftUIModifierName: handleSuffix(info.name, 'SwiftUIModifier'),
++    composeViewName: handleSuffix(info.name, 'ComposeView'),
++    composeModifierName: handleSuffix(info.name, 'ComposeModifier'),
+     sharedObjectName: resolvedSharedObjectName,
+     platforms: allPlatforms,
+     features,
+@@ -557,10 +561,12 @@ export async function addPlatformSupport(
+ 
+   ensureNativePlatformTargetsAvailable(moduleRoot, platformsToAdd);
+ 
+-  const { detectedFeatures, sharedObjectName } = await resolveDetectedFeatures(
++  const allPlatforms: Platform[] = [...moduleInfo.platforms, ...platformsToAdd];
++  const { detectedFeatures: rawFeatures, sharedObjectName } = await resolveDetectedFeatures(
+     moduleDefinitionFile,
+     options
+   );
++  const detectedFeatures = filterFeaturesByPlatforms(rawFeatures, allPlatforms);
+ 
+   await updatePublicModuleNameFromSources(moduleInfo, moduleRoot, moduleDefinitionFile);
+ 
+diff --git a/packages/create-expo-module/src/create-expo-module.ts b/packages/create-expo-module/src/create-expo-module.ts
+index a0d9bf739638d2..ca0e19f3b2ad4c 100644
+--- a/packages/create-expo-module/src/create-expo-module.ts
++++ b/packages/create-expo-module/src/create-expo-module.ts
+@@ -9,7 +9,7 @@ import validateNpmPackage from 'validate-npm-package-name';
+ import { addPlatformSupport } from './addPlatformSupport';
+ import { ensureSafeModuleName } from './appleFrameworks';
+ import { createExampleApp } from './createExampleApp';
+-import { ALL_FEATURES, resolveFeatures } from './features';
++import { ALL_FEATURES, filterFeaturesByPlatforms, resolveFeatures } from './features';
+ import {
+   PACKAGE_MANAGERS,
+   installDependencies,
+@@ -516,7 +516,8 @@ async function askForSubstitutionDataAsync(
+   const interactive = isInteractive();
+ 
+   const platforms = await resolvePlatformsAsync(isLocal, interactive, options);
+-  const features = await resolveFeaturesAsync(interactive, options);
++  const rawFeatures = await resolveFeaturesAsync(interactive, options);
++  const features = filterFeaturesByPlatforms(rawFeatures, platforms);
+ 
+   if (!interactive) {
+     return getSubstitutionDataFromOptions(slug, isLocal, options, platforms, features);
+@@ -556,6 +557,10 @@ async function askForSubstitutionDataAsync(
+         package: projectPackage,
+         moduleName: handleSuffix(name, 'Module'),
+         viewName: handleSuffix(name, 'View'),
++        swiftUIViewName: handleSuffix(name, 'SwiftUIView'),
++        swiftUIModifierName: handleSuffix(name, 'SwiftUIModifier'),
++        composeViewName: handleSuffix(name, 'ComposeView'),
++        composeModifierName: handleSuffix(name, 'ComposeModifier'),
+         sharedObjectName: handleSuffix(name, 'Module') + 'SharedObject',
+         platforms,
+         features,
+@@ -585,6 +590,10 @@ async function askForSubstitutionDataAsync(
+       package: projectPackage,
+       moduleName: handleSuffix(name, 'Module'),
+       viewName: handleSuffix(name, 'View'),
++      swiftUIViewName: handleSuffix(name, 'SwiftUIView'),
++      swiftUIModifierName: handleSuffix(name, 'SwiftUIModifier'),
++      composeViewName: handleSuffix(name, 'ComposeView'),
++      composeModifierName: handleSuffix(name, 'ComposeModifier'),
+       sharedObjectName: handleSuffix(name, 'Module') + 'SharedObject',
+       platforms,
+       features,
+@@ -656,6 +665,10 @@ async function getSubstitutionDataFromOptions(
+         package: projectPackage,
+         moduleName: handleSuffix(name, 'Module'),
+         viewName: handleSuffix(name, 'View'),
++        swiftUIViewName: handleSuffix(name, 'SwiftUIView'),
++        swiftUIModifierName: handleSuffix(name, 'SwiftUIModifier'),
++        composeViewName: handleSuffix(name, 'ComposeView'),
++        composeModifierName: handleSuffix(name, 'ComposeModifier'),
+         sharedObjectName: handleSuffix(name, 'Module') + 'SharedObject',
+         platforms,
+         features,
+@@ -701,6 +714,10 @@ async function getSubstitutionDataFromOptions(
+       package: projectPackage,
+       moduleName: handleSuffix(name, 'Module'),
+       viewName: handleSuffix(name, 'View'),
++      swiftUIViewName: handleSuffix(name, 'SwiftUIView'),
++      swiftUIModifierName: handleSuffix(name, 'SwiftUIModifier'),
++      composeViewName: handleSuffix(name, 'ComposeView'),
++      composeModifierName: handleSuffix(name, 'ComposeModifier'),
+       sharedObjectName: handleSuffix(name, 'Module') + 'SharedObject',
+       platforms,
+       features,
+@@ -758,7 +775,17 @@ async function generateBarrelFileAsync(
+   targetPath: string,
+   data: LocalSubstitutionData
+ ): Promise<void> {
+-  const { moduleName, viewName, sharedObjectName, name, features } = data.project;
++  const {
++    moduleName,
++    viewName,
++    swiftUIViewName,
++    swiftUIModifierName,
++    composeViewName,
++    composeModifierName,
++    sharedObjectName,
++    name,
++    features,
++  } = data.project;
+   const lines = [
+     `// Re-export the native module. On web, it will be resolved to ${moduleName}.web.ts`,
+     `// and on native platforms to ${moduleName}.ts`,
+@@ -767,6 +794,18 @@ async function generateBarrelFileAsync(
+   if (features.includes('View')) {
+     lines.push(`export { default as ${viewName} } from './src/${viewName}';`);
+   }
++  if (features.includes('SwiftUIView')) {
++    lines.push(`export { default as ${swiftUIViewName} } from './src/${swiftUIViewName}';`);
++  }
++  if (features.includes('ComposeView')) {
++    lines.push(`export { default as ${composeViewName} } from './src/${composeViewName}';`);
++  }
++  if (features.includes('SwiftUIModifier')) {
++    lines.push(`export * from './src/${swiftUIModifierName}';`);
++  }
++  if (features.includes('ComposeModifier')) {
++    lines.push(`export * from './src/${composeModifierName}';`);
++  }
+   if (features.includes('SharedObject')) {
+     lines.push(
+       `export { create${sharedObjectName}, use${sharedObjectName} } from './src/${sharedObjectName}';`
+diff --git a/packages/create-expo-module/src/createExampleApp.ts b/packages/create-expo-module/src/createExampleApp.ts
+index 3b5ce5c66f2d4b..6a21ca5f16e9fd 100644
+--- a/packages/create-expo-module/src/createExampleApp.ts
++++ b/packages/create-expo-module/src/createExampleApp.ts
+@@ -3,6 +3,7 @@ import fs from 'node:fs';
+ import os from 'node:os';
+ import path from 'node:path';
+ 
++import { usesExpoUI } from './features';
+ import { installDependencies, type PackageManagerName } from './packageManager';
+ import type { SubstitutionData } from './types';
+ import { env } from './utils/env';
+@@ -79,6 +80,9 @@ export async function createExampleApp(
+ 
+   await newStep('Installing dependencies in the example app', async (step) => {
+     await installDependencies(packageManager, appTargetPath);
++    if (usesExpoUI(data.project.features)) {
++      await installExpoUI(appTargetPath);
++    }
+     if (os.platform() === 'darwin') {
+       await podInstall(appTargetPath);
+       step.succeed('Installed dependencies in the example app');
+@@ -88,6 +92,17 @@ export async function createExampleApp(
+   });
+ }
+ 
++/**
++ * Installs `@expo/ui` in the example app using `expo install` so the version is
++ * resolved against the example app's bundled native module versions.
++ */
++async function installExpoUI(exampleAppPath: string): Promise<void> {
++  await spawnAsync('npx', ['expo', 'install', '@expo/ui'], {
++    cwd: exampleAppPath,
++    stdio: ['ignore', 'ignore', 'pipe'],
++  });
++}
++
+ function createCommand(
+   packageManager: PackageManagerName,
+   exampleProjectSlug: string,
+diff --git a/packages/create-expo-module/src/featureDetection.ts b/packages/create-expo-module/src/featureDetection.ts
+index 3a5436d247c063..98339730da317f 100644
+--- a/packages/create-expo-module/src/featureDetection.ts
++++ b/packages/create-expo-module/src/featureDetection.ts
+@@ -8,6 +8,13 @@ const functionPattern = /(?:^|\s)Function\s*\(/;
+ const eventsPattern = /(?:^|\s)Events\s*\(/;
+ const classPattern = /(?:^|\s)Class\s*\(/;
+ const classNamePattern = /Class\s*\((\w+)(?:\.self|::class)/;
++// Swift form: `ExpoUIView(<Name>.self)`. Excludes Kotlin's generic form `ExpoUIView<...>(`.
++const swiftUIViewPattern = /(?:^|\s)ExpoUIView\s*\(/;
++// Kotlin form: `ExpoUIView<Props>("Name") { ... }`.
++const composeViewPattern = /(?:^|\s)ExpoUIView\s*</;
++const swiftUIModifierPattern = /ViewModifierRegistry\s*\.\s*register\s*\(/;
++// Word boundary excludes `ViewModifierRegistry.register` from matching here.
++const composeModifierPattern = /\bModifierRegistry\s*\.\s*register\s*\(/;
+ const IGNORED_SEARCH_DIRS = new Set(['build', 'Pods', '.gradle', 'node_modules', 'DerivedData']);
+ 
+ export type DetectedFeatures = {
+@@ -81,6 +88,22 @@ export function detectFeaturesFromContent(content: string): DetectedFeatures {
+       }
+     }
+ 
++    // Compose check before SwiftUI: `ExpoUIView<` should not also fall through
++    // to the SwiftUI pattern (which matches `ExpoUIView(`).
++    if (composeViewPattern.test(stripped)) {
++      features.add('ComposeView');
++    } else if (swiftUIViewPattern.test(stripped)) {
++      features.add('SwiftUIView');
++    }
++
++    // SwiftUI check before Compose: avoid `ViewModifierRegistry.register`
++    // matching the more general `ModifierRegistry.register` pattern.
++    if (swiftUIModifierPattern.test(stripped)) {
++      features.add('SwiftUIModifier');
++    } else if (composeModifierPattern.test(stripped)) {
++      features.add('ComposeModifier');
++    }
++
+     // ── Update brace depth ───────────────────────────────────────────────
+     const opens = (stripped.match(/\{/g) ?? []).length;
+     const closes = (stripped.match(/\}/g) ?? []).length;
+diff --git a/packages/create-expo-module/src/features.ts b/packages/create-expo-module/src/features.ts
+index 24f3c01e1ff51f..5b231d5bfc5cac 100644
+--- a/packages/create-expo-module/src/features.ts
++++ b/packages/create-expo-module/src/features.ts
+@@ -1,3 +1,5 @@
++import chalk from 'chalk';
++
+ export const ALL_FEATURES = [
+   'Constant',
+   'Function',
+@@ -6,16 +8,58 @@ export const ALL_FEATURES = [
+   'View',
+   'ViewEvent',
+   'SharedObject',
++  'SwiftUIView',
++  'SwiftUIModifier',
++  'ComposeView',
++  'ComposeModifier',
+ ] as const;
+ 
+ export type Feature = (typeof ALL_FEATURES)[number];
+ 
++const SWIFTUI_FEATURES: readonly Feature[] = ['SwiftUIView', 'SwiftUIModifier'];
++const COMPOSE_FEATURES: readonly Feature[] = ['ComposeView', 'ComposeModifier'];
++
++/**
++ * Features included by `--full-example` / `--features all`. SwiftUI/Compose
++ * features are intentionally excluded — they pull in @expo/ui and extend a
++ * specific library rather than the core Modules DSL, so users opt in explicitly.
++ */
++const FULL_EXAMPLE_FEATURES: readonly Feature[] = [
++  'Constant',
++  'Function',
++  'AsyncFunction',
++  'Event',
++  'View',
++  'ViewEvent',
++  'SharedObject',
++];
++
++export function isSwiftUIFeature(feature: Feature): boolean {
++  return SWIFTUI_FEATURES.includes(feature);
++}
++
++export function isComposeFeature(feature: Feature): boolean {
++  return COMPOSE_FEATURES.includes(feature);
++}
++
++export function usesSwiftUI(features: readonly Feature[]): boolean {
++  return features.some(isSwiftUIFeature);
++}
++
++export function usesCompose(features: readonly Feature[]): boolean {
++  return features.some(isComposeFeature);
++}
++
++export function usesExpoUI(features: readonly Feature[]): boolean {
++  return usesSwiftUI(features) || usesCompose(features);
++}
++
+ /**
+  * Validates, deduplicates, and applies ViewEvent→View auto-include.
+  */
+ export function resolveFeatures(selected: string[], fullExample = false): Feature[] {
+   if (fullExample) {
+-    return [...ALL_FEATURES];
++    return [...FULL_EXAMPLE_FEATURES];
+   }
+   const valid = selected.filter((f): f is Feature =>
+     (ALL_FEATURES as readonly string[]).includes(f)
+@@ -26,3 +70,35 @@ export function resolveFeatures(selected: string[], fullExample = false): Featur
+ 
+   return [...new Set(valid)] as Feature[];
+ }
++
++/**
++ * Drops features whose required platform was not selected (SwiftUI* require
++ * apple, Compose* require android) and warns about each drop.
++ */
++export function filterFeaturesByPlatforms(
++  features: readonly Feature[],
++  platforms: readonly string[]
++): Feature[] {
++  const kept: Feature[] = [];
++  const dropped: Feature[] = [];
++  for (const feature of features) {
++    const requiresApple = isSwiftUIFeature(feature);
++    const requiresAndroid = isComposeFeature(feature);
++    if (requiresApple && !platforms.includes('apple')) {
++      dropped.push(feature);
++    } else if (requiresAndroid && !platforms.includes('android')) {
++      dropped.push(feature);
++    } else {
++      kept.push(feature);
++    }
++  }
++  if (dropped.length > 0) {
++    console.log(
++      chalk.yellow(
++        `⚠️  Dropping ${dropped.join(', ')} — required platform not selected ` +
++          `(SwiftUI* require apple, Compose* require android).`
++      )
++    );
++  }
++  return kept;
++}
+diff --git a/packages/create-expo-module/src/snippets.ts b/packages/create-expo-module/src/snippets.ts
+index 1c6c32f79c173d..3e1cec82cfe5ba 100644
+--- a/packages/create-expo-module/src/snippets.ts
++++ b/packages/create-expo-module/src/snippets.ts
+@@ -13,6 +13,10 @@ const MODULE_LEVEL_FEATURES: Feature[] = [
+   'AsyncFunction',
+   'View',
+   'SharedObject',
++  'SwiftUIView',
++  'SwiftUIModifier',
++  'ComposeView',
++  'ComposeModifier',
+ ];
+ 
+ const VIEW_LEVEL_FEATURES: Feature[] = ['ViewEvent'];
+@@ -24,6 +28,10 @@ const APP_SNIPPET_FEATURES: Feature[] = [
+   'Event',
+   'View',
+   'SharedObject',
++  'SwiftUIView',
++  'SwiftUIModifier',
++  'ComposeView',
++  'ComposeModifier',
+ ];
+ 
+ async function readSnippet(
+@@ -190,6 +198,66 @@ const FILE_SNIPPET_SPECS: FileSnippetSpec[] = [
+     source: 'sharedObject.ts.ejs',
+     dest: (d) => path.join('src', `${d.project.sharedObjectName}.ts`),
+   },
++  {
++    feature: 'SwiftUIView',
++    source: 'view.swift.ejs',
++    dest: (d) => path.join('ios', `${d.project.swiftUIViewName}.swift`),
++    platform: 'apple',
++  },
++  {
++    feature: 'SwiftUIView',
++    source: 'view.tsx.ejs',
++    dest: (d) => path.join('src', `${d.project.swiftUIViewName}.tsx`),
++  },
++  {
++    feature: 'SwiftUIModifier',
++    source: 'modifier.swift.ejs',
++    dest: (d) => path.join('ios', `${d.project.swiftUIModifierName}.swift`),
++    platform: 'apple',
++  },
++  {
++    feature: 'SwiftUIModifier',
++    source: 'modifiers.ts.ejs',
++    dest: (d) => path.join('src', `${d.project.swiftUIModifierName}.ts`),
++  },
++  {
++    feature: 'ComposeView',
++    source: 'view.kt.ejs',
++    dest: (d) =>
++      path.join(
++        'android',
++        'src',
++        'main',
++        'java',
++        ...d.project.package.split('.'),
++        `${d.project.composeViewName}.kt`
++      ),
++    platform: 'android',
++  },
++  {
++    feature: 'ComposeView',
++    source: 'view.tsx.ejs',
++    dest: (d) => path.join('src', `${d.project.composeViewName}.tsx`),
++  },
++  {
++    feature: 'ComposeModifier',
++    source: 'modifier.kt.ejs',
++    dest: (d) =>
++      path.join(
++        'android',
++        'src',
++        'main',
++        'java',
++        ...d.project.package.split('.'),
++        `${d.project.composeModifierName}.kt`
++      ),
++    platform: 'android',
++  },
++  {
++    feature: 'ComposeModifier',
++    source: 'modifiers.ts.ejs',
++    dest: (d) => path.join('src', `${d.project.composeModifierName}.ts`),
++  },
+ ];
+ 
+ async function copySnippetsInternal(
+diff --git a/packages/create-expo-module/src/templateUtils.ts b/packages/create-expo-module/src/templateUtils.ts
+index 34c1e860ad91bb..701ec66d22e6e8 100644
+--- a/packages/create-expo-module/src/templateUtils.ts
++++ b/packages/create-expo-module/src/templateUtils.ts
+@@ -5,6 +5,7 @@ import fs from 'node:fs';
+ import os from 'node:os';
+ import path from 'node:path';
+ 
++import { usesCompose, usesExpoUI, usesSwiftUI } from './features';
+ import type { Platform } from './prompts';
+ import {
+   buildAppSnippets,
+@@ -67,6 +68,10 @@ export function handleSuffix(name: string, suffix: string): string {
+   return `${name}${suffix}`;
+ }
+ 
++function lowerFirst(value: string): string {
++  return value.charAt(0).toLowerCase() + value.slice(1);
++}
++
+ /**
+  * Converts a slug to an Android package name.
+  */
+@@ -249,6 +254,16 @@ export async function buildAugmentedData(
+   );
+   const moduleNamedImports: string[] = [];
+   if (features.includes('View')) moduleNamedImports.push(data.project.viewName);
++  if (features.includes('SwiftUIView')) moduleNamedImports.push(data.project.swiftUIViewName);
++  if (features.includes('ComposeView')) moduleNamedImports.push(data.project.composeViewName);
++  if (features.includes('SwiftUIModifier')) {
++    const fnName = lowerFirst(data.project.swiftUIModifierName);
++    moduleNamedImports.push(fnName);
++  }
++  if (features.includes('ComposeModifier')) {
++    const fnName = lowerFirst(data.project.composeModifierName);
++    moduleNamedImports.push(fnName);
++  }
+   if (features.includes('SharedObject'))
+     moduleNamedImports.push(`use${data.project.sharedObjectName}`);
+ 
+@@ -282,6 +297,9 @@ export async function buildAugmentedData(
+     appReactImportSnippets,
+     appHookSnippets,
+     appJSXSnippets,
++    usesSwiftUI: usesSwiftUI(features),
++    usesCompose: usesCompose(features),
++    usesExpoUI: usesExpoUI(features),
+   };
+ }
+ 
+diff --git a/packages/create-expo-module/src/types.ts b/packages/create-expo-module/src/types.ts
+index f5f1255cb403ca..ae3263fe5c36f5 100644
+--- a/packages/create-expo-module/src/types.ts
++++ b/packages/create-expo-module/src/types.ts
+@@ -44,6 +44,10 @@ export type SubstitutionData = {
+     package: string;
+     moduleName: string;
+     viewName: string;
++    swiftUIViewName: string;
++    swiftUIModifierName: string;
++    composeViewName: string;
++    composeModifierName: string;
+     sharedObjectName: string;
+     platforms: Platform[];
+     features: Feature[];
+@@ -61,6 +65,10 @@ export type LocalSubstitutionData = {
+     package: string;
+     moduleName: string;
+     viewName: string;
++    swiftUIViewName: string;
++    swiftUIModifierName: string;
++    composeViewName: string;
++    composeModifierName: string;
+     sharedObjectName: string;
+     platforms: Platform[];
+     features: Feature[];
+diff --git a/packages/expo-module-template/$package.json b/packages/expo-module-template/$package.json
+index 405394509f990f..fec72961c550a3 100644
+--- a/packages/expo-module-template/$package.json
++++ b/packages/expo-module-template/$package.json
+@@ -28,6 +28,9 @@
+   "homepage": "<%- repo %>#readme",
+   "dependencies": {},
+   "devDependencies": {
++<% if (usesExpoUI) { -%>
++    "@expo/ui": "^56.0.10",
++<% } -%>
+     "@babel/core": "^7.26.0",
+     "@types/jest": "^29.2.1",
+     "@types/react": "~19.1.1",
+@@ -48,6 +51,9 @@
+     ]
+   },
+   "peerDependencies": {
++<% if (usesExpoUI) { -%>
++    "@expo/ui": "*",
++<% } -%>
+     "expo": "*",
+     "react": "*",
+     "react-native": "*"
+diff --git a/packages/expo-module-template/android/build.gradle b/packages/expo-module-template/android/build.gradle
+index 487b3346356eec..883f52ec7480d1 100644
+--- a/packages/expo-module-template/android/build.gradle
++++ b/packages/expo-module-template/android/build.gradle
+@@ -1,7 +1,21 @@
++<% if (usesCompose) { -%>
++buildscript {
++  repositories {
++    mavenCentral()
++  }
++  dependencies {
++    classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersion}")
++  }
++}
++
++<% } -%>
+ plugins {
+   id 'com.android.library'
+   id 'expo-module-gradle-plugin'
+ }
++<% if (usesCompose) { -%>
++apply plugin: 'org.jetbrains.kotlin.plugin.compose'
++<% } -%>
+ 
+ group = '<%- project.package %>'
+ version = '<% if (type === 'remote') { %><%- project.version %><% } else { %>0.1.0<% } %>'
+@@ -12,7 +26,25 @@ android {
+     versionCode 1
+     versionName "<% if (type === 'remote') { %><%- project.version %><% } else { %>0.1.0<% } %>"
+   }
++<% if (usesCompose) { -%>
++  buildFeatures {
++    compose true
++  }
++<% } -%>
+   lintOptions {
+     abortOnError false
+   }
+ }
++<% if (usesCompose) { -%>
++
++dependencies {
++  implementation 'androidx.compose.foundation:foundation-android:1.10.6'
++  implementation 'androidx.compose.ui:ui-android:1.10.6'
++  implementation 'androidx.compose.material3:material3-android:1.5.0-alpha17'
++  if (findProject(':expo-ui') != null) {
++    implementation project(':expo-ui')
++  } else {
++    implementation 'expo.modules.ui:expo.modules.ui:+'
++  }
++}
++<% } -%>
+diff --git a/packages/expo-module-template/android/src/main/java/{%= project.package %}/{%- project.moduleName %}.kt b/packages/expo-module-template/android/src/main/java/{%= project.package %}/{%- project.moduleName %}.kt
+index d857fc8999e23b..af712f9a3276b6 100644
+--- a/packages/expo-module-template/android/src/main/java/{%= project.package %}/{%- project.moduleName %}.kt	
++++ b/packages/expo-module-template/android/src/main/java/{%= project.package %}/{%- project.moduleName %}.kt	
+@@ -2,6 +2,13 @@ package <%- project.package %>
+ 
+ import expo.modules.kotlin.modules.Module
+ import expo.modules.kotlin.modules.ModuleDefinition
++<% if (project.features.includes('ComposeView')) { -%>
++import expo.modules.ui.ExpoUIView
++<% } -%>
++<% if (project.features.includes('ComposeModifier')) { -%>
++import expo.modules.kotlin.records.recordFromMap
++import expo.modules.ui.ModifierRegistry
++<% } -%>
+ 
+ class <%- project.moduleName %> : Module() {
+   override fun definition() = ModuleDefinition {
+diff --git a/packages/expo-module-template/ios/{%- project.moduleName %}.swift b/packages/expo-module-template/ios/{%- project.moduleName %}.swift
+index d7433b7afcf993..6ac0dc6888f042 100644
+--- a/packages/expo-module-template/ios/{%- project.moduleName %}.swift	
++++ b/packages/expo-module-template/ios/{%- project.moduleName %}.swift	
+@@ -1,4 +1,7 @@
+ import ExpoModulesCore
++<% if (usesSwiftUI) { -%>
++import ExpoUI
++<% } -%>
+ 
+ public class <%- project.moduleName %>: Module {
+   public func definition() -> ModuleDefinition {
+diff --git a/packages/expo-module-template/ios/{%- project.name %}.podspec b/packages/expo-module-template/ios/{%- project.name %}.podspec
+index 9eb2e91c11ec7d..9651a3c8999e1c 100644
+--- a/packages/expo-module-template/ios/{%- project.name %}.podspec	
++++ b/packages/expo-module-template/ios/{%- project.name %}.podspec	
+@@ -31,6 +31,9 @@ Pod::Spec.new do |s|
+   s.static_framework = true
+ 
+   s.dependency 'ExpoModulesCore'
++<% if (usesSwiftUI) { -%>
++  s.dependency 'ExpoUI'
++<% } -%>
+ 
+   # Swift/Objective-C compatibility
+   s.pod_target_xcconfig = {
+diff --git a/packages/expo-module-template/snippets/ComposeModifier/app.external-imports.tsx.ejs b/packages/expo-module-template/snippets/ComposeModifier/app.external-imports.tsx.ejs
+new file mode 100644
+index 00000000000000..96cf40f19a92fd
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeModifier/app.external-imports.tsx.ejs
+@@ -0,0 +1,6 @@
++<% if (project.features.includes('ComposeView')) { -%>
++import { Column } from '@expo/ui/jetpack-compose';
++<% } else { -%>
++import { Host as ComposeHost, Column, Text as ComposeText } from '@expo/ui/jetpack-compose';
++import { paddingAll } from '@expo/ui/jetpack-compose/modifiers';
++<% } -%>
+diff --git a/packages/expo-module-template/snippets/ComposeModifier/app.jsx.tsx.ejs b/packages/expo-module-template/snippets/ComposeModifier/app.jsx.tsx.ejs
+new file mode 100644
+index 00000000000000..66f9f5e52d74a1
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeModifier/app.jsx.tsx.ejs
+@@ -0,0 +1,13 @@
++        {process.env.EXPO_OS === 'android' && (
++          <Group name="Compose Modifier">
++            <ComposeHost style={styles.view}>
++              <Column
++                modifiers={[
++                  paddingAll(20),
++                  <%= project.composeModifierName.charAt(0).toLowerCase() + project.composeModifierName.slice(1) %>({ color: 0xFFFF6B35, width: 3, cornerRadius: 8 }),
++                ]}>
++                <ComposeText>Custom modifier example</ComposeText>
++              </Column>
++            </ComposeHost>
++          </Group>
++        )}
+diff --git a/packages/expo-module-template/snippets/ComposeModifier/modifier.kt.ejs b/packages/expo-module-template/snippets/ComposeModifier/modifier.kt.ejs
+new file mode 100644
+index 00000000000000..72a44f40db0dbc
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeModifier/modifier.kt.ejs
+@@ -0,0 +1,23 @@
++package <%- project.package %>
++
++import androidx.compose.foundation.border
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.unit.dp
++import expo.modules.kotlin.records.Field
++import expo.modules.kotlin.records.Record
++
++data class <%- project.composeModifierName %>Params(
++  @Field val color: Long = 0xFFFF0000,
++  @Field val width: Int = 2,
++  @Field val cornerRadius: Int = 0
++) : Record {
++  fun toModifier(): Modifier {
++    return Modifier.border(
++      width = width.dp,
++      color = Color(color),
++      shape = RoundedCornerShape(cornerRadius.dp)
++    )
++  }
++}
+diff --git a/packages/expo-module-template/snippets/ComposeModifier/modifiers.ts.ejs b/packages/expo-module-template/snippets/ComposeModifier/modifiers.ts.ejs
+new file mode 100644
+index 00000000000000..b51679843be65f
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeModifier/modifiers.ts.ejs
+@@ -0,0 +1,7 @@
++import { createModifier, type ModifierConfig } from '@expo/ui/jetpack-compose/modifiers';
++
++export const <%= project.composeModifierName.charAt(0).toLowerCase() + project.composeModifierName.slice(1) %> = (params: {
++  color?: number;
++  width?: number;
++  cornerRadius?: number;
++}): ModifierConfig => createModifier('<%= project.composeModifierName.charAt(0).toLowerCase() + project.composeModifierName.slice(1) %>', params);
+diff --git a/packages/expo-module-template/snippets/ComposeModifier/module.kt.ejs b/packages/expo-module-template/snippets/ComposeModifier/module.kt.ejs
+new file mode 100644
+index 00000000000000..dcd052325967b7
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeModifier/module.kt.ejs
+@@ -0,0 +1,5 @@
++    OnCreate {
++      ModifierRegistry.register("<%= project.composeModifierName.charAt(0).toLowerCase() + project.composeModifierName.slice(1) %>") { params, _, _, _ ->
++        recordFromMap<<%- project.composeModifierName %>Params>(params).toModifier()
++      }
++    }
+diff --git a/packages/expo-module-template/snippets/ComposeView/app.external-imports.tsx.ejs b/packages/expo-module-template/snippets/ComposeView/app.external-imports.tsx.ejs
+new file mode 100644
+index 00000000000000..ae5a5f088cdd0b
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeView/app.external-imports.tsx.ejs
+@@ -0,0 +1,2 @@
++import { Host as ComposeHost, Text as ComposeText } from '@expo/ui/jetpack-compose';
++import { paddingAll, background as composeBackground } from '@expo/ui/jetpack-compose/modifiers';
+diff --git a/packages/expo-module-template/snippets/ComposeView/app.jsx.tsx.ejs b/packages/expo-module-template/snippets/ComposeView/app.jsx.tsx.ejs
+new file mode 100644
+index 00000000000000..0bd634bb8fbd8b
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeView/app.jsx.tsx.ejs
+@@ -0,0 +1,11 @@
++        {process.env.EXPO_OS === 'android' && (
++          <Group name="Compose View">
++            <ComposeHost style={styles.view}>
++              <<%- project.composeViewName %>
++                title="Hello from <%- project.name %>"
++                modifiers={[paddingAll(16), composeBackground('#f0f0f0')]}>
++                <ComposeText>Child content</ComposeText>
++              </<%- project.composeViewName %>>
++            </ComposeHost>
++          </Group>
++        )}
+diff --git a/packages/expo-module-template/snippets/ComposeView/module.kt.ejs b/packages/expo-module-template/snippets/ComposeView/module.kt.ejs
+new file mode 100644
+index 00000000000000..2134779bd0246d
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeView/module.kt.ejs
+@@ -0,0 +1,5 @@
++    ExpoUIView<<%- project.composeViewName %>Props>("<%- project.composeViewName %>") {
++      Content { props ->
++        <%- project.composeViewName %>Content(props)
++      }
++    }
+diff --git a/packages/expo-module-template/snippets/ComposeView/view.kt.ejs b/packages/expo-module-template/snippets/ComposeView/view.kt.ejs
+new file mode 100644
+index 00000000000000..bee26dc7aa52d8
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeView/view.kt.ejs
+@@ -0,0 +1,30 @@
++package <%- project.package %>
++
++import androidx.compose.foundation.layout.Column
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import expo.modules.kotlin.records.Field
++import expo.modules.kotlin.views.ComposeProps
++import expo.modules.kotlin.views.FunctionalComposableScope
++import expo.modules.ui.ModifierList
++import expo.modules.ui.ModifierRegistry
++
++data class <%- project.composeViewName %>Props(
++  @Field val title: String = "",
++  @Field val modifiers: ModifierList = emptyList()
++) : ComposeProps
++
++@Composable
++fun FunctionalComposableScope.<%- project.composeViewName %>Content(props: <%- project.composeViewName %>Props) {
++  Column(
++    modifier = ModifierRegistry.applyModifiers(
++      props.modifiers,
++      appContext,
++      composableScope,
++      globalEventDispatcher
++    )
++  ) {
++    Text(props.title)
++    Children(composableScope)
++  }
++}
+diff --git a/packages/expo-module-template/snippets/ComposeView/view.tsx.ejs b/packages/expo-module-template/snippets/ComposeView/view.tsx.ejs
+new file mode 100644
+index 00000000000000..a3fb62929df020
+--- /dev/null
++++ b/packages/expo-module-template/snippets/ComposeView/view.tsx.ejs
+@@ -0,0 +1,27 @@
++import { requireNativeView } from 'expo';
++import { type PrimitiveBaseProps } from '@expo/ui/jetpack-compose';
++import { createViewModifierEventListener } from '@expo/ui/jetpack-compose/modifiers';
++import * as React from 'react';
++
++export interface <%- project.composeViewName %>Props extends PrimitiveBaseProps {
++  title: string;
++  children?: React.ReactNode;
++}
++
++const Native<%- project.composeViewName %> = requireNativeView<<%- project.composeViewName %>Props>(
++  '<%- project.name %>',
++  '<%- project.composeViewName %>'
++);
++
++export default function <%- project.composeViewName %>({
++  modifiers,
++  ...rest
++}: <%- project.composeViewName %>Props) {
++  return (
++    <Native<%- project.composeViewName %>
++      modifiers={modifiers}
++      {...(modifiers ? createViewModifierEventListener(modifiers) : undefined)}
++      {...rest}
++    />
++  );
++}
+diff --git a/packages/expo-module-template/snippets/SwiftUIModifier/app.external-imports.tsx.ejs b/packages/expo-module-template/snippets/SwiftUIModifier/app.external-imports.tsx.ejs
+new file mode 100644
+index 00000000000000..802f0c4aa44023
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIModifier/app.external-imports.tsx.ejs
+@@ -0,0 +1,6 @@
++<% if (project.features.includes('SwiftUIView')) { -%>
++import { VStack } from '@expo/ui/swift-ui';
++<% } else { -%>
++import { Host as SwiftUIHost, VStack, Text as SwiftUIText } from '@expo/ui/swift-ui';
++import { padding } from '@expo/ui/swift-ui/modifiers';
++<% } -%>
+diff --git a/packages/expo-module-template/snippets/SwiftUIModifier/app.jsx.tsx.ejs b/packages/expo-module-template/snippets/SwiftUIModifier/app.jsx.tsx.ejs
+new file mode 100644
+index 00000000000000..663785623ebca4
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIModifier/app.jsx.tsx.ejs
+@@ -0,0 +1,13 @@
++        {process.env.EXPO_OS === 'ios' && (
++          <Group name="SwiftUI Modifier">
++            <SwiftUIHost style={styles.view}>
++              <VStack
++                modifiers={[
++                  padding({ all: 20 }),
++                  <%= project.swiftUIModifierName.charAt(0).toLowerCase() + project.swiftUIModifierName.slice(1) %>({ color: '#FF6B35', width: 3, cornerRadius: 8 }),
++                ]}>
++                <SwiftUIText>Custom modifier example</SwiftUIText>
++              </VStack>
++            </SwiftUIHost>
++          </Group>
++        )}
+diff --git a/packages/expo-module-template/snippets/SwiftUIModifier/modifier.swift.ejs b/packages/expo-module-template/snippets/SwiftUIModifier/modifier.swift.ejs
+new file mode 100644
+index 00000000000000..24482a659d187a
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIModifier/modifier.swift.ejs
+@@ -0,0 +1,17 @@
++import SwiftUI
++import ExpoModulesCore
++import ExpoUI
++
++struct <%- project.swiftUIModifierName %>: ViewModifier, Record {
++  @Field var color: Color = .red
++  @Field var width: CGFloat = 2
++  @Field var cornerRadius: CGFloat = 0
++
++  func body(content: Content) -> some View {
++    content
++      .overlay(
++        RoundedRectangle(cornerRadius: cornerRadius)
++          .stroke(color, lineWidth: width)
++      )
++  }
++}
+diff --git a/packages/expo-module-template/snippets/SwiftUIModifier/modifiers.ts.ejs b/packages/expo-module-template/snippets/SwiftUIModifier/modifiers.ts.ejs
+new file mode 100644
+index 00000000000000..04f1e772f56a46
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIModifier/modifiers.ts.ejs
+@@ -0,0 +1,7 @@
++import { createModifier, type ModifierConfig } from '@expo/ui/swift-ui/modifiers';
++
++export const <%= project.swiftUIModifierName.charAt(0).toLowerCase() + project.swiftUIModifierName.slice(1) %> = (params: {
++  color?: string;
++  width?: number;
++  cornerRadius?: number;
++}): ModifierConfig => createModifier('<%= project.swiftUIModifierName.charAt(0).toLowerCase() + project.swiftUIModifierName.slice(1) %>', params);
+diff --git a/packages/expo-module-template/snippets/SwiftUIModifier/module.swift.ejs b/packages/expo-module-template/snippets/SwiftUIModifier/module.swift.ejs
+new file mode 100644
+index 00000000000000..abe9cf66e723e3
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIModifier/module.swift.ejs
+@@ -0,0 +1,9 @@
++    OnCreate {
++      ViewModifierRegistry.register("<%= project.swiftUIModifierName.charAt(0).toLowerCase() + project.swiftUIModifierName.slice(1) %>") { params, appContext, _ in
++        return try <%- project.swiftUIModifierName %>(from: params, appContext: appContext)
++      }
++    }
++
++    OnDestroy {
++      ViewModifierRegistry.unregister("<%= project.swiftUIModifierName.charAt(0).toLowerCase() + project.swiftUIModifierName.slice(1) %>")
++    }
+diff --git a/packages/expo-module-template/snippets/SwiftUIView/app.external-imports.tsx.ejs b/packages/expo-module-template/snippets/SwiftUIView/app.external-imports.tsx.ejs
+new file mode 100644
+index 00000000000000..68073e5a103f40
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIView/app.external-imports.tsx.ejs
+@@ -0,0 +1,2 @@
++import { Host as SwiftUIHost, Text as SwiftUIText } from '@expo/ui/swift-ui';
++import { padding, cornerRadius, background } from '@expo/ui/swift-ui/modifiers';
+diff --git a/packages/expo-module-template/snippets/SwiftUIView/app.jsx.tsx.ejs b/packages/expo-module-template/snippets/SwiftUIView/app.jsx.tsx.ejs
+new file mode 100644
+index 00000000000000..aeb54e72cfb98c
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIView/app.jsx.tsx.ejs
+@@ -0,0 +1,11 @@
++        {process.env.EXPO_OS === 'ios' && (
++          <Group name="SwiftUI View">
++            <SwiftUIHost style={styles.view}>
++              <<%- project.swiftUIViewName %>
++                title="Hello from <%- project.name %>"
++                modifiers={[padding({ all: 16 }), cornerRadius(12), background('#f0f0f0')]}>
++                <SwiftUIText>Child content</SwiftUIText>
++              </<%- project.swiftUIViewName %>>
++            </SwiftUIHost>
++          </Group>
++        )}
+diff --git a/packages/expo-module-template/snippets/SwiftUIView/module.swift.ejs b/packages/expo-module-template/snippets/SwiftUIView/module.swift.ejs
+new file mode 100644
+index 00000000000000..96990e31f7a944
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIView/module.swift.ejs
+@@ -0,0 +1 @@
++    ExpoUIView(<%- project.swiftUIViewName %>.self)
+diff --git a/packages/expo-module-template/snippets/SwiftUIView/view.swift.ejs b/packages/expo-module-template/snippets/SwiftUIView/view.swift.ejs
+new file mode 100644
+index 00000000000000..e0234f54907bfc
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIView/view.swift.ejs
+@@ -0,0 +1,19 @@
++import SwiftUI
++import ExpoModulesCore
++import ExpoUI
++
++final class <%- project.swiftUIViewName %>Props: UIBaseViewProps {
++  @Field var title: String = ""
++}
++
++struct <%- project.swiftUIViewName %>: ExpoSwiftUI.View {
++  @ObservedObject public var props: <%- project.swiftUIViewName %>Props
++
++  var body: some View {
++    VStack {
++      Text(props.title)
++        .font(.headline)
++      Children()
++    }
++  }
++}
+diff --git a/packages/expo-module-template/snippets/SwiftUIView/view.tsx.ejs b/packages/expo-module-template/snippets/SwiftUIView/view.tsx.ejs
+new file mode 100644
+index 00000000000000..da140e688a783e
+--- /dev/null
++++ b/packages/expo-module-template/snippets/SwiftUIView/view.tsx.ejs
+@@ -0,0 +1,27 @@
++import { requireNativeView } from 'expo';
++import { type CommonViewModifierProps } from '@expo/ui/swift-ui';
++import { createViewModifierEventListener } from '@expo/ui/swift-ui/modifiers';
++import * as React from 'react';
++
++export interface <%- project.swiftUIViewName %>Props extends CommonViewModifierProps {
++  title: string;
++  children?: React.ReactNode;
++}
++
++const Native<%- project.swiftUIViewName %> = requireNativeView<<%- project.swiftUIViewName %>Props>(
++  '<%- project.name %>',
++  '<%- project.swiftUIViewName %>'
++);
++
++export default function <%- project.swiftUIViewName %>({
++  modifiers,
++  ...rest
++}: <%- project.swiftUIViewName %>Props) {
++  return (
++    <Native<%- project.swiftUIViewName %>
++      modifiers={modifiers}
++      {...(modifiers ? createViewModifierEventListener(modifiers) : undefined)}
++      {...rest}
++    />
++  );
++}
+diff --git a/packages/expo-module-template/src/index.ts b/packages/expo-module-template/src/index.ts
+index afc7cef4a198d7..71b4bef95d0abd 100644
+--- a/packages/expo-module-template/src/index.ts
++++ b/packages/expo-module-template/src/index.ts
+@@ -4,6 +4,18 @@ export { default } from './<%- project.moduleName %>';
+ <% if (project.features.includes('View')) { -%>
+ export { default as <%- project.viewName %> } from './<%- project.viewName %>';
+ <% } -%>
++<% if (project.features.includes('SwiftUIView')) { -%>
++export { default as <%- project.swiftUIViewName %> } from './<%- project.swiftUIViewName %>';
++<% } -%>
++<% if (project.features.includes('ComposeView')) { -%>
++export { default as <%- project.composeViewName %> } from './<%- project.composeViewName %>';
++<% } -%>
++<% if (project.features.includes('SwiftUIModifier')) { -%>
++export * from './<%- project.swiftUIModifierName %>';
++<% } -%>
++<% if (project.features.includes('ComposeModifier')) { -%>
++export * from './<%- project.composeModifierName %>';
++<% } -%>
+ export * from './<%- project.name %>.types';
+ <% if (project.features.includes('SharedObject')) { -%>
+ export * from './<%- project.sharedObjectName %>';

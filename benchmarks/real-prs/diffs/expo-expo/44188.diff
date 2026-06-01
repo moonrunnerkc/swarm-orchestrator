@@ -1,0 +1,687 @@
+diff --git a/packages/@expo/prebuild-config/CHANGELOG.md b/packages/@expo/prebuild-config/CHANGELOG.md
+index 70ce43770e267d..34e07a13f26ac4 100644
+--- a/packages/@expo/prebuild-config/CHANGELOG.md
++++ b/packages/@expo/prebuild-config/CHANGELOG.md
+@@ -8,6 +8,8 @@
+ 
+ ### 🐛 Bug fixes
+ 
++- Fix Jest 30 compatibility in prebuild test helpers by removing internal `expect/build/matchers` import. ([#44188](https://github.com/expo/expo/pull/44188) by [@mvincentong](https://github.com/mvincentong))
++
+ ### 💡 Others
+ 
+ ## 56.0.11 — 2026-05-21
+diff --git a/packages/@expo/prebuild-config/src/testing-library/__tests__/expect.ts b/packages/@expo/prebuild-config/src/testing-library/__tests__/expect.ts
+index 1b3da08a9dde33..9f02bb913aecc8 100644
+--- a/packages/@expo/prebuild-config/src/testing-library/__tests__/expect.ts
++++ b/packages/@expo/prebuild-config/src/testing-library/__tests__/expect.ts
+@@ -1,14 +1,39 @@
+ import { AndroidConfig, type ExportedConfig, IOSConfig } from '@expo/config-plugins';
+ import plist from '@expo/plist';
+-import matchers from 'expect/build/matchers';
+ import fs from 'fs';
+ 
+ import { getInfoPlistPathLikePrebuild, getProjectRootLikePrebuild } from './prebuild-tester';
+ 
+-matchers.customTesters = [];
+-
+ const cacheSymbol = Symbol('jest.prebuild.cache');
+ 
++function printMatcherDiff(
++  context: jest.MatcherContext,
++  expected: unknown,
++  received: unknown
++): string {
++  if (context.isNot) {
++    return (
++      `Expected: ${context.isNot ? 'not ' : ''}${context.utils.printExpected(expected)}\n` +
++      `Received: ${context.utils.printReceived(received)}`
++    );
++  }
++
++  return context.utils.printDiffOrStringify(
++    expected,
++    received,
++    'Expected',
++    'Received',
++    context.expand !== false
++  );
++}
++
++function getMatcherHint(context: jest.MatcherContext, matcherName: string): string {
++  return context.utils.matcherHint(matcherName, undefined, undefined, {
++    isNot: context.isNot,
++    promise: context.promise,
++  });
++}
++
+ expect.extend({
+   toMatchInfoPlist(
+     config: ExportedConfig & {
+@@ -19,7 +44,15 @@ expect.extend({
+     expected: any
+   ) {
+     if (config[cacheSymbol]?.infoPlist) {
+-      return matchers.toEqual(config[cacheSymbol].infoPlist, expected);
++      const received = config[cacheSymbol].infoPlist;
++      const pass = this.equals(received, expected);
++      return {
++        pass,
++        message: () =>
++          getMatcherHint(this, 'toMatchInfoPlist') +
++          '\n\n' +
++          printMatcherDiff(this, expected, received),
++      };
+     }
+ 
+     const infoPlistPath = getInfoPlistPathLikePrebuild(config);
+@@ -28,13 +61,27 @@ expect.extend({
+     config[cacheSymbol] = config[cacheSymbol] || {};
+     config[cacheSymbol].infoPlist = config[cacheSymbol].infoPlist || infoPlist;
+ 
+-    return matchers.toEqual(infoPlist, expected);
++    const pass = this.equals(infoPlist, expected);
++    return {
++      pass,
++      message: () =>
++        getMatcherHint(this, 'toMatchInfoPlist') +
++        '\n\n' +
++        printMatcherDiff(this, expected, infoPlist),
++    };
+   },
+   toMatchAppleEntitlements(config: ExportedConfig, expected: any) {
+     const filePath = IOSConfig.Entitlements.getEntitlementsPath(getProjectRootLikePrebuild(config));
+     if (!filePath) throw new Error('iOS entitlements path not found');
+     const data = plist.parse(fs.readFileSync(filePath, 'utf8'));
+-    return matchers.toEqual(data, expected);
++    const pass = this.equals(data, expected);
++    return {
++      pass,
++      message: () =>
++        getMatcherHint(this, 'toMatchAppleEntitlements') +
++        '\n\n' +
++        printMatcherDiff(this, expected, data),
++    };
+   },
+   toHaveModHistory(config: ExportedConfig, name: string) {
+     if (!config._internal?.pluginHistory) {
+@@ -57,13 +104,18 @@ expect.extend({
+   },
+ 
+   toMatchAndroidProjectBuildGradle(config: ExportedConfig, expected: any) {
+-    return matchers.toEqual(
+-      fs.readFileSync(
+-        AndroidConfig.Paths.getProjectBuildGradleFilePath(getProjectRootLikePrebuild(config)),
+-        'utf8'
+-      ),
+-      expected
++    const received = fs.readFileSync(
++      AndroidConfig.Paths.getProjectBuildGradleFilePath(getProjectRootLikePrebuild(config)),
++      'utf8'
+     );
++    const pass = this.equals(received, expected);
++    return {
++      pass,
++      message: () =>
++        getMatcherHint(this, 'toMatchAndroidProjectBuildGradle') +
++        '\n\n' +
++        printMatcherDiff(this, expected, received),
++    };
+   },
+ });
+ 
+diff --git a/packages/@expo/prebuild-config/src/testing-library/__tests__/prebuild-testing-lib.test.ts b/packages/@expo/prebuild-config/src/testing-library/__tests__/prebuild-testing-lib.test.ts
+index 5e6bef91b6a017..07655021700910 100644
+--- a/packages/@expo/prebuild-config/src/testing-library/__tests__/prebuild-testing-lib.test.ts
++++ b/packages/@expo/prebuild-config/src/testing-library/__tests__/prebuild-testing-lib.test.ts
+@@ -40,6 +40,12 @@ it('runs normally for a single iOS prebuild', async () => {
+   expect(Object.values(config.mods!.ios!).every((value) => typeof value === 'function')).toBe(true);
+ 
+   expect(config).toMatchInfoPlist(expect.objectContaining({ CFBundleDisplayName: 'app' }));
++  expect(() =>
++    expect(config).not.toMatchInfoPlist(expect.objectContaining({ CFBundleDisplayName: 'app' }))
++  ).toThrow(/\.not\.toMatchInfoPlist/);
++  expect(() =>
++    expect(config).not.toMatchInfoPlist(expect.objectContaining({ CFBundleDisplayName: 'app' }))
++  ).toThrow(/Expected: not/);
+   expect(config).toMatchAppleEntitlements({});
+ });
+ 
+diff --git a/packages/expo-router/CHANGELOG.md b/packages/expo-router/CHANGELOG.md
+index e9914b77b84bef..ac13d2664cbb99 100644
+--- a/packages/expo-router/CHANGELOG.md
++++ b/packages/expo-router/CHANGELOG.md
+@@ -9,6 +9,7 @@
+ ### 🐛 Bug fixes
+ 
+ - Fix an ES module import error in the typed config plugin. ([#46089](https://github.com/expo/expo/pull/46089) by [@zoontek](https://github.com/zoontek))
++- Fix Jest 30 compatibility in testing library by removing internal `expect/build/matchers` import. ([#40184](https://github.com/expo/expo/issues/40184)) ([#44188](https://github.com/expo/expo/pull/44188) by [@mvincentong](https://github.com/mvincentong))
+ 
+ ### 💡 Others
+ 
+diff --git a/packages/expo-router/build/testing-library/expect.js b/packages/expo-router/build/testing-library/expect.js
+index d86294639db64c..f12b9888702543 100644
+--- a/packages/expo-router/build/testing-library/expect.js
++++ b/packages/expo-router/build/testing-library/expect.js
+@@ -1,25 +1,73 @@
+ "use strict";
+-var __importDefault = (this && this.__importDefault) || function (mod) {
+-    return (mod && mod.__esModule) ? mod : { "default": mod };
+-};
+ Object.defineProperty(exports, "__esModule", { value: true });
+-const matchers_1 = __importDefault(require("expect/build/matchers"));
+-matchers_1.default.customTesters = [];
++function printMatcherDiff(context, expected, received) {
++    if (context.isNot) {
++        return printMatcherValues(context, expected, received);
++    }
++    return context.utils.printDiffOrStringify(expected, received, 'Expected', 'Received', context.expand !== false);
++}
++function getMatcherHint(context, matcherName) {
++    return context.utils.matcherHint(matcherName, undefined, undefined, {
++        isNot: context.isNot,
++        promise: context.promise,
++    });
++}
++function printMatcherValues(context, expected, received) {
++    return (`Expected: ${context.isNot ? 'not ' : ''}${context.utils.printExpected(expected)}\n` +
++        `Received: ${context.utils.printReceived(received)}`);
++}
+ expect.extend({
+     toHavePathname(screen, expected) {
+-        return matchers_1.default.toEqual(screen.getPathname(), expected);
++        const received = screen.getPathname();
++        const pass = this.equals(received, expected);
++        return {
++            pass,
++            // Diffs add value for structured data, but are noise for short strings, so print raw values here.
++            message: () => getMatcherHint(this, 'toHavePathname') +
++                '\n\n' +
++                printMatcherValues(this, expected, received),
++        };
+     },
+     toHavePathnameWithParams(screen, expected) {
+-        return matchers_1.default.toEqual(screen.getPathnameWithParams(), expected);
++        const received = screen.getPathnameWithParams();
++        const pass = this.equals(received, expected);
++        return {
++            pass,
++            // Diffs add value for structured data, but are noise for short strings, so print raw values here.
++            message: () => getMatcherHint(this, 'toHavePathnameWithParams') +
++                '\n\n' +
++                printMatcherValues(this, expected, received),
++        };
+     },
+     toHaveSegments(screen, expected) {
+-        return matchers_1.default.toEqual(screen.getSegments(), expected);
++        const received = screen.getSegments();
++        const pass = this.equals(received, expected);
++        return {
++            pass,
++            message: () => getMatcherHint(this, 'toHaveSegments') +
++                '\n\n' +
++                printMatcherDiff(this, expected, received),
++        };
+     },
+     toHaveSearchParams(screen, expected) {
+-        return matchers_1.default.toEqual(screen.getSearchParams(), expected);
++        const received = screen.getSearchParams();
++        const pass = this.equals(received, expected);
++        return {
++            pass,
++            message: () => getMatcherHint(this, 'toHaveSearchParams') +
++                '\n\n' +
++                printMatcherDiff(this, expected, received),
++        };
+     },
+     toHaveRouterState(screen, expected) {
+-        return matchers_1.default.toEqual(screen.getRouterState(), expected);
++        const received = screen.getRouterState();
++        const pass = this.equals(received, expected);
++        return {
++            pass,
++            message: () => getMatcherHint(this, 'toHaveRouterState') +
++                '\n\n' +
++                printMatcherDiff(this, expected, received),
++        };
+     },
+ });
+ //# sourceMappingURL=expect.js.map
+\ No newline at end of file
+diff --git a/packages/expo-router/build/testing-library/expect.js.map b/packages/expo-router/build/testing-library/expect.js.map
+index b3d441fba3a701..53df680acf6b83 100644
+--- a/packages/expo-router/build/testing-library/expect.js.map
++++ b/packages/expo-router/build/testing-library/expect.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"expect.js","sourceRoot":"","sources":["../../src/testing-library/expect.ts"],"names":[],"mappings":";;;;;AAAA,qEAA6C;AAE7C,kBAAQ,CAAC,aAAa,GAAG,EAAE,CAAC;AAE5B,MAAM,CAAC,MAAM,CAAC;IACZ,cAAc,CAAC,MAAM,EAAE,QAAQ;QAC7B,OAAO,kBAAQ,CAAC,OAAO,CAAC,MAAM,CAAC,WAAW,EAAE,EAAE,QAAQ,CAAC,CAAC;IAC1D,CAAC;IACD,wBAAwB,CAAC,MAAM,EAAE,QAAQ;QACvC,OAAO,kBAAQ,CAAC,OAAO,CAAC,MAAM,CAAC,qBAAqB,EAAE,EAAE,QAAQ,CAAC,CAAC;IACpE,CAAC;IACD,cAAc,CAAC,MAAM,EAAE,QAAQ;QAC7B,OAAO,kBAAQ,CAAC,OAAO,CAAC,MAAM,CAAC,WAAW,EAAE,EAAE,QAAQ,CAAC,CAAC;IAC1D,CAAC;IACD,kBAAkB,CAAC,MAAM,EAAE,QAAQ;QACjC,OAAO,kBAAQ,CAAC,OAAO,CAAC,MAAM,CAAC,eAAe,EAAE,EAAE,QAAQ,CAAC,CAAC;IAC9D,CAAC;IACD,iBAAiB,CAAC,MAAM,EAAE,QAAQ;QAChC,OAAO,kBAAQ,CAAC,OAAO,CAAC,MAAM,CAAC,cAAc,EAAE,EAAE,QAAQ,CAAC,CAAC;IAC7D,CAAC;CACF,CAAC,CAAC","sourcesContent":["import matchers from 'expect/build/matchers';\n\nmatchers.customTesters = [];\n\nexpect.extend({\n  toHavePathname(screen, expected) {\n    return matchers.toEqual(screen.getPathname(), expected);\n  },\n  toHavePathnameWithParams(screen, expected) {\n    return matchers.toEqual(screen.getPathnameWithParams(), expected);\n  },\n  toHaveSegments(screen, expected) {\n    return matchers.toEqual(screen.getSegments(), expected);\n  },\n  toHaveSearchParams(screen, expected) {\n    return matchers.toEqual(screen.getSearchParams(), expected);\n  },\n  toHaveRouterState(screen, expected) {\n    return matchers.toEqual(screen.getRouterState(), expected);\n  },\n});\n"]}
+\ No newline at end of file
++{"version":3,"file":"expect.js","sourceRoot":"","sources":["../../src/testing-library/expect.ts"],"names":[],"mappings":"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","sourcesContent":["function printMatcherDiff(\n  context: jest.MatcherContext,\n  expected: unknown,\n  received: unknown\n): string {\n  if (context.isNot) {\n    return printMatcherValues(context, expected, received);\n  }\n\n  return context.utils.printDiffOrStringify(\n    expected,\n    received,\n    'Expected',\n    'Received',\n    context.expand !== false\n  );\n}\n\nfunction getMatcherHint(context: jest.MatcherContext, matcherName: string): string {\n  return context.utils.matcherHint(matcherName, undefined, undefined, {\n    isNot: context.isNot,\n    promise: context.promise,\n  });\n}\n\nfunction printMatcherValues(\n  context: jest.MatcherContext,\n  expected: unknown,\n  received: unknown\n): string {\n  return (\n    `Expected: ${context.isNot ? 'not ' : ''}${context.utils.printExpected(expected)}\\n` +\n    `Received: ${context.utils.printReceived(received)}`\n  );\n}\n\nexpect.extend({\n  toHavePathname(screen, expected) {\n    const received = screen.getPathname();\n    const pass = this.equals(received, expected);\n    return {\n      pass,\n      // Diffs add value for structured data, but are noise for short strings, so print raw values here.\n      message: () =>\n        getMatcherHint(this, 'toHavePathname') +\n        '\\n\\n' +\n        printMatcherValues(this, expected, received),\n    };\n  },\n  toHavePathnameWithParams(screen, expected) {\n    const received = screen.getPathnameWithParams();\n    const pass = this.equals(received, expected);\n    return {\n      pass,\n      // Diffs add value for structured data, but are noise for short strings, so print raw values here.\n      message: () =>\n        getMatcherHint(this, 'toHavePathnameWithParams') +\n        '\\n\\n' +\n        printMatcherValues(this, expected, received),\n    };\n  },\n  toHaveSegments(screen, expected) {\n    const received = screen.getSegments();\n    const pass = this.equals(received, expected);\n    return {\n      pass,\n      message: () =>\n        getMatcherHint(this, 'toHaveSegments') +\n        '\\n\\n' +\n        printMatcherDiff(this, expected, received),\n    };\n  },\n  toHaveSearchParams(screen, expected) {\n    const received = screen.getSearchParams();\n    const pass = this.equals(received, expected);\n    return {\n      pass,\n      message: () =>\n        getMatcherHint(this, 'toHaveSearchParams') +\n        '\\n\\n' +\n        printMatcherDiff(this, expected, received),\n    };\n  },\n  toHaveRouterState(screen, expected) {\n    const received = screen.getRouterState();\n    const pass = this.equals(received, expected);\n    return {\n      pass,\n      message: () =>\n        getMatcherHint(this, 'toHaveRouterState') +\n        '\\n\\n' +\n        printMatcherDiff(this, expected, received),\n    };\n  },\n});\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-router/src/__tests__/__snapshots__/testing-library.test.ios.tsx.snap.ios b/packages/expo-router/src/__tests__/__snapshots__/testing-library.test.ios.tsx.snap.ios
+new file mode 100644
+index 00000000000000..bb9632ab9a350f
+--- /dev/null
++++ b/packages/expo-router/src/__tests__/__snapshots__/testing-library.test.ios.tsx.snap.ios
+@@ -0,0 +1,106 @@
++// Jest Snapshot v1, https://goo.gl/fbAQLP
++
++exports[`toHavePathname fails with the correct message 1`] = `
++"expect(received).toHavePathname(expected)
++
++Expected: "/xyz"
++Received: "/home""
++`;
++
++exports[`toHavePathname fails with the correct message for a .not assertion 1`] = `
++"expect(received).not.toHavePathname(expected)
++
++Expected: not "/home"
++Received: "/home""
++`;
++
++exports[`toHavePathnameWithParams fails with the correct message 1`] = `
++"expect(received).toHavePathnameWithParams(expected)
++
++Expected: "/xyz"
++Received: "/home?test=true""
++`;
++
++exports[`toHavePathnameWithParams fails with the correct message for a .not assertion 1`] = `
++"expect(received).not.toHavePathnameWithParams(expected)
++
++Expected: not "/home?test=true"
++Received: "/home?test=true""
++`;
++
++exports[`toHaveRouterState fails with the correct message 1`] = `
++"expect(received).toHaveRouterState(expected)
++
++- Expected  -  1
+++ Received  + 20
++
++  Object {
++-   "routes": Array [],
+++   "routes": Array [
+++     Object {
+++       "name": "__root",
+++       "params": Object {
+++         "slug": "home",
+++       },
+++       "state": Object {
+++         "routes": Array [
+++           Object {
+++             "name": "[slug]",
+++             "params": Object {
+++               "slug": "home",
+++               "test": "true",
+++             },
+++             "path": "/home?test=true",
+++           },
+++         ],
+++       },
+++     },
+++   ],
++  }"
++`;
++
++exports[`toHaveRouterState fails with the correct message for a .not assertion 1`] = `
++"expect(received).not.toHaveRouterState(expected)
++
++Expected: not {"routes": [{"name": "__root", "params": {"slug": "home"}, "state": {"routes": [{"name": "[slug]", "params": {"slug": "home", "test": "true"}, "path": "/home?test=true"}]}}]}
++Received: {"routes": [{"name": "__root", "params": {"slug": "home"}, "state": {"routes": [{"name": "[slug]", "params": {"slug": "home", "test": "true"}, "path": "/home?test=true"}]}}]}"
++`;
++
++exports[`toHaveSearchParams fails with the correct message 1`] = `
++"expect(received).toHaveSearchParams(expected)
++
++- Expected  - 1
+++ Received  + 2
++
++  Object {
++-   "slug": "xyz",
+++   "slug": "home",
+++   "test": "true",
++  }"
++`;
++
++exports[`toHaveSearchParams fails with the correct message for a .not assertion 1`] = `
++"expect(received).not.toHaveSearchParams(expected)
++
++Expected: not {"slug": "home", "test": "true"}
++Received: {"slug": "home", "test": "true"}"
++`;
++
++exports[`toHaveSegments fails with the correct message 1`] = `
++"expect(received).toHaveSegments(expected)
++
++- Expected  - 1
+++ Received  + 1
++
++  Array [
++-   "xyz",
+++   "[slug]",
++  ]"
++`;
++
++exports[`toHaveSegments fails with the correct message for a .not assertion 1`] = `
++"expect(received).not.toHaveSegments(expected)
++
++Expected: not ["[slug]"]
++Received: ["[slug]"]"
++`;
+diff --git a/packages/expo-router/src/__tests__/testing-library.test.ios.tsx b/packages/expo-router/src/__tests__/testing-library.test.ios.tsx
+index 4549bff0afc284..b409c30b3e70f2 100644
+--- a/packages/expo-router/src/__tests__/testing-library.test.ios.tsx
++++ b/packages/expo-router/src/__tests__/testing-library.test.ios.tsx
+@@ -1,57 +1,141 @@
+ import { act, screen } from '@testing-library/react-native';
++import { stripVTControlCharacters } from 'node:util';
+ 
+ import { router } from '../imperative-api';
+ import { renderRouter } from '../testing-library';
+ 
++function getThrownMessage(fn: () => void): string {
++  try {
++    fn();
++  } catch (e) {
++    return stripVTControlCharacters((e as Error).message);
++  }
++  throw new Error('Expected function to throw');
++}
++
+ /*
+  * Smoke Tests for the Testing Library. While we use these functions in the other tests, we want to make sure they work as expected.
+  */
+-it('toHavePathname', () => {
+-  renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
+-  expect(screen).toHavePathname('/home');
++describe('toHavePathname', () => {
++  it('correctly matches', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    expect(screen).toHavePathname('/home');
++  });
++
++  it('fails with the correct message', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).toHavePathname('/xyz'));
++    expect(message).toMatchSnapshot();
++  });
++
++  it('fails with the correct message for a .not assertion', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).not.toHavePathname('/home'));
++    expect(message).toMatchSnapshot();
++  });
+ });
+ 
+-it('toHavePathnameWithParams', () => {
+-  renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
+-  expect(screen).toHavePathnameWithParams('/home?test=true');
++describe('toHavePathnameWithParams', () => {
++  it('correctly matches', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    expect(screen).toHavePathnameWithParams('/home?test=true');
++  });
++
++  it('fails with the correct message', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).toHavePathnameWithParams('/xyz'));
++    expect(message).toMatchSnapshot();
++  });
++
++  it('fails with the correct message for a .not assertion', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() =>
++      expect(screen).not.toHavePathnameWithParams('/home?test=true')
++    );
++    expect(message).toMatchSnapshot();
++  });
+ });
+ 
+-it('toHaveSearchParams', () => {
+-  renderRouter(['[slug]/[...catchAll]'], { initialUrl: '/home/long/name?test=true' });
+-  expect(screen).toHaveSearchParams({ slug: 'home', test: 'true', catchAll: ['long', 'name'] });
++describe('toHaveSegments', () => {
++  it('correctly matches', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    expect(screen).toHaveSegments(['[slug]']);
++  });
++
++  it('fails with the correct message', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).toHaveSegments(['xyz']));
++    expect(message).toMatchSnapshot();
++  });
++
++  it('fails with the correct message for a .not assertion', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).not.toHaveSegments(['[slug]']));
++    expect(message).toMatchSnapshot();
++  });
+ });
+ 
+-it('toHavePathnameWithParams', () => {
+-  renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
+-  expect(screen).toHavePathnameWithParams('/home?test=true');
++describe('toHaveSearchParams', () => {
++  it('correctly matches', () => {
++    renderRouter(['[slug]/[...catchAll]'], { initialUrl: '/home/long/name?test=true' });
++    expect(screen).toHaveSearchParams({ slug: 'home', test: 'true', catchAll: ['long', 'name'] });
++  });
++
++  it('fails with the correct message', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).toHaveSearchParams({ slug: 'xyz' }));
++    expect(message).toMatchSnapshot();
++  });
++
++  it('fails with the correct message for a .not assertion', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const params = { slug: 'home', test: 'true' };
++    const message = getThrownMessage(() => expect(screen).not.toHaveSearchParams(params));
++    expect(message).toMatchSnapshot();
++  });
+ });
+ 
+-// This test is currently broken in React Navigation v7 as @react-navigation/routers still has the prerenderRoutes key
+-it.skip('toHaveRouterState', () => {
+-  renderRouter(['[slug]', '[...catchAll]', 'directory/page'], { initialUrl: '/home?test=true' });
+-  act(() => router.navigate('/directory/page'));
+-  expect(screen).toHaveRouterState({
+-    index: 1,
+-    key: expect.any(String),
+-    routeNames: ['directory/page', '[slug]', '[...catchAll]'],
+-    routes: [
+-      {
+-        key: expect.any(String),
+-        name: '[slug]',
+-        params: {
+-          slug: 'home',
+-          test: 'true',
++describe('toHaveRouterState', () => {
++  // This test is currently broken in React Navigation v7 as @react-navigation/routers still has the prerenderRoutes key
++  it.skip('correctly matches', () => {
++    renderRouter(['[slug]', '[...catchAll]', 'directory/page'], { initialUrl: '/home?test=true' });
++    act(() => router.navigate('/directory/page'));
++    expect(screen).toHaveRouterState({
++      index: 1,
++      key: expect.any(String),
++      routeNames: ['directory/page', '[slug]', '[...catchAll]'],
++      routes: [
++        {
++          key: expect.any(String),
++          name: '[slug]',
++          params: {
++            slug: 'home',
++            test: 'true',
++          },
++          path: '/home?test=true',
++        },
++        {
++          key: expect.any(String),
++          name: 'directory/page',
++          params: {},
++          path: undefined,
+         },
+-        path: '/home?test=true',
+-      },
+-      {
+-        key: expect.any(String),
+-        name: 'directory/page',
+-        params: {},
+-        path: undefined,
+-      },
+-    ],
+-    stale: false,
+-    type: 'stack',
++      ],
++      stale: false,
++      type: 'stack',
++    });
++  });
++
++  it('fails with the correct message', () => {
++    renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const message = getThrownMessage(() => expect(screen).toHaveRouterState({ routes: [] }));
++    expect(message).toMatchSnapshot();
++  });
++
++  it('fails with the correct message for a .not assertion', () => {
++    const result = renderRouter(['[slug]'], { initialUrl: '/home?test=true' });
++    const state = result.getRouterState();
++    const message = getThrownMessage(() => expect(screen).not.toHaveRouterState(state));
++    expect(message).toMatchSnapshot();
+   });
+ });
+diff --git a/packages/expo-router/src/testing-library/expect.ts b/packages/expo-router/src/testing-library/expect.ts
+index 2783cfda34a28d..47d24469154909 100644
+--- a/packages/expo-router/src/testing-library/expect.ts
++++ b/packages/expo-router/src/testing-library/expect.ts
+@@ -1,21 +1,95 @@
+-import matchers from 'expect/build/matchers';
++function printMatcherDiff(
++  context: jest.MatcherContext,
++  expected: unknown,
++  received: unknown
++): string {
++  if (context.isNot) {
++    return printMatcherValues(context, expected, received);
++  }
+ 
+-matchers.customTesters = [];
++  return context.utils.printDiffOrStringify(
++    expected,
++    received,
++    'Expected',
++    'Received',
++    context.expand !== false
++  );
++}
++
++function getMatcherHint(context: jest.MatcherContext, matcherName: string): string {
++  return context.utils.matcherHint(matcherName, undefined, undefined, {
++    isNot: context.isNot,
++    promise: context.promise,
++  });
++}
++
++function printMatcherValues(
++  context: jest.MatcherContext,
++  expected: unknown,
++  received: unknown
++): string {
++  return (
++    `Expected: ${context.isNot ? 'not ' : ''}${context.utils.printExpected(expected)}\n` +
++    `Received: ${context.utils.printReceived(received)}`
++  );
++}
+ 
+ expect.extend({
+   toHavePathname(screen, expected) {
+-    return matchers.toEqual(screen.getPathname(), expected);
++    const received = screen.getPathname();
++    const pass = this.equals(received, expected);
++    return {
++      pass,
++      // Diffs add value for structured data, but are noise for short strings, so print raw values here.
++      message: () =>
++        getMatcherHint(this, 'toHavePathname') +
++        '\n\n' +
++        printMatcherValues(this, expected, received),
++    };
+   },
+   toHavePathnameWithParams(screen, expected) {
+-    return matchers.toEqual(screen.getPathnameWithParams(), expected);
++    const received = screen.getPathnameWithParams();
++    const pass = this.equals(received, expected);
++    return {
++      pass,
++      // Diffs add value for structured data, but are noise for short strings, so print raw values here.
++      message: () =>
++        getMatcherHint(this, 'toHavePathnameWithParams') +
++        '\n\n' +
++        printMatcherValues(this, expected, received),
++    };
+   },
+   toHaveSegments(screen, expected) {
+-    return matchers.toEqual(screen.getSegments(), expected);
++    const received = screen.getSegments();
++    const pass = this.equals(received, expected);
++    return {
++      pass,
++      message: () =>
++        getMatcherHint(this, 'toHaveSegments') +
++        '\n\n' +
++        printMatcherDiff(this, expected, received),
++    };
+   },
+   toHaveSearchParams(screen, expected) {
+-    return matchers.toEqual(screen.getSearchParams(), expected);
++    const received = screen.getSearchParams();
++    const pass = this.equals(received, expected);
++    return {
++      pass,
++      message: () =>
++        getMatcherHint(this, 'toHaveSearchParams') +
++        '\n\n' +
++        printMatcherDiff(this, expected, received),
++    };
+   },
+   toHaveRouterState(screen, expected) {
+-    return matchers.toEqual(screen.getRouterState(), expected);
++    const received = screen.getRouterState();
++    const pass = this.equals(received, expected);
++    return {
++      pass,
++      message: () =>
++        getMatcherHint(this, 'toHaveRouterState') +
++        '\n\n' +
++        printMatcherDiff(this, expected, received),
++    };
+   },
+ });
+diff --git a/packages/expo-router/src/ts-declarations/expect.d.ts b/packages/expo-router/src/ts-declarations/expect.d.ts
+index 275725a7b44e6c..6dc6ef9ff6dd14 100644
+--- a/packages/expo-router/src/ts-declarations/expect.d.ts
++++ b/packages/expo-router/src/ts-declarations/expect.d.ts
+@@ -1,8 +1,3 @@
+-declare module 'expect/build/matchers' {
+-  const matchers: any;
+-  export default matchers;
+-}
+-
+ declare namespace jest {
+   interface Matchers<R, T = unknown> {
+     toHavePathname(pathname: string): R;
+diff --git a/tools/src/check-packages/checkDependenciesAsync.ts b/tools/src/check-packages/checkDependenciesAsync.ts
+index 66e2cdeade67c5..b71b1eb48654bd 100644
+--- a/tools/src/check-packages/checkDependenciesAsync.ts
++++ b/tools/src/check-packages/checkDependenciesAsync.ts
+@@ -43,7 +43,6 @@ const SPECIAL_DEPENDENCIES: Record<string, Record<string, IgnoreKind | void> | v
+   },
+ 
+   'expo-router': {
+-    'expect/build/matchers': 'ignore-dev', // TODO: Unsure how to replace safely. Dep/Peer won't work. Globals and `@jest/globals` unclear
+     'react-native-tab-view': 'ignore-dev', // TODO: Should be a peer dep, but it's only used in the MaterialTopTabs which is gated behind a try/catch require, so it's not inherently dangerous
+   },
+ 

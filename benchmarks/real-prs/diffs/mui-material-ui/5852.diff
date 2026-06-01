@@ -1,0 +1,1074 @@
+diff --git a/.eslintignore b/.eslintignore
+index 6b99262406fad6..13e36d5eeb331a 100644
+--- a/.eslintignore
++++ b/.eslintignore
+@@ -6,6 +6,7 @@ node_modules
+ /packages/**/lib
+ /packages/icon-builder
+ /packages/material-ui-codemod/modules/v0.15.0
++/src/svg-icons
+ /test/coverage
+ /test/regressions/
+ /test/integration/
+diff --git a/docs/api/Avatar/Avatar.md b/docs/api/Avatar/Avatar.md
+index dc00d75cf43e56..b23cba91cc259b 100644
+--- a/docs/api/Avatar/Avatar.md
++++ b/docs/api/Avatar/Avatar.md
+@@ -9,9 +9,9 @@ Props
+ | Name | Type | Default | Description |
+ |:-----|:-----|:--------|:------------|
+ | alt | string | '' | Used in combination with `src` or `srcSet` to provide an alt attribute for the rendered `img` element. |
++| children | node |  | Used to render icon or text elements inside the Avatar. `src` and `alt` props will not be used and no `img` will be rendered by default.<br>This can be an element, or just a string. |
+ | className | string |  | The CSS class name of the root element. |
+-| component | string | 'div' |  |
+-| icon | node |  | Supply a custom icon. `src` and `alt` props will not be used and no `img` will be renderd by default.<br>This can be a custom element, or even just a string. |
++| component | string | 'div' | The component type of the root element. |
+ | sizes | string |  | sizes desc |
+ | src | string |  | src desc |
+ | srcSet | string |  | srcSet desc |
+diff --git a/docs/api/Chip/Chip.md b/docs/api/Chip/Chip.md
+new file mode 100644
+index 00000000000000..322033a3d7414a
+--- /dev/null
++++ b/docs/api/Chip/Chip.md
+@@ -0,0 +1,23 @@
++Chip
++====
++
++Chips represent complex entities in small blocks, such as a contact.
++
++```jsx
++<Chip avatar={<Avatar>} label="Label text" />
++```
++
++Props
++-----
++
++| Name | Type | Default | Description |
++|:-----|:-----|:--------|:------------|
++| avatar | node |  | Avatar element. |
++| className | string |  | CSS `className` of the root element. |
++| deleteIconClassName | string |  | CSS `className` of the delete icon element. |
++| label | string |  | Label |
++| labelClassName | string |  | CSS `className` of the label. |
++| onClick | function |  | Callback function fired when the `Chip` element is clicked. If set, the chip will by styled for hover focus and active states.<br><br>**Signature:**<br>`function(event: object) => void`<br>*event:* `onClick` event targeting the root element. |
++| onRequestDelete | function |  | Callback function fired when the delete icon is clicked. If set, the delete icon will be shown.<br><br>**Signature:**<br>`function(event: object) => void`<br>*event:* `onClick` event targeting the delete icon element. |
++
++Any other properties supplied will be spread to the root element.
+diff --git a/docs/site/assets/images/uxceo-128.jpg b/docs/site/assets/images/uxceo-128.jpg
+new file mode 100644
+index 00000000000000..89861700dcef6b
+Binary files /dev/null and b/docs/site/assets/images/uxceo-128.jpg differ
+diff --git a/docs/site/src/demos/avatars/IconAvatars.js b/docs/site/src/demos/avatars/IconAvatars.js
+index d0a49037fdfd38..773c5b2adc40f8 100644
+--- a/docs/site/src/demos/avatars/IconAvatars.js
++++ b/docs/site/src/demos/avatars/IconAvatars.js
+@@ -32,18 +32,15 @@ export default function IconAvatars(props, context) {
+   const classes = context.styleManager.render(styleSheet);
+   return (
+     <div className={classes.row}>
+-      <Avatar
+-        icon={<FolderIcon />}
+-        className={classes.avatar}
+-      />
+-      <Avatar
+-        icon={<PageviewIcon />}
+-        className={classes.pinkAvatar}
+-      />
+-      <Avatar
+-        icon={<AssignmentIcon />}
+-        className={classes.greenAvatar}
+-      />
++      <Avatar className={classes.avatar}>
++        <FolderIcon />
++      </Avatar>
++      <Avatar className={classes.pinkAvatar}>
++        <PageviewIcon />
++      </Avatar>
++      <Avatar className={classes.greenAvatar}>
++        <AssignmentIcon />
++      </Avatar>
+     </div>
+   );
+ }
+diff --git a/docs/site/src/demos/avatars/LetterAvatars.js b/docs/site/src/demos/avatars/LetterAvatars.js
+index d0ac6ab4df5365..35f8ca231eceb5 100644
+--- a/docs/site/src/demos/avatars/LetterAvatars.js
++++ b/docs/site/src/demos/avatars/LetterAvatars.js
+@@ -29,18 +29,9 @@ export default function LetterAvatars(props, context) {
+   const classes = context.styleManager.render(styleSheet);
+   return (
+     <div className={classes.row}>
+-      <Avatar
+-        icon="H"
+-        className={classes.avatar}
+-      />
+-      <Avatar
+-        icon="N"
+-        className={classes.orangeAvatar}
+-      />
+-      <Avatar
+-        icon="O"
+-        className={classes.purpleAvatar}
+-      />
++      <Avatar className={classes.avatar}>H</Avatar>
++      <Avatar className={classes.orangeAvatar}>N</Avatar>
++      <Avatar className={classes.purpleAvatar}>OP</Avatar>
+     </div>
+   );
+ }
+diff --git a/docs/site/src/demos/avatars/avatars.md b/docs/site/src/demos/avatars/avatars.md
+index d67be145190e55..7fd577eabfaa0f 100644
+--- a/docs/site/src/demos/avatars/avatars.md
++++ b/docs/site/src/demos/avatars/avatars.md
+@@ -10,12 +10,12 @@ Image avatars can be created by passing standard `img` props `src` or `srcSet` i
+ 
+ ## Icon avatars
+ 
+-Icon avatars are created by passing an icon prop.
++Icon avatars are created by passing an icon as `children`.
+ 
+ {{demo='demos/avatars/IconAvatars.js'}}
+ 
+ ## Letter avatars
+ 
+-Avatars containing simple characters can be created by passing your string as the `icon` prop.
++Avatars containing simple characters can be created by passing your string as `children`.
+ 
+ {{demo='demos/avatars/LetterAvatars.js'}}
+diff --git a/docs/site/src/demos/chips/Chips.js b/docs/site/src/demos/chips/Chips.js
+new file mode 100644
+index 00000000000000..ef4e85e01e1c3c
+--- /dev/null
++++ b/docs/site/src/demos/chips/Chips.js
+@@ -0,0 +1,65 @@
++// @flow weak
++
++import React, { PropTypes } from 'react';
++import { createStyleSheet } from 'jss-theme-reactor';
++import Avatar from 'material-ui/Avatar';
++import Chip from 'material-ui/Chip';
++import Face from 'material-ui/svg-icons/face';
++import { grey } from 'material-ui/styles/colors';
++import avatarImage from 'docs/site/assets/images/uxceo-128.jpg';
++
++const styleSheet = createStyleSheet('Chips', () => ({
++  chip: {
++    margin: '0 8px',
++  },
++  svgIcon: {
++    color: grey[800],
++  },
++  row: {
++    display: 'flex',
++    justifyContent: 'center',
++  },
++}));
++
++function handleRequestDelete() {
++  alert('You clicked the delete icon.'); // eslint-ignore-line no-alert
++}
++
++function handleClick() {
++  alert('You clicked the Chip.'); // eslint-ignore-line no-alert
++}
++
++export default function Chips(props, context) {
++  const classes = context.styleManager.render(styleSheet);
++  return (
++    <div className={classes.row}>
++      <Chip
++        label="Basic Chip"
++        className={classes.chip}
++      />
++      <Chip
++        avatar={<Avatar>MB</Avatar>}
++        label="Clickable Chip"
++        onClick={handleClick}
++        className={classes.chip}
++      />
++      <Chip
++        avatar={<Avatar src={avatarImage} />}
++        label="Deletable Chip"
++        onRequestDelete={handleRequestDelete}
++        className={classes.chip}
++      />
++      <Chip
++        avatar={<Avatar><Face className={classes.svgIcon} /></Avatar>}
++        label="Clickable Deletable Chip"
++        onClick={handleClick}
++        onRequestDelete={handleRequestDelete}
++        className={classes.chip}
++      />
++    </div>
++  );
++}
++
++Chips.contextTypes = {
++  styleManager: PropTypes.object.isRequired,
++};
+diff --git a/docs/site/src/demos/chips/ChipsArray.js b/docs/site/src/demos/chips/ChipsArray.js
+new file mode 100644
+index 00000000000000..87189f7c64d225
+--- /dev/null
++++ b/docs/site/src/demos/chips/ChipsArray.js
+@@ -0,0 +1,73 @@
++// @flow weak
++
++import React, { Component, PropTypes } from 'react';
++import { createStyleSheet } from 'jss-theme-reactor';
++import Chip from 'material-ui/Chip';
++
++
++const styleSheet = createStyleSheet('ChipsArray', () => ({
++  chip: {
++    margin: '0 4px',
++  },
++  row: {
++    display: 'flex',
++    justifyContent: 'center',
++  },
++}));
++
++export default class ChipsArray extends Component {
++  static contextTypes = {
++    styleManager: PropTypes.object.isRequired,
++  };
++
++  state = { chipData: [
++    { key: 0, label: 'Angular' },
++    { key: 1, label: 'JQuery' },
++    { key: 2, label: 'Polymer' },
++    { key: 3, label: 'ReactJS' },
++    { key: 4, label: 'Vue.js' },
++  ] };
++
++  styles = {
++    chip: {
++      margin: 4,
++    },
++    wrapper: {
++      display: 'flex',
++      flexWrap: 'wrap',
++    },
++  };
++
++  handleRequestDelete = (key) => {
++    if (key === 3) {
++      alert('Why would you want to delete React?! :)'); // eslint-ignore-line no-alert
++      return;
++    }
++
++    const chipData = [...this.state.chipData];
++    const chipToDelete = chipData.indexOf(chipData.find((chip) => chip.key === key));
++    chipData.splice(chipToDelete, 1);
++    this.setState({ chipData });
++  };
++
++  render() {
++    const classes = this.context.styleManager.render(styleSheet);
++
++    const renderChip = (data) => {
++      return (
++        <Chip
++          label={data.label}
++          key={data.key}
++          onRequestDelete={() => this.handleRequestDelete(data.key)}
++          className={classes.chip}
++        />
++      );
++    };
++
++    return (
++      <div className={classes.row}>
++        {this.state.chipData.map(renderChip, this)}
++      </div>
++    );
++  }
++}
+diff --git a/docs/site/src/demos/chips/chips.md b/docs/site/src/demos/chips/chips.md
+new file mode 100644
+index 00000000000000..e656ab31dd14b4
+--- /dev/null
++++ b/docs/site/src/demos/chips/chips.md
+@@ -0,0 +1,28 @@
++# Chips
++
++[Chips](https://www.google.com/design/spec/components/chips.html) 
++represent complex entities in small blocks, such as a contact.
++
++While included here as a standalone component, the most common use will 
++be in some form of input, so some of the behaviour demonstrated here is 
++not shown in context.
++
++## Chip
++
++Examples of Chips, using an image Avatar, SVG Icon Avatar, "Letter" 
++and (string) Avatar.
++Chips with the `onClick` property defined change appearance on focus,
++hover, and click.
++
++Chips with the `onRequestDelete` property defined will display a delete
++icon which changes appearance on hover.
++
++{{demo='demos/chips/Chips.js'}}
++
++## Chip array
++An example of rendering multiple Chips from an array of values. 
++Deleting a chip removes it from the array. Note that since no 
++`onClick` property is defined, the Chip can be focused, but does not 
++gain depth while clicked or touched.
++
++{{demo='demos/chips/ChipsArray.js'}}
+diff --git a/docs/site/src/demos/lists/FolderList.js b/docs/site/src/demos/lists/FolderList.js
+index 79d9a05b9cdcbb..027aa7f7b059c9 100644
+--- a/docs/site/src/demos/lists/FolderList.js
++++ b/docs/site/src/demos/lists/FolderList.js
+@@ -24,11 +24,11 @@ function FolderList(props, context) {
+     <div className={classes.root}>
+       <List>
+         <ListItem button>
+-          <Avatar icon={<FolderIcon />} />
++          <Avatar><FolderIcon /></Avatar>
+           <ListItemText primary="Photos" secondary="Jan 9, 2016" />
+         </ListItem>
+         <ListItem button>
+-          <Avatar icon={<FolderIcon />} />
++          <Avatar><FolderIcon /></Avatar>
+           <ListItemText primary="Work" secondary="Jan 7, 2016" />
+         </ListItem>
+       </List>
+diff --git a/src/Avatar/Avatar.js b/src/Avatar/Avatar.js
+index 65c08e5cd45c1f..45f1c49d2e94b9 100644
+--- a/src/Avatar/Avatar.js
++++ b/src/Avatar/Avatar.js
+@@ -3,6 +3,7 @@
+ import React, { PropTypes } from 'react';
+ import { createStyleSheet } from 'jss-theme-reactor';
+ import classNames from 'classnames';
++import { emphasize } from '../styles/colorManipulator';
+ 
+ export const styleSheet = createStyleSheet('Avatar', (theme) => {
+   const { palette } = theme;
+@@ -14,13 +15,14 @@ export const styleSheet = createStyleSheet('Avatar', (theme) => {
+       justifyContent: 'center',
+       width: 40,
+       height: 40,
+-      fontSize: 24,
++      fontSize: 20,
+       borderRadius: '50%',
+       overflow: 'hidden',
++      userSelect: 'none',
+     },
+     defaultColor: {
+-      color: palette.getContrastText(palette.text.disabled),
+-      background: palette.text.disabled,
++      color: palette.background.default,
++      backgroundColor: emphasize(palette.background.default, 0.26),
+     },
+     img: {
+       maxWidth: '100%',
+@@ -34,8 +36,9 @@ export default function Avatar(props, context) {
+   const {
+     alt,
+     className: classNameProp,
++    children: childrenProp,
++    childrenClassName: childrenClassNameProp,
+     component,
+-    icon,
+     sizes,
+     src,
+     srcSet,
+@@ -44,9 +47,8 @@ export default function Avatar(props, context) {
+ 
+   const classes = context.styleManager.render(styleSheet);
+   const className = classNames(classes.root, {
+-    [classes.defaultColor]: icon && !src && !srcSet,
++    [classes.defaultColor]: childrenProp && !src && !srcSet,
+   }, classNameProp);
+-
+   const containerProps = {
+     className,
+     ...other,
+@@ -54,8 +56,13 @@ export default function Avatar(props, context) {
+ 
+   let children = null;
+ 
+-  if (icon) {
+-    children = icon;
++  if (childrenProp) {
++    if (childrenClassNameProp && React.isValidElement(childrenProp)) {
++      const childrenClassName = classNames(childrenClassNameProp, childrenProp.props.className);
++      children = React.cloneElement(childrenProp, { className: childrenClassName });
++    } else {
++      children = childrenProp;
++    }
+   } else if (src || srcSet) {
+     const imgProps = {
+       alt,
+@@ -76,18 +83,28 @@ Avatar.propTypes = {
+    * provide an alt attribute for the rendered `img` element.
+    */
+   alt: PropTypes.string,
++  /**
++   * Used to render icon or text elements inside the Avatar.
++   * `src` and `alt` props will not be used and no `img` will
++   * be rendered by default.
++   *
++   * This can be an element, or just a string.
++   */
++  children: PropTypes.node,
++  /**
++   * @ignore
++   * The className of the child element.
++   * Used by Chip to style the Avatar icon.
++   */
++  childrenClassName: PropTypes.string,
+   /**
+    * The CSS class name of the root element.
+    */
+   className: PropTypes.string,
+-  component: PropTypes.string,
+   /**
+-   * Supply a custom icon. `src` and `alt` props will
+-   * not be used and no `img` will be renderd by default.
+-   *
+-   * This can be a custom element, or even just a string.
++   * The component type of the root element.
+    */
+-  icon: PropTypes.node,
++  component: PropTypes.string,
+   /**
+    * sizes desc
+    */
+diff --git a/src/Avatar/Avatar.spec.js b/src/Avatar/Avatar.spec.js
+index 370483687d6561..45ae6ca78532bc 100644
+--- a/src/Avatar/Avatar.spec.js
++++ b/src/Avatar/Avatar.spec.js
+@@ -5,6 +5,7 @@ import React from 'react';
+ import { assert } from 'chai';
+ import { createShallowWithContext } from 'test/utils';
+ import Avatar, { styleSheet } from './Avatar';
++import FaceIcon from '../svg-icons/face';
+ 
+ describe('<Avatar />', () => {
+   let shallow;
+@@ -56,27 +57,99 @@ describe('<Avatar />', () => {
+     });
+   });
+ 
+-  describe('icon avatar', () => {
++  describe('font icon avatar', () => {
+     let wrapper;
+ 
+     before(() => {
+       wrapper = shallow(
+         <Avatar
+-          icon={<span className="my-icon-font">icon</span>}
+           className="my-avatar"
+           data-my-prop="woof"
+-        />,
++          childrenClassName="my-children"
++        >
++          <span className="my-icon-font">icon</span>
++        </Avatar>,
+       );
+     });
+ 
+-    it('should render a div containing the custom icon', () => {
++    it('should render a div containing an font icon', () => {
++      const icon = wrapper.childAt(0);
+       assert.strictEqual(wrapper.is('div'), true, 'should be a div');
+-      assert.strictEqual(wrapper.childAt(0).is('span'), true, 'should be a span');
+-      assert.strictEqual(wrapper.childAt(0).hasClass('my-icon-font'), true);
+-      assert.strictEqual(wrapper.childAt(0).text(), 'icon');
++      assert.strictEqual(icon.is('span'), true, 'should be a span');
++      assert.strictEqual(icon.hasClass('my-icon-font'), true);
++      assert.strictEqual(icon.text(), 'icon');
+     });
+ 
+-    it('should spread custom props merge user classes to the root node', () => {
++    it('should merge user classes & spread custom props to the root node', () => {
++      assert.strictEqual(wrapper.hasClass(classes.root), true);
++      assert.strictEqual(wrapper.hasClass('my-avatar'), true);
++      assert.strictEqual(wrapper.prop('data-my-prop'), 'woof');
++    });
++
++    it('should apply the defaultColor class', () => {
++      assert.strictEqual(wrapper.hasClass(classes.defaultColor), true);
++    });
++
++    it('should apply the childrenClassName class', () => {
++      assert.strictEqual(wrapper.childAt(0).hasClass('my-children'), true);
++    });
++  });
++
++  describe('svg icon avatar', () => {
++    let wrapper;
++
++    before(() => {
++      wrapper = shallow(
++        <Avatar
++          className="my-avatar"
++          data-my-prop="woof"
++          childrenClassName="my-children"
++        >
++          <FaceIcon />
++        </Avatar>,
++      );
++    });
++
++    it('should render a div containing an svg icon', () => {
++      assert.strictEqual(wrapper.is('div'), true, 'should be a div');
++      assert.strictEqual(wrapper.childAt(0).is('pure(Face)'), true, 'should be an svg icon');
++    });
++
++    it('should merge user classes & spread custom props to the root node', () => {
++      assert.strictEqual(wrapper.hasClass(classes.root), true);
++      assert.strictEqual(wrapper.hasClass('my-avatar'), true);
++      assert.strictEqual(wrapper.prop('data-my-prop'), 'woof');
++    });
++
++    it('should apply the defaultColor class', () => {
++      assert.strictEqual(wrapper.hasClass(classes.defaultColor), true);
++    });
++
++    it('should apply the childrenClassName class', () => {
++      assert.strictEqual(wrapper.childAt(0).hasClass('my-children'), true);
++    });
++  });
++
++  describe('text avatar', () => {
++    let wrapper;
++
++    before(() => {
++      wrapper = shallow(
++        <Avatar
++          className="my-avatar"
++          data-my-prop="woof"
++        >
++          OT
++        </Avatar>,
++      );
++    });
++
++    it('should render a div containing a string', () => {
++      assert.strictEqual(wrapper.is('div'), true, 'should be a div');
++      assert.strictEqual(wrapper.childAt(0).text(), 'OT');
++    });
++
++    it('should merge user classes & spread custom props to the root node', () => {
+       assert.strictEqual(wrapper.hasClass(classes.root), true);
+       assert.strictEqual(wrapper.hasClass('my-avatar'), true);
+       assert.strictEqual(wrapper.prop('data-my-prop'), 'woof');
+diff --git a/src/Chip/Chip.js b/src/Chip/Chip.js
+new file mode 100644
+index 00000000000000..f40a97586503b0
+--- /dev/null
++++ b/src/Chip/Chip.js
+@@ -0,0 +1,217 @@
++// @flow weak
++
++import React, { cloneElement, isValidElement, PropTypes } from 'react';
++import { createStyleSheet } from 'jss-theme-reactor';
++import classNames from 'classnames';
++import keycode from 'keycode';
++import DeleteIcon from '../svg-icons/cancel';
++import { emphasize, fade } from '../styles/colorManipulator';
++
++export const styleSheet = createStyleSheet('Chip', (theme) => {
++  const { palette, shadows, transitions } = theme;
++  const height = 32;
++  const backgroundColor = emphasize(palette.background.default, 0.12);
++  const deleteIconColor = fade(palette.text.primary, 0.26);
++  return {
++    root: {
++      fontFamily: 'inherit', // Override `button` default system font
++      fontSize: 13,
++      display: 'flex',
++      alignItems: 'center',
++      justifyContent: 'center',
++      height,
++      color: palette.getContrastText(backgroundColor),
++      backgroundColor,
++      borderRadius: height / 2,
++      whiteSpace: 'nowrap',
++      width: 'fit-content',
++      transition: transitions.create(),
++      cursor: 'default', // label will inherit this from root, then `clickable` class overrides this for both
++      outline: 'none', // No outline on focused element in Chrome (as triggered by tabIndex prop)
++      border: 'none', // Remove `button` border
++      padding: 0, // Remove `button` padding
++    },
++    clickable: {
++      '&:hover, &:focus': {
++        backgroundColor: emphasize(backgroundColor, 0.08),
++      },
++      '&:active': {
++        boxShadow: shadows[1],
++        backgroundColor: emphasize(backgroundColor, 0.12),
++      },
++      cursor: 'pointer',
++    },
++    deletable: {
++      '&:focus': {
++        backgroundColor: emphasize(backgroundColor, 0.08),
++      },
++    },
++    avatar: {
++      marginRight: -4,
++      width: 32,
++      height: 32,
++      fontSize: 16,
++    },
++    avatarChildren: {
++      width: 19,
++      height: 19,
++    },
++    label: {
++      paddingLeft: 12,
++      paddingRight: 12,
++      userSelect: 'none',
++      whiteSpace: 'nowrap',
++      cursor: 'inherit',
++    },
++    deleteIcon: {
++      color: deleteIconColor,
++      '&:hover': {
++        color: fade(deleteIconColor, 0.4),
++      },
++      cursor: 'pointer',
++      margin: '0 4px 0 -8px',
++    },
++  };
++});
++
++/**
++ * Chips represent complex entities in small blocks, such as a contact.
++ *
++ * ```jsx
++ * <Chip avatar={<Avatar>} label="Label text" />
++ * ```
++ */
++export default function Chip(props, context) {
++  const {
++    avatar: avatarProp,
++    className: classNameProp,
++    deleteIconClassName: deleteIconClassNameProp,
++    label,
++    labelClassName: labelClassNameProp,
++    onClick,
++    onKeyDown,
++    onRequestDelete,
++    tabIndex: tabIndexProp,
++    ...other
++  } = props;
++
++  let chipRef;
++
++  const handleDeleteIconClick = (event) => {
++    // Stop the event from bubbling up to the `Chip`
++    event.stopPropagation();
++    onRequestDelete(event);
++  };
++
++  const handleKeyDown = (event) => {
++    const key = keycode(event);
++
++    if (onClick && (key === 'space' || key === 'enter')) {
++      event.preventDefault();
++      onClick(event);
++    } else if (onRequestDelete && key === 'backspace') {
++      event.preventDefault();
++      onRequestDelete(event);
++    } else if (key === 'esc') {
++      event.preventDefault();
++      chipRef.blur();
++    }
++    onKeyDown(event);
++  };
++
++  const classes = context.styleManager.render(styleSheet);
++  const className = classNames(
++    classes.root,
++    { [classes.clickable]: onClick },
++    { [classes.deletable]: onRequestDelete },
++    classNameProp,
++  );
++  const labelClassName = classNames(classes.label, labelClassNameProp);
++
++  let deleteIcon = null;
++  if (onRequestDelete) {
++    const deleteIconClassName = classNames(classes.deleteIcon, deleteIconClassNameProp);
++    deleteIcon = <DeleteIcon className={deleteIconClassName} onClick={handleDeleteIconClick} />;
++  }
++
++  let avatar = null;
++  if (avatarProp && isValidElement(avatarProp)) {
++    const avatarClassName = classNames(classes.avatar, avatarProp.props.className);
++    const avatarChildrenClassName = classNames(classes.avatarChildren, avatarProp.props.childrenClassName);
++
++    avatar = cloneElement(avatarProp, {
++      className: avatarClassName,
++      childrenClassName: avatarChildrenClassName,
++    });
++  }
++
++  const tabIndex = (onClick || onRequestDelete) ? tabIndexProp : undefined;
++
++  return (
++    <button
++      className={className}
++      onClick={onClick}
++      tabIndex={tabIndex}
++      onKeyDown={handleKeyDown}
++      ref={(c) => { chipRef = c; }}
++      {...other}
++    >
++      {avatar}
++      <span className={labelClassName}>{label}</span>
++      {deleteIcon}
++    </button>
++  );
++}
++
++Chip.propTypes = {
++  /**
++   * Avatar element.
++   */
++  avatar: PropTypes.node,
++  /**
++   * CSS `className` of the root element.
++   */
++  className: PropTypes.string,
++  /**
++   * CSS `className` of the delete icon element.
++   */
++  deleteIconClassName: PropTypes.string,
++  /**
++   * The label text.
++   */
++  label: PropTypes.string,
++  /**
++   * CSS `className` of the label.
++   */
++  labelClassName: PropTypes.string,
++  /**
++   * @ignore
++   * Callback function fired when the `Chip` element is clicked.
++   * If set, the chip will by styled for hover focus and active states.
++   * @param {object} event `onClick` event targeting the root element.
++   */
++  onClick: PropTypes.func,
++  /**
++   * @ignore
++   */
++  onKeyDown: PropTypes.func,
++  /**
++   * Callback function fired when the delete icon is clicked.
++   * If set, the delete icon will be shown.
++   * @param {object} event `onClick` event targeting the delete icon element.
++   */
++  onRequestDelete: PropTypes.func,
++  /**
++   * @ignore
++   */
++  tabIndex: PropTypes.number,
++};
++
++Chip.contextTypes = {
++  styleManager: PropTypes.object.isRequired,
++};
++
++Chip.defaultProps = {
++  onKeyDown: () => {},
++  tabIndex: 0,
++};
+diff --git a/src/Chip/Chip.spec.js b/src/Chip/Chip.spec.js
+new file mode 100644
+index 00000000000000..a7768b8e3314c2
+--- /dev/null
++++ b/src/Chip/Chip.spec.js
+@@ -0,0 +1,139 @@
++// @flow weak
++/* eslint-env mocha */
++
++import React from 'react';
++import { assert } from 'chai';
++import { createShallowWithContext } from 'test/utils';
++import Chip, { styleSheet } from './Chip.js';
++import Avatar from '../Avatar/Avatar.js';
++
++describe('<Chip />', () => {
++  let shallow;
++  let classes;
++
++  before(() => {
++    shallow = createShallowWithContext();
++    classes = shallow.context.styleManager.render(styleSheet);
++  });
++
++  describe('text only', () => {
++    let wrapper;
++
++    before(() => {
++      wrapper = shallow(
++        <Chip
++          className="my-Chip"
++          data-my-prop="woof"
++        >
++          Text Chip
++        </Chip>,
++      );
++    });
++
++    it('should render a button containing a span', () => {
++      assert.strictEqual(wrapper.is('button'), true, 'should be a button');
++      assert.strictEqual(wrapper.childAt(0).is('span'), true, 'should be a span');
++    });
++
++    it('should merge user classes & spread custom props to the root node', () => {
++      assert.strictEqual(wrapper.hasClass(classes.root), true);
++      assert.strictEqual(wrapper.hasClass('my-Chip'), true);
++      assert.strictEqual(wrapper.prop('data-my-prop'), 'woof');
++    });
++
++    it('should not have a tabIndex prop', () => {
++      assert.strictEqual(wrapper.prop('tabIndex'), undefined);
++    });
++  });
++
++  describe('clickable text chip', () => {
++    let wrapper;
++    let handleClick;
++
++    before(() => {
++      handleClick = () => {};
++      wrapper = shallow(
++        <Chip
++          className="my-Chip"
++          data-my-prop="woof"
++          onClick={handleClick}
++        >
++          Text Chip
++        </Chip>,
++      );
++    });
++
++    it('should render a button containing a span', () => {
++      assert.strictEqual(wrapper.is('button'), true, 'should be a button');
++      assert.strictEqual(wrapper.childAt(0).is('span'), true, 'should be a span');
++    });
++
++    it('should merge user classes & spread custom props to the root node', () => {
++      assert.strictEqual(wrapper.hasClass(classes.root), true);
++      assert.strictEqual(wrapper.hasClass('my-Chip'), true);
++      assert.strictEqual(wrapper.prop('data-my-prop'), 'woof');
++      assert.strictEqual(wrapper.prop('onClick'), handleClick);
++    });
++
++    it('should have a tabIndex prop with value 0', () => {
++      assert.strictEqual(wrapper.prop('tabIndex'), 0);
++    });
++
++    it('should apply user value of tabIndex', () => {
++      wrapper = shallow(
++        <Chip
++          onClick={() => {}}
++          tabIndex={5} // eslint-disable-line jsx-a11y/tabindex-no-positive
++        >
++          Text Chip
++        </Chip>,
++      );
++      assert.strictEqual(wrapper.prop('tabIndex'), 5);
++    });
++  });
++
++  describe('deletable Avatar chip', () => {
++    let wrapper;
++
++    before(() => {
++      wrapper = shallow(
++        <Chip
++          avatar={<Avatar
++            className="my-Avatar"
++            data-my-prop="woof"
++          >
++            MB
++          </Avatar>}
++          label="Text Avatar Chip"
++          onRequestDelete={() => {}}
++          className="my-Chip"
++          data-my-prop="woof"
++        />,
++      );
++    });
++
++    it('should render a button containing an Avatar, span and svg', () => {
++      assert.strictEqual(wrapper.is('button'), true, 'should be a button');
++      assert.strictEqual(wrapper.childAt(0).is('Avatar'), true, 'should have an Avatar');
++      assert.strictEqual(wrapper.childAt(1).is('span'), true, 'should have a span');
++      assert.strictEqual(wrapper.childAt(2).is('pure(Cancel)'), true,
++        'should be an svg icon');
++    });
++
++    it('should merge user classes & spread custom props to the root node', () => {
++      assert.strictEqual(wrapper.hasClass(classes.root), true);
++      assert.strictEqual(wrapper.hasClass('my-Chip'), true);
++      assert.strictEqual(wrapper.prop('data-my-prop'), 'woof');
++    });
++
++    it('should merge user classes & spread custom props to the Avatar node', () => {
++      assert.strictEqual(wrapper.childAt(0).hasClass(classes.avatar), true);
++      assert.strictEqual(wrapper.childAt(0).hasClass('my-Avatar'), true);
++      assert.strictEqual(wrapper.childAt(0).prop('data-my-prop'), 'woof');
++    });
++
++    it('should have a tabIndex prop with value 0', () => {
++      assert.strictEqual(wrapper.prop('tabIndex'), 0);
++    });
++  });
++});
+diff --git a/src/Chip/index.js b/src/Chip/index.js
+new file mode 100644
+index 00000000000000..ac430fec239f2f
+--- /dev/null
++++ b/src/Chip/index.js
+@@ -0,0 +1,4 @@
++/* eslint-disable flowtype/require-valid-file-annotation */
++
++export default from './Chip';
++export Chip from './Chip';
+diff --git a/test/regressions/screenshots/baseline/Avatar/IconAvatar/chrome-53.0.2785.143-linux.png b/test/regressions/screenshots/baseline/Avatar/IconAvatar/chrome-53.0.2785.143-linux.png
+new file mode 100644
+index 00000000000000..febc5e8c3822c9
+Binary files /dev/null and b/test/regressions/screenshots/baseline/Avatar/IconAvatar/chrome-53.0.2785.143-linux.png differ
+diff --git a/test/regressions/screenshots/baseline/Avatar/LetterAvatar/chrome-53.0.2785.143-linux.png b/test/regressions/screenshots/baseline/Avatar/LetterAvatar/chrome-53.0.2785.143-linux.png
+index f5169da00a4d8e..f0c0f766988871 100644
+Binary files a/test/regressions/screenshots/baseline/Avatar/LetterAvatar/chrome-53.0.2785.143-linux.png and b/test/regressions/screenshots/baseline/Avatar/LetterAvatar/chrome-53.0.2785.143-linux.png differ
+diff --git a/test/regressions/screenshots/baseline/Chip/DeletableAvatarChip/chrome-53.0.2785.143-linux.png b/test/regressions/screenshots/baseline/Chip/DeletableAvatarChip/chrome-53.0.2785.143-linux.png
+new file mode 100644
+index 00000000000000..d08cbb10ebb34c
+Binary files /dev/null and b/test/regressions/screenshots/baseline/Chip/DeletableAvatarChip/chrome-53.0.2785.143-linux.png differ
+diff --git a/test/regressions/screenshots/baseline/ListItem/AvatarListItem/chrome-53.0.2785.143-linux.png b/test/regressions/screenshots/baseline/ListItem/AvatarListItem/chrome-53.0.2785.143-linux.png
+index d32c7c537d1bdc..5c629db3ebeb48 100644
+Binary files a/test/regressions/screenshots/baseline/ListItem/AvatarListItem/chrome-53.0.2785.143-linux.png and b/test/regressions/screenshots/baseline/ListItem/AvatarListItem/chrome-53.0.2785.143-linux.png differ
+diff --git a/test/regressions/site/src/tests/Avatar/IconAvatar.js b/test/regressions/site/src/tests/Avatar/IconAvatar.js
+new file mode 100644
+index 00000000000000..5416cba016c02c
+--- /dev/null
++++ b/test/regressions/site/src/tests/Avatar/IconAvatar.js
+@@ -0,0 +1,18 @@
++// @flow weak
++
++import React from 'react';
++import Avatar from 'material-ui/Avatar';
++import { deepOrange } from 'material-ui/styles/colors';
++
++export default function IconAvatar() {
++  return (
++    <Avatar
++      style={{
++        color: '#fff',
++        backgroundColor: deepOrange[500],
++      }}
++    >
++      <span className="material-icons">favorite</span>
++    </Avatar>
++  );
++}
+diff --git a/test/regressions/site/src/tests/Avatar/ImageAvatar.js b/test/regressions/site/src/tests/Avatar/ImageAvatar.js
+index 20071cb2e6a2d8..068bf8f1d83b47 100644
+--- a/test/regressions/site/src/tests/Avatar/ImageAvatar.js
++++ b/test/regressions/site/src/tests/Avatar/ImageAvatar.js
+@@ -1,14 +1,25 @@
+ // @flow weak
+ 
+-import React from 'react';
++import React, { Component }from 'react';
+ import Avatar from 'material-ui/Avatar';
+ import image from './ImageAvatar.jpg';
+ 
+-export default function ImageAvatar() {
+-  return (
+-    <Avatar
+-      alt="Remy Sharp"
+-      src={image}
+-    />
+-  );
++export default class ImageAvatar extends Component {
++
++  sleep(ms) {
++    return new Promise(resolve => setTimeout(resolve, ms));
++  }
++
++  componentDidMount() {
++    this.sleep(1000);
++  }
++
++  render() {
++    return (
++      <Avatar
++        alt="Remy Sharp"
++        src={image}
++      />
++    );
++  }
+ }
+diff --git a/test/regressions/site/src/tests/Avatar/LetterAvatar.js b/test/regressions/site/src/tests/Avatar/LetterAvatar.js
+index 638135a5934bdd..bcac0532fc519b 100644
+--- a/test/regressions/site/src/tests/Avatar/LetterAvatar.js
++++ b/test/regressions/site/src/tests/Avatar/LetterAvatar.js
+@@ -4,14 +4,15 @@ import React from 'react';
+ import Avatar from 'material-ui/Avatar';
+ import { deepOrange } from 'material-ui/styles/colors';
+ 
+-export default function ImageAvatar() {
++export default function LetterAvatar() {
+   return (
+     <Avatar
+-      icon="N"
+       style={{
+         color: '#fff',
+         backgroundColor: deepOrange[500],
+       }}
+-    />
++    >
++      N
++    </Avatar>
+   );
+ }
+diff --git a/test/regressions/site/src/tests/Chip/DeletableAvatarChip.js b/test/regressions/site/src/tests/Chip/DeletableAvatarChip.js
+new file mode 100644
+index 00000000000000..931da73af25f55
+--- /dev/null
++++ b/test/regressions/site/src/tests/Chip/DeletableAvatarChip.js
+@@ -0,0 +1,15 @@
++// @flow weak
++
++import React from 'react';
++import Avatar from 'material-ui/Avatar';
++import Chip from 'material-ui/Chip';
++
++export default function DeletableAvatarChip() {
++  return (
++    <Chip
++      avatar={<Avatar>MB</Avatar>}
++      label="SvgIcon Chip"
++      onRequestDelete={() => {}}
++    />
++  );
++}
+diff --git a/test/regressions/site/src/tests/ListItem/AvatarListItem.js b/test/regressions/site/src/tests/ListItem/AvatarListItem.js
+index 77ea042b3bb158..93ac8e5067b2dc 100644
+--- a/test/regressions/site/src/tests/ListItem/AvatarListItem.js
++++ b/test/regressions/site/src/tests/ListItem/AvatarListItem.js
+@@ -11,7 +11,7 @@ export default function AvatarListItem() {
+   return (
+     <div style={{ background: '#fff', width: 300 }}>
+       <ListItem>
+-        <Avatar icon={<span className="material-icons">folder</span>} />
++        <Avatar><span className="material-icons">folder</span></Avatar>
+         <ListItemText primary="Avatar" />
+       </ListItem>
+     </div>

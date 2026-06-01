@@ -1,0 +1,839 @@
+diff --git a/apps/bare-expo/App.tsx b/apps/bare-expo/App.tsx
+index be7dd0ea7d1283..e533fac7696e2e 100644
+--- a/apps/bare-expo/App.tsx
++++ b/apps/bare-expo/App.tsx
+@@ -1,10 +1,9 @@
+ import { ThemeProvider } from 'ThemeProvider';
+ import BenchmarkHelper from 'benchmark-helper';
+-import { ObserveRoot } from 'expo-observe';
++import { Observe, ObserveRoot } from 'expo-observe';
+ import * as Splashscreen from 'expo-splash-screen';
+ import React from 'react';
+ import * as DevMenu from 'expo-dev-menu';
+-import ExpoObserve from 'expo-observe';
+ 
+ import MainNavigator, { optionalRequire } from './MainNavigator';
+ 
+@@ -67,7 +66,7 @@ function useLoaded() {
+   return isLoaded;
+ }
+ 
+-ExpoObserve.configure({
++Observe.configure({
+   dispatchingEnabled: true,
+   sampleRate: 0.9,
+   integrations: {
+diff --git a/apps/observe-tester/app/(tabs)/(metrics)/index.tsx b/apps/observe-tester/app/(tabs)/(metrics)/index.tsx
+index f207cc84c5f828..7837b6ab0581d2 100644
+--- a/apps/observe-tester/app/(tabs)/(metrics)/index.tsx
++++ b/apps/observe-tester/app/(tabs)/(metrics)/index.tsx
+@@ -1,5 +1,5 @@
+ import AppMetrics from 'expo-app-metrics';
+-import ExpoObserve, { useObserve } from 'expo-observe';
++import { Observe, useObserve } from 'expo-observe';
+ import { checkForUpdateAsync, fetchUpdateAsync, reloadAsync, useUpdates } from 'expo-updates';
+ import { Platform, ScrollView, StyleSheet, Text } from 'react-native';
+ 
+@@ -18,7 +18,7 @@ export default function Index() {
+   }
+ 
+   async function handleDispatchEvents() {
+-    await ExpoObserve.dispatchEvents();
++    await Observe.dispatchEvents();
+   }
+ 
+   async function handleClearStoredEntries() {
+diff --git a/apps/observe-tester/app/_layout.tsx b/apps/observe-tester/app/_layout.tsx
+index 8084517e3ea598..550d5ef71c6328 100644
+--- a/apps/observe-tester/app/_layout.tsx
++++ b/apps/observe-tester/app/_layout.tsx
+@@ -1,9 +1,9 @@
+ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+-import ExpoObserve, { ObserveRoot } from 'expo-observe';
++import { Observe, ObserveRoot } from 'expo-observe';
+ import { Stack } from 'expo-router';
+ import { useColorScheme } from 'react-native';
+ 
+-ExpoObserve.configure({
++Observe.configure({
+   environment: 'custom-env',
+   dispatchingEnabled: true,
+   dispatchInDebug: true,
+diff --git a/packages/expo-observe/android/src/main/java/expo/modules/observe/ObserveModule.kt b/packages/expo-observe/android/src/main/java/expo/modules/observe/ObserveModule.kt
+index 2e283aed392729..e9aeac1bddafcd 100644
+--- a/packages/expo-observe/android/src/main/java/expo/modules/observe/ObserveModule.kt
++++ b/packages/expo-observe/android/src/main/java/expo/modules/observe/ObserveModule.kt
+@@ -3,7 +3,6 @@ package expo.modules.observe
+ import android.content.Context
+ import android.util.Log
+ import expo.modules.appmetrics.AppMetricsModule
+-import expo.modules.appmetrics.GlobalAttributes
+ import expo.modules.interfaces.constants.ConstantsInterface
+ import expo.modules.kotlin.exception.Exceptions
+ import expo.modules.kotlin.functions.Coroutine
+@@ -75,10 +74,6 @@ class ObserveModule : Module() {
+         resolvedEnvironment?.let { appMetricsModule.setEnvironment(it) }
+       }
+ 
+-      Function("setGlobalAttributes") { attributes: Map<String, Any?>? ->
+-        GlobalAttributes.set(attributes)
+-      }
+-
+       Function("setBundleDefaults") { defaults: BundleDefaults ->
+         // Empty environment means JS bypassed both `process.env.NODE_ENV` and the
+         // `?? 'production'` fallback. Refuse rather than persist an empty string,
+diff --git a/packages/expo-observe/build/index.d.ts b/packages/expo-observe/build/index.d.ts
+index e2db509086f1de..4607c6ead6fff0 100644
+--- a/packages/expo-observe/build/index.d.ts
++++ b/packages/expo-observe/build/index.d.ts
+@@ -1,6 +1,9 @@
++import Observe from './module';
+ export { default as AppMetrics } from 'expo-app-metrics';
+ export { ObserveRoot } from './ObserveRoot';
+-export { default } from './module';
+-export * from './types';
++export { Observe };
++/** @deprecated Import the named `Observe` export instead. */
++export default Observe;
++export type { ObserveAttribute, ObserveAttributes, ObserveConfig, ObserveIntegrationsConfig, } from './types';
+ export { useObserve } from './useObserve';
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/index.d.ts.map b/packages/expo-observe/build/index.d.ts.map
+index 9dad5e8bba0c57..a83362cf4041ca 100644
+--- a/packages/expo-observe/build/index.d.ts.map
++++ b/packages/expo-observe/build/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,OAAO,IAAI,UAAU,EAAE,MAAM,kBAAkB,CAAC;AACzD,OAAO,EAAE,WAAW,EAAE,MAAM,eAAe,CAAC;AAO5C,OAAO,EAAE,OAAO,EAAE,MAAM,UAAU,CAAC;AACnC,cAAc,SAAS,CAAC;AACxB,OAAO,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,UAAU,CAAC;AAE/B,OAAO,EAAE,OAAO,IAAI,UAAU,EAAE,MAAM,kBAAkB,CAAC;AACzD,OAAO,EAAE,WAAW,EAAE,MAAM,eAAe,CAAC;AAO5C,OAAO,EAAE,OAAO,EAAE,CAAC;AAEnB,6DAA6D;AAC7D,eAAe,OAAO,CAAC;AAEvB,YAAY,EACV,gBAAgB,EAChB,iBAAiB,EACjB,aAAa,EACb,yBAAyB,GAC1B,MAAM,SAAS,CAAC;AACjB,OAAO,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/module.d.ts b/packages/expo-observe/build/module.d.ts
+index 7088006f2a067a..a7332c9aec3552 100644
+--- a/packages/expo-observe/build/module.d.ts
++++ b/packages/expo-observe/build/module.d.ts
+@@ -1,4 +1,4 @@
+-import type { ExpoObserveModuleType } from './types';
+-declare const ExpoObserve: ExpoObserveModuleType;
+-export default ExpoObserve;
++import type { ObserveModule } from './types';
++declare const Observe: ObserveModule;
++export default Observe;
+ //# sourceMappingURL=module.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/module.d.ts.map b/packages/expo-observe/build/module.d.ts.map
+index 774338c70985e9..0046d8de57ec5d 100644
+--- a/packages/expo-observe/build/module.d.ts.map
++++ b/packages/expo-observe/build/module.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"module.d.ts","sourceRoot":"","sources":["../src/module.ts"],"names":[],"mappings":"AAMA,OAAO,KAAK,EAAU,qBAAqB,EAAE,MAAM,SAAS,CAAC;AAI7D,QAAA,MAAM,WAAW,EAAE,qBAuCjB,CAAC;AAEH,eAAe,WAAW,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"module.d.ts","sourceRoot":"","sources":["../src/module.ts"],"names":[],"mappings":"AAOA,OAAO,KAAK,EAAiB,aAAa,EAAE,MAAM,SAAS,CAAC;AAI5D,QAAA,MAAM,OAAO,EAAE,aA0Cb,CAAC;AAEH,eAAe,OAAO,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/module.web.d.ts b/packages/expo-observe/build/module.web.d.ts
+index 158db4dbb8b5e2..df6eb8bcd093e1 100644
+--- a/packages/expo-observe/build/module.web.d.ts
++++ b/packages/expo-observe/build/module.web.d.ts
+@@ -1,9 +1,12 @@
+ import { NativeModule } from 'expo';
+-import type { Config, ExpoObserveModuleType, ObserveAttributes } from './types';
+-export * from './types';
+-declare class ExpoObserveModule extends NativeModule implements ExpoObserveModuleType {
++import { type LogEventOptions, type MetricAttributes } from 'expo-app-metrics';
++import type { ObserveConfig, ObserveModule, ObserveAttributes } from './types';
++declare class ExpoObserveModule extends NativeModule implements ObserveModule {
+     dispatchEvents(): Promise<void>;
+-    configure(config: Config): void;
++    configure(config: ObserveConfig): void;
++    logEvent(name: string, options?: LogEventOptions): void;
++    markFirstRender(): void;
++    markInteractive(attributes?: MetricAttributes): void;
+     setGlobalAttributes(attributes?: ObserveAttributes | null): void;
+     setBundleDefaults(defaults: {
+         environment: string;
+diff --git a/packages/expo-observe/build/module.web.d.ts.map b/packages/expo-observe/build/module.web.d.ts.map
+index 4bd662de065b13..8171f387a21e3f 100644
+--- a/packages/expo-observe/build/module.web.d.ts.map
++++ b/packages/expo-observe/build/module.web.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"module.web.d.ts","sourceRoot":"","sources":["../src/module.web.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,YAAY,EAAqB,MAAM,MAAM,CAAC;AAEvD,OAAO,KAAK,EAAE,MAAM,EAAE,qBAAqB,EAAE,iBAAiB,EAAE,MAAM,SAAS,CAAC;AAEhF,cAAc,SAAS,CAAC;AAExB,cAAM,iBAAkB,SAAQ,YAAa,YAAW,qBAAqB;IACrE,cAAc;IACpB,SAAS,CAAC,MAAM,EAAE,MAAM,GAAG,IAAI;IAC/B,mBAAmB,CAAC,UAAU,CAAC,EAAE,iBAAiB,GAAG,IAAI,GAAG,IAAI;IAChE,iBAAiB,CAAC,QAAQ,EAAE;QAAE,WAAW,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,OAAO,CAAA;KAAE,GAAG,IAAI;CAC7E;;AAED,wBAAmE"}
+\ No newline at end of file
++{"version":3,"file":"module.web.d.ts","sourceRoot":"","sources":["../src/module.web.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,YAAY,EAAqB,MAAM,MAAM,CAAC;AACvD,OAAmB,EAAE,KAAK,eAAe,EAAE,KAAK,gBAAgB,EAAE,MAAM,kBAAkB,CAAC;AAE3F,OAAO,KAAK,EAAE,aAAa,EAAE,aAAa,EAAE,iBAAiB,EAAE,MAAM,SAAS,CAAC;AAE/E,cAAM,iBAAkB,SAAQ,YAAa,YAAW,aAAa;IAC7D,cAAc;IACpB,SAAS,CAAC,MAAM,EAAE,aAAa,GAAG,IAAI;IACtC,QAAQ,CAAC,IAAI,EAAE,MAAM,EAAE,OAAO,CAAC,EAAE,eAAe,GAAG,IAAI;IAGvD,eAAe,IAAI,IAAI;IAGvB,eAAe,CAAC,UAAU,CAAC,EAAE,gBAAgB,GAAG,IAAI;IAGpD,mBAAmB,CAAC,UAAU,CAAC,EAAE,iBAAiB,GAAG,IAAI,GAAG,IAAI;IAGhE,iBAAiB,CAAC,QAAQ,EAAE;QAAE,WAAW,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,OAAO,CAAA;KAAE,GAAG,IAAI;CAC7E;;AAED,wBAAmE"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/types.d.ts b/packages/expo-observe/build/types.d.ts
+index 4a8be6facf5aa0..bdcb5b969221da 100644
+--- a/packages/expo-observe/build/types.d.ts
++++ b/packages/expo-observe/build/types.d.ts
+@@ -1,4 +1,5 @@
+-import type { LogAttributeValue } from 'expo-app-metrics';
++import type { NativeModule } from 'expo';
++import type { LogAttributeValue, LogEventOptions, MetricAttributes } from 'expo-app-metrics';
+ /**
+  * Value types accepted as attribute values in `setGlobalAttributes` and the
+  * other Observe APIs. Strings, numbers, and booleans are stored as typed
+@@ -10,7 +11,7 @@ export type ObserveAttribute = LogAttributeValue;
+  * other Observe APIs that take a free-form attributes payload.
+  */
+ export type ObserveAttributes = Record<string, ObserveAttribute>;
+-export type Config = {
++export type ObserveConfig = {
+     /**
+      * The environment for observability events
+      *
+@@ -60,9 +61,9 @@ export type Config = {
+     /**
+      * Opt in to per-integration behavior.
+      */
+-    integrations?: IntegrationsConfig;
++    integrations?: ObserveIntegrationsConfig;
+ };
+-export interface IntegrationsConfig {
++export type ObserveIntegrationsConfig = {
+     /**
+      * Enables the `expo-router` integration, which records navigation metrics
+      * (`cold_ttr`, `warm_ttr`, `tti`) from router state changes.
+@@ -83,13 +84,37 @@ export interface IntegrationsConfig {
+      * @default false
+      */
+     'react-navigation'?: boolean;
+-}
+-export interface ExpoObserveModuleType {
++};
++export declare class ObserveModule extends NativeModule {
+     dispatchEvents(): Promise<void>;
+     /**
+      * Configures observability settings.
+      */
+-    configure(config: Config): void;
++    configure(config: ObserveConfig): void;
++    /**
++     * Records a log event against the current main session. The event is
++     * persisted locally and dispatched on the next `dispatchEvents()` flush.
++     *
++     * Severity defaults to `"info"` when not provided.
++     *
++     * @param name Event name.
++     * @param options Optional body, attributes, and severity overrides.
++     */
++    logEvent(name: string, options?: LogEventOptions): void;
++    /**
++     * Marks the first render of the app. Used to compute the `cold_ttr` and
++     * `warm_ttr` metrics.
++     */
++    markFirstRender(): void;
++    /**
++     * Marks the moment the app becomes interactive. Used to compute the `tti`
++     * metric. Custom `routeName` and `params` can be attached via `attributes`.
++     *
++     * > Note: When the `expo-router` or `@react-navigation/native` integration
++     * > is active, prefer `useObserve().markInteractive(...)` — the hook fills
++     * > in `routeName` from the current route, while this raw call does not.
++     */
++    markInteractive(attributes?: MetricAttributes): void;
+     /**
+      * Sets attributes merged into every subsequent metric and log event.
+      * Per-record keys win on collision. Pass `null`, `undefined`, or an empty
+@@ -97,7 +122,7 @@ export interface ExpoObserveModuleType {
+      *
+      * @example
+      * ```ts
+-     * ExpoObserve.setGlobalAttributes({
++     * Observe.setGlobalAttributes({
+      *   subscription_tier: 'pro',
+      *   experiment_variant: 'B',
+      * });
+diff --git a/packages/expo-observe/build/types.d.ts.map b/packages/expo-observe/build/types.d.ts.map
+index 410436b923831c..bd2c66c0976d29 100644
+--- a/packages/expo-observe/build/types.d.ts.map
++++ b/packages/expo-observe/build/types.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../src/types.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,iBAAiB,EAAE,MAAM,kBAAkB,CAAC;AAE1D;;;;GAIG;AACH,MAAM,MAAM,gBAAgB,GAAG,iBAAiB,CAAC;AAEjD;;;GAGG;AACH,MAAM,MAAM,iBAAiB,GAAG,MAAM,CAAC,MAAM,EAAE,gBAAgB,CAAC,CAAC;AAEjE,MAAM,MAAM,MAAM,GAAG;IACnB;;;;OAIG;IACH,WAAW,CAAC,EAAE,MAAM,CAAC;IACrB;;;;;;;OAOG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;IAC7B;;;;;;;;;;;;OAYG;IACH,eAAe,CAAC,EAAE,OAAO,CAAC;IAC1B;;;;;;;;;;;;;;;OAeG;IACH,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB;;OAEG;IACH,YAAY,CAAC,EAAE,kBAAkB,CAAC;CACnC,CAAC;AAEF,MAAM,WAAW,kBAAkB;IACjC;;;;;;;OAOG;IACH,aAAa,CAAC,EAAE,OAAO,CAAC;IACxB;;;;;;;;;OASG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;CAC9B;AAED,MAAM,WAAW,qBAAqB;IACpC,cAAc,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC;IAChC;;OAEG;IACH,SAAS,CAAC,MAAM,EAAE,MAAM,GAAG,IAAI,CAAC;IAChC;;;;;;;;;;;;OAYG;IACH,mBAAmB,CAAC,UAAU,CAAC,EAAE,iBAAiB,GAAG,IAAI,GAAG,IAAI,CAAC;IACjE;;;;;;OAMG;IACH,iBAAiB,CAAC,QAAQ,EAAE;QAAE,WAAW,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,OAAO,CAAA;KAAE,GAAG,IAAI,CAAC;CAC9E"}
+\ No newline at end of file
++{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../src/types.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,MAAM,CAAC;AACzC,OAAO,KAAK,EAAE,iBAAiB,EAAE,eAAe,EAAE,gBAAgB,EAAE,MAAM,kBAAkB,CAAC;AAE7F;;;;GAIG;AACH,MAAM,MAAM,gBAAgB,GAAG,iBAAiB,CAAC;AAEjD;;;GAGG;AACH,MAAM,MAAM,iBAAiB,GAAG,MAAM,CAAC,MAAM,EAAE,gBAAgB,CAAC,CAAC;AAEjE,MAAM,MAAM,aAAa,GAAG;IAC1B;;;;OAIG;IACH,WAAW,CAAC,EAAE,MAAM,CAAC;IACrB;;;;;;;OAOG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;IAC7B;;;;;;;;;;;;OAYG;IACH,eAAe,CAAC,EAAE,OAAO,CAAC;IAC1B;;;;;;;;;;;;;;;OAeG;IACH,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB;;OAEG;IACH,YAAY,CAAC,EAAE,yBAAyB,CAAC;CAC1C,CAAC;AAEF,MAAM,MAAM,yBAAyB,GAAG;IACtC;;;;;;;OAOG;IACH,aAAa,CAAC,EAAE,OAAO,CAAC;IACxB;;;;;;;;;OASG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;CAC9B,CAAC;AAEF,MAAM,CAAC,OAAO,OAAO,aAAc,SAAQ,YAAY;IACrD,cAAc,IAAI,OAAO,CAAC,IAAI,CAAC;IAC/B;;OAEG;IACH,SAAS,CAAC,MAAM,EAAE,aAAa,GAAG,IAAI;IACtC;;;;;;;;OAQG;IACH,QAAQ,CAAC,IAAI,EAAE,MAAM,EAAE,OAAO,CAAC,EAAE,eAAe,GAAG,IAAI;IACvD;;;OAGG;IACH,eAAe,IAAI,IAAI;IACvB;;;;;;;OAOG;IACH,eAAe,CAAC,UAAU,CAAC,EAAE,gBAAgB,GAAG,IAAI;IACpD;;;;;;;;;;;;OAYG;IACH,mBAAmB,CAAC,UAAU,CAAC,EAAE,iBAAiB,GAAG,IAAI,GAAG,IAAI;IAChE;;;;;;OAMG;IACH,iBAAiB,CAAC,QAAQ,EAAE;QAAE,WAAW,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,OAAO,CAAA;KAAE,GAAG,IAAI;CAC7E"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/ios/ObserveModule.swift b/packages/expo-observe/ios/ObserveModule.swift
+index adc2fe9c34b398..bc8f20717f6ff2 100644
+--- a/packages/expo-observe/ios/ObserveModule.swift
++++ b/packages/expo-observe/ios/ObserveModule.swift
+@@ -54,10 +54,6 @@ public final class ObserveModule: Module {
+       }
+     }
+ 
+-    Function("setGlobalAttributes") { (attributes: [String: Any]?) in
+-      GlobalAttributes.set(attributes)
+-    }
+-
+     Function("setBundleDefaults") { (defaults: BundleDefaults) in
+       guard !defaults.environment.isEmpty else {
+         observeLogger.warn(
+diff --git a/packages/expo-observe/src/__tests__/module.test.native.ts b/packages/expo-observe/src/__tests__/module.test.native.ts
+index c90846a41e22de..31f7bf13624201 100644
+--- a/packages/expo-observe/src/__tests__/module.test.native.ts
++++ b/packages/expo-observe/src/__tests__/module.test.native.ts
+@@ -7,10 +7,22 @@ const mockNative = {
+   dispatchEvents: jest.fn(() => Promise.resolve()),
+ };
+ 
++const mockAppMetrics = {
++  logEvent: jest.fn(),
++  markFirstRender: jest.fn(),
++  markInteractive: jest.fn(),
++  setGlobalAttributes: jest.fn(),
++};
++
+ jest.mock('expo', () => ({
+   requireNativeModule: jest.fn(() => mockNative),
+ }));
+ 
++jest.mock('expo-app-metrics', () => ({
++  __esModule: true,
++  default: mockAppMetrics,
++}));
++
+ jest.mock('../integrations/expo-router/router', () => ({
+   isRouterInstalled: true,
+   optionalRouter: undefined,
+@@ -39,6 +51,7 @@ beforeEach(() => {
+   jest.resetModules();
+   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+   jest.doMock('expo', () => ({ requireNativeModule: jest.fn(() => mockNative) }));
++  jest.doMock('expo-app-metrics', () => ({ __esModule: true, default: mockAppMetrics }));
+   jest.doMock('../integrations/expo-router/router', () => ({
+     isRouterInstalled: true,
+     optionalRouter: undefined,
+@@ -74,8 +87,8 @@ describe('module Proxy', () => {
+   it.each([true, false, undefined])(
+     "forwards a integrations object to native when 'expo-router' is %s",
+     (router) => {
+-      const ExpoObserve = loadModule();
+-      ExpoObserve.configure({
++      const Observe = loadModule();
++      Observe.configure({
+         environment: 'test',
+         integrations: { 'expo-router': router },
+       });
+@@ -88,9 +101,9 @@ describe('module Proxy', () => {
+   );
+ 
+   it("calls initRouterIntegration when router is installed and integrations['expo-router'] is true", () => {
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initRouterIntegration } = loadInit();
+-    ExpoObserve.configure({
++    Observe.configure({
+       environment: 'test',
+       integrations: { 'expo-router': true },
+     });
+@@ -99,9 +112,9 @@ describe('module Proxy', () => {
+   });
+ 
+   it('skips initRouterIntegration by default', () => {
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initRouterIntegration } = loadInit();
+-    ExpoObserve.configure({ environment: 'test' });
++    Observe.configure({ environment: 'test' });
+     expect(initRouterIntegration).not.toHaveBeenCalled();
+     expect(mockNative.configure).toHaveBeenCalledWith({
+       environment: 'test',
+@@ -118,9 +131,9 @@ describe('module Proxy', () => {
+       isReactNavigationInstalled: false,
+       optionalReactNavigation: undefined,
+     }));
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initRouterIntegration } = loadInit();
+-    ExpoObserve.configure({ integrations: { 'expo-router': true } });
++    Observe.configure({ integrations: { 'expo-router': true } });
+     expect(initRouterIntegration).not.toHaveBeenCalled();
+     expect(mockNative.configure).toHaveBeenCalledWith({
+       integrations: { 'expo-router': true },
+@@ -132,8 +145,8 @@ describe('module Proxy', () => {
+       isRouterInstalled: false,
+       optionalRouter: undefined,
+     }));
+-    const ExpoObserve = loadModule();
+-    ExpoObserve.configure({ integrations: { 'expo-router': true } });
++    const Observe = loadModule();
++    Observe.configure({ integrations: { 'expo-router': true } });
+     expect(warnSpy).toHaveBeenCalledTimes(1);
+     expect(warnSpy).toHaveBeenCalledWith(
+       "[expo-observe] `integrations: { 'expo-router': true }` was set, but `expo-router` is not installed. The integration will not initialize."
+@@ -145,8 +158,8 @@ describe('module Proxy', () => {
+       isReactNavigationInstalled: false,
+       optionalReactNavigation: undefined,
+     }));
+-    const ExpoObserve = loadModule();
+-    ExpoObserve.configure({ integrations: { 'react-navigation': true } });
++    const Observe = loadModule();
++    Observe.configure({ integrations: { 'react-navigation': true } });
+     expect(warnSpy).toHaveBeenCalledTimes(1);
+     expect(warnSpy).toHaveBeenCalledWith(
+       "[expo-observe] `integrations: { 'react-navigation': true }` was set, but `@react-navigation/native` is not installed. The integration will not initialize."
+@@ -154,8 +167,8 @@ describe('module Proxy', () => {
+   });
+ 
+   it('warns when both integrations resolve to init (router takes precedence)', () => {
+-    const ExpoObserve = loadModule();
+-    ExpoObserve.configure({
++    const Observe = loadModule();
++    Observe.configure({
+       integrations: { 'expo-router': true, 'react-navigation': true },
+     });
+     expect(warnSpy).toHaveBeenCalledTimes(1);
+@@ -170,8 +183,8 @@ describe('module Proxy', () => {
+       isReactNavigationInstalled: false,
+       optionalReactNavigation: undefined,
+     }));
+-    const ExpoObserve = loadModule();
+-    ExpoObserve.configure({
++    const Observe = loadModule();
++    Observe.configure({
+       integrations: { 'expo-router': true, 'react-navigation': true },
+     });
+     // Only the missing-peer warning fires; the 'both enabled' warning is gated
+@@ -187,8 +200,8 @@ describe('module Proxy', () => {
+       isRouterInstalled: false,
+       optionalRouter: undefined,
+     }));
+-    const ExpoObserve = loadModule();
+-    ExpoObserve.configure({
++    const Observe = loadModule();
++    Observe.configure({
+       integrations: { 'expo-router': true, 'react-navigation': true },
+     });
+     // Missing-peer fires for expo-router; 'both enabled' is gated on
+@@ -201,9 +214,9 @@ describe('module Proxy', () => {
+   });
+ 
+   it("calls initReactNavigationIntegration when integrations['react-navigation'] is true and react-navigation is installed", () => {
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initReactNavigationIntegration } = loadReactNavigationInit();
+-    ExpoObserve.configure({
++    Observe.configure({
+       environment: 'test',
+       integrations: { 'react-navigation': true },
+     });
+@@ -212,10 +225,10 @@ describe('module Proxy', () => {
+   });
+ 
+   it("initializes react-navigation even when expo-router is installed, as long as 'react-navigation' is the only flag set", () => {
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initRouterIntegration } = loadInit();
+     const { initReactNavigationIntegration } = loadReactNavigationInit();
+-    ExpoObserve.configure({
++    Observe.configure({
+       environment: 'test',
+       integrations: { 'react-navigation': true },
+     });
+@@ -225,10 +238,10 @@ describe('module Proxy', () => {
+   });
+ 
+   it('does NOT call initReactNavigationIntegration when both flags are true', () => {
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initRouterIntegration } = loadInit();
+     const { initReactNavigationIntegration } = loadReactNavigationInit();
+-    ExpoObserve.configure({
++    Observe.configure({
+       environment: 'test',
+       integrations: { 'expo-router': true, 'react-navigation': true },
+     });
+@@ -241,9 +254,9 @@ describe('module Proxy', () => {
+       isReactNavigationInstalled: false,
+       optionalReactNavigation: undefined,
+     }));
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initReactNavigationIntegration } = loadReactNavigationInit();
+-    ExpoObserve.configure({
++    Observe.configure({
+       environment: 'test',
+       integrations: { 'react-navigation': true },
+     });
+@@ -251,19 +264,19 @@ describe('module Proxy', () => {
+   });
+ 
+   it('skips both integrations by default', () => {
+-    const ExpoObserve = loadModule();
++    const Observe = loadModule();
+     const { initRouterIntegration } = loadInit();
+     const { initReactNavigationIntegration } = loadReactNavigationInit();
+-    ExpoObserve.configure({ environment: 'test' });
++    Observe.configure({ environment: 'test' });
+     expect(initRouterIntegration).not.toHaveBeenCalled();
+     expect(initReactNavigationIntegration).not.toHaveBeenCalled();
+     expect(warnSpy).not.toHaveBeenCalled();
+   });
+ 
+   it('passes through dispatchEvents and setBundleDefaults to native', () => {
+-    const ExpoObserve = loadModule();
+-    ExpoObserve.dispatchEvents();
+-    ExpoObserve.setBundleDefaults({ environment: 'production', isJsDev: false });
++    const Observe = loadModule();
++    Observe.dispatchEvents();
++    Observe.setBundleDefaults({ environment: 'production', isJsDev: false });
+     expect(mockNative.dispatchEvents).toHaveBeenCalledTimes(1);
+     expect(mockNative.setBundleDefaults).toHaveBeenCalledWith({
+       environment: 'production',
+@@ -273,10 +286,39 @@ describe('module Proxy', () => {
+   });
+ 
+   it('returns the native function via Reflect.get for unknown props', () => {
+-    const ExpoObserve = loadModule();
+-    expect((ExpoObserve as { dispatchEvents: unknown }).dispatchEvents).toBe(
+-      mockNative.dispatchEvents
+-    );
++    const Observe = loadModule();
++    expect((Observe as { dispatchEvents: unknown }).dispatchEvents).toBe(mockNative.dispatchEvents);
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it('forwards logEvent to AppMetrics', () => {
++    const Observe = loadModule();
++    Observe.logEvent('app_boot', { severity: 'info', body: 'boot' });
++    expect(mockAppMetrics.logEvent).toHaveBeenCalledWith('app_boot', {
++      severity: 'info',
++      body: 'boot',
++    });
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it('forwards markFirstRender to AppMetrics', () => {
++    const Observe = loadModule();
++    Observe.markFirstRender();
++    expect(mockAppMetrics.markFirstRender).toHaveBeenCalledTimes(1);
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it('forwards markInteractive to AppMetrics', () => {
++    const Observe = loadModule();
++    Observe.markInteractive({ routeName: '/home' });
++    expect(mockAppMetrics.markInteractive).toHaveBeenCalledWith({ routeName: '/home' });
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it('forwards setGlobalAttributes to AppMetrics', () => {
++    const Observe = loadModule();
++    Observe.setGlobalAttributes({ tier: 'pro' });
++    expect(mockAppMetrics.setGlobalAttributes).toHaveBeenCalledWith({ tier: 'pro' });
+     expect(warnSpy).not.toHaveBeenCalled();
+   });
+ });
+diff --git a/packages/expo-observe/src/index.ts b/packages/expo-observe/src/index.ts
+index 8227d6a495b3c0..d1c61b7771ca6a 100644
+--- a/packages/expo-observe/src/index.ts
++++ b/packages/expo-observe/src/index.ts
+@@ -1,13 +1,22 @@
+-import ExpoObserve from './module';
++import Observe from './module';
+ 
+ export { default as AppMetrics } from 'expo-app-metrics';
+ export { ObserveRoot } from './ObserveRoot';
+ 
+-ExpoObserve.setBundleDefaults({
++Observe.setBundleDefaults({
+   environment: process.env.NODE_ENV ?? 'production',
+   isJsDev: !!__DEV__,
+ });
+ 
+-export { default } from './module';
+-export * from './types';
++export { Observe };
++
++/** @deprecated Import the named `Observe` export instead. */
++export default Observe;
++
++export type {
++  ObserveAttribute,
++  ObserveAttributes,
++  ObserveConfig,
++  ObserveIntegrationsConfig,
++} from './types';
+ export { useObserve } from './useObserve';
+diff --git a/packages/expo-observe/src/integrations/expo-router/ObserveRouterIntegrationProvider.tsx b/packages/expo-observe/src/integrations/expo-router/ObserveRouterIntegrationProvider.tsx
+index 2cbb586c1d84a4..3533d37e012250 100644
+--- a/packages/expo-observe/src/integrations/expo-router/ObserveRouterIntegrationProvider.tsx
++++ b/packages/expo-observe/src/integrations/expo-router/ObserveRouterIntegrationProvider.tsx
+@@ -18,7 +18,7 @@ export function ObserveRouterIntegrationProvider({ children }: PropsWithChildren
+   const prevInitialized = useRef(isInitialized());
+   if (prevInitialized.current !== isInitialized()) {
+     throw new Error(
+-      `[expo-observe] Router integration was ${isInitialized() ? 'enabled' : 'disabled'} after application mounted. Call ExpoObserve.configure() before mounting AppMetricsRoot.`
++      `[expo-observe] Router integration was ${isInitialized() ? 'enabled' : 'disabled'} after application mounted. Call Observe.configure() before mounting AppMetricsRoot.`
+     );
+   }
+ 
+diff --git a/packages/expo-observe/src/integrations/expo-router/__tests__/ObserveRouterIntegrationProvider.test.native.tsx b/packages/expo-observe/src/integrations/expo-router/__tests__/ObserveRouterIntegrationProvider.test.native.tsx
+index 5bba15b8388630..d3e7e2dcbf9344 100644
+--- a/packages/expo-observe/src/integrations/expo-router/__tests__/ObserveRouterIntegrationProvider.test.native.tsx
++++ b/packages/expo-observe/src/integrations/expo-router/__tests__/ObserveRouterIntegrationProvider.test.native.tsx
+@@ -114,7 +114,7 @@ describe('ObserveRouterIntegrationProvider', () => {
+         </ObserveRouterIntegrationProvider>
+       )
+     ).toThrow(
+-      '[expo-observe] Router integration was enabled after application mounted. Call ExpoObserve.configure() before mounting AppMetricsRoot.'
++      '[expo-observe] Router integration was enabled after application mounted. Call Observe.configure() before mounting AppMetricsRoot.'
+     );
+   });
+ 
+diff --git a/packages/expo-observe/src/integrations/expo-router/__tests__/useObserveForRouter.test.native.tsx b/packages/expo-observe/src/integrations/expo-router/__tests__/useObserveForRouter.test.native.tsx
+index 3668302138cb6d..ac04160e5d4bca 100644
+--- a/packages/expo-observe/src/integrations/expo-router/__tests__/useObserveForRouter.test.native.tsx
++++ b/packages/expo-observe/src/integrations/expo-router/__tests__/useObserveForRouter.test.native.tsx
+@@ -301,7 +301,7 @@ describe('useObserveForRouter', () => {
+ 
+     isInitMock.mockReturnValue(true);
+     expect(() => rerender(undefined)).toThrow(
+-      "[expo-observe] Router integration was toggled during a screen's lifecycle. Call `ExpoObserve.configure({ integrations: { 'expo-router': true } })` once at startup before any screen mounts."
++      "[expo-observe] Router integration was toggled during a screen's lifecycle. Call `Observe.configure({ integrations: { 'expo-router': true } })` once at startup before any screen mounts."
+     );
+   });
+ });
+diff --git a/packages/expo-observe/src/integrations/expo-router/useObserveForRouter.ts b/packages/expo-observe/src/integrations/expo-router/useObserveForRouter.ts
+index a1508f3b50430e..8da809c6ff5bf3 100644
+--- a/packages/expo-observe/src/integrations/expo-router/useObserveForRouter.ts
++++ b/packages/expo-observe/src/integrations/expo-router/useObserveForRouter.ts
+@@ -22,7 +22,7 @@ export function useObserveForRouter(): MarkInteractive | null {
+   useAssertValueDoesNotChange(
+     initialized,
+     "[expo-observe] Router integration was toggled during a screen's lifecycle. " +
+-      "Call `ExpoObserve.configure({ integrations: { 'expo-router': true } })` once at startup before any screen mounts."
++      "Call `Observe.configure({ integrations: { 'expo-router': true } })` once at startup before any screen mounts."
+   );
+ 
+   const screenId = route?.key;
+diff --git a/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx b/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx
+index 72f13408edc0e2..2053c97e32dd6d 100644
+--- a/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx
++++ b/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx
+@@ -54,7 +54,7 @@ function ObserveNavigationContainerImpl(
+ 
+   useAssertValueDoesNotChange(
+     initialized,
+-    `[expo-observe] React Navigation integration was toggled after ObserveNavigationContainer mounted. Call \`ExpoObserve.configure({ integrations: { 'react-navigation': true } })\` before rendering ObserveNavigationContainer.`
++    `[expo-observe] React Navigation integration was toggled after ObserveNavigationContainer mounted. Call \`Observe.configure({ integrations: { 'react-navigation': true } })\` before rendering ObserveNavigationContainer.`
+   );
+ 
+   useEffect(() => {
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx b/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx
+index 50888d8167e3a1..960daf9ed4657e 100644
+--- a/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx
+@@ -276,7 +276,7 @@ describe('ObserveNavigationContainer', () => {
+         </ObserveNavigationContainer>
+       )
+     ).toThrow(
+-      "[expo-observe] React Navigation integration was toggled after ObserveNavigationContainer mounted. Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` before rendering ObserveNavigationContainer."
++      "[expo-observe] React Navigation integration was toggled after ObserveNavigationContainer mounted. Call `Observe.configure({ integrations: { 'react-navigation': true } })` before rendering ObserveNavigationContainer."
+     );
+   });
+ });
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx b/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx
+index 835ff18d4ef886..12abf7d59ec65b 100644
+--- a/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx
+@@ -213,7 +213,7 @@ describe('useObserveForReactNavigation', () => {
+ 
+     initModule.isInitialized.mockReturnValue(true);
+     expect(() => rerender(undefined)).toThrow(
+-      "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
++      "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. Call `Observe.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
+     );
+   });
+ 
+diff --git a/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts b/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts
+index f96e5ce879cd1b..4c73da677556e1 100644
+--- a/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts
++++ b/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts
+@@ -21,7 +21,7 @@ export function useObserveForReactNavigation(): MarkInteractive | null {
+   useAssertValueDoesNotChange(
+     initialized,
+     "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. " +
+-      "Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
++      "Call `Observe.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
+   );
+ 
+   const screenId = route?.key;
+diff --git a/packages/expo-observe/src/module.ts b/packages/expo-observe/src/module.ts
+index e9550db93d92c7..1d4bea530fcf7d 100644
+--- a/packages/expo-observe/src/module.ts
++++ b/packages/expo-observe/src/module.ts
+@@ -1,17 +1,18 @@
+ import { requireNativeModule } from 'expo';
++import AppMetrics from 'expo-app-metrics';
+ 
+ import { initRouterIntegration } from './integrations/expo-router/init';
+ import { isRouterInstalled } from './integrations/expo-router/router';
+ import { initReactNavigationIntegration } from './integrations/react-navigation/init';
+ import { isReactNavigationInstalled } from './integrations/react-navigation/reactNavigation';
+-import type { Config, ExpoObserveModuleType } from './types';
++import type { ObserveConfig, ObserveModule } from './types';
+ 
+-const native = requireNativeModule<ExpoObserveModuleType>('ExpoObserve');
++const native = requireNativeModule<ObserveModule>('ExpoObserve');
+ 
+-const ExpoObserve: ExpoObserveModuleType = new Proxy(native, {
++const Observe: ObserveModule = new Proxy(native, {
+   get(target, prop, receiver) {
+     if (prop === 'configure') {
+-      return (config: Config) => {
++      return (config: ObserveConfig) => {
+         const routerEnabled = !!config.integrations?.['expo-router'];
+         const reactNavigationEnabled = !!config.integrations?.['react-navigation'];
+ 
+@@ -45,8 +46,11 @@ const ExpoObserve: ExpoObserveModuleType = new Proxy(native, {
+         return target.configure(config);
+       };
+     }
++    if (typeof prop === 'string' && !(prop in target)) {
++      return Reflect.get(AppMetrics, prop);
++    }
+     return Reflect.get(target, prop, receiver);
+   },
+ });
+ 
+-export default ExpoObserve;
++export default Observe;
+diff --git a/packages/expo-observe/src/module.web.ts b/packages/expo-observe/src/module.web.ts
+index 6a0cb4cd8ece8f..b51c59472bd419 100644
+--- a/packages/expo-observe/src/module.web.ts
++++ b/packages/expo-observe/src/module.web.ts
+@@ -1,13 +1,23 @@
+ import { NativeModule, registerWebModule } from 'expo';
++import AppMetrics, { type LogEventOptions, type MetricAttributes } from 'expo-app-metrics';
+ 
+-import type { Config, ExpoObserveModuleType, ObserveAttributes } from './types';
++import type { ObserveConfig, ObserveModule, ObserveAttributes } from './types';
+ 
+-export * from './types';
+-
+-class ExpoObserveModule extends NativeModule implements ExpoObserveModuleType {
++class ExpoObserveModule extends NativeModule implements ObserveModule {
+   async dispatchEvents() {}
+-  configure(config: Config): void {}
+-  setGlobalAttributes(attributes?: ObserveAttributes | null): void {}
++  configure(config: ObserveConfig): void {}
++  logEvent(name: string, options?: LogEventOptions): void {
++    AppMetrics.logEvent(name, options);
++  }
++  markFirstRender(): void {
++    AppMetrics.markFirstRender();
++  }
++  markInteractive(attributes?: MetricAttributes): void {
++    AppMetrics.markInteractive(attributes);
++  }
++  setGlobalAttributes(attributes?: ObserveAttributes | null): void {
++    AppMetrics.setGlobalAttributes(attributes);
++  }
+   setBundleDefaults(defaults: { environment: string; isJsDev: boolean }): void {}
+ }
+ 
+diff --git a/packages/expo-observe/src/types.ts b/packages/expo-observe/src/types.ts
+index fe61075c3cb5cd..9560d0c11d2f22 100644
+--- a/packages/expo-observe/src/types.ts
++++ b/packages/expo-observe/src/types.ts
+@@ -1,4 +1,5 @@
+-import type { LogAttributeValue } from 'expo-app-metrics';
++import type { NativeModule } from 'expo';
++import type { LogAttributeValue, LogEventOptions, MetricAttributes } from 'expo-app-metrics';
+ 
+ /**
+  * Value types accepted as attribute values in `setGlobalAttributes` and the
+@@ -13,7 +14,7 @@ export type ObserveAttribute = LogAttributeValue;
+  */
+ export type ObserveAttributes = Record<string, ObserveAttribute>;
+ 
+-export type Config = {
++export type ObserveConfig = {
+   /**
+    * The environment for observability events
+    *
+@@ -63,10 +64,10 @@ export type Config = {
+   /**
+    * Opt in to per-integration behavior.
+    */
+-  integrations?: IntegrationsConfig;
++  integrations?: ObserveIntegrationsConfig;
+ };
+ 
+-export interface IntegrationsConfig {
++export type ObserveIntegrationsConfig = {
+   /**
+    * Enables the `expo-router` integration, which records navigation metrics
+    * (`cold_ttr`, `warm_ttr`, `tti`) from router state changes.
+@@ -87,14 +88,38 @@ export interface IntegrationsConfig {
+    * @default false
+    */
+   'react-navigation'?: boolean;
+-}
++};
+ 
+-export interface ExpoObserveModuleType {
++export declare class ObserveModule extends NativeModule {
+   dispatchEvents(): Promise<void>;
+   /**
+    * Configures observability settings.
+    */
+-  configure(config: Config): void;
++  configure(config: ObserveConfig): void;
++  /**
++   * Records a log event against the current main session. The event is
++   * persisted locally and dispatched on the next `dispatchEvents()` flush.
++   *
++   * Severity defaults to `"info"` when not provided.
++   *
++   * @param name Event name.
++   * @param options Optional body, attributes, and severity overrides.
++   */
++  logEvent(name: string, options?: LogEventOptions): void;
++  /**
++   * Marks the first render of the app. Used to compute the `cold_ttr` and
++   * `warm_ttr` metrics.
++   */
++  markFirstRender(): void;
++  /**
++   * Marks the moment the app becomes interactive. Used to compute the `tti`
++   * metric. Custom `routeName` and `params` can be attached via `attributes`.
++   *
++   * > Note: When the `expo-router` or `@react-navigation/native` integration
++   * > is active, prefer `useObserve().markInteractive(...)` — the hook fills
++   * > in `routeName` from the current route, while this raw call does not.
++   */
++  markInteractive(attributes?: MetricAttributes): void;
+   /**
+    * Sets attributes merged into every subsequent metric and log event.
+    * Per-record keys win on collision. Pass `null`, `undefined`, or an empty
+@@ -102,7 +127,7 @@ export interface ExpoObserveModuleType {
+    *
+    * @example
+    * ```ts
+-   * ExpoObserve.setGlobalAttributes({
++   * Observe.setGlobalAttributes({
+    *   subscription_tier: 'pro',
+    *   experiment_variant: 'B',
+    * });
+diff --git a/packages/expo-observe/src/useObserve.ts b/packages/expo-observe/src/useObserve.ts
+index 715237fab40762..58bd06ecfa4c41 100644
+--- a/packages/expo-observe/src/useObserve.ts
++++ b/packages/expo-observe/src/useObserve.ts
+@@ -14,7 +14,7 @@ export function useObserve() {
+   useAssertValueDoesNotChange(
+     expoRouterInitialized,
+     "[expo-observe] Router integration was toggled during a screen's lifecycle. " +
+-      "Call `ExpoObserve.configure({ integrations: { 'expo-router': true } })` once at startup before any screen mounts."
++      "Call `Observe.configure({ integrations: { 'expo-router': true } })` once at startup before any screen mounts."
+   );
+   // useAssertValueDoesNotChange asserts that the useObserveForRouter is either rendered
+   // or not for the whole lifecycle of this hook
+@@ -24,7 +24,7 @@ export function useObserve() {
+   useAssertValueDoesNotChange(
+     reactNavigationInitialized,
+     "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. " +
+-      "Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
++      "Call `Observe.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
+   );
+   // useAssertValueDoesNotChange asserts that the useObserveForReactNavigation is either rendered
+   // or not for the whole lifecycle of this hook

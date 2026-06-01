@@ -1,0 +1,208 @@
+diff --git a/dev-packages/e2e-tests/test-applications/nestjs/src/app.controller.ts b/dev-packages/e2e-tests/test-applications/nestjs/src/app.controller.ts
+index 154f62ada912..5ba6bcb2a68e 100644
+--- a/dev-packages/e2e-tests/test-applications/nestjs/src/app.controller.ts
++++ b/dev-packages/e2e-tests/test-applications/nestjs/src/app.controller.ts
+@@ -69,6 +69,16 @@ export class AppController1 {
+   async testOutgoingHttpExternalDisallowed() {
+     return this.appService.testOutgoingHttpExternalDisallowed();
+   }
++
++  @Get('test-span-decorator-async')
++  async testSpanDecoratorAsync() {
++    return { result: await this.appService.testSpanDecoratorAsync() };
++  }
++
++  @Get('test-span-decorator-sync')
++  async testSpanDecoratorSync() {
++    return { result: await this.appService.testSpanDecoratorSync() };
++  }
+ }
+ 
+ @Controller()
+diff --git a/dev-packages/e2e-tests/test-applications/nestjs/src/app.service.ts b/dev-packages/e2e-tests/test-applications/nestjs/src/app.service.ts
+index 1103c65941a1..7e0df6b7e1c8 100644
+--- a/dev-packages/e2e-tests/test-applications/nestjs/src/app.service.ts
++++ b/dev-packages/e2e-tests/test-applications/nestjs/src/app.service.ts
+@@ -1,5 +1,6 @@
+ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+ import * as Sentry from '@sentry/nestjs';
++import { SentryTraced } from '@sentry/nestjs';
+ import { makeHttpRequest } from './utils';
+ 
+ @Injectable()
+@@ -75,6 +76,25 @@ export class AppService1 {
+   async testOutgoingHttpExternalDisallowed() {
+     return makeHttpRequest('http://localhost:3040/external-disallowed');
+   }
++
++  @SentryTraced('wait and return a string')
++  async wait() {
++    await new Promise(resolve => setTimeout(resolve, 500));
++    return 'test';
++  }
++
++  async testSpanDecoratorAsync() {
++    return await this.wait();
++  }
++
++  @SentryTraced('return a string')
++  getString(): string {
++    return 'test';
++  }
++
++  async testSpanDecoratorSync() {
++    return this.getString();
++  }
+ }
+ 
+ @Injectable()
+diff --git a/dev-packages/e2e-tests/test-applications/nestjs/tests/span-decorator.test.ts b/dev-packages/e2e-tests/test-applications/nestjs/tests/span-decorator.test.ts
+new file mode 100644
+index 000000000000..3efdfb979d73
+--- /dev/null
++++ b/dev-packages/e2e-tests/test-applications/nestjs/tests/span-decorator.test.ts
+@@ -0,0 +1,74 @@
++import { expect, test } from '@playwright/test';
++import { waitForTransaction } from '@sentry-internal/test-utils';
++
++test('Transaction includes span and correct value for decorated async function', async ({ baseURL }) => {
++  const transactionEventPromise = waitForTransaction('nestjs', transactionEvent => {
++    return (
++      transactionEvent?.contexts?.trace?.op === 'http.server' &&
++      transactionEvent?.transaction === 'GET /test-span-decorator-async'
++    );
++  });
++
++  const response = await fetch(`${baseURL}/test-span-decorator-async`);
++  const body = await response.json();
++
++  expect(body.result).toEqual('test');
++
++  const transactionEvent = await transactionEventPromise;
++
++  expect(transactionEvent.spans).toEqual(
++    expect.arrayContaining([
++      expect.objectContaining({
++        span_id: expect.any(String),
++        trace_id: expect.any(String),
++        data: {
++          'sentry.origin': 'manual',
++          'sentry.op': 'wait and return a string',
++          'otel.kind': 'INTERNAL',
++        },
++        description: 'wait',
++        parent_span_id: expect.any(String),
++        start_timestamp: expect.any(Number),
++        status: 'ok',
++        op: 'wait and return a string',
++        origin: 'manual',
++      }),
++    ]),
++  );
++});
++
++test('Transaction includes span and correct value for decorated sync function', async ({ baseURL }) => {
++  const transactionEventPromise = waitForTransaction('nestjs', transactionEvent => {
++    return (
++      transactionEvent?.contexts?.trace?.op === 'http.server' &&
++      transactionEvent?.transaction === 'GET /test-span-decorator-sync'
++    );
++  });
++
++  const response = await fetch(`${baseURL}/test-span-decorator-sync`);
++  const body = await response.json();
++
++  expect(body.result).toEqual('test');
++
++  const transactionEvent = await transactionEventPromise;
++
++  expect(transactionEvent.spans).toEqual(
++    expect.arrayContaining([
++      expect.objectContaining({
++        span_id: expect.any(String),
++        trace_id: expect.any(String),
++        data: {
++          'sentry.origin': 'manual',
++          'sentry.op': 'return a string',
++          'otel.kind': 'INTERNAL',
++        },
++        description: 'getString',
++        parent_span_id: expect.any(String),
++        start_timestamp: expect.any(Number),
++        status: 'ok',
++        op: 'return a string',
++        origin: 'manual',
++      }),
++    ]),
++  );
++});
+diff --git a/packages/nestjs/README.md b/packages/nestjs/README.md
+index 58ab6bc95372..8928327b1470 100644
+--- a/packages/nestjs/README.md
++++ b/packages/nestjs/README.md
+@@ -38,6 +38,24 @@ Sentry.init({
+ 
+ Note that it is necessary to initialize Sentry **before you import any package that may be instrumented by us**.
+ 
++## Span Decorator
++
++Use the @SentryTraced() decorator to gain additional performance insights for any function within your NestJS
++application.
++
++```js
++import { Injectable } from '@nestjs/common';
++import { SentryTraced } from '@sentry/nestjs';
++
++@Injectable()
++export class ExampleService {
++  @SentryTraced('example function')
++  async performTask() {
++    // Your business logic here
++  }
++}
++```
++
+ ## Links
+ 
+ - [Official SDK Docs](https://docs.sentry.io/platforms/javascript/guides/nestjs/)
+diff --git a/packages/nestjs/src/index.ts b/packages/nestjs/src/index.ts
+index 6ac8d97b4241..668187a21e29 100644
+--- a/packages/nestjs/src/index.ts
++++ b/packages/nestjs/src/index.ts
+@@ -1,3 +1,5 @@
+ export * from '@sentry/node';
+ 
+ export { init } from './sdk';
++
++export { SentryTraced } from './span-decorator';
+diff --git a/packages/nestjs/src/span-decorator.ts b/packages/nestjs/src/span-decorator.ts
+new file mode 100644
+index 000000000000..c56056a26621
+--- /dev/null
++++ b/packages/nestjs/src/span-decorator.ts
+@@ -0,0 +1,25 @@
++import { startSpan } from '@sentry/node';
++
++/**
++ * A decorator usable to wrap arbitrary functions with spans.
++ */
++export function SentryTraced(op: string = 'function') {
++  return function (target: unknown, propertyKey: string, descriptor: PropertyDescriptor) {
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    const originalMethod = descriptor.value as (...args: any[]) => Promise<any>;
++
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    descriptor.value = function (...args: any[]) {
++      return startSpan(
++        {
++          op: op,
++          name: propertyKey,
++        },
++        async () => {
++          return originalMethod.apply(this, args);
++        },
++      );
++    };
++    return descriptor;
++  };
++}

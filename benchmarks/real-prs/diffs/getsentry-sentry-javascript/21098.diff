@@ -1,0 +1,595 @@
+diff --git a/.oxlintrc.base.json b/.oxlintrc.base.json
+index 55d91cce59fd..e14c4cd3ae9c 100644
+--- a/.oxlintrc.base.json
++++ b/.oxlintrc.base.json
+@@ -157,6 +157,7 @@
+         "**/integrations/tracing/hapi/vendored/**/*.ts",
+         "**/integrations/tracing/mongoose/vendored/**/*.ts",
+         "**/integrations/tracing/amqplib/vendored/**/*.ts",
++        "**/integrations/tracing/prisma/vendored/**/*.ts",
+         "**/integrations/tracing/graphql/vendored/**/*.ts"
+       ],
+       "rules": {
+diff --git a/packages/node/package.json b/packages/node/package.json
+index 204729a79625..0f4bd72491ac 100644
+--- a/packages/node/package.json
++++ b/packages/node/package.json
+@@ -73,7 +73,6 @@
+     "@opentelemetry/instrumentation-pg": "0.66.0",
+     "@opentelemetry/sdk-trace-base": "^2.6.1",
+     "@opentelemetry/semantic-conventions": "^1.40.0",
+-    "@prisma/instrumentation": "7.6.0",
+     "@fastify/otel": "0.18.0",
+     "@sentry/core": "10.53.1",
+     "@sentry/node-core": "10.53.1",
+diff --git a/packages/node/src/integrations/tracing/prisma.ts b/packages/node/src/integrations/tracing/prisma/index.ts
+similarity index 97%
+rename from packages/node/src/integrations/tracing/prisma.ts
+rename to packages/node/src/integrations/tracing/prisma/index.ts
+index 71ec0fd3b49e..89a605f9da7f 100644
+--- a/packages/node/src/integrations/tracing/prisma.ts
++++ b/packages/node/src/integrations/tracing/prisma/index.ts
+@@ -2,11 +2,11 @@ import type { Link, Tracer } from '@opentelemetry/api';
+ import { context, SpanKind, trace, TraceFlags } from '@opentelemetry/api';
+ import type { Instrumentation } from '@opentelemetry/instrumentation';
+ import type { IdGenerator } from '@opentelemetry/sdk-trace-base';
+-import { PrismaInstrumentation } from '@prisma/instrumentation';
+ import { consoleSandbox, defineIntegration, SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN, spanToJSON } from '@sentry/core';
+ import { generateInstrumentOnce } from '@sentry/node-core';
+-import type { PrismaV5TracingHelper } from './prisma/vendor/v5-tracing-helper';
+-import type { PrismaV6TracingHelper } from './prisma/vendor/v6-tracing-helper';
++import { PrismaInstrumentation } from './vendored/instrumentation';
++import type { PrismaV5TracingHelper } from './vendored/v5-tracing-helper';
++import type { PrismaV6TracingHelper } from './vendored/v6-tracing-helper';
+ 
+ const INTEGRATION_NAME = 'Prisma';
+ 
+diff --git a/packages/node/src/integrations/tracing/prisma/vendored/active-tracing-helper.ts b/packages/node/src/integrations/tracing/prisma/vendored/active-tracing-helper.ts
+new file mode 100644
+index 000000000000..547f5dd538bd
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/prisma/vendored/active-tracing-helper.ts
+@@ -0,0 +1,185 @@
++/*
++ * Copyright Prisma
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/prisma/prisma/tree/b6feea5565ec577545a79547d24273ccdd11b4c7/packages/instrumentation
++ * - Upstream version: @prisma/instrumentation@7.8.0
++ * - Replaced `@prisma/instrumentation-contract` imports with local vendored types
++ * - Minor TypeScript strictness adjustments for this repository's compiler settings
++ */
++/* eslint-disable */
++
++import {
++  Attributes,
++  Context,
++  context as _context,
++  Span,
++  SpanKind,
++  SpanOptions,
++  trace,
++  Tracer,
++  TracerProvider,
++} from '@opentelemetry/api';
++import type { EngineSpan, EngineSpanKind, ExtendedSpanOptions, SpanCallback, TracingHelper } from './types';
++
++const showAllTraces = process.env.PRISMA_SHOW_ALL_TRACES === 'true';
++
++const nonSampledTraceParent = `00-10-10-00`;
++
++type Options = {
++  tracerProvider: TracerProvider;
++  ignoreSpanTypes: (string | RegExp)[];
++};
++
++function engineSpanKindToOtelSpanKind(engineSpanKind: EngineSpanKind): SpanKind {
++  switch (engineSpanKind) {
++    case 'client':
++      return SpanKind.CLIENT;
++    case 'internal':
++    default:
++      return SpanKind.INTERNAL;
++  }
++}
++
++export class ActiveTracingHelper implements TracingHelper {
++  private tracerProvider: TracerProvider;
++  private ignoreSpanTypes: (string | RegExp)[];
++
++  constructor({ tracerProvider, ignoreSpanTypes }: Options) {
++    this.tracerProvider = tracerProvider;
++    this.ignoreSpanTypes = ignoreSpanTypes;
++  }
++
++  isEnabled(): boolean {
++    return true;
++  }
++
++  getTraceParent(context?: Context | undefined): string {
++    const span = trace.getSpanContext(context ?? _context.active());
++    if (span) {
++      return `00-${span.traceId}-${span.spanId}-0${span.traceFlags}`;
++    }
++    return nonSampledTraceParent;
++  }
++
++  dispatchEngineSpans(spans: EngineSpan[]): void {
++    const tracer = this.tracerProvider.getTracer('prisma');
++    const linkIds = new Map<string, string>();
++    const roots = spans.filter(span => span.parentId === null);
++
++    for (const root of roots) {
++      dispatchEngineSpan(tracer, root, spans, linkIds, this.ignoreSpanTypes);
++    }
++  }
++
++  getActiveContext(): Context | undefined {
++    return _context.active();
++  }
++
++  runInChildSpan<R>(options: string | ExtendedSpanOptions, callback: SpanCallback<R>): R {
++    if (typeof options === 'string') {
++      options = { name: options };
++    }
++
++    if (options.internal && !showAllTraces) {
++      return callback();
++    }
++
++    const tracer = this.tracerProvider.getTracer('prisma');
++    const context = options.context ?? this.getActiveContext();
++    const name = `prisma:client:${options.name}`;
++
++    if (shouldIgnoreSpan(name, this.ignoreSpanTypes)) {
++      return callback();
++    }
++
++    if (options.active === false) {
++      const span = tracer.startSpan(name, options, context);
++      return endSpan(span, callback(span, context));
++    }
++
++    return tracer.startActiveSpan(name, options, span => endSpan(span, callback(span, context)));
++  }
++}
++
++function dispatchEngineSpan(
++  tracer: Tracer,
++  engineSpan: EngineSpan,
++  allSpans: EngineSpan[],
++  linkIds: Map<string, string>,
++  ignoreSpanTypes: (string | RegExp)[],
++) {
++  if (shouldIgnoreSpan(engineSpan.name, ignoreSpanTypes)) return;
++
++  const spanOptions = {
++    attributes: engineSpan.attributes as Attributes,
++    kind: engineSpanKindToOtelSpanKind(engineSpan.kind),
++    startTime: engineSpan.startTime,
++  } satisfies SpanOptions;
++
++  tracer.startActiveSpan(engineSpan.name, spanOptions, span => {
++    linkIds.set(engineSpan.id, span.spanContext().spanId);
++
++    if (engineSpan.links) {
++      span.addLinks(
++        engineSpan.links.flatMap(link => {
++          const linkedId = linkIds.get(link);
++          if (!linkedId) {
++            return [];
++          }
++          return {
++            context: {
++              spanId: linkedId,
++              traceId: span.spanContext().traceId,
++              traceFlags: span.spanContext().traceFlags,
++            },
++          };
++        }),
++      );
++    }
++
++    const children = allSpans.filter(s => s.parentId === engineSpan.id);
++    for (const child of children) {
++      dispatchEngineSpan(tracer, child, allSpans, linkIds, ignoreSpanTypes);
++    }
++
++    span.end(engineSpan.endTime);
++  });
++}
++
++function endSpan<T>(span: Span, result: T): T {
++  if (isPromiseLike(result)) {
++    return result.then(
++      value => {
++        span.end();
++        return value;
++      },
++      reason => {
++        span.end();
++        throw reason;
++      },
++    ) as T;
++  }
++  span.end();
++  return result;
++}
++
++function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
++  return value != null && typeof (value as Record<string, unknown>)['then'] === 'function';
++}
++
++function shouldIgnoreSpan(spanName: string, ignoreSpanTypes: (string | RegExp)[]): boolean {
++  return ignoreSpanTypes.some(pattern => (typeof pattern === 'string' ? pattern === spanName : pattern.test(spanName)));
++}
+diff --git a/packages/node/src/integrations/tracing/prisma/vendored/constants.ts b/packages/node/src/integrations/tracing/prisma/vendored/constants.ts
+new file mode 100644
+index 000000000000..75788810347d
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/prisma/vendored/constants.ts
+@@ -0,0 +1,31 @@
++/*
++ * Copyright Prisma
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/prisma/prisma/tree/b6feea5565ec577545a79547d24273ccdd11b4c7/packages/instrumentation
++ * - Upstream version: @prisma/instrumentation@7.8.0
++ * - Replaced `import packageJson from '../package.json'` with hardcoded values
++ */
++/* eslint-disable */
++
++import { SDK_VERSION } from '@sentry/core';
++
++export const VERSION = SDK_VERSION;
++
++export const NAME = '@sentry/instrumentation-prisma';
++
++export const MODULE_NAME = '@prisma/client';
++
++export const SUPPORTED_MODULE_VERSIONS = ['>=5.0.0'];
+diff --git a/packages/node/src/integrations/tracing/prisma/vendored/global.ts b/packages/node/src/integrations/tracing/prisma/vendored/global.ts
+new file mode 100644
+index 000000000000..e1ae9bf19565
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/prisma/vendored/global.ts
+@@ -0,0 +1,60 @@
++/*
++ * Copyright Prisma
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/prisma/prisma/tree/b6feea5565ec577545a79547d24273ccdd11b4c7/packages/instrumentation-contract
++ * - Upstream version: @prisma/instrumentation-contract@7.8.0
++ * - Replaced `import packageJson from '../package.json'` with hardcoded major version
++ */
++/* eslint-disable */
++
++import type { PrismaInstrumentationGlobalValue, TracingHelper } from './types';
++
++const majorVersion = '7';
++
++const GLOBAL_INSTRUMENTATION_KEY = 'PRISMA_INSTRUMENTATION';
++const GLOBAL_VERSIONED_INSTRUMENTATION_KEY = `V${majorVersion}_PRISMA_INSTRUMENTATION` as const;
++
++type GlobalThisWithPrismaInstrumentation = typeof globalThis & {
++  [GLOBAL_INSTRUMENTATION_KEY]?: PrismaInstrumentationGlobalValue;
++} & {
++  [K in typeof GLOBAL_VERSIONED_INSTRUMENTATION_KEY]?: PrismaInstrumentationGlobalValue;
++};
++
++const globalThisWithPrismaInstrumentation = globalThis as GlobalThisWithPrismaInstrumentation;
++
++export function getGlobalTracingHelper(): TracingHelper | undefined {
++  const versionedGlobal = globalThisWithPrismaInstrumentation[GLOBAL_VERSIONED_INSTRUMENTATION_KEY];
++
++  if (versionedGlobal?.helper) {
++    return versionedGlobal.helper;
++  }
++
++  const fallbackGlobal = globalThisWithPrismaInstrumentation[GLOBAL_INSTRUMENTATION_KEY];
++
++  return fallbackGlobal?.helper;
++}
++
++export function setGlobalTracingHelper(helper: TracingHelper): void {
++  const globalValue: PrismaInstrumentationGlobalValue = { helper };
++
++  globalThisWithPrismaInstrumentation[GLOBAL_VERSIONED_INSTRUMENTATION_KEY] = globalValue;
++  globalThisWithPrismaInstrumentation[GLOBAL_INSTRUMENTATION_KEY] = globalValue;
++}
++
++export function clearGlobalTracingHelper(): void {
++  delete globalThisWithPrismaInstrumentation[GLOBAL_VERSIONED_INSTRUMENTATION_KEY];
++  delete globalThisWithPrismaInstrumentation[GLOBAL_INSTRUMENTATION_KEY];
++}
+diff --git a/packages/node/src/integrations/tracing/prisma/vendored/instrumentation.ts b/packages/node/src/integrations/tracing/prisma/vendored/instrumentation.ts
+new file mode 100644
+index 000000000000..8adc9d807e7e
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/prisma/vendored/instrumentation.ts
+@@ -0,0 +1,76 @@
++/*
++ * Copyright Prisma
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/prisma/prisma/tree/b6feea5565ec577545a79547d24273ccdd11b4c7/packages/instrumentation
++ * - Upstream version: @prisma/instrumentation@7.8.0
++ * - Replaced `@prisma/instrumentation-contract` imports with local vendored equivalents
++ * - Replaced `import { VERSION, NAME, MODULE_NAME } from './constants'` with local vendored constants
++ */
++/* eslint-disable */
++
++import { trace, TracerProvider } from '@opentelemetry/api';
++import {
++  InstrumentationBase,
++  InstrumentationConfig,
++  InstrumentationNodeModuleDefinition,
++} from '@opentelemetry/instrumentation';
++import { clearGlobalTracingHelper, getGlobalTracingHelper, setGlobalTracingHelper } from './global';
++
++import { ActiveTracingHelper } from './active-tracing-helper';
++import { MODULE_NAME, NAME, SUPPORTED_MODULE_VERSIONS, VERSION } from './constants';
++
++export interface PrismaInstrumentationConfig {
++  ignoreSpanTypes?: (string | RegExp)[];
++}
++
++type Config = PrismaInstrumentationConfig & InstrumentationConfig;
++
++export class PrismaInstrumentation extends InstrumentationBase {
++  private tracerProvider: TracerProvider | undefined;
++
++  constructor(config: Config = {}) {
++    super(NAME, VERSION, config);
++  }
++
++  setTracerProvider(tracerProvider: TracerProvider): void {
++    this.tracerProvider = tracerProvider;
++  }
++
++  init() {
++    const module = new InstrumentationNodeModuleDefinition(MODULE_NAME, SUPPORTED_MODULE_VERSIONS);
++
++    return [module];
++  }
++
++  enable() {
++    const config = this._config as Config;
++
++    setGlobalTracingHelper(
++      new ActiveTracingHelper({
++        tracerProvider: this.tracerProvider ?? trace.getTracerProvider(),
++        ignoreSpanTypes: config.ignoreSpanTypes ?? [],
++      }),
++    );
++  }
++
++  disable() {
++    clearGlobalTracingHelper();
++  }
++
++  isEnabled() {
++    return getGlobalTracingHelper() !== undefined;
++  }
++}
+diff --git a/packages/node/src/integrations/tracing/prisma/vendored/types.ts b/packages/node/src/integrations/tracing/prisma/vendored/types.ts
+new file mode 100644
+index 000000000000..17c55f4847f6
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/prisma/vendored/types.ts
+@@ -0,0 +1,86 @@
++/*
++ * Copyright Prisma
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/prisma/prisma/tree/b6feea5565ec577545a79547d24273ccdd11b4c7/packages/instrumentation-contract
++ * - Upstream version: @prisma/instrumentation-contract@7.8.0
++ */
++/* eslint-disable */
++
++import type { Context, Span, SpanOptions } from '@opentelemetry/api';
++
++export type SpanCallback<R> = (span?: Span, context?: Context) => R;
++
++export interface ExtendedSpanOptions extends SpanOptions {
++  /** The name of the span */
++  name: string;
++  /* Internal spans are not shown unless PRISMA_SHOW_ALL_TRACES=true env var is set */
++  internal?: boolean;
++  /** Whether it propagates context (?=true) */
++  active?: boolean;
++  /** The context to append the span to */
++  context?: Context;
++}
++
++export type EngineSpanId = string;
++
++export type HrTime = [number, number];
++
++export type EngineSpanKind = 'client' | 'internal';
++
++export type EngineSpan = {
++  id: EngineSpanId;
++  parentId: string | null;
++  name: string;
++  startTime: HrTime;
++  endTime: HrTime;
++  kind: EngineSpanKind;
++  attributes?: Record<string, unknown>;
++  links?: EngineSpanId[];
++};
++
++export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'query';
++
++export interface EngineTraceEvent {
++  spanId: EngineSpanId;
++  target?: string;
++  level: LogLevel;
++  timestamp: HrTime;
++  attributes: Record<string, unknown> & {
++    message?: string;
++    query?: string;
++    duration_ms?: number;
++    params?: string;
++  };
++}
++
++export interface EngineTrace {
++  spans: EngineSpan[];
++  events: EngineTraceEvent[];
++}
++
++export interface TracingHelper {
++  isEnabled(): boolean;
++  getTraceParent(context?: Context): string;
++  dispatchEngineSpans(spans: EngineSpan[]): void;
++
++  getActiveContext(): Context | undefined;
++
++  runInChildSpan<R>(nameOrOptions: string | ExtendedSpanOptions, callback: SpanCallback<R>): R;
++}
++
++export interface PrismaInstrumentationGlobalValue {
++  helper?: TracingHelper;
++}
+diff --git a/packages/node/src/integrations/tracing/prisma/vendor/v5-tracing-helper.ts b/packages/node/src/integrations/tracing/prisma/vendored/v5-tracing-helper.ts
+similarity index 100%
+rename from packages/node/src/integrations/tracing/prisma/vendor/v5-tracing-helper.ts
+rename to packages/node/src/integrations/tracing/prisma/vendored/v5-tracing-helper.ts
+diff --git a/packages/node/src/integrations/tracing/prisma/vendor/v6-tracing-helper.ts b/packages/node/src/integrations/tracing/prisma/vendored/v6-tracing-helper.ts
+similarity index 100%
+rename from packages/node/src/integrations/tracing/prisma/vendor/v6-tracing-helper.ts
+rename to packages/node/src/integrations/tracing/prisma/vendored/v6-tracing-helper.ts
+diff --git a/packages/node/test/integrations/tracing/prisma.test.ts b/packages/node/test/integrations/tracing/prisma.test.ts
+index 7fb734d7193d..3833b1adb34f 100644
+--- a/packages/node/test/integrations/tracing/prisma.test.ts
++++ b/packages/node/test/integrations/tracing/prisma.test.ts
+@@ -1,9 +1,9 @@
+-import { PrismaInstrumentation } from '@prisma/instrumentation';
++import { PrismaInstrumentation } from '../../../src/integrations/tracing/prisma/vendored/instrumentation';
+ import { INSTRUMENTED } from '@sentry/node-core';
+ import { beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+ import { instrumentPrisma } from '../../../src/integrations/tracing/prisma';
+ 
+-vi.mock('@prisma/instrumentation');
++vi.mock('../../../src/integrations/tracing/prisma/vendored/instrumentation');
+ 
+ describe('Prisma', () => {
+   beforeEach(() => {
+diff --git a/yarn.lock b/yarn.lock
+index bc806f3df97e..a2f398a92e7b 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -6009,13 +6009,6 @@
+   dependencies:
+     "@octokit/openapi-types" "^12.11.0"
+ 
+-"@opentelemetry/api-logs@0.207.0":
+-  version "0.207.0"
+-  resolved "https://registry.yarnpkg.com/@opentelemetry/api-logs/-/api-logs-0.207.0.tgz#ae991c51eedda55af037a3e6fc1ebdb12b289f49"
+-  integrity sha512-lAb0jQRVyleQQGiuuvCOTDVspc14nx6XJjP4FspJ1sNARo3Regq4ZZbrc3rN4b1TYSuUCvgH+UXUPug4SLOqEQ==
+-  dependencies:
+-    "@opentelemetry/api" "^1.3.0"
+-
+ "@opentelemetry/api-logs@0.212.0":
+   version "0.212.0"
+   resolved "https://registry.yarnpkg.com/@opentelemetry/api-logs/-/api-logs-0.212.0.tgz#ec66a0951b84b1f082e13fd8a027b9f9d65a3f7a"
+@@ -6089,15 +6082,6 @@
+     import-in-the-middle "^3.0.0"
+     require-in-the-middle "^8.0.0"
+ 
+-"@opentelemetry/instrumentation@^0.207.0":
+-  version "0.207.0"
+-  resolved "https://registry.yarnpkg.com/@opentelemetry/instrumentation/-/instrumentation-0.207.0.tgz#1a5a921c04f171ff28096fa320af713f3c87ec14"
+-  integrity sha512-y6eeli9+TLKnznrR8AZlQMSJT7wILpXH+6EYq5Vf/4Ao+huI7EedxQHwRgVUOMLFbe7VFDvHJrX9/f4lcwnJsA==
+-  dependencies:
+-    "@opentelemetry/api-logs" "0.207.0"
+-    import-in-the-middle "^2.0.0"
+-    require-in-the-middle "^8.0.0"
+-
+ "@opentelemetry/instrumentation@^0.212.0":
+   version "0.212.0"
+   resolved "https://registry.yarnpkg.com/@opentelemetry/instrumentation/-/instrumentation-0.212.0.tgz#238b6e3e2131217ff4acfe7e8e7b6ce1f0ac0ba0"
+@@ -6708,13 +6692,6 @@
+   dependencies:
+     "@prisma/debug" "6.15.0"
+ 
+-"@prisma/instrumentation@7.6.0":
+-  version "7.6.0"
+-  resolved "https://registry.yarnpkg.com/@prisma/instrumentation/-/instrumentation-7.6.0.tgz#22a4ea3e9d8cdc57cbaa0e26ccf10cb8db854549"
+-  integrity sha512-ZPW2gRiwpPzEfgeZgaekhqXrbW+Y2RJKHVqUmlhZhKzRNCcvR6DykzylDrynpArKKRQtLxoZy36fK7U0p3pdgQ==
+-  dependencies:
+-    "@opentelemetry/instrumentation" "^0.207.0"
+-
+ "@protobuf-ts/plugin-framework@^2.9.4":
+   version "2.9.4"
+   resolved "https://registry.yarnpkg.com/@protobuf-ts/plugin-framework/-/plugin-framework-2.9.4.tgz#d7a617dedda4a12c568fdc1db5aa67d5e4da2406"
+@@ -18859,7 +18836,7 @@ import-fresh@^3.2.1:
+     parent-module "^1.0.0"
+     resolve-from "^4.0.0"
+ 
+-import-in-the-middle@^2.0.0, import-in-the-middle@^2.0.6:
++import-in-the-middle@^2.0.6:
+   version "2.0.6"
+   resolved "https://registry.yarnpkg.com/import-in-the-middle/-/import-in-the-middle-2.0.6.tgz#1972337bfe020d05f6b5e020c13334567436324f"
+   integrity sha512-3vZV3jX0XRFW3EJDTwzWoZa+RH1b8eTTx6YOCjglrLyPuepwoBti1k3L2dKwdCUrnVEfc5CuRuGstaC/uQJJaw==

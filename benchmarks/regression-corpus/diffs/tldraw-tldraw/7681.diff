@@ -1,0 +1,2402 @@
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 8b259b716e9b..e64eb3ea8dd8 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -717,6 +717,7 @@ export const defaultTldrawOptions: {
+     readonly handleRadius: 12;
+     readonly hitTestMargin: 8;
+     readonly laserDelayMs: 1200;
++    readonly laserFadeoutMs: 500;
+     readonly longPressDurationMs: 500;
+     readonly maxExportDelayMs: 5000;
+     readonly maxFilesAtOnce: 100;
+@@ -2705,19 +2706,30 @@ export interface ScribbleItem {
+ // @public (undocumented)
+ export class ScribbleManager {
+     constructor(editor: Editor);
+-    addPoint(id: ScribbleItem['id'], x: number, y: number, z?: number): ScribbleItem;
+-    // (undocumented)
++    addPoint(id: string, x: number, y: number, z?: number): ScribbleItem;
++    addPointToSession(sessionId: string, scribbleId: string, x: number, y: number, z?: number): ScribbleItem;
+     addScribble(scribble: Partial<TLScribble>, id?: string): ScribbleItem;
+-    // (undocumented)
++    addScribbleToSession(sessionId: string, scribble: Partial<TLScribble>, scribbleId?: string): ScribbleItem;
++    clearSession(sessionId: string): void;
++    extendSession(sessionId: string): void;
++    isSessionActive(sessionId: string): boolean;
+     reset(): void;
+-    // (undocumented)
+-    scribbleItems: Map<string, ScribbleItem>;
+-    // (undocumented)
+-    state: "paused" | "running";
+-    stop(id: ScribbleItem['id']): ScribbleItem;
++    startSession(options?: ScribbleSessionOptions): string;
++    stop(id: string): ScribbleItem;
++    stopSession(sessionId: string): void;
+     tick(elapsed: number): void;
+ }
+ 
++// @public (undocumented)
++export interface ScribbleSessionOptions {
++    fadeDurationMs?: number;
++    fadeEasing?: 'ease-in' | 'linear';
++    fadeMode?: 'grouped' | 'individual';
++    id?: string;
++    idleTimeoutMs?: number;
++    selfConsume?: boolean;
++}
++
+ // @public (undocumented)
+ export type SelectionCorner = 'bottom_left' | 'bottom_right' | 'top_left' | 'top_right';
+ 
+@@ -3503,6 +3515,7 @@ export interface TldrawOptions {
+     readonly hitTestMargin: number;
+     // (undocumented)
+     readonly laserDelayMs: number;
++    readonly laserFadeoutMs: number;
+     // (undocumented)
+     readonly longPressDurationMs: number;
+     // (undocumented)
+diff --git a/packages/editor/src/index.ts b/packages/editor/src/index.ts
+index 2c5b6570c613..a74e264b395c 100644
+--- a/packages/editor/src/index.ts
++++ b/packages/editor/src/index.ts
+@@ -150,6 +150,7 @@ export { InputsManager } from './lib/editor/managers/InputsManager/InputsManager
+ export {
+ 	ScribbleManager,
+ 	type ScribbleItem,
++	type ScribbleSessionOptions,
+ } from './lib/editor/managers/ScribbleManager/ScribbleManager'
+ export {
+ 	BoundsSnaps,
+diff --git a/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.test.ts b/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.test.ts
+deleted file mode 100644
+index 93d58011b272..000000000000
+--- a/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.test.ts
++++ /dev/null
+@@ -1,621 +0,0 @@
+-import { TLScribble } from '@tldraw/tlschema'
+-import { Mock, Mocked, vi } from 'vitest'
+-import { Editor } from '../../Editor'
+-import { ScribbleItem, ScribbleManager } from './ScribbleManager'
+-
+-// Mock the Editor class
+-vi.mock('../../Editor')
+-vi.mock('@tldraw/utils', () => ({
+-	uniqueId: vi.fn(() => 'test-id'),
+-}))
+-
+-describe('ScribbleManager', () => {
+-	let editor: Mocked<Editor>
+-	let scribbleManager: ScribbleManager
+-	let mockUniqueId: Mock
+-
+-	beforeEach(async () => {
+-		editor = {
+-			updateInstanceState: vi.fn(),
+-			run: vi.fn((fn) => fn()),
+-		} as any
+-
+-		const { uniqueId } = await vi.importMock('@tldraw/utils')
+-		mockUniqueId = uniqueId as Mock
+-		mockUniqueId.mockReturnValue('test-id')
+-
+-		scribbleManager = new ScribbleManager(editor)
+-	})
+-
+-	afterEach(() => {
+-		vi.clearAllMocks()
+-	})
+-
+-	describe('constructor and initialization', () => {
+-		it('should initialize with empty scribble items and paused state', () => {
+-			expect(scribbleManager.scribbleItems.size).toBe(0)
+-			expect(scribbleManager.state).toBe('paused')
+-		})
+-	})
+-
+-	describe('addScribble', () => {
+-		it('should add a new scribble with default values', () => {
+-			const result = scribbleManager.addScribble({})
+-
+-			expect(result).toBeDefined()
+-			expect(result.id).toBe('test-id')
+-			expect(result.scribble).toMatchObject({
+-				id: 'test-id',
+-				size: 20,
+-				color: 'accent',
+-				opacity: 0.8,
+-				delay: 0,
+-				points: [],
+-				shrink: 0.1,
+-				taper: true,
+-				state: 'starting',
+-			})
+-			expect(result.timeoutMs).toBe(0)
+-			expect(result.delayRemaining).toBe(0)
+-			expect(result.prev).toBeNull()
+-			expect(result.next).toBeNull()
+-		})
+-
+-		it('should add a scribble with custom properties', () => {
+-			const customScribble: Partial<TLScribble> = {
+-				size: 30,
+-				color: 'black',
+-				opacity: 0.5,
+-				delay: 1000,
+-				shrink: 0.2,
+-				taper: false,
+-			}
+-
+-			const result = scribbleManager.addScribble(customScribble)
+-
+-			expect(result.scribble).toMatchObject({
+-				...customScribble,
+-				id: 'test-id',
+-				points: [],
+-				state: 'starting',
+-			})
+-			expect(result.delayRemaining).toBe(1000)
+-		})
+-
+-		it('should add scribble with custom id', () => {
+-			const customId = 'custom-scribble-id'
+-			const result = scribbleManager.addScribble({}, customId)
+-
+-			expect(result.id).toBe(customId)
+-			expect(result.scribble.id).toBe(customId)
+-			expect(scribbleManager.scribbleItems.has(customId)).toBe(true)
+-		})
+-
+-		it('should store scribble in scribbleItems map', () => {
+-			const result = scribbleManager.addScribble({})
+-
+-			expect(scribbleManager.scribbleItems.size).toBe(1)
+-			expect(scribbleManager.scribbleItems.get('test-id')).toBe(result)
+-		})
+-
+-		it('should handle multiple scribbles', () => {
+-			mockUniqueId.mockReturnValueOnce('id1').mockReturnValueOnce('id2').mockReturnValueOnce('id3')
+-
+-			const scribble1 = scribbleManager.addScribble({ color: 'black' })
+-			const scribble2 = scribbleManager.addScribble({ color: 'white' })
+-			const scribble3 = scribbleManager.addScribble({ color: 'accent' })
+-
+-			expect(scribbleManager.scribbleItems.size).toBe(3)
+-			expect(scribble1.scribble.color).toBe('black')
+-			expect(scribble2.scribble.color).toBe('white')
+-			expect(scribble3.scribble.color).toBe('accent')
+-		})
+-	})
+-
+-	describe('reset', () => {
+-		it('should clear all scribble items and update instance state', () => {
+-			mockUniqueId.mockReturnValueOnce('id1').mockReturnValueOnce('id2')
+-			scribbleManager.addScribble({})
+-			scribbleManager.addScribble({})
+-			expect(scribbleManager.scribbleItems.size).toBe(2)
+-
+-			scribbleManager.reset()
+-
+-			expect(scribbleManager.scribbleItems.size).toBe(0)
+-			expect(editor.updateInstanceState).toHaveBeenCalledWith({ scribbles: [] })
+-		})
+-
+-		it('should work when no scribbles exist', () => {
+-			expect(() => scribbleManager.reset()).not.toThrow()
+-			expect(scribbleManager.scribbleItems.size).toBe(0)
+-			expect(editor.updateInstanceState).toHaveBeenCalledWith({ scribbles: [] })
+-		})
+-	})
+-
+-	describe('stop', () => {
+-		it('should stop an existing scribble', () => {
+-			const item = scribbleManager.addScribble({ delay: 1000 })
+-			item.delayRemaining = 500
+-
+-			const result = scribbleManager.stop(item.id)
+-
+-			expect(result).toBe(item)
+-			expect(result.scribble.state).toBe('stopping')
+-			expect(result.delayRemaining).toBe(200) // min(500, 200)
+-		})
+-
+-		it('should cap delay at 200ms when stopping', () => {
+-			const item = scribbleManager.addScribble({ delay: 50 })
+-			item.delayRemaining = 50
+-
+-			scribbleManager.stop(item.id)
+-
+-			expect(item.delayRemaining).toBe(50) // min(50, 200)
+-		})
+-
+-		it('should throw error for non-existent scribble', () => {
+-			expect(() => scribbleManager.stop('non-existent-id')).toThrow(
+-				'Scribble with id non-existent-id not found'
+-			)
+-		})
+-
+-		it('should handle stopping multiple scribbles', () => {
+-			mockUniqueId.mockReturnValueOnce('id1').mockReturnValueOnce('id2')
+-
+-			const item1 = scribbleManager.addScribble({})
+-			const item2 = scribbleManager.addScribble({})
+-
+-			scribbleManager.stop('id1')
+-			scribbleManager.stop('id2')
+-
+-			expect(item1.scribble.state).toBe('stopping')
+-			expect(item2.scribble.state).toBe('stopping')
+-		})
+-	})
+-
+-	describe('addPoint', () => {
+-		it('should add point to existing scribble', () => {
+-			const item = scribbleManager.addScribble({})
+-
+-			const result = scribbleManager.addPoint(item.id, 10, 20, 0.7)
+-
+-			expect(result).toBe(item)
+-			expect(result.next).toEqual({ x: 10, y: 20, z: 0.7 })
+-		})
+-
+-		it('should use default z value of 0.5', () => {
+-			const item = scribbleManager.addScribble({})
+-
+-			scribbleManager.addPoint(item.id, 10, 20)
+-
+-			expect(item.next).toEqual({ x: 10, y: 20, z: 0.5 })
+-		})
+-
+-		it('should only set next if distance from prev is >= 1', () => {
+-			const item = scribbleManager.addScribble({})
+-			item.prev = { x: 10, y: 20, z: 0.5 }
+-
+-			// Distance < 1 (should not set next)
+-			scribbleManager.addPoint(item.id, 10.5, 20.3)
+-			expect(item.next).toBeNull()
+-
+-			// Distance >= 1 (should set next)
+-			scribbleManager.addPoint(item.id, 11, 21)
+-			expect(item.next).toEqual({ x: 11, y: 21, z: 0.5 })
+-		})
+-
+-		it('should set next when prev is null', () => {
+-			const item = scribbleManager.addScribble({})
+-			expect(item.prev).toBeNull()
+-
+-			scribbleManager.addPoint(item.id, 5, 5)
+-
+-			expect(item.next).toEqual({ x: 5, y: 5, z: 0.5 })
+-		})
+-
+-		it('should throw error for non-existent scribble', () => {
+-			expect(() => scribbleManager.addPoint('non-existent-id', 10, 20)).toThrow(
+-				'Scribble with id non-existent-id not found'
+-			)
+-		})
+-
+-		it('should handle multiple points', () => {
+-			const item = scribbleManager.addScribble({})
+-
+-			scribbleManager.addPoint(item.id, 0, 0)
+-			expect(item.next).toEqual({ x: 0, y: 0, z: 0.5 })
+-
+-			item.prev = item.next
+-			scribbleManager.addPoint(item.id, 10, 10)
+-			expect(item.next).toEqual({ x: 10, y: 10, z: 0.5 })
+-		})
+-	})
+-
+-	describe('tick', () => {
+-		it('should return early when no scribble items exist', () => {
+-			scribbleManager.tick(16)
+-
+-			expect(editor.run).not.toHaveBeenCalled()
+-		})
+-
+-		it('should wrap tick operations in editor.run', () => {
+-			scribbleManager.addScribble({})
+-
+-			scribbleManager.tick(16)
+-
+-			expect(editor.run).toHaveBeenCalledWith(expect.any(Function))
+-		})
+-
+-		describe('starting state behavior', () => {
+-			it('should add points to scribble in starting state', () => {
+-				const item = scribbleManager.addScribble({})
+-				item.next = { x: 10, y: 20, z: 0.5 }
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.prev).toEqual({ x: 10, y: 20, z: 0.5 })
+-				expect(item.scribble.points).toHaveLength(1)
+-				expect(item.scribble.points[0]).toEqual({ x: 10, y: 20, z: 0.5 })
+-			})
+-
+-			it('should not add point if next equals prev', () => {
+-				const item = scribbleManager.addScribble({})
+-				const point = { x: 10, y: 20, z: 0.5 }
+-				item.next = point
+-				item.prev = point
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.points).toHaveLength(0)
+-			})
+-
+-			it('should transition to active after 8 points', () => {
+-				const item = scribbleManager.addScribble({})
+-
+-				// Add 9 points to trigger transition
+-				for (let i = 0; i < 9; i++) {
+-					item.next = { x: i, y: i, z: 0.5 }
+-					item.prev = null // Reset prev to ensure point is added
+-					scribbleManager.tick(16)
+-				}
+-
+-				expect(item.scribble.state).toBe('active')
+-				expect(item.scribble.points).toHaveLength(9)
+-			})
+-		})
+-
+-		describe('active state behavior', () => {
+-			let item: ScribbleItem
+-
+-			beforeEach(() => {
+-				item = scribbleManager.addScribble({})
+-				item.scribble.state = 'active'
+-			})
+-
+-			it('should add new points when next differs from prev', () => {
+-				item.next = { x: 10, y: 20, z: 0.5 }
+-				item.prev = { x: 0, y: 0, z: 0.5 }
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.prev).toEqual({ x: 10, y: 20, z: 0.5 })
+-				expect(item.scribble.points).toContainEqual({ x: 10, y: 20, z: 0.5 })
+-			})
+-
+-			it('should shrink from start when delay is finished and points > 8', () => {
+-				// Set up scribble with > 8 points and no delay
+-				for (let i = 0; i < 10; i++) {
+-					item.scribble.points.push({ x: i, y: i, z: 0.5 })
+-				}
+-				item.delayRemaining = 0
+-				item.next = { x: 50, y: 50, z: 0.5 }
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.points).toHaveLength(10) // Added one, removed one
+-				expect(item.scribble.points[0]).toEqual({ x: 1, y: 1, z: 0.5 }) // First was removed
+-			})
+-
+-			it('should shrink when not moving and timeout reached', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-				item.timeoutMs = 16 // Will reset to 0, triggering shrink
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.points).toHaveLength(1)
+-				expect(item.scribble.points[0]).toEqual({ x: 2, y: 2, z: 0.5 })
+-			})
+-
+-			it('should reset delay when down to single point while stationary', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.delay = 500
+-				item.delayRemaining = 0
+-				item.timeoutMs = 16
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.delayRemaining).toBe(500)
+-			})
+-
+-			it('should update timeout correctly', () => {
+-				item.timeoutMs = 10
+-
+-				scribbleManager.tick(5)
+-				expect(item.timeoutMs).toBe(15)
+-
+-				scribbleManager.tick(2)
+-				expect(item.timeoutMs).toBe(0) // Reset when >= 16 (15 + 2 = 17)
+-			})
+-
+-			it('should reduce delay remaining', () => {
+-				item.delayRemaining = 100
+-
+-				scribbleManager.tick(30)
+-
+-				expect(item.delayRemaining).toBeLessThan(100)
+-			})
+-
+-			it('should not reduce delay below 0', () => {
+-				item.delayRemaining = 10
+-
+-				scribbleManager.tick(30)
+-
+-				expect(item.delayRemaining).toBe(0)
+-			})
+-		})
+-
+-		describe('stopping state behavior', () => {
+-			let item: ScribbleItem
+-
+-			beforeEach(() => {
+-				item = scribbleManager.addScribble({})
+-				item.scribble.state = 'stopping'
+-			})
+-
+-			it('should remove points when delay is finished and timeout reached', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-				item.delayRemaining = 0
+-				item.timeoutMs = 16
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.points).toHaveLength(1)
+-				expect(item.scribble.points[0]).toEqual({ x: 2, y: 2, z: 0.5 })
+-			})
+-
+-			it('should shrink scribble size when shrink is enabled', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-				item.scribble.size = 20
+-				item.scribble.shrink = 0.1
+-				item.delayRemaining = 0
+-				item.timeoutMs = 16
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.size).toBe(18) // 20 * (1 - 0.1)
+-			})
+-
+-			it('should not shrink size below 1', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-				item.scribble.size = 1.5
+-				item.scribble.shrink = 0.8
+-				item.delayRemaining = 0
+-				item.timeoutMs = 16
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.size).toBe(1) // Math.max(1, 1.5 * 0.2)
+-			})
+-
+-			it('should remove scribble when down to one point', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.delayRemaining = 0
+-				item.timeoutMs = 16
+-
+-				scribbleManager.tick(16)
+-
+-				expect(scribbleManager.scribbleItems.has(item.id)).toBe(false)
+-			})
+-
+-			it('should not process when delay remaining > 0', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-				item.delayRemaining = 100
+-				item.timeoutMs = 16
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.points).toHaveLength(2) // No change
+-			})
+-
+-			it('should not process when timeout < 16', () => {
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-				item.delayRemaining = 0
+-				item.timeoutMs = 10
+-
+-				scribbleManager.tick(5)
+-
+-				expect(item.scribble.points).toHaveLength(2) // No change
+-				expect(item.timeoutMs).toBe(15)
+-			})
+-		})
+-
+-		describe('paused state behavior', () => {
+-			it('should do nothing when scribble is paused', () => {
+-				const item = scribbleManager.addScribble({})
+-				item.scribble.state = 'paused'
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-				const originalPoints = [...item.scribble.points]
+-
+-				scribbleManager.tick(16)
+-
+-				expect(item.scribble.points).toEqual(originalPoints)
+-			})
+-		})
+-
+-		describe('instance state updates', () => {
+-			it('should update instance state with scribbles', () => {
+-				mockUniqueId.mockReturnValueOnce('id1').mockReturnValueOnce('id2')
+-				scribbleManager.addScribble({ color: 'black' })
+-				scribbleManager.addScribble({ color: 'white' })
+-
+-				scribbleManager.tick(16)
+-
+-				expect(editor.updateInstanceState).toHaveBeenCalledWith({
+-					scribbles: expect.arrayContaining([
+-						expect.objectContaining({
+-							color: 'black',
+-							points: expect.any(Array),
+-						}),
+-						expect.objectContaining({
+-							color: 'white',
+-							points: expect.any(Array),
+-						}),
+-					]),
+-				})
+-			})
+-
+-			it('should create copies of scribbles for instance state', () => {
+-				const item = scribbleManager.addScribble({})
+-				item.scribble.points.push({ x: 1, y: 1, z: 0.5 })
+-
+-				scribbleManager.tick(16)
+-
+-				const call = editor.updateInstanceState.mock.calls[0][0]
+-				const scribbleInState = call.scribbles![0]
+-
+-				// Modify the original
+-				item.scribble.points.push({ x: 2, y: 2, z: 0.5 })
+-
+-				// State copy should be unaffected
+-				expect(scribbleInState.points).toHaveLength(1)
+-			})
+-
+-			it('should limit scribbles to 5 items', () => {
+-				// Add 7 scribbles
+-				const colors = ['accent', 'black', 'white', 'laser', 'muted-1', 'accent', 'black'] as const
+-				for (let i = 0; i < 7; i++) {
+-					mockUniqueId.mockReturnValueOnce(`id${i}`)
+-					scribbleManager.addScribble({ color: colors[i] })
+-				}
+-
+-				scribbleManager.tick(16)
+-
+-				const call = editor.updateInstanceState.mock.calls[0][0]
+-				expect(call.scribbles).toHaveLength(5)
+-			})
+-		})
+-	})
+-
+-	describe('edge cases and error handling', () => {
+-		it('should handle Vec.Dist calculation edge cases', () => {
+-			const item = scribbleManager.addScribble({})
+-			item.prev = { x: 0, y: 0, z: 0 }
+-
+-			// Exactly distance 1
+-			scribbleManager.addPoint(item.id, 1, 0)
+-			expect(item.next).toEqual({ x: 1, y: 0, z: 0.5 })
+-
+-			// Reset and test just under distance 1
+-			item.next = null
+-			scribbleManager.addPoint(item.id, 0.9, 0)
+-			expect(item.next).toBeNull()
+-		})
+-
+-		it('should handle multiple scribbles in different states', () => {
+-			mockUniqueId
+-				.mockReturnValueOnce('starting')
+-				.mockReturnValueOnce('active')
+-				.mockReturnValueOnce('stopping')
+-
+-			const startingItem = scribbleManager.addScribble({})
+-			const activeItem = scribbleManager.addScribble({})
+-			const stoppingItem = scribbleManager.addScribble({})
+-
+-			activeItem.scribble.state = 'active'
+-			stoppingItem.scribble.state = 'stopping'
+-
+-			startingItem.next = { x: 1, y: 1, z: 0.5 }
+-			activeItem.next = { x: 2, y: 2, z: 0.5 }
+-			stoppingItem.scribble.points.push({ x: 3, y: 3, z: 0.5 })
+-			stoppingItem.delayRemaining = 0
+-			stoppingItem.timeoutMs = 16
+-
+-			scribbleManager.tick(16)
+-
+-			expect(startingItem.scribble.points).toHaveLength(1)
+-			expect(activeItem.scribble.points).toHaveLength(1)
+-			expect(scribbleManager.scribbleItems.has('stopping')).toBe(false) // Removed
+-		})
+-
+-		it('should handle tick with 0 elapsed time', () => {
+-			const item = scribbleManager.addScribble({})
+-			item.delayRemaining = 100
+-
+-			expect(() => scribbleManager.tick(0)).not.toThrow()
+-			expect(item.delayRemaining).toBe(100) // Should remain unchanged
+-		})
+-
+-		it('should handle negative elapsed time', () => {
+-			const item = scribbleManager.addScribble({})
+-			item.delayRemaining = 100
+-
+-			scribbleManager.tick(-50)
+-
+-			expect(item.delayRemaining).toBe(100) // Should remain unchanged or handle gracefully
+-		})
+-
+-		it('should handle empty points array operations', () => {
+-			const item = scribbleManager.addScribble({})
+-			item.scribble.state = 'active'
+-			item.timeoutMs = 16
+-
+-			expect(() => scribbleManager.tick(16)).not.toThrow()
+-		})
+-	})
+-
+-	describe('integration scenarios', () => {
+-		it('should handle complete scribble lifecycle', () => {
+-			const item = scribbleManager.addScribble({ delay: 100 })
+-
+-			// Starting state - add points
+-			for (let i = 0; i < 10; i++) {
+-				item.next = { x: i, y: i, z: 0.5 }
+-				item.prev = null
+-				scribbleManager.tick(16)
+-			}
+-
+-			expect(item.scribble.state).toBe('active')
+-			expect(item.scribble.points).toHaveLength(10)
+-
+-			// Stop the scribble
+-			scribbleManager.stop(item.id)
+-			expect(item.scribble.state).toBe('stopping')
+-
+-			// Process until removed
+-			let iterations = 0
+-			while (scribbleManager.scribbleItems.has(item.id) && iterations < 20) {
+-				scribbleManager.tick(16)
+-				iterations++
+-			}
+-
+-			expect(scribbleManager.scribbleItems.has(item.id)).toBe(false)
+-		})
+-
+-		it('should handle rapid point additions', () => {
+-			const item = scribbleManager.addScribble({})
+-
+-			// Add many points rapidly
+-			for (let i = 0; i < 100; i++) {
+-				scribbleManager.addPoint(item.id, i * 2, i * 2) // Ensure distance > 1
+-			}
+-
+-			expect(item.next).toEqual({ x: 198, y: 198, z: 0.5 })
+-		})
+-	})
+-})
+diff --git a/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts b/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts
+index d02fd23a06b3..ef44dcaac994 100644
+--- a/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts
++++ b/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts
+@@ -13,18 +13,111 @@ export interface ScribbleItem {
+ 	next: null | VecModel
+ }
+ 
++/** @public */
++export interface ScribbleSessionOptions {
++	/** Session id. Auto-generated if not provided. */
++	id?: string
++	/**
++	 * Whether scribbles self-consume (shrink from start) while drawing.
++	 * - true: scribbles eat their own tail as you draw (default, used for eraser/select)
++	 * - false: scribbles persist until session stops (used for laser)
++	 */
++	selfConsume?: boolean
++	/**
++	 * How long to wait after last activity before auto-stopping the session.
++	 * Only applies when selfConsume is false.
++	 */
++	idleTimeoutMs?: number
++	/**
++	 * How scribbles fade when stopping.
++	 * - 'individual': each scribble fades on its own (default)
++	 * - 'grouped': all scribbles fade together as one sequence
++	 */
++	fadeMode?: 'individual' | 'grouped'
++	/**
++	 * Easing for grouped fade.
++	 */
++	fadeEasing?: 'linear' | 'ease-in'
++	/**
++	 * Duration of the fade in milliseconds.
++	 */
++	fadeDurationMs?: number
++}
++
++// Internal session state (not exported)
++interface Session {
++	id: string
++	items: ScribbleItem[]
++	state: 'active' | 'stopping' | 'complete'
++	options: Required<Omit<ScribbleSessionOptions, 'id'>>
++	idleTimeoutHandle?: number
++	fadeElapsed: number
++	totalPointsAtFadeStart: number
++}
++
+ /** @public */
+ export class ScribbleManager {
+-	scribbleItems = new Map<string, ScribbleItem>()
+-	state = 'paused' as 'paused' | 'running'
++	private sessions = new Map<string, Session>()
+ 
+ 	constructor(private editor: Editor) {}
+ 
+-	addScribble(scribble: Partial<TLScribble>, id = uniqueId()) {
+-		const item: ScribbleItem = {
++	// ==================== SESSION API ====================
++
++	/**
++	 * Start a new session for grouping scribbles.
++	 * Returns a session ID that can be used with other session methods.
++	 *
++	 * @param options - Session configuration
++	 * @returns Session ID
++	 * @public
++	 */
++	startSession(options: ScribbleSessionOptions = {}): string {
++		const id = options.id ?? uniqueId()
++		const session: Session = {
+ 			id,
++			items: [],
++			state: 'active',
++			options: {
++				selfConsume: options.selfConsume ?? true,
++				idleTimeoutMs: options.idleTimeoutMs ?? 0,
++				fadeMode: options.fadeMode ?? 'individual',
++				fadeEasing: options.fadeEasing ?? (options.fadeMode === 'grouped' ? 'ease-in' : 'linear'),
++				fadeDurationMs: options.fadeDurationMs ?? this.editor.options.laserFadeoutMs,
++			},
++			fadeElapsed: 0,
++			totalPointsAtFadeStart: 0,
++		}
++
++		this.sessions.set(id, session)
++
++		// Set up idle timeout if configured
++		if (session.options.idleTimeoutMs > 0) {
++			this.resetIdleTimeout(session)
++		}
++
++		return id
++	}
++
++	/**
++	 * Add a scribble to a session.
++	 *
++	 * @param sessionId - The session ID
++	 * @param scribble - Partial scribble properties
++	 * @param scribbleId - Optional scribble ID
++	 * @public
++	 */
++	addScribbleToSession(
++		sessionId: string,
++		scribble: Partial<TLScribble>,
++		scribbleId = uniqueId()
++	): ScribbleItem {
++		const session = this.sessions.get(sessionId)
++		if (!session) throw Error(`Session ${sessionId} not found`)
++
++		const item: ScribbleItem = {
++			id: scribbleId,
+ 			scribble: {
+-				id,
++				id: scribbleId,
+ 				size: 20,
+ 				color: 'accent',
+ 				opacity: 0.8,
+@@ -40,46 +133,197 @@ export class ScribbleManager {
+ 			prev: null,
+ 			next: null,
+ 		}
+-		this.scribbleItems.set(id, item)
++
++		session.items.push(item)
++
++		// Reset idle timeout on activity
++		if (session.options.idleTimeoutMs > 0) {
++			this.resetIdleTimeout(session)
++		}
++
++		return item
++	}
++
++	/**
++	 * Add a point to a scribble in a session.
++	 *
++	 * @param sessionId - The session ID
++	 * @param scribbleId - The scribble ID
++	 * @param x - X coordinate
++	 * @param y - Y coordinate
++	 * @param z - Z coordinate (pressure)
++	 * @public
++	 */
++	addPointToSession(
++		sessionId: string,
++		scribbleId: string,
++		x: number,
++		y: number,
++		z = 0.5
++	): ScribbleItem {
++		const session = this.sessions.get(sessionId)
++		if (!session) throw Error(`Session ${sessionId} not found`)
++
++		const item = session.items.find((i) => i.id === scribbleId)
++		if (!item) throw Error(`Scribble ${scribbleId} not found in session ${sessionId}`)
++
++		const point = { x, y, z }
++		if (!item.prev || Vec.Dist(item.prev, point) >= 1) {
++			item.next = point
++		}
++
++		// Reset idle timeout on activity
++		if (session.options.idleTimeoutMs > 0) {
++			this.resetIdleTimeout(session)
++		}
++
+ 		return item
+ 	}
+ 
+-	reset() {
+-		this.editor.updateInstanceState({ scribbles: [] })
+-		this.scribbleItems.clear()
++	/**
++	 * Extend a session, resetting its idle timeout.
++	 *
++	 * @param sessionId - The session ID
++	 * @public
++	 */
++	extendSession(sessionId: string): void {
++		const session = this.sessions.get(sessionId)
++		if (!session) return
++
++		if (session.options.idleTimeoutMs > 0) {
++			this.resetIdleTimeout(session)
++		}
+ 	}
+ 
+ 	/**
+-	 * Start stopping the scribble. The scribble won't be removed until its last point is cleared.
++	 * Stop a session, triggering fade-out.
+ 	 *
++	 * @param sessionId - The session ID
+ 	 * @public
+ 	 */
+-	stop(id: ScribbleItem['id']) {
+-		const item = this.scribbleItems.get(id)
+-		if (!item) throw Error(`Scribble with id ${id} not found`)
+-		item.delayRemaining = Math.min(item.delayRemaining, 200)
+-		item.scribble.state = 'stopping'
+-		return item
++	stopSession(sessionId: string): void {
++		const session = this.sessions.get(sessionId)
++		if (!session || session.state !== 'active') return
++
++		this.clearIdleTimeout(session)
++		session.state = 'stopping'
++
++		if (session.options.fadeMode === 'grouped') {
++			session.totalPointsAtFadeStart = session.items.reduce(
++				(sum, item) => sum + item.scribble.points.length,
++				0
++			)
++			session.fadeElapsed = 0
++			for (const item of session.items) {
++				item.scribble.state = 'stopping'
++			}
++		} else {
++			for (const item of session.items) {
++				item.delayRemaining = Math.min(item.delayRemaining, 200)
++				item.scribble.state = 'stopping'
++			}
++		}
+ 	}
+ 
+ 	/**
+-	 * Set the scribble's next point.
++	 * Clear all scribbles in a session immediately.
+ 	 *
+-	 * @param id - The id of the scribble to add a point to.
+-	 * @param x - The x coordinate of the point.
+-	 * @param y - The y coordinate of the point.
+-	 * @param z - The z coordinate of the point.
++	 * @param sessionId - The session ID
+ 	 * @public
+ 	 */
+-	addPoint(id: ScribbleItem['id'], x: number, y: number, z = 0.5) {
+-		const item = this.scribbleItems.get(id)
+-		if (!item) throw Error(`Scribble with id ${id} not found`)
+-		const { prev } = item
+-		const point = { x, y, z }
+-		if (!prev || Vec.Dist(prev, point) >= 1) {
+-			item.next = point
++	clearSession(sessionId: string): void {
++		const session = this.sessions.get(sessionId)
++		if (!session) return
++
++		this.clearIdleTimeout(session)
++		for (const item of session.items) {
++			item.scribble.points.length = 0
+ 		}
+-		return item
++		session.state = 'complete'
++	}
++
++	/**
++	 * Check if a session is active.
++	 *
++	 * @param sessionId - The session ID
++	 * @public
++	 */
++	isSessionActive(sessionId: string): boolean {
++		const session = this.sessions.get(sessionId)
++		return session?.state === 'active'
++	}
++
++	// ==================== SIMPLE API (for eraser, select, etc.) ====================
++
++	/**
++	 * Add a scribble using the default self-consuming behavior.
++	 * Creates an implicit session for the scribble.
++	 *
++	 * @param scribble - Partial scribble properties
++	 * @param id - Optional scribble id
++	 * @returns The created scribble item
++	 * @public
++	 */
++	addScribble(scribble: Partial<TLScribble>, id = uniqueId()): ScribbleItem {
++		const sessionId = this.startSession()
++		return this.addScribbleToSession(sessionId, scribble, id)
++	}
++
++	/**
++	 * Add a point to a scribble. Searches all sessions.
++	 *
++	 * @param id - The scribble id
++	 * @param x - X coordinate
++	 * @param y - Y coordinate
++	 * @param z - Z coordinate (pressure)
++	 * @public
++	 */
++	addPoint(id: string, x: number, y: number, z = 0.5): ScribbleItem {
++		for (const session of this.sessions.values()) {
++			const item = session.items.find((i) => i.id === id)
++			if (item) {
++				const point = { x, y, z }
++				if (!item.prev || Vec.Dist(item.prev, point) >= 1) {
++					item.next = point
++				}
++				if (session.options.idleTimeoutMs > 0) {
++					this.resetIdleTimeout(session)
++				}
++				return item
++			}
++		}
++		throw Error(`Scribble with id ${id} not found`)
++	}
++
++	/**
++	 * Stop a scribble. Searches all sessions.
++	 *
++	 * @param id - The scribble id
++	 * @public
++	 */
++	stop(id: string): ScribbleItem {
++		for (const session of this.sessions.values()) {
++			const item = session.items.find((i) => i.id === id)
++			if (item) {
++				item.delayRemaining = Math.min(item.delayRemaining, 200)
++				item.scribble.state = 'stopping'
++				return item
++			}
++		}
++		throw Error(`Scribble with id ${id} not found`)
++	}
++
++	/**
++	 * Stop and remove all sessions.
++	 *
++	 * @public
++	 */
++	reset(): void {
++		for (const session of this.sessions.values()) {
++			this.clearIdleTimeout(session)
++		}
++		this.sessions.clear()
++		this.editor.updateInstanceState({ scribbles: [] })
+ 	}
+ 
+ 	/**
+@@ -88,98 +332,219 @@ export class ScribbleManager {
+ 	 * @param elapsed - The number of milliseconds since the last tick.
+ 	 * @public
+ 	 */
+-	tick(elapsed: number) {
+-		if (this.scribbleItems.size === 0) return
++	tick(elapsed: number): void {
++		const currentScribbles = this.editor.getInstanceState().scribbles
++		if (this.sessions.size === 0 && currentScribbles.length === 0) return
++
+ 		this.editor.run(() => {
+-			this.scribbleItems.forEach((item) => {
+-				// let the item get at least eight points before
+-				//  switching from starting to active
+-				if (item.scribble.state === 'starting') {
+-					const { next, prev } = item
+-					if (next && next !== prev) {
+-						item.prev = next
+-						item.scribble.points.push(next)
+-					}
++			// Tick all sessions
++			for (const session of this.sessions.values()) {
++				this.tickSession(session, elapsed)
++			}
+ 
+-					if (item.scribble.points.length > 8) {
+-						item.scribble.state = 'active'
+-					}
+-					return
++			// Remove completed sessions
++			for (const [id, session] of this.sessions) {
++				if (session.state === 'complete') {
++					this.clearIdleTimeout(session)
++					this.sessions.delete(id)
+ 				}
++			}
+ 
+-				if (item.delayRemaining > 0) {
+-					item.delayRemaining = Math.max(0, item.delayRemaining - elapsed)
++			// Collect scribbles from all sessions
++			const scribbles: TLScribble[] = []
++			for (const session of this.sessions.values()) {
++				for (const item of session.items) {
++					if (item.scribble.points.length > 0) {
++						scribbles.push({
++							...item.scribble,
++							points: [...item.scribble.points],
++						})
++					}
+ 				}
++			}
++
++			this.editor.updateInstanceState({ scribbles })
++		})
++	}
++
++	// ==================== PRIVATE HELPERS ====================
++
++	private resetIdleTimeout(session: Session): void {
++		this.clearIdleTimeout(session)
++		session.idleTimeoutHandle = this.editor.timers.setTimeout(() => {
++			this.stopSession(session.id)
++		}, session.options.idleTimeoutMs)
++	}
++
++	private clearIdleTimeout(session: Session): void {
++		if (session.idleTimeoutHandle !== undefined) {
++			clearTimeout(session.idleTimeoutHandle)
++			session.idleTimeoutHandle = undefined
++		}
++	}
+ 
+-				item.timeoutMs += elapsed
+-				if (item.timeoutMs >= 16) {
+-					item.timeoutMs = 0
++	private tickSession(session: Session, elapsed: number): void {
++		if (session.state === 'complete') return
++
++		if (session.state === 'stopping' && session.options.fadeMode === 'grouped') {
++			this.tickGroupedFade(session, elapsed)
++		} else {
++			this.tickSessionItems(session, elapsed)
++		}
++
++		// Check if session is complete
++		const hasContent = session.items.some((item) => item.scribble.points.length > 0)
++		if (!hasContent && (session.state === 'stopping' || session.items.length === 0)) {
++			session.state = 'complete'
++		}
++	}
++
++	private tickSessionItems(session: Session, elapsed: number): void {
++		for (const item of session.items) {
++			const shouldSelfConsume =
++				session.options.selfConsume ||
++				session.state === 'stopping' ||
++				item.scribble.state === 'stopping'
++
++			if (shouldSelfConsume) {
++				this.tickSelfConsumingItem(item, elapsed)
++			} else {
++				this.tickPersistentItem(item)
++			}
++		}
++
++		// Remove completed items in individual fade mode
++		if (session.options.fadeMode === 'individual') {
++			for (let i = session.items.length - 1; i >= 0; i--) {
++				if (session.items[i].scribble.points.length === 0) {
++					session.items.splice(i, 1)
+ 				}
++			}
++		}
++	}
++
++	private tickPersistentItem(item: ScribbleItem): void {
++		const { scribble } = item
++
++		if (scribble.state === 'starting') {
++			const { next, prev } = item
++			if (next && next !== prev) {
++				item.prev = next
++				scribble.points.push(next)
++			}
++			if (scribble.points.length > 8) {
++				scribble.state = 'active'
++			}
++			return
++		}
++
++		if (scribble.state === 'active') {
++			const { next, prev } = item
++			if (next && next !== prev) {
++				item.prev = next
++				scribble.points.push(next)
++			}
++		}
++	}
+ 
+-				const { delayRemaining, timeoutMs, prev, next, scribble } = item
++	private tickSelfConsumingItem(item: ScribbleItem, elapsed: number): void {
++		const { scribble } = item
+ 
+-				switch (scribble.state) {
+-					case 'active': {
+-						if (next && next !== prev) {
+-							item.prev = next
+-							scribble.points.push(next)
++		if (scribble.state === 'starting') {
++			const { next, prev } = item
++			if (next && next !== prev) {
++				item.prev = next
++				scribble.points.push(next)
++			}
++			if (scribble.points.length > 8) {
++				scribble.state = 'active'
++			}
++			return
++		}
++
++		if (item.delayRemaining > 0) {
++			item.delayRemaining = Math.max(0, item.delayRemaining - elapsed)
++		}
+ 
+-							// If we've run out of delay, then shrink the scribble from the start
+-							if (delayRemaining === 0) {
+-								if (scribble.points.length > 8) {
+-									scribble.points.shift()
+-								}
+-							}
++		item.timeoutMs += elapsed
++		if (item.timeoutMs >= 16) {
++			item.timeoutMs = 0
++		}
++
++		const { delayRemaining, timeoutMs, prev, next } = item
++
++		switch (scribble.state) {
++			case 'active': {
++				if (next && next !== prev) {
++					item.prev = next
++					scribble.points.push(next)
++					if (delayRemaining === 0 && scribble.points.length > 8) {
++						scribble.points.shift()
++					}
++				} else {
++					if (timeoutMs === 0) {
++						if (scribble.points.length > 1) {
++							scribble.points.shift()
+ 						} else {
+-							// While not moving, shrink the scribble from the start
+-							if (timeoutMs === 0) {
+-								if (scribble.points.length > 1) {
+-									scribble.points.shift()
+-								} else {
+-									// Reset the item's delay
+-									item.delayRemaining = scribble.delay
+-								}
+-							}
++							item.delayRemaining = scribble.delay
+ 						}
+-						break
+ 					}
+-					case 'stopping': {
+-						if (item.delayRemaining === 0) {
+-							if (timeoutMs === 0) {
+-								// If the scribble is down to one point, we're done!
+-								if (scribble.points.length === 1) {
+-									this.scribbleItems.delete(item.id) // Remove the scribble
+-									return
+-								}
+-
+-								if (scribble.shrink) {
+-									// Drop the scribble's size as it shrinks
+-									scribble.size = Math.max(1, scribble.size * (1 - scribble.shrink))
+-								}
+-
+-								// Drop the scribble's first point (its tail)
+-								scribble.points.shift()
+-							}
+-						}
+-						break
++				}
++				break
++			}
++			case 'stopping': {
++				if (delayRemaining === 0 && timeoutMs === 0) {
++					if (scribble.points.length <= 1) {
++						scribble.points.length = 0
++						return
+ 					}
+-					case 'paused': {
+-						// Nothing to do while paused.
+-						break
++					if (scribble.shrink) {
++						scribble.size = Math.max(1, scribble.size * (1 - scribble.shrink))
+ 					}
++					scribble.points.shift()
+ 				}
+-			})
+-
+-			// The object here will get frozen into the record, so we need to
+-			// create a copies of the parts that what we'll be mutating later.
+-			this.editor.updateInstanceState({
+-				scribbles: Array.from(this.scribbleItems.values())
+-					.map(({ scribble }) => ({
+-						...scribble,
+-						points: [...scribble.points],
+-					}))
+-					.slice(-5), // limit to three as a minor sanity check
+-			})
+-		})
++				break
++			}
++			case 'paused': {
++				break
++			}
++		}
++	}
++
++	private tickGroupedFade(session: Session, elapsed: number): void {
++		session.fadeElapsed += elapsed
++
++		let remainingPoints = 0
++		for (const item of session.items) {
++			remainingPoints += item.scribble.points.length
++		}
++
++		if (remainingPoints === 0) return
++
++		if (session.fadeElapsed >= session.options.fadeDurationMs) {
++			for (const item of session.items) {
++				item.scribble.points.length = 0
++			}
++			return
++		}
++
++		const progress = session.fadeElapsed / session.options.fadeDurationMs
++		const easedProgress = session.options.fadeEasing === 'ease-in' ? progress * progress : progress
++
++		const targetRemoved = Math.floor(easedProgress * session.totalPointsAtFadeStart)
++		const actuallyRemoved = session.totalPointsAtFadeStart - remainingPoints
++		const pointsToRemove = Math.max(1, targetRemoved - actuallyRemoved)
++
++		let removed = 0
++		let itemIndex = 0
++		while (removed < pointsToRemove && itemIndex < session.items.length) {
++			const item = session.items[itemIndex]
++			if (item.scribble.points.length > 0) {
++				item.scribble.points.shift()
++				removed++
++			} else {
++				itemIndex++
++			}
++		}
+ 	}
+ }
+diff --git a/packages/editor/src/lib/options.ts b/packages/editor/src/lib/options.ts
+index 9df0b9802666..3b779c479546 100644
+--- a/packages/editor/src/lib/options.ts
++++ b/packages/editor/src/lib/options.ts
+@@ -54,6 +54,12 @@ export interface TldrawOptions {
+ 	readonly flattenImageBoundsExpand: number
+ 	readonly flattenImageBoundsPadding: number
+ 	readonly laserDelayMs: number
++	/**
++	 * How long (in milliseconds) to fade all laser scribbles after the session ends.
++	 * The total points across all scribbles will be removed proportionally over this duration.
++	 * Defaults to 500ms (0.5 seconds).
++	 */
++	readonly laserFadeoutMs: number
+ 	readonly maxExportDelayMs: number
+ 	readonly tooltipDelayMs: number
+ 	/**
+@@ -157,6 +163,7 @@ export const defaultTldrawOptions = {
+ 	flattenImageBoundsExpand: 64,
+ 	flattenImageBoundsPadding: 16,
+ 	laserDelayMs: 1200,
++	laserFadeoutMs: 500,
+ 	maxExportDelayMs: 5000,
+ 	tooltipDelayMs: 700,
+ 	temporaryAssetPreviewLifetimeMs: 180000,
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index d55f5971b9f4..bed86ae4772d 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -1985,6 +1985,7 @@ export function LanguageMenu(): JSX.Element | null;
+ export class LaserTool extends StateNode {
+     // (undocumented)
+     static children(): TLStateNodeConstructor[];
++    getSessionId(): string;
+     // (undocumented)
+     static id: string;
+     // (undocumented)
+@@ -1992,7 +1993,11 @@ export class LaserTool extends StateNode {
+     // (undocumented)
+     static isLockable: boolean;
+     // (undocumented)
++    onCancel(): void;
++    // (undocumented)
+     onEnter(): void;
++    // (undocumented)
++    onExit(): void;
+ }
+ 
+ // @public (undocumented)
+diff --git a/packages/tldraw/src/lib/tools/LaserTool/LaserTool.ts b/packages/tldraw/src/lib/tools/LaserTool/LaserTool.ts
+index 6df101d4496e..7db1cfca6636 100644
+--- a/packages/tldraw/src/lib/tools/LaserTool/LaserTool.ts
++++ b/packages/tldraw/src/lib/tools/LaserTool/LaserTool.ts
+@@ -11,7 +11,43 @@ export class LaserTool extends StateNode {
+ 	}
+ 	static override isLockable = false
+ 
++	private sessionId: string | null = null
++
+ 	override onEnter() {
+ 		this.editor.setCursor({ type: 'cross', rotation: 0 })
+ 	}
++
++	override onExit() {
++		this.sessionId = null
++	}
++
++	override onCancel() {
++		if (this.sessionId && this.editor.scribbles.isSessionActive(this.sessionId)) {
++			this.editor.scribbles.clearSession(this.sessionId)
++			this.sessionId = null
++			this.transition('idle')
++		} else {
++			this.editor.setCurrentTool('select')
++		}
++	}
++
++	/**
++	 * Get the current laser session ID, or create a new one if none exists or the current one is fading.
++	 */
++	getSessionId(): string {
++		// Reuse existing session if it's still active
++		if (this.sessionId && this.editor.scribbles.isSessionActive(this.sessionId)) {
++			return this.sessionId
++		}
++
++		// Create a new session
++		this.sessionId = this.editor.scribbles.startSession({
++			selfConsume: false,
++			idleTimeoutMs: this.editor.options.laserDelayMs,
++			fadeMode: 'grouped',
++			fadeEasing: 'ease-in',
++		})
++
++		return this.sessionId
++	}
+ }
+diff --git a/packages/tldraw/src/lib/tools/LaserTool/childStates/Idle.ts b/packages/tldraw/src/lib/tools/LaserTool/childStates/Idle.ts
+index f8f2ab012463..01e4080fd8c1 100644
+--- a/packages/tldraw/src/lib/tools/LaserTool/childStates/Idle.ts
++++ b/packages/tldraw/src/lib/tools/LaserTool/childStates/Idle.ts
+@@ -1,13 +1,18 @@
+-import { StateNode, TLPointerEventInfo } from '@tldraw/editor'
++import { StateNode } from '@tldraw/editor'
++import { LaserTool } from '../LaserTool'
+ 
+ export class Idle extends StateNode {
+ 	static override id = 'idle'
+ 
+-	override onCancel() {
+-		this.editor.setCurrentTool('select')
+-	}
+-
+-	override onPointerDown(info: TLPointerEventInfo) {
+-		this.parent.transition('lasering', info)
++	override onPointerDown() {
++		// Get or create the shared laser session from the parent tool
++		const sessionId = (this.parent as LaserTool).getSessionId()
++		const scribble = this.editor.scribbles.addScribbleToSession(sessionId, {
++			color: 'laser',
++			opacity: 0.7,
++			size: 4,
++			taper: false,
++		})
++		this.parent.transition('lasering', { sessionId, scribbleId: scribble.id })
+ 	}
+ }
+diff --git a/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts b/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts
+index 4c148b16c65d..22346fe26055 100644
+--- a/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts
++++ b/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts
+@@ -3,40 +3,34 @@ import { StateNode } from '@tldraw/editor'
+ export class Lasering extends StateNode {
+ 	static override id = 'lasering'
+ 
+-	scribbleId = 'id'
+-
+-	override onEnter() {
+-		const scribble = this.editor.scribbles.addScribble({
+-			color: 'laser',
+-			opacity: 0.7,
+-			size: 4,
+-			delay: this.editor.options.laserDelayMs,
+-			shrink: 0.05,
+-			taper: true,
+-		})
+-		this.scribbleId = scribble.id
+-		this.pushPointToScribble()
+-	}
++	private scribbleId = ''
++	private sessionId = ''
+ 
+-	override onExit() {
+-		this.editor.scribbles.stop(this.scribbleId)
++	override onEnter(info: { sessionId: string; scribbleId: string }) {
++		this.sessionId = info.sessionId
++		this.scribbleId = info.scribbleId
++		this.pushPointToScribble()
+ 	}
+ 
+ 	override onPointerMove() {
+ 		this.pushPointToScribble()
+ 	}
+ 
+-	override onPointerUp() {
+-		this.complete()
+-	}
+-
+ 	private pushPointToScribble() {
+ 		const { x, y } = this.editor.inputs.getCurrentPagePoint()
+-		this.editor.scribbles.addPoint(this.scribbleId, x, y)
++		this.editor.scribbles.addPointToSession(this.sessionId, this.scribbleId, x, y)
++	}
++
++	override onTick() {
++		this.editor.scribbles.extendSession(this.sessionId)
++	}
++
++	override onPointerUp() {
++		this.complete()
+ 	}
+ 
+ 	override onCancel() {
+-		this.cancel()
++		this.onComplete()
+ 	}
+ 
+ 	override onComplete() {
+@@ -46,8 +40,4 @@ export class Lasering extends StateNode {
+ 	private complete() {
+ 		this.parent.transition('idle')
+ 	}
+-
+-	private cancel() {
+-		this.parent.transition('idle')
+-	}
+ }
+diff --git a/packages/tldraw/src/test/LaserTool.test.ts b/packages/tldraw/src/test/LaserTool.test.ts
+index 598bdcb3800b..15de6c9bab4e 100644
+--- a/packages/tldraw/src/test/LaserTool.test.ts
++++ b/packages/tldraw/src/test/LaserTool.test.ts
+@@ -1,3 +1,432 @@
+-describe('Laser tool', () => {
+-	it.todo('tests the laser tool')
++import { vi } from 'vitest'
++import { TestEditor } from './TestEditor'
++
++vi.useFakeTimers()
++
++let editor: TestEditor
++
++beforeEach(() => {
++	editor = new TestEditor()
++})
++
++afterEach(() => {
++	editor?.dispose()
++})
++
++describe('LaserTool', () => {
++	describe('State chart', () => {
++		it('starts in idle state', () => {
++			editor.setCurrentTool('laser')
++			editor.expectToBeIn('laser.idle')
++		})
++
++		it('sets cursor to cross on enter', () => {
++			editor.setCurrentTool('laser')
++			expect(editor.getInstanceState().cursor.type).toBe('cross')
++		})
++
++		it('transitions to lasering on pointer down', () => {
++			editor.setCurrentTool('laser')
++			editor.expectToBeIn('laser.idle')
++
++			editor.pointerDown(0, 0)
++			editor.expectToBeIn('laser.lasering')
++		})
++
++		it('transitions back to idle on pointer up', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.expectToBeIn('laser.lasering')
++
++			editor.pointerUp()
++			editor.expectToBeIn('laser.idle')
++		})
++
++		it('transitions to idle on cancel while lasering', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.expectToBeIn('laser.lasering')
++
++			editor.cancel()
++			editor.expectToBeIn('laser.idle')
++		})
++
++		it('switches to select tool on cancel from idle without session', () => {
++			editor.setCurrentTool('laser')
++			editor.expectToBeIn('laser.idle')
++
++			// Cancel without ever drawing - should switch to select
++			editor.cancel()
++			editor.expectToBeIn('select.idle')
++		})
++
++		it('clears scribbles and stays in idle on cancel with active session', () => {
++			editor.setCurrentTool('laser')
++
++			// Draw to create a session
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++			editor.pointerUp()
++
++			editor.expectToBeIn('laser.idle')
++
++			// Verify we have scribbles
++			let scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBeGreaterThan(0)
++
++			// Cancel should clear scribbles and stay in idle
++			editor.cancel()
++			editor.expectToBeIn('laser.idle')
++
++			vi.advanceTimersByTime(16)
++			scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(0)
++		})
++
++		it('handles complete event from lasering state', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.expectToBeIn('laser.lasering')
++
++			// Send complete event
++			editor.complete()
++			editor.expectToBeIn('laser.idle')
++		})
++	})
++
++	describe('Scribble creation', () => {
++		it('creates a scribble when drawing', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBeGreaterThan(0)
++		})
++
++		it('creates scribble with laser color', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles[0].color).toBe('laser')
++		})
++
++		it('creates scribble with correct properties', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles[0]).toMatchObject({
++				color: 'laser',
++				opacity: 0.7,
++				size: 4,
++				taper: false,
++			})
++		})
++
++		it('adds points to scribble on pointer move', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++
++			for (let i = 1; i <= 10; i++) {
++				editor.pointerMove(i * 5, i * 5)
++				vi.advanceTimersByTime(16)
++			}
++
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles[0].points.length).toBeGreaterThan(1)
++		})
++	})
++
++	describe('Session behavior', () => {
++		it('handles multiple strokes in a single session', () => {
++			editor.setCurrentTool('laser')
++
++			// First stroke
++			editor.pointerDown(0, 0)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, 0)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Second stroke (within idle timeout)
++			vi.advanceTimersByTime(100)
++			editor.pointerDown(0, 50)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, 50)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Both strokes should be visible
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(2)
++		})
++
++		it('extends session on tick while lasering', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++
++			// Simulate drawing for longer than idle timeout
++			const drawDuration = editor.options.laserDelayMs + 500
++			for (let elapsed = 0; elapsed < drawDuration; elapsed += 16) {
++				editor.pointerMove(elapsed / 10, elapsed / 10)
++				vi.advanceTimersByTime(16)
++			}
++
++			// Should still have scribbles because session was extended
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBeGreaterThan(0)
++			expect(scribbles[0].points.length).toBeGreaterThan(0)
++		})
++
++		it('fades out scribbles after idle timeout', () => {
++			editor.setCurrentTool('laser')
++
++			// Draw a stroke
++			editor.pointerDown(0, 0)
++			for (let i = 1; i <= 10; i++) {
++				editor.pointerMove(i * 5, i * 5)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Verify scribbles exist
++			let scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBeGreaterThan(0)
++
++			// Wait for idle timeout to trigger fade
++			vi.advanceTimersByTime(editor.options.laserDelayMs + 100)
++
++			// Wait for fade to complete
++			vi.advanceTimersByTime(editor.options.laserFadeoutMs + 100)
++
++			// Scribbles should be completely gone
++			scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(0)
++		})
++
++		it('allows creating a new session while previous session is fading', () => {
++			editor.setCurrentTool('laser')
++
++			// First session
++			editor.pointerDown(0, 0)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, 0)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Wait for idle timeout to start fading
++			vi.advanceTimersByTime(editor.options.laserDelayMs + 100)
++
++			// Partially through fade
++			vi.advanceTimersByTime(editor.options.laserFadeoutMs / 2)
++
++			// Start a new stroke while first is still fading
++			editor.pointerDown(0, 100)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, 100)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Should have scribbles from the new session
++			let scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBeGreaterThan(0)
++
++			// Wait for everything to complete
++			vi.advanceTimersByTime(editor.options.laserDelayMs + 100)
++			vi.advanceTimersByTime(editor.options.laserFadeoutMs + 200)
++
++			// All should be cleared
++			scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(0)
++		})
++	})
++
++	describe('Cancel behavior', () => {
++		it('canceling while lasering clears scribbles and returns to idle', () => {
++			editor.setCurrentTool('laser')
++
++			// Start drawing
++			editor.pointerDown(0, 0)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, i * 5)
++				vi.advanceTimersByTime(16)
++			}
++
++			// Verify scribbles exist before cancel
++			expect(editor.getInstanceState().scribbles.length).toBeGreaterThan(0)
++
++			// Cancel mid-stroke - child state completes stroke, then parent clears session
++			editor.cancel()
++			editor.expectToBeIn('laser.idle')
++
++			// Scribbles should be cleared (parent's onCancel clears the session)
++			vi.advanceTimersByTime(16)
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(0)
++		})
++
++		it('canceling from idle with session clears all scribbles immediately', () => {
++			editor.setCurrentTool('laser')
++
++			// Draw multiple strokes
++			editor.pointerDown(0, 0)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, 0)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			vi.advanceTimersByTime(100)
++
++			editor.pointerDown(0, 50)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, 50)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Verify multiple scribbles exist
++			let scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(2)
++
++			// Cancel from idle should clear all
++			editor.cancel()
++			editor.expectToBeIn('laser.idle')
++
++			vi.advanceTimersByTime(16)
++			scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBe(0)
++		})
++
++		it('second cancel from idle without session switches to select', () => {
++			editor.setCurrentTool('laser')
++
++			// Draw and cancel once (clears session)
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++			editor.pointerUp()
++
++			editor.cancel() // First cancel - clears scribbles
++			editor.expectToBeIn('laser.idle')
++
++			vi.advanceTimersByTime(16)
++			expect(editor.getInstanceState().scribbles.length).toBe(0)
++
++			// Second cancel - no session, switch to select
++			editor.cancel()
++			editor.expectToBeIn('select.idle')
++		})
++	})
++
++	describe('Tool exit', () => {
++		it('clears session reference on tool exit', () => {
++			editor.setCurrentTool('laser')
++
++			// Draw a stroke
++			editor.pointerDown(0, 0)
++			for (let i = 1; i <= 5; i++) {
++				editor.pointerMove(i * 5, i * 5)
++				vi.advanceTimersByTime(16)
++			}
++			editor.pointerUp()
++
++			// Scribbles should exist
++			expect(editor.getInstanceState().scribbles.length).toBeGreaterThan(0)
++
++			// Switch tools
++			editor.setCurrentTool('select')
++
++			// Scribbles should still be visible (fading naturally)
++			expect(editor.getInstanceState().scribbles.length).toBeGreaterThan(0)
++
++			// Wait for fade
++			vi.advanceTimersByTime(editor.options.laserDelayMs + 100)
++			vi.advanceTimersByTime(editor.options.laserFadeoutMs + 200)
++
++			expect(editor.getInstanceState().scribbles.length).toBe(0)
++		})
++
++		it('re-entering laser tool creates fresh session', () => {
++			editor.setCurrentTool('laser')
++
++			// Draw first stroke
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++			editor.pointerUp()
++
++			const initialScribbleCount = editor.getInstanceState().scribbles.length
++
++			// Switch away and back
++			editor.setCurrentTool('select')
++			editor.setCurrentTool('laser')
++
++			// Draw second stroke
++			editor.pointerDown(0, 50)
++			editor.pointerMove(10, 60)
++			vi.advanceTimersByTime(16)
++			editor.pointerUp()
++
++			// Should have scribbles from both (before first fades)
++			expect(editor.getInstanceState().scribbles.length).toBeGreaterThan(initialScribbleCount)
++		})
++	})
++
++	describe('Edge cases', () => {
++		it('handles rapid pointer up/down', () => {
++			editor.setCurrentTool('laser')
++
++			// Rapid clicks
++			for (let i = 0; i < 5; i++) {
++				editor.pointerDown(i * 20, 0)
++				editor.pointerMove(i * 20 + 10, 10)
++				vi.advanceTimersByTime(16)
++				editor.pointerUp()
++				vi.advanceTimersByTime(16)
++			}
++
++			// Should have multiple scribbles
++			const scribbles = editor.getInstanceState().scribbles
++			expect(scribbles.length).toBeGreaterThan(0)
++		})
++
++		it('handles pointer move without pointer down', () => {
++			editor.setCurrentTool('laser')
++			editor.expectToBeIn('laser.idle')
++
++			// Move without pressing - should stay in idle
++			editor.pointerMove(10, 10)
++			editor.pointerMove(20, 20)
++
++			editor.expectToBeIn('laser.idle')
++			expect(editor.getInstanceState().scribbles.length).toBe(0)
++		})
++
++		it('handles interrupt event', () => {
++			editor.setCurrentTool('laser')
++			editor.pointerDown(0, 0)
++			editor.pointerMove(10, 10)
++			vi.advanceTimersByTime(16)
++
++			// Interrupt (e.g., from pinch gesture)
++			editor.interrupt()
++
++			// Should still be in lasering - interrupt doesn't cancel
++			// (This matches eraser behavior where interrupt allows pinch)
++			editor.expectToBeIn('laser.lasering')
++		})
++	})
+ })
+diff --git a/packages/tldraw/src/test/ScribbleManager.test.ts b/packages/tldraw/src/test/ScribbleManager.test.ts
+new file mode 100644
+index 000000000000..352079045a25
+--- /dev/null
++++ b/packages/tldraw/src/test/ScribbleManager.test.ts
+@@ -0,0 +1,422 @@
++import { vi } from 'vitest'
++import { TestEditor } from './TestEditor'
++
++vi.useFakeTimers()
++
++let editor: TestEditor
++
++beforeEach(() => {
++	editor = new TestEditor()
++})
++
++afterEach(() => {
++	editor?.dispose()
++})
++
++describe('ScribbleManager', () => {
++	describe('startSession', () => {
++		it('creates a new session and returns an id', () => {
++			const sessionId = editor.scribbles.startSession()
++
++			expect(typeof sessionId).toBe('string')
++			expect(sessionId.length).toBeGreaterThan(0)
++		})
++
++		it('creates a session with custom id', () => {
++			const sessionId = editor.scribbles.startSession({ id: 'my-session' })
++
++			expect(sessionId).toBe('my-session')
++		})
++
++		it('session is active after creation', () => {
++			const sessionId = editor.scribbles.startSession()
++
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(true)
++		})
++	})
++
++	describe('addScribble (simple API)', () => {
++		it('creates a scribble with default values', () => {
++			const item = editor.scribbles.addScribble({})
++
++			expect(item.scribble.size).toBe(20)
++			expect(item.scribble.color).toBe('accent')
++			expect(item.scribble.opacity).toBe(0.8)
++			expect(item.scribble.shrink).toBe(0.1)
++			expect(item.scribble.taper).toBe(true)
++			expect(item.scribble.state).toBe('starting')
++		})
++
++		it('creates a scribble with custom values', () => {
++			const item = editor.scribbles.addScribble({
++				color: 'laser',
++				size: 4,
++				opacity: 0.7,
++			})
++
++			expect(item.scribble.color).toBe('laser')
++			expect(item.scribble.size).toBe(4)
++			expect(item.scribble.opacity).toBe(0.7)
++		})
++
++		it('creates a scribble with custom id', () => {
++			const item = editor.scribbles.addScribble({}, 'my-scribble')
++
++			expect(item.id).toBe('my-scribble')
++		})
++	})
++
++	describe('addScribbleToSession', () => {
++		it('adds scribble to an existing session', () => {
++			const sessionId = editor.scribbles.startSession()
++			const item = editor.scribbles.addScribbleToSession(sessionId, { color: 'laser' })
++
++			expect(item.scribble.color).toBe('laser')
++		})
++
++		it('throws for non-existent session', () => {
++			expect(() => {
++				editor.scribbles.addScribbleToSession('non-existent', {})
++			}).toThrow()
++		})
++	})
++
++	describe('addPoint', () => {
++		it('adds point to existing scribble', () => {
++			const item = editor.scribbles.addScribble({})
++
++			editor.scribbles.addPoint(item.id, 10, 20, 0.8)
++
++			expect(item.next).toEqual({ x: 10, y: 20, z: 0.8 })
++		})
++
++		it('uses default z value of 0.5', () => {
++			const item = editor.scribbles.addScribble({})
++
++			editor.scribbles.addPoint(item.id, 10, 20)
++
++			expect(item.next).toEqual({ x: 10, y: 20, z: 0.5 })
++		})
++
++		it('throws for non-existent scribble', () => {
++			expect(() => {
++				editor.scribbles.addPoint('non-existent', 10, 20)
++			}).toThrow()
++		})
++	})
++
++	describe('addPointToSession', () => {
++		it('adds point to scribble in session', () => {
++			const sessionId = editor.scribbles.startSession()
++			const item = editor.scribbles.addScribbleToSession(sessionId, {})
++
++			editor.scribbles.addPointToSession(sessionId, item.id, 10, 20, 0.8)
++
++			expect(item.next).toEqual({ x: 10, y: 20, z: 0.8 })
++		})
++
++		it('throws for non-existent session', () => {
++			expect(() => {
++				editor.scribbles.addPointToSession('non-existent', 'scribble', 10, 20)
++			}).toThrow()
++		})
++
++		it('throws for non-existent scribble in session', () => {
++			const sessionId = editor.scribbles.startSession()
++
++			expect(() => {
++				editor.scribbles.addPointToSession(sessionId, 'non-existent', 10, 20)
++			}).toThrow()
++		})
++	})
++
++	describe('stop', () => {
++		it('stops an existing scribble', () => {
++			const item = editor.scribbles.addScribble({})
++
++			editor.scribbles.stop(item.id)
++
++			expect(item.scribble.state).toBe('stopping')
++		})
++
++		it('throws for non-existent scribble', () => {
++			expect(() => {
++				editor.scribbles.stop('non-existent')
++			}).toThrow()
++		})
++	})
++
++	describe('reset', () => {
++		it('clears all sessions and updates instance state', () => {
++			const sessionId1 = editor.scribbles.startSession()
++			const sessionId2 = editor.scribbles.startSession()
++			editor.scribbles.addScribbleToSession(sessionId1, {})
++			editor.scribbles.addScribbleToSession(sessionId2, {})
++
++			editor.scribbles.reset()
++
++			expect(editor.scribbles.isSessionActive(sessionId1)).toBe(false)
++			expect(editor.scribbles.isSessionActive(sessionId2)).toBe(false)
++			expect(editor.getInstanceState().scribbles).toEqual([])
++		})
++	})
++
++	describe('tick', () => {
++		describe('self-consuming behavior (default)', () => {
++			it('adds points to scribble in starting state', () => {
++				const item = editor.scribbles.addScribble({})
++				item.next = { x: 10, y: 10, z: 0.5 }
++
++				editor.scribbles.tick(16)
++
++				expect(item.scribble.points).toHaveLength(1)
++				expect(item.prev).toEqual({ x: 10, y: 10, z: 0.5 })
++			})
++
++			it('transitions to active after 8 points', () => {
++				const item = editor.scribbles.addScribble({})
++
++				for (let i = 0; i < 9; i++) {
++					item.next = { x: i * 10, y: i * 10, z: 0.5 }
++					editor.scribbles.tick(16)
++				}
++
++				expect(item.scribble.state).toBe('active')
++			})
++
++			it('shrinks from start when delay is finished and points > 8', () => {
++				const item = editor.scribbles.addScribble({ delay: 0 })
++
++				// Add 10 points to get into active state
++				for (let i = 0; i < 10; i++) {
++					item.next = { x: i * 10, y: i * 10, z: 0.5 }
++					editor.scribbles.tick(16)
++				}
++
++				const pointsBefore = item.scribble.points.length
++
++				// Add another point - should trigger shrink
++				item.next = { x: 100, y: 100, z: 0.5 }
++				editor.scribbles.tick(16)
++
++				// Should have same length (one added, one removed)
++				expect(item.scribble.points.length).toBe(pointsBefore)
++			})
++		})
++
++		describe('persistent behavior (selfConsume: false)', () => {
++			it('does not shrink while session is active', () => {
++				const sessionId = editor.scribbles.startSession({ selfConsume: false })
++				const item = editor.scribbles.addScribbleToSession(sessionId, { delay: 0 })
++
++				// Add 15 points
++				for (let i = 0; i < 15; i++) {
++					item.next = { x: i * 10, y: i * 10, z: 0.5 }
++					editor.scribbles.tick(16)
++				}
++
++				// All points should be preserved
++				expect(item.scribble.points.length).toBe(15)
++			})
++
++			it('shrinks after session is stopped', () => {
++				const sessionId = editor.scribbles.startSession({ selfConsume: false })
++				const item = editor.scribbles.addScribbleToSession(sessionId, { delay: 0 })
++
++				// Add points
++				for (let i = 0; i < 5; i++) {
++					item.next = { x: i * 10, y: i * 10, z: 0.5 }
++					editor.scribbles.tick(16)
++				}
++
++				const pointsBefore = item.scribble.points.length
++
++				// Stop the session
++				editor.scribbles.stopSession(sessionId)
++
++				// Tick to process shrinking
++				for (let i = 0; i < 10; i++) {
++					editor.scribbles.tick(16)
++				}
++
++				expect(item.scribble.points.length).toBeLessThan(pointsBefore)
++			})
++		})
++
++		describe('grouped fade behavior', () => {
++			it('fades all scribbles together when session stops', () => {
++				const sessionId = editor.scribbles.startSession({
++					selfConsume: false,
++					fadeMode: 'grouped',
++					fadeDurationMs: 1000,
++				})
++
++				const s1 = editor.scribbles.addScribbleToSession(sessionId, {})
++				const s2 = editor.scribbles.addScribbleToSession(sessionId, {})
++
++				// Add points to both
++				for (let i = 0; i < 10; i++) {
++					s1.next = { x: i, y: i, z: 0.5 }
++					s2.next = { x: i + 10, y: i + 10, z: 0.5 }
++					editor.scribbles.tick(16)
++				}
++
++				const totalBefore = s1.scribble.points.length + s2.scribble.points.length
++
++				// Stop session to trigger grouped fade
++				editor.scribbles.stopSession(sessionId)
++
++				// Tick through the fade
++				for (let i = 0; i < 100; i++) {
++					editor.scribbles.tick(16)
++				}
++
++				// Both should have fewer points
++				const totalAfter = s1.scribble.points.length + s2.scribble.points.length
++				expect(totalAfter).toBeLessThan(totalBefore)
++			})
++
++			it('clears all points when fade duration is exceeded', () => {
++				const sessionId = editor.scribbles.startSession({
++					selfConsume: false,
++					fadeMode: 'grouped',
++					fadeDurationMs: 100,
++				})
++
++				const item = editor.scribbles.addScribbleToSession(sessionId, {})
++
++				// Add points
++				for (let i = 0; i < 10; i++) {
++					item.next = { x: i, y: i, z: 0.5 }
++					editor.scribbles.tick(16)
++				}
++
++				editor.scribbles.stopSession(sessionId)
++
++				// Tick past fade duration
++				editor.scribbles.tick(150)
++
++				expect(item.scribble.points.length).toBe(0)
++			})
++		})
++
++		describe('instance state updates', () => {
++			it('updates instance state with scribbles', () => {
++				const item1 = editor.scribbles.addScribble({ color: 'black' })
++				const item2 = editor.scribbles.addScribble({ color: 'white' })
++				item1.next = { x: 0, y: 0, z: 0.5 }
++				item2.next = { x: 10, y: 10, z: 0.5 }
++
++				editor.scribbles.tick(16)
++
++				const scribbles = editor.getInstanceState().scribbles
++				expect(scribbles.length).toBe(2)
++				expect(scribbles.some((s) => s.color === 'black')).toBe(true)
++				expect(scribbles.some((s) => s.color === 'white')).toBe(true)
++			})
++
++			it('does not include empty scribbles in instance state', () => {
++				editor.scribbles.addScribble({ color: 'accent' })
++				// Don't add any points
++
++				editor.scribbles.tick(16)
++
++				const scribbles = editor.getInstanceState().scribbles
++				expect(scribbles.length).toBe(0)
++			})
++		})
++
++		describe('session cleanup', () => {
++			it('removes completed sessions', () => {
++				const sessionId = editor.scribbles.startSession({ fadeMode: 'individual' })
++				const item = editor.scribbles.addScribbleToSession(sessionId, {})
++				item.scribble.points.push({ x: 0, y: 0, z: 0.5 })
++				item.scribble.state = 'stopping'
++				item.delayRemaining = 0
++
++				// Tick until scribble is removed
++				for (let i = 0; i < 20; i++) {
++					editor.scribbles.tick(16)
++				}
++
++				expect(editor.scribbles.isSessionActive(sessionId)).toBe(false)
++			})
++		})
++	})
++
++	describe('session idle timeout', () => {
++		it('auto-stops session after idle timeout', () => {
++			const sessionId = editor.scribbles.startSession({
++				selfConsume: false,
++				idleTimeoutMs: editor.options.laserDelayMs,
++			})
++
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(true)
++
++			// Wait for idle timeout
++			vi.advanceTimersByTime(editor.options.laserDelayMs + 100)
++
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(false)
++		})
++
++		it('extendSession can be called on active session', () => {
++			const sessionId = editor.scribbles.startSession({
++				selfConsume: false,
++				idleTimeoutMs: editor.options.laserDelayMs,
++			})
++
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(true)
++
++			// Should not throw
++			editor.scribbles.extendSession(sessionId)
++
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(true)
++		})
++
++		it('extendSession is no-op for non-existent session', () => {
++			// Should not throw
++			editor.scribbles.extendSession('non-existent')
++		})
++	})
++
++	describe('clearSession', () => {
++		it('immediately clears all scribbles in session', () => {
++			const sessionId = editor.scribbles.startSession({ selfConsume: false })
++			const item = editor.scribbles.addScribbleToSession(sessionId, {})
++
++			// Add points
++			for (let i = 0; i < 10; i++) {
++				item.next = { x: i, y: i, z: 0.5 }
++				editor.scribbles.tick(16)
++			}
++
++			expect(item.scribble.points.length).toBe(10)
++
++			editor.scribbles.clearSession(sessionId)
++			editor.scribbles.tick(16)
++
++			expect(item.scribble.points.length).toBe(0)
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(false)
++		})
++	})
++
++	describe('stopSession', () => {
++		it('triggers fade-out of all scribbles', () => {
++			const sessionId = editor.scribbles.startSession({ selfConsume: false })
++			const item = editor.scribbles.addScribbleToSession(sessionId, {})
++
++			// Add enough points to get to active state (needs > 8)
++			for (let i = 0; i < 10; i++) {
++				item.next = { x: i, y: i, z: 0.5 }
++				editor.scribbles.tick(16)
++			}
++
++			expect(item.scribble.state).toBe('active')
++
++			editor.scribbles.stopSession(sessionId)
++
++			expect(item.scribble.state).toBe('stopping')
++			expect(editor.scribbles.isSessionActive(sessionId)).toBe(false)
++		})
++	})
++})

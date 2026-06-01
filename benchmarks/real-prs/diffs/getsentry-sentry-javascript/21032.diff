@@ -1,0 +1,4134 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 228f3fbdf88e..21c43b6e61f2 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -160,9 +160,6 @@ jobs:
+       changed_node_core_integration:
+         ${{ needs.job_get_metadata.outputs.changed_ci == 'true' || contains(steps.checkForAffected.outputs.affected,
+         '@sentry-internal/node-core-integration-tests') }}
+-      changed_remix:
+-        ${{ needs.job_get_metadata.outputs.changed_ci == 'true' || contains(steps.checkForAffected.outputs.affected,
+-        '@sentry/remix') }}
+       changed_node:
+         ${{ needs.job_get_metadata.outputs.changed_ci == 'true' || contains(steps.checkForAffected.outputs.affected,
+         '@sentry/node') }}
+@@ -897,41 +894,6 @@ jobs:
+         working-directory: dev-packages/bun-integration-tests
+         run: yarn test
+ 
+-  job_remix_integration_tests:
+-    name: Remix (Node ${{ matrix.node }}) Tests
+-    needs: [job_get_metadata, job_build]
+-    if: needs.job_build.outputs.changed_remix == 'true' || github.event_name != 'pull_request'
+-    runs-on: ubuntu-24.04
+-    timeout-minutes: 15
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        node: [18, 20, 22, 24, 26]
+-    steps:
+-      - name: Check out current commit (${{ needs.job_get_metadata.outputs.commit_label }})
+-        uses: actions/checkout@v6
+-        with:
+-          ref: ${{ env.HEAD_COMMIT }}
+-      - name: Set up Node
+-        uses: actions/setup-node@v6
+-        with:
+-          node-version: ${{ matrix.node }}
+-      - name: Restore caches
+-        uses: ./.github/actions/restore-cache
+-        with:
+-          dependency_cache_key: ${{ needs.job_build.outputs.dependency_cache_key }}
+-
+-      - name: Install Playwright
+-        uses: ./.github/actions/install-playwright
+-        with:
+-          browsers: chromium
+-
+-      - name: Run integration tests
+-        env:
+-          NODE_VERSION: ${{ matrix.node }}
+-        working-directory: packages/remix
+-        run: yarn test:integration
+-
+   job_build_tarballs:
+     name: Build tarballs
+     # We want to run this if:
+@@ -1224,7 +1186,6 @@ jobs:
+         job_bun_integration_tests,
+         job_browser_playwright_tests,
+         job_browser_loader_tests,
+-        job_remix_integration_tests,
+         job_e2e_tests,
+         job_artifacts,
+         job_lint,
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/entry.server.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/entry.server.tsx
+index 8f9efd9b6254..bf5b3f028ea1 100644
+--- a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/entry.server.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/entry.server.tsx
+@@ -13,7 +13,9 @@ installGlobals();
+ 
+ const ABORT_DELAY = 5_000;
+ 
+-export const handleError = Sentry.sentryHandleError;
++export const handleError = Sentry.wrapHandleErrorWithSentry(() => {
++  Sentry.setTag('remix-test-tag', 'remix-test-value');
++});
+ 
+ export default function handleRequest(
+   request: Request,
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/root.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/root.tsx
+index eef9aca8c4f1..5481674c7b47 100644
+--- a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/root.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/root.tsx
+@@ -1,40 +1,57 @@
+ import { cssBundleHref } from '@remix-run/css-bundle';
+-import { LinksFunction, MetaFunction, json } from '@remix-run/node';
+-import {
+-  Links,
+-  LiveReload,
+-  Meta,
+-  Outlet,
+-  Scripts,
+-  ScrollRestoration,
+-  useLoaderData,
+-  useRouteError,
+-} from '@remix-run/react';
++import { LinksFunction, LoaderFunction, MetaFunction, defer, json, redirect } from '@remix-run/node';
++import { Links, LiveReload, Meta, Outlet, Scripts, ScrollRestoration, useRouteError } from '@remix-run/react';
+ import { captureRemixErrorBoundaryError, withSentry } from '@sentry/remix';
+ import type { SentryMetaArgs } from '@sentry/remix';
+ 
+ export const links: LinksFunction = () => [...(cssBundleHref ? [{ rel: 'stylesheet', href: cssBundleHref }] : [])];
+ 
+-export const loader = () => {
+-  return json({
+-    ENV: {
+-      SENTRY_DSN: process.env.E2E_TEST_DSN,
+-    },
+-  });
++const ENV = {
++  SENTRY_DSN: process.env.E2E_TEST_DSN,
++};
++
++export const loader: LoaderFunction = async ({ request }) => {
++  const url = new URL(request.url);
++  const type = url.searchParams.get('type');
++
++  switch (type) {
++    case 'empty':
++      return {};
++    case 'plain':
++      return { data_one: [], data_two: 'a string' };
++    case 'json':
++      return json({ data_one: [], data_two: 'a string' }, { headers: { 'Cache-Control': 'max-age=300' } });
++    case 'defer':
++      return defer({ data_one: [], data_two: 'a string' });
++    case 'null':
++      return null;
++    case 'undefined':
++      return undefined;
++    case 'throwRedirect':
++      throw redirect('/?type=plain');
++    case 'returnRedirect':
++      return redirect('/?type=plain');
++    case 'throwRedirectToExternal':
++      throw redirect('https://docs.sentry.io');
++    case 'returnRedirectToExternal':
++      return redirect('https://docs.sentry.io');
++    default:
++      return json({ ENV });
++  }
+ };
+ 
+ export const meta = ({ data }: SentryMetaArgs<MetaFunction<typeof loader>>) => {
+   return [
+     {
+-      env: data.ENV,
++      env: data?.ENV,
+     },
+     {
+       name: 'sentry-trace',
+-      content: data.sentryTrace,
++      content: data?.sentryTrace,
+     },
+     {
+       name: 'baggage',
+-      content: data.sentryBaggage,
++      content: data?.sentryBaggage,
+     },
+   ];
+ };
+@@ -52,8 +69,8 @@ export function ErrorBoundary() {
+ }
+ 
+ function App() {
+-  const { ENV } = useLoaderData() as { ENV: { SENTRY_DSN: string } };
+-
++  // Use the module-level ENV constant so the client always gets a DSN even when
++  // the root loader is exercised with `?type=...` variants that omit ENV.
+   return (
+     <html lang="en">
+       <head>
+diff --git a/packages/remix/test/integration/app/routes/action-json-response.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/action-json-response.$id.tsx
+similarity index 88%
+rename from packages/remix/test/integration/app/routes/action-json-response.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/action-json-response.$id.tsx
+index b9d3d545403a..31c27d19e742 100644
+--- a/packages/remix/test/integration/app/routes/action-json-response.$id.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/action-json-response.$id.tsx
+@@ -1,6 +1,5 @@
+-import { ActionFunction, ActionFunctionArgs, json, redirect } from '@remix-run/node';
++import { ActionFunction, ActionFunctionArgs, LoaderFunctionArgs, json, redirect } from '@remix-run/node';
+ import { useActionData } from '@remix-run/react';
+-import { LoaderFunctionArgs } from '@remix-run/router';
+ 
+ export const loader = async ({ params: { id } }: LoaderFunctionArgs) => {
+   if (id === '-100') {
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/api.v1.data.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/api.v1.data.$id.tsx
+new file mode 100644
+index 000000000000..b1dbb3f1b661
+--- /dev/null
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/api.v1.data.$id.tsx
+@@ -0,0 +1,16 @@
++import { LoaderFunction, json } from '@remix-run/node';
++import { useLoaderData } from '@remix-run/react';
++
++export const loader: LoaderFunction = async ({ params }) => {
++  return json({ id: params.id });
++};
++
++export default function ApiV1Data() {
++  const data = useLoaderData<{ id: string }>();
++
++  return (
++    <div>
++      <h1>api/v1/data/{data.id}</h1>
++    </div>
++  );
++}
+diff --git a/packages/remix/test/integration/app/routes/capture-exception.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/capture-exception.tsx
+similarity index 62%
+rename from packages/remix/test/integration/app/routes/capture-exception.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/capture-exception.tsx
+index 296d50af21f4..1077b9737083 100644
+--- a/packages/remix/test/integration/app/routes/capture-exception.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/capture-exception.tsx
+@@ -1,7 +1,7 @@
+ import * as Sentry from '@sentry/remix';
+ 
+-export default function ErrorBoundaryCapture() {
++export default function CaptureException() {
+   Sentry.captureException(new Error('Sentry Manually Captured Error'));
+ 
+-  return <div></div>;
++  return <div />;
+ }
+diff --git a/packages/remix/test/integration/app/routes/capture-message.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/capture-message.tsx
+similarity index 71%
+rename from packages/remix/test/integration/app/routes/capture-message.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/capture-message.tsx
+index 06e92f79e931..56ead8f47f52 100644
+--- a/packages/remix/test/integration/app/routes/capture-message.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/capture-message.tsx
+@@ -1,6 +1,6 @@
+ import * as Sentry from '@sentry/remix';
+ 
+-export default function ErrorBoundaryCapture() {
++export default function CaptureMessage() {
+   Sentry.captureMessage('Sentry Manually Captured Message');
+ 
+   return <div />;
+diff --git a/packages/remix/test/integration/app/routes/click-error.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/click-error.tsx
+similarity index 91%
+rename from packages/remix/test/integration/app/routes/click-error.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/click-error.tsx
+index 3e42801b2cee..de3b2d9f4e67 100644
+--- a/packages/remix/test/integration/app/routes/click-error.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/click-error.tsx
+@@ -1,4 +1,3 @@
+-// Throw error on click
+ export default function ClickError() {
+   return (
+     <div>
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/deeply.$nested.$structure.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/deeply.$nested.$structure.$id.tsx
+new file mode 100644
+index 000000000000..8012b1653077
+--- /dev/null
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/deeply.$nested.$structure.$id.tsx
+@@ -0,0 +1,18 @@
++import { LoaderFunction, json } from '@remix-run/node';
++import { useLoaderData } from '@remix-run/react';
++
++export const loader: LoaderFunction = async ({ params }) => {
++  return json({ nested: params.nested, structure: params.structure, id: params.id });
++};
++
++export default function Deeply() {
++  const data = useLoaderData<{ nested: string; structure: string; id: string }>();
++
++  return (
++    <div>
++      <h1>
++        {data.nested}/{data.structure}/{data.id}
++      </h1>
++    </div>
++  );
++}
+diff --git a/packages/remix/test/integration/app/routes/error-boundary-capture.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/error-boundary-capture.$id.tsx
+similarity index 100%
+rename from packages/remix/test/integration/app/routes/error-boundary-capture.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/error-boundary-capture.$id.tsx
+diff --git a/packages/remix/test/integration/app/routes/loader-defer-response.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-defer-response.$id.tsx
+similarity index 81%
+rename from packages/remix/test/integration/app/routes/loader-defer-response.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-defer-response.$id.tsx
+index 777c3325490e..434716f965ad 100644
+--- a/packages/remix/test/integration/app/routes/loader-defer-response.$id.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-defer-response.$id.tsx
+@@ -2,12 +2,10 @@ import { LoaderFunctionArgs, defer } from '@remix-run/node';
+ import { useLoaderData } from '@remix-run/react';
+ 
+ export const loader = async ({ params: { id } }: LoaderFunctionArgs) => {
+-  return defer({
+-    id,
+-  });
++  return defer({ id });
+ };
+ 
+-export default function LoaderJSONResponse() {
++export default function LoaderDeferResponse() {
+   const data = useLoaderData<typeof loader>();
+ 
+   return (
+diff --git a/packages/remix/test/integration/app/routes/loader-json-response.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-json-response.$id.tsx
+similarity index 94%
+rename from packages/remix/test/integration/app/routes/loader-json-response.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-json-response.$id.tsx
+index 3c7aa2cd5e5d..ac1d4c792aca 100644
+--- a/packages/remix/test/integration/app/routes/loader-json-response.$id.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-json-response.$id.tsx
+@@ -12,9 +12,7 @@ export const loader: LoaderFunction = async ({ params: { id } }) => {
+     throw redirect('/loader-json-response/-2');
+   }
+ 
+-  return json({
+-    id,
+-  });
++  return json({ id });
+ };
+ 
+ export default function LoaderJSONResponse() {
+diff --git a/packages/remix/test/integration/app/routes/loader-throw-response.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-throw-response.$id.tsx
+similarity index 80%
+rename from packages/remix/test/integration/app/routes/loader-throw-response.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-throw-response.$id.tsx
+index deaedf1cf1ce..09ad66e8121d 100644
+--- a/packages/remix/test/integration/app/routes/loader-throw-response.$id.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/loader-throw-response.$id.tsx
+@@ -13,12 +13,12 @@ export const loader: LoaderFunction = async ({ params: { id } }) => {
+ };
+ 
+ export default function LoaderThrowResponse() {
+-  const data = useLoaderData();
++  const data = useLoaderData<{ message?: string }>();
+ 
+   return (
+     <div>
+       <h1>Loader Throw Response</h1>
+-      <span>{data ? data.message : 'No Data'} </span>
++      <span>{data ? data.message : 'No Data'}</span>
+     </div>
+   );
+ }
+diff --git a/packages/remix/test/integration/app/routes/manual-tracing.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/manual-tracing.$id.tsx
+similarity index 100%
+rename from packages/remix/test/integration/app/routes/manual-tracing.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/manual-tracing.$id.tsx
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/products.$productId.reviews.$reviewId.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/products.$productId.reviews.$reviewId.tsx
+new file mode 100644
+index 000000000000..7cc2a0ddae46
+--- /dev/null
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/products.$productId.reviews.$reviewId.tsx
+@@ -0,0 +1,18 @@
++import { LoaderFunction, json } from '@remix-run/node';
++import { useLoaderData } from '@remix-run/react';
++
++export const loader: LoaderFunction = async ({ params }) => {
++  return json({ productId: params.productId, reviewId: params.reviewId });
++};
++
++export default function ProductReview() {
++  const data = useLoaderData<{ productId: string; reviewId: string }>();
++
++  return (
++    <div>
++      <h1>
++        Product {data.productId} / Review {data.reviewId}
++      </h1>
++    </div>
++  );
++}
+diff --git a/packages/remix/test/integration/app/routes/scope-bleed.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/scope-bleed.$id.tsx
+similarity index 99%
+rename from packages/remix/test/integration/app/routes/scope-bleed.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/scope-bleed.$id.tsx
+index 1b684b1a6759..943bb9ba772d 100644
+--- a/packages/remix/test/integration/app/routes/scope-bleed.$id.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/scope-bleed.$id.tsx
+@@ -1,5 +1,4 @@
+ import { LoaderFunction, json } from '@remix-run/node';
+-
+ import * as Sentry from '@sentry/remix';
+ 
+ export const loader: LoaderFunction = async ({ params: { id } }) => {
+diff --git a/packages/remix/test/integration/app/routes/server-side-unexpected-errors.$id.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/server-side-unexpected-errors.$id.tsx
+similarity index 79%
+rename from packages/remix/test/integration/app/routes/server-side-unexpected-errors.$id.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/server-side-unexpected-errors.$id.tsx
+index 0e0a46205e37..3be62532421a 100644
+--- a/packages/remix/test/integration/app/routes/server-side-unexpected-errors.$id.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/server-side-unexpected-errors.$id.tsx
+@@ -2,12 +2,10 @@ import { ActionFunction } from '@remix-run/node';
+ import { useActionData } from '@remix-run/react';
+ 
+ export const action: ActionFunction = async ({ params: { id } }) => {
+-  // Throw string
+   if (id === '-1') {
+     throw 'Thrown String Error';
+   }
+ 
+-  // Throw object
+   if (id === '-2') {
+     throw {
+       message: 'Thrown Object Error',
+@@ -16,8 +14,8 @@ export const action: ActionFunction = async ({ params: { id } }) => {
+   }
+ };
+ 
+-export default function ActionJSONResponse() {
+-  const data = useActionData();
++export default function ServerSideUnexpectedErrors() {
++  const data = useActionData<{ test?: string }>();
+ 
+   return (
+     <div>
+diff --git a/packages/remix/test/integration/app/routes/ssr-error.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/ssr-error.tsx
+similarity index 76%
+rename from packages/remix/test/integration/app/routes/ssr-error.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/ssr-error.tsx
+index d171f73bcd9c..0dedfb368b31 100644
+--- a/packages/remix/test/integration/app/routes/ssr-error.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/ssr-error.tsx
+@@ -1,5 +1,5 @@
+ export default function SSRError() {
+-  const data = ['err'].map(err => {
++  const data = ['err'].map(() => {
+     throw new Error('Sentry SSR Test Error');
+   });
+ 
+diff --git a/packages/remix/test/integration/app/routes/throw-redirect.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/throw-redirect.tsx
+similarity index 88%
+rename from packages/remix/test/integration/app/routes/throw-redirect.tsx
+rename to dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/throw-redirect.tsx
+index 2d530e41d0c0..8de3caecf969 100644
+--- a/packages/remix/test/integration/app/routes/throw-redirect.tsx
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/throw-redirect.tsx
+@@ -7,5 +7,5 @@ export const loader: LoaderFunction = async () => {
+ 
+ export default function ThrowRedirect() {
+   const data = useLoaderData();
+-  return <div>{data}</div>;
++  return <div>{String(data)}</div>;
+ }
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/users.$userId.posts.$postId.tsx b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/users.$userId.posts.$postId.tsx
+new file mode 100644
+index 000000000000..bc064f71edaa
+--- /dev/null
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/app/routes/users.$userId.posts.$postId.tsx
+@@ -0,0 +1,18 @@
++import { LoaderFunction, json } from '@remix-run/node';
++import { useLoaderData } from '@remix-run/react';
++
++export const loader: LoaderFunction = async ({ params }) => {
++  return json({ userId: params.userId, postId: params.postId });
++};
++
++export default function UserPost() {
++  const data = useLoaderData<{ userId: string; postId: string }>();
++
++  return (
++    <div>
++      <h1>
++        User {data.userId} / Post {data.postId}
++      </h1>
++    </div>
++  );
++}
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-errors.test.ts b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-errors.test.ts
+index df815b6d4bb7..c56146476c90 100644
+--- a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-errors.test.ts
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-errors.test.ts
+@@ -27,3 +27,105 @@ test('Sends a client-side ErrorBoundary exception to Sentry', async ({ page }) =
+ 
+   expect(errorEvent).toBeDefined();
+ });
++
++test('Reports a manually captured exception from a route', async ({ page }) => {
++  // The route component runs on both server and browser, so two events are emitted.
++  // We only care about the browser-side capture here.
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return (
++      errorEvent.platform === 'javascript' &&
++      errorEvent.exception?.values?.[0]?.value === 'Sentry Manually Captured Error'
++    );
++  });
++
++  await page.goto('/capture-exception');
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.level).toBe('error');
++  expect(errorEvent.transaction).toBe('/capture-exception');
++  expect(errorEvent.exception?.values).toMatchObject([
++    {
++      type: 'Error',
++      value: 'Sentry Manually Captured Error',
++      stacktrace: { frames: expect.any(Array) },
++      mechanism: { type: 'generic', handled: true },
++    },
++  ]);
++});
++
++test('Reports a manually captured message from a route', async ({ page }) => {
++  const messagePromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.platform === 'javascript' && errorEvent.message === 'Sentry Manually Captured Message';
++  });
++
++  await page.goto('/capture-message');
++
++  const messageEvent = await messagePromise;
++
++  expect(messageEvent.level).toBe('info');
++  expect(messageEvent.transaction).toBe('/capture-message');
++});
++
++test('Reports a click error with stacktrace and mechanism', async ({ page }) => {
++  await page.goto('/click-error');
++
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'ClickError';
++  });
++
++  await page.click('#click-error');
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.level).toBe('error');
++  expect(errorEvent.sdk?.name).toBe('sentry.javascript.remix');
++  expect(errorEvent.exception?.values).toMatchObject([
++    {
++      type: 'Error',
++      value: 'ClickError',
++      stacktrace: { frames: expect.any(Array) },
++      mechanism: { type: 'auto.browser.browserapierrors.addEventListener', handled: false },
++    },
++  ]);
++
++  const frames = errorEvent.exception?.values?.[0]?.stacktrace?.frames;
++  expect(frames?.[frames.length - 1]?.function).toBe('onClick');
++});
++
++test('Does not report SSR errors on the client', async ({ page }) => {
++  let clientErrorReceived = false;
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    // The server SDK emits the same error with `platform: 'node'` — only flag browser envelopes.
++    if (errorEvent.platform === 'javascript' && errorEvent.exception?.values?.[0]?.value === 'Sentry SSR Test Error') {
++      clientErrorReceived = true;
++      return true;
++    }
++    return false;
++  });
++
++  await page.goto('/ssr-error').catch(() => {
++    // expected to fail server-side
++  });
++
++  await Promise.race([errorPromise, new Promise(resolve => setTimeout(resolve, 3000))]);
++
++  expect(clientErrorReceived).toBe(false);
++});
++
++test('Does not report thrown redirect responses on the client', async ({ page }) => {
++  let clientErrorReceived = false;
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    if (errorEvent.platform === 'javascript') {
++      clientErrorReceived = true;
++      return true;
++    }
++    return false;
++  });
++
++  await page.goto('/throw-redirect');
++
++  await Promise.race([errorPromise, new Promise(resolve => setTimeout(resolve, 3000))]);
++
++  expect(clientErrorReceived).toBe(false);
++});
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-transactions.test.ts b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-transactions.test.ts
+index 68237301b635..c468a2276fb3 100644
+--- a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-transactions.test.ts
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/client-transactions.test.ts
+@@ -55,3 +55,144 @@ test('Renders `sentry-trace` and `baggage` meta tags for a sub-route', async ({
+   expect(sentryTraceMetaTag).toBeTruthy();
+   expect(baggageMetaTag).toBeTruthy();
+ });
++
++async function extractTraceAndBaggageFromMeta(page: import('@playwright/test').Page) {
++  const sentryTrace = await page.$('meta[name="sentry-trace"]').then(t => t?.getAttribute('content'));
++  const baggage = await page.$('meta[name="baggage"]').then(t => t?.getAttribute('content'));
++  return { sentryTrace, baggage };
++}
++
++for (const type of ['empty', 'plain', 'json', 'defer', 'null', 'undefined'] as const) {
++  test(`Injects sentry-trace and baggage meta tags with ${type} root loader`, async ({ page }) => {
++    await page.goto(`/?type=${type}`);
++    const { sentryTrace, baggage } = await extractTraceAndBaggageFromMeta(page);
++
++    expect(sentryTrace).toMatch(/.+/);
++    expect(baggage).toMatch(/.+/);
++  });
++}
++
++test('Injects sentry-trace and baggage meta tags after a thrown internal redirect', async ({ page }) => {
++  await page.goto('/?type=throwRedirect');
++
++  expect(page.url()).toEqual(expect.stringContaining('/?type=plain'));
++
++  const { sentryTrace, baggage } = await extractTraceAndBaggageFromMeta(page);
++
++  expect(sentryTrace).toMatch(/.+/);
++  expect(baggage).toMatch(/.+/);
++});
++
++test('Injects sentry-trace and baggage meta tags after a returned internal redirect', async ({ page, baseURL }) => {
++  await page.goto(`${baseURL}/?type=returnRedirect`);
++
++  expect(page.url()).toEqual(expect.stringContaining('/?type=plain'));
++
++  const { sentryTrace, baggage } = await extractTraceAndBaggageFromMeta(page);
++
++  expect(sentryTrace).toMatch(/.+/);
++  expect(baggage).toMatch(/.+/);
++});
++
++test('Does not inject sentry-trace and baggage when returning an external redirect', async ({ page, baseURL }) => {
++  await page.goto(`${baseURL}/?type=returnRedirectToExternal`);
++
++  expect(page.url()).toEqual(expect.stringContaining('docs.sentry.io'));
++
++  const { sentryTrace, baggage } = await extractTraceAndBaggageFromMeta(page);
++
++  expect(sentryTrace).toBeFalsy();
++  expect(baggage).toBeFalsy();
++});
++
++test('Does not inject sentry-trace and baggage when throwing an external redirect', async ({ page, baseURL }) => {
++  await page.goto(`${baseURL}/?type=throwRedirectToExternal`);
++
++  expect(page.url()).toEqual(expect.stringContaining('docs.sentry.io'));
++
++  const { sentryTrace, baggage } = await extractTraceAndBaggageFromMeta(page);
++
++  expect(sentryTrace).toBeFalsy();
++  expect(baggage).toBeFalsy();
++});
++
++test('Pageload transaction is parameterized for a dynamic route', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', transactionEvent => {
++    return (
++      transactionEvent.contexts?.trace?.op === 'pageload' &&
++      transactionEvent.transaction === '/error-boundary-capture/:id'
++    );
++  });
++
++  await page.goto('/error-boundary-capture/123');
++
++  const transactionEvent = await transactionPromise;
++
++  expect(transactionEvent.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Pageload transaction is parameterized for a 2-level nested route', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', transactionEvent => {
++    return (
++      transactionEvent.contexts?.trace?.op === 'pageload' &&
++      transactionEvent.transaction === '/users/:userId/posts/:postId'
++    );
++  });
++
++  await page.goto('/users/user123/posts/post456');
++
++  const transactionEvent = await transactionPromise;
++
++  expect(transactionEvent.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Pageload transaction is parameterized for a deeply nested route', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', transactionEvent => {
++    return (
++      transactionEvent.contexts?.trace?.op === 'pageload' &&
++      transactionEvent.transaction === '/deeply/:nested/:structure/:id'
++    );
++  });
++
++  await page.goto('/deeply/level1/level2/level3');
++
++  const transactionEvent = await transactionPromise;
++
++  expect(transactionEvent.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Pageload transaction is parameterized for a flat dot-notation route', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', transactionEvent => {
++    return (
++      transactionEvent.contexts?.trace?.op === 'pageload' &&
++      transactionEvent.transaction === '/products/:productId/reviews/:reviewId'
++    );
++  });
++
++  await page.goto('/products/prod789/reviews/rev101');
++
++  const transactionEvent = await transactionPromise;
++
++  expect(transactionEvent.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Reports a manually created transaction', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', transactionEvent => {
++    return transactionEvent.transaction === 'test_transaction_1';
++  });
++
++  await page.goto('/manual-tracing/0');
++
++  const transactionEvent = await transactionPromise;
++
++  expect(transactionEvent.sdk?.name).toBe('sentry.javascript.remix');
++  expect(transactionEvent.start_timestamp).toBeDefined();
++  expect(transactionEvent.timestamp).toBeDefined();
++});
++
++test('Renders data from a deferred loader response', async ({ page }) => {
++  await page.goto('/loader-defer-response/98765');
++
++  const renderedId = await page.waitForSelector('#data-render');
++  expect(await renderedId.textContent()).toBe('98765');
++});
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-errors.test.ts b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-errors.test.ts
+index e83da1c43fd5..40030e276515 100644
+--- a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-errors.test.ts
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-errors.test.ts
+@@ -1,5 +1,5 @@
+ import { expect, test } from '@playwright/test';
+-import { waitForError } from '@sentry-internal/test-utils';
++import { waitForError, waitForTransaction } from '@sentry-internal/test-utils';
+ 
+ test('Sends a loader error to Sentry', async ({ page }) => {
+   const loaderErrorPromise = waitForError('create-remix-app-express', errorEvent => {
+@@ -12,3 +12,209 @@ test('Sends a loader error to Sentry', async ({ page }) => {
+ 
+   expect(loaderError).toBeDefined();
+ });
++
++test('Reports an error thrown from a loader with handleError mechanism', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.transaction === 'GET loader-json-response/:id' && txn.contexts?.trace?.status === 'internal_error';
++  });
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return (
++      errorEvent.exception?.values?.[0]?.value === 'Unexpected Server Error' &&
++      errorEvent.exception?.values?.[0]?.mechanism?.data?.function === 'remix.server.handleError'
++    );
++  });
++
++  await page.goto('/loader-json-response/-2').catch(() => {});
++
++  const transaction = await transactionPromise;
++  const errorEvent = await errorPromise;
++
++  expect(transaction.contexts?.trace?.data?.['http.response.status_code']).toBe(500);
++  expect(errorEvent.exception?.values?.[0]?.mechanism).toMatchObject({
++    handled: false,
++    type: 'auto.function.remix.server',
++    data: { function: 'remix.server.handleError' },
++  });
++});
++
++test('Reports a thrown Response from a loader', async ({ page }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return (
++      errorEvent.exception?.values?.[0]?.value === 'Not found' &&
++      errorEvent.exception?.values?.[0]?.mechanism?.data?.function === 'loader'
++    );
++  });
++
++  await page.goto('/loader-throw-response/-1').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism).toMatchObject({
++    handled: false,
++    type: 'auto.function.remix.server',
++    data: { function: 'loader' },
++  });
++});
++
++test('Reports an error in the redirection target loader', async ({ page }) => {
++  // Same payload as the direct-loader-error test; serial execution + timestamp
++  // gating in the proxy ensures this listener only matches the event emitted
++  // for this test.
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return (
++      errorEvent.platform === 'node' &&
++      errorEvent.exception?.values?.[0]?.value === 'Unexpected Server Error' &&
++      errorEvent.exception?.values?.[0]?.mechanism?.data?.function === 'remix.server.handleError'
++    );
++  });
++
++  await page.goto('/loader-json-response/-1').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent).toBeDefined();
++});
++
++test('Reports an error thrown from an action', async ({ request }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.transaction === 'POST action-json-response/:id' && txn.contexts?.trace?.status === 'internal_error';
++  });
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return (
++      errorEvent.platform === 'node' &&
++      errorEvent.request?.method === 'POST' &&
++      errorEvent.exception?.values?.[0]?.value === 'Unexpected Server Error' &&
++      errorEvent.exception?.values?.[0]?.mechanism?.data?.function === 'remix.server.handleError'
++    );
++  });
++
++  await request.post('/action-json-response/-1').catch(() => {});
++
++  const transaction = await transactionPromise;
++  const errorEvent = await errorPromise;
++
++  expect(transaction.contexts?.trace?.data?.['http.response.status_code']).toBe(500);
++  expect(errorEvent.exception?.values?.[0]?.mechanism).toMatchObject({
++    handled: false,
++    type: 'auto.function.remix.server',
++  });
++});
++
++test('Reports a thrown json() error response with statusText', async ({ request }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Sentry Test Error';
++  });
++
++  await request.post('/action-json-response/-3').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism).toMatchObject({
++    handled: false,
++    type: 'auto.function.remix.server',
++    data: { function: 'action' },
++  });
++});
++
++test('Reports a thrown json() error response with object body', async ({ request }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Object captured as exception with keys: data';
++  });
++
++  await request.post('/action-json-response/-4').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism?.data?.function).toBe('action');
++});
++
++test('Reports a thrown json() error response with string body', async ({ request }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Sentry Test Error [string body]';
++  });
++
++  await request.post('/action-json-response/-5').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism?.data?.function).toBe('action');
++});
++
++test('Reports a thrown json() error response with an empty object body', async ({ request }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Object captured as exception with keys: [object has no keys]';
++  });
++
++  await request.post('/action-json-response/-6').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism?.data?.function).toBe('action');
++});
++
++test('Reports a thrown string primitive from an action', async ({ request }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Thrown String Error';
++  });
++
++  await request.post('/server-side-unexpected-errors/-1').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism?.data?.function).toBe('remix.server.handleError');
++});
++
++test('Reports a thrown plain object from an action', async ({ request }) => {
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Thrown Object Error';
++  });
++
++  await request.post('/server-side-unexpected-errors/-2').catch(() => {});
++
++  const errorEvent = await errorPromise;
++
++  expect(errorEvent.exception?.values?.[0]?.mechanism?.data?.function).toBe('remix.server.handleError');
++});
++
++test('Reports an SSR error and applies tags from wrapHandleErrorWithSentry', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return (
++      txn.transaction === 'GET ssr-error' &&
++      txn.contexts?.trace?.status === 'internal_error' &&
++      txn.tags?.['remix-test-tag'] === 'remix-test-value'
++    );
++  });
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    return errorEvent.exception?.values?.[0]?.value === 'Sentry SSR Test Error';
++  });
++
++  await page.goto('/ssr-error').catch(() => {});
++
++  const transaction = await transactionPromise;
++  const errorEvent = await errorPromise;
++
++  expect(transaction.contexts?.trace?.data?.['http.response.status_code']).toBe(500);
++  expect(errorEvent.exception?.values?.[0]?.mechanism).toMatchObject({
++    handled: false,
++    type: 'auto.function.remix.server',
++    data: { function: 'remix.server.handleError' },
++  });
++});
++
++test('Does not report a thrown redirect response on the server', async ({ page }) => {
++  let serverErrorReceived = false;
++
++  const errorPromise = waitForError('create-remix-app-express', errorEvent => {
++    if (errorEvent.platform === 'node') {
++      serverErrorReceived = true;
++      return true;
++    }
++    return false;
++  });
++
++  await page.goto('/throw-redirect');
++
++  await Promise.race([errorPromise, new Promise(resolve => setTimeout(resolve, 3000))]);
++
++  expect(serverErrorReceived).toBe(false);
++});
+diff --git a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-transactions.test.ts b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-transactions.test.ts
+index ddb866e5dbaa..64d2f5c71b63 100644
+--- a/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-transactions.test.ts
++++ b/dev-packages/e2e-tests/test-applications/create-remix-app-express/tests/server-transactions.test.ts
+@@ -100,6 +100,145 @@ test('Propagates trace when ErrorBoundary is triggered', async ({ page }) => {
+   expect(pageLoadSpanId).not.toEqual(httpServerSpanId);
+ });
+ 
++test('Parameterizes a 2-level nested route on the server', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.contexts?.trace?.op === 'http.server' && txn.transaction === 'GET users/:userId/posts/:postId';
++  });
++
++  await page.goto('/users/user123/posts/post456');
++
++  const transaction = await transactionPromise;
++
++  expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++  expect(transaction.spans?.some(s => s.data?.['code.function'] === 'loader' && s.op === 'loader.remix')).toBe(true);
++});
++
++test('Parameterizes a 3-level nested API route on the server', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.contexts?.trace?.op === 'http.server' && txn.transaction === 'GET api/v1/data/:id';
++  });
++
++  await page.goto('/api/v1/data/abc123');
++
++  const transaction = await transactionPromise;
++
++  expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Parameterizes a deeply nested route on the server', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.contexts?.trace?.op === 'http.server' && txn.transaction === 'GET deeply/:nested/:structure/:id';
++  });
++
++  await page.goto('/deeply/level1/level2/level3');
++
++  const transaction = await transactionPromise;
++
++  expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Parameterizes a flat dot-notation route on the server', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.contexts?.trace?.op === 'http.server' && txn.transaction === 'GET products/:productId/reviews/:reviewId';
++  });
++
++  await page.goto('/products/prod789/reviews/rev101');
++
++  const transaction = await transactionPromise;
++
++  expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++});
++
++test('Records action and loader spans on a parameterized action route', async ({ request }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.transaction === 'POST action-json-response/:id';
++  });
++
++  await request.post('/action-json-response/123123');
++
++  const transaction = await transactionPromise;
++
++  const actionSpan = transaction.spans?.find(
++    s => s.data?.['code.function'] === 'action' && s.data?.['match.route.id'] === 'routes/action-json-response.$id',
++  );
++  expect(actionSpan).toBeDefined();
++  expect(actionSpan?.op).toBe('action.remix');
++  expect(actionSpan?.data?.['match.params.id']).toBe('123123');
++
++  const rootLoaderSpan = transaction.spans?.find(
++    s => s.data?.['code.function'] === 'loader' && s.data?.['match.route.id'] === 'root',
++  );
++  expect(rootLoaderSpan).toBeDefined();
++
++  const routeLoaderSpan = transaction.spans?.find(
++    s => s.data?.['code.function'] === 'loader' && s.data?.['match.route.id'] === 'routes/action-json-response.$id',
++  );
++  expect(routeLoaderSpan).toBeDefined();
++
++  expect(transaction.request?.method).toBe('POST');
++});
++
++test('Records loader spans on a deferred loader response', async ({ page }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.transaction === 'GET loader-defer-response/:id';
++  });
++
++  await page.goto('/loader-defer-response/123123');
++
++  const transaction = await transactionPromise;
++
++  expect(transaction.contexts?.trace?.data?.['sentry.source']).toBe('route');
++  expect(
++    transaction.spans?.some(
++      s => s.data?.['code.function'] === 'loader' && s.data?.['match.route.id'] === 'routes/loader-defer-response.$id',
++    ),
++  ).toBe(true);
++});
++
++test('Continues a trace from incoming sentry-trace and baggage headers', async ({ request }) => {
++  const transactionPromise = waitForTransaction('create-remix-app-express', txn => {
++    return txn.contexts?.trace?.trace_id === '12312012123120121231201212312012';
++  });
++
++  await request.get('/loader-json-response/3', {
++    headers: {
++      'sentry-trace': '12312012123120121231201212312012-1121201211212012-1',
++      baggage: 'sentry-version=1.0,sentry-environment=production,sentry-trace_id=12312012123120121231201212312012',
++    },
++  });
++
++  const transaction = await transactionPromise;
++
++  expect(transaction.contexts?.trace?.parent_span_id).toBe('1121201211212012');
++});
++
++test('Does not bleed scope tags between concurrent requests', async ({ request }) => {
++  const txnPromises = [1, 2, 3, 4].map(i =>
++    waitForTransaction('create-remix-app-express', txn => {
++      return txn.transaction === 'GET scope-bleed/:id' && txn.tags?.[`tag${i}`] === String(i);
++    }),
++  );
++
++  await Promise.all([
++    request.get('/scope-bleed/1'),
++    request.get('/scope-bleed/2'),
++    request.get('/scope-bleed/3'),
++    request.get('/scope-bleed/4'),
++  ]);
++
++  const transactions = await Promise.all(txnPromises);
++
++  transactions.forEach(txn => {
++    const tags = txn.tags ?? {};
++    const customTags = Object.keys(tags).filter(t => t.startsWith('tag'));
++    expect(customTags).toHaveLength(1);
++
++    const key = customTags[0]!;
++    const value = key[key.length - 1];
++    expect(tags[key]).toBe(value);
++  });
++});
++
+ test('Sends two linked transactions (server & client) to Sentry', async ({ page }) => {
+   // We use this to identify the transactions
+   const testTag = crypto.randomUUID();
+diff --git a/packages/remix/.gitignore b/packages/remix/.gitignore
+index 3062ec3dd163..3d07bafc84a2 100644
+--- a/packages/remix/.gitignore
++++ b/packages/remix/.gitignore
+@@ -1,11 +1,6 @@
+ node_modules
+ 
+-test/integration/.cache
+ /build
+ /public/build
+ .env
+-/test-results/
+-/playwright-report/
+-/playwright/.cache/
+-yarn.lock
+ 
+diff --git a/packages/remix/.oxlintrc.json b/packages/remix/.oxlintrc.json
+index 5e5f2bb0ae99..15bdddb468f6 100644
+--- a/packages/remix/.oxlintrc.json
++++ b/packages/remix/.oxlintrc.json
+@@ -5,5 +5,5 @@
+     "browser": true,
+     "node": true
+   },
+-  "ignorePatterns": ["playwright.config.ts", "vitest.config.ts", "vitest.config.unit.ts", "test/integration/**"]
++  "ignorePatterns": ["vitest.config.unit.ts"]
+ }
+diff --git a/packages/remix/package.json b/packages/remix/package.json
+index 103eaf635ea8..351734023eda 100644
+--- a/packages/remix/package.json
++++ b/packages/remix/package.json
+@@ -106,12 +106,6 @@
+     "lint": "OXLINT_TSGOLINT_DANGEROUSLY_SUPPRESS_PROGRAM_DIAGNOSTICS=true oxlint . --type-aware",
+     "lint:es-compatibility": "es-check es2020 ./build/cjs/*.js && es-check es2020 ./build/esm/*.js --module",
+     "test": "yarn test:unit",
+-    "test:integration": "run-s test:integration:clean test:integration:prepare test:integration:client test:integration:server",
+-    "test:integration:prepare": "(cd test/integration && yarn install)",
+-    "test:integration:prepare:playwright": "yarn playwright install-deps",
+-    "test:integration:clean": "(cd test/integration && rimraf .cache node_modules build)",
+-    "test:integration:client": "yarn playwright test test/integration/test/client/ --project='chromium'",
+-    "test:integration:server": "export NODE_OPTIONS='--stack-trace-limit=25' && vitest run",
+     "test:unit": "vitest run --config vitest.config.unit.ts",
+     "test:watch": "vitest --watch --config vitest.config.unit.ts",
+     "yalc:publish": "yalc publish --push --sig"
+diff --git a/packages/remix/playwright.config.ts b/packages/remix/playwright.config.ts
+deleted file mode 100644
+index cacbe1f561ec..000000000000
+--- a/packages/remix/playwright.config.ts
++++ /dev/null
+@@ -1,36 +0,0 @@
+-import type { PlaywrightTestConfig } from '@playwright/test';
+-import { devices } from '@playwright/test';
+-
+-const config: PlaywrightTestConfig = {
+-  retries: 0,
+-  use: {
+-    baseURL: 'http://localhost:3000',
+-  },
+-  // Run tests inside of a single file in parallel
+-  fullyParallel: true,
+-  reporter: process.env.CI ? [['list'], ['junit', { outputFile: 'results.junit.xml' }]] : 'list',
+-  // Use 3 workers on CI, else use defaults (based on available CPU cores)
+-  // Note that 3 is a random number selected to work well with our CI setup
+-  workers: process.env.CI ? 3 : undefined,
+-  webServer: {
+-    command: `(cd test/integration/ && yarn build && yarn start)`,
+-    port: 3000,
+-  },
+-  projects: [
+-    {
+-      name: 'chromium',
+-      use: devices['Desktop Chrome'],
+-    },
+-    {
+-      name: 'webkit',
+-      use: devices['Desktop Safari'],
+-    },
+-    {
+-      name: 'firefox',
+-      grep: /@firefox/i,
+-      use: devices['Desktop Firefox'],
+-    },
+-  ],
+-};
+-
+-export default config;
+diff --git a/packages/remix/test/integration/routeConversionConsistency.test.ts b/packages/remix/test/config/routeConversion.test.ts
+similarity index 100%
+rename from packages/remix/test/integration/routeConversionConsistency.test.ts
+rename to packages/remix/test/config/routeConversion.test.ts
+diff --git a/packages/remix/test/integration/app/entry.client.tsx b/packages/remix/test/integration/app/entry.client.tsx
+deleted file mode 100644
+index 7059cf1e27e8..000000000000
+--- a/packages/remix/test/integration/app/entry.client.tsx
++++ /dev/null
+@@ -1,25 +0,0 @@
+-import { RemixBrowser, useLocation, useMatches } from '@remix-run/react';
+-import * as Sentry from '@sentry/remix';
+-import { StrictMode, startTransition, useEffect } from 'react';
+-import { hydrateRoot } from 'react-dom/client';
+-
+-Sentry.init({
+-  dsn: 'https://public@dsn.ingest.sentry.io/1337',
+-  tracesSampleRate: 1,
+-  integrations: [
+-    Sentry.browserTracingIntegration({
+-      useEffect,
+-      useLocation,
+-      useMatches,
+-    }),
+-  ],
+-});
+-
+-startTransition(() => {
+-  hydrateRoot(
+-    document,
+-    <StrictMode>
+-      <RemixBrowser />
+-    </StrictMode>,
+-  );
+-});
+diff --git a/packages/remix/test/integration/app/entry.server.tsx b/packages/remix/test/integration/app/entry.server.tsx
+deleted file mode 100644
+index 86b0312eb92f..000000000000
+--- a/packages/remix/test/integration/app/entry.server.tsx
++++ /dev/null
+@@ -1,27 +0,0 @@
+-import * as Sentry from '@sentry/remix';
+-
+-import type { EntryContext } from '@remix-run/node';
+-import { RemixServer } from '@remix-run/react';
+-import { renderToString } from 'react-dom/server';
+-
+-const handleErrorImpl = () => {
+-  Sentry.setTag('remix-test-tag', 'remix-test-value');
+-};
+-
+-export const handleError = Sentry.wrapHandleErrorWithSentry(handleErrorImpl);
+-
+-export default function handleRequest(
+-  request: Request,
+-  responseStatusCode: number,
+-  responseHeaders: Headers,
+-  remixContext: EntryContext,
+-) {
+-  let markup = renderToString(<RemixServer context={remixContext} url={request.url} />);
+-
+-  responseHeaders.set('Content-Type', 'text/html');
+-
+-  return new Response('<!DOCTYPE html>' + markup, {
+-    status: responseStatusCode,
+-    headers: responseHeaders,
+-  });
+-}
+diff --git a/packages/remix/test/integration/app/root.tsx b/packages/remix/test/integration/app/root.tsx
+deleted file mode 100644
+index c1d0bf218baa..000000000000
+--- a/packages/remix/test/integration/app/root.tsx
++++ /dev/null
+@@ -1,77 +0,0 @@
+-import { LoaderFunction, MetaFunction, defer, json, redirect } from '@remix-run/node';
+-import { Links, LiveReload, Meta, Outlet, Scripts, ScrollRestoration, useRouteError } from '@remix-run/react';
+-import { ErrorBoundaryComponent } from '@remix-run/react/dist/routeModules';
+-import { captureRemixErrorBoundaryError, withSentry } from '@sentry/remix';
+-
+-export const ErrorBoundary: ErrorBoundaryComponent = () => {
+-  const error = useRouteError();
+-
+-  captureRemixErrorBoundaryError(error);
+-
+-  return (
+-    <div>
+-      <span id="error-header">ErrorBoundary Error</span>
+-    </div>
+-  );
+-};
+-
+-export const meta: MetaFunction = ({ data }) => [
+-  { charset: 'utf-8' },
+-  { title: 'New Remix App' },
+-  { name: 'viewport', content: 'width=device-width,initial-scale=1' },
+-  { name: 'sentry-trace', content: data.sentryTrace },
+-  { name: 'baggage', content: data.sentryBaggage },
+-];
+-
+-export const loader: LoaderFunction = async ({ request }) => {
+-  const url = new URL(request.url);
+-  const type = url.searchParams.get('type');
+-
+-  switch (type) {
+-    case 'empty':
+-      return {};
+-    case 'plain':
+-      return {
+-        data_one: [],
+-        data_two: 'a string',
+-      };
+-    case 'json':
+-      return json({ data_one: [], data_two: 'a string' }, { headers: { 'Cache-Control': 'max-age=300' } });
+-    case 'defer':
+-      return defer({ data_one: [], data_two: 'a string' });
+-    case 'null':
+-      return null;
+-    case 'undefined':
+-      return undefined;
+-    case 'throwRedirect':
+-      throw redirect('/?type=plain');
+-    case 'returnRedirect':
+-      return redirect('/?type=plain');
+-    case 'throwRedirectToExternal':
+-      throw redirect(`https://docs.sentry.io`);
+-    case 'returnRedirectToExternal':
+-      return redirect('https://docs.sentry.io');
+-    default: {
+-      return {};
+-    }
+-  }
+-};
+-
+-function App() {
+-  return (
+-    <html lang="en">
+-      <head>
+-        <Meta />
+-        <Links />
+-      </head>
+-      <body>
+-        <Outlet />
+-        <ScrollRestoration />
+-        <Scripts />
+-        <LiveReload />
+-      </body>
+-    </html>
+-  );
+-}
+-
+-export default withSentry(App);
+diff --git a/packages/remix/test/integration/app/routes/api.v1.data.$id.tsx b/packages/remix/test/integration/app/routes/api.v1.data.$id.tsx
+deleted file mode 100644
+index 3ab0454a50b8..000000000000
+--- a/packages/remix/test/integration/app/routes/api.v1.data.$id.tsx
++++ /dev/null
+@@ -1,10 +0,0 @@
+-import type { LoaderFunctionArgs } from '@remix-run/node';
+-import { json } from '@remix-run/node';
+-
+-export const loader = async ({ params }: LoaderFunctionArgs) => {
+-  return json({
+-    id: params.id,
+-    api_version: 'v1',
+-    data: { nested: true, level: 3 },
+-  });
+-};
+diff --git a/packages/remix/test/integration/app/routes/deeply.$nested.$structure.$id.tsx b/packages/remix/test/integration/app/routes/deeply.$nested.$structure.$id.tsx
+deleted file mode 100644
+index 0d65b9c0ad02..000000000000
+--- a/packages/remix/test/integration/app/routes/deeply.$nested.$structure.$id.tsx
++++ /dev/null
+@@ -1,26 +0,0 @@
+-import type { LoaderFunctionArgs } from '@remix-run/node';
+-import { json } from '@remix-run/node';
+-import { useLoaderData } from '@remix-run/react';
+-
+-export const loader = async ({ params }: LoaderFunctionArgs) => {
+-  return json({
+-    nested: params.nested,
+-    structure: params.structure,
+-    id: params.id,
+-    depth: 4,
+-  });
+-};
+-
+-export default function DeeplyNested() {
+-  const data = useLoaderData<typeof loader>();
+-
+-  return (
+-    <div>
+-      <h1>Deeply Nested Route Test (Flat Syntax)</h1>
+-      <p>Nested: {data.nested}</p>
+-      <p>Structure: {data.structure}</p>
+-      <p>ID: {data.id}</p>
+-      <p>Depth: {data.depth} levels</p>
+-    </div>
+-  );
+-}
+diff --git a/packages/remix/test/integration/app/routes/index.tsx b/packages/remix/test/integration/app/routes/index.tsx
+deleted file mode 100644
+index c21dea0629f3..000000000000
+--- a/packages/remix/test/integration/app/routes/index.tsx
++++ /dev/null
+@@ -1,7 +0,0 @@
+-export default function Index() {
+-  return (
+-    <div>
+-      <h1>Remix Integration Tests Home</h1>
+-    </div>
+-  );
+-}
+diff --git a/packages/remix/test/integration/app/routes/products.$productId.reviews.$reviewId.tsx b/packages/remix/test/integration/app/routes/products.$productId.reviews.$reviewId.tsx
+deleted file mode 100644
+index 65e0972de887..000000000000
+--- a/packages/remix/test/integration/app/routes/products.$productId.reviews.$reviewId.tsx
++++ /dev/null
+@@ -1,24 +0,0 @@
+-import type { LoaderFunctionArgs } from '@remix-run/node';
+-import { json } from '@remix-run/node';
+-import { useLoaderData } from '@remix-run/react';
+-
+-export const loader = async ({ params }: LoaderFunctionArgs) => {
+-  return json({
+-    productId: params.productId,
+-    reviewId: params.reviewId,
+-    pattern: 'flat-dot-notation',
+-  });
+-};
+-
+-export default function ProductReview() {
+-  const data = useLoaderData<typeof loader>();
+-
+-  return (
+-    <div>
+-      <h1>Flat Route Pattern Test</h1>
+-      <p>Product ID: {data.productId}</p>
+-      <p>Review ID: {data.reviewId}</p>
+-      <p>Pattern: {data.pattern}</p>
+-    </div>
+-  );
+-}
+diff --git a/packages/remix/test/integration/app/routes/users.$userId.posts.$postId.tsx b/packages/remix/test/integration/app/routes/users.$userId.posts.$postId.tsx
+deleted file mode 100644
+index 36f5c919531d..000000000000
+--- a/packages/remix/test/integration/app/routes/users.$userId.posts.$postId.tsx
++++ /dev/null
+@@ -1,24 +0,0 @@
+-import type { LoaderFunctionArgs } from '@remix-run/node';
+-import { json } from '@remix-run/node';
+-import { useLoaderData } from '@remix-run/react';
+-
+-export const loader = async ({ params }: LoaderFunctionArgs) => {
+-  return json({
+-    userId: params.userId,
+-    postId: params.postId,
+-    timestamp: Date.now(),
+-  });
+-};
+-
+-export default function UserPost() {
+-  const data = useLoaderData<typeof loader>();
+-
+-  return (
+-    <div>
+-      <h1>Nested Route Test (Flat Syntax)</h1>
+-      <p>User ID: {data.userId}</p>
+-      <p>Post ID: {data.postId}</p>
+-      <p>Timestamp: {data.timestamp}</p>
+-    </div>
+-  );
+-}
+diff --git a/packages/remix/test/integration/instrument.server.mjs b/packages/remix/test/integration/instrument.server.mjs
+deleted file mode 100644
+index 5598d81af581..000000000000
+--- a/packages/remix/test/integration/instrument.server.mjs
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import * as Sentry from '@sentry/remix';
+-
+-Sentry.init({
+-  dsn: 'https://public@dsn.ingest.sentry.io/1337',
+-  tracesSampleRate: 1,
+-  tracePropagationTargets: ['example.org'],
+-});
+diff --git a/packages/remix/test/integration/package.json b/packages/remix/test/integration/package.json
+deleted file mode 100644
+index 5057128101ce..000000000000
+--- a/packages/remix/test/integration/package.json
++++ /dev/null
+@@ -1,48 +0,0 @@
+-{
+-  "private": true,
+-  "sideEffects": false,
+-  "type": "module",
+-  "scripts": {
+-    "build": "vite build && vite build --ssr",
+-    "dev": "remix vite:dev",
+-    "start": "NODE_OPTIONS='--import=./instrument.server.mjs' remix-serve build/server/index.js"
+-  },
+-  "dependencies": {
+-    "@remix-run/express": "2.17.4",
+-    "@remix-run/node": "2.17.4",
+-    "@remix-run/react": "2.17.4",
+-    "@remix-run/serve": "2.17.4",
+-    "@sentry/remix": "file:../..",
+-    "react": "^18.3.1",
+-    "react-dom": "^18.3.1"
+-  },
+-  "devDependencies": {
+-    "@remix-run/dev": "2.17.4",
+-    "@types/react": "^18",
+-    "@types/react-dom": "^18",
+-    "nock": "^13.5.5",
+-    "typescript": "~5.8.0",
+-    "vite": "^6.4.2"
+-  },
+-  "resolutions": {
+-    "@sentry/browser": "file:../../../browser",
+-    "@sentry/core": "file:../../../core",
+-    "@sentry/node": "file:../../../node",
+-    "@sentry/node-core": "file:../../../node-core",
+-    "@sentry/opentelemetry": "file:../../../opentelemetry",
+-    "@sentry/react": "file:../../../react",
+-    "@sentry-internal/browser-utils": "file:../../../browser-utils",
+-    "@sentry-internal/replay": "file:../../../replay-internal",
+-    "@sentry-internal/replay-canvas": "file:../../../replay-canvas",
+-    "@sentry-internal/feedback": "file:../../../feedback",
+-    "@sentry-internal/browser-integration-tests": "file:../../../../dev-packages/browser-integration-tests",
+-    "@vanilla-extract/css": "1.13.0",
+-    "@vanilla-extract/integration": "6.2.4",
+-    "@types/mime": "^3.0.0",
+-    "vite": "^6.4.2",
+-    "quansync": "0.2.11"
+-  },
+-  "engines": {
+-    "node": ">=18"
+-  }
+-}
+diff --git a/packages/remix/test/integration/regexPatternValidation.test.ts b/packages/remix/test/integration/regexPatternValidation.test.ts
+deleted file mode 100644
+index 77b6f99162eb..000000000000
+--- a/packages/remix/test/integration/regexPatternValidation.test.ts
++++ /dev/null
+@@ -1,235 +0,0 @@
+-import { describe, expect, it } from 'vitest';
+-import { createRemixRouteManifest } from '../../src/config/createRemixRouteManifest';
+-
+-describe('Regex Pattern Validation', () => {
+-  describe('Dynamic route regex patterns', () => {
+-    it('should generate regex that matches simple dynamic segments', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      expect(userIdRoute).toBeDefined();
+-      expect(userIdRoute?.regex).toBeDefined();
+-
+-      const regex = new RegExp(userIdRoute!.regex!);
+-      expect(regex.test('/users/123')).toBe(true);
+-      expect(regex.test('/users/abc')).toBe(true);
+-      expect(regex.test('/users/user-123')).toBe(true);
+-      expect(regex.test('/users')).toBe(false);
+-      expect(regex.test('/users/')).toBe(false);
+-      expect(regex.test('/users/123/posts')).toBe(false);
+-    });
+-
+-    it('should generate regex that matches nested dynamic segments', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const nestedRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:userId/posts/:postId');
+-
+-      expect(nestedRoute).toBeDefined();
+-      expect(nestedRoute?.regex).toBeDefined();
+-
+-      const regex = new RegExp(nestedRoute!.regex!);
+-      expect(regex.test('/users/123/posts/456')).toBe(true);
+-      expect(regex.test('/users/abc/posts/def')).toBe(true);
+-      expect(regex.test('/users/123/posts')).toBe(false);
+-      expect(regex.test('/users/123')).toBe(false);
+-      expect(regex.test('/users/123/posts/456/comments')).toBe(false);
+-    });
+-
+-    it('should generate regex that matches splat routes', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const splatRoute = manifest.dynamicRoutes.find(r => r.path === '/docs/:*');
+-
+-      expect(splatRoute).toBeDefined();
+-      expect(splatRoute?.regex).toBeDefined();
+-
+-      const regex = new RegExp(splatRoute!.regex!);
+-      expect(regex.test('/docs/intro')).toBe(true);
+-      expect(regex.test('/docs/getting-started')).toBe(true);
+-      expect(regex.test('/docs/api/users')).toBe(true);
+-      expect(regex.test('/docs/api/users/create')).toBe(true);
+-      expect(regex.test('/docs')).toBe(false);
+-      expect(regex.test('/docs/')).toBe(false);
+-    });
+-
+-    it('should generate regex that matches root splat routes', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const rootSplatRoute = manifest.dynamicRoutes.find(r => r.path === '/:*');
+-
+-      if (rootSplatRoute) {
+-        const regex = new RegExp(rootSplatRoute.regex!);
+-        expect(regex.test('/anything')).toBe(true);
+-        expect(regex.test('/deeply/nested/path')).toBe(true);
+-        expect(regex.test('/')).toBe(false);
+-      }
+-    });
+-  });
+-
+-  describe('Edge cases and special characters', () => {
+-    it('should handle URL-encoded characters correctly', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      if (userIdRoute?.regex) {
+-        const regex = new RegExp(userIdRoute.regex);
+-        // URL-encoded space: %20
+-        expect(regex.test('/users/john%20doe')).toBe(true);
+-        // URL-encoded special chars
+-        expect(regex.test('/users/user%40email')).toBe(true);
+-        // Should not match slashes even when encoded (segment boundary)
+-        expect(regex.test('/users/foo%2Fbar')).toBe(true); // %2F is encoded slash, should match as part of segment
+-      }
+-    });
+-
+-    it('should handle hyphens and underscores in dynamic segments', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      if (userIdRoute?.regex) {
+-        const regex = new RegExp(userIdRoute.regex);
+-        expect(regex.test('/users/user-123')).toBe(true);
+-        expect(regex.test('/users/user_123')).toBe(true);
+-        expect(regex.test('/users/user-name-with-dashes')).toBe(true);
+-      }
+-    });
+-
+-    it('should handle numeric IDs', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      if (userIdRoute?.regex) {
+-        const regex = new RegExp(userIdRoute.regex);
+-        expect(regex.test('/users/123')).toBe(true);
+-        expect(regex.test('/users/0')).toBe(true);
+-        expect(regex.test('/users/999999')).toBe(true);
+-      }
+-    });
+-
+-    it('should handle UUIDs', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      if (userIdRoute?.regex) {
+-        const regex = new RegExp(userIdRoute.regex);
+-        expect(regex.test('/users/550e8400-e29b-41d4-a716-446655440000')).toBe(true);
+-      }
+-    });
+-
+-    it('should not match trailing slashes', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      if (userIdRoute?.regex) {
+-        const regex = new RegExp(userIdRoute.regex);
+-        expect(regex.test('/users/123/')).toBe(false);
+-      }
+-    });
+-
+-    it('should handle dots in dynamic segments', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      if (userIdRoute?.regex) {
+-        const regex = new RegExp(userIdRoute.regex);
+-        expect(regex.test('/users/user.name')).toBe(true);
+-        expect(regex.test('/users/file.txt')).toBe(true);
+-      }
+-    });
+-  });
+-
+-  describe('Regex escaping', () => {
+-    it('should properly escape special regex characters in static segments', () => {
+-      // If you have a route like /api.v1/users, the dot should be treated literally
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const apiRoute = manifest.dynamicRoutes.find(r => r.path.includes('api'));
+-
+-      if (apiRoute?.regex && apiRoute.path.includes('.')) {
+-        const regex = new RegExp(apiRoute.regex);
+-        const testPath = apiRoute.path.replace(/:[\w*]+/g, 'test');
+-        expect(regex.test(testPath)).toBe(true);
+-      }
+-    });
+-
+-    it('should handle parentheses in static segments', () => {
+-      // Routes with special chars should have them escaped in regex
+-      const routePath = '/api/(v1)/users/:id';
+-      const regexPattern = routePath
+-        .split('/')
+-        .filter(Boolean)
+-        .map(segment => {
+-          if (segment.startsWith(':')) {
+-            return segment.endsWith('*') ? '(.+)' : '([^/]+)';
+-          }
+-          return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+-        })
+-        .join('/');
+-
+-      const regex = new RegExp(`^/${regexPattern}$`);
+-      expect(regex.test('/api/(v1)/users/123')).toBe(true);
+-      expect(regex.test('/api/xv1x/users/123')).toBe(false);
+-    });
+-  });
+-
+-  describe('Param name extraction', () => {
+-    it('should extract param names for dynamic segments', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const userIdRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:id');
+-
+-      expect(userIdRoute?.paramNames).toEqual(['id']);
+-    });
+-
+-    it('should extract multiple param names', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const nestedRoute = manifest.dynamicRoutes.find(r => r.path === '/users/:userId/posts/:postId');
+-
+-      expect(nestedRoute?.paramNames).toEqual(['userId', 'postId']);
+-    });
+-
+-    it('should extract splat param names', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const splatRoute = manifest.dynamicRoutes.find(r => r.path === '/docs/:*');
+-
+-      // Splat params are named '*' in Remix
+-      expect(splatRoute?.paramNames).toEqual(['']);
+-    });
+-  });
+-
+-  describe('Real-world routing scenarios', () => {
+-    it('should match blog post URLs', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-      const blogRoute = manifest.dynamicRoutes.find(r => r.path.includes('blog') || r.path === '/posts/:slug');
+-
+-      if (blogRoute?.regex) {
+-        const regex = new RegExp(blogRoute.regex);
+-        expect(regex.test('/posts/my-first-post')).toBe(true);
+-        expect(regex.test('/posts/getting-started-with-remix')).toBe(true);
+-        expect(regex.test('/posts/2024-01-15-announcement')).toBe(true);
+-      }
+-    });
+-
+-    it('should correctly prioritize more specific routes over less specific', () => {
+-      const manifest = createRemixRouteManifest({ rootDir: './test/fixtures/app-basic' });
+-
+-      // More specific routes should come first when sorted by specificity
+-      const routes = manifest.dynamicRoutes.filter(r => r.path.startsWith('/users'));
+-
+-      // /users/:id/posts/:postId is more specific than /users/:id
+-      const specificRoute = routes.find(r => r.path === '/users/:userId/posts/:postId');
+-      const generalRoute = routes.find(r => r.path === '/users/:id');
+-
+-      if (specificRoute && generalRoute) {
+-        // Both should have valid regex patterns
+-        expect(specificRoute.regex).toBeDefined();
+-        expect(generalRoute.regex).toBeDefined();
+-
+-        const specificRegex = new RegExp(specificRoute.regex!);
+-        const generalRegex = new RegExp(generalRoute.regex!);
+-
+-        // More specific should match its pattern
+-        expect(specificRegex.test('/users/123/posts/456')).toBe(true);
+-        // But general should NOT match the more specific pattern
+-        expect(generalRegex.test('/users/123/posts/456')).toBe(false);
+-        // General should match its own pattern
+-        expect(generalRegex.test('/users/123')).toBe(true);
+-      }
+-    });
+-  });
+-});
+diff --git a/packages/remix/test/integration/test/client/capture-exception.test.ts b/packages/remix/test/integration/test/client/capture-exception.test.ts
+deleted file mode 100644
+index b844f7e81b70..000000000000
+--- a/packages/remix/test/integration/test/client/capture-exception.test.ts
++++ /dev/null
+@@ -1,24 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getMultipleSentryEnvelopeRequests } from './utils/helpers';
+-
+-test('should report a manually captured error.', async ({ page }) => {
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 2, { url: '/capture-exception' });
+-
+-  const [errorEnvelope, pageloadEnvelope] = envelopes;
+-
+-  expect(errorEnvelope.level).toBe('error');
+-  expect(errorEnvelope.transaction).toBe('/capture-exception');
+-  expect(errorEnvelope.exception?.values).toMatchObject([
+-    {
+-      type: 'Error',
+-      value: 'Sentry Manually Captured Error',
+-      stacktrace: { frames: expect.any(Array) },
+-      mechanism: { type: 'generic', handled: true },
+-    },
+-  ]);
+-
+-  expect(pageloadEnvelope.contexts?.trace?.op).toBe('pageload');
+-  expect(pageloadEnvelope.type).toBe('transaction');
+-  expect(pageloadEnvelope.transaction).toBe('/capture-exception');
+-});
+diff --git a/packages/remix/test/integration/test/client/capture-message.test.ts b/packages/remix/test/integration/test/client/capture-message.test.ts
+deleted file mode 100644
+index 4e25d32c90ab..000000000000
+--- a/packages/remix/test/integration/test/client/capture-message.test.ts
++++ /dev/null
+@@ -1,17 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getMultipleSentryEnvelopeRequests } from './utils/helpers';
+-
+-test('should report a manually captured message.', async ({ page }) => {
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 2, { url: '/capture-message' });
+-
+-  const [messageEnvelope, pageloadEnvelope] = envelopes;
+-
+-  expect(messageEnvelope.level).toBe('info');
+-  expect(messageEnvelope.transaction).toBe('/capture-message');
+-  expect(messageEnvelope.message).toBe('Sentry Manually Captured Message');
+-
+-  expect(pageloadEnvelope.contexts?.trace?.op).toBe('pageload');
+-  expect(pageloadEnvelope.type).toBe('transaction');
+-  expect(pageloadEnvelope.transaction).toBe('/capture-message');
+-});
+diff --git a/packages/remix/test/integration/test/client/click-error.test.ts b/packages/remix/test/integration/test/client/click-error.test.ts
+deleted file mode 100644
+index 78573bb9782a..000000000000
+--- a/packages/remix/test/integration/test/client/click-error.test.ts
++++ /dev/null
+@@ -1,31 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getMultipleSentryEnvelopeRequests } from './utils/helpers';
+-
+-test('should report a manually captured message on click with the correct stacktrace.', async ({ page }) => {
+-  await page.goto('/click-error');
+-
+-  const promise = getMultipleSentryEnvelopeRequests<Event>(page, 2);
+-  await page.click('#click-error');
+-
+-  const envelopes = await promise;
+-
+-  const [_, errorEnvelope] = envelopes;
+-
+-  expect(errorEnvelope.level).toBe('error');
+-  expect(errorEnvelope.sdk?.name).toBe('sentry.javascript.remix');
+-
+-  expect(errorEnvelope.exception?.values).toMatchObject([
+-    {
+-      type: 'Error',
+-      value: 'ClickError',
+-      stacktrace: { frames: expect.any(Array) },
+-      mechanism: { type: 'auto.browser.browserapierrors.addEventListener', handled: false },
+-    },
+-  ]);
+-
+-  // Check the last frame of the stacktrace
+-  const stacktrace = errorEnvelope.exception?.values[0]?.stacktrace?.frames;
+-
+-  expect(stacktrace?.[stacktrace.length - 1].function).toBe('onClick');
+-});
+diff --git a/packages/remix/test/integration/test/client/deferred-response.test.ts b/packages/remix/test/integration/test/client/deferred-response.test.ts
+deleted file mode 100644
+index bb647870c818..000000000000
+--- a/packages/remix/test/integration/test/client/deferred-response.test.ts
++++ /dev/null
+@@ -1,9 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-
+-test('should receive correct data from instrumented defer response', async ({ page }) => {
+-  await page.goto('/loader-defer-response/98765');
+-
+-  const renderedId = await page.waitForSelector('#data-render');
+-
+-  expect(await renderedId?.textContent()).toBe('98765');
+-});
+diff --git a/packages/remix/test/integration/test/client/errorboundary.test.ts b/packages/remix/test/integration/test/client/errorboundary.test.ts
+deleted file mode 100644
+index 56abc1774362..000000000000
+--- a/packages/remix/test/integration/test/client/errorboundary.test.ts
++++ /dev/null
+@@ -1,30 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getMultipleSentryEnvelopeRequests } from './utils/helpers';
+-
+-test('should capture React component errors.', async ({ page }) => {
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 2, {
+-    url: '/error-boundary-capture/0',
+-  });
+-
+-  const [pageloadEnvelope, errorEnvelope] = envelopes;
+-
+-  expect(pageloadEnvelope.contexts?.trace?.op).toBe('pageload');
+-  expect(pageloadEnvelope.type).toBe('transaction');
+-  expect(pageloadEnvelope.transaction).toBe('/error-boundary-capture/:id');
+-
+-  expect(errorEnvelope.level).toBe('error');
+-  expect(errorEnvelope.sdk?.name).toBe('sentry.javascript.remix');
+-  expect(errorEnvelope.exception?.values).toMatchObject([
+-    {
+-      type: 'Error',
+-      value: 'Sentry React Component Error',
+-      stacktrace: { frames: expect.any(Array) },
+-      mechanism: { type: 'instrument', handled: false },
+-    },
+-  ]);
+-  expect(errorEnvelope.transaction).toBe('/error-boundary-capture/:id');
+-
+-  // The error boundary should be rendered
+-  expect(await page.textContent('#error-header')).toBe('ErrorBoundary Error');
+-});
+diff --git a/packages/remix/test/integration/test/client/manualtracing.test.ts b/packages/remix/test/integration/test/client/manualtracing.test.ts
+deleted file mode 100644
+index 23b97264b4f2..000000000000
+--- a/packages/remix/test/integration/test/client/manualtracing.test.ts
++++ /dev/null
+@@ -1,21 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getMultipleSentryEnvelopeRequests } from './utils/helpers';
+-
+-test('should report a manually created / finished transaction.', async ({ page }) => {
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 2, {
+-    url: '/manual-tracing/0',
+-    envelopeType: 'transaction',
+-  });
+-
+-  const [manualTransactionEnvelope, pageloadEnvelope] = envelopes;
+-
+-  expect(manualTransactionEnvelope.transaction).toBe('test_transaction_1');
+-  expect(manualTransactionEnvelope.sdk?.name).toBe('sentry.javascript.remix');
+-  expect(manualTransactionEnvelope.start_timestamp).toBeDefined();
+-  expect(manualTransactionEnvelope.timestamp).toBeDefined();
+-
+-  expect(pageloadEnvelope.contexts?.trace?.op).toBe('pageload');
+-  expect(pageloadEnvelope.type).toBe('transaction');
+-  expect(pageloadEnvelope.transaction).toBe('/manual-tracing/:id');
+-});
+diff --git a/packages/remix/test/integration/test/client/meta-tags.test.ts b/packages/remix/test/integration/test/client/meta-tags.test.ts
+deleted file mode 100644
+index 94a5ecfa1bd4..000000000000
+--- a/packages/remix/test/integration/test/client/meta-tags.test.ts
++++ /dev/null
+@@ -1,66 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getFirstSentryEnvelopeRequest } from './utils/helpers';
+-
+-test('should inject `sentry-trace` and `baggage` meta tags inside the root page.', async ({ page }) => {
+-  await page.goto('/');
+-
+-  const sentryTraceTag = await page.$('meta[name="sentry-trace"]');
+-  const sentryTraceContent = await sentryTraceTag?.getAttribute('content');
+-
+-  expect(sentryTraceContent).toEqual(expect.any(String));
+-
+-  const sentryBaggageTag = await page.$('meta[name="baggage"]');
+-  const sentryBaggageContent = await sentryBaggageTag?.getAttribute('content');
+-
+-  expect(sentryBaggageContent).toEqual(expect.any(String));
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags inside a parameterized route.', async ({ page }) => {
+-  await page.goto('/loader-json-response/0');
+-
+-  const sentryTraceTag = await page.$('meta[name="sentry-trace"]');
+-  const sentryTraceContent = await sentryTraceTag?.getAttribute('content');
+-
+-  expect(sentryTraceContent).toEqual(expect.any(String));
+-
+-  const sentryBaggageTag = await page.$('meta[name="baggage"]');
+-  const sentryBaggageContent = await sentryBaggageTag?.getAttribute('content');
+-
+-  expect(sentryBaggageContent).toEqual(expect.any(String));
+-});
+-
+-test('should send transactions with corresponding `sentry-trace` and `baggage` inside root page', async ({
+-  page,
+-  browserName,
+-}) => {
+-  const envelope = await getFirstSentryEnvelopeRequest<Event>(page, '/');
+-
+-  const sentryTraceTag = await page.$('meta[name="sentry-trace"]');
+-  const sentryTraceContent = await sentryTraceTag?.getAttribute('content');
+-  const sentryBaggageTag = await page.$('meta[name="baggage"]');
+-  const sentryBaggageContent = await sentryBaggageTag?.getAttribute('content');
+-
+-  expect(sentryTraceContent).toContain(
+-    `${envelope.contexts?.trace?.trace_id}-${envelope.contexts?.trace?.parent_span_id}-`,
+-  );
+-
+-  expect(sentryBaggageContent).toContain(envelope.contexts?.trace?.trace_id);
+-});
+-
+-test('should send transactions with corresponding `sentry-trace` and `baggage` inside a parameterized route', async ({
+-  page,
+-}) => {
+-  const envelope = await getFirstSentryEnvelopeRequest<Event>(page, '/loader-json-response/0');
+-
+-  const sentryTraceTag = await page.$('meta[name="sentry-trace"]');
+-  const sentryTraceContent = await sentryTraceTag?.getAttribute('content');
+-  const sentryBaggageTag = await page.$('meta[name="baggage"]');
+-  const sentryBaggageContent = await sentryBaggageTag?.getAttribute('content');
+-
+-  expect(sentryTraceContent).toContain(
+-    `${envelope.contexts?.trace?.trace_id}-${envelope.contexts?.trace?.parent_span_id}-`,
+-  );
+-
+-  expect(sentryBaggageContent).toContain(envelope.contexts?.trace?.trace_id);
+-});
+diff --git a/packages/remix/test/integration/test/client/navigation-transactions.test.ts b/packages/remix/test/integration/test/client/navigation-transactions.test.ts
+deleted file mode 100644
+index f4d8123bb1db..000000000000
+--- a/packages/remix/test/integration/test/client/navigation-transactions.test.ts
++++ /dev/null
+@@ -1,72 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getMultipleSentryEnvelopeRequests } from './utils/helpers';
+-
+-test('should create parameterized transactions for dynamic routes', async ({ page }) => {
+-  // Navigate directly to a parameterized route
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 1, {
+-    url: '/error-boundary-capture/123',
+-    envelopeType: 'transaction',
+-  });
+-
+-  const [transactionEnvelope] = envelopes;
+-
+-  expect(transactionEnvelope).toBeDefined();
+-  expect(transactionEnvelope!.contexts?.trace?.op).toBe('pageload');
+-  expect(transactionEnvelope!.type).toBe('transaction');
+-  // Should be parameterized to /error-boundary-capture/:id
+-  expect(transactionEnvelope!.transaction).toBe('/error-boundary-capture/:id');
+-  expect(transactionEnvelope!.contexts?.trace?.data?.['sentry.source']).toBe('route');
+-});
+-
+-test('should create parameterized transactions for nested routes', async ({ page }) => {
+-  // Navigate directly to a nested parameterized route
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 1, {
+-    url: '/users/user123/posts/post456',
+-    envelopeType: 'transaction',
+-  });
+-
+-  const [transactionEnvelope] = envelopes;
+-
+-  expect(transactionEnvelope).toBeDefined();
+-  expect(transactionEnvelope!.contexts?.trace?.op).toBe('pageload');
+-  expect(transactionEnvelope!.type).toBe('transaction');
+-  // Should be parameterized to /users/:userId/posts/:postId
+-  expect(transactionEnvelope!.transaction).toBe('/users/:userId/posts/:postId');
+-  expect(transactionEnvelope!.contexts?.trace?.data?.['sentry.source']).toBe('route');
+-});
+-
+-test('should create parameterized transactions for deeply nested routes', async ({ page }) => {
+-  // Navigate directly to a deeply nested route
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 1, {
+-    url: '/deeply/level1/level2/level3',
+-    envelopeType: 'transaction',
+-  });
+-
+-  const [transactionEnvelope] = envelopes;
+-
+-  expect(transactionEnvelope).toBeDefined();
+-  expect(transactionEnvelope!.contexts?.trace?.op).toBe('pageload');
+-  expect(transactionEnvelope!.type).toBe('transaction');
+-  // Should be parameterized to /deeply/:nested/:structure/:id
+-  expect(transactionEnvelope!.transaction).toBe('/deeply/:nested/:structure/:id');
+-  expect(transactionEnvelope!.contexts?.trace?.data?.['sentry.source']).toBe('route');
+-});
+-
+-test('should handle static routes without parameterization', async ({ page }) => {
+-  // Navigate directly to a static route
+-  const envelopes = await getMultipleSentryEnvelopeRequests<Event>(page, 1, {
+-    url: '/capture-exception',
+-    envelopeType: 'transaction',
+-  });
+-
+-  const [transactionEnvelope] = envelopes;
+-
+-  expect(transactionEnvelope).toBeDefined();
+-  expect(transactionEnvelope!.contexts?.trace?.op).toBe('pageload');
+-  expect(transactionEnvelope!.type).toBe('transaction');
+-  // Static routes should keep their original path
+-  expect(transactionEnvelope!.transaction).toBe('/capture-exception');
+-  // Static routes are sourced from URL since they don't have parameters
+-  expect(transactionEnvelope!.contexts?.trace?.data?.['sentry.source']).toBe('url');
+-});
+diff --git a/packages/remix/test/integration/test/client/pageload.test.ts b/packages/remix/test/integration/test/client/pageload.test.ts
+deleted file mode 100644
+index ccaa80ed3f06..000000000000
+--- a/packages/remix/test/integration/test/client/pageload.test.ts
++++ /dev/null
+@@ -1,14 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import type { Event } from '@sentry/core';
+-import { getFirstSentryEnvelopeRequest } from './utils/helpers';
+-
+-test('should add `pageload` transaction on load.', async ({ page }) => {
+-  const envelope = await getFirstSentryEnvelopeRequest<Event>(page, '/');
+-
+-  expect(envelope.contexts?.trace.op).toBe('pageload');
+-  expect(envelope.type).toBe('transaction');
+-
+-  // Static root route should use '/' (URL) since it doesn't need parameterization
+-  expect(envelope.transaction).toBe('/');
+-  expect(envelope.contexts?.trace?.data?.['sentry.source']).toBe('url');
+-});
+diff --git a/packages/remix/test/integration/test/client/root-loader.test.ts b/packages/remix/test/integration/test/client/root-loader.test.ts
+deleted file mode 100644
+index eb26654cf85a..000000000000
+--- a/packages/remix/test/integration/test/client/root-loader.test.ts
++++ /dev/null
+@@ -1,106 +0,0 @@
+-import { type Page, expect, test } from '@playwright/test';
+-
+-async function extractTraceAndBaggageFromMeta(
+-  page: Page,
+-): Promise<{ sentryTrace?: string | null; sentryBaggage?: string | null }> {
+-  const sentryTraceTag = await page.$('meta[name="sentry-trace"]');
+-  const sentryTraceContent = await sentryTraceTag?.getAttribute('content');
+-
+-  const sentryBaggageTag = await page.$('meta[name="baggage"]');
+-  const sentryBaggageContent = await sentryBaggageTag?.getAttribute('content');
+-
+-  return { sentryTrace: sentryTraceContent, sentryBaggage: sentryBaggageContent };
+-}
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with empty loader', async ({ page }) => {
+-  await page.goto('/?type=empty');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with plain object loader', async ({ page }) => {
+-  await page.goto('/?type=plain');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with JSON response loader', async ({ page }) => {
+-  await page.goto('/?type=json');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with deferred response loader', async ({ page }) => {
+-  await page.goto('/?type=defer');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with null loader', async ({ page }) => {
+-  await page.goto('/?type=null');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with undefined loader', async ({ page }) => {
+-  await page.goto('/?type=undefined');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with throw redirect loader', async ({ page }) => {
+-  await page.goto('/?type=throwRedirect');
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  // We should be successfully redirected to the path.
+-  expect(page.url()).toEqual(expect.stringContaining('/?type=plain'));
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should inject `sentry-trace` and `baggage` meta tags with return redirect loader', async ({ page, baseURL }) => {
+-  await page.goto(`${baseURL}/?type=returnRedirect`);
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  // We should be successfully redirected to the path.
+-  expect(page.url()).toEqual(expect.stringContaining('/?type=plain'));
+-
+-  expect(sentryTrace).toMatch(/.+/);
+-  expect(sentryBaggage).toMatch(/.+/);
+-});
+-
+-test('should return redirect to an external path with no baggage and trace injected.', async ({ page, baseURL }) => {
+-  await page.goto(`${baseURL}/?type=returnRedirectToExternal`);
+-
+-  expect(page.url()).toEqual(expect.stringContaining('docs.sentry.io'));
+-
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toBeUndefined();
+-  expect(sentryBaggage).toBeUndefined();
+-});
+-
+-test('should throw redirect to an external path with no baggage and trace injected.', async ({ page, baseURL }) => {
+-  await page.goto(`${baseURL}/?type=throwRedirectToExternal`);
+-
+-  // We should be successfully redirected to the external path.
+-  expect(page.url()).toEqual(expect.stringContaining('docs.sentry.io'));
+-
+-  const { sentryTrace, sentryBaggage } = await extractTraceAndBaggageFromMeta(page);
+-
+-  expect(sentryTrace).toBeUndefined();
+-  expect(sentryBaggage).toBeUndefined();
+-});
+diff --git a/packages/remix/test/integration/test/client/ssr-error.test.ts b/packages/remix/test/integration/test/client/ssr-error.test.ts
+deleted file mode 100644
+index 45d62a62a51f..000000000000
+--- a/packages/remix/test/integration/test/client/ssr-error.test.ts
++++ /dev/null
+@@ -1,8 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import { countEnvelopes } from './utils/helpers';
+-
+-test('should not report an SSR error on client side.', async ({ page }) => {
+-  const count = await countEnvelopes(page, { url: '/ssr-error', envelopeType: 'event' });
+-
+-  expect(count).toBe(0);
+-});
+diff --git a/packages/remix/test/integration/test/client/throw-redirect.test.ts b/packages/remix/test/integration/test/client/throw-redirect.test.ts
+deleted file mode 100644
+index 60ed3588c79b..000000000000
+--- a/packages/remix/test/integration/test/client/throw-redirect.test.ts
++++ /dev/null
+@@ -1,8 +0,0 @@
+-import { expect, test } from '@playwright/test';
+-import { countEnvelopes } from './utils/helpers';
+-
+-test('should not report thrown redirect response on client side.', async ({ page }) => {
+-  const count = await countEnvelopes(page, { url: '/throw-redirect', envelopeType: 'event' });
+-
+-  expect(count).toBe(0);
+-});
+diff --git a/packages/remix/test/integration/test/client/utils/helpers.ts b/packages/remix/test/integration/test/client/utils/helpers.ts
+deleted file mode 100644
+index 71aec9bb54f2..000000000000
+--- a/packages/remix/test/integration/test/client/utils/helpers.ts
++++ /dev/null
+@@ -1,412 +0,0 @@
+-// Inlined copy from dev-packages/browser-integration-tests/utils/helpers
+-
+-import type { Page, Request } from '@playwright/test';
+-import { parseEnvelope } from '@sentry/core';
+-import type {
+-  Envelope,
+-  EnvelopeItem,
+-  EnvelopeItemType,
+-  Event,
+-  EventEnvelope,
+-  EventEnvelopeHeaders,
+-  SessionContext,
+-  TransactionEvent,
+-} from '@sentry/core';
+-
+-export const envelopeUrlRegex = /\.sentry\.io\/api\/\d+\/envelope\//;
+-
+-export const envelopeParser = (request: Request | null): unknown[] => {
+-  // https://develop.sentry.dev/sdk/envelopes/
+-  const envelope = request?.postData() || '';
+-
+-  // Third row of the envelop is the event payload.
+-  return envelope.split('\n').map(line => {
+-    try {
+-      return JSON.parse(line);
+-    } catch (error) {
+-      return line;
+-    }
+-  });
+-};
+-
+-export const envelopeRequestParser = <T = Event>(request: Request | null, envelopeIndex = 2): T => {
+-  return envelopeParser(request)[envelopeIndex] as T;
+-};
+-
+-/**
+- * The above envelope parser does not follow the envelope spec...
+- * ...but modifying it to follow the spec breaks a lot of the test which rely on the current indexing behavior.
+- *
+- * This parser is a temporary solution to allow us to test metrics with statsd envelopes.
+- *
+- * Eventually, all the tests should be migrated to use this 'proper' envelope parser!
+- */
+-export const properEnvelopeParser = (request: Request | null): EnvelopeItem[] => {
+-  // https://develop.sentry.dev/sdk/envelopes/
+-  const envelope = request?.postData() || '';
+-
+-  const [, items] = parseEnvelope(envelope);
+-
+-  return items;
+-};
+-
+-export type EventAndTraceHeader = [Event, EventEnvelopeHeaders['trace']];
+-
+-/**
+- * Returns the first event item and `trace` envelope header from an envelope.
+- * This is particularly helpful if you want to test dynamic sampling and trace propagation-related cases.
+- */
+-export const eventAndTraceHeaderRequestParser = (request: Request | null): EventAndTraceHeader => {
+-  const envelope = properFullEnvelopeParser<EventEnvelope>(request);
+-  return getEventAndTraceHeader(envelope);
+-};
+-
+-const properFullEnvelopeParser = <T extends Envelope>(request: Request | null): T => {
+-  // https://develop.sentry.dev/sdk/envelopes/
+-  const envelope = request?.postData() || '';
+-
+-  return parseEnvelope(envelope) as T;
+-};
+-
+-function getEventAndTraceHeader(envelope: EventEnvelope): EventAndTraceHeader {
+-  const event = envelope[1][0]?.[1] as Event | undefined;
+-  const trace = envelope[0]?.trace;
+-
+-  if (!event || !trace) {
+-    throw new Error('Could not get event or trace from envelope');
+-  }
+-
+-  return [event, trace];
+-}
+-
+-export const properEnvelopeRequestParser = <T = Event>(request: Request | null, envelopeIndex = 1): T => {
+-  return properEnvelopeParser(request)[0]?.[envelopeIndex] as T;
+-};
+-
+-export const properFullEnvelopeRequestParser = <T extends Envelope>(request: Request | null): T => {
+-  // https://develop.sentry.dev/sdk/envelopes/
+-  const envelope = request?.postData() || '';
+-
+-  return parseEnvelope(envelope) as T;
+-};
+-
+-export const envelopeHeaderRequestParser = (request: Request | null): EventEnvelopeHeaders => {
+-  // https://develop.sentry.dev/sdk/envelopes/
+-  const envelope = request?.postData() || '';
+-
+-  // First row of the envelop is the event payload.
+-  return envelope.split('\n').map(line => JSON.parse(line))[0];
+-};
+-
+-export const getEnvelopeType = (request: Request | null): EnvelopeItemType => {
+-  const envelope = request?.postData() || '';
+-
+-  return (envelope.split('\n').map(line => JSON.parse(line))[1] as Record<string, unknown>).type as EnvelopeItemType;
+-};
+-
+-export const countEnvelopes = async (
+-  page: Page,
+-  options?: {
+-    url?: string;
+-    timeout?: number;
+-    envelopeType: EnvelopeItemType | EnvelopeItemType[];
+-  },
+-): Promise<number> => {
+-  const countPromise = new Promise<number>((resolve, reject) => {
+-    let reqCount = 0;
+-
+-    const requestHandler = (request: Request): void => {
+-      if (envelopeUrlRegex.test(request.url())) {
+-        try {
+-          if (options?.envelopeType) {
+-            const envelopeTypeArray = options
+-              ? typeof options.envelopeType === 'string'
+-                ? [options.envelopeType]
+-                : options.envelopeType || (['event'] as EnvelopeItemType[])
+-              : (['event'] as EnvelopeItemType[]);
+-
+-            if (envelopeTypeArray.includes(getEnvelopeType(request))) {
+-              reqCount++;
+-            }
+-          }
+-        } catch (e) {
+-          reject(e);
+-        }
+-      }
+-    };
+-
+-    page.on('request', requestHandler);
+-
+-    setTimeout(() => {
+-      page.off('request', requestHandler);
+-      resolve(reqCount);
+-    }, options?.timeout || 1000);
+-  });
+-
+-  if (options?.url) {
+-    await page.goto(options.url);
+-  }
+-
+-  return countPromise;
+-};
+-
+-/**
+- * Run script inside the test environment.
+- * This is useful for throwing errors in the test environment.
+- *
+- * Errors thrown from this function are not guaranteed to be captured by Sentry, especially in Webkit.
+- *
+- * @param {Page} page
+- * @param {{ path?: string; content?: string }} impl
+- * @return {*}  {Promise<void>}
+- */
+-export async function runScriptInSandbox(
+-  page: Page,
+-  impl: {
+-    path?: string;
+-    content?: string;
+-  },
+-): Promise<void> {
+-  try {
+-    await page.addScriptTag({ path: impl.path, content: impl.content });
+-  } catch {
+-    // no-op
+-  }
+-}
+-
+-/**
+- * Get Sentry events at the given URL, or the current page.
+- *
+- * @param {Page} page
+- * @param {string} [url]
+- * @return {*}  {Promise<Array<Event>>}
+- */
+-export async function getSentryEvents(page: Page, url?: string): Promise<Array<Event>> {
+-  if (url) {
+-    await page.goto(url);
+-  }
+-  const eventsHandle = await page.evaluateHandle<Array<Event>>('window.events');
+-
+-  return eventsHandle.jsonValue();
+-}
+-
+-export async function waitForErrorRequestOnUrl(page: Page, url: string): Promise<Request> {
+-  const [req] = await Promise.all([waitForErrorRequest(page), page.goto(url)]);
+-  return req;
+-}
+-
+-export async function waitForTransactionRequestOnUrl(page: Page, url: string): Promise<Request> {
+-  const [req] = await Promise.all([waitForTransactionRequest(page), page.goto(url)]);
+-  return req;
+-}
+-
+-export function waitForErrorRequest(page: Page, callback?: (event: Event) => boolean): Promise<Request> {
+-  return page.waitForRequest(req => {
+-    const postData = req.postData();
+-    if (!postData) {
+-      return false;
+-    }
+-
+-    try {
+-      const event = envelopeRequestParser(req);
+-
+-      if (event.type) {
+-        return false;
+-      }
+-
+-      if (callback) {
+-        return callback(event);
+-      }
+-
+-      return true;
+-    } catch {
+-      return false;
+-    }
+-  });
+-}
+-
+-export function waitForTransactionRequest(
+-  page: Page,
+-  callback?: (event: TransactionEvent) => boolean,
+-): Promise<Request> {
+-  return page.waitForRequest(req => {
+-    const postData = req.postData();
+-    if (!postData) {
+-      return false;
+-    }
+-
+-    try {
+-      const event = envelopeRequestParser(req);
+-
+-      if (event.type !== 'transaction') {
+-        return false;
+-      }
+-
+-      if (callback) {
+-        return callback(event as TransactionEvent);
+-      }
+-
+-      return true;
+-    } catch {
+-      return false;
+-    }
+-  });
+-}
+-
+-export async function waitForSession(page: Page): Promise<SessionContext> {
+-  const req = await page.waitForRequest(req => {
+-    const postData = req.postData();
+-    if (!postData) {
+-      return false;
+-    }
+-
+-    try {
+-      const event = envelopeRequestParser<SessionContext>(req);
+-
+-      return typeof event.init === 'boolean' && event.started !== undefined;
+-    } catch {
+-      return false;
+-    }
+-  });
+-
+-  return envelopeRequestParser<SessionContext>(req);
+-}
+-
+-/**
+- * We can only test tracing tests in certain bundles/packages:
+- * - NPM (ESM, CJS)
+- * - CDN bundles that contain Tracing
+- *
+- * @returns `true` if we should skip the tracing test
+- */
+-export function shouldSkipTracingTest(): boolean {
+-  const bundle = process.env.PW_BUNDLE as string | undefined;
+-  return bundle != null && !bundle.includes('tracing') && !bundle.includes('esm') && !bundle.includes('cjs');
+-}
+-
+-/**
+- * Today we always run feedback tests, but this can be used to guard this if we ever need to.
+- */
+-export function shouldSkipFeedbackTest(): boolean {
+-  // We always run these, in bundles the pluggable integration is automatically added
+-  return false;
+-}
+-
+-/**
+- * We only test feature flags integrations in certain bundles/packages:
+- * - NPM (ESM, CJS)
+- * - Not CDNs.
+- *
+- * @returns `true` if we should skip the feature flags test
+- */
+-export function shouldSkipFeatureFlagsTest(): boolean {
+-  const bundle = process.env.PW_BUNDLE as string | undefined;
+-  return bundle != null && !bundle.includes('esm') && !bundle.includes('cjs');
+-}
+-
+-/**
+- * Waits until a number of requests matching urlRgx at the given URL arrive.
+- * If the timeout option is configured, this function will abort waiting, even if it hasn't received the configured
+- * amount of requests, and returns all the events received up to that point in time.
+- */
+-async function getMultipleRequests<T>(
+-  page: Page,
+-  count: number,
+-  urlRgx: RegExp,
+-  requestParser: (req: Request) => T,
+-  options?: {
+-    url?: string;
+-    timeout?: number;
+-    envelopeType?: EnvelopeItemType | EnvelopeItemType[];
+-  },
+-): Promise<T[]> {
+-  const requests: Promise<T[]> = new Promise((resolve, reject) => {
+-    let reqCount = count;
+-    const requestData: T[] = [];
+-    let timeoutId: NodeJS.Timeout | undefined = undefined;
+-
+-    function requestHandler(request: Request): void {
+-      if (urlRgx.test(request.url())) {
+-        try {
+-          if (options?.envelopeType) {
+-            const envelopeTypeArray = options
+-              ? typeof options.envelopeType === 'string'
+-                ? [options.envelopeType]
+-                : options.envelopeType || (['event'] as EnvelopeItemType[])
+-              : (['event'] as EnvelopeItemType[]);
+-
+-            if (!envelopeTypeArray.includes(getEnvelopeType(request))) {
+-              return;
+-            }
+-          }
+-
+-          reqCount--;
+-          requestData.push(requestParser(request));
+-
+-          if (reqCount === 0) {
+-            if (timeoutId) {
+-              clearTimeout(timeoutId);
+-            }
+-            page.off('request', requestHandler);
+-            resolve(requestData);
+-          }
+-        } catch (err) {
+-          reject(err);
+-        }
+-      }
+-    }
+-
+-    page.on('request', requestHandler);
+-
+-    if (options?.timeout) {
+-      timeoutId = setTimeout(() => {
+-        resolve(requestData);
+-      }, options.timeout);
+-    }
+-  });
+-
+-  if (options?.url) {
+-    await page.goto(options.url);
+-  }
+-
+-  return requests;
+-}
+-
+-/**
+- * Wait and get multiple envelope requests at the given URL, or the current page
+- */
+-export async function getMultipleSentryEnvelopeRequests<T>(
+-  page: Page,
+-  count: number,
+-  options?: {
+-    url?: string;
+-    timeout?: number;
+-    envelopeType?: EnvelopeItemType | EnvelopeItemType[];
+-  },
+-  requestParser: (req: Request) => T = envelopeRequestParser as (req: Request) => T,
+-): Promise<T[]> {
+-  return getMultipleRequests<T>(page, count, envelopeUrlRegex, requestParser, options) as Promise<T[]>;
+-}
+-
+-/**
+- * Wait and get the first envelope request at the given URL, or the current page
+- *
+- * @template T
+- * @param {Page} page
+- * @param {string} [url]
+- * @return {*}  {Promise<T>}
+- */
+-export async function getFirstSentryEnvelopeRequest<T>(
+-  page: Page,
+-  url?: string,
+-  requestParser: (req: Request) => T = envelopeRequestParser as (req: Request) => T,
+-): Promise<T> {
+-  const reqs = await getMultipleSentryEnvelopeRequests<T>(page, 1, { url }, requestParser);
+-
+-  const req = reqs[0];
+-  if (!req) {
+-    throw new Error('No request found');
+-  }
+-
+-  return req;
+-}
+diff --git a/packages/remix/test/integration/test/server/instrumentation/action.test.ts b/packages/remix/test/integration/test/server/instrumentation/action.test.ts
+deleted file mode 100644
+index d511368ba707..000000000000
+--- a/packages/remix/test/integration/test/server/instrumentation/action.test.ts
++++ /dev/null
+@@ -1,477 +0,0 @@
+-import { describe, it } from 'vitest';
+-import { RemixTestEnv, assertSentryEvent, assertSentryTransaction } from '../utils/helpers';
+-
+-describe('Remix API Actions', () => {
+-  it('correctly instruments a parameterized Remix API action', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/123123`;
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      method: 'post',
+-      envelopeType: 'transaction',
+-      count: 1,
+-    });
+-    const transaction = envelopes[0][2];
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: `POST action-json-response/:id`,
+-      spans: [
+-        {
+-          data: {
+-            'code.function': 'action',
+-            'sentry.op': 'action.remix',
+-            'match.route.id': 'routes/action-json-response.$id',
+-            'match.params.id': '123123',
+-          },
+-        },
+-        {
+-          data: {
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-            'match.route.id': 'root',
+-            'match.params.id': '123123',
+-          },
+-        },
+-        {
+-          data: {
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-            'match.route.id': 'routes/action-json-response.$id',
+-            'match.params.id': '123123',
+-          },
+-        },
+-      ],
+-      request: {
+-        method: 'POST',
+-        url,
+-        cookies: expect.any(Object),
+-        headers: {
+-          'user-agent': expect.any(String),
+-          host: expect.stringContaining('localhost:'),
+-        },
+-      },
+-    });
+-  });
+-
+-  it('reports an error thrown from the action', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-1`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Unexpected Server Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('includes request data in transaction and error events', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-1`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      transaction: `POST action-json-response/:id`,
+-      request: {
+-        method: 'POST',
+-        url,
+-        cookies: expect.any(Object),
+-        headers: {
+-          'user-agent': expect.any(String),
+-          host: expect.stringContaining('localhost:'),
+-        },
+-      },
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Unexpected Server Error',
+-          },
+-        ],
+-      },
+-      request: {
+-        method: 'POST',
+-        url,
+-        cookies: expect.any(Object),
+-        headers: {
+-          'user-agent': expect.any(String),
+-          host: expect.stringContaining('localhost:'),
+-        },
+-      },
+-    });
+-  });
+-
+-  it('handles an error-throwing redirection target', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-2`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `GET action-json-response/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Unexpected Server Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('handles a thrown `json()` error response with `statusText`', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-3`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `POST action-json-response/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Sentry Test Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'action',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('handles a thrown `json()` error response without `statusText`', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-4`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `POST action-json-response/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Object captured as exception with keys: data',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'action',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('handles a thrown `json()` error response with string body', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-5`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `POST action-json-response/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Sentry Test Error [string body]',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'action',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('handles a thrown `json()` error response with an empty object', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/action-json-response/-6`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `POST action-json-response/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Object captured as exception with keys: [object has no keys]',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'action',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('handles thrown string (primitive) from an action', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/server-side-unexpected-errors/-1`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['event', 'transaction'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `POST server-side-unexpected-errors/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Thrown String Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('handles thrown object from an action', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/server-side-unexpected-errors/-2`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      method: 'post',
+-      envelopeType: ['event', 'transaction'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `POST server-side-unexpected-errors/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Thrown Object Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-});
+diff --git a/packages/remix/test/integration/test/server/instrumentation/loader.test.ts b/packages/remix/test/integration/test/server/instrumentation/loader.test.ts
+deleted file mode 100644
+index 75bcadf29b0c..000000000000
+--- a/packages/remix/test/integration/test/server/instrumentation/loader.test.ts
++++ /dev/null
+@@ -1,258 +0,0 @@
+-import type { Event } from '@sentry/core';
+-import { describe, expect, it } from 'vitest';
+-import { RemixTestEnv, assertSentryEvent, assertSentryTransaction } from '../utils/helpers';
+-
+-describe('Remix API Loaders', () => {
+-  it('reports an error thrown from the loader', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/loader-json-response/-2`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({ url, count: 2, envelopeType: ['transaction', 'event'] });
+-
+-    const event = envelopes[0][2].type === 'transaction' ? envelopes[1][2] : envelopes[0][2];
+-    const transaction = envelopes[0][2].type === 'transaction' ? envelopes[0][2] : envelopes[1][2];
+-
+-    assertSentryTransaction(transaction, {
+-      contexts: {
+-        trace: {
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-    });
+-
+-    assertSentryEvent(event, {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Unexpected Server Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('reports a thrown error response the loader', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/loader-throw-response/-1`;
+-
+-    // We also wait for the transaction, even though we don't care about it for this test
+-    // but otherwise this may leak into another test
+-    const envelopes = await env.getMultipleEnvelopeRequest({ url, count: 2, envelopeType: ['event', 'transaction'] });
+-
+-    const event = envelopes[0][2].type === 'transaction' ? envelopes[1][2] : envelopes[0][2];
+-    const transaction = envelopes[0][2].type === 'transaction' ? envelopes[0][2] : envelopes[1][2];
+-
+-    assertSentryTransaction(transaction, {
+-      contexts: {
+-        trace: {
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-    });
+-
+-    assertSentryEvent(event, {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Not found',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'loader',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('correctly instruments a parameterized Remix API loader', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/loader-json-response/123123`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2];
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: `GET loader-json-response/:id`,
+-      transaction_info: {
+-        source: 'route',
+-      },
+-      spans: [
+-        {
+-          data: {
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-            'sentry.origin': 'auto.http.otel.remix',
+-          },
+-          origin: 'auto.http.otel.remix',
+-        },
+-        {
+-          data: {
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-            'sentry.origin': 'auto.http.otel.remix',
+-          },
+-          origin: 'auto.http.otel.remix',
+-        },
+-      ],
+-    });
+-  });
+-
+-  it('handles an error-throwing redirection target', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/loader-json-response/-1`;
+-
+-    const envelopes = await env.getMultipleEnvelopeRequest({
+-      url,
+-      count: 2,
+-      envelopeType: ['transaction', 'event'],
+-    });
+-
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      transaction: `GET loader-json-response/:id`,
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Unexpected Server Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-
+-  it('makes sure scope does not bleed between requests', async () => {
+-    const env = await RemixTestEnv.init();
+-
+-    const envelopes = await Promise.all([
+-      env.getEnvelopeRequest({ url: `${env.url}/scope-bleed/1`, endServer: false, envelopeType: 'transaction' }),
+-      env.getEnvelopeRequest({ url: `${env.url}/scope-bleed/2`, endServer: false, envelopeType: 'transaction' }),
+-      env.getEnvelopeRequest({ url: `${env.url}/scope-bleed/3`, endServer: false, envelopeType: 'transaction' }),
+-      env.getEnvelopeRequest({ url: `${env.url}/scope-bleed/4`, endServer: false, envelopeType: 'transaction' }),
+-    ]);
+-
+-    await new Promise(resolve => env.server.close(resolve));
+-
+-    envelopes.forEach(envelope => {
+-      const tags = envelope[2].tags as NonNullable<Event['tags']>;
+-      const customTagArr = Object.keys(tags).filter(t => t.startsWith('tag'));
+-      expect(customTagArr).toHaveLength(1);
+-
+-      const key = customTagArr[0];
+-      const val = key[key.length - 1];
+-      expect(tags[key]).toEqual(val);
+-    });
+-  });
+-
+-  it('continues transaction from sentry-trace header and baggage', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/loader-json-response/3`;
+-
+-    // send sentry-trace and baggage headers to loader
+-    env.setAxiosConfig({
+-      headers: {
+-        'sentry-trace': '12312012123120121231201212312012-1121201211212012-1',
+-        baggage: 'sentry-version=1.0,sentry-environment=production,sentry-trace_id=12312012123120121231201212312012',
+-      },
+-    });
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-
+-    expect(envelope[0].trace).toMatchObject({
+-      trace_id: '12312012123120121231201212312012',
+-    });
+-
+-    assertSentryTransaction(envelope[2], {
+-      contexts: {
+-        trace: {
+-          trace_id: '12312012123120121231201212312012',
+-          parent_span_id: '1121201211212012',
+-        },
+-      },
+-    });
+-  });
+-
+-  it('correctly instruments a deferred loader', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/loader-defer-response/123123`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2];
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: 'GET loader-defer-response/:id',
+-      transaction_info: {
+-        source: 'route',
+-      },
+-      spans: [
+-        {
+-          data: {
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-            'match.route.id': 'root',
+-          },
+-        },
+-        {
+-          data: {
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-            'match.route.id': 'routes/loader-defer-response.$id',
+-          },
+-        },
+-      ],
+-    });
+-  });
+-
+-  it('does not capture thrown redirect responses', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/throw-redirect`;
+-
+-    const envelopesCount = await env.countEnvelopes({
+-      url,
+-      envelopeType: 'event',
+-      timeout: 3000,
+-    });
+-
+-    expect(envelopesCount).toBe(0);
+-  });
+-});
+diff --git a/packages/remix/test/integration/test/server/instrumentation/nested-routes.test.ts b/packages/remix/test/integration/test/server/instrumentation/nested-routes.test.ts
+deleted file mode 100644
+index da0f94eb154e..000000000000
+--- a/packages/remix/test/integration/test/server/instrumentation/nested-routes.test.ts
++++ /dev/null
+@@ -1,128 +0,0 @@
+-import type { Event, TransactionEvent } from '@sentry/core';
+-import { describe, expect, it } from 'vitest';
+-import { RemixTestEnv, assertSentryTransaction } from '../utils/helpers';
+-
+-describe('Nested Route Parameterization', () => {
+-  it('correctly parameterizes a 2-level nested route (users/:userId/posts/:postId)', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/users/user123/posts/post456`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2] as unknown as TransactionEvent;
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: 'GET users/:userId/posts/:postId',
+-      transaction_info: {
+-        source: 'route',
+-      },
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'ok',
+-        },
+-      },
+-    });
+-  });
+-
+-  it('correctly parameterizes a 3-level nested API route (api/v1/data/:id)', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/api/v1/data/abc123`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2] as unknown as TransactionEvent;
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: 'GET api/v1/data/:id',
+-      transaction_info: {
+-        source: 'route',
+-      },
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'ok',
+-        },
+-      },
+-    });
+-  });
+-
+-  it('correctly parameterizes a deeply nested route (deeply/:nested/:structure/:id)', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/deeply/level1/level2/level3`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2] as unknown as TransactionEvent;
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: 'GET deeply/:nested/:structure/:id',
+-      transaction_info: {
+-        source: 'route',
+-      },
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'ok',
+-        },
+-      },
+-    });
+-  });
+-
+-  it('correctly parameterizes flat routes with dot notation (products/:productId/reviews/:reviewId)', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/products/prod789/reviews/rev101`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2] as unknown as TransactionEvent;
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: 'GET products/:productId/reviews/:reviewId',
+-      transaction_info: {
+-        source: 'route',
+-      },
+-      contexts: {
+-        trace: {
+-          op: 'http.server',
+-          status: 'ok',
+-        },
+-      },
+-    });
+-  });
+-
+-  it('sends loader span for nested route', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/users/user999/posts/post888`;
+-    const envelope = await env.getEnvelopeRequest({ url, envelopeType: 'transaction' });
+-    const transaction = envelope[2] as unknown as TransactionEvent;
+-
+-    assertSentryTransaction(transaction, {
+-      transaction: 'GET users/:userId/posts/:postId',
+-      spans: expect.arrayContaining([
+-        expect.objectContaining({
+-          data: expect.objectContaining({
+-            'code.function': 'loader',
+-            'sentry.op': 'loader.remix',
+-          }),
+-        }),
+-      ]),
+-    });
+-  });
+-
+-  it('differentiates between nested and flat routes with same parameter names', async () => {
+-    const env = await RemixTestEnv.init();
+-
+-    // Request flat route
+-    const flatEnvelope = await env.getEnvelopeRequest({
+-      url: `${env.url}/loader-json-response/flat123`,
+-      envelopeType: 'transaction',
+-      endServer: false,
+-    });
+-
+-    // Request nested route
+-    const nestedEnvelope = await env.getEnvelopeRequest({
+-      url: `${env.url}/users/nested123/posts/post123`,
+-      envelopeType: 'transaction',
+-    });
+-
+-    const flatTransaction = flatEnvelope[2];
+-    const nestedTransaction = nestedEnvelope[2];
+-
+-    // Verify they have different transaction names
+-    expect((flatTransaction as Event).transaction).toBe('GET loader-json-response/:id');
+-    expect((nestedTransaction as Event).transaction).toBe('GET users/:userId/posts/:postId');
+-  });
+-});
+diff --git a/packages/remix/test/integration/test/server/instrumentation/ssr.test.ts b/packages/remix/test/integration/test/server/instrumentation/ssr.test.ts
+deleted file mode 100644
+index 4f5965fac31f..000000000000
+--- a/packages/remix/test/integration/test/server/instrumentation/ssr.test.ts
++++ /dev/null
+@@ -1,46 +0,0 @@
+-import { describe, expect, it } from 'vitest';
+-import { RemixTestEnv, assertSentryEvent, assertSentryTransaction } from '../utils/helpers';
+-
+-describe('Server Side Rendering', () => {
+-  it('correctly reports a server side rendering error', async () => {
+-    const env = await RemixTestEnv.init();
+-    const url = `${env.url}/ssr-error`;
+-    const envelopes = await env.getMultipleEnvelopeRequest({ url, count: 2, envelopeType: ['transaction', 'event'] });
+-    const [transaction] = envelopes.filter(envelope => envelope[1].type === 'transaction');
+-    const [event] = envelopes.filter(envelope => envelope[1].type === 'event');
+-
+-    assertSentryTransaction(transaction[2], {
+-      contexts: {
+-        trace: {
+-          status: 'internal_error',
+-          data: {
+-            'http.response.status_code': 500,
+-          },
+-        },
+-      },
+-      tags: {
+-        // Testing that the wrapped `handleError` correctly adds tags
+-        'remix-test-tag': 'remix-test-value',
+-      },
+-    });
+-
+-    assertSentryEvent(event[2], {
+-      exception: {
+-        values: [
+-          {
+-            type: 'Error',
+-            value: 'Sentry SSR Test Error',
+-            stacktrace: expect.any(Object),
+-            mechanism: {
+-              data: {
+-                function: 'remix.server.handleError',
+-              },
+-              handled: false,
+-              type: 'auto.function.remix.server',
+-            },
+-          },
+-        ],
+-      },
+-    });
+-  });
+-});
+diff --git a/packages/remix/test/integration/test/server/utils/helpers.ts b/packages/remix/test/integration/test/server/utils/helpers.ts
+deleted file mode 100644
+index b338b783bac0..000000000000
+--- a/packages/remix/test/integration/test/server/utils/helpers.ts
++++ /dev/null
+@@ -1,318 +0,0 @@
+-import * as http from 'http';
+-import { AddressInfo } from 'net';
+-import * as path from 'path';
+-import { createRequestHandler } from '@remix-run/express';
+-import { debug } from '@sentry/core';
+-import type { EnvelopeItemType, Event, TransactionEvent } from '@sentry/core';
+-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+-import * as Sentry from '@sentry/node';
+-import type { AxiosRequestConfig } from 'axios';
+-import axios from 'axios';
+-import express from 'express';
+-import type { Express } from 'express';
+-import type { HttpTerminator } from 'http-terminator';
+-import { createHttpTerminator } from 'http-terminator';
+-import nock from 'nock';
+-
+-type DataCollectorOptions = {
+-  // Optional custom URL
+-  url?: string;
+-
+-  // The expected amount of requests to the envelope endpoint.
+-  // If the amount of sent requests is lower than `count`, this function will not resolve.
+-  count?: number;
+-
+-  // The method of the request.
+-  method?: 'get' | 'post';
+-
+-  // Whether to stop the server after the requests have been intercepted
+-  endServer?: boolean;
+-
+-  // Type(s) of the envelopes to capture
+-  envelopeType?: EnvelopeItemType | EnvelopeItemType[];
+-};
+-
+-async function makeRequest(
+-  method: 'get' | 'post' = 'get',
+-  url: string,
+-  axiosConfig?: AxiosRequestConfig,
+-): Promise<void> {
+-  try {
+-    if (method === 'get') {
+-      await axios.get(url, axiosConfig);
+-    } else {
+-      await axios.post(url, axiosConfig);
+-    }
+-  } catch (e) {
+-    // We sometimes expect the request to fail, but not the test.
+-    // So, we do nothing.
+-    debug.warn(e);
+-  }
+-}
+-
+-class TestEnv {
+-  private _axiosConfig: AxiosRequestConfig | undefined = undefined;
+-  private _terminator: HttpTerminator;
+-
+-  public constructor(
+-    public readonly server: http.Server,
+-    public readonly url: string,
+-  ) {
+-    this.server = server;
+-    this.url = url;
+-    this._terminator = createHttpTerminator({ server: this.server, gracefulTerminationTimeout: 0 });
+-  }
+-
+-  /**
+-   * Starts a test server and returns the TestEnv instance
+-   *
+-   * @param {string} testDir
+-   * @param {string} [serverPath]
+-   * @param {string} [scenarioPath]
+-   * @return {*}  {Promise<string>}
+-   */
+-  public static async init(testDir: string, serverPath?: string, scenarioPath?: string): Promise<TestEnv> {
+-    const defaultServerPath = path.resolve(process.cwd(), 'utils', 'defaults', 'server');
+-
+-    const [server, url] = await new Promise<[http.Server, string]>(async resolve => {
+-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-member-access
+-      const { default: app } = (await import(serverPath || defaultServerPath)) as { default: Express };
+-
+-      app.get('/test', async (_req, res) => {
+-        try {
+-          await import(scenarioPath || `${testDir}/scenario`);
+-        } finally {
+-          res.status(200).end();
+-        }
+-      });
+-
+-      const server = app.listen(0, () => {
+-        const url = `http://localhost:${(server.address() as AddressInfo).port}/test`;
+-        resolve([server, url]);
+-      });
+-    });
+-
+-    return new TestEnv(server, url);
+-  }
+-
+-  /**
+-   * Intercepts and extracts up to a number of requests containing Sentry envelopes.
+-   *
+-   * @param {DataCollectorOptions} options
+-   * @returns The intercepted envelopes.
+-   */
+-  public async getMultipleEnvelopeRequest(options: DataCollectorOptions): Promise<Record<string, unknown>[][]> {
+-    const envelopeTypeArray =
+-      typeof options.envelopeType === 'string'
+-        ? [options.envelopeType]
+-        : options.envelopeType || (['event'] as EnvelopeItemType[]);
+-
+-    const resProm = this.setupNock(
+-      options.count || 1,
+-      typeof options.endServer === 'undefined' ? true : options.endServer,
+-      envelopeTypeArray,
+-    );
+-
+-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+-    makeRequest(options.method, options.url || this.url, this._axiosConfig);
+-    return resProm;
+-  }
+-
+-  /**
+-   * Intercepts and extracts a single request containing a Sentry envelope
+-   *
+-   * @param {DataCollectorOptions} options
+-   * @returns The extracted envelope.
+-   */
+-  public async getEnvelopeRequest(options?: DataCollectorOptions): Promise<Array<Record<string, unknown>>> {
+-    const requests = await this.getMultipleEnvelopeRequest({ ...options, count: 1 });
+-
+-    if (!requests[0]) {
+-      throw new Error('No requests found');
+-    }
+-
+-    return requests[0];
+-  }
+-
+-  /**
+-   * Sends a get request to given URL, with optional headers. Returns the response.
+-   * Ends the server instance and flushes the Sentry event queue.
+-   *
+-   * @param {Record<string, string>} [headers]
+-   * @return {*}  {Promise<any>}
+-   */
+-  public async getAPIResponse(
+-    url?: string,
+-    headers: Record<string, string> = {},
+-    endServer: boolean = true,
+-  ): Promise<unknown> {
+-    try {
+-      const { data } = await axios.get(url || this.url, {
+-        headers,
+-        // KeepAlive false to work around a Node 20 bug with ECONNRESET: https://github.com/axios/axios/issues/5929
+-        httpAgent: new http.Agent({ keepAlive: false }),
+-      });
+-      return data;
+-    } finally {
+-      await Sentry.flush();
+-
+-      if (endServer) {
+-        this.server.close();
+-      }
+-    }
+-  }
+-
+-  public async setupNock(
+-    count: number,
+-    endServer: boolean,
+-    envelopeType: EnvelopeItemType[],
+-  ): Promise<Record<string, unknown>[][]> {
+-    return new Promise(resolve => {
+-      const envelopes: Record<string, unknown>[][] = [];
+-      const mock = nock('https://dsn.ingest.sentry.io')
+-        .persist()
+-        .post('/api/1337/envelope/', body => {
+-          const envelope = parseEnvelope(body);
+-
+-          if (envelopeType.includes(envelope[1]?.type as EnvelopeItemType)) {
+-            envelopes.push(envelope);
+-          } else {
+-            return false;
+-          }
+-
+-          if (count === envelopes.length) {
+-            nock.removeInterceptor(mock);
+-
+-            if (endServer) {
+-              // Cleaning nock only before the server is closed,
+-              // not to break tests that use simultaneous requests to the server.
+-              // Ex: Remix scope bleed tests.
+-              nock.cleanAll();
+-
+-              // Abort all pending requests to nock to prevent hanging / flakes.
+-              // See: https://github.com/nock/nock/issues/1118#issuecomment-544126948
+-              nock.abortPendingRequests();
+-
+-              this._closeServer()
+-                .catch(e => {
+-                  debug.warn(e);
+-                })
+-                .finally(() => {
+-                  resolve(envelopes);
+-                });
+-            } else {
+-              resolve(envelopes);
+-            }
+-          }
+-
+-          return true;
+-        });
+-
+-      mock
+-        .query(true) // accept any query params - used for sentry_key param
+-        .reply(200);
+-    });
+-  }
+-
+-  public setAxiosConfig(axiosConfig: AxiosRequestConfig): void {
+-    this._axiosConfig = axiosConfig;
+-  }
+-
+-  public async countEnvelopes(options: {
+-    url?: string;
+-    timeout?: number;
+-    envelopeType: EnvelopeItemType | EnvelopeItemType[];
+-  }): Promise<number> {
+-    return new Promise(resolve => {
+-      let reqCount = 0;
+-
+-      const mock = nock('https://dsn.ingest.sentry.io')
+-        .persist()
+-        .post('/api/1337/envelope/', body => {
+-          const envelope = parseEnvelope(body);
+-
+-          if (options.envelopeType.includes(envelope[1]?.type as EnvelopeItemType)) {
+-            reqCount++;
+-            return true;
+-          }
+-
+-          return false;
+-        });
+-
+-      setTimeout(() => {
+-        nock.removeInterceptor(mock);
+-
+-        nock.cleanAll();
+-
+-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+-        this._closeServer().then(() => {
+-          resolve(reqCount);
+-        });
+-      }, options.timeout || 1000);
+-    });
+-  }
+-
+-  private _closeServer(): Promise<void> {
+-    return this._terminator.terminate();
+-  }
+-}
+-
+-export class RemixTestEnv extends TestEnv {
+-  private constructor(
+-    public readonly server: http.Server,
+-    public readonly url: string,
+-  ) {
+-    super(server, url);
+-  }
+-
+-  public static async init(): Promise<RemixTestEnv> {
+-    let serverPort;
+-    const server = await new Promise<http.Server>(async resolve => {
+-      const app = express();
+-
+-      // Vite builds to build/server/index.js instead of build/index.js
+-      app.all('*', createRequestHandler({ build: await import('../../../build/server/index.js') }));
+-
+-      const server = app.listen(0, () => {
+-        serverPort = (server.address() as AddressInfo).port;
+-        resolve(server);
+-      });
+-    });
+-
+-    return new RemixTestEnv(server, `http://localhost:${serverPort}`);
+-  }
+-}
+-
+-const parseEnvelope = (body: string): Array<Record<string, unknown>> => {
+-  return body.split('\n').map(e => JSON.parse(e));
+-};
+-
+-/**
+- * Asserts against a Sentry Event ignoring non-deterministic properties
+- *
+- * @param {Record<string, unknown>} actual
+- * @param {Record<string, unknown>} expected
+- */
+-export const assertSentryEvent = (actual: Event, expected: Record<string, unknown>): void => {
+-  expect(actual).toMatchObject({
+-    event_id: expect.any(String),
+-    ...expected,
+-  });
+-};
+-
+-/**
+- * Asserts against a Sentry Transaction ignoring non-deterministic properties
+- *
+- * @param {Record<string, unknown>} actual
+- * @param {Record<string, unknown>} expected
+- */
+-export const assertSentryTransaction = (actual: TransactionEvent, expected: Record<string, unknown>): void => {
+-  expect(actual).toMatchObject({
+-    event_id: expect.any(String),
+-    timestamp: expect.anything(),
+-    start_timestamp: expect.anything(),
+-    spans: expect.any(Array),
+-    type: 'transaction',
+-    ...expected,
+-  });
+-};
+diff --git a/packages/remix/test/integration/test/tsconfig.json b/packages/remix/test/integration/test/tsconfig.json
+deleted file mode 100644
+index 105334e2253a..000000000000
+--- a/packages/remix/test/integration/test/tsconfig.json
++++ /dev/null
+@@ -1,3 +0,0 @@
+-{
+-  "extends": "../../../tsconfig.test.json"
+-}
+diff --git a/packages/remix/test/integration/tsconfig.json b/packages/remix/test/integration/tsconfig.json
+deleted file mode 100644
+index a6d18f97a35f..000000000000
+--- a/packages/remix/test/integration/tsconfig.json
++++ /dev/null
+@@ -1,23 +0,0 @@
+-{
+-  "include": ["remix.env.d.ts", "**/*.ts", "**/*.tsx", "vite.config.ts"],
+-  "compilerOptions": {
+-    "lib": ["DOM", "DOM.Iterable", "ES2020"],
+-    "isolatedModules": true,
+-    "esModuleInterop": true,
+-    "jsx": "react-jsx",
+-    "module": "ESNext",
+-    "moduleResolution": "Bundler",
+-    "resolveJsonModule": true,
+-    "target": "ES2020",
+-    "strict": true,
+-    "allowJs": true,
+-    "skipLibCheck": true,
+-    "forceConsistentCasingInFileNames": true,
+-    "baseUrl": ".",
+-    "paths": {
+-      "~/*": ["./app/*"]
+-    },
+-    "noEmit": true,
+-    "types": ["@remix-run/node", "vite/client"]
+-  }
+-}
+diff --git a/packages/remix/test/integration/tsconfig.test.json b/packages/remix/test/integration/tsconfig.test.json
+deleted file mode 100644
+index 0bb16039ac48..000000000000
+--- a/packages/remix/test/integration/tsconfig.test.json
++++ /dev/null
+@@ -1,9 +0,0 @@
+-{
+-  "extends": "./tsconfig.json",
+-
+-  "include": ["test/**/*"],
+-
+-  "compilerOptions": {
+-    "types": ["node"]
+-  }
+-}
+diff --git a/packages/remix/test/integration/vite.config.ts b/packages/remix/test/integration/vite.config.ts
+deleted file mode 100644
+index 5355e209498f..000000000000
+--- a/packages/remix/test/integration/vite.config.ts
++++ /dev/null
+@@ -1,42 +0,0 @@
+-import { vitePlugin as remix } from '@remix-run/dev';
+-import { defineConfig, Plugin } from 'vite';
+-import { sentryRemixVitePlugin } from '@sentry/remix';
+-import path from 'path';
+-
+-// Custom plugin to resolve @sentry/remix to ESM builds for Vite
+-function sentryRemixEsmResolver(): Plugin {
+-  const remixPackageRoot = path.resolve(__dirname, '../..');
+-
+-  return {
+-    name: 'sentry-remix-esm-resolver',
+-    enforce: 'pre',
+-    resolveId(source, importer, options) {
+-      if (source === '@sentry/remix') {
+-        // For SSR build, use the server ESM build
+-        if (options.ssr) {
+-          return path.join(remixPackageRoot, 'build/esm/index.server.js');
+-        }
+-        // For client build, use the client ESM build
+-        return path.join(remixPackageRoot, 'build/esm/index.client.js');
+-      }
+-      return null;
+-    },
+-  };
+-}
+-
+-export default defineConfig({
+-  plugins: [
+-    sentryRemixEsmResolver(),
+-    remix({
+-      future: {
+-        v3_fetcherPersist: true,
+-        v3_relativeSplatPath: true,
+-        v3_throwAbortReason: true,
+-        // v3_singleFetch disabled - causes SDK initialization issues in test environment
+-        v3_singleFetch: false,
+-        v3_lazyRouteDiscovery: true,
+-      },
+-    }),
+-    sentryRemixVitePlugin(),
+-  ],
+-});
+diff --git a/packages/remix/tsconfig.test.json b/packages/remix/tsconfig.test.json
+index dace64b4fd9a..03cd2293ef63 100644
+--- a/packages/remix/tsconfig.test.json
++++ b/packages/remix/tsconfig.test.json
+@@ -1,7 +1,7 @@
+ {
+   "extends": "./tsconfig.json",
+ 
+-  "include": ["test/**/*", "vitest.config.ts", "vitest.config.unit.ts"],
++  "include": ["test/**/*", "vitest.config.unit.ts"],
+ 
+   "compilerOptions": {
+     "lib": ["DOM", "es2020"],
+diff --git a/packages/remix/vitest.config.ts b/packages/remix/vitest.config.ts
+deleted file mode 100644
+index d2194a288aa1..000000000000
+--- a/packages/remix/vitest.config.ts
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import { defineConfig } from 'vitest/config';
+-
+-export default defineConfig({
+-  test: {
+-    globals: true,
+-    disableConsoleIntercept: true,
+-    silent: false,
+-    setupFiles: './test/integration/instrument.server.mjs',
+-    include: ['**/integration/test/server/**/*.test.ts'],
+-  },
+-});
+diff --git a/packages/remix/vitest.config.unit.ts b/packages/remix/vitest.config.unit.ts
+index a81b35e3fd75..ae119071e469 100644
+--- a/packages/remix/vitest.config.unit.ts
++++ b/packages/remix/vitest.config.unit.ts
+@@ -6,9 +6,6 @@ export default defineConfig({
+   ...baseConfig,
+   test: {
+     ...baseConfig.test,
+-    // disableConsoleIntercept: true,
+-    // silent: false,
+     include: ['test/**/*.test.ts'],
+-    exclude: ['**/integration/**/*.test.ts'],
+   },
+ });
+diff --git a/yarn.lock b/yarn.lock
+index bc5f13f60af1..33eeda6eef11 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -10180,17 +10180,6 @@
+     estree-walker "^2.0.2"
+     source-map "^0.6.1"
+ 
+-"@vue/compiler-core@3.5.28":
+-  version "3.5.28"
+-  resolved "https://registry.yarnpkg.com/@vue/compiler-core/-/compiler-core-3.5.28.tgz#8298ab91d34b2c0d7d398384cd840471919e7e34"
+-  integrity sha512-kviccYxTgoE8n6OCw96BNdYlBg2GOWfBuOW4Vqwrt7mSKWKwFVvI8egdTltqRgITGPsTFYtKYfxIG8ptX2PJHQ==
+-  dependencies:
+-    "@babel/parser" "^7.29.0"
+-    "@vue/shared" "3.5.28"
+-    entities "^7.0.1"
+-    estree-walker "^2.0.2"
+-    source-map-js "^1.2.1"
+-
+ "@vue/compiler-core@3.5.34":
+   version "3.5.34"
+   resolved "https://registry.yarnpkg.com/@vue/compiler-core/-/compiler-core-3.5.34.tgz#6d84a46b7fdf1162cf8225aa2be42918a76ab827"
+@@ -10210,14 +10199,6 @@
+     "@vue/compiler-core" "3.2.45"
+     "@vue/shared" "3.2.45"
+ 
+-"@vue/compiler-dom@3.5.28":
+-  version "3.5.28"
+-  resolved "https://registry.yarnpkg.com/@vue/compiler-dom/-/compiler-dom-3.5.28.tgz#4e27b885898f4799d95305dfc56d14c2dcf8e5ba"
+-  integrity sha512-/1ZepxAb159jKR1btkefDP+J2xuWL5V3WtleRmxaT+K2Aqiek/Ab/+Ebrw2pPj0sdHO8ViAyyJWfhXXOP/+LQA==
+-  dependencies:
+-    "@vue/compiler-core" "3.5.28"
+-    "@vue/shared" "3.5.28"
+-
+ "@vue/compiler-dom@3.5.34":
+   version "3.5.34"
+   resolved "https://registry.yarnpkg.com/@vue/compiler-dom/-/compiler-dom-3.5.34.tgz#6b943e8106822868e74d66c615432bbba6a589be"
+@@ -10265,14 +10246,6 @@
+     "@vue/compiler-dom" "3.2.45"
+     "@vue/shared" "3.2.45"
+ 
+-"@vue/compiler-ssr@3.5.28":
+-  version "3.5.28"
+-  resolved "https://registry.yarnpkg.com/@vue/compiler-ssr/-/compiler-ssr-3.5.28.tgz#bfd3d39b3085b77220eaa278e5fbe3c93ffbc9c2"
+-  integrity sha512-JCq//9w1qmC6UGLWJX7RXzrGpKkroubey/ZFqTpvEIDJEKGgntuDMqkuWiZvzTzTA5h2qZvFBFHY7fAAa9475g==
+-  dependencies:
+-    "@vue/compiler-dom" "3.5.28"
+-    "@vue/shared" "3.5.28"
+-
+ "@vue/compiler-ssr@3.5.34":
+   version "3.5.34"
+   resolved "https://registry.yarnpkg.com/@vue/compiler-ssr/-/compiler-ssr-3.5.34.tgz#0561ae3f9b81564929a8544769eee9cc92a76c42"
+@@ -10399,11 +10372,6 @@
+   resolved "https://registry.yarnpkg.com/@vue/shared/-/shared-3.2.45.tgz#a3fffa7489eafff38d984e23d0236e230c818bc2"
+   integrity sha512-Ewzq5Yhimg7pSztDV+RH1UDKBzmtqieXQlpTVm2AwraoRL/Rks96mvd8Vgi7Lj+h+TH8dv7mXD3FRZR3TUvbSg==
+ 
+-"@vue/shared@3.5.28":
+-  version "3.5.28"
+-  resolved "https://registry.yarnpkg.com/@vue/shared/-/shared-3.5.28.tgz#ed9b6785e9452621ad3ab2f2775e9cba494a9ef4"
+-  integrity sha512-cfWa1fCGBxrvaHRhvV3Is0MgmrbSCxYTXCSCau2I0a1Xw1N1pHAvkWCiXPRAqjvToILvguNyEwjevUqAuBQWvQ==
+-
+ "@vue/shared@3.5.34", "@vue/shared@^3.5.17", "@vue/shared@^3.5.18", "@vue/shared@^3.5.34":
+   version "3.5.34"
+   resolved "https://registry.yarnpkg.com/@vue/shared/-/shared-3.5.34.tgz#665f2b2fd600f6c180668423909a6fde64cbfccd"
+@@ -22324,7 +22292,7 @@ named-placeholders@^1.1.6:
+   dependencies:
+     lru.min "^1.1.0"
+ 
+-nanoid@^3.3.11, nanoid@^3.3.12, nanoid@^3.3.6, nanoid@^3.3.8:
++nanoid@^3.3.12, nanoid@^3.3.6, nanoid@^3.3.8:
+   version "3.3.12"
+   resolved "https://registry.yarnpkg.com/nanoid/-/nanoid-3.3.12.tgz#ab3d912e217a6d0a514f00a72a16543a28982c05"
+   integrity sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==

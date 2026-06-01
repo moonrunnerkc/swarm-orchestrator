@@ -1,0 +1,1360 @@
+diff --git a/docs/data/joy/components/alert/AlertColors.js b/docs/data/joy/components/alert/AlertColors.js
+new file mode 100644
+index 00000000000000..597a6ef3ed1749
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertColors.js
+@@ -0,0 +1,78 @@
++import Alert from '@mui/joy/Alert';
++import Box from '@mui/joy/Box';
++import Radio from '@mui/joy/Radio';
++import RadioGroup from '@mui/joy/RadioGroup';
++import Sheet from '@mui/joy/Sheet';
++
++import Typography from '@mui/joy/Typography';
++import * as React from 'react';
++
++export default function AlertColors() {
++  const [variant, setVariant] = React.useState('solid');
++  return (
++    <Box
++      sx={{
++        display: 'flex',
++        alignItems: 'center',
++        gap: 3,
++      }}
++    >
++      <Box
++        sx={{
++          display: 'grid',
++          gridTemplateColumns: 'repeat(3, minmax(150px, 1fr))',
++          gap: 1,
++        }}
++      >
++        <Alert variant={variant} color="primary">
++          Primary
++        </Alert>
++        <Alert variant={variant} color="neutral">
++          Neutral
++        </Alert>
++        <Alert variant={variant} color="danger">
++          Danger
++        </Alert>
++        <Alert variant={variant} color="info">
++          Info
++        </Alert>
++        <Alert variant={variant} color="success">
++          Success
++        </Alert>
++        <Alert variant={variant} color="warning">
++          Warning
++        </Alert>
++      </Box>
++      <Sheet
++        sx={{
++          background: 'transparent',
++          pl: 4,
++          borderLeft: '1px solid',
++          borderColor: 'divider',
++        }}
++      >
++        <Typography
++          level="body2"
++          fontWeight="xl"
++          id="variant-label"
++          textColor="text.primary"
++          mb={1}
++        >
++          Variant:
++        </Typography>
++        <RadioGroup
++          size="sm"
++          aria-labelledby="variant-label"
++          name="variant"
++          value={variant}
++          onChange={(event) => setVariant(event.target.value)}
++        >
++          <Radio label="Solid" value="solid" />
++          <Radio label="Soft" value="soft" />
++          <Radio label="Outlined" value="outlined" />
++          <Radio label="Plain" value="plain" />
++        </RadioGroup>
++      </Sheet>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertColors.tsx b/docs/data/joy/components/alert/AlertColors.tsx
+new file mode 100644
+index 00000000000000..98e4904edd9d9c
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertColors.tsx
+@@ -0,0 +1,78 @@
++import Alert from '@mui/joy/Alert';
++import Box from '@mui/joy/Box';
++import Radio from '@mui/joy/Radio';
++import RadioGroup from '@mui/joy/RadioGroup';
++import Sheet from '@mui/joy/Sheet';
++import { VariantProp } from '@mui/joy/styles';
++import Typography from '@mui/joy/Typography';
++import * as React from 'react';
++
++export default function AlertColors() {
++  const [variant, setVariant] = React.useState<VariantProp>('solid');
++  return (
++    <Box
++      sx={{
++        display: 'flex',
++        alignItems: 'center',
++        gap: 3,
++      }}
++    >
++      <Box
++        sx={{
++          display: 'grid',
++          gridTemplateColumns: 'repeat(3, minmax(150px, 1fr))',
++          gap: 1,
++        }}
++      >
++        <Alert variant={variant} color="primary">
++          Primary
++        </Alert>
++        <Alert variant={variant} color="neutral">
++          Neutral
++        </Alert>
++        <Alert variant={variant} color="danger">
++          Danger
++        </Alert>
++        <Alert variant={variant} color="info">
++          Info
++        </Alert>
++        <Alert variant={variant} color="success">
++          Success
++        </Alert>
++        <Alert variant={variant} color="warning">
++          Warning
++        </Alert>
++      </Box>
++      <Sheet
++        sx={{
++          background: 'transparent',
++          pl: 4,
++          borderLeft: '1px solid',
++          borderColor: 'divider',
++        }}
++      >
++        <Typography
++          level="body2"
++          fontWeight="xl"
++          id="variant-label"
++          textColor="text.primary"
++          mb={1}
++        >
++          Variant:
++        </Typography>
++        <RadioGroup
++          size="sm"
++          aria-labelledby="variant-label"
++          name="variant"
++          value={variant}
++          onChange={(event) => setVariant(event.target.value as VariantProp)}
++        >
++          <Radio label="Solid" value="solid" />
++          <Radio label="Soft" value="soft" />
++          <Radio label="Outlined" value="outlined" />
++          <Radio label="Plain" value="plain" />
++        </RadioGroup>
++      </Sheet>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertSizes.js b/docs/data/joy/components/alert/AlertSizes.js
+new file mode 100644
+index 00000000000000..6b9f35c2d85b5e
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertSizes.js
+@@ -0,0 +1,13 @@
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++
++export default function AlertSizes() {
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      <Alert size="sm">This is an alert in the small size.</Alert>
++      <Alert size="md">This is an alert in the medium size.</Alert>
++      <Alert size="lg">This is an alert in the large size.</Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertSizes.tsx b/docs/data/joy/components/alert/AlertSizes.tsx
+new file mode 100644
+index 00000000000000..6b9f35c2d85b5e
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertSizes.tsx
+@@ -0,0 +1,13 @@
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++
++export default function AlertSizes() {
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      <Alert size="sm">This is an alert in the small size.</Alert>
++      <Alert size="md">This is an alert in the medium size.</Alert>
++      <Alert size="lg">This is an alert in the large size.</Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertSizes.tsx.preview b/docs/data/joy/components/alert/AlertSizes.tsx.preview
+new file mode 100644
+index 00000000000000..662704300e2d2b
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertSizes.tsx.preview
+@@ -0,0 +1,3 @@
++<Alert size="sm">This is an alert in the small size.</Alert>
++<Alert size="md">This is an alert in the medium size.</Alert>
++<Alert size="lg">This is an alert in the large size.</Alert>
+\ No newline at end of file
+diff --git a/docs/data/joy/components/alert/AlertUsage.js b/docs/data/joy/components/alert/AlertUsage.js
+new file mode 100644
+index 00000000000000..ecbcd1f2d4b938
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertUsage.js
+@@ -0,0 +1,33 @@
++import * as React from 'react';
++import Alert from '@mui/joy/Alert';
++import JoyUsageDemo from 'docs/src/modules/components/JoyUsageDemo';
++
++export default function AlertUsage() {
++  return (
++    <JoyUsageDemo
++      componentName="Alert"
++      data={[
++        {
++          propName: 'variant',
++          knob: 'select',
++          defaultValue: 'soft',
++          options: ['plain', 'outlined', 'soft', 'solid'],
++        },
++        {
++          propName: 'color',
++          knob: 'color',
++          defaultValue: 'primary',
++        },
++        {
++          propName: 'size',
++          knob: 'radio',
++          options: ['sm', 'md', 'lg'],
++          defaultValue: 'md',
++        },
++      ]}
++      renderDemo={(props) => (
++        <Alert {...props}>This is a Joy UI alert — check it out!</Alert>
++      )}
++    />
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertVariants.js b/docs/data/joy/components/alert/AlertVariants.js
+new file mode 100644
+index 00000000000000..3a9b0d9b3f8059
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertVariants.js
+@@ -0,0 +1,14 @@
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++
++export default function AlertVariants() {
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      <Alert variant="solid">This is an alert using the solid variant.</Alert>
++      <Alert variant="soft">This is an alert using the soft variant.</Alert>
++      <Alert variant="outlined">This is an alert using the outlined variant.</Alert>
++      <Alert variant="plain">This is an alert using the plain variant.</Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertVariants.tsx b/docs/data/joy/components/alert/AlertVariants.tsx
+new file mode 100644
+index 00000000000000..3a9b0d9b3f8059
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertVariants.tsx
+@@ -0,0 +1,14 @@
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++
++export default function AlertVariants() {
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      <Alert variant="solid">This is an alert using the solid variant.</Alert>
++      <Alert variant="soft">This is an alert using the soft variant.</Alert>
++      <Alert variant="outlined">This is an alert using the outlined variant.</Alert>
++      <Alert variant="plain">This is an alert using the plain variant.</Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertVariants.tsx.preview b/docs/data/joy/components/alert/AlertVariants.tsx.preview
+new file mode 100644
+index 00000000000000..ca9c0114aead70
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertVariants.tsx.preview
+@@ -0,0 +1,4 @@
++<Alert variant="solid">This is an alert using the solid variant.</Alert>
++<Alert variant="soft">This is an alert using the soft variant.</Alert>
++<Alert variant="outlined">This is an alert using the outlined variant.</Alert>
++<Alert variant="plain">This is an alert using the plain variant.</Alert>
+\ No newline at end of file
+diff --git a/docs/data/joy/components/alert/AlertVariousStates.js b/docs/data/joy/components/alert/AlertVariousStates.js
+new file mode 100644
+index 00000000000000..02b4db7ed1e9b6
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertVariousStates.js
+@@ -0,0 +1,50 @@
++import InfoIcon from '@mui/icons-material/Info';
++import WarningIcon from '@mui/icons-material/Warning';
++import ReportIcon from '@mui/icons-material/Report';
++import CheckCircleIcon from '@mui/icons-material/CheckCircle';
++import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++import IconButton from '@mui/joy/IconButton';
++import Typography from '@mui/joy/Typography';
++
++export default function AlertVariousStates() {
++  const items = [
++    { title: 'Success', color: 'success', icon: <CheckCircleIcon /> },
++    { title: 'Warning', color: 'warning', icon: <WarningIcon /> },
++    { title: 'Error', color: 'danger', icon: <ReportIcon /> },
++    { title: 'Info', color: 'info', icon: <InfoIcon /> },
++  ];
++
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      {items.map(({ title, color, icon }) => (
++        <Alert
++          key={title}
++          sx={{ alignItems: 'flex-start' }}
++          startDecorator={React.cloneElement(icon, {
++            sx: { mt: '2px', mx: '4px' },
++            fontSize: 'xl2',
++          })}
++          variant="soft"
++          color={color}
++          endDecorator={
++            <IconButton variant="soft" size="sm" color={color}>
++              <CloseRoundedIcon />
++            </IconButton>
++          }
++        >
++          <div>
++            <Typography fontWeight="lg" mt={0.25}>
++              {title}
++            </Typography>
++            <Typography fontSize="sm" sx={{ opacity: 0.8 }}>
++              This is a {title} message.
++            </Typography>
++          </div>
++        </Alert>
++      ))}
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertVariousStates.tsx b/docs/data/joy/components/alert/AlertVariousStates.tsx
+new file mode 100644
+index 00000000000000..deb0ce499cc74f
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertVariousStates.tsx
+@@ -0,0 +1,54 @@
++import InfoIcon from '@mui/icons-material/Info';
++import WarningIcon from '@mui/icons-material/Warning';
++import ReportIcon from '@mui/icons-material/Report';
++import CheckCircleIcon from '@mui/icons-material/CheckCircle';
++import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++import IconButton from '@mui/joy/IconButton';
++import Typography from '@mui/joy/Typography';
++import { ColorPaletteProp } from '@mui/joy/styles';
++
++export default function AlertVariousStates() {
++  const items: {
++    title: string;
++    color: ColorPaletteProp;
++    icon: React.ReactElement;
++  }[] = [
++    { title: 'Success', color: 'success', icon: <CheckCircleIcon /> },
++    { title: 'Warning', color: 'warning', icon: <WarningIcon /> },
++    { title: 'Error', color: 'danger', icon: <ReportIcon /> },
++    { title: 'Info', color: 'info', icon: <InfoIcon /> },
++  ];
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      {items.map(({ title, color, icon }) => (
++        <Alert
++          key={title}
++          sx={{ alignItems: 'flex-start' }}
++          startDecorator={React.cloneElement(icon, {
++            sx: { mt: '2px', mx: '4px' },
++            fontSize: 'xl2',
++          })}
++          variant="soft"
++          color={color}
++          endDecorator={
++            <IconButton variant="soft" size="sm" color={color}>
++              <CloseRoundedIcon />
++            </IconButton>
++          }
++        >
++          <div>
++            <Typography fontWeight="lg" mt={0.25}>
++              {title}
++            </Typography>
++            <Typography fontSize="sm" sx={{ opacity: 0.8 }}>
++              This is a {title} message.
++            </Typography>
++          </div>
++        </Alert>
++      ))}
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertWithDangerState.js b/docs/data/joy/components/alert/AlertWithDangerState.js
+new file mode 100644
+index 00000000000000..05f50d1c54e7ee
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertWithDangerState.js
+@@ -0,0 +1,73 @@
++import WarningIcon from '@mui/icons-material/Warning';
++import CloseIcon from '@mui/icons-material/Close';
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++import IconButton from '@mui/joy/IconButton';
++import Typography from '@mui/joy/Typography';
++import Button from '@mui/joy/Button';
++
++export default function AlertWithDangerState() {
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      <Alert
++        startDecorator={<WarningIcon sx={{ mx: 0.5 }} />}
++        variant="soft"
++        color="danger"
++        endDecorator={
++          <React.Fragment>
++            <Button variant="soft" color="danger" sx={{ mr: 1 }}>
++              Undo
++            </Button>
++            <IconButton variant="soft" size="sm" color="danger">
++              <CloseIcon />
++            </IconButton>
++          </React.Fragment>
++        }
++      >
++        <Typography color="danger" fontWeight="md">
++          This file was successfully deleted
++        </Typography>
++      </Alert>
++      <Alert
++        startDecorator={<WarningIcon sx={{ mx: 0.5 }} />}
++        variant="solid"
++        color="danger"
++        endDecorator={
++          <React.Fragment>
++            <Button variant="solid" color="danger" sx={{ mr: 1 }}>
++              Undo
++            </Button>
++            <IconButton variant="solid" size="sm" color="danger">
++              <CloseIcon />
++            </IconButton>
++          </React.Fragment>
++        }
++      >
++        <Typography sx={{ color: 'white' }} fontWeight="md">
++          This file was successfully deleted
++        </Typography>
++      </Alert>
++
++      <Alert
++        startDecorator={<WarningIcon sx={{ mx: 0.5 }} />}
++        variant="outlined"
++        color="danger"
++        endDecorator={
++          <React.Fragment>
++            <Button variant="plain" color="danger" sx={{ mr: 1 }}>
++              Undo
++            </Button>
++            <IconButton variant="soft" size="sm" color="danger">
++              <CloseIcon />
++            </IconButton>
++          </React.Fragment>
++        }
++      >
++        <Typography color="danger" fontWeight="md">
++          This file was successfully deleted
++        </Typography>
++      </Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertWithDangerState.tsx b/docs/data/joy/components/alert/AlertWithDangerState.tsx
+new file mode 100644
+index 00000000000000..05f50d1c54e7ee
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertWithDangerState.tsx
+@@ -0,0 +1,73 @@
++import WarningIcon from '@mui/icons-material/Warning';
++import CloseIcon from '@mui/icons-material/Close';
++import * as React from 'react';
++import Box from '@mui/joy/Box';
++import Alert from '@mui/joy/Alert';
++import IconButton from '@mui/joy/IconButton';
++import Typography from '@mui/joy/Typography';
++import Button from '@mui/joy/Button';
++
++export default function AlertWithDangerState() {
++  return (
++    <Box sx={{ display: 'flex', gap: 2, width: '100%', flexDirection: 'column' }}>
++      <Alert
++        startDecorator={<WarningIcon sx={{ mx: 0.5 }} />}
++        variant="soft"
++        color="danger"
++        endDecorator={
++          <React.Fragment>
++            <Button variant="soft" color="danger" sx={{ mr: 1 }}>
++              Undo
++            </Button>
++            <IconButton variant="soft" size="sm" color="danger">
++              <CloseIcon />
++            </IconButton>
++          </React.Fragment>
++        }
++      >
++        <Typography color="danger" fontWeight="md">
++          This file was successfully deleted
++        </Typography>
++      </Alert>
++      <Alert
++        startDecorator={<WarningIcon sx={{ mx: 0.5 }} />}
++        variant="solid"
++        color="danger"
++        endDecorator={
++          <React.Fragment>
++            <Button variant="solid" color="danger" sx={{ mr: 1 }}>
++              Undo
++            </Button>
++            <IconButton variant="solid" size="sm" color="danger">
++              <CloseIcon />
++            </IconButton>
++          </React.Fragment>
++        }
++      >
++        <Typography sx={{ color: 'white' }} fontWeight="md">
++          This file was successfully deleted
++        </Typography>
++      </Alert>
++
++      <Alert
++        startDecorator={<WarningIcon sx={{ mx: 0.5 }} />}
++        variant="outlined"
++        color="danger"
++        endDecorator={
++          <React.Fragment>
++            <Button variant="plain" color="danger" sx={{ mr: 1 }}>
++              Undo
++            </Button>
++            <IconButton variant="soft" size="sm" color="danger">
++              <CloseIcon />
++            </IconButton>
++          </React.Fragment>
++        }
++      >
++        <Typography color="danger" fontWeight="md">
++          This file was successfully deleted
++        </Typography>
++      </Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertWithDecorators.js b/docs/data/joy/components/alert/AlertWithDecorators.js
+new file mode 100644
+index 00000000000000..300f62dffb5d99
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertWithDecorators.js
+@@ -0,0 +1,48 @@
++import * as React from 'react';
++import Alert from '@mui/joy/Alert';
++import Box from '@mui/joy/Box';
++import Button from '@mui/joy/Button';
++import IconButton from '@mui/joy/IconButton';
++import PlaylistAddCheckCircleRoundedIcon from '@mui/icons-material/PlaylistAddCheckCircleRounded';
++import AccountCircleRoundedIcon from '@mui/icons-material/AccountCircleRounded';
++import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
++
++export default function AlertWithDecorators() {
++  return (
++    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
++      <Alert
++        variant="soft"
++        color="success"
++        startDecorator={<PlaylistAddCheckCircleRoundedIcon />}
++        endDecorator={
++          <Button
++            size="sm"
++            variant="outlined"
++            color="success"
++            sx={{
++              textTransform: 'uppercase',
++              fontSize: 'xs',
++              fontWeight: 'xl',
++            }}
++          >
++            Close
++          </Button>
++        }
++      >
++        Your message was sent successfully.
++      </Alert>
++      <Alert
++        variant="outlined"
++        color="neutral"
++        startDecorator={<AccountCircleRoundedIcon />}
++        endDecorator={
++          <IconButton variant="plain" size="sm" color="neutral">
++            <CloseRoundedIcon />
++          </IconButton>
++        }
++      >
++        Your account was updated.
++      </Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/AlertWithDecorators.tsx b/docs/data/joy/components/alert/AlertWithDecorators.tsx
+new file mode 100644
+index 00000000000000..300f62dffb5d99
+--- /dev/null
++++ b/docs/data/joy/components/alert/AlertWithDecorators.tsx
+@@ -0,0 +1,48 @@
++import * as React from 'react';
++import Alert from '@mui/joy/Alert';
++import Box from '@mui/joy/Box';
++import Button from '@mui/joy/Button';
++import IconButton from '@mui/joy/IconButton';
++import PlaylistAddCheckCircleRoundedIcon from '@mui/icons-material/PlaylistAddCheckCircleRounded';
++import AccountCircleRoundedIcon from '@mui/icons-material/AccountCircleRounded';
++import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
++
++export default function AlertWithDecorators() {
++  return (
++    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
++      <Alert
++        variant="soft"
++        color="success"
++        startDecorator={<PlaylistAddCheckCircleRoundedIcon />}
++        endDecorator={
++          <Button
++            size="sm"
++            variant="outlined"
++            color="success"
++            sx={{
++              textTransform: 'uppercase',
++              fontSize: 'xs',
++              fontWeight: 'xl',
++            }}
++          >
++            Close
++          </Button>
++        }
++      >
++        Your message was sent successfully.
++      </Alert>
++      <Alert
++        variant="outlined"
++        color="neutral"
++        startDecorator={<AccountCircleRoundedIcon />}
++        endDecorator={
++          <IconButton variant="plain" size="sm" color="neutral">
++            <CloseRoundedIcon />
++          </IconButton>
++        }
++      >
++        Your account was updated.
++      </Alert>
++    </Box>
++  );
++}
+diff --git a/docs/data/joy/components/alert/alert.md b/docs/data/joy/components/alert/alert.md
+new file mode 100644
+index 00000000000000..b15c32df0ebbe0
+--- /dev/null
++++ b/docs/data/joy/components/alert/alert.md
+@@ -0,0 +1,75 @@
++---
++product: joy-ui
++title: React Alert component
++githubLabel: 'component: alert'
++waiAria: https://www.w3.org/WAI/ARIA/apg/patterns/alert/
++---
++
++# Alert
++
++<p class="description">An alert displays a short, important message in a way that attracts the user's attention without interrupting the user's task.</p>
++
++## Introduction
++
++{{"demo": "AlertUsage.js", "hideToolbar": true}}
++
++{{"component": "modules/components/ComponentLinkHeader.js", "design": false}}
++
++## Component
++
++After [installation](/joy-ui/getting-started/installation/), you can start building with this component using the following basic elements:
++
++```jsx
++import Alert from '@mui/joy/Alert';
++
++export default function MyApp() {
++  return <Alert />;
++}
++```
++
++### Variants
++
++The alert component supports the four global variants: `solid` (default), `soft`, `outlined` and `plain`.
++
++{{"demo": "AlertVariants.js"}}
++
++### Colors
++
++Every palette included in the theme is available via the `color` prop.
++Play around combining different colors with different variants.
++
++{{"demo": "AlertColors.js"}}
++
++### Sizes
++
++The alert components comes with three sizes out of the box: `sm`, `md` (the default), and `lg`.
++
++{{"demo": "AlertSizes.js"}}
++
++### Decorators
++
++Use the `startDecorator` and/or `endDecorator` props to insert actionable buttons or icon buttons on the Alert.
++
++{{"demo": "AlertWithDecorators.js"}}
++
++## Common examples
++
++### Various states
++
++{{"demo": "AlertVariousStates.js"}}
++
++### Danger alerts
++
++{{"demo": "AlertWithDangerState.js"}}
++
++## Accessibility
++
++Here are a few tips to make sure you have an accessible alert component:
++
++- When the component is dynamically displayed, the content is automatically announced by most screen readers.
++  At this time, screen readers do not inform users of alerts that are present when the page loads.
++
++- Using color to add meaning only provides a visual indication, which will not be conveyed to users of assistive technologies such as screen readers.
++  Ensure that information denoted by the color is either obvious from the content itself (for example the visible text), or is included through alternative means, such as additional hidden text.
++
++- Actions must have a tab index of 0 so that they can be reached by keyboard-only users.
+diff --git a/docs/data/joy/pages.ts b/docs/data/joy/pages.ts
+index 3e6768dc745790..a8eb54fbe4ffb0 100644
+--- a/docs/data/joy/pages.ts
++++ b/docs/data/joy/pages.ts
+@@ -51,6 +51,11 @@ const pages = [
+           { pathname: '/joy-ui/react-typography' },
+         ],
+       },
++      {
++        pathname: '/joy-ui/components/feedback',
++        subheader: 'feedback',
++        children: [{ pathname: '/joy-ui/react-alert' }],
++      },
+       {
+         pathname: '/joy-ui/components/surfaces',
+         subheader: 'surfaces',
+diff --git a/docs/pages/joy-ui/react-alert.js b/docs/pages/joy-ui/react-alert.js
+new file mode 100644
+index 00000000000000..c728d8bb1f9fe4
+--- /dev/null
++++ b/docs/pages/joy-ui/react-alert.js
+@@ -0,0 +1,7 @@
++import * as React from 'react';
++import MarkdownDocs from 'docs/src/modules/components/MarkdownDocs';
++import { demos, docs, demoComponents } from 'docs/data/joy/components/alert/alert.md?@mui/markdown';
++
++export default function Page() {
++  return <MarkdownDocs demos={demos} docs={docs} demoComponents={demoComponents} />;
++}
+diff --git a/packages/mui-joy/src/Alert/Alert.spec.tsx b/packages/mui-joy/src/Alert/Alert.spec.tsx
+new file mode 100644
+index 00000000000000..5fb1638d8302c3
+--- /dev/null
++++ b/packages/mui-joy/src/Alert/Alert.spec.tsx
+@@ -0,0 +1,34 @@
++import Alert from '@mui/joy/Alert';
++import * as React from 'react';
++
++<Alert />;
++
++<Alert component="div" />;
++
++// `variant`
++<Alert />;
++<Alert variant="soft" />;
++<Alert variant="outlined" />;
++<Alert variant="solid" />;
++
++// `color`
++<Alert color="primary" />;
++<Alert color="danger" />;
++<Alert color="info" />;
++<Alert color="success" />;
++<Alert color="warning" />;
++<Alert color="neutral" />;
++
++// `size`
++<Alert size="sm" />;
++<Alert size="md" />;
++<Alert size="lg" />;
++
++// @ts-expect-error there is no variant `filled`
++<Alert variant="filled" />;
++
++// @ts-expect-error there is no color `secondary`
++<Alert color="secondary" />;
++
++// @ts-expect-error there is no size `xl2`
++<Alert size="xl2" />;
+diff --git a/packages/mui-joy/src/Alert/Alert.test.js b/packages/mui-joy/src/Alert/Alert.test.js
+new file mode 100644
+index 00000000000000..0839212ccc39e0
+--- /dev/null
++++ b/packages/mui-joy/src/Alert/Alert.test.js
+@@ -0,0 +1,71 @@
++import * as React from 'react';
++import { expect } from 'chai';
++import { createRenderer, describeConformance } from 'test/utils';
++import { ThemeProvider } from '@mui/joy/styles';
++import Alert, { alertClasses as classes } from '@mui/joy/Alert';
++import { unstable_capitalize as capitalize } from '@mui/utils';
++
++describe('<Alert />', () => {
++  const { render } = createRenderer();
++
++  describeConformance(<Alert />, () => ({
++    classes,
++    inheritComponent: 'div',
++    render,
++    ThemeProvider,
++    muiName: 'JoyAlert',
++    refInstanceof: window.HTMLDivElement,
++    testComponentPropWith: 'span',
++    testVariantProps: { variant: 'solid' },
++    testCustomVariant: true,
++    skip: ['classesRoot', 'componentsProp'],
++  }));
++
++  describe('prop: variant', () => {
++    it('soft by default', () => {
++      const { getByRole } = render(<Alert />);
++
++      expect(getByRole('alert')).to.have.class(classes.variantSoft);
++    });
++
++    ['outlined', 'soft', 'solid'].forEach((variant) => {
++      it(`should render ${variant}`, () => {
++        const { getByRole } = render(<Alert variant={variant} />);
++
++        expect(getByRole('alert')).to.have.class(classes[`variant${capitalize(variant)}`]);
++      });
++    });
++  });
++
++  describe('prop: color', () => {
++    it('adds a primary class by default', () => {
++      const { getByRole } = render(<Alert />);
++
++      expect(getByRole('alert')).to.have.class(classes.colorPrimary);
++    });
++
++    ['primary', 'success', 'info', 'danger', 'neutral', 'warning'].forEach((color) => {
++      it(`should render ${color}`, () => {
++        const { getByRole } = render(<Alert color={color} />);
++
++        expect(getByRole('alert')).to.have.class(classes[`color${capitalize(color)}`]);
++      });
++    });
++  });
++
++  describe('prop: size', () => {
++    it('md by default', () => {
++      const { getByRole } = render(<Alert />);
++
++      expect(getByRole('alert')).to.have.class(classes.sizeMd);
++    });
++
++    ['sm', 'md', 'lg'].forEach((size) => {
++      it(`should render ${size}`, () => {
++        const { getByRole } = render(<Alert size={size} />);
++
++        expect(getByRole('alert')).to.have.class(classes[`size${capitalize(size)}`]);
++      });
++    });
++  });
++});
+diff --git a/packages/mui-joy/src/Alert/Alert.tsx b/packages/mui-joy/src/Alert/Alert.tsx
+new file mode 100644
+index 00000000000000..2f5c7e724d621f
+--- /dev/null
++++ b/packages/mui-joy/src/Alert/Alert.tsx
+@@ -0,0 +1,212 @@
++import { unstable_composeClasses as composeClasses } from '@mui/base';
++import { OverridableComponent } from '@mui/types';
++import { unstable_capitalize as capitalize } from '@mui/utils';
++import clsx from 'clsx';
++import PropTypes from 'prop-types';
++import * as React from 'react';
++import styled from '../styles/styled';
++import useThemeProps from '../styles/useThemeProps';
++import { getAlertUtilityClass } from './alertClasses';
++import { AlertProps, AlertTypeMap } from './AlertProps';
++
++const useUtilityClasses = (ownerState: AlertProps) => {
++  const { variant, color, size } = ownerState;
++
++  const slots = {
++    root: [
++      'root',
++      size && `size${capitalize(size)}`,
++      color && `color${capitalize(color)}`,
++      variant && `variant${capitalize(variant)}`,
++    ],
++    startDecorator: ['startDecorator'],
++    endDecorator: ['endDecorator'],
++  };
++
++  return composeClasses(slots, getAlertUtilityClass, {});
++};
++
++const AlertRoot = styled('div', {
++  name: 'JoyAlert',
++  slot: 'Root',
++  overridesResolver: (props, styles) => styles.root,
++})<{ ownerState: AlertProps }>(({ theme, ownerState }) => ({
++  '--Alert-radius': theme.vars.radius.sm,
++  '--Alert-decorator-childRadius':
++    'max((var(--Alert-radius) - var(--variant-borderWidth)) - var(--Alert-padding), min(var(--Alert-padding) / 2, (var(--Alert-radius) - var(--variant-borderWidth)) / 2))',
++  '--Button-minHeight': 'var(--Alert-decorator-childHeight)',
++  '--IconButton-size': 'var(--Alert-decorator-childHeight)',
++  '--Button-radius': 'var(--Alert-decorator-childRadius)',
++  '--IconButton-radius': 'var(--Alert-decorator-childRadius)',
++  ...(ownerState.size === 'sm' && {
++    '--Alert-padding': '0.5rem',
++    '--Alert-gap': '0.375rem',
++    '--Alert-decorator-childHeight': '1.5rem',
++    '--Icon-fontSize': '1.125rem',
++    fontSize: theme.vars.fontSize.sm,
++  }),
++  ...(ownerState.size === 'md' && {
++    '--Alert-padding': '0.75rem',
++    '--Alert-gap': '0.5rem',
++    '--Alert-decorator-childHeight': '2rem',
++    '--Icon-fontSize': '1.25rem',
++    fontSize: theme.vars.fontSize.sm,
++    fontWeight: theme.vars.fontWeight.md,
++  }),
++  ...(ownerState.size === 'lg' && {
++    '--Alert-padding': '1rem',
++    '--Alert-gap': '0.75rem',
++    '--Alert-decorator-childHeight': '2.375rem',
++    '--Icon-fontSize': '1.5rem',
++    fontSize: theme.vars.fontSize.md,
++    fontWeight: theme.vars.fontWeight.md,
++  }),
++  fontFamily: theme.vars.fontFamily.body,
++  lineHeight: theme.vars.lineHeight.md,
++  backgroundColor: 'transparent',
++  display: 'flex',
++  alignItems: 'center',
++  padding: `var(--Alert-padding)`,
++  borderRadius: 'var(--Alert-radius)',
++  ...theme.variants[ownerState.variant!]?.[ownerState.color!],
++}));
++
++const AlertStartDecorator = styled('span', {
++  name: 'JoyAlert',
++  slot: 'StartDecorator',
++  overridesResolver: (props, styles) => styles.startDecorator,
++})<{ ownerState: AlertProps }>(({ theme, ownerState }) => ({
++  display: 'inherit',
++  flex: 'none',
++  marginInlineEnd: 'var(--Alert-gap)',
++  color: theme.vars.palette[ownerState.color!]?.[`${ownerState.variant!}Color`],
++}));
++
++const AlertEndDecorator = styled('span', {
++  name: 'JoyAlert',
++  slot: 'EndDecorator',
++  overridesResolver: (props, styles) => styles.endDecorator,
++})<{ ownerState: AlertProps }>(({ theme, ownerState }) => ({
++  display: 'inherit',
++  flex: 'none',
++  marginInlineStart: 'var(--Alert-gap)',
++  marginLeft: 'auto',
++  color: theme.vars.palette[ownerState.color!]?.[`${ownerState.variant!}Color`],
++}));
++
++const Alert = React.forwardRef(function Alert(inProps, ref) {
++  const props = useThemeProps<typeof inProps & AlertProps>({
++    props: inProps,
++    name: 'JoyAlert',
++  });
++
++  const {
++    children,
++    className,
++    component = 'div',
++    color = 'primary',
++    role = 'alert',
++    variant = 'soft',
++    size = 'md',
++    startDecorator,
++    endDecorator,
++    ...other
++  } = props;
++
++  const ownerState = {
++    ...props,
++    color,
++    variant,
++    size,
++  };
++
++  const classes = useUtilityClasses(ownerState);
++
++  return (
++    <AlertRoot
++      as={component}
++      role={role}
++      ownerState={ownerState}
++      className={clsx(classes.root, className)}
++      ref={ref}
++      {...other}
++    >
++      {startDecorator && (
++        <AlertStartDecorator className={classes.startDecorator} ownerState={ownerState}>
++          {startDecorator}
++        </AlertStartDecorator>
++      )}
++
++      {children}
++      {endDecorator && (
++        <AlertEndDecorator className={classes.endDecorator} ownerState={ownerState}>
++          {endDecorator}
++        </AlertEndDecorator>
++      )}
++    </AlertRoot>
++  );
++}) as OverridableComponent<AlertTypeMap>;
++
++Alert.propTypes /* remove-proptypes */ = {
++  // ----------------------------- Warning --------------------------------
++  // | These PropTypes are generated from the TypeScript type definitions |
++  // |     To update them edit TypeScript types and run "yarn proptypes"  |
++  // ----------------------------------------------------------------------
++  /**
++   * @ignore
++   */
++  children: PropTypes.node,
++  /**
++   * @ignore
++   */
++  className: PropTypes.string,
++  /**
++   * The color of the component. It supports those theme colors that make sense for this component.
++   * @default 'primary'
++   */
++  color: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
++    PropTypes.oneOf(['danger', 'info', 'neutral', 'primary', 'success', 'warning']),
++    PropTypes.string,
++  ]),
++  /**
++   * The component used for the root node.
++   * Either a string to use a HTML element or a component.
++   */
++  component: PropTypes.elementType,
++  /**
++   * Element placed after the children.
++   */
++  endDecorator: PropTypes.node,
++  /**
++   * The ARIA role attribute of the element.
++   * @default 'alert'
++   */
++  role: PropTypes.string,
++  /**
++   * The size of the component.
++   * @default 'md'
++   */
++  size: PropTypes.oneOf(['sm', 'md', 'lg']),
++  /**
++   * Element placed before the children.
++   */
++  startDecorator: PropTypes.node,
++  /**
++   * The system prop that allows defining system overrides as well as additional CSS styles.
++   */
++  sx: PropTypes.oneOfType([
++    PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.func, PropTypes.object, PropTypes.bool])),
++    PropTypes.func,
++    PropTypes.object,
++  ]),
++  /**
++   * The variant to use.
++   * @default 'soft'
++   */
++  variant: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
++    PropTypes.oneOf(['outlined', 'plain', 'soft', 'solid']),
++    PropTypes.string,
++  ]),
++} as any;
++
++export default Alert;
+diff --git a/packages/mui-joy/src/Alert/AlertProps.ts b/packages/mui-joy/src/Alert/AlertProps.ts
+new file mode 100644
+index 00000000000000..8d4b36ba3ebc26
+--- /dev/null
++++ b/packages/mui-joy/src/Alert/AlertProps.ts
+@@ -0,0 +1,54 @@
++import { OverridableStringUnion, OverrideProps } from '@mui/types';
++import * as React from 'react';
++import { ColorPaletteProp, SxProps, VariantProp } from '../styles/types';
++
++export type AlertSlot = 'root' | 'startDecorator' | 'endDecorator';
++
++export interface AlertPropsVariantOverrides {}
++export interface AlertPropsColorOverrides {}
++export interface AlertPropsSizeOverrides {}
++
++export interface AlertTypeMap<P = {}, D extends React.ElementType = 'div'> {
++  props: P & {
++    /**
++     * The color of the component. It supports those theme colors that make sense for this component.
++     * @default 'primary'
++     */
++    color?: OverridableStringUnion<ColorPaletteProp, AlertPropsColorOverrides>;
++    /**
++     * Element placed after the children.
++     */
++    endDecorator?: React.ReactNode;
++    /**
++     * The ARIA role attribute of the element.
++     * @default 'alert'
++     */
++    role?: string;
++    /**
++     * The size of the component.
++     * @default 'md'
++     */
++    size?: OverridableStringUnion<'sm' | 'md' | 'lg', AlertPropsSizeOverrides>;
++    /**
++     * Element placed before the children.
++     */
++    startDecorator?: React.ReactNode;
++    /**
++     * The system prop that allows defining system overrides as well as additional CSS styles.
++     */
++    sx?: SxProps;
++    /**
++     * The variant to use.
++     * @default 'soft'
++     */
++    variant?: OverridableStringUnion<VariantProp, AlertPropsVariantOverrides>;
++  };
++  defaultComponent: D;
++}
++
++export type AlertProps<
++  D extends React.ElementType = AlertTypeMap['defaultComponent'],
++  P = { component?: React.ElementType },
++> = OverrideProps<AlertTypeMap<P, D>, D>;
++
++export interface AlertOwnerState extends AlertProps {}
+diff --git a/packages/mui-joy/src/Alert/alertClasses.ts b/packages/mui-joy/src/Alert/alertClasses.ts
+new file mode 100644
+index 00000000000000..b81ef589bf789f
+--- /dev/null
++++ b/packages/mui-joy/src/Alert/alertClasses.ts
+@@ -0,0 +1,63 @@
++import { generateUtilityClass, generateUtilityClasses } from '../className';
++
++export interface AlertClasses {
++  /** Styles applied to the root element. */
++  root: string;
++  /** Styles applied to the icon wrapper element. */
++  icon: string;
++  /** Styles applied to the action wrapper element if `action` is provided. */
++  action: string;
++  /** Styles applied to the message wrapper element. */
++  message: string;
++  /** Styles applied to the root element if `color="primary"`. */
++  colorPrimary: string;
++  /** Styles applied to the root element if `color="danger"`. */
++  colorDanger: string;
++  /** Styles applied to the root element if `color="info"`. */
++  colorInfo: string;
++  /** Styles applied to the root element if `color="neutral"`. */
++  colorNeutral: string;
++  /** Styles applied to the root element if `color="success"`. */
++  colorSuccess: string;
++  /** Styles applied to the root element if `color="warning"`. */
++  colorWarning: string;
++  /** Styles applied to the root element if `size="sm"`. */
++  sizeSm: string;
++  /** Styles applied to the root element if `size="md"`. */
++  sizeMd: string;
++  /** Styles applied to the root element if `size="lg"`. */
++  sizeLg: string;
++  /** Styles applied to the root element if `variant="outlined"`. */
++  variantOutlined: string;
++  /** Styles applied to the root element if `variant="soft"`. */
++  variantSoft: string;
++  /** Styles applied to the root element if `variant="solid"`. */
++  variantSolid: string;
++}
++
++export type AlertClassKey = keyof AlertClasses;
++
++export function getAlertUtilityClass(slot: string): string {
++  return generateUtilityClass('JoyAlert', slot);
++}
++
++const alertClasses: AlertClasses = generateUtilityClasses('JoyAlert', [
++  'root',
++  'action',
++  'icon',
++  'message',
++  'colorPrimary',
++  'colorDanger',
++  'colorInfo',
++  'colorNeutral',
++  'colorSuccess',
++  'colorWarning',
++  'sizeSm',
++  'sizeMd',
++  'sizeLg',
++  'variantOutlined',
++  'variantSoft',
++  'variantSolid',
++]);
++
++export default alertClasses;
+diff --git a/packages/mui-joy/src/Alert/index.ts b/packages/mui-joy/src/Alert/index.ts
+new file mode 100644
+index 00000000000000..e9dd48d0d9d252
+--- /dev/null
++++ b/packages/mui-joy/src/Alert/index.ts
+@@ -0,0 +1,4 @@
++export { default } from './Alert';
++export * from './alertClasses';
++export { default as alertClasses } from './alertClasses';
++export * from './AlertProps';
+diff --git a/packages/mui-joy/src/index.ts b/packages/mui-joy/src/index.ts
+index 5bc0819c616253..da3402db1361c2 100644
+--- a/packages/mui-joy/src/index.ts
++++ b/packages/mui-joy/src/index.ts
+@@ -4,6 +4,9 @@ export * from './styles';
+ export { default as AspectRatio } from './AspectRatio';
+ export * from './AspectRatio';
+ 
++export { default as Alert } from './Alert';
++export * from './Alert';
++
+ export { default as Avatar } from './Avatar';
+ export * from './Avatar';
+ 
+diff --git a/packages/mui-joy/src/styles/components.d.ts b/packages/mui-joy/src/styles/components.d.ts
+index 894d608892969c..6b929fc16a3d4b 100644
+--- a/packages/mui-joy/src/styles/components.d.ts
++++ b/packages/mui-joy/src/styles/components.d.ts
+@@ -12,6 +12,7 @@ import {
+   AvatarGroupSlot,
+ } from '../AvatarGroup/AvatarGroupProps';
+ import { BadgeProps, BadgeOwnerState, BadgeSlot } from '../Badge/BadgeProps';
++import { AlertProps, AlertOwnerState, AlertSlot } from '../Alert/AlertProps';
+ import { BoxProps, BoxSlot } from '../Box/BoxProps';
+ import {
+   BreadcrumbsProps,
+@@ -123,6 +124,10 @@ export type OverridesStyleRules<
+ >;
+ export interface Components<Theme = unknown> {
+   // alphabetical order
++  JoyAlert?: {
++    defaultProps?: Partial<AlertProps>;
++    styleOverrides?: OverridesStyleRules<AlertSlot, AlertOwnerState, Theme>;
++  };
+   JoyAspectRatio?: {
+     defaultProps?: Partial<AspectRatioProps>;
+     styleOverrides?: OverridesStyleRules<AspectRatioSlot, AspectRatioOwnerState, Theme>;
+diff --git a/packages/mui-joy/src/styles/extendTheme.spec.ts b/packages/mui-joy/src/styles/extendTheme.spec.ts
+index cfe3090b0333d9..3c8a883f9fe5fe 100644
+--- a/packages/mui-joy/src/styles/extendTheme.spec.ts
++++ b/packages/mui-joy/src/styles/extendTheme.spec.ts
+@@ -1,6 +1,4 @@
+-import * as React from 'react';
+-import { expectType } from '@mui/types';
+-import { extendTheme } from '@mui/joy/styles';
++import { AlertOwnerState } from '@mui/joy/Alert';
+ import { AspectRatioOwnerState } from '@mui/joy/AspectRatio';
+ import { AvatarOwnerState } from '@mui/joy/Avatar';
+ import { AvatarGroupOwnerState } from '@mui/joy/AvatarGroup';
+@@ -37,6 +35,7 @@ import { SelectOwnerState } from '@mui/joy/Select';
+ import { SheetOwnerState } from '@mui/joy/Sheet';
+ import { SliderOwnerState } from '@mui/joy/Slider';
+ import { StackProps } from '@mui/joy/Stack';
++import { extendTheme } from '@mui/joy/styles';
+ import { SvgIconOwnerState } from '@mui/joy/SvgIcon';
+ import { SwitchOwnerState } from '@mui/joy/Switch';
+ import { TabOwnerState } from '@mui/joy/Tab';
+@@ -45,9 +44,30 @@ import { TabPanelOwnerState } from '@mui/joy/TabPanel';
+ import { TabsOwnerState } from '@mui/joy/Tabs';
+ import { TextareaOwnerState } from '@mui/joy/Textarea';
+ import { TypographyOwnerState } from '@mui/joy/Typography';
++import { expectType } from '@mui/types';
+ 
+ extendTheme({
+   components: {
++    JoyAlert: {
++      defaultProps: {
++        variant: 'soft',
++        color: 'primary',
++      },
++      styleOverrides: {
++        root: ({ ownerState }) => {
++          expectType<AlertOwnerState & Record<string, unknown>, typeof ownerState>(ownerState);
++          return {};
++        },
++        startDecorator: ({ ownerState }) => {
++          expectType<AlertOwnerState & Record<string, unknown>, typeof ownerState>(ownerState);
++          return {};
++        },
++        endDecorator: ({ ownerState }) => {
++          expectType<AlertOwnerState & Record<string, unknown>, typeof ownerState>(ownerState);
++          return {};
++        },
++      },
++    },
+     JoyAspectRatio: {
+       defaultProps: {
+         variant: 'outlined',

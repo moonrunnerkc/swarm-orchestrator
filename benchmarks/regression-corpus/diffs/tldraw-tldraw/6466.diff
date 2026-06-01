@@ -1,0 +1,1475 @@
+diff --git a/apps/examples/src/examples/custom-config/CardShape/CardShapeUtil.tsx b/apps/examples/src/examples/custom-config/CardShape/CardShapeUtil.tsx
+index 41c90a894d98..41bfb2c0992e 100644
+--- a/apps/examples/src/examples/custom-config/CardShape/CardShapeUtil.tsx
++++ b/apps/examples/src/examples/custom-config/CardShape/CardShapeUtil.tsx
+@@ -4,6 +4,7 @@ import {
+ 	Rectangle2d,
+ 	ShapeUtil,
+ 	TLResizeInfo,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	resizeBox,
+ } from 'tldraw'
+@@ -65,8 +66,8 @@ export class CardShapeUtil extends ShapeUtil<ICardShape> {
+ 					alignItems: 'center',
+ 					justifyContent: 'center',
+ 					pointerEvents: 'all',
+-					backgroundColor: theme[shape.props.color].semi,
+-					color: theme[shape.props.color].solid,
++					backgroundColor: getColorValue(theme, shape.props.color, 'semi'),
++					color: getColorValue(theme, shape.props.color, 'solid'),
+ 				}}
+ 			>
+ 				<h2>Clicks: {count}</h2>
+diff --git a/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx b/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx
+index d705728a7e6c..5143cc7ecc0e 100644
+--- a/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx
++++ b/apps/examples/src/examples/custom-renderer/CustomRenderer.tsx
+@@ -1,5 +1,5 @@
+ import { useLayoutEffect, useRef } from 'react'
+-import { TLDrawShape, TLGeoShape, getDefaultColorTheme, useEditor } from 'tldraw'
++import { TLDrawShape, TLGeoShape, getColorValue, getDefaultColorTheme, useEditor } from 'tldraw'
+ 
+ export function CustomRenderer() {
+ 	const editor = useEditor()
+@@ -70,17 +70,17 @@ export function CustomRenderer() {
+ 							}
+ 						}
+ 					}
+-					ctx.strokeStyle = theme[shape.props.color].solid
++					ctx.strokeStyle = getColorValue(theme, shape.props.color, 'solid')
+ 					ctx.lineWidth = 4
+ 					ctx.stroke()
+ 					if (shape.props.fill !== 'none' && shape.props.isClosed) {
+-						ctx.fillStyle = theme[shape.props.color].semi
++						ctx.fillStyle = getColorValue(theme, shape.props.color, 'semi')
+ 						ctx.fill()
+ 					}
+ 				} else if (editor.isShapeOfType<TLGeoShape>(shape, 'geo')) {
+ 					// Draw a geo shape
+ 					const bounds = editor.getShapeGeometry(shape).bounds
+-					ctx.strokeStyle = theme[shape.props.color].solid
++					ctx.strokeStyle = getColorValue(theme, shape.props.color, 'solid')
+ 					ctx.lineWidth = 2
+ 					ctx.strokeRect(bounds.minX, bounds.minY, bounds.width, bounds.height)
+ 				} else {
+diff --git a/apps/examples/src/examples/shape-with-tldraw-styles/ShapeWithTldrawStylesExample.tsx b/apps/examples/src/examples/shape-with-tldraw-styles/ShapeWithTldrawStylesExample.tsx
+index 9f79f5ca540b..4b6a70fdc254 100644
+--- a/apps/examples/src/examples/shape-with-tldraw-styles/ShapeWithTldrawStylesExample.tsx
++++ b/apps/examples/src/examples/shape-with-tldraw-styles/ShapeWithTldrawStylesExample.tsx
+@@ -2,6 +2,7 @@ import {
+ 	BaseBoxShapeUtil,
+ 	DefaultColorStyle,
+ 	DefaultSizeStyle,
++	getColorValue,
+ 	HTMLContainer,
+ 	T,
+ 	TLBaseShape,
+@@ -65,7 +66,7 @@ class MyShapeUtil extends BaseBoxShapeUtil<IMyShape> {
+ 					style={{
+ 						// [3]
+ 						fontSize: FONT_SIZES[shape.props.size],
+-						color: theme[shape.props.color].solid,
++						color: getColorValue(theme, shape.props.color, 'solid'),
+ 					}}
+ 				>
+ 					Select the shape and use the style panel to change the font size and color
+diff --git a/apps/examples/src/examples/speech-bubble/SpeechBubble/SpeechBubbleUtil.tsx b/apps/examples/src/examples/speech-bubble/SpeechBubble/SpeechBubbleUtil.tsx
+index 52f5011e0978..6b3f5d402381 100644
+--- a/apps/examples/src/examples/speech-bubble/SpeechBubble/SpeechBubbleUtil.tsx
++++ b/apps/examples/src/examples/speech-bubble/SpeechBubble/SpeechBubbleUtil.tsx
+@@ -19,6 +19,7 @@ import {
+ 	TLResizeInfo,
+ 	Vec,
+ 	ZERO_INDEX_KEY,
++	getColorValue,
+ 	resizeBox,
+ 	structuredClone,
+ 	useDefaultColorTheme,
+@@ -189,7 +190,7 @@ export class SpeechBubbleUtil extends ShapeUtil<SpeechBubbleShape> {
+ 					<path
+ 						d={pathData}
+ 						strokeWidth={STROKE_SIZES[size]}
+-						stroke={theme[color].solid}
++						stroke={getColorValue(theme, color, 'solid')}
+ 						fill={'none'}
+ 					/>
+ 				</svg>
+@@ -203,7 +204,7 @@ export class SpeechBubbleUtil extends ShapeUtil<SpeechBubbleShape> {
+ 					align={align}
+ 					verticalAlign="start"
+ 					text={text}
+-					labelColor={theme[color].solid}
++					labelColor={getColorValue(theme, color, 'solid')}
+ 					isSelected={isSelected}
+ 					wrap
+ 				/>
+diff --git a/packages/editor/src/lib/exports/getSvgJsx.tsx b/packages/editor/src/lib/exports/getSvgJsx.tsx
+index 26832ff9f998..6509a3acf337 100644
+--- a/packages/editor/src/lib/exports/getSvgJsx.tsx
++++ b/packages/editor/src/lib/exports/getSvgJsx.tsx
+@@ -4,6 +4,7 @@ import {
+ 	TLGroupShape,
+ 	TLShape,
+ 	TLShapeId,
++	getColorValue,
+ 	getDefaultColorTheme,
+ } from '@tldraw/tlschema'
+ import { hasOwnProperty, promiseWithResolve, uniqueId } from '@tldraw/utils'
+@@ -373,8 +374,7 @@ function SvgExport({
+ 			| { options: { showColors: boolean } }
+ 		if (frameShapeUtil?.options.showColors) {
+ 			const shape = editor.getShape(singleFrameShapeId)! as TLFrameShape
+-			const color = theme[shape.props.color]
+-			backgroundColor = color.frame.fill
++			backgroundColor = getColorValue(theme, shape.props.color, 'frameFill')
+ 		} else {
+ 			backgroundColor = theme.solid
+ 		}
+diff --git a/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx b/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
+index f08bf31e6e8c..57297e1a2917 100644
+--- a/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
+@@ -31,6 +31,7 @@ import {
+ 	clamp,
+ 	debugFlags,
+ 	exhaustiveSwitchError,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	getFontsFromRichText,
+ 	invLerp,
+@@ -785,8 +786,8 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 						lineHeight={TEXT_PROPS.lineHeight}
+ 						align="middle"
+ 						verticalAlign="middle"
++						labelColor={getColorValue(theme, shape.props.labelColor, 'solid')}
+ 						richText={shape.props.richText}
+-						labelColor={theme[shape.props.labelColor].solid}
+ 						textWidth={labelPosition.box.w - ARROW_LABEL_PADDING * 2 * shape.props.scale}
+ 						isSelected={isSelected}
+ 						padding={0}
+@@ -934,8 +935,8 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 					font={shape.props.font}
+ 					align="middle"
+ 					verticalAlign="middle"
++					labelColor={getColorValue(theme, shape.props.labelColor, 'solid')}
+ 					richText={shape.props.richText}
+-					labelColor={theme[shape.props.labelColor].solid}
+ 					bounds={getArrowLabelPosition(this.editor, shape)
+ 						.box.clone()
+ 						.expandBy(-ARROW_LABEL_PADDING * shape.props.scale)}
+@@ -1077,7 +1078,7 @@ const ArrowSvg = track(function ArrowSvg({
+ 			</defs>
+ 			<g
+ 				fill="none"
+-				stroke={theme[shape.props.color].solid}
++				stroke={getColorValue(theme, shape.props.color, 'solid')}
+ 				strokeWidth={strokeWidth}
+ 				strokeLinejoin="round"
+ 				strokeLinecap="round"
+diff --git a/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx b/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
+index 32a98c4809f8..6a87929824b7 100644
+--- a/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
+@@ -14,6 +14,7 @@ import {
+ 	VecLike,
+ 	drawShapeMigrations,
+ 	drawShapeProps,
++	getColorValue,
+ 	last,
+ 	lerp,
+ 	rng,
+@@ -289,7 +290,7 @@ function DrawShapeSvg({ shape, zoomOverride }: { shape: TLDrawShape; zoomOverrid
+ 				<path
+ 					d={svgInk(allPointsFromSegments, options)}
+ 					strokeLinecap="round"
+-					fill={theme[shape.props.color].solid}
++					fill={getColorValue(theme, shape.props.color, 'solid')}
+ 				/>
+ 			</>
+ 		)
+@@ -313,8 +314,8 @@ function DrawShapeSvg({ shape, zoomOverride }: { shape: TLDrawShape; zoomOverrid
+ 			<path
+ 				d={solidStrokePath}
+ 				strokeLinecap="round"
+-				fill={isDot ? theme[shape.props.color].solid : 'none'}
+-				stroke={theme[shape.props.color].solid}
++				fill={isDot ? getColorValue(theme, shape.props.color, 'solid') : 'none'}
++				stroke={getColorValue(theme, shape.props.color, 'solid')}
+ 				strokeWidth={sw}
+ 				strokeDasharray={isDot ? 'none' : getDrawShapeStrokeDashArray(shape, sw, dotAdjustment)}
+ 				strokeDashoffset="0"
+diff --git a/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx b/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
+index f6857d3ce787..2a60cee368ee 100644
+--- a/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
+@@ -19,6 +19,7 @@ import {
+ 	compact,
+ 	frameShapeMigrations,
+ 	frameShapeProps,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	lerp,
+ 	resizeBox,
+@@ -220,13 +221,12 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+ 		)
+ 
+ 		const showFrameColors = this.options.showColors
+-
+-		const color = theme[shape.props.color]
+-		const frameFill = showFrameColors ? color.frame.fill : theme.black.frame.fill
+-		const frameStroke = showFrameColors ? color.frame.stroke : theme.black.frame.stroke
+-		const frameHeadingStroke = showFrameColors ? color.frame.headingStroke : theme.background
+-		const frameHeadingFill = showFrameColors ? color.frame.headingFill : theme.background
+-		const frameHeadingText = showFrameColors ? color.frame.text : theme.text
++		const colorToUse = showFrameColors ? shape.props.color : 'black'
++		const frameFill = getColorValue(theme, colorToUse, 'frameFill')
++		const frameStroke = getColorValue(theme, colorToUse, 'frameStroke')
++		const frameHeadingStroke = getColorValue(theme, colorToUse, 'frameHeadingStroke')
++		const frameHeadingFill = getColorValue(theme, colorToUse, 'frameHeadingFill')
++		const frameHeadingText = getColorValue(theme, colorToUse, 'frameText')
+ 
+ 		return (
+ 			<>
+@@ -277,13 +277,12 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+ 		const text = createTextJsxFromSpans(this.editor, spans, opts)
+ 
+ 		const showFrameColors = this.options.showColors
+-
+-		const color = theme[shape.props.color]
+-		const frameFill = showFrameColors ? color.frame.fill : theme.black.frame.fill
+-		const frameStroke = showFrameColors ? color.frame.stroke : theme.black.frame.stroke
+-		const frameHeadingStroke = showFrameColors ? color.frame.headingStroke : theme.background
+-		const frameHeadingFill = showFrameColors ? color.frame.headingFill : theme.background
+-		const frameHeadingText = showFrameColors ? color.frame.text : theme.text
++		const colorToUse = showFrameColors ? shape.props.color : 'black'
++		const frameFill = getColorValue(theme, colorToUse, 'frameFill')
++		const frameStroke = getColorValue(theme, colorToUse, 'frameStroke')
++		const frameHeadingStroke = getColorValue(theme, colorToUse, 'frameHeadingStroke')
++		const frameHeadingFill = getColorValue(theme, colorToUse, 'frameHeadingFill')
++		const frameHeadingText = getColorValue(theme, colorToUse, 'frameText')
+ 
+ 		return (
+ 			<>
+diff --git a/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx b/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx
+index c1f8df5026cd..29d049ef0fb4 100644
+--- a/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx
+@@ -18,6 +18,7 @@ import {
+ 	exhaustiveSwitchError,
+ 	geoShapeMigrations,
+ 	geoShapeProps,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	getFontsFromRichText,
+ 	isEqual,
+@@ -220,7 +221,7 @@ export class GeoShapeUtil extends BaseBoxShapeUtil<TLGeoShape> {
+ 							verticalAlign={verticalAlign}
+ 							richText={richText}
+ 							isSelected={isOnlySelected}
+-							labelColor={theme[props.labelColor].solid}
++							labelColor={getColorValue(theme, props.labelColor, 'solid')}
+ 							wrap
+ 						/>
+ 					</HTMLContainer>
+@@ -278,7 +279,7 @@ export class GeoShapeUtil extends BaseBoxShapeUtil<TLGeoShape> {
+ 					align={props.align}
+ 					verticalAlign={props.verticalAlign}
+ 					richText={props.richText}
+-					labelColor={theme[props.labelColor].solid}
++					labelColor={getColorValue(theme, props.labelColor, 'solid')}
+ 					bounds={bounds}
+ 					padding={LABEL_PADDING}
+ 				/>
+diff --git a/packages/tldraw/src/lib/shapes/geo/components/GeoShapeBody.tsx b/packages/tldraw/src/lib/shapes/geo/components/GeoShapeBody.tsx
+index 1fb51de6fc82..de97b632c465 100644
+--- a/packages/tldraw/src/lib/shapes/geo/components/GeoShapeBody.tsx
++++ b/packages/tldraw/src/lib/shapes/geo/components/GeoShapeBody.tsx
+@@ -1,4 +1,4 @@
+-import { TLGeoShape } from '@tldraw/editor'
++import { getColorValue, TLGeoShape } from '@tldraw/editor'
+ import { ShapeFill } from '../../shared/ShapeFill'
+ import { STROKE_SIZES } from '../../shared/default-shape-constants'
+ import { useDefaultColorTheme } from '../../shared/useDefaultColorTheme'
+@@ -33,7 +33,7 @@ export function GeoShapeBody({
+ 				strokeWidth,
+ 				forceSolid,
+ 				randomSeed: shape.id,
+-				props: { fill: 'none', stroke: theme[color].solid },
++				props: { fill: 'none', stroke: getColorValue(theme, color, 'solid') },
+ 			})}
+ 		</>
+ 	)
+diff --git a/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx b/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
+index bc4fe86a85ca..daeb28120348 100644
+--- a/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
+@@ -10,6 +10,7 @@ import {
+ 	TLHighlightShapeProps,
+ 	TLResizeInfo,
+ 	VecLike,
++	getColorValue,
+ 	highlightShapeMigrations,
+ 	highlightShapeProps,
+ 	last,
+@@ -289,7 +290,12 @@ function HighlightRenderer({
+ 			: getShapeDot(shape.props.segments[0].points[0])
+ 
+ 	const colorSpace = useColorSpace()
+-	const color = theme[shape.props.color].highlight[colorSpace]
++
++	const color = getColorValue(
++		theme,
++		shape.props.color,
++		colorSpace === 'p3' ? 'highlightP3' : 'highlightSrgb'
++	)
+ 
+ 	return (
+ 		<path
+diff --git a/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx b/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx
+index 818b324b3e40..84db88dbfe6e 100644
+--- a/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx
+@@ -12,6 +12,7 @@ import {
+ 	WeakCache,
+ 	ZERO_INDEX_KEY,
+ 	assert,
++	getColorValue,
+ 	getIndexAbove,
+ 	getIndexBetween,
+ 	getIndices,
+@@ -346,6 +347,10 @@ function LineShapeSvg({
+ 		strokeWidth,
+ 		forceSolid,
+ 		randomSeed: shape.id,
+-		props: { transform: `scale(${scale})`, stroke: theme[color].solid, fill: 'none' },
++		props: {
++			transform: `scale(${scale})`,
++			stroke: getColorValue(theme, color, 'solid'),
++			fill: 'none',
++		},
+ 	})
+ }
+diff --git a/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx b/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
+index 6a11a6addc93..21f97a60dedf 100644
+--- a/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
+@@ -17,6 +17,7 @@ import {
+ 	Vec,
+ 	WeakCache,
+ 	exhaustiveSwitchError,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	getFontsFromRichText,
+ 	isEqual,
+@@ -288,7 +289,7 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+ 					style={{
+ 						width: nw,
+ 						height: nh,
+-						backgroundColor: theme[color].note.fill,
++						backgroundColor: getColorValue(theme, color, 'noteFill'),
+ 						borderBottom: hideShadows
+ 							? isDarkMode
+ 								? `${2 * scale}px solid rgb(20, 20, 20)`
+@@ -308,7 +309,11 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+ 							verticalAlign={verticalAlign}
+ 							richText={richText}
+ 							isSelected={isSelected}
+-							labelColor={labelColor === 'black' ? theme[color].note.text : theme[labelColor].fill}
++							labelColor={
++								labelColor === 'black'
++									? getColorValue(theme, color, 'noteText')
++									: getColorValue(theme, labelColor, 'fill')
++							}
+ 							wrap
+ 							padding={LABEL_PADDING * scale}
+ 							hasCustomTabBehavior
+@@ -343,7 +348,7 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+ 				align={shape.props.align}
+ 				verticalAlign={shape.props.verticalAlign}
+ 				richText={shape.props.richText}
+-				labelColor={theme[shape.props.color].note.text}
++				labelColor={getColorValue(theme, shape.props.color, 'noteText')}
+ 				bounds={bounds}
+ 				padding={LABEL_PADDING}
+ 				showTextOutline={false}
+@@ -357,7 +362,7 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+ 					rx={1}
+ 					width={NOTE_SIZE}
+ 					height={bounds.h}
+-					fill={theme[shape.props.color].note.fill}
++					fill={getColorValue(theme, shape.props.color, 'noteFill')}
+ 				/>
+ 				{textLabel}
+ 			</>
+diff --git a/packages/tldraw/src/lib/shapes/shared/ShapeFill.tsx b/packages/tldraw/src/lib/shapes/shared/ShapeFill.tsx
+index f52260817b8e..dd7149afced2 100644
+--- a/packages/tldraw/src/lib/shapes/shared/ShapeFill.tsx
++++ b/packages/tldraw/src/lib/shapes/shared/ShapeFill.tsx
+@@ -1,4 +1,5 @@
+ import {
++	getColorValue,
+ 	TLDefaultColorStyle,
+ 	TLDefaultColorTheme,
+ 	TLDefaultFillStyle,
+@@ -29,13 +30,13 @@ export const ShapeFill = React.memo(function ShapeFill({
+ 			return null
+ 		}
+ 		case 'solid': {
+-			return <path fill={theme[color].semi} d={d} />
++			return <path fill={getColorValue(theme, color, 'semi')} d={d} />
+ 		}
+ 		case 'semi': {
+-			return <path fill={theme.solid} d={d} />
++			return <path fill={getColorValue(theme, color, 'solid')} d={d} />
+ 		}
+ 		case 'fill': {
+-			return <path fill={theme[color].fill} d={d} />
++			return <path fill={getColorValue(theme, color, 'fill')} d={d} />
+ 		}
+ 		case 'pattern': {
+ 			return <PatternFill theme={theme} color={color} fill={fill} d={d} scale={scale} />
+@@ -53,13 +54,13 @@ export function PatternFill({ d, color, theme }: ShapeFillProps) {
+ 
+ 	return (
+ 		<>
+-			<path fill={theme[color].pattern} d={d} />
++			<path fill={getColorValue(theme, color, 'pattern')} d={d} />
+ 			<path
+ 				fill={
+ 					svgExport
+ 						? `url(#${getHashPatternZoomName(1, theme.id)})`
+ 						: teenyTiny
+-							? theme[color].semi
++							? getColorValue(theme, color, 'semi')
+ 							: `url(#${getHashPatternZoomName(zoomLevel, theme.id)})`
+ 				}
+ 				d={d}
+diff --git a/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx b/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx
+index 665f8d2bb1cd..af4bbd377afc 100644
+--- a/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx
+@@ -11,6 +11,7 @@ import {
+ 	TLTextShape,
+ 	Vec,
+ 	createComputedCache,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	getFontsFromRichText,
+ 	isEqual,
+@@ -135,7 +136,7 @@ export class TextShapeUtil extends ShapeUtil<TLTextShape> {
+ 				align={textAlign}
+ 				verticalAlign="middle"
+ 				richText={richText}
+-				labelColor={theme[color].solid}
++				labelColor={getColorValue(theme, color, 'solid')}
+ 				isSelected={isSelected}
+ 				textWidth={width}
+ 				textHeight={height}
+@@ -171,7 +172,7 @@ export class TextShapeUtil extends ShapeUtil<TLTextShape> {
+ 				align={shape.props.textAlign}
+ 				verticalAlign="middle"
+ 				richText={shape.props.richText}
+-				labelColor={theme[shape.props.color].solid}
++				labelColor={getColorValue(theme, shape.props.color, 'solid')}
+ 				bounds={exportBounds}
+ 				padding={0}
+ 			/>
+diff --git a/packages/tldraw/src/lib/ui/components/MobileStylePanel.tsx b/packages/tldraw/src/lib/ui/components/MobileStylePanel.tsx
+index 6a458828b83e..d8bb97118099 100644
+--- a/packages/tldraw/src/lib/ui/components/MobileStylePanel.tsx
++++ b/packages/tldraw/src/lib/ui/components/MobileStylePanel.tsx
+@@ -1,6 +1,7 @@
+ import {
+ 	DefaultColorStyle,
+ 	TLDefaultColorStyle,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	useEditor,
+ 	useValue,
+@@ -25,9 +26,10 @@ export function MobileStylePanel() {
+ 	const relevantStyles = useRelevantStyles()
+ 	const color = relevantStyles?.get(DefaultColorStyle)
+ 	const theme = getDefaultColorTheme({ isDarkMode: editor.user.getIsDarkMode() })
+-	const currentColor = (
+-		color?.type === 'shared' ? theme[color.value as TLDefaultColorStyle] : theme.black
+-	).solid
++	const currentColor =
++		color?.type === 'shared'
++			? getColorValue(theme, color.value as TLDefaultColorStyle, 'solid')
++			: getColorValue(theme, 'black', 'solid')
+ 
+ 	const disableStylePanel = useValue(
+ 		'disable style panel',
+diff --git a/packages/tldraw/src/lib/ui/components/primitives/TldrawUiButtonPicker.tsx b/packages/tldraw/src/lib/ui/components/primitives/TldrawUiButtonPicker.tsx
+index 22da89fe090e..5fa5a47760c1 100644
+--- a/packages/tldraw/src/lib/ui/components/primitives/TldrawUiButtonPicker.tsx
++++ b/packages/tldraw/src/lib/ui/components/primitives/TldrawUiButtonPicker.tsx
+@@ -1,12 +1,13 @@
+ import {
+ 	DefaultColorStyle,
++	getColorValue,
+ 	SharedStyle,
+ 	StyleProp,
+ 	TLDefaultColorStyle,
+ 	TLDefaultColorTheme,
+ 	useEditor,
+ } from '@tldraw/editor'
+-import { ReactElement, memo, useMemo, useRef } from 'react'
++import { memo, ReactElement, useMemo, useRef } from 'react'
+ import { StyleValuesForUi } from '../../../styles'
+ import { PORTRAIT_BREAKPOINT } from '../../constants'
+ import { useBreakpoint } from '../../context/breakpoints'
+@@ -140,7 +141,7 @@ export const TldrawUiButtonPicker = memo(function TldrawUiButtonPicker<T extends
+ 							title={label}
+ 							style={
+ 								style === (DefaultColorStyle as StyleProp<unknown>)
+-									? { color: theme[item.value as TLDefaultColorStyle].solid }
++									? { color: getColorValue(theme, item.value as TLDefaultColorStyle, 'solid') }
+ 									: undefined
+ 							}
+ 							onPointerEnter={handleButtonPointerEnter}
+diff --git a/packages/tlschema/api-report.api.md b/packages/tlschema/api-report.api.md
+index a7e2eaba3697..82d171568945 100644
+--- a/packages/tlschema/api-report.api.md
++++ b/packages/tlschema/api-report.api.md
+@@ -313,6 +313,9 @@ export const geoShapeMigrations: TLPropsMigrations;
+ // @public (undocumented)
+ export const geoShapeProps: RecordProps<TLGeoShape>;
+ 
++// @public (undocumented)
++export function getColorValue(theme: TLDefaultColorTheme, color: TLDefaultColorStyle, variant: keyof TLDefaultColorThemeColor): string;
++
+ // @public (undocumented)
+ export function getDefaultColorTheme(opts: {
+     isDarkMode: boolean;
+@@ -927,23 +930,23 @@ export interface TLDefaultColorThemeColor {
+     // (undocumented)
+     fill: string;
+     // (undocumented)
+-    frame: {
+-        fill: string;
+-        headingFill: string;
+-        headingStroke: string;
+-        stroke: string;
+-        text: string;
+-    };
++    frameFill: string;
+     // (undocumented)
+-    highlight: {
+-        p3: string;
+-        srgb: string;
+-    };
++    frameHeadingFill: string;
+     // (undocumented)
+-    note: {
+-        fill: string;
+-        text: string;
+-    };
++    frameHeadingStroke: string;
++    // (undocumented)
++    frameStroke: string;
++    // (undocumented)
++    frameText: string;
++    // (undocumented)
++    highlightP3: string;
++    // (undocumented)
++    highlightSrgb: string;
++    // (undocumented)
++    noteFill: string;
++    // (undocumented)
++    noteText: string;
+     // (undocumented)
+     pattern: string;
+     // (undocumented)
+diff --git a/packages/tlschema/src/index.ts b/packages/tlschema/src/index.ts
+index c69a6dac3202..8b5b9ce2c295 100644
+--- a/packages/tlschema/src/index.ts
++++ b/packages/tlschema/src/index.ts
+@@ -230,6 +230,7 @@ export {
+ 	defaultColorNames,
+ 	DefaultColorStyle,
+ 	DefaultColorThemePalette,
++	getColorValue,
+ 	getDefaultColorTheme,
+ 	type TLDefaultColorStyle,
+ 	type TLDefaultColorTheme,
+diff --git a/packages/tlschema/src/styles/TLColorStyle.ts b/packages/tlschema/src/styles/TLColorStyle.ts
+index d5ce1b4288d2..309121e723ba 100644
+--- a/packages/tlschema/src/styles/TLColorStyle.ts
++++ b/packages/tlschema/src/styles/TLColorStyle.ts
+@@ -24,22 +24,16 @@ export interface TLDefaultColorThemeColor {
+ 	solid: string
+ 	semi: string
+ 	pattern: string
+-	fill: string // same as solid
+-	frame: {
+-		headingStroke: string
+-		headingFill: string
+-		stroke: string
+-		fill: string
+-		text: string
+-	}
+-	note: {
+-		fill: string
+-		text: string
+-	}
+-	highlight: {
+-		srgb: string
+-		p3: string
+-	}
++	fill: string // usually same as solid
++	frameHeadingStroke: string
++	frameHeadingFill: string
++	frameStroke: string
++	frameFill: string
++	frameText: string
++	noteFill: string
++	noteText: string
++	highlightSrgb: string
++	highlightP3: string
+ }
+ 
+ /** @public */
+@@ -65,275 +59,197 @@ export const DefaultColorThemePalette: {
+ 		black: {
+ 			solid: '#1d1d1d',
+ 			fill: '#1d1d1d',
+-			frame: {
+-				headingStroke: '#717171',
+-				headingFill: '#ffffff',
+-				stroke: '#717171',
+-				fill: '#ffffff',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#FCE19C',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#717171',
++			frameHeadingFill: '#ffffff',
++			frameStroke: '#717171',
++			frameFill: '#ffffff',
++			frameText: '#000000',
++			noteFill: '#FCE19C',
++			noteText: '#000000',
+ 			semi: '#e8e8e8',
+ 			pattern: '#494949',
+-			highlight: {
+-				srgb: '#fddd00',
+-				p3: 'color(display-p3 0.972 0.8205 0.05)',
+-			},
++			highlightSrgb: '#fddd00',
++			highlightP3: 'color(display-p3 0.972 0.8205 0.05)',
+ 		},
+ 		blue: {
+ 			solid: '#4465e9',
+ 			fill: '#4465e9',
+-			frame: {
+-				headingStroke: '#6681ec',
+-				headingFill: '#f9fafe',
+-				stroke: '#6681ec',
+-				fill: '#f9fafe',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#8AA3FF',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#6681ec',
++			frameHeadingFill: '#f9fafe',
++			frameStroke: '#6681ec',
++			frameFill: '#f9fafe',
++			frameText: '#000000',
++			noteFill: '#8AA3FF',
++			noteText: '#000000',
+ 			semi: '#dce1f8',
+ 			pattern: '#6681ee',
+-			highlight: {
+-				srgb: '#10acff',
+-				p3: 'color(display-p3 0.308 0.6632 0.9996)',
+-			},
++			highlightSrgb: '#10acff',
++			highlightP3: 'color(display-p3 0.308 0.6632 0.9996)',
+ 		},
+ 		green: {
+ 			solid: '#099268',
+ 			fill: '#099268',
+-			frame: {
+-				headingStroke: '#37a684',
+-				headingFill: '#f8fcfa',
+-				stroke: '#37a684',
+-				fill: '#f8fcfa',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#6FC896',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#37a684',
++			frameHeadingFill: '#f8fcfa',
++			frameStroke: '#37a684',
++			frameFill: '#f8fcfa',
++			frameText: '#000000',
++			noteFill: '#6FC896',
++			noteText: '#000000',
+ 			semi: '#d3e9e3',
+ 			pattern: '#39a785',
+-			highlight: {
+-				srgb: '#00ffc8',
+-				p3: 'color(display-p3 0.2536 0.984 0.7981)',
+-			},
++			highlightSrgb: '#00ffc8',
++			highlightP3: 'color(display-p3 0.2536 0.984 0.7981)',
+ 		},
+ 		grey: {
+ 			solid: '#9fa8b2',
+ 			fill: '#9fa8b2',
+-			frame: {
+-				headingStroke: '#aaaaab',
+-				headingFill: '#fbfcfc',
+-				stroke: '#aaaaab',
+-				fill: '#fcfcfd',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#C0CAD3',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#aaaaab',
++			frameHeadingFill: '#fbfcfc',
++			frameStroke: '#aaaaab',
++			frameFill: '#fcfcfd',
++			frameText: '#000000',
++			noteFill: '#C0CAD3',
++			noteText: '#000000',
+ 			semi: '#eceef0',
+ 			pattern: '#bcc3c9',
+-			highlight: {
+-				srgb: '#cbe7f1',
+-				p3: 'color(display-p3 0.8163 0.9023 0.9416)',
+-			},
++			highlightSrgb: '#cbe7f1',
++			highlightP3: 'color(display-p3 0.8163 0.9023 0.9416)',
+ 		},
+ 		'light-blue': {
+ 			solid: '#4ba1f1',
+ 			fill: '#4ba1f1',
+-			frame: {
+-				headingStroke: '#6cb2f3',
+-				headingFill: '#f8fbfe',
+-				stroke: '#6cb2f3',
+-				fill: '#fafcff',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#9BC4FD',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#6cb2f3',
++			frameHeadingFill: '#f8fbfe',
++			frameStroke: '#6cb2f3',
++			frameFill: '#fafcff',
++			frameText: '#000000',
++			noteFill: '#9BC4FD',
++			noteText: '#000000',
+ 			semi: '#ddedfa',
+ 			pattern: '#6fbbf8',
+-			highlight: {
+-				srgb: '#00f4ff',
+-				p3: 'color(display-p3 0.1512 0.9414 0.9996)',
+-			},
++			highlightSrgb: '#00f4ff',
++			highlightP3: 'color(display-p3 0.1512 0.9414 0.9996)',
+ 		},
+ 		'light-green': {
+ 			solid: '#4cb05e',
+ 			fill: '#4cb05e',
+-			frame: {
+-				headingStroke: '#6dbe7c',
+-				headingFill: '#f8fcf9',
+-				stroke: '#6dbe7c',
+-				fill: '#fafdfa',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#98D08A',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#6dbe7c',
++			frameHeadingFill: '#f8fcf9',
++			frameStroke: '#6dbe7c',
++			frameFill: '#fafdfa',
++			frameText: '#000000',
++			noteFill: '#98D08A',
++			noteText: '#000000',
+ 			semi: '#dbf0e0',
+ 			pattern: '#65cb78',
+-			highlight: {
+-				srgb: '#65f641',
+-				p3: 'color(display-p3 0.563 0.9495 0.3857)',
+-			},
++			highlightSrgb: '#65f641',
++			highlightP3: 'color(display-p3 0.563 0.9495 0.3857)',
+ 		},
+ 		'light-red': {
+ 			solid: '#f87777',
+ 			fill: '#f87777',
+-			frame: {
+-				headingStroke: '#f89090',
+-				headingFill: '#fffafa',
+-				stroke: '#f89090',
+-				fill: '#fffbfb',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#F7A5A1',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#f89090',
++			frameHeadingFill: '#fffafa',
++			frameStroke: '#f89090',
++			frameFill: '#fffbfb',
++			frameText: '#000000',
++			noteFill: '#F7A5A1',
++			noteText: '#000000',
+ 			semi: '#f4dadb',
+ 			pattern: '#fe9e9e',
+-			highlight: {
+-				srgb: '#ff7fa3',
+-				p3: 'color(display-p3 0.9988 0.5301 0.6397)',
+-			},
++			highlightSrgb: '#ff7fa3',
++			highlightP3: 'color(display-p3 0.9988 0.5301 0.6397)',
+ 		},
+ 		'light-violet': {
+ 			solid: '#e085f4',
+ 			fill: '#e085f4',
+-			frame: {
+-				headingStroke: '#e59bf5',
+-				headingFill: '#fefaff',
+-				stroke: '#e59bf5',
+-				fill: '#fefbff',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#DFB0F9',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#e59bf5',
++			frameHeadingFill: '#fefaff',
++			frameStroke: '#e59bf5',
++			frameFill: '#fefbff',
++			frameText: '#000000',
++			noteFill: '#DFB0F9',
++			noteText: '#000000',
+ 			semi: '#f5eafa',
+ 			pattern: '#e9acf8',
+-			highlight: {
+-				srgb: '#ff88ff',
+-				p3: 'color(display-p3 0.9676 0.5652 0.9999)',
+-			},
++			highlightSrgb: '#ff88ff',
++			highlightP3: 'color(display-p3 0.9676 0.5652 0.9999)',
+ 		},
+ 		orange: {
+ 			solid: '#e16919',
+ 			fill: '#e16919',
+-			frame: {
+-				headingStroke: '#e68544',
+-				headingFill: '#fef9f6',
+-				stroke: '#e68544',
+-				fill: '#fef9f6',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#FAA475',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#e68544',
++			frameHeadingFill: '#fef9f6',
++			frameStroke: '#e68544',
++			frameFill: '#fef9f6',
++			frameText: '#000000',
++			noteFill: '#FAA475',
++			noteText: '#000000',
+ 			semi: '#f8e2d4',
+ 			pattern: '#f78438',
+-			highlight: {
+-				srgb: '#ffa500',
+-				p3: 'color(display-p3 0.9988 0.6905 0.266)',
+-			},
++			highlightSrgb: '#ffa500',
++			highlightP3: 'color(display-p3 0.9988 0.6905 0.266)',
+ 		},
+ 		red: {
+ 			solid: '#e03131',
+ 			fill: '#e03131',
+-			frame: {
+-				headingStroke: '#e55757',
+-				headingFill: '#fef7f7',
+-				stroke: '#e55757',
+-				fill: '#fef9f9',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#FC8282',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#e55757',
++			frameHeadingFill: '#fef7f7',
++			frameStroke: '#e55757',
++			frameFill: '#fef9f9',
++			frameText: '#000000',
++			noteFill: '#FC8282',
++			noteText: '#000000',
+ 			semi: '#f4dadb',
+ 			pattern: '#e55959',
+-			highlight: {
+-				srgb: '#ff636e',
+-				p3: 'color(display-p3 0.9992 0.4376 0.45)',
+-			},
++			highlightSrgb: '#ff636e',
++			highlightP3: 'color(display-p3 0.9992 0.4376 0.45)',
+ 		},
+ 		violet: {
+ 			solid: '#ae3ec9',
+ 			fill: '#ae3ec9',
+-			frame: {
+-				headingStroke: '#bc62d3',
+-				headingFill: '#fcf7fd',
+-				stroke: '#bc62d3',
+-				fill: '#fdf9fd',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#DB91FD',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#bc62d3',
++			frameHeadingFill: '#fcf7fd',
++			frameStroke: '#bc62d3',
++			frameFill: '#fdf9fd',
++			frameText: '#000000',
++			noteFill: '#DB91FD',
++			noteText: '#000000',
+ 			semi: '#ecdcf2',
+ 			pattern: '#bd63d3',
+-			highlight: {
+-				srgb: '#c77cff',
+-				p3: 'color(display-p3 0.7469 0.5089 0.9995)',
+-			},
++			highlightSrgb: '#c77cff',
++			highlightP3: 'color(display-p3 0.7469 0.5089 0.9995)',
+ 		},
+ 		yellow: {
+ 			solid: '#f1ac4b',
+ 			fill: '#f1ac4b',
+-			frame: {
+-				headingStroke: '#f3bb6c',
+-				headingFill: '#fefcf8',
+-				stroke: '#f3bb6c',
+-				fill: '#fffdfa',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#FED49A',
+-				text: '#000000',
+-			},
++			frameHeadingStroke: '#f3bb6c',
++			frameHeadingFill: '#fefcf8',
++			frameStroke: '#f3bb6c',
++			frameFill: '#fffdfa',
++			frameText: '#000000',
++			noteFill: '#FED49A',
++			noteText: '#000000',
+ 			semi: '#f9f0e6',
+ 			pattern: '#fecb92',
+-			highlight: {
+-				srgb: '#fddd00',
+-				p3: 'color(display-p3 0.972 0.8705 0.05)',
+-			},
++			highlightSrgb: '#fddd00',
++			highlightP3: 'color(display-p3 0.972 0.8705 0.05)',
+ 		},
+ 		white: {
+ 			solid: '#FFFFFF',
+ 			fill: '#FFFFFF',
+ 			semi: '#f5f5f5',
+ 			pattern: '#f9f9f9',
+-			frame: {
+-				headingStroke: '#7d7d7d',
+-				headingFill: '#ffffff',
+-				stroke: '#7d7d7d',
+-				fill: '#ffffff',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#FFFFFF',
+-				text: '#000000',
+-			},
+-			highlight: {
+-				srgb: '#ffffff',
+-				p3: 'color(display-p3 1 1 1)',
+-			},
++			frameHeadingStroke: '#7d7d7d',
++			frameHeadingFill: '#ffffff',
++			frameStroke: '#7d7d7d',
++			frameFill: '#ffffff',
++			frameText: '#000000',
++			noteFill: '#FFFFFF',
++			noteText: '#000000',
++			highlightSrgb: '#ffffff',
++			highlightP3: 'color(display-p3 1 1 1)',
+ 		},
+ 	},
+ 	darkMode: {
+@@ -345,275 +261,197 @@ export const DefaultColorThemePalette: {
+ 		black: {
+ 			solid: '#f2f2f2',
+ 			fill: '#f2f2f2',
+-			frame: {
+-				headingStroke: '#5c5c5c',
+-				headingFill: '#252525',
+-				stroke: '#5c5c5c',
+-				fill: '#0c0c0c',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#2c2c2c',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#5c5c5c',
++			frameHeadingFill: '#252525',
++			frameStroke: '#5c5c5c',
++			frameFill: '#0c0c0c',
++			frameText: '#f2f2f2',
++			noteFill: '#2c2c2c',
++			noteText: '#f2f2f2',
+ 			semi: '#2c3036',
+ 			pattern: '#989898',
+-			highlight: {
+-				srgb: '#d2b700',
+-				p3: 'color(display-p3 0.8078 0.6225 0.0312)',
+-			},
++			highlightSrgb: '#d2b700',
++			highlightP3: 'color(display-p3 0.8078 0.6225 0.0312)',
+ 		},
+ 		blue: {
+ 			solid: '#4f72fc', // 3c60f0
+ 			fill: '#4f72fc',
+-			frame: {
+-				headingStroke: '#384994',
+-				headingFill: '#1C2036',
+-				stroke: '#384994',
+-				fill: '#11141f',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#2A3F98',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#384994',
++			frameHeadingFill: '#1C2036',
++			frameStroke: '#384994',
++			frameFill: '#11141f',
++			frameText: '#f2f2f2',
++			noteFill: '#2A3F98',
++			noteText: '#f2f2f2',
+ 			semi: '#262d40',
+ 			pattern: '#3a4b9e',
+-			highlight: {
+-				srgb: '#0079d2',
+-				p3: 'color(display-p3 0.0032 0.4655 0.7991)',
+-			},
++			highlightSrgb: '#0079d2',
++			highlightP3: 'color(display-p3 0.0032 0.4655 0.7991)',
+ 		},
+ 		green: {
+ 			solid: '#099268',
+ 			fill: '#099268',
+-			frame: {
+-				headingStroke: '#10513C',
+-				headingFill: '#14241f',
+-				stroke: '#10513C',
+-				fill: '#0E1614',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#014429',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#10513C',
++			frameHeadingFill: '#14241f',
++			frameStroke: '#10513C',
++			frameFill: '#0E1614',
++			frameText: '#f2f2f2',
++			noteFill: '#014429',
++			noteText: '#f2f2f2',
+ 			semi: '#253231',
+ 			pattern: '#366a53',
+-			highlight: {
+-				srgb: '#009774',
+-				p3: 'color(display-p3 0.0085 0.582 0.4604)',
+-			},
++			highlightSrgb: '#009774',
++			highlightP3: 'color(display-p3 0.0085 0.582 0.4604)',
+ 		},
+ 		grey: {
+ 			solid: '#9398b0',
+ 			fill: '#9398b0',
+-			frame: {
+-				headingStroke: '#42474D',
+-				headingFill: '#23262A',
+-				stroke: '#42474D',
+-				fill: '#151719',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#56595F',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#42474D',
++			frameHeadingFill: '#23262A',
++			frameStroke: '#42474D',
++			frameFill: '#151719',
++			frameText: '#f2f2f2',
++			noteFill: '#56595F',
++			noteText: '#f2f2f2',
+ 			semi: '#33373c',
+ 			pattern: '#7c8187',
+-			highlight: {
+-				srgb: '#9cb4cb',
+-				p3: 'color(display-p3 0.6299 0.7012 0.7856)',
+-			},
++			highlightSrgb: '#9cb4cb',
++			highlightP3: 'color(display-p3 0.6299 0.7012 0.7856)',
+ 		},
+ 		'light-blue': {
+ 			solid: '#4dabf7',
+ 			fill: '#4dabf7',
+-			frame: {
+-				headingStroke: '#075797',
+-				headingFill: '#142839',
+-				stroke: '#075797',
+-				fill: '#0B1823',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#1F5495',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#075797',
++			frameHeadingFill: '#142839',
++			frameStroke: '#075797',
++			frameFill: '#0B1823',
++			frameText: '#f2f2f2',
++			noteFill: '#1F5495',
++			noteText: '#f2f2f2',
+ 			semi: '#2a3642',
+ 			pattern: '#4d7aa9',
+-			highlight: {
+-				srgb: '#00bdc8',
+-				p3: 'color(display-p3 0.0023 0.7259 0.7735)',
+-			},
++			highlightSrgb: '#00bdc8',
++			highlightP3: 'color(display-p3 0.0023 0.7259 0.7735)',
+ 		},
+ 		'light-green': {
+ 			solid: '#40c057',
+ 			fill: '#40c057',
+-			frame: {
+-				headingStroke: '#1C5427',
+-				headingFill: '#18251A',
+-				stroke: '#1C5427',
+-				fill: '#0F1911',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#21581D',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#1C5427',
++			frameHeadingFill: '#18251A',
++			frameStroke: '#1C5427',
++			frameFill: '#0F1911',
++			frameText: '#f2f2f2',
++			noteFill: '#21581D',
++			noteText: '#f2f2f2',
+ 			semi: '#2a3830',
+ 			pattern: '#4e874e',
+-			highlight: {
+-				srgb: '#00a000',
+-				p3: 'color(display-p3 0.2711 0.6172 0.0195)',
+-			},
++			highlightSrgb: '#00a000',
++			highlightP3: 'color(display-p3 0.2711 0.6172 0.0195)',
+ 		},
+ 		'light-red': {
+ 			solid: '#ff8787',
+ 			fill: '#ff8787',
+-			frame: {
+-				headingStroke: '#6f3232', // Darker and desaturated variant of solid
+-				headingFill: '#341818', // Deep, muted dark red
+-				stroke: '#6f3232', // Matches headingStroke
+-				fill: '#181212', // Darker, muted background shade
+-				text: '#f2f2f2', // Consistent bright text color
+-			},
+-			note: {
+-				fill: '#7a3333', // Medium-dark, muted variant of solid
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#6f3232', // Darker and desaturated variant of solid
++			frameHeadingFill: '#341818', // Deep, muted dark red
++			frameStroke: '#6f3232', // Matches headingStroke
++			frameFill: '#181212', // Darker, muted background shade
++			frameText: '#f2f2f2', // Consistent bright text color
++			noteFill: '#7a3333', // Medium-dark, muted variant of solid
++			noteText: '#f2f2f2',
+ 			semi: '#3c2b2b', // Subdued, darker neutral-red tone
+ 			pattern: '#a56767', // Existing pattern shade retained
+-			highlight: {
+-				srgb: '#db005b',
+-				p3: 'color(display-p3 0.7849 0.0585 0.3589)',
+-			},
++			highlightSrgb: '#db005b',
++			highlightP3: 'color(display-p3 0.7849 0.0585 0.3589)',
+ 		},
+ 		'light-violet': {
+ 			solid: '#e599f7',
+ 			fill: '#e599f7',
+-			frame: {
+-				headingStroke: '#6c367a',
+-				headingFill: '#2D2230',
+-				stroke: '#6c367a',
+-				fill: '#1C151E',
+-				text: '#f2f2f2',
+-			},
+-			note: {
+-				fill: '#762F8E',
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#6c367a',
++			frameHeadingFill: '#2D2230',
++			frameStroke: '#6c367a',
++			frameFill: '#1C151E',
++			frameText: '#f2f2f2',
++			noteFill: '#762F8E',
++			noteText: '#f2f2f2',
+ 			semi: '#383442',
+ 			pattern: '#9770a9',
+-			highlight: {
+-				srgb: '#c400c7',
+-				p3: 'color(display-p3 0.7024 0.0403 0.753)',
+-			},
++			highlightSrgb: '#c400c7',
++			highlightP3: 'color(display-p3 0.7024 0.0403 0.753)',
+ 		},
+ 		orange: {
+ 			solid: '#f76707',
+ 			fill: '#f76707',
+-			frame: {
+-				headingStroke: '#773a0e', // Darker, muted version of solid
+-				headingFill: '#2f1d13', // Deep, warm, muted background
+-				stroke: '#773a0e', // Matches headingStroke
+-				fill: '#1c1512', // Darker, richer muted background
+-				text: '#f2f2f2', // Bright text for contrast
+-			},
+-			note: {
+-				fill: '#7c3905', // Muted dark variant for note fill
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#773a0e', // Darker, muted version of solid
++			frameHeadingFill: '#2f1d13', // Deep, warm, muted background
++			frameStroke: '#773a0e', // Matches headingStroke
++			frameFill: '#1c1512', // Darker, richer muted background
++			frameText: '#f2f2f2', // Bright text for contrast
++			noteFill: '#7c3905', // Muted dark variant for note fill
++			noteText: '#f2f2f2',
+ 			semi: '#3b2e27', // Muted neutral-orange tone
+ 			pattern: '#9f552d', // Retained existing shade
+-			highlight: {
+-				srgb: '#d07a00',
+-				p3: 'color(display-p3 0.7699 0.4937 0.0085)',
+-			},
++			highlightSrgb: '#d07a00',
++			highlightP3: 'color(display-p3 0.7699 0.4937 0.0085)',
+ 		},
+ 		red: {
+ 			solid: '#e03131',
+ 			fill: '#e03131',
+-			frame: {
+-				headingStroke: '#701e1e', // Darker, muted variation of solid
+-				headingFill: '#301616', // Deep, muted reddish backdrop
+-				stroke: '#701e1e', // Matches headingStroke
+-				fill: '#1b1313', // Rich, dark muted background
+-				text: '#f2f2f2', // Bright text for readability
+-			},
+-			note: {
+-				fill: '#7e201f', // Muted dark variant for note fill
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#701e1e', // Darker, muted variation of solid
++			frameHeadingFill: '#301616', // Deep, muted reddish backdrop
++			frameStroke: '#701e1e', // Matches headingStroke
++			frameFill: '#1b1313', // Rich, dark muted background
++			frameText: '#f2f2f2', // Bright text for readability
++			noteFill: '#7e201f', // Muted dark variant for note fill
++			noteText: '#f2f2f2',
+ 			semi: '#382726', // Dark neutral-red tone
+ 			pattern: '#8f3734', // Existing pattern color retained
+-			highlight: {
+-				srgb: '#de002c',
+-				p3: 'color(display-p3 0.7978 0.0509 0.2035)',
+-			},
++			highlightSrgb: '#de002c',
++			highlightP3: 'color(display-p3 0.7978 0.0509 0.2035)',
+ 		},
+ 		violet: {
+ 			solid: '#ae3ec9',
+ 			fill: '#ae3ec9',
+-			frame: {
+-				headingStroke: '#6d1583', // Darker, muted variation of solid
+-				headingFill: '#27152e', // Deep, rich muted violet backdrop
+-				stroke: '#6d1583', // Matches headingStroke
+-				fill: '#1b0f21', // Darker muted violet background
+-				text: '#f2f2f2', // Consistent bright text color
+-			},
+-			note: {
+-				fill: '#5f1c70', // Muted dark variant for note fill
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#6d1583', // Darker, muted variation of solid
++			frameHeadingFill: '#27152e', // Deep, rich muted violet backdrop
++			frameStroke: '#6d1583', // Matches headingStroke
++			frameFill: '#1b0f21', // Darker muted violet background
++			frameText: '#f2f2f2', // Consistent bright text color
++			noteFill: '#5f1c70', // Muted dark variant for note fill
++			noteText: '#f2f2f2',
+ 			semi: '#342938', // Dark neutral-violet tone
+ 			pattern: '#763a8b', // Retained existing pattern color
+-			highlight: {
+-				srgb: '#9e00ee',
+-				p3: 'color(display-p3 0.5651 0.0079 0.8986)',
+-			},
++			highlightSrgb: '#9e00ee',
++			highlightP3: 'color(display-p3 0.5651 0.0079 0.8986)',
+ 		},
+ 		yellow: {
+ 			solid: '#ffc034',
+ 			fill: '#ffc034',
+-			frame: {
+-				headingStroke: '#684e12', // Darker, muted variant of solid
+-				headingFill: '#2a2113', // Rich, muted dark-yellow background
+-				stroke: '#684e12', // Matches headingStroke
+-				fill: '#1e1911', // Darker muted shade for background fill
+-				text: '#f2f2f2', // Bright text color for readability
+-			},
+-			note: {
+-				fill: '#8a5e1c', // Muted, dark complementary variant
+-				text: '#f2f2f2',
+-			},
++			frameHeadingStroke: '#684e12', // Darker, muted variant of solid
++			frameHeadingFill: '#2a2113', // Rich, muted dark-yellow background
++			frameStroke: '#684e12', // Matches headingStroke
++			frameFill: '#1e1911', // Darker muted shade for background fill
++			frameText: '#f2f2f2', // Bright text color for readability
++			noteFill: '#8a5e1c', // Muted, dark complementary variant
++			noteText: '#f2f2f2',
+ 			semi: '#3b352b', // Dark muted neutral-yellow tone
+ 			pattern: '#fecb92', // Existing shade retained
+-			highlight: {
+-				srgb: '#d2b700',
+-				p3: 'color(display-p3 0.8078 0.7225 0.0312)',
+-			},
++			highlightSrgb: '#d2b700',
++			highlightP3: 'color(display-p3 0.8078 0.7225 0.0312)',
+ 		},
+ 		white: {
+ 			solid: '#f3f3f3',
+ 			fill: '#f3f3f3',
+ 			semi: '#f5f5f5',
+ 			pattern: '#f9f9f9',
+-			frame: {
+-				headingStroke: '#ffffff',
+-				headingFill: '#ffffff',
+-				stroke: '#ffffff',
+-				fill: '#ffffff',
+-				text: '#000000',
+-			},
+-			note: {
+-				fill: '#eaeaea',
+-				text: '#1d1d1d',
+-			},
+-			highlight: {
+-				srgb: '#ffffff',
+-				p3: 'color(display-p3 1 1 1)',
+-			},
++			frameHeadingStroke: '#ffffff',
++			frameHeadingFill: '#ffffff',
++			frameStroke: '#ffffff',
++			frameFill: '#ffffff',
++			frameText: '#000000',
++			noteFill: '#eaeaea',
++			noteText: '#1d1d1d',
++			highlightSrgb: '#ffffff',
++			highlightP3: 'color(display-p3 1 1 1)',
+ 		},
+ 	},
+ }
+@@ -637,3 +475,25 @@ export const DefaultLabelColorStyle = StyleProp.defineEnum('tldraw:labelColor',
+ 
+ /** @public */
+ export type TLDefaultColorStyle = T.TypeOf<typeof DefaultColorStyle>
++
++const defaultColorNamesSet = new Set(defaultColorNames)
++
++/** @public */
++export function isDefaultThemeColor(
++	color: TLDefaultColorStyle
++): color is (typeof defaultColorNames)[number] {
++	return defaultColorNamesSet.has(color as (typeof defaultColorNames)[number])
++}
++
++/** @public */
++export function getColorValue(
++	theme: TLDefaultColorTheme,
++	color: TLDefaultColorStyle,
++	variant: keyof TLDefaultColorThemeColor
++): string {
++	if (!isDefaultThemeColor(color)) {
++		return color
++	}
++
++	return theme[color][variant]
++}
+diff --git a/templates/ai/worker/do/openai/getTldrawAiChangesFromSimpleEvents.ts b/templates/ai/worker/do/openai/getTldrawAiChangesFromSimpleEvents.ts
+index 7a3e22159140..35c70fdb4541 100644
+--- a/templates/ai/worker/do/openai/getTldrawAiChangesFromSimpleEvents.ts
++++ b/templates/ai/worker/do/openai/getTldrawAiChangesFromSimpleEvents.ts
+@@ -9,6 +9,7 @@ import {
+ 	IndexKey,
+ 	TLArrowBinding,
+ 	TLArrowShape,
++	TLDefaultColorStyle,
+ 	TLDefaultFillStyle,
+ 	TLGeoShape,
+ 	TLLineShape,
+@@ -87,7 +88,7 @@ function getTldrawAiChangesFromSimpleCreateOrUpdateEvent(
+ 					y: shape.y,
+ 					props: {
+ 						richText: toRichTextIfNeeded(shape.text ?? ''),
+-						color: shape.color ?? 'black',
++						color: (shape.color ?? 'black') as TLDefaultColorStyle,
+ 						textAlign: shape.textAlign ?? 'middle',
+ 					},
+ 				},
+@@ -121,7 +122,7 @@ function getTldrawAiChangesFromSimpleCreateOrUpdateEvent(
+ 								y: shape.y2 - minY,
+ 							},
+ 						},
+-						color: shape.color ?? 'black',
++						color: (shape.color ?? 'black') as TLDefaultColorStyle,
+ 					},
+ 				},
+ 			} satisfies TLAiCreateShapeChange<TLLineShape> | TLAiUpdateShapeChange<TLLineShape>)

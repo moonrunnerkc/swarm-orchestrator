@@ -1,0 +1,670 @@
+diff --git a/.changeset/sharp-default-format-svgs.md b/.changeset/sharp-default-format-svgs.md
+new file mode 100644
+index 000000000000..8bbddeaf2bab
+--- /dev/null
++++ b/.changeset/sharp-default-format-svgs.md
+@@ -0,0 +1,7 @@
++---
++'astro': patch
++---
++
++Fixes remote SVG sources erroring with `dangerouslyProcessSVG` after the v6.3 SVG-processing gate. The default Sharp service now resolves the output format from the source up-front when it can (URL extension, `data:` MIME, ESM metadata), and from the actual buffer at request time when it can't, so SVG sources pass through untouched without needing to set `image.dangerouslyProcessSVG: true` or an explicit `format="svg"`.
++
++The error message has also been updated to point at `format="svg"` as the simpler workaround when an SVG source is encountered without `dangerouslyProcessSVG` enabled.
+diff --git a/packages/astro/src/assets/internal.ts b/packages/astro/src/assets/internal.ts
+index dd4e4f632091..b7c27e2fd307 100644
+--- a/packages/astro/src/assets/internal.ts
++++ b/packages/astro/src/assets/internal.ts
+@@ -19,6 +19,7 @@ import {
+ 	type UnresolvedImageTransform,
+ } from './types.js';
+ import { isESMImportedImage, isRemoteImage, resolveSrc } from './utils/imageKind.js';
++import { resolveDefaultOutputFormat } from './utils/inferSourceFormat.js';
+ import { inferRemoteSize } from './utils/remoteProbe.js';
+ import { createPlaceholderURL, stringifyPlaceholderURL } from './utils/url.js';
+ 
+@@ -97,6 +98,11 @@ export async function getImage(
+ 			const result = await getRemoteSize(resolvedOptions.src); // Directly probe the image URL
+ 			resolvedOptions.width ??= result.width;
+ 			resolvedOptions.height ??= result.height;
++			// We've already paid for the fetch; reuse it to pin down the output format so the URL
++			// (and any baked filename) doesn't have to defer or refetch.
++			if (result.format) {
++				resolvedOptions.format ??= resolveDefaultOutputFormat(result.format);
++			}
+ 			originalWidth = result.width;
+ 			originalHeight = result.height;
+ 		}
+@@ -202,6 +208,12 @@ export async function getImage(
+ 		? await service.validateOptions(resolvedOptions, imageConfig)
+ 		: resolvedOptions;
+ 
++	validatedOptions.format ??= await peekRemoteFormatForStaticEmit(
++		validatedOptions,
++		imageConfig,
++		service,
++	);
++
+ 	// Get all the options for the different srcSets
+ 	const srcSetTransforms = service.getSrcSet
+ 		? await service.getSrcSet(validatedOptions, imageConfig)
+@@ -290,3 +302,32 @@ export async function getImage(
+ 				: {},
+ 	};
+ }
++
++/**
++ * Build-time only: probes the remote URL via `getRemoteSize` so we can commit a real `format`
++ * before the filename is hashed. Returns undefined when no peek applies (SSR, non-remote,
++ * disallowed remote, external service, missing `getRemoteSize`, or probe failure) — the
++ * transform service handles those by detecting from the actual buffer.
++ */
++async function peekRemoteFormatForStaticEmit(
++	options: ImageTransform,
++	imageConfig: AstroConfig['image'] & AstroAdapterClientConfig,
++	service: ImageService,
++): Promise<string | undefined> {
++	if (
++		!isRemoteImage(options.src) ||
++		!isRemoteAllowed(options.src, imageConfig) ||
++		!globalThis.astroAsset?.addStaticImage ||
++		!isLocalService(service) ||
++		!service.getRemoteSize
++	) {
++		return undefined;
++	}
++
++	try {
++		const probed = await service.getRemoteSize(options.src, imageConfig);
++		return resolveDefaultOutputFormat(probed.format);
++	} catch {
++		return undefined;
++	}
++}
+diff --git a/packages/astro/src/assets/services/service.ts b/packages/astro/src/assets/services/service.ts
+index c77017d19ba0..ce15ae3fca20 100644
+--- a/packages/astro/src/assets/services/service.ts
++++ b/packages/astro/src/assets/services/service.ts
+@@ -2,7 +2,7 @@ import { isRemoteAllowed } from '@astrojs/internal-helpers/remote';
+ import { AstroError, AstroErrorData } from '../../core/errors/index.js';
+ import { isRemotePath, joinPaths } from '../../core/path.js';
+ import type { AstroConfig } from '../../types/public/config.js';
+-import { DEFAULT_HASH_PROPS, DEFAULT_OUTPUT_FORMAT, VALID_SUPPORTED_FORMATS } from '../consts.js';
++import { DEFAULT_HASH_PROPS, VALID_SUPPORTED_FORMATS } from '../consts.js';
+ import type {
+ 	ImageFit,
+ 	ImageMetadata,
+@@ -11,6 +11,7 @@ import type {
+ 	UnresolvedSrcSetValue,
+ } from '../types.js';
+ import { isESMImportedImage, isRemoteImage } from '../utils/imageKind.js';
++import { inferSourceFormat, resolveDefaultOutputFormat } from '../utils/inferSourceFormat.js';
+ import { inferRemoteSize } from '../utils/remoteProbe.js';
+ 
+ export type ImageService = LocalImageService | ExternalImageService;
+@@ -132,7 +133,7 @@ export type BaseServiceTransform = {
+ 	src: string;
+ 	width?: number;
+ 	height?: number;
+-	format: string;
++	format?: string;
+ 	quality?: string | null;
+ 	fit?: ImageFit;
+ 	position?: string;
+@@ -231,10 +232,11 @@ export const baseService: Omit<LocalImageService, 'transform'> = {
+ 
+ 		// Apply defaults and normalization separate from verification
+ 		if (!options.format) {
+-			if (isESMImportedImage(options.src) && options.src.format === 'svg') {
+-				options.format = 'svg';
++			if (isESMImportedImage(options.src)) {
++				options.format = resolveDefaultOutputFormat(options.src.format);
+ 			} else {
+-				options.format = DEFAULT_OUTPUT_FORMAT;
++				const inferred = inferSourceFormat(options.src);
++				if (inferred) options.format = resolveDefaultOutputFormat(inferred);
+ 			}
+ 		}
+ 		if (options.width) options.width = Math.round(options.width);
+@@ -277,7 +279,9 @@ export const baseService: Omit<LocalImageService, 'transform'> = {
+ 		const { targetWidth, targetHeight } = getTargetDimensions(options);
+ 		const aspectRatio = targetWidth / targetHeight;
+ 		const { widths, densities } = options;
+-		const targetFormat = options.format ?? DEFAULT_OUTPUT_FORMAT;
++		// When format is undefined the response type is resolved from the buffer at request time,
++		// so leave the <source type> attribute off rather than asserting webp.
++		const targetFormat = options.format;
+ 
+ 		let transformedWidths = (widths ?? []).sort(sortNumeric);
+ 
+@@ -347,9 +351,7 @@ export const baseService: Omit<LocalImageService, 'transform'> = {
+ 			return {
+ 				transform,
+ 				descriptor,
+-				attributes: {
+-					type: `image/${targetFormat}`,
+-				},
++				attributes: targetFormat ? { type: `image/${targetFormat}` } : {},
+ 			};
+ 		});
+ 	},
+@@ -403,7 +405,7 @@ export const baseService: Omit<LocalImageService, 'transform'> = {
+ 			src: params.get('href')!,
+ 			width: params.has('w') ? Number.parseInt(params.get('w')!) : undefined,
+ 			height: params.has('h') ? Number.parseInt(params.get('h')!) : undefined,
+-			format: params.get('f') as ImageOutputFormat,
++			format: params.has('f') ? (params.get('f') as ImageOutputFormat) : undefined,
+ 			quality: params.get('q'),
+ 			fit: params.get('fit') as ImageFit,
+ 			position: params.get('position') ?? undefined,
+diff --git a/packages/astro/src/assets/services/sharp.ts b/packages/astro/src/assets/services/sharp.ts
+index 4e41c9c2752e..599ba65bf732 100644
+--- a/packages/astro/src/assets/services/sharp.ts
++++ b/packages/astro/src/assets/services/sharp.ts
+@@ -10,6 +10,7 @@ import type {
+ } from 'sharp';
+ import { AstroError, AstroErrorData } from '../../core/errors/index.js';
+ import type { ImageFit, ImageOutputFormat, ImageQualityPreset } from '../types.js';
++import { resolveDefaultOutputFormat } from '../utils/inferSourceFormat.js';
+ import { detector } from '../utils/vendor/image-size/detector.js';
+ import {
+ 	type BaseServiceTransform,
+@@ -77,6 +78,10 @@ export function resolveSharpEncoderOptions(
+ ): JpegOptions | PngOptions | WebpOptions | AvifOptions | { quality?: number } | undefined {
+ 	const quality = resolveSharpQuality(transform.quality);
+ 
++	if (transform.format === undefined) {
++		return quality === undefined ? undefined : { quality };
++	}
++
+ 	switch (transform.format) {
+ 		case 'jpg':
+ 		case 'jpeg':
+@@ -145,16 +150,33 @@ const sharpService: LocalImageService<SharpImageServiceConfig> = {
+ 		const transform: BaseServiceTransform = transformOptions as BaseServiceTransform;
+ 		const kernel = config.service.config.kernel;
+ 
+-		// Return SVGs as-is
++		const bufferFormat = detector(inputBuffer);
++		// Resolve the output format from the buffer when validateOptions deferred (ambiguous remote URL hit SSR, manually formed URLs etc)
++		const outputFormat = transform.format ?? resolveDefaultOutputFormat(bufferFormat);
++
+ 		// TODO: Sharp has some support for SVGs, we could probably support this once Sharp is the default and only service.
+-		if (transform.format === 'svg') return { data: inputBuffer, format: 'svg' };
++		if (outputFormat === 'svg') {
++			if (bufferFormat && bufferFormat !== 'svg') {
++				console.warn(
++					`⚠️  Astro expected an SVG for "${transform.src}" but the source is ${bufferFormat}. Passing it through as ${bufferFormat} instead.`,
++				);
++				return { data: inputBuffer, format: bufferFormat as ImageOutputFormat };
++			}
++			return { data: inputBuffer, format: 'svg' };
++		}
++
++		// If we couldn't figure out the format, it's probably something weird we shouldn't try to process.
++		if (!bufferFormat) {
++			throw new AstroError({
++				...AstroErrorData.NoImageMetadata,
++				message: AstroErrorData.NoImageMetadata.message(transform.src),
++			});
++		}
+ 
+-		// Rasterizing an SVG runs librsvg on untrusted input; require explicit opt-in.
+-		if (detector(inputBuffer) === 'svg' && !config.dangerouslyProcessSVG) {
++		if (bufferFormat === 'svg' && !config.dangerouslyProcessSVG) {
+ 			throw new AstroError({
+ 				...AstroErrorData.UnsupportedImageFormat,
+-				message:
+-					'SVG image processing is disabled. Set `image.dangerouslyProcessSVG: true` to allow processing of SVG sources.',
++				message: `SVG image processing is disabled, but the source for "${transform.src}" is an SVG. Pass it through unchanged by setting \`format="svg"\` on the component, or set \`image.dangerouslyProcessSVG: true\` to rasterize SVG sources.`,
+ 			});
+ 		}
+ 
+@@ -166,21 +188,6 @@ const sharpService: LocalImageService<SharpImageServiceConfig> = {
+ 
+ 		// always call rotate to adjust for EXIF data orientation
+ 		result.rotate();
+-		// get some information about the input
+-		let format: string | undefined;
+-		try {
+-			({ format } = await result.metadata());
+-		} catch {
+-			// Sharp cannot decode this image (e.g. animated AVIF sequences).
+-			// Pass it through unmodified rather than crashing the build. When Sharp adds support for these
+-			// formats, the image will be optimized automatically without code changes.
+-			console.warn(
+-				`⚠️  Astro could not optimize image "${transform.src}". ` +
+-					`Sharp doesn't support this format. The image will be used unoptimized. ` +
+-					`Consider converting to WebP or placing in the public/ folder.`,
+-			);
+-			return { data: inputBuffer, format: transform.format };
+-		}
+ 
+ 		if (transform.width && transform.height) {
+ 			const fit: keyof FitEnum | undefined = transform.fit
+@@ -216,26 +223,37 @@ const sharpService: LocalImageService<SharpImageServiceConfig> = {
+ 			result.flatten({ background: transform.background });
+ 		}
+ 
+-		if (transform.format) {
+-			const encoderOptions = resolveSharpEncoderOptions(transform, format, config.service.config);
+-
+-			if (transform.format === 'webp' && format === 'gif') {
+-				// Convert animated GIF to animated WebP with loop=0 (infinite) unless overridden in config.
+-				result.webp(encoderOptions as WebpOptions | undefined);
+-			} else if (transform.format === 'webp') {
+-				result.webp(encoderOptions as WebpOptions | undefined);
+-			} else if (transform.format === 'png') {
+-				result.png(encoderOptions as PngOptions | undefined);
+-			} else if (transform.format === 'avif') {
+-				result.avif(encoderOptions as AvifOptions | undefined);
+-			} else if (transform.format === 'jpeg' || transform.format === 'jpg') {
+-				result.jpeg(encoderOptions as JpegOptions | undefined);
+-			} else {
+-				result.toFormat(transform.format as keyof FormatEnum, encoderOptions);
+-			}
++		const encoderOptions = resolveSharpEncoderOptions(
++			{ format: outputFormat, quality: transform.quality },
++			bufferFormat,
++			config.service.config,
++		);
++
++		if (outputFormat === 'webp') {
++			result.webp(encoderOptions as WebpOptions | undefined);
++		} else if (outputFormat === 'png') {
++			result.png(encoderOptions as PngOptions | undefined);
++		} else if (outputFormat === 'avif') {
++			result.avif(encoderOptions as AvifOptions | undefined);
++		} else if (outputFormat === 'jpeg' || outputFormat === 'jpg') {
++			result.jpeg(encoderOptions as JpegOptions | undefined);
++		} else {
++			result.toFormat(outputFormat as keyof FormatEnum, encoderOptions);
+ 		}
+ 
+-		const { data, info } = await result.toBuffer({ resolveWithObject: true });
++		let data: Uint8Array;
++		let info: { format: string };
++		try {
++			({ data, info } = await result.toBuffer({ resolveWithObject: true }));
++		} catch {
++			// Sharp cannot decode this image (e.g. animated AVIF sequences).
++			// Pass it through unmodified rather than crashing the build. When Sharp adds support for these
++			// formats, the image will be optimized automatically without code changes.
++			console.warn(
++				`⚠️  Astro could not optimize image "${transform.src}". Sharp doesn't support this format. The image will be used unoptimized. Consider converting to WebP or placing in the public/ folder.`,
++			);
++			return { data: inputBuffer, format: bufferFormat as ImageOutputFormat };
++		}
+ 
+ 		// Sharp can sometimes return a SharedArrayBuffer when using WebAssembly.
+ 		// SharedArrayBuffers need to be copied into an ArrayBuffer in order to be manipulated.
+diff --git a/packages/astro/src/assets/utils/inferSourceFormat.ts b/packages/astro/src/assets/utils/inferSourceFormat.ts
+index b6d8d526c3f0..0493373ea7d9 100644
+--- a/packages/astro/src/assets/utils/inferSourceFormat.ts
++++ b/packages/astro/src/assets/utils/inferSourceFormat.ts
+@@ -1,29 +1,46 @@
+ import { removeQueryString } from '@astrojs/internal-helpers/path';
++import { DEFAULT_OUTPUT_FORMAT } from '../consts.js';
+ 
+ const DATA_PREFIX = 'data:';
+ 
+ /**
+- * Infer the image format from a source path or URL by examining
+- * the file extension. For data: URIs, the MIME type is extracted.
+- * Returns undefined if the format cannot be determined.
++ * Infer the image format from a source path or URL.
++ *
++ * For `data:` URIs the MIME is read up to the first `;` or `,` (whichever comes first),
++ * so both `data:image/svg+xml;base64,...` and `data:image/svg+xml,<svg>...` work.
++ * `image/svg+xml` normalizes to `svg`; otherwise the subtype after the slash is returned.
++ *
++ * Returns undefined when the format cannot be determined.
+  */
+ export function inferSourceFormat(src: string): string | undefined {
+ 	// data: URIs encode the MIME type directly, e.g. "data:image/svg+xml;base64,..."
++	// or "data:image/svg+xml,<svg>...</svg>" (no media-type parameter).
+ 	if (src.startsWith(DATA_PREFIX)) {
+-		const mime = src.slice(DATA_PREFIX.length, src.indexOf(';'));
++		const sepIndex = src.indexOf(';');
++		const commaIndex = src.indexOf(',');
++		const mimeEnd =
++			sepIndex === -1 ? commaIndex : commaIndex === -1 ? sepIndex : Math.min(sepIndex, commaIndex);
++		if (mimeEnd === -1) return undefined;
++		const mime = src.slice(DATA_PREFIX.length, mimeEnd);
+ 		if (mime === 'image/svg+xml') return 'svg';
+ 		const sub = mime.split('/')[1];
+ 		return sub || undefined;
+ 	}
+ 
+-	// For regular URLs/paths, extract the extension from the pathname
++	// For regular URLs/paths, extract the extension from the last path segment only.
++	// Looking at the whole string would treat dots in hostnames (`example.com`) as extensions.
+ 	try {
+-		// Strip query string and hash before extracting extension
+ 		const cleanSrc = removeQueryString(src).split('#')[0];
+-		const lastDot = cleanSrc.lastIndexOf('.');
++		const lastSlash = cleanSrc.lastIndexOf('/');
++		const basename = lastSlash === -1 ? cleanSrc : cleanSrc.slice(lastSlash + 1);
++		const lastDot = basename.lastIndexOf('.');
+ 		if (lastDot === -1) return undefined;
+-		return cleanSrc.slice(lastDot + 1).toLowerCase();
++		return basename.slice(lastDot + 1).toLowerCase();
+ 	} catch {
+ 		return undefined;
+ 	}
+ }
++
++export function resolveDefaultOutputFormat(sourceFormat: string | undefined): string {
++	return sourceFormat === 'svg' ? 'svg' : DEFAULT_OUTPUT_FORMAT;
++}
+diff --git a/packages/astro/test/units/assets/endpoint-svg-reject.test.ts b/packages/astro/test/units/assets/endpoint-svg-reject.test.ts
+index f4f60c79e365..ce717433cc3b 100644
+--- a/packages/astro/test/units/assets/endpoint-svg-reject.test.ts
++++ b/packages/astro/test/units/assets/endpoint-svg-reject.test.ts
+@@ -23,6 +23,18 @@ describe('inferSourceFormat', () => {
+ 		assert.equal(inferSourceFormat('data:image/svg+xml;base64,PHN2Zz4='), 'svg');
+ 	});
+ 
++	it('detects svg from data: URI without media-type parameter', () => {
++		assert.equal(inferSourceFormat('data:image/svg+xml,%3Csvg/%3E'), 'svg');
++	});
++
++	it('uses the earlier of `;` or `,` as the MIME terminator', () => {
++		assert.equal(inferSourceFormat('data:image/png,foo;bar'), 'png');
++	});
++
++	it('returns undefined for malformed data: URI without `;` or `,`', () => {
++		assert.equal(inferSourceFormat('data:image/png'), undefined);
++	});
++
+ 	it('detects png from file extension', () => {
+ 		assert.equal(inferSourceFormat('/images/photo.png'), 'png');
+ 	});
+diff --git a/packages/astro/test/units/assets/getImage.test.ts b/packages/astro/test/units/assets/getImage.test.ts
+index 207107aec613..2ab3804a977f 100644
+--- a/packages/astro/test/units/assets/getImage.test.ts
++++ b/packages/astro/test/units/assets/getImage.test.ts
+@@ -1,5 +1,6 @@
+ import assert from 'node:assert/strict';
+-import { after, before, describe, it } from 'node:test';
++import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
++import { baseService } from '../../../dist/assets/services/service.js';
+ import type { GetImageResult, UnresolvedImageTransform } from '../../../dist/assets/types.js';
+ import { getImage } from '../../../dist/assets/internal.js';
+ import { installImageService } from '../mocks.ts';
+@@ -310,7 +311,7 @@ describe('getImage', () => {
+ 	});
+ 
+ 	describe('format', () => {
+-		it('defaults to webp format', async () => {
++		it('defaults to webp for remote images with a non-svg extension', async () => {
+ 			const result = await renderImage({
+ 				src: 'https://example.com/photo.jpg',
+ 				width: 800,
+@@ -322,6 +323,41 @@ describe('getImage', () => {
+ 			assert.equal(params.get('f'), 'webp');
+ 		});
+ 
++		it('defaults to svg for remote URLs ending in .svg so they pass through', async () => {
++			const result = await renderImage({
++				src: 'https://example.com/icon.svg',
++				width: 64,
++				height: 64,
++				alt: 'Format test',
++			});
++			const params = new URL(result.src, 'http://localhost').searchParams;
++			assert.equal(params.get('f'), 'svg');
++		});
++
++		it('defaults to svg for data:image/svg+xml so they pass through', async () => {
++			// Data URIs aren't in the test allowlist, so the URL is returned as-is by getURL — verify
++			// the resolved transform options instead.
++			const svg = 'data:image/svg+xml,%3Csvg/%3E';
++			const result = await renderImage({
++				src: svg,
++				width: 32,
++				height: 32,
++				alt: 'Format test',
++			});
++			assert.equal(result.options.format, 'svg');
++		});
++
++		it('omits format param for remote URLs without a detectable extension (resolved by /_image at request time)', async () => {
++			const result = await renderImage({
++				src: 'https://example.com/api/avatar',
++				width: 64,
++				height: 64,
++				alt: 'Format test',
++			});
++			const params = new URL(result.src, 'http://localhost').searchParams;
++			assert.equal(params.has('f'), false);
++		});
++
+ 		it('respects explicit format', async () => {
+ 			const result = await renderImage({
+ 				src: 'https://example.com/photo.jpg',
+@@ -496,3 +532,150 @@ describe('getImage - remotePatterns', () => {
+ 		});
+ 	});
+ });
++
++describe('getImage - peekRemoteFormatForStaticEmit', () => {
++	let probedFormat: string | undefined;
++	let probeCalls = 0;
++	let probeError: Error | undefined;
++
++	// `baseService.getURL` reads `import.meta.env.BASE_URL`, which isn't set in unit tests.
++	const stubGetURL = (options: { src: string | { src: string } }) =>
++		typeof options.src === 'string' ? options.src : options.src.src;
++
++	const localServiceWithProbe = {
++		...baseService,
++		getURL: stubGetURL,
++		// `isLocalService` only checks for `transform`, so a stub is enough.
++		async transform() {
++			return { data: new Uint8Array(), format: 'webp' };
++		},
++		async getRemoteSize(_url: string) {
++			probeCalls++;
++			if (probeError) throw probeError;
++			return { format: probedFormat, width: 100, height: 100 };
++		},
++	};
++
++	const imageConfig = {
++		service: { entrypoint: 'test', config: {} },
++		domains: ['example.com'],
++		remotePatterns: [],
++		endpoint: { route: '/_image' },
++		dangerouslyProcessSVG: false,
++		responsiveStyles: false,
++	};
++
++	beforeEach(() => {
++		probedFormat = undefined;
++		probeCalls = 0;
++		probeError = undefined;
++		(globalThis as any).astroAsset = {
++			imageService: localServiceWithProbe,
++			addStaticImage: () => '/_astro/peeked.hash.png',
++		};
++	});
++
++	afterEach(() => {
++		(globalThis as any).astroAsset = undefined;
++	});
++
++	it('commits the probed format when the URL has no detectable extension', async () => {
++		probedFormat = 'png';
++		const result = await getImage(
++			{ src: 'https://example.com/api/avatar', width: 64, height: 64, alt: 'no-ext' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 1);
++		// Raster sources default to webp.
++		assert.equal(result.options.format, 'webp');
++	});
++
++	it('preserves svg through the peek so SVGs do not get rasterized', async () => {
++		probedFormat = 'svg';
++		const result = await getImage(
++			{ src: 'https://example.com/api/avatar', width: 64, height: 64, alt: 'svg-peek' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 1);
++		assert.equal(result.options.format, 'svg');
++	});
++
++	it('does not peek when the URL extension already resolved a format', async () => {
++		probedFormat = 'svg';
++		const result = await getImage(
++			{ src: 'https://example.com/photo.jpg', width: 64, height: 64, alt: 'has-ext' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 0);
++		assert.equal(result.options.format, 'webp');
++	});
++
++	it('does not peek when the caller already set an explicit format', async () => {
++		probedFormat = 'svg';
++		const result = await getImage(
++			{
++				src: 'https://example.com/api/avatar',
++				width: 64,
++				height: 64,
++				alt: 'explicit',
++				format: 'png',
++			},
++			imageConfig,
++		);
++		assert.equal(probeCalls, 0);
++		assert.equal(result.options.format, 'png');
++	});
++
++	it('does not peek when not running at build time (no addStaticImage)', async () => {
++		probedFormat = 'svg';
++		(globalThis as any).astroAsset = { imageService: localServiceWithProbe };
++		const result = await getImage(
++			{ src: 'https://example.com/api/avatar', width: 64, height: 64, alt: 'ssr' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 0);
++		assert.equal(result.options.format, undefined);
++	});
++
++	it('does not peek when the remote URL is not allowed', async () => {
++		probedFormat = 'svg';
++		const result = await getImage(
++			{ src: 'https://untrusted.com/api/avatar', width: 64, height: 64, alt: 'blocked' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 0);
++		assert.equal(result.options.format, undefined);
++	});
++
++	it('does not peek for external (non-local) services', async () => {
++		// External service has no `transform`, so `isLocalService` returns false.
++		const externalService = {
++			...baseService,
++			getURL: stubGetURL,
++			async getRemoteSize(_url: string) {
++				probeCalls++;
++				return { format: 'svg', width: 100, height: 100 };
++			},
++		};
++		(globalThis as any).astroAsset = {
++			imageService: externalService,
++			addStaticImage: () => '/_astro/peeked.hash.png',
++		};
++		const result = await getImage(
++			{ src: 'https://example.com/api/avatar', width: 64, height: 64, alt: 'external' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 0);
++		assert.equal(result.options.format, undefined);
++	});
++
++	it('falls back to undefined when the probe throws', async () => {
++		probeError = new Error('network down');
++		const result = await getImage(
++			{ src: 'https://example.com/api/avatar', width: 64, height: 64, alt: 'probe-fail' },
++			imageConfig,
++		);
++		assert.equal(probeCalls, 1);
++		assert.equal(result.options.format, undefined);
++	});
++});
+diff --git a/packages/astro/test/units/assets/image-service.test.ts b/packages/astro/test/units/assets/image-service.test.ts
+index d285ab71b399..2634c9eb5124 100644
+--- a/packages/astro/test/units/assets/image-service.test.ts
++++ b/packages/astro/test/units/assets/image-service.test.ts
+@@ -195,4 +195,47 @@ describe('sharp image service SVG handling', async () => {
+ 		);
+ 		assert.equal(format, 'png');
+ 	});
++
++	it('passes SVG buffers through when format is undefined (ambiguous remote URL via SSR)', async () => {
++		const { data, format } = await sharpService.transform(
++			SVG_BUFFER,
++			{ src: 'https://example.com/api/icon' } as any,
++			makeConfig(),
++		);
++		assert.equal(format, 'svg');
++		assert.equal(data, SVG_BUFFER);
++	});
++
++	// Regression: SVG validator only scans first 1KB, so a long XML comment can hide `<svg>`
++	// and reach libvips/librsvg unclassified. The fail-closed check is what blocks this.
++	it('rejects SVG buffers that hide `<svg>` past the detector window', async () => {
++		const padding = '<!--' + 'x'.repeat(1100) + '-->';
++		const PADDED_SVG = new TextEncoder().encode(
++			padding +
++				'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
++		);
++		await assert.rejects(
++			sharpService.transform(
++				PADDED_SVG,
++				{ src: 'https://example.com/icon', format: 'webp' } as any,
++				makeConfig(),
++			),
++			/Could not process image metadata/,
++		);
++	});
++
++	it('still accepts comment-padded SVGs when the user opts into format="svg"', async () => {
++		const padding = '<!--' + 'x'.repeat(1100) + '-->';
++		const PADDED_SVG = new TextEncoder().encode(
++			padding +
++				'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
++		);
++		const { data, format } = await sharpService.transform(
++			PADDED_SVG,
++			{ src: 'https://example.com/icon', format: 'svg' } as any,
++			makeConfig(),
++		);
++		assert.equal(format, 'svg');
++		assert.equal(data, PADDED_SVG);
++	});
+ });
+diff --git a/packages/astro/test/units/mocks.ts b/packages/astro/test/units/mocks.ts
+index 829e9d825113..e999effcb072 100644
+--- a/packages/astro/test/units/mocks.ts
++++ b/packages/astro/test/units/mocks.ts
+@@ -338,6 +338,8 @@ export function installImageService(overrides: ImageServiceOverrides = {}): {
+ 		domains: string[];
+ 		remotePatterns: { hostname?: string; pathname?: string; protocol?: string; port?: string }[];
+ 		endpoint: { route: string };
++		dangerouslyProcessSVG: boolean;
++		responsiveStyles: boolean;
+ 	};
+ 	cleanup: () => void;
+ } {
+@@ -348,6 +350,8 @@ export function installImageService(overrides: ImageServiceOverrides = {}): {
+ 		domains: overrides.domains ?? [],
+ 		remotePatterns: overrides.remotePatterns ?? [],
+ 		endpoint: { route: '/_image' },
++		dangerouslyProcessSVG: false,
++		responsiveStyles: false,
+ 	};
+ 
+ 	return {

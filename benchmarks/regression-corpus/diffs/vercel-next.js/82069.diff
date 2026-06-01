@@ -1,0 +1,1070 @@
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index cfddda3288cb..d8c90e1ea249 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -195,6 +195,7 @@ import {
+ import { isReactLargeShellError } from './react-large-shell-error'
+ import type { GlobalErrorComponent } from '../../client/components/builtin/global-error'
+ import { normalizeConventionFilePath } from './segment-explorer-path'
++import { getRequestMeta } from '../request-meta'
+ 
+ export type GetDynamicParamFromSegment = (
+   // [slug] / [[slug]] / [...slug]
+@@ -627,13 +628,17 @@ async function generateDynamicFlightRenderResult(
+     const [resolveValidation, validationOutlet] = createValidationOutlet()
+     RSCPayload._validation = validationOutlet
+ 
++    const devValidatingFallbackParams =
++      getRequestMeta(req, 'devValidatingFallbackParams') || null
++
+     spawnDynamicValidationInDev(
+       resolveValidation,
+       ctx.componentMod.tree,
+       ctx,
+       false,
+       ctx.clientReferenceManifest,
+-      requestStore
++      requestStore,
++      devValidatingFallbackParams
+     )
+   }
+ 
+@@ -1947,13 +1952,17 @@ async function renderToStream(
+         }
+       )
+ 
++      const devValidatingFallbackParams =
++        getRequestMeta(req, 'devValidatingFallbackParams') || null
++
+       spawnDynamicValidationInDev(
+         resolveValidation,
+         tree,
+         ctx,
+         res.statusCode === 404,
+         clientReferenceManifest,
+-        requestStore
++        requestStore,
++        devValidatingFallbackParams
+       )
+ 
+       reactServerResult = new ReactServerResult(reactServerStream)
+@@ -2304,7 +2313,8 @@ async function spawnDynamicValidationInDev(
+   ctx: AppRenderContext,
+   isNotFound: boolean,
+   clientReferenceManifest: NonNullable<RenderOpts['clientReferenceManifest']>,
+-  requestStore: RequestStore
++  requestStore: RequestStore,
++  fallbackRouteParams: FallbackRouteParams | null
+ ): Promise<void> {
+   const {
+     componentMod: ComponentMod,
+@@ -2369,7 +2379,7 @@ async function spawnDynamicValidationInDev(
+     type: 'prerender',
+     phase: 'render',
+     rootParams,
+-    fallbackRouteParams: null,
++    fallbackRouteParams,
+     implicitTags,
+     renderSignal: initialServerRenderController.signal,
+     controller: initialServerPrerenderController,
+@@ -2501,7 +2511,7 @@ async function spawnDynamicValidationInDev(
+       type: 'prerender-client',
+       phase: 'render',
+       rootParams,
+-      fallbackRouteParams: null,
++      fallbackRouteParams,
+       implicitTags,
+       renderSignal: initialClientRenderController.signal,
+       controller: initialClientPrerenderController,
+@@ -2610,7 +2620,7 @@ async function spawnDynamicValidationInDev(
+     type: 'prerender',
+     phase: 'render',
+     rootParams,
+-    fallbackRouteParams: null,
++    fallbackRouteParams,
+     implicitTags,
+     renderSignal: finalServerRenderController.signal,
+     controller: finalServerReactController,
+@@ -2698,7 +2708,7 @@ async function spawnDynamicValidationInDev(
+     type: 'prerender-client',
+     phase: 'render',
+     rootParams,
+-    fallbackRouteParams: null,
++    fallbackRouteParams,
+     implicitTags,
+     renderSignal: finalClientRenderController.signal,
+     controller: finalClientReactController,
+diff --git a/packages/next/src/server/base-server.ts b/packages/next/src/server/base-server.ts
+index d4d2dfab6f47..7dbf32ac0434 100644
+--- a/packages/next/src/server/base-server.ts
++++ b/packages/next/src/server/base-server.ts
+@@ -141,6 +141,7 @@ import { fixMojibake } from './lib/fix-mojibake'
+ import { computeCacheBustingSearchParam } from '../shared/lib/router/utils/cache-busting-search-param'
+ import { setCacheBustingSearchParamWithHash } from '../client/components/router-reducer/set-cache-busting-search-param'
+ import type { CacheControl } from './lib/cache-control'
++import type { PrerenderedRoute } from '../build/static-paths/types'
+ 
+ export type FindComponentsResult = {
+   components: LoadComponentsReturnType
+@@ -1910,6 +1911,7 @@ export default abstract class Server<
+     isAppPath: boolean
+   }): Promise<{
+     staticPaths?: string[]
++    prerenderedRoutes?: PrerenderedRoute[]
+     fallbackMode?: FallbackMode
+   }> {
+     // Read whether or not fallback should exist from the manifest.
+@@ -2257,13 +2259,42 @@ export default abstract class Server<
+       isDynamicRoute(pathname) &&
+       (components.getStaticPaths || isAppPath)
+     ) {
+-      await this.getStaticPaths({
++      const pathsResults = await this.getStaticPaths({
+         pathname,
+         urlPathname,
+         requestHeaders: req.headers,
+         page: components.page,
+         isAppPath,
+       })
++      if (isAppPath && this.nextConfig.experimental.cacheComponents) {
++        if (pathsResults.prerenderedRoutes?.length) {
++          let smallestFallbackRouteParams = null
++          for (const route of pathsResults.prerenderedRoutes) {
++            const fallbackRouteParams = route.fallbackRouteParams
++            if (!fallbackRouteParams || fallbackRouteParams.length === 0) {
++              // There are no fallback route params so we don't need to continue
++              smallestFallbackRouteParams = null
++              break
++            }
++            if (
++              smallestFallbackRouteParams === null ||
++              fallbackRouteParams.length < smallestFallbackRouteParams.length
++            ) {
++              smallestFallbackRouteParams = fallbackRouteParams
++            }
++          }
++          if (smallestFallbackRouteParams) {
++            const devValidatingFallbackParams = new Map<string, string>(
++              smallestFallbackRouteParams.map((v) => [v, ''])
++            )
++            addRequestMeta(
++              req,
++              'devValidatingFallbackParams',
++              devValidatingFallbackParams
++            )
++          }
++        }
++      }
+     }
+ 
+     // An OPTIONS request to a page handler is invalid.
+diff --git a/packages/next/src/server/dev/next-dev-server.ts b/packages/next/src/server/dev/next-dev-server.ts
+index e4ad95a12ce6..5ddbbe53d82d 100644
+--- a/packages/next/src/server/dev/next-dev-server.ts
++++ b/packages/next/src/server/dev/next-dev-server.ts
+@@ -76,6 +76,7 @@ import {
+ } from '../lib/router-utils/instrumentation-globals.external'
+ import type { PrerenderManifest } from '../../build'
+ import { getRouteRegex } from '../../shared/lib/router/utils/route-regex'
++import type { PrerenderedRoute } from '../../build/static-paths/types'
+ 
+ // Load ReactDevOverlay only when needed
+ let PagesDevOverlayBridgeImpl: PagesDevOverlayBridgeType
+@@ -795,6 +796,7 @@ export default class DevServer extends Server {
+     page: string
+     isAppPath: boolean
+   }): Promise<{
++    prerenderedRoutes?: PrerenderedRoute[]
+     staticPaths?: string[]
+     fallbackMode?: FallbackMode
+   }> {
+@@ -855,18 +857,19 @@ export default class DevServer extends Server {
+       []
+     )
+       .then(async (res) => {
+-        const { prerenderedRoutes: staticPaths, fallbackMode: fallback } =
+-          res.value
++        const { prerenderedRoutes, fallbackMode: fallback } = res.value
+ 
+         if (isAppPath) {
+           if (this.nextConfig.output === 'export') {
+-            if (!staticPaths) {
++            if (!prerenderedRoutes) {
+               throw new Error(
+                 `Page "${page}" is missing exported function "generateStaticParams()", which is required with "output: export" config.`
+               )
+             }
+ 
+-            if (!staticPaths.some((item) => item.pathname === urlPathname)) {
++            if (
++              !prerenderedRoutes.some((item) => item.pathname === urlPathname)
++            ) {
+               throw new Error(
+                 `Page "${page}" is missing param "${pathname}" in "generateStaticParams()", which is required with "output: export" config.`
+               )
+@@ -888,9 +891,11 @@ export default class DevServer extends Server {
+ 
+         const value: {
+           staticPaths: string[] | undefined
++          prerenderedRoutes: PrerenderedRoute[] | undefined
+           fallbackMode: FallbackMode | undefined
+         } = {
+-          staticPaths: staticPaths?.map((route) => route.pathname),
++          staticPaths: prerenderedRoutes?.map((route) => route.pathname),
++          prerenderedRoutes,
+           fallbackMode: fallback,
+         }
+ 
+@@ -898,7 +903,7 @@ export default class DevServer extends Server {
+           res.value?.fallbackMode !== undefined &&
+           // This matches the hasGenerateStaticParams logic
+           // we do during build
+-          (!isAppPath || (staticPaths && staticPaths.length > 0))
++          (!isAppPath || (prerenderedRoutes && prerenderedRoutes.length > 0))
+         ) {
+           // we write the static paths to partial manifest for
+           // fallback handling inside of entry handler's
+diff --git a/packages/next/src/server/request-meta.ts b/packages/next/src/server/request-meta.ts
+index 3eb892264f52..155ce9184238 100644
+--- a/packages/next/src/server/request-meta.ts
++++ b/packages/next/src/server/request-meta.ts
+@@ -231,6 +231,11 @@ export interface RequestMeta {
+    * specific flags in future)
+    */
+   minimalMode?: boolean
++
++  /**
++   * DEV only: The fallback params that should be used when validating prerenders during dev
++   */
++  devValidatingFallbackParams?: Map<string, string>
+ }
+ 
+ /**
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/layout.tsx
+new file mode 100644
+index 000000000000..4c7385a9916f
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/layout.tsx
+@@ -0,0 +1,11 @@
++export function generateStaticParams() {
++  return [{ top: 'prerendered' }]
++}
++
++export default async function Layout({
++  children,
++}: {
++  children: React.ReactNode
++}) {
++  return children
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/unwrapped/[bottom]/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/unwrapped/[bottom]/page.tsx
+new file mode 100644
+index 000000000000..e036b7e61003
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/unwrapped/[bottom]/page.tsx
+@@ -0,0 +1,13 @@
++export function generateStaticParams() {
++  return [{ bottom: 'prerendered' }]
++}
++
++export default async function Page(props: {
++  params: Promise<{ top: string; bottom: string }>
++}) {
++  return (
++    <p>
++      Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
++    </p>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/unwrapped/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/unwrapped/layout.tsx
+new file mode 100644
+index 000000000000..381617e72245
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/unwrapped/layout.tsx
+@@ -0,0 +1,10 @@
++export default async function Layout({
++  children,
++  params,
++}: {
++  children: React.ReactNode
++  params: Promise<{ top: string }>
++}) {
++  await params
++  return children
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/wrapped/[bottom]/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/wrapped/[bottom]/page.tsx
+new file mode 100644
+index 000000000000..e036b7e61003
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/wrapped/[bottom]/page.tsx
+@@ -0,0 +1,13 @@
++export function generateStaticParams() {
++  return [{ bottom: 'prerendered' }]
++}
++
++export default async function Page(props: {
++  params: Promise<{ top: string; bottom: string }>
++}) {
++  return (
++    <p>
++      Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
++    </p>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/wrapped/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/wrapped/layout.tsx
+new file mode 100644
+index 000000000000..d916c38b11ba
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/complete/[top]/wrapped/layout.tsx
+@@ -0,0 +1,12 @@
++import { Suspense } from 'react'
++
++export default async function Layout({
++  children,
++  params,
++}: {
++  children: React.ReactNode
++  params: Promise<{ top: string }>
++}) {
++  await params
++  return <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/favicon.ico b/test/development/app-dir/cache-components-dev-fallback-validation/app/favicon.ico
+new file mode 100644
+index 000000000000..4965832f2c9b
+Binary files /dev/null and b/test/development/app-dir/cache-components-dev-fallback-validation/app/favicon.ico differ
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/layout.tsx
+new file mode 100644
+index 000000000000..1f35a8619bf1
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/layout.tsx
+@@ -0,0 +1,172 @@
++export default function Root({ children }: { children: React.ReactNode }) {
++  return (
++    <html>
++      <body>
++        {children}
++        <main>
++          <h1>Validating Fallback Shells in Dev</h1>
++          <p>
++            This App is made up of a number of sub-pages which exercise the
++            Cache Components validation performed in dev to ensure it matches up
++            with the validation performed during the build.
++          </p>
++          <p>
++            When Building routes with dynamic params we validate that the
++            prerender produces an acceptable static shell. If we do not have a
++            complete set of params for any given page we will use a special kind
++            of param called a fallback param which suspends as dynamic and is
++            required to be wrapped in Suspense if accessed so we can ensure
++            there is still an acceptable shell even when we don't know about
++            specific values for that param.
++          </p>
++          <p>
++            In Dev, our validation needs to match and the way we do this is we
++            look at the current route and determine the most specific set of
++            params that would be availalbe during the build and then use the
++            remaining fallback params for the validation render. This way if you
++            see an error during the build you should be able to debug that error
++            during development too.
++          </p>
++          <p>
++            Click on some of the sample links for the routes
++            '.../[top]/.../[bottom]'
++          </p>
++          <section>
++            <h2>Complete Params</h2>
++            <p>
++              These links are for routes where the build has a complete set of
++              params to prerender with. We don't expect these to fail at all
++              during validation because nothing is dynamic on these pages other
++              than possible param access
++            </p>
++            <h3>Suspense between [top] and [bottom]</h3>
++            <ul>
++              <li>
++                <a href="/complete/prerendered/wrapped/prerendered">
++                  /complete/prerendered/wrapped/prerendered
++                </a>
++              </li>
++              <li>
++                <a href="/complete/prerendered/wrapped/novel">
++                  /complete/prerendered/wrapped/novel
++                </a>
++              </li>
++              <li>
++                <a href="/complete/novel/wrapped/novel">
++                  /complete/novel/wrapped/novel
++                </a>
++              </li>
++            </ul>
++            <h3>No Suspense</h3>
++            <ul>
++              <li>
++                <a href="/complete/prerendered/unwrapped/prerendered">
++                  /complete/prerendered/unwrapped/prerendered
++                </a>
++              </li>
++              <li>
++                <a href="/complete/prerendered/unwrapped/novel">
++                  /complete/prerendered/unwrapped/novel
++                </a>
++              </li>
++              <li>
++                <a href="/complete/novel/unwrapped/novel">
++                  /complete/novel/unwrapped/novel
++                </a>
++              </li>
++            </ul>
++          </section>
++          <section>
++            <h2>Partial Params</h2>
++            <p>
++              These links are for routes where the top param is prerendered
++              during the build but the bottom param is not. We expect that if
++              you attempt to access the bottom param without a wrapping Suspense
++              boundary it will fail validation
++            </p>
++            <h3>Suspense between [top] and [bottom]</h3>
++            <ul>
++              <li>
++                <a href="/partial/prerendered/wrapped/prerendered">
++                  /partial/prerendered/wrapped/prerendered
++                </a>
++              </li>
++              <li>
++                <a href="/partial/prerendered/wrapped/novel">
++                  /partial/prerendered/wrapped/novel
++                </a>
++              </li>
++              <li>
++                <a href="/partial/novel/wrapped/novel">
++                  /partial/novel/wrapped/novel
++                </a>
++              </li>
++            </ul>
++            <h3>No Suspense</h3>
++            <ul>
++              <li>
++                <a href="/partial/prerendered/unwrapped/prerendered">
++                  /partial/prerendered/unwrapped/prerendered
++                </a>
++              </li>
++              <li>
++                <a href="/partial/prerendered/unwrapped/novel">
++                  /partial/prerendered/unwrapped/novel
++                </a>
++              </li>
++              <li>
++                <a href="/partial/novel/unwrapped/novel">
++                  /partial/novel/unwrapped/novel
++                </a>
++              </li>
++            </ul>
++          </section>
++          <section>
++            <h2>No Params</h2>
++            <p>
++              These links are for routes where there are no params provided
++              during the build at all. We expect these to fail validation if you
++              attempt to access the params above a Suspense boundary.
++            </p>
++            <h3>Suspense between [top] and [bottom]</h3>
++            <ul>
++              <li>
++                <a href="/none/prerendered/wrapped/prerendered">
++                  /none/prerendered/wrapped/prerendered
++                </a>
++              </li>
++              <li>
++                <a href="/none/prerendered/wrapped/novel">
++                  /none/prerendered/wrapped/novel
++                </a>
++              </li>
++              <li>
++                <a href="/none/novel/wrapped/novel">
++                  /none/novel/wrapped/novel
++                </a>
++              </li>
++            </ul>
++            <h3>No Suspense</h3>
++            <ul>
++              <li>
++                <a href="/none/prerendered/unwrapped/prerendered">
++                  /none/prerendered/unwrapped/prerendered
++                </a>
++              </li>
++              <li>
++                <a href="/none/prerendered/unwrapped/novel">
++                  /none/prerendered/unwrapped/novel
++                </a>
++              </li>
++              <li>
++                <a href="/none/novel/unwrapped/novel">
++                  /none/novel/unwrapped/novel
++                </a>
++              </li>
++            </ul>
++          </section>
++        </main>
++      </body>
++    </html>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/layout.tsx
+new file mode 100644
+index 000000000000..cd3c528dcf79
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/layout.tsx
+@@ -0,0 +1,7 @@
++export default async function Layout({
++  children,
++}: {
++  children: React.ReactNode
++}) {
++  return children
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/unwrapped/[bottom]/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/unwrapped/[bottom]/page.tsx
+new file mode 100644
+index 000000000000..7696bb9ed1cc
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/unwrapped/[bottom]/page.tsx
+@@ -0,0 +1,9 @@
++export default async function Page(props: {
++  params: Promise<{ top: string; bottom: string }>
++}) {
++  return (
++    <p>
++      Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
++    </p>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/unwrapped/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/unwrapped/layout.tsx
+new file mode 100644
+index 000000000000..381617e72245
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/unwrapped/layout.tsx
+@@ -0,0 +1,10 @@
++export default async function Layout({
++  children,
++  params,
++}: {
++  children: React.ReactNode
++  params: Promise<{ top: string }>
++}) {
++  await params
++  return children
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/wrapped/[bottom]/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/wrapped/[bottom]/page.tsx
+new file mode 100644
+index 000000000000..7696bb9ed1cc
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/wrapped/[bottom]/page.tsx
+@@ -0,0 +1,9 @@
++export default async function Page(props: {
++  params: Promise<{ top: string; bottom: string }>
++}) {
++  return (
++    <p>
++      Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
++    </p>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/wrapped/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/wrapped/layout.tsx
+new file mode 100644
+index 000000000000..d916c38b11ba
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/none/[top]/wrapped/layout.tsx
+@@ -0,0 +1,12 @@
++import { Suspense } from 'react'
++
++export default async function Layout({
++  children,
++  params,
++}: {
++  children: React.ReactNode
++  params: Promise<{ top: string }>
++}) {
++  await params
++  return <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/page.tsx
+new file mode 100644
+index 000000000000..c17431379f96
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/page.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return null
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/layout.tsx
+new file mode 100644
+index 000000000000..4c7385a9916f
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/layout.tsx
+@@ -0,0 +1,11 @@
++export function generateStaticParams() {
++  return [{ top: 'prerendered' }]
++}
++
++export default async function Layout({
++  children,
++}: {
++  children: React.ReactNode
++}) {
++  return children
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/unwrapped/[bottom]/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/unwrapped/[bottom]/page.tsx
+new file mode 100644
+index 000000000000..7696bb9ed1cc
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/unwrapped/[bottom]/page.tsx
+@@ -0,0 +1,9 @@
++export default async function Page(props: {
++  params: Promise<{ top: string; bottom: string }>
++}) {
++  return (
++    <p>
++      Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
++    </p>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/unwrapped/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/unwrapped/layout.tsx
+new file mode 100644
+index 000000000000..381617e72245
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/unwrapped/layout.tsx
+@@ -0,0 +1,10 @@
++export default async function Layout({
++  children,
++  params,
++}: {
++  children: React.ReactNode
++  params: Promise<{ top: string }>
++}) {
++  await params
++  return children
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/wrapped/[bottom]/page.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/wrapped/[bottom]/page.tsx
+new file mode 100644
+index 000000000000..7696bb9ed1cc
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/wrapped/[bottom]/page.tsx
+@@ -0,0 +1,9 @@
++export default async function Page(props: {
++  params: Promise<{ top: string; bottom: string }>
++}) {
++  return (
++    <p>
++      Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
++    </p>
++  )
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/wrapped/layout.tsx b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/wrapped/layout.tsx
+new file mode 100644
+index 000000000000..d916c38b11ba
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/app/partial/[top]/wrapped/layout.tsx
+@@ -0,0 +1,12 @@
++import { Suspense } from 'react'
++
++export default async function Layout({
++  children,
++  params,
++}: {
++  children: React.ReactNode
++  params: Promise<{ top: string }>
++}) {
++  await params
++  return <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
++}
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts b/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts
+new file mode 100644
+index 000000000000..4bfe97ebf0bd
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts
+@@ -0,0 +1,352 @@
++import { nextTestSetup } from 'e2e-utils'
++import { assertNoRedbox } from 'next-test-utils'
++
++describe('Cache Components Fallback Validation', () => {
++  const { isTurbopack, next } = nextTestSetup({
++    files: __dirname,
++  })
++
++  it('should not warn about missing Suspense when accessing params if static params are completely known at build time', async () => {
++    // when the params are complete we don't expect to see any errors await params regarless of where there
++    // are Suspense boundaries.
++    const browser = await next.browser(
++      '/complete/prerendered/wrapped/prerendered'
++    )
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(`${next.url}/complete/prerendered/wrapped/novel`)
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(`${next.url}/complete/novel/wrapped/novel`)
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(
++      `${next.url}/complete/prerendered/unwrapped/prerendered`
++    )
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(`${next.url}/complete/prerendered/unwrapped/novel`)
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(`${next.url}/complete/novel/unwrapped/novel`)
++    await assertNoRedbox(browser)
++  })
++
++  it('should warn about missing Suspense when accessing params if static params are partially known at build time', async () => {
++    // when the params are partially complete we don't expect to see any errors awaiting the params that are known
++    // but do expect errors awaiting the params that are not known if not inside a Suspense boundary.
++    const browser = await next.browser(
++      '/partial/prerendered/wrapped/prerendered'
++    )
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(`${next.url}/partial/prerendered/wrapped/novel`)
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(`${next.url}/partial/novel/wrapped/novel`)
++    await assertNoRedbox(browser)
++
++    await browser.loadPage(
++      `${next.url}/partial/prerendered/unwrapped/prerendered`
++    )
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/partial/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31) @ Page
++       > 1 | export default async function Page(props: {
++           |                               ^",
++         "stack": [
++           "Page app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/partial/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31) @ Page
++       > 1 | export default async function Page(props: {
++           |                               ^",
++         "stack": [
++           "Page app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/partial/prerendered/unwrapped/novel`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/partial/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31) @ Page
++       > 1 | export default async function Page(props: {
++           |                               ^",
++         "stack": [
++           "Page app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/partial/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31) @ Page
++       > 1 | export default async function Page(props: {
++           |                               ^",
++         "stack": [
++           "Page app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/partial/novel/unwrapped/novel`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/partial/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31) @ Page
++       > 1 | export default async function Page(props: {
++           |                               ^",
++         "stack": [
++           "Page app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/partial/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31) @ Page
++       > 1 | export default async function Page(props: {
++           |                               ^",
++         "stack": [
++           "Page app/partial/[top]/unwrapped/[bottom]/page.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++  })
++
++  it('should warn about missing Suspense when accessing params if static params are entirely missing at build time', async () => {
++    // when the params are partially complete we don't expect to see any errors awaiting the params that are known
++    // but do expect errors awaiting the params that are not known if not inside a Suspense boundary.
++    const browser = await next.browser('/none/prerendered/wrapped/prerendered')
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/wrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/wrapped/layout.tsx (3:31) @ Layout
++       > 3 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/wrapped/layout.tsx (3:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/wrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/wrapped/layout.tsx (3:31) @ Layout
++       > 3 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/wrapped/layout.tsx (3:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/none/prerendered/wrapped/novel`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/wrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/wrapped/layout.tsx (3:31) @ Layout
++       > 3 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/wrapped/layout.tsx (3:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/wrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/wrapped/layout.tsx (3:31) @ Layout
++       > 3 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/wrapped/layout.tsx (3:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/none/novel/wrapped/novel`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/wrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/wrapped/layout.tsx (3:31) @ Layout
++       > 3 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/wrapped/layout.tsx (3:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/wrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/wrapped/layout.tsx (3:31) @ Layout
++       > 3 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/wrapped/layout.tsx (3:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/none/prerendered/unwrapped/prerendered`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/unwrapped/layout.tsx (1:31) @ Layout
++       > 1 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/unwrapped/layout.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/unwrapped/layout.tsx (1:31) @ Layout
++       > 1 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/unwrapped/layout.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/none/prerendered/unwrapped/novel`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/unwrapped/layout.tsx (1:31) @ Layout
++       > 1 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/unwrapped/layout.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/unwrapped/layout.tsx (1:31) @ Layout
++       > 1 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/unwrapped/layout.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++
++    await browser.loadPage(`${next.url}/none/novel/unwrapped/novel`)
++    if (isTurbopack) {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/unwrapped/layout.tsx (1:31) @ Layout
++       > 1 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/unwrapped/layout.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    } else {
++      await expect(browser).toDisplayCollapsedRedbox(`
++       {
++         "description": "Route "/none/[top]/unwrapped/[bottom]": A component accessed data, headers, params, searchParams, or a short-lived cache without a Suspense boundary nor a "use cache" above it. See more info: https://nextjs.org/docs/messages/next-prerender-missing-suspense",
++         "environmentLabel": "Server",
++         "label": "Console Error",
++         "source": "app/none/[top]/unwrapped/layout.tsx (1:31) @ Layout
++       > 1 | export default async function Layout({
++           |                               ^",
++         "stack": [
++           "Layout app/none/[top]/unwrapped/layout.tsx (1:31)",
++           "LogSafely <anonymous>",
++         ],
++       }
++      `)
++    }
++  })
++})
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/next.config.js b/test/development/app-dir/cache-components-dev-fallback-validation/next.config.js
+new file mode 100644
+index 000000000000..30a826fdacc5
+--- /dev/null
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/next.config.js
+@@ -0,0 +1,10 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {
++  experimental: {
++    cacheComponents: true,
++  },
++}
++
++module.exports = nextConfig
+diff --git a/test/e2e/app-dir/hello-world/next.config.js b/test/e2e/app-dir/hello-world/next.config.js
+index 807126e4cf0b..30a826fdacc5 100644
+--- a/test/e2e/app-dir/hello-world/next.config.js
++++ b/test/e2e/app-dir/hello-world/next.config.js
+@@ -1,6 +1,10 @@
+ /**
+  * @type {import('next').NextConfig}
+  */
+-const nextConfig = {}
++const nextConfig = {
++  experimental: {
++    cacheComponents: true,
++  },
++}
+ 
+ module.exports = nextConfig

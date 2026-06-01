@@ -1,0 +1,4614 @@
+diff --git a/.github/workflows/test-template.yml b/.github/workflows/test-template.yml
+index 68de3fa3aa3b..175426c7c17c 100644
+--- a/.github/workflows/test-template.yml
++++ b/.github/workflows/test-template.yml
+@@ -396,97 +396,6 @@ jobs:
+           key: ${{ secrets.BUILDPULSE_ACCESS_KEY_ID }}
+           secret: ${{ secrets.BUILDPULSE_SECRET_ACCESS_KEY }}
+ 
+-  #
+-  # CLIENT (memory tests)
+-  #
+-  client-memory:
+-    name: Client (memory tests) [v${{ matrix.node }}]
+-    timeout-minutes: ${{ inputs.jobTimeout }}
+-    runs-on: ubuntu-latest
+-    if: |
+-      contains(inputs.jobsToRun, '-all-') ||
+-      contains(inputs.jobsToRun, '-client-')
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        queryEngine: [client]
+-        node: ['20.19.0', '22.12.0', '24']
+-    steps:
+-      - uses: actions/checkout@v6
+-
+-      - name: Start Docker Compose Services
+-        uses: nick-fields/retry@v3
+-        with:
+-          timeout_minutes: 10
+-          max_attempts: 5
+-          retry_wait_seconds: 120
+-          command: docker compose -f docker/docker-compose.yml up --wait --detach postgres
+-
+-      - name: Install & build
+-        uses: ./.github/actions/setup
+-        with:
+-          node-version: ${{ matrix.node }}
+-          engine-hash: ${{ inputs.engineHash }}
+-          skip-tsc: true
+-
+-      - run: pnpm run test:memory
+-        working-directory: packages/client
+-
+-      - uses: actions/github-script@v8
+-        if: ${{ failure() && github.event_name == 'pull_request' }}
+-        id: upload-report
+-        env:
+-          NODE_VERSION: ${{ matrix.node }}
+-        with:
+-          github-token: ${{ secrets.BOT_TOKEN }}
+-          script: |
+-            const fs = require('fs')
+-            const nodeVersion = process.env.NODE_VERSION
+-            const reportPath = `client-memory-test/${context.issue.number}/${context.sha}.${nodeVersion}.html`
+-            const url = `https://prisma.github.io/ci-reports/${reportPath}`
+-            const localReport = './packages/client/tests/memory/memory-report.html'
+-            if (fs.existsSync(localReport)) {
+-              await github.rest.repos.createOrUpdateFileContents({
+-                owner: 'prisma',
+-                repo: 'ci-reports',
+-                branch: 'gh-pages',
+-                path: reportPath,
+-                message: `Add memory results for PR ${context.issue.number}`,
+-                content: fs.readFileSync(localReport, 'base64'),
+-              });
+-              core.setOutput('url', url);
+-            }
+-      - name: Find report comment
+-        uses: peter-evans/find-comment@v4
+-        id: fc
+-        if: ${{ always() && github.event_name == 'pull_request' }}
+-        with:
+-          issue-number: ${{ github.event.pull_request.number }}
+-          comment-author: 'github-actions[bot]'
+-          body-includes: 'Client memory tests, node ${{ matrix.node}}, ${{ matrix.queryEngine }}:'
+-
+-      - name: Create or update remote comment (failure)
+-        uses: peter-evans/create-or-update-comment@v5
+-        if: ${{ failure() && steps.upload-report.outputs.url }}
+-        with:
+-          comment-id: ${{ steps.fc.outputs.comment-id }}
+-          issue-number: ${{ github.event.pull_request.number }}
+-          body: |
+-            Client memory tests, node ${{ matrix.node}}, ${{ matrix.queryEngine }}:
+-            ❌ Failure, [see report](${{ steps.upload-report.outputs.url }}).
+-          edit-mode: replace
+-
+-      - name: Create or update remote comment (success)
+-        uses: peter-evans/create-or-update-comment@v5
+-        if: ${{ success() && steps.fc.outputs.comment-id != '' }}
+-        with:
+-          comment-id: ${{ steps.fc.outputs.comment-id }}
+-          issue-number: ${{ github.event.pull_request.number }}
+-          body: |
+-            Client memory tests, node ${{ matrix.node}}, ${{ matrix.queryEngine }}:
+-            ✅ Success
+-          edit-mode: replace
+-
+   #
+   # CLIENT test:e2e
+   #
+@@ -1019,6 +928,10 @@ jobs:
+         name: 'adapter-neon'
+         working-directory: packages/adapter-neon
+ 
++      - run: pnpm run test
++        name: 'adapter-ppg'
++        working-directory: packages/adapter-ppg
++
+   #
+   # Query plan executor unit tests
+   #
+diff --git a/AGENTS.md b/AGENTS.md
+index f881bbc8fcb4..509d36d2434b 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -36,6 +36,8 @@
+   - `QueryInterpreter` class in `packages/client-engine-runtime/src/interpreter/query-interpreter.ts` executes query plans against `SqlQueryable` (driver adapter interface).
+   - Query flow: `PrismaClient` → `ClientEngine.request()` → query compiler → `executor.execute()` → `QueryInterpreter.run()` → driver adapter.
+   - `ExecutePlanParams` interface in `packages/client/src/runtime/core/engines/client/Executor.ts` defines what's passed through the execution chain.
++  - Fluent API `dataPath` is built in `packages/client/src/runtime/core/model/applyFluent.ts` by appending `['select', <relationName>]` on each hop; runtime unpacking in `packages/client/src/runtime/RequestHandler.ts` currently strips `'select'`/`'include'` segments before `deepGet`.
++  - In extension context resolution, `dataPath` should be interpreted as selector/field pairs (`select|include`, relation field). Do not strip by raw string value or relation fields literally named `select`/`include` get dropped.
+ 
+ - **Adding PrismaClient constructor options**:
+   - Runtime types: `PrismaClientOptions` in `packages/client/src/runtime/getPrismaClient.ts`.
+@@ -69,6 +71,7 @@
+   - Tests rely on fixtures under `packages/**/src/__tests__/fixtures`; many now contain `prisma.config.ts`.
+   - Default Jest/Vitest runner is invoked via `pnpm --filter @prisma/<pkg> test <pattern>`; it wraps `dotenv` and expects `.db.env`.
+     - Some packages already use Vitest, `packages/cli` uses both for different tests as it's in the process of transition, older packages still use Jest.
++  - Functional generated clients in `packages/client/tests/functional/**/.generated` import `packages/client/runtime/client.js` directly; runtime changes in `src/runtime` may need corresponding runtime bundle updates to be exercised by functional tests.
+   - Inline snapshots can be sensitive to formatting; prefer concise expectations unless the exact message matters.
+ 
+ - **Environment loading**: Prisma 7 removes automatic `.env` loading.
+diff --git a/README.md b/README.md
+index 08e6f2c4edac..9f3d2f431832 100644
+--- a/README.md
++++ b/README.md
+@@ -156,7 +156,7 @@ npx create-db --interactive
+ 
+ ### The Prisma data model
+ 
+-On this page, the focus is on the data model. You can learn more about [Data sources](https://www.prisma.io/docs/reference/tools-and-interfaces/prisma-schema/data-sources) and [Generators](https://www.prisma.io/docs/reference/tools-and-interfaces/prisma-schema/generators) on the respective docs pages.
++On this page, the focus is on the data model. You can learn more about [Data sources](https://www.prisma.io/docs/orm/prisma-schema/overview/data-sources) and [Generators](https://www.prisma.io/docs/orm/prisma-schema/overview/generators) on the respective docs pages.
+ 
+ #### Functions of Prisma models
+ 
+diff --git a/TESTING.md b/TESTING.md
+index c00a87c292fd..5f70cd35f4b5 100644
+--- a/TESTING.md
++++ b/TESTING.md
+@@ -55,7 +55,6 @@ In the `prisma/prisma` repository we have a few places where you can write tests
+ - **`client`**
+   - [`./packages/client/tests/functional/`](./packages/client/tests/functional/) - The functional test setup, current default place where to add tests, tests are fully isolated and can easily be ran on all supported databases.
+     - Check out the example test: [`./packages/client/tests/functional/_example/`](./packages/client/tests/functional/_example/)
+-  - [`./packages/client/tests/memory/`](./packages/client/tests/memory/) - Memory leaks tests
+   - [`./packages/client/src/__tests__/*.test.ts`](./packages/client/src/__tests__/) - Unit tests
+   - [`./packages/client/src/__tests__/integration/happy/**`](./packages/client/src/__tests__/integration/happy/) - Legacy integration tests for the happy path. Please, write functional tests instead.
+   - [`./packages/client/src/__tests__/integration/errors/**`](./packages/client/src/__tests__/integration/errors/) - Legacy integration tests for error cases. Please write functional tests instead.
+@@ -327,56 +326,6 @@ If JS expression, following `@ts-test-if:` evaluates to truthy value, `@ts-expec
+ inserted in its place during the generation. All parameters from the test matrix can be used within that
+ expression.
+ 
+-## Memory tests
+-
+-This suite tests client for memory leaks. It works by repeatedly running test code in a loop
+-and monitoring V8 heap usage after every iteration. If it detects that memory usage grows
+-with a rate higher than the threshold, it will report a memory leak and fail the test.
+-
+-To create a memory test you need 2 files:
+-
+-- schema, located in `tests/memory/<your-test-name>/prisma/schema.prisma` file, which will be
+-  used for setting up the database.
+-- test code, `tests/memory/<your-test-name>/test.ts`
+-
+-### Writing memory test
+-
+-Tests are created using `createMemoryTest` function:
+-
+-```ts
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-
+-void createMemoryTest({
+-  async prepare({ PrismaClient }: PrismaModule) {
+-    const client = new PrismaClient()
+-    await client.$connect()
+-    return client
+-  },
+-  async run(client) {
+-    await client.user.findMany()
+-  },
+-  async cleanup(client) {
+-    await client.$disconnect()
+-  },
+-  iterations: 1500,
+-})
+-```
+-
+-`createMemoryTest` accepts following options:
+-
+-- `prepare(prismaModule)` is used for any setup code, needed by the test. It is executed only once. Return value of this function will be passed into `run` and `cleanup` methods.
+-- `run(prepareResult)` - actual test code. It is expected that after executing this function, memory usage does not increase. This function is repeatedly executed in a loop while the test runs.
+-- `cleanup(prepareResult)` used for cleaning up any work, done in `prepare` function.
+-- `iterations` specifies the number of executions of `run` function, for which memory measurement will be done, default is 1000. On top of that, test setup also adds 100 iterations for warming up.
+-
+-### Running memory tests
+-
+-- `pnpm test:memory` for running whole test suite
+-- `pnpm test:memory <test name>` for running single test
+-
+ ## How to use custom engines
+ 
+ By default, you get the engines that are downloaded on postinstall in `@prisma/engines` thanks to `@prisma/engines-version`.
+diff --git a/packages/adapter-ppg/src/conversion.test.ts b/packages/adapter-ppg/src/conversion.test.ts
+new file mode 100644
+index 000000000000..bd70dd2c764c
+--- /dev/null
++++ b/packages/adapter-ppg/src/conversion.test.ts
+@@ -0,0 +1,163 @@
++import { describe, expect, test } from 'vitest'
++
++import { ArrayColumnType, builtinParsers, ScalarColumnType } from './conversion'
++
++function getParser(oid: number) {
++  const entry = builtinParsers.find((p) => p.oid === oid)
++  if (!entry) {
++    throw new Error(`No parser registered for OID ${oid}`)
++  }
++  return entry.parse
++}
++
++describe('conversion', () => {
++  describe('null handling in type parsers', () => {
++    test('normalize_timestamp returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.TIMESTAMP)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_timestamptz returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.TIMESTAMPTZ)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_timez returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.TIMETZ)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_money returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.MONEY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('normalize_bool returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.BOOL)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('convertBytes returns null for null input', () => {
++      const parse = getParser(ScalarColumnType.BYTEA)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++  })
++
++  describe('null handling in array type parsers', () => {
++    test('timestamp array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.TIMESTAMP_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('timestamptz array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.TIMESTAMPTZ_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('money array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.MONEY_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++
++    test('bytea array parser returns null for null input', () => {
++      const parse = getParser(ArrayColumnType.BYTEA_ARRAY)
++      expect(parse(null as unknown as string)).toBeNull()
++    })
++  })
++
++  describe('normalize_timestamp', () => {
++    const parse = getParser(ScalarColumnType.TIMESTAMP)
++
++    test('converts space separator to T and appends UTC offset', () => {
++      expect(parse('1996-12-19 16:39:57')).toBe('1996-12-19T16:39:57+00:00')
++    })
++
++    test('preserves fractional seconds', () => {
++      expect(parse('2024-01-15 08:30:00.123456')).toBe('2024-01-15T08:30:00.123456+00:00')
++    })
++
++    test('supports arrays of timestamps', () => {
++      expect(getParser(ArrayColumnType.TIMESTAMP_ARRAY)('{1996-12-19 16:39:57,2024-01-15 08:30:00}')).toEqual([
++        '1996-12-19T16:39:57+00:00',
++        '2024-01-15T08:30:00+00:00',
++      ])
++    })
++  })
++
++  describe('normalize_timestamptz', () => {
++    const parse = getParser(ScalarColumnType.TIMESTAMPTZ)
++
++    test('normalizes positive offset to UTC', () => {
++      expect(parse('1996-12-19 16:39:57+05:30')).toBe('1996-12-19T16:39:57+00:00')
++    })
++
++    test('normalizes negative offset to UTC', () => {
++      expect(parse('2024-01-15 08:30:00-08:00')).toBe('2024-01-15T08:30:00+00:00')
++    })
++
++    test('normalizes short offset format', () => {
++      expect(parse('2024-01-15 08:30:00+05')).toBe('2024-01-15T08:30:00+00:00')
++    })
++
++    test('supports arrays of timestamptz', () => {
++      expect(
++        getParser(ArrayColumnType.TIMESTAMPTZ_ARRAY)('{1996-12-19 16:39:57+05:30,2024-01-15 08:30:00-08:00}'),
++      ).toEqual(['1996-12-19T16:39:57+00:00', '2024-01-15T08:30:00+00:00'])
++    })
++  })
++
++  describe('normalize_timez', () => {
++    const parse = getParser(ScalarColumnType.TIMETZ)
++
++    test('strips timezone offset', () => {
++      expect(parse('16:39:57+05:30')).toBe('16:39:57')
++    })
++
++    test('strips negative offset', () => {
++      expect(parse('08:30:00-08:00')).toBe('08:30:00')
++    })
++  })
++
++  describe('normalize_money', () => {
++    const parse = getParser(ScalarColumnType.MONEY)
++
++    test('strips leading currency symbol', () => {
++      expect(parse('$1234.56')).toBe('1234.56')
++    })
++
++    test('supports arrays of money', () => {
++      expect(getParser(ArrayColumnType.MONEY_ARRAY)('{$1234.56,$7890.12}')).toEqual(['1234.56', '7890.12'])
++    })
++  })
++
++  describe('normalize_bool', () => {
++    const parse = getParser(ScalarColumnType.BOOL)
++
++    test('converts f to false', () => {
++      expect(parse('f')).toBe('false')
++    })
++
++    test('converts t to true', () => {
++      expect(parse('t')).toBe('true')
++    })
++  })
++
++  describe('convertBytes', () => {
++    const parse = getParser(ScalarColumnType.BYTEA)
++
++    test('converts base64 string to Buffer', () => {
++      const result = parse('aGVsbG8=')
++      expect(Buffer.isBuffer(result)).toBe(true)
++      expect(result!.toString('utf8')).toBe('hello')
++    })
++
++    test('supports arrays of bytea', () => {
++      const result = getParser(ArrayColumnType.BYTEA_ARRAY)('{aGVsbG8=,NULL}')
++      expect(Array.isArray(result)).toBe(true)
++      expect(result!.length).toBe(2)
++      expect(Buffer.isBuffer(result![0])).toBe(true)
++      expect(result![0]!.toString()).toBe('aGVsbG8=')
++      expect(result![1]).toBeNull()
++    })
++  })
++})
+diff --git a/packages/adapter-ppg/src/conversion.ts b/packages/adapter-ppg/src/conversion.ts
+index 19edcce0984d..819520538990 100644
+--- a/packages/adapter-ppg/src/conversion.ts
++++ b/packages/adapter-ppg/src/conversion.ts
+@@ -149,7 +149,7 @@ export const ScalarColumnType = {
+  * See the semantics of each of this code in:
+  *   https://github.com/postgres/postgres/blob/master/src/include/catalog/pg_type.dat
+  */
+-const ArrayColumnType = {
++export const ArrayColumnType = {
+   BIT_ARRAY: 1561,
+   BOOL_ARRAY: 1000,
+   BYTEA_ARRAY: 1001,
+@@ -306,12 +306,17 @@ export const builtinParsers = Object.entries({
+   parse: v,
+ }))
+ 
+-function normalize_bool(x: string) {
++function normalize_bool(x: string | null) {
+   return x === null ? null : x === 'f' ? 'false' : 'true'
+ }
+ 
+-function normalize_array(element_normalizer: (x: string) => string): (str: string) => string[] {
+-  return (str) => parseArray(str, element_normalizer)
++function normalize_array(
++  element_normalizer: (x: string) => string | null,
++): (str: string | null) => (string | null)[] | null {
++  return (str) => {
++    if (str === null) return null
++    return parseArray(str, element_normalizer)
++  }
+ }
+ 
+ /****************************/
+@@ -339,11 +344,13 @@ function normalize_date(date: string): string {
+  * ex: 1996-12-19T16:39:57-08:00
+  */
+ 
+-function normalize_timestamp(time: string): string {
++function normalize_timestamp(time: string | null): string | null {
++  if (time === null) return null
+   return `${time.replace(' ', 'T')}+00:00`
+ }
+ 
+-function normalize_timestamptz(time: string): string {
++function normalize_timestamptz(time: string | null): string | null {
++  if (time === null) return null
+   return time.replace(' ', 'T').replace(/[+-]\d{2}(:\d{2})?$/, '+00:00')
+ }
+ 
+@@ -355,7 +362,8 @@ function normalize_time(time: string): string {
+   return time
+ }
+ 
+-function normalize_timez(time: string): string {
++function normalize_timez(time: string | null): string | null {
++  if (time === null) return null
+   // Although it might be controversial, UTC is assumed in consistency with the behavior of rust postgres driver
+   // in quaint. See quaint/src/connector/postgres/conversion.rs
+   return time.replace(/[+-]\d{2}(:\d{2})?$/, '')
+@@ -365,7 +373,8 @@ function normalize_timez(time: string): string {
+ /* Money handling */
+ /******************/
+ 
+-function normalize_money(money: string): string {
++function normalize_money(money: string | null): string | null {
++  if (money === null) return null
+   return money.slice(1)
+ }
+ 
+@@ -405,11 +414,13 @@ const builtInByteParser = getTypeParser(ScalarColumnType.BYTEA) as (_: string) =
+ /*
+  * BYTEA_ARRAY - arrays of arbitrary raw binary strings
+  */
+-function normalizeByteaArray(x: string) {
+-  return parseArray(x).map(builtInByteParser)
++function normalizeByteaArray(x: string | null): (Buffer | null)[] | null {
++  if (x === null) return null
++  return parseArray(x).map((elem) => (elem === null ? null : builtInByteParser(elem)))
+ }
+ 
+-function convertBytes(serializedBytes: string): Buffer {
++function convertBytes(serializedBytes: string | null): Buffer | null {
++  if (serializedBytes === null) return null
+   return parsePgBytes(serializedBytes)
+ }
+ 
+diff --git a/packages/client-engine-runtime/bench/data-mapper.bench.ts b/packages/client-engine-runtime/bench/data-mapper.bench.ts
+deleted file mode 100644
+index 7136e586019a..000000000000
+--- a/packages/client-engine-runtime/bench/data-mapper.bench.ts
++++ /dev/null
+@@ -1,63 +0,0 @@
+-import { withCodSpeed } from '@codspeed/benchmark.js-plugin'
+-import Benchmark from 'benchmark'
+-
+-import { applyDataMap } from '../src/interpreter/data-mapper'
+-import { runSuite, syncBench } from './bench-utils'
+-import { generateNestedData, generateUserRows, USER_STRUCTURE, USER_WITH_POSTS_STRUCTURE } from './mock-data'
+-
+-async function runBenchmarks(): Promise<void> {
+-  const smallUserData = generateUserRows(10)
+-  const mediumUserData = generateUserRows(50)
+-  const largeUserData = generateUserRows(100)
+-  const nestedDataSmall = generateNestedData(5, 3)
+-  const nestedDataMedium = generateNestedData(10, 5)
+-  const nestedDataLarge = generateNestedData(20, 10)
+-
+-  const suite = withCodSpeed(new Benchmark.Suite('data-mapper'))
+-
+-  suite.add(
+-    'dataMapper: 10 rows',
+-    syncBench(() => {
+-      applyDataMap(smallUserData, USER_STRUCTURE, {})
+-    }),
+-  )
+-
+-  suite.add(
+-    'dataMapper: 50 rows',
+-    syncBench(() => {
+-      applyDataMap(mediumUserData, USER_STRUCTURE, {})
+-    }),
+-  )
+-
+-  suite.add(
+-    'dataMapper: 100 rows',
+-    syncBench(() => {
+-      applyDataMap(largeUserData, USER_STRUCTURE, {})
+-    }),
+-  )
+-
+-  suite.add(
+-    'dataMapper: nested 5 users x 3 posts',
+-    syncBench(() => {
+-      applyDataMap(nestedDataSmall, USER_WITH_POSTS_STRUCTURE, {})
+-    }),
+-  )
+-
+-  suite.add(
+-    'dataMapper: nested 10 users x 5 posts',
+-    syncBench(() => {
+-      applyDataMap(nestedDataMedium, USER_WITH_POSTS_STRUCTURE, {})
+-    }),
+-  )
+-
+-  suite.add(
+-    'dataMapper: nested 20 users x 10 posts',
+-    syncBench(() => {
+-      applyDataMap(nestedDataLarge, USER_WITH_POSTS_STRUCTURE, {})
+-    }),
+-  )
+-
+-  await runSuite(suite)
+-}
+-
+-void runBenchmarks()
+diff --git a/packages/client-engine-runtime/src/batch.ts b/packages/client-engine-runtime/src/batch.ts
+index 0566afc08fb0..cd5a405f0a78 100644
+--- a/packages/client-engine-runtime/src/batch.ts
++++ b/packages/client-engine-runtime/src/batch.ts
+@@ -1,4 +1,4 @@
+-import { deserializeJsonResponse } from './json-protocol'
++import { deserializeJsonObject } from './json-protocol'
+ import { QueryPlanNode } from './query-plan'
+ import { UserFacingError } from './user-facing-error'
+ import { doKeysMatch } from './utils'
+@@ -77,7 +77,7 @@ export function convertCompactedRows(
+   // a list of objects that contain the keys of every row
+   const keysPerRow = rows.map((item) =>
+     compiledBatch.keys.reduce((acc, key) => {
+-      acc[key] = deserializeJsonResponse(item[key])
++      acc[key] = deserializeJsonObject(item[key])
+       return acc
+     }, {}),
+   )
+diff --git a/packages/client-engine-runtime/src/interpreter/query-interpreter.ts b/packages/client-engine-runtime/src/interpreter/query-interpreter.ts
+index 2628b39f7792..b2c25ac4eda4 100644
+--- a/packages/client-engine-runtime/src/interpreter/query-interpreter.ts
++++ b/packages/client-engine-runtime/src/interpreter/query-interpreter.ts
+@@ -2,7 +2,7 @@ import { ConnectionInfo, SqlQuery, SqlQueryable, SqlResultSet } from '@prisma/dr
+ import type { SqlCommenterPlugin, SqlCommenterQueryInfo } from '@prisma/sqlcommenter'
+ 
+ import { QueryEvent } from '../events'
+-import { FieldInitializer, FieldOperation, JoinExpression, QueryPlanNode } from '../query-plan'
++import { FieldInitializer, FieldOperation, InMemoryOps, JoinExpression, QueryPlanNode } from '../query-plan'
+ import { type SchemaProvider } from '../schema'
+ import { appendSqlComment, buildSqlComment } from '../sql-commenter'
+ import { type TracingHelper, withQuerySpanAndEvent } from '../tracing'
+@@ -301,6 +301,7 @@ export class QueryInterpreter {
+ 
+       case 'process': {
+         const { value, lastInsertId } = await this.interpretNode(node.args.expr, context)
++        evaluateProcessingParameters(node.args.operations, context.scope, context.generators)
+         return { value: processRecords(value, node.args.operations), lastInsertId }
+       }
+ 
+@@ -526,3 +527,19 @@ function applyComments(query: SqlQuery, sqlCommenter?: QueryInterpreterSqlCommen
+     sql: appendSqlComment(query.sql, comment),
+   }
+ }
++
++function evaluateProcessingParameters(
++  ops: InMemoryOps,
++  scope: ScopeBindings,
++  generators: GeneratorRegistrySnapshot,
++): void {
++  const cursor = ops.pagination?.cursor
++  if (cursor) {
++    for (const [key, value] of Object.entries(cursor)) {
++      cursor[key] = evaluateArg(value, scope, generators)
++    }
++  }
++  for (const nested of Object.values(ops.nested)) {
++    evaluateProcessingParameters(nested, scope, generators)
++  }
++}
+diff --git a/packages/client-engine-runtime/src/json-protocol.test.ts b/packages/client-engine-runtime/src/json-protocol.test.ts
+index 0553d3610f02..abd505e592db 100644
+--- a/packages/client-engine-runtime/src/json-protocol.test.ts
++++ b/packages/client-engine-runtime/src/json-protocol.test.ts
+@@ -1,46 +1,46 @@
+ import { Decimal } from '@prisma/client-runtime-utils'
+ 
+-import { deserializeJsonResponse } from './json-protocol'
++import { deserializeJsonObject } from './json-protocol'
+ 
+-describe('deserializeJsonResponse', () => {
++describe('deserializeJsonObject', () => {
+   test('primitives', () => {
+-    expect(deserializeJsonResponse(1)).toBe(1)
+-    expect(deserializeJsonResponse('foo')).toBe('foo')
+-    expect(deserializeJsonResponse(null)).toBe(null)
+-    expect(deserializeJsonResponse(false)).toBe(false)
++    expect(deserializeJsonObject(1)).toBe(1)
++    expect(deserializeJsonObject('foo')).toBe('foo')
++    expect(deserializeJsonObject(null)).toBe(null)
++    expect(deserializeJsonObject(false)).toBe(false)
+   })
+ 
+   test('Date', () => {
+-    const value = deserializeJsonResponse({ $type: 'DateTime', value: '1980-01-02T00:00:00.000Z' })
++    const value = deserializeJsonObject({ $type: 'DateTime', value: '1980-01-02T00:00:00.000Z' })
+     expect(value).toBeInstanceOf(Date)
+     expect(value).toEqual(new Date('1980-01-02T00:00:00.000Z'))
+   })
+ 
+   test('BigInt', () => {
+-    const value = deserializeJsonResponse({ $type: 'BigInt', value: '123' })
++    const value = deserializeJsonObject({ $type: 'BigInt', value: '123' })
+     expect(value).toBe(123n)
+   })
+ 
+   test('Bytes', () => {
+-    const value = deserializeJsonResponse({ $type: 'Bytes', value: 'aGVsbG8gd29ybGQ=' })
++    const value = deserializeJsonObject({ $type: 'Bytes', value: 'aGVsbG8gd29ybGQ=' })
+     expect(value).toBeInstanceOf(Uint8Array)
+     expect(value).toEqual(new Uint8Array(Buffer.from('hello world')))
+   })
+ 
+   test('Decimal', () => {
+-    const value = deserializeJsonResponse({ $type: 'Decimal', value: '123.45' })
++    const value = deserializeJsonObject({ $type: 'Decimal', value: '123.45' })
+     expect(value).toBeInstanceOf(Decimal)
+     expect(value).toEqual(new Decimal('123.45'))
+   })
+ 
+   test('Json', () => {
+-    const value = deserializeJsonResponse({ $type: 'Json', value: '{"foo":123}' })
++    const value = deserializeJsonObject({ $type: 'Json', value: '{"foo":123}' })
+     expect(value).toEqual({ foo: 123 })
+   })
+ 
+   test('object', () => {
+     expect(
+-      deserializeJsonResponse({
++      deserializeJsonObject({
+         name: 'John',
+         height: 173.45,
+         money: { $type: 'Decimal', value: '123.45' },
+@@ -59,6 +59,6 @@ describe('deserializeJsonResponse', () => {
+   })
+ 
+   test('array', () => {
+-    expect(deserializeJsonResponse(['foo', 123, { $type: 'BigInt', value: '123' }])).toEqual(['foo', 123, 123n])
++    expect(deserializeJsonObject(['foo', 123, { $type: 'BigInt', value: '123' }])).toEqual(['foo', 123, 123n])
+   })
+ })
+diff --git a/packages/client-engine-runtime/src/json-protocol.ts b/packages/client-engine-runtime/src/json-protocol.ts
+index fc4a10a1b25d..82c9664b363b 100644
+--- a/packages/client-engine-runtime/src/json-protocol.ts
++++ b/packages/client-engine-runtime/src/json-protocol.ts
+@@ -9,6 +9,7 @@ export type BigIntTaggedValue = { $type: 'BigInt'; value: string }
+ export type FieldRefTaggedValue = { $type: 'FieldRef'; value: { _ref: string } }
+ export type EnumTaggedValue = { $type: 'Enum'; value: string }
+ export type JsonTaggedValue = { $type: 'Json'; value: string }
++export type RawTaggedValue = { $type: 'Raw'; value: unknown }
+ 
+ export type JsonInputTaggedValue =
+   | DateTaggedValue
+@@ -18,6 +19,7 @@ export type JsonInputTaggedValue =
+   | FieldRefTaggedValue
+   | JsonTaggedValue
+   | EnumTaggedValue
++  | RawTaggedValue
+ 
+ export type JsonOutputTaggedValue =
+   | DateTaggedValue
+@@ -83,7 +85,10 @@ function isTaggedValue(value: unknown): value is JsonOutputTaggedValue {
+  * patch and normalize them here to ensure they are consistent with the snapshots
+  * in the query engine tests.
+  */
+-function normalizeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsonOutputTaggedValue {
++function normalizeTaggedValue({
++  $type,
++  value,
++}: JsonInputTaggedValue | JsonOutputTaggedValue): JsonInputTaggedValue | JsonOutputTaggedValue {
+   switch ($type) {
+     case 'BigInt':
+       return { $type, value: String(value) }
+@@ -95,6 +100,12 @@ function normalizeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsonOutp
+       return { $type, value: String(new Decimal(value)) }
+     case 'Json':
+       return { $type, value: JSON.stringify(JSON.parse(value)) }
++    case 'Raw':
++      return { $type, value }
++    case 'FieldRef':
++      return { $type, value }
++    case 'Enum':
++      return { $type, value }
+     default:
+       assertNever(value, 'Unknown tagged value')
+   }
+@@ -113,13 +124,13 @@ function mapObjectValues<K extends PropertyKey, T, U>(
+   return result
+ }
+ 
+-export function deserializeJsonResponse(result: unknown): unknown {
++export function deserializeJsonObject(result: unknown): unknown {
+   if (result === null) {
+     return result
+   }
+ 
+   if (Array.isArray(result)) {
+-    return result.map(deserializeJsonResponse)
++    return result.map(deserializeJsonObject)
+   }
+ 
+   if (typeof result === 'object') {
+@@ -132,13 +143,13 @@ export function deserializeJsonResponse(result: unknown): unknown {
+       return result
+     }
+ 
+-    return mapObjectValues(result, deserializeJsonResponse)
++    return mapObjectValues(result, deserializeJsonObject)
+   }
+ 
+   return result
+ }
+ 
+-function deserializeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsOutputValue {
++function deserializeTaggedValue({ $type, value }: JsonInputTaggedValue | JsonOutputTaggedValue): JsOutputValue {
+   switch ($type) {
+     case 'BigInt':
+       return BigInt(value)
+@@ -152,6 +163,12 @@ function deserializeTaggedValue({ $type, value }: JsonOutputTaggedValue): JsOutp
+       return new Decimal(value)
+     case 'Json':
+       return JSON.parse(value)
++    case 'Raw':
++      return value as JsOutputValue
++    case 'FieldRef':
++      throw new Error('FieldRef tagged values cannot be deserialized to JavaScript values')
++    case 'Enum':
++      return value
+     default:
+       assertNever(value, 'Unknown tagged value')
+   }
+diff --git a/packages/client-engine-runtime/src/query-plan.ts b/packages/client-engine-runtime/src/query-plan.ts
+index 25d22a509ae1..93b2829641b3 100644
+--- a/packages/client-engine-runtime/src/query-plan.ts
++++ b/packages/client-engine-runtime/src/query-plan.ts
+@@ -229,7 +229,7 @@ export type FieldOperation =
+   | { type: 'divide'; value: PrismaValue }
+ 
+ export type Pagination = {
+-  cursor: Record<string, PrismaValue> | null
++  cursor: Record<string, unknown> | null
+   take: number | null
+   skip: number | null
+ }
+diff --git a/packages/client-generator-js/package.json b/packages/client-generator-js/package.json
+index 453496dfc19c..611c372f6c10 100644
+--- a/packages/client-generator-js/package.json
++++ b/packages/client-generator-js/package.json
+@@ -28,7 +28,7 @@
+     "@prisma/client-common": "workspace:*",
+     "@prisma/debug": "workspace:*",
+     "@prisma/dmmf": "workspace:*",
+-    "@prisma/engines-version": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+diff --git a/packages/client-generator-js/src/TSClient/PrismaClient.ts b/packages/client-generator-js/src/TSClient/PrismaClient.ts
+index 77d59f5f0520..f03b904ab10b 100644
+--- a/packages/client-generator-js/src/TSClient/PrismaClient.ts
++++ b/packages/client-generator-js/src/TSClient/PrismaClient.ts
+@@ -199,7 +199,7 @@ function batchingTransactionDefinition(context: GenerateContext) {
+         ])
+         \`\`\`
+ 
+-        Read more in our [docs](https://www.prisma.io/docs/concepts/components/prisma-client/transactions).
++        Read more in our [docs](https://www.prisma.io/docs/orm/prisma-client/queries/transactions).
+       `,
+     )
+     .addGenericParameter(ts.genericParameter('P').extends(ts.array(tsx.prismaPromise(ts.anyType))))
+diff --git a/packages/client-generator-ts/package.json b/packages/client-generator-ts/package.json
+index 48559ab06b5b..d1dba468fadd 100644
+--- a/packages/client-generator-ts/package.json
++++ b/packages/client-generator-ts/package.json
+@@ -28,7 +28,7 @@
+     "@prisma/client-common": "workspace:*",
+     "@prisma/debug": "workspace:*",
+     "@prisma/dmmf": "workspace:*",
+-    "@prisma/engines-version": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+diff --git a/packages/client-generator-ts/src/TSClient/PrismaClient.ts b/packages/client-generator-ts/src/TSClient/PrismaClient.ts
+index 5d2fef064e30..06f6723d8198 100644
+--- a/packages/client-generator-ts/src/TSClient/PrismaClient.ts
++++ b/packages/client-generator-ts/src/TSClient/PrismaClient.ts
+@@ -39,7 +39,7 @@ function batchingTransactionDefinition(context: GenerateContext) {
+         ])
+         \`\`\`
+ 
+-        Read more in our [docs](https://www.prisma.io/docs/concepts/components/prisma-client/transactions).
++        Read more in our [docs](https://www.prisma.io/docs/orm/prisma-client/queries/transactions).
+       `,
+     )
+     .addGenericParameter(ts.genericParameter('P').extends(ts.array(tsx.prismaPromise(ts.anyType))))
+diff --git a/packages/client/helpers/memory-tests.ts b/packages/client/helpers/memory-tests.ts
+deleted file mode 100644
+index 49de58e86b72..000000000000
+--- a/packages/client/helpers/memory-tests.ts
++++ /dev/null
+@@ -1,10 +0,0 @@
+-import { runAllMemoryTests } from '../tests/memory/_utils/runAllMemoryTests'
+-
+-if (process.argv.length > 3) {
+-  console.error(`Usage: pnpm test:memory [filter]`)
+-  process.exit(1)
+-}
+-
+-const filter = process.argv[2]
+-
+-void runAllMemoryTests(filter)
+diff --git a/packages/client/package.json b/packages/client/package.json
+index 864fdc51726a..5734413a35ca 100644
+--- a/packages/client/package.json
++++ b/packages/client/package.json
+@@ -138,7 +138,6 @@
+     "test:e2e": "dotenv -e ../../.db.env -- tsx tests/e2e/_utils/run.ts",
+     "test:functional": "dotenv -e ../../.db.env -- tsx helpers/functional-test/run-tests.ts",
+     "test:functional:client": "pnpm run test:functional --client-runtime client",
+-    "test:memory": "dotenv -e ../../.db.env -- tsx helpers/memory-tests.ts",
+     "test:functional:code": "dotenv -e ../../.db.env -- tsx helpers/functional-test/run-tests.ts --no-types",
+     "test:functional:types": "dotenv -e ../../.db.env -- tsx helpers/functional-test/run-tests.ts --types-only",
+     "test-notypes": "dotenv -e ../../.db.env -- jest --testPathIgnorePatterns src/__tests__/types/types.test.ts",
+@@ -199,7 +198,7 @@
+     "@prisma/dmmf": "workspace:*",
+     "@prisma/driver-adapter-utils": "workspace:*",
+     "@prisma/engines": "workspace:*",
+-    "@prisma/engines-version": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/generator": "workspace:*",
+     "@prisma/generator-helper": "workspace:*",
+@@ -211,7 +210,7 @@
+     "@prisma/migrate": "workspace:*",
+     "@prisma/param-graph": "workspace:*",
+     "@prisma/param-graph-builder": "workspace:*",
+-    "@prisma/query-compiler-wasm": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/query-compiler-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/query-plan-executor": "workspace:*",
+     "@prisma/sqlcommenter": "workspace:*",
+     "@prisma/sqlcommenter-trace-context": "workspace:*",
+diff --git a/packages/client/src/__tests__/benchmarks/query-performance/compilation.bench.ts b/packages/client/src/__tests__/benchmarks/query-performance/compilation.bench.ts
+deleted file mode 100644
+index 5522b900d1e1..000000000000
+--- a/packages/client/src/__tests__/benchmarks/query-performance/compilation.bench.ts
++++ /dev/null
+@@ -1,761 +0,0 @@
+-/**
+- * Query Compilation Performance Benchmarks
+- *
+- * Tests the performance of the Wasm query compiler for various query types.
+- * Measures compilation time separately from execution time.
+- */
+-import fs from 'node:fs'
+-import path from 'node:path'
+-
+-import { withCodSpeed } from '@codspeed/benchmark.js-plugin'
+-import { QueryCompiler, QueryCompilerConstructor } from '@prisma/client-common'
+-import Benchmark from 'benchmark'
+-
+-import { loadQueryCompiler } from './qc-loader'
+-
+-let QueryCompilerClass: QueryCompilerConstructor
+-let queryCompiler: QueryCompiler
+-
+-const BENCHMARK_DATAMODEL = fs.readFileSync(path.join(__dirname, 'schema.prisma'), 'utf-8')
+-
+-const QUERIES = {
+-  findUniqueSimple: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findUnique',
+-    query: {
+-      arguments: { where: { id: 1 } },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  findUniqueSelect: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findUnique',
+-    query: {
+-      arguments: { where: { id: 1 } },
+-      selection: {
+-        id: true,
+-        email: true,
+-        name: true,
+-      },
+-    },
+-  }),
+-
+-  findManySimple: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findMany',
+-    query: {
+-      arguments: { take: 10 },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  findManyFiltered: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findMany',
+-    query: {
+-      arguments: {
+-        where: { isActive: true, role: 'user' },
+-        orderBy: [{ createdAt: 'desc' }],
+-        take: 20,
+-      },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  findManyComplexWhere: JSON.stringify({
+-    modelName: 'Post',
+-    action: 'findMany',
+-    query: {
+-      arguments: {
+-        where: {
+-          published: true,
+-          OR: [{ featured: true }, { viewCount: { gt: 100 } }],
+-        },
+-        take: 20,
+-      },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  findUniqueWithInclude1to1: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findUnique',
+-    query: {
+-      arguments: { where: { id: 1 } },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  findUniqueWithInclude1toN: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findUnique',
+-    query: {
+-      arguments: { where: { id: 1 } },
+-      selection: {
+-        $scalars: true,
+-        posts: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  findManyNestedIncludes: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findMany',
+-    query: {
+-      arguments: { take: 10 },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-        posts: {
+-          arguments: { take: 5 },
+-          selection: {
+-            $scalars: true,
+-            comments: {
+-              arguments: { take: 3 },
+-              selection: {
+-                $scalars: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  findManyDeepNested: JSON.stringify({
+-    modelName: 'Post',
+-    action: 'findMany',
+-    query: {
+-      arguments: { take: 10 },
+-      selection: {
+-        $scalars: true,
+-        author: {
+-          selection: {
+-            id: true,
+-            name: true,
+-            profile: {
+-              selection: {
+-                $scalars: true,
+-              },
+-            },
+-          },
+-        },
+-        category: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-        comments: {
+-          arguments: {
+-            take: 5,
+-            orderBy: [{ createdAt: 'desc' }],
+-          },
+-          selection: {
+-            $scalars: true,
+-            author: {
+-              selection: {
+-                id: true,
+-                name: true,
+-                avatar: true,
+-              },
+-            },
+-          },
+-        },
+-        tags: {
+-          selection: {
+-            tag: {
+-              selection: {
+-                $scalars: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  createSimple: JSON.stringify({
+-    modelName: 'User',
+-    action: 'createOne',
+-    query: {
+-      arguments: {
+-        data: {
+-          email: 'test@example.com',
+-          username: 'testuser',
+-          name: 'Test User',
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  createNested: JSON.stringify({
+-    modelName: 'User',
+-    action: 'createOne',
+-    query: {
+-      arguments: {
+-        data: {
+-          email: 'test@example.com',
+-          username: 'testuser',
+-          name: 'Test User',
+-          profile: {
+-            create: {
+-              firstName: 'Test',
+-              lastName: 'User',
+-            },
+-          },
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  updateSimple: JSON.stringify({
+-    modelName: 'User',
+-    action: 'updateOne',
+-    query: {
+-      arguments: {
+-        where: { id: 1 },
+-        data: { name: 'Updated Name' },
+-      },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  updateMany: JSON.stringify({
+-    modelName: 'Post',
+-    action: 'updateMany',
+-    query: {
+-      arguments: {
+-        where: { published: false },
+-        data: { viewCount: { increment: 1 } },
+-      },
+-      selection: {
+-        count: true,
+-      },
+-    },
+-  }),
+-
+-  upsert: JSON.stringify({
+-    modelName: 'User',
+-    action: 'upsertOne',
+-    query: {
+-      arguments: {
+-        where: { email: 'test@example.com' },
+-        create: {
+-          email: 'test@example.com',
+-          username: 'testuser',
+-          name: 'Test User',
+-        },
+-        update: {
+-          name: 'Updated User',
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  deleteSimple: JSON.stringify({
+-    modelName: 'User',
+-    action: 'deleteOne',
+-    query: {
+-      arguments: {
+-        where: { id: 1 },
+-      },
+-      selection: {
+-        $scalars: true,
+-      },
+-    },
+-  }),
+-
+-  count: JSON.stringify({
+-    modelName: 'User',
+-    action: 'aggregate',
+-    query: {
+-      arguments: {},
+-      selection: {
+-        _count: true,
+-      },
+-    },
+-  }),
+-
+-  countFiltered: JSON.stringify({
+-    modelName: 'Post',
+-    action: 'aggregate',
+-    query: {
+-      arguments: {
+-        where: { published: true },
+-      },
+-      selection: {
+-        _count: true,
+-      },
+-    },
+-  }),
+-
+-  aggregate: JSON.stringify({
+-    modelName: 'Product',
+-    action: 'aggregate',
+-    query: {
+-      arguments: {},
+-      selection: {
+-        _count: true,
+-        _sum: {
+-          selection: { price: true },
+-        },
+-        _avg: {
+-          selection: { price: true },
+-        },
+-        _min: {
+-          selection: { price: true },
+-        },
+-        _max: {
+-          selection: { price: true },
+-        },
+-      },
+-    },
+-  }),
+-
+-  groupBy: JSON.stringify({
+-    modelName: 'User',
+-    action: 'groupBy',
+-    query: {
+-      arguments: {
+-        by: ['role'],
+-      },
+-      selection: {
+-        _count: {
+-          selection: { _all: true },
+-        },
+-      },
+-    },
+-  }),
+-
+-  blogPostPage: JSON.stringify({
+-    modelName: 'Post',
+-    action: 'findUnique',
+-    query: {
+-      arguments: { where: { id: 1 } },
+-      selection: {
+-        $scalars: true,
+-        author: {
+-          selection: {
+-            id: true,
+-            name: true,
+-            avatar: true,
+-          },
+-        },
+-        category: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-        tags: {
+-          selection: {
+-            tag: {
+-              selection: {
+-                $scalars: true,
+-              },
+-            },
+-          },
+-        },
+-        comments: {
+-          arguments: {
+-            take: 10,
+-            orderBy: [{ createdAt: 'desc' }],
+-          },
+-          selection: {
+-            $scalars: true,
+-            author: {
+-              selection: {
+-                id: true,
+-                name: true,
+-                avatar: true,
+-              },
+-            },
+-          },
+-        },
+-        _count: {
+-          selection: {
+-            likes: true,
+-            comments: true,
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  blogListingPage: JSON.stringify({
+-    modelName: 'Post',
+-    action: 'findMany',
+-    query: {
+-      arguments: {
+-        where: { published: true },
+-        take: 12,
+-        orderBy: [{ createdAt: 'desc' }],
+-      },
+-      selection: {
+-        id: true,
+-        title: true,
+-        slug: true,
+-        excerpt: true,
+-        createdAt: true,
+-        author: {
+-          selection: {
+-            name: true,
+-            avatar: true,
+-          },
+-        },
+-        category: {
+-          selection: {
+-            name: true,
+-            slug: true,
+-          },
+-        },
+-        _count: {
+-          selection: {
+-            comments: true,
+-            likes: true,
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  userProfilePage: JSON.stringify({
+-    modelName: 'User',
+-    action: 'findUnique',
+-    query: {
+-      arguments: { where: { id: 1 } },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-        posts: {
+-          arguments: {
+-            where: { published: true },
+-            take: 5,
+-            orderBy: [{ createdAt: 'desc' }],
+-          },
+-          selection: {
+-            id: true,
+-            title: true,
+-            slug: true,
+-            createdAt: true,
+-          },
+-        },
+-        _count: {
+-          selection: {
+-            posts: true,
+-            followers: true,
+-            following: true,
+-          },
+-        },
+-      },
+-    },
+-  }),
+-
+-  orderHistory: JSON.stringify({
+-    modelName: 'Order',
+-    action: 'findMany',
+-    query: {
+-      arguments: {
+-        where: { userId: 1 },
+-        orderBy: [{ createdAt: 'desc' }],
+-        take: 10,
+-      },
+-      selection: {
+-        $scalars: true,
+-        items: {
+-          selection: {
+-            $scalars: true,
+-            product: {
+-              selection: {
+-                name: true,
+-                slug: true,
+-                price: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    },
+-  }),
+-}
+-
+-async function setup(): Promise<void> {
+-  const provider = 'sqlite'
+-
+-  QueryCompilerClass = await loadQueryCompiler(provider)
+-
+-  queryCompiler = new QueryCompilerClass({
+-    provider,
+-    connectionInfo: {
+-      supportsRelationJoins: false,
+-    },
+-    datamodel: BENCHMARK_DATAMODEL,
+-  })
+-}
+-
+-function syncBench(fn: () => void): Benchmark.Options {
+-  return { fn }
+-}
+-
+-async function runBenchmarks(): Promise<void> {
+-  await setup()
+-
+-  const suite = withCodSpeed(new Benchmark.Suite('query-compilation'))
+-
+-  // ============================================
+-  // Simple Read Queries
+-  // ============================================
+-
+-  suite.add(
+-    'compile findUnique simple',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findUniqueSimple)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findUnique with select',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findUniqueSelect)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findMany simple',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findManySimple)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findMany filtered',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findManyFiltered)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findMany complex where',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findManyComplexWhere)
+-    }),
+-  )
+-
+-  // ============================================
+-  // Queries with Includes
+-  // ============================================
+-
+-  suite.add(
+-    'compile findUnique with 1:1 include',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findUniqueWithInclude1to1)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findUnique with 1:N include',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findUniqueWithInclude1toN)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findMany nested includes',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findManyNestedIncludes)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile findMany deep nested',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.findManyDeepNested)
+-    }),
+-  )
+-
+-  // ============================================
+-  // Write Queries
+-  // ============================================
+-
+-  suite.add(
+-    'compile create simple',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.createSimple)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile create nested',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.createNested)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile update simple',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.updateSimple)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile updateMany',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.updateMany)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile upsert',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.upsert)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile delete simple',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.deleteSimple)
+-    }),
+-  )
+-
+-  // ============================================
+-  // Aggregation Queries
+-  // ============================================
+-
+-  suite.add(
+-    'compile count',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.count)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile count filtered',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.countFiltered)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile aggregate',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.aggregate)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile groupBy',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.groupBy)
+-    }),
+-  )
+-
+-  // ============================================
+-  // Realistic Page Queries
+-  // ============================================
+-
+-  suite.add(
+-    'compile blog post page',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.blogPostPage)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile blog listing page',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.blogListingPage)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile user profile page',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.userProfilePage)
+-    }),
+-  )
+-
+-  suite.add(
+-    'compile order history',
+-    syncBench(() => {
+-      queryCompiler.compile(QUERIES.orderHistory)
+-    }),
+-  )
+-
+-  // ============================================
+-  // Query Compiler Instantiation
+-  // ============================================
+-
+-  suite.add(
+-    'instantiate query compiler',
+-    syncBench(() => {
+-      queryCompiler = new QueryCompilerClass({
+-        provider: 'sqlite',
+-        connectionInfo: {
+-          supportsRelationJoins: false,
+-        },
+-        datamodel: BENCHMARK_DATAMODEL,
+-      })
+-    }),
+-  )
+-
+-  await new Promise<void>((resolve) => {
+-    void suite
+-      .on('cycle', (event: Benchmark.Event) => {
+-        console.log(String(event.target))
+-      })
+-      .on('complete', () => {
+-        resolve()
+-      })
+-      .on('error', (event: Benchmark.Event) => {
+-        console.error('Benchmark error:', event.target)
+-      })
+-      .run({ async: true })
+-  })
+-}
+-
+-void runBenchmarks()
+diff --git a/packages/client/src/runtime/RequestHandler.ts b/packages/client/src/runtime/RequestHandler.ts
+index 9a697a39c557..1ccd3ad6a146 100644
+--- a/packages/client/src/runtime/RequestHandler.ts
++++ b/packages/client/src/runtime/RequestHandler.ts
+@@ -1,5 +1,5 @@
+ import { Context } from '@opentelemetry/api'
+-import { deserializeJsonResponse } from '@prisma/client-engine-runtime'
++import { deserializeJsonObject } from '@prisma/client-engine-runtime'
+ import { hasBatchIndex } from '@prisma/client-runtime-utils'
+ import { Debug } from '@prisma/debug'
+ import { assertNever } from '@prisma/internals'
+@@ -119,6 +119,15 @@ export class RequestHandler {
+       },
+ 
+       batchBy: (request) => {
++        // If the request is part of an interactive transaction, we want to group all requests with the same
++        // protocolQuery together to take advantage of automatic batching in the engine.
++        // Note that we only do this for interactive transactions, not for batch transactions, as it can lead to queries
++        // being executed out of order in batch transactions.
++        if (request.transaction?.kind === 'itx') {
++          const batchId = getBatchId(request.protocolQuery)
++          return `itx-${request.transaction.id}${batchId ? `-${batchId}` : ''}`
++        }
++
+         if (request.transaction?.id) {
+           return `transaction-${request.transaction.id}`
+         }
+@@ -274,7 +283,7 @@ export class RequestHandler {
+     const deserializedResponse =
+       operation === 'queryRaw'
+         ? deserializeRawResult(extractedResponse as RawResponse)
+-        : (deserializeJsonResponse(extractedResponse) as unknown)
++        : (deserializeJsonObject(extractedResponse) as unknown)
+ 
+     return unpacker ? unpacker(deserializedResponse) : deserializedResponse
+   }
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+index 96ac25c79e4c..9619b487ce0b 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
++++ b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+@@ -6,6 +6,7 @@
+  * both schema rules and runtime value types agree.
+  */
+ 
++import { deserializeJsonObject } from '@prisma/client-engine-runtime'
+ import type {
+   JsonArgumentValue,
+   JsonBatchQuery,
+@@ -272,7 +273,7 @@ class Parameterizer {
+    */
+   #handleArray(items: unknown[], originalValue: unknown, edge: InputEdge): unknown {
+     if (hasFlag(edge, EdgeFlag.ParamScalar) && getScalarMask(edge) & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(items)
++      const jsonValue = JSON.stringify(deserializeJsonObject(items))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+@@ -323,7 +324,7 @@ class Parameterizer {
+ 
+     const mask = getScalarMask(edge)
+     if (mask & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(obj)
++      const jsonValue = JSON.stringify(deserializeJsonObject(obj))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+diff --git a/packages/client/src/runtime/core/extensions/resolve-result-extension-context.test.ts b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.test.ts
+new file mode 100644
+index 000000000000..6857f7c6d944
+--- /dev/null
++++ b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.test.ts
+@@ -0,0 +1,264 @@
++import { field, model, runtimeDataModel } from '../../../testUtils/dataModelBuilder'
++import { applyAllResultExtensions } from './applyAllResultExtensions'
++import { MergedExtensionsList } from './MergedExtensionsList'
++import { resolveResultExtensionContext } from './resolve-result-extension-context'
++
++const UserModel = model('User', [field('object', 'posts', 'Post', { relationName: 'UserToPost', isList: true })])
++
++const PostModel = model('Post', [field('object', 'author', 'User', { relationName: 'PostToUser' })])
++
++const datamodel = runtimeDataModel({
++  models: [UserModel, PostModel],
++})
++
++const KeywordRelationSourceModel = model('KeywordRelationSource', [
++  field('object', 'select', 'KeywordSelectTarget', {
++    relationName: 'KeywordRelationSourceToKeywordSelectTarget',
++    isList: true,
++  }),
++  field('object', 'include', 'KeywordIncludeTarget', {
++    relationName: 'KeywordRelationSourceToKeywordIncludeTarget',
++    isList: true,
++  }),
++])
++
++const KeywordSelectTargetModel = model('KeywordSelectTarget', [])
++
++const KeywordIncludeTargetModel = model('KeywordIncludeTarget', [])
++
++const keywordRelationsDatamodel = runtimeDataModel({
++  models: [KeywordRelationSourceModel, KeywordSelectTargetModel, KeywordIncludeTargetModel],
++})
++
++test('returns root context if dataPath is empty', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: [],
++    modelName: 'User',
++    args: { where: { id: '1' } },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'User',
++    args: { where: { id: '1' } },
++  })
++})
++
++test('resolves model and args for fluent one-hop select path', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: {
++          select: {
++            id: true,
++          },
++        },
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'Post',
++    args: {
++      select: {
++        id: true,
++      },
++    },
++  })
++})
++
++test('resolves model and args for fluent one-hop include path', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['include', 'posts'],
++    modelName: 'User',
++    args: {
++      include: {
++        posts: {
++          where: { id: 'post-id' },
++        },
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'Post',
++    args: {
++      where: { id: 'post-id' },
++    },
++  })
++})
++
++test('resolves model and args for multi-hop fluent path', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts', 'select', 'author'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: {
++          select: {
++            author: {
++              select: {
++                id: true,
++              },
++            },
++          },
++        },
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'User',
++    args: {
++      select: {
++        id: true,
++      },
++    },
++  })
++})
++
++test('throws a runtime error when a relation field from dataPath is missing', () => {
++  expect(() =>
++    resolveResultExtensionContext({
++      dataPath: ['select', 'email'],
++      modelName: 'User',
++      args: {
++        select: {
++          email: true,
++        },
++      },
++      runtimeDataModel: datamodel,
++    }),
++  ).toThrow('Could not resolve relation field "email" on model "User" from dataPath "select.email"')
++})
++
++test('defaults nested args to empty object when selection is true', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: true,
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  expect(context).toEqual({
++    modelName: 'Post',
++    args: {},
++  })
++})
++
++test('resolved context applies result extensions to fluent-style unwrapped results', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'posts'],
++    modelName: 'User',
++    args: {
++      select: {
++        posts: true,
++      },
++    },
++    runtimeDataModel: datamodel,
++  })
++
++  const extensions = MergedExtensionsList.single({
++    result: {
++      post: {
++        postLabel: {
++          needs: { id: true },
++          compute(post) {
++            return `post-${post.id}`
++          },
++        },
++      },
++    },
++  })
++
++  const result = applyAllResultExtensions({
++    result: [{ id: 'post-id' }] as Array<{ id: string; postLabel?: string }>,
++    modelName: context.modelName,
++    args: context.args,
++    extensions,
++    runtimeDataModel: datamodel,
++  })
++
++  expect(result?.[0]?.postLabel).toBe('post-post-id')
++})
++
++test('resolved context applies result extensions when relation field is named "select"', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['select', 'select'],
++    modelName: 'KeywordRelationSource',
++    args: {
++      select: {
++        select: true,
++      },
++    },
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  const extensions = MergedExtensionsList.single({
++    result: {
++      keywordSelectTarget: {
++        selectLabel: {
++          needs: { id: true },
++          compute(model) {
++            return `select-${model.id}`
++          },
++        },
++      },
++    },
++  })
++
++  const result = applyAllResultExtensions({
++    result: [{ id: 'keyword-id' }] as Array<{ id: string; selectLabel?: string }>,
++    modelName: context.modelName,
++    args: context.args,
++    extensions,
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  expect(result?.[0]?.selectLabel).toBe('select-keyword-id')
++})
++
++test('resolved context applies result extensions when relation field is named "include"', () => {
++  const context = resolveResultExtensionContext({
++    dataPath: ['include', 'include'],
++    modelName: 'KeywordRelationSource',
++    args: {
++      include: {
++        include: true,
++      },
++    },
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  const extensions = MergedExtensionsList.single({
++    result: {
++      keywordIncludeTarget: {
++        includeLabel: {
++          needs: { id: true },
++          compute(model) {
++            return `include-${model.id}`
++          },
++        },
++      },
++    },
++  })
++
++  const result = applyAllResultExtensions({
++    result: [{ id: 'keyword-id' }] as Array<{ id: string; includeLabel?: string }>,
++    modelName: context.modelName,
++    args: context.args,
++    extensions,
++    runtimeDataModel: keywordRelationsDatamodel,
++  })
++
++  expect(result?.[0]?.includeLabel).toBe('include-keyword-id')
++})
+diff --git a/packages/client/src/runtime/core/extensions/resolve-result-extension-context.ts b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.ts
+new file mode 100644
+index 000000000000..c8468c521c22
+--- /dev/null
++++ b/packages/client/src/runtime/core/extensions/resolve-result-extension-context.ts
+@@ -0,0 +1,101 @@
++import { RuntimeDataModel } from '@prisma/client-common'
++
++import { JsArgs } from '../types/exported/JsApi'
++
++type ResolveResultExtensionContextParams = {
++  dataPath: string[]
++  modelName: string
++  args?: JsArgs
++  runtimeDataModel: RuntimeDataModel
++}
++
++type ResultExtensionContext = {
++  modelName: string
++  args: JsArgs
++}
++
++/**
++ * Resolves the model/args context used for result extensions from a query dataPath.
++ * Falls back to the root model context when traversal can not continue because the model is
++ * missing, the segment is not a relation, or the path format is invalid.
++ * Throws when a relation field segment from dataPath does not exist on the current model.
++ */
++export function resolveResultExtensionContext({
++  dataPath,
++  modelName,
++  args,
++  runtimeDataModel,
++}: ResolveResultExtensionContextParams): ResultExtensionContext {
++  const rootContext = {
++    modelName,
++    args: args ?? {},
++  }
++
++  const relationPath = relationPathFromDataPath(dataPath)
++  if (!relationPath || relationPath.length === 0) {
++    return rootContext
++  }
++
++  let currentModelName = modelName
++  let currentArgs: JsArgs = args ?? {}
++
++  for (const relationFieldName of relationPath) {
++    const currentModel = runtimeDataModel.models[currentModelName]
++    if (!currentModel) {
++      return rootContext
++    }
++
++    const relationField = currentModel.fields.find((field) => field.name === relationFieldName)
++    if (!relationField) {
++      throw new Error(
++        `Could not resolve relation field "${relationFieldName}" on model "${currentModelName}" from dataPath "${dataPath.join('.')}"`,
++      )
++    }
++    if (relationField.kind !== 'object' || !relationField.relationName) {
++      return rootContext
++    }
++
++    currentModelName = relationField.type
++    currentArgs = resolveNextArgs(currentArgs, relationFieldName)
++  }
++
++  return {
++    modelName: currentModelName,
++    args: currentArgs,
++  }
++}
++
++function relationPathFromDataPath(dataPath: string[]): string[] | undefined {
++  const relationPath: string[] = []
++
++  for (let index = 0; index < dataPath.length; index += 2) {
++    const selector = dataPath[index]
++    const relationFieldName = dataPath[index + 1]
++
++    if ((selector !== 'select' && selector !== 'include') || relationFieldName === undefined) {
++      return undefined
++    }
++
++    relationPath.push(relationFieldName)
++  }
++
++  return relationPath
++}
++
++function resolveNextArgs(args: JsArgs, relationFieldName: string): JsArgs {
++  const select = args.select?.[relationFieldName]
++  if (isNestedArgs(select)) {
++    return select
++  }
++
++  const include = args.include?.[relationFieldName]
++  if (isNestedArgs(include)) {
++    return include
++  }
++
++  return {}
++}
++
++function isNestedArgs(value: unknown): value is JsArgs {
++  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
++}
+diff --git a/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts b/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts
+index 498e4c16fbf0..443ecc13d783 100644
+--- a/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts
++++ b/packages/client/src/runtime/core/jsonProtocol/serializeJsonQuery.ts
+@@ -500,7 +500,7 @@ class SerializeContext {
+   }
+ 
+   shouldWrapRawValues(): boolean {
+-    return this.params.wrapRawValues ?? false
++    return this.params.wrapRawValues ?? true
+   }
+ 
+   getComputedFields() {
+diff --git a/packages/client/src/runtime/getPrismaClient.ts b/packages/client/src/runtime/getPrismaClient.ts
+index cab4c1426992..11f5d3df3687 100644
+--- a/packages/client/src/runtime/getPrismaClient.ts
++++ b/packages/client/src/runtime/getPrismaClient.ts
+@@ -20,6 +20,7 @@ import { $extends } from './core/extensions/$extends'
+ import { applyAllResultExtensions } from './core/extensions/applyAllResultExtensions'
+ import { applyQueryExtensions } from './core/extensions/applyQueryExtensions'
+ import { MergedExtensionsList } from './core/extensions/MergedExtensionsList'
++import { resolveResultExtensionContext } from './core/extensions/resolve-result-extension-context'
+ import { getEngineInstance } from './core/init/getEngineInstance'
+ import { GlobalOmitOptions, serializeJsonQuery } from './core/jsonProtocol/serializeJsonQuery'
+ import {
+@@ -808,10 +809,18 @@ Or read our docs at https://www.prisma.io/docs/concepts/components/prisma-client
+         if (!requestParams.model) {
+           return result
+         }
+-        return applyAllResultExtensions({
+-          result,
++
++        const extensionContext = resolveResultExtensionContext({
++          dataPath: requestParams.dataPath,
+           modelName: requestParams.model,
+           args: requestParams.args,
++          runtimeDataModel: this._runtimeDataModel,
++        })
++
++        return applyAllResultExtensions({
++          result,
++          modelName: extensionContext.modelName,
++          args: extensionContext.args,
+           extensions: this._extensions,
+           runtimeDataModel: this._runtimeDataModel,
+           globalOmit: this._globalOmit,
+diff --git a/packages/client/src/runtime/index.ts b/packages/client/src/runtime/index.ts
+index fe02daf2d0c4..8c4dbcd8d95c 100644
+--- a/packages/client/src/runtime/index.ts
++++ b/packages/client/src/runtime/index.ts
+@@ -26,7 +26,7 @@ export {
+   type Operation,
+   type RuntimeDataModel,
+ } from '@prisma/client-common'
+-export { deserializeJsonResponse } from '@prisma/client-engine-runtime'
++export { deserializeJsonObject } from '@prisma/client-engine-runtime'
+ export type { RawValue, Value } from '@prisma/client-runtime-utils'
+ export type { AnyNullClass, DbNullClass, JsonNullClass } from '@prisma/client-runtime-utils'
+ export {
+diff --git a/packages/client/src/runtime/utils/deepCloneArgs.test.ts b/packages/client/src/runtime/utils/deepCloneArgs.test.ts
+new file mode 100644
+index 000000000000..64f24cec483d
+--- /dev/null
++++ b/packages/client/src/runtime/utils/deepCloneArgs.test.ts
+@@ -0,0 +1,51 @@
++import { isSkip, skip } from '../core/types'
++import { deepCloneArgs } from './deepCloneArgs'
++
++describe('deepCloneArgs', () => {
++  test('preserves Skip instances through cloning', () => {
++    const args = {
++      data: {
++        name: skip,
++        email: 'test@example.com',
++      },
++    }
++
++    const cloned = deepCloneArgs(args) as Record<string, any>
++
++    expect(isSkip(cloned.data.name)).toBe(true)
++    expect(cloned.data.name).toBe(skip)
++    expect(cloned.data.email).toBe('test@example.com')
++  })
++
++  test('preserves Skip as a top-level value', () => {
++    const args = {
++      where: skip,
++      orderBy: { name: 'asc' },
++    }
++
++    const cloned = deepCloneArgs(args) as Record<string, any>
++
++    expect(isSkip(cloned.where)).toBe(true)
++    expect(cloned.where).toBe(skip)
++  })
++
++  test('preserves Skip in arrays', () => {
++    const args = {
++      data: [skip, 'value'],
++    }
++
++    const cloned = deepCloneArgs(args) as Record<string, any>
++
++    expect(isSkip(cloned.data[0])).toBe(true)
++  })
++
++  test('still deep clones regular objects', () => {
++    const inner = { foo: 'bar' }
++    const args = { data: inner }
++
++    const cloned = deepCloneArgs(args) as Record<string, any>
++
++    expect(cloned.data).toEqual(inner)
++    expect(cloned.data).not.toBe(inner)
++  })
++})
+diff --git a/packages/client/src/runtime/utils/deepCloneArgs.ts b/packages/client/src/runtime/utils/deepCloneArgs.ts
+index 29252da2c980..2843f8df71a7 100644
+--- a/packages/client/src/runtime/utils/deepCloneArgs.ts
++++ b/packages/client/src/runtime/utils/deepCloneArgs.ts
+@@ -2,6 +2,7 @@ import { Decimal, ObjectEnumValue, Sql } from '@prisma/client-runtime-utils'
+ import { assertNever } from '@prisma/internals'
+ 
+ import { isFieldRef } from '../core/model/FieldRef'
++import { isSkip } from '../core/types'
+ import { isTypedSql, TypedSql, UnknownTypedSql } from '../core/types/exported'
+ import { JsArgs, JsInputValue } from '../core/types/exported/JsApi'
+ import { RawQueryArgs } from '../core/types/exported/RawQueryArgs'
+@@ -43,7 +44,7 @@ function cloneTypedSql(rawParam: UnknownTypedSql): UnknownTypedSql {
+ 
+ // based on https://github.com/lukeed/klona/blob/v2.0.6/src/index.js
+ function deepCloneValue(x: JsInputValue): JsInputValue {
+-  if (typeof x !== 'object' || x == null || x instanceof ObjectEnumValue || isFieldRef(x)) {
++  if (typeof x !== 'object' || x == null || x instanceof ObjectEnumValue || isFieldRef(x) || isSkip(x)) {
+     return x
+   }
+ 
+diff --git a/packages/client/tests/functional/batching/prisma/_schema.ts b/packages/client/tests/functional/batching/prisma/_schema.ts
+index 815da26ce70c..67ab8fe3a8e9 100644
+--- a/packages/client/tests/functional/batching/prisma/_schema.ts
++++ b/packages/client/tests/functional/batching/prisma/_schema.ts
+@@ -15,6 +15,7 @@ export default testMatrix.setupSchema(({ provider }) => {
+     id ${idForProvider(provider)}
+     email String @unique
+     posts Post[]
++    comments Comment[]
+   }
+ 
+ 
+@@ -23,5 +24,11 @@ export default testMatrix.setupSchema(({ provider }) => {
+     userId String
+     user User @relation(fields: [userId], references: [id])
+   }
++
++  model Comment {
++    id ${idForProvider(provider)}
++    userId String
++    user User @relation(fields: [userId], references: [id])
++  }
+   `
+ })
+diff --git a/packages/client/tests/functional/batching/tests.ts b/packages/client/tests/functional/batching/tests.ts
+index 234820b3f1a8..becad156f2e4 100644
+--- a/packages/client/tests/functional/batching/tests.ts
++++ b/packages/client/tests/functional/batching/tests.ts
+@@ -1,10 +1,12 @@
+ import { copycat, faker } from '@snaplet/copycat'
+ 
++import { getPrismaClient } from '../../../src/runtime/getPrismaClient'
++import { Providers } from '../_utils/providers'
+ import { waitFor } from '../_utils/tests/waitFor'
+ import { NewPrismaClient } from '../_utils/types'
+ import testMatrix from './_matrix'
+ // @ts-ignore
+-import type { PrismaClient } from './generated/prisma/client'
++import type { Prisma, PrismaClient } from './generated/prisma/client'
+ 
+ const user1 = {
+   id: faker.database.mongodbObjectId(),
+@@ -18,22 +20,83 @@ const user2 = {
+ declare const newPrismaClient: NewPrismaClient<PrismaClient, typeof PrismaClient>
+ 
+ testMatrix.setupTestSuite(
+-  () => {
++  ({ provider }) => {
+     let prisma: PrismaClient
+     let queriesExecuted = 0
++    let beginCount = 0
++    let commitCount = 0
++    let rollbackCount = 0
++    let savepointCount = 0
++    let releaseSavepointCount = 0
++    let rollbackToSavepointCount = 0
++    let engineRequestCount = 0
++    let engineRequestBatchCount = 0
++    const engineRequestBatchSizes: number[] = []
++
++    function resetQueryCounts() {
++      queriesExecuted = 0
++      beginCount = 0
++      commitCount = 0
++      rollbackCount = 0
++      savepointCount = 0
++      releaseSavepointCount = 0
++      rollbackToSavepointCount = 0
++    }
++
++    function resetEngineCounts() {
++      engineRequestCount = 0
++      engineRequestBatchCount = 0
++      engineRequestBatchSizes.length = 0
++    }
+ 
+     beforeAll(async () => {
+       prisma = newPrismaClient({
+         log: [{ emit: 'event', level: 'query' }],
+       })
+ 
++      // Count batching at the transport layer: this is what actually verifies that Prisma Client
++      // grouped multiple operations into a single engine roundtrip.
++      const engine = (prisma as unknown as InstanceType<ReturnType<typeof getPrismaClient>>)._engine
++      const originalRequest = engine.request.bind(engine)
++      const originalRequestBatch = engine.requestBatch.bind(engine)
++
++      engine.request = (query, options) => {
++        engineRequestCount++
++        return originalRequest(query, options)
++      }
++
++      engine.requestBatch = (queries, options) => {
++        engineRequestBatchCount++
++        engineRequestBatchSizes.push(Array.isArray(queries) ? queries.length : 0)
++        return originalRequestBatch(queries, options)
++      }
++
+       await prisma.user.create({ data: { posts: { create: {} }, ...user1 } })
+       await prisma.user.create({ data: user2 })
+ 
+       // @ts-expect-error - client not typed for log opts for cross generator compatibility - can be improved once we drop the prisma-client-js generator
+       prisma.$on('query', ({ query }: Prisma.QueryEvent) => {
+-        // TODO(query compiler): compacted batches don't need to be wrapped in transactions
+-        if (query.includes('BEGIN') || query.includes('COMMIT') || query.includes('ROLLBACK')) {
++        const normalized = query.trim().toUpperCase()
++
++        // Track transaction boundary statements separately from "real" queries.
++        // In qpe=remote mode, BEGIN isn't consistently surfaced in query logs, but COMMIT often is.
++        if (normalized.startsWith('BEGIN')) beginCount++
++        if (normalized.startsWith('COMMIT')) commitCount++
++        if (normalized.startsWith('ROLLBACK TO SAVEPOINT')) rollbackToSavepointCount++
++        else if (normalized.startsWith('ROLLBACK')) rollbackCount++
++        if (normalized.startsWith('RELEASE SAVEPOINT')) releaseSavepointCount++
++        if (normalized.startsWith('SAVEPOINT')) savepointCount++
++
++        // TODO(query compiler): compacted batches don't need to be wrapped in transactions.
++        // We exclude transaction boundary statements from the general query count.
++        if (
++          normalized.startsWith('BEGIN') ||
++          normalized.startsWith('COMMIT') ||
++          normalized.startsWith('ROLLBACK') ||
++          normalized.startsWith('SAVEPOINT') ||
++          normalized.startsWith('RELEASE SAVEPOINT') ||
++          normalized.startsWith('ROLLBACK TO SAVEPOINT')
++        ) {
+           return
+         }
+         queriesExecuted++
+@@ -41,7 +104,8 @@ testMatrix.setupTestSuite(
+     })
+ 
+     beforeEach(() => {
+-      queriesExecuted = 0
++      resetQueryCounts()
++      resetEngineCounts()
+     })
+ 
+     test('batches findUnique', async () => {
+@@ -156,6 +220,138 @@ testMatrix.setupTestSuite(
+ 
+       await waitFor(() => expect(queriesExecuted).toBeGreaterThan(1))
+     })
++
++    testIf(provider === Providers.POSTGRESQL)(
++      'interactive transactions: batches findUnique for a single model',
++      async () => {
++        const requestCount = 10
++        const u1 = await prisma.user.create({
++          data: {
++            email: `user1-${faker.string.uuid()}@example.com`,
++          },
++        })
++        const u2 = await prisma.user.create({
++          data: {
++            email: `user2-${faker.string.uuid()}@example.com`,
++          },
++        })
++
++        const users = [u1, u2]
++        for (let i = 0; i < requestCount - 2; i++) {
++          users.push(
++            await prisma.user.create({
++              data: {
++                email: `user-${i}-${faker.string.uuid()}@example.com`,
++              },
++            }),
++          )
++        }
++
++        // Create one related record per user so we can assert results are correct.
++        await prisma.post.createMany({
++          data: users.map((u) => ({ userId: u.id })),
++        })
++
++        const ids = users.map((u) => u.id)
++
++        // Measure only what happens inside the interactive transaction.
++        resetQueryCounts()
++        resetEngineCounts()
++
++        const res = await prisma.$transaction((tx) => {
++          return Promise.all(ids.map((id) => tx.user.findUnique({ where: { id } }).posts()))
++        })
++
++        await waitFor(() => {
++          // Ensure batching did not introduce nested transaction boundaries.
++          // We expect exactly one top-level commit for the interactive transaction.
++          expect(beginCount).toBeLessThanOrEqual(1)
++          expect(commitCount).toBe(1)
++          expect(rollbackCount).toBe(0)
++          expect(savepointCount).toBe(0)
++          expect(releaseSavepointCount).toBe(0)
++          expect(rollbackToSavepointCount).toBe(0)
++
++          // This is the real batching assertion: N operations should be sent as a single engine batch.
++          expect(engineRequestCount).toBe(0)
++          expect(engineRequestBatchCount).toBe(1)
++          expect(engineRequestBatchSizes).toEqual([requestCount])
++
++          expect(res).toHaveLength(requestCount)
++          for (const posts of res) {
++            expect(posts).toHaveLength(1)
++          }
++        })
++      },
++    )
++
++    testIf(provider === Providers.POSTGRESQL)(
++      'interactive transactions: batches findUnique for multiple models',
++      async () => {
++        const requestCount = 10
++        const u1 = await prisma.user.create({
++          data: {
++            email: `user1-${faker.string.uuid()}@example.com`,
++          },
++        })
++        const u2 = await prisma.user.create({
++          data: {
++            email: `user2-${faker.string.uuid()}@example.com`,
++          },
++        })
++
++        const users = [u1, u2]
++        for (let i = 0; i < requestCount - 2; i++) {
++          users.push(
++            await prisma.user.create({
++              data: {
++                email: `user-${i}-${faker.string.uuid()}@example.com`,
++              },
++            }),
++          )
++        }
++
++        await prisma.post.createMany({
++          data: users.map((u) => ({ userId: u.id })),
++        })
++        await prisma.comment.createMany({
++          data: users.map((u) => ({ userId: u.id })),
++        })
++
++        const ids = users.map((u) => u.id)
++
++        // Measure only what happens inside the interactive transaction.
++        resetQueryCounts()
++        resetEngineCounts()
++
++        const res = await prisma.$transaction((tx) => {
++          return Promise.all([
++            ...ids.map((id) => tx.user.findUnique({ where: { id } }).posts()),
++            ...ids.map((id) => tx.user.findUnique({ where: { id } }).comments()),
++          ])
++        })
++
++        await waitFor(() => {
++          // Ensure batching did not introduce nested transaction boundaries.
++          expect(beginCount).toBeLessThanOrEqual(1)
++          expect(commitCount).toBe(1)
++          expect(rollbackCount).toBe(0)
++          expect(savepointCount).toBe(0)
++          expect(releaseSavepointCount).toBe(0)
++          expect(rollbackToSavepointCount).toBe(0)
++
++          // We expect one engine batch for posts and one for comments (same tx, same tick).
++          expect(engineRequestCount).toBe(0)
++          expect(engineRequestBatchCount).toBe(2)
++          expect(engineRequestBatchSizes.sort((a, b) => a - b)).toEqual([requestCount, requestCount])
++
++          expect(res).toHaveLength(requestCount * 2)
++          for (const related of res) {
++            expect(related).toHaveLength(1)
++          }
++        })
++      },
++    )
+   },
+   {
+     skipDefaultClientInstance: true,
+diff --git a/packages/client/tests/functional/extensions/result.ts b/packages/client/tests/functional/extensions/result.ts
+index 23debeb41032..8d0cd0b4e083 100644
+--- a/packages/client/tests/functional/extensions/result.ts
++++ b/packages/client/tests/functional/extensions/result.ts
+@@ -25,6 +25,29 @@ function prismaWithExtension() {
+   })
+ }
+ 
++function prismaWithUserAndPostExtensions() {
++  return prisma.$extends({
++    result: {
++      user: {
++        fullName: {
++          needs: { firstName: true, lastName: true },
++          compute(user) {
++            return `${user.firstName} ${user.lastName}`
++          },
++        },
++      },
++      post: {
++        postLabel: {
++          needs: { id: true },
++          compute(post) {
++            return `post-${post.id}`
++          },
++        },
++      },
++    },
++  })
++}
++
+ testMatrix.setupTestSuite(
+   () => {
+     beforeEach(async () => {
+@@ -204,6 +227,165 @@ testMatrix.setupTestSuite(
+       expectTypeOf(post?.user.fullName).toEqualTypeOf<string | undefined>()
+     })
+ 
++    test('nested reads: include applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const user = await xprisma.user.findFirstOrThrow({
++        include: {
++          posts: true,
++        },
++      })
++
++      expect(user.posts[0].postLabel).toBe(`post-${user.posts[0].id}`)
++    })
++
++    test('nested reads: select applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const user = await xprisma.user.findFirstOrThrow({
++        select: {
++          posts: {
++            select: {
++              postLabel: true,
++            },
++          },
++        },
++      })
++
++      expect(user.posts[0].postLabel).toBeDefined()
++    })
++
++    test('nested writes (create): include applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const createdUser = await xprisma.user.create({
++        data: {
++          email: faker.internet.email(),
++          firstName: 'Nested',
++          lastName: 'Create',
++          posts: {
++            create: [{}],
++          },
++        },
++        include: {
++          posts: true,
++        },
++      })
++
++      expect(createdUser.posts[0].postLabel).toBe(`post-${createdUser.posts[0].id}`)
++    })
++
++    test('nested writes (create): select applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const createdUser = await xprisma.user.create({
++        data: {
++          email: faker.internet.email(),
++          firstName: 'Nested',
++          lastName: 'Create',
++          posts: {
++            create: [{}],
++          },
++        },
++        select: {
++          posts: {
++            select: {
++              postLabel: true,
++            },
++          },
++        },
++      })
++
++      expect(createdUser.posts[0].postLabel).toBeDefined()
++    })
++
++    test('nested writes (update): include applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const updatedUser = await xprisma.user.update({
++        where: { email },
++        data: {
++          firstName: 'Nested Update',
++          posts: {
++            create: [{}],
++          },
++        },
++        include: {
++          posts: true,
++        },
++      })
++
++      expect(updatedUser.posts[0].postLabel).toBe(`post-${updatedUser.posts[0].id}`)
++    })
++
++    test('nested writes (update): select applies result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const updatedUser = await xprisma.user.update({
++        where: { email },
++        data: {
++          firstName: 'Nested Update',
++          posts: {
++            create: [{}],
++          },
++        },
++        select: {
++          posts: {
++            select: {
++              postLabel: true,
++            },
++          },
++        },
++      })
++
++      expect(updatedUser.posts[0].postLabel).toBeDefined()
++    })
++
++    test('fluent reads apply result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const posts = await xprisma.user.findUniqueOrThrow({ where: { email } }).posts()
++
++      expect(posts[0].postLabel).toBe(`post-${posts[0].id}`)
++    })
++
++    test('fluent writes (create) apply result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const posts = await xprisma.user
++        .create({
++          data: {
++            email: faker.internet.email(),
++            firstName: 'Fluent',
++            lastName: 'Create',
++            posts: {
++              create: [{}],
++            },
++          },
++        })
++        .posts()
++
++      expect(posts[0].postLabel).toBe(`post-${posts[0].id}`)
++    })
++
++    test('fluent writes (update) apply result extensions to nested models', async () => {
++      const xprisma = prismaWithUserAndPostExtensions()
++
++      const posts = await xprisma.user
++        .update({
++          where: { email },
++          data: {
++            firstName: 'Fluent Update',
++            posts: {
++              create: [{}],
++            },
++          },
++        })
++        .posts()
++
++      expect(posts[0].postLabel).toBe(`post-${posts[0].id}`)
++    })
++
+     test('dependencies between computed fields', async () => {
+       const xprisma = prismaWithExtension().$extends({
+         result: {
+diff --git a/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/_matrix.ts b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/_matrix.ts
+new file mode 100644
+index 000000000000..169663a76317
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders, Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [allProviders.filter(({ provider }) => provider !== Providers.SQLSERVER)])
+diff --git a/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/prisma/_schema.ts b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/prisma/_schema.ts
+new file mode 100644
+index 000000000000..888f6d8d37bd
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/prisma/_schema.ts
+@@ -0,0 +1,19 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model User {
++      id ${idForProvider(provider)}
++      properties Json
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/tests.ts b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/tests.ts
+new file mode 100644
+index 000000000000..286a150f5212
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29174-jsonb-parameter-regression/tests.ts
+@@ -0,0 +1,68 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    test('correctly deserializes Date objects in JSON fields', async () => {
++      const user = await prisma.user.create({
++        data: {
++          properties: {
++            dateField: new Date(),
++          },
++        },
++      })
++
++      expect(user).toMatchObject({
++        properties: {
++          dateField: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++        },
++      })
++    })
++
++    test('correctly deserializes Date array objects in JSON fields', async () => {
++      const user = await prisma.user.create({
++        data: {
++          properties: {
++            dateArrayField: [new Date(), new Date()],
++          },
++        },
++      })
++
++      expect(user).toMatchObject({
++        properties: {
++          dateArrayField: [
++            expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++            expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++          ],
++        },
++      })
++    })
++
++    test('correctly deserializes Date objects in JSON fields with $type', async () => {
++      const user = await prisma.user.create({
++        data: {
++          properties: {
++            $type: 'Json',
++            dateField: new Date(),
++          },
++        },
++      })
++
++      expect(user).toMatchObject({
++        properties: {
++          $type: 'Json',
++          dateField: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
++        },
++      })
++    })
++  },
++  {
++    optOut: {
++      from: ['sqlserver'],
++      reason: 'SQL server does not support JSON fields',
++    },
++  },
++)
+diff --git a/packages/client/tests/functional/issues/29176-cursor-parameter-regression/_matrix.ts b/packages/client/tests/functional/issues/29176-cursor-parameter-regression/_matrix.ts
+new file mode 100644
+index 000000000000..d56f2f6b7702
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29176-cursor-parameter-regression/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders } from '../../_utils/providers'
++
++export default defineMatrix(() => [allProviders])
+diff --git a/packages/client/tests/functional/issues/29176-cursor-parameter-regression/prisma/_schema.ts b/packages/client/tests/functional/issues/29176-cursor-parameter-regression/prisma/_schema.ts
+new file mode 100644
+index 000000000000..8524fa8a5255
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29176-cursor-parameter-regression/prisma/_schema.ts
+@@ -0,0 +1,23 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider  = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model ListResult {
++      id ${idForProvider(provider)}
++      connection_uuid  String
++      query_ref        String
++      result_index     Int
++
++      @@unique([connection_uuid, query_ref, result_index])
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29176-cursor-parameter-regression/tests.ts b/packages/client/tests/functional/issues/29176-cursor-parameter-regression/tests.ts
+new file mode 100644
+index 000000000000..cef0e8286e0c
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29176-cursor-parameter-regression/tests.ts
+@@ -0,0 +1,65 @@
++import { randomUUID } from 'crypto'
++
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(() => {
++  test('correctly handles a cursor with parameterised values', async () => {
++    const connection_uuid = randomUUID()
++    const query_ref = 'asdf'
++
++    await prisma.listResult.createMany({
++      data: [
++        {
++          connection_uuid,
++          query_ref,
++          result_index: 0,
++        },
++        {
++          connection_uuid,
++          query_ref,
++          result_index: 1,
++        },
++        {
++          connection_uuid,
++          query_ref,
++          result_index: 2,
++        },
++      ],
++    })
++
++    const results = await prisma.listResult.findMany({
++      take: 5,
++      skip: 0,
++      where: {
++        connection_uuid,
++        query_ref,
++      },
++      select: {
++        result_index: true,
++      },
++      orderBy: {
++        result_index: 'asc',
++      },
++      cursor: {
++        connection_uuid_query_ref_result_index: {
++          connection_uuid,
++          query_ref,
++          result_index: 1,
++        },
++      },
++    })
++
++    expect(results).toEqual([
++      {
++        result_index: 1,
++      },
++      {
++        result_index: 2,
++      },
++    ])
++  })
++})
+diff --git a/packages/client/tests/functional/skip/test.ts b/packages/client/tests/functional/skip/test.ts
+index 1e6b7b5241d4..d8c84cc4acb9 100644
+--- a/packages/client/tests/functional/skip/test.ts
++++ b/packages/client/tests/functional/skip/test.ts
+@@ -195,4 +195,67 @@ testMatrix.setupTestSuite(() => {
+       expectTypeOf(result).toHaveProperty('email')
+     })
+   })
++
++  describe('after query extension', () => {
++    const getExtendedClient = () =>
++      prisma.$extends({
++        query: {
++          $allModels: {
++            $allOperations: (params) => params.query(params.args),
++          },
++        },
++      })
++
++    test('skips fields in create with query extension', async () => {
++      const result = await getExtendedClient().user.create({
++        data: {
++          email: 'query-ext-test@example.com',
++          name: Prisma.skip,
++        },
++      })
++
++      expect(result.name).toBe('Test User')
++    })
++
++    test('skips input fields in findMany with query extension', async () => {
++      const result = await getExtendedClient().user.findMany({
++        where: {
++          name: Prisma.skip,
++        },
++        orderBy: { name: 'asc' },
++      })
++
++      expect(result.length).toBeGreaterThanOrEqual(2)
++    })
++
++    test('skips arguments in findMany with query extension', async () => {
++      const result = await getExtendedClient().user.findMany({
++        where: Prisma.skip,
++        orderBy: { name: 'asc' },
++      })
++
++      expect(result.length).toBeGreaterThanOrEqual(2)
++    })
++
++    test('skips relations in include with query extension', async () => {
++      const result = await getExtendedClient().user.findFirstOrThrow({
++        include: {
++          posts: Prisma.skip,
++        },
++      })
++
++      expect(result).not.toHaveProperty('posts')
++    })
++
++    test('skips relations in select with query extension', async () => {
++      const result = await getExtendedClient().user.findFirstOrThrow({
++        select: {
++          id: true,
++          posts: Prisma.skip,
++        },
++      })
++
++      expect(result).not.toHaveProperty('posts')
++    })
++  })
+ })
+diff --git a/packages/client/tests/memory/_utils/MemoryTestDir.ts b/packages/client/tests/memory/_utils/MemoryTestDir.ts
+deleted file mode 100644
+index 1d605bd877f1..000000000000
+--- a/packages/client/tests/memory/_utils/MemoryTestDir.ts
++++ /dev/null
+@@ -1,37 +0,0 @@
+-import path from 'path'
+-
+-export class MemoryTestDir {
+-  readonly basePath: string
+-
+-  constructor(basePath: string) {
+-    this.basePath = basePath
+-  }
+-
+-  get testName(): string {
+-    return path.basename(this.basePath)
+-  }
+-
+-  get schemaFilePath(): string {
+-    return path.join(this.basePath, 'prisma', 'schema.prisma')
+-  }
+-
+-  get generatedDir(): string {
+-    return path.join(this.basePath, '.generated')
+-  }
+-
+-  get reportPath(): string {
+-    return path.join(this.generatedDir, 'report.html')
+-  }
+-
+-  get resultsPath(): string {
+-    return path.join(this.generatedDir, 'result')
+-  }
+-
+-  get sourceTestPath(): string {
+-    return path.join(this.basePath, 'test.ts')
+-  }
+-
+-  get compiledTestPath(): string {
+-    return path.join(this.generatedDir, 'test.js')
+-  }
+-}
+diff --git a/packages/client/tests/memory/_utils/buildMemoryTest.ts b/packages/client/tests/memory/_utils/buildMemoryTest.ts
+deleted file mode 100644
+index c0dc539bfe33..000000000000
+--- a/packages/client/tests/memory/_utils/buildMemoryTest.ts
++++ /dev/null
+@@ -1,16 +0,0 @@
+-import esbuild from 'esbuild'
+-
+-import { MemoryTestDir } from './MemoryTestDir'
+-
+-/**
+- * Bundles memory test file and all its dependencies with esbuild
+- * @param testDir
+- */
+-export async function buildMemoryTest(testDir: MemoryTestDir): Promise<void> {
+-  await esbuild.build({
+-    entryPoints: [testDir.sourceTestPath],
+-    platform: 'node',
+-    outfile: testDir.compiledTestPath,
+-    bundle: true,
+-  })
+-}
+diff --git a/packages/client/tests/memory/_utils/commonSettings.ts b/packages/client/tests/memory/_utils/commonSettings.ts
+deleted file mode 100644
+index 5c1b007291b6..000000000000
+--- a/packages/client/tests/memory/_utils/commonSettings.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-// NOTE: Increased warmup iterations due to Node.js 23 changed JIT behavior.
+-// It seems to take longer to create optimized code which consumes additional memory.
+-// Our tests incorrectly report this additional memory as leakage.
+-// See: https://github.com/prisma/prisma/pull/25971#issuecomment-2572448506
+-export const WARMUP_ITERATIONS = 2000
+diff --git a/packages/client/tests/memory/_utils/createMemoryTest.ts b/packages/client/tests/memory/_utils/createMemoryTest.ts
+deleted file mode 100644
+index 14272ca1f65d..000000000000
+--- a/packages/client/tests/memory/_utils/createMemoryTest.ts
++++ /dev/null
+@@ -1,70 +0,0 @@
+-import fs from 'fs'
+-import path from 'path'
+-
+-import { WARMUP_ITERATIONS } from './commonSettings'
+-
+-declare function gc(): void
+-
+-type PrismaModule = {
+-  PrismaClient: {
+-    new (...opts: any[]): any
+-  }
+-  Prisma: any
+-}
+-
+-type ScenarioOptions<ModuleT extends PrismaModule, PrepareResult> = {
+-  warmupIterations?: number
+-  iterations?: number
+-  prepare?: (module: ModuleT) => PrepareResult | Promise<PrepareResult>
+-  run: (params: PrepareResult) => Promise<void>
+-  cleanup?: (params: PrepareResult) => Promise<void>
+-}
+-
+-/**
+- * Creates and runs child process of the memory test
+- *
+- * Expected to run with `--expose-gc` and results file as a
+- * first command argument. The process is launched by
+- * `runMemoryTest`.
+- *
+- *
+- * It executes provided callback `iterations` + WARMUP_ITERATIONS iterations number of times,
+- * with the assumption that parent process will ignore warmup iterations.
+- * After each iteration, forces garbage collection and records current heap memory
+- * usage into results file.
+- *
+- * We record it into the file as opposed to storing results in memory to
+- * avoid skewing the measurements too much
+- *
+- * For results processing, see `runMemoryTest`
+- *
+- * @param callback
+- * @param options
+- */
+-export function createMemoryTest<ModuleT extends PrismaModule, PrepareResult = void>({
+-  iterations = 1000,
+-  prepare,
+-  run,
+-  cleanup,
+-}: ScenarioOptions<ModuleT, PrepareResult>) {
+-  void (async () => {
+-    const resultFile = process.argv[2]
+-    const dir = path.dirname(require.main!.filename)
+-    const prismaModule = require(path.join(dir, 'node_modules', '@prisma', 'client'))
+-    const runParams = (await prepare?.(prismaModule)) as PrepareResult
+-    const totalIterations = iterations + WARMUP_ITERATIONS
+-
+-    const resultStream = fs.createWriteStream(resultFile)
+-
+-    for (let i = 0; i < totalIterations; i++) {
+-      await run(runParams)
+-      gc()
+-
+-      await new Promise((resolve) => resultStream.write(process.memoryUsage().heapUsed + '\n', resolve))
+-    }
+-
+-    await cleanup?.(runParams)
+-
+-    resultStream.close()
+-  })()
+-}
+diff --git a/packages/client/tests/memory/_utils/database.ts b/packages/client/tests/memory/_utils/database.ts
+deleted file mode 100644
+index 1eb8206511f4..000000000000
+--- a/packages/client/tests/memory/_utils/database.ts
++++ /dev/null
+@@ -1,51 +0,0 @@
+-import { loadConfigFromFile, PrismaConfigInternal } from '@prisma/config'
+-import { DbDrop, DbPush } from '@prisma/migrate'
+-
+-import { MemoryTestDir } from './MemoryTestDir'
+-
+-/**
+- * Creates a database according to provided schema while silencing the output
+- * @param testDir
+- * @returns
+- */
+-export async function setupMemoryTestDatabase(testDir: MemoryTestDir) {
+-  const config = await getMemoryTestConfig(testDir)
+-
+-  return withNoOutput(async () => {
+-    await DbPush.new().parse(['--force-reset'], config, testDir.basePath)
+-  })
+-}
+-
+-/**
+- * Drops previously created database
+- * @param testDir
+- * @returns
+- */
+-export async function dropMemoryTestDatabase(testDir: MemoryTestDir) {
+-  const config = await getMemoryTestConfig(testDir)
+-
+-  return withNoOutput(async () => {
+-    await DbDrop.new().parse(['--force', '--preview-feature'], config, testDir.basePath)
+-  })
+-}
+-
+-async function withNoOutput(callback: () => Promise<void>) {
+-  const originalInfo = console.info
+-  console.info = () => {}
+-  try {
+-    await callback()
+-  } finally {
+-    console.info = originalInfo
+-  }
+-}
+-
+-async function getMemoryTestConfig(testDir: MemoryTestDir): Promise<PrismaConfigInternal> {
+-  const { config, error } = await loadConfigFromFile({ configRoot: testDir.basePath })
+-
+-  if (error || !config) {
+-    const reason = error?._tag ?? 'unknown error'
+-    throw new Error(`Failed to load prisma.config.ts for memory test ${testDir.testName} (${reason}).`)
+-  }
+-
+-  return config
+-}
+diff --git a/packages/client/tests/memory/_utils/generateMemoryTestClient.ts b/packages/client/tests/memory/_utils/generateMemoryTestClient.ts
+deleted file mode 100644
+index a55420dd5a41..000000000000
+--- a/packages/client/tests/memory/_utils/generateMemoryTestClient.ts
++++ /dev/null
+@@ -1,35 +0,0 @@
+-import { generateClient } from '@prisma/client-generator-js'
+-import { getConfig, getDMMF, parseEnvValue } from '@prisma/internals'
+-import fs from 'fs/promises'
+-import path from 'path'
+-
+-import { MemoryTestDir } from './MemoryTestDir'
+-
+-export async function generateMemoryTestClient(testDir: MemoryTestDir) {
+-  const schema = await fs.readFile(testDir.schemaFilePath, 'utf8')
+-  const dmmf = await getDMMF({ datamodel: schema })
+-  const config = await getConfig({
+-    datamodel: [[testDir.schemaFilePath, schema]],
+-  })
+-  const generator = config.generators.find((g) => parseEnvValue(g.provider) === 'prisma-client-js')!
+-
+-  const runtimePath = path.join(__dirname, '../../../runtime')
+-
+-  await generateClient({
+-    datamodel: schema,
+-    schemaPath: testDir.schemaFilePath,
+-    binaryPaths: {},
+-    datasources: config.datasources,
+-    outputDir: path.join(testDir.generatedDir, 'node_modules/@prisma/client'),
+-    copyRuntime: false,
+-    dmmf: dmmf,
+-    generator: generator,
+-    engineVersion: '0000000000000000000000000000000000000000',
+-    clientVersion: '0.0.0',
+-    testMode: true,
+-    activeProvider: config.datasources[0].activeProvider,
+-    runtimeBase: runtimePath,
+-    runtimeSourcePath: runtimePath,
+-    compilerBuild: 'fast',
+-  })
+-}
+diff --git a/packages/client/tests/memory/_utils/generateMemoryUsageReport.ts b/packages/client/tests/memory/_utils/generateMemoryUsageReport.ts
+deleted file mode 100644
+index 8d37c384628e..000000000000
+--- a/packages/client/tests/memory/_utils/generateMemoryUsageReport.ts
++++ /dev/null
+@@ -1,95 +0,0 @@
+-import fs from 'fs/promises'
+-
+-import type { TestResult } from './runMemoryTest'
+-
+-export async function generateMemoryUsageReport(outputFile: string, results: TestResult[]) {
+-  await fs.writeFile(outputFile, getHtmlTemplate(results))
+-}
+-
+-function getHtmlTemplate(results: TestResult[]) {
+-  const renderCalls = results
+-    .map((result) => {
+-      const name = result.testDir.testName
+-      const data = Array.from(result.heapUsageOverTime.entries())
+-      return `renderChart(${JSON.stringify({ name, data, hasLeak: result.hasLeak })})`
+-    })
+-    .join()
+-  return `
+-<!DOCTYPE html>
+-<html>
+-    <head>
+-        <title>Memory tests usage</title>
+-        <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.0/dist/chart.min.js"></script>
+-        <style>
+-        body {
+-            margin: 0;
+-            padding: 0;
+-        }
+-
+-        .chart {
+-            margin-bottom: 32px;
+-        }
+-
+-        .chart-container {
+-            width: 800px;
+-            margin: 0 auto;
+-            max-width: 100%;
+-        }
+-        </style>
+-    </head>
+-    <body>
+-        <div class="chart-container"></div>
+-        <script type="module">
+-            import prettyBytes from 'https://cdn.jsdelivr.net/npm/pretty-bytes@6.0.0/index.js';
+-
+-            const chartContainer = document.querySelector('.chart-container')
+-
+-            function renderChart({ name, data, hasLeak }) {
+-                const canvas = document.createElement('canvas')
+-                canvas.classList.add('chart')
+-                chartContainer.appendChild(canvas)
+-                const ctx = canvas.getContext('2d');
+-                new Chart(ctx, {
+-                    type: 'line',
+-                    data: {
+-                        datasets: [
+-                            {
+-                                label: name + ' test heap usage',
+-                                data,
+-                                fill: false,
+-                                borderColor: hasLeak ? '#A33B36' : '#46A368',
+-                            },
+-                        ]
+-                    },
+-                    options: {
+-                        scales: {
+-                            x: {
+-                                type: 'linear',
+-                                title: {
+-                                    display: true,
+-                                    text: 'Iteration'
+-                                }
+-                            },
+-                            y: {
+-                                beginAtZero: true,
+-                                ticks: {
+-                                    callback: (value) => prettyBytes(value)
+-                                }
+-                            },
+-                        },
+-                        elements: {
+-                            point: {
+-                                radius: 0
+-                            }
+-                        }
+-                    }
+-                })
+-
+-            }
+-
+-            ${renderCalls}
+-        </script>
+-    </body>
+-</html>
+-`
+-}
+diff --git a/packages/client/tests/memory/_utils/runAllMemoryTests.ts b/packages/client/tests/memory/_utils/runAllMemoryTests.ts
+deleted file mode 100644
+index a1a006741d7f..000000000000
+--- a/packages/client/tests/memory/_utils/runAllMemoryTests.ts
++++ /dev/null
+@@ -1,47 +0,0 @@
+-import { existsSync } from 'fs'
+-import fs from 'fs/promises'
+-import { bold, white } from 'kleur/colors'
+-import path from 'path'
+-
+-import { generateMemoryUsageReport } from './generateMemoryUsageReport'
+-import { MemoryTestDir } from './MemoryTestDir'
+-import { runMemoryTest, TestResult } from './runMemoryTest'
+-
+-/**
+- * Runs all defined memory tests
+- * If filter is set, runs only those tests, matching the filter
+- * If no tests match the filter, exits with an error
+- *
+- * @param filter
+- * @returns
+- */
+-export async function runAllMemoryTests(filter?: string) {
+-  const testsDir = path.resolve(__dirname, '..')
+-  const dirContents = await fs.readdir(testsDir)
+-  const allTests = dirContents.filter((fileName) => {
+-    if (fileName[0] === '.' || fileName[0] === '_') {
+-      return false
+-    }
+-    if (!existsSync(path.join(testsDir, fileName, 'test.ts'))) {
+-      return false
+-    }
+-    return !filter || fileName.includes(filter)
+-  })
+-
+-  if (filter && allTests.length === 0) {
+-    console.error(`Error: no tests matching ${bold(filter)} found`)
+-    process.exitCode = 1
+-    return
+-  }
+-
+-  const results = [] as TestResult[]
+-  for (const testDirName of allTests) {
+-    const result = await runMemoryTest(new MemoryTestDir(path.join(testsDir, testDirName)))
+-    results.push(result)
+-  }
+-
+-  const reportPath = path.resolve(__dirname, '..', 'memory-report.html')
+-  await generateMemoryUsageReport(reportPath, results)
+-
+-  console.log(`See report at: ${white(bold(reportPath))}`)
+-}
+diff --git a/packages/client/tests/memory/_utils/runMemoryTest.ts b/packages/client/tests/memory/_utils/runMemoryTest.ts
+deleted file mode 100644
+index 7bdfecdbce1f..000000000000
+--- a/packages/client/tests/memory/_utils/runMemoryTest.ts
++++ /dev/null
+@@ -1,137 +0,0 @@
+-import childProcess from 'child_process'
+-import { once } from 'events'
+-import fs from 'fs/promises'
+-import { bold, green, red, white } from 'kleur/colors'
+-import { linearRegression } from 'simple-statistics'
+-
+-import { buildMemoryTest } from './buildMemoryTest'
+-import { WARMUP_ITERATIONS } from './commonSettings'
+-import { dropMemoryTestDatabase, setupMemoryTestDatabase } from './database'
+-import { generateMemoryTestClient } from './generateMemoryTestClient'
+-import { MemoryTestDir } from './MemoryTestDir'
+-
+-const GROWTH_RATE_THRESHOLD_IN_BYTES = 20
+-
+-export type TestResult = {
+-  testDir: MemoryTestDir
+-  hasLeak: boolean
+-  heapUsageOverTime: number[]
+-}
+-
+-/**
+- * Runs a single memory test in a child process
+- * See `createMemoryTest` source code for child process counterpart
+- * source code.
+- *
+- * Does the following:
+- * - bundles test file using esbuild. We don't want to use esbuild-register here
+- * to avoid extra memory overhead
+- * - generates client using provided schema and creates a database
+- * - runs the test in a child process. During the run, child will periodically
+- * write current heap usage into results file
+- * - when child exits, reads heap usage over time. Using that information it can then make
+- * a decision on whether or not leak is happening and create html report with a graph
+- * (see `detectPossibleMemoryLeak` comments)
+- * - if memory leak is happening, set process exit code to 1
+- *
+- * @param testDir
+- */
+-export async function runMemoryTest(testDir: MemoryTestDir): Promise<TestResult> {
+-  console.log(`Running test ${bold(testDir.testName)}`)
+-  await fs.rm(testDir.generatedDir, { recursive: true, force: true })
+-  await buildMemoryTest(testDir)
+-  await setupMemoryTestDatabase(testDir)
+-  try {
+-    await generateMemoryTestClient(testDir)
+-
+-    const heapUsageOverTime = await runTestProcess(testDir)
+-
+-    const { hasLeak, growthRate } = detectPossibleMemoryLeak(heapUsageOverTime)
+-
+-    if (hasLeak) {
+-      console.log(bold(red('Looks like test is leaking memory')))
+-      console.log('')
+-      console.log(`Leak rate: ${red(growthRate)} bytes / iteration`)
+-
+-      process.exitCode = 1
+-    } else {
+-      console.log(white('No memory leak detected'))
+-      console.log(`Memory growth rate: ${green(growthRate)} bytes / iteration, which is below threshold`)
+-    }
+-    console.log('')
+-    return { testDir, hasLeak, heapUsageOverTime }
+-  } finally {
+-    await dropMemoryTestDatabase(testDir)
+-  }
+-}
+-
+-/**
+- * Runs test process, passing result file path as an argument and reads back
+- * the results
+- * @param testDir
+- * @returns
+- */
+-async function runTestProcess(testDir: MemoryTestDir) {
+-  const child = childProcess.spawn(
+-    'node',
+-    [
+-      // exposing GC and disabling a bunch
+-      // of caches to minimize their impact on memory
+-      '--expose-gc',
+-      '--no-compilation-cache',
+-      '--no-opt',
+-      testDir.compiledTestPath,
+-      testDir.resultsPath,
+-    ],
+-    {
+-      stdio: 'inherit',
+-    },
+-  )
+-
+-  await once(child, 'exit')
+-  return readTestResults(testDir)
+-}
+-
+-/**
+- * After test is finished, reads its results and converts it to numeric
+- * array
+- *
+- * @param testDir
+- * @returns
+- */
+-async function readTestResults(testDir: MemoryTestDir) {
+-  return (await fs.readFile(testDir.resultsPath, 'utf-8'))
+-    .split('\n')
+-    .slice(WARMUP_ITERATIONS) // do not take warmup iterations count into account
+-    .filter((line) => line !== '')
+-    .map((value) => parseFloat(value))
+-}
+-
+-/**
+- * Given heap usage over time data, determines memory
+- * growth rate, and based on that, decides whether or not
+- * to consider it a memory leak
+- *
+- * In order to determine growth rate, it first tries to fit the data
+- * into the line. Why do we do that, as opposed to just computing average deltas?
+- * It helps to filter out the outliers: node is a complicated things and occasionally,
+- * memory usage data will have short spikes, which nevertheless will skew the average
+- * too much and make it quite difficult to come up with reliable threshold. Fitting
+- * data into the closest possible line helps to smooth the data and get reproducible
+- * result from run to run.
+- *
+- * `linearRegression` function will return line equation, y = mx + b, where m is the
+- * slope of the line of the line. In our case, m corresponds to the memory growth rate
+- * of the test. If it gets over threshold we declare a memory leak and fail the test.
+- *
+- * @param heapUsageOverTime
+- * @returns
+- */
+-function detectPossibleMemoryLeak(heapUsageOverTime: number[]) {
+-  const trendLine = linearRegression(Array.from(heapUsageOverTime.entries()))
+-
+-  return {
+-    hasLeak: trendLine.m > GROWTH_RATE_THRESHOLD_IN_BYTES,
+-    growthRate: trendLine.m,
+-  }
+-}
+diff --git a/packages/client/tests/memory/basic/prisma.config.ts b/packages/client/tests/memory/basic/prisma.config.ts
+deleted file mode 100644
+index bddf714911ed..000000000000
+--- a/packages/client/tests/memory/basic/prisma.config.ts
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig } from '@prisma/config'
+-
+-export default defineConfig({
+-  datasource: {
+-    url: 'file:dev.db',
+-  },
+-})
+diff --git a/packages/client/tests/memory/basic/prisma/schema.prisma b/packages/client/tests/memory/basic/prisma/schema.prisma
+deleted file mode 100644
+index ad1dacd8595d..000000000000
+--- a/packages/client/tests/memory/basic/prisma/schema.prisma
++++ /dev/null
+@@ -1,12 +0,0 @@
+-generator client {
+-  provider = "prisma-client-js"
+-}
+-
+-datasource my_db {
+-    provider = "sqlite"
+-}
+-
+-model User {
+-    id        Int @id @default(autoincrement())
+-    viewCount Int
+-}
+diff --git a/packages/client/tests/memory/basic/test.ts b/packages/client/tests/memory/basic/test.ts
+deleted file mode 100644
+index 7424a0ccd86e..000000000000
+--- a/packages/client/tests/memory/basic/test.ts
++++ /dev/null
+@@ -1,19 +0,0 @@
+-import { PrismaLibSql } from '@prisma/adapter-libsql'
+-
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-createMemoryTest({
+-  prepare(module: PrismaModule) {
+-    return module.PrismaClient
+-  },
+-
+-  async run(PrismaClient) {
+-    const client = new PrismaClient({
+-      adapter: new PrismaLibSql({ url: `file:${__dirname}/../dev.db` }),
+-    })
+-    await client.$connect()
+-    await client.$disconnect()
+-  },
+-})
+diff --git a/packages/client/tests/memory/big-schema/prisma.config.ts b/packages/client/tests/memory/big-schema/prisma.config.ts
+deleted file mode 100644
+index d6f5a38d8d81..000000000000
+--- a/packages/client/tests/memory/big-schema/prisma.config.ts
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig } from '@prisma/config'
+-
+-export default defineConfig({
+-  datasource: {
+-    url: 'file:./dev.db',
+-  },
+-})
+diff --git a/packages/client/tests/memory/big-schema/prisma/schema.prisma b/packages/client/tests/memory/big-schema/prisma/schema.prisma
+deleted file mode 100644
+index 1d409cf7bb59..000000000000
+--- a/packages/client/tests/memory/big-schema/prisma/schema.prisma
++++ /dev/null
+@@ -1,452 +0,0 @@
+-generator client {
+-  provider = "prisma-client-js"
+-}
+-
+-datasource db {
+-    provider = "sqlite"
+-}
+-
+-model alltime_standing_entries {
+-    id                  Int      @id @default(autoincrement())
+-    alltime_standing_id Int
+-    team_id             Int
+-    pos                 Int?
+-    played              Int?
+-    won                 Int?
+-    lost                Int?
+-    drawn               Int?
+-    goals_for           Int?
+-    goals_against       Int?
+-    pts                 Int?
+-    recs                Int?
+-    comments            String?
+-    created_at          DateTime
+-    updated_at          DateTime
+-}
+-
+-model alltime_standings {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    title      String
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model assocs {
+-    id               Int      @id @default(autoincrement())
+-    key              String
+-    title            String
+-    since            Int?
+-    web              String?
+-    country_id       Int?
+-    national         Boolean  @default(dbgenerated("'f'"))
+-    continental      Boolean  @default(dbgenerated("'f'"))
+-    intercontinental Boolean  @default(dbgenerated("'f'"))
+-    created_at       DateTime
+-    updated_at       DateTime
+-}
+-
+-model assocs_assocs {
+-    id         Int      @id @default(autoincrement())
+-    assoc1_id  Int
+-    assoc2_id  Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model badges {
+-    id         Int      @id @default(autoincrement())
+-    team_id    Int
+-    league_id  Int
+-    season_id  Int
+-    title      String
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model cities {
+-    id         Int      @id @default(autoincrement())
+-    name       String
+-    key        String
+-    place_id   Int
+-    code       String?
+-    alt_names  String?
+-    country_id Int
+-    region_id  Int?
+-    city_id    Int?
+-    pop        Int?
+-    popm       Int?
+-    area       Int?
+-    m          Boolean  @default(dbgenerated("'f'"))
+-    c          Boolean  @default(dbgenerated("'f'"))
+-    d          Boolean  @default(dbgenerated("'f'"))
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model continents {
+-    id         Int      @id @default(autoincrement())
+-    name       String
+-    slug       String
+-    key        String
+-    place_id   Int
+-    alt_names  String?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model countries {
+-    id           Int      @id @default(autoincrement())
+-    name         String
+-    slug         String
+-    key          String
+-    place_id     Int
+-    code         String
+-    alt_names    String?
+-    pop          Int
+-    area         Int
+-    continent_id Int?
+-    country_id   Int?
+-    s            Boolean  @default(dbgenerated("'f'"))
+-    c            Boolean  @default(dbgenerated("'f'"))
+-    d            Boolean  @default(dbgenerated("'f'"))
+-    motor        String?
+-    iso2         String?
+-    iso3         String?
+-    fifa         String?
+-    net          String?
+-    wikipedia    String?
+-    created_at   DateTime
+-    updated_at   DateTime
+-}
+-
+-model event_standing_entries {
+-    id                Int      @id @default(autoincrement())
+-    event_standing_id Int
+-    team_id           Int
+-    pos               Int?
+-    played            Int?
+-    won               Int?
+-    lost              Int?
+-    drawn             Int?
+-    goals_for         Int?
+-    goals_against     Int?
+-    pts               Int?
+-    comments          String?
+-    created_at        DateTime
+-    updated_at        DateTime
+-}
+-
+-model event_standings {
+-    id         Int      @id @default(autoincrement())
+-    event_id   Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model events {
+-    id         Int       @id @default(autoincrement())
+-    key        String
+-    league_id  Int
+-    season_id  Int
+-    start_at   DateTime
+-    end_at     DateTime?
+-    team3      Boolean   @default(dbgenerated("'t'"))
+-    sources    String?
+-    config     String?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model events_grounds {
+-    id         Int      @id @default(autoincrement())
+-    event_id   Int
+-    ground_id  Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model events_teams {
+-    id         Int      @id @default(autoincrement())
+-    event_id   Int
+-    team_id    Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model games {
+-    id           Int       @id @default(autoincrement())
+-    key          String?
+-    round_id     Int
+-    pos          Int
+-    group_id     Int?
+-    team1_id     Int
+-    team2_id     Int
+-    play_at      DateTime
+-    postponed    Boolean   @default(dbgenerated("'f'"))
+-    play_at_v2   DateTime?
+-    play_at_v3   DateTime?
+-    ground_id    Int?
+-    city_id      Int?
+-    knockout     Boolean   @default(dbgenerated("'f'"))
+-    home         Boolean   @default(dbgenerated("'t'"))
+-    score1       Int?
+-    score2       Int?
+-    score1et     Int?
+-    score2et     Int?
+-    score1p      Int?
+-    score2p      Int?
+-    score1i      Int?
+-    score2i      Int?
+-    score1ii     Int?
+-    score2ii     Int?
+-    next_game_id Int?
+-    prev_game_id Int?
+-    winner       Int?
+-    winner90     Int?
+-    created_at   DateTime
+-    updated_at   DateTime
+-}
+-
+-model goals {
+-    id         Int      @id @default(autoincrement())
+-    person_id  Int
+-    game_id    Int
+-    team_id    Int
+-    minute     Int?
+-    offset     Int      @default(0)
+-    score1     Int?
+-    score2     Int?
+-    penalty    Boolean  @default(dbgenerated("'f'"))
+-    owngoal    Boolean  @default(dbgenerated("'f'"))
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model grounds {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    title      String
+-    synonyms   String?
+-    country_id Int
+-    city_id    Int?
+-    since      Int?
+-    capacity   Int?
+-    address    String?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model group_standing_entries {
+-    id                Int      @id @default(autoincrement())
+-    group_standing_id Int
+-    team_id           Int
+-    pos               Int?
+-    played            Int?
+-    won               Int?
+-    lost              Int?
+-    drawn             Int?
+-    goals_for         Int?
+-    goals_against     Int?
+-    pts               Int?
+-    comments          String?
+-    created_at        DateTime
+-    updated_at        DateTime
+-}
+-
+-model group_standings {
+-    id         Int      @id @default(autoincrement())
+-    group_id   Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model groups {
+-    id         Int      @id @default(autoincrement())
+-    event_id   Int
+-    title      String
+-    pos        Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model groups_teams {
+-    id         Int      @id @default(autoincrement())
+-    group_id   Int
+-    team_id    Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model langs {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    name       String
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model leagues {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    title      String
+-    country_id Int?
+-    club       Boolean  @default(dbgenerated("'f'"))
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model logs {
+-    id         Int      @id @default(autoincrement())
+-    msg        String
+-    level      String
+-    app        String?
+-    tag        String?
+-    pid        Int?
+-    tid        Int?
+-    ts         String?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model names {
+-    id         Int      @id @default(autoincrement())
+-    name       String
+-    place_id   Int
+-    lang       String   @default("en")
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model persons {
+-    id             Int       @id @default(autoincrement())
+-    key            String
+-    name           String
+-    synonyms       String?
+-    code           String?
+-    born_at        DateTime?
+-    city_id        Int?
+-    region_id      Int?
+-    country_id     Int?
+-    nationality_id Int?
+-    created_at     DateTime
+-    updated_at     DateTime
+-}
+-
+-model places {
+-    id         Int      @id @default(autoincrement())
+-    name       String
+-    kind       String
+-    lat        Float?
+-    lng        Float?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model props {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    value      String
+-    kind       String?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model regions {
+-    id         Int      @id @default(autoincrement())
+-    name       String
+-    key        String
+-    place_id   Int
+-    code       String?
+-    abbr       String?
+-    iso        String?
+-    nuts       String?
+-    alt_names  String?
+-    country_id Int
+-    pop        Int?
+-    area       Int?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model rosters {
+-    id         Int      @id @default(autoincrement())
+-    person_id  Int
+-    team_id    Int
+-    event_id   Int?
+-    pos        Int
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model rounds {
+-    id         Int       @id @default(autoincrement())
+-    event_id   Int
+-    title      String
+-    title2     String?
+-    pos        Int
+-    knockout   Boolean   @default(dbgenerated("'f'"))
+-    start_at   DateTime
+-    end_at     DateTime?
+-    auto       Boolean   @default(dbgenerated("'t'"))
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model seasons {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    title      String
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model taggings {
+-    id            Int      @id @default(autoincrement())
+-    tag_id        Int
+-    taggable_id   Int
+-    taggable_type String
+-    created_at    DateTime
+-    updated_at    DateTime
+-}
+-
+-model tags {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    slug       String
+-    name       String?
+-    grade      Int      @default(1)
+-    parent_id  Int?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model teams {
+-    id         Int      @id @default(autoincrement())
+-    key        String
+-    title      String
+-    title2     String?
+-    code       String?
+-    synonyms   String?
+-    country_id Int
+-    city_id    Int?
+-    club       Boolean  @default(false)
+-    since      Int?
+-    address    String?
+-    web        String?
+-    assoc_id   Int?
+-    national   Boolean  @default(false)
+-    created_at DateTime
+-    updated_at DateTime
+-}
+-
+-model usages {
+-    id         Int      @id @default(autoincrement())
+-    country_id Int
+-    lang_id    Int
+-    official   Boolean  @default(dbgenerated("'t'"))
+-    minor      Boolean  @default(dbgenerated("'f'"))
+-    percent    Float?
+-    created_at DateTime
+-    updated_at DateTime
+-}
+diff --git a/packages/client/tests/memory/big-schema/test.ts b/packages/client/tests/memory/big-schema/test.ts
+deleted file mode 100644
+index b77fed5d6ae4..000000000000
+--- a/packages/client/tests/memory/big-schema/test.ts
++++ /dev/null
+@@ -1,35 +0,0 @@
+-import { faker } from '@faker-js/faker'
+-import { PrismaLibSql } from '@prisma/adapter-libsql'
+-
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-
+-void createMemoryTest({
+-  async prepare({ PrismaClient }: PrismaModule) {
+-    const client = new PrismaClient({
+-      adapter: new PrismaLibSql({ url: `file:${__dirname}/../dev.db` }),
+-    })
+-    await client.$connect()
+-
+-    for (let i = 0; i < 5000; i++) {
+-      await client.teams.create({
+-        data: {
+-          key: faker.lorem.word(),
+-          title: faker.lorem.sentence(),
+-          created_at: new Date(),
+-          updated_at: new Date(),
+-          country_id: 0,
+-        },
+-      })
+-    }
+-    return client
+-  },
+-  async run(client) {
+-    await client.teams.findMany({})
+-  },
+-  async cleanup(client) {
+-    await client.$disconnect()
+-  },
+-})
+diff --git a/packages/client/tests/memory/createMany/prisma.config.ts b/packages/client/tests/memory/createMany/prisma.config.ts
+deleted file mode 100644
+index 38f3ff2c773c..000000000000
+--- a/packages/client/tests/memory/createMany/prisma.config.ts
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig, env } from '@prisma/config'
+-
+-export default defineConfig({
+-  datasource: {
+-    url: env('TEST_POSTGRES_URI'),
+-  },
+-})
+diff --git a/packages/client/tests/memory/createMany/prisma/schema.prisma b/packages/client/tests/memory/createMany/prisma/schema.prisma
+deleted file mode 100644
+index 0e9a712ec73a..000000000000
+--- a/packages/client/tests/memory/createMany/prisma/schema.prisma
++++ /dev/null
+@@ -1,12 +0,0 @@
+-generator client {
+-  provider = "prisma-client-js"
+-}
+-
+-datasource db {
+-    provider = "postgresql"
+-}
+-
+-model User {
+-    id    String @id @default(cuid())
+-    email String
+-}
+diff --git a/packages/client/tests/memory/createMany/test.ts b/packages/client/tests/memory/createMany/test.ts
+deleted file mode 100644
+index b36f9f092898..000000000000
+--- a/packages/client/tests/memory/createMany/test.ts
++++ /dev/null
+@@ -1,30 +0,0 @@
+-import { faker } from '@faker-js/faker'
+-import { PrismaPg } from '@prisma/adapter-pg'
+-
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-
+-void createMemoryTest({
+-  async prepare({ PrismaClient }: PrismaModule) {
+-    const client = new PrismaClient({
+-      adapter: new PrismaPg({ connectionString: process.env.TEST_POSTGRES_URI }),
+-    })
+-    await client.$connect()
+-
+-    return client
+-  },
+-  async run(client) {
+-    const data = Array.from({ length: 50 }, () => {
+-      return {
+-        email: faker.internet.email(),
+-      }
+-    })
+-
+-    await client.user.createMany({ data })
+-  },
+-  async cleanup(client) {
+-    await client.$disconnect()
+-  },
+-})
+diff --git a/packages/client/tests/memory/createManyAndReturn/prisma.config.ts b/packages/client/tests/memory/createManyAndReturn/prisma.config.ts
+deleted file mode 100644
+index 38f3ff2c773c..000000000000
+--- a/packages/client/tests/memory/createManyAndReturn/prisma.config.ts
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig, env } from '@prisma/config'
+-
+-export default defineConfig({
+-  datasource: {
+-    url: env('TEST_POSTGRES_URI'),
+-  },
+-})
+diff --git a/packages/client/tests/memory/createManyAndReturn/prisma/schema.prisma b/packages/client/tests/memory/createManyAndReturn/prisma/schema.prisma
+deleted file mode 100644
+index 0e9a712ec73a..000000000000
+--- a/packages/client/tests/memory/createManyAndReturn/prisma/schema.prisma
++++ /dev/null
+@@ -1,12 +0,0 @@
+-generator client {
+-  provider = "prisma-client-js"
+-}
+-
+-datasource db {
+-    provider = "postgresql"
+-}
+-
+-model User {
+-    id    String @id @default(cuid())
+-    email String
+-}
+diff --git a/packages/client/tests/memory/createManyAndReturn/test.ts b/packages/client/tests/memory/createManyAndReturn/test.ts
+deleted file mode 100644
+index e430d19f9c80..000000000000
+--- a/packages/client/tests/memory/createManyAndReturn/test.ts
++++ /dev/null
+@@ -1,30 +0,0 @@
+-import { faker } from '@faker-js/faker'
+-import { PrismaPg } from '@prisma/adapter-pg'
+-
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-
+-void createMemoryTest({
+-  async prepare({ PrismaClient }: PrismaModule) {
+-    const client = new PrismaClient({
+-      adapter: new PrismaPg({ connectionString: process.env.TEST_POSTGRES_URI }),
+-    })
+-    await client.$connect()
+-
+-    return client
+-  },
+-  async run(client) {
+-    const data = Array.from({ length: 50 }, () => {
+-      return {
+-        email: faker.internet.email(),
+-      }
+-    })
+-
+-    await client.user.createManyAndReturn({ data })
+-  },
+-  async cleanup(client) {
+-    await client.$disconnect()
+-  },
+-})
+diff --git a/packages/client/tests/memory/query/prisma.config.ts b/packages/client/tests/memory/query/prisma.config.ts
+deleted file mode 100644
+index bddf714911ed..000000000000
+--- a/packages/client/tests/memory/query/prisma.config.ts
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig } from '@prisma/config'
+-
+-export default defineConfig({
+-  datasource: {
+-    url: 'file:dev.db',
+-  },
+-})
+diff --git a/packages/client/tests/memory/query/prisma/schema.prisma b/packages/client/tests/memory/query/prisma/schema.prisma
+deleted file mode 100644
+index ad1dacd8595d..000000000000
+--- a/packages/client/tests/memory/query/prisma/schema.prisma
++++ /dev/null
+@@ -1,12 +0,0 @@
+-generator client {
+-  provider = "prisma-client-js"
+-}
+-
+-datasource my_db {
+-    provider = "sqlite"
+-}
+-
+-model User {
+-    id        Int @id @default(autoincrement())
+-    viewCount Int
+-}
+diff --git a/packages/client/tests/memory/query/test.ts b/packages/client/tests/memory/query/test.ts
+deleted file mode 100644
+index b468de1aceda..000000000000
+--- a/packages/client/tests/memory/query/test.ts
++++ /dev/null
+@@ -1,29 +0,0 @@
+-import { PrismaLibSql } from '@prisma/adapter-libsql'
+-
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-
+-void createMemoryTest({
+-  async prepare({ PrismaClient }: PrismaModule) {
+-    const client = new PrismaClient({
+-      adapter: new PrismaLibSql({ url: `file:${__dirname}/../dev.db` }),
+-    })
+-    await client.$connect()
+-    for (let i = 0; i < 1000; i++) {
+-      await client.user.create({
+-        data: {
+-          viewCount: Math.floor(Math.random() * 50_000),
+-        },
+-      })
+-    }
+-    return client
+-  },
+-  async run(client) {
+-    await client.user.findMany()
+-  },
+-  async cleanup(client) {
+-    await client.$disconnect()
+-  },
+-})
+diff --git a/packages/client/tests/memory/transaction/prisma.config.ts b/packages/client/tests/memory/transaction/prisma.config.ts
+deleted file mode 100644
+index bddf714911ed..000000000000
+--- a/packages/client/tests/memory/transaction/prisma.config.ts
++++ /dev/null
+@@ -1,7 +0,0 @@
+-import { defineConfig } from '@prisma/config'
+-
+-export default defineConfig({
+-  datasource: {
+-    url: 'file:dev.db',
+-  },
+-})
+diff --git a/packages/client/tests/memory/transaction/prisma/schema.prisma b/packages/client/tests/memory/transaction/prisma/schema.prisma
+deleted file mode 100644
+index e8ab7abec085..000000000000
+--- a/packages/client/tests/memory/transaction/prisma/schema.prisma
++++ /dev/null
+@@ -1,12 +0,0 @@
+-generator client {
+-    provider = "prisma-client-js"
+-}
+-
+-datasource my_db {
+-    provider = "sqlite"
+-}
+-
+-model User {
+-    id        Int @id @default(autoincrement())
+-    viewCount Int
+-}
+diff --git a/packages/client/tests/memory/transaction/test.ts b/packages/client/tests/memory/transaction/test.ts
+deleted file mode 100644
+index bb3e363c1f3f..000000000000
+--- a/packages/client/tests/memory/transaction/test.ts
++++ /dev/null
+@@ -1,24 +0,0 @@
+-import { PrismaLibSql } from '@prisma/adapter-libsql'
+-
+-import { createMemoryTest } from '../_utils/createMemoryTest'
+-
+-//@ts-ignore
+-type PrismaModule = typeof import('./.generated/node_modules/@prisma/client')
+-
+-void createMemoryTest({
+-  async prepare({ PrismaClient }: PrismaModule) {
+-    const client = new PrismaClient({
+-      adapter: new PrismaLibSql({ url: `file:${__dirname}/../dev.db` }),
+-    })
+-    await client.$connect()
+-    return client
+-  },
+-  async run(client) {
+-    await client.$transaction(async (tx) => {
+-      await tx.user.findMany({})
+-    })
+-  },
+-  async cleanup(client) {
+-    await client.$disconnect()
+-  },
+-})
+diff --git a/packages/engines/package.json b/packages/engines/package.json
+index 12136ae0ceb3..b122913de485 100644
+--- a/packages/engines/package.json
++++ b/packages/engines/package.json
+@@ -22,7 +22,7 @@
+   },
+   "dependencies": {
+     "@prisma/debug": "workspace:*",
+-    "@prisma/engines-version": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/fetch-engine": "workspace:*",
+     "@prisma/get-platform": "workspace:*"
+   },
+diff --git a/packages/fetch-engine/package.json b/packages/fetch-engine/package.json
+index cee1a2bf7f79..838f1d1a7a1a 100644
+--- a/packages/fetch-engine/package.json
++++ b/packages/fetch-engine/package.json
+@@ -37,7 +37,7 @@
+   },
+   "dependencies": {
+     "@prisma/debug": "workspace:*",
+-    "@prisma/engines-version": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/get-platform": "workspace:*"
+   },
+   "scripts": {
+diff --git a/packages/internals/package.json b/packages/internals/package.json
+index ba64f5ae015c..64e26fd97171 100644
+--- a/packages/internals/package.json
++++ b/packages/internals/package.json
+@@ -81,8 +81,8 @@
+     "@prisma/generator": "workspace:*",
+     "@prisma/generator-helper": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+-    "@prisma/prisma-schema-wasm": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
+-    "@prisma/schema-engine-wasm": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/prisma-schema-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
++    "@prisma/schema-engine-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/schema-files-loader": "workspace:*",
+     "arg": "5.0.2",
+     "prompts": "2.4.2"
+diff --git a/packages/migrate/package.json b/packages/migrate/package.json
+index 7191b5e3cb49..409d696c3c91 100644
+--- a/packages/migrate/package.json
++++ b/packages/migrate/package.json
+@@ -54,7 +54,7 @@
+     "@prisma/config": "workspace:*",
+     "@prisma/debug": "workspace:*",
+     "@prisma/driver-adapter-utils": "workspace:*",
+-    "@prisma/engines-version": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/engines-version": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "@prisma/generator": "workspace:*",
+     "@prisma/get-platform": "workspace:*",
+     "@prisma/internals": "workspace:*",
+diff --git a/packages/migrate/src/commands/MigrateDiff.ts b/packages/migrate/src/commands/MigrateDiff.ts
+index 57b1768aa4c6..71821163b1da 100644
+--- a/packages/migrate/src/commands/MigrateDiff.ts
++++ b/packages/migrate/src/commands/MigrateDiff.ts
+@@ -88,7 +88,7 @@ ${bold('Examples')}
+     --to-schema=next_datamodel.prisma \\
+     --script
+ 
+-  From a peisma datamodel to the configured database
++  From a Prisma datamodel to the configured database
+     e.g. roll forward after a migration failed in the middle
+   ${dim('$')} prisma migrate diff \\
+     --from-schema=next_datamodel.prisma \\
+diff --git a/packages/schema-files-loader/package.json b/packages/schema-files-loader/package.json
+index 19197587c7b0..293cb80afa14 100644
+--- a/packages/schema-files-loader/package.json
++++ b/packages/schema-files-loader/package.json
+@@ -22,7 +22,7 @@
+   ],
+   "sideEffects": false,
+   "dependencies": {
+-    "@prisma/prisma-schema-wasm": "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57",
++    "@prisma/prisma-schema-wasm": "7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3",
+     "fs-extra": "11.3.0"
+   }
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 1420f26c6b4a..638a6eb5e6ab 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -730,8 +730,8 @@ importers:
+         specifier: workspace:*
+         version: link:../engines
+       '@prisma/engines-version':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -766,8 +766,8 @@ importers:
+         specifier: workspace:*
+         version: link:../param-graph-builder
+       '@prisma/query-compiler-wasm':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/query-plan-executor':
+         specifier: workspace:*
+         version: link:../query-plan-executor
+@@ -1019,8 +1019,8 @@ importers:
+         specifier: workspace:*
+         version: link:../dmmf
+       '@prisma/engines-version':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -1099,8 +1099,8 @@ importers:
+         specifier: workspace:*
+         version: link:../dmmf
+       '@prisma/engines-version':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -1237,8 +1237,8 @@ importers:
+         specifier: workspace:*
+         version: link:../debug
+       '@prisma/engines-version':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/fetch-engine':
+         specifier: workspace:*
+         version: link:../fetch-engine
+@@ -1274,8 +1274,8 @@ importers:
+         specifier: workspace:*
+         version: link:../debug
+       '@prisma/engines-version':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/get-platform':
+         specifier: workspace:*
+         version: link:../get-platform
+@@ -1563,11 +1563,11 @@ importers:
+         specifier: workspace:*
+         version: link:../get-platform
+       '@prisma/prisma-schema-wasm':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/schema-engine-wasm':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/schema-files-loader':
+         specifier: workspace:*
+         version: link:../schema-files-loader
+@@ -1728,8 +1728,8 @@ importers:
+         specifier: workspace:*
+         version: link:../driver-adapter-utils
+       '@prisma/engines-version':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       '@prisma/generator':
+         specifier: workspace:*
+         version: link:../generator
+@@ -1893,8 +1893,8 @@ importers:
+   packages/schema-files-loader:
+     dependencies:
+       '@prisma/prisma-schema-wasm':
+-        specifier: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+-        version: 7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57
++        specifier: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
++        version: 7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3
+       fs-extra:
+         specifier: 11.3.0
+         version: 11.3.0
+@@ -3667,8 +3667,8 @@ packages:
+   '@prisma/dev@0.20.0':
+     resolution: {integrity: sha512-ovlBYwWor0OzG+yH4J3Ot+AneD818BttLA+Ii7wjbcLHUrnC4tbUPVGyNd3c/+71KETPKZfjhkTSpdS15dmXNQ==}
+ 
+-  '@prisma/engines-version@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57':
+-    resolution: {integrity: sha512-5o3/bubIYdUeg38cyNf+VDq+LVtxvvi2393Fd1Uru52LPfkGJnmVbCaX1wBOAncgKR3BCloMJFD+Koog9LtYqQ==}
++  '@prisma/engines-version@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
++    resolution: {integrity: sha512-fUxVd1TjOW8K4XsZ8dAm88sDW5Ry7AxWDfsYEWwScS6Fjo3caKC6hgNumUfsmsy0Il9LjDn5X0PpVXNt3iwayw==}
+ 
+   '@prisma/get-platform@7.2.0':
+     resolution: {integrity: sha512-k1V0l0Td1732EHpAfi2eySTezyllok9dXb6UQanajkJQzPUGi3vO2z7jdkz67SypFTdmbnyGYxvEvYZdZsMAVA==}
+@@ -3679,17 +3679,17 @@ packages:
+   '@prisma/ppg@1.0.1':
+     resolution: {integrity: sha512-rRRXuPPerXwNWjSA3OE0e/bqXSTfsE82EsMvoiluc0fN0DizQSe3937/Tnl5+DPbxY5rdAOlYjWXG0A2wwTbKA==}
+ 
+-  '@prisma/prisma-schema-wasm@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57':
+-    resolution: {integrity: sha512-c4l8sQorhTZGIRx2IcJZUoFBaST0jVhbKb7yC68FF065T11K5BNAQt8mgcsdsC2UA1AsRK1LFpMZjvfiYg1tNA==}
++  '@prisma/prisma-schema-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
++    resolution: {integrity: sha512-7J7kF0YCsY4blgM+VFq3rG1+mgFS8drZiKRKah1wsLN77t4ZS+6VwI89qTN6SlMakzlkd3giwQqDxr/utPgFXw==}
+ 
+-  '@prisma/query-compiler-wasm@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57':
+-    resolution: {integrity: sha512-UfjxUfReGmDFGz7OaQ+C5X28b6GojCysgv3c1gmD6wyx8Z8dNQNJpn/5XmsF3Gyq+/dPlI8G/FB+yBHqlgjOqg==}
++  '@prisma/query-compiler-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
++    resolution: {integrity: sha512-U+H1YH6kMotxdz1QaQjTlcN0nfcpOzbzRryQBHb01gexGua4MScvEhcKAZHKD7OORXvnbmQJKxOzY6uGfWHYvA==}
+ 
+   '@prisma/query-plan-executor@7.2.0':
+     resolution: {integrity: sha512-EOZmNzcV8uJ0mae3DhTsiHgoNCuu1J9mULQpGCh62zN3PxPTd+qI9tJvk5jOst8WHKQNwJWR3b39t0XvfBB0WQ==}
+ 
+-  '@prisma/schema-engine-wasm@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57':
+-    resolution: {integrity: sha512-iYJdHsejfsqMq4pufb8yDESDdgvah9BX8e2io+pPcKHGDEtEq6s1+6yIih9zLLKoRammgeScA6V6MFngNa/xHA==}
++  '@prisma/schema-engine-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3':
++    resolution: {integrity: sha512-R95Js2Kk+iPVEAan8D+aBQgSSJJIrvsDzNVwBNjsYuTd42YRoZJnJP6YJ/YNBMfNyWnjx7ulQ20Ol1ubA72xGg==}
+ 
+   '@prisma/studio-core@0.13.1':
+     resolution: {integrity: sha512-agdqaPEePRHcQ7CexEfkX1RvSH9uWDb6pXrZnhCRykhDFAV0/0P3d07WtfiY8hZWb7oRU4v+NkT4cGFHkQJIPg==}
+@@ -10338,7 +10338,7 @@ snapshots:
+     transitivePeerDependencies:
+       - typescript
+ 
+-  '@prisma/engines-version@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57': {}
++  '@prisma/engines-version@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
+ 
+   '@prisma/get-platform@7.2.0':
+     dependencies:
+@@ -10355,13 +10355,13 @@ snapshots:
+       - bufferutil
+       - utf-8-validate
+ 
+-  '@prisma/prisma-schema-wasm@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57': {}
++  '@prisma/prisma-schema-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
+ 
+-  '@prisma/query-compiler-wasm@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57': {}
++  '@prisma/query-compiler-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
+ 
+   '@prisma/query-plan-executor@7.2.0': {}
+ 
+-  '@prisma/schema-engine-wasm@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57': {}
++  '@prisma/schema-engine-wasm@7.5.0-4.55ae170b1ced7fc6ed07a15f110549408c501bb3': {}
+ 
+   '@prisma/studio-core@0.13.1': {}
+ 

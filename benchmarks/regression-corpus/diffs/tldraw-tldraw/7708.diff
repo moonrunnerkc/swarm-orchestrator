@@ -1,0 +1,1277 @@
+diff --git a/apps/examples/e2e/tests/test-rich-text.spec.ts b/apps/examples/e2e/tests/test-rich-text.spec.ts
+index bcd1e7ce9c32..52a0ac554283 100644
+--- a/apps/examples/e2e/tests/test-rich-text.spec.ts
++++ b/apps/examples/e2e/tests/test-rich-text.spec.ts
+@@ -25,13 +25,9 @@ test.describe('more rich text', () => {
+ 		await page.keyboard.type('Live in a big white house in the forest')
+ 		expect(page.getByTestId('rich-text-area')).toHaveText('Live in a big white house in the forest')
+ 
+-		// expect indicator to be in the DOM (since the shape is editing)
+-		const indicator = page.locator('.tl-overlays__item')
+-		expect(indicator.first()).toHaveCSS('display', 'block')
+-
+-		// ...but expect the rectangle inside of the indicator to be hidden (because it's auto width)
+-		const indicatorRect = page.locator('.tl-overlays__item > .tl-shape-indicator > rect')
+-		expect(await indicatorRect.isHidden()).toBe(true)
++		// expect canvas indicator to be visible (since the shape is editing)
++		const canvasIndicator = page.locator('.tl-canvas-indicators')
++		await expect(canvasIndicator).toBeVisible()
+ 	})
+ 
+ 	test('Click and drag with text tool to create and edit fixed-width text on the canvas', async ({
+@@ -50,12 +46,8 @@ test.describe('more rich text', () => {
+ 			'Drink gin and tonic and play a grand piano'
+ 		)
+ 
+-		// expect indicator to be in the DOM (since the shape is editing)
+-		const indicator = page.locator('.tl-overlays__item')
+-		expect(indicator.first()).toHaveCSS('display', 'block')
+-
+-		// ...but expect the rectangle inside of the indicator to be visible (because it's fixed width)
+-		const indicatorRect = page.locator('.tl-overlays__item > .tl-shape-indicator > rect')
+-		expect(await indicatorRect.isVisible()).toBe(true)
++		// expect canvas indicator to be visible (since the shape is editing)
++		const canvasIndicator = page.locator('.tl-canvas-indicators')
++		await expect(canvasIndicator).toBeVisible()
+ 	})
+ })
+diff --git a/internal/config/vitest/setup.ts b/internal/config/vitest/setup.ts
+index 7d7ec18d80a5..a16b109e6b8b 100644
+--- a/internal/config/vitest/setup.ts
++++ b/internal/config/vitest/setup.ts
+@@ -50,6 +50,13 @@ if (typeof HTMLImageElement !== 'undefined') {
+ 	}
+ }
+ 
++// Path2D polyfills
++if (typeof Path2D !== 'undefined' && !Path2D.prototype.roundRect) {
++	Path2D.prototype.roundRect = function (x, y, w, h, _) {
++		this.rect(x, y, w, h)
++	}
++}
++
+ // CSS.supports polyfill for tests that use color spaces (e.g., highlight shapes)
+ if (typeof CSS === 'undefined') {
+ 	;(global as any).CSS = {}
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 4a0ed03bfe2d..25135290e7e5 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -2771,6 +2771,7 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+     abstract getGeometry(shape: Shape, opts?: TLGeometryOpts): Geometry2d;
+     getHandles?(shape: Shape): TLHandle[];
+     getHandleSnapGeometry(shape: Shape): HandleSnapGeometry;
++    getIndicatorPath(shape: Shape): TLIndicatorPath | undefined;
+     getInterpolatedProps?(startShape: Shape, endShape: Shape, progress: number): Shape['props'];
+     // (undocumented)
+     getText(shape: Shape): string | undefined;
+@@ -2824,6 +2825,7 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+     toBackgroundSvg?(shape: Shape, ctx: SvgExportContext): null | Promise<null | ReactElement> | ReactElement;
+     toSvg?(shape: Shape, ctx: SvgExportContext): null | Promise<null | ReactElement> | ReactElement;
+     static type: string;
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public
+@@ -3982,6 +3984,13 @@ export interface TLImageExportOptions extends TLSvgExportOptions {
+     quality?: number;
+ }
+ 
++// @public
++export type TLIndicatorPath = {
++    additionalPaths?: Path2D[];
++    clipPath?: Path2D;
++    path: Path2D;
++} | Path2D;
++
+ // @public (undocumented)
+ export type TLInterruptEvent = (info: TLInterruptEventInfo) => void;
+ 
+diff --git a/packages/editor/editor.css b/packages/editor/editor.css
+index e8580e7a491d..4d296c1868ea 100644
+--- a/packages/editor/editor.css
++++ b/packages/editor/editor.css
+@@ -1162,6 +1162,12 @@ input,
+ 	contain: size layout;
+ }
+ 
++.tl-canvas-indicators {
++	position: absolute;
++	inset: 0;
++	pointer-events: none;
++}
++
+ /* ---------------------- Shape --------------------- */
+ 
+ .tl-shape {
+diff --git a/packages/editor/src/index.ts b/packages/editor/src/index.ts
+index 2c5b6570c613..911b39543c42 100644
+--- a/packages/editor/src/index.ts
++++ b/packages/editor/src/index.ts
+@@ -184,6 +184,7 @@ export {
+ 	type TLEditStartInfo,
+ 	type TLGeometryOpts,
+ 	type TLHandleDragInfo,
++	type TLIndicatorPath,
+ 	type TLResizeInfo,
+ 	type TLResizeMode,
+ 	type TLShapeUtilCanBeLaidOutOpts,
+diff --git a/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx b/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx
+new file mode 100644
+index 000000000000..3a7a4abd2512
+--- /dev/null
++++ b/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx
+@@ -0,0 +1,217 @@
++import { useComputed, useQuickReactor } from '@tldraw/state-react'
++import { createComputedCache } from '@tldraw/store'
++import { TLShape, TLShapeId } from '@tldraw/tlschema'
++import { dedupe, isEqual } from '@tldraw/utils'
++import { memo, useEffect, useRef } from 'react'
++import { Editor } from '../../editor/Editor'
++import { TLIndicatorPath } from '../../editor/shapes/ShapeUtil'
++import { useEditor } from '../../hooks/useEditor'
++import { useIsDarkMode } from '../../hooks/useIsDarkMode'
++
++/** @public */
++export interface TLCanvasShapeIndicatorsProps {
++	/** Whether to hide all of the indicators */
++	hideAll?: boolean
++	/** Whether to show all of the indicators */
++	showAll?: boolean
++	/** Whether to render hinted shape indicators */
++	renderHints?: boolean
++}
++
++const indicatorPathCache = createComputedCache(
++	'indicatorPath',
++	(editor: Editor, shape: TLShape) => {
++		const util = editor.getShapeUtil(shape)
++		return util.getIndicatorPath(shape)
++	}
++)
++
++const getIndicatorPath = (editor: Editor, shape: TLShape) => {
++	return indicatorPathCache.get(editor, shape.id)
++}
++
++function renderShapeIndicator(
++	ctx: CanvasRenderingContext2D,
++	editor: Editor,
++	shapeId: TLShapeId,
++	renderingShapeIds: Set<TLShapeId>
++): boolean {
++	if (!renderingShapeIds.has(shapeId)) return false
++
++	const shape = editor.getShape(shapeId)
++	if (!shape || shape.isLocked) return false
++
++	const pageTransform = editor.getShapePageTransform(shape)
++	if (!pageTransform) return false
++
++	const indicatorPath = getIndicatorPath(editor, shape)
++	if (!indicatorPath) return false
++
++	ctx.save()
++	ctx.transform(
++		pageTransform.a,
++		pageTransform.b,
++		pageTransform.c,
++		pageTransform.d,
++		pageTransform.e,
++		pageTransform.f
++	)
++	renderIndicatorPath(ctx, indicatorPath)
++	ctx.restore()
++
++	return true
++}
++
++function renderIndicatorPath(ctx: CanvasRenderingContext2D, indicatorPath: TLIndicatorPath) {
++	if (indicatorPath instanceof Path2D) {
++		ctx.stroke(indicatorPath)
++	} else {
++		const { path, clipPath, additionalPaths } = indicatorPath
++
++		if (clipPath) {
++			ctx.save()
++			ctx.clip(clipPath, 'evenodd')
++			ctx.stroke(path)
++			ctx.restore()
++		} else {
++			ctx.stroke(path)
++		}
++
++		if (additionalPaths) {
++			for (const additionalPath of additionalPaths) {
++				ctx.stroke(additionalPath)
++			}
++		}
++	}
++}
++
++/** @public @react */
++export const CanvasShapeIndicators = memo(function CanvasShapeIndicators({
++	hideAll,
++	showAll,
++	renderHints = true,
++}: TLCanvasShapeIndicatorsProps) {
++	const editor = useEditor()
++	const canvasRef = useRef<HTMLCanvasElement>(null)
++
++	if (hideAll && showAll) throw Error('You cannot set both hideAll and showAll props to true')
++
++	// Cache the selected color to avoid getComputedStyle on every render
++	const rSelectedColor = useRef<string | null>(null)
++	const isDarkMode = useIsDarkMode()
++
++	useEffect(() => {
++		const timer = editor.timers.setTimeout(() => {
++			rSelectedColor.current = null
++		}, 0)
++		return () => clearTimeout(timer)
++	}, [isDarkMode, editor])
++
++	const $renderData = useComputed(
++		'indicator render data',
++		() => {
++			const renderingShapeIds = new Set(editor.getRenderingShapes().map((s) => s.id))
++
++			// Compute ids to display
++			let idsToDisplay: Set<TLShapeId>
++			if (showAll) {
++				idsToDisplay = renderingShapeIds
++			} else if (hideAll) {
++				idsToDisplay = new Set()
++			} else {
++				idsToDisplay = new Set<TLShapeId>()
++				const instanceState = editor.getInstanceState()
++				const isChangingStyle = instanceState.isChangingStyle
++				const isIdleOrEditing = editor.isInAny('select.idle', 'select.editing_shape')
++				const isInSelectState = editor.isInAny(
++					'select.brushing',
++					'select.scribble_brushing',
++					'select.pointing_shape',
++					'select.pointing_selection',
++					'select.pointing_handle'
++				)
++
++				if (!isChangingStyle && (isIdleOrEditing || isInSelectState)) {
++					for (const id of editor.getSelectedShapeIds()) {
++						idsToDisplay.add(id)
++					}
++					if (isIdleOrEditing && instanceState.isHoveringCanvas && !instanceState.isCoarsePointer) {
++						const hovered = editor.getHoveredShapeId()
++						if (hovered) idsToDisplay.add(hovered)
++					}
++				}
++			}
++
++			// Compute hinting shape ids
++			const hintingShapeIds = renderHints ? dedupe(editor.getHintingShapeIds()) : []
++
++			return {
++				idsToDisplay,
++				renderingShapeIds,
++				hintingShapeIds,
++			}
++		},
++		{ isEqual: isEqual },
++		[editor, showAll, hideAll, renderHints]
++	)
++
++	useQuickReactor(
++		'canvas indicators render',
++		() => {
++			const canvas = canvasRef.current
++			if (!canvas) return
++
++			const ctx = canvas.getContext('2d')
++			if (!ctx) return
++
++			const { idsToDisplay, renderingShapeIds, hintingShapeIds } = $renderData.get()
++
++			const { w, h } = editor.getViewportScreenBounds()
++			const dpr = window.devicePixelRatio || 1
++			const { x: cx, y: cy, z: zoom } = editor.getCamera()
++
++			const canvasWidth = Math.ceil(w * dpr)
++			const canvasHeight = Math.ceil(h * dpr)
++
++			if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
++				canvas.width = canvasWidth
++				canvas.height = canvasHeight
++				canvas.style.width = `${w}px`
++				canvas.style.height = `${h}px`
++			}
++
++			ctx.resetTransform()
++			ctx.clearRect(0, 0, canvas.width, canvas.height)
++
++			ctx.scale(dpr, dpr)
++			ctx.scale(zoom, zoom)
++			ctx.translate(cx, cy)
++
++			// Use cached color, only call getComputedStyle when cache is empty
++			if (!rSelectedColor.current) {
++				rSelectedColor.current = getComputedStyle(canvas).getPropertyValue('--tl-color-selected')
++			}
++
++			ctx.strokeStyle = rSelectedColor.current
++			ctx.lineCap = 'round'
++			ctx.lineJoin = 'round'
++
++			// Draw selected/hovered indicators (1.5px stroke)
++			ctx.lineWidth = 1.5 / zoom
++			for (const shapeId of idsToDisplay) {
++				renderShapeIndicator(ctx, editor, shapeId, renderingShapeIds)
++			}
++
++			// Draw hinted indicators with a thicker stroke (2.5px)
++			if (hintingShapeIds.length > 0) {
++				ctx.lineWidth = 2.5 / zoom
++				for (const shapeId of hintingShapeIds) {
++					renderShapeIndicator(ctx, editor, shapeId, renderingShapeIds)
++				}
++			}
++		},
++		[editor, $renderData]
++	)
++
++	return <canvas ref={canvasRef} className="tl-canvas-indicators" />
++})
+diff --git a/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx b/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
+index c29811dcadf9..57332bc1ef00 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
+@@ -26,6 +26,7 @@ import { GeometryDebuggingView } from '../GeometryDebuggingView'
+ import { LiveCollaborators } from '../LiveCollaborators'
+ import { MenuClickCapture } from '../MenuClickCapture'
+ import { Shape } from '../Shape'
++import { CanvasShapeIndicators } from './CanvasShapeIndicators'
+ 
+ /** @public */
+ export interface TLCanvasComponentProps {
+@@ -159,6 +160,7 @@ export function DefaultCanvas({ className }: TLCanvasComponentProps) {
+ 					{hideShapes ? null : debugSvg ? <ShapesWithSVGs /> : <ShapesToDisplay />}
+ 				</div>
+ 				<div className="tl-overlays">
++					<CanvasShapeIndicators />
+ 					<div ref={rHtmlLayer2} className="tl-html-layer">
+ 						{debugGeometry ? <GeometryDebuggingView /> : null}
+ 						<BrushWrapper />
+@@ -445,7 +447,19 @@ function HintedShapeIndicator() {
+ 	const editor = useEditor()
+ 	const { ShapeIndicator } = useEditorComponents()
+ 
+-	const ids = useValue('hinting shape ids', () => dedupe(editor.getHintingShapeIds()), [editor])
++	const ids = useValue(
++		'hinting shape ids without canvas indicator',
++		() => {
++			// Filter to only shapes that use legacy SVG indicators
++			return dedupe(editor.getHintingShapeIds()).filter((id) => {
++				const shape = editor.getShape(id)
++				if (!shape) return false
++				const util = editor.getShapeUtil(shape)
++				return util.useLegacyIndicator()
++			})
++		},
++		[editor]
++	)
+ 
+ 	if (!ids.length) return null
+ 	if (!ShapeIndicator) return null
+diff --git a/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx b/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx
+index 770019367d06..651f0c136ba4 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx
+@@ -32,6 +32,11 @@ const InnerIndicator = memo(({ editor, id }: { editor: Editor; id: TLShapeId })
+ 
+ 	if (!shape || shape.isLocked) return null
+ 
++	const util = editor.getShapeUtil(shape)
++
++	// If the shape uses canvas indicators, it will be rendered by CanvasShapeIndicators
++	if (!util.useLegacyIndicator()) return null
++
+ 	return (
+ 		<OptionalErrorBoundary
+ 			fallback={ShapeIndicatorErrorFallback}
+@@ -39,7 +44,7 @@ const InnerIndicator = memo(({ editor, id }: { editor: Editor; id: TLShapeId })
+ 				editor.annotateError(error, { origin: 'react.shapeIndicator', willCrashApp: false })
+ 			}
+ 		>
+-			<EvenInnererIndicator key={shape.id} shape={shape} util={editor.getShapeUtil(shape)} />
++			<EvenInnererIndicator key={shape.id} shape={shape} util={util} />
+ 		</OptionalErrorBoundary>
+ 	)
+ })
+diff --git a/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx b/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx
+index 160f7fa21094..b7cef03de7a8 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx
+@@ -89,9 +89,24 @@ export const DefaultShapeIndicators = memo(function DefaultShapeIndicators({
+ 	const renderingShapes = useValue('rendering shapes', () => editor.getRenderingShapes(), [editor])
+ 
+ 	const { ShapeIndicator } = useEditorComponents()
++
++	// Filter out shapes that have canvas indicator support - only render shapes that use legacy SVG indicators
++	const shapesToRender = useValue(
++		'shapes to render for svg indicators',
++		() => {
++			return renderingShapes.filter(({ id }) => {
++				const shape = editor.getShape(id)
++				if (!shape) return false
++				const util = editor.getShapeUtil(shape)
++				return util.useLegacyIndicator()
++			})
++		},
++		[editor, renderingShapes]
++	)
++
+ 	if (!ShapeIndicator) return null
+ 
+-	return renderingShapes.map(({ id }) => (
++	return shapesToRender.map(({ id }) => (
+ 		<ShapeIndicator
+ 			key={id + '_indicator'}
+ 			shapeId={id}
+diff --git a/packages/editor/src/lib/editor/shapes/ShapeUtil.ts b/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
+index 1744c97f8a0b..12ec7e873346 100644
+--- a/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
++++ b/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
+@@ -75,6 +75,19 @@ export interface TLShapeUtilCanvasSvgDef {
+ 	component: React.ComponentType
+ }
+ 
++/**
++ * Return type for {@link ShapeUtil.getIndicatorPath}. Can be either a simple Path2D
++ * or an object with additional rendering info like clip paths for complex indicators.
++ * @public
++ */
++export type TLIndicatorPath =
++	| Path2D
++	| {
++			path: Path2D
++			clipPath?: Path2D
++			additionalPaths?: Path2D[]
++	  }
++
+ /** @public */
+ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+ 	/** Configure this shape utils {@link ShapeUtil.options | `options`}. */
+@@ -173,6 +186,37 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+ 	 */
+ 	abstract indicator(shape: Shape): any
+ 
++	/**
++	 * Whether to use the legacy React-based indicator rendering.
++	 *
++	 * Override this to return `false` if your shape implements {@link ShapeUtil.getIndicatorPath}
++	 * for canvas-based indicator rendering.
++	 *
++	 * @returns `true` to use SVG indicators (default), `false` to use canvas indicators.
++	 * @public
++	 */
++	useLegacyIndicator(): boolean {
++		return true
++	}
++
++	/**
++	 * Get a Path2D for rendering the shape's indicator on the canvas.
++	 *
++	 * When implemented, this is used instead of {@link ShapeUtil.indicator} for more
++	 * efficient canvas-based indicator rendering. Shapes that return `undefined` will
++	 * fall back to SVG-based rendering via {@link ShapeUtil.indicator}.
++	 *
++	 * For complex indicators that need clipping (e.g., arrows with labels), return an
++	 * object with `path`, `clipPath`, and `additionalPaths` properties.
++	 *
++	 * @param shape - The shape.
++	 * @returns A Path2D to stroke, or an object with clipping info, or undefined to use SVG fallback.
++	 * @public
++	 */
++	getIndicatorPath(shape: Shape): TLIndicatorPath | undefined {
++		return undefined
++	}
++
+ 	/**
+ 	 * Get the font faces that should be rendered in the document in order for this shape to render
+ 	 * correctly.
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index ae7b26ac5ddf..a5e7d3f2f8a2 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -277,6 +277,12 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+     // (undocumented)
+     getHandles(shape: TLArrowShape): TLHandle[];
+     // (undocumented)
++    getIndicatorPath(shape: TLArrowShape): {
++        additionalPaths: Path2D[];
++        clipPath: Path2D;
++        path: Path2D;
++    } | Path2D | undefined;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLArrowShape, endShape: TLArrowShape, progress: number): TLArrowShapeProps;
+     // (undocumented)
+     getText(shape: TLArrowShape): string;
+@@ -342,6 +348,8 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+     toSvg(shape: TLArrowShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "arrow";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public
+@@ -430,6 +438,8 @@ export class BookmarkShapeUtil extends BaseBoxShapeUtil<TLBookmarkShape> {
+     // (undocumented)
+     getDefaultProps(): TLBookmarkShape['props'];
+     // (undocumented)
++    getIndicatorPath(shape: TLBookmarkShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLBookmarkShape, endShape: TLBookmarkShape, t: number): TLBookmarkShapeProps;
+     // (undocumented)
+     getText(shape: TLBookmarkShape): string;
+@@ -483,6 +493,8 @@ export class BookmarkShapeUtil extends BaseBoxShapeUtil<TLBookmarkShape> {
+     static props: RecordProps<TLBookmarkShape>;
+     // (undocumented)
+     static type: "bookmark";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -1171,6 +1183,8 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+     // (undocumented)
+     getGeometry(shape: TLDrawShape): Circle2d | Polyline2d;
+     // (undocumented)
++    getIndicatorPath(shape: TLDrawShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLDrawShape, endShape: TLDrawShape, t: number): TLDrawShapeProps;
+     // (undocumented)
+     hideResizeHandles(shape: TLDrawShape): boolean;
+@@ -1197,6 +1211,8 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+     toSvg(shape: TLDrawShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "draw";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -1416,6 +1432,8 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+     // (undocumented)
+     getGeometry(shape: TLEmbedShape): Geometry2d;
+     // (undocumented)
++    getIndicatorPath(shape: TLEmbedShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLEmbedShape, endShape: TLEmbedShape, t: number): TLEmbedShapeProps;
+     // (undocumented)
+     getText(shape: TLEmbedShape): string;
+@@ -1435,6 +1453,8 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+     static setEmbedDefinitions(embedDefinitions: readonly TLEmbedDefinition[]): void;
+     // (undocumented)
+     static type: "embed";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -1566,6 +1586,8 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+     // (undocumented)
+     getGeometry(shape: TLFrameShape): Geometry2d;
+     // (undocumented)
++    getIndicatorPath(shape: TLFrameShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLFrameShape, endShape: TLFrameShape, t: number): TLFrameShapeProps;
+     // (undocumented)
+     getText(shape: TLFrameShape): string | undefined;
+@@ -1605,6 +1627,8 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+     toSvg(shape: TLFrameShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "frame";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -1639,6 +1663,8 @@ export class GeoShapeUtil extends BaseBoxShapeUtil<TLGeoShape> {
+     // (undocumented)
+     getHandleSnapGeometry(shape: TLGeoShape): HandleSnapGeometry;
+     // (undocumented)
++    getIndicatorPath(shape: TLGeoShape): Path2D | undefined;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLGeoShape, endShape: TLGeoShape, t: number): TLGeoShapeProps;
+     // (undocumented)
+     getText(shape: TLGeoShape): string;
+@@ -1760,6 +1786,8 @@ export class GeoShapeUtil extends BaseBoxShapeUtil<TLGeoShape> {
+     toSvg(shape: TLGeoShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "geo";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -1902,6 +1930,8 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+     // (undocumented)
+     getGeometry(shape: TLHighlightShape): Circle2d | Polygon2d;
+     // (undocumented)
++    getIndicatorPath(shape: TLHighlightShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLHighlightShape, endShape: TLHighlightShape, t: number): TLHighlightShapeProps;
+     // (undocumented)
+     hideResizeHandles(shape: TLHighlightShape): boolean;
+@@ -1930,6 +1960,8 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+     toSvg(shape: TLHighlightShape): JSX.Element;
+     // (undocumented)
+     static type: "highlight";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -1948,6 +1980,8 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<TLImageShape> {
+     // (undocumented)
+     getGeometry(shape: TLImageShape): Geometry2d;
+     // (undocumented)
++    getIndicatorPath(shape: TLImageShape): Path2D | undefined;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLImageShape, endShape: TLImageShape, t: number): TLImageShapeProps;
+     // (undocumented)
+     indicator(shape: TLImageShape): JSX.Element | null;
+@@ -1967,6 +2001,8 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<TLImageShape> {
+     toSvg(shape: TLImageShape, ctx: SvgExportContext): Promise<JSX.Element | null>;
+     // (undocumented)
+     static type: "image";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -2023,6 +2059,8 @@ export class LineShapeUtil extends ShapeUtil<TLLineShape> {
+     // (undocumented)
+     getHandleSnapGeometry(shape: TLLineShape): HandleSnapGeometry;
+     // (undocumented)
++    getIndicatorPath(shape: TLLineShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLLineShape, endShape: TLLineShape, t: number): TLLineShape['props'];
+     // (undocumented)
+     hideInMinimap(): boolean;
+@@ -2117,6 +2155,8 @@ export class LineShapeUtil extends ShapeUtil<TLLineShape> {
+     toSvg(shape: TLLineShape): JSX.Element;
+     // (undocumented)
+     static type: "line";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -2182,6 +2222,8 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+     // (undocumented)
+     getHandles(shape: TLNoteShape): TLHandle[];
+     // (undocumented)
++    getIndicatorPath(shape: TLNoteShape): Path2D;
++    // (undocumented)
+     getInterpolatedProps(startShape: TLNoteShape, endShape: TLNoteShape, t: number): TLNoteShapeProps;
+     // (undocumented)
+     getText(shape: TLNoteShape): string;
+@@ -2265,6 +2307,8 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+     toSvg(shape: TLNoteShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "note";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -2392,6 +2436,8 @@ export class PathBuilder {
+     // (undocumented)
+     toGeometry(): Group2d | PathBuilderGeometry2d;
+     // (undocumented)
++    toPath2D(opts: PathBuilderOpts): Path2D;
++    // (undocumented)
+     toSvg(opts: PathBuilderOpts): JSX.Element;
+ }
+ 
+@@ -3025,6 +3071,8 @@ export class TextShapeUtil extends ShapeUtil<TLTextShape> {
+     // (undocumented)
+     getGeometry(shape: TLTextShape, opts: TLGeometryOpts): Rectangle2d;
+     // (undocumented)
++    getIndicatorPath(shape: TLTextShape): Path2D | undefined;
++    // (undocumented)
+     getMinDimensions(shape: TLTextShape): {
+         height: number;
+         width: number;
+@@ -3090,6 +3138,8 @@ export class TextShapeUtil extends ShapeUtil<TLTextShape> {
+     toSvg(shape: TLTextShape, ctx: SvgExportContext): JSX.Element;
+     // (undocumented)
+     static type: "text";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+@@ -5503,6 +5553,8 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<TLVideoShape> {
+     // (undocumented)
+     getDefaultProps(): TLVideoShape['props'];
+     // (undocumented)
++    getIndicatorPath(shape: TLVideoShape): Path2D;
++    // (undocumented)
+     indicator(shape: TLVideoShape): JSX.Element;
+     // (undocumented)
+     isAspectRatioLocked(): boolean;
+@@ -5516,6 +5568,8 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<TLVideoShape> {
+     toSvg(shape: TLVideoShape, ctx: SvgExportContext): Promise<JSX.Element | null>;
+     // (undocumented)
+     static type: "video";
++    // (undocumented)
++    useLegacyIndicator(): boolean;
+ }
+ 
+ // @public (undocumented)
+diff --git a/packages/tldraw/src/lib/shapes/arrow/ArrowPath.tsx b/packages/tldraw/src/lib/shapes/arrow/ArrowPath.tsx
+index ce133ab583b3..7587dfe825da 100644
+--- a/packages/tldraw/src/lib/shapes/arrow/ArrowPath.tsx
++++ b/packages/tldraw/src/lib/shapes/arrow/ArrowPath.tsx
+@@ -3,13 +3,12 @@ import { PathBuilder, PathBuilderOpts } from '../shared/PathBuilder'
+ import { TLArrowInfo } from './arrow-types'
+ import { getRouteHandlePath } from './elbow/getElbowArrowInfo'
+ 
+-export function getArrowBodyPath(shape: TLArrowShape, info: TLArrowInfo, opts: PathBuilderOpts) {
++export function getArrowBodyPathBuilder(info: TLArrowInfo): PathBuilder {
+ 	switch (info.type) {
+ 		case 'straight':
+ 			return new PathBuilder()
+ 				.moveTo(info.start.point.x, info.start.point.y, { offset: 0, roundness: 0 })
+ 				.lineTo(info.end.point.x, info.end.point.y, { offset: 0, roundness: 0 })
+-				.toSvg(opts)
+ 		case 'arc':
+ 			return new PathBuilder()
+ 				.moveTo(info.start.point.x, info.start.point.y, { offset: 0, roundness: 0 })
+@@ -21,7 +20,6 @@ export function getArrowBodyPath(shape: TLArrowShape, info: TLArrowInfo, opts: P
+ 					info.end.point.y,
+ 					{ offset: 0, roundness: 0 }
+ 				)
+-				.toSvg(opts)
+ 		case 'elbow': {
+ 			const path = new PathBuilder()
+ 			path.moveTo(info.start.point.x, info.start.point.y, {
+@@ -36,13 +34,17 @@ export function getArrowBodyPath(shape: TLArrowShape, info: TLArrowInfo, opts: P
+ 					offset: i === info.route.points.length - 1 ? 0 : undefined,
+ 				})
+ 			}
+-			return path.toSvg(opts)
++			return path
+ 		}
+ 		default:
+ 			exhaustiveSwitchError(info, 'type')
+ 	}
+ }
+ 
++export function getArrowBodyPath(shape: TLArrowShape, info: TLArrowInfo, opts: PathBuilderOpts) {
++	return getArrowBodyPathBuilder(info).toSvg(opts)
++}
++
+ export function getArrowHandlePath(info: TLArrowInfo, opts: PathBuilderOpts) {
+ 	switch (info.type) {
+ 		case 'straight':
+diff --git a/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx b/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
+index 271d4872f3d3..02db7101e572 100644
+--- a/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/arrow/ArrowShapeUtil.tsx
+@@ -56,7 +56,7 @@ import { ARROW_LABEL_PADDING, STROKE_SIZES, TEXT_PROPS } from '../shared/default
+ import { getFillDefForCanvas, getFillDefForExport } from '../shared/defaultStyleDefs'
+ import { useDefaultColorTheme } from '../shared/useDefaultColorTheme'
+ import { useEfficientZoomThreshold } from '../shared/useEfficientZoomThreshold'
+-import { getArrowBodyPath, getArrowHandlePath } from './ArrowPath'
++import { getArrowBodyPath, getArrowBodyPathBuilder, getArrowHandlePath } from './ArrowPath'
+ import { ArrowShapeOptions } from './arrow-types'
+ import {
+ 	getArrowLabelDefaultPosition,
+@@ -919,6 +919,131 @@ export class ArrowShapeUtil extends ShapeUtil<TLArrowShape> {
+ 		)
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLArrowShape) {
++		const info = getArrowInfo(this.editor, shape)
++		if (!info) return undefined
++
++		const isEditing = this.editor.getEditingShapeId() === shape.id
++		const { start, end } = getArrowTerminalsInArrowSpace(this.editor, shape, info?.bindings)
++		const geometry = this.editor.getShapeGeometry<Group2d>(shape)
++		const isEmpty = isEmptyRichText(shape.props.richText)
++
++		const labelGeometry = isEditing || !isEmpty ? (geometry.children[1] as Rectangle2d) : null
++
++		if (Vec.Equals(start, end)) return undefined
++
++		const strokeWidth = STROKE_SIZES[shape.props.size] * shape.props.scale
++
++		// If editing and has label, just return the label rect
++		if (isEditing && labelGeometry) {
++			const labelBounds = labelGeometry.getBounds()
++			const path = new Path2D()
++			path.roundRect(
++				labelBounds.x,
++				labelBounds.y,
++				labelBounds.w,
++				labelBounds.h,
++				3.5 * shape.props.scale
++			)
++			return path
++		}
++
++		// Get arrow body path
++		const isForceSolid = this.editor.getEfficientZoomLevel() < shape.props.scale * 0.25
++		const bodyPathBuilder = getArrowBodyPathBuilder(info)
++		const bodyPath2D = bodyPathBuilder.toPath2D(
++			shape.props.dash === 'draw' && !isForceSolid
++				? {
++						style: 'draw',
++						randomSeed: shape.id,
++						strokeWidth: 1,
++						passes: 1,
++						offset: 0,
++						roundness: strokeWidth * 2,
++					}
++				: { style: 'solid', strokeWidth: 1 }
++		)
++
++		// Get arrowhead paths
++		const as = info.start.arrowhead && getArrowheadPathForType(info, 'start', strokeWidth)
++		const ae = info.end.arrowhead && getArrowheadPathForType(info, 'end', strokeWidth)
++
++		// Check if we need clipping (label or complex arrowheads)
++		const clipStartArrowhead = !!(as && info.start.arrowhead !== 'arrow')
++		const clipEndArrowhead = !!(ae && info.end.arrowhead !== 'arrow')
++		const needsClipping = labelGeometry || clipStartArrowhead || clipEndArrowhead
++
++		if (needsClipping) {
++			// Create clip path using evenodd rule
++			const bounds = geometry.bounds
++			const clipPath = new Path2D()
++
++			// Outer rectangle (clockwise) - defines the area to keep
++			clipPath.rect(bounds.minX - 100, bounds.minY - 100, bounds.width + 200, bounds.height + 200)
++
++			// Label cutout (counter-clockwise via roundRect's default winding)
++			if (labelGeometry) {
++				const labelBounds = labelGeometry.getBounds()
++				const radius = 3.5 * shape.props.scale
++				// Create counter-clockwise rounded rect to cut out the label area
++				// We need to manually create the path in reverse winding order
++				const lb = labelBounds
++				clipPath.moveTo(lb.x, lb.y + radius)
++				clipPath.lineTo(lb.x, lb.maxY - radius)
++				clipPath.arcTo(lb.x, lb.maxY, lb.x + radius, lb.maxY, radius)
++				clipPath.lineTo(lb.maxX - radius, lb.maxY)
++				clipPath.arcTo(lb.maxX, lb.maxY, lb.maxX, lb.maxY - radius, radius)
++				clipPath.lineTo(lb.maxX, lb.y + radius)
++				clipPath.arcTo(lb.maxX, lb.y, lb.maxX - radius, lb.y, radius)
++				clipPath.lineTo(lb.x + radius, lb.y)
++				clipPath.arcTo(lb.x, lb.y, lb.x, lb.y + radius, radius)
++				clipPath.closePath()
++			}
++
++			// Add arrowhead paths to clip path if needed
++			if (clipStartArrowhead && as) {
++				clipPath.addPath(new Path2D(as))
++			}
++			if (clipEndArrowhead && ae) {
++				clipPath.addPath(new Path2D(ae))
++			}
++
++			// Additional paths (arrowheads, label rect) to draw after clipped body
++			const additionalPaths: Path2D[] = []
++			if (as) additionalPaths.push(new Path2D(as))
++			if (ae) additionalPaths.push(new Path2D(ae))
++			if (labelGeometry) {
++				const labelBounds = labelGeometry.getBounds()
++				const labelPath = new Path2D()
++				labelPath.roundRect(labelBounds.x, labelBounds.y, labelBounds.w, labelBounds.h, 3.5)
++				additionalPaths.push(labelPath)
++			}
++
++			return {
++				path: bodyPath2D,
++				clipPath,
++				additionalPaths,
++			}
++		}
++
++		// No clipping needed - combine all paths into one
++		const combinedPath = new Path2D()
++		combinedPath.addPath(bodyPath2D)
++
++		if (as) {
++			combinedPath.addPath(new Path2D(as))
++		}
++		if (ae) {
++			combinedPath.addPath(new Path2D(ae))
++		}
++
++		return combinedPath
++	}
++
+ 	override onEditStart(shape: TLArrowShape) {
+ 		if (isEmptyRichText(shape.props.richText)) {
+ 			// editing text for the first time, so set the position to the default:
+diff --git a/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx b/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx
+index 8807e684e7da..3539cd2f24c6 100644
+--- a/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/bookmark/BookmarkShapeUtil.tsx
+@@ -79,6 +79,16 @@ export class BookmarkShapeUtil extends BaseBoxShapeUtil<TLBookmarkShape> {
+ 		return <BookmarkIndicatorComponent w={shape.props.w} h={shape.props.h} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLBookmarkShape): Path2D {
++		const path = new Path2D()
++		path.roundRect(0, 0, shape.props.w, shape.props.h, 6)
++		return path
++	}
++
+ 	override onBeforeCreate(next: TLBookmarkShape) {
+ 		return setBookmarkHeight(this.editor, next)
+ 	}
+diff --git a/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx b/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
+index 98f113f053fb..f9833c48b348 100644
+--- a/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/draw/DrawShapeUtil.tsx
+@@ -177,6 +177,42 @@ export class DrawShapeUtil extends ShapeUtil<TLDrawShape> {
+ 		return <path d={solidStrokePath} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLDrawShape): Path2D {
++		const allPointsFromSegments = getPointsFromDrawSegments(
++			shape.props.segments,
++			shape.props.scaleX,
++			shape.props.scaleY
++		)
++
++		let sw = (STROKE_SIZES[shape.props.size] + 1) * shape.props.scale
++
++		const zoomLevel = this.editor.getEfficientZoomLevel()
++		const forceSolid = zoomLevel < 0.5 && zoomLevel < 1.5 / sw
++
++		if (
++			!forceSolid &&
++			!shape.props.isPen &&
++			shape.props.dash === 'draw' &&
++			allPointsFromSegments.length === 1
++		) {
++			sw += rng(shape.id)() * (sw / 6)
++		}
++
++		const showAsComplete = shape.props.isComplete || last(shape.props.segments)?.type === 'straight'
++		const options = getFreehandOptions(shape.props, sw, showAsComplete, true)
++		const strokePoints = getStrokePoints(allPointsFromSegments, options)
++		const solidStrokePath =
++			strokePoints.length > 1
++				? getSvgPathFromStrokePoints(strokePoints, shape.props.isClosed)
++				: getDot(allPointsFromSegments[0], sw)
++
++		return new Path2D(solidStrokePath)
++	}
++
+ 	override toSvg(shape: TLDrawShape, ctx: SvgExportContext) {
+ 		ctx.addExportDef(getFillDefForExport(shape.props.fill))
+ 		const scaleFactor = 1 / shape.props.scale
+diff --git a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+index be43e97c74ac..1dc172ef25a6 100644
+--- a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+@@ -255,6 +255,25 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 			<BookmarkIndicatorComponent w={BOOKMARK_WIDTH} h={BOOKMARK_JUST_URL_HEIGHT} />
+ 		)
+ 	}
++
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLEmbedShape): Path2D {
++		const path = new Path2D()
++		const embedInfo = this.getEmbedDefinition(shape.props.url)
++
++		if (embedInfo?.definition) {
++			const radius = embedInfo.definition.overrideOutlineRadius ?? 8
++			path.roundRect(0, 0, shape.props.w, shape.props.h, radius)
++		} else {
++			// Fallback to bookmark indicator
++			path.roundRect(0, 0, BOOKMARK_WIDTH, BOOKMARK_JUST_URL_HEIGHT, 6)
++		}
++		return path
++	}
++
+ 	override getInterpolatedProps(
+ 		startShape: TLEmbedShape,
+ 		endShape: TLEmbedShape,
+diff --git a/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx b/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
+index c46a7777933d..de61946f8ca7 100644
+--- a/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/frame/FrameShapeUtil.tsx
+@@ -336,6 +336,16 @@ export class FrameShapeUtil extends BaseBoxShapeUtil<TLFrameShape> {
+ 		return <rect width={toDomPrecision(shape.props.w)} height={toDomPrecision(shape.props.h)} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLFrameShape): Path2D {
++		const path = new Path2D()
++		path.rect(0, 0, shape.props.w, shape.props.h)
++		return path
++	}
++
+ 	override providesBackgroundForChildren(): boolean {
+ 		return true
+ 	}
+diff --git a/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx b/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx
+index 2010a769fa36..84d353bc76d4 100644
+--- a/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx
+@@ -246,6 +246,29 @@ export class GeoShapeUtil extends BaseBoxShapeUtil<TLGeoShape> {
+ 		})
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLGeoShape): Path2D | undefined {
++		const isForceSolid = this.editor.getEfficientZoomLevel() < shape.props.scale * 0.25
++
++		const { size, dash, scale } = shape.props
++		const strokeWidth = STROKE_SIZES[size]
++
++		const path = getGeoShapePath(shape)
++
++		return path.toPath2D({
++			style: dash === 'draw' ? 'draw' : 'solid',
++			strokeWidth: 1,
++			passes: 1,
++			randomSeed: shape.id,
++			offset: 0,
++			roundness: strokeWidth * 2 * scale,
++			forceSolid: isForceSolid,
++		})
++	}
++
+ 	override toSvg(shape: TLGeoShape, ctx: SvgExportContext) {
+ 		const scale = shape.props.scale
+ 		// We need to scale the shape to 1x for export
+diff --git a/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx b/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
+index b53e55b8277c..fe99d5f674e6 100644
+--- a/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/highlight/HighlightShapeUtil.tsx
+@@ -147,6 +147,32 @@ export class HighlightShapeUtil extends ShapeUtil<TLHighlightShape> {
+ 		return <path d={strokePath} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLHighlightShape): Path2D {
++		const strokeWidth = getStrokeWidth(shape)
++		const zoomLevel = this.editor.getEfficientZoomLevel()
++		const forceSolid = strokeWidth / zoomLevel < 1.5
++
++		const { strokePoints, sw } = getHighlightStrokePoints(shape, strokeWidth, forceSolid)
++		const allPointsFromSegments = getPointsFromDrawSegments(
++			shape.props.segments,
++			shape.props.scaleX,
++			shape.props.scaleY
++		)
++
++		let strokePath
++		if (strokePoints.length < 2) {
++			strokePath = getIndicatorDot(allPointsFromSegments[0], sw)
++		} else {
++			strokePath = getSvgPathFromStrokePoints(strokePoints, false)
++		}
++
++		return new Path2D(strokePath)
++	}
++
+ 	override toSvg(shape: TLHighlightShape) {
+ 		const strokeWidth = getStrokeWidth(shape)
+ 		const forceSolid = strokeWidth < 1.5
+diff --git a/packages/tldraw/src/lib/shapes/image/ImageShapeUtil.tsx b/packages/tldraw/src/lib/shapes/image/ImageShapeUtil.tsx
+index dabb07047955..d125466e98a7 100644
+--- a/packages/tldraw/src/lib/shapes/image/ImageShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/image/ImageShapeUtil.tsx
+@@ -158,6 +158,24 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<TLImageShape> {
+ 		return <rect width={toDomPrecision(shape.props.w)} height={toDomPrecision(shape.props.h)} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLImageShape): Path2D | undefined {
++		if (this.editor.getCroppingShapeId() === shape.id) return undefined
++
++		const path = new Path2D()
++		if (shape.props.crop?.isCircle) {
++			const cx = shape.props.w / 2
++			const cy = shape.props.h / 2
++			path.ellipse(cx, cy, cx, cy, 0, 0, Math.PI * 2)
++		} else {
++			path.rect(0, 0, shape.props.w, shape.props.h)
++		}
++		return path
++	}
++
+ 	override async toSvg(shape: TLImageShape, ctx: SvgExportContext) {
+ 		const props = shape.props
+ 		if (!props.assetId) return null
+diff --git a/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx b/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx
+index 6d99d19f33e9..a3c037c220dd 100644
+--- a/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/line/LineShapeUtil.tsx
+@@ -205,6 +205,25 @@ export class LineShapeUtil extends ShapeUtil<TLLineShape> {
+ 		})
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLLineShape): Path2D {
++		const strokeWidth = STROKE_SIZES[shape.props.size] * shape.props.scale
++		const path = getPathForLineShape(shape)
++		const { dash } = shape.props
++
++		return path.toPath2D({
++			style: dash === 'draw' ? 'draw' : 'solid',
++			strokeWidth: 1,
++			passes: 1,
++			randomSeed: shape.id,
++			offset: 0,
++			roundness: strokeWidth * 2,
++		})
++	}
++
+ 	override toSvg(shape: TLLineShape) {
+ 		return <LineShapeSvg shouldScale shape={shape} />
+ 	}
+diff --git a/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx b/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
+index af1677a57fe7..dea6f5780084 100644
+--- a/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/note/NoteShapeUtil.tsx
+@@ -337,6 +337,17 @@ export class NoteShapeUtil extends ShapeUtil<TLNoteShape> {
+ 		)
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLNoteShape): Path2D {
++		const { scale } = shape.props
++		const path = new Path2D()
++		path.roundRect(0, 0, NOTE_SIZE * scale, getNoteHeight(shape), scale)
++		return path
++	}
++
+ 	override toSvg(shape: TLNoteShape, ctx: SvgExportContext) {
+ 		const theme = getDefaultColorTheme({ isDarkMode: ctx.isDarkMode })
+ 		const bounds = getBoundsForSVG(shape)
+diff --git a/packages/tldraw/src/lib/shapes/shared/PathBuilder.tsx b/packages/tldraw/src/lib/shapes/shared/PathBuilder.tsx
+index bff39069c756..9141049d42d3 100644
+--- a/packages/tldraw/src/lib/shapes/shared/PathBuilder.tsx
++++ b/packages/tldraw/src/lib/shapes/shared/PathBuilder.tsx
+@@ -525,6 +525,17 @@ export class PathBuilder {
+ 		}
+ 	}
+ 
++	toPath2D(opts: PathBuilderOpts): Path2D {
++		if (opts.forceSolid || opts.style === 'solid') {
++			return new Path2D(this.toD({ onlyFilled: opts.onlyFilled }))
++		}
++		if (opts.style === 'draw') {
++			return new Path2D(this.toDrawD(opts))
++		}
++
++		return new Path2D(this.toD({ onlyFilled: opts.onlyFilled }))
++	}
++
+ 	toGeometry(): PathBuilderGeometry2d | Group2d {
+ 		const geometries = []
+ 
+diff --git a/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx b/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx
+index afbf51686a6a..a80643a31e0b 100644
+--- a/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/text/TextShapeUtil.tsx
+@@ -161,6 +161,18 @@ export class TextShapeUtil extends ShapeUtil<TLTextShape> {
+ 		return <rect width={toDomPrecision(bounds.width)} height={toDomPrecision(bounds.height)} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLTextShape): Path2D | undefined {
++		if (shape.props.autoSize && this.editor.getEditingShapeId() === shape.id) return undefined
++		const bounds = this.editor.getShapeGeometry(shape).bounds
++		const path = new Path2D()
++		path.rect(0, 0, bounds.width, bounds.height)
++		return path
++	}
++
+ 	override toSvg(shape: TLTextShape, ctx: SvgExportContext) {
+ 		const bounds = this.editor.getShapeGeometry(shape).bounds
+ 		const width = bounds.width / (shape.props.scale ?? 1)
+diff --git a/packages/tldraw/src/lib/shapes/video/VideoShapeUtil.tsx b/packages/tldraw/src/lib/shapes/video/VideoShapeUtil.tsx
+index df24b092f19f..8fbadf7d3a38 100644
+--- a/packages/tldraw/src/lib/shapes/video/VideoShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/video/VideoShapeUtil.tsx
+@@ -73,6 +73,16 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<TLVideoShape> {
+ 		return <rect width={toDomPrecision(shape.props.w)} height={toDomPrecision(shape.props.h)} />
+ 	}
+ 
++	override useLegacyIndicator() {
++		return false
++	}
++
++	override getIndicatorPath(shape: TLVideoShape): Path2D {
++		const path = new Path2D()
++		path.rect(0, 0, shape.props.w, shape.props.h)
++		return path
++	}
++
+ 	override async toSvg(shape: TLVideoShape, ctx: SvgExportContext) {
+ 		const props = shape.props
+ 		if (!props.assetId) return null
+diff --git a/packages/tldraw/src/test/TldrawEditor.test.tsx b/packages/tldraw/src/test/TldrawEditor.test.tsx
+index 90304e9feafd..770061dfbf26 100644
+--- a/packages/tldraw/src/test/TldrawEditor.test.tsx
++++ b/packages/tldraw/src/test/TldrawEditor.test.tsx
+@@ -253,10 +253,8 @@ describe('<TldrawEditor />', () => {
+ 			shapeTypesToTest.length
+ 		)
+ 
+-		// Check that all shape indicators are present
+-		expect(document.querySelectorAll('.tl-shape-indicator').length).toBeGreaterThanOrEqual(
+-			shapeTypesToTest.length
+-		)
++		// Check that the canvas indicators element is present
++		expect(document.querySelector('.tl-canvas-indicators')).toBeTruthy()
+ 
+ 		// Select one of the shapes (the note shape)
+ 		const noteShapeId = shapeIds[9] // note is at index 9

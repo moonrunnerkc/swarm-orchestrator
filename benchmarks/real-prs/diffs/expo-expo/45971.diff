@@ -1,0 +1,2842 @@
+diff --git a/apps/bare-expo/App.tsx b/apps/bare-expo/App.tsx
+index 62e271601ee9b9..8807fd85960173 100644
+--- a/apps/bare-expo/App.tsx
++++ b/apps/bare-expo/App.tsx
+@@ -69,6 +69,9 @@ function useLoaded() {
+ ExpoObserve.configure({
+   dispatchingEnabled: true,
+   sampleRate: 0.9,
++  integrations: {
++    'react-navigation': true,
++  },
+ });
+ 
+ export default function Main() {
+diff --git a/apps/bare-expo/MainNavigator.tsx b/apps/bare-expo/MainNavigator.tsx
+index b220ac8dac2cd9..6671dcfc38dd55 100644
+--- a/apps/bare-expo/MainNavigator.tsx
++++ b/apps/bare-expo/MainNavigator.tsx
+@@ -1,6 +1,6 @@
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+-import { LinkingOptions, NavigationContainer } from '@react-navigation/native';
++import { LinkingOptions } from '@react-navigation/native';
+ import { createNativeStackNavigator } from '@react-navigation/native-stack';
+ import { useTheme } from 'ThemeProvider';
+ import * as Linking from 'expo-linking';
+@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
+ import { TestStackNavigator } from 'test-suite/TestStackNavigator';
+ import { GestureHandlerRootView } from 'react-native-gesture-handler';
+ import { AppMetrics } from 'expo-observe';
++import { ObserveNavigationContainer } from 'expo-observe/integrations/react-navigation';
+ 
+ type NavigationRouteConfigMap = React.ComponentType;
+ 
+@@ -164,7 +165,7 @@ export default function MainNavigator() {
+   }
+   return (
+     <GestureHandlerRootView style={{ flex: 1 }}>
+-      <NavigationContainer
++      <ObserveNavigationContainer
+         linking={linking}
+         initialState={initialState}
+         onStateChange={(state) => {
+@@ -179,7 +180,7 @@ export default function MainNavigator() {
+           <Switch.Screen name="main" component={TabNavigator} />
+         </Switch.Navigator>
+         <StatusBar style={themeName === 'light' ? 'dark' : 'light'} />
+-      </NavigationContainer>
++      </ObserveNavigationContainer>
+     </GestureHandlerRootView>
+   );
+ }
+diff --git a/packages/expo-observe/build/integrations/react-navigation/ObserveNavigationContainer.d.ts b/packages/expo-observe/build/integrations/react-navigation/ObserveNavigationContainer.d.ts
+new file mode 100644
+index 00000000000000..fd7dbd556840bd
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/ObserveNavigationContainer.d.ts
+@@ -0,0 +1,27 @@
++import { NavigationContainer, type NavigationContainerRef } from '@react-navigation/native';
++import { type ComponentProps, type Ref } from 'react';
++type NavigationContainerProps = ComponentProps<typeof NavigationContainer>;
++export type ObserveNavigationContainerProps = NavigationContainerProps;
++export declare const ObserveNavigationContainer: import("react").ForwardRefExoticComponent<Omit<import("@react-navigation/native").NavigationContainerProps & {
++    initialState?: Readonly<Partial<Omit<Readonly<{
++        key: string;
++        index: number;
++        routeNames: string[];
++        history?: unknown[];
++        routes: import("@react-navigation/native").NavigationRoute<import("@react-navigation/native").ParamListBase, string>[];
++        type: string;
++        stale: false;
++    }>, "stale" | "routes">> & {
++        routes: (Omit<import("@react-navigation/native").Route<string>, "key"> & {
++            state?: import("@react-navigation/native").InitialState;
++        })[];
++    }> | undefined;
++    direction?: import("@react-navigation/native").LocaleDirection;
++    linking?: import("@react-navigation/native").LinkingOptions<{}> | undefined;
++    fallback?: React.ReactNode;
++    documentTitle?: import("@react-navigation/native").DocumentTitleOptions;
++} & {
++    ref?: Ref<NavigationContainerRef<{}>> | undefined;
++}, "ref"> & import("react").RefAttributes<NavigationContainerRef<ReactNavigation.RootParamList>>>;
++export {};
++//# sourceMappingURL=ObserveNavigationContainer.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/ObserveNavigationContainer.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/ObserveNavigationContainer.d.ts.map
+new file mode 100644
+index 00000000000000..3794c9c4e6d153
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/ObserveNavigationContainer.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"ObserveNavigationContainer.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/ObserveNavigationContainer.tsx"],"names":[],"mappings":"AAAA,OAAO,EACL,mBAAmB,EACnB,KAAK,sBAAsB,EAE5B,MAAM,0BAA0B,CAAC;AAClC,OAAO,EAOL,KAAK,cAAc,EACnB,KAAK,GAAG,EACT,MAAM,OAAO,CAAC;AAWf,KAAK,wBAAwB,GAAG,cAAc,CAAC,OAAO,mBAAmB,CAAC,CAAC;AAE3E,MAAM,MAAM,+BAA+B,GAAG,wBAAwB,CAAC;AA6EvE,eAAO,MAAM,0BAA0B;;;;;;;;;;;iBA5DnC,CAAA;;;;;;;;;iGA4DgF,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/actionListener.d.ts b/packages/expo-observe/build/integrations/react-navigation/actionListener.d.ts
+new file mode 100644
+index 00000000000000..bd52e0ac4980bc
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/actionListener.d.ts
+@@ -0,0 +1,14 @@
++import type { ReactNavigationIntegrationStorage } from './storage';
++export interface NavigationRefActionListenerHandle {
++    addListener(event: '__unsafe_action__', cb: (e: {
++        data: {
++            action: {
++                type: string;
++                payload?: object;
++            };
++            noop: boolean;
++        };
++    }) => void): () => void;
++}
++export declare function attachActionListener(navigationRef: NavigationRefActionListenerHandle, storage: ReactNavigationIntegrationStorage): () => void;
++//# sourceMappingURL=actionListener.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/actionListener.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/actionListener.d.ts.map
+new file mode 100644
+index 00000000000000..9a566380fd7657
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/actionListener.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"actionListener.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/actionListener.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,iCAAiC,EAAE,MAAM,WAAW,CAAC;AAEnE,MAAM,WAAW,iCAAiC;IAChD,WAAW,CACT,KAAK,EAAE,mBAAmB,EAC1B,EAAE,EAAE,CAAC,CAAC,EAAE;QAAE,IAAI,EAAE;YAAE,MAAM,EAAE;gBAAE,IAAI,EAAE,MAAM,CAAC;gBAAC,OAAO,CAAC,EAAE,MAAM,CAAA;aAAE,CAAC;YAAC,IAAI,EAAE,OAAO,CAAA;SAAE,CAAA;KAAE,KAAK,IAAI,GACvF,MAAM,IAAI,CAAC;CACf;AAED,wBAAgB,oBAAoB,CAClC,aAAa,EAAE,iCAAiC,EAChD,OAAO,EAAE,iCAAiC,GACzC,MAAM,IAAI,CAWZ"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/context.d.ts b/packages/expo-observe/build/integrations/react-navigation/context.d.ts
+new file mode 100644
+index 00000000000000..6dea236687ecab
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/context.d.ts
+@@ -0,0 +1,8 @@
++import type { ReactNavigationIntegrationStorage } from './storage';
++import type { GetPathname } from './types';
++export interface ReactNavigationIntegrationContextValue {
++    storage: ReactNavigationIntegrationStorage;
++    getPathname: GetPathname;
++}
++export declare const ObserveReactNavigationIntegrationContext: import("react").Context<ReactNavigationIntegrationContextValue | null>;
++//# sourceMappingURL=context.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/context.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/context.d.ts.map
+new file mode 100644
+index 00000000000000..02305bda9b3815
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/context.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"context.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/context.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,iCAAiC,EAAE,MAAM,WAAW,CAAC;AACnE,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AAE3C,MAAM,WAAW,sCAAsC;IACrD,OAAO,EAAE,iCAAiC,CAAC;IAC3C,WAAW,EAAE,WAAW,CAAC;CAC1B;AAED,eAAO,MAAM,wCAAwC,wEACe,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/emitTTI.d.ts b/packages/expo-observe/build/integrations/react-navigation/emitTTI.d.ts
+new file mode 100644
+index 00000000000000..4141b656246dc3
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/emitTTI.d.ts
+@@ -0,0 +1,8 @@
++export declare function emitTTI(args: {
++    sessionId: string;
++    timestamp: string;
++    routeName: string | undefined;
++    value: number;
++    routeParams: object;
++}): Promise<void>;
++//# sourceMappingURL=emitTTI.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/emitTTI.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/emitTTI.d.ts.map
+new file mode 100644
+index 00000000000000..84a9d34d29cef5
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/emitTTI.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"emitTTI.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/emitTTI.ts"],"names":[],"mappings":"AAEA,wBAAgB,OAAO,CAAC,IAAI,EAAE;IAC5B,SAAS,EAAE,MAAM,CAAC;IAClB,SAAS,EAAE,MAAM,CAAC;IAClB,SAAS,EAAE,MAAM,GAAG,SAAS,CAAC;IAC9B,KAAK,EAAE,MAAM,CAAC;IACd,WAAW,EAAE,MAAM,CAAC;CACrB,GAAG,OAAO,CAAC,IAAI,CAAC,CAUhB"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/getPathname.d.ts b/packages/expo-observe/build/integrations/react-navigation/getPathname.d.ts
+new file mode 100644
+index 00000000000000..f9f45dd86bb040
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/getPathname.d.ts
+@@ -0,0 +1,4 @@
++import { type LinkingOptions, type ParamListBase } from '@react-navigation/native';
++import type { GetPathname } from './types';
++export declare function createGetPathname<ParamList extends ParamListBase>(linking: LinkingOptions<ParamList> | undefined): GetPathname;
++//# sourceMappingURL=getPathname.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/getPathname.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/getPathname.d.ts.map
+new file mode 100644
+index 00000000000000..39c6ac42c61258
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/getPathname.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"getPathname.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/getPathname.ts"],"names":[],"mappings":"AAAA,OAAO,EAEL,KAAK,cAAc,EAEnB,KAAK,aAAa,EACnB,MAAM,0BAA0B,CAAC;AAElC,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AAE3C,wBAAgB,iBAAiB,CAAC,SAAS,SAAS,aAAa,EAC/D,OAAO,EAAE,cAAc,CAAC,SAAS,CAAC,GAAG,SAAS,GAC7C,WAAW,CAeb"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/handleStateChange.d.ts b/packages/expo-observe/build/integrations/react-navigation/handleStateChange.d.ts
+new file mode 100644
+index 00000000000000..e2145587ddb285
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/handleStateChange.d.ts
+@@ -0,0 +1,4 @@
++import type { ReactNavigationIntegrationStorage } from './storage';
++import type { GetPathname, NavigationStateLike } from './types';
++export declare function createStateChangeHandler(storage: ReactNavigationIntegrationStorage, getPathname: GetPathname, appLaunchTime: number): (state: NavigationStateLike | undefined) => void;
++//# sourceMappingURL=handleStateChange.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/handleStateChange.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/handleStateChange.d.ts.map
+new file mode 100644
+index 00000000000000..27b3b84e1c0e38
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/handleStateChange.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"handleStateChange.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/handleStateChange.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAE,iCAAiC,EAAE,MAAM,WAAW,CAAC;AACnE,OAAO,KAAK,EAAE,WAAW,EAAE,mBAAmB,EAAE,MAAM,SAAS,CAAC;AAEhE,wBAAgB,wBAAwB,CACtC,OAAO,EAAE,iCAAiC,EAC1C,WAAW,EAAE,WAAW,EACxB,aAAa,EAAE,MAAM,GACpB,CAAC,KAAK,EAAE,mBAAmB,GAAG,SAAS,KAAK,IAAI,CAuHlD"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/index.d.ts b/packages/expo-observe/build/integrations/react-navigation/index.d.ts
+new file mode 100644
+index 00000000000000..f48823b16ca463
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/index.d.ts
+@@ -0,0 +1,6 @@
++export { isReactNavigationInstalled } from './reactNavigation';
++export { initReactNavigationIntegration, isInitialized as isReactNavigationInitialized, } from './init';
++export { ObserveNavigationContainer, type ObserveNavigationContainerProps, } from './ObserveNavigationContainer';
++export { ObserveReactNavigationIntegrationContext } from './context';
++export { useObserveForReactNavigation } from './useObserveForReactNavigation';
++//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/index.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/index.d.ts.map
+new file mode 100644
+index 00000000000000..75eb0dc66bd0da
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/index.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/index.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,0BAA0B,EAAE,MAAM,mBAAmB,CAAC;AAC/D,OAAO,EACL,8BAA8B,EAC9B,aAAa,IAAI,4BAA4B,GAC9C,MAAM,QAAQ,CAAC;AAEhB,OAAO,EACL,0BAA0B,EAC1B,KAAK,+BAA+B,GACrC,MAAM,8BAA8B,CAAC;AACtC,OAAO,EAAE,wCAAwC,EAAE,MAAM,WAAW,CAAC;AACrE,OAAO,EAAE,4BAA4B,EAAE,MAAM,gCAAgC,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/init.d.ts b/packages/expo-observe/build/integrations/react-navigation/init.d.ts
+new file mode 100644
+index 00000000000000..5d125176fa7970
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/init.d.ts
+@@ -0,0 +1,3 @@
++export declare const isInitialized: () => boolean;
++export declare function initReactNavigationIntegration(): void;
++//# sourceMappingURL=init.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/init.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/init.d.ts.map
+new file mode 100644
+index 00000000000000..14661d9557c032
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/init.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"init.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/init.ts"],"names":[],"mappings":"AAEA,eAAO,MAAM,aAAa,eAAoB,CAAC;AAE/C,wBAAgB,8BAA8B,SAE7C"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/reactNavigation.d.ts b/packages/expo-observe/build/integrations/react-navigation/reactNavigation.d.ts
+new file mode 100644
+index 00000000000000..466c825cdee6e9
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/reactNavigation.d.ts
+@@ -0,0 +1,4 @@
++declare let optionalReactNavigation: typeof import('@react-navigation/native') | undefined;
++declare const isReactNavigationInstalled: boolean;
++export { optionalReactNavigation, isReactNavigationInstalled };
++//# sourceMappingURL=reactNavigation.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/reactNavigation.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/reactNavigation.d.ts.map
+new file mode 100644
+index 00000000000000..bd6c8654c8a550
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/reactNavigation.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"reactNavigation.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/reactNavigation.ts"],"names":[],"mappings":"AAEA,QAAA,IAAI,uBAAuB,EAAE,cAAc,0BAA0B,CAAC,GAAG,SAAS,CAAC;AAKnF,QAAA,MAAM,0BAA0B,SAA4B,CAAC;AAE7D,OAAO,EAAE,uBAAuB,EAAE,0BAA0B,EAAE,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/stateTraversal.d.ts b/packages/expo-observe/build/integrations/react-navigation/stateTraversal.d.ts
+new file mode 100644
+index 00000000000000..22ad3131b8fecb
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/stateTraversal.d.ts
+@@ -0,0 +1,7 @@
++import type { NavigationRouteLike, NavigationStateLike } from './types';
++export declare function findFocusedLeaf(state: NavigationStateLike): {
++    route: NavigationRouteLike;
++    key: string;
++} | null;
++export declare function collectMountedKeys(state: NavigationStateLike): Map<string, NavigationRouteLike>;
++//# sourceMappingURL=stateTraversal.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/stateTraversal.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/stateTraversal.d.ts.map
+new file mode 100644
+index 00000000000000..84547a0e2f62dd
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/stateTraversal.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"stateTraversal.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/stateTraversal.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,mBAAmB,EAAE,MAAM,SAAS,CAAC;AAExE,wBAAgB,eAAe,CAC7B,KAAK,EAAE,mBAAmB,GACzB;IAAE,KAAK,EAAE,mBAAmB,CAAC;IAAC,GAAG,EAAE,MAAM,CAAA;CAAE,GAAG,IAAI,CAUpD;AAED,wBAAgB,kBAAkB,CAAC,KAAK,EAAE,mBAAmB,GAAG,GAAG,CAAC,MAAM,EAAE,mBAAmB,CAAC,CA4B/F"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/storage.d.ts b/packages/expo-observe/build/integrations/react-navigation/storage.d.ts
+new file mode 100644
+index 00000000000000..54d458ec5c207c
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/storage.d.ts
+@@ -0,0 +1,17 @@
++export type ScreenTimes = {
++    dispatchTime?: number;
++    lastInteractiveCall?: number;
++};
++export type PendingAction = {
++    actionType: string;
++    dispatchTime: number;
++};
++export type ReactNavigationIntegrationStorage = {
++    pendingActions: PendingAction[];
++    renderedScreensIds: Set<string>;
++    hasRecordedInitialTtr: boolean;
++    screenTimes: Record<string, ScreenTimes>;
++    interactiveScreensIds: Set<string>;
++};
++export declare function createReactNavigationIntegrationStorage(): ReactNavigationIntegrationStorage;
++//# sourceMappingURL=storage.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/storage.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/storage.d.ts.map
+new file mode 100644
+index 00000000000000..b5df4d24180594
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/storage.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"storage.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/storage.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,WAAW,GAAG;IACxB,YAAY,CAAC,EAAE,MAAM,CAAC;IACtB,mBAAmB,CAAC,EAAE,MAAM,CAAC;CAC9B,CAAC;AAEF,MAAM,MAAM,aAAa,GAAG;IAC1B,UAAU,EAAE,MAAM,CAAC;IACnB,YAAY,EAAE,MAAM,CAAC;CACtB,CAAC;AAEF,MAAM,MAAM,iCAAiC,GAAG;IAC9C,cAAc,EAAE,aAAa,EAAE,CAAC;IAChC,kBAAkB,EAAE,GAAG,CAAC,MAAM,CAAC,CAAC;IAChC,qBAAqB,EAAE,OAAO,CAAC;IAC/B,WAAW,EAAE,MAAM,CAAC,MAAM,EAAE,WAAW,CAAC,CAAC;IACzC,qBAAqB,EAAE,GAAG,CAAC,MAAM,CAAC,CAAC;CACpC,CAAC;AAEF,wBAAgB,uCAAuC,IAAI,iCAAiC,CAQ3F"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/types.d.ts b/packages/expo-observe/build/integrations/react-navigation/types.d.ts
+new file mode 100644
+index 00000000000000..40e16b2e24fb1b
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/types.d.ts
+@@ -0,0 +1,7 @@
++import type { NavigationRoute, NavigationState } from '@react-navigation/native';
++export type NavigationRouteLike = NavigationRoute<any, string> & {
++    state: NavigationState;
++};
++export type NavigationStateLike = NavigationState;
++export type GetPathname = (state: NavigationStateLike | undefined) => string | undefined;
++//# sourceMappingURL=types.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/types.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/types.d.ts.map
+new file mode 100644
+index 00000000000000..01b5e0e4608efd
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/types.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/types.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,eAAe,EAAE,MAAM,0BAA0B,CAAC;AAEjF,MAAM,MAAM,mBAAmB,GAAG,eAAe,CAAC,GAAG,EAAE,MAAM,CAAC,GAAG;IAAE,KAAK,EAAE,eAAe,CAAA;CAAE,CAAC;AAC5F,MAAM,MAAM,mBAAmB,GAAG,eAAe,CAAC;AAElD,MAAM,MAAM,WAAW,GAAG,CAAC,KAAK,EAAE,mBAAmB,GAAG,SAAS,KAAK,MAAM,GAAG,SAAS,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/useObserveForReactNavigation.d.ts b/packages/expo-observe/build/integrations/react-navigation/useObserveForReactNavigation.d.ts
+new file mode 100644
+index 00000000000000..e403ca330c19a9
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/useObserveForReactNavigation.d.ts
+@@ -0,0 +1,5 @@
++import AppMetrics from 'expo-app-metrics';
++type MarkInteractive = (typeof AppMetrics)['markInteractive'];
++export declare function useObserveForReactNavigation(): MarkInteractive | null;
++export {};
++//# sourceMappingURL=useObserveForReactNavigation.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/integrations/react-navigation/useObserveForReactNavigation.d.ts.map b/packages/expo-observe/build/integrations/react-navigation/useObserveForReactNavigation.d.ts.map
+new file mode 100644
+index 00000000000000..d641848eff7791
+--- /dev/null
++++ b/packages/expo-observe/build/integrations/react-navigation/useObserveForReactNavigation.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"useObserveForReactNavigation.d.ts","sourceRoot":"","sources":["../../../src/integrations/react-navigation/useObserveForReactNavigation.ts"],"names":[],"mappings":"AAAA,OAAO,UAAqC,MAAM,kBAAkB,CAAC;AAUrE,KAAK,eAAe,GAAG,CAAC,OAAO,UAAU,CAAC,CAAC,iBAAiB,CAAC,CAAC;AAE9D,wBAAgB,4BAA4B,IAAI,eAAe,GAAG,IAAI,CAoHrE"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/module.d.ts.map b/packages/expo-observe/build/module.d.ts.map
+index c0d4686e229f85..774338c70985e9 100644
+--- a/packages/expo-observe/build/module.d.ts.map
++++ b/packages/expo-observe/build/module.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"module.d.ts","sourceRoot":"","sources":["../src/module.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAU,qBAAqB,EAAE,MAAM,SAAS,CAAC;AAI7D,QAAA,MAAM,WAAW,EAAE,qBAYjB,CAAC;AAEH,eAAe,WAAW,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"module.d.ts","sourceRoot":"","sources":["../src/module.ts"],"names":[],"mappings":"AAMA,OAAO,KAAK,EAAU,qBAAqB,EAAE,MAAM,SAAS,CAAC;AAI7D,QAAA,MAAM,WAAW,EAAE,qBAuCjB,CAAC;AAEH,eAAe,WAAW,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/types.d.ts b/packages/expo-observe/build/types.d.ts
+index c99576635a570f..289acc9c55c4e4 100644
+--- a/packages/expo-observe/build/types.d.ts
++++ b/packages/expo-observe/build/types.d.ts
+@@ -51,7 +51,26 @@ export type Config = {
+     integrations?: IntegrationsConfig;
+ };
+ export interface IntegrationsConfig {
++    /**
++     * Enables the `expo-router` integration, which records navigation metrics
++     * (`cold_ttr`, `warm_ttr`, `tti`) from router state changes.
++     *
++     * Requires `expo-router` to be installed.
++     *
++     * @default false
++     */
+     'expo-router'?: boolean;
++    /**
++     * Enables the `@react-navigation/native` integration, which records
++     * navigation metrics (`cold_ttr`, `warm_ttr`, `tti`).
++     *
++     * Requires `@react-navigation/native` to be installed and the app tree
++     * to be wrapped in `<ObserveNavigationContainer>` instead of the stock
++     * `<NavigationContainer>`.
++     *
++     * @default false
++     */
++    'react-navigation'?: boolean;
+ }
+ export interface ExpoObserveModuleType {
+     dispatchEvents(): Promise<void>;
+diff --git a/packages/expo-observe/build/types.d.ts.map b/packages/expo-observe/build/types.d.ts.map
+index 7cdeeacf118a61..0a2a7fe3c11d55 100644
+--- a/packages/expo-observe/build/types.d.ts.map
++++ b/packages/expo-observe/build/types.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../src/types.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,MAAM,GAAG;IACnB;;;;OAIG;IACH,WAAW,CAAC,EAAE,MAAM,CAAC;IACrB;;;;;;;OAOG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;IAC7B;;;;;;;;;;;;OAYG;IACH,eAAe,CAAC,EAAE,OAAO,CAAC;IAC1B;;;;;;;;;;;;;;;OAeG;IACH,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB;;OAEG;IACH,YAAY,CAAC,EAAE,kBAAkB,CAAC;CACnC,CAAC;AAEF,MAAM,WAAW,kBAAkB;IACjC,aAAa,CAAC,EAAE,OAAO,CAAC;CACzB;AAED,MAAM,WAAW,qBAAqB;IACpC,cAAc,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC;IAChC;;OAEG;IACH,SAAS,CAAC,MAAM,EAAE,MAAM,GAAG,IAAI,CAAC;IAChC;;;;;;OAMG;IACH,iBAAiB,CAAC,QAAQ,EAAE;QAAE,WAAW,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,OAAO,CAAA;KAAE,GAAG,IAAI,CAAC;CAC9E"}
+\ No newline at end of file
++{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../src/types.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,MAAM,GAAG;IACnB;;;;OAIG;IACH,WAAW,CAAC,EAAE,MAAM,CAAC;IACrB;;;;;;;OAOG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;IAC7B;;;;;;;;;;;;OAYG;IACH,eAAe,CAAC,EAAE,OAAO,CAAC;IAC1B;;;;;;;;;;;;;;;OAeG;IACH,UAAU,CAAC,EAAE,MAAM,CAAC;IACpB;;OAEG;IACH,YAAY,CAAC,EAAE,kBAAkB,CAAC;CACnC,CAAC;AAEF,MAAM,WAAW,kBAAkB;IACjC;;;;;;;OAOG;IACH,aAAa,CAAC,EAAE,OAAO,CAAC;IACxB;;;;;;;;;OASG;IACH,kBAAkB,CAAC,EAAE,OAAO,CAAC;CAC9B;AAED,MAAM,WAAW,qBAAqB;IACpC,cAAc,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC;IAChC;;OAEG;IACH,SAAS,CAAC,MAAM,EAAE,MAAM,GAAG,IAAI,CAAC;IAChC;;;;;;OAMG;IACH,iBAAiB,CAAC,QAAQ,EAAE;QAAE,WAAW,EAAE,MAAM,CAAC;QAAC,OAAO,EAAE,OAAO,CAAA;KAAE,GAAG,IAAI,CAAC;CAC9E"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/build/useObserve.d.ts.map b/packages/expo-observe/build/useObserve.d.ts.map
+index 33bf0eebe7ab8d..4b622bd2411651 100644
+--- a/packages/expo-observe/build/useObserve.d.ts.map
++++ b/packages/expo-observe/build/useObserve.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"useObserve.d.ts","sourceRoot":"","sources":["../src/useObserve.ts"],"names":[],"mappings":"AAKA,wBAAgB,UAAU;;EAgBzB"}
+\ No newline at end of file
++{"version":3,"file":"useObserve.d.ts","sourceRoot":"","sources":["../src/useObserve.ts"],"names":[],"mappings":"AASA,wBAAgB,UAAU;;EA8BzB"}
+\ No newline at end of file
+diff --git a/packages/expo-observe/package.json b/packages/expo-observe/package.json
+index 0dad83e3e03bc4..ec6f4296ec8e1e 100644
+--- a/packages/expo-observe/package.json
++++ b/packages/expo-observe/package.json
+@@ -5,6 +5,17 @@
+   "description": "Expo module that dispatches collected app metrics to EAS Observe",
+   "main": "src/index.ts",
+   "types": "build/index.d.ts",
++  "exports": {
++    "./package.json": "./package.json",
++    ".": {
++      "types": "./build/index.d.ts",
++      "default": "./src/index.ts"
++    },
++    "./integrations/react-navigation": {
++      "types": "./build/integrations/react-navigation/index.d.ts",
++      "default": "./src/integrations/react-navigation/index.ts"
++    }
++  },
+   "sideEffects": false,
+   "scripts": {
+     "build": "expo-module build",
+@@ -36,6 +47,7 @@
+     "expo-eas-client": "workspace:~56.0.0"
+   },
+   "devDependencies": {
++    "@react-navigation/native": "^7.1.33",
+     "@testing-library/react-native": "^13.3.0",
+     "@types/react": "~19.2.0",
+     "expo": "workspace:*",
+@@ -45,11 +57,15 @@
+     "expo": "*",
+     "react": "*",
+     "react-native": "*",
+-    "expo-router": "*"
++    "expo-router": "*",
++    "@react-navigation/native": "^7.0.0"
+   },
+   "peerDependenciesMeta": {
+     "expo-router": {
+       "optional": true
++    },
++    "@react-navigation/native": {
++      "optional": true
+     }
+   }
+ }
+diff --git a/packages/expo-observe/src/__tests__/module.test.native.ts b/packages/expo-observe/src/__tests__/module.test.native.ts
+index 9da30f4f4cc997..c90846a41e22de 100644
+--- a/packages/expo-observe/src/__tests__/module.test.native.ts
++++ b/packages/expo-observe/src/__tests__/module.test.native.ts
+@@ -1,4 +1,6 @@
+ /* eslint-disable @typescript-eslint/no-require-imports */
++export {};
++
+ const mockNative = {
+   configure: jest.fn(),
+   setBundleDefaults: jest.fn(),
+@@ -20,9 +22,22 @@ jest.mock('../integrations/expo-router/init', () => ({
+   initListeners: jest.fn(() => () => {}),
+ }));
+ 
++jest.mock('../integrations/react-navigation/reactNavigation', () => ({
++  isReactNavigationInstalled: true,
++  optionalReactNavigation: undefined,
++}));
++
++jest.mock('../integrations/react-navigation/init', () => ({
++  initReactNavigationIntegration: jest.fn(),
++  isInitialized: jest.fn(() => false),
++}));
++
++let warnSpy: jest.SpyInstance;
++
+ beforeEach(() => {
+   jest.clearAllMocks();
+   jest.resetModules();
++  warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+   jest.doMock('expo', () => ({ requireNativeModule: jest.fn(() => mockNative) }));
+   jest.doMock('../integrations/expo-router/router', () => ({
+     isRouterInstalled: true,
+@@ -33,6 +48,14 @@ beforeEach(() => {
+     isInitialized: jest.fn(() => false),
+     initListeners: jest.fn(() => () => {}),
+   }));
++  jest.doMock('../integrations/react-navigation/reactNavigation', () => ({
++    isReactNavigationInstalled: true,
++    optionalReactNavigation: undefined,
++  }));
++  jest.doMock('../integrations/react-navigation/init', () => ({
++    initReactNavigationIntegration: jest.fn(),
++    isInitialized: jest.fn(() => false),
++  }));
+ });
+ 
+ function loadModule() {
+@@ -43,6 +66,10 @@ function loadInit() {
+   return require('../integrations/expo-router/init') as typeof import('../integrations/expo-router/init');
+ }
+ 
++function loadReactNavigationInit() {
++  return require('../integrations/react-navigation/init') as typeof import('../integrations/react-navigation/init');
++}
++
+ describe('module Proxy', () => {
+   it.each([true, false, undefined])(
+     "forwards a integrations object to native when 'expo-router' is %s",
+@@ -56,6 +83,7 @@ describe('module Proxy', () => {
+         environment: 'test',
+         integrations: { 'expo-router': router },
+       });
++      expect(warnSpy).not.toHaveBeenCalled();
+     }
+   );
+ 
+@@ -67,6 +95,7 @@ describe('module Proxy', () => {
+       integrations: { 'expo-router': true },
+     });
+     expect(initRouterIntegration).toHaveBeenCalledTimes(1);
++    expect(warnSpy).not.toHaveBeenCalled();
+   });
+ 
+   it('skips initRouterIntegration by default', () => {
+@@ -77,6 +106,7 @@ describe('module Proxy', () => {
+     expect(mockNative.configure).toHaveBeenCalledWith({
+       environment: 'test',
+     });
++    expect(warnSpy).not.toHaveBeenCalled();
+   });
+ 
+   it('skips initRouterIntegration when router is not installed, but passes the integrations object unchanged', () => {
+@@ -84,6 +114,10 @@ describe('module Proxy', () => {
+       isRouterInstalled: false,
+       optionalRouter: undefined,
+     }));
++    jest.doMock('../integrations/react-navigation/reactNavigation', () => ({
++      isReactNavigationInstalled: false,
++      optionalReactNavigation: undefined,
++    }));
+     const ExpoObserve = loadModule();
+     const { initRouterIntegration } = loadInit();
+     ExpoObserve.configure({ integrations: { 'expo-router': true } });
+@@ -93,6 +127,139 @@ describe('module Proxy', () => {
+     });
+   });
+ 
++  it('warns when expo-router integration is enabled but expo-router is not installed', () => {
++    jest.doMock('../integrations/expo-router/router', () => ({
++      isRouterInstalled: false,
++      optionalRouter: undefined,
++    }));
++    const ExpoObserve = loadModule();
++    ExpoObserve.configure({ integrations: { 'expo-router': true } });
++    expect(warnSpy).toHaveBeenCalledTimes(1);
++    expect(warnSpy).toHaveBeenCalledWith(
++      "[expo-observe] `integrations: { 'expo-router': true }` was set, but `expo-router` is not installed. The integration will not initialize."
++    );
++  });
++
++  it('warns when react-navigation integration is enabled but @react-navigation/native is not installed', () => {
++    jest.doMock('../integrations/react-navigation/reactNavigation', () => ({
++      isReactNavigationInstalled: false,
++      optionalReactNavigation: undefined,
++    }));
++    const ExpoObserve = loadModule();
++    ExpoObserve.configure({ integrations: { 'react-navigation': true } });
++    expect(warnSpy).toHaveBeenCalledTimes(1);
++    expect(warnSpy).toHaveBeenCalledWith(
++      "[expo-observe] `integrations: { 'react-navigation': true }` was set, but `@react-navigation/native` is not installed. The integration will not initialize."
++    );
++  });
++
++  it('warns when both integrations resolve to init (router takes precedence)', () => {
++    const ExpoObserve = loadModule();
++    ExpoObserve.configure({
++      integrations: { 'expo-router': true, 'react-navigation': true },
++    });
++    expect(warnSpy).toHaveBeenCalledTimes(1);
++    expect(warnSpy).toHaveBeenCalledWith(
++      "[expo-observe] Both 'expo-router' and 'react-navigation' integrations are enabled. " +
++        "Only 'expo-router' will initialize; 'react-navigation' will be ignored. "
++    );
++  });
++
++  it('warns once per missing peer but does not also warn about both-enabled when react-navigation is not installed', () => {
++    jest.doMock('../integrations/react-navigation/reactNavigation', () => ({
++      isReactNavigationInstalled: false,
++      optionalReactNavigation: undefined,
++    }));
++    const ExpoObserve = loadModule();
++    ExpoObserve.configure({
++      integrations: { 'expo-router': true, 'react-navigation': true },
++    });
++    // Only the missing-peer warning fires; the 'both enabled' warning is gated
++    // on shouldInitReactNavigationIntegration, which is false here.
++    expect(warnSpy).toHaveBeenCalledTimes(1);
++    expect(warnSpy).toHaveBeenCalledWith(
++      "[expo-observe] `integrations: { 'react-navigation': true }` was set, but `@react-navigation/native` is not installed. The integration will not initialize."
++    );
++  });
++
++  it('warns twice when both integrations are enabled but expo-router is not installed', () => {
++    jest.doMock('../integrations/expo-router/router', () => ({
++      isRouterInstalled: false,
++      optionalRouter: undefined,
++    }));
++    const ExpoObserve = loadModule();
++    ExpoObserve.configure({
++      integrations: { 'expo-router': true, 'react-navigation': true },
++    });
++    // Missing-peer fires for expo-router; 'both enabled' is gated on
++    // shouldInitRouterIntegration so it does not fire. react-navigation
++    // initializes alone, no additional warning.
++    expect(warnSpy).toHaveBeenCalledTimes(1);
++    expect(warnSpy).toHaveBeenCalledWith(
++      "[expo-observe] `integrations: { 'expo-router': true }` was set, but `expo-router` is not installed. The integration will not initialize."
++    );
++  });
++
++  it("calls initReactNavigationIntegration when integrations['react-navigation'] is true and react-navigation is installed", () => {
++    const ExpoObserve = loadModule();
++    const { initReactNavigationIntegration } = loadReactNavigationInit();
++    ExpoObserve.configure({
++      environment: 'test',
++      integrations: { 'react-navigation': true },
++    });
++    expect(initReactNavigationIntegration).toHaveBeenCalledTimes(1);
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it("initializes react-navigation even when expo-router is installed, as long as 'react-navigation' is the only flag set", () => {
++    const ExpoObserve = loadModule();
++    const { initRouterIntegration } = loadInit();
++    const { initReactNavigationIntegration } = loadReactNavigationInit();
++    ExpoObserve.configure({
++      environment: 'test',
++      integrations: { 'react-navigation': true },
++    });
++    expect(initRouterIntegration).not.toHaveBeenCalled();
++    expect(initReactNavigationIntegration).toHaveBeenCalledTimes(1);
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it('does NOT call initReactNavigationIntegration when both flags are true', () => {
++    const ExpoObserve = loadModule();
++    const { initRouterIntegration } = loadInit();
++    const { initReactNavigationIntegration } = loadReactNavigationInit();
++    ExpoObserve.configure({
++      environment: 'test',
++      integrations: { 'expo-router': true, 'react-navigation': true },
++    });
++    expect(initRouterIntegration).toHaveBeenCalledTimes(1);
++    expect(initReactNavigationIntegration).not.toHaveBeenCalled();
++  });
++
++  it('skips initReactNavigationIntegration when react-navigation is not installed', () => {
++    jest.doMock('../integrations/react-navigation/reactNavigation', () => ({
++      isReactNavigationInstalled: false,
++      optionalReactNavigation: undefined,
++    }));
++    const ExpoObserve = loadModule();
++    const { initReactNavigationIntegration } = loadReactNavigationInit();
++    ExpoObserve.configure({
++      environment: 'test',
++      integrations: { 'react-navigation': true },
++    });
++    expect(initReactNavigationIntegration).not.toHaveBeenCalled();
++  });
++
++  it('skips both integrations by default', () => {
++    const ExpoObserve = loadModule();
++    const { initRouterIntegration } = loadInit();
++    const { initReactNavigationIntegration } = loadReactNavigationInit();
++    ExpoObserve.configure({ environment: 'test' });
++    expect(initRouterIntegration).not.toHaveBeenCalled();
++    expect(initReactNavigationIntegration).not.toHaveBeenCalled();
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
+   it('passes through dispatchEvents and setBundleDefaults to native', () => {
+     const ExpoObserve = loadModule();
+     ExpoObserve.dispatchEvents();
+@@ -102,6 +269,7 @@ describe('module Proxy', () => {
+       environment: 'production',
+       isJsDev: false,
+     });
++    expect(warnSpy).not.toHaveBeenCalled();
+   });
+ 
+   it('returns the native function via Reflect.get for unknown props', () => {
+@@ -109,5 +277,6 @@ describe('module Proxy', () => {
+     expect((ExpoObserve as { dispatchEvents: unknown }).dispatchEvents).toBe(
+       mockNative.dispatchEvents
+     );
++    expect(warnSpy).not.toHaveBeenCalled();
+   });
+ });
+diff --git a/packages/expo-observe/src/__tests__/useObserve.test.native.tsx b/packages/expo-observe/src/__tests__/useObserve.test.native.tsx
+index 26477a7f9b66cd..8d75b5dd75fb55 100644
+--- a/packages/expo-observe/src/__tests__/useObserve.test.native.tsx
++++ b/packages/expo-observe/src/__tests__/useObserve.test.native.tsx
+@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react-native';
+ import AppMetrics from 'expo-app-metrics';
+ 
+ import * as routerIntegration from '../integrations/expo-router';
++import * as reactNavigationIntegration from '../integrations/react-navigation';
+ import { useObserve } from '../useObserve';
+ 
+ jest.mock('expo-app-metrics', () => ({
+@@ -20,11 +21,24 @@ jest.mock('../integrations/expo-router', () => ({
+   isExpoRouterInitialized: jest.fn(() => true),
+ }));
+ 
++jest.mock('../integrations/react-navigation', () => ({
++  __esModule: true,
++  useObserveForReactNavigation: jest.fn(),
++  isReactNavigationInitialized: jest.fn(() => true),
++}));
++
+ const mockUseObserveForRouter = routerIntegration.useObserveForRouter as jest.Mock;
+ const isExpoRouterInitializedMock = routerIntegration.isExpoRouterInitialized as jest.Mock;
++const mockUseObserveForReactNavigation =
++  reactNavigationIntegration.useObserveForReactNavigation as jest.Mock;
++const isReactNavigationInitializedMock =
++  reactNavigationIntegration.isReactNavigationInitialized as jest.Mock;
+ 
+ beforeEach(() => {
+   jest.clearAllMocks();
++  isExpoRouterInitializedMock.mockReturnValue(true);
++  isReactNavigationInitializedMock.mockReturnValue(true);
++  mockUseObserveForReactNavigation.mockReturnValue(null);
+ });
+ 
+ describe(useObserve, () => {
+@@ -37,20 +51,56 @@ describe(useObserve, () => {
+     expect(result.current.markInteractive).toBe(routerScoped);
+   });
+ 
+-  it('falls back to AppMetrics.markInteractive when useObserveForRouter returns null', () => {
++  it('returns the react-navigation-scoped markInteractive when only that integration is active', () => {
++    mockUseObserveForRouter.mockReturnValue(null);
++    const reactNavigationScoped = jest.fn();
++    mockUseObserveForReactNavigation.mockReturnValue(reactNavigationScoped);
++
++    const { result } = renderHook(() => useObserve());
++
++    expect(result.current.markInteractive).toBe(reactNavigationScoped);
++  });
++
++  it('prefers router over react-navigation when both happen to resolve', () => {
++    const routerScoped = jest.fn();
++    const reactNavigationScoped = jest.fn();
++    mockUseObserveForRouter.mockReturnValue(routerScoped);
++    mockUseObserveForReactNavigation.mockReturnValue(reactNavigationScoped);
++
++    const { result } = renderHook(() => useObserve());
++
++    expect(result.current.markInteractive).toBe(routerScoped);
++  });
++
++  it('falls back to AppMetrics.markInteractive when neither integration is active', () => {
+     mockUseObserveForRouter.mockReturnValue(null);
++    mockUseObserveForReactNavigation.mockReturnValue(null);
+ 
+     const { result } = renderHook(() => useObserve());
+ 
+     expect(result.current.markInteractive).toBe(AppMetrics.markInteractive);
+   });
+ 
+-  it('falls back to AppMetrics.markInteractive when router is not initialized', () => {
++  it('falls back to react-navigation when router is not initialized', () => {
++    isExpoRouterInitializedMock.mockReturnValue(false);
++    const f = () => {};
++    mockUseObserveForReactNavigation.mockReturnValue(f);
++
++    const { result } = renderHook(() => useObserve());
++
++    expect(mockUseObserveForRouter).not.toHaveBeenCalled();
++    expect(mockUseObserveForReactNavigation).toHaveBeenCalledTimes(1);
++    expect(result.current.markInteractive).toBe(f);
++  });
++
++  it('falls back to AppMetrics.markInteractive when react-navigation and expo router are not initialized', () => {
+     isExpoRouterInitializedMock.mockReturnValue(false);
++    isReactNavigationInitializedMock.mockReturnValue(false);
+ 
+     const { result } = renderHook(() => useObserve());
+ 
+     expect(result.current.markInteractive).toBe(AppMetrics.markInteractive);
++    expect(mockUseObserveForReactNavigation).not.toHaveBeenCalled();
+     expect(mockUseObserveForRouter).not.toHaveBeenCalled();
+   });
+ 
+diff --git a/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx b/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx
+new file mode 100644
+index 00000000000000..72f13408edc0e2
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/ObserveNavigationContainer.tsx
+@@ -0,0 +1,105 @@
++import {
++  NavigationContainer,
++  type NavigationContainerRef,
++  useNavigationContainerRef,
++} from '@react-navigation/native';
++import {
++  forwardRef,
++  useCallback,
++  useEffect,
++  useImperativeHandle,
++  useMemo,
++  useState,
++  type ComponentProps,
++  type Ref,
++} from 'react';
++
++import { attachActionListener } from './actionListener';
++import { ObserveReactNavigationIntegrationContext } from './context';
++import { createGetPathname } from './getPathname';
++import { createStateChangeHandler } from './handleStateChange';
++import { isInitialized } from './init';
++import { createReactNavigationIntegrationStorage } from './storage';
++import type { NavigationStateLike } from './types';
++import { useAssertValueDoesNotChange } from '../../useAssertValueDoesNotChange';
++
++type NavigationContainerProps = ComponentProps<typeof NavigationContainer>;
++
++export type ObserveNavigationContainerProps = NavigationContainerProps;
++
++function ObserveNavigationContainerImpl(
++  props: ObserveNavigationContainerProps,
++  forwardedRef: Ref<NavigationContainerRef<ReactNavigation.RootParamList>>
++) {
++  const { children, onStateChange, onReady, linking, ...rest } = props;
++  const navigationRef = useNavigationContainerRef();
++  const initialized = isInitialized();
++
++  useImperativeHandle(
++    forwardedRef,
++    () => navigationRef as unknown as NavigationContainerRef<ReactNavigation.RootParamList>,
++    [navigationRef]
++  );
++
++  const [internal] = useState(() => {
++    if (!initialized) return null;
++    const storage = createReactNavigationIntegrationStorage();
++    const getPathname = createGetPathname(linking);
++    return {
++      storage,
++      getPathname,
++      handleStateChange: createStateChangeHandler(storage, getPathname, performance.now()),
++    };
++  });
++
++  useAssertValueDoesNotChange(
++    initialized,
++    `[expo-observe] React Navigation integration was toggled after ObserveNavigationContainer mounted. Call \`ExpoObserve.configure({ integrations: { 'react-navigation': true } })\` before rendering ObserveNavigationContainer.`
++  );
++
++  useEffect(() => {
++    if (!internal) return;
++    return attachActionListener(navigationRef, internal.storage);
++  }, [internal, navigationRef]);
++
++  const onStateChangeMerged = useCallback<NonNullable<NavigationContainerProps['onStateChange']>>(
++    (state) => {
++      internal?.handleStateChange(state as unknown as NavigationStateLike | undefined);
++      onStateChange?.(state);
++    },
++    [internal, onStateChange]
++  );
++
++  // React Navigation's `onStateChange` doesn't fire for the initial state, so
++  // without this the first focused screen would never be recorded — every
++  // subsequent revisit would then look like a cold focus.
++  const onReadyMerged = useCallback<NonNullable<NavigationContainerProps['onReady']>>(() => {
++    if (internal) {
++      const rootState = navigationRef.getRootState() as unknown as NavigationStateLike | undefined;
++      if (rootState) {
++        internal.handleStateChange(rootState);
++      }
++    }
++    onReady?.();
++  }, [internal, navigationRef, onReady]);
++
++  const contextValue = useMemo(
++    () => (internal ? { storage: internal.storage, getPathname: internal.getPathname } : null),
++    [internal]
++  );
++
++  return (
++    <NavigationContainer
++      {...rest}
++      linking={linking}
++      ref={navigationRef as unknown as NavigationContainerProps['ref']}
++      onStateChange={onStateChangeMerged}
++      onReady={onReadyMerged}>
++      <ObserveReactNavigationIntegrationContext.Provider value={contextValue}>
++        {children}
++      </ObserveReactNavigationIntegrationContext.Provider>
++    </NavigationContainer>
++  );
++}
++
++export const ObserveNavigationContainer = forwardRef(ObserveNavigationContainerImpl);
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx b/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx
+new file mode 100644
+index 00000000000000..50888d8167e3a1
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/ObserveNavigationContainer.test.native.tsx
+@@ -0,0 +1,282 @@
++/* eslint-disable @typescript-eslint/no-require-imports */
++import { render } from '@testing-library/react-native';
++import { createRef, use } from 'react';
++import { Text } from 'react-native';
++
++import { ObserveReactNavigationIntegrationContext } from '../context';
++import * as initModule from '../init';
++
++jest.mock('expo-app-metrics', () => ({
++  __esModule: true,
++  default: {
++    markInteractive: jest.fn(),
++    getMainSession: jest.fn(async () => ({ id: 'session-1' })),
++    addCustomMetricToSession: jest.fn(),
++  },
++}));
++
++jest.mock('../init', () => ({
++  __esModule: true,
++  isInitialized: jest.fn(() => true),
++  initReactNavigationIntegration: jest.fn(),
++}));
++
++jest.mock('../actionListener', () => {
++  const cleanup = jest.fn();
++  return {
++    __esModule: true,
++    attachActionListener: jest.fn(() => cleanup),
++    __cleanup: cleanup,
++  };
++});
++
++jest.mock('../handleStateChange', () => {
++  const handler = jest.fn();
++  return {
++    __esModule: true,
++    createStateChangeHandler: jest.fn(() => handler),
++    __handler: handler,
++  };
++});
++
++jest.mock('@react-navigation/native', () => {
++  const mockNavigationContainerFn = jest.fn(
++    ({ children }: { children: React.ReactNode }) => children
++  );
++  const mockNavRef = {
++    addListener: jest.fn(() => () => {}),
++    getRootState: jest.fn(() => undefined),
++  };
++  return {
++    __esModule: true,
++    NavigationContainer: (props: { children: React.ReactNode }) => mockNavigationContainerFn(props),
++    useNavigationContainerRef: jest.fn(() => mockNavRef),
++    getPathFromState: jest.fn(() => '/from-linking'),
++    __navigationContainerFn: mockNavigationContainerFn,
++    __navigationRef: mockNavRef,
++  };
++});
++
++// Import the component AFTER setting up all mocks so it picks them up.
++const { ObserveNavigationContainer } =
++  require('../ObserveNavigationContainer') as typeof import('../ObserveNavigationContainer');
++const actionListenerModule = require('../actionListener') as {
++  attachActionListener: jest.Mock;
++  __cleanup: jest.Mock;
++};
++const handleStateChangeModule = require('../handleStateChange') as {
++  createStateChangeHandler: jest.Mock;
++  __handler: jest.Mock;
++};
++const reactNavigationMock = require('@react-navigation/native') as {
++  __navigationContainerFn: jest.Mock;
++  __navigationRef: { addListener: jest.Mock; getRootState: jest.Mock };
++};
++
++const mockIsInitialized = initModule.isInitialized as jest.Mock;
++const mockNavigationContainer = reactNavigationMock.__navigationContainerFn;
++const fakeNavigationRef = reactNavigationMock.__navigationRef;
++const attachActionListenerMock = actionListenerModule.attachActionListener;
++const attachActionListenerCleanup = actionListenerModule.__cleanup;
++const createStateChangeHandlerMock = handleStateChangeModule.createStateChangeHandler;
++const stateChangeHandler = handleStateChangeModule.__handler;
++
++function ContextProbe({ onRead }: { onRead: (value: unknown) => void }) {
++  const value = use(ObserveReactNavigationIntegrationContext);
++  onRead(value);
++  return <Text>probe</Text>;
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockIsInitialized.mockReturnValue(true);
++  jest.spyOn(console, 'warn').mockImplementation(() => {});
++});
++
++describe('ObserveNavigationContainer', () => {
++  it('renders NavigationContainer with the same children', () => {
++    const { getByText } = render(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    expect(getByText('child')).toBeTruthy();
++    expect(mockNavigationContainer).toHaveBeenCalled();
++  });
++
++  it('exposes a non-null context when isInitialized() is true', () => {
++    const reads: unknown[] = [];
++    render(
++      <ObserveNavigationContainer>
++        <ContextProbe onRead={(v) => reads.push(v)} />
++      </ObserveNavigationContainer>
++    );
++    expect(reads[0]).toBeTruthy();
++    expect(
++      (reads[0] as { storage: { interactiveScreensIds: Set<string> } }).storage
++        .interactiveScreensIds
++    ).toBeInstanceOf(Set);
++  });
++
++  it('exposes a null context and skips attachActionListener when not initialized', () => {
++    mockIsInitialized.mockReturnValue(false);
++    const reads: unknown[] = [];
++    render(
++      <ObserveNavigationContainer>
++        <ContextProbe onRead={(v) => reads.push(v)} />
++      </ObserveNavigationContainer>
++    );
++    expect(reads[0]).toBeNull();
++    expect(attachActionListenerMock).not.toHaveBeenCalled();
++  });
++
++  it('attaches the action listener with the internal navigationRef and runs cleanup on unmount', () => {
++    const { unmount } = render(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    expect(attachActionListenerMock).toHaveBeenCalledTimes(1);
++    expect(attachActionListenerMock.mock.calls[0][0]).toBe(fakeNavigationRef);
++
++    expect(attachActionListenerCleanup).not.toHaveBeenCalled();
++    unmount();
++    expect(attachActionListenerCleanup).toHaveBeenCalledTimes(1);
++  });
++
++  it('forwards a user-supplied ref to the internal navigationRef', () => {
++    const ref = createRef<unknown>();
++    render(
++      <ObserveNavigationContainer ref={ref as never}>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    expect(ref.current).toBe(fakeNavigationRef);
++  });
++
++  it('passes its own onStateChange to NavigationContainer and forwards to the user callback too', () => {
++    const userOnStateChange = jest.fn();
++    render(
++      <ObserveNavigationContainer onStateChange={userOnStateChange}>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    const props =
++      mockNavigationContainer.mock.calls[mockNavigationContainer.mock.calls.length - 1][0];
++    expect(typeof props.onStateChange).toBe('function');
++
++    const fakeState = { index: 0, routes: [{ key: 'a', name: 'A' }] };
++    props.onStateChange(fakeState);
++
++    expect(stateChangeHandler).toHaveBeenCalledWith(fakeState);
++    expect(userOnStateChange).toHaveBeenCalledWith(fakeState);
++  });
++
++  it('does not require a user onStateChange', () => {
++    render(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    const props =
++      mockNavigationContainer.mock.calls[mockNavigationContainer.mock.calls.length - 1][0];
++    expect(() => props.onStateChange({ index: 0, routes: [] })).not.toThrow();
++    expect(stateChangeHandler).toHaveBeenCalled();
++  });
++
++  it('processes the initial navigation state when NavigationContainer fires onReady', () => {
++    const initialState = { index: 0, routes: [{ key: 'a', name: 'A' }] };
++    fakeNavigationRef.getRootState.mockReturnValueOnce(initialState);
++    const userOnReady = jest.fn();
++    render(
++      <ObserveNavigationContainer onReady={userOnReady}>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++
++    const props =
++      mockNavigationContainer.mock.calls[mockNavigationContainer.mock.calls.length - 1][0];
++    expect(typeof props.onReady).toBe('function');
++
++    props.onReady();
++
++    expect(stateChangeHandler).toHaveBeenCalledWith(initialState);
++    expect(userOnReady).toHaveBeenCalledTimes(1);
++  });
++
++  it('does not invoke the state handler from onReady when there is no root state yet', () => {
++    fakeNavigationRef.getRootState.mockReturnValueOnce(undefined);
++    render(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    const props =
++      mockNavigationContainer.mock.calls[mockNavigationContainer.mock.calls.length - 1][0];
++
++    props.onReady();
++
++    expect(stateChangeHandler).not.toHaveBeenCalled();
++  });
++
++  it('builds a linking-aware getPathname and passes it to createStateChangeHandler', () => {
++    const linking = { prefixes: [], config: { screens: { Home: 'home' } } };
++    render(
++      <ObserveNavigationContainer linking={linking as unknown as never}>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++
++    const [, getPathname] = createStateChangeHandlerMock.mock.calls[0];
++    expect(getPathname({ index: 0, routes: [] }, { name: 'Home' })).toBe('/from-linking');
++    expect(require('@react-navigation/native').getPathFromState).toHaveBeenCalled();
++  });
++
++  it('passes other NavigationContainer props through (e.g. theme)', () => {
++    const theme = { dark: true, colors: {} } as unknown as never;
++    render(
++      <ObserveNavigationContainer theme={theme}>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    const props =
++      mockNavigationContainer.mock.calls[mockNavigationContainer.mock.calls.length - 1][0];
++    expect(props.theme).toBe(theme);
++  });
++
++  it('uses the same createStateChangeHandler for the entire mount lifetime', () => {
++    const { rerender } = render(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    rerender(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++    expect(createStateChangeHandlerMock).toHaveBeenCalledTimes(1);
++  });
++
++  it('throws when isInitialized() flips during the container lifetime', () => {
++    mockIsInitialized.mockReturnValue(false);
++    jest.spyOn(console, 'error').mockImplementation(() => {});
++
++    const { rerender } = render(
++      <ObserveNavigationContainer>
++        <Text>child</Text>
++      </ObserveNavigationContainer>
++    );
++
++    mockIsInitialized.mockReturnValue(true);
++    expect(() =>
++      rerender(
++        <ObserveNavigationContainer>
++          <Text>child</Text>
++        </ObserveNavigationContainer>
++      )
++    ).toThrow(
++      "[expo-observe] React Navigation integration was toggled after ObserveNavigationContainer mounted. Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` before rendering ObserveNavigationContainer."
++    );
++  });
++});
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/actionListener.test.ts b/packages/expo-observe/src/integrations/react-navigation/__tests__/actionListener.test.ts
+new file mode 100644
+index 00000000000000..9c6b9b8ac67768
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/actionListener.test.ts
+@@ -0,0 +1,72 @@
++import { attachActionListener } from '../actionListener';
++import {
++  createReactNavigationIntegrationStorage,
++  type ReactNavigationIntegrationStorage,
++} from '../storage';
++
++type ActionEvent = {
++  data: { action: { type: string; payload?: object }; noop: boolean };
++};
++
++interface FakeNavigationRef {
++  addListener(event: '__unsafe_action__', cb: (e: ActionEvent) => void): () => void;
++  fire(e: ActionEvent): void;
++}
++
++function createFakeNavigationRef(): FakeNavigationRef {
++  const listeners = new Set<(e: ActionEvent) => void>();
++  return {
++    addListener(_event, cb) {
++      listeners.add(cb);
++      return () => listeners.delete(cb);
++    },
++    fire(e) {
++      listeners.forEach((cb) => cb(e));
++    },
++  };
++}
++
++function action(type: string, opts?: { noop?: boolean }): ActionEvent {
++  return {
++    data: { action: { type, payload: undefined }, noop: opts?.noop ?? false },
++  };
++}
++
++let storage: ReactNavigationIntegrationStorage;
++let ref: FakeNavigationRef;
++let cleanup: () => void;
++
++beforeEach(() => {
++  storage = createReactNavigationIntegrationStorage();
++  ref = createFakeNavigationRef();
++  cleanup = attachActionListener(ref, storage);
++});
++
++afterEach(() => {
++  cleanup?.();
++});
++
++describe('attachActionListener', () => {
++  it('pushes a pending action for a non-noop NAVIGATE', () => {
++    ref.fire(action('NAVIGATE'));
++    expect(storage.pendingActions).toHaveLength(1);
++    expect(storage.pendingActions[0].actionType).toBe('NAVIGATE');
++  });
++
++  it('drops noop actions', () => {
++    ref.fire(action('NAVIGATE', { noop: true }));
++    expect(storage.pendingActions).toHaveLength(0);
++  });
++
++  it('drops PRELOAD actions', () => {
++    ref.fire(action('PRELOAD'));
++    expect(storage.pendingActions).toHaveLength(0);
++  });
++
++  it('cleanup unsubscribes the listener', () => {
++    cleanup();
++    ref.fire(action('NAVIGATE'));
++    expect(storage.pendingActions).toHaveLength(0);
++    cleanup = () => {};
++  });
++});
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/getPathname.test.native.ts b/packages/expo-observe/src/integrations/react-navigation/__tests__/getPathname.test.native.ts
+new file mode 100644
+index 00000000000000..6f1afadb78ceb8
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/getPathname.test.native.ts
+@@ -0,0 +1,159 @@
++import type {
++  NavigationRoute,
++  NavigationState,
++  NavigatorScreenParams,
++  ParamListBase,
++} from '@react-navigation/native';
++
++import { createGetPathname } from '../getPathname';
++
++type FlatParamList = {
++  Home: undefined;
++  Details: { id?: string } | undefined;
++  Profile: undefined;
++  Unknown: undefined;
++};
++
++type NestedParamList = {
++  Group: NavigatorScreenParams<{
++    Home: undefined;
++    Details: undefined;
++  }>;
++};
++
++type RouteSpec = {
++  name: string;
++  params?: object;
++  state?: NavigationState;
++};
++
++function state(
++  type: 'stack' | 'tab',
++  routes: RouteSpec[],
++  index = routes.length - 1
++): NavigationState {
++  const navRoutes: NavigationRoute<ParamListBase, string>[] = routes.map((route, i) => ({
++    key: `${route.name}-${i}`,
++    name: route.name,
++    params: route.params,
++    state: route.state,
++  }));
++  return {
++    type,
++    index,
++    key: `${type}-key`,
++    routeNames: routes.map((route) => route.name),
++    stale: false,
++    routes: navRoutes,
++  };
++}
++
++describe('createGetPathname', () => {
++  it('returns undefined for every input when no linking.config is provided', () => {
++    const getPathname = createGetPathname(undefined);
++    expect(getPathname(undefined)).toBeUndefined();
++    expect(getPathname(state('stack', [{ name: 'Home' }]))).toBeUndefined();
++  });
++
++  it('returns undefined when linking is provided but config is missing', () => {
++    const getPathname = createGetPathname<FlatParamList>({ prefixes: [] });
++    expect(getPathname(state('stack', [{ name: 'Home' }]))).toBeUndefined();
++  });
++
++  it('returns undefined for an undefined state even when config is present', () => {
++    const getPathname = createGetPathname<FlatParamList>({
++      prefixes: [],
++      config: { screens: { Home: 'home' } },
++    });
++    expect(getPathname(undefined)).toBeUndefined();
++  });
++
++  it('resolves a flat single-screen state to its configured path', () => {
++    const getPathname = createGetPathname<FlatParamList>({
++      prefixes: [],
++      config: { screens: { Home: 'home' } },
++    });
++    expect(getPathname(state('stack', [{ name: 'Home' }]))).toBe('/home');
++  });
++
++  it('uses the focused route within a stack to pick the path', () => {
++    const getPathname = createGetPathname<FlatParamList>({
++      prefixes: [],
++      config: { screens: { Home: 'home', Details: 'details' } },
++    });
++    expect(getPathname(state('stack', [{ name: 'Home' }, { name: 'Details' }]))).toBe('/details');
++  });
++
++  it('descends into nested navigators and joins configured paths', () => {
++    const getPathname = createGetPathname<NestedParamList>({
++      prefixes: [],
++      config: {
++        screens: {
++          Group: {
++            path: 'group',
++            screens: { Home: 'home', Details: 'details' },
++          },
++        },
++      },
++    });
++    const nested = state('stack', [
++      {
++        name: 'Group',
++        state: state('stack', [{ name: 'Home' }, { name: 'Details' }]),
++      },
++    ]);
++    expect(getPathname(nested)).toBe('/group/details');
++  });
++
++  it('still resolves a path when given the inner-navigator subtree (as useStateForPath returns)', () => {
++    // useStateForPath returns the state subtree rooted at the focused
++    // screen's path. `getPathFromState` walks routes downward, so the inner
++    // navigator's path segments still resolve against the same config.
++    const getPathname = createGetPathname<NestedParamList>({
++      prefixes: [],
++      config: {
++        screens: {
++          Group: {
++            path: 'group',
++            screens: { Home: 'home', Details: 'details' },
++          },
++        },
++      },
++    });
++    const subtree = state('stack', [
++      {
++        name: 'Group',
++        state: state('stack', [{ name: 'Home' }, { name: 'Details' }]),
++      },
++    ]);
++    expect(getPathname(subtree)).toBe('/group/details');
++  });
++
++  it('serializes route params into the pathname when the config declares them', () => {
++    const getPathname = createGetPathname<FlatParamList>({
++      prefixes: [],
++      config: {
++        screens: { Details: { path: 'details/:id' } },
++      },
++    });
++    expect(getPathname(state('stack', [{ name: 'Details', params: { id: '42' } }]))).toBe(
++      '/details/42'
++    );
++  });
++
++  it('uses the route name as a fallback path when the screen is not in the config', () => {
++    const getPathname = createGetPathname<FlatParamList>({
++      prefixes: [],
++      config: { screens: { Home: 'home' } },
++    });
++    expect(getPathname(state('stack', [{ name: 'Unknown' }]))).toBe('/Unknown');
++  });
++
++  it('picks the focused tab when given a tab navigator state', () => {
++    const getPathname = createGetPathname<FlatParamList>({
++      prefixes: [],
++      config: { screens: { Home: 'home', Profile: 'profile' } },
++    });
++    expect(getPathname(state('tab', [{ name: 'Home' }, { name: 'Profile' }], 1))).toBe('/profile');
++  });
++});
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/handleStateChange.test.native.ts b/packages/expo-observe/src/integrations/react-navigation/__tests__/handleStateChange.test.native.ts
+new file mode 100644
+index 00000000000000..310838621c25d0
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/handleStateChange.test.native.ts
+@@ -0,0 +1,288 @@
++import AppMetrics from 'expo-app-metrics';
++
++import { createStateChangeHandler } from '../handleStateChange';
++import {
++  createReactNavigationIntegrationStorage,
++  type ReactNavigationIntegrationStorage,
++} from '../storage';
++import type { GetPathname, NavigationRouteLike, NavigationStateLike } from '../types';
++
++jest.mock('expo-app-metrics', () => {
++  const addCustomMetricToSession = jest.fn();
++  const getMainSession = jest.fn(async () => ({ id: 'session-1' }));
++  return {
++    __esModule: true,
++    default: {
++      markInteractive: jest.fn(),
++      getMainSession,
++      addCustomMetricToSession,
++    },
++  };
++});
++
++const mockAddCustomMetric = AppMetrics.addCustomMetricToSession as jest.Mock;
++const mockSessionId = 'session-1';
++
++const getPathname: GetPathname = (state) => {
++  if (!state) return undefined;
++  let current: NavigationStateLike | undefined = state;
++  while (current) {
++    const route: NavigationRouteLike | undefined = current.routes[
++      current.index ?? 0
++    ] as NavigationRouteLike;
++    if (!route) return undefined;
++    if (!route.state) return `/${route.name}`;
++    current = route.state;
++  }
++  return undefined;
++};
++
++function stackState(
++  routes: { key: string; name?: string; params?: object }[],
++  index = routes.length - 1
++): NavigationStateLike {
++  return {
++    type: 'stack',
++    index,
++    routes: routes.map((r) => ({ key: r.key, name: r.name ?? r.key, params: r.params })),
++    routeNames: [],
++    stale: false,
++    key: 'test',
++  };
++}
++
++function tabState(routes: { key: string; name?: string }[], index: number): NavigationStateLike {
++  return {
++    type: 'tab',
++    index,
++    routes: routes.map((r) => ({ key: r.key, name: r.name ?? r.key })),
++    routeNames: [],
++    stale: false,
++    key: 'test',
++  };
++}
++
++function flushAsync() {
++  return new Promise((resolve) => setImmediate(resolve));
++}
++
++let storage: ReactNavigationIntegrationStorage;
++let handle: (state: NavigationStateLike | undefined) => void;
++let appLaunchTime: number;
++let logSpy: jest.SpyInstance;
++let warnSpy: jest.SpyInstance;
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
++  warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
++  storage = createReactNavigationIntegrationStorage();
++  appLaunchTime = performance.now();
++  handle = createStateChangeHandler(storage, getPathname, appLaunchTime);
++});
++
++afterEach(() => {
++  expect(logSpy).not.toHaveBeenCalled();
++  expect(warnSpy).not.toHaveBeenCalled();
++});
++
++describe('createStateChangeHandler', () => {
++  it('records cold_ttr with isAppLaunch=true on the first focused state', async () => {
++    jest.spyOn(performance, 'now').mockReturnValue(appLaunchTime + 100);
++    handle(stackState([{ key: 'a' }]));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(1);
++    expect(mockAddCustomMetric).toHaveBeenCalledWith({
++      sessionId: mockSessionId,
++      timestamp: expect.any(String),
++      category: 'navigation',
++      name: 'cold_ttr',
++      routeName: '/a',
++      value: expect.closeTo(0.1, 2),
++      params: { isAppLaunch: true, routeParams: {} },
++    });
++  });
++
++  it('records cold_ttr with isAppLaunch=false on subsequent navigations to a new screen', async () => {
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++    mockAddCustomMetric.mockClear();
++
++    storage.pendingActions.push({ actionType: 'NAVIGATE', dispatchTime: performance.now() });
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(1);
++    expect(mockAddCustomMetric.mock.calls[0][0].name).toBe('cold_ttr');
++    expect(mockAddCustomMetric.mock.calls[0][0].params).toEqual({
++      isAppLaunch: false,
++      routeParams: {},
++    });
++  });
++
++  it('records warm_ttr when revisiting a previously focused screen', async () => {
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++
++    storage.pendingActions.push({ actionType: 'NAVIGATE', dispatchTime: performance.now() });
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++
++    storage.pendingActions.push({ actionType: 'GO_BACK', dispatchTime: performance.now() });
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(3);
++    expect(mockAddCustomMetric.mock.calls[0][0].name).toBe('cold_ttr');
++    expect(mockAddCustomMetric.mock.calls[0][0].params.isAppLaunch).toBe(true);
++    expect(mockAddCustomMetric.mock.calls[1][0].name).toBe('cold_ttr');
++    expect(mockAddCustomMetric.mock.calls[1][0].params.isAppLaunch).toBe(false);
++    expect(mockAddCustomMetric.mock.calls[2][0].name).toBe('warm_ttr');
++  });
++
++  it('does not emit when the focused key is unchanged (param-only state update)', async () => {
++    handle(stackState([{ key: 'a' }]));
++    await flushAsync();
++    mockAddCustomMetric.mockClear();
++
++    handle(stackState([{ key: 'a', params: { x: '1' } }]));
++    await flushAsync();
++    expect(mockAddCustomMetric).not.toHaveBeenCalled();
++  });
++
++  it('emits cold_ttr for first focus of each tab; tab siblings are not preemptively marked', async () => {
++    handle(tabState([{ key: 'home' }, { key: 'settings' }], 0));
++    await flushAsync();
++    mockAddCustomMetric.mockClear();
++
++    storage.pendingActions.push({ actionType: 'JUMP_TO', dispatchTime: performance.now() });
++    handle(tabState([{ key: 'home' }, { key: 'settings' }], 1));
++    await flushAsync();
++
++    storage.pendingActions.push({ actionType: 'JUMP_TO', dispatchTime: performance.now() });
++    handle(tabState([{ key: 'home' }, { key: 'settings' }], 0));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(2);
++    expect(mockAddCustomMetric.mock.calls[0][0].name).toBe('cold_ttr');
++    expect(mockAddCustomMetric.mock.calls[1][0].name).toBe('warm_ttr');
++  });
++
++  it('passes the focused route params through as routeParams on the emitted metric', async () => {
++    handle(stackState([{ key: 'a', name: 'A', params: { id: '42' } }]));
++    await flushAsync();
++
++    expect(mockAddCustomMetric.mock.calls[0][0].params).toEqual({
++      isAppLaunch: true,
++      routeParams: { id: '42' },
++    });
++  });
++
++  it('backfills dispatchTime on every mounted screen during a warm focus change', async () => {
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++
++    const dispatchTime = performance.now();
++    storage.pendingActions.push({ actionType: 'NAVIGATE', dispatchTime });
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++
++    expect(storage.screenTimes['a']?.dispatchTime).toBe(appLaunchTime);
++    expect(storage.screenTimes['b']?.dispatchTime).toBe(dispatchTime);
++  });
++
++  it('treats undefined state as a no-op', async () => {
++    handle(undefined);
++    await flushAsync();
++    expect(mockAddCustomMetric).not.toHaveBeenCalled();
++  });
++
++  it('adds non-focused mounted stack screens to renderedScreensIds so revisits become warm_ttr', async () => {
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++    expect(storage.renderedScreensIds.has('a')).toBe(true);
++    expect(storage.renderedScreensIds.has('b')).toBe(true);
++
++    mockAddCustomMetric.mockClear();
++    storage.pendingActions.push({ actionType: 'GO_BACK', dispatchTime: performance.now() });
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(1);
++    expect(mockAddCustomMetric.mock.calls[0][0].name).toBe('warm_ttr');
++  });
++
++  it('emits tti alongside the TTR when a pending interactive was waiting (post-cold-launch)', async () => {
++    // Cold-launch the first screen so the next focus runs through the warm branch.
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++    mockAddCustomMetric.mockClear();
++
++    // markInteractive ran before onStateChange — wrote lastInteractiveCall
++    // with no dispatchTime.
++    storage.screenTimes['b'] = { lastInteractiveCall: performance.now() };
++
++    const dispatchTime = performance.now();
++    storage.pendingActions.push({ actionType: 'NAVIGATE', dispatchTime });
++    jest.spyOn(performance, 'now').mockReturnValue(dispatchTime + 50);
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(2);
++    const ttrCall = mockAddCustomMetric.mock.calls[0][0];
++    const ttiCall = mockAddCustomMetric.mock.calls[1][0];
++    expect(ttrCall.name).toBe('cold_ttr');
++    expect(ttrCall.params.isAppLaunch).toBe(false);
++    expect(ttiCall.name).toBe('tti');
++    expect(ttiCall.value).toBe(ttrCall.value);
++    expect(ttiCall.routeName).toBe('/b');
++    expect(ttiCall.params).toEqual({ routeParams: {} });
++  });
++
++  it('emits tti = cold_ttr when a pending interactive was waiting during cold launch', async () => {
++    storage.screenTimes['a'] = { lastInteractiveCall: performance.now() };
++    jest.spyOn(performance, 'now').mockReturnValue(appLaunchTime + 200);
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(2);
++    const ttrCall = mockAddCustomMetric.mock.calls.find((c) => c[0].name === 'cold_ttr')?.[0];
++    const ttiCall = mockAddCustomMetric.mock.calls.find((c) => c[0].name === 'tti')?.[0];
++    expect(ttrCall.params.isAppLaunch).toBe(true);
++    expect(ttiCall.value).toBe(ttrCall.value);
++    expect(ttiCall.routeName).toBe('/a');
++  });
++
++  it('marks lastInteractiveCall after a deferred emit so a follow-up markInteractive is deduped', async () => {
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++
++    storage.screenTimes['b'] = { lastInteractiveCall: 1000 };
++    storage.pendingActions.push({ actionType: 'NAVIGATE', dispatchTime: 2000 });
++    jest.spyOn(performance, 'now').mockReturnValue(2100);
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++
++    // After handleStateChange: lastInteractiveCall > dispatchTime, which
++    // satisfies the duplicate-detection branch in useObserveForReactNavigation
++    // (`dispatchTime < previousInteractiveCall`).
++    const entry = storage.screenTimes['b'];
++    expect(entry?.dispatchTime).toBe(2000);
++    expect(entry?.lastInteractiveCall).toBe(2100);
++    expect(entry!.dispatchTime!).toBeLessThan(entry!.lastInteractiveCall!);
++  });
++
++  it('does not emit tti when no pending interactive is waiting', async () => {
++    handle(stackState([{ key: 'a' }], 0));
++    await flushAsync();
++    mockAddCustomMetric.mockClear();
++
++    storage.pendingActions.push({ actionType: 'NAVIGATE', dispatchTime: performance.now() });
++    handle(stackState([{ key: 'a' }, { key: 'b' }], 1));
++    await flushAsync();
++
++    const ttiCalls = mockAddCustomMetric.mock.calls.filter((c) => c[0].name === 'tti');
++    expect(ttiCalls).toHaveLength(0);
++  });
++});
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/stateTraversal.test.ts b/packages/expo-observe/src/integrations/react-navigation/__tests__/stateTraversal.test.ts
+new file mode 100644
+index 00000000000000..5f59ee9215e8f7
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/stateTraversal.test.ts
+@@ -0,0 +1,158 @@
++import { collectMountedKeys, findFocusedLeaf, type NavigationStateLike } from '../stateTraversal';
++
++function stackState(
++  routes: { key: string; name: string; state?: NavigationStateLike }[],
++  index: number | undefined
++): NavigationStateLike {
++  return {
++    type: 'stack',
++    index,
++    routes,
++    key: 'test',
++    routeNames: [],
++    stale: false,
++  } as NavigationStateLike;
++}
++
++function tabState(
++  routes: { key: string; name: string; state?: NavigationStateLike }[],
++  index = 0
++): NavigationStateLike {
++  return { type: 'tab', index, routes, key: 'test', routeNames: [], stale: false };
++}
++
++function drawerState(
++  routes: { key: string; name: string; state?: NavigationStateLike }[],
++  index = 0
++): NavigationStateLike {
++  return { type: 'drawer', index, routes, key: 'test', routeNames: [], stale: false };
++}
++
++describe('findFocusedLeaf', () => {
++  it('returns null when index points past the routes array', () => {
++    const state = stackState([{ key: 'a', name: 'A' }], 5);
++    expect(findFocusedLeaf(state)).toBeNull();
++  });
++
++  it('returns first router when index is undefined the routes array', () => {
++    const state = stackState([{ key: 'a', name: 'A' }], undefined);
++    expect(findFocusedLeaf(state)).toEqual({
++      route: { key: 'a', name: 'A' },
++      key: 'a',
++    });
++  });
++
++  it('returns the focused route in a flat stack', () => {
++    const state = stackState(
++      [
++        { key: 'a', name: 'A' },
++        { key: 'b', name: 'B' },
++      ],
++      1
++    );
++    expect(findFocusedLeaf(state)).toEqual({
++      route: state.routes[1],
++      key: 'b',
++    });
++  });
++
++  it('descends into a nested stack to find the leaf', () => {
++    const inner = stackState([{ key: 'b', name: 'B' }], 0);
++    const outer = stackState([{ key: 'a', name: 'A', state: inner }], 0);
++    expect(findFocusedLeaf(outer)).toEqual({ route: inner.routes[0], key: 'b' });
++  });
++
++  it('descends through tabs to find the focused screen', () => {
++    const tabs = tabState(
++      [
++        { key: 't1', name: 'Home' },
++        { key: 't2', name: 'Settings' },
++      ],
++      1
++    );
++    const outer = stackState([{ key: 'root', name: 'Root', state: tabs }], 0);
++    expect(findFocusedLeaf(outer)).toEqual({ route: tabs.routes[1], key: 't2' });
++  });
++
++  it('stops when the focused route has no nested state', () => {
++    const state = stackState([{ key: 'a', name: 'A' }], 0);
++    expect(findFocusedLeaf(state)).toEqual({ route: state.routes[0], key: 'a' });
++  });
++});
++
++describe('collectMountedKeys', () => {
++  it('collects every key in a flat stack', () => {
++    const state = stackState(
++      [
++        { key: 'a', name: 'A' },
++        { key: 'b', name: 'B' },
++        { key: 'c', name: 'C' },
++      ],
++      2
++    );
++    expect([...collectMountedKeys(state).keys()]).toEqual(['a', 'b', 'c']);
++  });
++
++  it('recurses into nested stack subtrees', () => {
++    const inner = stackState([{ key: 'inner', name: 'Inner' }], 0);
++    const outer = stackState([{ key: 'a', name: 'A', state: inner }], 0);
++    expect([...collectMountedKeys(outer).keys()].sort()).toEqual(['a', 'inner']);
++  });
++
++  it('treats drawer subtrees as mounted (drawer is not a tab)', () => {
++    const drawer = drawerState([
++      { key: 'd1', name: 'D1' },
++      { key: 'd2', name: 'D2' },
++    ]);
++    const outer = stackState([{ key: 'root', name: 'Root', state: drawer }], 0);
++    expect([...collectMountedKeys(outer).keys()].sort()).toEqual(['d1', 'd2', 'root']);
++  });
++
++  it('includes the focused tab and its subtree, but skips sibling tabs', () => {
++    const innerStack = stackState(
++      [
++        { key: 'tabStack1', name: 'TabScreen1' },
++        { key: 'tabStack2', name: 'TabScreen2' },
++      ],
++      0
++    );
++    const tabs = tabState(
++      [
++        { key: 't1', name: 'Home', state: innerStack },
++        { key: 't2', name: 'Settings' },
++      ],
++      0
++    );
++    const outer = stackState([{ key: 'root', name: 'Root', state: tabs }], 0);
++    expect([...collectMountedKeys(outer).keys()].sort()).toEqual([
++      'root',
++      't1',
++      'tabStack1',
++      'tabStack2',
++    ]);
++  });
++
++  it('returns only the focused tab when the root navigator is a tab navigator', () => {
++    const tabs = tabState(
++      [
++        { key: 't1', name: 'Home' },
++        { key: 't2', name: 'Settings' },
++      ],
++      0
++    );
++    expect([...collectMountedKeys(tabs).keys()]).toEqual(['t1']);
++  });
++
++  it('maps each key to its route object', () => {
++    const state = stackState(
++      [
++        { key: 'a', name: 'A' },
++        { key: 'b', name: 'B' },
++      ],
++      0
++    );
++    const map = collectMountedKeys(state);
++    expect(map.get('a')).toBe(state.routes[0]);
++    expect(map.get('b')).toBe(state.routes[1]);
++  });
++});
+diff --git a/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx b/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx
+new file mode 100644
+index 00000000000000..835ff18d4ef886
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/__tests__/useObserveForReactNavigation.test.native.tsx
+@@ -0,0 +1,266 @@
++/* eslint-disable @typescript-eslint/no-require-imports */
++import { renderHook, act } from '@testing-library/react-native';
++import AppMetrics from 'expo-app-metrics';
++import { type ReactNode } from 'react';
++
++import { ObserveReactNavigationIntegrationContext } from '../context';
++import {
++  createReactNavigationIntegrationStorage,
++  type ReactNavigationIntegrationStorage,
++} from '../storage';
++import { useObserveForReactNavigation } from '../useObserveForReactNavigation';
++
++jest.mock('expo-app-metrics', () => ({
++  __esModule: true,
++  default: {
++    markInteractive: jest.fn(),
++    getMainSession: jest.fn(() => ({ id: 'session-1' })),
++    addCustomMetricToSession: jest.fn(),
++  },
++}));
++
++jest.mock('../init', () => ({
++  __esModule: true,
++  isInitialized: jest.fn(() => true),
++  initReactNavigationIntegration: jest.fn(),
++}));
++
++jest.mock('@react-navigation/native', () => {
++  const useRoute = jest.fn(() => ({ key: 'screen-a', name: 'A', params: { x: '1' } }));
++  const useNavigation = jest.fn(() => ({ isFocused: () => true }));
++  const useStateForPath = jest.fn(() => ({
++    index: 0,
++    routes: [{ key: 'screen-a', name: 'A', params: { x: '1' } }],
++  }));
++  return {
++    __esModule: true,
++    useRoute,
++    useNavigation,
++    useStateForPath,
++    getPathFromState: jest.fn(() => '/from-linking'),
++    __useRoute: useRoute,
++    __useNavigation: useNavigation,
++  };
++});
++
++const reactNavigationModule = require('@react-navigation/native') as {
++  __useRoute: jest.Mock;
++  __useNavigation: jest.Mock;
++  useStateForPath: jest.Mock;
++};
++const mockUseRoute = reactNavigationModule.__useRoute;
++const mockUseNavigation = reactNavigationModule.__useNavigation;
++const mockUseStateForPath = reactNavigationModule.useStateForPath;
++const initModule = require('../init') as { isInitialized: jest.Mock };
++
++const mockAddCustomMetric = AppMetrics.addCustomMetricToSession as jest.Mock;
++
++function wrapper(value: { storage: ReactNavigationIntegrationStorage } | null) {
++  const contextValue = value
++    ? {
++        storage: value.storage,
++        getPathname: (state: any) => {
++          if (!state) return undefined;
++          const route = state.routes?.[state.index ?? 0];
++          return route ? `/${route.name}` : undefined;
++        },
++      }
++    : null;
++  return ({ children }: { children: ReactNode }) => (
++    <ObserveReactNavigationIntegrationContext.Provider value={contextValue}>
++      {children}
++    </ObserveReactNavigationIntegrationContext.Provider>
++  );
++}
++
++let storage: ReactNavigationIntegrationStorage;
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  jest.spyOn(console, 'log').mockImplementation(() => {});
++  jest.spyOn(console, 'warn').mockImplementation(() => {});
++  initModule.isInitialized.mockReturnValue(true);
++  mockUseRoute.mockReturnValue({ key: 'screen-a', name: 'A', params: { x: '1' } });
++  mockUseNavigation.mockReturnValue({ isFocused: () => true });
++  mockUseStateForPath.mockReturnValue({
++    index: 0,
++    routes: [{ key: 'screen-a', name: 'A', params: { x: '1' } }],
++  });
++  storage = createReactNavigationIntegrationStorage();
++});
++
++describe('useObserveForReactNavigation', () => {
++  it('records TTI from dispatchTime on the first call when focused', async () => {
++    storage.screenTimes['screen-a'] = { dispatchTime: 1000 };
++    jest.spyOn(performance, 'now').mockReturnValue(1300);
++
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(1);
++    expect(mockAddCustomMetric).toHaveBeenCalledWith({
++      sessionId: 'session-1',
++      timestamp: expect.any(String),
++      category: 'navigation',
++      routeName: '/A',
++      name: 'tti',
++      value: 0.3,
++      params: { routeParams: { x: '1' } },
++    });
++  });
++
++  it('calls AppMetrics.markInteractive when the screen is focused', async () => {
++    storage.screenTimes['screen-a'] = { dispatchTime: 1000 };
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!({ params: { x: 'payload' } });
++    });
++    expect(AppMetrics.markInteractive).toHaveBeenCalledWith({
++      params: { x: 'payload' },
++      routeName: '/A',
++    });
++  });
++
++  it('still records lastInteractiveCall when the screen is not focused (skips markInteractive and TTI)', async () => {
++    mockUseNavigation.mockReturnValue({ isFocused: () => false });
++    storage.screenTimes['screen-a'] = { dispatchTime: 1000 };
++    jest.spyOn(performance, 'now').mockReturnValue(1300);
++
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++
++    expect(AppMetrics.markInteractive).not.toHaveBeenCalled();
++    expect(mockAddCustomMetric).not.toHaveBeenCalled();
++    expect(storage.screenTimes['screen-a'].lastInteractiveCall).toBe(1300);
++    expect(storage.interactiveScreensIds.has('screen-a')).toBe(true);
++  });
++
++  it('skips TTI silently when no dispatchTime is recorded for the screen', async () => {
++    const warnSpy = jest.spyOn(console, 'warn');
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++    expect(mockAddCustomMetric).not.toHaveBeenCalled();
++    expect(warnSpy).not.toHaveBeenCalled();
++  });
++
++  it('warns and skips when called on an unmounted screen', async () => {
++    const warnSpy = jest.spyOn(console, 'warn');
++    const { result, unmount } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    const fn = result.current!;
++    unmount();
++    await act(async () => {
++      await fn();
++    });
++    expect(warnSpy).toHaveBeenCalledWith(
++      '[expo-observe] Calling markInteractive on unmounted screen'
++    );
++    expect(AppMetrics.markInteractive).not.toHaveBeenCalled();
++  });
++
++  it('warns when there is no screenId on the route', async () => {
++    mockUseRoute.mockReturnValue({ key: undefined, name: 'A', params: {} });
++    const warnSpy = jest.spyOn(console, 'warn');
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++    expect(warnSpy).toHaveBeenCalledWith(
++      '[expo-observe] No metadata available for the current screen. Make sure to call useObserve inside a screen component.'
++    );
++    expect(AppMetrics.markInteractive).not.toHaveBeenCalled();
++  });
++
++  it('warns when the screen ID changes between renders', () => {
++    const warnSpy = jest.spyOn(console, 'warn');
++    mockUseRoute.mockReturnValue({ key: 'screen-a', name: 'A', params: {} });
++    const { rerender } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++
++    mockUseRoute.mockReturnValue({ key: 'screen-b', name: 'A', params: {} });
++    rerender(undefined);
++
++    expect(warnSpy).toHaveBeenCalledWith(
++      '[expo-observe] Screen ID changed between renders. The hook should be called inside the screen component, not a higher wrapper.'
++    );
++  });
++
++  it('throws when isInitialized() flips mid-lifetime', () => {
++    initModule.isInitialized.mockReturnValue(false);
++    jest.spyOn(console, 'error').mockImplementation(() => {});
++
++    const { rerender } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++
++    initModule.isInitialized.mockReturnValue(true);
++    expect(() => rerender(undefined)).toThrow(
++      "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
++    );
++  });
++
++  it('records interactive only once per navigation (skips duplicate calls)', async () => {
++    storage.screenTimes['screen-a'] = { dispatchTime: 1000 };
++    jest.spyOn(performance, 'now').mockReturnValue(1300);
++
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++    await act(async () => {
++      await result.current!();
++    });
++    expect(mockAddCustomMetric).toHaveBeenCalledTimes(1);
++  });
++
++  it('falls back to route.name when useStateForPath returns undefined', async () => {
++    mockUseStateForPath.mockReturnValue(undefined);
++    storage.screenTimes['screen-a'] = { dispatchTime: 1000 };
++    jest.spyOn(performance, 'now').mockReturnValue(1100);
++
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++
++    expect(AppMetrics.markInteractive).toHaveBeenCalledWith({ routeName: 'A' });
++  });
++
++  it('stores lastInteractiveCall and defers TTI emission when dispatchTime is not yet recorded', async () => {
++    // markInteractive runs before handleStateChange has recorded the dispatch.
++    jest.spyOn(performance, 'now').mockReturnValue(1234);
++
++    const { result } = renderHook(() => useObserveForReactNavigation(), {
++      wrapper: wrapper({ storage }),
++    });
++    await act(async () => {
++      await result.current!();
++    });
++
++    expect(mockAddCustomMetric).not.toHaveBeenCalled();
++    expect(storage.screenTimes['screen-a']).toEqual({ lastInteractiveCall: 1234 });
++    expect(storage.interactiveScreensIds.has('screen-a')).toBe(true);
++  });
++});
+diff --git a/packages/expo-observe/src/integrations/react-navigation/actionListener.ts b/packages/expo-observe/src/integrations/react-navigation/actionListener.ts
+new file mode 100644
+index 00000000000000..0d91b83158403f
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/actionListener.ts
+@@ -0,0 +1,24 @@
++import type { ReactNavigationIntegrationStorage } from './storage';
++
++export interface NavigationRefActionListenerHandle {
++  addListener(
++    event: '__unsafe_action__',
++    cb: (e: { data: { action: { type: string; payload?: object }; noop: boolean } }) => void
++  ): () => void;
++}
++
++export function attachActionListener(
++  navigationRef: NavigationRefActionListenerHandle,
++  storage: ReactNavigationIntegrationStorage
++): () => void {
++  return navigationRef.addListener('__unsafe_action__', (e) => {
++    if (e.data.noop) return;
++    // PRELOAD comes from preload APIs (e.g. native-stack `unstable_preload`) —
++    // a warm-up, not a user navigation — so it must not seed dispatchTime.
++    if (e.data.action.type === 'PRELOAD') return;
++    storage.pendingActions.push({
++      actionType: e.data.action.type,
++      dispatchTime: performance.now(),
++    });
++  });
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/context.ts b/packages/expo-observe/src/integrations/react-navigation/context.ts
+new file mode 100644
+index 00000000000000..2ce9b872cd3c2a
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/context.ts
+@@ -0,0 +1,12 @@
++import { createContext } from 'react';
++
++import type { ReactNavigationIntegrationStorage } from './storage';
++import type { GetPathname } from './types';
++
++export interface ReactNavigationIntegrationContextValue {
++  storage: ReactNavigationIntegrationStorage;
++  getPathname: GetPathname;
++}
++
++export const ObserveReactNavigationIntegrationContext =
++  createContext<ReactNavigationIntegrationContextValue | null>(null);
+diff --git a/packages/expo-observe/src/integrations/react-navigation/emitTTI.ts b/packages/expo-observe/src/integrations/react-navigation/emitTTI.ts
+new file mode 100644
+index 00000000000000..0262c1dadef8eb
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/emitTTI.ts
+@@ -0,0 +1,19 @@
++import AppMetrics from 'expo-app-metrics';
++
++export function emitTTI(args: {
++  sessionId: string;
++  timestamp: string;
++  routeName: string | undefined;
++  value: number;
++  routeParams: object;
++}): Promise<void> {
++  return AppMetrics.addCustomMetricToSession({
++    sessionId: args.sessionId,
++    timestamp: args.timestamp,
++    category: 'navigation',
++    name: 'tti',
++    routeName: args.routeName,
++    value: args.value,
++    params: { routeParams: args.routeParams },
++  });
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/getPathname.ts b/packages/expo-observe/src/integrations/react-navigation/getPathname.ts
+new file mode 100644
+index 00000000000000..8ea39c0661f760
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/getPathname.ts
+@@ -0,0 +1,27 @@
++import {
++  getPathFromState,
++  type LinkingOptions,
++  type NavigationState,
++  type ParamListBase,
++} from '@react-navigation/native';
++
++import type { GetPathname } from './types';
++
++export function createGetPathname<ParamList extends ParamListBase>(
++  linking: LinkingOptions<ParamList> | undefined
++): GetPathname {
++  if (!linking?.config) {
++    return (_state) => undefined;
++  }
++  return (state) => {
++    if (!state) return undefined;
++    // `LinkingOptions['config'].initialRouteName` is typed `keyof ParamList`,
++    // while `getPathFromState`'s `Options['initialRouteName']` is `string`.
++    // The shapes are structurally compatible — the cast bridges this gap in
++    // react-navigation's own typings.
++    return getPathFromState(
++      state as unknown as NavigationState,
++      linking.config as Parameters<typeof getPathFromState>[1]
++    );
++  };
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/handleStateChange.ts b/packages/expo-observe/src/integrations/react-navigation/handleStateChange.ts
+new file mode 100644
+index 00000000000000..f4a9d6d03c7fc9
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/handleStateChange.ts
+@@ -0,0 +1,131 @@
++import AppMetrics from 'expo-app-metrics';
++
++import { emitTTI } from './emitTTI';
++import { collectMountedKeys, findFocusedLeaf } from './stateTraversal';
++import type { ReactNavigationIntegrationStorage } from './storage';
++import type { GetPathname, NavigationStateLike } from './types';
++
++export function createStateChangeHandler(
++  storage: ReactNavigationIntegrationStorage,
++  getPathname: GetPathname,
++  appLaunchTime: number
++): (state: NavigationStateLike | undefined) => void {
++  let previousFocusedKey: string | null = null;
++
++  return async function handleStateChange(state) {
++    if (!state) return;
++    // Snapshot clocks once so every metric written below is stamped with
++    // the moment the focus actually fired, not the moment
++    // `addCustomMetricToSession` happens to run after the awaited
++    // `getMainSession()` round-trip.
++    const now = performance.now();
++    const timestamp = new Date().toISOString();
++    // Mark all non-focused mounted screens as already rendered so a later
++    // focus on them resolves to `warm_ttr`. Tab-navigator siblings are
++    // skipped by `collectMountedKeys` because `lazy: true` (the v7 default)
++    // leaves unfocused tabs unmounted.
++    const mounted = collectMountedKeys(state);
++    const focused = findFocusedLeaf(state);
++    // Mostly to satisfy typescript. This should not happen
++    if (!focused) return;
++
++    // This needs to happen before keys are added to renderedScreensIds
++    const isInitial = !storage.renderedScreensIds.has(focused.key);
++
++    // Snapshot BEFORE the mounted-keys loop writes dispatchTime so the
++    // deferred-TTI check sees the focused screen's pre-write state.
++    const existingFocusedScreenTimes = storage.screenTimes[focused.key];
++    const hasPendingInteractive =
++      existingFocusedScreenTimes?.lastInteractiveCall != null &&
++      existingFocusedScreenTimes?.dispatchTime == null;
++
++    const last = storage.pendingActions[storage.pendingActions.length - 1];
++    const isColdAppLaunch = !storage.hasRecordedInitialTtr;
++    const effectiveDispatchTime = isColdAppLaunch ? appLaunchTime : last?.dispatchTime;
++
++    // We want to collect the preloaded screens even if the focused route
++    // didn't change. The preload can happen without the focus to change.
++    // Also backfill dispatchTime on any mounted screen that doesn't have
++    // one yet, so a later `markInteractive` does not set hasPendingInteractive
++    // to true
++    for (const key of mounted.keys()) {
++      storage.renderedScreensIds.add(key);
++      if (effectiveDispatchTime != null && storage.screenTimes[key]?.dispatchTime == null) {
++        storage.screenTimes[key] = {
++          ...storage.screenTimes[key],
++          dispatchTime: effectiveDispatchTime,
++        };
++      }
++    }
++
++    if (focused.key === previousFocusedKey) return;
++    previousFocusedKey = focused.key;
++
++    const pathname = getPathname(state) ?? focused.route.name;
++    const routeParams = focused.route.params ?? {};
++    const name = isInitial ? 'cold_ttr' : 'warm_ttr';
++
++    const mainSessionId = (await AppMetrics.getMainSession())?.id;
++    if (!mainSessionId) return;
++
++    if (isColdAppLaunch) {
++      const appLaunchTtrSeconds = (now - appLaunchTime) / 1000;
++      storage.hasRecordedInitialTtr = true;
++      if (hasPendingInteractive) {
++        storage.screenTimes[focused.key] = {
++          ...storage.screenTimes[focused.key],
++          lastInteractiveCall: now,
++        };
++      }
++      AppMetrics.addCustomMetricToSession({
++        sessionId: mainSessionId,
++        timestamp,
++        category: 'navigation',
++        name,
++        routeName: pathname,
++        value: appLaunchTtrSeconds,
++        params: { isAppLaunch: true, routeParams },
++      });
++      if (hasPendingInteractive) {
++        await emitTTI({
++          sessionId: mainSessionId,
++          timestamp,
++          routeName: pathname,
++          value: appLaunchTtrSeconds,
++          routeParams,
++        });
++      }
++      storage.pendingActions.length = 0;
++      return;
++    }
++
++    if (!last) return;
++    const ttrSeconds = (now - last.dispatchTime) / 1000;
++    if (hasPendingInteractive) {
++      storage.screenTimes[focused.key] = {
++        ...storage.screenTimes[focused.key],
++        lastInteractiveCall: now,
++      };
++    }
++
++    AppMetrics.addCustomMetricToSession({
++      sessionId: mainSessionId,
++      timestamp,
++      category: 'navigation',
++      name,
++      routeName: pathname,
++      value: ttrSeconds,
++      params: { isAppLaunch: false, routeParams },
++    });
++    if (hasPendingInteractive) {
++      await emitTTI({
++        sessionId: mainSessionId,
++        timestamp,
++        routeName: pathname,
++        value: ttrSeconds,
++        routeParams,
++      });
++    }
++    storage.pendingActions.length = 0;
++  };
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/index.ts b/packages/expo-observe/src/integrations/react-navigation/index.ts
+new file mode 100644
+index 00000000000000..4ffe7e461cc45e
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/index.ts
+@@ -0,0 +1,12 @@
++export { isReactNavigationInstalled } from './reactNavigation';
++export {
++  initReactNavigationIntegration,
++  isInitialized as isReactNavigationInitialized,
++} from './init';
++
++export {
++  ObserveNavigationContainer,
++  type ObserveNavigationContainerProps,
++} from './ObserveNavigationContainer';
++export { ObserveReactNavigationIntegrationContext } from './context';
++export { useObserveForReactNavigation } from './useObserveForReactNavigation';
+diff --git a/packages/expo-observe/src/integrations/react-navigation/init.ts b/packages/expo-observe/src/integrations/react-navigation/init.ts
+new file mode 100644
+index 00000000000000..c35e8f38b98e23
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/init.ts
+@@ -0,0 +1,7 @@
++let initialized = false;
++
++export const isInitialized = () => initialized;
++
++export function initReactNavigationIntegration() {
++  initialized = true;
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/reactNavigation.ts b/packages/expo-observe/src/integrations/react-navigation/reactNavigation.ts
+new file mode 100644
+index 00000000000000..56cceafdf9de95
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/reactNavigation.ts
+@@ -0,0 +1,10 @@
++// @react-navigation/native is an optional peerDependency. When the host app
++// hasn't installed it, `require` throws and the integration becomes a no-op.
++let optionalReactNavigation: typeof import('@react-navigation/native') | undefined;
++try {
++  // eslint-disable-next-line @typescript-eslint/no-require-imports
++  optionalReactNavigation = require('@react-navigation/native');
++} catch {}
++const isReactNavigationInstalled = !!optionalReactNavigation;
++
++export { optionalReactNavigation, isReactNavigationInstalled };
+diff --git a/packages/expo-observe/src/integrations/react-navigation/stateTraversal.ts b/packages/expo-observe/src/integrations/react-navigation/stateTraversal.ts
+new file mode 100644
+index 00000000000000..5c7c3127c49992
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/stateTraversal.ts
+@@ -0,0 +1,45 @@
++import type { NavigationRouteLike, NavigationStateLike } from './types';
++
++export function findFocusedLeaf(
++  state: NavigationStateLike
++): { route: NavigationRouteLike; key: string } | null {
++  let current: NavigationStateLike | undefined = state;
++  while (current) {
++    // Similar casting is happening in getPathFromState
++    const route = current.routes[current.index ?? 0] as NavigationRouteLike | undefined;
++    if (!route) return null;
++    if (!route.state) return { route, key: route.key };
++    current = route.state;
++  }
++  return null;
++}
++
++export function collectMountedKeys(state: NavigationStateLike): Map<string, NavigationRouteLike> {
++  const result = new Map<string, NavigationRouteLike>();
++  if (state.type === 'tab') {
++    // Only the focused tab's subtree counts as mounted. Sibling tabs are
++    // treated as unmounted because of `lazy: true` (the v7 default) —
++    // claiming we'd already rendered them would resolve their first focus
++    // to warm_ttr instead of cold_ttr.
++    const focusedRoute = state.routes[state.index ?? 0] as NavigationRouteLike | undefined;
++    if (focusedRoute) {
++      result.set(focusedRoute.key, focusedRoute);
++      if (focusedRoute.state) {
++        for (const [key, value] of collectMountedKeys(focusedRoute.state)) {
++          result.set(key, value);
++        }
++      }
++    }
++    return result;
++  }
++  for (const route of state.routes) {
++    const castedRoute = route as NavigationRouteLike;
++    result.set(route.key, castedRoute);
++    if (route.state) {
++      for (const [key, value] of collectMountedKeys(castedRoute.state)) {
++        result.set(key, value);
++      }
++    }
++  }
++  return result;
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/storage.ts b/packages/expo-observe/src/integrations/react-navigation/storage.ts
+new file mode 100644
+index 00000000000000..803b1916b48fe9
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/storage.ts
+@@ -0,0 +1,27 @@
++export type ScreenTimes = {
++  dispatchTime?: number;
++  lastInteractiveCall?: number;
++};
++
++export type PendingAction = {
++  actionType: string;
++  dispatchTime: number;
++};
++
++export type ReactNavigationIntegrationStorage = {
++  pendingActions: PendingAction[];
++  renderedScreensIds: Set<string>;
++  hasRecordedInitialTtr: boolean;
++  screenTimes: Record<string, ScreenTimes>;
++  interactiveScreensIds: Set<string>;
++};
++
++export function createReactNavigationIntegrationStorage(): ReactNavigationIntegrationStorage {
++  return {
++    pendingActions: [],
++    renderedScreensIds: new Set(),
++    hasRecordedInitialTtr: false,
++    screenTimes: {},
++    interactiveScreensIds: new Set(),
++  };
++}
+diff --git a/packages/expo-observe/src/integrations/react-navigation/types.ts b/packages/expo-observe/src/integrations/react-navigation/types.ts
+new file mode 100644
+index 00000000000000..4660087a93519d
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/types.ts
+@@ -0,0 +1,6 @@
++import type { NavigationRoute, NavigationState } from '@react-navigation/native';
++
++export type NavigationRouteLike = NavigationRoute<any, string> & { state: NavigationState };
++export type NavigationStateLike = NavigationState;
++
++export type GetPathname = (state: NavigationStateLike | undefined) => string | undefined;
+diff --git a/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts b/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts
+new file mode 100644
+index 00000000000000..f96e5ce879cd1b
+--- /dev/null
++++ b/packages/expo-observe/src/integrations/react-navigation/useObserveForReactNavigation.ts
+@@ -0,0 +1,129 @@
++import AppMetrics, { type MetricAttributes } from 'expo-app-metrics';
++import { use, useCallback, useEffect, useRef } from 'react';
++
++import { ObserveReactNavigationIntegrationContext } from './context';
++import { emitTTI } from './emitTTI';
++import { isInitialized } from './init';
++import { optionalReactNavigation } from './reactNavigation';
++import type { NavigationStateLike } from './types';
++import { useAssertValueDoesNotChange } from '../../useAssertValueDoesNotChange';
++
++type MarkInteractive = (typeof AppMetrics)['markInteractive'];
++
++export function useObserveForReactNavigation(): MarkInteractive | null {
++  const initialized = isInitialized();
++  const contextValue = use(ObserveReactNavigationIntegrationContext);
++  const isMounted = useRef(true);
++  const route = optionalReactNavigation?.useRoute();
++  const navigation = optionalReactNavigation?.useNavigation();
++  const stateForPath = optionalReactNavigation?.useStateForPath();
++
++  useAssertValueDoesNotChange(
++    initialized,
++    "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. " +
++      "Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
++  );
++
++  const screenId = route?.key;
++  const prevScreenId = useRef(screenId);
++  if (prevScreenId.current !== screenId) {
++    console.warn(
++      '[expo-observe] Screen ID changed between renders. The hook should be called inside the screen component, not a higher wrapper.'
++    );
++    prevScreenId.current = screenId;
++  }
++
++  useEffect(() => {
++    // Strict-mode mounts the effect twice (mount → cleanup → re-mount). Without
++    // restoring isMounted here the second mount would leave it permanently false.
++    isMounted.current = true;
++    return () => {
++      isMounted.current = false;
++    };
++  }, []);
++
++  const markInteractive = useCallback(
++    async (attributes?: MetricAttributes) => {
++      const now = performance.now();
++      const timestamp = new Date().toISOString();
++      if (!isMounted.current) {
++        console.warn('[expo-observe] Calling markInteractive on unmounted screen');
++        return;
++      }
++      if (!screenId) {
++        console.warn(
++          '[expo-observe] No metadata available for the current screen. Make sure to call useObserve inside a screen component.'
++        );
++        return;
++      }
++
++      if (!contextValue) {
++        throw new Error(
++          '[expo-observe] markInteractive was called without an active ObserveNavigationContainer. Wrap your tree in <ObserveNavigationContainer>.'
++        );
++      }
++      const { storage, getPathname } = contextValue;
++
++      if (!route) {
++        return;
++      }
++      // `useStateForPath` returns the navigation state subtree rooted at the
++      // current screen's path, not the full root state. That's intentional:
++      // `getPathFromState` only walks routes/state/params downward, so feeding
++      // it the subtree produces the same pathname as the full state without
++      // requiring access to the root navigation state from inside a leaf hook.
++      const pathname = getPathname(stateForPath as NavigationStateLike | undefined) ?? route.name;
++      const routeParams = (route.params as object | undefined) ?? {};
++
++      // Snapshot times BEFORE writing the new interactive timestamp so the
++      // duplicate-detection logic below sees the previous call, not this one.
++      const currentScreenData = storage.screenTimes[screenId];
++
++      storage.interactiveScreensIds.add(screenId);
++      storage.screenTimes[screenId] = {
++        ...storage.screenTimes[screenId],
++        lastInteractiveCall: now,
++      };
++
++      if (!navigation?.isFocused()) {
++        return;
++      }
++
++      AppMetrics.markInteractive({
++        ...(attributes ?? {}),
++        routeName: pathname,
++      });
++
++      if (currentScreenData?.dispatchTime == null) {
++        // `onStateChange` hasn't recorded the dispatch yet. `handleStateChange`
++        // will see `lastInteractiveCall` set with no `dispatchTime` and emit
++        // TTI = TTR on our behalf.
++        return;
++      }
++
++      const previousInteractiveCall = currentScreenData.lastInteractiveCall;
++      const previousWasAfterDispatch =
++        previousInteractiveCall != null && currentScreenData.dispatchTime < previousInteractiveCall;
++
++      if (previousWasAfterDispatch) {
++        // Record interactive once per navigation.
++        return;
++      }
++
++      const interactiveTimeSeconds = (now - currentScreenData.dispatchTime) / 1000;
++      const mainSessionId = (await AppMetrics.getMainSession())?.id;
++      if (mainSessionId) {
++        await emitTTI({
++          sessionId: mainSessionId,
++          timestamp,
++          routeName: pathname,
++          value: interactiveTimeSeconds,
++          routeParams,
++        });
++      }
++    },
++    [screenId, navigation, route, contextValue, stateForPath]
++  );
++
++  return initialized ? markInteractive : null;
++}
+diff --git a/packages/expo-observe/src/module.ts b/packages/expo-observe/src/module.ts
+index 8159e598235efb..e9550db93d92c7 100644
+--- a/packages/expo-observe/src/module.ts
++++ b/packages/expo-observe/src/module.ts
+@@ -2,6 +2,8 @@ import { requireNativeModule } from 'expo';
+ 
+ import { initRouterIntegration } from './integrations/expo-router/init';
+ import { isRouterInstalled } from './integrations/expo-router/router';
++import { initReactNavigationIntegration } from './integrations/react-navigation/init';
++import { isReactNavigationInstalled } from './integrations/react-navigation/reactNavigation';
+ import type { Config, ExpoObserveModuleType } from './types';
+ 
+ const native = requireNativeModule<ExpoObserveModuleType>('ExpoObserve');
+@@ -10,8 +12,35 @@ const ExpoObserve: ExpoObserveModuleType = new Proxy(native, {
+   get(target, prop, receiver) {
+     if (prop === 'configure') {
+       return (config: Config) => {
+-        if (config.integrations?.['expo-router'] && isRouterInstalled) {
++        const routerEnabled = !!config.integrations?.['expo-router'];
++        const reactNavigationEnabled = !!config.integrations?.['react-navigation'];
++
++        if (routerEnabled && !isRouterInstalled) {
++          console.warn(
++            "[expo-observe] `integrations: { 'expo-router': true }` was set, but `expo-router` is not installed. The integration will not initialize."
++          );
++        }
++        if (reactNavigationEnabled && !isReactNavigationInstalled) {
++          console.warn(
++            "[expo-observe] `integrations: { 'react-navigation': true }` was set, but `@react-navigation/native` is not installed. The integration will not initialize."
++          );
++        }
++
++        const shouldInitRouterIntegration = routerEnabled && isRouterInstalled;
++        const shouldInitReactNavigationIntegration =
++          reactNavigationEnabled && isReactNavigationInstalled;
++
++        if (shouldInitRouterIntegration && shouldInitReactNavigationIntegration) {
++          console.warn(
++            "[expo-observe] Both 'expo-router' and 'react-navigation' integrations are enabled. " +
++              "Only 'expo-router' will initialize; 'react-navigation' will be ignored. "
++          );
++        }
++
++        if (shouldInitRouterIntegration) {
+           initRouterIntegration();
++        } else if (shouldInitReactNavigationIntegration) {
++          initReactNavigationIntegration();
+         }
+         return target.configure(config);
+       };
+diff --git a/packages/expo-observe/src/types.ts b/packages/expo-observe/src/types.ts
+index 1a7942256677ae..2d0ef068c6a8e8 100644
+--- a/packages/expo-observe/src/types.ts
++++ b/packages/expo-observe/src/types.ts
+@@ -52,7 +52,26 @@ export type Config = {
+ };
+ 
+ export interface IntegrationsConfig {
++  /**
++   * Enables the `expo-router` integration, which records navigation metrics
++   * (`cold_ttr`, `warm_ttr`, `tti`) from router state changes.
++   *
++   * Requires `expo-router` to be installed.
++   *
++   * @default false
++   */
+   'expo-router'?: boolean;
++  /**
++   * Enables the `@react-navigation/native` integration, which records
++   * navigation metrics (`cold_ttr`, `warm_ttr`, `tti`).
++   *
++   * Requires `@react-navigation/native` to be installed and the app tree
++   * to be wrapped in `<ObserveNavigationContainer>` instead of the stock
++   * `<NavigationContainer>`.
++   *
++   * @default false
++   */
++  'react-navigation'?: boolean;
+ }
+ 
+ export interface ExpoObserveModuleType {
+diff --git a/packages/expo-observe/src/useObserve.ts b/packages/expo-observe/src/useObserve.ts
+index 257d86d5fa744e..715237fab40762 100644
+--- a/packages/expo-observe/src/useObserve.ts
++++ b/packages/expo-observe/src/useObserve.ts
+@@ -1,10 +1,15 @@
+ import AppMetrics from 'expo-app-metrics';
+ 
+ import { isExpoRouterInitialized, useObserveForRouter } from './integrations/expo-router';
++import {
++  isReactNavigationInitialized,
++  useObserveForReactNavigation,
++} from './integrations/react-navigation';
+ import { useAssertValueDoesNotChange } from './useAssertValueDoesNotChange';
+ 
+ export function useObserve() {
+   const expoRouterInitialized = isExpoRouterInitialized();
++  const reactNavigationInitialized = isReactNavigationInitialized();
+ 
+   useAssertValueDoesNotChange(
+     expoRouterInitialized,
+@@ -16,7 +21,20 @@ export function useObserve() {
+   // eslint-disable-next-line react-hooks/rules-of-hooks
+   const routerMarkInteractive = expoRouterInitialized ? useObserveForRouter() : undefined;
+ 
++  useAssertValueDoesNotChange(
++    reactNavigationInitialized,
++    "[expo-observe] React Navigation integration was toggled during a screen's lifecycle. " +
++      "Call `ExpoObserve.configure({ integrations: { 'react-navigation': true } })` once at startup before any screen mounts."
++  );
++  // useAssertValueDoesNotChange asserts that the useObserveForReactNavigation is either rendered
++  // or not for the whole lifecycle of this hook
++  const reactNavigationMarkInteractive = reactNavigationInitialized
++    ? // eslint-disable-next-line react-hooks/rules-of-hooks
++      useObserveForReactNavigation()
++    : undefined;
++
+   return {
+-    markInteractive: routerMarkInteractive ?? AppMetrics.markInteractive,
++    markInteractive:
++      routerMarkInteractive ?? reactNavigationMarkInteractive ?? AppMetrics.markInteractive,
+   };
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 9e2a1a21ae0429..d3ba79b57547c4 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -5063,6 +5063,9 @@ importers:
+         specifier: 0.85.3
+         version: 0.85.3(@babel/core@7.29.0)(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+     devDependencies:
++      '@react-navigation/native':
++        specifier: ^7.1.33
++        version: 7.1.33(react-native@0.85.3(@babel/core@7.29.0)(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+       '@testing-library/react-native':
+         specifier: ^13.3.0
+         version: 13.3.3(jest@29.7.0(@types/node@22.19.15)(ts-node@10.9.2(@swc/core@1.15.18)(@types/node@22.19.15)(typescript@6.0.3)))(react-native@0.85.3(@babel/core@7.29.0)(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react-test-renderer@19.2.3(react@19.2.3))(react@19.2.3)

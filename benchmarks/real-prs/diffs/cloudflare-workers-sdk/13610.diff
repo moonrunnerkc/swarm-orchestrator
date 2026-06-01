@@ -1,0 +1,2981 @@
+diff --git a/.changeset/agent-memory-binding-support.md b/.changeset/agent-memory-binding-support.md
+new file mode 100644
+index 0000000000..bf34802ced
+--- /dev/null
++++ b/.changeset/agent-memory-binding-support.md
+@@ -0,0 +1,25 @@
++---
++"miniflare": minor
++"wrangler": minor
++---
++
++Add support for `agent_memory` bindings
++
++Agent Memory bindings allow Workers to connect to Cloudflare's Agent Memory service for storing and retrieving agent conversation state. This binding is remote-only, meaning it always connects to the Cloudflare API during `wrangler dev` rather than using a local simulation.
++
++To configure an `agent_memory` binding, add the following to your `wrangler.json`:
++
++```jsonc
++{
++	"agent_memory": [
++		{
++			"binding": "MY_MEMORY",
++			"namespace": "my-namespace",
++		},
++	],
++}
++```
++
++Wrangler will automatically provision the namespace during deployment if it does not already exist. Type generation via `wrangler types` is also supported.
++
++This change also adds the `agent-memory:write` OAuth scope to Wrangler's default login scopes, so `wrangler login` can request the permissions needed to provision and manage Agent Memory namespaces.
+diff --git a/.changeset/agent-memory-namespace-commands.md b/.changeset/agent-memory-namespace-commands.md
+new file mode 100644
+index 0000000000..57e1b72d42
+--- /dev/null
++++ b/.changeset/agent-memory-namespace-commands.md
+@@ -0,0 +1,14 @@
++---
++"wrangler": minor
++---
++
++Add `wrangler agent-memory namespace` commands
++
++The following commands have been added for managing Agent Memory namespaces:
++
++```bash
++wrangler agent-memory namespace create <namespace>
++wrangler agent-memory namespace list [--json]
++wrangler agent-memory namespace get <namespace_name> [--json]
++wrangler agent-memory namespace delete <namespace_name> [--force]
++```
+diff --git a/packages/miniflare/src/plugins/agent-memory/index.ts b/packages/miniflare/src/plugins/agent-memory/index.ts
+new file mode 100644
+index 0000000000..2b5707c11b
+--- /dev/null
++++ b/packages/miniflare/src/plugins/agent-memory/index.ts
+@@ -0,0 +1,71 @@
++import { z } from "zod";
++import {
++	getUserBindingServiceName,
++	ProxyNodeBinding,
++	remoteProxyClientWorker,
++} from "../shared";
++import type { Plugin, RemoteProxyConnectionString } from "../shared";
++
++const AgentMemoryEntrySchema = z.object({
++	namespace: z.string(),
++	remoteProxyConnectionString: z
++		.custom<RemoteProxyConnectionString>()
++		.optional(),
++});
++
++export const AgentMemoryOptionsSchema = z.object({
++	agentMemory: z.record(AgentMemoryEntrySchema).optional(),
++});
++
++export const AGENT_MEMORY_PLUGIN_NAME = "agent-memory";
++
++const AGENT_MEMORY_SCOPE = "agent-memory";
++
++export const AGENT_MEMORY_PLUGIN: Plugin<typeof AgentMemoryOptionsSchema> = {
++	options: AgentMemoryOptionsSchema,
++	async getBindings(options) {
++		if (!options.agentMemory) {
++			return [];
++		}
++
++		return Object.entries(options.agentMemory).map(([bindingName, entry]) => ({
++			name: bindingName,
++			service: {
++				name: getUserBindingServiceName(
++					AGENT_MEMORY_SCOPE,
++					bindingName,
++					entry.remoteProxyConnectionString
++				),
++			},
++		}));
++	},
++	getNodeBindings(options) {
++		if (!options.agentMemory) {
++			return {};
++		}
++
++		return Object.fromEntries(
++			Object.keys(options.agentMemory).map((bindingName) => [
++				bindingName,
++				new ProxyNodeBinding(),
++			])
++		);
++	},
++	async getServices({ options }) {
++		if (!options.agentMemory) {
++			return [];
++		}
++
++		return Object.entries(options.agentMemory).map(([bindingName, entry]) => ({
++			name: getUserBindingServiceName(
++				AGENT_MEMORY_SCOPE,
++				bindingName,
++				entry.remoteProxyConnectionString
++			),
++			worker: remoteProxyClientWorker(
++				entry.remoteProxyConnectionString,
++				bindingName
++			),
++		}));
++	},
++};
+diff --git a/packages/miniflare/src/plugins/index.ts b/packages/miniflare/src/plugins/index.ts
+index b47d99eb25..31b220c15b 100644
+--- a/packages/miniflare/src/plugins/index.ts
++++ b/packages/miniflare/src/plugins/index.ts
+@@ -1,3 +1,4 @@
++import { AGENT_MEMORY_PLUGIN, AGENT_MEMORY_PLUGIN_NAME } from "./agent-memory";
+ import { AI_PLUGIN, AI_PLUGIN_NAME } from "./ai";
+ import { AI_SEARCH_PLUGIN, AI_SEARCH_PLUGIN_NAME } from "./ai-search";
+ import {
+@@ -67,6 +68,7 @@ export const PLUGINS = {
+ 	[EMAIL_PLUGIN_NAME]: EMAIL_PLUGIN,
+ 	[ANALYTICS_ENGINE_PLUGIN_NAME]: ANALYTICS_ENGINE_PLUGIN,
+ 	[AI_PLUGIN_NAME]: AI_PLUGIN,
++	[AGENT_MEMORY_PLUGIN_NAME]: AGENT_MEMORY_PLUGIN,
+ 	[AI_SEARCH_PLUGIN_NAME]: AI_SEARCH_PLUGIN,
+ 	[WEB_SEARCH_PLUGIN_NAME]: WEB_SEARCH_PLUGIN,
+ 	[BROWSER_RENDERING_PLUGIN_NAME]: BROWSER_RENDERING_PLUGIN,
+@@ -137,6 +139,7 @@ export type WorkerOptions = z.input<typeof CORE_PLUGIN.options> &
+ 	z.input<typeof SECRET_STORE_PLUGIN.options> &
+ 	z.input<typeof ANALYTICS_ENGINE_PLUGIN.options> &
+ 	z.input<typeof AI_PLUGIN.options> &
++	z.input<typeof AGENT_MEMORY_PLUGIN.options> &
+ 	z.input<typeof AI_SEARCH_PLUGIN.options> &
+ 	z.input<typeof WEB_SEARCH_PLUGIN.options> &
+ 	z.input<typeof BROWSER_RENDERING_PLUGIN.options> &
+@@ -229,6 +232,7 @@ export * from "./secret-store";
+ export * from "./email";
+ export * from "./analytics-engine";
+ export * from "./ai";
++export * from "./agent-memory";
+ export * from "./ai-search";
+ export * from "./web-search";
+ export * from "./browser-rendering";
+diff --git a/packages/workers-utils/src/config/binding-local-support.ts b/packages/workers-utils/src/config/binding-local-support.ts
+index cfa24709ed..3052bc02aa 100644
+--- a/packages/workers-utils/src/config/binding-local-support.ts
++++ b/packages/workers-utils/src/config/binding-local-support.ts
+@@ -70,6 +70,7 @@ const BINDING_LOCAL_SUPPORT: Record<
+ 	vpc_service: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
+ 	vpc_network: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
+ 	web_search: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
++	agent_memory: "DO-NOT-USE-this-resource-will-never-have-a-local-simulator",
+ };
+ 
+ export function getBindingLocalSupport(
+diff --git a/packages/workers-utils/src/config/config.ts b/packages/workers-utils/src/config/config.ts
+index a230ffb213..eab814ae93 100644
+--- a/packages/workers-utils/src/config/config.ts
++++ b/packages/workers-utils/src/config/config.ts
+@@ -337,6 +337,7 @@ export const defaultWranglerConfig: Config = {
+ 	ai_search_namespaces: [],
+ 	ai_search: [],
+ 	web_search: undefined,
++	agent_memory: [],
+ 	hyperdrive: [],
+ 	workflows: [],
+ 	secrets_store_secrets: [],
+diff --git a/packages/workers-utils/src/config/environment.ts b/packages/workers-utils/src/config/environment.ts
+index 372d47dc3e..018a61bc60 100644
+--- a/packages/workers-utils/src/config/environment.ts
++++ b/packages/workers-utils/src/config/environment.ts
+@@ -1054,6 +1054,24 @@ export interface EnvironmentNonInheritable {
+ 		remote?: boolean;
+ 	}[];
+ 
++	/**
++	 * Specifies Agent Memory namespace bindings that are bound to this Worker environment.
++	 *
++	 * NOTE: This field is not automatically inherited from the top level environment,
++	 * and so must be specified in every named environment.
++	 *
++	 * @default []
++	 * @nonInheritable
++	 */
++	agent_memory: {
++		/** The binding name used to refer to the Agent Memory namespace in the Worker. */
++		binding: string;
++		/** The user-chosen namespace name. Must exist in Cloudflare at deploy time. */
++		namespace: string;
++		/** Whether the Agent Memory binding should be remote in local development */
++		remote?: boolean;
++	}[];
++
+ 	/**
+ 	 * Cloudflare Web Search binding. There is exactly one shared web corpus, so the
+ 	 * binding is zero-config -- only the variable name is required, declared as a
+diff --git a/packages/workers-utils/src/config/validation.ts b/packages/workers-utils/src/config/validation.ts
+index ecf1d3babe..a1bdda5b0a 100644
+--- a/packages/workers-utils/src/config/validation.ts
++++ b/packages/workers-utils/src/config/validation.ts
+@@ -83,6 +83,7 @@ export type ConfigBindingFieldName =
+ 	| "ai_search_namespaces"
+ 	| "ai_search"
+ 	| "web_search"
++	| "agent_memory"
+ 	| "hyperdrive"
+ 	| "r2_buckets"
+ 	| "logfwdr"
+@@ -126,6 +127,7 @@ export const friendlyBindingNames: Record<ConfigBindingFieldName, string> = {
+ 	ai_search_namespaces: "AI Search Namespace",
+ 	ai_search: "AI Search Instance",
+ 	web_search: "Web Search",
++	agent_memory: "Agent Memory",
+ 	hyperdrive: "Hyperdrive Config",
+ 	r2_buckets: "R2 Bucket",
+ 	logfwdr: "logfwdr",
+@@ -184,6 +186,7 @@ const bindingTypeFriendlyNames: Record<Binding["type"], string> = {
+ 	ai_search_namespace: "AI Search Namespace",
+ 	ai_search: "AI Search Instance",
+ 	web_search: "Web Search",
++	agent_memory: "Agent Memory",
+ 	hyperdrive: "Hyperdrive Config",
+ 	service: "Worker",
+ 	fetcher: "Service Binding",
+@@ -1769,6 +1772,16 @@ function normalizeAndValidateEnvironment(
+ 			validateNamedSimpleBinding(envName),
+ 			undefined
+ 		),
++		agent_memory: notInheritable(
++			diagnostics,
++			topLevelEnv,
++			rawConfig,
++			rawEnv,
++			envName,
++			"agent_memory",
++			validateBindingArray(envName, validateAgentMemoryBinding),
++			[]
++		),
+ 		hyperdrive: notInheritable(
+ 			diagnostics,
+ 			topLevelEnv,
+@@ -3078,6 +3091,7 @@ const validateUnsafeBinding: ValidatorFn = (diagnostics, field, value) => {
+ 			"ai_search_namespace",
+ 			"ai_search",
+ 			"web_search",
++			"agent_memory",
+ 			"kv_namespace",
+ 			"durable_object_namespace",
+ 			"d1_database",
+@@ -4227,6 +4241,40 @@ const validateAISearchBinding: ValidatorFn = (diagnostics, field, value) => {
+ 	return isValid;
+ };
+ 
++const validateAgentMemoryBinding: ValidatorFn = (diagnostics, field, value) => {
++	if (typeof value !== "object" || value === null) {
++		diagnostics.errors.push(
++			`"agent_memory" bindings should be objects, but got ${JSON.stringify(value)}`
++		);
++		return false;
++	}
++	let isValid = true;
++	if (!isRequiredProperty(value, "binding", "string")) {
++		diagnostics.errors.push(
++			`"${field}" bindings should have a string "binding" field but got ${JSON.stringify(value)}.`
++		);
++		isValid = false;
++	}
++	if (!isRequiredProperty(value, "namespace", "string")) {
++		diagnostics.errors.push(
++			`"${field}" bindings must have a "namespace" field but got ${JSON.stringify(value)}.`
++		);
++		isValid = false;
++	}
++
++	if (!isRemoteValid(value, field, diagnostics)) {
++		isValid = false;
++	}
++
++	validateAdditionalProperties(diagnostics, field, Object.keys(value), [
++		"binding",
++		"namespace",
++		"remote",
++	]);
++
++	return isValid;
++};
++
+ const validateHyperdriveBinding: ValidatorFn = (diagnostics, field, value) => {
+ 	if (typeof value !== "object" || value === null) {
+ 		diagnostics.errors.push(
+diff --git a/packages/workers-utils/src/map-worker-metadata-bindings.ts b/packages/workers-utils/src/map-worker-metadata-bindings.ts
+index 5fd2d6d609..db23b0543c 100644
+--- a/packages/workers-utils/src/map-worker-metadata-bindings.ts
++++ b/packages/workers-utils/src/map-worker-metadata-bindings.ts
+@@ -306,6 +306,16 @@ export function mapWorkerMetadataBindings(
+ 							};
+ 						}
+ 						break;
++					case "agent_memory": {
++						configObj.agent_memory = [
++							...(configObj.agent_memory ?? []),
++							{
++								binding: binding.name,
++								namespace: binding.namespace,
++							},
++						];
++						break;
++					}
+ 					case "hyperdrive":
+ 						configObj.hyperdrive = [
+ 							...(configObj.hyperdrive ?? []),
+diff --git a/packages/workers-utils/src/types.ts b/packages/workers-utils/src/types.ts
+index 8272e851ce..c3a43716f8 100644
+--- a/packages/workers-utils/src/types.ts
++++ b/packages/workers-utils/src/types.ts
+@@ -8,6 +8,7 @@ import type {
+ } from "./config/environment";
+ import type {
+ 	CfAIBinding,
++	CfAgentMemory,
+ 	CfAISearch,
+ 	CfAISearchNamespace,
+ 	CfAnalyticsEngineDataset,
+@@ -76,6 +77,7 @@ export type WorkerMetadataBinding =
+ 	| { type: "ai_search_namespace"; name: string; namespace: string }
+ 	| { type: "ai_search"; name: string; instance_name: string }
+ 	| { type: "web_search"; name: string }
++	| { type: "agent_memory"; name: string; namespace: string }
+ 	| { type: "kv_namespace"; name: string; namespace_id: string; raw?: boolean }
+ 	| { type: "media"; name: string }
+ 	| {
+@@ -372,6 +374,7 @@ export type Binding =
+ 	| ({ type: "ai_search_namespace" } & BindingOmit<CfAISearchNamespace>)
+ 	| ({ type: "ai_search" } & BindingOmit<CfAISearch>)
+ 	| ({ type: "web_search" } & BindingOmit<CfWebSearch>)
++	| ({ type: "agent_memory" } & BindingOmit<CfAgentMemory>)
+ 	| ({ type: "hyperdrive" } & BindingOmit<CfHyperdrive>)
+ 	| ({ type: "service" } & BindingOmit<CfService>)
+ 	| { type: "fetcher"; fetcher: ServiceFetch }
+diff --git a/packages/workers-utils/src/worker.ts b/packages/workers-utils/src/worker.ts
+index 2f601c3b00..c6ea6edc03 100644
+--- a/packages/workers-utils/src/worker.ts
++++ b/packages/workers-utils/src/worker.ts
+@@ -248,6 +248,12 @@ export interface CfWebSearch {
+ 	remote?: boolean;
+ }
+ 
++export interface CfAgentMemory {
++	binding: string;
++	namespace: string | typeof INHERIT_SYMBOL;
++	remote?: boolean;
++}
++
+ export interface CfSecretsStoreSecrets {
+ 	binding: string;
+ 	store_id: string;
+diff --git a/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts b/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts
+index 1a35b44208..7704b58233 100644
+--- a/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts
++++ b/packages/workers-utils/tests/config/validation/normalize-and-validate-config.test.ts
+@@ -37,6 +37,7 @@ describe("normalizeAndValidateConfig()", () => {
+ 			vectorize: [],
+ 			ai_search_namespaces: [],
+ 			ai_search: [],
++			agent_memory: [],
+ 			hyperdrive: [],
+ 			dev: {
+ 				ip: process.platform === "win32" ? "127.0.0.1" : "localhost",
+@@ -2327,6 +2328,137 @@ describe("normalizeAndValidateConfig()", () => {
+ 			});
+ 		});
+ 
++		describe("[agent_memory]", () => {
++			it("should error if agent_memory is an object", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ agent_memory: {} } as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - The field "agent_memory" should be an array but got {}."
++				`);
++			});
++
++			it("should error if agent_memory is a string", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ agent_memory: "BAD" } as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - The field "agent_memory" should be an array but got "BAD"."
++				`);
++			});
++
++			it("should error if agent_memory is a number", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ agent_memory: 999 } as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - The field "agent_memory" should be an array but got 999."
++				`);
++			});
++
++			it("should error if agent_memory is null", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{ agent_memory: null } as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - The field "agent_memory" should be an array but got null."
++				`);
++			});
++
++			it("should error if agent_memory bindings are not valid", ({
++				expect,
++			}) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{
++						agent_memory: [
++							{},
++							{ binding: "VALID" },
++							{ binding: 2000, namespace: 2111 },
++							{
++								binding: "BINDING_2",
++								namespace: "my-namespace",
++							},
++						],
++					} as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.renderErrors()).toMatchInlineSnapshot(`
++					"Processing wrangler configuration:
++					  - "agent_memory[0]" bindings should have a string "binding" field but got {}.
++					  - "agent_memory[0]" bindings must have a "namespace" field but got {}.
++					  - "agent_memory[1]" bindings must have a "namespace" field but got {"binding":"VALID"}.
++					  - "agent_memory[2]" bindings should have a string "binding" field but got {"binding":2000,"namespace":2111}.
++					  - "agent_memory[2]" bindings must have a "namespace" field but got {"binding":2000,"namespace":2111}."
++				`);
++			});
++
++			it("should accept valid agent_memory bindings", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{
++						agent_memory: [
++							{
++								binding: "MEMORY",
++								namespace: "my-namespace",
++							},
++						],
++					} as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.hasWarnings()).toBe(false);
++				expect(diagnostics.hasErrors()).toBe(false);
++			});
++
++			it("should error on additional properties", ({ expect }) => {
++				const { diagnostics } = normalizeAndValidateConfig(
++					{
++						agent_memory: [
++							{
++								binding: "MEMORY",
++								namespace: "my-namespace",
++								extra_field: "unexpected",
++							},
++						],
++					} as unknown as RawConfig,
++					undefined,
++					undefined,
++					{ env: undefined }
++				);
++
++				expect(diagnostics.renderWarnings()).toContain("extra_field");
++			});
++		});
++
+ 		// AI
+ 		describe("[ai]", () => {
+ 			it("should error if ai is an array", ({ expect }) => {
+diff --git a/packages/wrangler/e2e/agent-memory.test.ts b/packages/wrangler/e2e/agent-memory.test.ts
+new file mode 100644
+index 0000000000..29ee50610b
+--- /dev/null
++++ b/packages/wrangler/e2e/agent-memory.test.ts
+@@ -0,0 +1,87 @@
++import { describe, it } from "vitest";
++import { CLOUDFLARE_ACCOUNT_ID } from "./helpers/account-id";
++import { WranglerE2ETestHelper } from "./helpers/e2e-wrangler-test";
++import { generateResourceName } from "./helpers/generate-resource-name";
++import { normalizeOutput } from "./helpers/normalize";
++
++describe.skipIf(!CLOUDFLARE_ACCOUNT_ID)("agent-memory", () => {
++	const namespaceName = generateResourceName("agent-memory", 8);
++	let namespaceId = "";
++
++	const helper = new WranglerE2ETestHelper();
++
++	const normalize = (str: string) =>
++		normalizeOutput(str, { [namespaceName]: "tmp-e2e-agent-memory" });
++
++	it("create namespace", async ({ expect }) => {
++		const output = await helper.run(
++			`wrangler agent-memory namespace create ${namespaceName} --json`
++		);
++
++		// The open-beta status warning is suppressed when --json is used
++		// (printBanner returns false), so stderr should be empty.
++		expect(output.stderr).toBe("");
++
++		// Extract the namespace ID for use in subsequent tests
++		try {
++			const result = JSON.parse(output.stdout) as { name: string; id: string };
++			expect(result.name).toEqual(namespaceName);
++			namespaceId = result.id;
++		} catch (cause) {
++			throw new Error("Could not extract namespace ID from create output", {
++				cause,
++			});
++		}
++	});
++
++	it("list namespaces", async ({ expect }) => {
++		const output = await helper.run(`wrangler agent-memory namespace list`);
++
++		expect(normalize(output.stdout)).toContain("tmp-e2e-agent-memory");
++		expect(normalize(output.stderr)).toMatchInlineSnapshot(`
++			"▲ [WARNING] 🚧 \`wrangler agent-memory namespace list\` is a private beta command. Please report any issues to https://github.com/cloudflare/workers-sdk/issues/new/choose"
++		`);
++	});
++
++	it("list namespaces --json", async ({ expect }) => {
++		const output = await helper.run(
++			`wrangler agent-memory namespace list --json`
++		);
++
++		const parsed = JSON.parse(output.stdout) as Array<{
++			id: string;
++			name: string;
++		}>;
++		const found = parsed.find((ns) => ns.name === namespaceName);
++		expect(found).toBeDefined();
++		expect(found?.id).toBe(namespaceId);
++		// The open-beta status warning is suppressed when --json is used
++		// (printBanner returns false), so stderr should be empty.
++		expect(output.stderr).toBe("");
++	});
++
++	it("get namespace", async ({ expect }) => {
++		const output = await helper.run(
++			`wrangler agent-memory namespace get ${namespaceName}`
++		);
++
++		expect(normalize(output.stdout)).toContain("tmp-e2e-agent-memory");
++		expect(output.stdout).toContain(namespaceId);
++		expect(normalize(output.stderr)).toMatchInlineSnapshot(`
++			"▲ [WARNING] 🚧 \`wrangler agent-memory namespace get\` is a private beta command. Please report any issues to https://github.com/cloudflare/workers-sdk/issues/new/choose"
++		`);
++	});
++
++	it("delete namespace", async ({ expect }) => {
++		const output = await helper.run(
++			`wrangler agent-memory namespace delete ${namespaceName} --force`
++		);
++
++		expect(normalize(output.stdout)).toContain(
++			`✅ Deleted Agent Memory namespace tmp-e2e-agent-memory`
++		);
++		expect(normalize(output.stderr)).toMatchInlineSnapshot(`
++			"▲ [WARNING] 🚧 \`wrangler agent-memory namespace delete\` is a private beta command. Please report any issues to https://github.com/cloudflare/workers-sdk/issues/new/choose"
++		`);
++	});
++});
+diff --git a/packages/wrangler/e2e/helpers/generate-resource-name.ts b/packages/wrangler/e2e/helpers/generate-resource-name.ts
+index c26c5b4b06..5b20b50dea 100644
+--- a/packages/wrangler/e2e/helpers/generate-resource-name.ts
++++ b/packages/wrangler/e2e/helpers/generate-resource-name.ts
+@@ -1,5 +1,5 @@
+ import crypto from "node:crypto";
+ 
+-export function generateResourceName(type = "worker") {
+-	return `tmp-e2e-${type}-${crypto.randomUUID()}`;
++export function generateResourceName(type = "worker", maxLength?: number) {
++	return `tmp-e2e-${type}-${crypto.randomUUID().slice(0, maxLength)}`;
+ }
+diff --git a/packages/wrangler/e2e/remote-binding/miniflare-remote-resources.test.ts b/packages/wrangler/e2e/remote-binding/miniflare-remote-resources.test.ts
+index 47a26b02a6..7b5c8bf151 100644
+--- a/packages/wrangler/e2e/remote-binding/miniflare-remote-resources.test.ts
++++ b/packages/wrangler/e2e/remote-binding/miniflare-remote-resources.test.ts
+@@ -8,8 +8,7 @@ import {
+ 	WranglerE2ETestHelper,
+ } from "../helpers/e2e-wrangler-test";
+ import { generateResourceName } from "../helpers/generate-resource-name";
+-import type { StartDevWorkerInput } from "../../src/api";
+-import type { StartRemoteProxySessionOptions } from "../../src/cli";
++import type { RemoteProxySession, StartDevWorkerInput } from "../../src/api";
+ import type { RawConfig } from "@cloudflare/workers-utils";
+ import type {
+ 	Awaitable,
+@@ -62,11 +61,11 @@ interface TestCase {
+  */
+ interface TestConfig {
+ 	/**
+-	 * These bindings and options objects will be merged with all the other test cases to create a single remote proxy session for all tests.
++	 * The bindings to install on the shared remote proxy session via
++	 * `updateBindings` when this test case runs.
+ 	 */
+ 	remoteProxySessionConfig: {
+ 		bindings: StartDevWorkerInput["bindings"];
+-		options?: StartRemoteProxySessionOptions;
+ 	};
+ 	/**
+ 	 * The Miniflare config (mostly bindings) for this test case. This will be merged with all other test cases to create a single Miniflare instance for all tests.
+@@ -482,6 +481,34 @@ const testCases: TestCase[] = [
+ 		},
+ 		getExpectFetchToMatch: (expect) => [expect.stringContaining(`"id"`)],
+ 	},
++	{
++		name: "Agent Memory",
++		scriptPath: "agent-memory.js",
++		setup: async (helper) => {
++			const namespace = generateResourceName("agent-memory", 8);
++			await helper.run(`wrangler agent-memory namespace create ${namespace}`);
++
++			return {
++				remoteProxySessionConfig: {
++					bindings: {
++						MEMORY: {
++							type: "agent_memory",
++							namespace,
++						},
++					},
++				},
++				miniflareConfig: (connection) => ({
++					agentMemory: {
++						MEMORY: {
++							namespace,
++							remoteProxyConnectionString: connection,
++						},
++					},
++				}),
++			};
++		},
++		getExpectFetchToMatch: (expect) => [expect.stringContaining("profile")],
++	},
+ 	{
+ 		name: "Pipelines",
+ 		scriptPath: "pipelines.js",
+@@ -642,29 +669,25 @@ if (!CLOUDFLARE_ACCOUNT_ID) {
+ 	describe("Remote bindings (remote proxy session enabled)", () => {
+ 		let helper: WranglerE2ETestHelper;
+ 		let mf: MiniflareType;
++		let remoteProxySession: RemoteProxySession;
++		const testConfigByTestCase = new Map<TestCase, TestConfig>();
+ 		const onTeardown = useTeardown({ timeout: testCases.length * 15_000 });
+ 		const activeTestCases = testCases.filter((testCase) => !testCase.skip);
+ 
+ 		beforeAll(async () => {
+ 			helper = new WranglerE2ETestHelper(onTeardown);
+ 			await helper.seed(path.resolve(__dirname, "./workers"));
+-			const testConfigs: TestConfig[] = [];
+ 			for (const testCase of activeTestCases) {
+-				testConfigs.push(await testCase.setup(helper));
++				testConfigByTestCase.set(testCase, await testCase.setup(helper));
+ 			}
+-			const remoteProxySession = await startRemoteProxySession(
+-				Object.assign(
+-					{},
+-					...testConfigs.map(
+-						(config) => config.remoteProxySessionConfig.bindings
+-					)
+-				),
+-				Object.assign(
+-					{},
+-					...testConfigs.map(
+-						(config) => config.remoteProxySessionConfig.options
+-					)
+-				)
++			const testConfigs = [...testConfigByTestCase.values()];
++
++			// Boot the proxy session with only the first test case's bindings.
++			// Each `it` will then call `updateBindings` to swap in its own bindings.
++			// This makes the boot smaller (and faster) and pinpoints any per-binding
++			// issue to the test that owns that binding rather than the beforeAll hook.
++			remoteProxySession = await startRemoteProxySession(
++				testConfigs[0].remoteProxySessionConfig.bindings
+ 			);
+ 
+ 			const testCaseModules = activeTestCases.map((testCase) => ({
+@@ -672,6 +695,10 @@ if (!CLOUDFLARE_ACCOUNT_ID) {
+ 				path: path.resolve(helper.tmpPath, testCase.scriptPath),
+ 			}));
+ 
++			// The proxy connection string is stable across `updateBindings` calls,
++			// so we can build the Miniflare instance once with all bindings merged.
++			// Each test script only touches its own binding (selected via the
++			// `x-test-module` header), so unused entries are dormant.
+ 			const miniflareConfig: MiniflareOptions = Object.assign(
+ 				{
+ 					compatibilityDate: "2025-09-06",
+@@ -692,114 +719,101 @@ if (!CLOUDFLARE_ACCOUNT_ID) {
+ 		}, activeTestCases.length * 15_000);
+ 
+ 		for (const testCase of activeTestCases) {
+-			it("should work for " + testCase.name, async ({ expect }) => {
+-				const resp = await mf.dispatchFetch("http://example.com/", {
+-					headers: { "x-test-module": testCase.scriptPath },
+-				});
+-				const respText = await resp.text();
+-				testCase.getExpectFetchToMatch(expect).forEach((match) => {
+-					expect(respText).toEqual(match);
+-				});
+-			});
++			it(
++				"should work for " + testCase.name,
++				async ({ expect }) => {
++					const testConfig = testConfigByTestCase.get(testCase);
++					assert(testConfig, `Missing test config for ${testCase.name}`);
++					await remoteProxySession.updateBindings(
++						testConfig.remoteProxySessionConfig.bindings
++					);
++					const resp = await mf.dispatchFetch("http://example.com/", {
++						headers: { "x-test-module": testCase.scriptPath },
++					});
++					const respText = await resp.text();
++					testCase.getExpectFetchToMatch(expect).forEach((match) => {
++						expect(respText).toEqual(match);
++					});
++				},
++				45_000
++			);
+ 		}
+ 	});
+ 
+-	// Separate describe block for mTLS since it needs a custom remote-binding proxy worker deployment
++	// Separate describe block for mTLS because it needs a custom remote-binding
++	// proxy worker pre-deployed with `mtls_certificates` configured. That can't
++	// be done via runtime `bindings:` alone, so it can't share the standard
++	// proxy worker the other test cases use.
+ 	describe("Remote bindings (mtls)", () => {
+-		const mtlsTestCase: TestCase = {
+-			name: "mTLS",
+-			scriptPath: "mtls.js",
+-			setup: async (helper) => {
+-				const certificateId = await helper.cert();
+-				// We need to override the standard Wrangler remote proxy worker with one that has the mTLS configured.
+-				const workerName = generateResourceName();
+-				const wranglerConfig: RawConfig = {
+-					name: workerName,
+-					main: "worker.js",
+-					mtls_certificates: [
+-						{
+-							certificate_id: certificateId,
+-							binding: "MTLS",
+-						},
+-					],
+-				};
+-				await helper.seed({
+-					"worker.js": dedent /* javascript */ `
+-						export default {
+-							fetch(request) { return new Response("Hello"); }
+-						}
+-					`,
+-					"pre-deployment-wrangler.json": JSON.stringify(
+-						wranglerConfig,
+-						null,
+-						2
+-					),
+-				});
+-				// Deploy the custom remote proxy worker for this tests
+-				await helper.worker({
+-					workerName,
+-					configPath: "pre-deployment-wrangler.json",
+-				});
+-				return {
+-					remoteProxySessionConfig: {
+-						bindings: {
+-							MTLS: {
+-								type: "mtls_certificate",
+-								certificate_id: certificateId,
+-							},
+-						},
+-						// This is the big difference that means we cannot use the standard remote proxy worker
+-						// This worker needs to have mTLS certificates configured.
+-						options: {
+-							workerName,
+-						},
+-					},
+-					miniflareConfig: (connection) => ({
+-						mtlsCertificates: {
+-							MTLS: {
+-								certificate_id: certificateId,
+-								remoteProxyConnectionString: connection,
+-							},
+-						},
+-					}),
+-				};
+-			},
+-			getExpectFetchToMatch: (expect) => [
+-				// Note: in this test we are making sure that TLS negotiation does work by checking that we get an SSL certificate error
+-				expect.stringMatching(/The SSL certificate error/),
+-				expect.not.stringMatching(/No required SSL certificate was sent/),
+-			],
+-		};
+-
+ 		it("should work for mTLS bindings", async ({ expect }) => {
+ 			const helper = new WranglerE2ETestHelper();
+ 			await helper.seed(path.resolve(__dirname, "./workers"));
+-			const testConfig = await mtlsTestCase.setup(helper);
++
++			const certificateId = await helper.cert();
++			// Override the standard Wrangler remote proxy worker with one that has
++			// the mTLS certificate configured at the wrangler-config level.
++			const workerName = generateResourceName();
++			const wranglerConfig: RawConfig = {
++				name: workerName,
++				main: "worker.js",
++				mtls_certificates: [
++					{
++						certificate_id: certificateId,
++						binding: "MTLS",
++					},
++				],
++			};
++			await helper.seed({
++				"worker.js": dedent /* javascript */ `
++					export default {
++						fetch(request) { return new Response("Hello"); }
++					}
++				`,
++				"pre-deployment-wrangler.json": JSON.stringify(wranglerConfig, null, 2),
++			});
++			// Deploy the custom remote proxy worker for this test
++			await helper.worker({
++				workerName,
++				configPath: "pre-deployment-wrangler.json",
++			});
++
+ 			const remoteProxySession = await startRemoteProxySession(
+-				testConfig.remoteProxySessionConfig.bindings,
+-				testConfig.remoteProxySessionConfig.options
+-			);
+-			const miniflareConfig: MiniflareOptions = Object.assign(
+ 				{
+-					compatibilityDate: "2025-09-06",
+-					modules: [
+-						{
+-							type: "ESModule",
+-							path: path.resolve(helper.tmpPath, mtlsTestCase.scriptPath),
+-						},
+-					],
+-					modulesRoot: helper.tmpPath,
+-				} satisfies MiniflareOptions,
+-				testConfig.miniflareConfig(
+-					remoteProxySession.remoteProxyConnectionString
+-				)
++					MTLS: {
++						type: "mtls_certificate",
++						certificate_id: certificateId,
++					},
++				},
++				{ workerName }
+ 			);
+-			const mf = new Miniflare(miniflareConfig);
++
++			const mf = new Miniflare({
++				compatibilityDate: "2025-09-06",
++				modules: [
++					{
++						type: "ESModule",
++						path: path.resolve(helper.tmpPath, "mtls.js"),
++					},
++				],
++				modulesRoot: helper.tmpPath,
++				mtlsCertificates: {
++					MTLS: {
++						certificate_id: certificateId,
++						remoteProxyConnectionString:
++							remoteProxySession.remoteProxyConnectionString,
++					},
++				},
++			});
+ 			const resp = await mf.dispatchFetch("http://example.com/");
+ 			const respText = await resp.text();
+-			mtlsTestCase.getExpectFetchToMatch(expect).forEach((match) => {
+-				expect(respText).toEqual(match);
+-			});
++			// Check that TLS negotiation does work by checking that we get an SSL
++			// certificate error rather than a "no certificate sent" error.
++			expect(respText).toEqual(
++				expect.stringMatching(/The SSL certificate error/)
++			);
++			expect(respText).toEqual(
++				expect.not.stringMatching(/No required SSL certificate was sent/)
++			);
+ 		});
+ 	});
+ }
+diff --git a/packages/wrangler/e2e/remote-binding/workers/agent-memory.js b/packages/wrangler/e2e/remote-binding/workers/agent-memory.js
+new file mode 100644
+index 0000000000..30ad8158b2
+--- /dev/null
++++ b/packages/wrangler/e2e/remote-binding/workers/agent-memory.js
+@@ -0,0 +1,7 @@
++export default {
++	async fetch(_request, env) {
++		const profile = env.MEMORY.getProfile("wrangler-e2e");
++		const summary = await profile.getSummary();
++		return new Response(JSON.stringify(summary));
++	},
++};
+diff --git a/packages/wrangler/src/__tests__/agent-memory.test.ts b/packages/wrangler/src/__tests__/agent-memory.test.ts
+new file mode 100644
+index 0000000000..5dca762457
+--- /dev/null
++++ b/packages/wrangler/src/__tests__/agent-memory.test.ts
+@@ -0,0 +1,426 @@
++import { UserError } from "@cloudflare/workers-utils";
++import { runInTempDir } from "@cloudflare/workers-utils/test-helpers";
++import { http, HttpResponse } from "msw";
++import { afterEach, describe, it } from "vitest";
++import { endEventLoop } from "./helpers/end-event-loop";
++import { mockAccountId, mockApiToken } from "./helpers/mock-account-id";
++import { mockConsoleMethods } from "./helpers/mock-console";
++import { clearDialogs, mockConfirm } from "./helpers/mock-dialogs";
++import { useMockIsTTY } from "./helpers/mock-istty";
++import { createFetchResult, msw } from "./helpers/msw";
++import { runWrangler } from "./helpers/run-wrangler";
++import type { AgentMemoryNamespace } from "../agent-memory/client";
++
++const TEST_NAMESPACE: AgentMemoryNamespace = {
++	id: "01HNXYZ1234567890ABCDEFGH",
++	name: "my-namespace",
++	account_id: "some-account-id",
++	created_at: "2024-01-01T00:00:00Z",
++	updated_at: "2024-01-02T00:00:00Z",
++};
++
++describe("agent-memory help", () => {
++	const std = mockConsoleMethods();
++	runInTempDir();
++
++	it("should show help text when no arguments are passed", async ({
++		expect,
++	}) => {
++		await runWrangler("agent-memory");
++		await endEventLoop();
++
++		expect(std.err).toMatchInlineSnapshot(`""`);
++		expect(std.out).toMatchInlineSnapshot(`
++			"wrangler agent-memory
++
++			🧠 Manage Agent Memory namespaces [private beta]
++
++			COMMANDS
++			  wrangler agent-memory namespace  Manage Agent Memory namespaces [private beta]
++
++			GLOBAL FLAGS
++			  -c, --config          Path to Wrangler configuration file  [string]
++			      --cwd             Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
++			  -e, --env             Environment to use for operations, and for selecting .env and .dev.vars files  [string]
++			      --env-file        Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
++			  -h, --help            Show help  [boolean]
++			      --install-skills  Install Cloudflare agents skills, if not already present, without asking the user for confirmation  [boolean] [default: false]
++			  -v, --version         Show version number  [boolean]"
++		`);
++	});
++
++	it("should show help text for the namespace subcommand", async ({
++		expect,
++	}) => {
++		await runWrangler("agent-memory namespace");
++		await endEventLoop();
++
++		expect(std.err).toMatchInlineSnapshot(`""`);
++		expect(std.out).toMatchInlineSnapshot(`
++			"wrangler agent-memory namespace
++
++			Manage Agent Memory namespaces [private beta]
++
++			COMMANDS
++			  wrangler agent-memory namespace create <namespace>       Create a new Agent Memory namespace [private beta]
++			  wrangler agent-memory namespace list                     List all Agent Memory namespaces associated with your account [private beta]
++			  wrangler agent-memory namespace get <namespace_name>     Get details for a given Agent Memory namespace [private beta]
++			  wrangler agent-memory namespace delete <namespace_name>  Delete a given Agent Memory namespace [private beta]
++
++			GLOBAL FLAGS
++			  -c, --config          Path to Wrangler configuration file  [string]
++			      --cwd             Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
++			  -e, --env             Environment to use for operations, and for selecting .env and .dev.vars files  [string]
++			      --env-file        Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
++			  -h, --help            Show help  [boolean]
++			      --install-skills  Install Cloudflare agents skills, if not already present, without asking the user for confirmation  [boolean] [default: false]
++			  -v, --version         Show version number  [boolean]"
++		`);
++	});
++});
++
++describe("agent-memory namespace commands", () => {
++	mockAccountId();
++	mockApiToken();
++	runInTempDir();
++	const { setIsTTY } = useMockIsTTY();
++	const std = mockConsoleMethods();
++
++	afterEach(() => {
++		clearDialogs();
++	});
++
++	// ── create ────────────────────────────────────────────────────────────────
++
++	it("should create a namespace", async ({ expect }) => {
++		msw.use(
++			http.post(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				async ({ request }) => {
++					const body = (await request.json()) as { name: string };
++					expect(body.name).toBe("my-namespace");
++					return HttpResponse.json(createFetchResult(TEST_NAMESPACE, true));
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler("agent-memory namespace create my-namespace");
++
++		expect(std.out).toContain("✅ Created Agent Memory namespace");
++		expect(std.out).toContain(TEST_NAMESPACE.id);
++		expect(std.out).toContain(TEST_NAMESPACE.name);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	it("should create a namespace and output JSON with --json", async ({
++		expect,
++	}) => {
++		msw.use(
++			http.post(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				async ({ request }) => {
++					const body = (await request.json()) as { name: string };
++					expect(body.name).toBe("my-namespace");
++					return HttpResponse.json(createFetchResult(TEST_NAMESPACE, true));
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler("agent-memory namespace create my-namespace --json");
++
++		const parsed = JSON.parse(std.out);
++		expect(parsed).toEqual(TEST_NAMESPACE);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	// ── list ──────────────────────────────────────────────────────────────────
++
++	it("should list namespaces in a table", async ({ expect }) => {
++		msw.use(
++			http.get(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				() => {
++					return HttpResponse.json(
++						createFetchResult([TEST_NAMESPACE], true, [], [], {
++							cursor: "",
++							per_page: 20,
++							total_count: 1,
++						})
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler("agent-memory namespace list");
++
++		expect(std.out).toContain(TEST_NAMESPACE.id);
++		expect(std.out).toContain(TEST_NAMESPACE.name);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	it("should list namespaces as JSON with --json", async ({ expect }) => {
++		msw.use(
++			http.get(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				() => {
++					return HttpResponse.json(
++						createFetchResult([TEST_NAMESPACE], true, [], [], {
++							cursor: "",
++							per_page: 20,
++							total_count: 1,
++						})
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler("agent-memory namespace list --json");
++
++		const parsed = JSON.parse(std.out);
++		expect(parsed).toEqual([TEST_NAMESPACE]);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	it("should print a message when no namespaces exist", async ({ expect }) => {
++		msw.use(
++			http.get(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				() => {
++					return HttpResponse.json(
++						createFetchResult([], true, [], [], {
++							cursor: "",
++							per_page: 20,
++							total_count: 0,
++						})
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler("agent-memory namespace list");
++
++		expect(std.out).toContain("No Agent Memory namespaces found");
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	// ── get ───────────────────────────────────────────────────────────────────
++
++	it("should get a namespace in a table", async ({ expect }) => {
++		msw.use(
++			http.get(
++				`*/accounts/:accountId/agent-memory/namespaces/${TEST_NAMESPACE.name}`,
++				() => {
++					return HttpResponse.json(createFetchResult(TEST_NAMESPACE, true));
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler(`agent-memory namespace get ${TEST_NAMESPACE.name}`);
++
++		expect(std.out).toContain(TEST_NAMESPACE.id);
++		expect(std.out).toContain(TEST_NAMESPACE.name);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	it("should get a namespace as JSON with --json", async ({ expect }) => {
++		msw.use(
++			http.get(
++				`*/accounts/:accountId/agent-memory/namespaces/${TEST_NAMESPACE.name}`,
++				() => {
++					return HttpResponse.json(createFetchResult(TEST_NAMESPACE, true));
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler(
++			`agent-memory namespace get ${TEST_NAMESPACE.name} --json`
++		);
++
++		const parsed = JSON.parse(std.out);
++		expect(parsed).toEqual(TEST_NAMESPACE);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	// ── delete ────────────────────────────────────────────────────────────────
++
++	it("should delete a namespace after confirmation", async ({ expect }) => {
++		setIsTTY(true);
++		mockConfirm({
++			text: `OK to delete the Agent Memory namespace "${TEST_NAMESPACE.name}"?`,
++			result: true,
++		});
++
++		msw.use(
++			http.delete(
++				`*/accounts/:accountId/agent-memory/namespaces/${TEST_NAMESPACE.name}`,
++				() => {
++					return HttpResponse.json(createFetchResult(null, true));
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler(`agent-memory namespace delete ${TEST_NAMESPACE.name}`);
++
++		expect(std.out).toContain(`✅ Deleted Agent Memory namespace`);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	it("should cancel deletion when confirmation is declined", async ({
++		expect,
++	}) => {
++		setIsTTY(true);
++		mockConfirm({
++			text: `OK to delete the Agent Memory namespace "${TEST_NAMESPACE.name}"?`,
++			result: false,
++		});
++
++		await runWrangler(`agent-memory namespace delete ${TEST_NAMESPACE.name}`);
++
++		expect(std.out).toContain("Deletion cancelled.");
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	it("should delete a namespace without confirmation when --force is passed", async ({
++		expect,
++	}) => {
++		msw.use(
++			http.delete(
++				`*/accounts/:accountId/agent-memory/namespaces/${TEST_NAMESPACE.name}`,
++				() => {
++					return HttpResponse.json(createFetchResult(null, true));
++				},
++				{ once: true }
++			)
++		);
++
++		await runWrangler(
++			`agent-memory namespace delete ${TEST_NAMESPACE.name} --force`
++		);
++
++		expect(std.out).toContain(`✅ Deleted Agent Memory namespace`);
++		expect(std.err).toMatchInlineSnapshot(`""`);
++	});
++
++	// ── user-caused errors ────────────────────────────────────────────────────
++	// These are surfaced as UserErrors so they are not reported to Sentry.
++
++	it("should throw a UserError when `get` hits a 404", async ({ expect }) => {
++		msw.use(
++			http.get(
++				`*/accounts/:accountId/agent-memory/namespaces/${TEST_NAMESPACE.name}`,
++				() => {
++					return HttpResponse.json(
++						createFetchResult(null, false, [
++							{ code: 1000, message: "namespace not found" },
++						]),
++						{ status: 404 }
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await expect(
++			runWrangler(`agent-memory namespace get ${TEST_NAMESPACE.name}`)
++		).rejects.toThrow(UserError);
++		expect(std.err).toContain(
++			`Agent Memory namespace "${TEST_NAMESPACE.name}" not found`
++		);
++	});
++
++	it("should throw a UserError when `delete` hits a 404", async ({
++		expect,
++	}) => {
++		msw.use(
++			http.delete(
++				`*/accounts/:accountId/agent-memory/namespaces/${TEST_NAMESPACE.name}`,
++				() => {
++					return HttpResponse.json(
++						createFetchResult(null, false, [
++							{ code: 1000, message: "namespace not found" },
++						]),
++						{ status: 404 }
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await expect(
++			runWrangler(
++				`agent-memory namespace delete ${TEST_NAMESPACE.name} --force`
++			)
++		).rejects.toThrow(UserError);
++		expect(std.err).toContain(
++			`Agent Memory namespace "${TEST_NAMESPACE.name}" not found`
++		);
++	});
++
++	it("should throw a UserError when `create` receives a 400 (invalid name)", async ({
++		expect,
++	}) => {
++		msw.use(
++			http.post(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				() => {
++					return HttpResponse.json(
++						createFetchResult(null, false, [
++							{
++								code: 1001,
++								message:
++									"namespace name must be 1-32 characters, alphanumeric with embedded hyphens",
++							},
++						]),
++						{ status: 400 }
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await expect(
++			runWrangler("agent-memory namespace create bad_name!")
++		).rejects.toThrow(UserError);
++		expect(std.err).toContain(
++			`Failed to create Agent Memory namespace "bad_name!"`
++		);
++		expect(std.err).toContain(
++			"namespace name must be 1-32 characters, alphanumeric with embedded hyphens"
++		);
++	});
++
++	it("should throw a UserError when `create` receives a 409 (duplicate)", async ({
++		expect,
++	}) => {
++		msw.use(
++			http.post(
++				"*/accounts/:accountId/agent-memory/namespaces",
++				() => {
++					return HttpResponse.json(
++						createFetchResult(null, false, [
++							{ code: 1002, message: "namespace already exists" },
++						]),
++						{ status: 409 }
++					);
++				},
++				{ once: true }
++			)
++		);
++
++		await expect(
++			runWrangler(`agent-memory namespace create ${TEST_NAMESPACE.name}`)
++		).rejects.toThrow(UserError);
++		expect(std.err).toContain(
++			`Failed to create Agent Memory namespace "${TEST_NAMESPACE.name}"`
++		);
++		expect(std.err).toContain("namespace already exists");
++	});
++});
+diff --git a/packages/wrangler/src/__tests__/create-worker-upload-form/bindings.test.ts b/packages/wrangler/src/__tests__/create-worker-upload-form/bindings.test.ts
+index 3d387557a5..fb45232d66 100644
+--- a/packages/wrangler/src/__tests__/create-worker-upload-form/bindings.test.ts
++++ b/packages/wrangler/src/__tests__/create-worker-upload-form/bindings.test.ts
+@@ -300,6 +300,10 @@ describe("createWorkerUploadForm — bindings", () => {
+ 				type: "ai_search" as const,
+ 				instance_name: "cloudflare-blog",
+ 			},
++			{
++				type: "agent_memory" as const,
++				namespace: "my-agent",
++			},
+ 			{ type: "inherit" as const },
+ 		])("should pass through $type binding unchanged", (input, { expect }) => {
+ 			const bindings: StartDevWorkerInput["bindings"] = {
+@@ -373,6 +377,49 @@ describe("createWorkerUploadForm — bindings", () => {
+ 		});
+ 	});
+ 
++	describe("agent_memory bindings", () => {
++		it("should include agent_memory binding with namespace", ({ expect }) => {
++			const bindings: StartDevWorkerInput["bindings"] = {
++				MEMORY: {
++					type: "agent_memory",
++					namespace: "my-agent",
++				},
++			};
++			const form = createWorkerUploadForm(createEsmWorker(), bindings);
++			expect(getBindings(form)).toContainEqual({
++				name: "MEMORY",
++				type: "agent_memory",
++				namespace: "my-agent",
++			});
++		});
++
++		it("should throw when agent_memory has no namespace and not in dry run", ({
++			expect,
++		}) => {
++			const bindings: StartDevWorkerInput["bindings"] = {
++				MEMORY: { type: "agent_memory" } as never,
++			};
++			expect(() =>
++				createWorkerUploadForm(createEsmWorker(), bindings)
++			).toThrowError('MEMORY bindings must have a "namespace" field');
++		});
++
++		it("should convert agent_memory to inherit binding during dry run when namespace is missing", ({
++			expect,
++		}) => {
++			const bindings: StartDevWorkerInput["bindings"] = {
++				MEMORY: { type: "agent_memory" } as never,
++			};
++			const form = createWorkerUploadForm(createEsmWorker(), bindings, {
++				dryRun: true,
++			});
++			expect(getBindings(form)).toContainEqual({
++				name: "MEMORY",
++				type: "inherit",
++			});
++		});
++	});
++
+ 	describe("pipeline bindings", () => {
+ 		it("should transform type from pipeline to pipelines", ({ expect }) => {
+ 			const bindings: StartDevWorkerInput["bindings"] = {
+diff --git a/packages/wrangler/src/__tests__/deploy/bindings.test.ts b/packages/wrangler/src/__tests__/deploy/bindings.test.ts
+index 41493edfab..442a342247 100644
+--- a/packages/wrangler/src/__tests__/deploy/bindings.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/bindings.test.ts
+@@ -83,6 +83,15 @@ describe("deploy", () => {
+ 				return HttpResponse.json(createFetchResult({}));
+ 			})
+ 		);
++		// Pretend all Agent Memory namespaces exist for the same reason.
++		msw.use(
++			http.get(
++				"*/accounts/:accountId/agent-memory/namespaces/:namespaceName",
++				async () => {
++					return HttpResponse.json(createFetchResult({}));
++				}
++			)
++		);
+ 		vi.mocked(fetchSecrets).mockResolvedValue([]);
+ 		vi.mocked(getInstalledPackageVersion).mockReturnValue(undefined);
+ 	});
+@@ -2149,6 +2158,46 @@ describe("deploy", () => {
+ 			});
+ 		});
+ 
++		describe("[agent_memory]", () => {
++			it("should support agent_memory bindings", async ({ expect }) => {
++				writeWranglerConfig({
++					agent_memory: [
++						{ binding: "MEMORY", namespace: "my-agent-namespace" },
++					],
++				});
++				writeWorkerSource();
++				mockSubDomainRequest();
++				mockUploadWorkerRequest({
++					expectedBindings: [
++						{
++							name: "MEMORY",
++							type: "agent_memory",
++							namespace: "my-agent-namespace",
++						},
++					],
++				});
++
++				await runWrangler("deploy index.js");
++				expect(std.out).toMatchInlineSnapshot(`
++					"
++					 ⛅️ wrangler x.x.x
++					──────────────────
++					Total Upload: xx KiB / gzip: xx KiB
++					Worker Startup Time: 100 ms
++					Your Worker has access to the following bindings:
++					Binding                              Resource
++					env.MEMORY (my-agent-namespace)      Agent Memory
++
++					Uploaded test-name (TIMINGS)
++					Deployed test-name triggers (TIMINGS)
++					  https://test-name.test-sub-domain.workers.dev
++					Current Version ID: Galaxy-Class"
++				`);
++				expect(std.err).toMatchInlineSnapshot(`""`);
++				expect(std.warn).toMatchInlineSnapshot(`""`);
++			});
++		});
++
+ 		describe("[unsafe]", () => {
+ 			describe("[unsafe.bindings]", () => {
+ 				it("should stringify object in unsafe metadata", async ({ expect }) => {
+diff --git a/packages/wrangler/src/__tests__/deploy/core.test.ts b/packages/wrangler/src/__tests__/deploy/core.test.ts
+index 48ba3b67d0..7b2c2871ca 100644
+--- a/packages/wrangler/src/__tests__/deploy/core.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/core.test.ts
+@@ -761,7 +761,7 @@ describe("deploy", () => {
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+ 				Attempting to login via OAuth...
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in.
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+@@ -807,7 +807,7 @@ describe("deploy", () => {
+ 					 ⛅️ wrangler x.x.x
+ 					──────────────────
+ 					Attempting to login via OAuth...
+-					Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++					Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 					Successfully logged in.
+ 					Total Upload: xx KiB / gzip: xx KiB
+ 					Worker Startup Time: 100 ms
+diff --git a/packages/wrangler/src/__tests__/index.test.ts b/packages/wrangler/src/__tests__/index.test.ts
+index 0537d5ad3c..84569b5f1c 100644
+--- a/packages/wrangler/src/__tests__/index.test.ts
++++ b/packages/wrangler/src/__tests__/index.test.ts
+@@ -50,6 +50,7 @@ describe("wrangler", () => {
+ 				  wrangler whoami                 🕵️ Retrieve your user information
+ 
+ 				COMPUTE & AI
++				  wrangler agent-memory           🧠 Manage Agent Memory namespaces [private beta]
+ 				  wrangler ai                     🤖 Manage AI models
+ 				  wrangler ai-search              🔍 Manage AI Search instances [open beta]
+ 				  wrangler browser                🌐 Manage Browser Run sessions [open beta]
+@@ -130,6 +131,7 @@ describe("wrangler", () => {
+ 				  wrangler whoami                 🕵️ Retrieve your user information
+ 
+ 				COMPUTE & AI
++				  wrangler agent-memory           🧠 Manage Agent Memory namespaces [private beta]
+ 				  wrangler ai                     🤖 Manage AI models
+ 				  wrangler ai-search              🔍 Manage AI Search instances [open beta]
+ 				  wrangler browser                🌐 Manage Browser Run sessions [open beta]
+diff --git a/packages/wrangler/src/__tests__/print-bindings.test.ts b/packages/wrangler/src/__tests__/print-bindings.test.ts
+index 43fe9c85c6..27225a5da7 100644
+--- a/packages/wrangler/src/__tests__/print-bindings.test.ts
++++ b/packages/wrangler/src/__tests__/print-bindings.test.ts
+@@ -115,6 +115,34 @@ describe("printBindings — AI Search bindings", () => {
+ 		expect(output).toContain("(inherited)");
+ 		expect(output).not.toContain("Symbol(inherit_binding)");
+ 	});
++
++	it("shows Agent Memory bindings", ({ expect }) => {
++		const output = callPrintBindings({
++			MEMORY: {
++				type: "agent_memory",
++				namespace: "my-agent",
++			},
++		});
++
++		expect(output).toContain("MEMORY");
++		expect(output).toContain("Agent Memory");
++		expect(output).toContain("my-agent");
++	});
++
++	it("renders inherited Agent Memory bindings as `(inherited)`", ({
++		expect,
++	}) => {
++		const output = callPrintBindings({
++			MEMORY: {
++				type: "agent_memory",
++				namespace: INHERIT_SYMBOL,
++			},
++		});
++
++		expect(output).toContain("MEMORY");
++		expect(output).toContain("(inherited)");
++		expect(output).not.toContain("Symbol(inherit_binding)");
++	});
+ });
+ 
+ describe("printBindings -- Artifacts bindings", () => {
+diff --git a/packages/wrangler/src/__tests__/provision.test.ts b/packages/wrangler/src/__tests__/provision.test.ts
+index db51b43569..650e8839e6 100644
+--- a/packages/wrangler/src/__tests__/provision.test.ts
++++ b/packages/wrangler/src/__tests__/provision.test.ts
+@@ -1319,6 +1319,86 @@ describe("resource provisioning", () => {
+ 		});
+ 	});
+ 
++	describe("provisions agent_memory bindings", () => {
++		beforeEach(() => {
++			writeWranglerConfig({
++				main: "index.js",
++				agent_memory: [{ binding: "MEMORY", namespace: "my-agent-namespace" }],
++			});
++		});
++
++		it("should inherit agent_memory binding if found in the deployed settings", async ({
++			expect,
++		}) => {
++			mockGetSettings({
++				result: {
++					bindings: [
++						{
++							type: "agent_memory",
++							name: "MEMORY",
++							namespace: "my-agent-namespace",
++						},
++					],
++				},
++			});
++			mockUploadWorkerRequest({
++				expectedBindings: [
++					{
++						name: "MEMORY",
++						type: "inherit",
++					},
++				],
++			});
++
++			await runWrangler("deploy");
++			expect(std.out).toContain("env.MEMORY (inherited)");
++			expect(std.err).toMatchInlineSnapshot(`""`);
++		});
++
++		it("should connect to existing agent_memory namespace if it already exists", async ({
++			expect,
++		}) => {
++			mockGetSettings();
++			mockGetAgentMemoryNamespace(expect, "my-agent-namespace", false);
++			mockUploadWorkerRequest({
++				expectedBindings: [
++					{
++						name: "MEMORY",
++						type: "agent_memory",
++						namespace: "my-agent-namespace",
++					},
++				],
++			});
++
++			await runWrangler("deploy");
++			expect(std.out).toContain("env.MEMORY");
++			expect(std.err).toMatchInlineSnapshot(`""`);
++		});
++
++		it("should create agent_memory namespace if it does not exist", async ({
++			expect,
++		}) => {
++			mockGetSettings();
++			mockGetAgentMemoryNamespace(expect, "my-agent-namespace", true);
++			mockCreateAgentMemoryNamespace(expect, {
++				assertName: "my-agent-namespace",
++			});
++			mockUploadWorkerRequest({
++				expectedBindings: [
++					{
++						name: "MEMORY",
++						type: "agent_memory",
++						namespace: "my-agent-namespace",
++					},
++				],
++			});
++
++			await runWrangler("deploy");
++			expect(std.out).toContain("env.MEMORY");
++			expect(std.err).toMatchInlineSnapshot(`""`);
++		});
++	});
++
+ 	it("should error if used with a service environment", async ({ expect }) => {
+ 		writeWorkerSource();
+ 		writeWranglerConfig({
+@@ -1433,3 +1513,57 @@ function mockGetD1Database(
+ 		)
+ 	);
+ }
++
++function mockGetAgentMemoryNamespace(
++	expect: ExpectStatic,
++	namespaceName: string,
++	missing: boolean = false
++) {
++	msw.use(
++		http.get(
++			"*/accounts/:accountId/agent-memory/namespaces/:namespaceName",
++			async ({ params }) => {
++				expect(params.namespaceName).toEqual(namespaceName);
++				if (missing) {
++					return HttpResponse.json(
++						createFetchResult(null, false, [
++							{ code: 10006, message: "namespace not found" },
++						]),
++						{ status: 404 }
++					);
++				}
++				return HttpResponse.json(
++					createFetchResult({
++						id: "agent-memory-namespace-id",
++						name: namespaceName,
++					})
++				);
++			},
++			{ once: true }
++		)
++	);
++}
++
++function mockCreateAgentMemoryNamespace(
++	expect: ExpectStatic,
++	options: { assertName?: string } = {}
++) {
++	msw.use(
++		http.post(
++			"*/accounts/:accountId/agent-memory/namespaces",
++			async ({ request }) => {
++				if (options.assertName) {
++					const requestBody = await request.json();
++					expect(requestBody).toEqual({ name: options.assertName });
++				}
++				return HttpResponse.json(
++					createFetchResult({
++						id: "new-agent-memory-namespace-id",
++						name: options.assertName ?? "test-namespace",
++					})
++				);
++			},
++			{ once: true }
++		)
++	);
++}
+diff --git a/packages/wrangler/src/__tests__/type-generation.test.ts b/packages/wrangler/src/__tests__/type-generation.test.ts
+index 011379e22c..0095321b3f 100644
+--- a/packages/wrangler/src/__tests__/type-generation.test.ts
++++ b/packages/wrangler/src/__tests__/type-generation.test.ts
+@@ -462,6 +462,12 @@ const bindingsConfigMock: Omit<
+ 			instance_name: "cloudflare-blog",
+ 		},
+ 	],
++	agent_memory: [
++		{
++			binding: "AGENT_MEMORY_BINDING",
++			namespace: "my-agent",
++		},
++	],
+ 	hyperdrive: [{ binding: "HYPERDRIVE_BINDING", id: "HYPERDRIVE_ID" }],
+ 	mtls_certificates: [
+ 		{ binding: "MTLS_BINDING", certificate_id: "MTLS_CERTIFICATE_ID" },
+@@ -789,6 +795,7 @@ describe("generate types - CLI", () => {
+ 				VPC_SERVICE_BINDING: Fetcher;
+ 				AI_SEARCH_NS_BINDING: AiSearchNamespace;
+ 				AI_SEARCH_BINDING: AiSearchInstance;
++				AGENT_MEMORY_BINDING: AgentMemoryNamespace;
+ 				LOGFWDR_SCHEMA: any;
+ 				BROWSER_BINDING: Fetcher;
+ 				AI_BINDING: Ai;
+@@ -908,6 +915,7 @@ describe("generate types - CLI", () => {
+ 				VPC_SERVICE_BINDING: Fetcher;
+ 				AI_SEARCH_NS_BINDING: AiSearchNamespace;
+ 				AI_SEARCH_BINDING: AiSearchInstance;
++				AGENT_MEMORY_BINDING: AgentMemoryNamespace;
+ 				LOGFWDR_SCHEMA: any;
+ 				BROWSER_BINDING: Fetcher;
+ 				AI_BINDING: Ai;
+@@ -1090,6 +1098,7 @@ describe("generate types - CLI", () => {
+ 				VPC_SERVICE_BINDING: Fetcher;
+ 				AI_SEARCH_NS_BINDING: AiSearchNamespace;
+ 				AI_SEARCH_BINDING: AiSearchInstance;
++				AGENT_MEMORY_BINDING: AgentMemoryNamespace;
+ 				LOGFWDR_SCHEMA: any;
+ 				BROWSER_BINDING: Fetcher;
+ 				AI_BINDING: Ai;
+diff --git a/packages/wrangler/src/__tests__/user.test.ts b/packages/wrangler/src/__tests__/user.test.ts
+index fdb401f615..67e0401547 100644
+--- a/packages/wrangler/src/__tests__/user.test.ts
++++ b/packages/wrangler/src/__tests__/user.test.ts
+@@ -85,7 +85,7 @@ describe("User", () => {
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+ 				Attempting to login via OAuth...
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -131,7 +131,7 @@ describe("User", () => {
+ 				Temporary login server listening on 0.0.0.0:8976
+ 				Note that the OAuth login page will always redirect to \`localhost:8976\`.
+ 				If you have changed the callback host or port because you are running in a container, then ensure that you have port forwarding set up correctly.
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -177,7 +177,7 @@ describe("User", () => {
+ 				Temporary login server listening on mylocalhost.local:8976
+ 				Note that the OAuth login page will always redirect to \`localhost:8976\`.
+ 				If you have changed the callback host or port because you are running in a container, then ensure that you have port forwarding set up correctly.
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -223,7 +223,7 @@ describe("User", () => {
+ 				Temporary login server listening on localhost:8787
+ 				Note that the OAuth login page will always redirect to \`localhost:8976\`.
+ 				If you have changed the callback host or port because you are running in a container, then ensure that you have port forwarding set up correctly.
+-				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 			expect(readAuthConfigFile()).toEqual<UserAuthConfig>({
+@@ -265,7 +265,7 @@ describe("User", () => {
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+ 				Attempting to login via OAuth...
+-				Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=4b2ea6cc-9421-4761-874b-ce550e0e3def&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++				Opening a link in your default browser: https://dash.staging.cloudflare.com/oauth2/auth?response_type=code&client_id=4b2ea6cc-9421-4761-874b-ce550e0e3def&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 				Successfully logged in."
+ 			`);
+ 
+@@ -483,7 +483,7 @@ describe("User", () => {
+ 			 ⛅️ wrangler x.x.x
+ 			──────────────────
+ 			Attempting to login via OAuth...
+-			Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
++			Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?response_type=code&client_id=54d11594-84e4-41aa-b438-e81b8fa78ee7&redirect_uri=http%3A%2F%2Flocalhost%3A8976%2Foauth%2Fcallback&scope=account%3Aread%20user%3Aread%20workers%3Awrite%20workers_kv%3Awrite%20workers_routes%3Awrite%20workers_scripts%3Awrite%20workers_tail%3Aread%20d1%3Awrite%20pages%3Awrite%20zone%3Aread%20ssl_certs%3Awrite%20ai%3Awrite%20ai-search%3Awrite%20ai-search%3Arun%20websearch.run%20agent-memory%3Awrite%20queues%3Awrite%20pipelines%3Awrite%20secrets_store%3Awrite%20artifacts%3Awrite%20flagship%3Awrite%20containers%3Awrite%20cloudchamber%3Awrite%20connectivity%3Aadmin%20email_routing%3Awrite%20email_sending%3Awrite%20browser%3Awrite%20offline_access&state=MOCK_STATE_PARAM&code_challenge=MOCK_CODE_CHALLENGE&code_challenge_method=S256
+ 			Successfully logged in."
+ 		`);
+ 		expect(std.warn).toMatchInlineSnapshot(`""`);
+diff --git a/packages/wrangler/src/__tests__/whoami.test.ts b/packages/wrangler/src/__tests__/whoami.test.ts
+index 0f84adbd3e..1973af83fe 100644
+--- a/packages/wrangler/src/__tests__/whoami.test.ts
++++ b/packages/wrangler/src/__tests__/whoami.test.ts
+@@ -349,6 +349,7 @@ describe("whoami", () => {
+ 			  - ai-search:write
+ 			  - ai-search:run
+ 			  - websearch.run
++			  - agent-memory:write
+ 			  - queues:write
+ 			  - pipelines:write
+ 			  - secrets_store:write
+@@ -424,6 +425,7 @@ describe("whoami", () => {
+ 			  - ai-search:write
+ 			  - ai-search:run
+ 			  - websearch.run
++			  - agent-memory:write
+ 			  - queues:write
+ 			  - pipelines:write
+ 			  - secrets_store:write
+@@ -541,6 +543,7 @@ describe("whoami", () => {
+ 			  - ai-search:write
+ 			  - ai-search:run
+ 			  - websearch.run
++			  - agent-memory:write
+ 			  - queues:write
+ 			  - pipelines:write
+ 			  - secrets_store:write
+diff --git a/packages/wrangler/src/agent-memory/client.ts b/packages/wrangler/src/agent-memory/client.ts
+new file mode 100644
+index 0000000000..30c715da5c
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/client.ts
+@@ -0,0 +1,111 @@
++// TODO(agent-memory): migrate this client to the Cloudflare TypeScript SDK
++// once it covers the /agentmemory endpoints. Using `fetchResult` directly for
++// now, matching the current precedent for other products that pre-date the
++// SDK support (see `src/ai-search/client.ts`).
++import { fetchListResult, fetchResult } from "../cfetch";
++import { requireAuth } from "../user";
++import type { ComplianceConfig, Config } from "@cloudflare/workers-utils";
++
++export type AgentMemoryNamespace = {
++	id: string;
++	name: string;
++	account_id: string;
++	created_at: string;
++	updated_at: string;
++};
++
++// ============================================================================
++// Low-level request helpers
++//
++// These take a ComplianceConfig + accountId directly and perform the raw HTTP
++// call. They are shared between the high-level command wrappers below and the
++// provisioning flow (see agent-memory/provisioning.ts), which already has an
++// accountId in hand and cannot call requireAuth.
++// ============================================================================
++
++export async function createNamespaceRequest(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	name: string
++): Promise<AgentMemoryNamespace> {
++	return await fetchResult<AgentMemoryNamespace>(
++		complianceConfig,
++		`/accounts/${accountId}/agent-memory/namespaces`,
++		{
++			method: "POST",
++			headers: { "Content-Type": "application/json" },
++			body: JSON.stringify({ name }),
++		}
++	);
++}
++
++export async function listNamespacesRequest(
++	complianceConfig: ComplianceConfig,
++	accountId: string
++): Promise<AgentMemoryNamespace[]> {
++	return await fetchListResult<AgentMemoryNamespace>(
++		complianceConfig,
++		`/accounts/${accountId}/agent-memory/namespaces`
++	);
++}
++
++export async function getNamespaceRequest(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	namespaceName: string
++): Promise<AgentMemoryNamespace> {
++	return await fetchResult<AgentMemoryNamespace>(
++		complianceConfig,
++		`/accounts/${accountId}/agent-memory/namespaces/${namespaceName}`
++	);
++}
++
++export async function deleteNamespaceRequest(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	namespaceName: string
++): Promise<void> {
++	await fetchResult<void>(
++		complianceConfig,
++		`/accounts/${accountId}/agent-memory/namespaces/${namespaceName}`,
++		{ method: "DELETE" }
++	);
++}
++
++// ============================================================================
++// High-level command wrappers
++//
++// Used by the `wrangler agent-memory namespace …` commands. Each resolves the
++// account id via requireAuth and delegates to the low-level helper above.
++// ============================================================================
++
++export async function createNamespace(
++	config: Config,
++	name: string
++): Promise<AgentMemoryNamespace> {
++	const accountId = await requireAuth(config);
++	return await createNamespaceRequest(config, accountId, name);
++}
++
++export async function listNamespaces(
++	config: Config
++): Promise<AgentMemoryNamespace[]> {
++	const accountId = await requireAuth(config);
++	return await listNamespacesRequest(config, accountId);
++}
++
++export async function getNamespace(
++	config: Config,
++	namespaceName: string
++): Promise<AgentMemoryNamespace> {
++	const accountId = await requireAuth(config);
++	return await getNamespaceRequest(config, accountId, namespaceName);
++}
++
++export async function deleteNamespace(
++	config: Config,
++	namespaceName: string
++): Promise<void> {
++	const accountId = await requireAuth(config);
++	await deleteNamespaceRequest(config, accountId, namespaceName);
++}
+diff --git a/packages/wrangler/src/agent-memory/create.ts b/packages/wrangler/src/agent-memory/create.ts
+new file mode 100644
+index 0000000000..c2c1798f50
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/create.ts
+@@ -0,0 +1,72 @@
++import { APIError, UserError } from "@cloudflare/workers-utils";
++import { createCommand } from "../core/create-command";
++import { logger } from "../logger";
++import { createNamespace } from "./client";
++
++export const agentMemoryNamespaceCreateCommand = createCommand({
++	metadata: {
++		description: "Create a new Agent Memory namespace",
++		status: "private beta",
++		owner: "Product: Agent Memory",
++	},
++	behaviour: {
++		printBanner: (args) => !args.json,
++	},
++	args: {
++		namespace: {
++			type: "string",
++			demandOption: true,
++			description:
++				"The name for the new namespace (max 32 characters, alphanumeric with embedded hyphens)",
++		},
++		json: {
++			type: "boolean",
++			default: false,
++			description: "Return output as JSON",
++		},
++	},
++	positionalArgs: ["namespace"],
++	async handler({ namespace, json }, { config }) {
++		let result;
++		try {
++			result = await createNamespace(config, namespace);
++		} catch (e) {
++			// Surface server-side validation / conflict errors (e.g. invalid name,
++			// duplicate namespace) as UserErrors so they are not reported to Sentry
++			// and the user sees the underlying message from the API.
++			if (
++				e instanceof APIError &&
++				e.status !== undefined &&
++				[400, 409, 422].includes(e.status)
++			) {
++				const details = e.notes
++					.map((n) => n.text)
++					.filter((t) => t.length > 0)
++					.join("\n");
++				throw new UserError(
++					`Failed to create Agent Memory namespace "${namespace}".${details ? `\n${details}` : ""}`,
++					{
++						telemetryMessage:
++							"agent-memory namespace create failed with client error",
++					}
++				);
++			}
++			throw e;
++		}
++
++		if (json) {
++			logger.json(result);
++			return;
++		}
++
++		logger.log(`✅ Created Agent Memory namespace "${result.name}"`);
++		logger.table([
++			{
++				namespace_id: result.id,
++				name: result.name,
++				account_id: result.account_id,
++				created_at: result.created_at,
++			},
++		]);
++	},
++});
+diff --git a/packages/wrangler/src/agent-memory/delete.ts b/packages/wrangler/src/agent-memory/delete.ts
+new file mode 100644
+index 0000000000..42c2f45d00
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/delete.ts
+@@ -0,0 +1,51 @@
++import { APIError, UserError } from "@cloudflare/workers-utils";
++import { createCommand } from "../core/create-command";
++import { confirm } from "../dialogs";
++import { logger } from "../logger";
++import { deleteNamespace } from "./client";
++
++export const agentMemoryNamespaceDeleteCommand = createCommand({
++	metadata: {
++		description: "Delete a given Agent Memory namespace",
++		status: "private beta",
++		owner: "Product: Agent Memory",
++	},
++	args: {
++		namespace_name: {
++			type: "string",
++			demandOption: true,
++			description: "The name of the namespace to delete",
++		},
++		force: {
++			type: "boolean",
++			alias: "y",
++			default: false,
++			description: "Skip confirmation",
++		},
++	},
++	positionalArgs: ["namespace_name"],
++	async handler({ namespace_name, force }, { config }) {
++		if (!force) {
++			const confirmedDeletion = await confirm(
++				`OK to delete the Agent Memory namespace "${namespace_name}"?`
++			);
++			if (!confirmedDeletion) {
++				logger.log("Deletion cancelled.");
++				return;
++			}
++		}
++
++		try {
++			await deleteNamespace(config, namespace_name);
++		} catch (e) {
++			if (e instanceof APIError && e.status === 404) {
++				throw new UserError(
++					`Agent Memory namespace "${namespace_name}" not found. Use 'wrangler agent-memory namespace list' to see available namespaces.`,
++					{ telemetryMessage: "agent-memory namespace not found" }
++				);
++			}
++			throw e;
++		}
++		logger.log(`✅ Deleted Agent Memory namespace ${namespace_name}`);
++	},
++});
+diff --git a/packages/wrangler/src/agent-memory/get.ts b/packages/wrangler/src/agent-memory/get.ts
+new file mode 100644
+index 0000000000..c1c759f03e
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/get.ts
+@@ -0,0 +1,57 @@
++import { APIError, UserError } from "@cloudflare/workers-utils";
++import { createCommand } from "../core/create-command";
++import { logger } from "../logger";
++import { getNamespace } from "./client";
++
++export const agentMemoryNamespaceGetCommand = createCommand({
++	metadata: {
++		description: "Get details for a given Agent Memory namespace",
++		status: "private beta",
++		owner: "Product: Agent Memory",
++	},
++	behaviour: {
++		printBanner: (args) => !args.json,
++	},
++	args: {
++		namespace_name: {
++			type: "string",
++			demandOption: true,
++			description: "The name of the namespace to retrieve",
++		},
++		json: {
++			type: "boolean",
++			default: false,
++			description: "Return output as JSON",
++		},
++	},
++	positionalArgs: ["namespace_name"],
++	async handler({ namespace_name, json }, { config }) {
++		let ns;
++		try {
++			ns = await getNamespace(config, namespace_name);
++		} catch (e) {
++			if (e instanceof APIError && e.status === 404) {
++				throw new UserError(
++					`Agent Memory namespace "${namespace_name}" not found. Use 'wrangler agent-memory namespace list' to see available namespaces.`,
++					{ telemetryMessage: "agent-memory namespace not found" }
++				);
++			}
++			throw e;
++		}
++
++		if (json) {
++			logger.json(ns);
++			return;
++		}
++
++		logger.table([
++			{
++				namespace_id: ns.id,
++				name: ns.name,
++				account_id: ns.account_id,
++				created_at: ns.created_at,
++				updated_at: ns.updated_at,
++			},
++		]);
++	},
++});
+diff --git a/packages/wrangler/src/agent-memory/index.ts b/packages/wrangler/src/agent-memory/index.ts
+new file mode 100644
+index 0000000000..58c8ca0517
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/index.ts
+@@ -0,0 +1,18 @@
++import { createNamespace } from "../core/create-command";
++
++export const agentMemoryNamespace = createNamespace({
++	metadata: {
++		description: "🧠 Manage Agent Memory namespaces",
++		status: "private beta",
++		owner: "Product: Agent Memory",
++		category: "Compute & AI",
++	},
++});
++
++export const agentMemoryNamespaceNamespace = createNamespace({
++	metadata: {
++		description: "Manage Agent Memory namespaces",
++		status: "private beta",
++		owner: "Product: Agent Memory",
++	},
++});
+diff --git a/packages/wrangler/src/agent-memory/list.ts b/packages/wrangler/src/agent-memory/list.ts
+new file mode 100644
+index 0000000000..63626655fa
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/list.ts
+@@ -0,0 +1,48 @@
++import { createCommand } from "../core/create-command";
++import { logger } from "../logger";
++import { listNamespaces } from "./client";
++
++export const agentMemoryNamespaceListCommand = createCommand({
++	metadata: {
++		description:
++			"List all Agent Memory namespaces associated with your account",
++		status: "private beta",
++		owner: "Product: Agent Memory",
++	},
++	behaviour: {
++		printBanner: (args) => !args.json,
++	},
++	args: {
++		json: {
++			type: "boolean",
++			default: false,
++			description: "Return output as JSON",
++		},
++	},
++	async handler({ json }, { config }) {
++		if (!json) {
++			logger.log(`📋 Listing Agent Memory namespaces...`);
++		}
++		const namespaces = await listNamespaces(config);
++
++		if (json) {
++			logger.json(namespaces);
++			return;
++		}
++
++		if (namespaces.length === 0) {
++			logger.log(
++				`No Agent Memory namespaces found. Use 'wrangler agent-memory namespace create <name>' to create one.`
++			);
++			return;
++		}
++
++		logger.table(
++			namespaces.map((ns) => ({
++				namespace_id: ns.id,
++				name: ns.name,
++				created_at: ns.created_at,
++			}))
++		);
++	},
++});
+diff --git a/packages/wrangler/src/agent-memory/provisioning.ts b/packages/wrangler/src/agent-memory/provisioning.ts
+new file mode 100644
+index 0000000000..bcbab65e77
+--- /dev/null
++++ b/packages/wrangler/src/agent-memory/provisioning.ts
+@@ -0,0 +1,42 @@
++import { APIError, type ComplianceConfig } from "@cloudflare/workers-utils";
++import { createNamespaceRequest, getNamespaceRequest } from "./client";
++import type { AgentMemoryNamespace } from "./client";
++
++/**
++ * Get an Agent Memory namespace for the given account.
++ * Returns `null` if the namespace does not exist (404); other errors propagate.
++ *
++ * Used by the provisioning system at deploy time to decide whether a
++ * configured namespace needs to be created. The caller (not this function)
++ * is responsible for provisioning when `null` is returned.
++ */
++export async function getAgentMemoryNamespace(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	namespaceName: string
++): Promise<AgentMemoryNamespace | null> {
++	try {
++		return await getNamespaceRequest(
++			complianceConfig,
++			accountId,
++			namespaceName
++		);
++	} catch (e) {
++		if (e instanceof APIError && e.status === 404) {
++			return null;
++		}
++		throw e;
++	}
++}
++
++/**
++ * Create an Agent Memory namespace for the given account.
++ * Used by the provisioning system when a namespace doesn't exist at deploy time.
++ */
++export async function createAgentMemoryNamespace(
++	complianceConfig: ComplianceConfig,
++	accountId: string,
++	namespaceName: string
++): Promise<void> {
++	await createNamespaceRequest(complianceConfig, accountId, namespaceName);
++}
+diff --git a/packages/wrangler/src/api/startDevWorker/utils.ts b/packages/wrangler/src/api/startDevWorker/utils.ts
+index a9436db204..0eadbc98c6 100644
+--- a/packages/wrangler/src/api/startDevWorker/utils.ts
++++ b/packages/wrangler/src/api/startDevWorker/utils.ts
+@@ -325,6 +325,12 @@ export function convertConfigToBindings(
+ 				output[binding] = { type: "web_search", ...x };
+ 				break;
+ 			}
++			case "agent_memory": {
++				for (const { binding, ...x } of info) {
++					output[binding] = { type: "agent_memory", ...x };
++				}
++				break;
++			}
+ 			case "unsafe": {
+ 				if (pages) {
+ 					break;
+@@ -667,6 +673,17 @@ export function convertWorkerMetadataBindingsToFlatBindings(
+ 				};
+ 				break;
+ 			}
++			case "agent_memory": {
++				const b = binding as Extract<
++					WorkerMetadataBinding,
++					{ type: "agent_memory" }
++				>;
++				output[name] = {
++					type: "agent_memory",
++					namespace: b.namespace,
++				};
++				break;
++			}
+ 			case "hyperdrive": {
+ 				const b = binding as Extract<
+ 					WorkerMetadataBinding,
+diff --git a/packages/wrangler/src/core/teams.d.ts b/packages/wrangler/src/core/teams.d.ts
+index bd918b48cc..ed3e8cb68f 100644
+--- a/packages/wrangler/src/core/teams.d.ts
++++ b/packages/wrangler/src/core/teams.d.ts
+@@ -15,6 +15,7 @@ export type Teams =
+ 	| "Product: Queues"
+ 	| "Product: AI"
+ 	| "Product: AI Search"
++	| "Product: Agent Memory"
+ 	| "Product: Web Search"
+ 	| "Product: Hyperdrive"
+ 	| "Product: Pipelines"
+diff --git a/packages/wrangler/src/deploy/check-remote-secrets-override.ts b/packages/wrangler/src/deploy/check-remote-secrets-override.ts
+index fda7556489..d0003a169f 100644
+--- a/packages/wrangler/src/deploy/check-remote-secrets-override.ts
++++ b/packages/wrangler/src/deploy/check-remote-secrets-override.ts
+@@ -114,6 +114,7 @@ function extractBindingNames(config: Config): string[] {
+ 			case "vectorize":
+ 			case "ai_search_namespaces":
+ 			case "ai_search":
++			case "agent_memory":
+ 			case "services":
+ 			case "mtls_certificates":
+ 			case "dispatch_namespaces":
+diff --git a/packages/wrangler/src/deploy/config-diffs.ts b/packages/wrangler/src/deploy/config-diffs.ts
+index 94a3849a2f..4a83e69a8f 100644
+--- a/packages/wrangler/src/deploy/config-diffs.ts
++++ b/packages/wrangler/src/deploy/config-diffs.ts
+@@ -24,6 +24,7 @@ const reorderableBindings = {
+ 	vectorize: true,
+ 	ai_search_namespaces: true,
+ 	ai_search: true,
++	agent_memory: true,
+ 	hyperdrive: true,
+ 	workflows: true,
+ 	dispatch_namespaces: true,
+@@ -238,6 +239,12 @@ function removeRemoteConfigFieldFromBindings(normalizedConfig: Config): void {
+ 		);
+ 	}
+ 
++	if (normalizedConfig.agent_memory?.length) {
++		normalizedConfig.agent_memory = normalizedConfig.agent_memory.map(
++			({ remote: _, ...binding }) => binding
++		);
++	}
++
+ 	if (normalizedConfig.flagship?.length) {
+ 		normalizedConfig.flagship = normalizedConfig.flagship.map(
+ 			({ remote: _, ...binding }) => binding
+diff --git a/packages/wrangler/src/deployment-bundle/bindings.ts b/packages/wrangler/src/deployment-bundle/bindings.ts
+index cf328b0a9d..dd75827cd7 100644
+--- a/packages/wrangler/src/deployment-bundle/bindings.ts
++++ b/packages/wrangler/src/deployment-bundle/bindings.ts
+@@ -7,6 +7,10 @@ import {
+ 	PatchConfigError,
+ 	UserError,
+ } from "@cloudflare/workers-utils";
++import {
++	createAgentMemoryNamespace,
++	getAgentMemoryNamespace,
++} from "../agent-memory/provisioning";
+ import { createAISearchNamespace, getAISearchNamespace } from "../ai-search";
+ import { convertConfigToBindings } from "../api/startDevWorker/utils";
+ import { fetchResult } from "../cfetch";
+@@ -27,6 +31,7 @@ import { printBindings } from "../utils/print-bindings";
+ import { useServiceEnvironments } from "../utils/useServiceEnvironments";
+ import type { Binding, StartDevWorkerInput } from "../api/startDevWorker/types";
+ import type {
++	CfAgentMemory,
+ 	CfAISearchNamespace,
+ 	CfD1Database,
+ 	CfKvNamespace,
+@@ -276,6 +281,67 @@ class AISearchNamespaceHandler extends ProvisionResourceHandler<
+ 	}
+ }
+ 
++class AgentMemoryNamespaceHandler extends ProvisionResourceHandler<
++	"agent_memory",
++	Extract<Binding, { type: "agent_memory" }>
++> {
++	get name(): string | undefined {
++		return this.binding.namespace as string;
++	}
++
++	async create(name: string) {
++		await createAgentMemoryNamespace(
++			this.complianceConfig,
++			this.accountId,
++			name
++		);
++		return name;
++	}
++
++	constructor(
++		bindingName: string,
++		binding: Extract<Binding, { type: "agent_memory" }>,
++		complianceConfig: ComplianceConfig,
++		accountId: string
++	) {
++		super(
++			"agent_memory",
++			bindingName,
++			binding,
++			"namespace",
++			complianceConfig,
++			accountId
++		);
++	}
++
++	canInherit(settings: Settings | undefined): boolean {
++		return !!settings?.bindings.find(
++			(existing) =>
++				existing.type === this.type &&
++				existing.name === this.bindingName &&
++				(this.binding.namespace
++					? this.binding.namespace === existing.namespace
++					: true)
++		);
++	}
++
++	async isConnectedToExistingResource(): Promise<boolean> {
++		assert(typeof this.binding.namespace !== "symbol");
++
++		if (!this.binding.namespace) {
++			return false;
++		}
++
++		const namespace = await getAgentMemoryNamespace(
++			this.complianceConfig,
++			this.accountId,
++			this.binding.namespace
++		);
++
++		return namespace !== null;
++	}
++}
++
+ class KVHandler extends ProvisionResourceHandler<
+ 	"kv_namespace",
+ 	Extract<Binding, { type: "kv_namespace" }>
+@@ -402,7 +468,8 @@ type ProvisionableBinding =
+ 	| Extract<Binding, { type: "kv_namespace" }>
+ 	| Extract<Binding, { type: "d1" }>
+ 	| Extract<Binding, { type: "r2_bucket" }>
+-	| Extract<Binding, { type: "ai_search_namespace" }>;
++	| Extract<Binding, { type: "ai_search_namespace" }>
++	| Extract<Binding, { type: "agent_memory" }>;
+ 
+ const HANDLERS = {
+ 	kv_namespace: {
+@@ -502,12 +569,51 @@ const HANDLERS = {
+ 			};
+ 		},
+ 	},
++	agent_memory: {
++		Handler: AgentMemoryNamespaceHandler,
++		sort: 4,
++		name: "Agent Memory",
++		keyDescription: "namespace name",
++		configField: "agent_memory" as const,
++		load: async (_complianceConfig: ComplianceConfig, _accountId: string) => {
++			// `load` only populates the interactive picker in `runProvisioningFlow`
++			// (the "Would you like to connect an existing X or create a new one?"
++			// prompt). For agent_memory, `namespace` is required in config — so
++			// `handler.name` is always set at provision time and `runProvisioningFlow`
++			// goes straight to the "Resource name found in config" branch without
++			// ever consulting this list. Whether or not the namespace already exists
++			// is decided by `isConnectedToExistingResource()` (which hits the GET
++			// /namespaces/:name endpoint), not by this list. Returning [] is
++			// therefore safe and avoids an unnecessary list call at deploy time.
++			return [];
++		},
++		toConfig: (
++			bindingName: string,
++			binding: Extract<Binding, { type: "agent_memory" }>
++		): CfAgentMemory => {
++			const { type: _, ...rest } = binding;
++			return {
++				...rest,
++				binding: bindingName,
++			};
++		},
++	},
+ };
+ 
+ type PendingResource = {
+ 	binding: string;
+-	resourceType: "kv_namespace" | "d1" | "r2_bucket" | "ai_search_namespace";
+-	handler: KVHandler | D1Handler | R2Handler | AISearchNamespaceHandler;
++	resourceType:
++		| "kv_namespace"
++		| "d1"
++		| "r2_bucket"
++		| "ai_search_namespace"
++		| "agent_memory";
++	handler:
++		| KVHandler
++		| D1Handler
++		| R2Handler
++		| AISearchNamespaceHandler
++		| AgentMemoryNamespaceHandler;
+ };
+ 
+ function isProvisionableBinding(
+@@ -521,7 +627,12 @@ function createHandler(
+ 	binding: ProvisionableBinding,
+ 	complianceConfig: ComplianceConfig,
+ 	accountId: string
+-): KVHandler | D1Handler | R2Handler | AISearchNamespaceHandler {
++):
++	| KVHandler
++	| D1Handler
++	| R2Handler
++	| AISearchNamespaceHandler
++	| AgentMemoryNamespaceHandler {
+ 	switch (binding.type) {
+ 		case "kv_namespace":
+ 			return new KVHandler(bindingName, binding, complianceConfig, accountId);
+@@ -536,13 +647,25 @@ function createHandler(
+ 				complianceConfig,
+ 				accountId
+ 			);
++		case "agent_memory":
++			return new AgentMemoryNamespaceHandler(
++				bindingName,
++				binding,
++				complianceConfig,
++				accountId
++			);
+ 	}
+ }
+ 
+ function toConfigBinding(
+ 	bindingName: string,
+ 	binding: ProvisionableBinding
+-): CfKvNamespace | CfR2Bucket | CfD1Database | CfAISearchNamespace {
++):
++	| CfKvNamespace
++	| CfR2Bucket
++	| CfD1Database
++	| CfAISearchNamespace
++	| CfAgentMemory {
+ 	switch (binding.type) {
+ 		case "kv_namespace":
+ 			return HANDLERS.kv_namespace.toConfig(bindingName, binding);
+@@ -552,6 +675,8 @@ function toConfigBinding(
+ 			return HANDLERS.r2_bucket.toConfig(bindingName, binding);
+ 		case "ai_search_namespace":
+ 			return HANDLERS.ai_search_namespace.toConfig(bindingName, binding);
++		case "agent_memory":
++			return HANDLERS.agent_memory.toConfig(bindingName, binding);
+ 	}
+ }
+ 
+diff --git a/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts b/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts
+index ffa797f1d6..34b50a3a9e 100644
+--- a/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts
++++ b/packages/wrangler/src/deployment-bundle/create-worker-upload-form.ts
+@@ -132,6 +132,7 @@ export function createWorkerUploadForm(
+ 	);
+ 	const ai_search = extractBindingsOfType("ai_search", bindings);
+ 	const web_search = extractBindingsOfType("web_search", bindings)[0];
++	const agent_memory = extractBindingsOfType("agent_memory", bindings);
+ 	const hyperdrive = extractBindingsOfType("hyperdrive", bindings);
+ 	const secrets_store_secrets = extractBindingsOfType(
+ 		"secrets_store_secret",
+@@ -375,6 +376,30 @@ export function createWorkerUploadForm(
+ 		});
+ 	}
+ 
++	agent_memory.forEach(({ binding, namespace }) => {
++		if (options?.dryRun) {
++			namespace ??= INHERIT_SYMBOL;
++		}
++		if (namespace === undefined) {
++			throw new UserError(`${binding} bindings must have a "namespace" field`, {
++				telemetryMessage: false,
++			});
++		}
++
++		if (namespace === INHERIT_SYMBOL) {
++			metadataBindings.push({
++				name: binding,
++				type: "inherit",
++			});
++		} else {
++			metadataBindings.push({
++				name: binding,
++				type: "agent_memory",
++				namespace,
++			});
++		}
++	});
++
+ 	hyperdrive.forEach(({ binding, id }) => {
+ 		metadataBindings.push({
+ 			name: binding,
+diff --git a/packages/wrangler/src/dev/miniflare/index.ts b/packages/wrangler/src/dev/miniflare/index.ts
+index 32e0da7cf2..6ea53b94de 100644
+--- a/packages/wrangler/src/dev/miniflare/index.ts
++++ b/packages/wrangler/src/dev/miniflare/index.ts
+@@ -424,6 +424,7 @@ type WorkerOptionsBindings = Pick<
+ 	| "aiSearchNamespaces"
+ 	| "aiSearchInstances"
+ 	| "webSearch"
++	| "agentMemory"
+ 	| "textBlobBindings"
+ 	| "dataBlobBindings"
+ 	| "wasmBindings"
+@@ -545,6 +546,7 @@ export function buildMiniflareBindingOptions(
+ 	);
+ 	const aiSearchInstanceBindings = extractBindingsOfType("ai_search", bindings);
+ 	const webSearchBindings = extractBindingsOfType("web_search", bindings);
++	const agentMemoryBindings = extractBindingsOfType("agent_memory", bindings);
+ 	const imagesBindings = extractBindingsOfType("images", bindings);
+ 	const mediaBindings = extractBindingsOfType("media", bindings);
+ 	const browserBindings = extractBindingsOfType("browser", bindings);
+@@ -657,6 +659,10 @@ export function buildMiniflareBindingOptions(
+ 		warnOrError("web_search", ws.remote);
+ 	}
+ 
++	for (const memory of agentMemoryBindings) {
++		warnOrError("agent_memory", memory.remote);
++	}
++
+ 	for (const media of mediaBindings) {
+ 		warnOrError("media", media.remote);
+ 	}
+@@ -788,6 +794,16 @@ export function buildMiniflareBindingOptions(
+ 			])
+ 		),
+ 
++		agentMemory: Object.fromEntries(
++			agentMemoryBindings.map((memory) => [
++				memory.binding,
++				{
++					namespace: memory.namespace as string,
++					remoteProxyConnectionString,
++				},
++			])
++		),
++
+ 		kvNamespaces: Object.fromEntries(
+ 			kvNamespaces.map((kv) =>
+ 				kvNamespaceEntry(kv, remoteProxyConnectionString)
+diff --git a/packages/wrangler/src/index.ts b/packages/wrangler/src/index.ts
+index 208b6fbf6c..3313cab26b 100644
+--- a/packages/wrangler/src/index.ts
++++ b/packages/wrangler/src/index.ts
+@@ -9,6 +9,14 @@ import chalk from "chalk";
+ import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+ import makeCLI from "yargs";
+ import { version as wranglerVersion } from "../package.json";
++import {
++	agentMemoryNamespace,
++	agentMemoryNamespaceNamespace,
++} from "./agent-memory";
++import { agentMemoryNamespaceCreateCommand } from "./agent-memory/create";
++import { agentMemoryNamespaceDeleteCommand } from "./agent-memory/delete";
++import { agentMemoryNamespaceGetCommand } from "./agent-memory/get";
++import { agentMemoryNamespaceListCommand } from "./agent-memory/list";
+ import { aiFineTuneNamespace, aiNamespace } from "./ai";
+ import { aiSearchCreateCommand } from "./ai-search/create";
+ import { aiSearchDeleteCommand } from "./ai-search/delete";
+@@ -1878,6 +1886,32 @@ export function createCLIParser(argv: string[]) {
+ 	]);
+ 	registry.registerNamespace("browser");
+ 
++	// agent-memory
++	registry.define([
++		{ command: "wrangler agent-memory", definition: agentMemoryNamespace },
++		{
++			command: "wrangler agent-memory namespace",
++			definition: agentMemoryNamespaceNamespace,
++		},
++		{
++			command: "wrangler agent-memory namespace create",
++			definition: agentMemoryNamespaceCreateCommand,
++		},
++		{
++			command: "wrangler agent-memory namespace list",
++			definition: agentMemoryNamespaceListCommand,
++		},
++		{
++			command: "wrangler agent-memory namespace get",
++			definition: agentMemoryNamespaceGetCommand,
++		},
++		{
++			command: "wrangler agent-memory namespace delete",
++			definition: agentMemoryNamespaceDeleteCommand,
++		},
++	]);
++	registry.registerNamespace("agent-memory");
++
+ 	// secrets store
+ 	registry.define([
+ 		{ command: "wrangler secrets-store", definition: secretsStoreNamespace },
+diff --git a/packages/wrangler/src/type-generation/index.ts b/packages/wrangler/src/type-generation/index.ts
+index 492df69273..abd6803388 100644
+--- a/packages/wrangler/src/type-generation/index.ts
++++ b/packages/wrangler/src/type-generation/index.ts
+@@ -2352,6 +2352,26 @@ function collectCoreBindings(
+ 			}
+ 		}
+ 
++		for (const [index, agentMemory] of (env.agent_memory ?? []).entries()) {
++			if (!agentMemory.binding) {
++				throwMissingBindingError({
++					binding: agentMemory,
++					bindingType: "agent_memory",
++					configPath: args.config,
++					envName,
++					fieldName: "binding",
++					index,
++				});
++			}
++
++			addBinding(
++				agentMemory.binding,
++				"AgentMemoryNamespace",
++				"agent_memory",
++				envName
++			);
++		}
++
+ 		// Pipelines handled separately for async schema fetching
+ 
+ 		if (env.logfwdr?.bindings?.length) {
+@@ -3514,6 +3534,25 @@ function collectCoreBindingsPerEnvironment(
+ 			}
+ 		}
+ 
++		for (const [index, agentMemory] of (env.agent_memory ?? []).entries()) {
++			if (!agentMemory.binding) {
++				throwMissingBindingError({
++					binding: agentMemory,
++					bindingType: "agent_memory",
++					configPath: args.config,
++					envName,
++					fieldName: "binding",
++					index,
++				});
++			}
++
++			bindings.push({
++				bindingCategory: "agent_memory",
++				name: agentMemory.binding,
++				type: "AgentMemoryNamespace",
++			});
++		}
++
+ 		return bindings;
+ 	}
+ 
+diff --git a/packages/wrangler/src/user/user.ts b/packages/wrangler/src/user/user.ts
+index c919c0f7c9..93f4f82bfd 100644
+--- a/packages/wrangler/src/user/user.ts
++++ b/packages/wrangler/src/user/user.ts
+@@ -373,6 +373,8 @@ const DefaultScopes = {
+ 	"ai-search:write": "See and change AI Search data",
+ 	"ai-search:run": "Run search queries on your AI Search instances",
+ 	"websearch.run": "Run search queries against Cloudflare Web Search",
++	"agent-memory:write":
++		"See and change Agent Memory data such as keys and namespaces.",
+ 	"queues:write": "See and change Cloudflare Queues settings and data",
+ 	"pipelines:write":
+ 		"See and change Cloudflare Pipelines configurations and data",
+diff --git a/packages/wrangler/src/utils/print-bindings.ts b/packages/wrangler/src/utils/print-bindings.ts
+index 134636f566..de2b774074 100644
+--- a/packages/wrangler/src/utils/print-bindings.ts
++++ b/packages/wrangler/src/utils/print-bindings.ts
+@@ -91,6 +91,7 @@ export function printBindings(
+ 	);
+ 	const ai_search = extractBindingsOfType("ai_search", bindings);
+ 	const web_search = extractBindingsOfType("web_search", bindings);
++	const agent_memory = extractBindingsOfType("agent_memory", bindings);
+ 	const hyperdrive = extractBindingsOfType("hyperdrive", bindings);
+ 	const r2_buckets = extractBindingsOfType("r2_bucket", bindings);
+ 	const logfwdr = extractBindingsOfType("logfwdr", bindings);
+@@ -367,6 +368,17 @@ export function printBindings(
+ 		);
+ 	}
+ 
++	if (agent_memory.length > 0) {
++		output.push(
++			...agent_memory.map(({ binding, namespace }) => ({
++				name: binding,
++				type: getBindingTypeFriendlyName("agent_memory"),
++				value: namespace ?? undefined,
++				mode: getMode({ isSimulatedLocally: false }),
++			}))
++		);
++	}
++
+ 	if (hyperdrive.length > 0) {
+ 		output.push(
+ 			...hyperdrive.map(({ binding, id }) => {
+diff --git a/tools/e2e/common.ts b/tools/e2e/common.ts
+index 37b685c33c..464de58dc0 100644
+--- a/tools/e2e/common.ts
++++ b/tools/e2e/common.ts
+@@ -49,6 +49,14 @@ export type HyperdriveConfig = {
+ 	created_on: string;
+ };
+ 
++export type AgentMemoryNamespace = {
++	id: string;
++	name: string;
++	account_id: string;
++	created_at: string;
++	updated_at: string;
++};
++
+ export type MTlsCertificateResponse = {
+ 	id: string;
+ 	name?: string;
+@@ -333,6 +341,63 @@ export const deleteCertificate = async (id: string) => {
+ 	return await apiFetch(`/mtls_certificates/${id}`, "DELETE");
+ };
+ 
++export const listTmpAgentMemoryNamespaces = async () => {
++	// The Agent Memory API uses cursor-based pagination, so we follow cursors manually
++	// rather than using apiFetchList (which uses page-number pagination).
++	const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}`;
++	const results: AgentMemoryNamespace[] = [];
++	let cursor: string | undefined;
++
++	while (true) {
++		const queryString = cursor
++			? "?" + new URLSearchParams({ cursor }).toString()
++			: "";
++		const url = `${baseUrl}/agent-memory/namespaces${queryString}`;
++
++		const response = await fetch(url, {
++			method: "GET",
++			headers: {
++				Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
++			},
++		});
++
++		if (!response.ok) {
++			console.error(
++				"Failed to list Agent Memory namespaces",
++				response.status,
++				await response.text()
++			);
++			return [];
++		}
++
++		const json = (await response.json()) as {
++			result: AgentMemoryNamespace[];
++			result_info?: { cursor?: string };
++		};
++
++		results.push(...json.result);
++
++		const nextCursor = json.result_info?.cursor;
++		if (!nextCursor) {
++			break;
++		}
++		cursor = nextCursor;
++	}
++
++	return results.filter(
++		(ns) =>
++			ns.name.startsWith("tmp-e2e-") &&
++			// Namespaces are more than an hour old
++			Date.now() - new Date(ns.created_at).valueOf() > 1000 * 60 * 60
++	);
++};
++
++export const deleteAgentMemoryNamespace = async (name: string) => {
++	const result = await apiFetch(`/agent-memory/namespaces/${name}`, "DELETE");
++	// If successful the result is `null`, if the namespace is not found the result is `false`
++	return result !== false;
++};
++
+ // Note: the container images functions below don't directly use the REST API since
+ //       they interact with the cloudflare images registry which has it's own
+ //       non-trivial auth mechanism, so instead of duplicating a bunch of logic
+diff --git a/tools/e2e/e2eCleanup.ts b/tools/e2e/e2eCleanup.ts
+index f6f28c0283..bbeb434c4c 100644
+--- a/tools/e2e/e2eCleanup.ts
++++ b/tools/e2e/e2eCleanup.ts
+@@ -1,4 +1,5 @@
+ import {
++	deleteAgentMemoryNamespace,
+ 	deleteCertificate,
+ 	deleteContainerApplication,
+ 	deleteContainerImage,
+@@ -11,6 +12,7 @@ import {
+ 	listCertificates,
+ 	listE2eContainerImages,
+ 	listHyperdriveConfigs,
++	listTmpAgentMemoryNamespaces,
+ 	listTmpDatabases,
+ 	listTmpE2EContainerApplications,
+ 	listTmpE2EProjects,
+@@ -54,6 +56,8 @@ async function run() {
+ 
+ 	await deleteContainerApplications();
+ 
++	await deleteAgentMemoryNamespaces();
++
+ 	deleteContainerImages();
+ }
+ 
+@@ -171,6 +175,21 @@ async function deleteMtlsCertificates() {
+ 	}
+ }
+ 
++async function deleteAgentMemoryNamespaces() {
++	const namespacesToDelete = await listTmpAgentMemoryNamespaces();
++	for (const ns of namespacesToDelete) {
++		console.log("Deleting Agent Memory namespace: " + ns.name);
++		if (await deleteAgentMemoryNamespace(ns.name)) {
++			console.log(`Successfully deleted Agent Memory namespace ${ns.name}`);
++		} else {
++			console.log(`Failed to delete Agent Memory namespace ${ns.name}`);
++		}
++	}
++	if (namespacesToDelete.length === 0) {
++		console.log(`No Agent Memory namespaces to delete.`);
++	}
++}
++
+ async function deleteContainerApplications() {
+ 	const containers = await listTmpE2EContainerApplications();
+ 	for (const container of containers) {

@@ -1,0 +1,856 @@
+diff --git a/docs/src/app/AppRoutes.js b/docs/src/app/AppRoutes.js
+index e48bc261a52042..19ea502e1433d2 100644
+--- a/docs/src/app/AppRoutes.js
++++ b/docs/src/app/AppRoutes.js
+@@ -24,6 +24,7 @@ import AutoCompletePage from './components/pages/components/AutoComplete/Page';
+ import AvatarPage from './components/pages/components/Avatar/Page';
+ import BadgePage from './components/pages/components/Badge/Page';
+ import CardPage from './components/pages/components/Card/Page';
++import ChipPage from './components/pages/components/Chip/Page';
+ import CircularProgressPage from './components/pages/components/CircularProgress/Page';
+ import CheckboxPage from './components/pages/components/Checkbox/Page';
+ import DatePicker from './components/pages/components/DatePicker/Page';
+@@ -98,6 +99,7 @@ const AppRoutes = (
+       <Route path="avatar" component={AvatarPage} />
+       <Route path="badge" component={BadgePage} />
+       <Route path="card" component={CardPage} />
++      <Route path="chip" component={ChipPage} />
+       <Route path="circular-progress" component={CircularProgressPage} />
+       <Route path="checkbox" component={CheckboxPage} />
+       <Route path="date-picker" component={DatePicker} />
+diff --git a/docs/src/app/components/AppNavDrawer.js b/docs/src/app/components/AppNavDrawer.js
+index 4c1b3ae127909a..2b5cbe456ce980 100644
+--- a/docs/src/app/components/AppNavDrawer.js
++++ b/docs/src/app/components/AppNavDrawer.js
+@@ -181,6 +181,7 @@ class AppNavDrawer extends Component {
+                 ]}
+               />,
+               <ListItem primaryText="Card" value="/components/card" />,
++              <ListItem primaryText="Chip" value="/components/chip" />,
+               <ListItem primaryText="Date Picker" value="/components/date-picker" />,
+               <ListItem primaryText="Dialog" value="/components/dialog" />,
+               <ListItem primaryText="Divider" value="/components/divider" />,
+diff --git a/docs/src/app/components/pages/components/Chip/ExampleArray.js b/docs/src/app/components/pages/components/Chip/ExampleArray.js
+new file mode 100644
+index 00000000000000..e4b91daa9eca5a
+--- /dev/null
++++ b/docs/src/app/components/pages/components/Chip/ExampleArray.js
+@@ -0,0 +1,61 @@
++import React from 'react';
++import Chip from 'material-ui/Chip';
++
++/**
++ * An example of rendering multiple Chips from an array of values. Deleting a chip removes it from the array.
++ * Note that since no `onTouchTap` property is defined, the Chip can be focused, but does not gain depth
++ * while clicked or touched.
++ */
++export default class ChipExampleArray extends React.Component {
++
++  constructor(props) {
++    super(props);
++    this.state = {chipData: [
++      {key: 0, label: 'Angular'},
++      {key: 1, label: 'JQuery'},
++      {key: 2, label: 'Polymer'},
++      {key: 3, label: 'ReactJS'},
++    ]};
++    this.styles = {
++      chip: {
++        margin: 4,
++      },
++      wrapper: {
++        display: 'flex',
++        flexWrap: 'wrap',
++      },
++    };
++  }
++
++  handleRequestDelete = (key) => {
++    if (key === 3) {
++      alert('Why would you want to delete React?! :)');
++      return;
++    }
++
++    this.chipData = this.state.chipData;
++    const chipToDelete = this.chipData.map((chip) => chip.key).indexOf(key);
++    this.chipData.splice(chipToDelete, 1);
++    this.setState({chipData: this.chipData});
++  };
++
++  renderChip(data) {
++    return (
++      <Chip
++        key={data.key}
++        onRequestDelete={() => this.handleRequestDelete(data.key)}
++        style={this.styles.chip}
++      >
++        {data.label}
++      </Chip>
++    );
++  }
++
++  render() {
++    return (
++      <div style={this.styles.wrapper}>
++        {this.state.chipData.map(this.renderChip, this)}
++      </div>
++    );
++  }
++}
+diff --git a/docs/src/app/components/pages/components/Chip/ExampleSimple.js b/docs/src/app/components/pages/components/Chip/ExampleSimple.js
+new file mode 100644
+index 00000000000000..cc127c535d738f
+--- /dev/null
++++ b/docs/src/app/components/pages/components/Chip/ExampleSimple.js
+@@ -0,0 +1,105 @@
++import React from 'react';
++import Avatar from 'material-ui/Avatar';
++import Chip from 'material-ui/Chip';
++import FontIcon from 'material-ui/FontIcon';
++import SvgIconFace from 'material-ui/svg-icons/action/face';
++import {blue300, indigo900} from 'material-ui/styles/colors';
++
++const styles = {
++  chip: {
++    margin: 4,
++  },
++  wrapper: {
++    display: 'flex',
++    flexWrap: 'wrap',
++  },
++};
++
++function handleRequestDelete() {
++  alert('You clicked the delete button.');
++}
++
++function handleTouchTap() {
++  alert('You clicked the Chip.');
++}
++
++/**
++ * Examples of Chips, using an image [Avatar](/#/components/font-icon), [Font Icon](/#/components/font-icon) Avatar,
++ * [SVG Icon](/#/components/svg-icon) Avatar, "Letter" (string) Avatar, and with custom colors.
++ *
++ * Chips with the `onRequestDelete` property defined will display a delete icon.
++ */
++export default class ChipExampleSimple extends React.Component {
++
++  render() {
++    return (
++      <div style={styles.wrapper}>
++
++        <Chip
++          style={styles.chip}
++        >
++          Text Chip
++        </Chip>
++
++        <Chip
++          onRequestDelete={handleRequestDelete}
++          onTouchTap={handleTouchTap}
++          style={styles.chip}
++        >
++          Deletable Text Chip
++        </Chip>
++
++        <Chip
++          onTouchTap={handleTouchTap}
++          style={styles.chip}
++        >
++          <Avatar src="images/uxceo-128.jpg" />
++          Image Avatar Chip
++        </Chip>
++
++        <Chip
++          onRequestDelete={handleRequestDelete}
++          onTouchTap={handleTouchTap}
++          style={styles.chip}
++        >
++          <Avatar src="images/ok-128.jpg" />
++          Deletable Avatar Chip
++        </Chip>
++
++        <Chip
++          onTouchTap={handleTouchTap}
++          style={styles.chip}
++        >
++          <Avatar icon={<FontIcon className="material-icons">perm_identity</FontIcon>} />
++          FontIcon Avatar Chip
++        </Chip>
++
++        <Chip
++          onRequestDelete={handleRequestDelete}
++          onTouchTap={handleTouchTap}
++          style={styles.chip}
++        >
++          <Avatar color="#444" icon={<SvgIconFace />} />
++          SvgIcon Avatar Chip
++        </Chip>
++
++        <Chip onTouchTap={handleTouchTap} style={styles.chip}>
++          <Avatar size={32}>A</Avatar>
++          Text Avatar Chip
++        </Chip>
++
++        <Chip
++          backgroundColor={blue300}
++          onRequestDelete={handleRequestDelete}
++          onTouchTap={handleTouchTap}
++          style={styles.chip}
++        >
++          <Avatar size={32} color={blue300} backgroundColor={indigo900}>
++            MB
++          </Avatar>
++          Colored Chip
++        </Chip>
++      </div>
++    );
++  }
++}
+diff --git a/docs/src/app/components/pages/components/Chip/Page.js b/docs/src/app/components/pages/components/Chip/Page.js
+new file mode 100644
+index 00000000000000..6f8ec09ac4c173
+--- /dev/null
++++ b/docs/src/app/components/pages/components/Chip/Page.js
+@@ -0,0 +1,35 @@
++import React from 'react';
++import Title from 'react-title-component';
++
++import CodeExample from '../../../CodeExample';
++import PropTypeDescription from '../../../PropTypeDescription';
++import MarkdownElement from '../../../MarkdownElement';
++
++import chipReadmeText from './README';
++import ChipExampleSimple from './ExampleSimple';
++import chipExampleSimpleCode from '!raw!./ExampleSimple';
++import ChipExampleArray from './ExampleArray';
++import chipExampleArrayCode from '!raw!./ExampleArray';
++import chipCode from '!raw!material-ui/Chip/Chip';
++
++const ChipPage = () => (
++  <div>
++    <Title render={(previousTitle) => `Chip - ${previousTitle}`} />
++    <MarkdownElement text={chipReadmeText} />
++    <CodeExample
++      code={chipExampleSimpleCode}
++      title="Example Chips"
++    >
++      <ChipExampleSimple />
++    </CodeExample>
++    <CodeExample
++      code={chipExampleArrayCode}
++      title="Example array"
++    >
++      <ChipExampleArray />
++    </CodeExample>
++    <PropTypeDescription code={chipCode} />
++  </div>
++);
++
++export default ChipPage;
+diff --git a/docs/src/app/components/pages/components/Chip/README.md b/docs/src/app/components/pages/components/Chip/README.md
+new file mode 100644
+index 00000000000000..cad6478b6cfb7c
+--- /dev/null
++++ b/docs/src/app/components/pages/components/Chip/README.md
+@@ -0,0 +1,10 @@
++## Chip
++
++[Chips](https://www.google.com/design/spec/components/chips.html) 
++represent complex entities in small blocks, such as a contact.
++
++While included here as a standalone component, the most common use will
++be in some form of input, so some of the behaviour demonstrated is not
++shown in context.
++
++### Examples
+diff --git a/src/Avatar/Avatar.js b/src/Avatar/Avatar.js
+index 07f741f9b72f04..92a03171ac12e7 100644
+--- a/src/Avatar/Avatar.js
++++ b/src/Avatar/Avatar.js
+@@ -47,6 +47,8 @@ function getStyles(props, context) {
+ }
+ 
+ class Avatar extends Component {
++  static muiName = 'Avatar';
++
+   static propTypes = {
+     /**
+      * The backgroundColor of the avatar. Does not apply to image avatars.
+diff --git a/src/Chip/Chip.js b/src/Chip/Chip.js
+new file mode 100644
+index 00000000000000..0de61d39e65cb9
+--- /dev/null
++++ b/src/Chip/Chip.js
+@@ -0,0 +1,286 @@
++import React, {Component, PropTypes} from 'react';
++import keycode from 'keycode';
++import {fade, emphasize} from '../utils/colorManipulator';
++import EnhancedButton from '../internal/EnhancedButton';
++import DeleteIcon from '../svg-icons/navigation/cancel';
++
++function getStyles(props, context, state) {
++  const {chip} = context.muiTheme;
++
++  const backgroundColor = props.backgroundColor || chip.backgroundColor;
++  const focusColor = emphasize(backgroundColor, 0.08);
++  const pressedColor = emphasize(backgroundColor, 0.12);
++
++  return {
++    avatar: {
++      marginRight: -4,
++    },
++    deleteIcon: {
++      color: (state.deleteHovered) ? fade(chip.deleteIconColor, 0.4) : chip.deleteIconColor,
++      cursor: 'pointer',
++      margin: '4px 4px 0px -8px',
++    },
++    label: {
++      color: props.labelColor || chip.textColor,
++      fontSize: chip.fontSize,
++      fontWeight: chip.fontWeight,
++      lineHeight: '32px',
++      paddingLeft: 12,
++      paddingRight: 12,
++      userSelect: 'none',
++      whiteSpace: 'nowrap',
++    },
++    root: {
++      backgroundColor: state.clicked ? pressedColor : (state.focused || state.hovered) ? focusColor : backgroundColor,
++      borderRadius: 16,
++      boxShadow: state.clicked ? chip.shadow : null,
++      cursor: props.onTouchTap ? 'pointer' : 'default',
++      display: 'flex',
++      whiteSpace: 'nowrap',
++      width: 'fit-content',
++    },
++  };
++}
++
++class Chip extends Component {
++
++  static propTypes = {
++    /**
++     * Override the background color of the chip.
++     */
++    backgroundColor: PropTypes.string,
++    /**
++     * Used to render elements inside the Chip.
++     */
++    children: PropTypes.node,
++    /**
++     * CSS `className` of the root element.
++     */
++    className: PropTypes.node,
++    /**
++     * Override the label color.
++     */
++    labelColor: PropTypes.string,
++    /**
++     * Override the inline-styles of the label.
++     */
++    labelStyle: PropTypes.object,
++    /** @ignore */
++    onBlur: PropTypes.func,
++    /** @ignore */
++    onFocus: PropTypes.func,
++    /** @ignore */
++    onKeyDown: PropTypes.func,
++    /** @ignore */
++    onKeyboardFocus: PropTypes.func,
++    /** @ignore */
++    onMouseDown: PropTypes.func,
++    /** @ignore */
++    onMouseEnter: PropTypes.func,
++    /** @ignore */
++    onMouseLeave: PropTypes.func,
++    /** @ignore */
++    onMouseUp: PropTypes.func,
++    /**
++     * Callback function fired when the delete icon is clicked. If set, the delete icon will be shown.
++     * @param {object} event `touchTap` event targeting the element.
++     */
++    onRequestDelete: PropTypes.func,
++    /** @ignore */
++    onTouchEnd: PropTypes.func,
++    /** @ignore */
++    onTouchStart: PropTypes.func,
++    /**
++     * Callback function fired when the `Chip` element is touch-tapped.
++     *
++     * @param {object} event TouchTap event targeting the element.
++     */
++    onTouchTap: PropTypes.func,
++    /**
++     * Override the inline-styles of the root element.
++     */
++    style: PropTypes.object,
++  };
++
++  static defaultProps = {
++    onBlur: () => {},
++    onFocus: () => {},
++    onKeyDown: () => {},
++    onKeyboardFocus: () => {},
++    onMouseDown: () => {},
++    onMouseEnter: () => {},
++    onMouseLeave: () => {},
++    onMouseUp: () => {},
++    onTouchEnd: () => {},
++    onTouchStart: () => {},
++  };
++
++  static contextTypes = {muiTheme: PropTypes.object.isRequired};
++
++  state = {
++    clicked: false,
++    deleteHovered: false,
++    focused: false,
++    hovered: false,
++  };
++
++  handleBlur = (event) => {
++    this.setState({clicked: false, focused: false});
++    this.props.onBlur(event);
++  };
++
++  handleFocus = (event) => {
++    if (this.props.onTouchTap || this.props.onRequestDelete) {
++      this.setState({focused: true});
++    }
++    this.props.onFocus(event);
++  };
++
++  handleKeyboardFocus = (event, keyboardFocused) => {
++    if (keyboardFocused) {
++      this.handleFocus();
++      this.props.onFocus(event);
++    } else {
++      this.handleBlur();
++    }
++
++    this.props.onKeyboardFocus(event, keyboardFocused);
++  };
++
++  handleKeyDown = (event) => {
++    if (keycode(event) === 'backspace') {
++      event.preventDefault();
++      if (this.props.onRequestDelete) {
++        this.props.onRequestDelete(event);
++      }
++    }
++    this.props.onKeyDown(event);
++  };
++
++  handleMouseDown = (event) => {
++    // Only listen to left clicks
++    if (event.button === 0) {
++      event.stopPropagation();
++      if (this.props.onTouchTap) {
++        this.setState({clicked: true});
++      }
++    }
++    this.props.onMouseDown(event);
++  };
++
++  handleMouseEnter = (event) => {
++    if (this.props.onTouchTap) {
++      this.setState({hovered: true});
++    }
++    this.props.onMouseEnter(event);
++  };
++
++  handleMouseEnterDeleteIcon = () => {
++    this.setState({deleteHovered: true});
++  };
++
++  handleMouseLeave = (event) => {
++    this.setState({
++      clicked: false,
++      hovered: false,
++    });
++    this.props.onMouseLeave(event);
++  };
++
++  handleMouseLeaveDeleteIcon = () => {
++    this.setState({deleteHovered: false});
++  };
++
++  handleMouseUp = (event) => {
++    this.setState({clicked: false});
++    this.props.onMouseUp(event);
++  };
++
++  handleTouchTapDeleteIcon = (event) => {
++    // Stop the event from bubbling up to the `Chip`
++    event.stopPropagation();
++    this.props.onRequestDelete(event);
++  };
++
++  handleTouchEnd = (event) => {
++    this.setState({clicked: false});
++    this.props.onTouchEnd(event);
++  };
++
++  handleTouchStart = (event) => {
++    event.stopPropagation();
++    if (this.props.onTouchTap) {
++      this.setState({clicked: true});
++    }
++    this.props.onTouchStart(event);
++  };
++
++  render() {
++    const buttonEventHandlers = {
++      onBlur: this.handleBlur,
++      onFocus: this.handleFocus,
++      onKeyDown: this.handleKeyDown,
++      onMouseDown: this.handleMouseDown,
++      onMouseEnter: this.handleMouseEnter,
++      onMouseLeave: this.handleMouseLeave,
++      onMouseUp: this.handleMouseUp,
++      onTouchEnd: this.handleTouchEnd,
++      onTouchStart: this.handleTouchStart,
++      onKeyboardFocus: this.handleKeyboardFocus,
++    };
++
++    const {prepareStyles} = this.context.muiTheme;
++    const styles = getStyles(this.props, this.context, this.state);
++
++    let {children, style, className, labelStyle, ...other} = this.props;
++    const deletable = this.props.onRequestDelete;
++    let avatar = null;
++
++    style = Object.assign(styles.root, style);
++    labelStyle = prepareStyles(Object.assign(styles.label, labelStyle));
++
++    const deleteIcon = deletable ?
++      <DeleteIcon
++        color={styles.deleteIcon.color}
++        style={styles.deleteIcon}
++        onTouchTap={this.handleTouchTapDeleteIcon}
++        onMouseEnter={this.handleMouseEnterDeleteIcon}
++        onMouseLeave={this.handleMouseLeaveDeleteIcon}
++      /> :
++      null;
++
++    const childCount = React.Children.count(children);
++
++    // If the first child is an avatar, extract it and style it
++    if (childCount > 1) {
++      children = React.Children.toArray(children);
++
++      if (React.isValidElement(children[0]) && children[0].type.muiName === 'Avatar') {
++        avatar = children.shift();
++
++        avatar = React.cloneElement(avatar, {
++          style: Object.assign(styles.avatar, avatar.props.style),
++          size: 32,
++        });
++      }
++    }
++
++    return (
++      <EnhancedButton
++        {...other}
++        {...buttonEventHandlers}
++        className={className}
++        containerElement="div" // Firefox doesn't support nested buttons
++        disableTouchRipple={true}
++        disableFocusRipple={true}
++        style={style}
++      >
++        {avatar}
++        <span style={labelStyle}>{children}</span>
++        {deleteIcon}
++      </EnhancedButton>
++    );
++  }
++}
++
++export default Chip;
+diff --git a/src/Chip/Chip.spec.js b/src/Chip/Chip.spec.js
+new file mode 100644
+index 00000000000000..8279debf9a743f
+--- /dev/null
++++ b/src/Chip/Chip.spec.js
+@@ -0,0 +1,163 @@
++/* eslint-env mocha */
++import React from 'react';
++import {shallow} from 'enzyme';
++import {assert} from 'chai';
++import sinon from 'sinon';
++import Chip from './Chip';
++import getMuiTheme from '../styles/getMuiTheme';
++
++const Avatar = (props) => <div {...props} />;
++Avatar.muiName = 'Avatar';
++
++describe('<Chip />', () => {
++  const muiTheme = getMuiTheme();
++  const themedShallow = (node) => {
++    const context = {muiTheme};
++    return shallow(node, {context});
++  };
++
++  describe('state', () => {
++    const wrapper = themedShallow(
++      <Chip onTouchTap={() => {}}>Label</Chip>
++    );
++
++    it('renders with initial state of false for clicked and focused', () => {
++      assert.strictEqual(wrapper.state('clicked'), false);
++      assert.strictEqual(wrapper.state('focused'), false);
++    });
++
++    it('sets the focus state onFocus', () => {
++      wrapper.simulate('focus');
++      assert.strictEqual(wrapper.state('focused'), true);
++    });
++
++    it('sets the clicked state on mouseDown', () => {
++      wrapper.simulate('mouseDown', {stopPropagation() {}, button: 0});
++      assert.strictEqual(wrapper.state('clicked'), true);
++    });
++
++    it('unsets the clicked state on mouseUp', () => {
++      wrapper.simulate('mouseUp');
++      assert.strictEqual(wrapper.state('clicked'), false);
++    });
++
++    it('sets the clicked state on touchStart', () => {
++      wrapper.simulate('touchStart', {stopPropagation() {}});
++      assert.strictEqual(wrapper.state('clicked'), true);
++    });
++
++    it('unsets the clicked state on touchEnd', () => {
++      wrapper.simulate('touchEnd');
++      assert.strictEqual(wrapper.state('clicked'), false);
++    });
++
++    it('resets the state on blur', () => {
++      wrapper.setState({focused: true, clicked: true});
++      wrapper.simulate('blur');
++      assert.strictEqual(wrapper.state('clicked'), false);
++      assert.strictEqual(wrapper.state('focused'), false);
++    });
++  });
++
++  describe('rendering', () => {
++    it('renders an EnhancedButton', () => {
++      const wrapper = themedShallow(
++        <Chip>Label</Chip>
++      );
++      assert.ok(wrapper.is('EnhancedButton'));
++    });
++
++    it('renders children', () => {
++      const wrapper = themedShallow(
++        <Chip>Hello world</Chip>
++      );
++      assert.ok(wrapper.contains('Hello world'), 'should contain the children');
++    });
++
++    it('merges styles and other props into the root node', () => {
++      const wrapper = themedShallow(
++        <Chip
++          style={{paddingRight: 200, color: 'purple', border: '1px solid tomato'}}
++          myProp="hello"
++        />
++      );
++      const {style, myProp} = wrapper.props();
++      assert.strictEqual(style.paddingRight, 200);
++      assert.strictEqual(style.color, 'purple');
++      assert.strictEqual(style.border, '1px solid tomato');
++      assert.strictEqual(myProp, 'hello');
++    });
++
++    it('renders a label with an Avatar before', () => {
++      const wrapper = themedShallow(
++        <Chip>
++          <Avatar src="images/kolage-128.jpg" />
++          Hello World
++        </Chip>
++      );
++      const avatar = wrapper.children().at(0);
++      const label = wrapper.children().at(1);
++      assert.ok(avatar.is('Avatar'));
++      assert.ok(label.is('span'));
++      assert.strictEqual(label.children().node, 'Hello World', 'says hello world');
++    });
++
++    it('does not render a delete icon by default', () => {
++      const wrapper = themedShallow(
++        <Chip>Label</Chip>
++      );
++      assert.notOk(wrapper.find('NavigationCancel').length);
++    });
++
++    it('renders a delete icon after the label when onRequestDelete is provided', () => {
++      const wrapper = themedShallow(
++        <Chip onRequestDelete={sinon.spy()}>Label</Chip>
++      );
++      assert.ok(wrapper.childAt(1).is('NavigationCancel'));
++    });
++  });
++
++  describe('callbacks', () => {
++    it('triggers onRequestDelete when the delete icon is clicked', () => {
++      const handleRequestDelete = sinon.spy();
++      const wrapper = themedShallow(
++        <Chip onRequestDelete={handleRequestDelete}>Label</Chip>
++      );
++      wrapper.childAt(1).simulate('touchTap', {stopPropagation() {}});
++      assert.ok(handleRequestDelete.calledOnce);
++    });
++
++    it('bubbles callbacks used internally', () => {
++      const events = [
++        'blur',
++        'focus',
++        'keyDown',
++        'keyboardFocus',
++        'mouseDown',
++        'mouseEnter',
++        'mouseUp',
++        'touchEnd',
++        'touchStart',
++      ];
++
++      const handlers = {};
++      const props = {};
++
++      events.forEach((event) => {
++        handlers[event] = sinon.spy();
++        props[`on${event.charAt(0).toUpperCase() + event.slice(1)}`] = handlers[event];
++      });
++
++      const wrapper = themedShallow(
++        <Chip {...props}>
++          Step One
++        </Chip>
++      );
++
++      events.forEach((event) => {
++        wrapper.simulate(event, {stopPropagation() {}});
++        assert.ok(handlers[event].calledOnce, `should trigger the ${event} callback`);
++      });
++    });
++  });
++});
+diff --git a/src/Chip/index.js b/src/Chip/index.js
+new file mode 100644
+index 00000000000000..e8c1dc2904a161
+--- /dev/null
++++ b/src/Chip/index.js
+@@ -0,0 +1 @@
++export default from './Chip';
+diff --git a/src/FloatingActionButton/FloatingActionButton.js b/src/FloatingActionButton/FloatingActionButton.js
+index f5659c6d2dd15b..29dfaecc3b17c0 100644
+--- a/src/FloatingActionButton/FloatingActionButton.js
++++ b/src/FloatingActionButton/FloatingActionButton.js
+@@ -112,7 +112,7 @@ class FloatingActionButton extends Component {
+      */
+     mini: PropTypes.bool,
+     /**
+-     * Callback function fired when a mouse button is pressed down on the elmeent.
++     * Callback function fired when a mouse button is pressed down on the element.
+      *
+      * @param {object} event `mousedown` event targeting the element.
+      */
+diff --git a/src/List/ListItem.js b/src/List/ListItem.js
+index 84c9ba218e3916..b9caad517a08bf 100644
+--- a/src/List/ListItem.js
++++ b/src/List/ListItem.js
+@@ -49,7 +49,7 @@ function getStyles(props, context, state) {
+ 
+     // This inner div is needed so that ripples will span the entire container
+     innerDiv: {
+-      marginLeft: nestedLevel * muiTheme.listItem.nestedLevelDepth,
++      marginLeft: nestedLevel * listItem.nestedLevelDepth,
+       paddingLeft: leftIcon || leftAvatar || leftCheckbox || insetChildren ? 72 : 16,
+       paddingRight: rightIcon || rightAvatar || rightIconButton ? 56 : rightToggle ? 72 : 16,
+       paddingBottom: singleAvatar ? 20 : 16,
+diff --git a/src/internal/EnhancedButton.js b/src/internal/EnhancedButton.js
+index db3f11c9e724ff..bf6bc90b20105f 100644
+--- a/src/internal/EnhancedButton.js
++++ b/src/internal/EnhancedButton.js
+@@ -57,6 +57,12 @@ class EnhancedButton extends Component {
+     onKeyDown: PropTypes.func,
+     onKeyUp: PropTypes.func,
+     onKeyboardFocus: PropTypes.func,
++    onMouseDown: PropTypes.func,
++    onMouseEnter: PropTypes.func,
++    onMouseLeave: PropTypes.func,
++    onMouseUp: PropTypes.func,
++    onTouchEnd: PropTypes.func,
++    onTouchStart: PropTypes.func,
+     onTouchTap: PropTypes.func,
+     style: PropTypes.object,
+     tabIndex: PropTypes.number,
+@@ -70,9 +76,15 @@ class EnhancedButton extends Component {
+     onBlur: () => {},
+     onClick: () => {},
+     onFocus: () => {},
+-    onKeyboardFocus: () => {},
+     onKeyDown: () => {},
+     onKeyUp: () => {},
++    onKeyboardFocus: () => {},
++    onMouseDown: () => {},
++    onMouseEnter: () => {},
++    onMouseLeave: () => {},
++    onMouseUp: () => {},
++    onTouchEnd: () => {},
++    onTouchStart: () => {},
+     onTouchTap: () => {},
+     tabIndex: 0,
+     type: 'button',
+@@ -182,6 +194,9 @@ class EnhancedButton extends Component {
+       if (keycode(event) === 'enter' && this.state.isKeyboardFocused) {
+         this.handleTouchTap(event);
+       }
++      if (keycode(event) === 'esc' && this.state.isKeyboardFocused) {
++        this.removeKeyboardFocus(event);
++      }
+     }
+     this.props.onKeyDown(event);
+   };
+@@ -273,6 +288,8 @@ class EnhancedButton extends Component {
+       WebkitTapHighlightColor: enhancedButton.tapHighlightColor, // Remove mobile color flashing (deprecated)
+       cursor: disabled ? 'default' : 'pointer',
+       textDecoration: 'none',
++      margin: 0,
++      padding: 0,
+       outline: 'none',
+       fontSize: 'inherit',
+       fontWeight: 'inherit',
+@@ -318,7 +335,7 @@ class EnhancedButton extends Component {
+     };
+     const buttonChildren = this.createButtonChildren();
+ 
+-    // Provides backward compatibity. Added to support wrapping around <a> element.
++    // Provides backward compatibility. Added to support wrapping around <a> element.
+     const targetLinkElement = buttonProps.hasOwnProperty('href') ? 'a' : 'span';
+ 
+     return React.isValidElement(containerElement) ?
+diff --git a/src/styles/getMuiTheme.js b/src/styles/getMuiTheme.js
+index 2057f51caf3bd8..481c2dc07d9715 100644
+--- a/src/styles/getMuiTheme.js
++++ b/src/styles/getMuiTheme.js
+@@ -77,6 +77,15 @@ export default function getMuiTheme(muiTheme, ...more) {
+       labelColor: palette.textColor,
+       labelDisabledColor: palette.disabledColor,
+     },
++    chip: {
++      backgroundColor: emphasize(palette.canvasColor, 0.12),
++      deleteIconColor: fade(palette.textColor, 0.26),
++      textColor: fade(palette.textColor, 0.87),
++      fontSize: 14,
++      fontWeight: typography.fontWeightNormal,
++      shadow: `0 1px 6px ${fade(palette.shadowColor, 0.12)},
++        0 1px 4px ${fade(palette.shadowColor, 0.12)}`,
++    },
+     datePicker: {
+       color: palette.primary1Color,
+       textColor: palette.alternateTextColor,

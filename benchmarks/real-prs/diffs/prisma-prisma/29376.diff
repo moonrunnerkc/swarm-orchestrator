@@ -1,0 +1,440 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index b46901e7859d..1e20e1963655 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -65,6 +65,10 @@
+ - **Test helpers**: `ctx.setConfigFile('<name>')` (from `__helpers__/prismaConfig.ts`) overrides the config used for the next CLI invocation and is automatically reset after each test, so no explicit cleanup is needed. Many migrate fixtures now provide one config per schema variant (e.g. `invalid-url.config.ts` next to `prisma/invalid-url.prisma`) and tests swap them via `ctx.setConfigFile(...)`. `ctx.setDatasource`/`ctx.resetDatasource` continue to override connection URLs when needed.
+ 
+ - **CLI commands**: Most commands already accept `--config` for custom config paths. Upcoming work removes `--schema` / `--url` in favour of config-based resolution. When editing CLI help text, keep examples aligned with new config-first workflow.
++  - For isolated Studio verification, you can run `packages/cli/src/Studio.ts` directly via `pnpm exec tsx` and pass a config object that preserves `loadedFromFile`; this keeps SQLite URLs resolving relative to the config file while avoiding unrelated `packages/cli/src/bin.ts` imports.
++  - Recent `@prisma/studio-core` bumps can require keeping the CLI's HTML import map in `packages/cli/src/Studio.ts` aligned with new bare browser imports (for example `@radix-ui/react-toggle` and `chart.js/auto`), and the CLI shell can serve `/favicon.ico` directly if the Studio UI starts requesting one.
++  - `esm.sh` may resolve React-based browser dependencies against a newer canary React by default. When the Studio shell imports such packages via the HTML import map, pin them with `?deps=react@<shell-version>,react-dom@<shell-version>` or the command palette can crash with invalid-hook-call style errors.
++  - If Enter or click does not open a cell editor in Studio, verify that the current table and column are writable before assuming a keyboard regression; views/system tables and read-only columns legitimately stay non-editable.
+ 
+ - **Driver adapters datasource**:
+   - Helper `ctx.setDatasource()` in tests overrides config.datasource for connection-specific scenarios.
+diff --git a/packages/cli/package.json b/packages/cli/package.json
+index 496e44b3b960..33ce23999dd9 100644
+--- a/packages/cli/package.json
++++ b/packages/cli/package.json
+@@ -183,7 +183,7 @@
+     "@prisma/config": "workspace:*",
+     "@prisma/dev": "0.20.0",
+     "@prisma/engines": "workspace:*",
+-    "@prisma/studio-core": "0.21.1",
++    "@prisma/studio-core": "0.27.3",
+     "mysql2": "3.15.3",
+     "postgres": "3.4.7"
+   },
+diff --git a/packages/cli/src/Studio.ts b/packages/cli/src/Studio.ts
+index c1109c2d36d0..39d43a84870f 100644
+--- a/packages/cli/src/Studio.ts
++++ b/packages/cli/src/Studio.ts
+@@ -55,6 +55,19 @@ const DEFAULT_CONTENT_TYPE = 'application/octet-stream'
+ 
+ const ADAPTER_FILE_NAME = 'adapter.js'
+ const ADAPTER_FACTORY_FUNCTION_NAME = 'createAdapter'
++const REACT_VERSION = '19.2.0'
++const REACT_DOM_VERSION = REACT_VERSION
++const RADIX_REACT_TOGGLE_URL = `https://esm.sh/@radix-ui/react-toggle@1.1.10?deps=react@${REACT_VERSION},react-dom@${REACT_DOM_VERSION}`
++const CHART_JS_AUTO_URL = 'https://esm.sh/chart.js@4.5.1/auto'
++const PRISMA_LOGO_SVG = `<svg width="12" height="14" viewBox="0 0 12 14" fill="none" xmlns="http://www.w3.org/2000/svg">
++  <path
++    fill-rule="evenodd"
++    clip-rule="evenodd"
++    d="M0.396923 8.8719C0.25789 9.09869 0.260041 9.38484 0.402469 9.60951L2.98037 13.6761C3.14768 13.94 3.47018 14.0603 3.76949 13.9705L11.2087 11.7388C11.6147 11.617 11.8189 11.1641 11.6415 10.7792L6.8592 0.405309C6.62598 -0.100601 5.92291 -0.142128 5.63176 0.332808L0.396923 8.8719ZM6.73214 2.77688C6.6305 2.54169 6.2863 2.57792 6.23585 2.82912L4.3947 11.9965C4.35588 12.1898 4.53686 12.3549 4.72578 12.2985L9.86568 10.7642C10.0157 10.7194 10.093 10.5537 10.0309 10.41L6.73214 2.77688Z"
++    fill="currentColor"
++  />
++</svg>`
++const PRISMA_LOGO_SVG_DATA_URL = `data:image/svg+xml,${encodeURIComponent(PRISMA_LOGO_SVG)}`
+ 
+ const ACCELERATE_UNSUPPORTED_MESSAGE =
+   'Prisma Studio no longer supports Accelerate URLs (`prisma://` or `prisma+postgres://`). Use a direct database connection string instead.'
+@@ -320,6 +333,10 @@ ${bold('Examples')}
+       return ctx.text(INDEX_HTML, 200, { 'Content-Type': contentType })
+     })
+ 
++    app.get('/favicon.ico', (ctx) => {
++      return ctx.body(PRISMA_LOGO_SVG, 200, { 'Content-Type': 'image/svg+xml' })
++    })
++
+     app.get(`/${ADAPTER_FILE_NAME}`, (ctx) => {
+       const contentType = FILE_EXTENSION_TO_CONTENT_TYPE[extname(ctx.req.path)]
+ 
+@@ -376,6 +393,20 @@ ${bold('Examples')}
+         ])
+       }
+ 
++      if (procedure === 'transaction') {
++        if (!executor.executeTransaction) {
++          return ctx.json([serializeBffError(new Error('Executor does not support transactions'))])
++        }
++
++        const [error, results] = await executor.executeTransaction(request.queries)
++
++        if (error) {
++          return ctx.json([serializeBffError(error)])
++        }
++
++        return ctx.json([null, results])
++      }
++
+       if (procedure === 'sql-lint') {
+         if (!executor.lintSql) {
+           return ctx.json([serializeBffError(new Error('Executor does not support SQL lint'))])
+@@ -552,6 +583,7 @@ const INDEX_HTML =
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <link rel="icon" href="${PRISMA_LOGO_SVG_DATA_URL}" type="image/svg+xml">
+     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.17"></script>
+     <link rel="stylesheet" href="/ui/index.css">
+     <style>
+@@ -569,10 +601,12 @@ const INDEX_HTML =
+     <script type="importmap">
+       {
+         "imports": {
+-          "react": "https://esm.sh/react@19.2.0",
+-          "react/jsx-runtime": "https://esm.sh/react@19.2.0/jsx-runtime",
+-          "react-dom": "https://esm.sh/react-dom@19.2.0",
+-          "react-dom/client": "https://esm.sh/react-dom@19.2.0/client"
++          "react": "https://esm.sh/react@${REACT_VERSION}",
++          "react/jsx-runtime": "https://esm.sh/react@${REACT_VERSION}/jsx-runtime",
++          "react-dom": "https://esm.sh/react-dom@${REACT_DOM_VERSION}",
++          "react-dom/client": "https://esm.sh/react-dom@${REACT_DOM_VERSION}/client",
++          "@radix-ui/react-toggle": "${RADIX_REACT_TOGGLE_URL}",
++          "chart.js/auto": "${CHART_JS_AUTO_URL}"
+         }
+       }
+     </script>
+diff --git a/packages/cli/src/__tests__/Studio.vitest.ts b/packages/cli/src/__tests__/Studio.vitest.ts
+index 03886679a3c3..5e06f3844b2c 100644
+--- a/packages/cli/src/__tests__/Studio.vitest.ts
++++ b/packages/cli/src/__tests__/Studio.vitest.ts
+@@ -297,27 +297,82 @@ describe('Studio BFF', () => {
+       },
+     ])
+   })
++
++  test('routes transaction requests to executor.executeTransaction', async () => {
++    const executeTransactionMock = vi.fn(() => Promise.resolve([null, [[{ id: 1 }], [{ id: 2 }]]]))
++
++    const queries = [
++      { parameters: [], sql: 'select 1 as id' },
++      { parameters: [], sql: 'select 2 as id' },
++    ]
++
++    await startStudioBff({
++      execute: vi.fn(),
++      executeTransaction: executeTransactionMock,
++    })
++
++    const response = await getBffResponse({
++      procedure: 'transaction',
++      queries,
++    })
++
++    expect(executeTransactionMock).toHaveBeenCalledWith(queries)
++    expect(await response.json()).toEqual([null, [[{ id: 1 }], [{ id: 2 }]]])
++  })
++
++  test('serves the Prisma logo as the favicon', async () => {
++    await startStudioBff({
++      execute: vi.fn(),
++    })
++
++    const response = await getServerResponse('http://localhost:5555/favicon.ico')
++
++    expect(response.status).toBe(200)
++    expect(response.headers.get('content-type')).toBe('image/svg+xml')
++    expect(await response.text()).toContain('<svg')
++  })
++
++  test('links the favicon from the Studio HTML shell', async () => {
++    await startStudioBff({
++      execute: vi.fn(),
++    })
++
++    const response = await getServerResponse('http://localhost:5555/')
++    const html = await response.text()
++
++    expect(response.status).toBe(200)
++    expect(html).toContain('<link rel="icon"')
++    expect(html).toContain(
++      '"@radix-ui/react-toggle": "https://esm.sh/@radix-ui/react-toggle@1.1.10?deps=react@19.2.0,react-dom@19.2.0"',
++    )
++  })
+ })
+ 
+ async function getBffResponse(body: unknown): Promise<Response> {
++  return getServerResponse('http://localhost:5555/bff', {
++    body: JSON.stringify(body),
++    headers: {
++      'content-type': 'application/json',
++    },
++    method: 'POST',
++  })
++}
++
++async function getServerResponse(input: string, init?: RequestInit): Promise<Response> {
+   const fetchHandler = serveMock.mock.calls.at(-1)?.[0]?.fetch as ((request: Request) => Promise<Response>) | undefined
+ 
+   if (!fetchHandler) {
+     throw new Error('Studio server fetch handler was not registered')
+   }
+ 
+-  return fetchHandler(
+-    new Request('http://localhost:5555/bff', {
+-      body: JSON.stringify(body),
+-      headers: {
+-        'content-type': 'application/json',
+-      },
+-      method: 'POST',
+-    }),
+-  )
++  return fetchHandler(new Request(input, init))
+ }
+ 
+-async function startStudioBff(executor: { execute: ReturnType<typeof vi.fn>; lintSql?: ReturnType<typeof vi.fn> }) {
++async function startStudioBff(executor: {
++  execute: ReturnType<typeof vi.fn>
++  executeTransaction?: ReturnType<typeof vi.fn>
++  lintSql?: ReturnType<typeof vi.fn>
++}) {
+   createPostgresJSExecutorMock.mockReturnValueOnce(executor)
+ 
+   const { Studio } = await import('../Studio')
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 2378c00562a3..eb15c3fbf3b7 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -433,8 +433,8 @@ importers:
+         specifier: workspace:*
+         version: link:../engines
+       '@prisma/studio-core':
+-        specifier: 0.21.1
+-        version: 0.21.1
++        specifier: 0.27.3
++        version: 0.27.3
+       mysql2:
+         specifier: 3.15.3
+         version: 3.15.3
+@@ -3211,6 +3211,9 @@ packages:
+     peerDependencies:
+       tslib: '2'
+ 
++  '@kurkle/color@0.3.4':
++    resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
++
+   '@libsql/client@0.17.0':
+     resolution: {integrity: sha512-TLjSU9Otdpq0SpKHl1tD1Nc9MKhrsZbCFGot3EbCxRa8m1E5R1mMwoOjKMMM31IyF7fr+hPNHLpYfwbMKNusmg==}
+ 
+@@ -3586,14 +3589,88 @@ packages:
+   '@prisma/schema-engine-wasm@7.5.0-15.280c870be64f457428992c43c1f6d557fab6e29e':
+     resolution: {integrity: sha512-dtTC5tVBTpOAXHEhoRYm/TQzC+kzzt6H8x1CUu99vVP6G7gN7tdO9FyykvY6+m5/P/qrrZZm9uHuXqJGV8l4UA==}
+ 
+-  '@prisma/studio-core@0.21.1':
+-    resolution: {integrity: sha512-bOGqG/eMQtKC0XVvcVLRmhWWzm/I+0QUWqAEhEBtetpuS3k3V4IWqKGUONkAIT223DNXJMxMtZp36b1FmcdPeg==}
+-    engines: {node: ^20.19 || ^22.12 || ^24.0, pnpm: '8'}
++  '@prisma/studio-core@0.27.3':
++    resolution: {integrity: sha512-AADjNFPdsrglxHQVTmHFqv6DuKQZ5WY4p5/gVFY017twvNrSwpLJ9lqUbYYxEu2W7nbvVxTZA8deJ8LseNALsw==}
++    engines: {node: ^20.19 || ^22.12 || >=24.0, pnpm: '8'}
+     peerDependencies:
+       '@types/react': ^18.0.0 || ^19.0.0
+       react: ^18.0.0 || ^19.0.0
+       react-dom: ^18.0.0 || ^19.0.0
+ 
++  '@radix-ui/primitive@1.1.3':
++    resolution: {integrity: sha512-JTF99U/6XIjCBo0wqkU5sK10glYe27MRRsfwoiq5zzOEZLHU3A3KCMa5X/azekYRCJ0HlwI0crAXS/5dEHTzDg==}
++
++  '@radix-ui/react-compose-refs@1.1.2':
++    resolution: {integrity: sha512-z4eqJvfiNnFMHIIvXP3CY57y2WJs5g2v3X0zm9mEJkrkNv4rDxu+sg9Jh8EkXyeqBkB7SOcboo9dMVqhyrACIg==}
++    peerDependencies:
++      '@types/react': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++
++  '@radix-ui/react-primitive@2.1.3':
++    resolution: {integrity: sha512-m9gTwRkhy2lvCPe6QJp4d3G1TYEUHn/FzJUtq9MjH46an1wJU+GdoGC5VLof8RX8Ft/DlpshApkhswDLZzHIcQ==}
++    peerDependencies:
++      '@types/react': '*'
++      '@types/react-dom': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++      '@types/react-dom':
++        optional: true
++
++  '@radix-ui/react-slot@1.2.3':
++    resolution: {integrity: sha512-aeNmHnBxbi2St0au6VBVC7JXFlhLlOnvIIlePNniyUNAClzmtAUEY8/pBiK3iHjufOlwA+c20/8jngo7xcrg8A==}
++    peerDependencies:
++      '@types/react': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++
++  '@radix-ui/react-toggle@1.1.10':
++    resolution: {integrity: sha512-lS1odchhFTeZv3xwHH31YPObmJn8gOg7Lq12inrr0+BH/l3Tsq32VfjqH1oh80ARM3mlkfMic15n0kg4sD1poQ==}
++    peerDependencies:
++      '@types/react': '*'
++      '@types/react-dom': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++      '@types/react-dom':
++        optional: true
++
++  '@radix-ui/react-use-controllable-state@1.2.2':
++    resolution: {integrity: sha512-BjasUjixPFdS+NKkypcyyN5Pmg83Olst0+c6vGov0diwTEo6mgdqVR6hxcEgFuh4QrAs7Rc+9KuGJ9TVCj0Zzg==}
++    peerDependencies:
++      '@types/react': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++
++  '@radix-ui/react-use-effect-event@0.0.2':
++    resolution: {integrity: sha512-Qp8WbZOBe+blgpuUT+lw2xheLP8q0oatc9UpmiemEICxGvFLYmHm9QowVZGHtJlGbS6A6yJ3iViad/2cVjnOiA==}
++    peerDependencies:
++      '@types/react': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++
++  '@radix-ui/react-use-layout-effect@1.1.1':
++    resolution: {integrity: sha512-RbJRS4UWQFkzHTTwVymMTUv8EqYhOp8dOOviLj2ugtTiXRaRQS7GLGxZTLL1jWhMeoSCf5zmcZkqTl9IiYfXcQ==}
++    peerDependencies:
++      '@types/react': '*'
++      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++
+   '@redocly/ajv@8.17.1':
+     resolution: {integrity: sha512-EDtsGZS964mf9zAUXAl9Ew16eYbeyAFWhsPr0fX6oaJxgd8rApYlPBf0joyhnUHz88WxrigyFtTaqqzXNzPgqw==}
+ 
+@@ -4628,6 +4705,10 @@ packages:
+   chardet@0.7.0:
+     resolution: {integrity: sha512-mT8iDcrh03qDGRRmoA2hmBJnxpllMR+0/0qlzjqZES6NdiWDcZkCNAk4rPFZ9Q85r27unkiNNg8ZOiwZXBHwcA==}
+ 
++  chart.js@4.5.1:
++    resolution: {integrity: sha512-GIjfiT9dbmHRiYi6Nl2yFCq7kkwdkp1W/lp2J99rX0yo9tgJGn3lKQATztIjb5tVtevcBtIdICNWqlq5+E8/Pw==}
++    engines: {pnpm: '>=8'}
++
+   checkpoint-client@1.1.33:
+     resolution: {integrity: sha512-kiG9G/2K2lDkwd5q7TrzxN4IVqBSdwItLWXw6H+7+2N5jopjHRjD434OWvg/anuRvAnRlr5tflOuwbetsHQoZQ==}
+ 
+@@ -9640,6 +9721,8 @@ snapshots:
+     dependencies:
+       tslib: 2.8.1
+ 
++  '@kurkle/color@0.3.4': {}
++
+   '@libsql/client@0.17.0(encoding@0.1.13)':
+     dependencies:
+       '@libsql/core': 0.17.0
+@@ -10072,7 +10155,41 @@ snapshots:
+ 
+   '@prisma/schema-engine-wasm@7.5.0-15.280c870be64f457428992c43c1f6d557fab6e29e': {}
+ 
+-  '@prisma/studio-core@0.21.1': {}
++  '@prisma/studio-core@0.27.3':
++    dependencies:
++      '@radix-ui/react-toggle': 1.1.10
++      chart.js: 4.5.1
++    transitivePeerDependencies:
++      - '@types/react-dom'
++
++  '@radix-ui/primitive@1.1.3': {}
++
++  '@radix-ui/react-compose-refs@1.1.2': {}
++
++  '@radix-ui/react-primitive@2.1.3':
++    dependencies:
++      '@radix-ui/react-slot': 1.2.3
++
++  '@radix-ui/react-slot@1.2.3':
++    dependencies:
++      '@radix-ui/react-compose-refs': 1.1.2
++
++  '@radix-ui/react-toggle@1.1.10':
++    dependencies:
++      '@radix-ui/primitive': 1.1.3
++      '@radix-ui/react-primitive': 2.1.3
++      '@radix-ui/react-use-controllable-state': 1.2.2
++
++  '@radix-ui/react-use-controllable-state@1.2.2':
++    dependencies:
++      '@radix-ui/react-use-effect-event': 0.0.2
++      '@radix-ui/react-use-layout-effect': 1.1.1
++
++  '@radix-ui/react-use-effect-event@0.0.2':
++    dependencies:
++      '@radix-ui/react-use-layout-effect': 1.1.1
++
++  '@radix-ui/react-use-layout-effect@1.1.1': {}
+ 
+   '@redocly/ajv@8.17.1':
+     dependencies:
+@@ -11266,6 +11383,10 @@ snapshots:
+ 
+   chardet@0.7.0: {}
+ 
++  chart.js@4.5.1:
++    dependencies:
++      '@kurkle/color': 0.3.4
++
+   checkpoint-client@1.1.33(encoding@0.1.13):
+     dependencies:
+       ci-info: 4.0.0
+diff --git a/scripts/run-studio.ts b/scripts/run-studio.ts
+new file mode 100644
+index 000000000000..a6c3f7dfe4dc
+--- /dev/null
++++ b/scripts/run-studio.ts
+@@ -0,0 +1,37 @@
++#!/usr/bin/env tsx
++
++import { defaultTestConfig } from '@prisma/config'
++
++import { Studio } from '../packages/cli/src/Studio'
++
++function printUsage(): void {
++  console.error(`Usage:
++  STUDIO_DATABASE_URL='<postgres-url>' pnpm exec tsx scripts/run-studio.ts
++  pnpm exec tsx scripts/run-studio.ts '<postgres-url>' [port] [browser]
++
++Environment variables:
++  STUDIO_DATABASE_URL  Database URL to connect Studio to
++  STUDIO_PORT          Port to bind to (default: 5555)
++  STUDIO_BROWSER       Browser to launch (default: none)
++`)
++}
++
++async function main(): Promise<void> {
++  const url = process.env.STUDIO_DATABASE_URL ?? process.argv[2]
++  const port = process.env.STUDIO_PORT ?? process.argv[3] ?? '5555'
++  const browser = process.env.STUDIO_BROWSER ?? process.argv[4] ?? 'none'
++
++  if (!url) {
++    printUsage()
++    process.exitCode = 1
++    return
++  }
++
++  const result = await Studio.new().parse(['--url', url, '--port', port, '--browser', browser], defaultTestConfig())
++
++  if (result instanceof Error) {
++    throw result
++  }
++}
++
++void main()

@@ -1,0 +1,5461 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 8266920691b4..e454a3648ebb 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -6,7 +6,7 @@
+ - **Workspace layout**: Managed via pnpm workspaces and Turborepo (`turbo.json`). Node ^20.19 || ^22.12 || >=24.0 and pnpm >=10.15 <11 are required (see root `package.json`). Top-level scripts (`pnpm build`, `pnpm dev`, `pnpm test`) delegate into `scripts/ci/publish.ts`; package-specific commands run with `pnpm --filter @prisma/<pkg> <script>`. Turborepo caches builds; run `pnpm build` from root to build all packages in dependency order.
+ - **Key packages**: `packages/cli` (Prisma CLI entry point), `packages/migrate` (migrate/db namespace + fixtures), `packages/client` (client runtime), `packages/client-generator-ts` (new `prisma-client` generator), `packages/client-generator-js` (traditional `prisma-client-js` generator), `packages/client-generator-registry` (generator registry for managing generators), `packages/client-engine-runtime` (the core part of the new Rust binary free client based on Wasm query compiler, used by `ClientEngine` class in `packages/client`), `packages/client-common` (shared client utilities), `packages/client-runtime-utils` (utility types and singletons for Prisma Client), `packages/config` (`PrismaConfigInternal` + loader), `packages/internals` (shared CLI + engine glue), `packages/engines` (Rust binaries download wrapper), `packages/integration-tests` (matrix suites), `packages/query-plan-executor` (standalone query plan executor service for Prisma Accelerate), `packages/credentials-store` (credential storage utilities), sqlcommenter packages under `packages/sqlcommenter*`, and numerous driver adapters under `packages/adapter-*`.
+ - **Driver adapters & runtimes**: `packages/bundled-js-drivers` plus the `adapter-*` packages ship JS driver adapters: `adapter-pg`, `adapter-neon`, `adapter-libsql`, `adapter-planetscale`, `adapter-d1`, `adapter-better-sqlite3`, `adapter-mssql`, `adapter-mariadb`, `adapter-ppg` (Prisma Postgres Serverless). These are built on helpers in `driver-adapter-utils`; migrate/client fixtures exercise them, so adapter changes typically require fixture/test updates. CI tests driver adapters with flavors: `js_pg`, `js_neon`, `js_libsql`, `js_planetscale`, `js_d1`, `js_better_sqlite3`, `js_mssql`, `js_mariadb`, `js_pg_cockroachdb`.
+-- **Build & tooling**: Typescript-first repo with WASM/Rust assets (downloaded by `@prisma/engines`). Multiple `tsconfig.*` drive bundle vs runtime builds. Lint via `pnpm lint`, format via `pnpm format`. Maintenance scripts live in `scripts/` (e.g. `bump-engines.ts`, `bench.ts`, `ci/publish.ts` orchestrates build/test/publish flows). Build configuration uses esbuild via `helpers/compile/build.ts` with configs in `helpers/compile/configs.ts`. Most packages use `adapterConfig` which bundles to both CJS and ESM with type declarations.
++- **Build & tooling**: Typescript-first repo with WASM/Rust assets (downloaded by `@prisma/engines`). Multiple `tsconfig.*` drive bundle vs runtime builds. Lint via `pnpm lint`, format via `pnpm format`. Maintenance scripts live in `scripts/` (e.g. `bump-engines.ts`, `bench.ts`, `ci/publish.ts` orchestrates build/test/publish flows). Build configuration uses esbuild via `helpers/compile/build.ts` with configs in `helpers/compile/configs.ts`. Most packages use `bundledConfig` which bundles to both CJS and ESM with type declarations.
+ - **Benchmarking**: Comprehensive performance benchmarks using Benchmark.js with CodSpeed integration. See `docs/benchmarking.md` for full documentation. Key commands:
+   - `pnpm bench` - Run all benchmarks (outputs to `output.txt`)
+   - `pnpm bench <pattern>` - Run benchmarks matching pattern
+@@ -52,7 +52,7 @@
+ - **Creating new packages**:
+   - Create directory under `packages/`, add `package.json`, `tsconfig.json`, `tsconfig.build.json`, and `helpers/build.ts`.
+   - Package is auto-discovered via `pnpm-workspace.yaml` glob `packages/*`.
+-  - For type-only packages, use `adapterConfig` from `helpers/compile/configs.ts`.
++  - For type-only packages, use `bundledConfig` from `helpers/compile/configs.ts`.
+   - Add as dependency to consuming packages using `"workspace:*"` version.
+   - **Important**: Add resolution path to `tsconfig.build.bundle.json` under `compilerOptions.paths` for go-to-definition to work in editors.
+   - **Important**: If the package has tests, add it to `.github/workflows/test-template.yml`. Utility packages typically go in:
+diff --git a/helpers/compile/configs.ts b/helpers/compile/configs.ts
+index 0bb9b72271a2..ca4f8104e544 100644
+--- a/helpers/compile/configs.ts
++++ b/helpers/compile/configs.ts
+@@ -7,7 +7,7 @@ type AdapterEntry = {
+   outfile: string
+ }
+ 
+-export function createAdapterConfig(entries: AdapterEntry[]): BuildOptions[] {
++export function createBundledConfig(entries: AdapterEntry[]): BuildOptions[] {
+   return entries.flatMap(({ entry, outfile }) => {
+     const baseName = path.basename(outfile)
+ 
+@@ -34,7 +34,7 @@ export function createAdapterConfig(entries: AdapterEntry[]): BuildOptions[] {
+   })
+ }
+ 
+-export const adapterConfig = createAdapterConfig([{ entry: 'src/index.ts', outfile: 'dist/index' }])
++export const bundledConfig = createBundledConfig([{ entry: 'src/index.ts', outfile: 'dist/index' }])
+ 
+ export const unbundledConfig: BuildOptions[] = [
+   {
+diff --git a/packages/adapter-better-sqlite3/helpers/build.ts b/packages/adapter-better-sqlite3/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-better-sqlite3/helpers/build.ts
++++ b/packages/adapter-better-sqlite3/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/adapter-d1/helpers/build.ts b/packages/adapter-d1/helpers/build.ts
+index bf2df5f04c0c..9da34df32c9f 100644
+--- a/packages/adapter-d1/helpers/build.ts
++++ b/packages/adapter-d1/helpers/build.ts
+@@ -1,7 +1,7 @@
+ import { build } from '../../../helpers/compile/build'
+-import { createAdapterConfig } from '../../../helpers/compile/configs'
++import { createBundledConfig } from '../../../helpers/compile/configs'
+ 
+-const bundleConfig = createAdapterConfig([
++const bundleConfig = createBundledConfig([
+   { entry: 'src/index-node.ts', outfile: 'dist/index-node' },
+   { entry: 'src/index-workerd.ts', outfile: 'dist/index-workerd' },
+ ])
+diff --git a/packages/adapter-libsql/helpers/build.ts b/packages/adapter-libsql/helpers/build.ts
+index 93b85f027e7b..089fad7f6618 100644
+--- a/packages/adapter-libsql/helpers/build.ts
++++ b/packages/adapter-libsql/helpers/build.ts
+@@ -1,13 +1,13 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-const defaultBuildOptions = adapterConfig.map((opts) => ({
++const defaultBuildOptions = bundledConfig.map((opts) => ({
+   ...opts,
+   entryPoints: ['src/index-node.ts'],
+   outfile: 'dist/index-node',
+ }))
+ 
+-const webBuildOptions = adapterConfig.map((opts) => ({
++const webBuildOptions = bundledConfig.map((opts) => ({
+   ...opts,
+   entryPoints: ['src/index-web.ts'],
+   outfile: 'dist/index-web',
+diff --git a/packages/adapter-mariadb/helpers/build.ts b/packages/adapter-mariadb/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-mariadb/helpers/build.ts
++++ b/packages/adapter-mariadb/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/adapter-mssql/helpers/build.ts b/packages/adapter-mssql/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-mssql/helpers/build.ts
++++ b/packages/adapter-mssql/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/adapter-neon/helpers/build.ts b/packages/adapter-neon/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-neon/helpers/build.ts
++++ b/packages/adapter-neon/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/adapter-pg/helpers/build.ts b/packages/adapter-pg/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-pg/helpers/build.ts
++++ b/packages/adapter-pg/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/adapter-planetscale/helpers/build.ts b/packages/adapter-planetscale/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-planetscale/helpers/build.ts
++++ b/packages/adapter-planetscale/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/adapter-ppg/helpers/build.ts b/packages/adapter-ppg/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/adapter-ppg/helpers/build.ts
++++ b/packages/adapter-ppg/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/bundled-js-drivers/helpers/build.ts b/packages/bundled-js-drivers/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/bundled-js-drivers/helpers/build.ts
++++ b/packages/bundled-js-drivers/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/client-engine-runtime/helpers/build.ts b/packages/client-engine-runtime/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/client-engine-runtime/helpers/build.ts
++++ b/packages/client-engine-runtime/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/client-generator-js/helpers/build.ts b/packages/client-generator-js/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/client-generator-js/helpers/build.ts
++++ b/packages/client-generator-js/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/client-generator-ts/helpers/build.ts b/packages/client-generator-ts/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/client-generator-ts/helpers/build.ts
++++ b/packages/client-generator-ts/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/client-runtime-utils/helpers/build.ts b/packages/client-runtime-utils/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/client-runtime-utils/helpers/build.ts
++++ b/packages/client-runtime-utils/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/credentials-store/helpers/build.ts b/packages/credentials-store/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/credentials-store/helpers/build.ts
++++ b/packages/credentials-store/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/debug/helpers/build.ts b/packages/debug/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/debug/helpers/build.ts
++++ b/packages/debug/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/dmmf/helpers/build.ts b/packages/dmmf/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/dmmf/helpers/build.ts
++++ b/packages/dmmf/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/driver-adapter-utils/helpers/build.ts b/packages/driver-adapter-utils/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/driver-adapter-utils/helpers/build.ts
++++ b/packages/driver-adapter-utils/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/get-dmmf/helpers/build.ts b/packages/get-dmmf/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/get-dmmf/helpers/build.ts
++++ b/packages/get-dmmf/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/json-protocol/helpers/build.ts b/packages/json-protocol/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/json-protocol/helpers/build.ts
++++ b/packages/json-protocol/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/param-graph-builder/helpers/build.ts b/packages/param-graph-builder/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/param-graph-builder/helpers/build.ts
++++ b/packages/param-graph-builder/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/param-graph/helpers/build.ts b/packages/param-graph/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/param-graph/helpers/build.ts
++++ b/packages/param-graph/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/sqlcommenter-query-insights/helpers/build.ts b/packages/sqlcommenter-query-insights/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/sqlcommenter-query-insights/helpers/build.ts
++++ b/packages/sqlcommenter-query-insights/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/sqlcommenter-query-insights/src/format/format.test.ts b/packages/sqlcommenter-query-insights/src/format/format.test.ts
+index 19f261a0b9d4..d5e9becf6ddd 100644
+--- a/packages/sqlcommenter-query-insights/src/format/format.test.ts
++++ b/packages/sqlcommenter-query-insights/src/format/format.test.ts
+@@ -1,9 +1,10 @@
+ import type { SqlCommenterQueryInfo } from '@prisma/sqlcommenter'
+ import { describe, expect, it } from 'vitest'
+ 
+-import { PARAM_PLACEHOLDER } from '../parameterize/parameterize'
+ import { formatQueryInsight, toBase64Url } from './format'
+ 
++const PARAM_PLACEHOLDER = { $type: 'Param' }
++
+ // Helper to decode base64url for test assertions
+ function fromBase64Url(data: string): string {
+   return Buffer.from(data, 'base64url').toString('utf-8')
+@@ -92,7 +93,7 @@ describe('formatQueryInsight', () => {
+         modelName: 'User',
+         action: 'findUnique',
+         query: {
+-          arguments: { where: { id: 123 } },
++          arguments: { where: { id: PARAM_PLACEHOLDER } },
+           selection: { $scalars: true },
+         },
+       }
+@@ -113,7 +114,7 @@ describe('formatQueryInsight', () => {
+         action: 'createOne',
+         query: {
+           arguments: {
+-            data: { email: 'test@example.com', name: 'Test User' },
++            data: { email: PARAM_PLACEHOLDER, name: PARAM_PLACEHOLDER },
+           },
+           selection: { $scalars: true },
+         },
+@@ -134,7 +135,7 @@ describe('formatQueryInsight', () => {
+         modelName: 'User',
+         action: 'findMany',
+         query: {
+-          arguments: { where: { active: true } },
++          arguments: { where: { active: PARAM_PLACEHOLDER } },
+           selection: {
+             $scalars: true,
+             $composites: true,
+@@ -187,8 +188,8 @@ describe('formatQueryInsight', () => {
+         modelName: 'User',
+         action: 'findUnique',
+         queries: [
+-          { arguments: { where: { id: 1 } }, selection: { $scalars: true } },
+-          { arguments: { where: { id: 2 } }, selection: { $scalars: true } },
++          { arguments: { where: { id: PARAM_PLACEHOLDER } }, selection: { $scalars: true } },
++          { arguments: { where: { id: PARAM_PLACEHOLDER } }, selection: { $scalars: true } },
+         ],
+       }
+       const result = formatQueryInsight(queryInfo)
+@@ -206,11 +207,11 @@ describe('formatQueryInsight', () => {
+         action: 'findUnique',
+         queries: [
+           {
+-            arguments: { where: { id: 1 } },
++            arguments: { where: { id: PARAM_PLACEHOLDER } },
+             selection: { $scalars: true, posts: { $scalars: true, $composites: true } },
+           },
+           {
+-            arguments: { where: { id: 2 } },
++            arguments: { where: { id: PARAM_PLACEHOLDER } },
+             selection: { $scalars: true, posts: { $scalars: true, $composites: true } },
+           },
+         ],
+@@ -314,7 +315,7 @@ describe('formatQueryInsight', () => {
+         modelName: 'User',
+         action: 'findMany',
+         query: {
+-          arguments: { where: { active: true } },
++          arguments: { where: { active: PARAM_PLACEHOLDER } },
+           selection: {
+             name: true,
+             posts: {
+diff --git a/packages/sqlcommenter-query-insights/src/format/format.ts b/packages/sqlcommenter-query-insights/src/format/format.ts
+index 945d9ea401bd..bba7136c1388 100644
+--- a/packages/sqlcommenter-query-insights/src/format/format.ts
++++ b/packages/sqlcommenter-query-insights/src/format/format.ts
+@@ -1,6 +1,5 @@
+ import type { SqlCommenterQueryInfo } from '@prisma/sqlcommenter'
+ 
+-import { parameterizeQuery } from '../parameterize/parameterize'
+ import { shapeQuery } from '../shape/shape'
+ 
+ /**
+@@ -28,8 +27,7 @@ export function formatQueryInsight(queryInfo: SqlCommenterQueryInfo): string {
+         return action
+       }
+ 
+-      const parameterizedQuery = parameterizeQuery(query)
+-      const shapedQuery = shapeQuery(parameterizedQuery)
++      const shapedQuery = shapeQuery(query)
+       const encoded = toBase64Url(JSON.stringify(shapedQuery))
+ 
+       return `${modelName}.${action}:${encoded}`
+@@ -38,7 +36,7 @@ export function formatQueryInsight(queryInfo: SqlCommenterQueryInfo): string {
+     case 'compacted': {
+       const { modelName, action, queries } = queryInfo
+ 
+-      const shapedQueries = queries.map((q) => shapeQuery(parameterizeQuery(q)))
++      const shapedQueries = queries.map((q) => shapeQuery(q))
+       const encoded = toBase64Url(JSON.stringify(shapedQueries))
+ 
+       return `${modelName}.${action}:${encoded}`
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/parameterize.ts b/packages/sqlcommenter-query-insights/src/parameterize/parameterize.ts
+deleted file mode 100644
+index c68059b69a7b..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/parameterize.ts
++++ /dev/null
+@@ -1,155 +0,0 @@
+-/**
+- * Query parameterization logic for Prisma query insights.
+- *
+- * This module handles the conversion of Prisma queries into parameterized shapes
+- * where user data values are replaced with placeholder markers.
+- *
+- * Design principle: when in doubt, parameterize. We're building query shapes
+- * for observability, not actual query parameterization for the query compiler.
+- */
+-
+-/**
+- * Placeholder object used to replace parameterized values in query shapes.
+- */
+-export const PARAM_PLACEHOLDER = { $type: 'Param' }
+-
+-/**
+- * Keys that represent nested relation operations within data contexts.
+- * These switch back from data context to default context.
+- */
+-const RELATION_OPERATION_KEYS = new Set([
+-  'connect',
+-  'connectOrCreate',
+-  'disconnect',
+-  'set',
+-  'create',
+-  'createMany',
+-  'update',
+-  'updateMany',
+-  'upsert',
+-  'delete',
+-  'deleteMany',
+-])
+-
+-/**
+- * Keys that switch from data context back to default context.
+- */
+-const STRUCTURAL_KEYS_IN_DATA = new Set([
+-  'where',
+-  'select',
+-  'include',
+-  'omit',
+-  '_count',
+-  '_sum',
+-  '_avg',
+-  '_min',
+-  '_max',
+-])
+-
+-/**
+- * Keys whose primitive values are structural (not user data).
+- */
+-const STRUCTURAL_VALUE_KEYS = new Set(['take', 'skip', 'sort', 'nulls', 'mode', 'relationLoadStrategy', 'distinct'])
+-
+-type Context = 'default' | 'selection' | 'orderBy' | 'data'
+-
+-function isTaggedValue(value: unknown): value is { $type: string; value: unknown } {
+-  return (
+-    typeof value === 'object' &&
+-    value !== null &&
+-    '$type' in value &&
+-    typeof (value as { $type: unknown }).$type === 'string'
+-  )
+-}
+-
+-function isSelectionMarker(key: string): boolean {
+-  return key === '$scalars' || key === '$composites'
+-}
+-
+-function isSortDirection(value: string): boolean {
+-  return value === 'asc' || value === 'desc'
+-}
+-
+-/**
+- * Get the context for a child key's value based on the key name and parent context.
+- */
+-function getChildContext(key: string, parentContext: Context): Context {
+-  // These keys always introduce their specific context
+-  if (key === 'arguments') return 'default'
+-  if (key === 'selection') return 'selection'
+-  if (key === 'orderBy') return 'orderBy'
+-  if (key === 'data') return 'data'
+-
+-  // In data context, certain keys escape back to default
+-  if (parentContext === 'data') {
+-    if (RELATION_OPERATION_KEYS.has(key) || STRUCTURAL_KEYS_IN_DATA.has(key)) {
+-      return 'default'
+-    }
+-  }
+-
+-  // Otherwise inherit parent context
+-  return parentContext
+-}
+-
+-/**
+- * Recursively parameterize a value based on its context.
+- */
+-function parameterize(value: unknown, context: Context, key?: string): unknown {
+-  if (value === null || value === undefined) {
+-    return value
+-  }
+-
+-  if (isTaggedValue(value)) {
+-    // Preserve structural tagged values: FieldRef (field comparisons) and Param (already parameterized)
+-    return value.$type === 'FieldRef' || value.$type === 'Param' ? value : PARAM_PLACEHOLDER
+-  }
+-
+-  if (Array.isArray(value)) {
+-    return value.map((item) => parameterize(item, context, key))
+-  }
+-
+-  if (typeof value === 'object') {
+-    return parameterizeObject(value as Record<string, unknown>, context)
+-  }
+-
+-  if (key && STRUCTURAL_VALUE_KEYS.has(key)) {
+-    return value
+-  }
+-
+-  // In selection context, booleans indicate field selection
+-  if (context === 'selection' && typeof value === 'boolean') {
+-    return value
+-  }
+-
+-  if (context === 'orderBy' && typeof value === 'string' && isSortDirection(value)) {
+-    return value
+-  }
+-
+-  return PARAM_PLACEHOLDER
+-}
+-
+-/**
+- * Parameterize an object by processing each key-value pair.
+- */
+-function parameterizeObject(obj: Record<string, unknown>, context: Context): Record<string, unknown> {
+-  const result: Record<string, unknown> = {}
+-
+-  for (const [key, value] of Object.entries(obj)) {
+-    if (isSelectionMarker(key)) {
+-      result[key] = value
+-      continue
+-    }
+-
+-    const childContext = getChildContext(key, context)
+-    result[key] = parameterize(value, childContext, key)
+-  }
+-
+-  return result
+-}
+-
+-/**
+- * Parameterizes a query object, replacing all user data values with placeholders.
+- */
+-export function parameterizeQuery(query: unknown): unknown {
+-  return parameterize(query, 'default')
+-}
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/basic-values.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/basic-values.test.ts
+deleted file mode 100644
+index 9745ae2f6047..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/basic-values.test.ts
++++ /dev/null
+@@ -1,105 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - basic values', () => {
+-  it('parameterizes string values in filter context', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          email: 'user@example.com',
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          email: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes number values in filter context', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          id: 123,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          id: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes boolean values in filter context', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          isActive: true,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          isActive: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves null values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          deletedAt: null,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          deletedAt: null,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves undefined values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          field: undefined,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          field: undefined,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/complex-queries.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/complex-queries.test.ts
+deleted file mode 100644
+index c86340977f19..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/complex-queries.test.ts
++++ /dev/null
+@@ -1,553 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - complex nested queries', () => {
+-  it('handles deeply nested structure with all features', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          AND: [
+-            { email: { contains: '@company.com' } },
+-            {
+-              OR: [{ role: 'ADMIN' }, { permissions: { some: { name: 'WRITE' } } }],
+-            },
+-          ],
+-        },
+-        take: 10,
+-        skip: 0,
+-      },
+-      selection: {
+-        $scalars: true,
+-        posts: {
+-          arguments: {
+-            where: { published: true },
+-            orderBy: { createdAt: { sort: 'desc' } },
+-          },
+-          selection: { $scalars: true },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          AND: [
+-            { email: { contains: PARAM_PLACEHOLDER } },
+-            {
+-              OR: [{ role: PARAM_PLACEHOLDER }, { permissions: { some: { name: PARAM_PLACEHOLDER } } }],
+-            },
+-          ],
+-        },
+-        take: 10,
+-        skip: 0,
+-      },
+-      selection: {
+-        $scalars: true,
+-        posts: {
+-          arguments: {
+-            where: { published: PARAM_PLACEHOLDER },
+-            orderBy: { createdAt: { sort: 'desc' } },
+-          },
+-          selection: { $scalars: true },
+-        },
+-      },
+-    })
+-  })
+-
+-  it('handles query with multiple nested selections and filters', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          id: 1,
+-          isActive: true,
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: {
+-            $scalars: true,
+-            avatar: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-        posts: {
+-          arguments: {
+-            where: {
+-              OR: [{ published: true }, { authorId: 1 }],
+-            },
+-            take: 5,
+-            orderBy: { createdAt: { sort: 'desc' } },
+-          },
+-          selection: {
+-            $scalars: true,
+-            comments: {
+-              arguments: {
+-                where: { approved: true },
+-                take: 10,
+-              },
+-              selection: {
+-                $scalars: true,
+-                author: {
+-                  selection: { $scalars: true },
+-                },
+-              },
+-            },
+-          },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          id: PARAM_PLACEHOLDER,
+-          isActive: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: {
+-            $scalars: true,
+-            avatar: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-        posts: {
+-          arguments: {
+-            where: {
+-              OR: [{ published: PARAM_PLACEHOLDER }, { authorId: PARAM_PLACEHOLDER }],
+-            },
+-            take: 5,
+-            orderBy: { createdAt: { sort: 'desc' } },
+-          },
+-          selection: {
+-            $scalars: true,
+-            comments: {
+-              arguments: {
+-                where: { approved: PARAM_PLACEHOLDER },
+-                take: 10,
+-              },
+-              selection: {
+-                $scalars: true,
+-                author: {
+-                  selection: { $scalars: true },
+-                },
+-              },
+-            },
+-          },
+-        },
+-      },
+-    })
+-  })
+-
+-  it('handles create with nested relations and where conditions', () => {
+-    const query = {
+-      arguments: {
+-        data: {
+-          email: 'user@example.com',
+-          name: 'Test User',
+-          profile: {
+-            create: {
+-              bio: 'Hello world',
+-              settings: {
+-                create: {
+-                  theme: 'dark',
+-                  notifications: true,
+-                },
+-              },
+-            },
+-          },
+-          posts: {
+-            create: [
+-              {
+-                title: 'First Post',
+-                content: 'Content here',
+-                tags: {
+-                  connect: [{ id: 1 }, { id: 2 }],
+-                },
+-              },
+-            ],
+-          },
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: { $scalars: true },
+-        },
+-        posts: {
+-          selection: {
+-            $scalars: true,
+-            tags: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        data: {
+-          email: PARAM_PLACEHOLDER,
+-          name: PARAM_PLACEHOLDER,
+-          profile: {
+-            create: {
+-              bio: PARAM_PLACEHOLDER,
+-              settings: {
+-                create: {
+-                  theme: PARAM_PLACEHOLDER,
+-                  notifications: PARAM_PLACEHOLDER,
+-                },
+-              },
+-            },
+-          },
+-          posts: {
+-            create: [
+-              {
+-                title: PARAM_PLACEHOLDER,
+-                content: PARAM_PLACEHOLDER,
+-                tags: {
+-                  connect: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-                },
+-              },
+-            ],
+-          },
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: { $scalars: true },
+-        },
+-        posts: {
+-          selection: {
+-            $scalars: true,
+-            tags: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-      },
+-    })
+-  })
+-
+-  it('handles update with complex nested operations', () => {
+-    const query = {
+-      arguments: {
+-        where: { id: 1 },
+-        data: {
+-          email: 'updated@example.com',
+-          profile: {
+-            update: {
+-              bio: 'Updated bio',
+-            },
+-          },
+-          posts: {
+-            create: { title: 'New Post' },
+-            update: {
+-              where: { id: 100 },
+-              data: { title: 'Updated Title' },
+-            },
+-            deleteMany: {
+-              where: { published: false },
+-            },
+-          },
+-          tags: {
+-            set: [{ id: 1 }, { id: 2 }],
+-            disconnect: [{ id: 3 }],
+-          },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: { id: PARAM_PLACEHOLDER },
+-        data: {
+-          email: PARAM_PLACEHOLDER,
+-          profile: {
+-            update: {
+-              bio: PARAM_PLACEHOLDER,
+-            },
+-          },
+-          posts: {
+-            create: { title: PARAM_PLACEHOLDER },
+-            update: {
+-              where: { id: PARAM_PLACEHOLDER },
+-              data: { title: PARAM_PLACEHOLDER },
+-            },
+-            deleteMany: {
+-              where: { published: PARAM_PLACEHOLDER },
+-            },
+-          },
+-          tags: {
+-            set: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-            disconnect: [{ id: PARAM_PLACEHOLDER }],
+-          },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('handles query with aggregations in selection', () => {
+-    const query = {
+-      arguments: {
+-        where: { status: 'ACTIVE' },
+-      },
+-      selection: {
+-        $scalars: true,
+-        _count: {
+-          selection: {
+-            posts: true,
+-            comments: true,
+-          },
+-        },
+-        posts: {
+-          arguments: {
+-            where: { published: true },
+-          },
+-          selection: {
+-            $scalars: true,
+-            _count: {
+-              selection: {
+-                comments: true,
+-                likes: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: { status: PARAM_PLACEHOLDER },
+-      },
+-      selection: {
+-        $scalars: true,
+-        _count: {
+-          selection: {
+-            posts: true,
+-            comments: true,
+-          },
+-        },
+-        posts: {
+-          arguments: {
+-            where: { published: PARAM_PLACEHOLDER },
+-          },
+-          selection: {
+-            $scalars: true,
+-            _count: {
+-              selection: {
+-                comments: true,
+-                likes: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    })
+-  })
+-
+-  it('handles upsert with complex where and data', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          email_tenantId: {
+-            email: 'user@example.com',
+-            tenantId: 'tenant-123',
+-          },
+-        },
+-        create: {
+-          email: 'user@example.com',
+-          tenantId: 'tenant-123',
+-          name: 'New User',
+-          profile: {
+-            create: { bio: 'New profile' },
+-          },
+-        },
+-        update: {
+-          name: 'Updated User',
+-          profile: {
+-            upsert: {
+-              create: { bio: 'Created profile' },
+-              update: { bio: 'Updated profile' },
+-            },
+-          },
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: { $scalars: true },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          email_tenantId: {
+-            email: PARAM_PLACEHOLDER,
+-            tenantId: PARAM_PLACEHOLDER,
+-          },
+-        },
+-        create: {
+-          email: PARAM_PLACEHOLDER,
+-          tenantId: PARAM_PLACEHOLDER,
+-          name: PARAM_PLACEHOLDER,
+-          profile: {
+-            create: { bio: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        update: {
+-          name: PARAM_PLACEHOLDER,
+-          profile: {
+-            upsert: {
+-              create: { bio: PARAM_PLACEHOLDER },
+-              update: { bio: PARAM_PLACEHOLDER },
+-            },
+-          },
+-        },
+-      },
+-      selection: {
+-        $scalars: true,
+-        profile: {
+-          selection: { $scalars: true },
+-        },
+-      },
+-    })
+-  })
+-
+-  it('handles complex filter with multiple relation traversals', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          AND: [
+-            {
+-              author: {
+-                profile: {
+-                  is: {
+-                    verified: true,
+-                  },
+-                },
+-              },
+-            },
+-            {
+-              categories: {
+-                some: {
+-                  parent: {
+-                    name: 'Technology',
+-                  },
+-                },
+-              },
+-            },
+-            {
+-              NOT: {
+-                tags: {
+-                  none: {
+-                    name: { in: ['spam', 'blocked'] },
+-                  },
+-                },
+-              },
+-            },
+-          ],
+-        },
+-        orderBy: [{ createdAt: { sort: 'desc' } }, { title: { sort: 'asc' } }],
+-        take: 20,
+-        skip: 0,
+-      },
+-      selection: {
+-        $scalars: true,
+-        author: {
+-          selection: {
+-            $scalars: true,
+-            profile: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-        categories: {
+-          selection: {
+-            $scalars: true,
+-            parent: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-        tags: {
+-          selection: { $scalars: true },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          AND: [
+-            {
+-              author: {
+-                profile: {
+-                  is: {
+-                    verified: PARAM_PLACEHOLDER,
+-                  },
+-                },
+-              },
+-            },
+-            {
+-              categories: {
+-                some: {
+-                  parent: {
+-                    name: PARAM_PLACEHOLDER,
+-                  },
+-                },
+-              },
+-            },
+-            {
+-              NOT: {
+-                tags: {
+-                  none: {
+-                    name: { in: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-                  },
+-                },
+-              },
+-            },
+-          ],
+-        },
+-        orderBy: [{ createdAt: { sort: 'desc' } }, { title: { sort: 'asc' } }],
+-        take: 20,
+-        skip: 0,
+-      },
+-      selection: {
+-        $scalars: true,
+-        author: {
+-          selection: {
+-            $scalars: true,
+-            profile: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-        categories: {
+-          selection: {
+-            $scalars: true,
+-            parent: {
+-              selection: { $scalars: true },
+-            },
+-          },
+-        },
+-        tags: {
+-          selection: { $scalars: true },
+-        },
+-      },
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/data-context.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/data-context.test.ts
+deleted file mode 100644
+index 71710aa527ab..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/data-context.test.ts
++++ /dev/null
+@@ -1,713 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - data context (create/update)', () => {
+-  describe('basic data operations', () => {
+-    it('parameterizes all values in data object', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'new@example.com',
+-            name: 'New User',
+-            age: 25,
+-            isActive: true,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            name: PARAM_PLACEHOLDER,
+-            age: PARAM_PLACEHOLDER,
+-            isActive: PARAM_PLACEHOLDER,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves null in data object', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            deletedAt: null,
+-            name: 'Test',
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            deletedAt: null,
+-            name: PARAM_PLACEHOLDER,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('nested relation creates', () => {
+-    it('handles create in data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            posts: {
+-              create: {
+-                title: 'My Post',
+-                content: 'Content here',
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            posts: {
+-              create: {
+-                title: PARAM_PLACEHOLDER,
+-                content: PARAM_PLACEHOLDER,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles create with array of records', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            posts: {
+-              create: [
+-                { title: 'Post 1', content: 'Content 1' },
+-                { title: 'Post 2', content: 'Content 2' },
+-              ],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            posts: {
+-              create: [
+-                { title: PARAM_PLACEHOLDER, content: PARAM_PLACEHOLDER },
+-                { title: PARAM_PLACEHOLDER, content: PARAM_PLACEHOLDER },
+-              ],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles createMany in data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            posts: {
+-              createMany: {
+-                data: [
+-                  { title: 'Post 1', content: 'Content 1' },
+-                  { title: 'Post 2', content: 'Content 2' },
+-                ],
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            posts: {
+-              createMany: {
+-                data: [
+-                  { title: PARAM_PLACEHOLDER, content: PARAM_PLACEHOLDER },
+-                  { title: PARAM_PLACEHOLDER, content: PARAM_PLACEHOLDER },
+-                ],
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('connect operations', () => {
+-    it('handles connect in data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            profile: {
+-              connect: {
+-                id: 123,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            profile: {
+-              connect: {
+-                id: PARAM_PLACEHOLDER,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles connect with array', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            tags: {
+-              connect: [{ id: 1 }, { id: 2 }, { id: 3 }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            tags: {
+-              connect: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles connectOrCreate in data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            profile: {
+-              connectOrCreate: {
+-                where: { userId: 123 },
+-                create: { bio: 'New bio' },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            profile: {
+-              connectOrCreate: {
+-                where: { userId: PARAM_PLACEHOLDER },
+-                create: { bio: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('disconnect operations', () => {
+-    it('handles disconnect with array', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              disconnect: [{ id: 1 }, { id: 2 }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              disconnect: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles disconnect with boolean', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            profile: {
+-              disconnect: true,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            profile: {
+-              disconnect: PARAM_PLACEHOLDER,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles disconnect with where clause', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            tags: {
+-              disconnect: { id: 123 },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            tags: {
+-              disconnect: { id: PARAM_PLACEHOLDER },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('set operations', () => {
+-    it('handles set with array of values', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            tags: {
+-              set: ['tag1', 'tag2'],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            tags: {
+-              set: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles set with array of objects', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            categories: {
+-              set: [{ id: 1 }, { id: 2 }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            categories: {
+-              set: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('update operations', () => {
+-    it('handles update in nested data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            profile: {
+-              update: {
+-                bio: 'Updated bio',
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            profile: {
+-              update: {
+-                bio: PARAM_PLACEHOLDER,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles update with where clause', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              update: {
+-                where: { id: 123 },
+-                data: { title: 'Updated title' },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              update: {
+-                where: { id: PARAM_PLACEHOLDER },
+-                data: { title: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles updateMany in nested data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              updateMany: {
+-                where: { published: false },
+-                data: { draft: true },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              updateMany: {
+-                where: { published: PARAM_PLACEHOLDER },
+-                data: { draft: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('upsert operations', () => {
+-    it('handles upsert in nested data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            profile: {
+-              upsert: {
+-                create: { bio: 'New bio' },
+-                update: { bio: 'Updated bio' },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            profile: {
+-              upsert: {
+-                create: { bio: PARAM_PLACEHOLDER },
+-                update: { bio: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles upsert with where clause', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              upsert: {
+-                where: { slug: 'my-post' },
+-                create: { title: 'New Post', slug: 'my-post' },
+-                update: { title: 'Updated Post' },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              upsert: {
+-                where: { slug: PARAM_PLACEHOLDER },
+-                create: { title: PARAM_PLACEHOLDER, slug: PARAM_PLACEHOLDER },
+-                update: { title: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('delete operations', () => {
+-    it('handles delete in nested data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              delete: { id: 123 },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              delete: { id: PARAM_PLACEHOLDER },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles delete with array', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              delete: [{ id: 1 }, { id: 2 }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              delete: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles delete with boolean', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            profile: {
+-              delete: true,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            profile: {
+-              delete: PARAM_PLACEHOLDER,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles deleteMany in nested data', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            posts: {
+-              deleteMany: {
+-                where: { published: false },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            posts: {
+-              deleteMany: {
+-                where: { published: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('complex nested data operations', () => {
+-    it('handles multiple nested operations together', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            profile: {
+-              create: { bio: 'New user' },
+-            },
+-            posts: {
+-              create: [{ title: 'Post 1' }],
+-              connect: [{ id: 100 }],
+-            },
+-            tags: {
+-              set: [{ id: 1 }, { id: 2 }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            profile: {
+-              create: { bio: PARAM_PLACEHOLDER },
+-            },
+-            posts: {
+-              create: [{ title: PARAM_PLACEHOLDER }],
+-              connect: [{ id: PARAM_PLACEHOLDER }],
+-            },
+-            tags: {
+-              set: [{ id: PARAM_PLACEHOLDER }, { id: PARAM_PLACEHOLDER }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles deeply nested relation creates', () => {
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: 'user@example.com',
+-            posts: {
+-              create: {
+-                title: 'My Post',
+-                comments: {
+-                  create: {
+-                    content: 'First comment',
+-                    author: {
+-                      connect: { id: 456 },
+-                    },
+-                  },
+-                },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          data: {
+-            email: PARAM_PLACEHOLDER,
+-            posts: {
+-              create: {
+-                title: PARAM_PLACEHOLDER,
+-                comments: {
+-                  create: {
+-                    content: PARAM_PLACEHOLDER,
+-                    author: {
+-                      connect: { id: PARAM_PLACEHOLDER },
+-                    },
+-                  },
+-                },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/edge-cases.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/edge-cases.test.ts
+deleted file mode 100644
+index b6cee2faaf61..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/edge-cases.test.ts
++++ /dev/null
+@@ -1,161 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - edge cases', () => {
+-  it('handles empty objects', () => {
+-    const query = {
+-      arguments: {
+-        where: {},
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {},
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('handles empty arrays', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          id: { in: [] },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          id: { in: [] },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('handles deeply nested empty structures', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          AND: [{ OR: [] }, {}],
+-        },
+-      },
+-      selection: {},
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          AND: [{ OR: [] }, {}],
+-        },
+-      },
+-      selection: {},
+-    })
+-  })
+-
+-  it('handles query with no arguments', () => {
+-    const query = {
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('handles query with empty arguments', () => {
+-    const query = {
+-      arguments: {},
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {},
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('handles null at top level', () => {
+-    expect(parameterizeQuery(null)).toEqual(null)
+-  })
+-
+-  it('handles undefined at top level', () => {
+-    expect(parameterizeQuery(undefined)).toEqual(undefined)
+-  })
+-
+-  it('handles primitive at top level', () => {
+-    expect(parameterizeQuery('string')).toEqual(PARAM_PLACEHOLDER)
+-    expect(parameterizeQuery(123)).toEqual(PARAM_PLACEHOLDER)
+-    expect(parameterizeQuery(true)).toEqual(PARAM_PLACEHOLDER)
+-  })
+-
+-  it('handles array at top level', () => {
+-    expect(parameterizeQuery(['a', 'b', 'c'])).toEqual([PARAM_PLACEHOLDER, PARAM_PLACEHOLDER, PARAM_PLACEHOLDER])
+-  })
+-
+-  it('handles mixed array with objects and primitives', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          OR: [{ status: 'ACTIVE' }, 'literal', 123],
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          OR: [{ status: PARAM_PLACEHOLDER }, PARAM_PLACEHOLDER, PARAM_PLACEHOLDER],
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('handles very deeply nested structures', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          AND: [
+-            {
+-              OR: [
+-                {
+-                  NOT: {
+-                    AND: [{ field: 'value' }],
+-                  },
+-                },
+-              ],
+-            },
+-          ],
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          AND: [
+-            {
+-              OR: [
+-                {
+-                  NOT: {
+-                    AND: [{ field: PARAM_PLACEHOLDER }],
+-                  },
+-                },
+-              ],
+-            },
+-          ],
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/filter-operators.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/filter-operators.test.ts
+deleted file mode 100644
+index c804a91501b9..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/filter-operators.test.ts
++++ /dev/null
+@@ -1,569 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - filter operators', () => {
+-  describe('equality operators', () => {
+-    it('parameterizes equals operator value', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            email: { equals: 'user@example.com' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            email: { equals: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes not operator with value', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            email: { not: 'admin@example.com' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            email: { not: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes not operator with nested object', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            email: { not: { equals: 'admin@example.com' } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            email: { not: { equals: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('list operators', () => {
+-    it('parameterizes in operator array', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            status: { in: ['ACTIVE', 'PENDING'] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            status: { in: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes notIn operator array', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            status: { notIn: ['DELETED', 'ARCHIVED'] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            status: { notIn: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('comparison operators', () => {
+-    it('parameterizes lt operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            age: { lt: 18 },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            age: { lt: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes lte operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            age: { lte: 17 },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            age: { lte: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes gt operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            age: { gt: 65 },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            age: { gt: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes gte operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            age: { gte: 66 },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            age: { gte: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes multiple comparison operators together', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            age: { lt: 18, lte: 17, gt: 65, gte: 66 },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            age: {
+-              lt: PARAM_PLACEHOLDER,
+-              lte: PARAM_PLACEHOLDER,
+-              gt: PARAM_PLACEHOLDER,
+-              gte: PARAM_PLACEHOLDER,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('string operators', () => {
+-    it('parameterizes contains operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            name: { contains: 'John' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            name: { contains: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes startsWith operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            name: { startsWith: 'J' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            name: { startsWith: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes endsWith operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            name: { endsWith: 'n' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            name: { endsWith: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes all string operators together', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            name: { contains: 'John', startsWith: 'J', endsWith: 'n' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            name: {
+-              contains: PARAM_PLACEHOLDER,
+-              startsWith: PARAM_PLACEHOLDER,
+-              endsWith: PARAM_PLACEHOLDER,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes search operator (full-text search)', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            content: { search: 'prisma database' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            content: { search: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves mode operator (structural enum)', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            name: { contains: 'john', mode: 'insensitive' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            name: { contains: PARAM_PLACEHOLDER, mode: 'insensitive' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('array field operators', () => {
+-    it('parameterizes has operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            tags: { has: 'typescript' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            tags: { has: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes hasEvery operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            tags: { hasEvery: ['typescript', 'prisma'] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            tags: { hasEvery: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes hasSome operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            tags: { hasSome: ['typescript', 'javascript'] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            tags: { hasSome: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes isEmpty operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            tags: { isEmpty: true },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            tags: { isEmpty: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('JSON operators', () => {
+-    it('parameterizes path operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { path: ['nested', 'field'], equals: 'value' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: {
+-              path: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER],
+-              equals: PARAM_PLACEHOLDER,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes string_contains operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { string_contains: 'search term' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: { string_contains: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes string_starts_with operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { string_starts_with: 'prefix' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: { string_starts_with: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes string_ends_with operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { string_ends_with: 'suffix' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: { string_ends_with: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes array_contains operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { array_contains: 'element' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: { array_contains: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes array_starts_with operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { array_starts_with: 'first' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: { array_starts_with: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes array_ends_with operator', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { array_ends_with: 'last' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            metadata: { array_ends_with: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/logical-operators.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/logical-operators.test.ts
+deleted file mode 100644
+index ece5041bb8ef..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/logical-operators.test.ts
++++ /dev/null
+@@ -1,373 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - logical operators', () => {
+-  describe('AND operator', () => {
+-    it('handles AND operator with array', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: [{ email: 'a@example.com' }, { name: 'Test' }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            AND: [{ email: PARAM_PLACEHOLDER }, { name: PARAM_PLACEHOLDER }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles AND operator with single object', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: { email: 'a@example.com', name: 'Test' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            AND: { email: PARAM_PLACEHOLDER, name: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles nested AND operators', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: [{ AND: [{ field1: 'value1' }, { field2: 'value2' }] }, { field3: 'value3' }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            AND: [
+-              { AND: [{ field1: PARAM_PLACEHOLDER }, { field2: PARAM_PLACEHOLDER }] },
+-              { field3: PARAM_PLACEHOLDER },
+-            ],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('OR operator', () => {
+-    it('handles OR operator with array', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            OR: [{ status: 'ACTIVE' }, { status: 'PENDING' }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            OR: [{ status: PARAM_PLACEHOLDER }, { status: PARAM_PLACEHOLDER }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles OR operator with complex conditions', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            OR: [{ email: { contains: '@company.com' } }, { role: 'ADMIN' }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            OR: [{ email: { contains: PARAM_PLACEHOLDER } }, { role: PARAM_PLACEHOLDER }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('NOT operator', () => {
+-    it('handles NOT operator with single object', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            NOT: { email: 'admin@example.com' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            NOT: { email: PARAM_PLACEHOLDER },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles NOT operator as array', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            NOT: [{ email: 'admin@example.com' }, { role: 'SYSTEM' }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            NOT: [{ email: PARAM_PLACEHOLDER }, { role: PARAM_PLACEHOLDER }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles NOT operator with nested conditions', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            NOT: {
+-              OR: [{ status: 'DELETED' }, { status: 'ARCHIVED' }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            NOT: {
+-              OR: [{ status: PARAM_PLACEHOLDER }, { status: PARAM_PLACEHOLDER }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('is/isNot operators (nullable relations)', () => {
+-    it('handles is operator with null', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            profile: { is: null },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            profile: { is: null },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles is operator with nested conditions', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            profile: { is: { bio: 'Developer' } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            profile: { is: { bio: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles isNot operator with null', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            profile: { isNot: null },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            profile: { isNot: null },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles isNot operator with nested conditions', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            profile: { isNot: { verified: false } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            profile: { isNot: { verified: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('combined logical operators', () => {
+-    it('handles AND with OR', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: [
+-              { email: { contains: '@company.com' } },
+-              {
+-                OR: [{ role: 'ADMIN' }, { role: 'MODERATOR' }],
+-              },
+-            ],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            AND: [
+-              { email: { contains: PARAM_PLACEHOLDER } },
+-              {
+-                OR: [{ role: PARAM_PLACEHOLDER }, { role: PARAM_PLACEHOLDER }],
+-              },
+-            ],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles AND with NOT', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: [{ isActive: true }, { NOT: { role: 'BANNED' } }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            AND: [{ isActive: PARAM_PLACEHOLDER }, { NOT: { role: PARAM_PLACEHOLDER } }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles OR with NOT', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            OR: [{ status: 'ACTIVE' }, { NOT: { deletedAt: null } }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            OR: [{ status: PARAM_PLACEHOLDER }, { NOT: { deletedAt: null } }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles complex nested logical operators', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: [
+-              {
+-                OR: [{ email: { endsWith: '@company.com' } }, { AND: [{ role: 'ADMIN' }, { verified: true }] }],
+-              },
+-              {
+-                NOT: {
+-                  OR: [{ status: 'BANNED' }, { status: 'SUSPENDED' }],
+-                },
+-              },
+-            ],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            AND: [
+-              {
+-                OR: [
+-                  { email: { endsWith: PARAM_PLACEHOLDER } },
+-                  { AND: [{ role: PARAM_PLACEHOLDER }, { verified: PARAM_PLACEHOLDER }] },
+-                ],
+-              },
+-              {
+-                NOT: {
+-                  OR: [{ status: PARAM_PLACEHOLDER }, { status: PARAM_PLACEHOLDER }],
+-                },
+-              },
+-            ],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/order-by-and-pagination.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/order-by-and-pagination.test.ts
+deleted file mode 100644
+index 81867b151a1e..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/order-by-and-pagination.test.ts
++++ /dev/null
+@@ -1,449 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - orderBy', () => {
+-  describe('simple orderBy', () => {
+-    it('preserves sort direction strings', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: {
+-            createdAt: { sort: 'desc', nulls: 'last' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: {
+-            createdAt: { sort: 'desc', nulls: 'last' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves simple sort direction string (shorthand format)', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: {
+-            name: 'asc',
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      // Shorthand orderBy format should preserve sort direction
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: {
+-            name: 'asc',
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves desc sort direction in shorthand format', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: {
+-            createdAt: 'desc',
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: {
+-            createdAt: 'desc',
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves sort with nulls handling', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: {
+-            updatedAt: { sort: 'asc', nulls: 'first' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: {
+-            updatedAt: { sort: 'asc', nulls: 'first' },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('orderBy as array', () => {
+-    it('handles orderBy with multiple fields', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: [{ lastName: { sort: 'asc' } }, { firstName: { sort: 'asc' } }],
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: [{ lastName: { sort: 'asc' } }, { firstName: { sort: 'asc' } }],
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles mixed orderBy array formats', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: [{ createdAt: { sort: 'desc' } }, { name: 'asc' }],
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      // Both long format and shorthand format should be preserved
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: [{ createdAt: { sort: 'desc' } }, { name: 'asc' }],
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('nested relation orderBy', () => {
+-    it('handles orderBy on nested relation', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: {
+-            author: {
+-              name: { sort: 'asc' },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: {
+-            author: {
+-              name: { sort: 'asc' },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles orderBy in nested selection', () => {
+-      const query = {
+-        selection: {
+-          $scalars: true,
+-          posts: {
+-            arguments: {
+-              orderBy: { createdAt: { sort: 'desc' } },
+-            },
+-            selection: { $scalars: true },
+-          },
+-        },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        selection: {
+-          $scalars: true,
+-          posts: {
+-            arguments: {
+-              orderBy: { createdAt: { sort: 'desc' } },
+-            },
+-            selection: { $scalars: true },
+-          },
+-        },
+-      })
+-    })
+-  })
+-
+-  describe('orderBy with aggregates', () => {
+-    it('handles orderBy with _count', () => {
+-      const query = {
+-        arguments: {
+-          orderBy: {
+-            posts: {
+-              _count: { sort: 'desc' },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          orderBy: {
+-            posts: {
+-              _count: { sort: 'desc' },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-})
+-
+-describe('parameterizeQuery - pagination', () => {
+-  describe('take', () => {
+-    it('preserves take value', () => {
+-      const query = {
+-        arguments: {
+-          take: 10,
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          take: 10,
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves negative take value (for reverse pagination)', () => {
+-      const query = {
+-        arguments: {
+-          take: -10,
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          take: -10,
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('skip', () => {
+-    it('preserves skip value', () => {
+-      const query = {
+-        arguments: {
+-          skip: 20,
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          skip: 20,
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('preserves skip value of zero', () => {
+-      const query = {
+-        arguments: {
+-          skip: 0,
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          skip: 0,
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('cursor', () => {
+-    it('parameterizes cursor values', () => {
+-      const query = {
+-        arguments: {
+-          cursor: {
+-            id: 123,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          cursor: {
+-            id: PARAM_PLACEHOLDER,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('parameterizes cursor with compound key', () => {
+-      const query = {
+-        arguments: {
+-          cursor: {
+-            tenantId_id: {
+-              tenantId: 'tenant-123',
+-              id: 456,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          cursor: {
+-            tenantId_id: {
+-              tenantId: PARAM_PLACEHOLDER,
+-              id: PARAM_PLACEHOLDER,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('combined pagination', () => {
+-    it('handles take, skip, and cursor together', () => {
+-      const query = {
+-        arguments: {
+-          take: 10,
+-          skip: 1,
+-          cursor: {
+-            id: 100,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          take: 10,
+-          skip: 1,
+-          cursor: {
+-            id: PARAM_PLACEHOLDER,
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles pagination with orderBy', () => {
+-      const query = {
+-        arguments: {
+-          take: 20,
+-          skip: 0,
+-          orderBy: { createdAt: { sort: 'desc' } },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          take: 20,
+-          skip: 0,
+-          orderBy: { createdAt: { sort: 'desc' } },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles pagination with where clause', () => {
+-      const query = {
+-        arguments: {
+-          where: { status: 'ACTIVE' },
+-          take: 10,
+-          skip: 5,
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: { status: PARAM_PLACEHOLDER },
+-          take: 10,
+-          skip: 5,
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('pagination in nested selections', () => {
+-    it('preserves pagination in nested relation', () => {
+-      const query = {
+-        selection: {
+-          $scalars: true,
+-          posts: {
+-            arguments: {
+-              take: 5,
+-              skip: 0,
+-            },
+-            selection: { $scalars: true },
+-          },
+-        },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        selection: {
+-          $scalars: true,
+-          posts: {
+-            arguments: {
+-              take: 5,
+-              skip: 0,
+-            },
+-            selection: { $scalars: true },
+-          },
+-        },
+-      })
+-    })
+-  })
+-})
+-
+-describe('parameterizeQuery - distinct', () => {
+-  it('preserves distinct field names', () => {
+-    const query = {
+-      arguments: {
+-        distinct: ['email'],
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        distinct: ['email'],
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves distinct with multiple fields', () => {
+-    const query = {
+-      arguments: {
+-        distinct: ['email', 'name'],
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        distinct: ['email', 'name'],
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/properties.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/properties.test.ts
+deleted file mode 100644
+index 0c009aef1b10..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/properties.test.ts
++++ /dev/null
+@@ -1,567 +0,0 @@
+-import * as fc from 'fast-check'
+-import { describe, expect, it } from 'vitest'
+-
+-import { parameterizeQuery } from '../parameterize'
+-
+-/**
+- * Property-based tests for parameterizeQuery.
+- *
+- * The key property we want to verify is simple:
+- * **User data values should never appear in the parameterized output.**
+- *
+- * We generate arbitrary query shapes containing "canary" values and verify
+- * those values don't appear in the JSON-serialized output.
+- */
+-
+-/** A unique marker we can search for in serialized output */
+-const CANARY_PREFIX = '___CANARY_'
+-
+-/** Generate a unique canary string */
+-function canary(id: number): string {
+-  return `${CANARY_PREFIX}${id}___`
+-}
+-
+-/** Check if output contains any canary values */
+-function containsCanary(output: unknown): boolean {
+-  const serialized = JSON.stringify(output)
+-  return serialized.includes(CANARY_PREFIX)
+-}
+-
+-/**
+- * Create an arbitrary that generates canary-tagged user values.
+- * Each value contains a unique canary string that we can search for.
+- */
+-function canaryValueArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<unknown> {
+-  return fc.oneof(
+-    // Plain canary string
+-    idArb.map((id) => canary(id)),
+-    // Tagged DateTime
+-    idArb.map((id) => ({ $type: 'DateTime', value: canary(id) })),
+-    // Tagged Decimal
+-    idArb.map((id) => ({ $type: 'Decimal', value: canary(id) })),
+-    // Tagged BigInt
+-    idArb.map((id) => ({ $type: 'BigInt', value: canary(id) })),
+-    // Tagged Bytes
+-    idArb.map((id) => ({ $type: 'Bytes', value: canary(id) })),
+-    // Tagged Json
+-    idArb.map((id) => ({ $type: 'Json', value: canary(id) })),
+-    // Tagged Enum
+-    idArb.map((id) => ({ $type: 'Enum', value: canary(id) })),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for filter operator objects containing canary values
+- */
+-function filterOperatorArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  const valueArb = canaryValueArb(idArb)
+-
+-  return fc.oneof(
+-    fc.record({ equals: valueArb }),
+-    fc.record({ not: valueArb }),
+-    fc.record({ in: fc.array(valueArb, { minLength: 1, maxLength: 3 }) }),
+-    fc.record({ notIn: fc.array(valueArb, { minLength: 1, maxLength: 3 }) }),
+-    fc.record({ lt: valueArb }),
+-    fc.record({ lte: valueArb }),
+-    fc.record({ gt: valueArb }),
+-    fc.record({ gte: valueArb }),
+-    fc.record({ contains: idArb.map((id) => canary(id)) }),
+-    fc.record({ startsWith: idArb.map((id) => canary(id)) }),
+-    fc.record({ endsWith: idArb.map((id) => canary(id)) }),
+-    fc.record({ contains: idArb.map((id) => canary(id)), mode: fc.constant('insensitive') }),
+-    fc.record({ search: idArb.map((id) => canary(id)) }),
+-    // Array field operators
+-    fc.record({ has: valueArb }),
+-    fc.record({ hasEvery: fc.array(valueArb, { minLength: 1, maxLength: 3 }) }),
+-    fc.record({ hasSome: fc.array(valueArb, { minLength: 1, maxLength: 3 }) }),
+-    // JSON operators
+-    fc.record({
+-      path: fc.array(
+-        idArb.map((id) => canary(id)),
+-        { minLength: 1, maxLength: 3 },
+-      ),
+-      equals: valueArb,
+-    }),
+-    fc.record({ string_contains: idArb.map((id) => canary(id)) }),
+-    fc.record({ string_starts_with: idArb.map((id) => canary(id)) }),
+-    fc.record({ string_ends_with: idArb.map((id) => canary(id)) }),
+-    fc.record({ array_contains: valueArb }),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for where clause field values (either direct value or filter operator)
+- */
+-function whereFieldValueArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<unknown> {
+-  return fc.oneof(canaryValueArb(idArb), filterOperatorArb(idArb))
+-}
+-
+-/**
+- * Create an arbitrary for simple where clauses (field -> value mappings)
+- */
+-function simpleWhereArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.dictionary(
+-    fc.constantFrom('id', 'email', 'name', 'status', 'age', 'isActive', 'createdAt', 'content', 'title'),
+-    whereFieldValueArb(idArb),
+-    { minKeys: 1, maxKeys: 4 },
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for relation filter operators (some, every, none)
+- */
+-function relationFilterArb(
+-  whereArb: fc.Arbitrary<Record<string, unknown>>,
+-): fc.Arbitrary<Record<string, Record<string, unknown>>> {
+-  return fc.oneof(
+-    fc.record({ posts: fc.record({ some: whereArb }) }),
+-    fc.record({ posts: fc.record({ every: whereArb }) }),
+-    fc.record({ posts: fc.record({ none: whereArb }) }),
+-    fc.record({ comments: fc.record({ some: whereArb }) }),
+-    fc.record({ author: fc.record({ is: whereArb }) }),
+-    fc.record({ profile: fc.record({ isNot: whereArb }) }),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for where clauses with logical operators and nesting
+- */
+-function whereClauseArb(idArb: fc.Arbitrary<number>, maxDepth: number = 3): fc.Arbitrary<Record<string, unknown>> {
+-  const simpleWhere = simpleWhereArb(idArb)
+-
+-  if (maxDepth <= 1) {
+-    return simpleWhere
+-  }
+-
+-  const recurse = whereClauseArb(idArb, maxDepth - 1)
+-
+-  return fc.oneof(
+-    { weight: 3, arbitrary: simpleWhere },
+-    { weight: 1, arbitrary: fc.record({ AND: fc.array(recurse, { minLength: 1, maxLength: 3 }) }) },
+-    { weight: 1, arbitrary: fc.record({ OR: fc.array(recurse, { minLength: 1, maxLength: 3 }) }) },
+-    { weight: 1, arbitrary: fc.record({ NOT: recurse }) },
+-    { weight: 1, arbitrary: relationFilterArb(simpleWhere) },
+-    // Combined: simple fields + logical operator
+-    {
+-      weight: 1,
+-      arbitrary: fc.record({
+-        field1: whereFieldValueArb(idArb),
+-        AND: fc.array(recurse, { minLength: 1, maxLength: 2 }),
+-      }),
+-    },
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for data objects (for create/update operations)
+- */
+-function dataObjectArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.dictionary(
+-    fc.constantFrom('email', 'name', 'title', 'content', 'status', 'age', 'isActive', 'bio'),
+-    canaryValueArb(idArb),
+-    { minKeys: 1, maxKeys: 5 },
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for nested relation operations in data context
+- */
+-function nestedDataOperationArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  const simpleData = dataObjectArb(idArb)
+-
+-  return fc.oneof(
+-    // create
+-    fc.record({ posts: fc.record({ create: simpleData }) }),
+-    fc.record({ posts: fc.record({ create: fc.array(simpleData, { minLength: 1, maxLength: 2 }) }) }),
+-    // createMany
+-    fc.record({
+-      posts: fc.record({ createMany: fc.record({ data: fc.array(simpleData, { minLength: 1, maxLength: 2 }) }) }),
+-    }),
+-    // connect
+-    fc.record({ profile: fc.record({ connect: fc.record({ id: idArb.map((id) => canary(id)) }) }) }),
+-    fc.record({
+-      tags: fc.record({
+-        connect: fc.array(fc.record({ id: idArb.map((id) => canary(id)) }), { minLength: 1, maxLength: 3 }),
+-      }),
+-    }),
+-    // connectOrCreate
+-    fc.record({
+-      profile: fc.record({
+-        connectOrCreate: fc.record({
+-          where: fc.record({ id: idArb.map((id) => canary(id)) }),
+-          create: simpleData,
+-        }),
+-      }),
+-    }),
+-    // update
+-    fc.record({ profile: fc.record({ update: simpleData }) }),
+-    // upsert
+-    fc.record({
+-      profile: fc.record({
+-        upsert: fc.record({
+-          create: simpleData,
+-          update: simpleData,
+-        }),
+-      }),
+-    }),
+-    // disconnect
+-    fc.record({
+-      tags: fc.record({
+-        disconnect: fc.array(fc.record({ id: idArb.map((id) => canary(id)) }), { minLength: 1, maxLength: 2 }),
+-      }),
+-    }),
+-    // set
+-    fc.record({
+-      tags: fc.record({
+-        set: fc.array(fc.record({ id: idArb.map((id) => canary(id)) }), { minLength: 1, maxLength: 3 }),
+-      }),
+-    }),
+-    // delete
+-    fc.record({ posts: fc.record({ delete: fc.record({ id: idArb.map((id) => canary(id)) }) }) }),
+-    // deleteMany
+-    fc.record({ posts: fc.record({ deleteMany: fc.record({ where: simpleWhereArb(idArb) }) }) }),
+-    // updateMany
+-    fc.record({
+-      posts: fc.record({
+-        updateMany: fc.record({
+-          where: simpleWhereArb(idArb),
+-          data: simpleData,
+-        }),
+-      }),
+-    }),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for the full data clause (simple fields + optional nested operations)
+- */
+-function fullDataArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.oneof(
+-    dataObjectArb(idArb),
+-    // Data with nested relation operation
+-    fc.tuple(dataObjectArb(idArb), nestedDataOperationArb(idArb)).map(([simple, nested]) => ({ ...simple, ...nested })),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for selection objects
+- */
+-function selectionArb(maxDepth: number = 2): fc.Arbitrary<Record<string, unknown>> {
+-  const simpleSelection = fc.record({
+-    $scalars: fc.constant(true as const),
+-  })
+-
+-  if (maxDepth <= 1) {
+-    return simpleSelection
+-  }
+-
+-  const nestedSelection = selectionArb(maxDepth - 1)
+-
+-  return fc.oneof(
+-    simpleSelection,
+-    fc.record({
+-      $scalars: fc.constant(true as const),
+-      $composites: fc.boolean(),
+-    }),
+-    // With nested relation selection
+-    fc.record({
+-      $scalars: fc.constant(true as const),
+-      posts: fc.record({
+-        selection: nestedSelection,
+-      }),
+-    }),
+-    fc.record({
+-      $scalars: fc.constant(true as const),
+-      author: fc.record({
+-        selection: nestedSelection,
+-      }),
+-    }),
+-    // With nested relation selection + arguments
+-    fc.record({
+-      $scalars: fc.constant(true as const),
+-      posts: fc.record({
+-        arguments: fc.record({
+-          take: fc.integer({ min: 1, max: 100 }),
+-          skip: fc.integer({ min: 0, max: 100 }),
+-        }),
+-        selection: nestedSelection,
+-      }),
+-    }),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for orderBy clauses
+- */
+-function orderByArb(): fc.Arbitrary<Record<string, unknown> | Record<string, unknown>[]> {
+-  const simpleOrderBy: fc.Arbitrary<Record<string, unknown>> = fc
+-    .constantFrom('createdAt', 'updatedAt', 'name', 'id')
+-    .chain((field) =>
+-      fc.record({
+-        [field]: fc.record({
+-          sort: fc.constantFrom('asc', 'desc'),
+-          nulls: fc.constantFrom('first', 'last'),
+-        }),
+-      }),
+-    )
+-
+-  return fc.oneof(simpleOrderBy, fc.array(simpleOrderBy, { minLength: 1, maxLength: 3 }))
+-}
+-
+-/**
+- * Create an arbitrary for cursor objects
+- */
+-function cursorArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.oneof(
+-    fc.record({ id: idArb.map((id) => canary(id)) }),
+-    fc.record({
+-      email_tenantId: fc.record({
+-        email: idArb.map((id) => canary(id)),
+-        tenantId: idArb.map((id) => canary(id)),
+-      }),
+-    }),
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for complete query-like objects
+- */
+-function queryArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.record(
+-    {
+-      arguments: fc.record(
+-        {
+-          where: whereClauseArb(idArb),
+-          data: fullDataArb(idArb),
+-          take: fc.integer({ min: 1, max: 100 }),
+-          skip: fc.integer({ min: 0, max: 100 }),
+-          orderBy: orderByArb(),
+-          cursor: cursorArb(idArb),
+-          distinct: fc.array(fc.constantFrom('email', 'name', 'id', 'createdAt'), { minLength: 1, maxLength: 3 }),
+-        },
+-        { requiredKeys: [] },
+-      ),
+-      selection: selectionArb(),
+-    },
+-    { requiredKeys: ['selection'] },
+-  )
+-}
+-
+-/**
+- * Create an arbitrary for queries focused on where clauses
+- */
+-function whereQueryArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.record({
+-    arguments: fc.record({
+-      where: whereClauseArb(idArb, 4),
+-    }),
+-    selection: fc.record({ $scalars: fc.constant(true as const) }),
+-  })
+-}
+-
+-/**
+- * Create an arbitrary for queries focused on data operations
+- */
+-function dataQueryArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.record({
+-    arguments: fc.record({
+-      data: fullDataArb(idArb),
+-    }),
+-    selection: fc.record({ $scalars: fc.constant(true as const) }),
+-  })
+-}
+-
+-/**
+- * Create an arbitrary for queries with deeply nested selections
+- */
+-function nestedSelectionQueryArb(idArb: fc.Arbitrary<number>): fc.Arbitrary<Record<string, unknown>> {
+-  return fc.record({
+-    arguments: fc.record({
+-      where: simpleWhereArb(idArb),
+-      take: fc.integer({ min: 1, max: 50 }),
+-    }),
+-    selection: selectionArb(4),
+-  })
+-}
+-
+-describe('parameterizeQuery - property-based tests', () => {
+-  // Use a mapped arbitrary to generate unique IDs for each test run
+-  const idArb = fc.integer({ min: 0, max: 100000 })
+-
+-  describe('no user data leakage', () => {
+-    it('does not leak canary values from arbitrary where clauses', () => {
+-      fc.assert(
+-        fc.property(whereQueryArb(idArb), (query) => {
+-          const result = parameterizeQuery(query)
+-          expect(containsCanary(result)).toBe(false)
+-        }),
+-        { numRuns: 500 },
+-      )
+-    })
+-
+-    it('does not leak canary values from arbitrary data operations', () => {
+-      fc.assert(
+-        fc.property(dataQueryArb(idArb), (query) => {
+-          const result = parameterizeQuery(query)
+-          expect(containsCanary(result)).toBe(false)
+-        }),
+-        { numRuns: 500 },
+-      )
+-    })
+-
+-    it('does not leak canary values from arbitrary complete queries', () => {
+-      fc.assert(
+-        fc.property(queryArb(idArb), (query) => {
+-          const result = parameterizeQuery(query)
+-          expect(containsCanary(result)).toBe(false)
+-        }),
+-        { numRuns: 500 },
+-      )
+-    })
+-
+-    it('does not leak canary values from queries with nested selections', () => {
+-      fc.assert(
+-        fc.property(nestedSelectionQueryArb(idArb), (query) => {
+-          const result = parameterizeQuery(query)
+-          expect(containsCanary(result)).toBe(false)
+-        }),
+-        { numRuns: 300 },
+-      )
+-    })
+-
+-    it('does not leak canary values from deeply nested logical operators', () => {
+-      // Generate extra-deep nesting specifically
+-      fc.assert(
+-        fc.property(idArb, (baseId) => {
+-          // Manually construct a deeply nested structure
+-          let where: Record<string, unknown> = { field: canary(baseId) }
+-          for (let i = 0; i < 6; i++) {
+-            const op = ['AND', 'OR', 'NOT'][i % 3]
+-            if (op === 'NOT') {
+-              where = { NOT: where }
+-            } else {
+-              where = { [op]: [where, { anotherField: canary(baseId + i + 1) }] }
+-            }
+-          }
+-
+-          const query = {
+-            arguments: { where },
+-            selection: { $scalars: true },
+-          }
+-
+-          const result = parameterizeQuery(query)
+-          expect(containsCanary(result)).toBe(false)
+-        }),
+-        { numRuns: 200 },
+-      )
+-    })
+-  })
+-
+-  describe('structural guarantees', () => {
+-    it('is deterministic: same input always produces same output', () => {
+-      fc.assert(
+-        fc.property(queryArb(idArb), (query) => {
+-          const result1 = JSON.stringify(parameterizeQuery(query))
+-          const result2 = JSON.stringify(parameterizeQuery(query))
+-          expect(result1).toBe(result2)
+-        }),
+-        { numRuns: 200 },
+-      )
+-    })
+-
+-    it('is idempotent: parameterizing twice yields same result', () => {
+-      fc.assert(
+-        fc.property(queryArb(idArb), (query) => {
+-          const once = parameterizeQuery(query)
+-          const twice = parameterizeQuery(once)
+-          expect(JSON.stringify(once)).toBe(JSON.stringify(twice))
+-        }),
+-        { numRuns: 200 },
+-      )
+-    })
+-
+-    it('always produces JSON-serializable output', () => {
+-      fc.assert(
+-        fc.property(queryArb(idArb), (query) => {
+-          const result = parameterizeQuery(query)
+-          // Should not throw
+-          const serialized = JSON.stringify(result)
+-          expect(typeof serialized).toBe('string')
+-          // Should be parseable
+-          expect(() => JSON.parse(serialized)).not.toThrow()
+-        }),
+-        { numRuns: 200 },
+-      )
+-    })
+-
+-    it('preserves null values in where clauses', () => {
+-      fc.assert(
+-        fc.property(idArb, (id) => {
+-          const query = {
+-            arguments: {
+-              where: { deletedAt: null, name: canary(id) },
+-            },
+-            selection: { $scalars: true },
+-          }
+-
+-          const result = parameterizeQuery(query) as { arguments: { where: { deletedAt: unknown } } }
+-          expect(result.arguments.where.deletedAt).toBe(null)
+-        }),
+-        { numRuns: 100 },
+-      )
+-    })
+-
+-    it('preserves take and skip at top level', () => {
+-      fc.assert(
+-        fc.property(fc.integer({ min: 1, max: 1000 }), fc.integer({ min: 0, max: 1000 }), (take, skip) => {
+-          const query = {
+-            arguments: { take, skip },
+-            selection: { $scalars: true },
+-          }
+-
+-          const result = parameterizeQuery(query) as { arguments: { take: number; skip: number } }
+-          expect(result.arguments.take).toBe(take)
+-          expect(result.arguments.skip).toBe(skip)
+-        }),
+-        { numRuns: 100 },
+-      )
+-    })
+-
+-    it('preserves sort directions in orderBy', () => {
+-      fc.assert(
+-        fc.property(fc.constantFrom('asc', 'desc'), fc.constantFrom('first', 'last'), (sort, nulls) => {
+-          const query = {
+-            arguments: {
+-              orderBy: { createdAt: { sort, nulls } },
+-            },
+-            selection: { $scalars: true },
+-          }
+-
+-          const result = parameterizeQuery(query) as {
+-            arguments: { orderBy: { createdAt: { sort: string; nulls: string } } }
+-          }
+-          expect(result.arguments.orderBy.createdAt.sort).toBe(sort)
+-          expect(result.arguments.orderBy.createdAt.nulls).toBe(nulls)
+-        }),
+-        { numRuns: 50 },
+-      )
+-    })
+-
+-    it('preserves selection markers', () => {
+-      fc.assert(
+-        fc.property(fc.boolean(), fc.boolean(), (scalars, composites) => {
+-          const query = {
+-            selection: { $scalars: scalars, $composites: composites },
+-          }
+-
+-          const result = parameterizeQuery(query) as {
+-            selection: { $scalars: boolean; $composites: boolean }
+-          }
+-          expect(result.selection.$scalars).toBe(scalars)
+-          expect(result.selection.$composites).toBe(composites)
+-        }),
+-        { numRuns: 50 },
+-      )
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/relation-filters.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/relation-filters.test.ts
+deleted file mode 100644
+index f9d4fb89a4a4..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/relation-filters.test.ts
++++ /dev/null
+@@ -1,275 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - relation filters', () => {
+-  describe('some operator', () => {
+-    it('handles some relation filter', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: { some: { title: 'Test' } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            posts: { some: { title: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles some with complex nested conditions', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: {
+-              some: {
+-                AND: [{ title: { contains: 'Prisma' } }, { published: true }],
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            posts: {
+-              some: {
+-                AND: [{ title: { contains: PARAM_PLACEHOLDER } }, { published: PARAM_PLACEHOLDER }],
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('every operator', () => {
+-    it('handles every relation filter', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: { every: { published: true } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            posts: { every: { published: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles every with multiple conditions', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            comments: {
+-              every: {
+-                approved: true,
+-                spam: false,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            comments: {
+-              every: {
+-                approved: PARAM_PLACEHOLDER,
+-                spam: PARAM_PLACEHOLDER,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('none operator', () => {
+-    it('handles none relation filter', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: { none: { deleted: true } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            posts: { none: { deleted: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles none with filter operators', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            users: {
+-              none: {
+-                email: { endsWith: '@blocked.com' },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            users: {
+-              none: {
+-                email: { endsWith: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-
+-  describe('nested relation filters', () => {
+-    it('handles deeply nested relation filters', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            author: {
+-              posts: {
+-                some: {
+-                  comments: {
+-                    every: {
+-                      approved: true,
+-                    },
+-                  },
+-                },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            author: {
+-              posts: {
+-                some: {
+-                  comments: {
+-                    every: {
+-                      approved: PARAM_PLACEHOLDER,
+-                    },
+-                  },
+-                },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles multiple relation filters at same level', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: { some: { published: true } },
+-            comments: { none: { spam: true } },
+-            followers: { every: { active: true } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            posts: { some: { published: PARAM_PLACEHOLDER } },
+-            comments: { none: { spam: PARAM_PLACEHOLDER } },
+-            followers: { every: { active: PARAM_PLACEHOLDER } },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles relation filters combined with field filters', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            email: { contains: '@company.com' },
+-            posts: {
+-              some: {
+-                title: { startsWith: 'Announcement' },
+-                views: { gt: 100 },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            email: { contains: PARAM_PLACEHOLDER },
+-            posts: {
+-              some: {
+-                title: { startsWith: PARAM_PLACEHOLDER },
+-                views: { gt: PARAM_PLACEHOLDER },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-
+-    it('handles relation filters inside logical operators', () => {
+-      const query = {
+-        arguments: {
+-          where: {
+-            OR: [{ posts: { some: { featured: true } } }, { role: 'ADMIN' }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      expect(parameterizeQuery(query)).toEqual({
+-        arguments: {
+-          where: {
+-            OR: [{ posts: { some: { featured: PARAM_PLACEHOLDER } } }, { role: PARAM_PLACEHOLDER }],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      })
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/security.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/security.test.ts
+deleted file mode 100644
+index 9f1de4728a06..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/security.test.ts
++++ /dev/null
+@@ -1,571 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - security: no user data leakage', () => {
+-  const sensitiveValues = [
+-    'password123',
+-    'secret-api-key',
+-    'user@private.email',
+-    'SSN-123-45-6789',
+-    'credit-card-1234-5678',
+-    '{"sensitive":"data"}',
+-  ]
+-
+-  describe('where clauses', () => {
+-    it('does not leak string values in where clauses', () => {
+-      for (const sensitive of sensitiveValues) {
+-        const query = {
+-          arguments: { where: { field: sensitive } },
+-          selection: { $scalars: true },
+-        }
+-
+-        const result = parameterizeQuery(query)
+-        const resultStr = JSON.stringify(result)
+-        expect(resultStr).not.toContain(sensitive)
+-      }
+-    })
+-
+-    it('does not leak numeric values that could be IDs', () => {
+-      const sensitiveId = 98765432
+-
+-      const query = {
+-        arguments: { where: { id: sensitiveId } },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(String(sensitiveId))
+-    })
+-
+-    it('does not leak values in nested where conditions', () => {
+-      const sensitive = 'secret-nested-value'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            user: {
+-              profile: {
+-                bio: sensitive,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitive)
+-    })
+-  })
+-
+-  describe('data clauses', () => {
+-    it('does not leak string values in data clauses', () => {
+-      for (const sensitive of sensitiveValues) {
+-        const query = {
+-          arguments: { data: { field: sensitive } },
+-          selection: { $scalars: true },
+-        }
+-
+-        const result = parameterizeQuery(query)
+-        const resultStr = JSON.stringify(result)
+-        expect(resultStr).not.toContain(sensitive)
+-      }
+-    })
+-
+-    it('does not leak values in nested data operations', () => {
+-      const sensitiveEmail = 'private@secret.email'
+-      const sensitiveContent = 'confidential content here'
+-
+-      const query = {
+-        arguments: {
+-          data: {
+-            email: sensitiveEmail,
+-            posts: {
+-              create: {
+-                content: sensitiveContent,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitiveEmail)
+-      expect(resultStr).not.toContain(sensitiveContent)
+-    })
+-  })
+-
+-  describe('filter operators', () => {
+-    it('does not leak values in filter operators', () => {
+-      const operators = ['equals', 'contains', 'startsWith', 'endsWith', 'in', 'notIn', 'lt', 'gt', 'lte', 'gte']
+-
+-      for (const op of operators) {
+-        for (const sensitive of sensitiveValues) {
+-          const query = {
+-            arguments: {
+-              where: {
+-                field: { [op]: op === 'in' || op === 'notIn' ? [sensitive] : sensitive },
+-              },
+-            },
+-            selection: { $scalars: true },
+-          }
+-
+-          const result = parameterizeQuery(query)
+-          const resultStr = JSON.stringify(result)
+-          expect(resultStr).not.toContain(sensitive)
+-        }
+-      }
+-    })
+-
+-    it('does not leak values in search operator', () => {
+-      const sensitive = 'secret search term'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            content: { search: sensitive },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitive)
+-    })
+-
+-    it('does not leak values in array operators', () => {
+-      const sensitiveTag = 'secret-tag'
+-
+-      const operators = ['has', 'hasEvery', 'hasSome']
+-      for (const op of operators) {
+-        const query = {
+-          arguments: {
+-            where: {
+-              tags: { [op]: op === 'has' ? sensitiveTag : [sensitiveTag] },
+-            },
+-          },
+-          selection: { $scalars: true },
+-        }
+-
+-        const result = parameterizeQuery(query)
+-        const resultStr = JSON.stringify(result)
+-        expect(resultStr).not.toContain(sensitiveTag)
+-      }
+-    })
+-  })
+-
+-  describe('nested relations', () => {
+-    it('does not leak values in nested relations', () => {
+-      const sensitive = 'super-secret-value'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: {
+-              some: {
+-                content: { contains: sensitive },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitive)
+-    })
+-
+-    it('does not leak values in deeply nested relation filters', () => {
+-      const sensitive1 = 'secret-author-name'
+-      const sensitive2 = 'secret-comment-content'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            posts: {
+-              some: {
+-                author: {
+-                  name: sensitive1,
+-                },
+-                comments: {
+-                  every: {
+-                    content: { contains: sensitive2 },
+-                  },
+-                },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitive1)
+-      expect(resultStr).not.toContain(sensitive2)
+-    })
+-  })
+-
+-  describe('tagged values', () => {
+-    it('does not leak tagged DateTime values', () => {
+-      const dateValue = '2024-12-25T10:30:00.000Z'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            scheduledAt: { $type: 'DateTime', value: dateValue },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(dateValue)
+-    })
+-
+-    it('does not leak tagged Decimal values', () => {
+-      const decimalValue = '99999.99'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            salary: { $type: 'Decimal', value: decimalValue },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(decimalValue)
+-    })
+-
+-    it('does not leak tagged BigInt values', () => {
+-      const bigIntValue = '9007199254740993'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            bigNumber: { $type: 'BigInt', value: bigIntValue },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(bigIntValue)
+-    })
+-
+-    it('does not leak tagged Bytes values', () => {
+-      const bytesValue = 'U2VjcmV0RGF0YQ=='
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            fileData: { $type: 'Bytes', value: bytesValue },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(bytesValue)
+-    })
+-
+-    it('does not leak tagged Json values', () => {
+-      const jsonValue = '{"secret":"dummy-api-key-NOTREAL"}'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: { $type: 'Json', value: jsonValue },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(jsonValue)
+-      expect(resultStr).not.toContain('dummy-api-key-NOTREAL')
+-    })
+-
+-    it('does not leak tagged Enum values', () => {
+-      const enumValue = 'SECRET_STATUS'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            status: { $type: 'Enum', value: enumValue },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(enumValue)
+-    })
+-  })
+-
+-  describe('logical operators', () => {
+-    it('does not leak values in deeply nested AND/OR conditions', () => {
+-      const sensitiveEmail = 'private@secret.com'
+-      const sensitivePassword = 'p@ssw0rd!'
+-      const sensitiveRecoveryCode = 'backup-123'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            AND: [
+-              { email: sensitiveEmail },
+-              {
+-                OR: [{ password: sensitivePassword }, { recoveryCode: sensitiveRecoveryCode }],
+-              },
+-            ],
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitiveEmail)
+-      expect(resultStr).not.toContain(sensitivePassword)
+-      expect(resultStr).not.toContain(sensitiveRecoveryCode)
+-    })
+-
+-    it('does not leak values in NOT conditions', () => {
+-      const sensitive = 'excluded-secret'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            NOT: {
+-              secretField: sensitive,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitive)
+-    })
+-  })
+-
+-  describe('cursor pagination', () => {
+-    it('does not leak cursor ID values', () => {
+-      const sensitiveId = 'user_abc123xyz'
+-
+-      const query = {
+-        arguments: {
+-          cursor: { id: sensitiveId },
+-          take: 10,
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitiveId)
+-    })
+-
+-    it('does not leak compound cursor values', () => {
+-      const sensitiveEmail = 'cursor@secret.com'
+-      const sensitiveTenant = 'tenant-secret-123'
+-
+-      const query = {
+-        arguments: {
+-          cursor: {
+-            email_tenantId: {
+-              email: sensitiveEmail,
+-              tenantId: sensitiveTenant,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitiveEmail)
+-      expect(resultStr).not.toContain(sensitiveTenant)
+-    })
+-  })
+-
+-  describe('JSON operators', () => {
+-    it('does not leak values in JSON path queries', () => {
+-      const sensitivePath1 = 'secretField'
+-      const sensitivePath2 = 'nestedSecret'
+-      const sensitiveValue = 'secret-json-value'
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            metadata: {
+-              path: [sensitivePath1, sensitivePath2],
+-              equals: sensitiveValue,
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitivePath1)
+-      expect(resultStr).not.toContain(sensitivePath2)
+-      expect(resultStr).not.toContain(sensitiveValue)
+-    })
+-
+-    it('does not leak values in JSON string operators', () => {
+-      const sensitiveSearch = 'confidential-content'
+-
+-      const operators = ['string_contains', 'string_starts_with', 'string_ends_with']
+-      for (const op of operators) {
+-        const query = {
+-          arguments: {
+-            where: {
+-              jsonField: { [op]: sensitiveSearch },
+-            },
+-          },
+-          selection: { $scalars: true },
+-        }
+-
+-        const result = parameterizeQuery(query)
+-        const resultStr = JSON.stringify(result)
+-        expect(resultStr).not.toContain(sensitiveSearch)
+-      }
+-    })
+-
+-    it('does not leak values in JSON array operators', () => {
+-      const sensitiveElement = 'secret-array-element'
+-
+-      const operators = ['array_contains', 'array_starts_with', 'array_ends_with']
+-      for (const op of operators) {
+-        const query = {
+-          arguments: {
+-            where: {
+-              jsonField: { [op]: sensitiveElement },
+-            },
+-          },
+-          selection: { $scalars: true },
+-        }
+-
+-        const result = parameterizeQuery(query)
+-        const resultStr = JSON.stringify(result)
+-        expect(resultStr).not.toContain(sensitiveElement)
+-      }
+-    })
+-  })
+-
+-  describe('connect/disconnect operations', () => {
+-    it('does not leak IDs in connect operations', () => {
+-      const sensitiveId1 = 'secret-id-111'
+-      const sensitiveId2 = 'secret-id-222'
+-
+-      const query = {
+-        arguments: {
+-          data: {
+-            tags: {
+-              connect: [{ id: sensitiveId1 }, { id: sensitiveId2 }],
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitiveId1)
+-      expect(resultStr).not.toContain(sensitiveId2)
+-    })
+-
+-    it('does not leak IDs in connectOrCreate operations', () => {
+-      const sensitiveId = 'secret-connect-or-create-id'
+-      const sensitiveEmail = 'connectorcreate@secret.com'
+-
+-      const query = {
+-        arguments: {
+-          data: {
+-            profile: {
+-              connectOrCreate: {
+-                where: { id: sensitiveId },
+-                create: { email: sensitiveEmail },
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-      expect(resultStr).not.toContain(sensitiveId)
+-      expect(resultStr).not.toContain(sensitiveEmail)
+-    })
+-  })
+-
+-  describe('combined sensitive data', () => {
+-    it('does not leak any values in a complex real-world query', () => {
+-      const sensitiveData = {
+-        email: 'john.doe@privatecompany.com',
+-        password: 'SuperSecret123!',
+-        ssn: '123-45-6789',
+-        creditCard: '4111-1111-1111-1111',
+-        apiKey: 'placeholder_api_key_NOTREAL',
+-        internalId: 'usr_2024_confidential',
+-        salary: '150000.00',
+-        birthDate: '1990-05-15T00:00:00Z',
+-      }
+-
+-      const query = {
+-        arguments: {
+-          where: {
+-            OR: [{ email: sensitiveData.email }, { ssn: sensitiveData.ssn }],
+-            AND: [
+-              { apiKey: { equals: sensitiveData.apiKey } },
+-              {
+-                payments: {
+-                  some: {
+-                    cardNumber: { contains: sensitiveData.creditCard },
+-                  },
+-                },
+-              },
+-            ],
+-          },
+-          data: {
+-            password: sensitiveData.password,
+-            salary: { $type: 'Decimal', value: sensitiveData.salary },
+-            birthDate: { $type: 'DateTime', value: sensitiveData.birthDate },
+-            profile: {
+-              update: {
+-                internalId: sensitiveData.internalId,
+-              },
+-            },
+-          },
+-        },
+-        selection: { $scalars: true },
+-      }
+-
+-      const result = parameterizeQuery(query)
+-      const resultStr = JSON.stringify(result)
+-
+-      for (const [key, value] of Object.entries(sensitiveData)) {
+-        expect(resultStr, `should not contain ${key}`).not.toContain(value)
+-      }
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/selection-markers.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/selection-markers.test.ts
+deleted file mode 100644
+index 321646d5423c..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/selection-markers.test.ts
++++ /dev/null
+@@ -1,135 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - selection markers', () => {
+-  it('preserves $scalars marker', () => {
+-    const query = {
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves $composites marker', () => {
+-    const query = {
+-      selection: { $composites: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: { $composites: true },
+-    })
+-  })
+-
+-  it('preserves both markers together', () => {
+-    const query = {
+-      selection: { $scalars: true, $composites: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: { $scalars: true, $composites: true },
+-    })
+-  })
+-
+-  it('preserves false values for selection markers', () => {
+-    const query = {
+-      selection: { $scalars: false, $composites: false },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: { $scalars: false, $composites: false },
+-    })
+-  })
+-
+-  it('preserves selection markers in nested selections', () => {
+-    const query = {
+-      selection: {
+-        $scalars: true,
+-        posts: {
+-          selection: {
+-            $scalars: true,
+-            $composites: true,
+-          },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: {
+-        $scalars: true,
+-        posts: {
+-          selection: {
+-            $scalars: true,
+-            $composites: true,
+-          },
+-        },
+-      },
+-    })
+-  })
+-
+-  it('preserves boolean field selections alongside markers', () => {
+-    const query = {
+-      selection: {
+-        $scalars: true,
+-        id: true,
+-        name: true,
+-        email: false,
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: {
+-        $scalars: true,
+-        id: true,
+-        name: true,
+-        email: false,
+-      },
+-    })
+-  })
+-
+-  it('preserves nested relation selections with markers', () => {
+-    const query = {
+-      selection: {
+-        $scalars: true,
+-        author: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-        comments: {
+-          selection: {
+-            $composites: true,
+-            author: {
+-              selection: {
+-                $scalars: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      selection: {
+-        $scalars: true,
+-        author: {
+-          selection: {
+-            $scalars: true,
+-          },
+-        },
+-        comments: {
+-          selection: {
+-            $composites: true,
+-            author: {
+-              selection: {
+-                $scalars: true,
+-              },
+-            },
+-          },
+-        },
+-      },
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-insights/src/parameterize/tests/tagged-values.test.ts b/packages/sqlcommenter-query-insights/src/parameterize/tests/tagged-values.test.ts
+deleted file mode 100644
+index 026e9ab3d019..000000000000
+--- a/packages/sqlcommenter-query-insights/src/parameterize/tests/tagged-values.test.ts
++++ /dev/null
+@@ -1,307 +0,0 @@
+-import { describe, expect, it } from 'vitest'
+-
+-import { PARAM_PLACEHOLDER, parameterizeQuery } from '../parameterize'
+-
+-describe('parameterizeQuery - tagged values', () => {
+-  it('parameterizes DateTime tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          createdAt: { $type: 'DateTime', value: '2024-01-01T00:00:00Z' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          createdAt: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes Decimal tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          price: { $type: 'Decimal', value: '99.99' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          price: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes BigInt tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          bigNum: { $type: 'BigInt', value: '9007199254740993' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          bigNum: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes Bytes tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          data: { $type: 'Bytes', value: 'SGVsbG8gV29ybGQ=' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          data: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes Json tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          metadata: { $type: 'Json', value: '{"key":"value"}' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          metadata: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes Enum tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          status: { $type: 'Enum', value: 'ACTIVE' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          status: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes Raw tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          field: { $type: 'Raw', value: 'some raw value' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          field: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves FieldRef tagged values (structural)', () => {
+-    const fieldRef = { $type: 'FieldRef', value: { _ref: 'otherField', _container: 'Model' } }
+-    const query = {
+-      arguments: {
+-        where: {
+-          field: { equals: fieldRef },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          field: { equals: fieldRef },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves pre-existing Param tagged values', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          email: { contains: PARAM_PLACEHOLDER },
+-          age: { gte: PARAM_PLACEHOLDER },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          email: { contains: PARAM_PLACEHOLDER },
+-          age: { gte: PARAM_PLACEHOLDER },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves pre-existing Param tagged values in data context', () => {
+-    const query = {
+-      arguments: {
+-        data: {
+-          name: PARAM_PLACEHOLDER,
+-          email: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        data: {
+-          name: PARAM_PLACEHOLDER,
+-          email: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('preserves pre-existing Param tagged values in arrays', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          id: { in: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          id: { in: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER] },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes tagged values in data context', () => {
+-    const query = {
+-      arguments: {
+-        data: {
+-          createdAt: { $type: 'DateTime', value: '2024-01-01T00:00:00Z' },
+-          price: { $type: 'Decimal', value: '99.99' },
+-          metadata: { $type: 'Json', value: '{"key":"value"}' },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        data: {
+-          createdAt: PARAM_PLACEHOLDER,
+-          price: PARAM_PLACEHOLDER,
+-          metadata: PARAM_PLACEHOLDER,
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes tagged values in nested filter operators', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          createdAt: {
+-            gte: { $type: 'DateTime', value: '2024-01-01T00:00:00Z' },
+-            lt: { $type: 'DateTime', value: '2024-12-31T23:59:59Z' },
+-          },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          createdAt: {
+-            gte: PARAM_PLACEHOLDER,
+-            lt: PARAM_PLACEHOLDER,
+-          },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-
+-  it('parameterizes tagged values in arrays', () => {
+-    const query = {
+-      arguments: {
+-        where: {
+-          status: {
+-            in: [
+-              { $type: 'Enum', value: 'ACTIVE' },
+-              { $type: 'Enum', value: 'PENDING' },
+-            ],
+-          },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    }
+-
+-    expect(parameterizeQuery(query)).toEqual({
+-      arguments: {
+-        where: {
+-          status: {
+-            in: [PARAM_PLACEHOLDER, PARAM_PLACEHOLDER],
+-          },
+-        },
+-      },
+-      selection: { $scalars: true },
+-    })
+-  })
+-})
+diff --git a/packages/sqlcommenter-query-tags/helpers/build.ts b/packages/sqlcommenter-query-tags/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/sqlcommenter-query-tags/helpers/build.ts
++++ b/packages/sqlcommenter-query-tags/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/sqlcommenter-trace-context/helpers/build.ts b/packages/sqlcommenter-trace-context/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/sqlcommenter-trace-context/helpers/build.ts
++++ b/packages/sqlcommenter-trace-context/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)
+diff --git a/packages/sqlcommenter/helpers/build.ts b/packages/sqlcommenter/helpers/build.ts
+index fffcc16a7e38..7993bde60903 100644
+--- a/packages/sqlcommenter/helpers/build.ts
++++ b/packages/sqlcommenter/helpers/build.ts
+@@ -1,4 +1,4 @@
+ import { build } from '../../../helpers/compile/build'
+-import { adapterConfig } from '../../../helpers/compile/configs'
++import { bundledConfig } from '../../../helpers/compile/configs'
+ 
+-void build(adapterConfig)
++void build(bundledConfig)

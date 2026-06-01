@@ -1,0 +1,1926 @@
+diff --git a/.github/workflows/android-instrumentation-tests.yml b/.github/workflows/android-instrumentation-tests.yml
+index c791b6ce0ca38d..c3ed677d67f515 100644
+--- a/.github/workflows/android-instrumentation-tests.yml
++++ b/.github/workflows/android-instrumentation-tests.yml
+@@ -10,6 +10,7 @@ on:
+       - fastlane/**
+       # - packages/**/android/**
+       - packages/expo-eas-client/android/**
++      - packages/expo-file-system/android/**
+       - packages/expo-json-utils/android/**
+       - packages/expo-manifests/android/**
+       - packages/expo-notifications/android/**
+@@ -28,6 +29,7 @@ on:
+       - fastlane/**
+       # - packages/**/android/**
+       - packages/expo-eas-client/android/**
++      - packages/expo-file-system/android/**
+       - packages/expo-json-utils/android/**
+       - packages/expo-manifests/android/**
+       - packages/expo-notifications/android/**
+diff --git a/apps/test-suite/tests/FileSystem.ts b/apps/test-suite/tests/FileSystem.ts
+index 516407b7e72c33..ded0cde72fbdbe 100644
+--- a/apps/test-suite/tests/FileSystem.ts
++++ b/apps/test-suite/tests/FileSystem.ts
+@@ -857,6 +857,359 @@ export async function test({ describe, expect, it, ...t }) {
+       });
+     });
+ 
++    if (Platform.OS === 'android') {
++      describeWithPermissions('Cross-backend copy/move operations (Android SAF)', () => {
++        let originalTimeout: number;
++        let safDirectory: Directory;
++        let localDirectory: Directory;
++
++        t.beforeAll(async () => {
++          originalTimeout = t.jasmine.DEFAULT_TIMEOUT_INTERVAL;
++          t.jasmine.DEFAULT_TIMEOUT_INTERVAL = originalTimeout * 10;
++
++          // User will pick a SAF directory before tests run
++          safDirectory = await Directory.pickDirectoryAsync();
++        });
++
++        t.afterAll(() => {
++          t.jasmine.DEFAULT_TIMEOUT_INTERVAL = originalTimeout;
++        });
++
++        t.beforeEach(async () => {
++          // Clean up SAF directory
++          safDirectory.list().forEach((item) => {
++            try {
++              item.delete();
++            } catch {}
++          });
++
++          // Create local test directory
++          localDirectory = new Directory(testDirectory, 'saf-tests');
++          localDirectory.create({ intermediates: true });
++        });
++
++        t.afterEach(() => {
++          // Clean up local directory
++          try {
++            localDirectory.delete();
++          } catch {}
++
++          // Clean up SAF directory
++          safDirectory.list().forEach((item) => {
++            try {
++              item.delete();
++            } catch {}
++          });
++        });
++
++        describe('Copy operations - SAF file', () => {
++          it('copies SAF file -> SAF directory (creates file inside)', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test content');
++
++            const dstDir = safDirectory.createDirectory('targetDir');
++            srcFile.copy(dstDir);
++
++            // Look for the file inside the destination directory
++            const copiedFile = dstDir.list().find((item) => item.name === 'source.txt') as File;
++            expect(copiedFile).toBeDefined();
++            expect(copiedFile.textSync()).toBe('test content');
++            expect(srcFile.textSync()).toBe('test content'); // Source still exists
++          });
++
++          it('copies SAF file -> local file', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test content');
++
++            const dstFile = new File(localDirectory, 'dest.txt');
++            srcFile.copy(dstFile);
++
++            expect(srcFile.exists).toBe(true);
++            expect(dstFile.exists).toBe(true);
++            expect(dstFile.textSync()).toBe('test content');
++          });
++
++          it('copies SAF file -> local directory (creates file inside)', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test content');
++
++            srcFile.copy(localDirectory);
++
++            const copiedFile = new File(localDirectory, 'source.txt');
++            expect(copiedFile.exists).toBe(true);
++            expect(copiedFile.textSync()).toBe('test content');
++          });
++        });
++
++        describe('Copy operations - SAF directory', () => {
++          it('copies SAF directory -> SAF directory (existing)', () => {
++            const srcDir = safDirectory.createDirectory('sourceDir');
++            const srcFile = srcDir.createFile('nested.txt', 'text/plain');
++            srcFile.write('nested content');
++
++            const dstDir = safDirectory.createDirectory('destDir');
++            srcDir.copy(dstDir);
++
++            // Find the copied directory inside destDir
++            const copiedDir = dstDir.list().find((item) => item.name === 'sourceDir') as Directory;
++            expect(copiedDir).toBeDefined();
++            expect(copiedDir.list().length).toBe(1);
++
++            const copiedFile = copiedDir.list()[0] as File;
++            expect(copiedFile.textSync()).toBe('nested content');
++          });
++
++          it('copies SAF directory -> local directory (existing)', () => {
++            const srcDir = safDirectory.createDirectory('sourceDir2');
++            const srcFile = srcDir.createFile('nested.txt', 'text/plain');
++            srcFile.write('nested content');
++
++            // Destination directory must exist for directory copy
++            srcDir.copy(localDirectory);
++
++            const copiedDir = new Directory(localDirectory, 'sourceDir2');
++            expect(copiedDir.exists).toBe(true);
++            expect(copiedDir.list().length).toBe(1);
++
++            const copiedFile = new File(copiedDir, 'nested.txt');
++            expect(copiedFile.textSync()).toBe('nested content');
++          });
++        });
++
++        describe('Copy operations - local to SAF', () => {
++          it('copies local file -> SAF directory (creates file inside)', () => {
++            const srcFile = new File(localDirectory, 'localfile.txt');
++            srcFile.write('test content');
++
++            const dstDir = safDirectory.createDirectory('localToSafDir');
++            srcFile.copy(dstDir);
++
++            const copiedFile = dstDir.list().find((item) => item.name === 'localfile.txt') as File;
++            expect(copiedFile).toBeDefined();
++            expect(copiedFile.textSync()).toBe('test content');
++            expect(srcFile.exists).toBe(true); // Source still exists
++          });
++
++          it('copies local directory -> SAF directory (existing)', () => {
++            const srcDir = new Directory(localDirectory, 'localSourceDir');
++            srcDir.create();
++            const srcFile = new File(srcDir, 'nested.txt');
++            srcFile.write('nested content');
++
++            srcDir.copy(safDirectory);
++
++            const copiedDir = safDirectory
++              .list()
++              .find((item) => item.name === 'localSourceDir') as Directory;
++            expect(copiedDir).toBeDefined();
++            expect(copiedDir.list().length).toBe(1);
++
++            const copiedFile = copiedDir.list()[0] as File;
++            expect(copiedFile.textSync()).toBe('nested content');
++          });
++        });
++
++        describe('Copy operations - asset files', () => {
++          it('copies asset file -> local file', () => {
++            const assetFile = new File(Paths.bundle, 'expo-root.pem');
++            const dstFile = new File(localDirectory, 'asset-copy.txt');
++
++            assetFile.copy(dstFile);
++
++            expect(dstFile.exists).toBe(true);
++            expect(dstFile.size).toBe(assetFile.size);
++          });
++
++          it('copies asset file -> local directory (creates file inside)', () => {
++            const assetFile = new File(Paths.bundle, 'expo-root.pem');
++            const localDir2 = new Directory(localDirectory, 'assetCopyDest');
++            localDir2.create();
++
++            assetFile.copy(localDir2);
++
++            const copiedFile = new File(localDir2, 'expo-root.pem');
++            expect(copiedFile.exists).toBe(true);
++            expect(copiedFile.size).toBe(assetFile.size);
++          });
++
++          it('copies asset file -> SAF directory (creates file inside)', () => {
++            const assetFile = new File(Paths.bundle, 'expo-root.pem');
++            const dstDir = safDirectory.createDirectory('assetsSaf');
++
++            assetFile.copy(dstDir);
++
++            const copiedFile = dstDir.list().find((item) => item.name === 'expo-root.pem') as File;
++            expect(copiedFile).toBeDefined();
++            expect(copiedFile.size).toBe(assetFile.size);
++          });
++        });
++
++        describe('Move operations - SAF file', () => {
++          it('moves SAF file -> SAF directory (creates file inside)', () => {
++            const srcFile = safDirectory.createFile('moveSource.txt', 'text/plain');
++            srcFile.write('test content');
++            const originalUri = srcFile.uri;
++
++            const dstDir = safDirectory.createDirectory('moveTargetDir');
++            srcFile.move(dstDir);
++
++            expect(srcFile.exists).toBe(true);
++            expect(srcFile.textSync()).toBe('test content');
++            expect(new File(originalUri).exists).toBe(false);
++
++            const movedFile = dstDir.list().find((item) => item.name === 'moveSource.txt') as File;
++            expect(movedFile).toBeDefined();
++            expect(movedFile.textSync()).toBe('test content');
++            expect(movedFile.uri).toBe(srcFile.uri); // URI updated
++          });
++
++          it('moves SAF file -> local file', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test content');
++            const originalUri = srcFile.uri;
++
++            const dstFile = new File(localDirectory, 'dest.txt');
++            srcFile.move(dstFile);
++
++            expect(srcFile.uri).toBe(dstFile.uri);
++            expect(dstFile.exists).toBe(true);
++            expect(dstFile.textSync()).toBe('test content');
++            expect(new File(originalUri).exists).toBe(false);
++          });
++
++          it('moves SAF file -> local directory (creates file inside)', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test content');
++            const originalUri = srcFile.uri;
++
++            srcFile.move(localDirectory);
++
++            const movedFile = new File(localDirectory, 'source.txt');
++            expect(movedFile.exists).toBe(true);
++            expect(movedFile.textSync()).toBe('test content');
++            expect(srcFile.uri).toBe(movedFile.uri);
++            expect(new File(originalUri).exists).toBe(false);
++          });
++        });
++
++        describe('Move operations - SAF directory', () => {
++          it('moves SAF directory -> SAF directory (existing)', () => {
++            const srcDir = safDirectory.createDirectory('moveSrcDir');
++            const srcFile = srcDir.createFile('nested.txt', 'text/plain');
++            srcFile.write('nested content');
++            const originalUri = srcDir.uri;
++
++            const dstDir = safDirectory.createDirectory('moveDestDir');
++            srcDir.move(dstDir);
++
++            expect(srcDir.exists).toBe(true);
++            expect(new Directory(originalUri).exists).toBe(false);
++
++            const movedFile = srcDir.list()[0] as File;
++            expect(movedFile.textSync()).toBe('nested content');
++          });
++
++          it('moves SAF directory -> local directory (existing)', () => {
++            const srcDir = safDirectory.createDirectory('moveSrcDir2');
++            const srcFile = srcDir.createFile('nested.txt', 'text/plain');
++            srcFile.write('nested content');
++            const originalUri = srcDir.uri;
++
++            const localDest = new Directory(localDirectory, 'safMoveTarget');
++            localDest.create();
++
++            srcDir.move(localDest);
++
++            expect(srcDir.exists).toBe(true);
++            expect(new Directory(originalUri).exists).toBe(false);
++
++            const movedFile = new File(srcDir, 'nested.txt');
++            expect(movedFile.textSync()).toBe('nested content');
++          });
++        });
++
++        describe('Move operations - local to SAF', () => {
++          it('moves local file -> SAF directory (creates file inside)', () => {
++            const srcFile = new File(localDirectory, 'localMoveFile.txt');
++            srcFile.write('test content');
++            const originalUri = srcFile.uri;
++
++            const dstDir = safDirectory.createDirectory('localMoveTarget');
++            srcFile.move(dstDir);
++
++            expect(srcFile.exists).toBe(true);
++            expect(srcFile.textSync()).toBe('test content');
++            expect(new File(originalUri).exists).toBe(false);
++
++            const movedFile = dstDir
++              .list()
++              .find((item) => item.name === 'localMoveFile.txt') as File;
++            expect(movedFile).toBeDefined();
++            expect(movedFile.textSync()).toBe('test content');
++            expect(movedFile.uri).toBe(srcFile.uri); // URI updated
++          });
++
++          it('moves local directory -> SAF directory (existing)', () => {
++            const srcDir = new Directory(localDirectory, 'localMoveDir');
++            srcDir.create();
++            const srcFile = new File(srcDir, 'nested.txt');
++            srcFile.write('nested content');
++            const originalUri = srcDir.uri;
++
++            srcDir.move(safDirectory);
++
++            expect(srcDir.exists).toBe(true);
++            expect(new Directory(originalUri).exists).toBe(false);
++
++            const movedDir = new Directory(srcDir.uri);
++            const movedFile = movedDir.list().find((item) => item.name === 'nested.txt') as File;
++            expect(movedFile.textSync()).toBe('nested content');
++          });
++        });
++
++        describe('Error handling', () => {
++          it('throws when moving asset file (read-only)', () => {
++            const assetFile = new File(Paths.bundle, 'expo-root.pem');
++            const dstFile = new File(localDirectory, 'dest.txt');
++
++            expect(() => assetFile.move(dstFile)).toThrow();
++          });
++
++          it('throws when copying directory to file', () => {
++            const srcDir = safDirectory.createDirectory('sourceDir');
++            const dstFile = new File(localDirectory, 'file.txt');
++            dstFile.create();
++
++            expect(() => srcDir.copy(dstFile)).toThrow();
++          });
++
++          it('throws when moving directory to file', () => {
++            const srcDir = safDirectory.createDirectory('sourceDir');
++            const dstFile = new File(localDirectory, 'file.txt');
++            dstFile.create();
++
++            expect(() => srcDir.move(dstFile)).toThrow();
++          });
++
++          it('throws when destination directory does not exist (file copy)', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test');
++            const nonExistentDir = new Directory(localDirectory, 'nonexistent');
++
++            expect(() => srcFile.copy(nonExistentDir)).toThrow();
++          });
++
++          it('throws when destination directory does not exist (file move)', () => {
++            const srcFile = safDirectory.createFile('source.txt', 'text/plain');
++            srcFile.write('test');
++            const nonExistentDir = new Directory(localDirectory, 'nonexistent');
++
++            expect(() => srcFile.move(nonExistentDir)).toThrow();
++          });
++        });
++      });
++    }
++
+     describe('When renaming a directory', () => {
+       it('renames a directory and updates its uri and parent listing', () => {
+         const originalDir = new Directory(testDirectory, 'oldName/');
+diff --git a/packages/expo-file-system/CHANGELOG.md b/packages/expo-file-system/CHANGELOG.md
+index f885b5c0ae31eb..3cb5fcf30717f6 100644
+--- a/packages/expo-file-system/CHANGELOG.md
++++ b/packages/expo-file-system/CHANGELOG.md
+@@ -8,6 +8,8 @@
+ 
+ ### 🐛 Bug fixes
+ 
++- [Android] Fix copy/move support for SAF and content provider URIs. ([#42887](https://github.com/expo/expo/pull/42887) by [@barthap](https://github.com/barthap))
++
+ ### 💡 Others
+ 
+ ## 55.0.9 — 2026-02-25
+diff --git a/packages/expo-file-system/android/build.gradle b/packages/expo-file-system/android/build.gradle
+index a3519386f26e0f..a2f59e19ecfce9 100644
+--- a/packages/expo-file-system/android/build.gradle
++++ b/packages/expo-file-system/android/build.gradle
+@@ -11,6 +11,10 @@ android {
+   defaultConfig {
+     versionCode 30
+     versionName "55.0.9"
++    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
++  }
++  testOptions {
++    unitTests.includeAndroidResources = true
+   }
+ }
+ 
+@@ -22,4 +26,8 @@ dependencies {
+   api 'com.squareup.okio:okio:2.9.0'
+   api "androidx.legacy:legacy-support-v4:1.0.0"
+   api "androidx.documentfile:documentfile:1.1.0"
++
++  if (project.findProject(':expo-modules-test-core')) {
++    androidTestImplementation project(':expo-modules-test-core')
++  }
+ }
+diff --git a/packages/expo-file-system/android/src/androidTest/AndroidManifest.xml b/packages/expo-file-system/android/src/androidTest/AndroidManifest.xml
+new file mode 100644
+index 00000000000000..e23d6085bbae77
+--- /dev/null
++++ b/packages/expo-file-system/android/src/androidTest/AndroidManifest.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android">
++
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
++
++    <application>
++        <provider
++            android:name="expo.modules.filesystem.TestStorageProvider"
++            android:authorities="expo.modules.filesystem.test.documents"
++            android:enabled="true"
++            android:exported="true"
++            android:permission="android.permission.MANAGE_DOCUMENTS"
++            android:grantUriPermissions="true">
++            <intent-filter>
++                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
++            </intent-filter>
++        </provider>
++    </application>
++
++</manifest>
+diff --git a/packages/expo-file-system/android/src/androidTest/java/expo/modules/filesystem/CopyMoveOperationsTest.kt b/packages/expo-file-system/android/src/androidTest/java/expo/modules/filesystem/CopyMoveOperationsTest.kt
+new file mode 100644
+index 00000000000000..1ce1aa073a1ec3
+--- /dev/null
++++ b/packages/expo-file-system/android/src/androidTest/java/expo/modules/filesystem/CopyMoveOperationsTest.kt
+@@ -0,0 +1,492 @@
++package expo.modules.filesystem
++
++import android.net.Uri
++import android.provider.DocumentsContract
++import androidx.documentfile.provider.DocumentFile
++import androidx.test.platform.app.InstrumentationRegistry
++import expo.modules.filesystem.fsops.DestinationSpec
++import expo.modules.filesystem.unifiedfile.JavaFile
++import expo.modules.filesystem.unifiedfile.SAFDocumentFile
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.io.File
++
++/**
++ * Comprehensive tests for copy/move operations across different file backends.
++ * Tests cover:
++ * - Copy operations (local, SAF, cross-backend)
++ * - Move operations (local, SAF, cross-backend)
++ * - Error handling and edge cases
++ * - Unix cp/mv behavior semantics
++ */
++class CopyMoveOperationsTest {
++
++  private val context = InstrumentationRegistry.getInstrumentation().targetContext
++  private val resolver = context.contentResolver
++
++  private fun getLocalTestDir() = File(context.cacheDir, "test_${System.currentTimeMillis()}").apply {
++    deleteRecursively()
++    mkdirs()
++  }
++
++  private fun getSAFRootDir(): DocumentFile {
++    val safRootUri = DocumentsContract.buildTreeDocumentUri(
++      TestStorageProvider.AUTHORITY,
++      TestStorageProvider.ROOT_DOC_ID
++    )
++    return DocumentFile.fromTreeUri(context, safRootUri)!!.apply {
++      listFiles().forEach { it.delete() }
++    }
++  }
++
++  private fun File.toUri(): Uri = Uri.parse(this.toURI().toString())
++
++  @Test
++  fun testCopyLocalFile_ToLocalFile() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("test content") }
++    val dstFile = File(localTestDir, "dest.txt")
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++
++    assertTrue("Source should still exist after copy", srcFile.exists())
++    assertTrue("Destination should exist", dstFile.exists())
++    assertEquals("test content", dstFile.readText())
++  }
++
++  @Test
++  fun testCopyLocalFile_ToLocalDirectory() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("test content") }
++    val dstDir = File(localTestDir, "destDir").apply { mkdirs() }
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstDir.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedFile = File(dstDir, "source.txt")
++    assertTrue("File should be created inside destination directory", copiedFile.exists())
++    assertEquals("test content", copiedFile.readText())
++  }
++
++  @Test
++  fun testCopyLocalDirectory_ToLocalDirectory() {
++    val localTestDir = getLocalTestDir()
++
++    val srcDir = File(localTestDir, "srcDir").apply { mkdirs() }
++    File(srcDir, "file1.txt").writeText("content1")
++    File(srcDir, "file2.txt").writeText("content2")
++
++    val dstDir = File(localTestDir, "dstDir").apply { mkdirs() }
++
++    val source = JavaFile(srcDir.toUri())
++    val dest = JavaFile(dstDir.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedDir = File(dstDir, "srcDir")
++    assertTrue(copiedDir.exists() && copiedDir.isDirectory)
++    assertTrue(File(copiedDir, "file1.txt").exists())
++    assertTrue(File(copiedDir, "file2.txt").exists())
++    assertEquals("content1", File(copiedDir, "file1.txt").readText())
++  }
++
++  @Test
++  fun testCopySAFFile_ToSAFFile() {
++    val safRootDir = getSAFRootDir()
++
++    val srcDoc = safRootDir.createFile("text/plain", "source.txt")
++    assertNotNull("Failed to create source file", srcDoc)
++    resolver.openOutputStream(srcDoc!!.uri)?.use { it.write("saf content".toByteArray()) }
++
++    // For SAF, we need to create the destination file to get a URI
++    // Then copy with overwrite=true to write the content
++    val dstDoc = safRootDir.createFile("text/plain", "dest.txt")
++    assertNotNull("Failed to create destination file", dstDoc)
++
++    val source = SAFDocumentFile(context, srcDoc.uri)
++    val dest = SAFDocumentFile(context, dstDoc!!.uri)
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = true, isDirectory = false))
++
++    val content = resolver.openInputStream(dstDoc.uri)?.bufferedReader()?.readText()
++    assertEquals("saf content", content)
++  }
++
++  @Test
++  fun testCopySAFFile_ToSAFDirectory() {
++    val safRootDir = getSAFRootDir()
++
++    val srcDoc = safRootDir.createFile("text/plain", "source.txt")!!
++    resolver.openOutputStream(srcDoc.uri)?.use { it.write("saf content".toByteArray()) }
++
++    val dstDir = safRootDir.createDirectory("targetDir")!!
++
++    val source = SAFDocumentFile(context, srcDoc.uri)
++    val dest = SAFDocumentFile(context, dstDir.uri)
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedFile = dstDir.findFile("source.txt")
++    assertNotNull("File should be created inside destination directory", copiedFile)
++    val content = resolver.openInputStream(copiedFile!!.uri)?.bufferedReader()?.readText()
++    assertEquals("saf content", content)
++  }
++
++  @Test
++  fun testCopySAFDirectory_ToSAFDirectory() {
++    val safRootDir = getSAFRootDir()
++
++    val srcDir = safRootDir.createDirectory("srcDir")!!
++    val file1 = srcDir.createFile("text/plain", "file1.txt")!!
++    resolver.openOutputStream(file1.uri)?.use { it.write("content1".toByteArray()) }
++
++    val dstDir = safRootDir.createDirectory("dstDir")!!
++
++    val source = SAFDocumentFile(context, srcDir.uri)
++    val dest = SAFDocumentFile(context, dstDir.uri)
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedDir = dstDir.findFile("srcDir")
++    assertNotNull("Directory should be created inside destination", copiedDir)
++    assertTrue(copiedDir!!.isDirectory)
++
++    val copiedFile = copiedDir.findFile("file1.txt")
++    assertNotNull(copiedFile)
++    val content = resolver.openInputStream(copiedFile!!.uri)?.bufferedReader()?.readText()
++    assertEquals("content1", content)
++  }
++
++  @Test
++  fun testCopySAFFile_ToLocalFile() {
++    val safRootDir = getSAFRootDir()
++    val localTestDir = getLocalTestDir()
++
++    val srcDoc = safRootDir.createFile("text/plain", "source.txt")!!
++    resolver.openOutputStream(srcDoc.uri)?.use { it.write("saf to local".toByteArray()) }
++
++    val dstFile = File(localTestDir, "dest.txt")
++
++    val source = SAFDocumentFile(context, srcDoc.uri)
++    val dest = JavaFile(dstFile.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++
++    assertTrue(dstFile.exists())
++    assertEquals("saf to local", dstFile.readText())
++  }
++
++  @Test
++  fun testCopySAFFile_ToLocalDirectory() {
++    val safRootDir = getSAFRootDir()
++    val localTestDir = getLocalTestDir()
++
++    val srcDoc = safRootDir.createFile("text/plain", "source.txt")!!
++    resolver.openOutputStream(srcDoc.uri)?.use { it.write("saf content".toByteArray()) }
++
++    val dstDir = File(localTestDir, "destDir").apply { mkdirs() }
++
++    val source = SAFDocumentFile(context, srcDoc.uri)
++    val dest = JavaFile(dstDir.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedFile = File(dstDir, "source.txt")
++    assertTrue(copiedFile.exists())
++    assertEquals("saf content", copiedFile.readText())
++  }
++
++  @Test
++  fun testCopyLocalFile_ToSAFDirectory() {
++    val safRootDir = getSAFRootDir()
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("local content") }
++    val dstDir = safRootDir.createDirectory("targetDir")!!
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = SAFDocumentFile(context, dstDir.uri)
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedFile = dstDir.findFile("source.txt")
++    assertNotNull(copiedFile)
++    val content = resolver.openInputStream(copiedFile!!.uri)?.bufferedReader()?.readText()
++    assertEquals("local content", content)
++  }
++
++  @Test
++  fun testCopyLocalDirectory_ToSAFDirectory() {
++    val safRootDir = getSAFRootDir()
++    val localTestDir = getLocalTestDir()
++
++    val srcDir = File(localTestDir, "srcDir").apply { mkdirs() }
++    File(srcDir, "nested.txt").writeText("nested content")
++
++    val dstDir = safRootDir.createDirectory("dstDir")!!
++
++    val source = JavaFile(srcDir.toUri())
++    val dest = SAFDocumentFile(context, dstDir.uri)
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedDir = dstDir.findFile("srcDir")
++    assertNotNull(copiedDir)
++    assertTrue(copiedDir!!.isDirectory)
++
++    val copiedFile = copiedDir.findFile("nested.txt")
++    assertNotNull(copiedFile)
++    val content = resolver.openInputStream(copiedFile!!.uri)?.bufferedReader()?.readText()
++    assertEquals("nested content", content)
++  }
++
++  @Test
++  fun testMoveLocalFile_ToLocalFile() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("move content") }
++    val dstFile = File(localTestDir, "dest.txt")
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    val resultUri = source.moveTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++
++    assertFalse("Source should not exist after move", srcFile.exists())
++    assertTrue("Destination should exist", dstFile.exists())
++    assertEquals("move content", dstFile.readText())
++    assertEquals(dstFile.toUri(), resultUri)
++  }
++
++  @Test
++  fun testMoveLocalFile_ToLocalDirectory() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("move content") }
++    val dstDir = File(localTestDir, "destDir").apply { mkdirs() }
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstDir.toUri())
++
++    source.moveTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    assertFalse("Source should not exist after move", srcFile.exists())
++    val movedFile = File(dstDir, "source.txt")
++    assertTrue(movedFile.exists())
++    assertEquals("move content", movedFile.readText())
++  }
++
++  @Test
++  fun testMoveSAFFile_ToLocalDirectory() {
++    val safRootDir = getSAFRootDir()
++    val localTestDir = getLocalTestDir()
++
++    val srcDoc = safRootDir.createFile("text/plain", "source.txt")!!
++    resolver.openOutputStream(srcDoc.uri)?.use { it.write("saf to local move".toByteArray()) }
++
++    val dstDir = File(localTestDir, "destDir").apply { mkdirs() }
++
++    val source = SAFDocumentFile(context, srcDoc.uri)
++    val dest = JavaFile(dstDir.toUri())
++
++    source.moveTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val movedFile = File(dstDir, "source.txt")
++    assertTrue("Destination file should exist at ${movedFile.absolutePath}", movedFile.exists())
++    assertEquals("saf to local move", movedFile.readText())
++
++    // Check if source was deleted by looking in the parent directory
++    val sourceStillExists = safRootDir.findFile("source.txt") != null
++    assertFalse("Source file should not exist after move", sourceStillExists)
++  }
++
++  @Test
++  fun testMoveLocalFile_ToSAFDirectory() {
++    val safRootDir = getSAFRootDir()
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("local to saf move") }
++    val dstDir = safRootDir.createDirectory("targetDir")!!
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = SAFDocumentFile(context, dstDir.uri)
++
++    source.moveTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    assertFalse("Source should not exist after move", srcFile.exists())
++    val movedFile = dstDir.findFile("source.txt")
++    assertNotNull(movedFile)
++    val content = resolver.openInputStream(movedFile!!.uri)?.bufferedReader()?.readText()
++    assertEquals("local to saf move", content)
++  }
++
++  @Test
++  fun testCopy_ThrowsWhenDestinationExists_AndOverwriteIsFalse() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("source") }
++    val dstFile = File(localTestDir, "dest.txt").apply { writeText("existing") }
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    val result = runCatching {
++      source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++    }
++
++    assertTrue(result.isFailure)
++    assertTrue(result.exceptionOrNull()!! is DestinationAlreadyExistsException)
++    assertEquals("existing", dstFile.readText())
++  }
++
++  @Test
++  fun testCopy_OverwritesDestination_WhenOverwriteIsTrue() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("new content") }
++    val dstFile = File(localTestDir, "dest.txt").apply { writeText("old content") }
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = true, isDirectory = false))
++
++    assertEquals("new content", dstFile.readText())
++  }
++
++  @Test
++  fun testMove_ThrowsWhenDestinationExists_AndOverwriteIsFalse() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("source") }
++    val dstFile = File(localTestDir, "dest.txt").apply { writeText("existing") }
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    val result = runCatching {
++      source.moveTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++    }
++
++    assertTrue(result.isFailure)
++    assertTrue(result.exceptionOrNull()!! is DestinationAlreadyExistsException)
++    assertTrue(srcFile.exists())
++  }
++
++  @Test
++  fun testMove_OverwritesDestination_WhenOverwriteIsTrue() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("new content") }
++    val dstFile = File(localTestDir, "dest.txt").apply { writeText("old content") }
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    source.moveTo(DestinationSpec(path = dest, overwrite = true, isDirectory = false))
++
++    assertTrue(dstFile.exists())
++    assertEquals("new content", dstFile.readText())
++  }
++
++  @Test
++  fun testCopy_ThrowsWhenCopyingDirectoryToFile() {
++    val localTestDir = getLocalTestDir()
++
++    val srcDir = File(localTestDir, "srcDir").apply { mkdirs() }
++    val dstFile = File(localTestDir, "dest.txt").apply { writeText("file") }
++
++    val source = JavaFile(srcDir.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    val result = runCatching {
++      source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++    }
++
++    assertTrue("Expected exception when copying directory to file", result.isFailure)
++    assertTrue(result.exceptionOrNull()!! is CopyOrMoveDirectoryToFileException)
++  }
++
++  @Test
++  fun testCopy_ThrowsWhenDestinationParentDoesNotExist() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("content") }
++    val dstFile = File(localTestDir, "nonexistent/dest.txt")
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstFile.toUri())
++
++    val result = runCatching {
++      source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = false))
++    }
++
++    assertTrue("Expected exception for nonexistent directory", result.isFailure)
++    assertTrue(result.exceptionOrNull()!! is DestinationDoesNotExistException)
++  }
++
++  @Test
++  fun testCopy_FileToNonexistentDirectory_Throws() {
++    val localTestDir = getLocalTestDir()
++
++    val srcFile = File(localTestDir, "source.txt").apply { writeText("content") }
++    val dstDir = File(localTestDir, "nonexistent")
++
++    val source = JavaFile(srcFile.toUri())
++    val dest = JavaFile(dstDir.toUri())
++
++    val result = runCatching {
++      source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++    }
++
++    assertTrue("Expected exception for nonexistent directory", result.isFailure)
++    assertTrue(result.exceptionOrNull()!! is DestinationDoesNotExistException)
++  }
++
++  @Test
++  fun testCopyDirectory_ToExistingDirectory_CreatesChildDirectory() {
++    val localTestDir = getLocalTestDir()
++
++    val srcDir = File(localTestDir, "srcDir").apply { mkdirs() }
++    File(srcDir, "file.txt").writeText("content")
++
++    val dstDir = File(localTestDir, "destDir").apply { mkdirs() }
++
++    val source = JavaFile(srcDir.toUri())
++    val dest = JavaFile(dstDir.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    val copiedDir = File(dstDir, "srcDir")
++    assertTrue(copiedDir.exists() && copiedDir.isDirectory)
++    assertTrue(File(copiedDir, "file.txt").exists())
++  }
++
++  @Test
++  fun testCopyDirectory_ToNonexistentDirectory_RenamesIfParentExists() {
++    val localTestDir = getLocalTestDir()
++
++    val srcDir = File(localTestDir, "srcDir").apply { mkdirs() }
++    File(srcDir, "file.txt").writeText("content")
++
++    val dstDir = File(localTestDir, "newName") // Doesn't exist
++
++    val source = JavaFile(srcDir.toUri())
++    val dest = JavaFile(dstDir.toUri())
++
++    source.copyTo(DestinationSpec(path = dest, overwrite = false, isDirectory = true))
++
++    assertTrue(dstDir.exists() && dstDir.isDirectory)
++    assertTrue(File(dstDir, "file.txt").exists())
++  }
++}
+diff --git a/packages/expo-file-system/android/src/androidTest/java/expo/modules/filesystem/TestStorageProvider.kt b/packages/expo-file-system/android/src/androidTest/java/expo/modules/filesystem/TestStorageProvider.kt
+new file mode 100644
+index 00000000000000..a3a31d850e413a
+--- /dev/null
++++ b/packages/expo-file-system/android/src/androidTest/java/expo/modules/filesystem/TestStorageProvider.kt
+@@ -0,0 +1,230 @@
++package expo.modules.filesystem
++
++import android.database.Cursor
++import android.database.MatrixCursor
++import android.os.CancellationSignal
++import android.os.ParcelFileDescriptor
++import android.provider.DocumentsContract.Document
++import android.provider.DocumentsContract.Root
++import android.provider.DocumentsProvider
++import java.io.File
++
++/**
++ * Mock DocumentsProvider for testing SAF operations without requiring user interaction.
++ * This provider uses the app's internal cache directory as its backing storage.
++ */
++class TestStorageProvider : DocumentsProvider() {
++  companion object {
++    const val AUTHORITY = "expo.modules.filesystem.test.documents"
++    const val ROOT_ID = "test_root"
++    const val ROOT_DOC_ID = "root_doc"
++  }
++
++  private lateinit var baseDir: File
++
++  override fun onCreate(): Boolean {
++    val cacheDir = context?.cacheDir ?: return false
++    baseDir = File(cacheDir, "test_saf_root").apply {
++      if (exists()) {
++        deleteRecursively()
++      }
++      mkdirs()
++    }
++    android.util.Log.d("TestStorageProvider", "Initialized with baseDir: ${baseDir.absolutePath}, exists: ${baseDir.exists()}")
++    return baseDir.exists() && baseDir.isDirectory
++  }
++
++  override fun queryRoots(projection: Array<out String>?): Cursor {
++    val cols = projection ?: arrayOf(
++      Root.COLUMN_ROOT_ID,
++      Root.COLUMN_FLAGS,
++      Root.COLUMN_TITLE,
++      Root.COLUMN_DOCUMENT_ID,
++      Root.COLUMN_ICON
++    )
++
++    return MatrixCursor(cols).apply {
++      newRow().apply {
++        add(Root.COLUMN_ROOT_ID, ROOT_ID)
++        add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD)
++        add(Root.COLUMN_TITLE, "Test SAF Storage")
++        add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
++        add(Root.COLUMN_ICON, android.R.drawable.ic_menu_manage)
++      }
++    }
++  }
++
++  override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
++    val cols = projection ?: arrayOf(
++      Document.COLUMN_DOCUMENT_ID,
++      Document.COLUMN_MIME_TYPE,
++      Document.COLUMN_DISPLAY_NAME,
++      Document.COLUMN_FLAGS,
++      Document.COLUMN_SIZE,
++      Document.COLUMN_LAST_MODIFIED
++    )
++
++    val file = getFileForDocId(documentId)
++    return MatrixCursor(cols).apply {
++      newRow().apply {
++        add(Document.COLUMN_DOCUMENT_ID, documentId)
++        add(Document.COLUMN_DISPLAY_NAME, file.name)
++        add(
++          Document.COLUMN_MIME_TYPE,
++          if (file.isDirectory) Document.MIME_TYPE_DIR else "application/octet-stream"
++        )
++        add(
++          Document.COLUMN_FLAGS,
++          Document.FLAG_SUPPORTS_WRITE or
++            Document.FLAG_SUPPORTS_DELETE or
++            Document.FLAG_SUPPORTS_MOVE or
++            Document.FLAG_SUPPORTS_RENAME
++        )
++        add(Document.COLUMN_SIZE, if (file.isFile) file.length() else 0)
++        add(Document.COLUMN_LAST_MODIFIED, file.lastModified())
++      }
++    }
++  }
++
++  override fun queryChildDocuments(
++    parentDocumentId: String,
++    projection: Array<out String>?,
++    sortOrder: String?
++  ): Cursor {
++    val cols = projection ?: arrayOf(
++      Document.COLUMN_DOCUMENT_ID,
++      Document.COLUMN_MIME_TYPE,
++      Document.COLUMN_DISPLAY_NAME,
++      Document.COLUMN_FLAGS,
++      Document.COLUMN_SIZE
++    )
++
++    val parent = getFileForDocId(parentDocumentId)
++    return MatrixCursor(cols).apply {
++      parent.listFiles()?.forEach { file ->
++        newRow().apply {
++          add(Document.COLUMN_DOCUMENT_ID, getDocIdForFile(file))
++          add(Document.COLUMN_DISPLAY_NAME, file.name)
++          add(
++            Document.COLUMN_MIME_TYPE,
++            if (file.isDirectory) Document.MIME_TYPE_DIR else "text/plain"
++          )
++          add(
++            Document.COLUMN_FLAGS,
++            Document.FLAG_SUPPORTS_WRITE or Document.FLAG_SUPPORTS_DELETE
++          )
++          add(Document.COLUMN_SIZE, if (file.isFile) file.length() else 0)
++        }
++      }
++    }
++  }
++
++  override fun openDocument(
++    documentId: String,
++    mode: String,
++    signal: CancellationSignal?
++  ): ParcelFileDescriptor {
++    val file = getFileForDocId(documentId)
++    val accessMode = ParcelFileDescriptor.parseMode(mode)
++    return ParcelFileDescriptor.open(file, accessMode)
++  }
++
++  override fun createDocument(
++    parentDocumentId: String,
++    mimeType: String,
++    displayName: String
++  ): String? {
++    android.util.Log.d("TestStorageProvider", "createDocument: parent=$parentDocumentId, mime=$mimeType, name=$displayName")
++
++    val parent = getFileForDocId(parentDocumentId)
++    android.util.Log.d("TestStorageProvider", "Parent file: ${parent.absolutePath}, exists=${parent.exists()}, isDir=${parent.isDirectory}")
++
++    if (!parent.exists() || !parent.isDirectory) {
++      android.util.Log.e("TestStorageProvider", "Parent doesn't exist or is not a directory")
++      return null
++    }
++
++    val file = File(parent, displayName)
++
++    val success = if (mimeType == Document.MIME_TYPE_DIR) {
++      file.mkdir()
++    } else {
++      file.createNewFile()
++    }
++
++    if (!success) {
++      android.util.Log.e("TestStorageProvider", "Failed to create file: ${file.absolutePath}")
++      return null
++    }
++
++    val docId = getDocIdForFile(file)
++    android.util.Log.d("TestStorageProvider", "Created document: $docId at ${file.absolutePath}")
++    return docId
++  }
++
++  override fun deleteDocument(documentId: String) {
++    val file = getFileForDocId(documentId)
++    file.deleteRecursively()
++  }
++
++  override fun renameDocument(documentId: String, displayName: String): String? {
++    val file = getFileForDocId(documentId)
++    if (!file.exists()) return null
++
++    val parent = file.parentFile ?: return null
++    val newFile = File(parent, displayName)
++
++    if (!file.renameTo(newFile)) return null
++    return getDocIdForFile(newFile)
++  }
++
++  override fun moveDocument(
++    sourceDocumentId: String,
++    sourceParentDocumentId: String,
++    targetParentDocumentId: String
++  ): String? {
++    val sourceFile = getFileForDocId(sourceDocumentId)
++    if (!sourceFile.exists()) return null
++
++    val targetParent = getFileForDocId(targetParentDocumentId)
++    if (!targetParent.exists() || !targetParent.isDirectory) return null
++
++    val targetFile = File(targetParent, sourceFile.name)
++
++    if (!sourceFile.renameTo(targetFile)) return null
++    return getDocIdForFile(targetFile)
++  }
++
++  override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean {
++    if (parentDocumentId == ROOT_DOC_ID) {
++      // Everything except root is a child of root
++      return documentId != ROOT_DOC_ID
++    }
++
++    // Check if documentId represents a child of parentDocumentId
++    return try {
++      val parent = getFileForDocId(parentDocumentId)
++      val child = getFileForDocId(documentId)
++      child.canonicalPath.startsWith(parent.canonicalPath + File.separator)
++    } catch (e: Exception) {
++      false
++    }
++  }
++
++  private fun getFileForDocId(id: String): File {
++    return when (id) {
++      ROOT_DOC_ID -> baseDir
++      else -> {
++        // Document IDs are relative paths from baseDir
++        File(baseDir, id)
++      }
++    }
++  }
++
++  private fun getDocIdForFile(file: File): String {
++    if (file == baseDir) return ROOT_DOC_ID
++
++    // Document ID is the relative path from baseDir
++    return file.relativeTo(baseDir).path
++  }
++}
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemExceptions.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemExceptions.kt
+index ea2f12b93ffb89..0a3210b162785b 100644
+--- a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemExceptions.kt
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemExceptions.kt
+@@ -56,3 +56,13 @@ internal class DestinationAlreadyExistsException :
+   CodedException(
+     "Destination already exists"
+   )
++
++internal class UnableToCopyException(reason: String) :
++  CodedException(
++    "Unable to copy file or directory: $reason"
++  )
++
++internal class UnableToMoveException(reason: String) :
++  CodedException(
++    "Unable to move file or directory: $reason"
++  )
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemPath.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemPath.kt
+index 4628c2e17a1cdc..bb605a4eb54fe3 100644
+--- a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemPath.kt
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/FileSystemPath.kt
+@@ -1,9 +1,13 @@
+ package expo.modules.filesystem
+ 
++import android.content.Context
+ import android.net.Uri
+ import android.os.Build
++import android.provider.DocumentsContract
+ import androidx.core.net.toUri
+ import expo.modules.filesystem.unifiedfile.AssetFile
++import expo.modules.filesystem.unifiedfile.ContentProviderFile
++import expo.modules.filesystem.fsops.DestinationSpec
+ import expo.modules.filesystem.unifiedfile.JavaFile
+ import expo.modules.filesystem.unifiedfile.SAFDocumentFile
+ import expo.modules.filesystem.unifiedfile.UnifiedFileInterface
+@@ -25,6 +29,11 @@ val Uri.isAssetUri
+     return scheme == "asset"
+   }
+ 
++fun Uri.isSAFUri(context: Context): Boolean =
++  isContentUri && (
++    DocumentsContract.isDocumentUri(context, this) || DocumentsContract.isTreeUri(this)
++    )
++
+ fun slashifyFilePath(path: String?): String? {
+   return if (path == null) {
+     null
+@@ -44,16 +53,17 @@ abstract class FileSystemPath(var uri: Uri) : SharedObject() {
+       if (currentAdapter?.uri == uri) {
+         return currentAdapter
+       }
+-      val newAdapter = if (uri.isContentUri) {
+-        SAFDocumentFile(appContext?.reactContext ?: throw Exception("No context"), uri)
+-      } else if (uri.isAssetUri) {
+-        AssetFile(appContext?.reactContext ?: throw Exception("No context"), uri)
+-      } else {
+-        JavaFile(uri)
++
++      val context = appContext?.reactContext ?: throw Exceptions.ReactContextLost()
++      val newAdapter = when {
++        uri.isSAFUri(context) -> SAFDocumentFile(context, uri)
++        uri.isContentUri -> ContentProviderFile(context, uri)
++        uri.isAssetUri -> AssetFile(context, uri)
++        else -> JavaFile(uri)
+       }
+-      fileAdapter = newAdapter
+-      return newAdapter
++      return newAdapter.also { fileAdapter = it }
+     }
++
+   val javaFile: File
+     get() =
+       if (uri.isContentUri) {
+@@ -141,7 +151,7 @@ abstract class FileSystemPath(var uri: Uri) : SharedObject() {
+     validatePermission(FilePermissionService.Permission.READ)
+     to.validatePermission(FilePermissionService.Permission.WRITE)
+ 
+-    javaFile.copyRecursively(getMoveOrCopyPath(to))
++    file.copyTo(to.asCopyOrMoveDestination())
+   }
+ 
+   fun move(to: FileSystemPath) {
+@@ -150,15 +160,11 @@ abstract class FileSystemPath(var uri: Uri) : SharedObject() {
+     validatePermission(FilePermissionService.Permission.WRITE)
+     to.validatePermission(FilePermissionService.Permission.WRITE)
+ 
+-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-      val destination = getMoveOrCopyPath(to)
+-      javaFile.toPath().moveTo(destination.toPath())
+-      uri = destination.toUri()
+-    } else {
+-      javaFile.copyTo(getMoveOrCopyPath(to))
+-      javaFile.delete()
+-      uri = getMoveOrCopyPath(to).toUri()
+-    }
++    // moveTo returns the URI of where the file was actually moved to
++    val finalUri = file.moveTo(to.asCopyOrMoveDestination())
++
++    // Update URI to reflect the new location
++    uri = finalUri
+   }
+ 
+   fun rename(newName: String) {
+@@ -186,3 +192,9 @@ abstract class FileSystemPath(var uri: Uri) : SharedObject() {
+       return file.creationTime
+     }
+ }
++
++fun FileSystemPath.asCopyOrMoveDestination(overwrite: Boolean = false) = DestinationSpec(
++  path = file,
++  overwrite = overwrite,
++  isDirectory = this is FileSystemDirectory
++)
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/CopyMoveStrategy.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/CopyMoveStrategy.kt
+new file mode 100644
+index 00000000000000..b9d481193263af
+--- /dev/null
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/CopyMoveStrategy.kt
+@@ -0,0 +1,188 @@
++package expo.modules.filesystem.fsops
++
++import android.content.Context
++import android.net.Uri
++import android.provider.DocumentsContract
++import androidx.core.net.toUri
++import expo.modules.filesystem.CopyOrMoveDirectoryToFileException
++import expo.modules.filesystem.DestinationAlreadyExistsException
++import expo.modules.filesystem.DestinationDoesNotExistException
++import expo.modules.filesystem.UnableToMoveException
++import expo.modules.filesystem.unifiedfile.AssetFile
++import expo.modules.filesystem.unifiedfile.ContentProviderFile
++import expo.modules.filesystem.unifiedfile.JavaFile
++import expo.modules.filesystem.unifiedfile.SAFDocumentFile
++import expo.modules.filesystem.unifiedfile.UnifiedFileInterface
++import expo.modules.kotlin.exception.Exceptions
++import java.io.File
++
++/**
++ * Strategy pattern for copy/move operations specific to each file backend type.
++ *
++ * Each file type (LocalFile, SAF, ContentProvider, Asset) has its own strategy
++ * that knows how to:
++ * - Prepare itself as a destination (validation, path resolution, overwrite handling)
++ * - Execute copy/move operations from itself as a source
++ * - Optimize operations based on source/destination type combinations
++ */
++sealed class CopyMoveStrategy(
++  protected open val file: UnifiedFileInterface
++) {
++
++  open fun copyTo(spec: DestinationSpec) {
++    spec.resolve(file).receiveFrom(file)
++  }
++
++  open fun moveTo(spec: DestinationSpec): Uri {
++    val resolved = spec.resolve(file)
++    return tryNativeMove(resolved) ?: run {
++      resolved.receiveFrom(file).also {
++        if (!file.deleteRecursively()) {
++          throw UnableToMoveException("Failed to delete source after move")
++        }
++      }
++    }
++  }
++
++  /**
++   * Attempts a native (atomic) move for the given resolved destination.
++   * Returns the resulting URI if native move succeeded, or null to fall back to copy+delete.
++   */
++  protected open fun tryNativeMove(resolved: DestinationSink): Uri? = null
++
++  internal abstract fun prepareAsDestination(source: UnifiedFileInterface, spec: DestinationSpec): DestinationSink
++
++  // Implementations
++
++  class LocalFile(override val file: JavaFile) : CopyMoveStrategy(file) {
++    override fun prepareAsDestination(source: UnifiedFileInterface, spec: DestinationSpec): DestinationSink {
++      val sourceIsDir = source.isDirectory()
++      val fileName = source.fileName
++        ?: throw IllegalArgumentException("Source has no file name")
++
++      val target: JavaFile = when {
++        // Directory → File: error
++        sourceIsDir && !spec.isDirectory -> throw CopyOrMoveDirectoryToFileException()
++        // Directory → Directory
++        sourceIsDir && spec.isDirectory -> {
++          if (file.exists()) {
++            JavaFile(File(file, fileName).toUri())
++          } else {
++            if (file.parentFile?.exists() != true) throw DestinationDoesNotExistException()
++            file
++          }
++        }
++        // File → Directory
++        !sourceIsDir && spec.isDirectory -> {
++          if (!file.exists()) throw DestinationDoesNotExistException()
++          JavaFile(File(file, fileName).toUri())
++        }
++        // File → File
++        else -> {
++          if (file.parentFile?.exists() != true) throw DestinationDoesNotExistException()
++          file
++        }
++      }
++
++      target.takeIf { it.exists() }?.let {
++        if (!spec.overwrite) throw DestinationAlreadyExistsException()
++        it.deleteRecursively()
++      }
++
++      return DestinationSink.LocalFile(spec, target)
++    }
++
++    override fun tryNativeMove(resolved: DestinationSink): Uri? {
++      if (resolved is DestinationSink.LocalFile) {
++        if (file.renameTo(resolved.target)) return resolved.target.uri
++      }
++      return null
++    }
++  }
++
++  class SAF(
++    override val file: SAFDocumentFile,
++    private val context: Context
++  ) : CopyMoveStrategy(file) {
++    override fun prepareAsDestination(source: UnifiedFileInterface, spec: DestinationSpec): DestinationSink {
++      val sourceFileName = source.fileName
++        ?: throw Exceptions.IllegalArgument("Source ${source.uri} has no file name")
++
++      // → SAF File (not a directory spec)
++      if (!spec.isDirectory) {
++        if (file.exists()) {
++          if (!spec.overwrite) throw DestinationAlreadyExistsException()
++          file.deleteRecursively()
++        }
++        return DestinationSink.SAF(spec, file, isContainer = false)
++      }
++
++      // → SAF Directory that doesn't exist
++      if (!file.exists()) {
++        if (source.isDirectory()) {
++          if (file.parentFile?.exists() != true) throw DestinationDoesNotExistException()
++          return DestinationSink.SAF(spec, file, isContainer = false)
++        } else {
++          throw DestinationDoesNotExistException()
++        }
++      }
++
++      // → Existing SAF Directory: check child
++      file.findFile(sourceFileName)?.let { existingChild ->
++        if (!spec.overwrite) {
++          throw DestinationAlreadyExistsException()
++        }
++        existingChild.deleteRecursively()
++      }
++
++      return DestinationSink.SAF(spec, file, isContainer = true)
++    }
++
++    /**
++     * Attempts to use native SAF move operation.
++     * Only works if both documents are in the same tree.
++     *
++     * @return the URI of the moved document if successful, null if not supported/failed
++     */
++    override fun tryNativeMove(resolved: DestinationSink): Uri? {
++      if (resolved !is DestinationSink.SAF) {
++        return null
++      }
++
++      val destination = resolved.target
++      val sourceParent = file.documentFile?.parentFile?.uri ?: return null
++      val destParent = destination.documentFile?.parentFile?.uri ?: return null
++
++      return runCatching {
++        DocumentsContract.moveDocument(
++          context.contentResolver,
++          file.uri,
++          sourceParent,
++          destParent
++        )
++      }.getOrNull()
++    }
++  }
++
++  class ContentProvider(override val file: ContentProviderFile) : CopyMoveStrategy(file) {
++    override fun prepareAsDestination(source: UnifiedFileInterface, spec: DestinationSpec): DestinationSink {
++      if (file.exists() && !spec.overwrite) throw DestinationAlreadyExistsException()
++      return DestinationSink.ContentResource(spec)
++    }
++
++    override fun moveTo(spec: DestinationSpec): Uri {
++      throw UnableToMoveException("Content provider file cannot be moved (provider-dependent)")
++    }
++  }
++
++  class Asset(override val file: AssetFile) : CopyMoveStrategy(file) {
++    override fun prepareAsDestination(source: UnifiedFileInterface, spec: DestinationSpec): DestinationSink {
++      if (file.exists() && !spec.overwrite) throw DestinationAlreadyExistsException()
++      return DestinationSink.Asset(spec)
++    }
++
++    override fun moveTo(spec: DestinationSpec): Uri {
++      throw UnableToMoveException("Assets cannot be moved (provider-dependent)")
++    }
++  }
++}
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/DestinationSink.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/DestinationSink.kt
+new file mode 100644
+index 00000000000000..c4b55d78964e49
+--- /dev/null
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/DestinationSink.kt
+@@ -0,0 +1,83 @@
++package expo.modules.filesystem.fsops
++
++import android.net.Uri
++import expo.modules.filesystem.UnableToCopyException
++import expo.modules.filesystem.unifiedfile.JavaFile
++import expo.modules.filesystem.unifiedfile.SAFDocumentFile
++import expo.modules.filesystem.unifiedfile.UnifiedFileInterface
++import expo.modules.kotlin.exception.Exceptions
++
++/**
++ * A validated, ready-to-write destination for copy/move operations.
++ * The destination has been:
++ * - Path-resolved (e.g., child path created if copying into directory)
++ * - Validated (overwrite checked, parent existence verified)
++ * - Cleaned up (existing file deleted if overwrite=true)
++ *
++ * Think of this as a "sink" that's ready to receive data from a source.
++ */
++sealed class DestinationSink(val spec: DestinationSpec) {
++  /**
++   * Receives data from the given source and writes it to this destination.
++   * Each subclass knows how to receive data appropriate to its backend.
++   *
++   * @param source The source file/directory to copy from
++   * @return The URI of the resulting copied file/directory
++   */
++  abstract fun receiveFrom(source: UnifiedFileInterface): Uri
++
++  class LocalFile(spec: DestinationSpec, val target: JavaFile) : DestinationSink(spec) {
++    override fun receiveFrom(source: UnifiedFileInterface): Uri {
++      when {
++        source is JavaFile -> source.copyRecursively(target, overwrite = spec.overwrite)
++        source.isDirectory() -> {
++          target.mkdir()
++          copyDirectoryViaStream(source, target)
++        }
++        else -> copyFileViaStream(source, target)
++      }
++      return target.uri
++    }
++  }
++
++  class SAF(spec: DestinationSpec, val target: SAFDocumentFile, val isContainer: Boolean = false) : DestinationSink(spec) {
++    override fun receiveFrom(source: UnifiedFileInterface): Uri {
++      if (source.isDirectory()) {
++        val actualDest = if (isContainer) {
++          val dirName = source.fileName
++            ?: throw Exceptions.IllegalStateException("Source has no directory name")
++          target.createDirectory(dirName)
++            ?: throw Exceptions.IllegalStateException("Failed to create directory: $dirName")
++        } else {
++          target
++        }
++        copyDirectoryViaStream(source, actualDest)
++        return actualDest.uri
++      } else {
++        val actualDest = if (isContainer) {
++          val fileName = source.fileName
++            ?: throw Exceptions.IllegalStateException("Source has no file name")
++          val mimeType = source.type ?: "*/*"
++          target.createFile(mimeType, fileName)
++            ?: throw Exceptions.IllegalStateException("Failed to create file: $fileName")
++        } else {
++          target
++        }
++        copyFileViaStream(source, actualDest)
++        return actualDest.uri
++      }
++    }
++  }
++
++  class ContentResource(spec: DestinationSpec) : DestinationSink(spec) {
++    override fun receiveFrom(source: UnifiedFileInterface): Uri {
++      throw UnableToCopyException("Cannot copy to read-only destination")
++    }
++  }
++
++  class Asset(spec: DestinationSpec) : DestinationSink(spec) {
++    override fun receiveFrom(source: UnifiedFileInterface): Uri {
++      throw UnableToCopyException("Cannot copy to read-only destination")
++    }
++  }
++}
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/DestinationSpec.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/DestinationSpec.kt
+new file mode 100644
+index 00000000000000..95fefd12955e91
+--- /dev/null
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/DestinationSpec.kt
+@@ -0,0 +1,30 @@
++package expo.modules.filesystem.fsops
++
++import expo.modules.filesystem.unifiedfile.UnifiedFileInterface
++import expo.modules.filesystem.DestinationAlreadyExistsException
++import expo.modules.filesystem.DestinationDoesNotExistException
++import expo.modules.filesystem.CopyOrMoveDirectoryToFileException
++
++/**
++ * Encapsulates destination parameters for copy/move operations.
++ * Represents what the user specified as the copy/move target.
++ */
++data class DestinationSpec(
++  val path: UnifiedFileInterface,
++  val overwrite: Boolean = false,
++  val isDirectory: Boolean = false
++) {
++  /**
++   * Resolves and validates the destination for a copy/move operation.
++   * Delegates to the destination path's own [CopyMoveStrategy.prepareAsDestination].
++   *
++   * @param source The source file/directory
++   * @return Validated and prepared destination
++   * @throws DestinationAlreadyExistsException if destination exists and overwrite is false
++   * @throws DestinationDoesNotExistException if parent doesn't exist
++   * @throws CopyOrMoveDirectoryToFileException if copying directory to file
++   */
++  internal fun resolve(source: UnifiedFileInterface): DestinationSink {
++    return this.path.copyMoveStrategy.prepareAsDestination(source, this)
++  }
++}
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/Utilities.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/Utilities.kt
+new file mode 100644
+index 00000000000000..cd42eca25a44ef
+--- /dev/null
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/fsops/Utilities.kt
+@@ -0,0 +1,55 @@
++package expo.modules.filesystem.fsops
++
++import expo.modules.filesystem.unifiedfile.UnifiedFileInterface
++import expo.modules.kotlin.exception.Exceptions
++
++/**
++ * Copy file contents via streams.
++ *
++ * @param source Source file (must be a file, not directory)
++ * @param dest DestinationSpec file (must be a file or not exist)
++ * @throws IllegalArgumentException if source is not a file
++ */
++internal fun copyFileViaStream(
++  source: UnifiedFileInterface,
++  dest: UnifiedFileInterface
++) {
++  require(source.isFile()) { "Source must be a file" }
++
++  source.inputStream().use { input ->
++    dest.outputStream().use { output ->
++      input.copyTo(output)
++    }
++  }
++}
++
++/**
++ * Copy directory recursively via streams.
++ *
++ * @param source Source directory (must be a directory)
++ * @param dest DestinationSpec directory (must be a directory)
++ * @throws Exceptions.IllegalArgument if source or dest is not a directory
++ * @throws Exceptions.IllegalStateException if child creation fails
++ */
++internal fun copyDirectoryViaStream(
++  source: UnifiedFileInterface,
++  dest: UnifiedFileInterface
++) {
++  require(source.isDirectory()) { "Source must be directory" }
++  require(dest.isDirectory()) { "Dest must be directory" }
++
++  source.listFilesAsUnified().forEach { child ->
++    val childName = child.fileName
++      ?: throw Exceptions.IllegalArgument("Child has no file name")
++
++    if (child.isDirectory()) {
++      val childDest = dest.createDirectory(childName)
++        ?: throw Exceptions.IllegalStateException("Failed to create directory: $childName")
++      copyDirectoryViaStream(child, childDest)
++    } else {
++      val childDest = dest.createFile(child.type ?: "*/*", childName)
++        ?: throw Exceptions.IllegalStateException("Failed to create file: $childName")
++      copyFileViaStream(child, childDest)
++    }
++  }
++}
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/AssetFile.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/AssetFile.kt
+index 38e22afe0d0afb..8521fc890da52b 100644
+--- a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/AssetFile.kt
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/AssetFile.kt
+@@ -4,6 +4,7 @@ import android.content.Context
+ import android.net.Uri
+ import android.webkit.MimeTypeMap
+ import androidx.core.net.toUri
++import expo.modules.filesystem.fsops.CopyMoveStrategy
+ import expo.modules.kotlin.AppContext
+ import java.io.File
+ import java.io.FileOutputStream
+@@ -140,4 +141,6 @@ class AssetFile(private val context: Context, override val uri: Uri) : UnifiedFi
+       }
+     }
+   }
++
++  override val copyMoveStrategy: CopyMoveStrategy = CopyMoveStrategy.Asset(this)
+ }
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/ContentProviderFile.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/ContentProviderFile.kt
+new file mode 100644
+index 00000000000000..98d79bdff355b1
+--- /dev/null
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/ContentProviderFile.kt
+@@ -0,0 +1,124 @@
++package expo.modules.filesystem.unifiedfile
++
++import android.content.Context
++import android.net.Uri
++import android.provider.OpenableColumns
++import android.webkit.MimeTypeMap
++import expo.modules.filesystem.fsops.CopyMoveStrategy
++import expo.modules.kotlin.AppContext
++import expo.modules.kotlin.exception.Exceptions
++import java.io.InputStream
++import java.io.OutputStream
++
++/**
++ * Implementation of UnifiedFileInterface for generic content:// URIs
++ * that are NOT Storage Access Framework (SAF) URIs.
++ *
++ * Examples: MediaStore URIs, custom content provider URIs, share intent URIs.
++ *
++ * This implementation:
++ * - Uses ContentResolver directly (no DocumentFile)
++ * - Supports basic stream operations (read/write)
++ * - Does NOT support directory operations (create, list, delete)
++ * - May or may not support random access (openChannel) depending on the provider
++ */
++class ContentProviderFile(
++  private val context: Context,
++  override val uri: Uri
++) : UnifiedFileInterface {
++
++  override fun exists(): Boolean = runCatching {
++    context.contentResolver.openInputStream(uri)?.use { true }
++  }.getOrNull() ?: false
++
++  override fun isFile(): Boolean = exists()
++
++  override fun isDirectory(): Boolean = false
++
++  override val parentFile: UnifiedFileInterface? = null
++
++  override fun createFile(mimeType: String, displayName: String): UnifiedFileInterface =
++    throw UnsupportedOperationException("Cannot create files in generic content provider: $uri")
++
++  override fun createDirectory(displayName: String): UnifiedFileInterface =
++    throw UnsupportedOperationException("Cannot create directories in generic content provider: $uri")
++
++  override fun delete(): Boolean =
++    throw UnsupportedOperationException("Cannot delete from generic content provider: $uri")
++
++  override fun deleteRecursively(): Boolean =
++    throw UnsupportedOperationException("Cannot delete from generic content provider: $uri")
++
++  override fun listFilesAsUnified(): List<UnifiedFileInterface> = emptyList()
++
++  override val type: String?
++    get() {
++      context.contentResolver.getType(uri)?.let { mimeType ->
++        return mimeType
++      }
++
++      val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
++      return extension.takeUnless { it.isNullOrEmpty() }?.let { ext ->
++        MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase())
++      }
++    }
++
++  override fun lastModified(): Long? = null
++
++  override val creationTime: Long? = null
++
++  override val fileName: String?
++    get() = queryColumn(OpenableColumns.DISPLAY_NAME) ?: uri.lastPathSegment
++
++  override fun getContentUri(appContext: AppContext): Uri = uri
++
++  override fun outputStream(append: Boolean): OutputStream {
++    return context.contentResolver.openOutputStream(uri)
++      ?: throw Exceptions.IllegalStateException("Unable to open output stream for URI: $uri")
++  }
++
++  override fun inputStream(): InputStream {
++    return context.contentResolver.openInputStream(uri)
++      ?: throw Exceptions.IllegalStateException("Unable to open input stream for URI: $uri")
++  }
++
++  override fun length(): Long {
++    queryColumn(OpenableColumns.SIZE)?.toLongOrNull()?.let { size ->
++      return size
++    }
++
++    return runCatching {
++      inputStream().use { stream ->
++        var total = 0L
++        val buffer = ByteArray(8192)
++        var read: Int
++        while (stream.read(buffer).also { read = it } != -1) {
++          total += read
++        }
++        total
++      }
++    }.getOrNull() ?: 0L
++  }
++
++  override fun walkTopDown(): Sequence<UnifiedFileInterface> = sequenceOf(this)
++
++  override val copyMoveStrategy: CopyMoveStrategy = CopyMoveStrategy.ContentProvider(this)
++
++  /**
++   * Helper to query a column from the ContentResolver.
++   */
++  private fun queryColumn(column: String): String? {
++    return runCatching {
++      context
++        .contentResolver
++        .query(uri, arrayOf(column), null, null, null)
++        ?.use { cursor ->
++          cursor.takeIf { it.moveToFirst() }?.let { cursor ->
++            cursor.getColumnIndex(column).takeIf { it >= 0 }?.let { index ->
++              cursor.getString(index)
++            }
++          }
++        }
++    }.getOrNull()
++  }
++}
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/JavaFile.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/JavaFile.kt
+index 309bd90e53e2f3..c753efc4b9a5b8 100644
+--- a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/JavaFile.kt
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/JavaFile.kt
+@@ -5,6 +5,7 @@ import android.os.Build
+ import android.webkit.MimeTypeMap
+ import androidx.core.content.FileProvider
+ import androidx.core.net.toUri
++import expo.modules.filesystem.fsops.CopyMoveStrategy
+ import expo.modules.kotlin.AppContext
+ import java.io.File
+ import java.io.FileInputStream
+@@ -22,13 +23,13 @@ class JavaFile(override val uri: Uri) : UnifiedFileInterface, File(URI.create(ur
+     get() = super<File>.parentFile?.toUri()?.let { JavaFile(it) }
+ 
+   override fun createFile(mimeType: String, displayName: String): UnifiedFileInterface? {
+-    val childFile = File(super<File>.parentFile, displayName)
++    val childFile = File(this, displayName)
+     childFile.createNewFile()
+     return JavaFile(childFile.toUri())
+   }
+ 
+   override fun createDirectory(displayName: String): UnifiedFileInterface? {
+-    val childFile = File(super<File>.parentFile, displayName)
++    val childFile = File(this, displayName)
+     childFile.mkdir()
+     return JavaFile(childFile.toUri())
+   }
+@@ -79,4 +80,6 @@ class JavaFile(override val uri: Uri) : UnifiedFileInterface, File(URI.create(ur
+   override fun walkTopDown(): Sequence<JavaFile> {
+     return walk(direction = FileWalkDirection.TOP_DOWN).map { JavaFile(it.toUri()) }
+   }
++
++  override val copyMoveStrategy: CopyMoveStrategy = CopyMoveStrategy.LocalFile(this)
+ }
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt
+index eccd71730920e3..6f01b402093242 100644
+--- a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt
+@@ -3,12 +3,13 @@ package expo.modules.filesystem.unifiedfile
+ import android.content.Context
+ import android.net.Uri
+ import androidx.documentfile.provider.DocumentFile
++import expo.modules.filesystem.fsops.CopyMoveStrategy
+ import expo.modules.kotlin.AppContext
+ import java.io.InputStream
+ import java.io.OutputStream
+ 
+ class SAFDocumentFile(private val context: Context, override val uri: Uri) : UnifiedFileInterface {
+-  private val documentFile: DocumentFile?
++  val documentFile: DocumentFile?
+     get() {
+       // Relying on singleUri.isDirectory did not work, and there's no explicit method for this, so we check path
+       val pathSegment = uri.pathSegments.getOrNull(0) ?: "tree"
+@@ -85,6 +86,15 @@ class SAFDocumentFile(private val context: Context, override val uri: Uri) : Uni
+     return documentFile?.length() ?: 0
+   }
+ 
++  /**
++   * Finds a child file/directory by name.
++   * @return The child file if found, null otherwise
++   */
++  fun findFile(name: String): SAFDocumentFile? {
++    val child = documentFile?.findFile(name) ?: return null
++    return SAFDocumentFile(context, child.uri)
++  }
++
+   override fun walkTopDown(): Sequence<SAFDocumentFile> {
+     return sequence {
+       yield(this@SAFDocumentFile)
+@@ -95,6 +105,8 @@ class SAFDocumentFile(private val context: Context, override val uri: Uri) : Uni
+       }
+     }
+   }
++
++  override val copyMoveStrategy: CopyMoveStrategy = CopyMoveStrategy.SAF(this, context)
+ }
+ 
+ fun DocumentFile.deleteRecursively(): Boolean {
+diff --git a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/UnifiedFileInterface.kt b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/UnifiedFileInterface.kt
+index 2b63e19ad67564..ff5882643736e6 100644
+--- a/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/UnifiedFileInterface.kt
++++ b/packages/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/UnifiedFileInterface.kt
+@@ -1,6 +1,8 @@
+ package expo.modules.filesystem.unifiedfile
+ 
+ import android.net.Uri
++import expo.modules.filesystem.fsops.DestinationSpec
++import expo.modules.filesystem.fsops.CopyMoveStrategy
+ import expo.modules.kotlin.AppContext
+ 
+ interface UnifiedFileInterface {
+@@ -23,4 +25,8 @@ interface UnifiedFileInterface {
+   fun inputStream(): java.io.InputStream
+   fun length(): Long
+   fun walkTopDown(): Sequence<UnifiedFileInterface>
++
++  val copyMoveStrategy: CopyMoveStrategy
++  fun copyTo(dest: DestinationSpec) = copyMoveStrategy.copyTo(dest)
++  fun moveTo(dest: DestinationSpec): Uri = copyMoveStrategy.moveTo(dest)
+ }

@@ -1,0 +1,1614 @@
+diff --git a/.changeset/agent-skills-telemetry.md b/.changeset/agent-skills-telemetry.md
+new file mode 100644
+index 0000000000..3d610daf33
+--- /dev/null
++++ b/.changeset/agent-skills-telemetry.md
+@@ -0,0 +1,7 @@
++---
++"wrangler": minor
++---
++
++Add telemetry for detecting whether AI coding agents have Cloudflare skills installed
++
++Wrangler now includes a `currentAgentSkillsInstalled` property in telemetry events that reports whether the current AI coding agent has Cloudflare skills present on disk. The value distinguishes between skills installed automatically by Wrangler (`"automatic"`), skills installed manually by the user (`"manual"`), no skills present (`false`), or no supported agent detected (`null`). Skill names are fetched from the GitHub Contents API with a 24-hour disk cache to avoid rate limits.
+diff --git a/packages/wrangler/src/__tests__/agents-skills-install.test.ts b/packages/wrangler/src/__tests__/agents-skills-install.test.ts
+index ec9151f6b7..de1fa34f90 100644
+--- a/packages/wrangler/src/__tests__/agents-skills-install.test.ts
++++ b/packages/wrangler/src/__tests__/agents-skills-install.test.ts
+@@ -1,19 +1,28 @@
+ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
++import os from "node:os";
+ import path from "node:path";
+ import { getGlobalWranglerConfigPath } from "@cloudflare/workers-utils";
+ import { runInTempDir } from "@cloudflare/workers-utils/test-helpers";
++import { detectAgenticEnvironment } from "am-i-vibing";
+ import ci from "ci-info";
++import { http, HttpResponse } from "msw";
+ import { afterEach, beforeEach, describe, test, vi } from "vitest";
+ import { sendMetricsEvent } from "../metrics/send-event";
+ import { mockConsoleMethods } from "./helpers/mock-console";
+ import { clearDialogs, mockConfirm } from "./helpers/mock-dialogs";
+ import { useMockIsTTY } from "./helpers/mock-istty";
+-import type { maybeInstallCloudflareSkillsGlobally as InstallFnType } from "../agents-skills-install";
++import { msw } from "./helpers/msw";
++import type {
++	maybeInstallCloudflareSkillsGlobally as InstallFnType,
++	telemetryCurrentAgentSkillsInstalled as TelemetryFnType,
++} from "../agents-skills-install";
+ import type * as SendEventModule from "../metrics/send-event";
+ 
+ // Undo the global no-op mock from vitest.setup.ts so we test the real implementation
+ vi.unmock("../agents-skills-install");
+ 
++vi.mock("am-i-vibing");
++
+ // Mock rosie-skills to avoid real network/WASM calls.
+ const mockRosieInstall = vi.fn();
+ const mockRosieAgents = vi.fn();
+@@ -92,6 +101,30 @@ async function freshImport(): Promise<typeof InstallFnType> {
+ 	return mod.maybeInstallCloudflareSkillsGlobally;
+ }
+ 
++/**
++ * Like {@link freshImport} but returns the telemetry function instead.
++ * Each call resets the module graph (and hence the memoised promise) so
++ * that tests start with a clean state.
++ *
++ * @returns The `telemetryCurrentAgentSkillsInstalled` function from a fresh module import.
++ */
++async function freshTelemetryImport(): Promise<typeof TelemetryFnType> {
++	vi.resetModules();
++	const mod = await import("../agents-skills-install");
++	return mod.telemetryCurrentAgentSkillsInstalled;
++}
++
++/**
++ * Creates an agent's global config directory under `os.homedir()`.
++ * This is needed because the telemetry function checks for skills in
++ * agent-specific directories.
++ *
++ * @param dirName The agent's directory name relative to $HOME (e.g. ".claude").
++ */
++function createAgentDir(dirName: string): void {
++	mkdirSync(path.join(os.homedir(), dirName), { recursive: true });
++}
++
+ describe("maybeInstallCloudflareSkillsGlobally", () => {
+ 	runInTempDir();
+ 	const std = mockConsoleMethods();
+@@ -121,6 +154,41 @@ describe("maybeInstallCloudflareSkillsGlobally", () => {
+ 			expect(sendMetricsEvent).not.toHaveBeenCalled();
+ 		});
+ 
++		// TODO(dario): Remove this migration branch after 2026-06-05 — by then
++		// most active users' metadata files will have been converted to version 1.
++		test("skips silently when metadata file uses the legacy format (no version field) and migrates it on disk", async ({
++			expect,
++		}) => {
++			writeMetadataFile({
++				accepted: true,
++				date: "2025-07-01T00:00:00Z",
++				detectedAgents: [
++					{
++						name: "Claude Code",
++						rosieId: "claude",
++						globalSkillsPath: "/fake/.claude/skills",
++					},
++				],
++				installFailed: false,
++			});
++			const maybeInstallCloudflareSkillsGlobally = await freshImport();
++
++			await maybeInstallCloudflareSkillsGlobally(false);
++
++			expect(mockRosieAgents).not.toHaveBeenCalled();
++			expect(mockRosieInstall).not.toHaveBeenCalled();
++			expect(sendMetricsEvent).not.toHaveBeenCalled();
++			// Verify the file was migrated to the new format on disk
++			const migratedMetadata = readMetadataFile();
++			expect(migratedMetadata.version).toBe(1);
++			expect(migratedMetadata.detectedAgents).toEqual([
++				{
++					name: "Claude Code",
++					rosie: { id: "claude", globalPath: "/fake/.claude/skills" },
++				},
++			]);
++		});
++
+ 		test("force=true ignores existing metadata file", async ({ expect }) => {
+ 			writeMetadataFile({ accepted: true, date: "2025-01-01T00:00:00Z" });
+ 			const maybeInstallCloudflareSkillsGlobally = await freshImport();
+@@ -329,8 +397,10 @@ describe("maybeInstallCloudflareSkillsGlobally", () => {
+ 					agents: [
+ 						{
+ 							name: "Claude Code",
+-							rosieId: "claude",
+-							globalSkillsPath: "/fake/.claude/skills",
++							rosie: {
++								id: "claude",
++								globalPath: "/fake/.claude/skills",
++							},
+ 						},
+ 					],
+ 				},
+@@ -484,7 +554,7 @@ describe("maybeInstallCloudflareSkillsGlobally", () => {
+ 				expect.arrayContaining([
+ 					expect.objectContaining({
+ 						name: "Claude Code",
+-						rosieId: "claude",
++						rosie: expect.objectContaining({ id: "claude" }),
+ 					}),
+ 				])
+ 			);
+@@ -569,3 +639,649 @@ describe("maybeInstallCloudflareSkillsGlobally", () => {
+ 		});
+ 	});
+ });
++
++/**
++ * MSW handler that returns a fake GitHub Contents API response.
++ *
++ * @param skillNames The skill directory names to include in the mocked response.
++ */
++function mockGitHubSkillsApi(skillNames: string[]) {
++	const entries = skillNames.map((name) => ({ name, type: "dir" }));
++	msw.use(
++		http.get(
++			"https://api.github.com/repos/cloudflare/skills/contents/skills",
++			() => {
++				return HttpResponse.json(entries);
++			}
++		)
++	);
++}
++
++/**
++ * MSW handler that makes the GitHub Contents API return an error.
++ *
++ * @param status The HTTP status code to return. Defaults to `403`.
++ */
++function mockGitHubSkillsApiError(status = 403) {
++	msw.use(
++		http.get(
++			"https://api.github.com/repos/cloudflare/skills/contents/skills",
++			() => {
++				return new HttpResponse(null, { status });
++			}
++		)
++	);
++}
++
++/** MSW handler that makes the GitHub Contents API throw a network error. */
++function mockGitHubSkillsApiNetworkError() {
++	msw.use(
++		http.get(
++			"https://api.github.com/repos/cloudflare/skills/contents/skills",
++			() => {
++				return HttpResponse.error();
++			}
++		)
++	);
++}
++
++describe("telemetryCurrentAgentSkillsInstalled", () => {
++	runInTempDir();
++	mockConsoleMethods();
++
++	beforeEach(() => {
++		// Default: no agent detected
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: false,
++			id: null,
++			name: null,
++			type: null,
++		});
++	});
++
++	test("resolves to null when no agent is detected", async ({ expect }) => {
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe(null);
++	});
++
++	test("resolves to null when detectAgenticEnvironment throws", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockImplementation(() => {
++			throw new Error("Detection failed");
++		});
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe(null);
++	});
++
++	test("resolves to null when agent is detected but not in telemetryAgentMappings", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "jules",
++			name: "Jules",
++			type: "agent",
++		});
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe(null);
++	});
++
++	test("resolves to false when GitHub API fetch fails and no cache exists", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		mockGitHubSkillsApiNetworkError();
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe(false);
++	});
++
++	test("resolves to false when no skills are present in agent's globalSkillsPath", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe(false);
++	});
++
++	test("resolves to 'manual' when some skills exist but no metadata file", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("manual");
++	});
++
++	test("resolves to 'automatic' when skills exist and metadata confirms successful install", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++		const claudeGlobalSkillsPath = path.join(os.homedir(), ".claude", "skills");
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Claude Code",
++					rosie: { id: "claude", globalPath: claudeGlobalSkillsPath },
++				},
++			],
++			installFailed: false,
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("automatic");
++	});
++
++	test("resolves to 'manual' when metadata says install failed entirely (installFailed: true)", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++		const claudeGlobalSkillsPath = path.join(os.homedir(), ".claude", "skills");
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Claude Code",
++					rosie: { id: "claude", globalPath: claudeGlobalSkillsPath },
++				},
++			],
++			installFailed: true,
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("manual");
++	});
++
++	test("resolves to 'manual' when metadata says install failed for this agent (installFailed: string[])", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++		const claudeGlobalSkillsPath = path.join(os.homedir(), ".claude", "skills");
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Claude Code",
++					rosie: { id: "claude", globalPath: claudeGlobalSkillsPath },
++				},
++			],
++			installFailed: ["claude"],
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("manual");
++	});
++
++	test("resolves to 'manual' when agent is not in detectedAgents", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [],
++			installFailed: false,
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("manual");
++	});
++
++	test("uses cached GitHub API response within TTL", async ({ expect }) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++
++		// Write a fresh cache file
++		const configDir = getGlobalWranglerConfigPath();
++		mkdirSync(configDir, { recursive: true });
++		writeFileSync(
++			path.join(configDir, "cloudflare-skills-repo-cache.json"),
++			JSON.stringify({
++				lastUpdate: Date.now(),
++				skillNames: ["cloudflare", "wrangler"],
++			})
++		);
++
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Claude Code",
++					rosie: {
++						id: "claude",
++						globalPath: path.join(os.homedir(), ".claude", "skills"),
++					},
++				},
++			],
++			installFailed: false,
++		});
++
++		// Do NOT set up a GitHub API mock — if fetch is called, it would
++		// go unhandled. The test verifies the cache is used instead.
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("automatic");
++	});
++
++	test("falls back to stale cache when GitHub API returns an error", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "claude-code",
++			name: "Claude Code",
++			type: "agent",
++		});
++		createAgentDir(".claude");
++		const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++		mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++
++		// Write an expired cache file (TTL is 24h, set lastUpdate to 48h ago)
++		const configDir = getGlobalWranglerConfigPath();
++		mkdirSync(configDir, { recursive: true });
++		writeFileSync(
++			path.join(configDir, "cloudflare-skills-repo-cache.json"),
++			JSON.stringify({
++				lastUpdate: Date.now() - 48 * 60 * 60 * 1000,
++				skillNames: ["cloudflare", "wrangler"],
++			})
++		);
++
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Claude Code",
++					rosie: {
++						id: "claude",
++						globalPath: path.join(os.homedir(), ".claude", "skills"),
++					},
++				},
++			],
++			installFailed: false,
++		});
++
++		mockGitHubSkillsApiError(403);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("automatic");
++	});
++
++	test("works with cursor-agent amIVibingId mapping", async ({ expect }) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "cursor-agent",
++			name: "Cursor Agent",
++			type: "agent",
++		});
++		createAgentDir(".cursor");
++		const cursorSkills = path.join(os.homedir(), ".cursor", "skills");
++		mkdirSync(path.join(cursorSkills, "cloudflare"), { recursive: true });
++		const cursorGlobalSkillsPath = path.join(os.homedir(), ".cursor", "skills");
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Cursor",
++					rosie: { id: "cursor", globalPath: cursorGlobalSkillsPath },
++				},
++			],
++			installFailed: false,
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("automatic");
++	});
++
++	test("resolves to 'manual' when skills exist at an alternativeGlobalPath but no metadata", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "opencode",
++			name: "OpenCode",
++			type: "agent",
++		});
++		// Primary rosie path (~/.config/opencode/skills) is empty, but skills
++		// exist in the alternative path (~/.agents/skills).
++		createAgentDir(".config/opencode");
++		const agentsSkills = path.join(os.homedir(), ".agents", "skills");
++		mkdirSync(path.join(agentsSkills, "cloudflare"), { recursive: true });
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("manual");
++	});
++
++	test("resolves to 'automatic' when skills at alternativeGlobalPath were installed for another agent", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "opencode",
++			name: "OpenCode",
++			type: "agent",
++		});
++		// Primary rosie path (~/.config/opencode/skills) is empty, but skills
++		// exist in ~/.agents/skills (which is Warp's rosie install target).
++		createAgentDir(".config/opencode");
++		const agentsSkills = path.join(os.homedir(), ".agents", "skills");
++		mkdirSync(path.join(agentsSkills, "cloudflare"), { recursive: true });
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Cline, Dexto, Warp",
++					rosie: { id: "warp", globalPath: agentsSkills },
++				},
++			],
++			installFailed: false,
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("automatic");
++	});
++
++	test("resolves to 'manual' when skills at alternativeGlobalPath were installed for another agent but failed", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "opencode",
++			name: "OpenCode",
++			type: "agent",
++		});
++		createAgentDir(".config/opencode");
++		const agentsSkills = path.join(os.homedir(), ".agents", "skills");
++		mkdirSync(path.join(agentsSkills, "cloudflare"), { recursive: true });
++		writeMetadataFile({
++			version: 1,
++			accepted: true,
++			date: new Date().toISOString(),
++			detectedAgents: [
++				{
++					name: "Cline, Dexto, Warp",
++					rosie: { id: "warp", globalPath: agentsSkills },
++				},
++			],
++			installFailed: ["warp"],
++		});
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe("manual");
++	});
++
++	test("resolves to false when skills are not at primary or any alternativeGlobalPath", async ({
++		expect,
++	}) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: true,
++			id: "opencode",
++			name: "OpenCode",
++			type: "agent",
++		});
++		// Create the primary path dir but leave it empty, and don't create
++		// any alternative paths either.
++		createAgentDir(".config/opencode/skills");
++		mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const result = await telemetryCurrentAgentSkillsInstalled();
++
++		expect(result).toBe(false);
++	});
++
++	// TODO(dario): Remove this migration branch after 2026-06-05 — by then
++	// most active users' metadata files will have been converted to version 1.
++	describe("legacy metadata migration", () => {
++		test("resolves to 'automatic' when metadata uses the legacy flat AgentInfo schema", async ({
++			expect,
++		}) => {
++			vi.mocked(detectAgenticEnvironment).mockReturnValue({
++				isAgentic: true,
++				id: "claude-code",
++				name: "Claude Code",
++				type: "agent",
++			});
++			createAgentDir(".claude");
++			const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++			mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++			// Write old-format metadata (no version field, flat rosieId/globalSkillsPath)
++			writeMetadataFile({
++				accepted: true,
++				date: "2025-07-01T00:00:00Z",
++				detectedAgents: [
++					{
++						name: "Claude Code",
++						rosieId: "claude",
++						globalSkillsPath: claudeSkills,
++					},
++				],
++				installFailed: false,
++			});
++			mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++			const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++			const result = await telemetryCurrentAgentSkillsInstalled();
++
++			expect(result).toBe("automatic");
++		});
++
++		test("migrates legacy metadata to version 1 on disk when read", async ({
++			expect,
++		}) => {
++			vi.mocked(detectAgenticEnvironment).mockReturnValue({
++				isAgentic: true,
++				id: "claude-code",
++				name: "Claude Code",
++				type: "agent",
++			});
++			createAgentDir(".claude");
++			const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++			mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++			// Write old-format metadata
++			writeMetadataFile({
++				accepted: true,
++				date: "2025-07-01T00:00:00Z",
++				detectedAgents: [
++					{
++						name: "Claude Code",
++						rosieId: "claude",
++						globalSkillsPath: claudeSkills,
++					},
++				],
++				installFailed: false,
++			});
++			mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++			const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++			// Trigger the read (and migration)
++			await telemetryCurrentAgentSkillsInstalled();
++
++			// The file on disk should now be in the new format
++			const migratedMetadata = readMetadataFile();
++			expect(migratedMetadata).toEqual({
++				version: 1,
++				accepted: true,
++				date: "2025-07-01T00:00:00Z",
++				detectedAgents: [
++					{
++						name: "Claude Code",
++						rosie: { id: "claude", globalPath: claudeSkills },
++					},
++				],
++				installFailed: false,
++			});
++		});
++
++		test("resolves to 'manual' when legacy metadata says install failed", async ({
++			expect,
++		}) => {
++			vi.mocked(detectAgenticEnvironment).mockReturnValue({
++				isAgentic: true,
++				id: "claude-code",
++				name: "Claude Code",
++				type: "agent",
++			});
++			createAgentDir(".claude");
++			const claudeSkills = path.join(os.homedir(), ".claude", "skills");
++			mkdirSync(path.join(claudeSkills, "cloudflare"), { recursive: true });
++			// Write old-format metadata with installFailed: true
++			writeMetadataFile({
++				accepted: true,
++				date: "2025-07-01T00:00:00Z",
++				detectedAgents: [
++					{
++						name: "Claude Code",
++						rosieId: "claude",
++						globalSkillsPath: claudeSkills,
++					},
++				],
++				installFailed: true,
++			});
++			mockGitHubSkillsApi(["cloudflare", "wrangler"]);
++			const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++			const result = await telemetryCurrentAgentSkillsInstalled();
++
++			expect(result).toBe("manual");
++		});
++	});
++
++	test("memoises the result across multiple calls", async ({ expect }) => {
++		vi.mocked(detectAgenticEnvironment).mockReturnValue({
++			isAgentic: false,
++			id: null,
++			name: null,
++			type: null,
++		});
++		const telemetryCurrentAgentSkillsInstalled = await freshTelemetryImport();
++
++		const first = telemetryCurrentAgentSkillsInstalled();
++		const second = telemetryCurrentAgentSkillsInstalled();
++
++		expect(first).toBe(second);
++		expect(await first).toBe(null);
++	});
++});
+diff --git a/packages/wrangler/src/__tests__/metrics.test.ts b/packages/wrangler/src/__tests__/metrics.test.ts
+index c7ff11c8b1..2bab74e4e8 100644
+--- a/packages/wrangler/src/__tests__/metrics.test.ts
++++ b/packages/wrangler/src/__tests__/metrics.test.ts
+@@ -108,7 +108,7 @@ describe("metrics", () => {
+ 				await allMetricsDispatchesCompleted();
+ 				expect(requests.count).toBe(1);
+ 				expect(std.debug).toMatchInlineSnapshot(
+-					`"Metrics dispatcher: Posting data {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2}}"`
++					`"Metrics dispatcher: Posting data {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2,"currentAgentSkillsInstalled":null}}"`
+ 				);
+ 				expect(std.out).toMatchInlineSnapshot(`""`);
+ 				expect(std.warn).toMatchInlineSnapshot(`""`);
+@@ -140,10 +140,11 @@ describe("metrics", () => {
+ 					sendMetrics: false,
+ 				});
+ 				dispatcher.sendAdhocEvent("some-event", { a: 1, b: 2 });
++				await allMetricsDispatchesCompleted();
+ 
+ 				expect(requests.count).toBe(0);
+ 				expect(std.debug).toMatchInlineSnapshot(
+-					`"Metrics dispatcher: Dispatching disabled - would have sent {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2}}."`
++					`"Metrics dispatcher: Dispatching disabled - would have sent {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2,"currentAgentSkillsInstalled":null}}."`
+ 				);
+ 				expect(std.out).toMatchInlineSnapshot(`""`);
+ 				expect(std.warn).toMatchInlineSnapshot(`""`);
+@@ -165,7 +166,7 @@ describe("metrics", () => {
+ 				await allMetricsDispatchesCompleted();
+ 
+ 				expect(std.debug).toMatchInlineSnapshot(`
+-					"Metrics dispatcher: Posting data {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2}}
++					"Metrics dispatcher: Posting data {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2,"currentAgentSkillsInstalled":null}}
+ 					Metrics dispatcher: Failed to send request: Failed to fetch"
+ 				`);
+ 				expect(std.out).toMatchInlineSnapshot(`""`);
+@@ -183,10 +184,11 @@ describe("metrics", () => {
+ 					sendMetrics: true,
+ 				});
+ 				dispatcher.sendAdhocEvent("some-event", { a: 1, b: 2 });
++				await allMetricsDispatchesCompleted();
+ 
+ 				expect(requests.count).toBe(0);
+ 				expect(std.debug).toMatchInlineSnapshot(
+-					`"Metrics dispatcher: Source Key not provided. Be sure to initialize before sending events {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2}}"`
++					`"Metrics dispatcher: Source Key not provided. Be sure to initialize before sending events {"deviceId":"f82b1f46-eb7b-4154-aa9f-ce95f23b2288","event":"some-event","timestamp":1733961600000,"properties":{"amplitude_session_id":1733961600000,"amplitude_event_id":0,"wranglerVersion":"1.2.3","wranglerMajorVersion":1,"wranglerMinorVersion":2,"wranglerPatchVersion":3,"osPlatform":"mock platform","osVersion":"mock os version","nodeVersion":1,"packageManager":"npm","isFirstUsage":false,"configFileType":"none","isCI":false,"isPagesCI":false,"isWorkersCI":false,"isInteractive":true,"hasAssets":false,"agent":null,"category":"Workers","os":"foo:bar","a":1,"b":2,"currentAgentSkillsInstalled":null}}"`
+ 				);
+ 				expect(std.out).toMatchInlineSnapshot(`""`);
+ 				expect(std.warn).toMatchInlineSnapshot(`""`);
+diff --git a/packages/wrangler/src/__tests__/vitest.setup.ts b/packages/wrangler/src/__tests__/vitest.setup.ts
+index 8cbab7e541..9986dfcb2d 100644
+--- a/packages/wrangler/src/__tests__/vitest.setup.ts
++++ b/packages/wrangler/src/__tests__/vitest.setup.ts
+@@ -221,9 +221,18 @@ vi.mock("../metrics/metrics-config", async (importOriginal) => {
+ 	return realModule;
+ });
+ 
+-vi.mock("../agents-skills-install", () => ({
+-	maybeInstallCloudflareSkillsGlobally: vi.fn().mockResolvedValue(undefined),
+-}));
++vi.mock("../agents-skills-install", async (importOriginal) => {
++	const realModule =
++		await importOriginal<typeof import("../agents-skills-install")>();
++	vi.spyOn(
++		realModule,
++		"maybeInstallCloudflareSkillsGlobally"
++	).mockResolvedValue(undefined);
++	vi.spyOn(realModule, "telemetryCurrentAgentSkillsInstalled").mockReturnValue(
++		Promise.resolve(null)
++	);
++	return realModule;
++});
+ 
+ vi.mock("prompts", () => {
+ 	return {
+diff --git a/packages/wrangler/src/agents-skills-install.ts b/packages/wrangler/src/agents-skills-install.ts
+index b2c5d92038..0e0e58bed3 100644
+--- a/packages/wrangler/src/agents-skills-install.ts
++++ b/packages/wrangler/src/agents-skills-install.ts
+@@ -1,10 +1,13 @@
+-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
++import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
++import os from "node:os";
+ import path from "node:path";
+ import {
+ 	getGlobalWranglerConfigPath,
+ 	parseJSONC,
+ } from "@cloudflare/workers-utils";
++import { detectAgenticEnvironment } from "am-i-vibing";
+ import ci from "ci-info";
++import { fetch } from "undici";
+ import { confirm } from "./dialogs";
+ import isInteractive from "./is-interactive";
+ import { logger } from "./logger";
+@@ -103,6 +106,7 @@ export async function maybeInstallCloudflareSkillsGlobally(
+ 
+ 	if (!accepted) {
+ 		writeSkillsInstallMetadataFile({
++			version: 1,
+ 			accepted: false,
+ 			date: new Date().toISOString(),
+ 			detectedAgents,
+@@ -113,7 +117,7 @@ export async function maybeInstallCloudflareSkillsGlobally(
+ 
+ 	try {
+ 		const rosie = await import("rosie-skills");
+-		const agentNames = detectedAgents.map((a) => a.rosieId);
++		const agentNames = detectedAgents.map((a) => a.rosie.id);
+ 		const { failedAgents } = await rosie.install(SKILLS_REPO, {
+ 			global: true,
+ 			agent: agentNames,
+@@ -122,7 +126,7 @@ export async function maybeInstallCloudflareSkillsGlobally(
+ 
+ 		const failedSet = new Set(failedAgents);
+ 		const succeededAgents = detectedAgents.filter(
+-			(a) => !failedSet.has(a.rosieId)
++			(a) => !failedSet.has(a.rosie.id)
+ 		);
+ 
+ 		if (succeededAgents.length > 0) {
+@@ -139,6 +143,7 @@ export async function maybeInstallCloudflareSkillsGlobally(
+ 		}
+ 
+ 		writeSkillsInstallMetadataFile({
++			version: 1,
+ 			accepted: true,
+ 			date: new Date().toISOString(),
+ 			detectedAgents,
+@@ -156,6 +161,7 @@ export async function maybeInstallCloudflareSkillsGlobally(
+ 		logger.warn(SKILLS_INSTALL_RETRY_HINT);
+ 
+ 		writeSkillsInstallMetadataFile({
++			version: 1,
+ 			accepted: true,
+ 			date: new Date().toISOString(),
+ 			detectedAgents,
+@@ -181,10 +187,13 @@ const SKILLS_INSTALL_RETRY_HINT =
+ type AgentInfo = {
+ 	/** Human-readable display name of the agent (e.g. "Claude Code"). */
+ 	name: string;
+-	/** Rosie's short identifier for the agent (e.g. "claude"). */
+-	rosieId: string;
+-	/** Absolute path to the agent's global skills directory. */
+-	globalSkillsPath: string;
++	/** Rosie agent metadata. */
++	rosie: {
++		/** Rosie's short identifier for the agent (e.g. "claude"). */
++		id: string;
++		/** Absolute path to the agent's global skills directory. */
++		globalPath: string;
++	};
+ };
+ 
+ /**
+@@ -192,6 +201,8 @@ type AgentInfo = {
+  * about installing Cloudflare agent skills globally.
+  */
+ interface SkillsInstallMetadata {
++	/** Schema version for forward-compatibility. Currently always `1`. */
++	version: 1;
+ 	/** Whether the user accepted the prompt to install skills. */
+ 	accepted: boolean;
+ 	/** ISO date string of when the user was prompted. */
+@@ -210,6 +221,16 @@ interface SkillsInstallMetadata {
+ /** Jsonc metadata file created when Cloudflare agent skills are installed */
+ const SKILLS_INSTALL_METADATA_FILENAME = "agents-skills-install.jsonc";
+ 
++/** GitHub Contents API URL for listing skill directories in the cloudflare/skills repo. */
++const SKILLS_REPO_CONTENTS_URL =
++	"https://api.github.com/repos/cloudflare/skills/contents/skills";
++
++/** Cache filename for skill directory names fetched from the GitHub API. */
++const SKILLS_REPO_CACHE_FILENAME = "cloudflare-skills-repo-cache.json";
++
++/** Time-to-live for the cached skill names (24 hours in milliseconds). */
++const SKILLS_REPO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
++
+ /**
+  * Returns the absolute path to the skills install config file within the global wrangler config directory.
+  */
+@@ -220,15 +241,90 @@ function getSkillsInstallMetadataFilePath(): string {
+ 	);
+ }
+ 
++/**
++ * Returns the absolute path to the skills repo cache file within the global wrangler config directory.
++ */
++function getSkillsRepoCachePath(): string {
++	return path.resolve(
++		getGlobalWranglerConfigPath(),
++		SKILLS_REPO_CACHE_FILENAME
++	);
++}
++
++/**
++ * Legacy shape of `AgentInfo` written by Wrangler versions before the
++ * `version: 1` schema was introduced. The agent's rosie ID and global
++ * skills path were stored as flat properties instead of being nested
++ * under a `rosie` object.
++ */
++interface LegacyAgentInfo {
++	name: string;
++	rosieId: string;
++	globalSkillsPath: string;
++}
++
++/**
++ * Legacy shape of the skills-install metadata file written by Wrangler
++ * versions before the `version: 1` schema was introduced. It lacks the
++ * `version` field and uses {@link LegacyAgentInfo} instead of {@link AgentInfo}.
++ */
++interface LegacySkillsInstallMetadata {
++	accepted: boolean;
++	date: string;
++	detectedAgents?: LegacyAgentInfo[];
++	installFailed?: boolean | string[];
++}
++
++// TODO(dario): Remove `migrateMetadataToV1` and the legacy types above after
++// 2026-06-05 — by then most active users' metadata files will have been
++// converted to the version-1 schema.
++/**
++ * Converts a legacy (pre-version-1) metadata object to the current schema.
++ * The old format stored `rosieId` / `globalSkillsPath` as flat properties on
++ * each agent entry; the new format nests them under `rosie: { id, globalPath }`.
++ */
++function migrateMetadataToV1(
++	old: LegacySkillsInstallMetadata
++): SkillsInstallMetadata {
++	return {
++		version: 1,
++		accepted: old.accepted,
++		date: old.date,
++		detectedAgents: old.detectedAgents?.map((agent) => ({
++			name: agent.name,
++			rosie: {
++				id: agent.rosieId,
++				globalPath: agent.globalSkillsPath,
++			},
++		})),
++		installFailed: old.installFailed,
++	};
++}
++
+ /**
+  * Reads and parses the skills install metadata file.
+  *
++ * If the file uses the legacy schema (no `version` field), it is automatically
++ * migrated to the current version-1 format and overwritten on disk.
++ *
+  * @returns The parsed metadata file, or `undefined` if the file doesn't exist or can't be parsed.
+  */
+ function readSkillsInstallMetadataFile(): SkillsInstallMetadata | undefined {
+ 	try {
+ 		const content = readFileSync(getSkillsInstallMetadataFilePath(), "utf8");
+-		return parseJSONC(content) as SkillsInstallMetadata;
++		const parsed = parseJSONC(content) as Record<string, unknown>;
++
++		// TODO(dario): Remove this migration branch after 2026-06-05 — by then
++		// most active users' metadata files will have been converted to version 1.
++		if ((parsed as { version?: unknown }).version === undefined) {
++			const migrated = migrateMetadataToV1(
++				parsed as unknown as LegacySkillsInstallMetadata
++			);
++			writeSkillsInstallMetadataFile(migrated);
++			return migrated;
++		}
++
++		return parsed as unknown as SkillsInstallMetadata;
+ 	} catch {
+ 		return undefined;
+ 	}
+@@ -243,6 +339,394 @@ function writeSkillsInstallMetadataFile(metadata: SkillsInstallMetadata): void {
+ 	writeFileSync(configPath, JSON.stringify(metadata, null, "\t"));
+ }
+ 
++/** On-disk cache for skill directory names fetched from the GitHub Contents API. */
++interface SkillsRepoCache {
++	/** Unix-epoch millisecond timestamp of when the cache was last written. */
++	lastUpdate: number;
++	/** Skill directory names from the `cloudflare/skills` repository. */
++	skillNames: string[];
++}
++
++/**
++ * Reads the cached skill names from disk, returning them only if the cache has not expired.
++ * Falls back to stale data when {@link allowStale} is true (e.g. after a failed network request).
++ *
++ * @param allowStale When `true`, returns cached data even if the TTL has expired.
++ * @returns Array of cached skill names, or `undefined` on cache miss.
++ */
++function readSkillsRepoCache(allowStale = false): string[] | undefined {
++	try {
++		const raw = readFileSync(getSkillsRepoCachePath(), "utf8");
++		const cache = JSON.parse(raw) as SkillsRepoCache;
++		if (
++			allowStale ||
++			cache.lastUpdate + SKILLS_REPO_CACHE_TTL_MS > Date.now()
++		) {
++			return cache.skillNames;
++		}
++	} catch {
++		// Cache file missing, corrupt, or unreadable — treat as cache miss.
++	}
++	return undefined;
++}
++
++/**
++ * Writes skill names to the disk cache with the current timestamp.
++ *
++ * @param skillNames The skill directory names to persist.
++ */
++function writeSkillsRepoCache(skillNames: string[]): void {
++	try {
++		const cachePath = getSkillsRepoCachePath();
++		mkdirSync(path.dirname(cachePath), { recursive: true });
++		const data: SkillsRepoCache = {
++			lastUpdate: Date.now(),
++			skillNames,
++		};
++		writeFileSync(cachePath, JSON.stringify(data));
++	} catch {
++		// Best-effort — cache write failure is non-fatal.
++	}
++}
++
++/**
++ * Fetches the list of skill directory names from the `cloudflare/skills` GitHub
++ * repository using the GitHub Contents API. Results are cached to disk for 24 hours
++ * to avoid hitting API rate limits.
++ *
++ * @returns Array of skill directory names, or `undefined` if both fetch and cache fail.
++ */
++async function fetchSkillNamesFromGitHub(): Promise<string[] | undefined> {
++	// Return fresh cached data if available.
++	const cached = readSkillsRepoCache();
++	if (cached) {
++		return cached;
++	}
++
++	try {
++		const res = await fetch(SKILLS_REPO_CONTENTS_URL, {
++			headers: {
++				Accept: "application/vnd.github.v3+json",
++				"User-Agent": "cloudflare-wrangler",
++			},
++		});
++		if (!res.ok) {
++			// API error (rate limited, 404, etc.) — fall back to stale cache.
++			return readSkillsRepoCache(true);
++		}
++		const entries = (await res.json()) as Array<{
++			name: string;
++			type: string;
++		}>;
++		const skillNames = entries
++			.filter((e) => e.type === "dir")
++			.map((e) => e.name);
++
++		writeSkillsRepoCache(skillNames);
++		return skillNames;
++	} catch {
++		// Network failure — fall back to stale cache.
++		return readSkillsRepoCache(true);
++	}
++}
++
++/**
++ * Result of checking whether the current AI agent has Cloudflare skills installed.
++ *
++ * - `null` — no agent detected or the agent is not in the supported list.
++ * - `false` — agent is supported but no skills are present on disk.
++ * - `"automatic"` — skills are present and the metadata file confirms Wrangler installed them.
++ * - `"manual"` — skills are present but were not installed by Wrangler (no metadata, agent not
++ *                listed in metadata, or the metadata records a failure for this agent).
++ */
++type AgentSkillsInstallStatus = "automatic" | "manual" | false | null;
++
++/**
++ * Maps an `am-i-vibing` agent ID to its global skills paths (both the rosie
++ * install path and any alternative paths the agent natively reads from).
++ * This is used by the telemetry function to check whether skills exist on
++ * disk without calling `rosie.agents()`, which loads WASM and is too slow
++ * for process-startup telemetry.
++ */
++interface AmIVibingDataMappingEntry {
++	/** `am-i-vibing` provider ID(s) that identify this agent. */
++	amIVibingIds: string[];
++	/**
++	 * Rosie agent metadata.
++	 *
++	 * The `globalPath` is the absolute path to the agent's global skills
++	 * directory, constructed via `path.join(os.homedir(), ...)` to match
++	 * the `global_path` field in rosie's `AGENT_DEFS` registry.
++	 * See: https://github.com/matthewp/rosie/blob/276939233/src/agent.rs#L26
++	 */
++	rosie: { globalPath: string };
++	/**
++	 * Additional absolute global skills paths where this agent natively
++	 * reads skills from, beyond the rosie install path. Used to detect
++	 * manual skill installations for telemetry. Only paths that differ
++	 * from `rosie.globalPath` should be listed here.
++	 *
++	 * Sources for each agent's alternative paths are linked inline below.
++	 */
++	alternativeGlobalPaths?: string[];
++}
++
++/**
++ * Static mapping from `am-i-vibing` agent IDs to their global skills paths,
++ * used only for telemetry.
++ *
++ * The `amIVibingIds` are the provider IDs returned by the `am-i-vibing`
++ * package's `detectAgenticEnvironment()` function.
++ *
++ * The `rosie.globalPath` values correspond to the `global_path` field from
++ * rosie's agent registry, constructed as absolute paths via
++ * `path.join(os.homedir(), ...)`:
++ * https://github.com/matthewp/rosie/blob/2769392335/src/agent.rs#L26
++ *
++ * The `alternativeGlobalPaths` are additional absolute directories that
++ * each agent natively reads skills from, sourced from the agent's official
++ * documentation. These are used to detect manual skill installations for
++ * telemetry.
++ */
++const amIVibingDataMapping: AmIVibingDataMappingEntry[] = [
++	{
++		// rosie name: "replit" / "amp" / "kimi-cli" / "universal"
++		amIVibingIds: ["replit", "replit-assistant"],
++		rosie: {
++			globalPath: path.join(os.homedir(), ".config", "agents", "skills"),
++		},
++		// https://ampcode.com/manual#agent-skills
++		alternativeGlobalPaths: [
++			path.join(os.homedir(), ".config", "amp", "skills"),
++			path.join(os.homedir(), ".claude", "skills"),
++		],
++	},
++	{
++		// rosie name: "claude"
++		// https://code.claude.com/docs/en/skills — only ~/.claude/skills/ documented
++		amIVibingIds: ["claude-code"],
++		rosie: { globalPath: path.join(os.homedir(), ".claude", "skills") },
++	},
++	{
++		// rosie name: "warp"
++		// .agents/skills IS the rosie path; closed source, no other paths confirmed
++		amIVibingIds: ["warp"],
++		rosie: { globalPath: path.join(os.homedir(), ".agents", "skills") },
++	},
++	{
++		// rosie name: "codex"
++		amIVibingIds: ["codex"],
++		rosie: { globalPath: path.join(os.homedir(), ".codex", "skills") },
++		// https://developers.openai.com/codex/skills — $HOME/.agents/skills is the USER scope
++		alternativeGlobalPaths: [path.join(os.homedir(), ".agents", "skills")],
++	},
++	{
++		// rosie name: "crush"
++		amIVibingIds: ["crush"],
++		rosie: {
++			globalPath: path.join(os.homedir(), ".config", "crush", "skills"),
++		},
++		// https://github.com/charmbracelet/crush?tab=readme-ov-file#agent-skills
++		alternativeGlobalPaths: [
++			path.join(os.homedir(), ".config", "agents", "skills"),
++			path.join(os.homedir(), ".agents", "skills"),
++			path.join(os.homedir(), ".claude", "skills"),
++		],
++	},
++	{
++		// rosie name: "cursor"
++		amIVibingIds: ["cursor-agent", "cursor"],
++		rosie: { globalPath: path.join(os.homedir(), ".cursor", "skills") },
++		// https://cursor.com/docs/context/skills
++		alternativeGlobalPaths: [
++			path.join(os.homedir(), ".agents", "skills"),
++			path.join(os.homedir(), ".claude", "skills"),
++			path.join(os.homedir(), ".codex", "skills"),
++		],
++	},
++	{
++		// rosie name: "gemini-cli"
++		amIVibingIds: ["gemini-agent"],
++		rosie: { globalPath: path.join(os.homedir(), ".gemini", "skills") },
++		// https://github.com/google-gemini/gemini-cli — Storage.getUserAgentSkillsDir()
++		alternativeGlobalPaths: [path.join(os.homedir(), ".agents", "skills")],
++	},
++	{
++		// rosie name: "copilot"
++		amIVibingIds: ["vscode-copilot-agent"],
++		rosie: { globalPath: path.join(os.homedir(), ".copilot", "skills") },
++		// https://docs.github.com/en/copilot/concepts/agents/about-agent-skills
++		alternativeGlobalPaths: [path.join(os.homedir(), ".agents", "skills")],
++	},
++	{
++		// rosie name: "opencode"
++		amIVibingIds: ["opencode"],
++		rosie: {
++			globalPath: path.join(os.homedir(), ".config", "opencode", "skills"),
++		},
++		// https://opencode.ai/docs/skills
++		alternativeGlobalPaths: [
++			path.join(os.homedir(), ".opencode", "skills"),
++			path.join(os.homedir(), ".claude", "skills"),
++			path.join(os.homedir(), ".agents", "skills"),
++		],
++	},
++	{
++		// rosie name: "windsurf"
++		// Closed source, no alternative global paths confirmed
++		amIVibingIds: ["windsurf"],
++		rosie: {
++			globalPath: path.join(os.homedir(), ".codeium", "windsurf", "skills"),
++		},
++	},
++];
++
++/**
++ * Checks whether a directory contains at least one of the given skill names.
++ *
++ * @param dirPath - Absolute path to a skills directory.
++ * @param skillNames - Skill directory names to look for.
++ * @returns `true` if at least one skill name is present, `false` otherwise
++ *   (including when the directory does not exist or is unreadable).
++ */
++function directoryContainsAnySkill(
++	dirPath: string,
++	skillNames: string[]
++): boolean {
++	try {
++		const entries = new Set(readdirSync(dirPath));
++		return skillNames.some((name) => entries.has(name));
++	} catch {
++		return false;
++	}
++}
++
++/**
++ * Determines whether the currently-running AI coding agent has Cloudflare
++ * skills installed. This runs asynchronously and is intended to be started
++ * eagerly on process startup so the result is available by the time
++ * telemetry events are dispatched.
++ *
++ * @returns The {@link AgentSkillsInstallStatus} for the current agent.
++ */
++async function computeTelemetryCurrentAgentSkillsInstalled(): Promise<AgentSkillsInstallStatus> {
++	let agentId: string | null = null;
++	try {
++		const detection = detectAgenticEnvironment(process.env, []);
++		agentId = detection.id;
++	} catch {
++		return null;
++	}
++	if (!agentId) {
++		return null;
++	}
++
++	const mapping = amIVibingDataMapping.find((a) =>
++		a.amIVibingIds.includes(agentId)
++	);
++	if (!mapping) {
++		return null;
++	}
++
++	const globalSkillsPath = path.resolve(mapping.rosie.globalPath);
++
++	const skillNames = await fetchSkillNamesFromGitHub();
++	if (!skillNames || skillNames.length === 0) {
++		return false;
++	}
++
++	// Check whether any Cloudflare skill exists at the primary rosie path.
++	const hasSkillsAtPrimary = directoryContainsAnySkill(
++		globalSkillsPath,
++		skillNames
++	);
++
++	if (!hasSkillsAtPrimary) {
++		// Skills not at the primary path — check alternative global paths that
++		// this agent natively reads from.
++		const matchedAlternativePath = (mapping.alternativeGlobalPaths ?? []).find(
++			(altPath) => directoryContainsAnySkill(path.resolve(altPath), skillNames)
++		);
++		if (!matchedAlternativePath) {
++			return false;
++		}
++
++		// Skills exist at an alternative path. Check whether Wrangler
++		// installed them there for a different agent whose rosie globalPath
++		// happens to match this alternative path (e.g. OpenCode reads
++		// ~/.agents/skills, which is Warp's rosie install target).
++		const metadata = readSkillsInstallMetadataFile();
++		if (metadata?.accepted) {
++			const altAbsPath = path.resolve(matchedAlternativePath);
++			const wasInstalledForAnotherAgent = metadata.detectedAgents?.some(
++				(agent) => {
++					if (path.resolve(agent.rosie.globalPath) !== altAbsPath) {
++						return false;
++					}
++					// Ensure the install didn't fail for that agent.
++					if (metadata.installFailed === true) {
++						return false;
++					}
++					if (Array.isArray(metadata.installFailed)) {
++						return !metadata.installFailed.includes(agent.rosie.id);
++					}
++					return true;
++				}
++			);
++			if (wasInstalledForAnotherAgent) {
++				return "automatic";
++			}
++		}
++		return "manual";
++	}
++
++	const metadata = readSkillsInstallMetadataFile();
++	if (!metadata) {
++		return "manual";
++	}
++
++	// Check if this agent was part of the Wrangler-driven install.
++	const isInDetectedAgents = metadata.detectedAgents?.some(
++		(agent) => path.resolve(agent.rosie.globalPath) === globalSkillsPath
++	);
++
++	// Check if the install failed for this agent.
++	// installFailed is `true` when the whole rosie.install() threw, `string[]` with
++	// rosie agent names on partial failure, or `false` on success.
++	const installFailedForAgent =
++		metadata.installFailed === true ||
++		(Array.isArray(metadata.installFailed) &&
++			metadata.detectedAgents?.some(
++				(agent) =>
++					path.resolve(agent.rosie.globalPath) === globalSkillsPath &&
++					(metadata.installFailed as string[]).includes(agent.rosie.id)
++			));
++
++	if (
++		metadata.accepted &&
++		isInDetectedAgents === true &&
++		!installFailedForAgent
++	) {
++		return "automatic";
++	}
++	return "manual";
++}
++
++/** Lazily-initialised singleton promise used to memoise {@link telemetryCurrentAgentSkillsInstalled}. */
++let _telemetryPromise: Promise<AgentSkillsInstallStatus> | undefined;
++
++/**
++ * Returns a memoised promise that resolves to whether the current AI agent
++ * has Cloudflare skills installed. The promise is started lazily on first
++ * call and cached for the lifetime of the process.
++ *
++ * @returns A promise resolving to the {@link AgentSkillsInstallStatus} for the current agent.
++ */
++export function telemetryCurrentAgentSkillsInstalled(): Promise<AgentSkillsInstallStatus> {
++	_telemetryPromise ??= computeTelemetryCurrentAgentSkillsInstalled();
++	return _telemetryPromise;
++}
++
+ /**
+  * Queries rosie for detected agents on the user's machine.
+  *
+@@ -262,7 +746,9 @@ async function getDetectedAgents(): Promise<AgentInfo[]> {
+ 		)
+ 		.map((agent) => ({
+ 			name: agent.display,
+-			rosieId: agent.name,
+-			globalSkillsPath: agent.installPath,
++			rosie: {
++				id: agent.name,
++				globalPath: agent.installPath,
++			},
+ 		}));
+ }
+diff --git a/packages/wrangler/src/metrics/metrics-dispatcher.ts b/packages/wrangler/src/metrics/metrics-dispatcher.ts
+index 46340ad7d1..2f15388029 100644
+--- a/packages/wrangler/src/metrics/metrics-dispatcher.ts
++++ b/packages/wrangler/src/metrics/metrics-dispatcher.ts
+@@ -3,6 +3,7 @@ import { detectAgenticEnvironment } from "am-i-vibing";
+ import chalk from "chalk";
+ import ci from "ci-info";
+ import { fetch } from "undici";
++import { telemetryCurrentAgentSkillsInstalled } from "../agents-skills-install";
+ import isInteractive from "../is-interactive";
+ import { logger } from "../logger";
+ import { sniffUserAgent } from "../package-manager";
+@@ -96,20 +97,34 @@ export function getMetricsDispatcher(options: MetricsConfigOptions) {
+ 		 *  - additional properties are camelCased
+ 		 */
+ 		sendAdhocEvent(name: string, properties: Properties = {}) {
+-			dispatch({
+-				name,
+-				properties: {
+-					...getCommonEventProperties(),
+-					category: "Workers",
+-					wranglerVersion,
+-					wranglerMajorVersion,
+-					wranglerMinorVersion,
+-					wranglerPatchVersion,
+-					os: getOS(),
+-					agent,
+-					...properties,
+-				},
+-			});
++			trackDispatch(
++				telemetryCurrentAgentSkillsInstalled()
++					.catch(() => null)
++					.then((currentAgentSkillsInstalled) => {
++						const baseProperties = {
++							...getCommonEventProperties(),
++							category: "Workers",
++							wranglerVersion,
++							wranglerMajorVersion,
++							wranglerMinorVersion,
++							wranglerPatchVersion,
++							os: getOS(),
++							agent,
++							...properties,
++						};
++
++						return dispatch({
++							name,
++							properties: {
++								...baseProperties,
++								currentAgentSkillsInstalled,
++							},
++						});
++					})
++					.catch((err) => {
++						logger.debug("Error sending adhoc metrics event", err);
++					})
++			);
+ 		},
+ 
+ 		/**
+@@ -146,20 +161,25 @@ export function getMetricsDispatcher(options: MetricsConfigOptions) {
+ 					argsCombination,
+ 				};
+ 
+-				dispatch({
+-					name,
+-					properties: {
+-						...commonCommandEventProperties,
+-						...properties,
+-					},
+-				});
++				trackDispatch(
++					dispatch({
++						name,
++						properties: {
++							...commonCommandEventProperties,
++							...properties,
++						},
++					})
++				);
+ 			} catch (err) {
+ 				logger.debug("Error sending metrics event", err);
+ 			}
+ 		},
+ 	};
+ 
+-	function dispatch(event: { name: string; properties: Properties }) {
++	function dispatch(event: {
++		name: string;
++		properties: Properties;
++	}): Promise<void> | void {
+ 		const metricsConfig = getMetricsConfig(options);
+ 		const body = {
+ 			deviceId: metricsConfig.deviceId,
+@@ -191,7 +211,7 @@ export function getMetricsDispatcher(options: MetricsConfigOptions) {
+ 		// before exiting Wrangler. The exit handler in index.ts races
+ 		// allMetricsDispatchesCompleted() against a 1s timeout, which is the
+ 		// real protection against slow connections at shutdown.
+-		const request = fetch(`${SPARROW_URL}/api/v1/event`, {
++		return fetch(`${SPARROW_URL}/api/v1/event`, {
+ 			method: "POST",
+ 			headers: {
+ 				Accept: "*/*",
+@@ -215,12 +235,23 @@ export function getMetricsDispatcher(options: MetricsConfigOptions) {
+ 					"Metrics dispatcher: Failed to send request:",
+ 					(e as Error).message
+ 				);
+-			})
+-			.finally(() => {
+-				pendingRequests.delete(request);
+ 			});
++	}
+ 
+-		pendingRequests.add(request);
++	/**
++	 * Adds a dispatch promise (or promise chain) to `pendingRequests` so it
++	 * is awaited at process exit. Automatically removes itself once settled.
++	 *
++	 * @param maybePromise The dispatch promise to track, or `void` if no async work is needed.
++	 */
++	function trackDispatch(maybePromise: Promise<void> | void): void {
++		if (!maybePromise) {
++			return;
++		}
++		const tracked = maybePromise.finally(() => {
++			pendingRequests.delete(tracked);
++		});
++		pendingRequests.add(tracked);
+ 	}
+ 
+ 	/**
+diff --git a/packages/wrangler/telemetry.md b/packages/wrangler/telemetry.md
+index f5979122c8..1fa565a64b 100644
+--- a/packages/wrangler/telemetry.md
++++ b/packages/wrangler/telemetry.md
+@@ -27,6 +27,7 @@ Telemetry in Wrangler allows us to better identify bugs and gain visibility on u
+ - Total session duration of the command run (e.g. 3 seconds, etc.)
+ - Whether the Wrangler client is running in CI or in an interactive instance
+ - Whether the command was executed by an AI coding agent (e.g. Claude Code, Cursor, GitHub Copilot), and if so, which agent
++- Whether the AI coding agent has Cloudflare skills installed, and if so, whether they were installed automatically by Wrangler or manually by the user
+ - Error _type_ (e.g. `APIError` or `UserError`), and sanitised error messages that will not include user information like filepaths or stack traces (e.g. `Asset too large`).
+ - General machine information such as OS and OS Version
+ - local REST API usage (e.g. via the Local Explorer):

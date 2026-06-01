@@ -1,0 +1,323 @@
+diff --git a/apps/expo-workflow-testing/.eas/workflows/updates-e2e-disabled.yml b/apps/expo-workflow-testing/.eas/workflows/updates-e2e-disabled.yml
+index 1e11ee0787c6ea..65ebc7781eec20 100644
+--- a/apps/expo-workflow-testing/.eas/workflows/updates-e2e-disabled.yml
++++ b/apps/expo-workflow-testing/.eas/workflows/updates-e2e-disabled.yml
+@@ -35,6 +35,7 @@ jobs:
+           /opt/homebrew/bin/brew tap wix/brew
+           /opt/homebrew/bin/brew install applesimutils
+           xcrun simctl list
++      - uses: eas/install_maestro
+       - uses: eas/checkout
+       - uses: eas/use_npm_token
+       - uses: eas/install_node_modules
+@@ -53,21 +54,29 @@ jobs:
+         run: |
+           yarn generate-test-update-bundles
+           npx pod-install
+-      - name: Build E2E project (debug and release)
+-        id: build
++      - name: Build E2E test app (debug)
++        id: builddebug
+         working_directory: ../../../updates-e2e
+         run: |
+-          npx detox build -c ios.debug
+-          npx detox build -c ios.release
+-      - name: Test E2E project (debug and release)
+-        id: test
+-        env:
+-          UPDATES_HOST: localhost
+-          UPDATES_PORT: "4747"
++          yarn maestro:ios:debug:build
++      - name: Build E2E test app (release)
++        id: buildrelease
+         working_directory: ../../../updates-e2e
+         run: |
+-          npx detox test -c ios.debug          
+-          npx detox test -c ios.release
++          yarn maestro:ios:release:build
++      - uses: eas/start_ios_simulator
++        with:
++          device_identifier: iPhone 16
++      - name: Run Maestro tests (debug)
++        id: testdebug
++        working_directory: ../../../updates-e2e
++        run: |
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-disabled.yml ios debug
++      - name: Run Maestro tests (release)
++        id: testrelease
++        working_directory: ../../../updates-e2e
++        run: |
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-disabled.yml ios release
+   android:
+     runs_on: linux-large-nested-virtualization
+     steps:
+@@ -78,6 +87,7 @@ jobs:
+         run: |
+           sudo apt-get --quiet update --yes
+           sudo apt-get --quiet install openjdk-17-jdk openjdk-17-jre libc6 libdbus-1-3 libfontconfig1 libgcc1 libpulse0 libtinfo5 libx11-6 libxcb1 libxdamage1 libnss3 libxcomposite1 libxcursor1 libxi6 libxext6 libxfixes3 zlib1g libgl1 pulseaudio socat --yes
++      - uses: eas/install_maestro
+       - uses: eas/checkout
+       - uses: eas/use_npm_token
+       - uses: eas/install_node_modules
+@@ -100,22 +110,31 @@ jobs:
+       - uses: eas/start_android_emulator
+         with:
+           device_name: pixel_4
+-      - name: Build E2E project (debug and release)
+-        id: build
++      - name: Build E2E test app (debug)
++        id: builddebug
++        working_directory: ../../../updates-e2e
++        env:
++          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
++        run: |
++          yarn maestro:android:debug:build
++      - name: Build E2E test app (release)
++        id: buildrelease
+         working_directory: ../../../updates-e2e
+         env:
+           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+         run: |
+-          npx detox build -c android.debug
+-          npx detox build -c android.release
+-      - name: Test E2E project (debug and release)
+-        id: test
++          yarn maestro:android:release:build
++      - name: Run Maestro tests (debug)
++        id: testdebug
++        env:
++          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
++        working_directory: ../../../updates-e2e
++        run: |
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-disabled.yml android debug
++      - name: Run Maestro tests (release)
++        id: testrelease
+         env:
+           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+-          UPDATES_HOST: localhost
+-          UPDATES_PORT: "4747"
+         working_directory: ../../../updates-e2e
+         run: |
+-          yarn check-android-emulator
+-          npx detox test -c android.debug
+-          npx detox test -c android.release
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-disabled.yml android release
+diff --git a/apps/expo-workflow-testing/.eas/workflows/updates-e2e-enabled.yml b/apps/expo-workflow-testing/.eas/workflows/updates-e2e-enabled.yml
+index 69d50e0628eb4f..239a0e0d63858b 100644
+--- a/apps/expo-workflow-testing/.eas/workflows/updates-e2e-enabled.yml
++++ b/apps/expo-workflow-testing/.eas/workflows/updates-e2e-enabled.yml
+@@ -95,12 +95,12 @@ jobs:
+         id: testdebug
+         working_directory: ../../../updates-e2e
+         run: |
+-          ./maestro/updates-e2e-enabled.sh ios debug
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-enabled.yml ios debug
+       - name: Run Maestro tests (release)
+         id: testrelease
+         working_directory: ../../../updates-e2e
+         run: |
+-          ./maestro/updates-e2e-enabled.sh ios release
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-enabled.yml ios release
+   android:
+     runs_on: linux-large-nested-virtualization
+     steps:
+@@ -154,11 +154,11 @@ jobs:
+           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+         working_directory: ../../../updates-e2e
+         run: |
+-          ./maestro/updates-e2e-enabled.sh android debug
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-enabled.yml android debug
+       - name: Run Maestro tests (release)
+         id: testrelease
+         env:
+           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+         working_directory: ../../../updates-e2e
+         run: |
+-          ./maestro/updates-e2e-enabled.sh android release
++          ./maestro/maestro-test-executor.sh ./maestro/tests/updates-e2e-enabled.yml android release
+diff --git a/packages/expo-constants/build/Constants.d.ts.map b/packages/expo-constants/build/Constants.d.ts.map
+index e0140c506ba32a..a31cde5e45b3bd 100644
+--- a/packages/expo-constants/build/Constants.d.ts.map
++++ b/packages/expo-constants/build/Constants.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"Constants.d.ts","sourceRoot":"","sources":["../src/Constants.ts"],"names":[],"mappings":"AAeA,OAAO,EACL,eAAe,EACf,YAAY,EACZ,SAAS,EACT,oBAAoB,EACpB,WAAW,EACX,eAAe,EACf,gBAAgB,EAChB,kBAAkB,EAClB,WAAW,EACZ,MAAM,mBAAmB,CAAC;AAG3B,OAAO,EACL,eAAe,EACf,YAAY,EACZ,SAAS,EACT,oBAAoB,EACpB,WAAW,EACX,eAAe,EACf,gBAAgB,EAChB,kBAAkB,EAClB,WAAW,GACZ,CAAC;wBA0N0B,SAAS;AAArC,wBAAsC"}
+\ No newline at end of file
++{"version":3,"file":"Constants.d.ts","sourceRoot":"","sources":["../src/Constants.ts"],"names":[],"mappings":"AAgBA,OAAO,EACL,eAAe,EACf,YAAY,EACZ,SAAS,EACT,oBAAoB,EACpB,WAAW,EACX,eAAe,EACf,gBAAgB,EAChB,kBAAkB,EAClB,WAAW,EACZ,MAAM,mBAAmB,CAAC;AAG3B,OAAO,EACL,eAAe,EACf,YAAY,EACZ,SAAS,EACT,oBAAoB,EACpB,WAAW,EACX,eAAe,EACf,gBAAgB,EAChB,kBAAkB,EAClB,WAAW,GACZ,CAAC;wBA0N0B,SAAS;AAArC,wBAAsC"}
+\ No newline at end of file
+diff --git a/packages/expo-constants/build/Constants.js.map b/packages/expo-constants/build/Constants.js.map
+index 5a9a484947443c..304afb843062cd 100644
+--- a/packages/expo-constants/build/Constants.js.map
++++ b/packages/expo-constants/build/Constants.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"Constants.js","sourceRoot":"","sources":["../src/Constants.ts"],"names":[],"mappings":"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","sourcesContent":["import type { ExpoConfig } from 'expo/config';\n// @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed\nimport type { Manifest as DevLauncherManifest } from 'expo-dev-launcher';\nimport type {\n  EmbeddedManifest,\n  EASConfig,\n  ExpoGoConfig,\n  ExpoUpdatesManifest,\n  // @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed\n} from 'expo-manifests';\nimport { CodedError, requireOptionalNativeModule } from 'expo-modules-core';\n// @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed\nimport type { Manifest as UpdatesManifest, ExpoUpdatesModule } from 'expo-updates';\nimport { Platform, NativeModules } from 'react-native';\n\nimport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n} from './Constants.types';\nimport ExponentConstants from './ExponentConstants';\n\nexport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n};\n\nif (!ExponentConstants) {\n  console.warn(\n    \"No native ExponentConstants module found, are you sure the expo-constants's module is linked properly?\"\n  );\n}\n\nconst ExpoUpdates = requireOptionalNativeModule<ExpoUpdatesModule>('ExpoUpdates');\n\nlet rawUpdatesManifest: UpdatesManifest | null = null;\n// If expo-updates defines a non-empty manifest, prefer that one\nif (ExpoUpdates) {\n  let updatesManifest: object | undefined;\n  if (ExpoUpdates.manifest) {\n    updatesManifest = ExpoUpdates.manifest;\n  } else if (ExpoUpdates.manifestString) {\n    updatesManifest = JSON.parse(ExpoUpdates.manifestString);\n  }\n  if (updatesManifest && Object.keys(updatesManifest).length > 0) {\n    rawUpdatesManifest = updatesManifest as any;\n  }\n}\n\n// If dev-launcher defines a non-empty manifest, prefer that one\nlet rawDevLauncherManifest: DevLauncherManifest | null = null;\nif (NativeModules.EXDevLauncher) {\n  let devLauncherManifest;\n  if (NativeModules.EXDevLauncher.manifestString) {\n    devLauncherManifest = JSON.parse(NativeModules.EXDevLauncher.manifestString);\n  }\n\n  if (devLauncherManifest && Object.keys(devLauncherManifest).length > 0) {\n    rawDevLauncherManifest = devLauncherManifest as any;\n  }\n}\n\n// Fall back to ExponentConstants.manifest if we don't have one from Updates\nlet rawAppConfig: ExpoConfig | null = null;\nif (ExponentConstants && ExponentConstants.manifest) {\n  const appConfig: object | string = ExponentConstants.manifest;\n\n  // On Android we pass the manifest in JSON form so this step is necessary\n  if (typeof appConfig === 'string') {\n    rawAppConfig = JSON.parse(appConfig);\n  } else {\n    rawAppConfig = appConfig as any;\n  }\n}\n\ntype RawManifest = UpdatesManifest | DevLauncherManifest | ExpoConfig;\nlet rawManifest: RawManifest | null = rawUpdatesManifest ?? rawDevLauncherManifest ?? rawAppConfig;\n\nconst { name, appOwnership, ...nativeConstants } = (ExponentConstants || {}) as any;\n\nconst constants: Constants = {\n  ...nativeConstants,\n  // Ensure this is null in bare workflow\n  appOwnership: appOwnership ?? null,\n};\n\nObject.defineProperties(constants, {\n  /**\n   * Use `manifest` property by default.\n   * This property is only used for internal purposes.\n   * It behaves similarly to the original one, but suppresses warning upon no manifest available.\n   * `expo-asset` uses it to prevent users from seeing mentioned warning.\n   */\n  __unsafeNoWarnManifest: {\n    get(): EmbeddedManifest | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest || !isEmbeddedManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: false,\n  },\n  __unsafeNoWarnManifest2: {\n    get(): ExpoUpdatesManifest | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest || !isExpoUpdatesManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: false,\n  },\n  manifest: {\n    get(): EmbeddedManifest | null {\n      const maybeManifest = getManifest();\n      if (!maybeManifest || !isEmbeddedManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: true,\n  },\n  manifest2: {\n    get(): ExpoUpdatesManifest | null {\n      const maybeManifest = getManifest();\n      if (!maybeManifest || !isExpoUpdatesManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: true,\n  },\n  expoConfig: {\n    get():\n      | (ExpoConfig & {\n          /**\n           * Only present during development using @expo/cli.\n           */\n          hostUri?: string;\n        })\n      | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest) {\n        return null;\n      }\n\n      // if running an embedded update, maybeManifest is a EmbeddedManifest which doesn't have\n      // the expo config. Instead, the embedded expo-constants app.config should be used.\n      if (ExpoUpdates && ExpoUpdates.isEmbeddedLaunch) {\n        return rawAppConfig;\n      }\n\n      if (isExpoUpdatesManifest(maybeManifest)) {\n        return maybeManifest.extra?.expoClient ?? null;\n      } else if (isEmbeddedManifest(maybeManifest)) {\n        return maybeManifest as any;\n      }\n\n      return null;\n    },\n    enumerable: true,\n  },\n  expoGoConfig: {\n    get(): ExpoGoConfig | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest) {\n        return null;\n      }\n\n      if (isExpoUpdatesManifest(maybeManifest)) {\n        return maybeManifest.extra?.expoGo ?? null;\n      } else if (isEmbeddedManifest(maybeManifest)) {\n        return maybeManifest as any;\n      }\n\n      return null;\n    },\n    enumerable: true,\n  },\n  easConfig: {\n    get(): EASConfig | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest) {\n        return null;\n      }\n\n      if (isExpoUpdatesManifest(maybeManifest)) {\n        return maybeManifest.extra?.eas ?? null;\n      } else if (isEmbeddedManifest(maybeManifest)) {\n        return maybeManifest as any;\n      }\n\n      return null;\n    },\n    enumerable: true,\n  },\n  __rawManifest_TEST: {\n    get(): RawManifest | null {\n      return rawManifest;\n    },\n    set(value: RawManifest | null) {\n      rawManifest = value;\n    },\n    enumerable: false,\n  },\n});\n\nfunction isEmbeddedManifest(manifest: RawManifest): manifest is EmbeddedManifest {\n  return !isExpoUpdatesManifest(manifest);\n}\n\nfunction isExpoUpdatesManifest(manifest: RawManifest): manifest is ExpoUpdatesManifest {\n  return 'metadata' in manifest;\n}\n\nfunction getManifest(suppressWarning = false): RawManifest | null {\n  if (!rawManifest) {\n    const invalidManifestType = rawManifest === null ? 'null' : 'undefined';\n    if (\n      nativeConstants.executionEnvironment === ExecutionEnvironment.Bare &&\n      Platform.OS !== 'web'\n    ) {\n      if (!suppressWarning) {\n        console.warn(\n          `Constants.manifest is ${invalidManifestType} because the embedded app.config could not be read. Ensure that you have installed the expo-constants build scripts if you need to read from Constants.manifest.`\n        );\n      }\n    } else if (\n      nativeConstants.executionEnvironment === ExecutionEnvironment.StoreClient ||\n      nativeConstants.executionEnvironment === ExecutionEnvironment.Standalone\n    ) {\n      // If we somehow get here, this is a truly exceptional state to be in.\n      // Constants.manifest should *always* be defined in those contexts.\n      throw new CodedError(\n        'ERR_CONSTANTS_MANIFEST_UNAVAILABLE',\n        `Constants.manifest is ${invalidManifestType}, must be an object.`\n      );\n    }\n  }\n  return rawManifest;\n}\n\nexport default constants as Constants;\n"]}
+\ No newline at end of file
++{"version":3,"file":"Constants.js","sourceRoot":"","sources":["../src/Constants.ts"],"names":[],"mappings":"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","sourcesContent":["import type { ExpoConfig } from 'expo/config';\n// @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed\nimport type {\n  EmbeddedManifest,\n  EASConfig,\n  ExpoGoConfig,\n  ExpoUpdatesManifest,\n  // @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed\n} from 'expo-manifests';\ntype DevLauncherManifest = ExpoUpdatesManifest;\n\nimport { CodedError, requireOptionalNativeModule } from 'expo-modules-core';\n// @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed\nimport type { Manifest as UpdatesManifest, ExpoUpdatesModule } from 'expo-updates';\nimport { Platform, NativeModules } from 'react-native';\n\nimport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n} from './Constants.types';\nimport ExponentConstants from './ExponentConstants';\n\nexport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n};\n\nif (!ExponentConstants) {\n  console.warn(\n    \"No native ExponentConstants module found, are you sure the expo-constants's module is linked properly?\"\n  );\n}\n\nconst ExpoUpdates = requireOptionalNativeModule<ExpoUpdatesModule>('ExpoUpdates');\n\nlet rawUpdatesManifest: UpdatesManifest | null = null;\n// If expo-updates defines a non-empty manifest, prefer that one\nif (ExpoUpdates) {\n  let updatesManifest: object | undefined;\n  if (ExpoUpdates.manifest) {\n    updatesManifest = ExpoUpdates.manifest;\n  } else if (ExpoUpdates.manifestString) {\n    updatesManifest = JSON.parse(ExpoUpdates.manifestString);\n  }\n  if (updatesManifest && Object.keys(updatesManifest).length > 0) {\n    rawUpdatesManifest = updatesManifest as any;\n  }\n}\n\n// If dev-launcher defines a non-empty manifest, prefer that one\nlet rawDevLauncherManifest: DevLauncherManifest | null = null;\nif (NativeModules.EXDevLauncher) {\n  let devLauncherManifest;\n  if (NativeModules.EXDevLauncher.manifestString) {\n    devLauncherManifest = JSON.parse(NativeModules.EXDevLauncher.manifestString);\n  }\n\n  if (devLauncherManifest && Object.keys(devLauncherManifest).length > 0) {\n    rawDevLauncherManifest = devLauncherManifest as any;\n  }\n}\n\n// Fall back to ExponentConstants.manifest if we don't have one from Updates\nlet rawAppConfig: ExpoConfig | null = null;\nif (ExponentConstants && ExponentConstants.manifest) {\n  const appConfig: object | string = ExponentConstants.manifest;\n\n  // On Android we pass the manifest in JSON form so this step is necessary\n  if (typeof appConfig === 'string') {\n    rawAppConfig = JSON.parse(appConfig);\n  } else {\n    rawAppConfig = appConfig as any;\n  }\n}\n\ntype RawManifest = UpdatesManifest | DevLauncherManifest | ExpoConfig;\nlet rawManifest: RawManifest | null = rawUpdatesManifest ?? rawDevLauncherManifest ?? rawAppConfig;\n\nconst { name, appOwnership, ...nativeConstants } = (ExponentConstants || {}) as any;\n\nconst constants: Constants = {\n  ...nativeConstants,\n  // Ensure this is null in bare workflow\n  appOwnership: appOwnership ?? null,\n};\n\nObject.defineProperties(constants, {\n  /**\n   * Use `manifest` property by default.\n   * This property is only used for internal purposes.\n   * It behaves similarly to the original one, but suppresses warning upon no manifest available.\n   * `expo-asset` uses it to prevent users from seeing mentioned warning.\n   */\n  __unsafeNoWarnManifest: {\n    get(): EmbeddedManifest | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest || !isEmbeddedManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: false,\n  },\n  __unsafeNoWarnManifest2: {\n    get(): ExpoUpdatesManifest | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest || !isExpoUpdatesManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: false,\n  },\n  manifest: {\n    get(): EmbeddedManifest | null {\n      const maybeManifest = getManifest();\n      if (!maybeManifest || !isEmbeddedManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: true,\n  },\n  manifest2: {\n    get(): ExpoUpdatesManifest | null {\n      const maybeManifest = getManifest();\n      if (!maybeManifest || !isExpoUpdatesManifest(maybeManifest)) {\n        return null;\n      }\n      return maybeManifest;\n    },\n    enumerable: true,\n  },\n  expoConfig: {\n    get():\n      | (ExpoConfig & {\n          /**\n           * Only present during development using @expo/cli.\n           */\n          hostUri?: string;\n        })\n      | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest) {\n        return null;\n      }\n\n      // if running an embedded update, maybeManifest is a EmbeddedManifest which doesn't have\n      // the expo config. Instead, the embedded expo-constants app.config should be used.\n      if (ExpoUpdates && ExpoUpdates.isEmbeddedLaunch) {\n        return rawAppConfig;\n      }\n\n      if (isExpoUpdatesManifest(maybeManifest)) {\n        return maybeManifest.extra?.expoClient ?? null;\n      } else if (isEmbeddedManifest(maybeManifest)) {\n        return maybeManifest as any;\n      }\n\n      return null;\n    },\n    enumerable: true,\n  },\n  expoGoConfig: {\n    get(): ExpoGoConfig | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest) {\n        return null;\n      }\n\n      if (isExpoUpdatesManifest(maybeManifest)) {\n        return maybeManifest.extra?.expoGo ?? null;\n      } else if (isEmbeddedManifest(maybeManifest)) {\n        return maybeManifest as any;\n      }\n\n      return null;\n    },\n    enumerable: true,\n  },\n  easConfig: {\n    get(): EASConfig | null {\n      const maybeManifest = getManifest(true);\n      if (!maybeManifest) {\n        return null;\n      }\n\n      if (isExpoUpdatesManifest(maybeManifest)) {\n        return maybeManifest.extra?.eas ?? null;\n      } else if (isEmbeddedManifest(maybeManifest)) {\n        return maybeManifest as any;\n      }\n\n      return null;\n    },\n    enumerable: true,\n  },\n  __rawManifest_TEST: {\n    get(): RawManifest | null {\n      return rawManifest;\n    },\n    set(value: RawManifest | null) {\n      rawManifest = value;\n    },\n    enumerable: false,\n  },\n});\n\nfunction isEmbeddedManifest(manifest: RawManifest): manifest is EmbeddedManifest {\n  return !isExpoUpdatesManifest(manifest);\n}\n\nfunction isExpoUpdatesManifest(manifest: RawManifest): manifest is ExpoUpdatesManifest {\n  return 'metadata' in manifest;\n}\n\nfunction getManifest(suppressWarning = false): RawManifest | null {\n  if (!rawManifest) {\n    const invalidManifestType = rawManifest === null ? 'null' : 'undefined';\n    if (\n      nativeConstants.executionEnvironment === ExecutionEnvironment.Bare &&\n      Platform.OS !== 'web'\n    ) {\n      if (!suppressWarning) {\n        console.warn(\n          `Constants.manifest is ${invalidManifestType} because the embedded app.config could not be read. Ensure that you have installed the expo-constants build scripts if you need to read from Constants.manifest.`\n        );\n      }\n    } else if (\n      nativeConstants.executionEnvironment === ExecutionEnvironment.StoreClient ||\n      nativeConstants.executionEnvironment === ExecutionEnvironment.Standalone\n    ) {\n      // If we somehow get here, this is a truly exceptional state to be in.\n      // Constants.manifest should *always* be defined in those contexts.\n      throw new CodedError(\n        'ERR_CONSTANTS_MANIFEST_UNAVAILABLE',\n        `Constants.manifest is ${invalidManifestType}, must be an object.`\n      );\n    }\n  }\n  return rawManifest;\n}\n\nexport default constants as Constants;\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-constants/build/Constants.server.js.map b/packages/expo-constants/build/Constants.server.js.map
+index e0b734f9fd6848..bea65e9677fca1 100644
+--- a/packages/expo-constants/build/Constants.server.js.map
++++ b/packages/expo-constants/build/Constants.server.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"Constants.server.js","sourceRoot":"","sources":["../src/Constants.server.ts"],"names":[],"mappings":"AAKA,OAAO,EAEL,YAAY,EAEZ,oBAAoB,EAIpB,kBAAkB,GAEnB,MAAM,mBAAmB,CAAC;AAC3B,OAAO,iBAAiB,MAAM,4BAA4B,CAAC;AAE3D,OAAO,EAEL,YAAY,EAEZ,oBAAoB,EAIpB,kBAAkB,GAEnB,CAAC;AAIF,MAAM,eAAe,GAAgB,CAAC,GAAG,EAAE;IACzC,IAAI,OAAO,iBAAiB,EAAE,QAAQ,KAAK,QAAQ,EAAE,CAAC;QACpD,OAAO,IAAI,CAAC,KAAK,CAAC,iBAAiB,CAAC,QAAQ,CAAC,CAAC;IAChD,CAAC;IACD,OAAO,iBAAiB,EAAE,QAAe,CAAC;AAC5C,CAAC,CAAC,EAAE,CAAC;AAEL,MAAM,SAAS,GAAc,iBAAiB,CAAC;AAE/C,MAAM,CAAC,gBAAgB,CAAC,SAAS,EAAE;IACjC;;;;;OAKG;IACH,sBAAsB,EAAE;QACtB,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,KAAK;KAClB;IACD,QAAQ,EAAE;QACR,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;IACD,UAAU,EAAE;QACV,GAAG;YAQD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;IACD,YAAY,EAAE;QACZ,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;IACD,SAAS,EAAE;QACT,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;CACF,CAAC,CAAC;AAEH,eAAe,SAAsB,CAAC","sourcesContent":["import type { ExpoConfig } from 'expo/config';\nimport type { Manifest as DevLauncherManifest } from 'expo-dev-launcher';\nimport type { EmbeddedManifest, EASConfig, ExpoGoConfig } from 'expo-manifests';\nimport type { Manifest as UpdatesManifest } from 'expo-updates';\n\nimport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n} from './Constants.types';\nimport ExponentConstants from './ExponentConstants.web.js';\n\nexport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n};\n\ntype RawManifest = UpdatesManifest | DevLauncherManifest | ExpoConfig;\n\nconst PARSED_MANIFEST: RawManifest = (() => {\n  if (typeof ExponentConstants?.manifest === 'string') {\n    return JSON.parse(ExponentConstants.manifest);\n  }\n  return ExponentConstants?.manifest as any;\n})();\n\nconst constants: Constants = ExponentConstants;\n\nObject.defineProperties(constants, {\n  /**\n   * Use `manifest` property by default.\n   * This property is only used for internal purposes.\n   * It behaves similarly to the original one, but suppresses warning upon no manifest available.\n   * `expo-asset` uses it to prevent users from seeing mentioned warning.\n   */\n  __unsafeNoWarnManifest: {\n    get(): EmbeddedManifest | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: false,\n  },\n  manifest: {\n    get(): EmbeddedManifest | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n  expoConfig: {\n    get():\n      | (ExpoConfig & {\n          /**\n           * Only present during development using @expo/cli.\n           */\n          hostUri?: string;\n        })\n      | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n  expoGoConfig: {\n    get(): ExpoGoConfig | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n  easConfig: {\n    get(): EASConfig | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n});\n\nexport default constants as Constants;\n"]}
+\ No newline at end of file
++{"version":3,"file":"Constants.server.js","sourceRoot":"","sources":["../src/Constants.server.ts"],"names":[],"mappings":"AAKA,OAAO,EAEL,YAAY,EAEZ,oBAAoB,EAIpB,kBAAkB,GAEnB,MAAM,mBAAmB,CAAC;AAC3B,OAAO,iBAAiB,MAAM,4BAA4B,CAAC;AAE3D,OAAO,EAEL,YAAY,EAEZ,oBAAoB,EAIpB,kBAAkB,GAEnB,CAAC;AAIF,MAAM,eAAe,GAAgB,CAAC,GAAG,EAAE;IACzC,IAAI,OAAO,iBAAiB,EAAE,QAAQ,KAAK,QAAQ,EAAE,CAAC;QACpD,OAAO,IAAI,CAAC,KAAK,CAAC,iBAAiB,CAAC,QAAQ,CAAC,CAAC;IAChD,CAAC;IACD,OAAO,iBAAiB,EAAE,QAAe,CAAC;AAC5C,CAAC,CAAC,EAAE,CAAC;AAEL,MAAM,SAAS,GAAc,iBAAiB,CAAC;AAE/C,MAAM,CAAC,gBAAgB,CAAC,SAAS,EAAE;IACjC;;;;;OAKG;IACH,sBAAsB,EAAE;QACtB,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,KAAK;KAClB;IACD,QAAQ,EAAE;QACR,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;IACD,UAAU,EAAE;QACV,GAAG;YAQD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;IACD,YAAY,EAAE;QACZ,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;IACD,SAAS,EAAE;QACT,GAAG;YACD,OAAO,eAAsB,CAAC;QAChC,CAAC;QACD,UAAU,EAAE,IAAI;KACjB;CACF,CAAC,CAAC;AAEH,eAAe,SAAsB,CAAC","sourcesContent":["import type { ExpoConfig } from 'expo/config';\nimport type { EmbeddedManifest, EASConfig, ExpoGoConfig, ExpoUpdatesManifest } from 'expo-manifests';\nimport type { Manifest as UpdatesManifest } from 'expo-updates';\ntype DevLauncherManifest = ExpoUpdatesManifest;\n\nimport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n} from './Constants.types';\nimport ExponentConstants from './ExponentConstants.web.js';\n\nexport {\n  AndroidManifest,\n  AppOwnership,\n  Constants,\n  ExecutionEnvironment,\n  IOSManifest,\n  NativeConstants,\n  PlatformManifest,\n  UserInterfaceIdiom,\n  WebManifest,\n};\n\ntype RawManifest = UpdatesManifest | DevLauncherManifest | ExpoConfig;\n\nconst PARSED_MANIFEST: RawManifest = (() => {\n  if (typeof ExponentConstants?.manifest === 'string') {\n    return JSON.parse(ExponentConstants.manifest);\n  }\n  return ExponentConstants?.manifest as any;\n})();\n\nconst constants: Constants = ExponentConstants;\n\nObject.defineProperties(constants, {\n  /**\n   * Use `manifest` property by default.\n   * This property is only used for internal purposes.\n   * It behaves similarly to the original one, but suppresses warning upon no manifest available.\n   * `expo-asset` uses it to prevent users from seeing mentioned warning.\n   */\n  __unsafeNoWarnManifest: {\n    get(): EmbeddedManifest | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: false,\n  },\n  manifest: {\n    get(): EmbeddedManifest | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n  expoConfig: {\n    get():\n      | (ExpoConfig & {\n          /**\n           * Only present during development using @expo/cli.\n           */\n          hostUri?: string;\n        })\n      | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n  expoGoConfig: {\n    get(): ExpoGoConfig | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n  easConfig: {\n    get(): EASConfig | null {\n      return PARSED_MANIFEST as any;\n    },\n    enumerable: true,\n  },\n});\n\nexport default constants as Constants;\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-constants/src/Constants.server.ts b/packages/expo-constants/src/Constants.server.ts
+index 7f7207821a0ee7..e3500f2b2115de 100644
+--- a/packages/expo-constants/src/Constants.server.ts
++++ b/packages/expo-constants/src/Constants.server.ts
+@@ -1,7 +1,7 @@
+ import type { ExpoConfig } from 'expo/config';
+-import type { Manifest as DevLauncherManifest } from 'expo-dev-launcher';
+-import type { EmbeddedManifest, EASConfig, ExpoGoConfig } from 'expo-manifests';
++import type { EmbeddedManifest, EASConfig, ExpoGoConfig, ExpoUpdatesManifest } from 'expo-manifests';
+ import type { Manifest as UpdatesManifest } from 'expo-updates';
++type DevLauncherManifest = ExpoUpdatesManifest;
+ 
+ import {
+   AndroidManifest,
+diff --git a/packages/expo-constants/src/Constants.ts b/packages/expo-constants/src/Constants.ts
+index 36350ea090898a..02970f3f803831 100644
+--- a/packages/expo-constants/src/Constants.ts
++++ b/packages/expo-constants/src/Constants.ts
+@@ -1,6 +1,5 @@
+ import type { ExpoConfig } from 'expo/config';
+ // @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed
+-import type { Manifest as DevLauncherManifest } from 'expo-dev-launcher';
+ import type {
+   EmbeddedManifest,
+   EASConfig,
+@@ -8,6 +7,8 @@ import type {
+   ExpoUpdatesManifest,
+   // @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed
+ } from 'expo-manifests';
++type DevLauncherManifest = ExpoUpdatesManifest;
++
+ import { CodedError, requireOptionalNativeModule } from 'expo-modules-core';
+ // @ts-ignore -- optional interface, will gracefully degrade to `any` if not installed
+ import type { Manifest as UpdatesManifest, ExpoUpdatesModule } from 'expo-updates';
+diff --git a/packages/expo-updates/CHANGELOG.md b/packages/expo-updates/CHANGELOG.md
+index 0f4318123e8910..2dfe13f88ba148 100644
+--- a/packages/expo-updates/CHANGELOG.md
++++ b/packages/expo-updates/CHANGELOG.md
+@@ -14,6 +14,7 @@
+ 
+ - [Android] Cleanup state machine resources when the module is destroyed. ([#37193](https://github.com/expo/expo/pull/37193) by [@alanjhughes](https://github.com/alanjhughes))
+ - [CI] convert E2E (enabled) tests to Maestro. ([#37492](https://github.com/expo/expo/pull/37492) by [@douglowder](https://github.com/douglowder))
++- [CI] convert E2E (disabled) tests to Maestro. ([#37558](https://github.com/expo/expo/pull/37558) by [@douglowder](https://github.com/douglowder))
+ 
+ ## 0.28.14 - 2025-06-04
+ 
+diff --git a/packages/expo-updates/e2e/fixtures/project_files/maestro/updates-e2e-enabled.sh b/packages/expo-updates/e2e/fixtures/project_files/maestro/maestro-test-executor.sh
+similarity index 77%
+rename from packages/expo-updates/e2e/fixtures/project_files/maestro/updates-e2e-enabled.sh
+rename to packages/expo-updates/e2e/fixtures/project_files/maestro/maestro-test-executor.sh
+index f0d7ccf9d82675..a60b754d09fb20 100755
+--- a/packages/expo-updates/e2e/fixtures/project_files/maestro/updates-e2e-enabled.sh
++++ b/packages/expo-updates/e2e/fixtures/project_files/maestro/maestro-test-executor.sh
+@@ -1,13 +1,16 @@
+ #!/bin/bash
+ 
+-if [[ "$#" -ne 2 ]]; then
+-  echo "Usage: $0 <ios|android> <debug|release>"
++# Executes a suite of Maestro tests tests defined in a YAML file
++
++if [[ "$#" -ne 3 ]]; then
++  echo "Usage: $0 <test_suite_path> <ios|android> <debug|release>"
+   exit 1
+ fi
+ 
+ . .env
+-export MAESTRO_PLATFORM=$1
+-export MAESTRO_CONFIGURATION=$2
++export MAESTRO_TEST_SUITE=$1
++export MAESTRO_PLATFORM=$2
++export MAESTRO_CONFIGURATION=$3
+ export MAESTRO_UPDATES_SERVER_PORT=$EXPO_PUBLIC_UPDATES_SERVER_PORT
+ 
+ function killUpdatesServerIfNeeded() {
+@@ -43,4 +46,4 @@ function beforeAll() {
+ 
+ beforeAll
+ 
+-maestro test maestro/tests/updates-e2e-enabled.yml
++maestro test $MAESTRO_TEST_SUITE
+diff --git a/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/disabled_verifyState.yml b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/disabled_verifyState.yml
+new file mode 100644
+index 00000000000000..f2bbd446612a22
+--- /dev/null
++++ b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/disabled_verifyState.yml
+@@ -0,0 +1,61 @@
++appId: dev.expo.updatese2e
++onFlowStart:
++  - runFlow:
++      file: beforeEach.yml
++---
++# Check that state is correct when updates are disabled
++- launchApp
++- copyTextFrom:
++    label: Copy text from update string
++    id: updateString
++- assertTrue:
++    condition: ${maestro.copiedText == "test"}
++    label: Assert update string is from embedded bundle
++- copyTextFrom:
++    label: Copy text from updateID
++    id: updateID
++- assertTrue:
++    condition: ${maestro.copiedText != ""}
++    label: Assert updateID is not empty
++- copyTextFrom:
++    label: Copy text from runtimeVersion
++    id: runtimeVersion
++- assertTrue:
++    condition: ${maestro.copiedText == "null"}
++    label: Assert runtimeVersion is null
++- copyTextFrom:
++    label: Copy text from checkAutomatically
++    id: checkAutomatically
++- assertTrue:
++    condition: ${maestro.copiedText == "NEVER"}
++    label: Assert checkAutomatically is NEVER
++- copyTextFrom:
++    label: Copy text from isEmbeddedLaunch
++    id: isEmbeddedLaunch
++- assertTrue:
++    condition: ${maestro.copiedText == "false"}
++    label: Assert isEmbeddedLaunch is false
++- copyTextFrom:
++    label: Copy text from availableUpdateID
++    id: availableUpdateID
++- assertTrue:
++    condition: ${maestro.copiedText == "undefined"}
++    label: Assert availableUpdateID is undefined
++- copyTextFrom:
++    label: Copy text from lastJSAPIErrorMessage
++    id: lastJSAPIErrorMessage
++- assertTrue:
++    condition: ${maestro.copiedText == "false"}
++    label: Assert lastJSAPIErrorMessage is false
++- tapOn:
++    label: Tap on callJSAPI
++    id: callJSAPI
++- evalScript:
++    script: ${output.api.delay(500)}
++    label: Delay for 0.5 seconds
++- copyTextFrom:
++    label: Copy text from lastJSAPIErrorMessage
++    id: lastJSAPIErrorMessage
++- assertTrue:
++    condition: ${maestro.copiedText == "true"}
++    label: Assert lastJSAPIErrorMessage is true
+diff --git a/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/updates-e2e-disabled.yml b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/updates-e2e-disabled.yml
+new file mode 100644
+index 00000000000000..5f9218b65e25b6
+--- /dev/null
++++ b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/updates-e2e-disabled.yml
+@@ -0,0 +1,6 @@
++appId: dev.expo.updatese2e
++---
++- runFlow:
++    file: disabled_verifyState.yml
++- runFlow:
++    file: basic_reload.yml

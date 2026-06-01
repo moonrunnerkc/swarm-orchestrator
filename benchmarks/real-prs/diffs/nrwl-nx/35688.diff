@@ -1,0 +1,657 @@
+diff --git a/packages/expo/migrations.json b/packages/expo/migrations.json
+index e6f758630ac..46abf5497ba 100644
+--- a/packages/expo/migrations.json
++++ b/packages/expo/migrations.json
+@@ -22,7 +22,7 @@
+       "version": "22.2.0-beta.3",
+       "cli": "nx",
+       "description": "Create AI migration instructions for Expo SDK 54 upgrade",
+-      "factory": "./src/migrations/update-22-2-0/create-ai-instructions-for-expo-54"
++      "prompt": "./src/migrations/update-22-2-0/ai-instructions-for-expo-54.md"
+     },
+     "update-22-2-0-add-expo-system-ui": {
+       "version": "22.2.0-beta.3",
+diff --git a/packages/expo/src/migrations/update-22-2-0/files/ai-instructions-for-expo-54.md b/packages/expo/src/migrations/update-22-2-0/ai-instructions-for-expo-54.md
+similarity index 100%
+rename from packages/expo/src/migrations/update-22-2-0/files/ai-instructions-for-expo-54.md
+rename to packages/expo/src/migrations/update-22-2-0/ai-instructions-for-expo-54.md
+diff --git a/packages/expo/src/migrations/update-22-2-0/create-ai-instructions-for-expo-54.ts b/packages/expo/src/migrations/update-22-2-0/create-ai-instructions-for-expo-54.ts
+deleted file mode 100644
+index cf39f505294..00000000000
+--- a/packages/expo/src/migrations/update-22-2-0/create-ai-instructions-for-expo-54.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+-import { Tree } from '@nx/devkit';
+-
+-export default async function createAiInstructionsForExpo54(tree: Tree) {
+-  const pathToAiInstructions = join(
+-    __dirname,
+-    'files',
+-    'ai-instructions-for-expo-54.md'
+-  );
+-  if (!existsSync(pathToAiInstructions)) {
+-    return;
+-  }
+-
+-  const contents = readFileSync(pathToAiInstructions, 'utf-8');
+-  tree.write('tools/ai-migrations/MIGRATE_EXPO_54.md', contents);
+-  return [
+-    `We created 'tools/ai-migrations/MIGRATE_EXPO_54.md' with instructions for an AI Agent to help migrate your Expo projects to Expo SDK 54.`,
+-  ];
+-}
+diff --git a/packages/next/migrations.json b/packages/next/migrations.json
+index bb4b62355fd..0b92c60119d 100644
+--- a/packages/next/migrations.json
++++ b/packages/next/migrations.json
+@@ -13,7 +13,7 @@
+         "next": ">=16.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces to Next.js 16.",
+-      "factory": "./src/migrations/update-22-2-0/create-ai-instructions-for-next-16"
++      "prompt": "./src/migrations/update-22-2-0/ai-instructions-for-next-16.md"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/next/src/migrations/update-22-2-0/files/ai-instructions-for-next-16.md b/packages/next/src/migrations/update-22-2-0/ai-instructions-for-next-16.md
+similarity index 100%
+rename from packages/next/src/migrations/update-22-2-0/files/ai-instructions-for-next-16.md
+rename to packages/next/src/migrations/update-22-2-0/ai-instructions-for-next-16.md
+diff --git a/packages/next/src/migrations/update-22-2-0/create-ai-instructions-for-next-16.ts b/packages/next/src/migrations/update-22-2-0/create-ai-instructions-for-next-16.ts
+deleted file mode 100644
+index 2c577d44614..00000000000
+--- a/packages/next/src/migrations/update-22-2-0/create-ai-instructions-for-next-16.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+-import { Tree } from '@nx/devkit';
+-
+-export default async function createAiInstructionsForNext16(tree: Tree) {
+-  const pathToAiInstructions = join(
+-    __dirname,
+-    'files',
+-    'ai-instructions-for-next-16.md'
+-  );
+-  if (!existsSync(pathToAiInstructions)) {
+-    return;
+-  }
+-
+-  const contents = readFileSync(pathToAiInstructions, 'utf-8');
+-  tree.write('tools/ai-migrations/MIGRATE_NEXT_16.md', contents);
+-  return [
+-    `We created 'tools/ai-migrations/MIGRATE_NEXT_16.md' with instructions for an AI Agent to help migrate your Next.js projects to Next.js 16.`,
+-  ];
+-}
+diff --git a/packages/nuxt/eslint.config.mjs b/packages/nuxt/eslint.config.mjs
+index 011831f866e..d3f13515a67 100644
+--- a/packages/nuxt/eslint.config.mjs
++++ b/packages/nuxt/eslint.config.mjs
+@@ -4,7 +4,12 @@ import * as jsoncEslintParser from 'jsonc-eslint-parser';
+ export default [
+   ...baseConfig,
+   {
+-    files: ['./package.json', './generators.json', './executors.json'],
++    files: [
++      './package.json',
++      './generators.json',
++      './executors.json',
++      './migrations.json',
++    ],
+     rules: {
+       '@nx/nx-plugin-checks': 'error',
+     },
+diff --git a/packages/nuxt/migrations.json b/packages/nuxt/migrations.json
+index 3c387b55e00..db42501a4ad 100644
+--- a/packages/nuxt/migrations.json
++++ b/packages/nuxt/migrations.json
+@@ -3,7 +3,7 @@
+     "update-22-2-0-create-ai-instructions-for-nuxt-4": {
+       "version": "22.2.0-beta.0",
+       "description": "Create AI Instructions to help migrate workspaces to Nuxt 4.",
+-      "implementation": "./src/migrations/update-22-2-0/create-ai-instructions-for-nuxt-4"
++      "prompt": "./src/migrations/update-22-2-0/ai-instructions-for-nuxt-4.md"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/nuxt/migrations.spec.ts b/packages/nuxt/migrations.spec.ts
+new file mode 100644
+index 00000000000..b5253a514b1
+--- /dev/null
++++ b/packages/nuxt/migrations.spec.ts
+@@ -0,0 +1,8 @@
++import json = require('./migrations.json');
++
++import { assertValidMigrationPaths } from '@nx/devkit/internal-testing-utils';
++import { MigrationsJson } from '@nx/devkit';
++
++describe('nuxt migrations', () => {
++  assertValidMigrationPaths(json as MigrationsJson, __dirname);
++});
+diff --git a/packages/nuxt/src/migrations/.gitkeep b/packages/nuxt/src/migrations/.gitkeep
+deleted file mode 100644
+index e69de29bb2d..00000000000
+diff --git a/packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.spec.ts b/packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.spec.ts
+deleted file mode 100644
+index 50a2d6a74e2..00000000000
+--- a/packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.spec.ts
++++ /dev/null
+@@ -1,80 +0,0 @@
+-import addIncludeToTsConfig from './add-include-tsconfig';
+-import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+-import { Tree, addProjectConfiguration, writeJson } from '@nx/devkit';
+-
+-jest.mock('@nuxt/kit', () => ({
+-  loadNuxtConfig: jest.fn().mockImplementation(() => {
+-    return Promise.resolve({
+-      buildDir: '../dist/my-nuxt-app/.nuxt',
+-    });
+-  }),
+-}));
+-
+-jest.mock('../../utils/executor-utils', () => ({
+-  loadNuxtKitDynamicImport: jest.fn().mockResolvedValue({
+-    loadNuxtConfig: jest.fn().mockResolvedValue({
+-      buildDir: '../dist/my-nuxt-app/.nuxt',
+-    }),
+-  }),
+-}));
+-
+-describe('addIncludeToTsConfig', () => {
+-  let tree: Tree;
+-
+-  beforeAll(() => {
+-    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
+-    addProjectConfiguration(tree, 'my-nuxt-app', {
+-      root: `my-nuxt-app`,
+-      sourceRoot: `my-nuxt-app/src`,
+-      targets: {
+-        test: {
+-          executor: '@nx/vite:test',
+-          options: {},
+-        },
+-      },
+-    });
+-
+-    tree.write(
+-      `my-nuxt-app/nuxt.config.ts`,
+-      `
+-      import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
+-      import { defineNuxtConfig } from 'nuxt/config';
+-      
+-      // https://nuxt.com/docs/api/configuration/nuxt-config
+-      export default defineNuxtConfig({
+-        workspaceDir: '../../',
+-        srcDir: 'src',
+-        buildDir: '../dist/my-nuxt-app/.nuxt',
+-        css: ['~/assets/css/styles.css'],
+-        vite: {
+-          plugins: [nxViteTsPaths()],
+-        },
+-      });
+-        `
+-    );
+-
+-    writeJson(tree, 'my-nuxt-app/tsconfig.json', {
+-      compilerOptions: {},
+-      files: [],
+-      include: [],
+-      references: [
+-        {
+-          path: './tsconfig.app.json',
+-        },
+-        {
+-          path: './tsconfig.spec.json',
+-        },
+-      ],
+-      extends: '../tsconfig.base.json',
+-    });
+-  });
+-
+-  it('should add include to tsconfig', async () => {
+-    await addIncludeToTsConfig(tree);
+-    const tsConfig = tree.read('my-nuxt-app/tsconfig.json', 'utf-8');
+-    const tsconfigJson = JSON.parse(tsConfig);
+-    expect(tsconfigJson.include).toMatchObject([
+-      '../dist/my-nuxt-app/.nuxt/nuxt.d.ts',
+-    ]);
+-  });
+-});
+diff --git a/packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.ts b/packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.ts
+deleted file mode 100644
+index f9a93d5e3c6..00000000000
+--- a/packages/nuxt/src/migrations/update-18-1-0/add-include-tsconfig.ts
++++ /dev/null
+@@ -1,75 +0,0 @@
+-import {
+-  Tree,
+-  formatFiles,
+-  getProjects,
+-  joinPathFragments,
+-  updateJson,
+-  workspaceRoot,
+-} from '@nx/devkit';
+-import { loadNuxtKitDynamicImport } from '../../utils/executor-utils';
+-import { basename } from 'path';
+-
+-export default async function (tree: Tree) {
+-  const projects = getProjects(tree);
+-
+-  for (const project of projects.values()) {
+-    const nuxtConfigPath = findNuxtConfig(tree, project.root);
+-
+-    if (!nuxtConfigPath) {
+-      continue;
+-    }
+-
+-    const nuxtConfig = await getInfoFromNuxtConfig(
+-      nuxtConfigPath,
+-      project.root
+-    );
+-
+-    const buildDir = nuxtConfig.buildDir ?? '.nuxt';
+-
+-    const tsConfigPath = joinPathFragments(project.root, 'tsconfig.json');
+-
+-    if (tree.exists(tsConfigPath)) {
+-      updateJson(tree, tsConfigPath, (json) => {
+-        if (!json.include) {
+-          json.include = [];
+-        }
+-
+-        if (!json.include.includes(buildDir + '/nuxt.d.ts')) {
+-          json.include.push(buildDir + '/nuxt.d.ts');
+-        }
+-
+-        return json;
+-      });
+-    }
+-  }
+-
+-  await formatFiles(tree);
+-}
+-
+-function findNuxtConfig(tree: Tree, projectRoot: string): string | undefined {
+-  const allowsExt = ['js', 'mjs', 'ts', 'cjs', 'mts', 'cts'];
+-
+-  for (const ext of allowsExt) {
+-    if (tree.exists(joinPathFragments(projectRoot, `nuxt.config.${ext}`))) {
+-      return joinPathFragments(projectRoot, `nuxt.config.${ext}`);
+-    }
+-  }
+-}
+-
+-async function getInfoFromNuxtConfig(
+-  configFilePath: string,
+-  projectRoot: string
+-): Promise<{
+-  buildDir: string;
+-}> {
+-  const { loadNuxtConfig } = await loadNuxtKitDynamicImport();
+-
+-  const config = await loadNuxtConfig({
+-    cwd: joinPathFragments(workspaceRoot, projectRoot),
+-    configFile: basename(configFilePath),
+-  });
+-
+-  return {
+-    buildDir: config?.buildDir,
+-  };
+-}
+diff --git a/packages/nuxt/src/migrations/update-22-2-0/files/ai-instructions-for-nuxt-4.md b/packages/nuxt/src/migrations/update-22-2-0/ai-instructions-for-nuxt-4.md
+similarity index 100%
+rename from packages/nuxt/src/migrations/update-22-2-0/files/ai-instructions-for-nuxt-4.md
+rename to packages/nuxt/src/migrations/update-22-2-0/ai-instructions-for-nuxt-4.md
+diff --git a/packages/nuxt/src/migrations/update-22-2-0/create-ai-instructions-for-nuxt-4.ts b/packages/nuxt/src/migrations/update-22-2-0/create-ai-instructions-for-nuxt-4.ts
+deleted file mode 100644
+index 3407117e6d2..00000000000
+--- a/packages/nuxt/src/migrations/update-22-2-0/create-ai-instructions-for-nuxt-4.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+-import { Tree } from '@nx/devkit';
+-
+-export default async function createAiInstructionsForNuxt(tree: Tree) {
+-  const pathToAiInstructions = join(
+-    __dirname,
+-    'files',
+-    'ai-instructions-for-nuxt-4.md'
+-  );
+-  if (!existsSync(pathToAiInstructions)) {
+-    return;
+-  }
+-
+-  const contents = readFileSync(pathToAiInstructions);
+-  tree.write('tools/ai-migrations/MIGRATE_NUXT_4.md', contents);
+-  return [
+-    `We created 'tools/ai-migrations/MIGRATE_NUXT_4.md' with instructions for an AI Agent to help migrate your Nuxt projects to Nuxt 4.`,
+-  ];
+-}
+diff --git a/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts b/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts
+index 0e3f7048754..a7ea0a946c5 100644
+--- a/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts
++++ b/packages/nx/src/internal-testing-utils/assert-valid-migrations.ts
+@@ -23,7 +23,12 @@ export function assertValidMigrationPaths(json: MigrationsJson, root: string) {
+     const migrations = Object.values(json.generators);
+     for (const m of migrations) {
+       const impl = m.factory ?? m.implementation;
+-      knownDirs.add(path.basename(path.dirname(impl)));
++      if (impl) {
++        knownDirs.add(path.basename(path.dirname(impl)));
++      }
++      if (m.prompt) {
++        knownDirs.add(path.basename(path.dirname(m.prompt)));
++      }
+     }
+     for (const dir of dirs) {
+       expect(knownDirs).toContain(dir);
+@@ -33,15 +38,20 @@ export function assertValidMigrationPaths(json: MigrationsJson, root: string) {
+ 
+ function validateMigration(m: MigrationsJsonEntry, root: string) {
+   const impl = m.factory ?? m.implementation;
+-  let [implPath, implMember] = impl.includes('#')
+-    ? impl.split('#')
+-    : [impl, null];
+-  implPath = implPath.replace(/dist\//, '');
+-  let implModule;
+-  expect(() => {
+-    implModule = require(path.join(root, `${implPath}.ts`));
+-  }).not.toThrow();
+-  if (implMember) {
+-    expect(implModule).toHaveProperty(implMember);
++  if (impl) {
++    let [implPath, implMember] = impl.includes('#')
++      ? impl.split('#')
++      : [impl, null];
++    implPath = implPath.replace(/dist\//, '');
++    let implModule;
++    expect(() => {
++      implModule = require(path.join(root, `${implPath}.ts`));
++    }).not.toThrow();
++    if (implMember) {
++      expect(implModule).toHaveProperty(implMember);
++    }
++  }
++  if (m.prompt) {
++    expect(fs.existsSync(path.join(root, m.prompt))).toBe(true);
+   }
+ }
+diff --git a/packages/storybook/migrations.json b/packages/storybook/migrations.json
+index a4ab0430a94..4bc15569c17 100644
+--- a/packages/storybook/migrations.json
++++ b/packages/storybook/migrations.json
+@@ -19,7 +19,8 @@
+         "storybook": ">=10.0.0"
+       },
+       "description": "Update workspace to use Storybook v10",
+-      "implementation": "./src/migrations/update-22-1-0/migrate-to-storybook-10"
++      "implementation": "./src/migrations/update-22-1-0/migrate-to-storybook-10",
++      "prompt": "./src/generators/migrate-10/files/ai-instructions-for-cjs-esm.md"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/storybook/src/generators/migrate-10/migrate-10.ts b/packages/storybook/src/generators/migrate-10/migrate-10.ts
+index d80b6142386..50a5ce8defa 100644
+--- a/packages/storybook/src/generators/migrate-10/migrate-10.ts
++++ b/packages/storybook/src/generators/migrate-10/migrate-10.ts
+@@ -21,6 +21,10 @@ export async function migrate10Generator(tree: Tree, schema: Schema) {
+ 
+   callUpgrade(schema);
+ 
++  if (schema.skipAiInstructions) {
++    return;
++  }
++
+   const pathToAiInstructions = join(
+     __dirname,
+     'files',
+diff --git a/packages/storybook/src/generators/migrate-10/schema.d.ts b/packages/storybook/src/generators/migrate-10/schema.d.ts
+index 7225117a703..f02d07f374c 100644
+--- a/packages/storybook/src/generators/migrate-10/schema.d.ts
++++ b/packages/storybook/src/generators/migrate-10/schema.d.ts
+@@ -1,4 +1,5 @@
+ export interface Schema {
+   autoAcceptAllPrompts?: boolean;
+   configDirs?: string[];
++  skipAiInstructions?: boolean;
+ }
+diff --git a/packages/storybook/src/generators/migrate-10/schema.json b/packages/storybook/src/generators/migrate-10/schema.json
+index 0887760d1a4..54a36f95de2 100644
+--- a/packages/storybook/src/generators/migrate-10/schema.json
++++ b/packages/storybook/src/generators/migrate-10/schema.json
+@@ -14,6 +14,11 @@
+       "type": "array",
+       "description": "Directory(ies) where to load Storybook configurations from. Use this if you want to customize the Storybook projects you'd like to migrate.",
+       "default": []
++    },
++    "skipAiInstructions": {
++      "type": "boolean",
++      "description": "Skip writing the AI migration instructions file to `tools/ai-migrations/`.",
++      "default": false
+     }
+   },
+   "examplesFile": "../../../docs/migrate-10-generator-examples.md"
+diff --git a/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.spec.ts b/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.spec.ts
+index d1048b29514..066a5fcce29 100644
+--- a/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.spec.ts
++++ b/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.spec.ts
+@@ -31,6 +31,7 @@ describe('migrate-to-storybook-10 migration', () => {
+ 
+     expect(migrate10GeneratorSpy).toHaveBeenCalledWith(tree, {
+       autoAcceptAllPrompts: true,
++      skipAiInstructions: true,
+     });
+   });
+ 
+diff --git a/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.ts b/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.ts
+index d767339b68d..d48c0cbe63f 100644
+--- a/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.ts
++++ b/packages/storybook/src/migrations/update-22-1-0/migrate-to-storybook-10.ts
+@@ -1,9 +1,6 @@
+ import { Tree } from '@nx/devkit';
+ import { output } from 'nx/src/utils/output';
+ import migrate10Generator from '../../generators/migrate-10/migrate-10';
+-import { storybookMajorVersion } from '../../utils/utilities';
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+ 
+ export default async function migrateToStorybook10(tree: Tree) {
+   output.log({
+@@ -17,10 +14,6 @@ export default async function migrateToStorybook10(tree: Tree) {
+   });
+   await migrate10Generator(tree, {
+     autoAcceptAllPrompts: true,
++    skipAiInstructions: true,
+   });
+-
+-  return [
+-    `Storybook 10 requires Storybook Configs to use ESM.`,
+-    `We created 'tools/ai-migrations/MIGRATE_STORYBOOK_10.md' with instructions for an AI Agent to convert CJS Storybook Configs to ESM in your workspace.`,
+-  ];
+ }
+diff --git a/packages/vite/eslint.config.mjs b/packages/vite/eslint.config.mjs
+index ade8fef7a84..84001b948eb 100644
+--- a/packages/vite/eslint.config.mjs
++++ b/packages/vite/eslint.config.mjs
+@@ -16,7 +16,12 @@ export default [
+     },
+   },
+   {
+-    files: ['./package.json', './generators.json', './executors.json'],
++    files: [
++      './package.json',
++      './generators.json',
++      './executors.json',
++      './migrations.json',
++    ],
+     rules: {
+       '@nx/nx-plugin-checks': 'error',
+     },
+diff --git a/packages/vite/migrations.json b/packages/vite/migrations.json
+index 313976e6a9c..c17daf7420e 100644
+--- a/packages/vite/migrations.json
++++ b/packages/vite/migrations.json
+@@ -31,7 +31,7 @@
+         "vitest": ">=4.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vitest 4.",
+-      "implementation": "./src/migrations/update-22-2-0/create-ai-instructions-for-vitest-4"
++      "prompt": "./src/migrations/update-22-2-0/ai-instructions-for-vitest-4.md"
+     },
+     "migrate-vitest-to-vitest-package": {
+       "version": "22.2.0-beta.2",
+@@ -57,7 +57,7 @@
+         "vite": ">=8.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vite 8.",
+-      "implementation": "./src/migrations/update-23-0-0/create-ai-instructions-for-vite-8"
++      "prompt": "./src/migrations/update-23-0-0/ai-instructions-for-vite-8.md"
+     }
+   },
+   "packageJsonUpdates": {
+diff --git a/packages/vite/src/migrations/update-22-2-0/files/ai-instructions-for-vitest-4.md b/packages/vite/src/migrations/update-22-2-0/ai-instructions-for-vitest-4.md
+similarity index 100%
+rename from packages/vite/src/migrations/update-22-2-0/files/ai-instructions-for-vitest-4.md
+rename to packages/vite/src/migrations/update-22-2-0/ai-instructions-for-vitest-4.md
+diff --git a/packages/vite/src/migrations/update-22-2-0/create-ai-instructions-for-vitest-4.ts b/packages/vite/src/migrations/update-22-2-0/create-ai-instructions-for-vitest-4.ts
+deleted file mode 100644
+index 83a330046e9..00000000000
+--- a/packages/vite/src/migrations/update-22-2-0/create-ai-instructions-for-vitest-4.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+-import { Tree } from '@nx/devkit';
+-
+-export default async function createAiInstructionsForVitest(tree: Tree) {
+-  const pathToAiInstructions = join(
+-    __dirname,
+-    'files',
+-    'ai-instructions-for-vitest-4.md'
+-  );
+-  if (!existsSync(pathToAiInstructions)) {
+-    return;
+-  }
+-
+-  const contents = readFileSync(pathToAiInstructions);
+-  tree.write('tools/ai-migrations/MIGRATE_VITEST_4.md', contents);
+-  return [
+-    `We created 'tools/ai-migrations/MIGRATE_VITEST_4.md' with instructions for an AI Agent to help migrate your Vitest projects to Vitest 4.`,
+-  ];
+-}
+diff --git a/packages/vite/src/migrations/update-23-0-0/files/ai-instructions-for-vite-8.md b/packages/vite/src/migrations/update-23-0-0/ai-instructions-for-vite-8.md
+similarity index 100%
+rename from packages/vite/src/migrations/update-23-0-0/files/ai-instructions-for-vite-8.md
+rename to packages/vite/src/migrations/update-23-0-0/ai-instructions-for-vite-8.md
+diff --git a/packages/vite/src/migrations/update-23-0-0/create-ai-instructions-for-vite-8.ts b/packages/vite/src/migrations/update-23-0-0/create-ai-instructions-for-vite-8.ts
+deleted file mode 100644
+index cd410c9cb38..00000000000
+--- a/packages/vite/src/migrations/update-23-0-0/create-ai-instructions-for-vite-8.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+-import { Tree } from '@nx/devkit';
+-
+-export default async function createAiInstructionsForVite8(tree: Tree) {
+-  const pathToAiInstructions = join(
+-    __dirname,
+-    'files',
+-    'ai-instructions-for-vite-8.md'
+-  );
+-  if (!existsSync(pathToAiInstructions)) {
+-    return;
+-  }
+-
+-  const contents = readFileSync(pathToAiInstructions);
+-  tree.write('tools/ai-migrations/MIGRATE_VITE_8.md', contents);
+-  return [
+-    `We created 'tools/ai-migrations/MIGRATE_VITE_8.md' with instructions for an AI Agent to help migrate your Vite projects to Vite 8.`,
+-  ];
+-}
+diff --git a/packages/vitest/eslint.config.mjs b/packages/vitest/eslint.config.mjs
+index 34f7bd53fde..dbd10571e32 100644
+--- a/packages/vitest/eslint.config.mjs
++++ b/packages/vitest/eslint.config.mjs
+@@ -4,7 +4,12 @@ import * as jsoncEslintParser from 'jsonc-eslint-parser';
+ export default [
+   ...baseConfig,
+   {
+-    files: ['./package.json', './generators.json', './executors.json'],
++    files: [
++      './package.json',
++      './generators.json',
++      './executors.json',
++      './migrations.json',
++    ],
+     rules: {
+       '@nx/nx-plugin-checks': 'error',
+     },
+diff --git a/packages/vitest/migrations.json b/packages/vitest/migrations.json
+index 1a7a977f977..d3eb4706387 100644
+--- a/packages/vitest/migrations.json
++++ b/packages/vitest/migrations.json
+@@ -8,7 +8,7 @@
+     "update-22-1-0": {
+       "version": "22.1.0-beta.8",
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vitest 4.",
+-      "implementation": "./src/migrations/update-22-1-0/create-ai-instructions-for-vitest-4"
++      "prompt": "./src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md"
+     },
+     "update-22-3-2": {
+       "version": "22.3.2-beta.0",
+@@ -16,7 +16,7 @@
+         "@angular/build": ">=21.0.0"
+       },
+       "description": "Create AI Instructions to help migrate users workspaces past breaking changes for Vitest 4.",
+-      "implementation": "./src/migrations/update-22-1-0/create-ai-instructions-for-vitest-4"
++      "prompt": "./src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md"
+     },
+     "update-22-6-0-prefix-reports-directory": {
+       "version": "22.6.0-beta.11",
+diff --git a/packages/vitest/migrations.spec.ts b/packages/vitest/migrations.spec.ts
+new file mode 100644
+index 00000000000..40428b70856
+--- /dev/null
++++ b/packages/vitest/migrations.spec.ts
+@@ -0,0 +1,8 @@
++import json = require('./migrations.json');
++
++import { assertValidMigrationPaths } from '@nx/devkit/internal-testing-utils';
++import { MigrationsJson } from '@nx/devkit';
++
++describe('vitest migrations', () => {
++  assertValidMigrationPaths(json as MigrationsJson, __dirname);
++});
+diff --git a/packages/vitest/src/migrations/update-22-1-0/files/ai-instructions-for-vitest-4.md b/packages/vitest/src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md
+similarity index 100%
+rename from packages/vitest/src/migrations/update-22-1-0/files/ai-instructions-for-vitest-4.md
+rename to packages/vitest/src/migrations/update-22-1-0/ai-instructions-for-vitest-4.md
+diff --git a/packages/vitest/src/migrations/update-22-1-0/create-ai-instructions-for-vitest-4.ts b/packages/vitest/src/migrations/update-22-1-0/create-ai-instructions-for-vitest-4.ts
+deleted file mode 100644
+index 83a330046e9..00000000000
+--- a/packages/vitest/src/migrations/update-22-1-0/create-ai-instructions-for-vitest-4.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { join } from 'path';
+-import { existsSync, readFileSync } from 'fs';
+-import { Tree } from '@nx/devkit';
+-
+-export default async function createAiInstructionsForVitest(tree: Tree) {
+-  const pathToAiInstructions = join(
+-    __dirname,
+-    'files',
+-    'ai-instructions-for-vitest-4.md'
+-  );
+-  if (!existsSync(pathToAiInstructions)) {
+-    return;
+-  }
+-
+-  const contents = readFileSync(pathToAiInstructions);
+-  tree.write('tools/ai-migrations/MIGRATE_VITEST_4.md', contents);
+-  return [
+-    `We created 'tools/ai-migrations/MIGRATE_VITEST_4.md' with instructions for an AI Agent to help migrate your Vitest projects to Vitest 4.`,
+-  ];
+-}

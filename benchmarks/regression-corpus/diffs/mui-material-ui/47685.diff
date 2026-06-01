@@ -1,0 +1,2184 @@
+diff --git a/docs/pages/joy-ui/api/select.json b/docs/pages/joy-ui/api/select.json
+index 9ce6f97f23e235..13814f9afb5d22 100644
+--- a/docs/pages/joy-ui/api/select.json
++++ b/docs/pages/joy-ui/api/select.json
+@@ -24,7 +24,7 @@
+     "indicator": { "type": { "name": "node" } },
+     "listboxId": { "type": { "name": "string" } },
+     "listboxOpen": { "type": { "name": "bool" }, "default": "undefined" },
+-    "multiple": { "type": { "name": "bool" } },
++    "multiple": { "type": { "name": "bool" }, "default": "false" },
+     "name": { "type": { "name": "string" } },
+     "onChange": { "type": { "name": "func" } },
+     "onClose": { "type": { "name": "func" } },
+diff --git a/docs/src/pages/premium-themes/onepirate/modules/form/FormButton.js b/docs/src/pages/premium-themes/onepirate/modules/form/FormButton.js
+index 4b98ce37481fd3..0bca2273c9790b 100644
+--- a/docs/src/pages/premium-themes/onepirate/modules/form/FormButton.js
++++ b/docs/src/pages/premium-themes/onepirate/modules/form/FormButton.js
+@@ -19,6 +19,7 @@ function FormButton(props) {
+ FormButton.propTypes = {
+   /**
+    * If `true`, the component is disabled.
++   * @default false
+    */
+   disabled: PropTypes.bool,
+   mounted: PropTypes.bool,
+diff --git a/docs/translations/api-docs-joy/avatar-group/avatar-group.json b/docs/translations/api-docs-joy/avatar-group/avatar-group.json
+index e1521a189212a6..acabb539e8015c 100644
+--- a/docs/translations/api-docs-joy/avatar-group/avatar-group.json
++++ b/docs/translations/api-docs-joy/avatar-group/avatar-group.json
+@@ -5,14 +5,12 @@
+       "description": "Used to render icon or text elements inside the AvatarGroup if <code>src</code> is not set. This can be an element, or just a string."
+     },
+     "color": {
+-      "description": "The color of the component. It supports those theme colors that make sense for this component."
++      "description": "The color context for the avatar children. It has no effect on the AvatarGroup."
+     },
+     "component": {
+       "description": "The component used for the root node. Either a string to use a HTML element or a component."
+     },
+-    "size": {
+-      "description": "The size of the component. It accepts theme values between &#39;sm&#39; and &#39;lg&#39;."
+-    },
++    "size": { "description": "The size of the component and the avatar children." },
+     "slotProps": { "description": "The props used for each slot inside." },
+     "slots": { "description": "The components used for each slot inside." },
+     "sx": {
+diff --git a/docs/translations/api-docs-joy/radio-group/radio-group.json b/docs/translations/api-docs-joy/radio-group/radio-group.json
+index d44307902efd8e..f60bfcbd6f2809 100644
+--- a/docs/translations/api-docs-joy/radio-group/radio-group.json
++++ b/docs/translations/api-docs-joy/radio-group/radio-group.json
+@@ -6,7 +6,7 @@
+       "description": "The color of the component. It supports those theme colors that make sense for this component."
+     },
+     "component": {
+-      "description": "The component used for the root node. Either a string to use a HTML element or a component."
++      "description": "The component used for the Root slot. Either a string to use a HTML element or a component."
+     },
+     "defaultValue": {
+       "description": "The default value. Use when the component is not controlled."
+diff --git a/docs/translations/api-docs-joy/select/select.json b/docs/translations/api-docs-joy/select/select.json
+index b6d1fb6ad9f93d..b5e573a32585e9 100644
+--- a/docs/translations/api-docs-joy/select/select.json
++++ b/docs/translations/api-docs-joy/select/select.json
+@@ -50,6 +50,7 @@
+       "description": "If <code>true</code>, the Select cannot be empty when submitting form."
+     },
+     "size": { "description": "The size of the component." },
++    "slotProps": { "description": "The props used for each slot inside." },
+     "slots": { "description": "The components used for each slot inside." },
+     "startDecorator": { "description": "Leading adornment for the select." },
+     "sx": {
+diff --git a/packages-internal/scripts/typescript-to-proptypes/src/generatePropTypes.ts b/packages-internal/scripts/typescript-to-proptypes/src/generatePropTypes.ts
+index 24c1de55e75cf1..765e4fcb4964fe 100644
+--- a/packages-internal/scripts/typescript-to-proptypes/src/generatePropTypes.ts
++++ b/packages-internal/scripts/typescript-to-proptypes/src/generatePropTypes.ts
+@@ -34,6 +34,10 @@ export interface GeneratePropTypesOptions {
+    * Previous source code of the validator for each prop type
+    */
+   previousPropTypesSource?: Map<string, string>;
++  /**
++   * Previous JSDoc comment source for each prop type
++   */
++  previousPropTypesJsDoc?: Map<string, string>;
+   /**
+    * Given the `prop`, the `previous` source of the validator and the `generated` source:
+    * What source should be injected? `previous` is `undefined` if the validator
+@@ -108,6 +112,7 @@ export function generatePropTypes(
+     includeJSDoc = true,
+     sortProptypes = true,
+     previousPropTypesSource = new Map<string, string>(),
++    previousPropTypesJsDoc = new Map<string, string>(),
+     reconcilePropTypes = (_prop: PropTypeDefinition, _previous: string, generated: string) =>
+       generated,
+     shouldInclude,
+@@ -306,7 +311,13 @@ export function generatePropTypes(
+       })}${isRequired === true ? '.isRequired' : ''}`,
+     );
+ 
+-    return `${jsDoc(propTypeDefinition)}"${propTypeDefinition.name}": ${validatorSource},`;
++    const previousJsDoc = previousPropTypesJsDoc.get(propTypeDefinition.name);
++    const jsDocSource =
++      previousJsDoc !== undefined && validatorSource.includes('@typescript-to-proptypes-ignore')
++        ? `${previousJsDoc}\n`
++        : jsDoc(propTypeDefinition);
++
++    return `${jsDocSource}"${propTypeDefinition.name}": ${validatorSource},`;
+   }
+ 
+   const propTypes = component.types.slice();
+diff --git a/packages-internal/scripts/typescript-to-proptypes/src/getPropTypesFromFile.ts b/packages-internal/scripts/typescript-to-proptypes/src/getPropTypesFromFile.ts
+index cefb83f910b27a..8de521eac9c6c0 100644
+--- a/packages-internal/scripts/typescript-to-proptypes/src/getPropTypesFromFile.ts
++++ b/packages-internal/scripts/typescript-to-proptypes/src/getPropTypesFromFile.ts
+@@ -34,20 +34,52 @@ function getSymbolDocumentation({
+ }: {
+   symbol: ts.Symbol | undefined;
+   project: TypeScriptProject;
++  parentType?: ts.Type;
+ }): string | undefined {
+   if (symbol === undefined) {
+     return undefined;
+   }
+ 
+   const decl = symbol.getDeclarations();
+-  if (decl) {
+-    // @ts-ignore
+-    const comments = ts.getJSDocCommentsAndTags(decl[0]) as readonly any[];
+-    if (comments && comments.length === 1) {
+-      const commentNode = comments[0];
+-      if (ts.isJSDoc(commentNode)) {
+-        return doctrine.unwrapComment(commentNode.getText()).trim();
++  if (decl && decl.length > 0) {
++    // This behavior tries to replicate how TypeScript itself merges JSDoc comments
++    // It is a complex logic that changes based on the kind of declarations
++    // There is an open issue for it in: https://github.com/microsoft/TypeScript/issues/30901
++    //
++    // For intersection types (A & B), the symbol may have multiple declarations.
++    // We need to handle three cases:
++    // 1. Intersection (type C = A & B): merge JSDoc from all declarations (deduplicated)
++    // 2. Interface extends (interface Z extends X, Y): use the (only) declaration's JSDoc
++    // 3. Interface override (interface W extends X { prop }): use the override's JSDoc (which is the only declaration)
++    //
++    // Note: TypeScript gives us:
++    // - Multiple declarations for intersection types (one from each constituent type)
++    // - Single declaration for interface extends (from the original interface)
++    // - Single declaration for interface override (from the overriding interface)
++
++    // Get JSDoc comments paired with their declarations
++    const declarationsWithComments = decl
++      .map((d) => {
++        const jsDocNodes = ts.getJSDocCommentsAndTags(d).filter((node) => ts.isJSDoc(node));
++        const comment =
++          jsDocNodes.length > 0
++            ? doctrine.unwrapComment(jsDocNodes[0].getText()).trim()
++            : undefined;
++        return { declaration: d, comment };
++      })
++      .filter((item) => item.comment !== undefined);
++
++    if (declarationsWithComments.length > 0) {
++      // If there's only one declaration with a comment, use it
++      // This handles both interface extends and interface override cases
++      if (declarationsWithComments.length === 1) {
++        return declarationsWithComments[0].comment;
+       }
++
++      // Multiple declarations with comments - this is the intersection case (type C = A & B)
++      // Merge JSDoc comments, deduplicating identical ones
++      const uniqueComments = [...new Set(declarationsWithComments.map((d) => d.comment))];
++      return uniqueComments.join('\n');
+     }
+   }
+ 
+@@ -116,7 +148,7 @@ function checkType({
+     return createObjectType({ jsDoc: undefined });
+   }
+ 
+-  const typeNode = type as any;
++  const typeNode = type;
+   const symbol = typeNode.aliasSymbol ? typeNode.aliasSymbol : typeNode.symbol;
+   const jsDoc = getSymbolDocumentation({ symbol, project });
+ 
+@@ -396,16 +428,18 @@ function checkSymbol({
+   symbol,
+   location,
+   typeStack,
++  parentType,
+ }: {
+   project: PropTypesProject;
+   symbol: ts.Symbol;
+   location: ts.Node;
+   typeStack: readonly number[];
++  parentType?: ts.Type;
+ }): PropTypeDefinition {
+   const declarations = symbol.getDeclarations();
+   const declaration = declarations && declarations[0];
+   const symbolFilenames = getSymbolFileNames(symbol);
+-  const jsDoc = getSymbolDocumentation({ symbol, project });
++  const jsDoc = getSymbolDocumentation({ symbol, project, parentType });
+ 
+   // TypeChecker keeps the name for
+   // { a: React.ElementType, b: React.ReactElement | boolean }
+@@ -535,9 +569,9 @@ function squashPropTypeDefinitions({
+ }): PropTypeDefinition {
+   const distinctDefinitions = new Map<number, PropTypeDefinition>();
+   propTypeDefinitions.forEach((definition) => {
+-    if (!distinctDefinitions.has(definition.$$id)) {
+-      distinctDefinitions.set(definition.$$id, definition);
+-    }
++    // Always update so that the last definition's jsDoc wins
++    // This ensures that when types are intersected (A & B), the last type's documentation is used
++    distinctDefinitions.set(definition.$$id, definition);
+   });
+ 
+   if (distinctDefinitions.size === 1 && !onlyUsedInSomeSignatures) {
+@@ -550,16 +584,20 @@ function squashPropTypeDefinitions({
+     types.push(createUndefinedType({ jsDoc: undefined }));
+   }
+ 
++  // Use the last definition's jsDoc so that when types are intersected (A & B),
++  // the last type's documentation wins
++  const lastDefinition = definitions[definitions.length - 1];
++
+   return {
+-    name: definitions[0].name,
+-    jsDoc: definitions[0].jsDoc,
++    name: lastDefinition.name,
++    jsDoc: lastDefinition.jsDoc,
+     propType: createUnionType({
+       // TODO: jsDoc from squashing is dropped
+       jsDoc: undefined,
+       types,
+     }),
+     filenames: new Set(definitions.flatMap((definition) => Array.from(definition.filenames))),
+-    $$id: definitions[0].$$id,
++    $$id: lastDefinition.$$id,
+   };
+ }
+ 
+@@ -581,6 +619,7 @@ function generatePropTypesFromNode(
+         project: params.project,
+         location: parsedComponent.location,
+         typeStack: [(componentType as any).id],
++        parentType: componentType,
+       }),
+     );
+ 
+diff --git a/packages-internal/scripts/typescript-to-proptypes/src/injectPropTypesInFile.ts b/packages-internal/scripts/typescript-to-proptypes/src/injectPropTypesInFile.ts
+index e94f325e1ee76d..bac31951ed505f 100644
+--- a/packages-internal/scripts/typescript-to-proptypes/src/injectPropTypesInFile.ts
++++ b/packages-internal/scripts/typescript-to-proptypes/src/injectPropTypesInFile.ts
+@@ -174,6 +174,7 @@ function createBabelPlugin({
+   let alreadyImported = false;
+   const originalPropTypesPaths = new Map<string, babel.NodePath>();
+   const previousPropTypesSources = new Map<string, Map<string, string>>();
++  const previousPropTypesJsDocs = new Map<string, Map<string, string>>();
+ 
+   function injectPropTypes(injectOptions: {
+     path: babel.NodePath;
+@@ -185,11 +186,14 @@ function createBabelPlugin({
+ 
+     const previousPropTypesSource =
+       previousPropTypesSources.get(nodeName) || new Map<string, string>();
++    const previousPropTypesJsDoc =
++      previousPropTypesJsDocs.get(nodeName) || new Map<string, string>();
+ 
+     const source = generatePropTypes(props, {
+       ...otherOptions,
+       importedName: importName,
+       previousPropTypesSource,
++      previousPropTypesJsDoc,
+       reconcilePropTypes,
+       shouldInclude: (prop) => shouldInclude({ component: props, prop, usedProps }),
+     });
+@@ -269,6 +273,9 @@ function createBabelPlugin({
+               const previousPropTypesSource = new Map<string, string>();
+               previousPropTypesSources.set(componentName, previousPropTypesSource);
+ 
++              const previousPropTypesJsDoc = new Map<string, string>();
++              previousPropTypesJsDocs.set(componentName, previousPropTypesJsDoc);
++
+               let maybeObjectExpression = node.expression.right;
+               // Component.propTypes = {} as any;
+               //                       ^^^^^^^^^ expression.right
+@@ -286,15 +293,38 @@ function createBabelPlugin({
+                 maybeObjectExpression.properties.forEach((property) => {
+                   if (babelTypes.isObjectProperty(property)) {
+                     const validatorSource = code.slice(property.value.start, property.value.end);
++
++                    let propName: string | undefined;
+                     if (babelTypes.isIdentifier(property.key)) {
+-                      previousPropTypesSource.set(property.key.name, validatorSource);
++                      propName = property.key.name;
+                     } else if (babelTypes.isStringLiteral(property.key)) {
+-                      previousPropTypesSource.set(property.key.value, validatorSource);
++                      propName = property.key.value;
+                     } else {
+                       console.warn(
+                         `${state.filename}: Possibly missed original proTypes source. Can only determine names for 'Identifiers' and 'StringLiteral' but received '${property.key.type}'.`,
+                       );
+                     }
++
++                    if (propName !== undefined) {
++                      previousPropTypesSource.set(propName, validatorSource);
++
++                      const leadingComments = property.leadingComments;
++                      if (leadingComments) {
++                        const jsDocComment = leadingComments.find(
++                          (c) => c.type === 'CommentBlock' && c.value.startsWith('*'),
++                        );
++                        if (
++                          jsDocComment &&
++                          jsDocComment.start != null &&
++                          jsDocComment.end != null
++                        ) {
++                          previousPropTypesJsDoc.set(
++                            propName,
++                            code.slice(jsDocComment.start, jsDocComment.end),
++                          );
++                        }
++                      }
++                    }
+                   }
+                 });
+               }
+diff --git a/packages/api-docs-builder/ApiBuilders/ComponentApiBuilder.ts b/packages/api-docs-builder/ApiBuilders/ComponentApiBuilder.ts
+index 87e8a0cccfba69..7188b2610463ad 100644
+--- a/packages/api-docs-builder/ApiBuilders/ComponentApiBuilder.ts
++++ b/packages/api-docs-builder/ApiBuilders/ComponentApiBuilder.ts
+@@ -1,6 +1,5 @@
+ import { readFileSync, writeFileSync } from 'fs';
+ import path from 'path';
+-import * as astTypes from 'ast-types';
+ import * as babel from '@babel/core';
+ import traverse from '@babel/traverse';
+ import { kebabCase, escapeRegExp } from 'es-toolkit/string';
+@@ -518,7 +517,7 @@ const attachPropsTable = (
+   const propErrors: Array<[propName: string, error: Error]> = [];
+   type Pair = [string, ComponentReactApi['propsTable'][string]];
+   const componentProps: ComponentReactApi['propsTable'] = Object.fromEntries(
+-    Object.entries(reactApi.props!).map(([propName, propDescriptor]): Pair => {
++    Object.entries(reactApi.props!).flatMap(([propName, propDescriptor]): Pair[] => {
+       let prop: DescribeablePropDescriptor | null;
+       try {
+         prop = createDescribeableProp(propDescriptor, propName, settings);
+@@ -527,11 +526,10 @@ const attachPropsTable = (
+         prop = null;
+       }
+       if (prop === null) {
+-        // have to delete `componentProps.undefined` later
+-        return [] as any;
++        return [];
+       }
+ 
+-      const defaultValue = propDescriptor.jsdocDefaultValue?.value;
++      const defaultValue = (propDescriptor as any).jsdocDefaultValue?.value;
+ 
+       const {
+         signature: signatureType,
+@@ -539,12 +537,13 @@ const attachPropsTable = (
+         signatureReturn,
+         seeMore,
+       } = generatePropDescription(prop, propName);
+-      const propTypeDescription = generatePropTypeDescription(propDescriptor.type);
++      const propType = propDescriptor.type;
++      const propTypeDescription = propType ? generatePropTypeDescription(propType) : undefined;
+       const chainedPropType = getChained(prop.type);
+ 
+       const requiredProp =
+         prop.required ||
+-        prop.type.raw?.includes('.isRequired') ||
++        prop.type?.raw?.includes('.isRequired') ||
+         (chainedPropType !== false && chainedPropType.required);
+ 
+       const deprecation = (propDescriptor.description || '').match(/@deprecated(\s+(?<info>.*))?/);
+@@ -582,24 +581,30 @@ const attachPropsTable = (
+           returned: signatureReturn?.name,
+         };
+       }
++      // Skip props with unknown/undefined types
++      if (!propType?.name) {
++        return [];
++      }
++
+       return [
+-        propName,
+-        {
+-          type: {
+-            name: propDescriptor.type.name,
+-            description:
+-              propTypeDescription !== propDescriptor.type.name ? propTypeDescription : undefined,
++        [
++          propName,
++          {
++            type: {
++              name: propType.name,
++              description: propTypeDescription !== propType.name ? propTypeDescription : undefined,
++            },
++            default: defaultValue,
++            // undefined values are not serialized => saving some bytes
++            required: requiredProp || undefined,
++            deprecated: !!deprecation || undefined,
++            deprecationInfo: renderMarkdown(deprecation?.groups?.info || '').trim() || undefined,
++            signature,
++            additionalInfo:
++              Object.keys(additionalPropsInfo).length === 0 ? undefined : additionalPropsInfo,
++            seeMoreLink: seeMore?.link,
+           },
+-          default: defaultValue,
+-          // undefined values are not serialized => saving some bytes
+-          required: requiredProp || undefined,
+-          deprecated: !!deprecation || undefined,
+-          deprecationInfo: renderMarkdown(deprecation?.groups?.info || '').trim() || undefined,
+-          signature,
+-          additionalInfo:
+-            Object.keys(additionalPropsInfo).length === 0 ? undefined : additionalPropsInfo,
+-          seeMoreLink: seeMore?.link,
+-        },
++        ],
+       ];
+     }),
+   );
+@@ -613,9 +618,6 @@ const attachPropsTable = (
+     );
+   }
+ 
+-  // created by returning the `[]` entry
+-  delete componentProps.undefined;
+-
+   reactApi.propsTable = componentProps;
+ };
+ 
+@@ -663,7 +665,7 @@ const attachTable = (
+ ) => {
+   const errors: Array<[propName: string, error: Error]> = [];
+   const data: { [key: string]: ApiItemDescription } = params
+-    .map((p) => {
++    .flatMap((p) => {
+       const { name: propName, ...propDescriptor } = p;
+       let prop: Omit<ParsedProperty, 'name'> | null;
+       try {
+@@ -673,8 +675,7 @@ const attachTable = (
+         prop = null;
+       }
+       if (prop === null) {
+-        // have to delete `componentProps.undefined` later
+-        return [] as any;
++        return [];
+       }
+ 
+       const deprecationTag = propDescriptor.tags?.deprecated;
+@@ -687,13 +688,15 @@ const attachTable = (
+         type = type.replace(/{|}/g, '');
+       }
+ 
+-      return {
+-        name: propName,
+-        description: propDescriptor.description,
+-        type,
+-        deprecated: !!deprecation || undefined,
+-        deprecationInfo: renderMarkdown(deprecation || '').trim() || undefined,
+-      };
++      return [
++        {
++          name: propName,
++          description: propDescriptor.description,
++          type,
++          deprecated: !!deprecation || undefined,
++          deprecationInfo: renderMarkdown(deprecation || '').trim() || undefined,
++        },
++      ];
+     })
+     .reduce((acc, cssVarDefinition) => {
+       const { name, ...other } = cssVarDefinition;
+@@ -737,56 +740,68 @@ export default async function generateComponentApi(
+   const filename = componentInfo.filename;
+   let reactApi: ComponentReactApi;
+ 
++  const handlers = [...defaultHandlers, muiDefaultPropsHandler];
+   try {
+-    reactApi = docgenParse(src, null, defaultHandlers.concat(muiDefaultPropsHandler), {
++    const results = docgenParse(src, {
++      handlers,
+       filename,
+     });
++    reactApi = results[0] as ComponentReactApi;
+   } catch (error) {
+     // fallback to default logic if there is no `create*` definition.
+     if ((error as Error).message === 'No suitable component definition found.') {
+-      reactApi = docgenParse(
+-        src,
+-        (ast) => {
+-          let node;
+-          // TODO migrate to react-docgen v6, using Babel AST now
+-          astTypes.visit(ast, {
+-            visitFunctionDeclaration: (functionPath) => {
+-              // @ts-ignore
+-              if (functionPath.node.params[0].name === 'props') {
+-                node = functionPath;
+-              }
+-              return false;
+-            },
+-            visitVariableDeclaration: (variablePath) => {
+-              const definitions: any[] = [];
+-              if (variablePath.node.declarations) {
+-                variablePath
+-                  .get('declarations')
+-                  .each((declarator: any) => definitions.push(declarator.get('init')));
+-              }
+-              definitions.forEach((definition) => {
+-                // definition.value.expression is defined when the source is in TypeScript.
+-                const expression = definition.value?.expression
+-                  ? definition.get('expression')
+-                  : definition;
+-                if (expression.value?.callee) {
+-                  const definitionName = expression.value.callee.name;
+-                  if (definitionName === `create${componentInfo.name}`) {
+-                    node = expression;
++      const results = docgenParse(src, {
++        resolver: {
++          resolve(file) {
++            const foundPaths: any[] = [];
++            file.traverse({
++              FunctionDeclaration(funcPath) {
++                const params = funcPath.node.params;
++                if (
++                  params.length > 0 &&
++                  params[0].type === 'Identifier' &&
++                  params[0].name === 'props'
++                ) {
++                  foundPaths.push(funcPath);
++                }
++              },
++              VariableDeclaration(varPath) {
++                for (const declarator of varPath.node.declarations) {
++                  if (declarator.init) {
++                    let initNode = declarator.init;
++                    // Handle TSAsExpression wrapper
++                    if (initNode.type === 'TSAsExpression') {
++                      initNode = initNode.expression;
++                    }
++                    if (
++                      initNode.type === 'CallExpression' &&
++                      initNode.callee.type === 'Identifier' &&
++                      initNode.callee.name === `create${componentInfo.name}`
++                    ) {
++                      // Get the path to the init (call expression)
++                      const declarators = varPath.get('declarations');
++                      if (Array.isArray(declarators) && declarators.length > 0) {
++                        let initPath = declarators[0].get('init');
++                        if (!Array.isArray(initPath)) {
++                          // Unwrap TSAsExpression if present
++                          if (initPath.isTSAsExpression()) {
++                            initPath = initPath.get('expression') as typeof initPath;
++                          }
++                          foundPaths.push(initPath);
++                        }
++                      }
++                    }
+                   }
+                 }
+-              });
+-              return false;
+-            },
+-          });
+-
+-          return node;
+-        },
+-        defaultHandlers.concat(muiDefaultPropsHandler),
+-        {
+-          filename,
++              },
++            });
++            return foundPaths;
++          },
+         },
+-      );
++        handlers,
++        filename,
++      });
++      reactApi = results[0] as ComponentReactApi;
+     } else {
+       throw error;
+     }
+diff --git a/packages/api-docs-builder/ApiBuilders/HookApiBuilder.ts b/packages/api-docs-builder/ApiBuilders/HookApiBuilder.ts
+index e1d0a1bb3f900e..c0f2e741952554 100644
+--- a/packages/api-docs-builder/ApiBuilders/HookApiBuilder.ts
++++ b/packages/api-docs-builder/ApiBuilders/HookApiBuilder.ts
+@@ -1,6 +1,5 @@
+ import { readFileSync, writeFileSync } from 'fs';
+ import path from 'path';
+-import * as astTypes from 'ast-types';
+ import * as babel from '@babel/core';
+ import traverse from '@babel/traverse';
+ import { defaultHandlers, parse as docgenParse } from 'react-docgen';
+@@ -231,7 +230,7 @@ const attachTable = (
+ ) => {
+   const propErrors: Array<[propName: string, error: Error]> = [];
+   const parameters: HookReactApi[typeof tableName] = params
+-    .map((p) => {
++    .flatMap((p) => {
+       const { name: propName, ...propDescriptor } = p;
+       let prop: Omit<ParsedProperty, 'name'> | null;
+       try {
+@@ -242,7 +241,7 @@ const attachTable = (
+       }
+       if (prop === null) {
+         // have to delete `componentProps.undefined` later
+-        return [] as any;
++        return [];
+       }
+ 
+       const defaultTag = propDescriptor.tags?.default;
+@@ -251,23 +250,26 @@ const attachTable = (
+ 
+       const deprecation = (propDescriptor.description || '').match(/@deprecated(\s+(?<info>.*))?/);
+       const typeDescription = escapeEntities(propDescriptor.typeStr ?? '');
+-      return {
+-        [propName]: {
+-          type: {
+-            // The docgen generates this structure for the components. For consistency in the structure
+-            // we are adding the same value in both the name and the description
+-            name: typeDescription,
+-            description: typeDescription,
++      return [
++        {
++          [propName]: {
++            type: {
++              // The docgen generates this structure for the components. For consistency in the structure
++              // we are adding the same value in both the name and the description
++              name: typeDescription,
++              description: typeDescription,
++            },
++            default: defaultValue,
++            // undefined values are not serialized => saving some bytes
++            required: requiredProp || undefined,
++            deprecated: !!deprecation || undefined,
++            deprecationInfo: renderMarkdown(deprecation?.groups?.info || '').trim() || undefined,
+           },
+-          default: defaultValue,
+-          // undefined values are not serialized => saving some bytes
+-          required: requiredProp || undefined,
+-          deprecated: !!deprecation || undefined,
+-          deprecationInfo: renderMarkdown(deprecation?.groups?.info || '').trim() || undefined,
+         },
+-      };
++      ];
+     })
+-    .reduce((acc, curr) => ({ ...acc, ...curr }), {}) as unknown as HookReactApi['parametersTable'];
++    .reduce((acc, curr) => ({ ...acc, ...curr }), {});
++
+   if (propErrors.length > 0) {
+     throw new Error(
+       `There were errors creating prop descriptions:\n${propErrors
+@@ -278,9 +280,6 @@ const attachTable = (
+     );
+   }
+ 
+-  // created by returning the `[]` entry
+-  delete parameters.undefined;
+-
+   reactApi[tableName] = parameters;
+ };
+ 
+@@ -426,23 +425,24 @@ export default async function generateHookApi(
+     return null;
+   }
+ 
+-  const reactApi: HookReactApi = docgenParse(
+-    src,
+-    (ast) => {
+-      let node;
+-      astTypes.visit(ast, {
+-        visitFunctionDeclaration: (functionPath) => {
+-          if (functionPath.node?.id?.name === name) {
+-            node = functionPath;
+-          }
+-          return false;
+-        },
+-      });
+-      return node;
++  const results = docgenParse(src, {
++    resolver: {
++      resolve(file) {
++        const foundPaths: any[] = [];
++        file.traverse({
++          FunctionDeclaration(funcPath) {
++            if (funcPath.node.id?.name === name) {
++              foundPaths.push(funcPath);
++            }
++          },
++        });
++        return foundPaths;
++      },
+     },
+-    defaultHandlers,
+-    { filename },
+-  );
++    handlers: defaultHandlers,
++    filename,
++  });
++  const reactApi: HookReactApi = results[0] as HookReactApi;
+ 
+   const parameters = await extractInfoFromType(`${upperFirst(name)}Parameters`, project);
+   const returnValue = await extractInfoFromType(`${upperFirst(name)}ReturnValue`, project);
+diff --git a/packages/api-docs-builder/package.json b/packages/api-docs-builder/package.json
+index 34614856374e83..7926f281d53ab4 100644
+--- a/packages/api-docs-builder/package.json
++++ b/packages/api-docs-builder/package.json
+@@ -16,14 +16,14 @@
+     "@babel/core": "^7.29.0",
+     "@babel/preset-typescript": "^7.28.5",
+     "@babel/traverse": "^7.29.0",
++    "@babel/types": "^7.29.0",
+     "@mui/internal-docs-utils": "workspace:^",
+     "@mui/internal-markdown": "workspace:^",
+-    "ast-types": "^0.14.2",
+     "doctrine": "^3.0.0",
+     "es-toolkit": "^1.44.0",
+     "fast-glob": "^3.3.3",
+     "prettier": "^3.8.1",
+-    "react-docgen": "^5.4.3",
++    "react-docgen": "^8.0.2",
+     "recast": "^0.23.11",
+     "remark": "^15.0.1",
+     "typescript": "^5.9.3",
+@@ -36,7 +36,6 @@
+     "@types/doctrine": "0.0.9",
+     "@types/mdast": "4.0.4",
+     "@types/node": "20.19.33",
+-    "@types/react-docgen": "workspace:*",
+     "@types/sinon": "17.0.4",
+     "chai": "6.2.2",
+     "sinon": "21.0.1"
+diff --git a/packages/api-docs-builder/types/ApiBuilder.types.ts b/packages/api-docs-builder/types/ApiBuilder.types.ts
+index 16894303c6a3ce..894ecfd8593f4a 100644
+--- a/packages/api-docs-builder/types/ApiBuilder.types.ts
++++ b/packages/api-docs-builder/types/ApiBuilder.types.ts
+@@ -1,4 +1,4 @@
+-import { ReactDocgenApi } from 'react-docgen';
++import type { Documentation } from 'react-docgen';
+ import { JSDocTagInfo } from 'typescript';
+ import { ComponentInfo, Slot, HookInfo, SeeMore, ApiItemDescription } from './utils.types';
+ 
+@@ -14,7 +14,7 @@ export type AdditionalPropsInfo = {
+ /**
+  * Common interface for both Component and Hook API builders.
+  */
+-interface CommonReactApi extends ReactDocgenApi {
++interface CommonReactApi extends Documentation {
+   demos: ReturnType<HookInfo['getDemos']>;
+   EOL: string;
+   filename: string;
+diff --git a/packages/api-docs-builder/utils/createDescribeableProp.ts b/packages/api-docs-builder/utils/createDescribeableProp.ts
+index 4b7e887f2d79ec..9e33c07709a73d 100644
+--- a/packages/api-docs-builder/utils/createDescribeableProp.ts
++++ b/packages/api-docs-builder/utils/createDescribeableProp.ts
+@@ -1,5 +1,5 @@
+ import * as doctrine from 'doctrine';
+-import { PropDescriptor, PropTypeDescriptor } from 'react-docgen';
++import type { PropDescriptor, PropTypeDescriptor } from 'react-docgen';
+ 
+ export interface DescribeablePropDescriptor {
+   annotation: doctrine.Annotation;
+@@ -26,11 +26,12 @@ export default function createDescribeableProp(
+   propName: string,
+   settings: CreateDescribeablePropSettings = {},
+ ): DescribeablePropDescriptor | null {
+-  const { defaultValue, jsdocDefaultValue, description, required, type } = prop;
++  const { defaultValue, description, required, type } = prop;
++  const jsdocDefaultValue = (prop as any).jsdocDefaultValue as { value: string } | undefined;
+ 
+   const { propsWithoutDefaultVerification = [] } = settings;
+ 
+-  const renderedDefaultValue = defaultValue?.value.replace(/\r?\n/g, '');
++  const renderedDefaultValue = (defaultValue?.value as string | undefined)?.replace(/\r?\n/g, '');
+   const renderDefaultValue = Boolean(
+     renderedDefaultValue &&
+     // Ignore "large" default values that would break the table layout.
+@@ -86,6 +87,6 @@ export default function createDescribeableProp(
+     annotation,
+     defaultValue: renderDefaultValue ? renderedDefaultValue! : null,
+     required: Boolean(required),
+-    type,
++    type: type!,
+   };
+ }
+diff --git a/packages/api-docs-builder/utils/defaultPropsHandler.ts b/packages/api-docs-builder/utils/defaultPropsHandler.ts
+index 6836e85cb677ec..66901b2329d6ef 100644
+--- a/packages/api-docs-builder/utils/defaultPropsHandler.ts
++++ b/packages/api-docs-builder/utils/defaultPropsHandler.ts
+@@ -1,54 +1,123 @@
+-import { namedTypes as types } from 'ast-types';
++import type { NodePath } from '@babel/traverse';
++import * as t from '@babel/types';
+ import { parse as parseDoctrine, Annotation } from 'doctrine';
+-import { utils as docgenUtils, NodePath, Documentation, Importer, Handler } from 'react-docgen';
++import { utils, type Handler } from 'react-docgen';
+ 
+-const { getPropertyName, isReactForwardRefCall, printValue, resolveToValue } = docgenUtils;
++const { getPropertyName, isReactForwardRefCall, printValue, resolveToValue } = utils;
+ 
+ // based on https://github.com/reactjs/react-docgen/blob/735f39ef784312f4c0e740d4bfb812f0a7acd3d5/src/handlers/defaultPropsHandler.js#L1-L112
+ // adjusted for material-ui getThemedProps
+ 
+-function getDefaultValue(propertyPath: NodePath, importer: Importer) {
+-  if (!types.AssignmentPattern.check(propertyPath.get('value').node)) {
++function isImportedIdentifier(path: NodePath): boolean {
++  if (!path.isIdentifier()) {
++    return false;
++  }
++  const binding = path.scope.getBinding(path.node.name);
++  if (!binding) {
++    return false;
++  }
++  return (
++    binding.path.isImportSpecifier() ||
++    binding.path.isImportDefaultSpecifier() ||
++    binding.path.isImportNamespaceSpecifier()
++  );
++}
++
++function getMemberExpressionString(node: t.MemberExpression): string {
++  const parts: string[] = [];
++  let current: t.Expression = node;
++
++  while (t.isMemberExpression(current)) {
++    if (t.isIdentifier(current.property)) {
++      parts.unshift(current.property.name);
++    }
++    current = current.object;
++  }
++
++  if (t.isIdentifier(current)) {
++    parts.unshift(current.name);
++  }
++
++  return parts.join('.');
++}
++
++function isMemberExpressionWithImportedObject(path: NodePath): boolean {
++  if (!path.isMemberExpression()) {
++    return false;
++  }
++  const object = path.get('object');
++  if (Array.isArray(object)) {
++    return false;
++  }
++  // Check if the object (or root of nested member expression) is an imported identifier
++  let current = object;
++  while (current.isMemberExpression()) {
++    const innerObject = current.get('object');
++    if (Array.isArray(innerObject)) {
++      return false;
++    }
++    current = innerObject;
++  }
++  return isImportedIdentifier(current);
++}
++
++function getDefaultValue(propertyPath: NodePath) {
++  const valueNode = propertyPath.get('value');
++  if (!Array.isArray(valueNode) && !valueNode.isAssignmentPattern()) {
+     return null;
+   }
+ 
+-  let path: NodePath = propertyPath.get('value', 'right');
++  if (Array.isArray(valueNode)) {
++    return null;
++  }
++
++  let path: NodePath = valueNode.get('right') as NodePath;
+   let node = path.node;
+ 
+   let defaultValue: string | undefined;
+-  if (types.Literal.check(path.node)) {
+-    // @ts-expect-error TODO upstream fix
+-    defaultValue = node.raw;
++  if (path.isLiteral() && 'raw' in path.node) {
++    defaultValue = path.node.raw as string | undefined;
+   } else {
+-    if (types.AssignmentPattern.check(path.node)) {
+-      path = resolveToValue(path.get('right'), importer);
++    // Check if the original value is an identifier that refers to an import
++    // In that case, use just the identifier name instead of resolving
++    const originalPath = path.isAssignmentPattern() ? (path.get('right') as NodePath) : path;
++
++    if (isImportedIdentifier(originalPath)) {
++      defaultValue = (originalPath.node as t.Identifier).name;
++    } else if (isMemberExpressionWithImportedObject(originalPath)) {
++      // For member expressions like `duration.standard`, preserve the original expression
++      defaultValue = getMemberExpressionString(originalPath.node as t.MemberExpression);
+     } else {
+-      path = resolveToValue(path, importer);
+-    }
+-    if (types.ImportDeclaration.check(path.node)) {
+-      if (types.TSAsExpression.check(node)) {
+-        node = node.expression;
++      // For non-imports and non-member expressions, resolve and print the value
++      if (path.isAssignmentPattern()) {
++        path = resolveToValue(path.get('right') as NodePath);
++      } else {
++        path = resolveToValue(path);
+       }
+-      if (!types.Identifier.check(node)) {
+-        const locationHint =
+-          node.loc != null ? `${node.loc.start.line}:${node.loc.start.column}` : 'unknown location';
+-        throw new TypeError(
+-          `Unable to follow data flow. Expected an 'Identifier' resolve to an 'ImportDeclaration'. Instead attempted to resolve a '${node.type}' at ${locationHint}.`,
+-        );
++      // Double-check if resolved to an import specifier (v6+ behavior)
++      if (
++        path.isImportSpecifier() ||
++        path.isImportDefaultSpecifier() ||
++        path.isImportNamespaceSpecifier()
++      ) {
++        // Get the local name from the original identifier
++        if (t.isTSAsExpression(node)) {
++          node = node.expression;
++        }
++        if (t.isIdentifier(node)) {
++          defaultValue = node.name;
++        }
++      }
++      if (defaultValue === undefined) {
++        node = path.node;
++        defaultValue = printValue(path);
+       }
+-      defaultValue = node.name;
+-    } else {
+-      node = path.node;
+-      defaultValue = printValue(path);
+     }
+   }
+   if (defaultValue !== undefined) {
+     return {
+       value: defaultValue,
+-      computed:
+-        types.CallExpression.check(node) ||
+-        types.MemberExpression.check(node) ||
+-        types.Identifier.check(node),
++      computed: t.isCallExpression(node) || t.isMemberExpression(node) || t.isIdentifier(node),
+     };
+   }
+ 
+@@ -63,45 +132,25 @@ function getJsdocDefaultValue(jsdoc: Annotation): { value: string } | undefined
+   return { value: defaultTag.description || '' };
+ }
+ 
+-function getDefaultValuesFromProps(
+-  properties: NodePath,
+-  documentation: Documentation,
+-  importer: Importer,
+-) {
+-  const { props: documentedProps } = documentation.toObject();
++function getDefaultValuesFromProps(properties: NodePath, documentedProps: Record<string, any>) {
+   const implementedProps: Record<string, NodePath> = {};
+-  properties
+-    .filter((propertyPath: NodePath) => types.Property.check(propertyPath.node), undefined)
+-    .forEach((propertyPath: NodePath) => {
+-      const propName = getPropertyName(propertyPath);
+-      if (propName) {
+-        implementedProps[propName] = propertyPath;
++
++  if (properties.isObjectPattern()) {
++    properties.get('properties').forEach((propertyPath) => {
++      if (propertyPath.isObjectProperty()) {
++        const propName = getPropertyName(propertyPath);
++        if (propName) {
++          implementedProps[propName] = propertyPath;
++        }
+       }
+     });
++  }
+ 
+-  // Sometimes we list props in .propTypes even though they're implemented by another component
+-  // These props are spread so they won't appear in the component implementation.
+-  Object.entries(documentedProps || []).forEach(([propName, propDescriptor]) => {
+-    if (propDescriptor.description === undefined) {
+-      // private props have no propsType validator and therefore
+-      // not description.
+-      // They are either not subject to eslint react/prop-types
+-      // or are and then we catch these issues during linting.
+-      return;
+-    }
+-
+-    const jsdocDefaultValue = getJsdocDefaultValue(
+-      parseDoctrine(propDescriptor.description, {
+-        sloppy: true,
+-      }),
+-    );
+-    if (jsdocDefaultValue) {
+-      propDescriptor.jsdocDefaultValue = jsdocDefaultValue;
+-    }
+-
++  // Extract runtime default values from the destructuring pattern
++  Object.entries(documentedProps || []).forEach(([propName, propDescriptor]: [string, any]) => {
+     const propertyPath = implementedProps[propName];
+     if (propertyPath !== undefined) {
+-      const defaultValue = getDefaultValue(propertyPath, importer);
++      const defaultValue = getDefaultValue(propertyPath);
+       if (defaultValue) {
+         propDescriptor.defaultValue = defaultValue;
+       }
+@@ -109,12 +158,32 @@ function getDefaultValuesFromProps(
+   });
+ }
+ 
+-function getRenderBody(componentDefinition: NodePath, importer: Importer): NodePath {
+-  const value = resolveToValue(componentDefinition, importer);
+-  if (isReactForwardRefCall(value, importer)) {
+-    return value.get('arguments', 0, 'body', 'body');
++function getRenderBody(componentDefinition: NodePath): NodePath | null {
++  const value = resolveToValue(componentDefinition);
++  if (isReactForwardRefCall(value)) {
++    const args = value.get('arguments');
++    if (Array.isArray(args) && args.length > 0) {
++      const firstArg = args[0];
++      if (firstArg.isArrowFunctionExpression() || firstArg.isFunctionExpression()) {
++        const body = firstArg.get('body');
++        if (!Array.isArray(body) && body.isBlockStatement()) {
++          return body.get('body') as unknown as NodePath;
++        }
++      }
++    }
++    return null;
+   }
+-  return value.get('body', 'body');
++  if (
++    componentDefinition.isArrowFunctionExpression() ||
++    componentDefinition.isFunctionExpression() ||
++    componentDefinition.isFunctionDeclaration()
++  ) {
++    const body = componentDefinition.get('body');
++    if (!Array.isArray(body) && body.isBlockStatement()) {
++      return body.get('body') as unknown as NodePath;
++    }
++  }
++  return null;
+ }
+ 
+ /**
+@@ -125,37 +194,55 @@ function getRenderBody(componentDefinition: NodePath, importer: Importer): NodeP
+  *   const { className, ...other } = props;
+  * })
+  */
+-function getExplicitPropsDeclaration(
+-  componentDefinition: NodePath,
+-  importer: Importer,
+-): NodePath | undefined {
+-  const functionNode = getRenderBody(componentDefinition, importer);
++function getExplicitPropsDeclaration(componentDefinition: NodePath): NodePath | undefined {
++  const functionNode = getRenderBody(componentDefinition);
+ 
+   // No function body available to inspect.
+-  if (!functionNode.value) {
++  if (!functionNode) {
+     return undefined;
+   }
+ 
+   let propsPath: NodePath | undefined;
+-  // visitVariableDeclarator, can't use visit body.node since it looses scope information
+-  functionNode
+-    .filter((path: NodePath) => {
+-      return types.VariableDeclaration.check(path.node);
+-    }, undefined)
+-    .forEach((path: NodePath) => {
+-      const declaratorPath = path.get('declarations', 0);
+-      // find `const {} = props`
+-      // but not `const ownerState = props`
+-      if (
+-        declaratorPath.get('init', 'name').value === 'props' &&
+-        declaratorPath.get('id', 'type').value === 'ObjectPattern'
+-      ) {
+-        propsPath = declaratorPath.get('id');
++
++  // Check if functionNode is iterable (array of statements)
++  // eslint-disable-next-line no-nested-ternary
++  const statements = Array.isArray(functionNode)
++    ? functionNode
++    : functionNode.node
++      ? [functionNode]
++      : [];
++
++  for (const path of statements) {
++    if (path.isVariableDeclaration && path.isVariableDeclaration()) {
++      const declarations = path.get('declarations');
++      if (Array.isArray(declarations) && declarations.length > 0) {
++        const declaratorPath = declarations[0];
++        const init = declaratorPath.get('init');
++        const id = declaratorPath.get('id');
++
++        // find `const {} = props`
++        // but not `const ownerState = props`
++        if (
++          !Array.isArray(init) &&
++          init.isIdentifier() &&
++          init.node.name === 'props' &&
++          !Array.isArray(id) &&
++          id.isObjectPattern()
++        ) {
++          propsPath = id;
++          break;
++        }
+       }
+-    });
++    }
++  }
+ 
+   if (!propsPath) {
+-    console.error(`${functionNode.parent.value.id.name}: could not find props declaration to generate jsdoc table. The component declaration should be in this format:
++    // Try to get component name for error message
++    let componentName = 'Unknown';
++    if (componentDefinition.isFunctionDeclaration() && componentDefinition.node.id) {
++      componentName = componentDefinition.node.id.name;
++    }
++    console.error(`${componentName}: could not find props declaration to generate jsdoc table. The component declaration should be in this format:
+ 
+   function Component(props: ComponentProps) {
+     const { ...spreadAsUsual } = props;
+@@ -167,10 +254,32 @@ function getExplicitPropsDeclaration(
+   return propsPath;
+ }
+ 
+-const defaultPropsHandler: Handler = (documentation, componentDefinition, importer) => {
+-  const props = getExplicitPropsDeclaration(componentDefinition, importer);
++const defaultPropsHandler: Handler = (documentation, componentDefinition) => {
++  const props = getExplicitPropsDeclaration(componentDefinition);
++
++  // Get documented props from the documentation builder
++  const docObject = documentation.build();
++  const documentedProps = docObject.props || {};
++
++  // Always extract jsdocDefaultValue from prop descriptions
++  Object.entries(documentedProps).forEach(([, propDescriptor]: [string, any]) => {
++    if (propDescriptor.description === undefined) {
++      return;
++    }
++    const jsdocDefaultValue = getJsdocDefaultValue(
++      parseDoctrine(propDescriptor.description, {
++        sloppy: true,
++      }),
++    );
++    if (jsdocDefaultValue) {
++      propDescriptor.jsdocDefaultValue = jsdocDefaultValue;
++    }
++  });
+ 
+-  getDefaultValuesFromProps(props?.get('properties') ?? [], documentation, importer);
++  // Extract runtime default values if we can find the props declaration
++  if (props && props.isObjectPattern()) {
++    getDefaultValuesFromProps(props, documentedProps);
++  }
+ };
+ 
+ export default defaultPropsHandler;
+diff --git a/packages/api-docs-builder/utils/generateApiTranslation.ts b/packages/api-docs-builder/utils/generateApiTranslation.ts
+index bf09225d628fce..65d3f2f2ffe242 100644
+--- a/packages/api-docs-builder/utils/generateApiTranslation.ts
++++ b/packages/api-docs-builder/utils/generateApiTranslation.ts
+@@ -4,6 +4,48 @@ import { kebabCase } from 'es-toolkit/string';
+ import { writePrettifiedFile } from '../buildApiUtils';
+ import { HooksTranslations, PropsTranslations } from '../types/ApiBuilder.types';
+ 
++/**
++ * Sorts object keys, does not recurse).
++ */
++function sortObjectKeys<T extends Record<string, unknown>>(obj: T | undefined): T | undefined {
++  if (!obj) {
++    return obj;
++  }
++  const sortedKeys = Object.keys(obj).sort((a, b) => {
++    return a.toLowerCase().localeCompare(b.toLowerCase());
++  });
++  const result: Record<string, unknown> = {};
++  for (const key of sortedKeys) {
++    result[key] = obj[key];
++  }
++  return result as T;
++}
++
++/**
++ * Sorts the description keys inside translations to ensure consistent JSON output ordering.
++ */
++function sortTranslationDescriptions(
++  translations: PropsTranslations | HooksTranslations,
++): PropsTranslations | HooksTranslations {
++  if ('propDescriptions' in translations) {
++    // PropsTranslations
++    return {
++      ...translations,
++      propDescriptions: sortObjectKeys(translations.propDescriptions) ?? {},
++      classDescriptions: sortObjectKeys(translations.classDescriptions) ?? {},
++      slotDescriptions: sortObjectKeys(translations.slotDescriptions),
++      cssVariablesDescriptions: sortObjectKeys(translations.cssVariablesDescriptions),
++      dataAttributesDescriptions: sortObjectKeys(translations.dataAttributesDescriptions),
++    };
++  }
++  // HooksTranslations
++  return {
++    ...translations,
++    parametersDescriptions: sortObjectKeys(translations.parametersDescriptions) ?? {},
++    returnValueDescriptions: sortObjectKeys(translations.returnValueDescriptions) ?? {},
++  };
++}
++
+ interface MinimalReactAPI {
+   name: string;
+   apiDocsTranslationFolder?: string;
+@@ -31,9 +73,11 @@ export default async function generateApiTranslations<ReactApi extends MinimalRe
+   });
+   reactApi.apiDocsTranslationFolder = apiDocsTranslationPath;
+ 
++  const sortedTranslations = sortTranslationDescriptions(reactApi.translations);
++
+   await writePrettifiedFile(
+     resolveApiDocsTranslationsComponentLanguagePath('en'),
+-    JSON.stringify(reactApi.translations),
++    JSON.stringify(sortedTranslations),
+   );
+ 
+   await Promise.all(
+@@ -42,7 +86,7 @@ export default async function generateApiTranslations<ReactApi extends MinimalRe
+         try {
+           await writePrettifiedFile(
+             resolveApiDocsTranslationsComponentLanguagePath(language),
+-            JSON.stringify(reactApi.translations),
++            JSON.stringify(sortedTranslations),
+             undefined,
+             { flag: 'wx' },
+           );
+diff --git a/packages/api-docs-builder/utils/generatePropDescription.ts b/packages/api-docs-builder/utils/generatePropDescription.ts
+index f3e7455535ab08..99bdcdb5b13d66 100644
+--- a/packages/api-docs-builder/utils/generatePropDescription.ts
++++ b/packages/api-docs-builder/utils/generatePropDescription.ts
+@@ -1,6 +1,6 @@
+ import * as doctrine from 'doctrine';
+ import * as recast from 'recast';
+-import { PropTypeDescriptor } from 'react-docgen';
++import type { PropTypeDescriptor } from 'react-docgen';
+ import { escapeCell, removeNewLines } from '../buildApi';
+ import {
+   isElementTypeAcceptingRefProp,
+@@ -57,6 +57,9 @@ function resolveType(type: NonNullable<doctrine.Tag['type']>): string {
+ }
+ 
+ function getDeprecatedInfo(type: PropTypeDescriptor) {
++  if (!type.raw) {
++    return false;
++  }
+   const marker = /deprecatedPropType\((\r*\n)*\s*PropTypes\./g;
+   const match = type.raw.match(marker);
+   const startIndex = type.raw.search(marker);
+@@ -99,7 +102,7 @@ export default function generatePropDescription(
+   const type = prop.type;
+   let deprecated = '';
+ 
+-  if (type.name === 'custom') {
++  if (type?.name === 'custom') {
+     const deprecatedInfo = getDeprecatedInfo(type);
+     if (deprecatedInfo) {
+       deprecated = `*Deprecated*. ${deprecatedInfo.explanation}<br><br>`;
+@@ -144,7 +147,7 @@ export default function generatePropDescription(
+       return { key, description };
+     })
+     .filter(Boolean) as PropTemplateDescriptor[];
+-  if (type.name === 'func' && (parsedArgs.length > 0 || parsedReturns !== undefined)) {
++  if (type?.name === 'func' && (parsedArgs.length > 0 || parsedReturns !== undefined)) {
+     parsedReturns = parsedReturns ?? { type: { type: 'VoidLiteral' } };
+ 
+     // Remove new lines from tag descriptions to avoid markdown errors.
+diff --git a/packages/api-docs-builder/utils/generatePropTypeDescription.ts b/packages/api-docs-builder/utils/generatePropTypeDescription.ts
+index 0728176ba4577f..2655b59216baf6 100644
+--- a/packages/api-docs-builder/utils/generatePropTypeDescription.ts
++++ b/packages/api-docs-builder/utils/generatePropTypeDescription.ts
+@@ -1,8 +1,11 @@
+ import * as recast from 'recast';
+-import { parse as docgenParse, PropTypeDescriptor } from 'react-docgen';
++import { parse as docgenParse, type PropTypeDescriptor } from 'react-docgen';
+ import { escapeCell, escapeEntities, joinUnionTypes } from '../buildApi';
+ 
+-function getDeprecatedInfo(type: PropTypeDescriptor) {
++function getDeprecatedInfo(type: PropTypeDescriptor | undefined) {
++  if (!type?.raw) {
++    return false;
++  }
+   const marker = /deprecatedPropType\((\r*\n)*\s*PropTypes\./g;
+   const match = type.raw.match(marker);
+   const startIndex = type.raw.search(marker);
+@@ -18,13 +21,13 @@ function getDeprecatedInfo(type: PropTypeDescriptor) {
+   return false;
+ }
+ 
+-export function getChained(type: PropTypeDescriptor) {
+-  if (type.raw) {
++export function getChained(type: PropTypeDescriptor | undefined) {
++  if (type?.raw) {
+     const marker = 'chainPropTypes';
+     const indexStart = type.raw.indexOf(marker);
+ 
+     if (indexStart !== -1) {
+-      const parsed = docgenParse(
++      const results = docgenParse(
+         `
+         import PropTypes from 'prop-types';
+         const Foo = () => <div />
+@@ -33,14 +36,13 @@ export function getChained(type: PropTypeDescriptor) {
+         }
+         export default Foo
+       `,
+-        null,
+-        null,
+         // helps react-docgen pickup babel.config.js
+         { filename: './' },
+       );
++      const parsed = results[0];
+       return {
+-        type: parsed.props.bar.type,
+-        required: parsed.props.bar.required,
++        type: parsed.props?.bar?.type,
++        required: parsed.props?.bar?.required,
+       };
+     }
+   }
+@@ -48,23 +50,28 @@ export function getChained(type: PropTypeDescriptor) {
+   return false;
+ }
+ 
+-export function isElementTypeAcceptingRefProp(type: PropTypeDescriptor): boolean {
+-  return type.raw === 'elementTypeAcceptingRef';
++export function isElementTypeAcceptingRefProp(type: PropTypeDescriptor | undefined): boolean {
++  return type?.raw === 'elementTypeAcceptingRef';
+ }
+ 
+-function isRefType(type: PropTypeDescriptor): boolean {
+-  return type.raw === 'refType';
++function isRefType(type: PropTypeDescriptor | undefined): boolean {
++  return type?.raw === 'refType';
+ }
+ 
+-function isIntegerType(type: PropTypeDescriptor): boolean {
+-  return type.raw.startsWith('integerPropType');
++function isIntegerType(type: PropTypeDescriptor | undefined): boolean {
++  return type?.raw?.startsWith('integerPropType') ?? false;
+ }
+ 
+-export function isElementAcceptingRefProp(type: PropTypeDescriptor): boolean {
+-  return /^elementAcceptingRef/.test(type.raw);
++export function isElementAcceptingRefProp(type: PropTypeDescriptor | undefined): boolean {
++  return type?.raw ? /^elementAcceptingRef/.test(type.raw) : false;
+ }
+ 
+-export default function generatePropTypeDescription(type: PropTypeDescriptor): string | undefined {
++export default function generatePropTypeDescription(
++  type: PropTypeDescriptor | undefined,
++): string | undefined {
++  if (!type) {
++    return undefined;
++  }
+   switch (type.name) {
+     case 'custom': {
+       if (isElementTypeAcceptingRefProp(type)) {
+@@ -91,49 +98,57 @@ export default function generatePropTypeDescription(type: PropTypeDescriptor): s
+         return generatePropTypeDescription({
+           // eslint-disable-next-line react/forbid-foreign-prop-types
+           name: deprecatedInfo.propTypes,
+-        } as any);
++        } as PropTypeDescriptor);
+       }
+ 
+       const chained = getChained(type);
+-      if (chained !== false) {
++      if (chained !== false && chained.type) {
+         return generatePropTypeDescription(chained.type);
+       }
+ 
+       return type.raw;
+     }
+ 
+-    case 'shape':
+-      return `{ ${Object.keys(type.value)
++    case 'shape': {
++      const shapeValue = type.value as Record<string, PropTypeDescriptor>;
++      return `{ ${Object.keys(shapeValue)
+         .map((subValue) => {
+-          const subType = type.value[subValue];
++          const subType = shapeValue[subValue];
+           return `${subValue}${subType.required ? '' : '?'}: ${generatePropTypeDescription(
+             subType,
+           )}`;
+         })
+         .join(', ')} }`;
++    }
+ 
+-    case 'union':
++    case 'union': {
++      const unionValue = type.value as PropTypeDescriptor[];
+       return joinUnionTypes(
+-        type.value.map((type2) => {
++        unionValue.map((type2) => {
+           return generatePropTypeDescription(type2) ?? '';
+         }),
+       );
+-    case 'enum':
++    }
++    case 'enum': {
++      const enumValue = type.value as Array<{ value: string; computed?: boolean }>;
+       return joinUnionTypes(
+-        type.value.map((type2) => {
++        enumValue.map((type2) => {
+           return escapeCell(type2.value);
+         }),
+       );
++    }
+ 
+     case 'arrayOf': {
+-      return `Array${escapeEntities('<')}${generatePropTypeDescription(type.value)}${escapeEntities('>')}`;
++      const arrayValue = type.value as PropTypeDescriptor;
++      return `Array${escapeEntities('<')}${generatePropTypeDescription(arrayValue)}${escapeEntities('>')}`;
+     }
+ 
+     case 'instanceOf': {
+-      if (type.value.startsWith('typeof')) {
+-        return /typeof (.*) ===/.exec(type.value)![1];
++      const instanceValue = type.value as string;
++      if (instanceValue.startsWith('typeof')) {
++        return /typeof (.*) ===/.exec(instanceValue)![1];
+       }
+-      return type.value;
++      return instanceValue;
+     }
+ 
+     default:
+diff --git a/packages/mui-joy/src/Autocomplete/AutocompleteProps.ts b/packages/mui-joy/src/Autocomplete/AutocompleteProps.ts
+index fad93279250cb8..d86067b6d08c6b 100644
+--- a/packages/mui-joy/src/Autocomplete/AutocompleteProps.ts
++++ b/packages/mui-joy/src/Autocomplete/AutocompleteProps.ts
+@@ -286,11 +286,6 @@ type AutocompleteOwnProps<
+      * @default <ArrowDropDownIcon />
+      */
+     popupIcon?: React.ReactNode;
+-    /**
+-     * If `true`, the component becomes read-only. It is also supported in multiple tags where the tag cannot be deleted.
+-     * @default false
+-     */
+-    readOnly?: boolean;
+     /**
+      * Render the group.
+      *
+diff --git a/packages/mui-joy/src/AvatarGroup/AvatarGroup.tsx b/packages/mui-joy/src/AvatarGroup/AvatarGroup.tsx
+index b3b8138b8b331d..ee27e164db8537 100644
+--- a/packages/mui-joy/src/AvatarGroup/AvatarGroup.tsx
++++ b/packages/mui-joy/src/AvatarGroup/AvatarGroup.tsx
+@@ -118,7 +118,8 @@ AvatarGroup.propTypes /* remove-proptypes */ = {
+    */
+   className: PropTypes.string,
+   /**
+-   * The color of the component. It supports those theme colors that make sense for this component.
++   * The color context for the avatar children.
++   * It has no effect on the AvatarGroup.
+    * @default 'neutral'
+    */
+   color: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
+@@ -131,8 +132,7 @@ AvatarGroup.propTypes /* remove-proptypes */ = {
+    */
+   component: PropTypes.elementType,
+   /**
+-   * The size of the component.
+-   * It accepts theme values between 'sm' and 'lg'.
++   * The size of the component and the avatar children.
+    * @default 'md'
+    */
+   size: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
+diff --git a/packages/mui-joy/src/AvatarGroup/AvatarGroupProps.ts b/packages/mui-joy/src/AvatarGroup/AvatarGroupProps.ts
+index a725ca2f898e5e..238d59bb0209b6 100644
+--- a/packages/mui-joy/src/AvatarGroup/AvatarGroupProps.ts
++++ b/packages/mui-joy/src/AvatarGroup/AvatarGroupProps.ts
+@@ -22,35 +22,34 @@ export type AvatarGroupSlotsAndSlotProps = CreateSlotsAndSlotProps<
+ >;
+ 
+ export interface AvatarGroupTypeMap<P = {}, D extends React.ElementType = 'div'> {
+-  props: P &
+-    Pick<AvatarProps, 'color' | 'size' | 'variant'> & {
+-      /**
+-       * The color context for the avatar children.
+-       * It has no effect on the AvatarGroup.
+-       * @default 'neutral'
+-       */
+-      color?: AvatarProps['color'];
+-      /**
+-       * Used to render icon or text elements inside the AvatarGroup if `src` is not set.
+-       * This can be an element, or just a string.
+-       */
+-      children?: React.ReactNode;
+-      /**
+-       * The size of the component and the avatar children.
+-       * @default 'md'
+-       */
+-      size?: AvatarProps['size'];
+-      /**
+-       * The system prop that allows defining system overrides as well as additional CSS styles.
+-       */
+-      sx?: SxProps;
+-      /**
+-       * The variant context for the avatar children.
+-       * It has no effect on the AvatarGroup.
+-       * @default 'soft'
+-       */
+-      variant?: AvatarProps['variant'];
+-    } & AvatarGroupSlotsAndSlotProps;
++  props: P & {
++    /**
++     * The color context for the avatar children.
++     * It has no effect on the AvatarGroup.
++     * @default 'neutral'
++     */
++    color?: AvatarProps['color'];
++    /**
++     * Used to render icon or text elements inside the AvatarGroup if `src` is not set.
++     * This can be an element, or just a string.
++     */
++    children?: React.ReactNode;
++    /**
++     * The size of the component and the avatar children.
++     * @default 'md'
++     */
++    size?: AvatarProps['size'];
++    /**
++     * The system prop that allows defining system overrides as well as additional CSS styles.
++     */
++    sx?: SxProps;
++    /**
++     * The variant context for the avatar children.
++     * It has no effect on the AvatarGroup.
++     * @default 'soft'
++     */
++    variant?: AvatarProps['variant'];
++  } & AvatarGroupSlotsAndSlotProps;
+   defaultComponent: D;
+ }
+ 
+diff --git a/packages/mui-joy/src/Menu/MenuProps.ts b/packages/mui-joy/src/Menu/MenuProps.ts
+index 99549a7b9291bd..bd7d5f5ab0ad4e 100644
+--- a/packages/mui-joy/src/Menu/MenuProps.ts
++++ b/packages/mui-joy/src/Menu/MenuProps.ts
+@@ -78,7 +78,7 @@ export interface MenuTypeMap<P = {}, D extends React.ElementType = 'ul'> {
+      */
+     variant?: OverridableStringUnion<VariantProp, MenuPropsVariantOverrides>;
+   } & MenuSlotsAndSlotProps &
+-    Omit<PopperProps, 'children' | 'open'>;
++    Omit<PopperProps, 'children' | 'open' | 'slots' | 'slotProps'>;
+   defaultComponent: D;
+ }
+ 
+diff --git a/packages/mui-joy/src/RadioGroup/RadioGroup.tsx b/packages/mui-joy/src/RadioGroup/RadioGroup.tsx
+index f018bb66208727..cb07d4a7b840eb 100644
+--- a/packages/mui-joy/src/RadioGroup/RadioGroup.tsx
++++ b/packages/mui-joy/src/RadioGroup/RadioGroup.tsx
+@@ -199,7 +199,7 @@ RadioGroup.propTypes /* remove-proptypes */ = {
+     PropTypes.string,
+   ]),
+   /**
+-   * The component used for the root node.
++   * The component used for the Root slot.
+    * Either a string to use a HTML element or a component.
+    */
+   component: PropTypes.elementType,
+diff --git a/packages/mui-joy/src/Select/Select.tsx b/packages/mui-joy/src/Select/Select.tsx
+index ee1a80fe58ac36..71f3e11132cc70 100644
+--- a/packages/mui-joy/src/Select/Select.tsx
++++ b/packages/mui-joy/src/Select/Select.tsx
+@@ -724,6 +724,8 @@ Select.propTypes /* remove-proptypes */ = {
+   /**
+    * If `true`, selecting multiple values is allowed.
+    * This affects the type of the `value`, `defaultValue`, and `onChange` props.
++   *
++   * @default false
+    */
+   multiple: PropTypes.bool,
+   /**
+diff --git a/packages/mui-material/src/AccordionSummary/AccordionSummary.d.ts b/packages/mui-material/src/AccordionSummary/AccordionSummary.d.ts
+index 64488f50c2f61f..eea853d93ec1a2 100644
+--- a/packages/mui-material/src/AccordionSummary/AccordionSummary.d.ts
++++ b/packages/mui-material/src/AccordionSummary/AccordionSummary.d.ts
+@@ -62,7 +62,6 @@ export type AccordionSummarySlotsAndSlotProps = CreateSlotsAndSlotProps<
+ >;
+ 
+ export interface AccordionSummaryOwnProps extends AccordionSummarySlotsAndSlotProps {
+-  children?: React.ReactNode;
+   /**
+    * Override or extend the styles applied to the component.
+    */
+diff --git a/packages/mui-material/src/ButtonBase/ButtonBase.d.ts b/packages/mui-material/src/ButtonBase/ButtonBase.d.ts
+index ff8832bf9b67fd..664840e45c207b 100644
+--- a/packages/mui-material/src/ButtonBase/ButtonBase.d.ts
++++ b/packages/mui-material/src/ButtonBase/ButtonBase.d.ts
+@@ -101,7 +101,7 @@ export interface ButtonBaseTypeMap<
+  * can make extension quite tricky
+  */
+ export interface ExtendButtonBaseTypeMap<TypeMap extends OverridableTypeMap> {
+-  props: TypeMap['props'] & Omit<ButtonBaseTypeMap['props'], 'classes'>;
++  props: TypeMap['props'] & Omit<ButtonBaseTypeMap['props'], 'classes' | keyof TypeMap['props']>;
+   defaultComponent: TypeMap['defaultComponent'];
+ }
+ 
+diff --git a/packages/mui-material/src/List/List.d.ts b/packages/mui-material/src/List/List.d.ts
+index 7f838383d1ddb7..74e6d9001528fe 100644
+--- a/packages/mui-material/src/List/List.d.ts
++++ b/packages/mui-material/src/List/List.d.ts
+@@ -44,7 +44,7 @@ export interface ListTypeMap<AdditionalProps = {}, RootComponent extends React.E
+  * utility to create component types that inherit props from List.
+  */
+ export interface ExtendListTypeMap<TypeMap extends OverridableTypeMap> {
+-  props: TypeMap['props'] & ListTypeMap['props'];
++  props: TypeMap['props'] & Omit<ListTypeMap['props'], keyof TypeMap['props']>;
+   defaultComponent: TypeMap['defaultComponent'];
+ }
+ 
+diff --git a/packages/mui-material/src/Select/Select.d.ts b/packages/mui-material/src/Select/Select.d.ts
+index 26ea7df44c6840..88c4ed290955f2 100644
+--- a/packages/mui-material/src/Select/Select.d.ts
++++ b/packages/mui-material/src/Select/Select.d.ts
+@@ -156,7 +156,7 @@ export interface BaseSelectProps<Value = unknown> extends StandardProps<
+ 
+ export interface FilledSelectProps extends Omit<
+   FilledInputProps,
+-  'value' | 'onChange' | 'id' | 'classes' | 'inputProps' | 'placeholder'
++  'value' | 'onChange' | 'id' | 'classes' | 'inputProps' | 'placeholder' | 'label'
+ > {
+   /**
+    * The variant to use.
+@@ -167,7 +167,7 @@ export interface FilledSelectProps extends Omit<
+ 
+ export interface StandardSelectProps extends Omit<
+   InputProps,
+-  'value' | 'onChange' | 'id' | 'classes' | 'inputProps' | 'placeholder'
++  'value' | 'onChange' | 'id' | 'classes' | 'inputProps' | 'placeholder' | 'label'
+ > {
+   /**
+    * The variant to use.
+@@ -178,7 +178,7 @@ export interface StandardSelectProps extends Omit<
+ 
+ export interface OutlinedSelectProps extends Omit<
+   OutlinedInputProps,
+-  'value' | 'onChange' | 'id' | 'classes' | 'inputProps' | 'placeholder'
++  'value' | 'onChange' | 'id' | 'classes' | 'inputProps' | 'placeholder' | 'label'
+ > {
+   /**
+    * The variant to use.
+diff --git a/packages/react-docgen-types/index.d.ts b/packages/react-docgen-types/index.d.ts
+deleted file mode 100644
+index 87b8d44a06bf12..00000000000000
+--- a/packages/react-docgen-types/index.d.ts
++++ /dev/null
+@@ -1,188 +0,0 @@
+-declare module 'react-docgen' {
+-  import { namedTypes } from 'ast-types';
+-  // `import { NodePath } from 'ast-types';` points to `const NodePath: NodePathConstructor` for unknown reasons.
+-  import { NodePath as AstTypesNodePath } from 'ast-types/lib/node-path';
+-
+-  export type Node = namedTypes.Node;
+-  type ASTNode = namedTypes.ASTNode;
+-
+-  // sound wrapper around `NodePath` from `ast-types` i.e. no `any`
+-  export type NodePath<SpecificNode extends Node = Node, Value = unknown> = AstTypesNodePath<
+-    SpecificNode,
+-    Value | undefined
+-  >;
+-
+-  export interface Documentation {
+-    toObject(): ReactDocgenApi;
+-  }
+-
+-  export type Handler = (
+-    documentation: Documentation,
+-    componentDefinition: NodePath,
+-    importer: Importer,
+-  ) => void;
+-
+-  export const defaultHandlers: readonly Handler[];
+-
+-  export type Importer = (path: NodePath, name: string) => NodePath | undefined;
+-  export type Resolver = (
+-    ast: ASTNode,
+-    parser: unknown,
+-    importer: Importer,
+-  ) => NodePath | NodePath[] | undefined;
+-
+-  export namespace resolver {
+-    export const findAllComponentDefinitions: Resolver;
+-    export const findExportedComponentDefinition: Resolver;
+-    export const findAllExportedComponentDefinitions: Resolver;
+-  }
+-  export interface ReactDocgenApi {
+-    description: string;
+-    props?: Record<string, PropDescriptor>;
+-  }
+-
+-  export interface BasePropTypeDescriptor {
+-    computed?: boolean;
+-    description?: string;
+-    raw: string;
+-    required?: boolean;
+-    type?: PropType;
+-  }
+-
+-  interface ArrayOfPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'arrayOf';
+-    value: PropTypeDescriptor;
+-  }
+-  interface CustomPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'custom';
+-  }
+-  interface EnumPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'enum';
+-    value: readonly StringPropTypeDescriptor[];
+-  }
+-  interface ArrayPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'array';
+-  }
+-  interface BoolPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'bool';
+-  }
+-  interface FuncPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'func';
+-  }
+-  interface NumberPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'number';
+-  }
+-  interface ObjectPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'object';
+-  }
+-  interface StringPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'string';
+-    value: string;
+-  }
+-  interface AnyPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'any';
+-  }
+-  interface ElementPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'element';
+-  }
+-  interface NodePropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'node';
+-  }
+-  interface SymbolPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'symbol';
+-  }
+-  interface ObjectOfPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'objectOf';
+-  }
+-  interface ShapePropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'shape';
+-    value: Record<string, PropTypeDescriptor>;
+-  }
+-  interface ExactPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'exact';
+-  }
+-  interface UnionPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'union';
+-    value: readonly PropTypeDescriptor[];
+-  }
+-  interface ElementTypePropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'elementType';
+-  }
+-  // not listed in react-docgen
+-  interface InstanceOfPropTypeDescriptor extends BasePropTypeDescriptor {
+-    name: 'instanceOf';
+-    value: string;
+-  }
+-
+-  export type PropTypeDescriptor =
+-    | ShapePropTypeDescriptor
+-    | ArrayOfPropTypeDescriptor
+-    | CustomPropTypeDescriptor
+-    | EnumPropTypeDescriptor
+-    | ArrayPropTypeDescriptor
+-    | BoolPropTypeDescriptor
+-    | FuncPropTypeDescriptor
+-    | NumberPropTypeDescriptor
+-    | ObjectPropTypeDescriptor
+-    | StringPropTypeDescriptor
+-    | AnyPropTypeDescriptor
+-    | ElementPropTypeDescriptor
+-    | NodePropTypeDescriptor
+-    | SymbolPropTypeDescriptor
+-    | ObjectOfPropTypeDescriptor
+-    | ExactPropTypeDescriptor
+-    | UnionPropTypeDescriptor
+-    | ElementTypePropTypeDescriptor
+-    | InstanceOfPropTypeDescriptor;
+-
+-  export interface PropDescriptor {
+-    defaultValue?: { computed: boolean; value: string };
+-    // augmented by docs/src/modules/utils/defaultPropsHandler.js
+-    jsdocDefaultValue?: { computed?: boolean; value: string };
+-    description?: string;
+-    required?: boolean;
+-    /**
+-     * react-docgen has this as nullable but it was never treated as such
+-     */
+-    type: PropTypeDescriptor;
+-  }
+-
+-  export interface AllLiteralPropType {
+-    type: 'AllLiteral';
+-  }
+-
+-  export interface TypeApplicationPropType {
+-    applications: readonly string[];
+-    type: 'TypeApplication';
+-  }
+-
+-  export interface StringLiteralTypePropType {
+-    type: 'StringLiteralType';
+-  }
+-
+-  export interface UnionPropType {
+-    type: 'UnionType';
+-    elements: readonly PropType[];
+-  }
+-
+-  export type PropType =
+-    | AllLiteralPropType
+-    | StringLiteralTypePropType
+-    | TypeApplicationPropType
+-    | UnionPropType;
+-
+-  export function parse(
+-    source: string,
+-    componentResolver: null | Resolver,
+-    handlers: null | readonly Handler[],
+-    options: { filename: string },
+-  ): any;
+-
+-  export namespace utils {
+-    export function getPropertyName(path: NodePath): string | undefined;
+-    export function isReactForwardRefCall(path: NodePath, importer: Importer): boolean;
+-    export function printValue(path: NodePath): string;
+-    export function resolveExportDeclaration(path: NodePath, importer: Importer): NodePath[];
+-    export function resolveToValue(path: NodePath, importer: Importer): NodePath;
+-  }
+-}
+diff --git a/packages/react-docgen-types/package.json b/packages/react-docgen-types/package.json
+deleted file mode 100644
+index f5a2eed153af57..00000000000000
+--- a/packages/react-docgen-types/package.json
++++ /dev/null
+@@ -1,7 +0,0 @@
+-{
+-  "name": "@types/react-docgen",
+-  "private": true,
+-  "devDependencies": {
+-    "ast-types": "0.14.2"
+-  }
+-}
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 402b08c66685dc..2a029538e7925e 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -675,15 +675,15 @@ importers:
+       '@babel/traverse':
+         specifier: ^7.29.0
+         version: 7.29.0
++      '@babel/types':
++        specifier: ^7.29.0
++        version: 7.29.0
+       '@mui/internal-docs-utils':
+         specifier: workspace:^
+         version: link:../../packages-internal/docs-utils
+       '@mui/internal-markdown':
+         specifier: workspace:^
+         version: link:../markdown
+-      ast-types:
+-        specifier: ^0.14.2
+-        version: 0.14.2
+       doctrine:
+         specifier: ^3.0.0
+         version: 3.0.0
+@@ -697,8 +697,8 @@ importers:
+         specifier: ^3.8.1
+         version: 3.8.1
+       react-docgen:
+-        specifier: ^5.4.3
+-        version: 5.4.3
++        specifier: ^8.0.2
++        version: 8.0.2
+       recast:
+         specifier: ^0.23.11
+         version: 0.23.11
+@@ -730,9 +730,6 @@ importers:
+       '@types/node':
+         specifier: 20.19.33
+         version: 20.19.33
+-      '@types/react-docgen':
+-        specifier: workspace:*
+-        version: link:../react-docgen-types
+       '@types/sinon':
+         specifier: 17.0.4
+         version: 17.0.4
+@@ -1548,12 +1545,6 @@ importers:
+         version: 21.0.1
+     publishDirectory: build
+ 
+-  packages/react-docgen-types:
+-    devDependencies:
+-      ast-types:
+-        specifier: 0.14.2
+-        version: 0.14.2
+-
+   packages/waterfall: {}
+ 
+   test:
+@@ -2648,9 +2639,6 @@ packages:
+       '@types/react':
+         optional: true
+ 
+-  '@bcoe/v8-coverage@0.2.3':
+-    resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
+-
+   '@bcoe/v8-coverage@1.0.2':
+     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
+     engines: {node: '>=18'}
+@@ -5437,9 +5425,6 @@ packages:
+   '@types/ip@1.1.3':
+     resolution: {integrity: sha512-64waoJgkXFTYnCYDUWgSATJ/dXEBanVkaP5d4Sbk7P6U7cTTMhxVyROTckc6JKdwCrgnAjZMn0k3177aQxtDEA==}
+ 
+-  '@types/istanbul-lib-coverage@2.0.6':
+-    resolution: {integrity: sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w==}
+-
+   '@types/jscodeshift@0.12.0':
+     resolution: {integrity: sha512-Jr2fQbEoDmjwEa92TreR/mX2t9iAaY/l5P/GKezvK4BodXahex60PDLXaQR0vAgP0KfCzc1CivHusQB9NhzX8w==}
+ 
+@@ -5513,6 +5498,9 @@ packages:
+   '@types/react@19.2.14':
+     resolution: {integrity: sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w==}
+ 
++  '@types/resolve@1.20.6':
++    resolution: {integrity: sha512-A4STmOXPhMUtHH+S6ymgE2GiBSMqf4oTvcQZMcHzokuTLVYzXTB8ttjcgxOVaAp2lGwEdzZ0J+cRbbeevQj1UQ==}
++
+   '@types/retry@0.12.0':
+     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
+ 
+@@ -6384,11 +6372,6 @@ packages:
+     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
+     engines: {node: '>= 0.8'}
+ 
+-  c8@7.12.0:
+-    resolution: {integrity: sha512-CtgQrHOkyxr5koX1wEUmN/5cfDa2ckbHRA4Gy5LAL0zaCFtVWJS5++n+w4/sr2GWGerBxgTjpKeDclk/Qk6W/A==}
+-    engines: {node: '>=10.12.0'}
+-    hasBin: true
+-
+   cacache@20.0.1:
+     resolution: {integrity: sha512-+7LYcYGBYoNqTp1Rv7Ny1YjUo5E0/ftkQtraH3vkfAGgVHc+ouWdC8okAwQgQR7EVIdW6JTzTmhKFwzb+4okAQ==}
+     engines: {node: ^20.17.0 || >=22.9.0}
+@@ -7573,10 +7556,6 @@ packages:
+     resolution: {integrity: sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA==}
+     engines: {node: '>=4.0'}
+ 
+-  estree-to-babel@3.2.1:
+-    resolution: {integrity: sha512-YNF+mZ/Wu2FU/gvmzuWtYc8rloubL7wfXCTgouFrnjGVXPA/EeYYA7pupXWrb3Iv1cTBeSSxxJIbK23l4MRNqg==}
+-    engines: {node: '>=8.3.0'}
+-
+   estree-walker@3.0.3:
+     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
+ 
+@@ -7800,10 +7779,6 @@ packages:
+     resolution: {integrity: sha512-dKx12eRCVIzqCxFGplyFKJMPvLEWgmNtUrpTiJIR5u97zEhRG8ySrtboPHZXx7daLxQVrl643cTzbab2tkQjxg==}
+     engines: {node: '>= 0.4'}
+ 
+-  foreground-child@2.0.0:
+-    resolution: {integrity: sha512-dCIq9FpEcyQyXKCkyzmlPTFNgrCzPudOe+mhvJU5zAtlBnGVy2yKxtfsxK2tQBThwq225jcvBjpw1Gr40uzZCA==}
+-    engines: {node: '>=8.0.0'}
+-
+   foreground-child@3.3.1:
+     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
+     engines: {node: '>=14'}
+@@ -9654,10 +9629,6 @@ packages:
+   node-cleanup@2.1.2:
+     resolution: {integrity: sha512-qN8v/s2PAJwGUtr1/hYTpNKlD6Y9rc4p8KSmJXyGdYGZsDGKXrGThikLFP9OCHFeLeEpQzPwiAtdIvBLqm//Hw==}
+ 
+-  node-dir@0.1.17:
+-    resolution: {integrity: sha512-tmPX422rYgofd4epzrNoOXiE8XFZYOcCq1vD7MAXCDO+O+zndlA2ztdKKMa+EeuBG5tHETpr4ml4RGgpqDCCAg==}
+-    engines: {node: '>= 0.10.5'}
+-
+   node-emoji@2.2.0:
+     resolution: {integrity: sha512-Z3lTE9pLaJF47NyMhd4ww1yFTAP8YhYI8SleJiHzM46Fgpm5cnNzSl9XfzFNqbaz+VlJrIj3fXQ4DeN1Rjm6cw==}
+     engines: {node: '>=18'}
+@@ -10452,10 +10423,9 @@ packages:
+     resolution: {integrity: sha512-y3bGgqKj3QBdxLbLkomlohkvsA8gdAiUQlSBJnBhfn+BPxg4bc62d8TcBW15wavDfgexCgccckhcZvywyQYPOw==}
+     hasBin: true
+ 
+-  react-docgen@5.4.3:
+-    resolution: {integrity: sha512-xlLJyOlnfr8lLEEeaDZ+X2J/KJoe6Nr9AzxnkdQWush5hz2ZSu66w6iLMOScMmxoSHWpWMn+k3v5ZiyCfcWsOA==}
+-    engines: {node: '>=8.10.0'}
+-    hasBin: true
++  react-docgen@8.0.2:
++    resolution: {integrity: sha512-+NRMYs2DyTP4/tqWz371Oo50JqmWltR1h2gcdgUMAWZJIAvrd0/SqlCfx7tpzpl/s36rzw6qH2MjoNrxtRNYhA==}
++    engines: {node: ^20.9.0 || >=22}
+ 
+   react-dom@19.2.4:
+     resolution: {integrity: sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==}
+@@ -10794,11 +10764,6 @@ packages:
+     deprecated: Rimraf versions prior to v4 are no longer supported
+     hasBin: true
+ 
+-  rimraf@3.0.2:
+-    resolution: {integrity: sha512-JZkJMZkAGFFPP2YqXZXPbMlMBgsxzE8ILs4lMIX/2o0L9UBw9O/Y3o6wFw/i9YLapcUJWwqbi3kdxIPdC62TIA==}
+-    deprecated: Rimraf versions prior to v4 are no longer supported
+-    hasBin: true
+-
+   rimraf@5.0.10:
+     resolution: {integrity: sha512-l0OE8wL34P4nJH/H2ffoaniAokM2qSmrtXHmlpvYr5AVVX8msAyW0l8NVJFDxlSK4u3Uh/f41cQheDVdnYijwQ==}
+     hasBin: true
+@@ -11250,6 +11215,10 @@ packages:
+     resolution: {integrity: sha512-laJTa3Jb+VQpaC6DseHhF7dXVqHTfJPCRDaEbid/drOhgitgYku/letMUqOXFoWV0zIIUbjpdH2t+tYj4bQMRQ==}
+     engines: {node: '>=8'}
+ 
++  strip-indent@4.1.1:
++    resolution: {integrity: sha512-SlyRoSkdh1dYP0PzclLE7r0M9sgbFKKMFXpFRUMNuKhQSbC6VQIGzq3E0qsfvGJaUFJPGv6Ws1NZ/haTAjfbMA==}
++    engines: {node: '>=12'}
++
+   strip-json-comments@2.0.1:
+     resolution: {integrity: sha512-4gB8na07fecVVkOI6Rs4e7T6NOTki5EmL7TUduTs6bu3EdnSycntVJ4re8kgZA+wx9IueI2Y11bfbgwtzuE0KQ==}
+     engines: {node: '>=0.10.0'}
+@@ -11838,10 +11807,6 @@ packages:
+     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+     hasBin: true
+ 
+-  v8-to-istanbul@9.0.1:
+-    resolution: {integrity: sha512-74Y4LqY74kLE6IFyIjPtkSTWzUZmj8tdHT9Ii/26dvQ6K9Dl2NbEfj0XgU2sHCtKgt5VupqhlO/5aWuqS+IY1w==}
+-    engines: {node: '>=10.12.0'}
+-
+   v8flags@3.2.0:
+     resolution: {integrity: sha512-mH8etigqMfiGWdeXpaaqGfs6BndypxusHHcv2qSHyZkGEznCd/qAXCWWRzeowtL54147cktFOC4P5y+kl8d8Jg==}
+     engines: {node: '>= 0.10'}
+@@ -13910,8 +13875,6 @@ snapshots:
+     optionalDependencies:
+       '@types/react': 19.2.14
+ 
+-  '@bcoe/v8-coverage@0.2.3': {}
+-
+   '@bcoe/v8-coverage@1.0.2': {}
+ 
+   '@braidai/lang@1.1.0': {}
+@@ -16929,8 +16892,6 @@ snapshots:
+     dependencies:
+       '@types/node': 20.19.33
+ 
+-  '@types/istanbul-lib-coverage@2.0.6': {}
+-
+   '@types/jscodeshift@0.12.0':
+     dependencies:
+       ast-types: 0.14.2
+@@ -16996,6 +16957,8 @@ snapshots:
+     dependencies:
+       csstype: 3.2.3
+ 
++  '@types/resolve@1.20.6': {}
++
+   '@types/retry@0.12.0': {}
+ 
+   '@types/send@1.2.1':
+@@ -18004,21 +17967,6 @@ snapshots:
+ 
+   bytes@3.1.2: {}
+ 
+-  c8@7.12.0:
+-    dependencies:
+-      '@bcoe/v8-coverage': 0.2.3
+-      '@istanbuljs/schema': 0.1.3
+-      find-up: 5.0.0
+-      foreground-child: 2.0.0
+-      istanbul-lib-coverage: 3.2.2
+-      istanbul-lib-report: 3.0.1
+-      istanbul-reports: 3.2.0
+-      rimraf: 3.0.2
+-      test-exclude: 6.0.0
+-      v8-to-istanbul: 9.0.1
+-      yargs: 16.2.0
+-      yargs-parser: 20.2.9
+-
+   cacache@20.0.1:
+     dependencies:
+       '@npmcli/fs': 4.0.0
+@@ -19390,14 +19338,6 @@ snapshots:
+ 
+   estraverse@5.3.0: {}
+ 
+-  estree-to-babel@3.2.1:
+-    dependencies:
+-      '@babel/traverse': 7.29.0
+-      '@babel/types': 7.29.0
+-      c8: 7.12.0
+-    transitivePeerDependencies:
+-      - supports-color
+-
+   estree-walker@3.0.3:
+     dependencies:
+       '@types/estree': 1.0.8
+@@ -19685,11 +19625,6 @@ snapshots:
+     dependencies:
+       is-callable: 1.2.7
+ 
+-  foreground-child@2.0.0:
+-    dependencies:
+-      cross-spawn: 7.0.6
+-      signal-exit: 3.0.7
+-
+   foreground-child@3.3.1:
+     dependencies:
+       cross-spawn: 7.0.6
+@@ -21854,10 +21789,6 @@ snapshots:
+ 
+   node-cleanup@2.1.2: {}
+ 
+-  node-dir@0.1.17:
+-    dependencies:
+-      minimatch: 3.1.2
+-
+   node-emoji@2.2.0:
+     dependencies:
+       '@sindresorhus/is': 4.6.0
+@@ -22781,18 +22712,18 @@ snapshots:
+       minimist: 1.2.8
+       strip-json-comments: 2.0.1
+ 
+-  react-docgen@5.4.3:
++  react-docgen@8.0.2:
+     dependencies:
+       '@babel/core': 7.29.0
+-      '@babel/generator': 7.29.1
+-      '@babel/runtime': 7.28.6
+-      ast-types: 0.14.2
+-      commander: 2.20.3
++      '@babel/traverse': 7.29.0
++      '@babel/types': 7.29.0
++      '@types/babel__core': 7.20.5
++      '@types/babel__traverse': 7.28.0
++      '@types/doctrine': 0.0.9
++      '@types/resolve': 1.20.6
+       doctrine: 3.0.0
+-      estree-to-babel: 3.2.1
+-      neo-async: 2.6.2
+-      node-dir: 0.1.17
+-      strip-indent: 3.0.0
++      resolve: 1.22.11
++      strip-indent: 4.1.1
+     transitivePeerDependencies:
+       - supports-color
+ 
+@@ -23200,10 +23131,6 @@ snapshots:
+     dependencies:
+       glob: 7.2.3
+ 
+-  rimraf@3.0.2:
+-    dependencies:
+-      glob: 7.2.3
+-
+   rimraf@5.0.10:
+     dependencies:
+       glob: 10.5.0
+@@ -23777,6 +23704,8 @@ snapshots:
+     dependencies:
+       min-indent: 1.0.1
+ 
++  strip-indent@4.1.1: {}
++
+   strip-json-comments@2.0.1: {}
+ 
+   strip-json-comments@3.1.1: {}
+@@ -24432,12 +24361,6 @@ snapshots:
+ 
+   uuid@8.3.2: {}
+ 
+-  v8-to-istanbul@9.0.1:
+-    dependencies:
+-      '@jridgewell/trace-mapping': 0.3.31
+-      '@types/istanbul-lib-coverage': 2.0.6
+-      convert-source-map: 1.8.0
+-
+   v8flags@3.2.0:
+     dependencies:
+       homedir-polyfill: 1.0.3

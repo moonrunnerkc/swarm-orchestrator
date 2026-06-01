@@ -1,0 +1,402 @@
+diff --git a/packages/cli/package.json b/packages/cli/package.json
+index ca79486f1a5d..975518582210 100644
+--- a/packages/cli/package.json
++++ b/packages/cli/package.json
+@@ -183,7 +183,7 @@
+     "@prisma/config": "workspace:*",
+     "@prisma/dev": "0.20.0",
+     "@prisma/engines": "workspace:*",
+-    "@prisma/studio-core": "0.13.1",
++    "@prisma/studio-core": "0.16.3",
+     "mysql2": "3.15.3",
+     "postgres": "3.4.7"
+   },
+diff --git a/packages/cli/src/Studio.ts b/packages/cli/src/Studio.ts
+index ae1eb7cf38e9..2969a7b1bc6d 100644
+--- a/packages/cli/src/Studio.ts
++++ b/packages/cli/src/Studio.ts
+@@ -18,9 +18,9 @@ import { digest } from 'ohash'
+ import open from 'open'
+ import { dirname, extname, join, resolve } from 'pathe'
+ import { runtime } from 'std-env'
+-import { z } from 'zod'
+ 
+ import packageJson from '../package.json' assert { type: 'json' }
++import { UserFacingError } from './utils/errors'
+ import { getPpgInfo } from './utils/ppgInfo'
+ 
+ /**
+@@ -56,12 +56,8 @@ const DEFAULT_CONTENT_TYPE = 'application/octet-stream'
+ const ADAPTER_FILE_NAME = 'adapter.js'
+ const ADAPTER_FACTORY_FUNCTION_NAME = 'createAdapter'
+ 
+-const ACCELERATE_API_KEY_QUERY_PARAMETER = 'api_key'
+-
+-const AccelerateAPIKeyPayloadSchema = z.object({
+-  secure_key: z.string(),
+-  tenant_id: z.string(),
+-})
++const ACCELERATE_UNSUPPORTED_MESSAGE =
++  'Prisma Studio no longer supports Accelerate URLs (`prisma://` or `prisma+postgres://`). Use a direct database connection string instead.'
+ 
+ interface StudioStuff {
+   createExecutor(connectionString: string, relativeTo: string): Promise<Executor>
+@@ -87,6 +83,14 @@ const PRISMA_ORM_SPECIFIC_QUERY_PARAMETERS = [
+   'statement_cache_size',
+ ] as const
+ 
++const PRISMA_ORM_SPECIFIC_MYSQL_QUERY_PARAMETERS = [
++  'connection_limit',
++  'pool_timeout',
++  'socket_timeout',
++  'sslaccept',
++  'sslidentity',
++] as const
++
+ const POSTGRES_STUDIO_STUFF: StudioStuff = {
+   async createExecutor(connectionString) {
+     const postgresModule = await import('postgres')
+@@ -184,54 +188,11 @@ Please use Node.js >=22.5, Deno >=2.2 or Bun >=1.0 or ensure you have the \`bett
+   },
+   postgres: POSTGRES_STUDIO_STUFF,
+   postgresql: POSTGRES_STUDIO_STUFF,
+-  'prisma+postgres': {
+-    async createExecutor(connectionString, relativeTo) {
+-      const connectionURL = new URL(connectionString)
+-
+-      if (['localhost', '127.0.0.1', '[::1]'].includes(connectionURL.hostname)) {
+-        // TODO: support `prisma dev` accelerate URLs.
+-
+-        throw new Error('The "prisma+postgres" protocol with localhost is not supported in Prisma Studio yet.')
+-      }
+-
+-      const apiKey = connectionURL.searchParams.get(ACCELERATE_API_KEY_QUERY_PARAMETER)
+-
+-      if (!apiKey) {
+-        throw new Error(
+-          `\`${ACCELERATE_API_KEY_QUERY_PARAMETER}\` query parameter is missing in the provided "prisma+postgres" connection string.`,
+-        )
+-      }
+-
+-      const [, payload] = apiKey.split('.')
+-
+-      try {
+-        const decodedPayload = AccelerateAPIKeyPayloadSchema.parse(
+-          JSON.parse(Buffer.from(payload, 'base64').toString('utf-8')),
+-        )
+-
+-        connectionURL.password = decodedPayload.secure_key
+-        connectionURL.username = decodedPayload.tenant_id
+-      } catch {
+-        throw new Error(
+-          `Invalid/outdated \`${ACCELERATE_API_KEY_QUERY_PARAMETER}\` query parameter in the provided "prisma+postgres" connection string. Please create a new API key and use the new connection string OR use a direct TCP connection string instead.`,
+-        )
+-      }
+-
+-      connectionURL.host = 'db.prisma.io:5432'
+-      connectionURL.pathname = '/postgres'
+-      connectionURL.protocol = 'postgres:'
+-      connectionURL.searchParams.delete(ACCELERATE_API_KEY_QUERY_PARAMETER)
+-      connectionURL.searchParams.set('sslmode', 'require')
+-
+-      return await POSTGRES_STUDIO_STUFF.createExecutor(connectionURL.toString(), relativeTo)
+-    },
+-    reExportAdapterScript: POSTGRES_STUDIO_STUFF.reExportAdapterScript,
+-  },
+   mysql: {
+     async createExecutor(connectionString) {
+       const { createPool } = await import('mysql2/promise')
+ 
+-      const pool = createPool(connectionString)
++      const pool = createPool(normalizeMySQLConnectionString(connectionString))
+ 
+       process.once('SIGINT', () => pool.end())
+       process.once('SIGTERM', () => pool.end())
+@@ -323,21 +284,25 @@ ${bold('Examples')}
+     const connectionString = args['--url'] || config.datasource?.url
+ 
+     if (!connectionString) {
+-      return new Error(
++      return new UserFacingError(
+         'No database URL found. Provide it via the `--url <url>` argument or define it in your Prisma config file as `datasource.url`.',
+       )
+     }
+ 
+     if (!URL.canParse(connectionString)) {
+-      return new Error('The provided database URL is not valid.')
++      return new UserFacingError('The provided database URL is not valid.')
+     }
+ 
+     const protocol = new URL(connectionString).protocol.replace(':', '')
+ 
++    if (isAccelerateProtocol(protocol)) {
++      return new UserFacingError(ACCELERATE_UNSUPPORTED_MESSAGE)
++    }
++
+     const studioStuff = CONNECTION_STRING_PROTOCOL_TO_STUDIO_STUFF[protocol]
+ 
+     if (!studioStuff) {
+-      return new Error(`Prisma Studio is not supported for the "${protocol}" protocol.`)
++      return new UserFacingError(`Prisma Studio is not supported for the "${protocol}" protocol.`)
+     }
+ 
+     const executor = await studioStuff.createExecutor(
+@@ -476,6 +441,45 @@ function getUrlBasePath(url: string | undefined, configPath: string | null): str
+   return url ? process.cwd() : configPath ? dirname(configPath) : process.cwd()
+ }
+ 
++function isAccelerateProtocol(protocol: string): boolean {
++  return protocol === 'prisma' || protocol === 'prisma+postgres'
++}
++
++function normalizeMySQLConnectionString(connectionString: string): string {
++  const connectionURL = new URL(connectionString)
++
++  const connectionLimit = connectionURL.searchParams.get('connection_limit')
++
++  if (connectionLimit && !connectionURL.searchParams.has('connectionLimit')) {
++    connectionURL.searchParams.set('connectionLimit', connectionLimit)
++  }
++
++  const sslAccept = connectionURL.searchParams.get('sslaccept')
++
++  if (sslAccept && !connectionURL.searchParams.has('ssl')) {
++    connectionURL.searchParams.set('ssl', JSON.stringify(prismaSslAcceptToMySQL2Ssl(sslAccept)))
++  }
++
++  for (const queryParameter of PRISMA_ORM_SPECIFIC_MYSQL_QUERY_PARAMETERS) {
++    connectionURL.searchParams.delete(queryParameter)
++  }
++
++  return connectionURL.toString()
++}
++
++function prismaSslAcceptToMySQL2Ssl(sslAccept: string): { rejectUnauthorized: boolean } {
++  switch (sslAccept) {
++    case 'strict':
++      return { rejectUnauthorized: true }
++    case 'accept_invalid_certs':
++      return { rejectUnauthorized: false }
++    default:
++      throw new Error(
++        `Unknown Prisma MySQL sslaccept value "${sslAccept}". Supported values are "strict" and "accept_invalid_certs".`,
++      )
++  }
++}
++
+ // prettier-ignore
+ const INDEX_HTML =
+ `<!doctype html>
+diff --git a/packages/cli/src/__tests__/Studio.vitest.ts b/packages/cli/src/__tests__/Studio.vitest.ts
+new file mode 100644
+index 000000000000..278c770a596b
+--- /dev/null
++++ b/packages/cli/src/__tests__/Studio.vitest.ts
+@@ -0,0 +1,122 @@
++import { defaultTestConfig } from '@prisma/config'
++import { beforeEach, describe, expect, test, vi } from 'vitest'
++
++const createPoolMock = vi.fn(() => ({ end: vi.fn() }))
++
++vi.mock('mysql2/promise', () => {
++  return {
++    createPool: createPoolMock,
++  }
++})
++
++vi.mock('@hono/node-server', () => {
++  return {
++    serve: vi.fn(() => ({ close: vi.fn() })),
++  }
++})
++
++vi.mock('@prisma/studio-core/data/mysql2', () => {
++  return {
++    createMySQL2Executor: vi.fn(() => ({
++      execute: vi.fn(),
++    })),
++  }
++})
++
++vi.mock('@prisma/studio-core/data/bff', () => {
++  return {
++    serializeError: vi.fn(() => ({ message: 'mock-error' })),
++  }
++})
++
++vi.mock('@prisma/studio-core/data/node-sqlite', () => {
++  return {
++    createNodeSQLiteExecutor: vi.fn(() => ({
++      execute: vi.fn(),
++    })),
++  }
++})
++
++vi.mock('@prisma/studio-core/data/postgresjs', () => {
++  return {
++    createPostgresJSExecutor: vi.fn(() => ({
++      execute: vi.fn(),
++    })),
++  }
++})
++
++describe('Studio MySQL URL compatibility', () => {
++  beforeEach(() => {
++    vi.resetModules()
++    createPoolMock.mockClear()
++  })
++
++  test('converts sslaccept=strict to mysql2 ssl JSON', async () => {
++    const { Studio } = await import('../Studio')
++
++    await Studio.new().parse(
++      [
++        '--browser',
++        'none',
++        '--port',
++        '5555',
++        '--url',
++        'mysql://user:password@aws.connect.psdb.cloud/db?sslaccept=strict',
++      ],
++      defaultTestConfig(),
++    )
++
++    expect(createPoolMock).toHaveBeenCalledTimes(1)
++
++    const passedUrl = new URL(createPoolMock.mock.calls[0][0])
++
++    expect(passedUrl.searchParams.get('sslaccept')).toBeNull()
++    expect(passedUrl.searchParams.get('ssl')).toBe('{"rejectUnauthorized":true}')
++  })
++
++  test('maps connection_limit to mysql2 connectionLimit', async () => {
++    const { Studio } = await import('../Studio')
++
++    await Studio.new().parse(
++      [
++        '--browser',
++        'none',
++        '--port',
++        '5555',
++        '--url',
++        'mysql://user:password@aws.connect.psdb.cloud/db?connection_limit=7',
++      ],
++      defaultTestConfig(),
++    )
++
++    expect(createPoolMock).toHaveBeenCalledTimes(1)
++
++    const passedUrl = new URL(createPoolMock.mock.calls[0][0])
++
++    expect(passedUrl.searchParams.get('connection_limit')).toBeNull()
++    expect(passedUrl.searchParams.get('connectionLimit')).toBe('7')
++  })
++
++  test('converts sslaccept=accept_invalid_certs to mysql2 ssl JSON', async () => {
++    const { Studio } = await import('../Studio')
++
++    await Studio.new().parse(
++      [
++        '--browser',
++        'none',
++        '--port',
++        '5555',
++        '--url',
++        'mysql://user:password@aws.connect.psdb.cloud/db?sslaccept=accept_invalid_certs',
++      ],
++      defaultTestConfig(),
++    )
++
++    expect(createPoolMock).toHaveBeenCalledTimes(1)
++
++    const passedUrl = new URL(createPoolMock.mock.calls[0][0])
++
++    expect(passedUrl.searchParams.get('sslaccept')).toBeNull()
++    expect(passedUrl.searchParams.get('ssl')).toBe('{"rejectUnauthorized":false}')
++  })
++})
+diff --git a/packages/cli/src/bin.ts b/packages/cli/src/bin.ts
+index 0c4d1f91d727..3f2b472c39d3 100755
+--- a/packages/cli/src/bin.ts
++++ b/packages/cli/src/bin.ts
+@@ -50,6 +50,7 @@ import { SubCommand } from './SubCommand'
+ import { Telemetry } from './Telemetry'
+ import { redactCommandArray } from './utils/checkpoint'
+ import { loadOrInitializeCommandState } from './utils/commandState'
++import { UserFacingError } from './utils/errors'
+ import { loadConfig } from './utils/loadConfig'
+ import { Validate } from './Validate'
+ import { Version } from './Version'
+@@ -167,7 +168,11 @@ async function main(): Promise<number> {
+     debug(`Execution time for executing "await cli.parse(commandArray)": ${cliExecElapsedTime} ms`)
+ 
+     if (result instanceof Error) {
+-      console.error(result instanceof HelpError ? result.message : result)
++      if (result instanceof HelpError || result instanceof UserFacingError) {
++        console.error(result.message)
++      } else {
++        console.error(result)
++      }
+       return 1
+     }
+ 
+diff --git a/packages/cli/src/utils/errors.ts b/packages/cli/src/utils/errors.ts
+index 2c75dad0637c..87c6d1ba3493 100644
+--- a/packages/cli/src/utils/errors.ts
++++ b/packages/cli/src/utils/errors.ts
+@@ -1,4 +1,4 @@
+-import { green } from 'kleur/colors'
++import { bold, green, red } from 'kleur/colors'
+ 
+ export class EarlyAccessFlagError extends Error {
+   constructor() {
+@@ -8,3 +8,13 @@ Please provide the ${green('--early-access')} flag to use this command.`,
+     )
+   }
+ }
++
++/**
++ * Error intended to be rendered directly to the terminal without stack traces.
++ */
++export class UserFacingError extends Error {
++  constructor(message: string) {
++    super(`\n${bold(red('!'))} ${message}`)
++    this.name = 'UserFacingError'
++  }
++}
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 234723843b33..2c38bb0ccc19 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -431,8 +431,8 @@ importers:
+         specifier: workspace:*
+         version: link:../engines
+       '@prisma/studio-core':
+-        specifier: 0.13.1
+-        version: 0.13.1
++        specifier: 0.16.3
++        version: 0.16.3
+       mysql2:
+         specifier: 3.15.3
+         version: 3.15.3
+@@ -3590,8 +3590,9 @@ packages:
+   '@prisma/schema-engine-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919':
+     resolution: {integrity: sha512-v7E/pxOvzJyILTK5ZvBs7fLjcoFPG2t6BdnAsfKIZtQZlQz7TyTC3kkZvcigtnV/6/ktVOsd0RQFIk0rD4e5lg==}
+ 
+-  '@prisma/studio-core@0.13.1':
+-    resolution: {integrity: sha512-agdqaPEePRHcQ7CexEfkX1RvSH9uWDb6pXrZnhCRykhDFAV0/0P3d07WtfiY8hZWb7oRU4v+NkT4cGFHkQJIPg==}
++  '@prisma/studio-core@0.16.3':
++    resolution: {integrity: sha512-mlORrIeF2GwshPqRR6Oho3b4GC9oupTjWu0R09qosjtORfihgYoJmW201Yvnyj99wZRz+vw9NnS9pH6LQ5Dx5w==}
++    engines: {node: ^20.19 || ^22.12 || ^24.0, pnpm: '8'}
+     peerDependencies:
+       '@types/react': ^18.0.0 || ^19.0.0
+       react: ^18.0.0 || ^19.0.0
+@@ -10083,7 +10084,7 @@ snapshots:
+ 
+   '@prisma/schema-engine-wasm@7.5.0-10.94a226be1cf2967af2541cca5529f0f7ba866919': {}
+ 
+-  '@prisma/studio-core@0.13.1': {}
++  '@prisma/studio-core@0.16.3': {}
+ 
+   '@redocly/ajv@8.17.1':
+     dependencies:

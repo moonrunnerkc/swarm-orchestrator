@@ -1,0 +1,2168 @@
+diff --git a/packages/cli/src/bin.ts b/packages/cli/src/bin.ts
+index 961bc3619e4c..5646f3922ced 100755
+--- a/packages/cli/src/bin.ts
++++ b/packages/cli/src/bin.ts
+@@ -28,6 +28,7 @@ import {
+ } from '@prisma/migrate'
+ import { bold, dim, red, yellow } from 'kleur/colors'
+ 
++import { Bootstrap } from './bootstrap/Bootstrap'
+ import { CLI } from './CLI'
+ import { DebugInfo } from './DebugInfo'
+ import { Format } from './Format'
+@@ -96,6 +97,7 @@ async function main(): Promise<number> {
+ 
+   const cli = CLI.new(
+     {
++      bootstrap: Bootstrap.new(),
+       init: Init.new(),
+       mcp: Mcp.new(),
+       migrate: MigrateCommand.new({
+diff --git a/packages/cli/src/bootstrap/Bootstrap.ts b/packages/cli/src/bootstrap/Bootstrap.ts
+new file mode 100644
+index 000000000000..51b91152e7c8
+--- /dev/null
++++ b/packages/cli/src/bootstrap/Bootstrap.ts
+@@ -0,0 +1,573 @@
++import { execFileSync } from 'node:child_process'
++import fs from 'node:fs'
++import path from 'node:path'
++
++import { confirm } from '@inquirer/prompts'
++import type { PrismaConfigInternal } from '@prisma/config'
++import { loadConfigFromFile } from '@prisma/config'
++import type { Command } from '@prisma/internals'
++import { arg, format, HelpError, isError } from '@prisma/internals'
++import { DbSeed, MigrateDev } from '@prisma/migrate'
++import * as checkpoint from 'checkpoint-client'
++import { bold, dim, green, red, yellow } from 'kleur/colors'
++import ora from 'ora'
++
++import { Generate } from '../Generate'
++import { Init } from '../Init'
++import { Link, type LinkResult } from '../postgres/link/Link'
++import { isAlreadyLinked } from '../postgres/link/local-setup'
++import { LinkApiError, sanitizeErrorMessage } from '../postgres/link/management-api'
++import { type BootstrapStepStatus, formatBootstrapOutput } from './completion-output'
++import { detectProjectState, getModelNames, getSeedCommand } from './project-state'
++import { emitFlowCompleted, emitFlowStarted, emitStepCompleted, emitStepFailed, emitStepSkipped } from './telemetry'
++import {
++  downloadAndExtractTemplate,
++  installDependencies,
++  isValidTemplateName,
++  promptTemplateSelection,
++} from './template-scaffold'
++
++/**
++ * Locates the user's locally installed `prisma` binary in node_modules.
++ * Returns the absolute path if found, null otherwise.
++ */
++function findLocalPrismaBin(baseDir: string): string | null {
++  const candidate = path.join(baseDir, 'node_modules', '.bin', 'prisma')
++  return fs.existsSync(candidate) ? candidate : null
++}
++
++/**
++ * Runs a Prisma CLI command using the user's locally installed binary.
++ * Uses execFileSync (no shell) to avoid shell injection risks.
++ * Inherits stdio so the user sees real-time output from migrate/seed.
++ */
++function runLocalPrismaCommand(bin: string, args: string[], baseDir: string, extraEnv?: Record<string, string>): void {
++  execFileSync(bin, args, {
++    cwd: baseDir,
++    stdio: 'inherit',
++    env: { ...process.env, ...extraEnv },
++    shell: process.platform === 'win32',
++  })
++}
++
++export class Bootstrap implements Command {
++  public static new(): Bootstrap {
++    return new Bootstrap()
++  }
++
++  private static help = format(`
++Bootstrap a Prisma Postgres project from scratch or connect an existing one.
++
++${bold('Usage')}
++
++  ${dim('$')} prisma bootstrap [options]
++
++${bold('Options')}
++
++  --api-key      Workspace API key (CI / non-interactive)
++  --database     Database ID to link to (e.g. db_abc123)
++  --template     Starter template name (e.g. nextjs, express)
++  --force        Re-link even if already linked to Prisma Postgres
++  -h, --help     Display this help message
++
++${bold('Examples')}
++
++  Interactive (opens browser, guides you through setup)
++  ${dim('$')} prisma bootstrap
++
++  Non-interactive with explicit credentials
++  ${dim('$')} prisma bootstrap --api-key "<your-api-key>" --database "db_..."
++
++  With a starter template
++  ${dim('$')} prisma bootstrap --template nextjs
++`)
++
++  public async parse(argv: string[], config: PrismaConfigInternal, baseDir: string): Promise<string | Error> {
++    const args = arg(argv, {
++      '--api-key': String,
++      '--database': String,
++      '--template': String,
++      '--force': Boolean,
++      '--help': Boolean,
++      '-h': '--help',
++      '--telemetry-information': String,
++    })
++
++    if (isError(args)) {
++      return this.help(args.message)
++    }
++
++    if (args['--help']) {
++      return this.help()
++    }
++
++    const apiKey = args['--api-key']
++    const databaseId = args['--database']
++    const templateName = args['--template']
++    const force = args['--force'] ?? false
++
++    if (apiKey && !databaseId) {
++      return new HelpError(
++        `\n${bold(red('!'))} Missing ${bold('--database')} flag.\n\nWhen using ${bold('--api-key')}, you must also provide ${bold('--database')}.\n${Bootstrap.help}`,
++      )
++    }
++
++    if (databaseId && !databaseId.startsWith('db_')) {
++      return new HelpError(
++        `\n${bold(red('!'))} Invalid database ID "${databaseId}" — expected format: ${bold('db_<id>')}\n${Bootstrap.help}`,
++      )
++    }
++
++    if (templateName && !isValidTemplateName(templateName)) {
++      return new HelpError(
++        `\n${bold(red('!'))} Unknown template "${templateName}". Available templates: nextjs, express, hono, fastify, nuxt, sveltekit, remix, react-router-7, astro, nest\n${Bootstrap.help}`,
++      )
++    }
++
++    try {
++      return await this.run(apiKey, databaseId, templateName, force, config, baseDir)
++    } catch (err) {
++      if (err instanceof LinkApiError) {
++        return new HelpError(`\n${bold(red('!'))} ${sanitizeErrorMessage(err.message)}`)
++      }
++      const message = err instanceof Error ? err.message : String(err)
++      return new HelpError(`\n${bold(red('!'))} ${sanitizeErrorMessage(message)}`)
++    }
++  }
++
++  private async run(
++    apiKey: string | undefined,
++    databaseId: string | undefined,
++    templateName: string | undefined,
++    force: boolean,
++    config: PrismaConfigInternal,
++    baseDir: string,
++  ): Promise<string | HelpError> {
++    const flowStart = performance.now()
++    const stepsCompleted: string[] = []
++    const steps: BootstrapStepStatus = {
++      init: 'skipped',
++      template: 'not-applicable',
++      link: 'skipped',
++      generate: 'not-applicable',
++      migrate: 'not-applicable',
++      seed: 'not-applicable',
++    }
++
++    let distinctId: string
++    try {
++      distinctId = await checkpoint.getSignature()
++    } catch {
++      distinctId = 'unknown'
++    }
++
++    const initialState = detectProjectState(baseDir)
++
++    const telemetryCtx = {
++      distinctId,
++      databaseId,
++      linkResult: null as LinkResult | null,
++      projectState: initialState,
++    }
++
++    await emitFlowStarted(telemetryCtx)
++
++    try {
++      let templateScaffolded = false
++      const isEmptyProject = !initialState.hasSchemaFile && !initialState.hasPackageJson
++
++      // --- Step 1: Init or Template (mutually exclusive, only for from-scratch projects) ---
++      //
++      // When no schema exists, the user is starting from scratch. We either:
++      //   (a) scaffold a starter template from prisma-examples (replaces init), or
++      //   (b) run `prisma init` for a minimal empty setup (requires an existing package.json)
++      //
++      // Empty directories without a package.json need special handling: prisma init creates
++      // a prisma.config.ts that depends on `dotenv`, which can't be installed without a
++      // Node.js project. We surface this clearly and require either a template (which
++      // provides its own package.json) or manual project initialization first.
++      if (!initialState.hasSchemaFile) {
++        if (isEmptyProject) {
++          console.log(`\n${yellow('!')} No project found in this directory.`)
++          console.log(`  A ${bold('package.json')} is required for Prisma to work.`)
++          console.log(
++            `  Initialize one with: ${dim('npm init -y')}, ${dim('pnpm init')}, ${dim('yarn init')}, or ${dim('bun init')}\n`,
++          )
++        }
++
++        const useTemplate = templateName ?? (await this.askAboutTemplate())
++
++        if (useTemplate) {
++          const spinner = ora(`Downloading ${bold(useTemplate)} template...`).start()
++          const stepStart = performance.now()
++
++          try {
++            await downloadAndExtractTemplate(useTemplate, baseDir)
++            spinner.succeed(`Template ${bold(useTemplate)} scaffolded`)
++            steps.template = 'completed'
++            steps.init = 'skipped'
++            templateScaffolded = true
++            stepsCompleted.push('template')
++            await emitStepCompleted(telemetryCtx, 'template', performance.now() - stepStart)
++          } catch (err) {
++            const msg = err instanceof Error ? err.message : String(err)
++            spinner.fail(`Template download failed: ${sanitizeErrorMessage(msg)}`)
++
++            if (isEmptyProject) {
++              return new HelpError(
++                `\n${bold(red('!'))} Template download failed and no project exists to fall back to.\n\nInitialize a project first, then re-run ${bold('prisma bootstrap')}:\n  ${dim('$')} npm init -y ${dim('  (or pnpm init / yarn init / bun init)')}\n  ${dim('$')} npx prisma bootstrap`,
++              )
++            }
++
++            console.log(`${dim('  Falling back to prisma init...')}`)
++            steps.template = 'failed'
++            await emitStepFailed(telemetryCtx, 'template', sanitizeErrorMessage(msg))
++            await this.runInit(steps, stepsCompleted, telemetryCtx, config, await this.askAboutSampleModel())
++          }
++        } else if (isEmptyProject) {
++          return new HelpError(
++            `\n${bold(red('!'))} Cannot proceed without a project.\n\nInitialize a project first, then re-run ${bold('prisma bootstrap')}:\n  ${dim('$')} npm init -y ${dim('  (or pnpm init / yarn init / bun init)')}\n  ${dim('$')} npx prisma bootstrap`,
++          )
++        } else {
++          steps.template = 'not-applicable'
++          await this.runInit(steps, stepsCompleted, telemetryCtx, config, await this.askAboutSampleModel())
++        }
++      } else {
++        steps.init = 'skipped'
++        steps.template = 'not-applicable'
++        await emitStepSkipped(telemetryCtx, 'init')
++      }
++
++      // --- Step 2: Link ---
++      if (!force && isAlreadyLinked(baseDir)) {
++        if (databaseId) {
++          return new HelpError(
++            `\n${bold(red('!'))} This project is already linked to Prisma Postgres. Re-run with ${bold('--force')} to relink to a different database.`,
++          )
++        }
++        console.log(`\n${green('✔')} Already linked to Prisma Postgres`)
++        steps.link = 'skipped'
++        await emitStepSkipped(telemetryCtx, 'link')
++      } else {
++        console.log(`\n${bold('Linking to Prisma Postgres...')}`)
++        const linkStart = performance.now()
++
++        try {
++          const link = Link.new()
++          const linkResult = await link.link(apiKey, databaseId, baseDir, { force })
++
++          steps.link = 'completed'
++          stepsCompleted.push('link')
++          telemetryCtx.linkResult = linkResult
++          telemetryCtx.databaseId = linkResult.databaseId
++          await emitStepCompleted(telemetryCtx, 'link', performance.now() - linkStart)
++
++          console.log(`${green('✔')} Linked to database ${bold(linkResult.databaseId)}`)
++        } catch (err) {
++          const msg = err instanceof Error ? err.message : String(err)
++          await emitStepFailed(telemetryCtx, 'link', sanitizeErrorMessage(msg))
++          throw err
++        }
++      }
++
++      // --- Step 3: Install dependencies (template path only) ---
++      //
++      // Template projects include a package.json with all dependencies.
++      // Installing here brings the local `prisma` binary into node_modules,
++      // which is required for the migrate/generate/seed steps below.
++      if (templateScaffolded) {
++        const installSpinner = ora('Installing dependencies...').start()
++        try {
++          await installDependencies(baseDir)
++          installSpinner.succeed('Dependencies installed')
++        } catch (err) {
++          const msg = err instanceof Error ? err.message : String(err)
++          installSpinner.fail(`Dependency install failed: ${sanitizeErrorMessage(msg)}`)
++          await emitStepFailed(telemetryCtx, 'install_deps', sanitizeErrorMessage(msg))
++          return new HelpError(
++            `\n${bold(red('!'))} Dependency installation failed. Please install dependencies manually and re-run ${bold('prisma bootstrap')}.`,
++          )
++        }
++      }
++
++      // Ensure DATABASE_URL is available for config loading and subprocesses.
++      // Read from the link result if we just linked, or from .env if already linked.
++      let databaseUrl = telemetryCtx.linkResult?.connectionString
++      if (!databaseUrl) {
++        const envPath = path.join(baseDir, '.env')
++        if (fs.existsSync(envPath)) {
++          const envContent = fs.readFileSync(envPath, 'utf-8')
++          const match = envContent.match(/^DATABASE_URL=["']?([^"'\n]+)["']?/m)
++          if (match) databaseUrl = match[1]
++        }
++      }
++      if (databaseUrl) {
++        process.env.DATABASE_URL = databaseUrl
++      }
++      const subprocessEnv: Record<string, string> = databaseUrl ? { DATABASE_URL: databaseUrl } : {}
++
++      // Re-detect project state after init/template + link may have changed files
++      const updatedState = detectProjectState(baseDir)
++
++      // Reload config after init/template may have created prisma.config.ts
++      let activeConfig = config
++      if (!initialState.hasPrismaConfig && updatedState.hasPrismaConfig) {
++        try {
++          const { config: reloadedConfig, error } = await loadConfigFromFile({})
++          if (!error) {
++            activeConfig = reloadedConfig
++          }
++        } catch {
++          console.log(`${yellow('warn')} Could not reload config — using initial config for migrate/seed`)
++        }
++      }
++
++      // --- Deps gate: check if Prisma dependencies are available ---
++      //
++      // The generated prisma.config.ts imports dotenv/config, and migrate/generate
++      // shell out to the local prisma binary when a schema file exists. Both must
++      // be installed for subsequent steps to work.
++      // Bootstrap doesn't install deps — that's the user's responsibility.
++      const missingDeps: string[] = []
++      if (!templateScaffolded) {
++        for (const pkg of ['dotenv', 'prisma']) {
++          if (!fs.existsSync(path.join(baseDir, 'node_modules', pkg))) {
++            missingDeps.push(pkg)
++          }
++        }
++      }
++      const needsDepsInstall = missingDeps.length > 0
++
++      if (needsDepsInstall) {
++        console.log(`\n${yellow('!')} Missing dependencies required by Prisma: ${bold(missingDeps.join(', '))}`)
++        console.log(`  Install them as dev dependencies with your package manager, then re-run:`)
++        console.log(`  ${dim('$')} npx prisma@latest bootstrap`)
++
++        return formatBootstrapOutput({
++          databaseId: telemetryCtx.linkResult?.databaseId ?? databaseId ?? 'unknown',
++          isNewProject: !initialState.hasPackageJson,
++          steps,
++          hasModels: updatedState.hasModels,
++          pendingDepsInstall: true,
++        })
++      }
++
++      // --- Step 4: Migrate (if schema has models) ---
++      //
++      // `link` is a Prisma Postgres platform concern — it always runs in-process because
++      // it uses the Management API shipped with this CLI version.
++      //
++      // `migrate` and `seed` are ORM concerns that depend on the user's local Prisma setup.
++      // A user may run `npx prisma@latest bootstrap` on a project that has an older Prisma
++      // version installed locally (e.g., Prisma 6 with `url` in schema.prisma instead of
++      // prisma.config.ts). Running migrate in-process would force this CLI's engine version
++      // on their project, causing version mismatches or hard failures.
++      //
++      // When a local `prisma` binary exists in node_modules, we shell out to it so that
++      // migrate/seed run with the user's own Prisma version and configuration. We only fall
++      // back to in-process execution for fresh projects where `init` just scaffolded Prisma 7
++      // files and no local binary exists yet.
++      const localPrismaBin = findLocalPrismaBin(baseDir)
++      const useLocalBin = localPrismaBin !== null && (initialState.hasSchemaFile || templateScaffolded)
++
++      if (updatedState.hasModels) {
++        const modelNames = getModelNames(baseDir)
++        const modelCount = modelNames.length
++        const modelSummary =
++          modelCount > 0 ? ` ${modelCount} model${modelCount === 1 ? '' : 's'} (${modelNames.join(', ')})` : ' schema'
++        const shouldMigrate = await confirm({
++          message: `Apply${modelSummary} to database with prisma migrate dev?`,
++          default: true,
++        })
++
++        if (shouldMigrate) {
++          console.log(`\n${bold('Running migration...')}`)
++          const migrateStart = performance.now()
++
++          try {
++            if (useLocalBin && localPrismaBin) {
++              runLocalPrismaCommand(localPrismaBin, ['migrate', 'dev', '--name', 'init'], baseDir, subprocessEnv)
++            } else {
++              const migrateDev = MigrateDev.new()
++              const migrateResult = await migrateDev.parse(['--name', 'init'], activeConfig, baseDir)
++
++              if (migrateResult instanceof Error) {
++                steps.migrate = 'failed'
++                console.log(`${yellow('warn')} Migration failed: ${sanitizeErrorMessage(migrateResult.message)}`)
++                await emitStepFailed(telemetryCtx, 'migrate', sanitizeErrorMessage(migrateResult.message))
++              }
++            }
++
++            if (steps.migrate !== 'failed') {
++              steps.migrate = 'completed'
++              stepsCompleted.push('migrate')
++              await emitStepCompleted(telemetryCtx, 'migrate', performance.now() - migrateStart)
++            }
++          } catch (err) {
++            const msg = err instanceof Error ? err.message : String(err)
++            console.log(`${yellow('warn')} Migration failed: ${sanitizeErrorMessage(msg)}`)
++            steps.migrate = 'failed'
++            await emitStepFailed(telemetryCtx, 'migrate', sanitizeErrorMessage(msg))
++          }
++        } else {
++          steps.migrate = 'skipped'
++          await emitStepSkipped(telemetryCtx, 'migrate')
++        }
++      }
++
++      // --- Step 5: Generate ---
++      //
++      // Always run an explicit `generate` step. While `migrate dev` runs `generate`
++      // implicitly, when shelling out to the local binary the implicit generate may
++      // not produce output at the expected location (e.g., custom output paths in
++      // the schema). Running it explicitly ensures the Prisma Client is generated
++      // reliably regardless of how migrate was invoked.
++      {
++        console.log(`\n${bold('Generating Prisma Client...')}`)
++        const generateStart = performance.now()
++
++        try {
++          if (useLocalBin && localPrismaBin) {
++            runLocalPrismaCommand(localPrismaBin, ['generate'], baseDir, subprocessEnv)
++          } else {
++            const generate = Generate.new()
++            const generateResult = await generate.parse([], activeConfig)
++
++            if (generateResult instanceof Error) {
++              steps.generate = 'failed'
++              console.log(`${yellow('warn')} Generate failed: ${sanitizeErrorMessage(generateResult.message)}`)
++              await emitStepFailed(telemetryCtx, 'generate', sanitizeErrorMessage(generateResult.message))
++            }
++          }
++
++          if (steps.generate !== 'failed') {
++            steps.generate = 'completed'
++            stepsCompleted.push('generate')
++            await emitStepCompleted(telemetryCtx, 'generate', performance.now() - generateStart)
++          }
++        } catch (err) {
++          const msg = err instanceof Error ? err.message : String(err)
++          console.log(`${yellow('warn')} Generate failed: ${sanitizeErrorMessage(msg)}`)
++          steps.generate = 'failed'
++          await emitStepFailed(telemetryCtx, 'generate', sanitizeErrorMessage(msg))
++        }
++      }
++
++      // --- Step 6: Seed (if seed script exists) ---
++      const finalState = detectProjectState(baseDir)
++      if (finalState.hasSeedScript) {
++        const seedCmd = getSeedCommand(baseDir)
++        const seedHint = seedCmd ? dim(` → ${seedCmd}`) : ''
++        const shouldSeed = await confirm({
++          message: `Seed the database?${seedHint}`,
++          default: true,
++        })
++
++        if (shouldSeed) {
++          console.log(`\n${bold('Seeding database...')}`)
++          const seedStart = performance.now()
++
++          try {
++            if (useLocalBin && localPrismaBin) {
++              runLocalPrismaCommand(localPrismaBin, ['db', 'seed'], baseDir, subprocessEnv)
++            } else {
++              const dbSeed = DbSeed.new()
++              const seedResult = await dbSeed.parse([], activeConfig)
++
++              if (seedResult instanceof Error) {
++                steps.seed = 'failed'
++                console.log(`${yellow('warn')} Seed failed: ${sanitizeErrorMessage(seedResult.message)}`)
++                await emitStepFailed(telemetryCtx, 'seed', sanitizeErrorMessage(seedResult.message))
++              }
++            }
++
++            if (steps.seed !== 'failed') {
++              steps.seed = 'completed'
++              stepsCompleted.push('seed')
++              await emitStepCompleted(telemetryCtx, 'seed', performance.now() - seedStart)
++            }
++          } catch (err) {
++            const msg = err instanceof Error ? err.message : String(err)
++            console.log(`${yellow('warn')} Seed failed: ${sanitizeErrorMessage(msg)}`)
++            steps.seed = 'failed'
++            await emitStepFailed(telemetryCtx, 'seed', sanitizeErrorMessage(msg))
++          }
++        } else {
++          steps.seed = 'skipped'
++          await emitStepSkipped(telemetryCtx, 'seed')
++        }
++      }
++
++      return formatBootstrapOutput({
++        databaseId: telemetryCtx.linkResult?.databaseId ?? databaseId ?? 'unknown',
++        isNewProject: !initialState.hasPackageJson,
++        steps,
++        hasModels: finalState.hasModels,
++      })
++    } finally {
++      await emitFlowCompleted(telemetryCtx, stepsCompleted, performance.now() - flowStart)
++    }
++  }
++
++  private async askAboutTemplate(): Promise<string | null> {
++    const wantsTemplate = await confirm({
++      message: 'Create a starter app from a template?',
++      default: true,
++    })
++
++    if (!wantsTemplate) return null
++    return promptTemplateSelection()
++  }
++
++  private async askAboutSampleModel(): Promise<boolean> {
++    return confirm({
++      message: 'Add a sample User model to get started?',
++      default: true,
++    })
++  }
++
++  private async runInit(
++    steps: BootstrapStepStatus,
++    stepsCompleted: string[],
++    telemetryCtx: {
++      distinctId: string
++      databaseId: string | undefined
++      linkResult: LinkResult | null
++      projectState: ReturnType<typeof detectProjectState>
++    },
++    config: PrismaConfigInternal,
++    withModel: boolean,
++  ): Promise<void> {
++    const label = withModel ? 'Setting up Prisma with a sample User model...' : 'Setting up Prisma...'
++    console.log(`\n${bold(label)}`)
++    const stepStart = performance.now()
++
++    try {
++      const init = Init.new()
++      const initArgs = ['--datasource-provider', 'postgresql']
++      if (withModel) initArgs.push('--with-model')
++      const initResult = await init.parse(initArgs, config)
++
++      if (initResult instanceof Error) {
++        await emitStepFailed(telemetryCtx, 'init', sanitizeErrorMessage(initResult.message))
++        throw new Error(`Init failed: ${initResult.message}`)
++      }
++
++      steps.init = 'completed'
++      stepsCompleted.push('init')
++      await emitStepCompleted(telemetryCtx, 'init', performance.now() - stepStart)
++    } catch (err) {
++      if (err instanceof Error && err.message.startsWith('Init failed:')) throw err
++      const msg = err instanceof Error ? err.message : String(err)
++      await emitStepFailed(telemetryCtx, 'init', sanitizeErrorMessage(msg))
++      throw new Error(`Init failed: ${msg}`)
++    }
++  }
++
++  public help(error?: string): string | HelpError {
++    if (error) {
++      return new HelpError(`\n${bold(red(`!`))} ${error}\n${Bootstrap.help}`)
++    }
++    return Bootstrap.help
++  }
++}
+diff --git a/packages/cli/src/bootstrap/__tests__/Bootstrap.vitest.ts b/packages/cli/src/bootstrap/__tests__/Bootstrap.vitest.ts
+new file mode 100644
+index 000000000000..df496cd07af0
+--- /dev/null
++++ b/packages/cli/src/bootstrap/__tests__/Bootstrap.vitest.ts
+@@ -0,0 +1,506 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++
++import { defaultTestConfig } from '@prisma/config'
++import { HelpError } from '@prisma/internals'
++import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
++
++import { Bootstrap } from '../Bootstrap'
++
++vi.mock('@prisma/management-api-sdk', () => {
++  class AuthErrorMock extends Error {
++    name = 'AuthError'
++    constructor(
++      message: string,
++      public readonly refreshTokenInvalid = false,
++    ) {
++      super(message)
++    }
++  }
++  return {
++    createManagementApiClient: vi.fn(() => mockSdkClient),
++    AuthError: AuthErrorMock,
++  }
++})
++
++vi.mock('../../../management-api/auth', () => ({
++  login: vi.fn(() => Promise.resolve()),
++}))
++
++vi.mock('../../../management-api/auth-client', () => ({
++  createAuthenticatedManagementAPI: vi.fn(() => ({ client: mockSdkClient })),
++}))
++
++vi.mock('../../../management-api/token-storage', () => ({
++  FileTokenStorage: class {
++    getTokens() {
++      return Promise.resolve({ accessToken: 'stored_token', workspaceId: 'wksp_1' })
++    }
++  },
++}))
++
++vi.mock('@inquirer/prompts', () => ({
++  select: vi.fn(),
++  confirm: vi.fn(),
++}))
++
++vi.mock('checkpoint-client', () => ({
++  getSignature: vi.fn(() => Promise.resolve('test-signature-123')),
++}))
++
++vi.mock('../../utils/nps/capture', () => ({
++  PosthogEventCapture: class {
++    async capture() {}
++  },
++}))
++
++vi.mock('@prisma/migrate', () => ({
++  MigrateDev: {
++    new: () => ({
++      parse: vi.fn(() => Promise.resolve('Migration completed')),
++    }),
++  },
++  DbSeed: {
++    new: () => ({
++      parse: vi.fn(() => Promise.resolve('Seed completed')),
++    }),
++  },
++}))
++
++vi.mock('../../Init', () => ({
++  Init: {
++    new: () => ({
++      parse: vi.fn(() => Promise.resolve('Prisma initialized')),
++    }),
++  },
++}))
++
++vi.mock('../template-scaffold', () => ({
++  downloadAndExtractTemplate: vi.fn(() => Promise.resolve()),
++  installDependencies: vi.fn(),
++  isValidTemplateName: vi.fn((name: string) => ['nextjs', 'express'].includes(name)),
++  promptTemplateSelection: vi.fn(() => Promise.resolve('nextjs')),
++}))
++
++const mockSdkClient = {
++  GET: vi.fn(),
++  POST: vi.fn(),
++}
++
++let tmpDir: string
++
++beforeEach(() => {
++  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-bootstrap-'))
++  mockSdkClient.GET.mockReset()
++  mockSdkClient.POST.mockReset()
++})
++
++afterEach(() => {
++  vi.restoreAllMocks()
++  vi.unstubAllEnvs()
++  fs.rmSync(tmpDir, { recursive: true, force: true })
++})
++
++function setupMockApiSuccess() {
++  mockSdkClient.POST.mockResolvedValueOnce({
++    data: {
++      data: {
++        id: 'conn_test',
++        name: `dev-${os.hostname()}`,
++        endpoints: {
++          pooled: { connectionString: 'postgres://user:pass@db-pool.prisma.io:5432/postgres' },
++          direct: { connectionString: 'postgres://user:pass@db.prisma.io:5432/postgres' },
++        },
++      },
++    },
++    error: undefined,
++  })
++}
++
++describe('Bootstrap command — help and validation', () => {
++  test('shows help with --help flag', async () => {
++    const result = await Bootstrap.new().parse(['--help'], defaultTestConfig(), tmpDir)
++    expect(result).toContain('prisma bootstrap')
++  })
++
++  test('returns error when --api-key is given without --database', async () => {
++    const result = await Bootstrap.new().parse(['--api-key', 'test_key'], defaultTestConfig(), tmpDir)
++    expect(result).toBeInstanceOf(HelpError)
++    expect((result as HelpError).message).toContain('--database')
++  })
++
++  test('validates database ID format', async () => {
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'invalid-id'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++    expect(result).toBeInstanceOf(HelpError)
++    expect((result as HelpError).message).toContain('db_')
++  })
++
++  test('rejects unknown --template name', async () => {
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123', '--template', 'unknown-framework'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++    expect(result).toBeInstanceOf(HelpError)
++    expect((result as HelpError).message).toContain('Unknown template')
++  })
++})
++
++describe('Bootstrap command — new project flow', () => {
++  test('runs init when user declines template, then links', async () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test"}', 'utf-8')
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(false)
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Bootstrap completed')
++    expect(output).toContain('Init')
++  })
++
++  test('scaffolds template when --template flag is provided', async () => {
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(false)
++
++    const { downloadAndExtractTemplate, installDependencies } = await import('../template-scaffold')
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123', '--template', 'nextjs'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Bootstrap completed')
++    expect(output).toContain('Template')
++    expect(output).toContain('done')
++    expect(downloadAndExtractTemplate).toHaveBeenCalledWith('nextjs', tmpDir)
++    expect(installDependencies).toHaveBeenCalledWith(tmpDir)
++  })
++
++  test('falls back to init when template download fails', async () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test"}', 'utf-8')
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(false)
++
++    const { downloadAndExtractTemplate } = await import('../template-scaffold')
++    vi.mocked(downloadAndExtractTemplate).mockRejectedValueOnce(new Error('Network error'))
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123', '--template', 'nextjs'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Bootstrap completed')
++    expect(output).toContain('Template')
++    expect(output).toContain('failed')
++    expect(output).toContain('Init')
++  })
++})
++
++describe('Bootstrap command — existing project flow', () => {
++  test('skips init and template when schema already exists', async () => {
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(path.join(prismaDir, 'schema.prisma'), 'datasource db { provider = "postgresql" }', 'utf-8')
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(false)
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Bootstrap completed')
++    expect(output).toContain('Init')
++  })
++})
++
++describe('Bootstrap command — consent gates', () => {
++  test('skips migrate when user declines', async () => {
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      `
++datasource db { provider = "postgresql" }
++model User { id Int @id }
++`,
++      'utf-8',
++    )
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(false)
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('skipped')
++  })
++})
++
++describe('Bootstrap command — deps gate', () => {
++  test('pauses with pending deps message when dotenv and prisma are missing', async () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test"}', 'utf-8')
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      'datasource db { provider = "postgresql" }\nmodel User { id Int @id }',
++      'utf-8',
++    )
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(true)
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Bootstrap completed')
++    expect(output).toContain('Install')
++    expect(output).toContain('dotenv')
++    expect(output).toContain('Re-run')
++  })
++
++  test('skips deps gate when deps are installed', async () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test"}', 'utf-8')
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      'datasource db { provider = "postgresql" }\nmodel User { id Int @id }',
++      'utf-8',
++    )
++
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'dotenv'), { recursive: true })
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'prisma'), { recursive: true })
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(true)
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Bootstrap completed')
++    expect(output).not.toContain('Re-run')
++    expect(output).toContain('Migration')
++  })
++})
++
++describe('Bootstrap command — seed step', () => {
++  test('runs seed when seed script exists and user accepts', async () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      '{"name":"test","prisma":{"seed":"npx tsx prisma/seed.ts"}}',
++      'utf-8',
++    )
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      'datasource db { provider = "postgresql" }\nmodel User { id Int @id }',
++      'utf-8',
++    )
++
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'dotenv'), { recursive: true })
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'prisma'), { recursive: true })
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm).mockResolvedValue(true)
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toMatch(/Seed\s+done/)
++  })
++
++  test('skips seed when user declines', async () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      '{"name":"test","prisma":{"seed":"npx tsx prisma/seed.ts"}}',
++      'utf-8',
++    )
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      'datasource db { provider = "postgresql" }\nmodel User { id Int @id }',
++      'utf-8',
++    )
++
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'dotenv'), { recursive: true })
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'prisma'), { recursive: true })
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm)
++      .mockResolvedValueOnce(true) // migrate
++      .mockResolvedValueOnce(false) // seed
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Seed')
++    expect(output).toContain('skipped')
++  })
++})
++
++describe('Bootstrap command — mixed consent gates', () => {
++  test('accepts migration but declines seed', async () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      '{"name":"test","prisma":{"seed":"npx tsx prisma/seed.ts"}}',
++      'utf-8',
++    )
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      'datasource db { provider = "postgresql" }\nmodel User { id Int @id }',
++      'utf-8',
++    )
++
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'dotenv'), { recursive: true })
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'prisma'), { recursive: true })
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm)
++      .mockResolvedValueOnce(true) // migrate
++      .mockResolvedValueOnce(false) // seed
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Migration')
++    expect(output).toContain('done')
++    expect(output).toContain('Seed')
++    expect(output).toContain('skipped')
++  })
++
++  test('declines migration but accepts seed', async () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      '{"name":"test","prisma":{"seed":"npx tsx prisma/seed.ts"}}',
++      'utf-8',
++    )
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir, { recursive: true })
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      'datasource db { provider = "postgresql" }\nmodel User { id Int @id }',
++      'utf-8',
++    )
++
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'dotenv'), { recursive: true })
++    fs.mkdirSync(path.join(tmpDir, 'node_modules', 'prisma'), { recursive: true })
++
++    const { confirm } = await import('@inquirer/prompts')
++    vi.mocked(confirm)
++      .mockResolvedValueOnce(false) // migrate
++      .mockResolvedValueOnce(true) // seed
++
++    setupMockApiSuccess()
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'test_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).not.toBeInstanceOf(Error)
++    const output = result as string
++    expect(output).toContain('Migration')
++    expect(output).toContain('skipped')
++    expect(output).toContain('Seed')
++  })
++})
++
++describe('Bootstrap command — error handling', () => {
++  test('returns error on API failure', async () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test"}', 'utf-8')
++
++    mockSdkClient.POST.mockResolvedValueOnce({
++      data: undefined,
++      error: { error: { code: 'unauthorized', message: 'Unauthorized' } },
++    })
++
++    const result = await Bootstrap.new().parse(
++      ['--api-key', 'bad_key', '--database', 'db_abc123'],
++      defaultTestConfig(),
++      tmpDir,
++    )
++
++    expect(result).toBeInstanceOf(HelpError)
++    expect((result as HelpError).message).toContain('Invalid credentials')
++  })
++})
+diff --git a/packages/cli/src/bootstrap/__tests__/project-state.vitest.ts b/packages/cli/src/bootstrap/__tests__/project-state.vitest.ts
+new file mode 100644
+index 000000000000..85068ec15844
+--- /dev/null
++++ b/packages/cli/src/bootstrap/__tests__/project-state.vitest.ts
+@@ -0,0 +1,231 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++
++import { afterEach, beforeEach, describe, expect, test } from 'vitest'
++
++import { detectProjectState, getModelNames, getSeedCommand } from '../project-state'
++
++let tmpDir: string
++
++beforeEach(() => {
++  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-bootstrap-state-'))
++})
++
++afterEach(() => {
++  fs.rmSync(tmpDir, { recursive: true, force: true })
++})
++
++describe('detectProjectState', () => {
++  test('returns all false for empty directory', () => {
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasPackageJson).toBe(false)
++    expect(state.hasSchemaFile).toBe(false)
++    expect(state.hasPrismaConfig).toBe(false)
++    expect(state.hasEnvFile).toBe(false)
++    expect(state.hasModels).toBe(false)
++    expect(state.hasSeedScript).toBe(false)
++  })
++
++  test('detects package.json', () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{}', 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasPackageJson).toBe(true)
++  })
++
++  test('detects prisma/schema.prisma', () => {
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir)
++    fs.writeFileSync(path.join(prismaDir, 'schema.prisma'), `datasource db { provider = "postgresql" }`, 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSchemaFile).toBe(true)
++    expect(state.hasModels).toBe(false)
++  })
++
++  test('detects schema.prisma at root', () => {
++    fs.writeFileSync(path.join(tmpDir, 'schema.prisma'), `datasource db { provider = "postgresql" }`, 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSchemaFile).toBe(true)
++  })
++
++  test('detects models in schema', () => {
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir)
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      `
++datasource db {
++  provider = "postgresql"
++  url = env("DATABASE_URL")
++}
++
++model User {
++  id   Int    @id @default(autoincrement())
++  name String
++}
++`,
++      'utf-8',
++    )
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasModels).toBe(true)
++  })
++
++  test('detects prisma.config.ts', () => {
++    fs.writeFileSync(path.join(tmpDir, 'prisma.config.ts'), 'export default {}', 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasPrismaConfig).toBe(true)
++  })
++
++  test('detects .env', () => {
++    fs.writeFileSync(path.join(tmpDir, '.env'), 'DATABASE_URL=test', 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasEnvFile).toBe(true)
++  })
++
++  test('detects seed script in package.json', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      JSON.stringify({ prisma: { seed: 'ts-node prisma/seed.ts' } }),
++      'utf-8',
++    )
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSeedScript).toBe(true)
++  })
++
++  test('returns false for seed when prisma.seed is empty', () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({ prisma: { seed: '' } }), 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSeedScript).toBe(false)
++  })
++
++  test('returns false for seed when prisma key is missing', () => {
++    fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({ name: 'test' }), 'utf-8')
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSeedScript).toBe(false)
++  })
++
++  test('detects seed script in prisma.config.ts', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'prisma.config.ts'),
++      `import { defineConfig } from 'prisma/config'\nexport default defineConfig({ migrations: { seed: 'tsx ./prisma/seed.ts' } })`,
++      'utf-8',
++    )
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSeedScript).toBe(true)
++  })
++
++  test('detects seed script in prisma.config.ts with different formatting', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'prisma.config.ts'),
++      `export default defineConfig({\n  migrations: {\n    seed: "npx tsx prisma/seed.ts",\n  },\n})`,
++      'utf-8',
++    )
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSeedScript).toBe(true)
++  })
++
++  test('returns false for seed when prisma.config.ts has no seed field', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'prisma.config.ts'),
++      `export default defineConfig({ migrations: { path: 'prisma/migrations' } })`,
++      'utf-8',
++    )
++    const state = detectProjectState(tmpDir)
++
++    expect(state.hasSeedScript).toBe(false)
++  })
++})
++
++describe('getModelNames', () => {
++  test('returns empty array when no schema exists', () => {
++    expect(getModelNames(tmpDir)).toEqual([])
++  })
++
++  test('extracts model names from schema', () => {
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir)
++    fs.writeFileSync(
++      path.join(prismaDir, 'schema.prisma'),
++      `
++datasource db { provider = "postgresql" }
++
++model User {
++  id   Int    @id
++  name String
++  posts Post[]
++}
++
++model Post {
++  id     Int    @id
++  title  String
++  author User   @relation(fields: [authorId], references: [id])
++  authorId Int
++}
++`,
++      'utf-8',
++    )
++
++    expect(getModelNames(tmpDir)).toEqual(['User', 'Post'])
++  })
++
++  test('returns empty array for schema without models', () => {
++    const prismaDir = path.join(tmpDir, 'prisma')
++    fs.mkdirSync(prismaDir)
++    fs.writeFileSync(path.join(prismaDir, 'schema.prisma'), `datasource db { provider = "postgresql" }`, 'utf-8')
++
++    expect(getModelNames(tmpDir)).toEqual([])
++  })
++})
++
++describe('getSeedCommand', () => {
++  test('returns null when no seed config exists', () => {
++    expect(getSeedCommand(tmpDir)).toBeNull()
++  })
++
++  test('returns seed command from package.json', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      JSON.stringify({ prisma: { seed: 'ts-node prisma/seed.ts' } }),
++      'utf-8',
++    )
++
++    expect(getSeedCommand(tmpDir)).toBe('ts-node prisma/seed.ts')
++  })
++
++  test('returns seed command from prisma.config.ts', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'prisma.config.ts'),
++      `export default defineConfig({ migrations: { seed: 'npx tsx prisma/seed.ts' } })`,
++      'utf-8',
++    )
++
++    expect(getSeedCommand(tmpDir)).toBe('npx tsx prisma/seed.ts')
++  })
++
++  test('prefers package.json over prisma.config.ts', () => {
++    fs.writeFileSync(
++      path.join(tmpDir, 'package.json'),
++      JSON.stringify({ prisma: { seed: 'ts-node prisma/seed.ts' } }),
++      'utf-8',
++    )
++    fs.writeFileSync(
++      path.join(tmpDir, 'prisma.config.ts'),
++      `export default defineConfig({ migrations: { seed: 'npx tsx prisma/seed.ts' } })`,
++      'utf-8',
++    )
++
++    expect(getSeedCommand(tmpDir)).toBe('ts-node prisma/seed.ts')
++  })
++})
+diff --git a/packages/cli/src/bootstrap/__tests__/template-scaffold.vitest.ts b/packages/cli/src/bootstrap/__tests__/template-scaffold.vitest.ts
+new file mode 100644
+index 000000000000..7348a8658833
+--- /dev/null
++++ b/packages/cli/src/bootstrap/__tests__/template-scaffold.vitest.ts
+@@ -0,0 +1,54 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++
++import { afterEach, beforeEach, describe, expect, test } from 'vitest'
++
++import { detectPackageManager, isValidTemplateName } from '../template-scaffold'
++
++let tmpDir: string
++
++beforeEach(() => {
++  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-template-'))
++})
++
++afterEach(() => {
++  fs.rmSync(tmpDir, { recursive: true, force: true })
++})
++
++describe('isValidTemplateName', () => {
++  test('accepts curated template names', () => {
++    expect(isValidTemplateName('nextjs')).toBe(true)
++    expect(isValidTemplateName('express')).toBe(true)
++    expect(isValidTemplateName('hono')).toBe(true)
++    expect(isValidTemplateName('nest')).toBe(true)
++  })
++
++  test('rejects unknown template names', () => {
++    expect(isValidTemplateName('angular')).toBe(false)
++    expect(isValidTemplateName('django')).toBe(false)
++    expect(isValidTemplateName('')).toBe(false)
++  })
++})
++
++describe('detectPackageManager', () => {
++  test('detects pnpm from lockfile', () => {
++    fs.writeFileSync(path.join(tmpDir, 'pnpm-lock.yaml'), '', 'utf-8')
++    expect(detectPackageManager(tmpDir)).toBe('pnpm')
++  })
++
++  test('detects yarn from lockfile', () => {
++    fs.writeFileSync(path.join(tmpDir, 'yarn.lock'), '', 'utf-8')
++    expect(detectPackageManager(tmpDir)).toBe('yarn')
++  })
++
++  test('defaults to npm when no lockfile exists', () => {
++    expect(detectPackageManager(tmpDir)).toBe('npm')
++  })
++
++  test('prefers pnpm over yarn when both exist', () => {
++    fs.writeFileSync(path.join(tmpDir, 'pnpm-lock.yaml'), '', 'utf-8')
++    fs.writeFileSync(path.join(tmpDir, 'yarn.lock'), '', 'utf-8')
++    expect(detectPackageManager(tmpDir)).toBe('pnpm')
++  })
++})
+diff --git a/packages/cli/src/bootstrap/completion-output.ts b/packages/cli/src/bootstrap/completion-output.ts
+new file mode 100644
+index 000000000000..7247d7ca311a
+--- /dev/null
++++ b/packages/cli/src/bootstrap/completion-output.ts
+@@ -0,0 +1,97 @@
++import { getCommandWithExecutor } from '@prisma/internals'
++import { bold, dim, green, red } from 'kleur/colors'
++
++type StepResult = 'completed' | 'skipped' | 'not-applicable' | 'failed'
++
++export interface BootstrapStepStatus {
++  init: 'completed' | 'skipped'
++  template: StepResult
++  link: 'completed' | 'skipped' | 'failed'
++  generate: StepResult
++  migrate: StepResult
++  seed: StepResult
++}
++
++function statusIcon(status: StepResult): string {
++  switch (status) {
++    case 'completed':
++      return green('✔')
++    case 'failed':
++      return red('✗')
++    case 'skipped':
++    case 'not-applicable':
++      return dim('–')
++  }
++}
++
++function statusLabel(status: StepResult): string {
++  switch (status) {
++    case 'completed':
++      return 'done'
++    case 'failed':
++      return red('failed')
++    case 'skipped':
++      return 'skipped'
++    case 'not-applicable':
++      return 'n/a'
++  }
++}
++
++export function formatBootstrapOutput(opts: {
++  databaseId: string
++  isNewProject: boolean
++  steps: BootstrapStepStatus
++  hasModels: boolean
++  pendingDepsInstall?: boolean
++}): string {
++  const lines: string[] = []
++
++  lines.push('')
++  lines.push(green('✔') + bold(' Bootstrap completed!'))
++  lines.push('')
++  lines.push(`  ${statusIcon(opts.steps.init)}  Init         ${statusLabel(opts.steps.init)}`)
++  lines.push(`  ${statusIcon(opts.steps.template)}  Template     ${statusLabel(opts.steps.template)}`)
++  lines.push(`  ${statusIcon(opts.steps.link)}  Link         ${statusLabel(opts.steps.link)}`)
++  lines.push(`  ${statusIcon(opts.steps.generate)}  Generate     ${statusLabel(opts.steps.generate)}`)
++  lines.push(`  ${statusIcon(opts.steps.migrate)}  Migration    ${statusLabel(opts.steps.migrate)}`)
++  lines.push(`  ${statusIcon(opts.steps.seed)}  Seed         ${statusLabel(opts.steps.seed)}`)
++  lines.push('')
++
++  if (opts.pendingDepsInstall) {
++    lines.push(bold('Next steps:'))
++    lines.push(`  1. Install ${bold('dotenv')} and ${bold('prisma')} as dev dependencies with your package manager`)
++    lines.push(`  2. Re-run ${green('npx prisma@latest bootstrap')} to finish setup`)
++    lines.push('')
++    return lines.join('\n')
++  }
++
++  lines.push(bold('Next steps:'))
++
++  const clientReady = opts.steps.generate === 'completed' || opts.steps.migrate === 'completed'
++
++  if (opts.hasModels && clientReady) {
++    lines.push(
++      `  1. Start querying: ${dim('https://www.prisma.io/docs/prisma-orm/quickstart/prisma-postgres#7-instantiate-prisma-client')}`,
++    )
++    lines.push(`  2. Run ${green(getCommandWithExecutor('prisma studio'))} to view your data in the browser`)
++  } else if (opts.hasModels) {
++    lines.push(`  1. Run ${green(getCommandWithExecutor('prisma generate'))} to generate the Prisma Client`)
++    lines.push(
++      `  2. Start querying: ${dim('https://www.prisma.io/docs/prisma-orm/quickstart/prisma-postgres#7-instantiate-prisma-client')}`,
++    )
++    lines.push(`  3. Run ${green(getCommandWithExecutor('prisma studio'))} to view your data in the browser`)
++  } else {
++    lines.push(`  1. Define your data model in ${green('prisma/schema.prisma')}`)
++    lines.push(`  2. Run ${green(getCommandWithExecutor('prisma migrate dev'))} to create the database tables`)
++    lines.push(`  3. Run ${green(getCommandWithExecutor('prisma studio'))} to view your data in the browser`)
++  }
++
++  lines.push('')
++  lines.push(dim('Enhance your development workflow:'))
++  lines.push(dim(`  Prisma in Cursor  cursor plugin install prisma-cursor-plugin`))
++  lines.push(dim(`  Prisma MCP        Add { "url": "https://mcp.prisma.io/mcp" } to .cursor/mcp.json`))
++  lines.push(dim(`  Prisma Skills     npx skills add prisma/skills`))
++  lines.push('')
++
++  return lines.join('\n')
++}
+diff --git a/packages/cli/src/bootstrap/project-state.ts b/packages/cli/src/bootstrap/project-state.ts
+new file mode 100644
+index 000000000000..dd9055e2a76c
+--- /dev/null
++++ b/packages/cli/src/bootstrap/project-state.ts
+@@ -0,0 +1,110 @@
++import fs from 'node:fs'
++import path from 'node:path'
++
++export interface ProjectState {
++  hasPackageJson: boolean
++  hasSchemaFile: boolean
++  hasPrismaConfig: boolean
++  hasEnvFile: boolean
++  hasModels: boolean
++  hasSeedScript: boolean
++}
++
++const SCHEMA_CANDIDATES = ['prisma/schema.prisma', 'schema.prisma']
++const MODEL_PATTERN = /^\s*model\s+\w+/m
++
++function findSchemaPath(baseDir: string): string | null {
++  for (const candidate of SCHEMA_CANDIDATES) {
++    const full = path.join(baseDir, candidate)
++    if (fs.existsSync(full)) return full
++  }
++  return null
++}
++
++function checkSeedScript(baseDir: string): boolean {
++  if (checkSeedInPackageJson(baseDir)) return true
++  return checkSeedInPrismaConfig(baseDir)
++}
++
++function checkSeedInPackageJson(baseDir: string): boolean {
++  const packageJsonPath = path.join(baseDir, 'package.json')
++  if (!fs.existsSync(packageJsonPath)) return false
++
++  try {
++    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
++    return typeof pkg.prisma?.seed === 'string' && pkg.prisma.seed.trim().length > 0
++  } catch {
++    return false
++  }
++}
++
++const SEED_PATTERN = /seed\s*[:=]\s*['"`]/
++
++function checkSeedInPrismaConfig(baseDir: string): boolean {
++  const configPath = path.join(baseDir, 'prisma.config.ts')
++  if (!fs.existsSync(configPath)) return false
++
++  try {
++    const content = fs.readFileSync(configPath, 'utf-8')
++    return SEED_PATTERN.test(content)
++  } catch {
++    return false
++  }
++}
++
++export function getModelNames(baseDir: string): string[] {
++  const schemaPath = findSchemaPath(baseDir)
++  if (!schemaPath) return []
++  try {
++    const content = fs.readFileSync(schemaPath, 'utf-8')
++    const matches = content.matchAll(/^\s*model\s+(\w+)/gm)
++    return Array.from(matches, (m) => m[1])
++  } catch {
++    return []
++  }
++}
++
++export function getSeedCommand(baseDir: string): string | null {
++  const packageJsonPath = path.join(baseDir, 'package.json')
++  if (fs.existsSync(packageJsonPath)) {
++    try {
++      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
++      if (typeof pkg.prisma?.seed === 'string' && pkg.prisma.seed.trim().length > 0) {
++        return pkg.prisma.seed.trim()
++      }
++    } catch {}
++  }
++
++  const configPath = path.join(baseDir, 'prisma.config.ts')
++  if (fs.existsSync(configPath)) {
++    try {
++      const content = fs.readFileSync(configPath, 'utf-8')
++      const match = content.match(/seed\s*[:=]\s*['"`]([^'"`]+)['"`]/)
++      if (match) return match[1]
++    } catch {}
++  }
++
++  return null
++}
++
++export function detectProjectState(baseDir: string): ProjectState {
++  const schemaPath = findSchemaPath(baseDir)
++  const hasSchemaFile = schemaPath !== null
++  let hasModels = false
++
++  if (schemaPath) {
++    try {
++      const content = fs.readFileSync(schemaPath, 'utf-8')
++      hasModels = MODEL_PATTERN.test(content)
++    } catch {}
++  }
++
++  return {
++    hasPackageJson: fs.existsSync(path.join(baseDir, 'package.json')),
++    hasSchemaFile,
++    hasPrismaConfig: fs.existsSync(path.join(baseDir, 'prisma.config.ts')),
++    hasEnvFile: fs.existsSync(path.join(baseDir, '.env')),
++    hasModels,
++    hasSeedScript: checkSeedScript(baseDir),
++  }
++}
+diff --git a/packages/cli/src/bootstrap/telemetry.ts b/packages/cli/src/bootstrap/telemetry.ts
+new file mode 100644
+index 000000000000..58ae3692ea5c
+--- /dev/null
++++ b/packages/cli/src/bootstrap/telemetry.ts
+@@ -0,0 +1,102 @@
++import type { LinkResult } from '../postgres/link/Link'
++import { PosthogEventCapture } from '../utils/nps/capture'
++import type { ProjectState } from './project-state'
++
++function isTelemetryDisabled(): boolean {
++  return Boolean(process.env.CHECKPOINT_DISABLE)
++}
++
++const eventCapture = new PosthogEventCapture()
++
++interface TelemetryContext {
++  distinctId: string
++  databaseId: string | undefined
++  linkResult: LinkResult | null
++  projectState: ProjectState
++}
++
++function baseProperties(ctx: TelemetryContext): Record<string, unknown> {
++  return {
++    'organization-id': ctx.linkResult?.workspaceId ?? null,
++    'project-id': ctx.linkResult?.projectId ?? null,
++    'environment-id': ctx.linkResult?.environmentId ?? null,
++    database_id: ctx.databaseId ?? ctx.linkResult?.databaseId ?? null,
++    is_existing_project: ctx.projectState.hasPackageJson,
++  }
++}
++
++export async function emitFlowStarted(ctx: TelemetryContext): Promise<void> {
++  if (isTelemetryDisabled()) return
++  try {
++    await eventCapture.capture(ctx.distinctId, 'activation:cli_flow_started', baseProperties(ctx))
++  } catch {
++    // telemetry should never block the command
++  }
++}
++
++export async function emitStepCompleted(ctx: TelemetryContext, stepName: string, durationMs: number): Promise<void> {
++  if (isTelemetryDisabled()) return
++  try {
++    await eventCapture.capture(ctx.distinctId, 'activation:cli_step_completed', {
++      ...baseProperties(ctx),
++      step_name: stepName,
++      duration_ms: durationMs,
++    })
++  } catch {
++    // telemetry should never block the command
++  }
++}
++
++export async function emitStepSkipped(ctx: TelemetryContext, stepName: string): Promise<void> {
++  if (isTelemetryDisabled()) return
++  try {
++    await eventCapture.capture(ctx.distinctId, 'activation:cli_step_skipped', {
++      ...baseProperties(ctx),
++      step_name: stepName,
++    })
++  } catch {
++    // telemetry should never block the command
++  }
++}
++
++export async function emitStepFailed(ctx: TelemetryContext, stepName: string, error: string): Promise<void> {
++  if (isTelemetryDisabled()) return
++  try {
++    const errorCode = error.match(/^[A-Z]\d+:|Error code: ([A-Z]\d+)/)?.[1] ?? extractErrorClass(error)
++    await eventCapture.capture(ctx.distinctId, 'activation:cli_step_failed', {
++      ...baseProperties(ctx),
++      step_name: stepName,
++      error_code: errorCode,
++    })
++  } catch {
++    // telemetry should never block the command
++  }
++}
++
++function extractErrorClass(msg: string): string {
++  const prismaCode = msg.match(/P\d{4}/)?.[0]
++  if (prismaCode) return prismaCode
++  if (msg.includes('ENOENT')) return 'ENOENT'
++  if (msg.includes('EACCES')) return 'EACCES'
++  if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) return 'TIMEOUT'
++  if (msg.includes('datasource')) return 'DATASOURCE_CONFIG'
++  if (msg.includes('authenticate') || msg.includes('credentials')) return 'AUTH'
++  return 'UNKNOWN'
++}
++
++export async function emitFlowCompleted(
++  ctx: TelemetryContext,
++  stepsCompleted: string[],
++  durationMs: number,
++): Promise<void> {
++  if (isTelemetryDisabled()) return
++  try {
++    await eventCapture.capture(ctx.distinctId, 'activation:cli_flow_completed', {
++      ...baseProperties(ctx),
++      steps_completed: stepsCompleted,
++      duration_ms: durationMs,
++    })
++  } catch {
++    // telemetry should never block the command
++  }
++}
+diff --git a/packages/cli/src/bootstrap/template-scaffold.ts b/packages/cli/src/bootstrap/template-scaffold.ts
+new file mode 100644
+index 000000000000..85a1cabca247
+--- /dev/null
++++ b/packages/cli/src/bootstrap/template-scaffold.ts
+@@ -0,0 +1,169 @@
++import { execFile } from 'node:child_process'
++import fs from 'node:fs'
++import path from 'node:path'
++import { Readable } from 'node:stream'
++import { promisify } from 'node:util'
++import { createGunzip } from 'node:zlib'
++
++import { select } from '@inquirer/prompts'
++import { dim } from 'kleur/colors'
++
++const PRISMA_EXAMPLES_TARBALL_URL = 'https://api.github.com/repos/prisma/prisma-examples/tarball/latest'
++
++interface TemplateEntry {
++  name: string
++  label: string
++}
++
++const CURATED_TEMPLATES: TemplateEntry[] = [
++  { name: 'nextjs', label: 'Next.js' },
++  { name: 'express', label: 'Express' },
++  { name: 'hono', label: 'Hono' },
++  { name: 'fastify', label: 'Fastify' },
++  { name: 'nuxt', label: 'Nuxt' },
++  { name: 'sveltekit', label: 'SvelteKit' },
++  { name: 'remix', label: 'Remix' },
++  { name: 'react-router-7', label: 'React Router 7' },
++  { name: 'astro', label: 'Astro' },
++  { name: 'nest', label: 'NestJS' },
++]
++
++export async function promptTemplateSelection(): Promise<string> {
++  return select({
++    message: 'Pick a starter template:',
++    choices: CURATED_TEMPLATES.map((t) => ({
++      name: `${t.label}  ${dim(`prisma-examples/orm/${t.name}`)}`,
++      value: t.name,
++    })),
++    loop: true,
++  })
++}
++
++export function isValidTemplateName(name: string): boolean {
++  return CURATED_TEMPLATES.some((t) => t.name === name)
++}
++
++/**
++ * Downloads the prisma-examples tarball and extracts only `orm/<templateName>/`
++ * into `targetDir`. Buffers the decompressed tar and walks it entry-by-entry.
++ *
++ * The prisma-examples tarball is typically <10 MB decompressed, so buffering
++ * is acceptable and avoids a streaming tar parser dependency.
++ */
++export async function downloadAndExtractTemplate(templateName: string, targetDir: string): Promise<void> {
++  const response = await fetch(PRISMA_EXAMPLES_TARBALL_URL, {
++    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'prisma-cli' },
++    redirect: 'follow',
++    signal: AbortSignal.timeout(30_000),
++  })
++
++  if (!response.ok || !response.body) {
++    throw new Error(`Failed to download template: HTTP ${response.status}`)
++  }
++
++  const tarBuffer = await decompressGzip(response.body as import('node:stream/web').ReadableStream)
++  const templatePrefix = `orm/${templateName}/`
++  let filesExtracted = 0
++
++  let offset = 0
++  while (offset + 512 <= tarBuffer.length) {
++    const header = parseTarHeader(tarBuffer, offset)
++    if (!header) break
++
++    offset += 512
++    const paddedSize = Math.ceil(header.size / 512) * 512
++
++    if (header.type === '0' || header.type === '') {
++      const relPath = stripFirstComponent(header.name)
++      if (relPath?.startsWith(templatePrefix)) {
++        const destPath = path.resolve(targetDir, relPath.slice(templatePrefix.length))
++        if (!destPath.startsWith(path.resolve(targetDir) + path.sep)) continue
++        fs.mkdirSync(path.dirname(destPath), { recursive: true })
++        fs.writeFileSync(destPath, tarBuffer.subarray(offset, offset + header.size))
++        filesExtracted++
++      }
++    }
++
++    offset += paddedSize
++  }
++
++  if (filesExtracted === 0) {
++    throw new Error(`Template "${templateName}" not found in prisma-examples repository`)
++  }
++
++  const packageJsonPath = path.join(targetDir, 'package.json')
++  if (!fs.existsSync(packageJsonPath)) {
++    throw new Error(
++      `Template "${templateName}" extracted ${filesExtracted} file(s) but is missing package.json — the download may be corrupted`,
++    )
++  }
++}
++
++async function decompressGzip(body: import('node:stream/web').ReadableStream): Promise<Buffer> {
++  const gunzip = createGunzip()
++  const nodeStream = Readable.fromWeb(body)
++  const chunks: Buffer[] = []
++
++  return new Promise<Buffer>((resolve, reject) => {
++    nodeStream
++      .pipe(gunzip)
++      .on('data', (chunk: Buffer) => chunks.push(chunk))
++      .on('end', () => resolve(Buffer.concat(chunks)))
++      .on('error', reject)
++  })
++}
++
++interface TarEntry {
++  name: string
++  size: number
++  type: string
++}
++
++function parseTarHeader(buf: Buffer, offset: number): TarEntry | null {
++  const header = buf.subarray(offset, offset + 512)
++  if (header.every((b) => b === 0)) return null
++
++  const name = header.subarray(0, 100).toString('utf-8').replace(/\0.*$/, '')
++  const sizeStr = header.subarray(124, 136).toString('utf-8').replace(/\0.*$/, '').trim()
++  const typeFlag = header[156]
++  const type = typeFlag === 0 ? '0' : String.fromCharCode(typeFlag)
++  const prefix = header.subarray(345, 500).toString('utf-8').replace(/\0.*$/, '')
++
++  const fullName = prefix ? `${prefix}/${name}` : name
++  const size = sizeStr ? parseInt(sizeStr, 8) : 0
++
++  if (isNaN(size)) return null
++
++  return { name: fullName, size, type }
++}
++
++/**
++ * GitHub tarballs add a `<owner>-<repo>-<sha>/` prefix to all paths.
++ */
++function stripFirstComponent(filePath: string): string | null {
++  const idx = filePath.indexOf('/')
++  if (idx === -1) return null
++  return filePath.slice(idx + 1)
++}
++
++export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun' | 'deno'
++
++export function detectPackageManager(baseDir: string): PackageManager {
++  if (fs.existsSync(path.join(baseDir, 'pnpm-lock.yaml'))) return 'pnpm'
++  if (fs.existsSync(path.join(baseDir, 'yarn.lock'))) return 'yarn'
++  if (fs.existsSync(path.join(baseDir, 'bun.lock')) || fs.existsSync(path.join(baseDir, 'bun.lockb'))) return 'bun'
++  if (fs.existsSync(path.join(baseDir, 'deno.lock'))) return 'deno'
++  return 'npm'
++}
++
++const execFileAsync = promisify(execFile)
++
++export async function installDependencies(baseDir: string): Promise<void> {
++  const pm = detectPackageManager(baseDir)
++  await execFileAsync(pm, ['install'], {
++    cwd: baseDir,
++    env: { ...process.env },
++    shell: process.platform === 'win32',
++    timeout: 300_000,
++  })
++}
+diff --git a/packages/cli/src/postgres/link/Link.ts b/packages/cli/src/postgres/link/Link.ts
+index f857907f7276..4a8a04e26d69 100644
+--- a/packages/cli/src/postgres/link/Link.ts
++++ b/packages/cli/src/postgres/link/Link.ts
+@@ -1,6 +1,3 @@
+-import fs from 'node:fs'
+-import path from 'node:path'
+-
+ import { select } from '@inquirer/prompts'
+ import type { PrismaConfigInternal } from '@prisma/config'
+ import type { Command } from '@prisma/internals'
+@@ -9,12 +6,36 @@ import type { ManagementApiClient } from '@prisma/management-api-sdk'
+ import { AuthError, createManagementApiClient } from '@prisma/management-api-sdk'
+ import { bold, dim, green, red } from 'kleur/colors'
+ 
++import { getModelNames } from '../../bootstrap/project-state'
+ import { login } from '../../management-api/auth'
+ import { createAuthenticatedManagementAPI } from '../../management-api/auth-client'
+ import { FileTokenStorage } from '../../management-api/token-storage'
+ import { formatCompletionOutput } from './completion-output'
+-import { isAlreadyLinked, writeLocalFiles } from './local-setup'
+-import { createDevConnection, LinkApiError, listDatabases, listProjects, sanitizeErrorMessage } from './management-api'
++import { isAlreadyLinked, writeLocalFiles, type WriteLocalFilesResult } from './local-setup'
++import {
++  createDevConnection,
++  getDatabase,
++  LinkApiError,
++  listDatabases,
++  listProjects,
++  sanitizeErrorMessage,
++} from './management-api'
++
++export interface LinkResult {
++  workspaceId: string
++  projectId: string
++  environmentId: string
++  databaseId: string
++  connectionString: string
++  localFilesResult: WriteLocalFilesResult
++  hasModels: boolean
++}
++
++interface DatabaseSelection {
++  databaseId: string
++  workspaceId: string
++  projectId: string
++}
+ 
+ const DEFAULT_MANAGEMENT_API_URL = 'https://api.prisma.io'
+ 
+@@ -42,7 +63,7 @@ function isExpiredSessionError(err: unknown): boolean {
+   return err instanceof AuthError && err.refreshTokenInvalid
+ }
+ 
+-async function resolveDatabase(client: ManagementApiClient): Promise<string> {
++async function resolveDatabase(client: ManagementApiClient): Promise<DatabaseSelection> {
+   const projects = await listProjects(client)
+ 
+   if (projects.length === 0) {
+@@ -58,6 +79,9 @@ async function resolveDatabase(client: ManagementApiClient): Promise<string> {
+     loop: true,
+   })
+ 
++  const selectedProject = projects.find((p) => p.id === projectId)
++  const workspaceId = selectedProject?.workspace?.id ?? 'unknown'
++
+   const databases = (await listDatabases(client, projectId)).filter((db) => db.status === 'ready')
+ 
+   if (databases.length === 0) {
+@@ -67,10 +91,10 @@ async function resolveDatabase(client: ManagementApiClient): Promise<string> {
+   if (databases.length === 1) {
+     const db = databases[0]
+     console.log(`${green('✔')} Using database ${bold(db.name)}${db.region ? ` (${db.region.name})` : ''}`)
+-    return db.id
++    return { databaseId: db.id, workspaceId, projectId }
+   }
+ 
+-  return select({
++  const databaseId = await select({
+     message: 'Select a database:',
+     choices: databases.map((db) => ({
+       name: `${db.name}  ${dim(db.region?.name ?? 'unknown region')}`,
+@@ -78,6 +102,29 @@ async function resolveDatabase(client: ManagementApiClient): Promise<string> {
+     })),
+     loop: true,
+   })
++
++  return { databaseId, workspaceId, projectId }
++}
++
++function extractWorkspaceIdFromToken(token: string): string | null {
++  try {
++    const parts = token.split('.')
++    if (parts.length < 2 || !parts[1]) return null
++    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString())
++    if (typeof payload !== 'object' || payload === null) return null
++    return payload.workspace_id ?? payload.workspaceId ?? null
++  } catch {
++    return null
++  }
++}
++
++async function resolveProjectForDatabase(client: ManagementApiClient, databaseId: string): Promise<string | null> {
++  try {
++    const database = await getDatabase(client, databaseId)
++    return database?.project?.id ?? null
++  } catch {
++    return null
++  }
+ }
+ 
+ export class Link implements Command {
+@@ -147,13 +194,15 @@ ${bold('Examples')}
+     }
+ 
+     try {
+-      return await this.linkDatabase(apiKey, databaseId, baseDir)
++      const result = await this.executeLinkFlow(apiKey, databaseId, baseDir)
++      return formatCompletionOutput(result)
+     } catch (err) {
+       if (!apiKey && isExpiredSessionError(err)) {
+         console.log(`Session expired. Re-authenticating via browser...`)
+         await login({ utmMedium: 'command-postgres-link' })
+         try {
+-          return await this.linkDatabase(apiKey, databaseId, baseDir)
++          const result = await this.executeLinkFlow(apiKey, databaseId, baseDir)
++          return formatCompletionOutput(result)
+         } catch (retryErr) {
+           return Link.formatError(retryErr)
+         }
+@@ -162,22 +211,62 @@ ${bold('Examples')}
+     }
+   }
+ 
+-  private async linkDatabase(
++  async link(
+     apiKey: string | undefined,
+     databaseId: string | undefined,
+     baseDir: string,
+-  ): Promise<string> {
++    opts?: { force?: boolean },
++  ): Promise<LinkResult> {
++    if (!opts?.force && isAlreadyLinked(baseDir)) {
++      throw new LinkApiError('This project is already linked to Prisma Postgres. Use force to re-link.')
++    }
++
++    try {
++      return await this.executeLinkFlow(apiKey, databaseId, baseDir)
++    } catch (err) {
++      if (!apiKey && isExpiredSessionError(err)) {
++        console.log(`Session expired. Re-authenticating via browser...`)
++        await login({ utmMedium: 'command-postgres-link' })
++        return await this.executeLinkFlow(apiKey, databaseId, baseDir)
++      }
++      throw err
++    }
++  }
++
++  private async executeLinkFlow(
++    apiKey: string | undefined,
++    databaseId: string | undefined,
++    baseDir: string,
++  ): Promise<LinkResult> {
+     const client = await resolveApiClient(apiKey)
+ 
++    let workspaceId: string | null = null
++    let projectId: string | null = null
++
+     if (!databaseId) {
+-      databaseId = await resolveDatabase(client)
++      const resolved = await resolveDatabase(client)
++      databaseId = resolved.databaseId
++      workspaceId = resolved.workspaceId
++      projectId = resolved.projectId
++    } else {
++      workspaceId = apiKey ? extractWorkspaceIdFromToken(apiKey) : null
++      projectId = await resolveProjectForDatabase(client, databaseId)
+     }
+ 
+     const connection = await createDevConnection(client, databaseId)
+     const localFilesResult = writeLocalFiles(baseDir, connection)
+-    const hasModels = schemaHasModels(baseDir)
+-
+-    return formatCompletionOutput({ databaseId, localFilesResult, hasModels })
++    const hasModels = getModelNames(baseDir).length > 0
++    const environmentId = databaseId.replace(/^db_/, '')
++
++    return {
++      workspaceId: workspaceId ?? 'unknown',
++      projectId: projectId ?? 'unknown',
++      environmentId,
++      databaseId,
++      connectionString: connection.connectionString,
++      localFilesResult,
++      hasModels,
++    }
+   }
+ 
+   private static formatError(err: unknown): HelpError {
+@@ -195,16 +284,3 @@ ${bold('Examples')}
+     return Link.help
+   }
+ }
+-
+-function schemaHasModels(baseDir: string): boolean {
+-  const candidates = [path.join(baseDir, 'prisma', 'schema.prisma'), path.join(baseDir, 'schema.prisma')]
+-
+-  for (const schemaPath of candidates) {
+-    if (fs.existsSync(schemaPath)) {
+-      const content = fs.readFileSync(schemaPath, 'utf-8')
+-      return /^\s*model\s+\w+/m.test(content)
+-    }
+-  }
+-
+-  return false
+-}
+diff --git a/packages/cli/src/postgres/link/completion-output.ts b/packages/cli/src/postgres/link/completion-output.ts
+index d040d7bc0cb5..2d224c001a24 100644
+--- a/packages/cli/src/postgres/link/completion-output.ts
++++ b/packages/cli/src/postgres/link/completion-output.ts
+@@ -1,13 +1,10 @@
+ import { getCommandWithExecutor } from '@prisma/internals'
+ import { bold, dim, green } from 'kleur/colors'
+ 
+-import { formatEnvSummary, type WriteLocalFilesResult } from './local-setup'
++import type { LinkResult } from './Link'
++import { formatEnvSummary } from './local-setup'
+ 
+-export function formatCompletionOutput(opts: {
+-  databaseId: string
+-  localFilesResult: WriteLocalFilesResult
+-  hasModels: boolean
+-}): string {
++export function formatCompletionOutput(opts: LinkResult): string {
+   const lines: string[] = []
+ 
+   lines.push('')
+diff --git a/packages/cli/src/postgres/link/management-api.ts b/packages/cli/src/postgres/link/management-api.ts
+index 0ad71bb2fa25..acc9f1bc5563 100644
+--- a/packages/cli/src/postgres/link/management-api.ts
++++ b/packages/cli/src/postgres/link/management-api.ts
+@@ -82,3 +82,16 @@ export async function listDatabases(client: ManagementApiClient, projectId: stri
+ 
+   return data?.data ?? []
+ }
++
++export async function getDatabase(client: ManagementApiClient, databaseId: string) {
++  const { data, error } = await client.GET('/v1/databases/{databaseId}', {
++    params: { path: { databaseId } },
++  })
++
++  if (error) {
++    const msg = typeof error.error?.message === 'string' ? error.error.message : 'Failed to get database'
++    throw new LinkApiError(msg)
++  }
++
++  return data?.data ?? null
++}

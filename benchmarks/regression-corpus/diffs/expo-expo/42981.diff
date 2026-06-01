@@ -1,0 +1,1522 @@
+diff --git a/packages/expo-dev-launcher/CHANGELOG.md b/packages/expo-dev-launcher/CHANGELOG.md
+index dbff3262aa115b..56eb7c9968dce1 100644
+--- a/packages/expo-dev-launcher/CHANGELOG.md
++++ b/packages/expo-dev-launcher/CHANGELOG.md
+@@ -6,6 +6,8 @@
+ 
+ ### 🎉 New features
+ 
++- Full native interface for updates. ([#42981](https://github.com/expo/expo/pull/42981) by [@douglowder](https://github.com/douglowder))
++
+ ### 🐛 Bug fixes
+ 
+ - fixes to error handling ([#42873](https://github.com/expo/expo/pull/42873) by [@vonovak](https://github.com/vonovak))
+diff --git a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/DevLauncherController.kt b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/DevLauncherController.kt
+index bfc11df97c3d51..772a272d92e9e2 100644
+--- a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/DevLauncherController.kt
++++ b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/DevLauncherController.kt
+@@ -42,6 +42,7 @@ import expo.modules.devlauncher.services.DependencyInjection
+ import expo.modules.kotlin.weak
+ import expo.modules.manifests.core.Manifest
+ import expo.modules.updatesinterface.UpdatesInterface
++import expo.modules.updatesinterface.UpdatesDevLauncherInterface
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.launch
+@@ -146,7 +147,7 @@ class DevLauncherController private constructor(
+       val manifestParser = DevLauncherManifestParser(httpClient, parsedUrl, installationIDHelper.getOrCreateInstallationID(context))
+       val appIntent = createAppIntent()
+ 
+-      updatesInterface?.reset()
++      (updatesInterface as UpdatesDevLauncherInterface?)?.reset()
+ 
+       val appLoaderFactory = DevLauncherAppLoaderFactory(
+         context,
+diff --git a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/helpers/DevLauncherUpdatesHelper.kt b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/helpers/DevLauncherUpdatesHelper.kt
+index 99501188c1e187..911023c594109f 100644
+--- a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/helpers/DevLauncherUpdatesHelper.kt
++++ b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/helpers/DevLauncherUpdatesHelper.kt
+@@ -2,7 +2,7 @@ package expo.modules.devlauncher.helpers
+ 
+ import android.content.Context
+ import android.net.Uri
+-import expo.modules.updatesinterface.UpdatesInterface
++import expo.modules.updatesinterface.UpdatesDevLauncherInterface
+ import org.json.JSONObject
+ import java.lang.Exception
+ import java.util.*
+@@ -11,16 +11,16 @@ import kotlin.coroutines.resume
+ import kotlin.coroutines.resumeWithException
+ import kotlin.coroutines.suspendCoroutine
+ 
+-suspend fun UpdatesInterface.loadUpdate(
++suspend fun UpdatesDevLauncherInterface.loadUpdate(
+   configuration: HashMap<String, Any>,
+   context: Context,
+   shouldContinue: (manifest: JSONObject) -> Boolean
+-): UpdatesInterface.Update =
++): UpdatesDevLauncherInterface.Update =
+   suspendCoroutine { cont ->
+     this.fetchUpdateWithConfiguration(
+       configuration,
+-      object : UpdatesInterface.UpdateCallback {
+-        override fun onSuccess(update: UpdatesInterface.Update?) {
++      object : UpdatesDevLauncherInterface.UpdateCallback {
++        override fun onSuccess(update: UpdatesDevLauncherInterface.Update?) {
+           // if the update is null, we previously aborted the fetch, so we've already resumed
+           update?.let { cont.resume(update) }
+         }
+@@ -32,7 +32,7 @@ suspend fun UpdatesInterface.loadUpdate(
+           return if (shouldContinue(manifest)) {
+             true
+           } else {
+-            cont.resume(object : UpdatesInterface.Update {
++            cont.resume(object : UpdatesDevLauncherInterface.Update {
+               override val manifest: JSONObject = manifest
+               override val launchAssetPath: String
+                 get() = throw Exception("Tried to access launch asset path for a manifest that was not loaded")
+diff --git a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/launcher/loaders/DevLauncherAppLoaderFactory.kt b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/launcher/loaders/DevLauncherAppLoaderFactory.kt
+index 1ea726f469f500..64554b000b99f7 100644
+--- a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/launcher/loaders/DevLauncherAppLoaderFactory.kt
++++ b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/launcher/loaders/DevLauncherAppLoaderFactory.kt
+@@ -9,6 +9,7 @@ import expo.modules.devlauncher.helpers.createUpdatesConfigurationWithUrl
+ import expo.modules.devlauncher.helpers.loadUpdate
+ import expo.modules.devlauncher.launcher.manifest.DevLauncherManifestParser
+ import expo.modules.manifests.core.Manifest
++import expo.modules.updatesinterface.UpdatesDevLauncherInterface
+ import expo.modules.updatesinterface.UpdatesInterface
+ 
+ class DevLauncherAppLoaderFactory(
+@@ -36,7 +37,7 @@ class DevLauncherAppLoaderFactory(
+         null
+       } else {
+         val configurationCandidate = createUpdatesConfigurationWithUrl(url, projectUrl, runtimeVersion, installationIDHelper.getOrCreateInstallationID(context))
+-        if (it.isValidUpdatesConfiguration(configurationCandidate)) {
++        if ((it as UpdatesDevLauncherInterface).isValidUpdatesConfiguration(configurationCandidate)) {
+           configurationCandidate
+         } else {
+           null
+@@ -51,7 +52,7 @@ class DevLauncherAppLoaderFactory(
+       }
+       DevLauncherLocalAppLoader(manifest!!, appHost, context, controller)
+     } else {
+-      val update = updatesInterface!!.loadUpdate(validConfiguration, context) {
++      val update = (updatesInterface as UpdatesDevLauncherInterface?)!!.loadUpdate(validConfiguration, context) {
+         manifest = Manifest.fromManifestJson(it) // TODO: might be able to pass actual manifest object in here
+         return@loadUpdate !manifest!!.isUsingDeveloperTool()
+       }
+diff --git a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/react/DevLauncherReactNativeHostHandler.kt b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/react/DevLauncherReactNativeHostHandler.kt
+index 980e3593c9968d..ed278bd29cb326 100644
+--- a/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/react/DevLauncherReactNativeHostHandler.kt
++++ b/packages/expo-dev-launcher/android/src/debug/java/expo/modules/devlauncher/react/DevLauncherReactNativeHostHandler.kt
+@@ -9,6 +9,7 @@ import expo.modules.core.interfaces.ReactNativeHostHandler
+ import expo.modules.devlauncher.DevLauncherController
+ import java.lang.ref.WeakReference
+ import expo.modules.updatesinterface.UpdatesControllerRegistry
++import expo.modules.updatesinterface.UpdatesDevLauncherInterface
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.launch
+@@ -45,7 +46,7 @@ class DevLauncherReactNativeHostHandler(context: Context) : ReactNativeHostHandl
+     CoroutineScope(Dispatchers.Main).launch {
+       UpdatesControllerRegistry.controller?.get()?.let {
+         DevLauncherController.instance.updatesInterface = it
+-        it.updatesInterfaceCallbacks = WeakReference(DevLauncherController.instance)
++        (it as UpdatesDevLauncherInterface).updatesInterfaceCallbacks = WeakReference(DevLauncherController.instance)
+       }
+     }
+   }
+diff --git a/packages/expo-dev-launcher/ios/EXDevLauncherController.h b/packages/expo-dev-launcher/ios/EXDevLauncherController.h
+index d881bb9ffbe630..9894c3fa7485ab 100644
+--- a/packages/expo-dev-launcher/ios/EXDevLauncherController.h
++++ b/packages/expo-dev-launcher/ios/EXDevLauncherController.h
+@@ -45,7 +45,7 @@ NS_ASSUME_NONNULL_BEGIN
+ @property (nonatomic, weak) EXAppContext * _Nullable appContext;
+ @property (nonatomic, strong) EXDevLauncherPendingDeepLinkRegistry *pendingDeepLinkRegistry;
+ @property (nonatomic, strong) EXDevLauncherRecentlyOpenedAppsRegistry *recentlyOpenedAppsRegistry;
+-@property (nonatomic, strong) id<EXUpdatesExternalInterface> updatesInterface;
++@property (nonatomic, strong) id<EXUpdatesDevLauncherInterface> updatesInterface;
+ 
+ + (instancetype)sharedInstance;
+ 
+diff --git a/packages/expo-dev-launcher/ios/EXDevLauncherController.m b/packages/expo-dev-launcher/ios/EXDevLauncherController.m
+index a042a05d369941..e6cb1a05599ba9 100644
+--- a/packages/expo-dev-launcher/ios/EXDevLauncherController.m
++++ b/packages/expo-dev-launcher/ios/EXDevLauncherController.m
+@@ -289,8 +289,8 @@ - (BOOL)_handleExternalDeepLink:(NSURL *)url options:(NSDictionary *)options
+ 
+ - (nullable NSURL *)sourceUrl
+ {
+-  if (_shouldPreferUpdatesInterfaceSourceUrl && _updatesInterface && ((id<EXUpdatesExternalInterface>)_updatesInterface).launchAssetURL) {
+-    return ((id<EXUpdatesExternalInterface>)_updatesInterface).launchAssetURL;
++  if (_shouldPreferUpdatesInterfaceSourceUrl && _updatesInterface && ((id<EXUpdatesDevLauncherInterface>)_updatesInterface).launchAssetURL) {
++    return ((id<EXUpdatesDevLauncherInterface>)_updatesInterface).launchAssetURL;
+   }
+   return _sourceUrl;
+ }
+@@ -425,7 +425,7 @@ - (void)loadApp:(NSURL *)url
+       // do nothing for now
+     } success:^(NSDictionary * _Nullable manifest) {
+       if (manifest) {
+-        launchExpoApp(((id<EXUpdatesExternalInterface>)self->_updatesInterface).launchAssetURL, [EXManifestsManifestFactory manifestForManifestJSON:manifest]);
++        launchExpoApp(((id<EXUpdatesDevLauncherInterface>)self->_updatesInterface).launchAssetURL, [EXManifestsManifestFactory manifestForManifestJSON:manifest]);
+       }
+     } error:onError];
+   };
+@@ -692,7 +692,7 @@ -(NSDictionary *)getUpdatesConfig: (nullable NSDictionary *) constants
+   return updatesConfig;
+ }
+ 
+-- (void)updatesExternalInterfaceDidRequestRelaunch:(id<EXUpdatesExternalInterface> _Nonnull)updatesExternalInterface {
++- (void)updatesExternalInterfaceDidRequestRelaunch:(id<EXUpdatesDevLauncherInterface> _Nonnull)updatesExternalInterface {
+   NSURL * _Nullable appUrl = self.appManifestURLWithFallback;
+   if (!appUrl) {
+     return;
+diff --git a/packages/expo-dev-launcher/ios/ReactDelegateHandler/ExpoDevLauncherReactDelegateHandler.swift b/packages/expo-dev-launcher/ios/ReactDelegateHandler/ExpoDevLauncherReactDelegateHandler.swift
+index dca659e57e6fcf..522a9f7c642c0d 100644
+--- a/packages/expo-dev-launcher/ios/ReactDelegateHandler/ExpoDevLauncherReactDelegateHandler.swift
++++ b/packages/expo-dev-launcher/ios/ReactDelegateHandler/ExpoDevLauncherReactDelegateHandler.swift
+@@ -92,7 +92,7 @@ public class ExpoDevLauncherReactDelegateHandler: ExpoReactDelegateHandler, EXDe
+     self.reactDelegate = reactDelegate
+     self.launchOptions = launchOptions
+ 
+-    if let sharedController = UpdatesControllerRegistry.sharedInstance.controller {
++    if let sharedController = UpdatesControllerRegistry.sharedInstance.controller as? UpdatesDevLauncherInterface {
+       // for some reason the swift compiler and bridge are having issues here
+       EXDevLauncherController.sharedInstance().updatesInterface = sharedController
+       sharedController.updatesExternalInterfaceDelegate = EXDevLauncherController.sharedInstance()
+diff --git a/packages/expo-updates-interface/CHANGELOG.md b/packages/expo-updates-interface/CHANGELOG.md
+index 6c451c310287a8..e09f4551c67c10 100644
+--- a/packages/expo-updates-interface/CHANGELOG.md
++++ b/packages/expo-updates-interface/CHANGELOG.md
+@@ -6,6 +6,8 @@
+ 
+ ### 🎉 New features
+ 
++- Full native interface for updates. ([#42981](https://github.com/expo/expo/pull/42981) by [@douglowder](https://github.com/douglowder))
++
+ ### 🐛 Bug fixes
+ 
+ ### 💡 Others
+@@ -16,9 +18,7 @@ _This version does not introduce any user-facing changes._
+ 
+ ## 55.1.0 — 2026-01-22
+ 
+-### 🎉 New features
+-
+-- Full native interface for updates. ([#41527](https://github.com/expo/expo/pull/41527) by [@douglowder](https://github.com/douglowder))
++_This version does not introduce any user-facing changes._
+ 
+ ## 55.0.0 — 2026-01-21
+ 
+diff --git a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesControllerRegistry.kt b/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesControllerRegistry.kt
+index 32f252d837d033..82291b58cdb129 100644
+--- a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesControllerRegistry.kt
++++ b/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesControllerRegistry.kt
+@@ -4,5 +4,4 @@ import java.lang.ref.WeakReference
+ 
+ object UpdatesControllerRegistry {
+   var controller: WeakReference<UpdatesInterface>? = null
+-  var metricsController: WeakReference<UpdatesMetricsInterface>? = null
+ }
+diff --git a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterface.kt b/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterface.kt
+index 5a619bc9ddf7e0..30c8eb3d8c5fbe 100644
+--- a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterface.kt
++++ b/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterface.kt
+@@ -3,12 +3,44 @@ package expo.modules.updatesinterface
+ import android.net.Uri
+ import org.json.JSONObject
+ import java.lang.ref.WeakReference
++import java.util.UUID
+ 
+ /**
+  * Interface for modules that depend on expo-updates for loading production updates but do not want
+  * to depend on expo-updates or delegate control to the singleton UpdatesController.
++ *
++ * All updates controllers implement this protocol
+  */
+ interface UpdatesInterface {
++  /**
++   * Whether updates is enabled
++   */
++  val isEnabled: Boolean get() = false
++
++  /**
++   * These properties are set when updates is enabled, or the dev client is running
++   */
++  val runtimeVersion: String?
++  val updateUrl: Uri?
++
++  /**
++   * These properties are only set when updates is enabled
++   */
++  val launchedUpdateId: UUID? get() = null
++  val embeddedUpdateId: UUID? get() = null
++  val launchAssetPath: String? get() = null
++
++  /**
++   * User code or third party modules can add a listener that will be called
++   * on updates state machine transitions (only when updates is enabled)
++   */
++  fun subscribeToUpdatesStateChanges(listener: UpdatesStateChangeListener): UpdatesStateChangeSubscription
++}
++
++/**
++ * Implemented only by the dev client updates controller.
++ */
++interface UpdatesDevLauncherInterface : UpdatesInterface {
+   interface UpdateCallback {
+     fun onFailure(e: Exception?)
+     fun onSuccess(update: Update?)
+@@ -32,7 +64,19 @@ interface UpdatesInterface {
+   fun reset()
+   fun fetchUpdateWithConfiguration(configuration: HashMap<String, Any>, callback: UpdateCallback)
+   fun isValidUpdatesConfiguration(configuration: HashMap<String, Any>): Boolean
++}
+ 
+-  val runtimeVersion: String?
+-  val updateUrl: Uri?
++interface UpdatesInterfaceCallbacks {
++  fun onRequestRelaunch()
++}
++
++interface UpdatesStateChangeListener {
++  fun updatesStateDidChange(event: Map<String, Any>)
++}
++
++interface UpdatesStateChangeSubscription {
++  /*
++   * Call this to remove the subscription and stop receiving state change events
++   */
++  fun remove()
+ }
+diff --git a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterfaceCallbacks.kt b/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterfaceCallbacks.kt
+deleted file mode 100644
+index 65942b3b53fd95..00000000000000
+--- a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesInterfaceCallbacks.kt
++++ /dev/null
+@@ -1,5 +0,0 @@
+-package expo.modules.updatesinterface
+-
+-interface UpdatesInterfaceCallbacks {
+-  fun onRequestRelaunch()
+-}
+diff --git a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesMetricsInterface.kt b/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesMetricsInterface.kt
+deleted file mode 100644
+index 18712bfaadfaa5..00000000000000
+--- a/packages/expo-updates-interface/android/src/main/java/expo/modules/updatesinterface/UpdatesMetricsInterface.kt
++++ /dev/null
+@@ -1,16 +0,0 @@
+-package expo.modules.updatesinterface
+-
+-import android.net.Uri
+-import java.util.UUID
+-
+-/**
+- * Interface for modules that depend on expo-updates for reading metrics information
+- * about the currently running update, but do not want
+- * to depend on expo-updates or delegate control to the singleton UpdatesController.
+- */
+-interface UpdatesMetricsInterface {
+-  val runtimeVersion: String?
+-  val updateUrl: Uri?
+-  val launchedUpdateId: UUID?
+-  val embeddedUpdateId: UUID?
+-}
+diff --git a/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesControllerRegistry.swift b/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesControllerRegistry.swift
+index fd9eafd282fd0e..4df3a13d536d23 100644
+--- a/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesControllerRegistry.swift
++++ b/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesControllerRegistry.swift
+@@ -2,11 +2,8 @@
+ 
+ import Foundation
+ 
+-@objc(EXUpdatesControllerRegistry)
+-@objcMembers
+ public final class UpdatesControllerRegistry: NSObject {
+-  public weak var controller: UpdatesExternalInterface?
+-  public weak var metricsController: UpdatesExternalMetricsInterface?
++  public weak var controller: UpdatesInterface?
+ 
+   public static let sharedInstance = UpdatesControllerRegistry()
+ }
+diff --git a/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesExternalInterface.swift b/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesInterface.swift
+similarity index 58%
+rename from packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesExternalInterface.swift
+rename to packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesInterface.swift
+index c7a9c1c40b6bb4..8f286359045df8 100644
+--- a/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesExternalInterface.swift
++++ b/packages/expo-updates-interface/ios/EXUpdatesInterface/UpdatesInterface.swift
+@@ -15,11 +15,38 @@ public typealias UpdatesProgressBlock = (_ successfulAssetCount: UInt, _ failedA
+ public typealias UpdatesManifestBlock = (_ manifest: [String: Any]) -> Bool
+ 
+ /**
+- * Protocol for modules that depend on expo-updates for loading production updates but do not want
+- * to depend on expo-updates or delegate control to the singleton EXUpdatesAppController.
++ * All updates controllers implement this protocol, which provides information on the running
++ * updates system.
+  */
+-@objc(EXUpdatesExternalInterface)
+-public protocol UpdatesExternalInterface {
++@objc(EXUpdatesInterface)
++public protocol UpdatesInterface {
++  /*
++   * Whether updates is enabled
++   */
++  @objc var isEnabled: Bool { get }
++  /*
++   * These properties are set when updates is enabled, or the dev client is running
++   */
++  @objc var runtimeVersion: String? { get }
++  @objc var updateURL: URL? { get }
++  /*
++   * These properties are only set when updates is enabled
++   */
++  @objc var launchedUpdateId: UUID? { get }
++  @objc var embeddedUpdateId: UUID? { get }
++  @objc var launchAssetPath: String? { get }
++  /*
++   * User code or third party modules can add a listener that will be called
++   * on updates state machine transitions (only when updates is enabled)
++   */
++  @objc func subscribeToUpdatesStateChanges(_ listener: any UpdatesStateChangeListener) -> UpdatesStateChangeSubscription
++}
++
++/**
++ * Implemented only by the dev client updates controller.
++ */
++@objc(EXUpdatesDevLauncherInterface)
++public protocol UpdatesDevLauncherInterface: UpdatesInterface {
+   @objc weak var updatesExternalInterfaceDelegate: (any UpdatesExternalInterfaceDelegate)? { get set }
+   @objc var launchAssetURL: URL? { get }
+ 
+@@ -44,16 +71,18 @@ public protocol UpdatesExternalInterface {
+  */
+ @objc(EXUpdatesExternalInterfaceDelegate)
+ public protocol UpdatesExternalInterfaceDelegate {
+-  @objc func updatesExternalInterfaceDidRequestRelaunch(_ updatesExternalInterface: UpdatesExternalInterface)
++  @objc func updatesExternalInterfaceDidRequestRelaunch(_ updatesExternalInterface: UpdatesDevLauncherInterface)
+ }
+ 
+-/**
+- * Protocol for use by the expo-app-metrics library
+- */
+-@objc(EXUpdatesExternalMetricsInterface)
+-public protocol UpdatesExternalMetricsInterface {
+-  @objc var runtimeVersion: String? { get }
+-  @objc var updateURL: URL? { get }
+-  @objc var launchedUpdateId: UUID? { get }
+-  @objc var embeddedUpdateId: UUID? { get }
++@objc(EXUpdatesStateChangeListener)
++public protocol UpdatesStateChangeListener {
++  func updatesStateDidChange(_ event: [String: Any])
++}
++
++@objc(EXUpdatesStateChangeSubscription)
++public protocol UpdatesStateChangeSubscription {
++  /*
++   * Call this to remove the subscription and stop receiving state change events
++   */
++  func remove()
+ }
+diff --git a/packages/expo-updates/CHANGELOG.md b/packages/expo-updates/CHANGELOG.md
+index 7384f334f9612c..64bf77b5a9a23b 100644
+--- a/packages/expo-updates/CHANGELOG.md
++++ b/packages/expo-updates/CHANGELOG.md
+@@ -6,6 +6,8 @@
+ 
+ ### 🎉 New features
+ 
++- Full native interface for updates. ([#42981](https://github.com/expo/expo/pull/42981) by [@douglowder](https://github.com/douglowder))
++
+ ### 🐛 Bug fixes
+ 
+ ### 💡 Others
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/DisabledUpdatesController.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/DisabledUpdatesController.kt
+index bcd30c6ee0421f..c2ffa85913aebe 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/DisabledUpdatesController.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/DisabledUpdatesController.kt
+@@ -2,6 +2,7 @@ package expo.modules.updates
+ 
+ import android.app.Activity
+ import android.content.Context
++import android.net.Uri
+ import android.os.Bundle
+ import com.facebook.react.bridge.ReactContext
+ import com.facebook.react.devsupport.interfaces.DevSupportManager
+@@ -16,6 +17,9 @@ import expo.modules.updates.procedures.RecreateReactContextProcedure
+ import expo.modules.updates.reloadscreen.ReloadScreenManager
+ import expo.modules.updates.statemachine.UpdatesStateMachine
+ import expo.modules.updates.statemachine.UpdatesStateValue
++import expo.modules.updatesinterface.UpdatesInterface
++import expo.modules.updatesinterface.UpdatesStateChangeListener
++import expo.modules.updatesinterface.UpdatesStateChangeSubscription
+ import kotlinx.coroutines.CompletableDeferred
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+@@ -43,7 +47,7 @@ import kotlin.time.toDuration
+ class DisabledUpdatesController(
+   private val context: Context,
+   private val fatalException: Exception?
+-) : IUpdatesController {
++) : IUpdatesController, UpdatesInterface {
+   /** Keep the activity for [RecreateReactContextProcedure] to relaunch the app. */
+   private var weakActivity: WeakReference<Activity>? = null
+   private val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+@@ -195,6 +199,14 @@ class DisabledUpdatesController(
+     controllerScope.cancel()
+   }
+ 
++  override val runtimeVersion: String? = null
++
++  override val updateUrl: Uri? = null
++
++  override fun subscribeToUpdatesStateChanges(listener: UpdatesStateChangeListener): UpdatesStateChangeSubscription {
++    return DisabledUpdatesStateChangeSubscription()
++  }
++
+   companion object {
+     private val TAG = DisabledUpdatesController::class.java.simpleName
+   }
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/EnabledUpdatesController.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/EnabledUpdatesController.kt
+index 0ad41385caca11..f01472f40c09aa 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/EnabledUpdatesController.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/EnabledUpdatesController.kt
+@@ -31,7 +31,9 @@ import expo.modules.updates.selectionpolicy.SelectionPolicy
+ import expo.modules.updates.selectionpolicy.SelectionPolicyFactory
+ import expo.modules.updates.statemachine.UpdatesStateMachine
+ import expo.modules.updates.statemachine.UpdatesStateValue
+-import expo.modules.updatesinterface.UpdatesMetricsInterface
++import expo.modules.updatesinterface.UpdatesInterface
++import expo.modules.updatesinterface.UpdatesStateChangeListener
++import expo.modules.updatesinterface.UpdatesStateChangeSubscription
+ import kotlinx.coroutines.CompletableDeferred
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+@@ -57,7 +59,7 @@ class EnabledUpdatesController(
+   private val context: Context,
+   private var updatesConfiguration: UpdatesConfiguration,
+   override val updatesDirectory: File
+-) : IUpdatesController, UpdatesMetricsInterface {
++) : IUpdatesController, UpdatesInterface {
+   /** Keep the activity for [RelaunchProcedure] to relaunch the app. */
+   private var weakActivity: WeakReference<Activity>? = null
+   private val logger = UpdatesLogger(context.filesDir)
+@@ -80,6 +82,8 @@ class EnabledUpdatesController(
+   private val startupFinishedMutex = Mutex()
+   override val reloadScreenManager = ReloadScreenManager()
+ 
++  internal val stateChangeListenerMap: MutableMap<String, UpdatesStateChangeListener> = mutableMapOf()
++
+   private fun purgeUpdatesLogsOlderThanOneDay() {
+     UpdatesLogReader(context.filesDir).purgeLogEntries {
+       if (it != null) {
+@@ -320,7 +324,7 @@ class EnabledUpdatesController(
+     updatesConfiguration = UpdatesConfiguration.create(context, updatesConfiguration, configOverride)
+   }
+ 
+-  // UpdatesMetricsInterface implementations
++  // UpdatesInterface implementations
+ 
+   override val runtimeVersion: String?
+     get() = updatesConfiguration.runtimeVersionRaw
+@@ -334,6 +338,23 @@ class EnabledUpdatesController(
+   override val embeddedUpdateId: UUID?
+     get() = getEmbeddedUpdate()?.id
+ 
++  override val launchAssetPath: String?
++    get() = startupProcedure.launchAssetFile
++
++  override fun subscribeToUpdatesStateChanges(listener: UpdatesStateChangeListener): UpdatesStateChangeSubscription {
++    val subscriptionId = UUID.randomUUID().toString()
++    stateChangeListenerMap[subscriptionId] = listener
++    return EnabledUpdatesStateChangeSubscription(subscriptionId = subscriptionId)
++  }
++
++  fun unsubscribeFromUpdatesStateChanges(subscriptionId: String) {
++    if (stateChangeListenerMap.containsKey(subscriptionId)) {
++      stateChangeListenerMap.remove(subscriptionId)
++    }
++  }
++
++  override val isEnabled: Boolean = true
++
+   companion object {
+     private val TAG = EnabledUpdatesController::class.java.simpleName
+   }
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesController.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesController.kt
+index ee9fa2e6970a46..9abf5b3bb92cda 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesController.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesController.kt
+@@ -87,10 +87,12 @@ object UpdatesController {
+ 
+     singletonInstance = if (updatesConfiguration != null) {
+       val enabledUpdatesController = EnabledUpdatesController(context, updatesConfiguration, updatesDirectory)
+-      UpdatesControllerRegistry.metricsController = WeakReference(enabledUpdatesController)
++      UpdatesControllerRegistry.controller = WeakReference(enabledUpdatesController)
+       enabledUpdatesController
+     } else {
+-      DisabledUpdatesController(context, null)
++      val disabledUpdatesController = DisabledUpdatesController(context, null)
++      UpdatesControllerRegistry.controller = WeakReference(disabledUpdatesController)
++      disabledUpdatesController
+     }
+   }
+ 
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesDevLauncherController.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesDevLauncherController.kt
+index 5b62d23cc5bb35..11245ba161a046 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesDevLauncherController.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesDevLauncherController.kt
+@@ -29,8 +29,10 @@ import expo.modules.updates.selectionpolicy.ReaperSelectionPolicyDevelopmentClie
+ import expo.modules.updates.selectionpolicy.ReaperSelectionPolicyFilterAware
+ import expo.modules.updates.selectionpolicy.SelectionPolicy
+ import expo.modules.updates.statemachine.UpdatesStateContext
+-import expo.modules.updatesinterface.UpdatesInterface
++import expo.modules.updatesinterface.UpdatesDevLauncherInterface
+ import expo.modules.updatesinterface.UpdatesInterfaceCallbacks
++import expo.modules.updatesinterface.UpdatesStateChangeListener
++import expo.modules.updatesinterface.UpdatesStateChangeSubscription
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.SupervisorJob
+@@ -56,7 +58,7 @@ class UpdatesDevLauncherController(
+   initialUpdatesConfiguration: UpdatesConfiguration?,
+   override val updatesDirectory: File?,
+   private val updatesDirectoryException: Exception?
+-) : IUpdatesController, UpdatesInterface {
++) : IUpdatesController, UpdatesDevLauncherInterface {
+   override val eventManager = NoOpUpdatesEventManager()
+   override var updatesInterfaceCallbacks: WeakReference<UpdatesInterfaceCallbacks>? = null
+ 
+@@ -138,13 +140,17 @@ class UpdatesDevLauncherController(
+   override val updateUrl: Uri?
+     get() = updatesConfiguration?.updateUrl
+ 
++  override fun subscribeToUpdatesStateChanges(listener: UpdatesStateChangeListener): UpdatesStateChangeSubscription {
++    return DisabledUpdatesStateChangeSubscription()
++  }
++
+   /**
+    * Fetch an update using a dynamically generated configuration object (including a potentially
+    * different update URL than the one embedded in the build).
+    */
+   override fun fetchUpdateWithConfiguration(
+     configuration: HashMap<String, Any>,
+-    callback: UpdatesInterface.UpdateCallback
++    callback: UpdatesDevLauncherInterface.UpdateCallback
+   ) {
+     val newUpdatesConfiguration: UpdatesConfiguration
+     try {
+@@ -266,7 +272,7 @@ class UpdatesDevLauncherController(
+     update: UpdateEntity,
+     configuration: UpdatesConfiguration,
+     fileDownloader: FileDownloader,
+-    callback: UpdatesInterface.UpdateCallback
++    callback: UpdatesDevLauncherInterface.UpdateCallback
+   ) {
+     // ensure that we launch the update we want, even if it isn't the latest one
+     val currentSelectionPolicy = selectionPolicy
+@@ -294,7 +300,7 @@ class UpdatesDevLauncherController(
+     try {
+       launcher.launch(databaseHolder.database)
+       this@UpdatesDevLauncherController.launcher = launcher
+-      callback.onSuccess(object : UpdatesInterface.Update {
++      callback.onSuccess(object : UpdatesDevLauncherInterface.Update {
+         override val manifest: JSONObject
+           get() = launcher.launchedUpdate!!.manifest
+         override val launchAssetPath: String
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesStateChangeSubscription.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesStateChangeSubscription.kt
+new file mode 100644
+index 00000000000000..163c6a5547a02a
+--- /dev/null
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/UpdatesStateChangeSubscription.kt
+@@ -0,0 +1,14 @@
++package expo.modules.updates
++
++import expo.modules.updatesinterface.UpdatesStateChangeSubscription
++
++class DisabledUpdatesStateChangeSubscription : UpdatesStateChangeSubscription {
++  override fun remove() {}
++}
++
++class EnabledUpdatesStateChangeSubscription(val subscriptionId: String) : UpdatesStateChangeSubscription {
++  override fun remove() {
++    val updatesController: EnabledUpdatesController? = UpdatesController.instance as? EnabledUpdatesController
++    updatesController?.unsubscribeFromUpdatesStateChanges(subscriptionId)
++  }
++}
+diff --git a/packages/expo-updates/android/src/main/java/expo/modules/updates/statemachine/UpdatesStateMachine.kt b/packages/expo-updates/android/src/main/java/expo/modules/updates/statemachine/UpdatesStateMachine.kt
+index cb1bd615e5f604..b731dc90b375ae 100644
+--- a/packages/expo-updates/android/src/main/java/expo/modules/updates/statemachine/UpdatesStateMachine.kt
++++ b/packages/expo-updates/android/src/main/java/expo/modules/updates/statemachine/UpdatesStateMachine.kt
+@@ -1,9 +1,12 @@
+ package expo.modules.updates.statemachine
+ 
++import expo.modules.manifests.core.toMap
++import expo.modules.updates.EnabledUpdatesController
+ import expo.modules.updates.events.IUpdatesEventManager
+ import expo.modules.updates.logging.UpdatesLogger
+ import expo.modules.updates.procedures.StateMachineProcedure
+ import expo.modules.updates.procedures.StateMachineSerialExecutorQueue
++import expo.modules.updatesinterface.UpdatesControllerRegistry
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import java.util.Date
+@@ -65,6 +68,25 @@ class UpdatesStateMachine(
+     sendContextToJS()
+   }
+ 
++  private fun toMap(event: UpdatesStateEvent): Map<String, Any> {
++    return when (event) {
++      is UpdatesStateEvent.DownloadCompleteWithUpdate -> mapOf("type" to "downloadCompleteWithUpdate", "manifest" to event.manifest.toMap())
++      is UpdatesStateEvent.CheckCompleteWithUpdate -> mapOf("type" to "checkCompleteWithUpdate", "manifest" to event.manifest.toMap())
++      is UpdatesStateEvent.CheckCompleteWithRollback -> mapOf("type" to "checkCompleteWithRollback")
++      is UpdatesStateEvent.CheckError -> mapOf("type" to "checkError", "errorMessage" to event.error.message)
++      is UpdatesStateEvent.DownloadError -> mapOf("type" to "downloadError", "errorMessage" to event.error.message)
++      is UpdatesStateEvent.DownloadProgress -> mapOf("type" to "downloadProgress", "progress" to event.progress)
++      is UpdatesStateEvent.Check -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.CheckCompleteUnavailable -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.Download -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.DownloadComplete -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.DownloadCompleteWithRollback -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.Restart -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.StartStartup -> mapOf("type" to event.type.type)
++      is UpdatesStateEvent.EndStartup -> mapOf("type" to event.type.type)
++    }
++  }
++
+   /**
+    * Transition the state machine forward to a new state.
+    */
+@@ -74,6 +96,14 @@ class UpdatesStateMachine(
+       if (event !is UpdatesStateEvent.DownloadProgress) {
+         logger.info("Updates state change: ${event.type}, context = ${context.json}")
+       }
++      UpdatesControllerRegistry.controller?.get()?.let {
++        if (it is EnabledUpdatesController) {
++          // Notify the controller state change listener
++          it.stateChangeListenerMap.keys.forEach { key ->
++            it.stateChangeListenerMap[key]?.updatesStateDidChange(toMap(event))
++          }
++        }
++      }
+       sendContextToJS()
+     }
+   }
+diff --git a/packages/expo-updates/e2e/fixtures/App.tsx b/packages/expo-updates/e2e/fixtures/App.tsx
+index 0cdcf34fd192ff..8efba781996f71 100644
+--- a/packages/expo-updates/e2e/fixtures/App.tsx
++++ b/packages/expo-updates/e2e/fixtures/App.tsx
+@@ -8,7 +8,55 @@ import { UpdatesLogEntry } from 'expo-updates';
+ import React from 'react';
+ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+ 
+-const ExpoUpdatesE2ETest = requireNativeModule('ExpoUpdatesE2ETest');
++const ExpoUpdatesE2ETestModule = requireNativeModule('ExpoUpdatesE2ETest');
++
++ExpoUpdatesE2ETestModule.addListener('Expo.updatesE2EStateChangeEvent', _handleE2EStateChangeEvent);
++
++type NativeInterfaceState = {
++  runtimeVersion: string;
++  embeddedUpdateId: string;
++  launchedUpdateId: string;
++  type?: string | null;
++  manifest?: ExpoUpdatesManifest | null;
++};
++
++const _nativeInterfaceStateChangeListeners = new Set<(event: any) => void>();
++
++// Reemits native state change events
++function _handleE2EStateChangeEvent(params: any) {
++  const newParams = typeof params === 'string' ? JSON.parse(params) : { ...params };
++
++  _nativeInterfaceStateChangeListeners.forEach((listener) => listener(newParams));
++}
++
++function useNativeInterfaceState() {
++  const runtimeVersion = ExpoUpdatesE2ETestModule.getRuntimeVersion();
++  const embeddedUpdateId = ExpoUpdatesE2ETestModule.getEmbeddedUpdateId()?.toLowerCase();
++  const launchedUpdateId = ExpoUpdatesE2ETestModule.getLaunchedUpdateId()?.toLowerCase();
++  const [state, setState] = React.useState<NativeInterfaceState>({
++    type: null,
++    manifest: null,
++    runtimeVersion,
++    embeddedUpdateId,
++    launchedUpdateId,
++  });
++  const listener = React.useCallback((event: any) => {
++    setState({
++      type: event.type,
++      manifest: event.manifest,
++      runtimeVersion,
++      embeddedUpdateId,
++      launchedUpdateId: ExpoUpdatesE2ETestModule.getLaunchedUpdateId(),
++    });
++  }, []);
++  React.useEffect(() => {
++    _nativeInterfaceStateChangeListeners.add(listener);
++    return () => {
++      _nativeInterfaceStateChangeListeners.delete(listener);
++    };
++  }, [listener]);
++  return state;
++}
+ 
+ require('./includedAssets/test.png');
+ require('./includedAssets/lock-filled.svg');
+@@ -71,6 +119,8 @@ export default function App() {
+     downloadProgress,
+   } = Updates.useUpdates();
+ 
++  const nativeInterfaceState = useNativeInterfaceState();
++
+   React.useEffect(() => {
+     setStartTime(Date.now());
+   }, []);
+@@ -135,13 +185,13 @@ export default function App() {
+   });
+ 
+   const handleReadAssetFiles = runBlockAsync(async () => {
+-    const numFiles = await ExpoUpdatesE2ETest.readInternalAssetsFolderAsync();
++    const numFiles = await ExpoUpdatesE2ETestModule.readInternalAssetsFolderAsync();
+     setNumAssetFiles(numFiles);
+   });
+ 
+   const handleClearAssetFiles = runBlockAsync(async () => {
+-    await ExpoUpdatesE2ETest.clearInternalAssetsFolderAsync();
+-    const numFiles = await ExpoUpdatesE2ETest.readInternalAssetsFolderAsync();
++    await ExpoUpdatesE2ETestModule.clearInternalAssetsFolderAsync();
++    const numFiles = await ExpoUpdatesE2ETestModule.readInternalAssetsFolderAsync();
+     setNumAssetFiles(numFiles);
+   });
+ 
+@@ -254,6 +304,15 @@ export default function App() {
+       <TestValue testID="state.isRestarting" value={`${isRestarting}`} />
+       <TestValue testID="state.restartCount" value={`${restartCount}`} />
+       <TestValue testID="state.downloadProgress" value={`${downloadProgress}`} />
++      <TestValue testID="nativeInterfaceState.type" value={`${nativeInterfaceState.type}`} />
++      <TestValue
++        testID="nativeInterfaceState.launchedUpdateId"
++        value={`${nativeInterfaceState.launchedUpdateId}`}
++      />
++      <TestValue
++        testID="nativeInterfaceState.availableUpdateId"
++        value={`${nativeInterfaceState.manifest?.id}`}
++      />
+ 
+       <Text>Log messages</Text>
+       <ScrollView contentContainerStyle={styles.logEntriesContainer}>
+diff --git a/packages/expo-updates/e2e/fixtures/E2ETestModule.swift b/packages/expo-updates/e2e/fixtures/E2ETestModule.swift
+index 6870c56180d022..67b096d84599a7 100644
+--- a/packages/expo-updates/e2e/fixtures/E2ETestModule.swift
++++ b/packages/expo-updates/e2e/fixtures/E2ETestModule.swift
+@@ -1,9 +1,21 @@
+ // Copyright 2019 650 Industries. All rights reserved.
+ 
+ import ExpoModulesCore
++import EXUpdatesInterface
+ 
+-public final class E2ETestModule: Module {
++let e2eEventName = "Expo.updatesE2EStateChangeEvent"
++
++public final class E2ETestModule: Module, UpdatesStateChangeListener {
+   private let methodQueue = DispatchQueue(label: "expo.modules.EXUpdatesQueue")
++  private var updatesController: (any UpdatesInterface)?
++  private var hasListener: Bool = false
++  private var subscription: UpdatesStateChangeSubscription?
++
++  public func updatesStateDidChange(_ event: [String : Any]) {
++    if (hasListener) {
++      sendEvent(e2eEventName, event)
++    }
++  }
+ 
+   public required init(appContext: AppContext) {
+     super.init(appContext: appContext)
+@@ -12,6 +24,41 @@ public final class E2ETestModule: Module {
+   public func definition() -> ModuleDefinition {
+     Name("ExpoUpdatesE2ETest")
+ 
++    Events([e2eEventName])
++
++    OnCreate {
++      if let controller = UpdatesControllerRegistry.sharedInstance.controller {
++        updatesController = controller
++        subscription = controller.subscribeToUpdatesStateChanges(self)
++      }
++    }
++
++    OnStartObserving(e2eEventName) {
++      hasListener = true
++    }
++
++    OnStopObserving(e2eEventName) {
++      hasListener = false
++    }
++
++    OnDestroy {
++      subscription?.remove()
++      updatesController = nil
++      subscription = nil
++    }
++
++    Function("getLaunchedUpdateId") {
++      return updatesController?.launchedUpdateId
++    }
++
++    Function("getEmbeddedUpdateId") {
++      return updatesController?.embeddedUpdateId
++    }
++
++    Function("getRuntimeVersion") {
++      return updatesController?.runtimeVersion
++    }
++
+     AsyncFunction("readInternalAssetsFolderAsync") { (promise: Promise) in
+       guard let assetsFolder = AppController.sharedInstance.updatesDirectory else {
+         promise.reject("ERR_UPDATES_E2E_READ", "No updatesDirectory initialized")
+diff --git a/packages/expo-updates/e2e/fixtures/UpdatesE2ETestModule.kt b/packages/expo-updates/e2e/fixtures/UpdatesE2ETestModule.kt
+index 688547e5a3a827..24fae22db2ae55 100644
+--- a/packages/expo-updates/e2e/fixtures/UpdatesE2ETestModule.kt
++++ b/packages/expo-updates/e2e/fixtures/UpdatesE2ETestModule.kt
+@@ -1,13 +1,58 @@
+ package expo.modules.updates
+ 
++import android.os.Bundle
+ import expo.modules.kotlin.Promise
+ import expo.modules.kotlin.modules.Module
+ import expo.modules.kotlin.modules.ModuleDefinition
++import expo.modules.kotlin.types.Enumerable
++import expo.modules.updatesinterface.UpdatesControllerRegistry
++import expo.modules.updatesinterface.UpdatesInterface
++import expo.modules.updatesinterface.UpdatesStateChangeListener
++import expo.modules.updatesinterface.UpdatesStateChangeSubscription
++
++class UpdatesE2ETestModule : Module(), UpdatesStateChangeListener {
++  private var hasListener: Boolean = false
++  private var updatesController: UpdatesInterface? = null
++  private var subscription: UpdatesStateChangeSubscription? = null
+ 
+-class UpdatesE2ETestModule : Module() {
+   override fun definition() = ModuleDefinition {
+     Name("ExpoUpdatesE2ETest")
+ 
++    Events<UpdatesE2EEvent>()
++
++    OnCreate {
++      UpdatesControllerRegistry.controller?.get()?.let {
++        subscription = it.subscribeToUpdatesStateChanges(this@UpdatesE2ETestModule)
++        updatesController = it
++      }
++    }
++
++    OnStartObserving(UpdatesE2EEvent.StateChange) {
++      hasListener = true
++    }
++
++    OnStopObserving(UpdatesE2EEvent.StateChange) {
++      hasListener = false
++    }
++
++    OnDestroy {
++      subscription?.remove()
++      subscription = null
++      updatesController = null
++    }
++
++    Function("getLaunchedUpdateId") {
++      return@Function updatesController?.launchedUpdateId?.toString()
++    }
++
++    Function("getEmbeddedUpdateId") {
++      return@Function updatesController?.embeddedUpdateId?.toString()
++    }
++
++    Function("getRuntimeVersion") {
++      return@Function updatesController?.runtimeVersion
++    }
++
+     AsyncFunction("clearInternalAssetsFolderAsync") { promise: Promise ->
+       try {
+         val assetsFolder = UpdatesController.instance.updatesDirectory
+@@ -33,4 +78,22 @@ class UpdatesE2ETestModule : Module() {
+       }
+     }
+   }
+-}
+\ No newline at end of file
++
++  override fun updatesStateDidChange(event: Map<String, Any>) {
++    if (hasListener) {
++      val payload = Bundle()
++      payload.putString("type", event["type"] as String)
++      val manifest = event["manifest"] as? Map<String, Any>
++      if (manifest != null) {
++        val manifestBundle = Bundle()
++        manifestBundle.putString("id", manifest["id"] as String)
++        payload.putBundle("manifest", manifestBundle)
++      }
++      sendEvent(UpdatesE2EEvent.StateChange, payload)
++    }
++  }
++}
++
++enum class UpdatesE2EEvent(val eventName: String) : Enumerable {
++  StateChange("Expo.updatesE2EStateChangeEvent")
++}
+diff --git a/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/devClient_verifyState.yml b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/devClient_verifyState.yml
+index f908cfbfd68e19..e958aa52436a5a 100644
+--- a/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/devClient_verifyState.yml
++++ b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/devClient_verifyState.yml
+@@ -5,9 +5,39 @@ onFlowStart:
+ ---
+ # Check that state is correct on a dev client build with updates enabled
+ - launchApp
++- runFlow:
++    when:
++      platform: iOS
++    commands:
++      - tapOn:
++          label: Tap on "Enter URL manually"
++          text: Enter URL manually
++      - tapOn:
++          label: Tap on "Updates URL" text field
++          text: '.*exp:.*'
++          below: Enter URL manually
++- runFlow:
++    when:
++      platform: android
++    commands:
++      - tapOn:
++          label: Tap on "New development server"
++          text: New development server
++      - tapOn:
++          label: Tap on "Updates URL" text field
++          text: '.*exp:.*'
++          below: New development server
++- inputText:
++    label: Input local update server URL
++    text: "http://localhost:8081\n"
+ - tapOn:
+-    label: Tap on local URL
+-    below: Development servers
++    label: Tap on "Connect" button
++    text: Connect
++    optional: true
++- tapOn:
++    label: Tap on "Connect" button
++    text: Connect
++    optional: true
+ - tapOn:
+     label: Tap on "Continue" to clear onboarding menu
+     text: Continue
+@@ -15,6 +45,7 @@ onFlowStart:
+ - tapOn:
+     label: Tap on reload
+     text: Reload
++    optional: true
+ - copyTextFrom:
+     label: Copy text from update string
+     id: updateString
+diff --git a/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/jsapi_stateMachine.yml b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/jsapi_stateMachine.yml
+index 352c4ef7600c87..58c1165266cdd6 100644
+--- a/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/jsapi_stateMachine.yml
++++ b/packages/expo-updates/e2e/fixtures/project_files/maestro/tests/jsapi_stateMachine.yml
+@@ -52,7 +52,7 @@ onFlowStart:
+ # Serve an update and then press checkForUpdate button, verify the state
+ # (update is available but not downloaded)
+ - evalScript:
+-    script:  ${output.downloadedUpdateId = output.api.serveManifest('test-update-basic', MAESTRO_PLATFORM)}
++    script: ${output.downloadedUpdateId = output.api.serveManifest('test-update-basic', MAESTRO_PLATFORM)}
+     label: Setup updates server to serve a basic update
+     env:
+       MAESTRO_PLATFORM: ${MAESTRO_PLATFORM}
+@@ -89,6 +89,12 @@ onFlowStart:
+ - assertTrue:
+     condition: ${maestro.copiedText == "null"}
+     label: Assert downloadedManifestId is null
++- copyTextFrom:
++    label: Copy text from nativeInterface state type
++    id: nativeInterfaceState.type
++- assertTrue:
++    condition: ${maestro.copiedText == "checkCompleteWithUpdate"}
++    label: Assert state is "checkCompleteWithUpdate"
+ # Press downloadUpdate button, verify the state (update is downloaded but not launched)
+ - tapOn:
+     label: Tap on downloadUpdate button
+@@ -120,6 +126,18 @@ onFlowStart:
+ - assertTrue:
+     condition: ${maestro.copiedText == output.downloadedUpdateId}
+     label: Assert downloadedManifestId is the downloaded update's id
++- copyTextFrom:
++    label: Copy text from nativeInterface state type
++    id: nativeInterfaceState.type
++- assertTrue:
++    condition: ${maestro.copiedText == "downloadCompleteWithUpdate"}
++    label: Assert state is "downloadCompleteWithUpdate"
++- copyTextFrom:
++    label: Copy text from nativeInterface availableUpdateID
++    id: nativeInterfaceState.availableUpdateID
++- assertTrue:
++    condition: ${maestro.copiedText == output.downloadedUpdateId}
++    label: Assert downloaded update ID shows in native interface state
+ - copyTextFrom:
+     label: Copy text from download progress
+     id: state.downloadProgress
+@@ -128,7 +146,7 @@ onFlowStart:
+     label: Assert download progress is 1
+ # Restart the app and verify the state (update is launched)
+ - evalScript:
+-    script:  ${output.api.restartUpdatesServer()}
++    script: ${output.api.restartUpdatesServer()}
+     label: Restart updates server
+ - stopApp
+ - launchApp
+@@ -168,12 +186,18 @@ onFlowStart:
+ - assertTrue:
+     condition: ${maestro.copiedText == "null"}
+     label: Assert downloadedManifestId is null
++- copyTextFrom:
++    label: Copy text from nativeInterface launchedUpdateId
++    id: nativeInterfaceState.launchedUpdateId
++- assertTrue:
++    condition: ${maestro.copiedText == output.downloadedUpdateId}
++    label: Assert downloaded update ID shows as launched in native interface
+ # Serve a rollback and verify the state
+ - evalScript:
+-    script:  ${output.api.restartUpdatesServer()}
++    script: ${output.api.restartUpdatesServer()}
+     label: Restart updates server
+ - evalScript:
+-    script:  ${output.api.serveManifest('test-rollback', MAESTRO_PLATFORM)}
++    script: ${output.api.serveManifest('test-rollback', MAESTRO_PLATFORM)}
+     label: Setup updates server to serve a rollback
+     env:
+       MAESTRO_PLATFORM: ${MAESTRO_PLATFORM}
+@@ -216,3 +240,9 @@ onFlowStart:
+ - assertTrue:
+     condition: ${maestro.copiedText == "null"}
+     label: Assert downloadedManifestId is null
++- copyTextFrom:
++    label: Copy text from nativeInterface state type
++    id: nativeInterfaceState.type
++- assertTrue:
++    condition: ${maestro.copiedText == "checkCompleteWithRollback"}
++    label: Assert state is "checkCompleteWithRollback"
+diff --git a/packages/expo-updates/e2e/setup/project.ts b/packages/expo-updates/e2e/setup/project.ts
+index 6db45fb4ff6fd1..4b801bbb6c5a97 100755
+--- a/packages/expo-updates/e2e/setup/project.ts
++++ b/packages/expo-updates/e2e/setup/project.ts
+@@ -235,11 +235,15 @@ async function copyCommonFixturesToProject(
+       cwd: path.join(repoRoot, 'patches'),
+       absolute: true,
+     });
++    const reactNativeJsonString = await fs.readFile(
++      path.join(projectRoot, 'node_modules', 'react-native', 'package.json'),
++      'utf-8'
++    );
++    const reactNativeJson = JSON.parse(reactNativeJsonString);
++    const reactNativeVersion = reactNativeJson.version;
++    const patchFileName = `react-native+${reactNativeVersion}.patch`;
+     if (patchFile.length > 0) {
+-      await fs.copyFile(
+-        patchFile[0],
+-        path.join(projectRoot, 'patches', path.basename(patchFile[0]))
+-      );
++      await fs.copyFile(patchFile[0], path.join(projectRoot, 'patches', patchFileName));
+     }
+   }
+ 
+@@ -360,7 +364,7 @@ async function preparePackageJson(
+           'set -o pipefail && xcodebuild -workspace ios/updatese2e.xcworkspace -scheme updatese2e -configuration Debug -sdk appletvsimulator -arch arm64 -derivedDataPath ios/build | npx @expo/xcpretty',
+         postinstall: 'patch-package',
+         'start:dev-client':
+-          'npx expo start --private-key-path ./keys/private-key.pem > /dev/null 2>&1 &',
++          'CI=false npx expo start --private-key-path ./keys/private-key.pem > /dev/null 2>&1 &',
+         ...extraScriptsGenerateTestUpdateBundlesPart,
+       }
+     : extraScriptsAssetExclusion;
+@@ -415,7 +419,7 @@ async function preparePackageJson(
+       dependencies: {
+         ...packageJson.dependencies,
+         'react-native': 'npm:react-native-tvos@0.83-stable',
+-        '@react-native-tvos/config-tv': '^0.1.4',
++        '@react-native-tvos/config-tv': '^0.1.5',
+       },
+       expo: {
+         install: {
+diff --git a/packages/expo-updates/ios/EXUpdates/AppController.swift b/packages/expo-updates/ios/EXUpdates/AppController.swift
+index ba63b60abfa577..15a25015e31ae7 100644
+--- a/packages/expo-updates/ios/EXUpdates/AppController.swift
++++ b/packages/expo-updates/ios/EXUpdates/AppController.swift
+@@ -219,9 +219,10 @@ public class AppController: NSObject {
+       // which expo-dev-client can access.
+       let devLauncherController = initializeAsDevLauncherWithoutStarting()
+       _sharedInstance = devLauncherController
+-      UpdatesControllerRegistry.sharedInstance.controller = devLauncherController
++      UpdatesControllerRegistry.sharedInstance.controller = devLauncherController as (any UpdatesDevLauncherInterface)
+       #else
+       _sharedInstance = DisabledAppController(error: nil)
++      UpdatesControllerRegistry.sharedInstance.controller = _sharedInstance as? (any UpdatesInterface)
+       #endif
+       return
+     }
+@@ -273,6 +274,7 @@ public class AppController: NSObject {
+         let directory = try initializeUpdatesDirectory()
+         try initializeUpdatesDatabase(updatesDatabase: updatesDatabase, inUpdatesDirectory: directory, logger: logger)
+         _sharedInstance = EnabledAppController(config: config, database: updatesDatabase, updatesDirectory: directory)
++        UpdatesControllerRegistry.sharedInstance.controller = _sharedInstance as? (any UpdatesInterface)
+       } catch {
+         let cause = UpdatesError.appControllerInitializationError(cause: error)
+         logger.error(
+@@ -280,6 +282,7 @@ public class AppController: NSObject {
+           code: .initializationError
+         )
+         _sharedInstance = DisabledAppController(error: cause)
++        UpdatesControllerRegistry.sharedInstance.controller = _sharedInstance as? (any UpdatesInterface)
+         return
+       }
+     } else {
+diff --git a/packages/expo-updates/ios/EXUpdates/AppLoader/FileDownloader.swift b/packages/expo-updates/ios/EXUpdates/AppLoader/FileDownloader.swift
+index d50b14d075a899..e8f89a4c1c64aa 100644
+--- a/packages/expo-updates/ios/EXUpdates/AppLoader/FileDownloader.swift
++++ b/packages/expo-updates/ios/EXUpdates/AppLoader/FileDownloader.swift
+@@ -1,10 +1,15 @@
+ //  Copyright © 2019 650 Industries. All rights reserved.
+ 
++// swiftlint:disable file_length
+ // swiftlint:disable force_cast
+ // swiftlint:disable function_parameter_count
+ // swiftlint:disable implicitly_unwrapped_optional
+ // swiftlint:disable identifier_name
+ // swiftlint:disable legacy_objc_type
++// swiftlint:disable closure_body_length
++// swiftlint:disable type_body_length
++// swiftlint:disable force_unwrapping
++// swiftlint:disable no_grouping_extension
+ 
+ import Foundation
+ import EASClient
+@@ -69,7 +74,6 @@ public final class FileDownloader {
+   private static let IMHeader = "im"
+   private static let ExpoBaseUpdateIdResponseHeader = "expo-base-update-id"
+ 
+-  // swiftlint:disable:next force_unwrapping
+   private static let ParameterParserSemicolonDelimiter = ";".utf16.first!
+ 
+   // these can be made non-forced lets when NSObject protocol is removed
+@@ -1288,3 +1292,8 @@ extension FileDownloader.DiffError: CustomStringConvertible {
+ // swiftlint:enable implicitly_unwrapped_optional
+ // swiftlint:enable identifier_name
+ // swiftlint:enable legacy_objc_type
++// swiftlint:enable closure_body_length
++// swiftlint:enable type_body_length
++// swiftlint:enable force_unwrapping
++// swiftlint:enable no_grouping_extension
++// swiftlint:enable file_length
+diff --git a/packages/expo-updates/ios/EXUpdates/AppLoader/RemoteAppLoader.swift b/packages/expo-updates/ios/EXUpdates/AppLoader/RemoteAppLoader.swift
+index a2c160a0bbb46d..8c90dc88b8a837 100644
+--- a/packages/expo-updates/ios/EXUpdates/AppLoader/RemoteAppLoader.swift
++++ b/packages/expo-updates/ios/EXUpdates/AppLoader/RemoteAppLoader.swift
+@@ -1,6 +1,7 @@
+ //  Copyright © 2019 650 Industries. All rights reserved.
+ 
+ // swiftlint:disable function_parameter_count
++// swiftlint:disable closure_body_length
+ 
+ import Foundation
+ 
+@@ -132,7 +133,9 @@ public final class RemoteAppLoader: AppLoader {
+         let canApplyPatch = asset.isLaunchAsset &&
+           self.launchedUpdate != nil &&
+           self.requestedUpdate != nil &&
++          // swiftlint:disable force_unwrapping
+           self.launchedUpdate!.updateId != self.requestedUpdate!.updateId
++          // swiftlint:enable force_unwrapping
+ 
+         self.downloader.downloadAsset(
+           asset: asset,
+@@ -267,3 +270,4 @@ public final class RemoteAppLoader: AppLoader {
+ }
+ 
+ // swiftlint:enable function_parameter_count
++// swiftlint:enable closure_body_length
+diff --git a/packages/expo-updates/ios/EXUpdates/BSPatch.swift b/packages/expo-updates/ios/EXUpdates/BSPatch.swift
+index 773ba49f9a9cc0..268ac1c415d0c9 100644
+--- a/packages/expo-updates/ios/EXUpdates/BSPatch.swift
++++ b/packages/expo-updates/ios/EXUpdates/BSPatch.swift
+@@ -7,10 +7,11 @@ enum BSPatchError: Error {
+ }
+ 
+ struct BSPatch {
+-  static func applyPatch(oldPath: String,
+-                  newPath: String,
+-                  patchPath: String) throws {
+-    
++  static func applyPatch(
++    oldPath: String,
++    newPath: String,
++    patchPath: String
++  ) throws {
+     guard let oldPath = oldPath.cString(using: .utf8),
+       let newPath = newPath.cString(using: .utf8),
+       let patchPath = patchPath.cString(using: .utf8) else {
+diff --git a/packages/expo-updates/ios/EXUpdates/DevLauncherAppController.swift b/packages/expo-updates/ios/EXUpdates/DevLauncherAppController.swift
+index f41a8dd49583e0..e3c1aa23545650 100644
+--- a/packages/expo-updates/ios/EXUpdates/DevLauncherAppController.swift
++++ b/packages/expo-updates/ios/EXUpdates/DevLauncherAppController.swift
+@@ -45,14 +45,24 @@ enum DevLauncherAppControllerError: Int, Error, LocalizedError {
+  */
+ @objc(EXUpdatesDevLauncherController)
+ @objcMembers
+-public final class DevLauncherAppController: NSObject, InternalAppControllerInterface, UpdatesExternalInterface {
++public final class DevLauncherAppController: NSObject, InternalAppControllerInterface, UpdatesDevLauncherInterface {
++  public func subscribeToUpdatesStateChanges(_ listener: any UpdatesStateChangeListener) -> UpdatesStateChangeSubscription {
++    return DisabledUpdatesStateChangeSubscription()
++  }
++
++  public var launchedUpdateId: UUID?
++
++  public var embeddedUpdateId: UUID?
++
++  public var isEnabled: Bool
++
+   public let eventManager: UpdatesEventManager = NoOpUpdatesEventManager()
+   public var reloadScreenManager: Reloadable? = ReloadScreenManager()
+ 
+   private let logger = UpdatesLogger()
+ 
+   public weak var delegate: AppControllerDelegate?
+-  public weak var updatesExternalInterfaceDelegate: (any EXUpdatesInterface.UpdatesExternalInterfaceDelegate)?
++  public weak var updatesExternalInterfaceDelegate: (any UpdatesExternalInterfaceDelegate)?
+ 
+   public func launchAssetUrl() -> URL? {
+     return launcher?.launchAssetUrl
+@@ -62,6 +72,10 @@ public final class DevLauncherAppController: NSObject, InternalAppControllerInte
+     launcher?.launchAssetUrl
+   }
+ 
++  public var launchAssetPath: String? {
++    launcher?.launchAssetUrl?.relativePath
++  }
++
+   public var runtimeVersion: String? {
+     config?.runtimeVersion
+   }
+@@ -107,7 +121,7 @@ public final class DevLauncherAppController: NSObject, InternalAppControllerInte
+       loaderSelectionPolicy: LoaderSelectionPolicyDevelopmentClient(config: self.config),
+       reaperSelectionPolicy: ReaperSelectionPolicyDevelopmentClient()
+     )
+-
++    self.isEnabled = false
+     super.init()
+   }
+ 
+diff --git a/packages/expo-updates/ios/EXUpdates/DisabledAppController.swift b/packages/expo-updates/ios/EXUpdates/DisabledAppController.swift
+index 50422d3ea249ed..1211c70c082d7d 100644
+--- a/packages/expo-updates/ios/EXUpdates/DisabledAppController.swift
++++ b/packages/expo-updates/ios/EXUpdates/DisabledAppController.swift
+@@ -1,6 +1,11 @@
+ //  Copyright © 2019 650 Industries. All rights reserved.
+ 
+ import ExpoModulesCore
++import EXUpdatesInterface
++
++internal class DisabledUpdatesStateChangeSubscription: UpdatesStateChangeSubscription {
++  func remove() {}
++}
+ 
+ /**
+  * Updates controller for applications that either disable updates explicitly or have an error
+@@ -9,7 +14,17 @@ import ExpoModulesCore
+  * - Internal database initialization errors
+  * - Configuration errors (missing required configuration)
+  */
+-public class DisabledAppController: InternalAppControllerInterface {
++public class DisabledAppController: InternalAppControllerInterface, UpdatesInterface {
++  public func subscribeToUpdatesStateChanges(_ listener: any UpdatesStateChangeListener) -> UpdatesStateChangeSubscription {
++    return DisabledUpdatesStateChangeSubscription()
++  }
++
++  public var launchedUpdateId: UUID?
++
++  public var embeddedUpdateId: UUID?
++
++  public var launchAssetPath: String?
++
+   public var reloadScreenManager: Reloadable?
+ 
+   public let isActiveController = false
+@@ -102,6 +117,14 @@ public class DisabledAppController: InternalAppControllerInterface {
+     )
+   }
+ 
++  // MARK: UpdatesInterface
++
++  public var runtimeVersion: String?
++
++  public var updateURL: URL?
++
++  public var isEnabled: Bool = false
++
+   public func requestRelaunch(
+     success successBlockArg: @escaping () -> Void,
+     error errorBlockArg: @escaping (ExpoModulesCore.Exception) -> Void
+diff --git a/packages/expo-updates/ios/EXUpdates/EnabledAppController.swift b/packages/expo-updates/ios/EXUpdates/EnabledAppController.swift
+index dcffc478c2f53c..cf62bea1dd188c 100644
+--- a/packages/expo-updates/ios/EXUpdates/EnabledAppController.swift
++++ b/packages/expo-updates/ios/EXUpdates/EnabledAppController.swift
+@@ -4,10 +4,24 @@ import SwiftUI
+ import ExpoModulesCore
+ import EXUpdatesInterface
+ 
++internal class EnabledUpdatesStateChangeSubscription: UpdatesStateChangeSubscription {
++  private let subscriptionId: String
++
++  required init(_ subscriptionId: String) {
++    self.subscriptionId = subscriptionId
++  }
++
++  func remove() {
++    if let updatesController = AppController.sharedInstance as? EnabledAppController {
++      updatesController.unsubscribeFromUpdatesStateChanges(subscriptionId)
++    }
++  }
++}
++
+ /**
+  * Updates controller for applications that have updates enabled and properly-configured.
+  */
+-public class EnabledAppController: InternalAppControllerInterface, UpdatesExternalMetricsInterface, StartupProcedureDelegate {
++public class EnabledAppController: InternalAppControllerInterface, UpdatesInterface, StartupProcedureDelegate {
+   public weak var delegate: AppControllerDelegate?
+   public var reloadScreenManager: Reloadable? = ReloadScreenManager()
+ 
+@@ -59,7 +73,6 @@ public class EnabledAppController: InternalAppControllerInterface, UpdatesExtern
+     self.logger.info(message: "AppController sharedInstance created")
+     self.eventManager = QueueUpdatesEventManager(logger: logger)
+     self.stateMachine = UpdatesStateMachine(logger: self.logger, eventManager: self.eventManager, validUpdatesStateValues: Set(UpdatesStateValue.allCases))
+-    UpdatesControllerRegistry.sharedInstance.metricsController = self
+   }
+ 
+   public func start() {
+@@ -159,7 +172,23 @@ public class EnabledAppController: InternalAppControllerInterface, UpdatesExtern
+     stateMachine.queueExecution(stateMachineProcedure: procedure)
+   }
+ 
+-  // MARK: - UpdatesExternalMetricsInterface
++  // MARK: - UpdatesInterface
++
++  internal var stateChangeListeners: [String: any UpdatesStateChangeListener] = [:]
++
++  public func subscribeToUpdatesStateChanges(_ listener: any UpdatesStateChangeListener) -> UpdatesStateChangeSubscription {
++    let subscriptionId = UUID().uuidString
++    let subscription = EnabledUpdatesStateChangeSubscription(subscriptionId)
++
++    stateChangeListeners[subscriptionId] = listener
++    return subscription
++  }
++
++  internal func unsubscribeFromUpdatesStateChanges(_ subscriptionId: String) {
++    if stateChangeListeners[subscriptionId] != nil {
++      stateChangeListeners.removeValue(forKey: subscriptionId)
++    }
++  }
+ 
+   public var runtimeVersion: String? {
+     return config.runtimeVersion
+@@ -177,6 +206,12 @@ public class EnabledAppController: InternalAppControllerInterface, UpdatesExtern
+     return getEmbeddedUpdate()?.updateId
+   }
+ 
++  public var launchAssetPath: String? {
++    return startupProcedure.launchAssetUrl()?.relativePath
++  }
++
++  public var isEnabled: Bool = true
++
+   // MARK: - Internal
+ 
+   private func purgeUpdatesLogsOlderThanOneDay() {
+diff --git a/packages/expo-updates/ios/EXUpdates/Multipart/UpdatesMultipartStreamReader.swift b/packages/expo-updates/ios/EXUpdates/Multipart/UpdatesMultipartStreamReader.swift
+index 5a1734147becc8..ef572ed17a44dc 100644
+--- a/packages/expo-updates/ios/EXUpdates/Multipart/UpdatesMultipartStreamReader.swift
++++ b/packages/expo-updates/ios/EXUpdates/Multipart/UpdatesMultipartStreamReader.swift
+@@ -162,8 +162,10 @@ public final class UpdatesMultipartStreamReader {
+   }
+ }
+ 
++// swiftlint:disable legacy_objc_type
+ private extension Data {
+   func range(of data: Data, options: Data.SearchOptions = [], in range: NSRange) -> NSRange {
+     return (self as NSData).range(of: data, options: options, in: range)
+   }
+ }
++// swiftlint:enable legacy_objc_type
+diff --git a/packages/expo-updates/ios/EXUpdates/UpdatesStateMachine.swift b/packages/expo-updates/ios/EXUpdates/UpdatesStateMachine.swift
+index 348b659cb4ebd1..aa0a7964e04bd0 100644
+--- a/packages/expo-updates/ios/EXUpdates/UpdatesStateMachine.swift
++++ b/packages/expo-updates/ios/EXUpdates/UpdatesStateMachine.swift
+@@ -3,6 +3,7 @@
+ // swiftlint:disable no_grouping_extension
+ 
+ import Foundation
++import EXUpdatesInterface
+ 
+ // MARK: - Enums
+ 
+@@ -84,6 +85,39 @@ internal enum UpdatesStateEvent {
+       return .restart
+     }
+   }
++
++  var toMap: [String: Any] {
++    switch self {
++    case .checkCompleteWithUpdate(manifest: let manifest):
++      return ["type": "checkCompleteWithUpdate", "manifest": manifest]
++    case .checkCompleteWithRollback:
++      return ["type": "checkCompleteWithRollback"]
++    case .downloadCompleteWithUpdate(manifest: let manifest):
++      return ["type": "downloadCompleteWithUpdate", "manifest": manifest]
++    case .checkError(errorMessage: let errorMessage):
++      return ["type": "checkError", "errorMessage": errorMessage]
++    case .downloadError(errorMessage: let errorMessage):
++      return ["type": "downloadError", "errorMessage": errorMessage]
++    case .downloadProgress(progress: let progress):
++      return ["type": "downloadProgress", "progress": progress]
++    case .check:
++      fallthrough
++    case .checkCompleteUnavailable:
++      fallthrough
++    case .download:
++      fallthrough
++    case .downloadComplete:
++      fallthrough
++    case .downloadCompleteWithRollback:
++      fallthrough
++    case .restart:
++      fallthrough
++    case .startStartup:
++      fallthrough
++    case .endStartup:
++      return ["type": "\(type)"]
++    }
++  }
+ }
+ 
+ /**
+@@ -319,6 +353,14 @@ internal class UpdatesStateMachine {
+       if event.type != .downloadProgress {
+         logger.info(message: "Updates state change: state = \(state), event = \(event.type), context = \(context)")
+       }
++      // Notify the controller state change listener
++      if let controller = UpdatesControllerRegistry.sharedInstance.controller as? EnabledAppController {
++        controller.stateChangeListeners.keys.forEach {subscriptionId in
++          if let listener = controller.stateChangeListeners[subscriptionId] {
++            listener.updatesStateDidChange(event.toMap)
++          }
++        }
++      }
+       sendContextToJS()
+     }
+   }

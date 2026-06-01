@@ -1,0 +1,1189 @@
+diff --git a/.circleci/config.yml b/.circleci/config.yml
+index 70269ad589efd6..b0b1b100ddf320 100644
+--- a/.circleci/config.yml
++++ b/.circleci/config.yml
+@@ -267,6 +267,9 @@ jobs:
+       - run:
+           name: Run visual regression tests
+           command: xvfb-run pnpm test:regressions
++      - run:
++          name: A11y results committed?
++          command: git add -A && git diff --exit-code --staged
+       - run:
+           name: Build packages for fixtures
+           command: pnpm release:build
+diff --git a/AGENTS.md b/AGENTS.md
+index c0a46e40b50d32..f55c875924d9b3 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -161,6 +161,46 @@ describe('Button', () => {
+ });
+ ```
+ 
++### Accessibility Testing
++
++axe-core runs inside the visual-regression Playwright loop (`test/regressions/index.test.js`) — no separate browser session. Screenshots and a11y are independent: a demo can opt out of one and still run the other.
++
++Key files:
++
++- `test/regressions/demoMeta.ts` — `SCREENSHOT_RULES` and `A11Y_RULES` arrays, matched last-wins (no inheritance: overrides restate every field) against `docs/data/material/components/{slug}/{Demo}` (minimatch globs).
++- `test/regressions/a11y/axe.ts` — asserts `color-contrast` and `link-in-text-block` unless listed in `skipAssertions`.
++- `test/regressions/a11y/a11yReporter.ts` — writes one file per slug at `docs/data/material/components/{slug}/{slug}.a11y.json`. Each file is keyed by demo name, then by axe rule ID. Each rule records a `status` (`pass`, `fail`, or `incomplete`) and WCAG tags.
++
++Enroll a component (slug-wide, or narrow with brace-glob):
++
++```ts
++// test/regressions/demoMeta.ts
++{ test: 'docs/data/material/components/alert/*', enabled: true, skipAssertions: ['color-contrast'] },
++{ test: 'docs/data/material/components/buttons/{BasicButtons,ColorButtons}', enabled: true },
++```
++
++Override a specific demo: append a per-demo rule _after_ the slug-wide rule (last-match-wins; the override must restate every field it wants):
++
++```ts
++{ test: 'docs/data/material/components/popover/AnchorPlayground', enabled: false }, // Redux isolation
++```
++
++Run `pnpm test:regressions` to refresh the `*.a11y.json` files. CI fails if any are stale.
++
++For local iteration, scope the run with vitest's `-t` test-name filter (matched against the `it()` strings, which contain the route). Non-matching tests are skipped — their bodies don't execute, so the browser never navigates to those routes.
++
++```bash
++# in one terminal
++pnpm test:regressions:server
++
++# in another — note no `--`, pnpm forwards args directly
++pnpm test:regressions:run -t '/docs-components-buttons/'              # one slug
++pnpm test:regressions:run -t '/docs-components-buttons/BasicButtons$' # one demo
++pnpm test:regressions:run -t '/docs-components-(buttons|chips)/'      # multiple slugs
++```
++
++Filtered runs only refresh the matched slugs' `*.a11y.json`. Run the unfiltered `pnpm test:regressions` before pushing.
++
+ ### Imports
+ 
+ Use one-level deep imports to avoid bundling entire packages:
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 8de3a053d53463..3cd40341f07a8a 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -208,12 +208,15 @@ The log of the failed build should list which browsers failed.
+ If Chrome failed then `pnpm test:browser` should<sup>[1](test/README.md#accessibility-tree-exclusion)</sup> fail locally as well.
+ If other browsers failed, you can debug using `VITEST_BROWSERS=firefox,webkit pnpm test:browser`.
+ 
+-#### ci/circleci: test_regression
++#### ci/circleci: test_regressions
+ 
+-This renders tests in `test/regressions/tests` and takes screenshots.
+-This step shouldn't fail if the others pass.
+-Otherwise, a maintainer will take a look.
+-The screenshots are evaluated in another step.
++This builds the regression fixture app and runs Playwright in a real browser.
++It checks for visual regressions with screenshots and accessibility regressions with axe-core.
++
++If it fails, check the log for the exact error.
++If generated accessibility results are stale, run `pnpm test:regressions` locally and commit the updated files.
++
++Screenshots are uploaded and compared by Argos in a separate step.
+ 
+ #### ci/circleci: test_types
+ 
+diff --git a/docs/data/material/components/buttons/buttons.a11y.json b/docs/data/material/components/buttons/buttons.a11y.json
+new file mode 100644
+index 00000000000000..c440f41f0f264e
+--- /dev/null
++++ b/docs/data/material/components/buttons/buttons.a11y.json
+@@ -0,0 +1,82 @@
++{
++  "BasicButtons": {
++    "rules": {
++      "aria-allowed-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-conditional-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-prohibited-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-valid-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-valid-attr-value": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "button-name": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "color-contrast": {
++        "status": "pass",
++        "tags": ["wcag2aa"]
++      },
++      "nested-interactive": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "target-size": {
++        "status": "pass",
++        "tags": ["wcag22aa"]
++      }
++    }
++  },
++  "ColorButtons": {
++    "rules": {
++      "aria-allowed-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-conditional-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-prohibited-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-valid-attr": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "aria-valid-attr-value": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "button-name": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "color-contrast": {
++        "status": "pass",
++        "tags": ["wcag2aa"]
++      },
++      "nested-interactive": {
++        "status": "pass",
++        "tags": ["wcag2a"]
++      },
++      "target-size": {
++        "status": "pass",
++        "tags": ["wcag22aa"]
++      }
++    }
++  }
++}
+diff --git a/package.json b/package.json
+index ceb24fd46e7db2..7133f0cb86403c 100644
+--- a/package.json
++++ b/package.json
+@@ -57,7 +57,7 @@
+     "test:e2e:dev": "pnpm -F ./test/e2e dev",
+     "test:e2e-website": "playwright test test/e2e-website --config test/e2e-website/playwright.config.ts",
+     "test:e2e-website:dev": "cross-env PLAYWRIGHT_TEST_BASE_URL=http://localhost:3000 playwright test test/e2e-website --config test/e2e-website/playwright.config.ts",
+-    "test:regressions": "cross-env NODE_ENV=production pnpm test:regressions:build && concurrently --success first --kill-others \"pnpm test:regressions:run\" \"pnpm test:regressions:server\"",
++    "test:regressions": "cross-env NODE_ENV=production pnpm test:regressions:build && concurrently --success first --kill-others \"pnpm test:regressions:run\" \"pnpm test:regressions:server\" && prettier --write \"docs/data/material/components/**/*.a11y.json\"",
+     "test:regressions:build": "vite build test/regressions",
+     "test:regressions:dev": "vite test/regressions --port 5001",
+     "test:regressions:run": "vitest run -r ./test/regressions/",
+@@ -112,6 +112,7 @@
+     "@vitejs/plugin-react": "^5.1.1",
+     "@vitest/browser-playwright": "^4.0.13",
+     "@vitest/coverage-v8": "^4.0.13",
++    "axe-core": "4.11.1",
+     "babel-plugin-module-resolver": "5.0.3",
+     "chalk": "5.6.2",
+     "concurrently": "9.2.1",
+@@ -127,6 +128,7 @@
+     "jsdom": "26.1.0",
+     "lerna": "9.0.7",
+     "markdownlint-cli2": "0.22.1",
++    "minimatch": "10.2.4",
+     "nx": "20.8.4",
+     "pkg-pr-new": "0.0.66",
+     "playwright": "1.59.1",
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index d49b20fdc51ff1..74c93747e831e4 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -152,6 +152,9 @@ importers:
+       '@vitest/coverage-v8':
+         specifier: ^4.0.13
+         version: 4.0.13(@vitest/browser@4.0.13(msw@2.7.3(@types/node@20.19.39)(typescript@5.9.3))(vite@7.3.1(@types/node@20.19.39)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.39.0)(tsx@4.21.0)(yaml@2.8.0))(vitest@4.0.13))(vitest@4.0.13)
++      axe-core:
++        specifier: 4.11.1
++        version: 4.11.1
+       babel-plugin-module-resolver:
+         specifier: 5.0.3
+         version: 5.0.3
+@@ -197,6 +200,9 @@ importers:
+       markdownlint-cli2:
+         specifier: 0.22.1
+         version: 0.22.1
++      minimatch:
++        specifier: 10.2.4
++        version: 10.2.4
+       nx:
+         specifier: 20.8.4
+         version: 20.8.4
+@@ -5811,8 +5817,8 @@ packages:
+     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
+     engines: {node: '>= 0.4'}
+ 
+-  axe-core@4.10.2:
+-    resolution: {integrity: sha512-RE3mdQ7P3FRSe7eqCWoeQ/Z9QXrtniSjp1wUjt5nRC3WIpz5rSCve6o3fsZ2aCpJtrZjSZgjwXAoTO5k4tEI0w==}
++  axe-core@4.11.1:
++    resolution: {integrity: sha512-BASOg+YwO2C+346x3LZOeoovTIoTrRqEsqMa6fmfAV0P+U9mFr9NsyOEpiYvFjbc64NMrSswhV50WdXzdb/Z5A==}
+     engines: {node: '>=4'}
+ 
+   axios@1.16.0:
+@@ -8988,6 +8994,10 @@ packages:
+     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
+     engines: {node: '>=4'}
+ 
++  minimatch@10.2.4:
++    resolution: {integrity: sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg==}
++    engines: {node: 18 || 20 || >=22}
++
+   minimatch@10.2.5:
+     resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
+     engines: {node: 18 || 20 || >=22}
+@@ -13128,7 +13138,7 @@ snapshots:
+     dependencies:
+       '@eslint/object-schema': 3.0.5
+       debug: 4.4.3
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+     transitivePeerDependencies:
+       - supports-color
+ 
+@@ -13726,7 +13736,7 @@ snapshots:
+       eslint-import-resolver-typescript: 4.4.4(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1))
+       eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@4.4.4(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1))
+       eslint-plugin-compat: 7.0.1(eslint@10.2.1(jiti@2.6.1))
+-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1))
++      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4)(eslint@10.2.1(jiti@2.6.1))
+       eslint-plugin-jsx-a11y: 6.10.2(eslint@10.2.1(jiti@2.6.1))
+       eslint-plugin-mdx: 3.7.0(eslint@10.2.1(jiti@2.6.1))
+       eslint-plugin-mocha: 11.2.0(eslint@10.2.1(jiti@2.6.1))
+@@ -14542,7 +14552,7 @@ snapshots:
+       hosted-git-info: 9.0.2
+       json-stringify-nice: 1.1.4
+       lru-cache: 11.3.5
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+       nopt: 8.1.0
+       npm-install-checks: 7.1.2
+       npm-package-arg: 13.0.1
+@@ -14636,7 +14646,7 @@ snapshots:
+       '@npmcli/name-from-folder': 4.0.0
+       '@npmcli/package-json': 7.0.2
+       glob: 13.0.6
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+ 
+   '@npmcli/metavuln-calculator@9.0.3':
+     dependencies:
+@@ -15757,7 +15767,7 @@ snapshots:
+       '@typescript-eslint/types': 8.57.1
+       '@typescript-eslint/visitor-keys': 8.57.1
+       debug: 4.4.3
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+       semver: 7.7.4
+       tinyglobby: 0.2.16
+       ts-api-utils: 2.5.0(typescript@5.9.3)
+@@ -15772,7 +15782,7 @@ snapshots:
+       '@typescript-eslint/types': 8.58.0
+       '@typescript-eslint/visitor-keys': 8.58.0
+       debug: 4.4.3
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+       semver: 7.7.4
+       tinyglobby: 0.2.16
+       ts-api-utils: 2.5.0(typescript@5.9.3)
+@@ -16302,7 +16312,7 @@ snapshots:
+     dependencies:
+       possible-typed-array-names: 1.0.0
+ 
+-  axe-core@4.10.2: {}
++  axe-core@4.11.1: {}
+ 
+   axios@1.16.0:
+     dependencies:
+@@ -17515,7 +17525,7 @@ snapshots:
+       tinyglobby: 0.2.16
+       unrs-resolver: 1.9.2
+     optionalDependencies:
+-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1))
++      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4)(eslint@10.2.1(jiti@2.6.1))
+     transitivePeerDependencies:
+       - supports-color
+ 
+@@ -17565,7 +17575,7 @@ snapshots:
+       lodash: 4.18.1
+       pkg-dir: 5.0.0
+ 
+-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1)))(eslint@10.2.1(jiti@2.6.1)):
++  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.57.1(eslint@10.2.1(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4)(eslint@10.2.1(jiti@2.6.1)):
+     dependencies:
+       '@rtsao/scc': 1.1.0
+       array-includes: 3.1.9
+@@ -17600,7 +17610,7 @@ snapshots:
+       array-includes: 3.1.9
+       array.prototype.flatmap: 1.3.3
+       ast-types-flow: 0.0.8
+-      axe-core: 4.10.2
++      axe-core: 4.11.1
+       axobject-query: 4.1.0
+       damerau-levenshtein: 1.0.8
+       emoji-regex: 9.2.2
+@@ -17733,7 +17743,7 @@ snapshots:
+       imurmurhash: 0.1.4
+       is-glob: 4.0.3
+       json-stable-stringify-without-jsonify: 1.0.1
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+       natural-compare: 1.4.0
+       optionator: 0.9.3
+     optionalDependencies:
+@@ -18250,14 +18260,14 @@ snapshots:
+     dependencies:
+       foreground-child: 3.3.1
+       jackspeak: 4.1.1
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+       minipass: 7.1.3
+       package-json-from-dist: 1.0.1
+       path-scurry: 2.0.2
+ 
+   glob@13.0.6:
+     dependencies:
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+       minipass: 7.1.3
+       path-scurry: 2.0.2
+ 
+@@ -18523,7 +18533,7 @@ snapshots:
+ 
+   ignore-walk@8.0.0:
+     dependencies:
+-      minimatch: 10.2.5
++      minimatch: 10.2.4
+ 
+   ignore@5.3.2: {}
+ 
+@@ -20069,6 +20079,10 @@ snapshots:
+ 
+   min-indent@1.0.1: {}
+ 
++  minimatch@10.2.4:
++    dependencies:
++      brace-expansion: 5.0.5
++
+   minimatch@10.2.5:
+     dependencies:
+       brace-expansion: 5.0.5
+diff --git a/test/regressions/README.md b/test/regressions/README.md
+index c4ef34a1d254b6..7f450a12a9fa2d 100644
+--- a/test/regressions/README.md
++++ b/test/regressions/README.md
+@@ -16,9 +16,11 @@ The rendered UI is either:
+ 
+ 2. a demo from `docs/data`
+ 
+-   By default all demos are included.
+-   We exclude demos if they are redundant or flaky etc.
+-   The logic for this exclusion is handled (like the composition) in `./index.js`
++   Most import-safe demos are included.
++   Non-demo paths and interactive or flaky components are excluded in `./index.jsx`.
++
++   Per-demo screenshot and accessibility rules live in `./demoMeta.ts`.
++   This keeps screenshot exclusions separate from accessibility coverage.
+ 
+ If you introduce new behavior, prefer adding a demo to the documentation to solve documentation and testing with one file.
+ If you're adding a new test prefer a new component instead of editing existing files since that might unknowingly alter existing tests.
+@@ -33,16 +35,33 @@ By default, a devtools-like view is shown that can be disabled by appending `#no
+ 
+ ### Automatic
+ 
+-We're using [`playwright`](https://playwright.dev) to iterate over each fixture and take a screenshot.
++We're using [`playwright`](https://playwright.dev) to iterate over each fixture in a real browser.
++
++For screenshot-enabled fixtures, Playwright saves a screenshot in `./screenshots/$BROWSER_NAME/`.
++
++Some demos also run axe-core accessibility checks.
++Their results are saved next to the related component docs.
++
+ It allows catching regressions like this one:
+ 
+ ![before](/test/docs-regressions-before.png)
+ ![diff](/test/docs-regressions-diff.png)
+ 
+-Screenshots are saved in `./screenshots/$BROWSER_NAME/`.
+ Each test tests only a single fixture.
+ A fixture can be loaded with `await renderFixture(fixturePath)`, for example `renderFixture('FocusTrap/OpenFocusTrap')`.
+ 
++Accessibility checks are opt-in.
++Add rules in `./demoMeta.ts` under `A11Y_RULES`.
++
++Use a slug-wide rule for many demos, or a brace-glob for specific demos:
++
++```ts
++{ test: 'docs/data/material/components/buttons/{BasicButtons,ColorButtons}', enabled: true }
++```
++
++Filtered runs with `-t` only refresh matched slugs.
++Use an unfiltered run when you need to refresh all generated results.
++
+ ## Commands
+ 
+ For development `pnpm test:regressions:dev` and `pnpm test:regressions:run --watch` in separate terminals is recommended.
+diff --git a/test/regressions/a11y/a11yReporter.ts b/test/regressions/a11y/a11yReporter.ts
+new file mode 100644
+index 00000000000000..0bb2d8434430e6
+--- /dev/null
++++ b/test/regressions/a11y/a11yReporter.ts
+@@ -0,0 +1,127 @@
++import * as fs from 'node:fs';
++import * as path from 'node:path';
++import chalk from 'chalk';
++import { globbySync } from 'globby';
++import type {
++  Reporter,
++  TestCase,
++  TestModule,
++  TestRunEndReason,
++  TestSuite,
++  Vitest,
++} from 'vitest/node';
++import type { SerializedError } from 'vitest';
++import type { A11yMeta } from './axe';
++
++const COMPONENTS_DIR = path.resolve(__dirname, '../../../docs/data/material/components');
++const VRT_MODULE_PATH = path.resolve(__dirname, '../index.test.js');
++
++interface DemoEntry {
++  rules: A11yMeta['rules'];
++}
++
++function* walkTests(node: TestModule | TestSuite): Generator<TestCase, undefined, void> {
++  for (const child of node.children) {
++    if (child.type === 'test') {
++      yield child;
++    } else if (child.type === 'suite') {
++      yield* walkTests(child);
++    }
++  }
++}
++
++function hasStatus(meta: A11yMeta, status: 'fail' | 'incomplete'): boolean {
++  for (const rule of Object.values(meta.rules)) {
++    if (rule.status === status) {
++      return true;
++    }
++  }
++  return false;
++}
++
++export default class A11yReporter implements Reporter {
++  private filtered = false;
++
++  onInit(ctx: Vitest) {
++    this.filtered = ctx.config.testNamePattern != null;
++  }
++
++  onTestRunEnd(
++    testModules: ReadonlyArray<TestModule>,
++    _unhandledErrors: ReadonlyArray<SerializedError>,
++    reason: TestRunEndReason,
++  ) {
++    const entries: A11yMeta[] = [];
++    for (const mod of testModules) {
++      for (const test of walkTests(mod)) {
++        const meta = (test.meta() as { a11y?: A11yMeta }).a11y;
++        if (meta) {
++          entries.push(meta);
++        }
++      }
++    }
++
++    const bySlug = new Map<string, A11yMeta[]>();
++    for (const meta of entries) {
++      const list = bySlug.get(meta.slug) ?? [];
++      list.push(meta);
++      bySlug.set(meta.slug, list);
++    }
++
++    // One file per slug, co-located with the component's other files. The docs
++    // toolbar reads these via a webpack require.context (eager) at build time.
++    for (const [slug, metas] of bySlug) {
++      const slugDir = path.join(COMPONENTS_DIR, slug);
++      fs.mkdirSync(slugDir, { recursive: true });
++      const sorted = [...metas].sort((a, b) => a.demo.localeCompare(b.demo));
++      const file: Record<string, DemoEntry> = {};
++      for (const meta of sorted) {
++        file[meta.demo] = { rules: meta.rules };
++      }
++      fs.writeFileSync(
++        path.join(slugDir, `${slug}.a11y.json`),
++        `${JSON.stringify(file, null, 2)}\n`,
++      );
++    }
++
++    // Only prune when this run is authoritative for the full enrolment set:
++    // VRT module must have actually executed, no `-t` filter narrowed it, and
++    // the run completed cleanly. A partial/failed run can omit slugs whose
++    // tests crashed before recording, so pruning then would delete tracked
++    // JSON for still-enrolled demos.
++    const ranVrtSuite = testModules.some((m) => m.moduleId === VRT_MODULE_PATH);
++    if (ranVrtSuite && !this.filtered && reason === 'passed') {
++      for (const file of globbySync('*/*.a11y.json', { cwd: COMPONENTS_DIR, absolute: true })) {
++        const slug = path.basename(path.dirname(file));
++        if (!bySlug.has(slug)) {
++          fs.unlinkSync(file);
++        }
++      }
++    }
++
++    if (entries.length === 0) {
++      return;
++    }
++
++    const slugs = [...bySlug.keys()].sort();
++    const partial = slugs.filter((s) => bySlug.get(s)!.some((m) => hasStatus(m, 'fail')));
++    const needsReview = slugs.filter(
++      (s) => !partial.includes(s) && bySlug.get(s)!.some((m) => hasStatus(m, 'incomplete')),
++    );
++    const pass = slugs.filter((s) => !partial.includes(s) && !needsReview.includes(s));
++    // eslint-disable-next-line no-console
++    console.log(
++      [
++        '',
++        chalk.bold(
++          `a11y results (${entries.length} demos, ${slugs.length} slugs) -> ${path.relative(process.cwd(), COMPONENTS_DIR)}/{slug}/{slug}.a11y.json`,
++        ),
++        '',
++        `  ✅ Pass (${pass.length}):         ${pass.join(', ') || '—'}`,
++        `  ⚠️  Partial (${partial.length}):      ${partial.join(', ') || '—'}`,
++        `  🔍 Needs review (${needsReview.length}): ${needsReview.join(', ') || '—'}`,
++        '',
++      ].join('\n'),
++    );
++  }
++}
+diff --git a/test/regressions/a11y/axe.ts b/test/regressions/a11y/axe.ts
+new file mode 100644
+index 00000000000000..35ff72b0a8bf08
+--- /dev/null
++++ b/test/regressions/a11y/axe.ts
+@@ -0,0 +1,124 @@
++import { expect } from 'chai';
++import type { AxeResults } from 'axe-core';
++import type { TestContext } from 'vitest';
++
++export const VISUAL_RULES = ['color-contrast', 'link-in-text-block'];
++
++export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
++
++/** Rules disabled globally — depend on page-level context, not component correctness. */
++export const GLOBAL_DISABLED_RULES = ['region', 'page-has-heading-one'];
++
++export type RuleStatus = 'pass' | 'fail' | 'incomplete';
++
++export interface RuleEntry {
++  status: RuleStatus;
++  tags: string[];
++}
++
++export interface A11yMeta {
++  slug: string;
++  demo: string;
++  rules: Record<string, RuleEntry>;
++}
++
++function formatNode(node: AxeResults['violations'][number]['nodes'][number]): string {
++  const lines = [`    HTML: ${node.html}`];
++  if (node.failureSummary) {
++    lines.push(`    Summary: ${node.failureSummary.replace(/\n/g, '\n      ')}`);
++  }
++  const checks = [...node.any, ...node.all, ...node.none];
++  for (const check of checks) {
++    lines.push(`    - ${check.message}`);
++    if (check.data && typeof check.data === 'object') {
++      const { fgColor, bgColor, contrastRatio, fontSize, fontWeight, expectedContrastRatio } =
++        check.data;
++      if (contrastRatio !== undefined) {
++        lines.push(
++          `      Foreground: ${fgColor}, Background: ${bgColor}, Ratio: ${contrastRatio}, Expected: ${expectedContrastRatio}, Font: ${fontSize} / ${fontWeight}`,
++        );
++      }
++    }
++  }
++  return lines.join('\n');
++}
++
++function formatResults(results: AxeResults['violations']) {
++  return results
++    .map((v) => {
++      const header = `  [${v.id}] ${v.help} (${v.impact})\n  ${v.helpUrl}`;
++      const nodes = v.nodes.map((n) => formatNode(n)).join('\n\n');
++      return `${header}\n\n${nodes}`;
++    })
++    .join('\n\n');
++}
++
++interface RecordA11yOptions {
++  slug: string;
++  demo: string;
++  /**
++   * Rule ids whose violations are recorded but not asserted on. The rule
++   * still runs and still lands in the results JSON — only the test-failing
++   * assertion is suppressed.
++   */
++  skipAssertions?: string[];
++}
++
++/**
++ * Node-side recorder for axe results produced inside a Playwright page.
++ *
++ * Extracts a structured summary onto `ctx.task.meta.a11y` (the reporter
++ * writes one file per demo), then asserts on visual rules (`color-contrast`,
++ * `link-in-text-block`) unless listed in `skipAssertions`.
++ */
++export function recordA11y(
++  ctx: TestContext,
++  results: AxeResults,
++  { slug, demo, skipAssertions = [] }: RecordA11yOptions,
++): void {
++  const rules: Record<string, RuleEntry> = {};
++  const buckets: ReadonlyArray<[AxeResults['passes'], RuleStatus]> = [
++    [results.passes, 'pass'],
++    [results.incomplete, 'incomplete'],
++    [results.violations, 'fail'],
++  ];
++  for (const [list, status] of buckets) {
++    for (const rule of list) {
++      const tags = rule.tags.filter((t) => WCAG_TAGS.includes(t)).sort();
++      rules[rule.id] = { status, tags };
++    }
++  }
++  const sortedRules = Object.fromEntries(
++    Object.entries(rules).sort(([a], [b]) => a.localeCompare(b)),
++  );
++
++  const meta: A11yMeta = {
++    slug,
++    demo,
++    rules: sortedRules,
++  };
++  (ctx.task.meta as { a11y?: A11yMeta }).a11y = meta;
++
++  const skip = new Set(skipAssertions);
++  const visualViolations = results.violations.filter(
++    (v) => VISUAL_RULES.includes(v.id) && !skip.has(v.id),
++  );
++  const visualIncomplete = results.incomplete.filter(
++    (v) => VISUAL_RULES.includes(v.id) && !skip.has(v.id),
++  );
++
++  const failures: string[] = [];
++  if (visualViolations.length > 0) {
++    failures.push(
++      `${visualViolations.length} axe violation(s):\n\n${formatResults(visualViolations)}`,
++    );
++  }
++  if (visualIncomplete.length > 0) {
++    failures.push(
++      `${visualIncomplete.length} axe incomplete (needs review):\n\n${formatResults(visualIncomplete)}`,
++    );
++  }
++  if (failures.length > 0) {
++    expect.fail(`[${slug}/${demo}] ${failures.join('\n\n')}`);
++  }
++}
+diff --git a/test/regressions/demoMeta.test.ts b/test/regressions/demoMeta.test.ts
+new file mode 100644
+index 00000000000000..514d39704f92cd
+--- /dev/null
++++ b/test/regressions/demoMeta.test.ts
+@@ -0,0 +1,69 @@
++import { describe, it } from 'vitest';
++import { expect } from 'chai';
++import { A11Y_RULES, SCREENSHOT_RULES, getConfig, parseRoute } from './demoMeta';
++
++describe('parseRoute', () => {
++  it('returns null for non-component routes (regression fixtures)', () => {
++    expect(parseRoute('/regression-Rating/FocusVisibleRating')).to.equal(null);
++  });
++
++  it('parses a docs-components route into path/slug/demo', () => {
++    expect(parseRoute('/docs-components-buttons/BasicButtons')).to.deep.equal({
++      path: 'docs/data/material/components/buttons/BasicButtons',
++      slug: 'buttons',
++      demo: 'BasicButtons',
++    });
++  });
++});
++
++describe('getConfig', () => {
++  it('returns undefined when no rule matches', () => {
++    expect(
++      getConfig(A11Y_RULES, 'docs/data/material/components/accordion/BasicAccordion'),
++    ).to.equal(undefined);
++  });
++
++  it('returns a screenshot opt-out rule for an excluded demo', () => {
++    expect(
++      getConfig(SCREENSHOT_RULES, 'docs/data/material/components/autocomplete/Asynchronous'),
++    ).to.deep.include({ enabled: false });
++  });
++
++  it('returns the a11y rule for a brace-glob enrolment', () => {
++    expect(
++      getConfig(A11Y_RULES, 'docs/data/material/components/buttons/BasicButtons'),
++    ).to.deep.include({ enabled: true });
++    expect(
++      getConfig(A11Y_RULES, 'docs/data/material/components/buttons/ColorButtons'),
++    ).to.deep.include({ enabled: true });
++  });
++
++  it('returns undefined for a demo outside a brace-glob enrolment', () => {
++    // `buttons` enrols only {BasicButtons,ColorButtons}.
++    expect(getConfig(A11Y_RULES, 'docs/data/material/components/buttons/DisabledButtons')).to.equal(
++      undefined,
++    );
++  });
++
++  it('honours last-match-wins when multiple rules apply', () => {
++    const rules = [
++      { test: 'docs/data/material/components/foo/*', enabled: true },
++      { test: 'docs/data/material/components/foo/Bar', enabled: false },
++    ];
++    expect(getConfig(rules, 'docs/data/material/components/foo/Bar')).to.deep.equal({
++      test: 'docs/data/material/components/foo/Bar',
++      enabled: false,
++    });
++    expect(getConfig(rules, 'docs/data/material/components/foo/Baz')).to.deep.equal({
++      test: 'docs/data/material/components/foo/*',
++      enabled: true,
++    });
++  });
++});
++
++describe('rule data sanity', () => {
++  it('rule arrays are non-empty (catches accidental import regression)', () => {
++    expect(SCREENSHOT_RULES.length).to.be.greaterThan(0);
++    expect(A11Y_RULES.length).to.be.greaterThan(0);
++  });
++});
+diff --git a/test/regressions/demoMeta.ts b/test/regressions/demoMeta.ts
+new file mode 100644
+index 00000000000000..a31673b5dad1eb
+--- /dev/null
++++ b/test/regressions/demoMeta.ts
+@@ -0,0 +1,151 @@
++/**
++ * Per-tool VRT configuration as two independent rule arrays — one for
++ * screenshots, one for axe — so editing one tool can never stomp on the
++ * other. Each list is evaluated last-match-wins (no inheritance: an override
++ * rule must restate every field it cares about) against the docs path
++ * `docs/data/material/components/{slug}/{Demo}`.
++ *
++ * Whole-slug exclusions where *no* tool wants anything live in the
++ * `index.jsx` glob — dropping them from the bundle entirely, not just from
++ * the tools.
++ */
++
++import { minimatch } from 'minimatch';
++
++export interface ScreenshotRule {
++  /** Minimatch glob against `docs/data/material/components/{slug}/{Demo}`. */
++  test: string;
++  enabled?: boolean;
++  /** Playwright waits for this selector after navigation, before axe + screenshot. */
++  waitForSelector?: string;
++}
++
++export interface A11yRule {
++  /** Minimatch glob against `docs/data/material/components/{slug}/{Demo}`. */
++  test: string;
++  enabled?: boolean;
++  /** Axe rule IDs recorded into results JSON but not asserted on. */
++  skipAssertions?: string[];
++}
++
++/**
++ * Screenshots default to enabled. Add a rule with `enabled: false` to opt
++ * out, or `waitForSelector` to gate axe + screenshot on a specific element.
++ * Trailing comments preserve the prose used in the old glob so `git grep` on a
++ * reason still finds every affected demo.
++ */
++export const SCREENSHOT_RULES: ScreenshotRule[] = [
++  { test: 'docs/data/material/components/alert/TransitionAlerts', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/app-bar/BackToTop', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/app-bar/ElevateAppBar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/app-bar/HideAppBar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/app-bar/MenuAppBar', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/Asynchronous', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/CheckboxesTags', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/CountrySelect', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/DisabledOptions', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/Filter', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/FreeSolo', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/GoogleMaps', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/Grouped', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/Highlights', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/Playground', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/UseAutocomplete', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/autocomplete/Virtualize', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/badges/BadgeAlignment', enabled: false }, // Redux isolation
++  { test: 'docs/data/material/components/badges/BadgeVisibility', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/bottom-navigation/FixedBottomNavigation', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/breadcrumbs/ActiveLastBreadcrumb', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/chips/ChipsPlayground', enabled: false }, // Redux isolation
++  { test: 'docs/data/material/components/drawers/SwipeableEdgeDrawer', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/drawers/SwipeableTemporaryDrawer', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/drawers/TemporaryDrawer', enabled: false }, // Needs interaction
++  {
++    test: 'docs/data/material/components/floating-action-button/FloatingActionButtonZoom',
++    enabled: false,
++  }, // Needs interaction
++  { test: 'docs/data/material/components/masonry/ImageMasonry', enabled: false }, // Images don't load
++  { test: 'docs/data/material/components/masonry/Sequential', enabled: false }, // Flaky
++  { test: 'docs/data/material/components/modal/BasicModal', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/modal/KeepMountedModal', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/modal/SpringModal', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/modal/TransitionsModal', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/no-ssr/FrameDeferring', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/popover/AnchorPlayground', enabled: false }, // Redux isolation
++  { test: 'docs/data/material/components/popover/BasicPopover', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/popover/PopoverPopupState', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/selects/ControlledOpenSelect', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/selects/DialogSelect', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/selects/GroupedSelect', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/skeleton/Animations', enabled: false }, // Animation disabled
++  { test: 'docs/data/material/components/skeleton/Facebook', enabled: false }, // Flaky image loading
++  { test: 'docs/data/material/components/skeleton/SkeletonChildren', enabled: false }, // Flaky image loading
++  { test: 'docs/data/material/components/skeleton/YouTube', enabled: false }, // Flaky image loading
++  { test: 'docs/data/material/components/snackbars/ConsecutiveSnackbars', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/snackbars/CustomizedSnackbars', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/snackbars/DirectionSnackbar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/snackbars/FabIntegrationSnackbar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/snackbars/IntegrationNotistack', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/snackbars/PositionedSnackbar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/snackbars/SimpleSnackbar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/snackbars/TransitionsSnackbar', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/stack/InteractiveStack', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/steppers/HorizontalNonLinearStepper', enabled: false }, // Redundant
++  { test: 'docs/data/material/components/steppers/TextMobileStepper', enabled: false }, // Flaky image loading
++  { test: 'docs/data/material/components/tabs/AccessibleTabs1', enabled: false }, // Needs interaction
++  { test: 'docs/data/material/components/tabs/AccessibleTabs2', enabled: false }, // Needs interaction
++  {
++    test: 'docs/data/material/components/table/ReactVirtualizedTable',
++    waitForSelector: '[data-index="1"]',
++  }, // Wait for virtualized rows to render
++];
++
++/**
++ * A11y defaults to off — only matched-and-enabled rules produce results.
++ * Slug-wide rules use `*`; brace-globs narrow enrolment to specific demos;
++ * later opt-out rules disable individual demos.
++ *
++ * Initial PR scope: `buttons` only. Other components onboard incrementally.
++ */
++export const A11Y_RULES: A11yRule[] = [
++  { test: 'docs/data/material/components/buttons/{BasicButtons,ColorButtons}', enabled: true },
++];
++
++export interface ParsedRoute {
++  path: string;
++  slug: string;
++  demo: string;
++}
++
++const ROUTE_REGEX = /^\/docs-components-([^/]+)\/(.+)$/;
++
++/**
++ * Map a VRT route to its docs path + slug + demo, or `null` for non-component
++ * routes (regression fixtures).
++ */
++export function parseRoute(route: string): ParsedRoute | null {
++  const match = route.match(ROUTE_REGEX);
++  if (!match) {
++    return null;
++  }
++  const [, slug, demo] = match;
++  return { path: `docs/data/material/components/${slug}/${demo}`, slug, demo };
++}
++
++/**
++ * Walk a rule list back-to-front, return the last matching rule (or undefined).
++ * Rules don't inherit from each other — every override must restate any field
++ * it cares about. Defaults (`enabled` on/off when no rule matches) live at
++ * the call site, not here.
++ */
++export function getConfig<T extends { test: string }>(
++  rules: ReadonlyArray<T>,
++  pathStr: string,
++): T | undefined {
++  for (let i = rules.length - 1; i >= 0; i -= 1) {
++    if (minimatch(pathStr, rules[i].test)) {
++      return rules[i];
++    }
++  }
++  return undefined;
++}
+diff --git a/test/regressions/index.jsx b/test/regressions/index.jsx
+index b0e78ca7f7b8ac..2c814a7f288fb8 100644
+--- a/test/regressions/index.jsx
++++ b/test/regressions/index.jsx
+@@ -44,16 +44,27 @@ Object.keys(importRegressionFixtures).forEach((path) => {
+ }, []);
+ 
+ // Also use some of the demos to avoid code duplication.
++//
++// Two exclusion layers:
++//   - Slug-level (whole slug has no tool consumer, or path can't be imported) lives here,
++//     dropping the demo from the bundle entirely.
++//   - Per-demo (a specific demo inside an otherwise-enrolled slug is skipped by one tool
++//     or the other) lives in `demoMeta.ts`, so screenshot-specific reasons
++//     ("Redundant", "Flaky image loading") don't also drop a11y coverage.
++//
++// Enrolling a new component for a11y: un-negate the slug glob below if needed,
++// then add an `A11Y_RULES` entry in `demoMeta.ts`
++// (e.g. `{ test: 'docs/data/material/components/foo/{BasicFoo,FooVariants}', enabled: true }`).
+ const importDemos = import.meta.glob(
+   [
+     'docs/data/**/[A-Z]*.js',
+     'docs/data/base/**/[A-Z]*/css/index.js',
+     'docs/data/base/**/[A-Z]*/tailwind/index.js',
+     'docs/data/base/**/[A-Z]*/system/index.js',
+-    // ================== Exclusions ==================
++    // ================== Structural — cannot be imported safely ==================
+     '!docs/data/experiments',
+     '!docs/data/material/**/*NoSnap.*',
+-    // Template
++    // Templates — not demos
+     '!docs/data/material/getting-started/templates/blog/components',
+     '!docs/data/material/getting-started/templates/checkout/components',
+     '!docs/data/material/getting-started/templates/crud-dashboard/components',
+@@ -69,80 +80,33 @@ const importDemos = import.meta.glob(
+     '!docs/data/material/getting-started/templates/sign-in/components',
+     '!docs/data/material/getting-started/templates/sign-in-side/components',
+     '!docs/data/material/getting-started/templates/sign-up/components',
+-    // Marketing Page Theme Customizations
+-    '!docs/data/material/components/alert/TransitionAlerts', // Needs interaction
+-    '!docs/data/material/components/app-bar/BackToTop', // Needs interaction
+-    '!docs/data/material/components/app-bar/ElevateAppBar', // Needs interaction
+-    '!docs/data/material/components/app-bar/HideAppBar', // Needs interaction
+-    '!docs/data/material/components/app-bar/MenuAppBar', // Redundant
+-    '!docs/data/material/components/autocomplete/Asynchronous', // Redundant
+-    '!docs/data/material/components/autocomplete/CheckboxesTags', // Redundant
+-    '!docs/data/material/components/autocomplete/CountrySelect', // Redundant
+-    '!docs/data/material/components/autocomplete/DisabledOptions', // Redundant
+-    '!docs/data/material/components/autocomplete/Filter', // Redundant
+-    '!docs/data/material/components/autocomplete/FreeSolo', // Redundant
+-    '!docs/data/material/components/autocomplete/GoogleMaps', // Redundant
+-    '!docs/data/material/components/autocomplete/Grouped', // Redundant
+-    '!docs/data/material/components/autocomplete/Highlights', // Redundant
+-    '!docs/data/material/components/autocomplete/Playground', // Redundant
+-    '!docs/data/material/components/autocomplete/UseAutocomplete', // Redundant
+-    '!docs/data/material/components/autocomplete/Virtualize', // Redundant
+-    '!docs/data/material/components/backdrop/SimpleBackdrop', // Needs interaction
+-    '!docs/data/material/components/badges/BadgeAlignment', // Redux isolation
+-    '!docs/data/material/components/badges/BadgeVisibility', // Needs interaction
+-    '!docs/data/material/components/bottom-navigation/FixedBottomNavigation', // Redundant
+-    '!docs/data/material/components/breadcrumbs/ActiveLastBreadcrumb', // Redundant
+-    '!docs/data/material/components/chips/ChipsPlayground', // Redux isolation
++    // Customization demos — not component pages
++    '!docs/data/material/customization/breakpoints',
++    '!docs/data/material/customization/color',
++    '!docs/data/material/customization/container-queries/ResizableDemo',
++    '!docs/data/material/customization/default-theme',
++    '!docs/data/material/customization/density/DensityTool',
++    '!docs/data/material/customization/right-to-left/RtlDemo',
++    '!docs/data/material/customization/transitions/TransitionHover',
++    '!docs/data/material/customization/typography/ResponsiveFontSizesChart',
++    // Other non-demo subtrees
++    '!docs/data/material/components/menubar/components', // Source subdir, not demos
++    '!docs/data/material/getting-started/supported-components/MaterialUIComponents',
++    '!docs/data/material/guides',
++    '!docs/data/base/getting-started/quickstart/BaseButtonTailwind',
++    '!docs/data/base/guides/working-with-tailwind-css/PlayerFinal',
++    '!docs/data/premium-themes',
++    // ================== Slug-level — no tool consumer ==================
++    '!docs/data/material/components/backdrop', // Needs interaction
+     '!docs/data/material/components/click-away-listener', // Needs interaction
+     '!docs/data/material/components/container', // Can't see the impact
+     '!docs/data/material/components/dialogs', // Needs interaction
+-    '!docs/data/material/components/drawers/SwipeableEdgeDrawer', // Needs interaction
+-    '!docs/data/material/components/drawers/SwipeableTemporaryDrawer', // Needs interaction
+-    '!docs/data/material/components/drawers/TemporaryDrawer', // Needs interaction
+-    '!docs/data/material/components/floating-action-button/FloatingActionButtonZoom', // Needs interaction
+-    '!docs/data/material/components/image-list', // Image don't load
+-    '!docs/data/material/components/masonry/ImageMasonry', // Image don't load
+-    '!docs/data/material/components/masonry/Sequential', // Flaky
+-    '!docs/data/material/components/material-icons/SearchIcons',
+-    '!docs/data/material/components/menubar/components', // Not demos
+-    '!docs/data/material/components/menus', // Need interaction
+-    '!docs/data/material/components/modal/BasicModal', // Needs interaction
+-    '!docs/data/material/components/modal/KeepMountedModal', // Needs interaction
+-    '!docs/data/material/components/modal/SpringModal', // Needs interaction
+-    '!docs/data/material/components/modal/TransitionsModal', // Needs interaction
+-    '!docs/data/material/components/no-ssr/FrameDeferring', // Needs interaction
+-    '!docs/data/material/components/popover/AnchorPlayground', // Redux isolation
+-    '!docs/data/material/components/popover/BasicPopover', // Needs interaction
+-    '!docs/data/material/components/popover/PopoverPopupState', // Needs interaction
+-    '!docs/data/material/components/popper/PopperPopupState', // Needs interaction
+-    '!docs/data/material/components/popper/PositionedPopper', // Needs interaction
+-    '!docs/data/material/components/popper/ScrollPlayground', // Redux isolation
+-    '!docs/data/material/components/popper/SimplePopper', // Needs interaction
+-    '!docs/data/material/components/popper/SpringPopper', // Needs interaction
+-    '!docs/data/material/components/popper/TransitionsPopper', // Needs interaction
+-    '!docs/data/material/components/popper/VirtualElementPopper', // Needs interaction
++    '!docs/data/material/components/image-list', // Images don't load
++    '!docs/data/material/components/material-icons/SearchIcons', // Heavy icon grid
++    '!docs/data/material/components/menus', // Needs interaction
++    '!docs/data/material/components/popper', // Needs interaction
+     '!docs/data/material/components/progress', // Flaky
+-    '!docs/data/material/components/selects/ControlledOpenSelect', // Needs interaction
+-    '!docs/data/material/components/selects/DialogSelect', // Needs interaction
+-    '!docs/data/material/components/selects/GroupedSelect', // Needs interaction
+-    '!docs/data/material/components/skeleton/Animations', // Animation disabled
+-    '!docs/data/material/components/skeleton/Facebook', // Flaky image loading
+-    '!docs/data/material/components/skeleton/SkeletonChildren', // flaky image loading
+-    '!docs/data/material/components/skeleton/YouTube', // Flaky image loading
+-    '!docs/data/material/components/snackbars/ConsecutiveSnackbars', // Needs interaction
+-    '!docs/data/material/components/snackbars/CustomizedSnackbars', // Redundant
+-    '!docs/data/material/components/snackbars/DirectionSnackbar', // Needs interaction
+-    '!docs/data/material/components/snackbars/FabIntegrationSnackbar', // Needs interaction
+-    '!docs/data/material/components/snackbars/IntegrationNotistack', // Needs interaction
+-    '!docs/data/material/components/snackbars/PositionedSnackbar', // Needs interaction
+-    '!docs/data/material/components/snackbars/SimpleSnackbar', // Needs interaction
+-    '!docs/data/material/components/snackbars/TransitionsSnackbar', // Needs interaction
+     '!docs/data/material/components/speed-dial', // Needs interaction
+-    '!docs/data/material/components/stack/InteractiveStack', // Redundant
+-    '!docs/data/material/components/steppers/HorizontalNonLinearStepper', // Redundant
+-    '!docs/data/material/components/steppers/TextMobileStepper', // Flaky image loading
+-    '!docs/data/material/components/tabs/AccessibleTabs1', // Need interaction
+-    '!docs/data/material/components/tabs/AccessibleTabs2', // Need interaction
+     '!docs/data/material/components/textarea-autosize', // Superseded by a dedicated regression test
+     '!docs/data/material/components/tooltips', // Needs interaction
+     '!docs/data/material/components/transitions', // Needs interaction
+diff --git a/test/regressions/index.test.js b/test/regressions/index.test.js
+index e238a66f362bdc..b14ee71bbf6a29 100644
+--- a/test/regressions/index.test.js
++++ b/test/regressions/index.test.js
+@@ -2,8 +2,11 @@ import * as url from 'url';
+ import * as path from 'path';
+ import * as fs from 'node:fs/promises';
+ import { chromium } from '@playwright/test';
++import { recordA11y, WCAG_TAGS, GLOBAL_DISABLED_RULES } from './a11y/axe';
++import { A11Y_RULES, SCREENSHOT_RULES, getConfig, parseRoute } from './demoMeta';
+ 
+ const currentDirectory = url.fileURLToPath(new URL('.', import.meta.url));
++const AXE_SCRIPT = path.resolve(currentDirectory, '../../node_modules/axe-core/axe.min.js');
+ 
+ async function main() {
+   const baseUrl = 'http://localhost:5001';
+@@ -53,6 +56,8 @@ async function main() {
+   });
+   routes = routes.map((route) => route.replace(baseUrl, ''));
+ 
++  const axeSource = await fs.readFile(AXE_SCRIPT, 'utf8');
++
+   /**
+    * @param {string} route
+    */
+@@ -107,7 +112,25 @@ async function main() {
+     });
+ 
+     routes.forEach((route) => {
+-      it(`creates screenshots of ${route}`, async function test() {
++      const parsed = parseRoute(route);
++      const screenshotRule = parsed ? getConfig(SCREENSHOT_RULES, parsed.path) : undefined;
++      const a11yRule = parsed ? getConfig(A11Y_RULES, parsed.path) : undefined;
++      const runScreenshot = parsed ? (screenshotRule?.enabled ?? true) : true;
++      const runA11y = a11yRule?.enabled === true;
++      if (!runScreenshot && !runA11y) {
++        return;
++      }
++
++      let action;
++      if (runA11y && runScreenshot) {
++        action = 'creates screenshots and runs a11y on';
++      } else if (runA11y) {
++        action = 'runs a11y on';
++      } else {
++        action = 'creates screenshots of';
++      }
++
++      it(`${action} ${route}`, async function test(ctx) {
+         // With the playwright inspector we might want to call `page.pause` which would lead to a timeout.
+         if (process.env.PWDEBUG) {
+           this?.timeout?.(0);
+@@ -115,16 +138,37 @@ async function main() {
+ 
+         const testcase = await renderFixture(route);
+ 
+-        switch (route) {
+-          case '/docs-components-table/ReactVirtualizedTable': {
+-            await page.waitForSelector('[data-index="1"]');
+-            break;
+-          }
+-          default:
+-            break;
++        if (screenshotRule?.waitForSelector) {
++          await page.waitForSelector(screenshotRule.waitForSelector);
++        }
++
++        // Run axe before the screenshot (if any) so it observes the natural
++        // DOM — Playwright's `animations: 'disabled'` injects inline
++        // `!important` styles that otherwise perturb rule applicability.
++        if (runA11y) {
++          // Inject axe fresh each run — page.addScriptTag can leak between navigations.
++          await page.evaluate(axeSource);
++          const results = await page.evaluate(
++            async ({ element, disabledRules, tags }) => {
++              window.axe.configure({
++                rules: disabledRules.map((id) => ({ id, enabled: false })),
++              });
++              return window.axe.run(element, {
++                runOnly: { type: 'tag', values: tags },
++              });
++            },
++            { element: testcase, disabledRules: GLOBAL_DISABLED_RULES, tags: WCAG_TAGS },
++          );
++          recordA11y(ctx, results, {
++            slug: parsed.slug,
++            demo: parsed.demo,
++            skipAssertions: a11yRule.skipAssertions,
++          });
+         }
+ 
+-        await takeScreenshot({ testcase, route });
++        if (runScreenshot) {
++          await takeScreenshot({ testcase, route });
++        }
+       });
+     });
+ 
+diff --git a/test/regressions/vitest.config.ts b/test/regressions/vitest.config.ts
+index 7382f40e7d2ca7..484796d66ee443 100644
+--- a/test/regressions/vitest.config.ts
++++ b/test/regressions/vitest.config.ts
+@@ -1,7 +1,10 @@
+ import { defineConfig } from 'vitest/config';
++import A11yReporter from './a11y/a11yReporter';
+ 
+ export default defineConfig({
+   test: {
+     globals: true,
++    testTimeout: 60_000,
++    reporters: [['default', {}], new A11yReporter()],
+   },
+ });

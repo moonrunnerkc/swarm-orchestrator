@@ -1,0 +1,1488 @@
+diff --git a/packages/next/src/build/templates/app-page.ts b/packages/next/src/build/templates/app-page.ts
+index f5a63b6669ad..0f0341b8b12a 100644
+--- a/packages/next/src/build/templates/app-page.ts
++++ b/packages/next/src/build/templates/app-page.ts
+@@ -29,6 +29,7 @@ import {
+   NodeNextResponse,
+ } from '../../server/base-http/node' with { 'turbopack-transition': 'next-server-utility' }
+ import { checkIsAppPPREnabled } from '../../server/lib/experimental/ppr' with { 'turbopack-transition': 'next-server-utility' }
++import { isRSCRequestHeader } from '../../server/lib/is-rsc-request' with { 'turbopack-transition': 'next-server-utility' }
+ import {
+   getFallbackRouteParams,
+   getPlaceholderFallbackRouteParams,
+@@ -294,7 +295,8 @@ export async function handler(
+   // NOTE: Don't delete headers[RSC] yet, it still needs to be used in renderToHTML later
+ 
+   const isRSCRequest =
+-    getRequestMeta(req, 'isRSCRequest') ?? Boolean(req.headers[RSC_HEADER])
++    getRequestMeta(req, 'isRSCRequest') ??
++    isRSCRequestHeader(req.headers[RSC_HEADER])
+ 
+   const isPossibleServerAction = getIsPossibleServerAction(req)
+ 
+@@ -426,7 +428,7 @@ export async function handler(
+   const isInstantNavigationTest =
+     exposeTestingApi &&
+     (req.headers[NEXT_INSTANT_PREFETCH_HEADER] === '1' ||
+-      (req.headers[RSC_HEADER] === undefined &&
++      (!isRSCRequestHeader(req.headers[RSC_HEADER]) &&
+         typeof req.headers.cookie === 'string' &&
+         req.headers.cookie.includes(NEXT_INSTANT_TEST_COOKIE + '=')))
+ 
+diff --git a/packages/next/src/client/script.tsx b/packages/next/src/client/script.tsx
+index e28724e894cc..d1bde2e38207 100644
+--- a/packages/next/src/client/script.tsx
++++ b/packages/next/src/client/script.tsx
+@@ -6,6 +6,7 @@ import type { ScriptHTMLAttributes } from 'react'
+ import { HeadManagerContext } from '../shared/lib/head-manager-context.shared-runtime'
+ import { setAttributesFromProps } from './set-attributes-from-props'
+ import { requestIdleCallback } from './request-idle-callback'
++import { htmlEscapeJsonString } from '../shared/lib/htmlescape'
+ 
+ const ScriptCache = new Map()
+ const LoadCache = new Set()
+@@ -327,10 +328,9 @@ function Script(props: ScriptProps): JSX.Element | null {
+           <script
+             nonce={nonce}
+             dangerouslySetInnerHTML={{
+-              __html: `(self.__next_s=self.__next_s||[]).push(${JSON.stringify([
+-                0,
+-                { ...restProps, id },
+-              ])})`,
++              __html: `(self.__next_s=self.__next_s||[]).push(${htmlEscapeJsonString(
++                JSON.stringify([0, { ...restProps, id }])
++              )})`,
+             }}
+           />
+         )
+@@ -351,10 +351,9 @@ function Script(props: ScriptProps): JSX.Element | null {
+           <script
+             nonce={nonce}
+             dangerouslySetInnerHTML={{
+-              __html: `(self.__next_s=self.__next_s||[]).push(${JSON.stringify([
+-                src,
+-                { ...restProps, id },
+-              ])})`,
++              __html: `(self.__next_s=self.__next_s||[]).push(${htmlEscapeJsonString(
++                JSON.stringify([src, { ...restProps, id }])
++              )})`,
+             }}
+           />
+         )
+diff --git a/packages/next/src/pages/_document.tsx b/packages/next/src/pages/_document.tsx
+index 117ad774a2df..28269e98e01c 100644
+--- a/packages/next/src/pages/_document.tsx
++++ b/packages/next/src/pages/_document.tsx
+@@ -14,7 +14,7 @@ import type { NextFontManifest } from '../build/webpack/plugins/next-font-manife
+ 
+ import { getPageFiles } from '../server/get-page-files'
+ import type { BuildManifest } from '../server/get-page-files'
+-import { htmlEscapeJsonString } from '../server/htmlescape'
++import { htmlEscapeJsonString } from '../shared/lib/htmlescape'
+ import isError from '../lib/is-error'
+ 
+ import {
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index 6878e8fc2395..d8ff3f0b337c 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -78,6 +78,7 @@ import {
+ } from '../../client/components/app-router-headers'
+ import { createMetadataContext } from '../../lib/metadata/metadata-context'
+ import { createRequestStoreForRender } from '../async-storage/request-store'
++import { isRSCRequestHeader } from '../lib/is-rsc-request'
+ import { createWorkStore } from '../async-storage/work-store'
+ import {
+   getAccessFallbackErrorTypeByStatus,
+@@ -389,7 +390,7 @@ function parseRequestHeaders(
+ 
+   const isHmrRefresh = headers[NEXT_HMR_REFRESH_HEADER] !== undefined
+ 
+-  const isRSCRequest = headers[RSC_HEADER] !== undefined
++  const isRSCRequest = isRSCRequestHeader(headers[RSC_HEADER])
+ 
+   const shouldProvideFlightRouterState =
+     isRSCRequest && (!isPrefetchRequest || !options.isRoutePPREnabled)
+diff --git a/packages/next/src/server/app-render/get-script-nonce-from-header.test.ts b/packages/next/src/server/app-render/get-script-nonce-from-header.test.ts
+new file mode 100644
+index 000000000000..38971b77e029
+--- /dev/null
++++ b/packages/next/src/server/app-render/get-script-nonce-from-header.test.ts
+@@ -0,0 +1,28 @@
++import { getScriptNonceFromHeader } from './get-script-nonce-from-header'
++
++describe('getScriptNonceFromHeader', () => {
++  it('returns the first valid nonce from the script-src directive', () => {
++    expect(
++      getScriptNonceFromHeader(
++        `default-src 'nonce-other'; script-src 'nonce-cmFuZG9tCg=='`
++      )
++    ).toBe('cmFuZG9tCg==')
++  })
++
++  it('ignores malformed nonce values', () => {
++    expect(
++      getScriptNonceFromHeader(`script-src 'nonce-"><script></script>"'`)
++    ).toBeUndefined()
++    expect(
++      getScriptNonceFromHeader(`script-src 'nonce-" onerror="alert(1)'`)
++    ).toBeUndefined()
++  })
++
++  it('skips malformed nonce values and keeps looking for a valid one', () => {
++    expect(
++      getScriptNonceFromHeader(
++        `script-src 'nonce-" onerror="alert(1)' 'nonce-cmFuZG9tCg=='`
++      )
++    ).toBe('cmFuZG9tCg==')
++  })
++})
+diff --git a/packages/next/src/server/app-render/get-script-nonce-from-header.tsx b/packages/next/src/server/app-render/get-script-nonce-from-header.tsx
+index 63b20a005fc3..45ce83c00ae0 100644
+--- a/packages/next/src/server/app-render/get-script-nonce-from-header.tsx
++++ b/packages/next/src/server/app-render/get-script-nonce-from-header.tsx
+@@ -1,4 +1,4 @@
+-import { ESCAPE_REGEX } from '../htmlescape'
++const CSP_NONCE_SOURCE_REGEX = /^'nonce-([A-Za-z0-9+/_-]+={0,2})'$/
+ 
+ export function getScriptNonceFromHeader(
+   cspHeaderValue: string
+@@ -19,35 +19,13 @@ export function getScriptNonceFromHeader(
+     return
+   }
+ 
+-  // Extract the nonce from the directive
+-  const nonce = directive
+-    .split(' ')
+-    // Remove the 'strict-src'/'default-src' string, this can't be the nonce.
+-    .slice(1)
+-    .map((source) => source.trim())
+-    // Find the first source with the 'nonce-' prefix.
+-    .find(
+-      (source) =>
+-        source.startsWith("'nonce-") &&
+-        source.length > 8 &&
+-        source.endsWith("'")
+-    )
+-    // Grab the nonce by trimming the 'nonce-' prefix.
+-    ?.slice(7, -1)
++  // Extract the first valid nonce from the directive. Malformed nonces are
++  // ignored so the request can continue without a nonce instead of failing.
++  for (const source of directive.split(/\s+/).slice(1)) {
++    const match = source.trim().match(CSP_NONCE_SOURCE_REGEX)
+ 
+-  // If we could't find the nonce, then we're done.
+-  if (!nonce) {
+-    return
+-  }
+-
+-  // Don't accept the nonce value if it contains HTML escape characters.
+-  // Technically, the spec requires a base64'd value, but this is just an
+-  // extra layer.
+-  if (ESCAPE_REGEX.test(nonce)) {
+-    throw new Error(
+-      'Nonce value from Content-Security-Policy contained HTML escape characters.\nLearn more: https://nextjs.org/docs/messages/nonce-contained-invalid-characters'
+-    )
++    if (match) {
++      return match[1]
++    }
+   }
+-
+-  return nonce
+ }
+diff --git a/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.test.ts b/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.test.ts
+new file mode 100644
+index 000000000000..f6b386763d03
+--- /dev/null
++++ b/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.test.ts
+@@ -0,0 +1,12 @@
++import { createServerInsertedMetadata } from './create-server-inserted-metadata'
++
++describe('createServerInsertedMetadata', () => {
++  it('escapes nonce attribute values in raw HTML output', async () => {
++    const getServerInsertedMetadata =
++      createServerInsertedMetadata(`" onerror="alert(1)`)
++
++    await expect(getServerInsertedMetadata()).resolves.toContain(
++      '<script nonce="&quot; onerror=&quot;alert(1)">'
++    )
++  })
++})
+diff --git a/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.tsx b/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.tsx
+index af42e04df397..44b9f53e4a0a 100644
+--- a/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.tsx
++++ b/packages/next/src/server/app-render/metadata-insertion/create-server-inserted-metadata.tsx
+@@ -1,3 +1,5 @@
++import { htmlEscapeAttributeString } from '../../../shared/lib/htmlescape'
++
+ /**
+  * For chromium based browsers (Chrome, Edge, etc.) and Safari,
+  * icons need to stay under <head> to be picked up by the browser.
+@@ -15,6 +17,8 @@ export function createServerInsertedMetadata(nonce: string | undefined) {
+     }
+ 
+     inserted = true
+-    return `<script ${nonce ? `nonce="${nonce}"` : ''}>${REINSERT_ICON_SCRIPT}</script>`
++    return `<script${
++      nonce ? ` nonce="${htmlEscapeAttributeString(nonce)}"` : ''
++    }>${REINSERT_ICON_SCRIPT}</script>`
+   }
+ }
+diff --git a/packages/next/src/server/app-render/stream-ops.node.ts b/packages/next/src/server/app-render/stream-ops.node.ts
+index 554246405494..5e4e80b26253 100644
+--- a/packages/next/src/server/app-render/stream-ops.node.ts
++++ b/packages/next/src/server/app-render/stream-ops.node.ts
+@@ -31,7 +31,10 @@ import {
+ import { indexOfUint8Array } from '../stream-utils/uint8array-helpers'
+ import { ENCODED_TAGS } from '../stream-utils/encoded-tags'
+ import { MISSING_ROOT_TAGS_ERROR } from '../../shared/lib/errors/constants'
+-import { htmlEscapeJsonString } from '../htmlescape'
++import {
++  htmlEscapeAttributeString,
++  htmlEscapeJsonString,
++} from '../../shared/lib/htmlescape'
+ import { createInlinedDataReadableStream } from './use-flight-response'
+ import type { AnyStream as AnyStreamType } from './app-render-prerender-utils'
+ import { DetachedPromise } from '../../lib/detached-promise'
+@@ -937,7 +940,7 @@ export function createNodeInlinedDataStream(
+   formState: unknown | null
+ ): AnyStream {
+   const startScriptTag = nonce
+-    ? `<script nonce=${JSON.stringify(nonce)}>`
++    ? `<script nonce="${htmlEscapeAttributeString(nonce)}">`
+     : '<script>'
+ 
+   const dataStream = webToReadable(source)
+diff --git a/packages/next/src/server/app-render/use-flight-response.tsx b/packages/next/src/server/app-render/use-flight-response.tsx
+index 5c871bfe5534..c3622317da0e 100644
+--- a/packages/next/src/server/app-render/use-flight-response.tsx
++++ b/packages/next/src/server/app-render/use-flight-response.tsx
+@@ -1,7 +1,10 @@
+ import type { BinaryStreamOf } from './app-render'
+ import type { Readable } from 'node:stream'
+ 
+-import { htmlEscapeJsonString } from '../htmlescape'
++import {
++  htmlEscapeAttributeString,
++  htmlEscapeJsonString,
++} from '../../shared/lib/htmlescape'
+ import { workUnitAsyncStorage } from './work-unit-async-storage.external'
+ import { InvariantError } from '../../shared/lib/invariant-error'
+ import { getClientReferenceManifest } from './manifests-singleton'
+@@ -165,7 +168,7 @@ export function createInlinedDataReadableStream(
+   formState: unknown | null
+ ): ReadableStream<Uint8Array> {
+   const startScriptTag = nonce
+-    ? `<script nonce=${JSON.stringify(nonce)}>`
++    ? `<script nonce="${htmlEscapeAttributeString(nonce)}">`
+     : '<script>'
+ 
+   const flightReader = flightStream.getReader()
+diff --git a/packages/next/src/server/base-server.ts b/packages/next/src/server/base-server.ts
+index f704829365c0..b807fb235fc1 100644
+--- a/packages/next/src/server/base-server.ts
++++ b/packages/next/src/server/base-server.ts
+@@ -48,6 +48,7 @@ import type { InstrumentationModule } from './instrumentation/types'
+ import * as path from 'path'
+ import { format as formatUrl } from 'url'
+ import { formatHostname } from './lib/format-hostname'
++import { isRSCRequestHeader } from './lib/is-rsc-request'
+ import {
+   APP_PATHS_MANIFEST,
+   NEXT_BUILTIN_DOCUMENT,
+@@ -660,7 +661,7 @@ export default abstract class Server<
+       stripFlightHeaders(req.headers)
+ 
+       return false
+-    } else if (req.headers[RSC_HEADER] === '1') {
++    } else if (isRSCRequestHeader(req.headers[RSC_HEADER])) {
+       addRequestMeta(req, 'isRSCRequest', true)
+ 
+       if (req.headers[NEXT_ROUTER_PREFETCH_HEADER] === '1') {
+@@ -2235,7 +2236,7 @@ export default abstract class Server<
+     // even during a locked scope, with blocking happening on the client side.
+     const hasInstantTestCookie =
+       exposeTestingApi &&
+-      req.headers[RSC_HEADER] === undefined &&
++      !isRSCRequestHeader(req.headers[RSC_HEADER]) &&
+       typeof req.headers.cookie === 'string' &&
+       req.headers.cookie.includes(NEXT_INSTANT_TEST_COOKIE + '=') &&
+       couldSupportPPR
+diff --git a/packages/next/src/server/lib/is-rsc-request.test.ts b/packages/next/src/server/lib/is-rsc-request.test.ts
+new file mode 100644
+index 000000000000..c2d9215d650a
+--- /dev/null
++++ b/packages/next/src/server/lib/is-rsc-request.test.ts
+@@ -0,0 +1,18 @@
++import { isRSCRequestHeader } from './is-rsc-request'
++
++describe('isRSCRequestHeader', () => {
++  it('returns true for the canonical RSC header value', () => {
++    expect(isRSCRequestHeader('1')).toBe(true)
++  })
++
++  it('returns false for invalid or missing values', () => {
++    expect(isRSCRequestHeader('0')).toBe(false)
++    expect(isRSCRequestHeader(undefined)).toBe(false)
++    expect(isRSCRequestHeader(null)).toBe(false)
++  })
++
++  it('returns false for repeated header values', () => {
++    expect(isRSCRequestHeader(['1'])).toBe(false)
++    expect(isRSCRequestHeader(['1', '1'])).toBe(false)
++  })
++})
+diff --git a/packages/next/src/server/lib/is-rsc-request.ts b/packages/next/src/server/lib/is-rsc-request.ts
+new file mode 100644
+index 000000000000..52e71d0a25fc
+--- /dev/null
++++ b/packages/next/src/server/lib/is-rsc-request.ts
+@@ -0,0 +1,9 @@
++/**
++ * Normalizes the raw RSC header value. Only the literal string "1" is treated
++ * as a valid RSC request marker; malformed or repeated values are ignored.
++ */
++export function isRSCRequestHeader(
++  value: string | string[] | null | undefined
++): boolean {
++  return value === '1'
++}
+diff --git a/packages/next/src/server/lib/router-server.ts b/packages/next/src/server/lib/router-server.ts
+index db4e1fbdc18a..b9d3957b87ca 100644
+--- a/packages/next/src/server/lib/router-server.ts
++++ b/packages/next/src/server/lib/router-server.ts
+@@ -895,12 +895,13 @@ export async function initialize(opts: {
+           )
+         },
+       })
+-      const { matchedOutput, parsedUrl } = await resolveRoutes({
+-        req,
+-        res,
+-        isUpgradeReq: true,
+-        signal: signalFromNodeResponse(socket),
+-      })
++      const { finished, matchedOutput, parsedUrl, statusCode } =
++        await resolveRoutes({
++          req,
++          res,
++          isUpgradeReq: true,
++          signal: signalFromNodeResponse(socket),
++        })
+ 
+       // TODO: allow upgrade requests to pages/app paths?
+       // this was not previously supported
+@@ -908,8 +909,12 @@ export async function initialize(opts: {
+         return socket.end()
+       }
+ 
+-      if (parsedUrl.protocol) {
+-        return await proxyRequest(req, socket, parsedUrl, head)
++      if (finished && parsedUrl.protocol) {
++        if (!statusCode) {
++          return await proxyRequest(req, socket, parsedUrl, head)
++        }
++
++        return socket.end()
+       }
+ 
+       // If there's no matched output, we don't handle the request as user's
+diff --git a/packages/next/src/server/lib/router-utils/resolve-routes.ts b/packages/next/src/server/lib/router-utils/resolve-routes.ts
+index 13757b326e01..1d4856af176d 100644
+--- a/packages/next/src/server/lib/router-utils/resolve-routes.ts
++++ b/packages/next/src/server/lib/router-utils/resolve-routes.ts
+@@ -33,6 +33,7 @@ import { NextDataPathnameNormalizer } from '../../normalizers/request/next-data'
+ import { BasePathPathnameNormalizer } from '../../normalizers/request/base-path'
+ 
+ import { addRequestMeta } from '../../request-meta'
++import { isRSCRequestHeader } from '../is-rsc-request'
+ import {
+   compileNonPath,
+   matchHas,
+@@ -451,6 +452,21 @@ export function getResolveRoutes(
+ 
+               if (curLocaleResult.detectedLocale) {
+                 addRequestMeta(req, 'locale', curLocaleResult.detectedLocale)
++              } else if (
++                defaultLocale &&
++                !curLocaleResult.pathname.startsWith('/_next/')
++              ) {
++                // Match normalized _next/data requests against the same
++                // locale-prefixed internal pathname shape used by direct page
++                // requests when the default locale was inferred.
++                normalized = addPathPrefix(
++                  curLocaleResult.pathname === '/'
++                    ? `/${defaultLocale}`
++                    : addPathPrefix(
++                        curLocaleResult.pathname || '',
++                        `/${defaultLocale}`
++                      )
++                )
+               }
+             }
+ 
+@@ -855,7 +871,7 @@ export function getResolveRoutes(
+ 
+           // Set the rewrite headers only if this is a RSC request.
+           if (
+-            req.headers[RSC_HEADER] === '1' &&
++            isRSCRequestHeader(req.headers[RSC_HEADER]) &&
+             (!parsedDestination.origin || isAllowedOrigin)
+           ) {
+             // We set the rewritten path and query headers on the response now
+diff --git a/packages/next/src/server/lib/server-ipc/utils.ts b/packages/next/src/server/lib/server-ipc/utils.ts
+index d9672cfc27a3..daddc68bc73b 100644
+--- a/packages/next/src/server/lib/server-ipc/utils.ts
++++ b/packages/next/src/server/lib/server-ipc/utils.ts
+@@ -50,6 +50,7 @@ const INTERNAL_HEADERS = [
+   'x-matched-path',
+   'x-nextjs-data',
+   'x-next-resume-state-length',
++  'next-resume',
+ ]
+ 
+ export const filterInternalHeaders = (
+diff --git a/packages/next/src/server/route-modules/app-page/normalize-request-url.ts b/packages/next/src/server/route-modules/app-page/normalize-request-url.ts
+index a8e5c4f1cb7c..d18cc7cda38c 100644
+--- a/packages/next/src/server/route-modules/app-page/normalize-request-url.ts
++++ b/packages/next/src/server/route-modules/app-page/normalize-request-url.ts
+@@ -6,6 +6,7 @@ import {
+   RSC_HEADER,
+ } from '../../../client/components/app-router-headers'
+ import type { BaseNextRequest } from '../../base-http'
++import { isRSCRequestHeader } from '../../lib/is-rsc-request'
+ import { parseReqUrl } from '../../../lib/url'
+ import { formatUrl } from '../../../shared/lib/router/utils/format-url'
+ import { addRequestMeta } from '../../request-meta'
+@@ -22,7 +23,7 @@ function getHeaderValue(
+ export function applyAppPageRscRequestMetaFromHeaders(
+   req: Pick<IncomingMessage | BaseNextRequest, 'headers'>
+ ): void {
+-  const isRscRequest = getHeaderValue(req.headers[RSC_HEADER]) === '1'
++  const isRscRequest = isRSCRequestHeader(req.headers[RSC_HEADER])
+   if (!isRscRequest) {
+     return
+   }
+diff --git a/packages/next/src/server/route-modules/route-module.ts b/packages/next/src/server/route-modules/route-module.ts
+index 2195e38af8db..1159e775f175 100644
+--- a/packages/next/src/server/route-modules/route-module.ts
++++ b/packages/next/src/server/route-modules/route-module.ts
+@@ -867,7 +867,13 @@ export abstract class RouteModule<
+     }
+ 
+     serverUtils.normalizeCdnUrl(req, combinedParamKeys)
+-    serverUtils.normalizeQueryParams(query, routeParamKeys)
++    // When Next is not hosted in a single process, upstream proxies will add query values for route params that were used to match the route.
++    // Outside of that environment, there is no reason to do any normalization to honor those query values.
++    if (!routerServerContext?.isWrappedByNextServer) {
++      serverUtils.normalizeQueryParams(query, routeParamKeys)
++    } else {
++      serverUtils.filterInternalQuery(query, [])
++    }
+     serverUtils.filterInternalQuery(originalQuery, combinedParamKeys)
+ 
+     if (pageIsDynamic) {
+diff --git a/packages/next/src/server/web/adapter.ts b/packages/next/src/server/web/adapter.ts
+index 9694482a9e4d..4b29f483968a 100644
+--- a/packages/next/src/server/web/adapter.ts
++++ b/packages/next/src/server/web/adapter.ts
+@@ -35,6 +35,7 @@ import { CloseController } from './web-on-close'
+ import { getEdgePreviewProps } from './get-edge-preview-props'
+ import { getBuiltinRequestContext } from '../after/builtin-request-context'
+ import { getImplicitTags } from '../lib/implicit-tags'
++import { isRSCRequestHeader } from '../lib/is-rsc-request'
+ import { setRequestMeta } from '../request-meta'
+ 
+ export class NextRequestHint extends NextRequest {
+@@ -151,7 +152,7 @@ export async function adapter(
+ 
+   const requestHeaders = fromNodeOutgoingHttpHeaders(params.request.headers)
+   const isNextDataRequest = requestHeaders.has('x-nextjs-data')
+-  const isRSCRequest = requestHeaders.get(RSC_HEADER) === '1'
++  const isRSCRequest = isRSCRequestHeader(requestHeaders.get(RSC_HEADER))
+ 
+   if (isNextDataRequest && requestURL.pathname === '/index') {
+     requestURL.pathname = '/'
+diff --git a/packages/next/src/server/htmlescape.ts b/packages/next/src/shared/lib/htmlescape.ts
+similarity index 58%
+rename from packages/next/src/server/htmlescape.ts
+rename to packages/next/src/shared/lib/htmlescape.ts
+index fa06e75df98a..1f8857913be0 100644
+--- a/packages/next/src/server/htmlescape.ts
++++ b/packages/next/src/shared/lib/htmlescape.ts
+@@ -11,6 +11,23 @@ const ESCAPE_LOOKUP: { [match: string]: string } = {
+ 
+ export const ESCAPE_REGEX = /[&><\u2028\u2029]/g
+ 
++const ATTRIBUTE_ESCAPE_LOOKUP: { [match: string]: string } = {
++  '&': '&amp;',
++  '"': '&quot;',
++  "'": '&#39;',
++  '<': '&lt;',
++  '>': '&gt;',
++}
++
++const ATTRIBUTE_ESCAPE_REGEX = /[&"'<>]/g
++
+ export function htmlEscapeJsonString(str: string): string {
+   return str.replace(ESCAPE_REGEX, (match) => ESCAPE_LOOKUP[match])
+ }
++
++export function htmlEscapeAttributeString(str: string): string {
++  return str.replace(
++    ATTRIBUTE_ESCAPE_REGEX,
++    (match) => ATTRIBUTE_ESCAPE_LOOKUP[match]
++  )
++}
+diff --git a/test/e2e/app-dir/script-before-interactive-xss/app/layout.tsx b/test/e2e/app-dir/script-before-interactive-xss/app/layout.tsx
+new file mode 100644
+index 000000000000..888614deda3b
+--- /dev/null
++++ b/test/e2e/app-dir/script-before-interactive-xss/app/layout.tsx
+@@ -0,0 +1,8 @@
++import { ReactNode } from 'react'
++export default function Root({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/script-before-interactive-xss/app/page.tsx b/test/e2e/app-dir/script-before-interactive-xss/app/page.tsx
+new file mode 100644
+index 000000000000..1841fac49f17
+--- /dev/null
++++ b/test/e2e/app-dir/script-before-interactive-xss/app/page.tsx
+@@ -0,0 +1,45 @@
++import Script from 'next/script'
++import { PwnDetector } from './xss-detector'
++
++// Regression fixture for HTML-escaping of the inline __next_s payload that
++// Next.js emits for `beforeInteractive` scripts. Any string prop forwarded
++// through `restProps` (here `data-tracking-id`, but `id` and any other
++// attribute are equivalent) reaches the inline <script> body via
++// JSON.stringify. Without HTML escaping, a value like
++// `</script><script>...</script>` breaks out of the script element at the
++// HTML tokenizer level, executes, and the fingerprint it leaves on `window`
++// is picked up by <PwnDetector />.
++export default function Page() {
++  return (
++    <div>
++      <Script
++        id="inline-innerhtml-xss"
++        strategy="beforeInteractive"
++        data-tracking-id="</script><script>window.__xssInlineInnerHTML=true</script>"
++        dangerouslySetInnerHTML={{
++          // The body evaluates a `<` comparison so the global doubles as proof
++          // of both "did this run" and "did the HTML-escape preserve the `<`".
++          // Any regression that mangled `<` would make the expression throw or
++          // evaluate to a non-true value, and the proof global would not be
++          // strictly equal to `true`.
++          __html: `window.__escapeProofInlineInnerHTML = 1 < 2;console.log('running innerhtml script');`,
++        }}
++      />
++      <Script
++        id="inline-children-xss"
++        strategy="beforeInteractive"
++        data-tracking-id="</script><script>window.__xssInlineChildren=true</script>"
++      >
++        {/* Same idea, exercising `>` and `&&` (contains `&`). */}
++        {`window.__escapeProofInlineChildren = 2 > 1 && 3 > 2;console.log('running children script');`}
++      </Script>
++      <Script
++        id="src-xss"
++        strategy="beforeInteractive"
++        src="/xss-src.js"
++        data-tracking-id="</script><script>window.__xssSrc=true</script>"
++      />
++      <PwnDetector />
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/script-before-interactive-xss/app/xss-detector.tsx b/test/e2e/app-dir/script-before-interactive-xss/app/xss-detector.tsx
+new file mode 100644
+index 000000000000..160892d3c041
+--- /dev/null
++++ b/test/e2e/app-dir/script-before-interactive-xss/app/xss-detector.tsx
+@@ -0,0 +1,99 @@
++'use client'
++import { useEffect, useState } from 'react'
++
++// Reports two things for the test to assert on:
++//
++// 1. Whether any malicious injected `<script>` executed. Each would set a
++//    `__xss*` global from its `</script><script>...</script>` break-out.
++// 2. Whether each legitimate beforeInteractive `<Script>` actually ran AND,
++//    for the inline ones, that the HTML-escape round-trip preserved the
++//    source verbatim. The inline scripts store the value of an expression
++//    containing `<`, `>`, or `&` — any corruption would either throw or
++//    produce a non-true value and the proof global would fail the `=== true`
++//    check. The external-src script only needs to confirm it loaded, so it
++//    uses a plain flag (`__loadedSrc`).
++//
++// Each result is both rendered as human-readable text for debugging and
++// exposed as a boolean `data-*` attribute for simple per-result querying
++// from tests.
++type Report = {
++  xssInlineInnerHTML: boolean
++  xssInlineChildren: boolean
++  xssSrc: boolean
++  escapeProofInlineInnerHTML: boolean
++  escapeProofInlineChildren: boolean
++  loadedSrc: boolean
++}
++
++export function PwnDetector() {
++  const [report, setReport] = useState<Report | null>(null)
++  useEffect(() => {
++    setReport({
++      xssInlineInnerHTML: (window as any).__xssInlineInnerHTML === true,
++      xssInlineChildren: (window as any).__xssInlineChildren === true,
++      xssSrc: (window as any).__xssSrc === true,
++      escapeProofInlineInnerHTML:
++        (window as any).__escapeProofInlineInnerHTML === true,
++      escapeProofInlineChildren:
++        (window as any).__escapeProofInlineChildren === true,
++      loadedSrc: (window as any).__loadedSrc === true,
++    })
++  }, [])
++
++  if (!report) {
++    return (
++      <section data-testid="xss-status" data-ready="false">
++        checking…
++      </section>
++    )
++  }
++
++  const row = (label: string, xss: boolean, legit: boolean) => (
++    <tr>
++      <td>{label}</td>
++      <td>{xss ? 'yes (XSS fired)' : 'no'}</td>
++      <td>{legit ? 'yes' : 'no'}</td>
++    </tr>
++  )
++
++  return (
++    <section
++      data-testid="xss-status"
++      data-ready="true"
++      data-xss-inline-innerhtml={String(report.xssInlineInnerHTML)}
++      data-xss-inline-children={String(report.xssInlineChildren)}
++      data-xss-src={String(report.xssSrc)}
++      data-escape-proof-inline-innerhtml={String(
++        report.escapeProofInlineInnerHTML
++      )}
++      data-escape-proof-inline-children={String(
++        report.escapeProofInlineChildren
++      )}
++      data-loaded-src={String(report.loadedSrc)}
++    >
++      <h2>next/script beforeInteractive — XSS detector</h2>
++      <table>
++        <thead>
++          <tr>
++            <th>script</th>
++            <th>injected payload executed?</th>
++            <th>legit body ran (and unmangled)?</th>
++          </tr>
++        </thead>
++        <tbody>
++          {row(
++            'inline (dangerouslySetInnerHTML)',
++            report.xssInlineInnerHTML,
++            report.escapeProofInlineInnerHTML
++          )}
++          {row(
++            'inline (children)',
++            report.xssInlineChildren,
++            report.escapeProofInlineChildren
++          )}
++          {row('external (src)', report.xssSrc, report.loadedSrc)}
++        </tbody>
++      </table>
++    </section>
++  )
++}
+diff --git a/test/e2e/app-dir/script-before-interactive-xss/next.config.js b/test/e2e/app-dir/script-before-interactive-xss/next.config.js
+new file mode 100644
+index 000000000000..807126e4cf0b
+--- /dev/null
++++ b/test/e2e/app-dir/script-before-interactive-xss/next.config.js
+@@ -0,0 +1,6 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {}
++
++module.exports = nextConfig
+diff --git a/test/e2e/app-dir/script-before-interactive-xss/public/xss-src.js b/test/e2e/app-dir/script-before-interactive-xss/public/xss-src.js
+new file mode 100644
+index 000000000000..ec541e569635
+--- /dev/null
++++ b/test/e2e/app-dir/script-before-interactive-xss/public/xss-src.js
+@@ -0,0 +1,2 @@
++window.__loadedSrc = true
++console.log('running xss-src.js script')
+diff --git a/test/e2e/app-dir/script-before-interactive-xss/script-before-interactive-xss.test.ts b/test/e2e/app-dir/script-before-interactive-xss/script-before-interactive-xss.test.ts
+new file mode 100644
+index 000000000000..99d881c218c5
+--- /dev/null
++++ b/test/e2e/app-dir/script-before-interactive-xss/script-before-interactive-xss.test.ts
+@@ -0,0 +1,48 @@
++import { nextTestSetup } from 'e2e-utils'
++import { retry } from 'next-test-utils'
++
++describe('next/script beforeInteractive inline payload escaping', () => {
++  const { next } = nextTestSetup({
++    files: __dirname,
++  })
++
++  it('should html-escape forwarded string props so they cannot break out of the inline __next_s script', async () => {
++    const html = await next.render('/')
++
++    // The attacker-controlled prop values must not appear verbatim in the HTML.
++    // If they do, the `</script>` inside terminates the inline __next_s push
++    // script at the HTML tokenizer level and the trailing <script> executes.
++    expect(html).not.toContain(
++      '</script><script>window.__xssInlineInnerHTML=true</script>'
++    )
++    expect(html).not.toContain(
++      '</script><script>window.__xssInlineChildren=true</script>'
++    )
++    expect(html).not.toContain('</script><script>window.__xssSrc=true</script>')
++
++    // The fixture's <PwnDetector /> exposes each result as a `data-*`
++    // attribute on `[data-testid="xss-status"]`. `data-ready="true"` flips
++    // after the effect populates the results.
++    //
++    //   - `data-xss-*` must all be "false" (no injected script ran)
++    //   - `data-escape-proof-*` must all be "true" for the inline scripts —
++    //     their bodies evaluate a `<`/`>`/`&&` expression, so `true` proves
++    //     both "the script ran" and "the HTML-escape round-trip didn't
++    //     mangle the source"
++    //   - `data-loaded-src` must be "true" (external script fetched and ran)
++    const browser = await next.browser('/')
++    const getAttr = (name: string) =>
++      browser.elementByCss('[data-testid="xss-status"]').getAttribute(name)
++
++    await retry(async () => {
++      expect(await getAttr('data-ready')).toBe('true')
++    })
++
++    expect(await getAttr('data-xss-inline-innerhtml')).toBe('false')
++    expect(await getAttr('data-xss-inline-children')).toBe('false')
++    expect(await getAttr('data-xss-src')).toBe('false')
++    expect(await getAttr('data-escape-proof-inline-innerhtml')).toBe('true')
++    expect(await getAttr('data-escape-proof-inline-children')).toBe('true')
++    expect(await getAttr('data-loaded-src')).toBe('true')
++  })
++})
+diff --git a/test/e2e/app-dir/segment-cache/cdn-cache-busting/cdn-cache-busting.test.ts b/test/e2e/app-dir/segment-cache/cdn-cache-busting/cdn-cache-busting.test.ts
+index aabbb2919acc..65d116bf3991 100644
+--- a/test/e2e/app-dir/segment-cache/cdn-cache-busting/cdn-cache-busting.test.ts
++++ b/test/e2e/app-dir/segment-cache/cdn-cache-busting/cdn-cache-busting.test.ts
+@@ -103,6 +103,31 @@ describe('segment cache (CDN cache busting)', () => {
+     }
+   )
+ 
++  it('ignores invalid RSC header values when serving a document request', async () => {
++    const url = new URL(`http://localhost:${port}/target-page`)
++    url.searchParams.set('test', 'invalid-rsc-header')
++
++    const invalidHeaderRes = await fetch(url, {
++      headers: {
++        rsc: '0',
++      },
++    })
++
++    expect(invalidHeaderRes.status).toBe(200)
++    expect(invalidHeaderRes.headers.get('content-type')).toContain('text/html')
++    expect(await invalidHeaderRes.text()).toContain(
++      '<div id="target-page">Target page</div>'
++    )
++
++    const htmlRes = await fetch(url)
++
++    expect(htmlRes.status).toBe(200)
++    expect(htmlRes.headers.get('content-type')).toContain('text/html')
++    expect(await htmlRes.text()).toContain(
++      '<div id="target-page">Target page</div>'
++    )
++  })
++
+   it(
+     'perform fully prefetched navigation when a third-party proxy ' +
+       'performs a redirect',
+diff --git a/test/e2e/middleware-general/test/index.test.ts b/test/e2e/middleware-general/test/index.test.ts
+index 860531374dd9..4d75e245bf6f 100644
+--- a/test/e2e/middleware-general/test/index.test.ts
++++ b/test/e2e/middleware-general/test/index.test.ts
+@@ -14,10 +14,6 @@ describe('Middleware Runtime', () => {
+ 
+   const isNodeMiddleware = Boolean(process.env.TEST_NODE_MIDDLEWARE)
+ 
+-  if (isNodeMiddleware && (global as any).isNextDeploy) {
+-    return it('should skip deploy for node middleware for now', () => {})
+-  }
+-
+   const setup = ({ i18n }: { i18n: boolean }) => {
+     afterAll(async () => {
+       await next.destroy()
+@@ -765,6 +761,23 @@ describe('Middleware Runtime', () => {
+         `/_next/data/${next.buildId}${i18n ? '/en' : ''}/send-url.json`
+       )
+       expect(res.headers.get('req-url-path')).toEqual('/send-url')
++
++      if (i18n) {
++        expect(res.headers.get('req-url-pathname')).toEqual('/send-url')
++        expect(res.headers.get('req-url-locale')).toEqual('en')
++
++        const defaultLocaleRes = await fetchViaHTTP(
++          next.url,
++          `/_next/data/${next.buildId}/send-url.json`
++        )
++        expect(defaultLocaleRes.headers.get('req-url-path')).toEqual(
++          '/send-url'
++        )
++        expect(defaultLocaleRes.headers.get('req-url-pathname')).toEqual(
++          '/send-url'
++        )
++        expect(defaultLocaleRes.headers.get('req-url-locale')).toEqual('en')
++      }
+     })
+ 
+     it('should keep non data requests in their original shape', async () => {
+@@ -791,6 +804,18 @@ describe('Middleware Runtime', () => {
+       expect(dataRes.headers.get('x-nextjs-matched-path')).toEqual(
+         `${i18n ? '/en' : ''}/ssr-page-2`
+       )
++
++      if (i18n) {
++        const defaultLocaleDataRes = await fetchViaHTTP(
++          next.url,
++          `/_next/data/${next.buildId}/ssr-page.json`
++        )
++        const defaultLocaleJson = await defaultLocaleDataRes.json()
++        expect(defaultLocaleJson.pageProps.message).toEqual('Bye Cruel World')
++        expect(defaultLocaleDataRes.headers.get('x-nextjs-matched-path')).toBe(
++          '/en/ssr-page-2'
++        )
++      }
+     })
+ 
+     it(`hard-navigates when the data request failed`, async () => {
+diff --git a/test/e2e/middleware-matcher/index.test.ts b/test/e2e/middleware-matcher/index.test.ts
+index 92aede717250..deeda042e67c 100644
+--- a/test/e2e/middleware-matcher/index.test.ts
++++ b/test/e2e/middleware-matcher/index.test.ts
+@@ -319,6 +319,112 @@ describe('using a single matcher', () => {
+   })
+ })
+ 
++describe.each([
++  { title: '' },
++  { title: ' and trailingSlash', trailingSlash: true },
++])(
++  'using a single matcher with i18n for a non-root route$title',
++  ({ trailingSlash }) => {
++    let next: NextInstance
++    beforeAll(async () => {
++      next = await createNext({
++        files: {
++          'pages/[...route].js': `
++            export default function Page({ message }) {
++              return <div>
++                <p>catchall page</p>
++                <p>{message}</p>
++              </div>
++            }
++
++            export const getServerSideProps = ({ params, locale }) => ({
++              props: {
++                message: \`(\${locale}) Hello from /\${params.route.join("/")}\`
++              }
++            })
++          `,
++          'middleware.js': `
++            import { NextResponse } from 'next/server'
++            export const config = {
++              matcher: '/middleware/works'
++            };
++            export default (req) => {
++              const res = NextResponse.next();
++              res.headers.set('X-From-Middleware', 'true');
++              return res;
++            }
++          `,
++          'next.config.js': `
++            module.exports = {
++              ${trailingSlash ? 'trailingSlash: true,' : ''}
++              i18n: {
++                localeDetection: false,
++                locales: ['es', 'en'],
++                defaultLocale: 'en',
++              }
++            }
++          `,
++        },
++        dependencies: {},
++      })
++    })
++    afterAll(() => next.destroy())
++
++    it('adds the header for matched paths', async () => {
++      const res1 = await fetchViaHTTP(next.url, '/middleware/works')
++      expect(await res1.text()).toContain(`(en) Hello from /middleware/works`)
++      expect(res1.headers.get('X-From-Middleware')).toBe('true')
++
++      const res2 = await fetchViaHTTP(next.url, '/es/middleware/works')
++      expect(await res2.text()).toContain(`(es) Hello from /middleware/works`)
++      expect(res2.headers.get('X-From-Middleware')).toBe('true')
++    })
++
++    it('adds the header for matched data paths, including the default locale without a prefix', async () => {
++      const res1 = await fetchViaHTTP(
++        next.url,
++        `/_next/data/${next.buildId}/en/middleware/works.json`,
++        undefined,
++        { headers: { 'x-nextjs-data': '1' } }
++      )
++      expect(await res1.json()).toMatchObject({
++        pageProps: {
++          message: '(en) Hello from /middleware/works',
++        },
++      })
++      expect(res1.headers.get('X-From-Middleware')).toBe('true')
++
++      const res2 = await fetchViaHTTP(
++        next.url,
++        `/_next/data/${next.buildId}/es/middleware/works.json`
++      )
++      expect(await res2.json()).toMatchObject({
++        pageProps: {
++          message: '(es) Hello from /middleware/works',
++        },
++      })
++      expect(res2.headers.get('X-From-Middleware')).toBe('true')
++
++      const res3 = await fetchViaHTTP(
++        next.url,
++        `/_next/data/${next.buildId}/middleware/works.json`
++      )
++      expect(await res3.json()).toMatchObject({
++        pageProps: {
++          message: '(en) Hello from /middleware/works',
++        },
++      })
++      expect(res3.headers.get('X-From-Middleware')).toBe('true')
++    })
++
++    it('does not add the header for an unmatched path', async () => {
++      const response = await fetchViaHTTP(next.url, '/about/me')
++      expect(await response.text()).toContain('(en) Hello from /about/me')
++      expect(response.headers.get('X-From-Middleware')).toBeNull()
++    })
++  }
++)
++
+ describe('using root matcher', () => {
+   let next: NextInstance
+   beforeAll(async () => {
+diff --git a/test/e2e/rewrite-request-smuggling/next.config.js b/test/e2e/rewrite-request-smuggling/next.config.js
+new file mode 100644
+index 000000000000..d0471a4691ec
+--- /dev/null
++++ b/test/e2e/rewrite-request-smuggling/next.config.js
+@@ -0,0 +1,13 @@
++/** @type {import('next').NextConfig} */
++const nextConfig = {
++  async rewrites() {
++    return [
++      {
++        source: '/rewrites/:path*',
++        destination: `http://127.0.0.1:${process.env.TEST_INTERMEDIARY_PORT}/rewrites/:path*`,
++      },
++    ]
++  },
++}
++
++module.exports = nextConfig
+diff --git a/test/e2e/rewrite-request-smuggling/pages/index.tsx b/test/e2e/rewrite-request-smuggling/pages/index.tsx
+new file mode 100644
+index 000000000000..ff7159d9149f
+--- /dev/null
++++ b/test/e2e/rewrite-request-smuggling/pages/index.tsx
+@@ -0,0 +1,3 @@
++export default function Page() {
++  return <p>hello world</p>
++}
+diff --git a/test/e2e/rewrite-request-smuggling/rewrite-request-smuggling.test.ts b/test/e2e/rewrite-request-smuggling/rewrite-request-smuggling.test.ts
+new file mode 100644
+index 000000000000..d53fba11e479
+--- /dev/null
++++ b/test/e2e/rewrite-request-smuggling/rewrite-request-smuggling.test.ts
+@@ -0,0 +1,234 @@
++import net from 'net'
++import http from 'http'
++import { createNext, NextInstance } from 'e2e-utils'
++import { findPort, retry } from 'next-test-utils'
++
++describe('rewrite-request-smuggling', () => {
++  if ((global as any).isNextDeploy) {
++    it('should skip deploy', () => {})
++    return
++  }
++
++  let backend: http.Server
++  let backendPort: number
++  let intermediary: http.Server
++  let intermediaryPort: number
++  let next: NextInstance
++  const backendRequests: string[] = []
++
++  async function sendSmugglingPayload({
++    nextPort,
++    connectionHeader,
++    method = 'DELETE',
++    rewritePath = '/rewrites/poc',
++  }: {
++    nextPort: number
++    connectionHeader: string
++    method?: 'DELETE' | 'OPTIONS'
++    rewritePath?: string
++  }) {
++    const smuggledRequest = Buffer.from(
++      `GET /secret HTTP/1.1\r\nHost: 127.0.0.1:${nextPort}\r\n\r\n`,
++      'latin1'
++    )
++    const chunkSize = Buffer.from(
++      `${smuggledRequest.length.toString(16).toUpperCase()}\r\n`,
++      'latin1'
++    )
++
++    const payload = Buffer.concat([
++      Buffer.from(
++        `${method} ${rewritePath} HTTP/1.1\r\nHost: 127.0.0.1:${nextPort}\r\nTransfer-Encoding: chunked\r\nConnection: ${connectionHeader}\r\n\r\n`,
++        'latin1'
++      ),
++      chunkSize,
++      smuggledRequest,
++      Buffer.from('\r\n0\r\n\r\n', 'latin1'),
++    ])
++
++    await new Promise<void>((resolve, reject) => {
++      const socket = net.createConnection({
++        host: '127.0.0.1',
++        port: nextPort,
++      })
++
++      socket.once('connect', () => {
++        socket.write(payload)
++      })
++      socket.once('error', reject)
++      socket.setTimeout(5000, () => socket.destroy())
++      socket.once('close', () => resolve())
++    })
++  }
++
++  beforeAll(async () => {
++    backendPort = await findPort()
++    intermediaryPort = await findPort()
++
++    backend = http.createServer((req, res) => {
++      backendRequests.push(`${req.method} ${req.url}`)
++
++      if (req.url?.startsWith('/rewrites/')) {
++        res.statusCode = 200
++        res.end('rewrite-ok')
++        return
++      }
++
++      if (req.url === '/secret') {
++        res.statusCode = 200
++        res.end('secret')
++        return
++      }
++
++      res.statusCode = 404
++      res.end('not-found')
++    })
++
++    intermediary = http.createServer((req, res) => {
++      const connectionHeader = Array.isArray(req.headers['connection'])
++        ? req.headers['connection'].join(',')
++        : req.headers['connection'] || ''
++      const hopByHopHeaders = connectionHeader
++        .split(',')
++        .map((h) => h.trim().toLowerCase())
++        .filter(Boolean)
++      const stripTransferEncodingUnconditionally =
++        req.url?.startsWith('/rewrites/non-rfc-strip') || false
++
++      const forwardHeaders: Record<string, string | string[]> = {}
++      for (const [key, value] of Object.entries(req.headers)) {
++        if (key === 'connection') continue
++        if (stripTransferEncodingUnconditionally && key === 'transfer-encoding')
++          continue
++        if (hopByHopHeaders.includes(key)) continue
++        if (value !== undefined) {
++          forwardHeaders[key] = value
++        }
++      }
++      forwardHeaders.connection = stripTransferEncodingUnconditionally
++        ? connectionHeader.toLowerCase().includes('close')
++          ? 'close'
++          : 'keep-alive'
++        : 'keep-alive'
++
++      const proxyReq = http.request(
++        {
++          hostname: '127.0.0.1',
++          port: backendPort,
++          method: req.method,
++          path: req.url,
++          headers: forwardHeaders,
++        },
++        (proxyRes) => {
++          res.writeHead(proxyRes.statusCode || 500, proxyRes.headers)
++          proxyRes.pipe(res)
++        }
++      )
++
++      proxyReq.on('error', () => {
++        res.statusCode = 502
++        res.end('Bad Gateway')
++      })
++
++      req.pipe(proxyReq)
++    })
++
++    await new Promise<void>((resolve, reject) => {
++      backend.listen(backendPort, '127.0.0.1', resolve)
++      backend.once('error', reject)
++    })
++
++    await new Promise<void>((resolve, reject) => {
++      intermediary.listen(intermediaryPort, '127.0.0.1', resolve)
++      intermediary.once('error', reject)
++    })
++
++    next = await createNext({
++      files: __dirname,
++      env: {
++        TEST_INTERMEDIARY_PORT: String(intermediaryPort),
++      },
++    })
++  })
++
++  afterAll(async () => {
++    await next?.destroy()
++    await new Promise<void>((resolve) => intermediary.close(() => resolve()))
++    await new Promise<void>((resolve) => backend.close(() => resolve()))
++  })
++
++  it('does not smuggle a second request when using keep-alive only', async () => {
++    backendRequests.length = 0
++
++    const nextPort = Number(new URL(next.url).port)
++    await sendSmugglingPayload({ nextPort, connectionHeader: 'keep-alive' })
++
++    await retry(async () => {
++      expect(backendRequests).toContain('DELETE /rewrites/poc')
++    })
++    expect(backendRequests).not.toContain('GET /secret')
++  })
++
++  it('does not smuggle a second request with keep-alive, upgrade', async () => {
++    backendRequests.length = 0
++
++    const nextPort = Number(new URL(next.url).port)
++    await sendSmugglingPayload({
++      nextPort,
++      connectionHeader: 'keep-alive, upgrade',
++    })
++
++    await retry(async () => {
++      expect(backendRequests).toContain('DELETE /rewrites/poc')
++    })
++    expect(backendRequests).not.toContain('GET /secret')
++  })
++
++  it('does not smuggle a second request with Transfer-Encoding, upgrade', async () => {
++    backendRequests.length = 0
++
++    const nextPort = Number(new URL(next.url).port)
++    await sendSmugglingPayload({
++      nextPort,
++      connectionHeader: 'Transfer-Encoding, upgrade',
++    })
++
++    await retry(async () => {
++      expect(backendRequests).toContain('DELETE /rewrites/poc')
++    })
++    expect(backendRequests).not.toContain('GET /secret')
++  })
++
++  it('does not smuggle a second request for OPTIONS with Transfer-Encoding, upgrade', async () => {
++    backendRequests.length = 0
++
++    const nextPort = Number(new URL(next.url).port)
++    await sendSmugglingPayload({
++      nextPort,
++      method: 'OPTIONS',
++      connectionHeader: 'Transfer-Encoding, upgrade',
++    })
++
++    await retry(async () => {
++      expect(backendRequests).toContain('OPTIONS /rewrites/poc')
++    })
++    expect(backendRequests).not.toContain('GET /secret')
++  })
++
++  it('does not smuggle a second request when an intermediary strips transfer-encoding unconditionally', async () => {
++    backendRequests.length = 0
++
++    const nextPort = Number(new URL(next.url).port)
++    await sendSmugglingPayload({
++      nextPort,
++      method: 'OPTIONS',
++      rewritePath: '/rewrites/non-rfc-strip',
++      connectionHeader: 'keep-alive, upgrade',
++    })
++
++    await retry(async () => {
++      expect(backendRequests).toContain('OPTIONS /rewrites/non-rfc-strip')
++    })
++    expect(backendRequests).not.toContain('GET /secret')
++  })
++})
+diff --git a/test/production/app-dir/max-postponed-state-size/max-postponed-state-size.test.ts b/test/production/app-dir/max-postponed-state-size/max-postponed-state-size.test.ts
+index 0c4fa0494027..7cd40d29e446 100644
+--- a/test/production/app-dir/max-postponed-state-size/max-postponed-state-size.test.ts
++++ b/test/production/app-dir/max-postponed-state-size/max-postponed-state-size.test.ts
+@@ -3,6 +3,9 @@ import { nextTestSetup } from 'e2e-utils'
+ describe('app-dir - max postponed state size', () => {
+   const { next } = nextTestSetup({
+     files: __dirname,
++    env: {
++      NEXT_PRIVATE_TEST_HEADERS: '1',
++    },
+   })
+ 
+   it('should return 413 when next-resume request exceeds max postponed state size', async () => {
+diff --git a/test/production/app-dir/subresource-integrity/subresource-integrity.test.ts b/test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
+index 815489cb3987..c06cf13a5ad5 100644
+--- a/test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
++++ b/test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
+@@ -42,6 +42,7 @@ describe('Subresource Integrity', () => {
+         const policies = [
+           `script-src 'nonce-'`, // invalid nonce
+           'style-src "nonce-cmFuZG9tCg=="', // no script or default src
++          `script-src 'nonce-" onerror="alert(1)'`, // malformed nonce
+           '', // empty string
+         ]
+ 
+@@ -232,15 +233,16 @@ describe('Subresource Integrity', () => {
+         expect(scriptsWithIntegrity).toBeGreaterThanOrEqual(2)
+       })
+ 
+-      it('throws when escape characters are included in nonce', async () => {
+-        const res = await fetchWithPolicy(
+-          `script-src 'nonce-"><script></script>"'`
+-        )
++      it('ignores malformed nonce values without failing the request', async () => {
++        const policies = [
++          `script-src 'nonce-"><script></script>"'`,
++          `script-src 'nonce-" onerror="alert(1)'`,
++        ]
+ 
+-        if (runtime === 'node' && process.env.__NEXT_CACHE_COMPONENTS) {
+-          expect(res.status).toBe(200)
+-        } else {
+-          expect(res.status).toBe(500)
++        for (const policy of policies) {
++          const $ = await renderWithPolicy(policy)
++
++          expect($('script[nonce]').length).toBe(0)
+         }
+       })
+     }
+diff --git a/test/production/rewrite-request-smuggling/rewrite-request-smuggling.test.ts b/test/production/rewrite-request-smuggling/rewrite-request-smuggling.test.ts
+index e53984ab1f54..3f6478e71b0b 100644
+--- a/test/production/rewrite-request-smuggling/rewrite-request-smuggling.test.ts
++++ b/test/production/rewrite-request-smuggling/rewrite-request-smuggling.test.ts
+@@ -4,6 +4,9 @@ import { createNext, NextInstance } from 'e2e-utils'
+ import { findPort, retry } from 'next-test-utils'
+ 
+ describe('rewrite-request-smuggling', () => {
++  const ssrfProbePath = '/secret-upgrade'
++  const ssrfProbeBody =
++    'SSRF_CONFIRMED: You reached the internal service at 127.0.0.1'
+   let backend: http.Server
+   let backendPort: number
+   let intermediary: http.Server
+@@ -51,11 +54,53 @@ describe('rewrite-request-smuggling', () => {
+         socket.write(payload)
+       })
+       socket.once('error', reject)
+-      socket.setTimeout(1000, () => socket.destroy())
++      socket.setTimeout(5000, () => socket.destroy())
+       socket.once('close', () => resolve())
+     })
+   }
+ 
++  async function sendAbsoluteUrlUpgradePayload({
++    nextPort,
++    targetPort,
++  }: {
++    nextPort: number
++    targetPort: number
++  }) {
++    const payload = Buffer.from(
++      `GET http://127.0.0.1:${targetPort}${ssrfProbePath} HTTP/1.1\r\nHost: 127.0.0.1:${nextPort}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
++      'latin1'
++    )
++
++    return await new Promise<string>((resolve, reject) => {
++      const socket = net.createConnection({
++        host: '127.0.0.1',
++        port: nextPort,
++      })
++      const chunks: Buffer[] = []
++      let settled = false
++
++      const finish = () => {
++        if (settled) return
++        settled = true
++        resolve(Buffer.concat(chunks).toString('latin1'))
++      }
++
++      socket.once('connect', () => {
++        socket.write(payload)
++      })
++      socket.on('data', (chunk) => {
++        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
++      })
++      socket.once('error', (err) => {
++        if (settled) return
++        settled = true
++        reject(err)
++      })
++      socket.setTimeout(1000, () => socket.destroy())
++      socket.once('close', finish)
++    })
++  }
++
+   beforeAll(async () => {
+     backendPort = await findPort()
+     intermediaryPort = await findPort()
+@@ -79,6 +124,14 @@ describe('rewrite-request-smuggling', () => {
+       res.end('not-found')
+     })
+ 
++    backend.on('upgrade', (req, socket) => {
++      backendRequests.push(`${req.method} ${req.url}`)
++      socket.write(
++        `HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: ${Buffer.byteLength(ssrfProbeBody)}\r\n\r\n${ssrfProbeBody}`
++      )
++      socket.end()
++    })
++
+     intermediary = http.createServer((req, res) => {
+       const connectionHeader = Array.isArray(req.headers['connection'])
+         ? req.headers['connection'].join(',')
+@@ -226,4 +279,19 @@ describe('rewrite-request-smuggling', () => {
+     })
+     expect(backendRequests).not.toContain('GET /secret')
+   })
++
++  it('does not proxy upgrade requests with absolute URLs without an external rewrite', async () => {
++    backendRequests.length = 0
++
++    const nextPort = Number(new URL(next.url).port)
++    const response = await sendAbsoluteUrlUpgradePayload({
++      nextPort,
++      targetPort: backendPort,
++    })
++
++    expect(response).not.toContain(ssrfProbeBody)
++    expect(
++      backendRequests.some((request) => request.includes(ssrfProbePath))
++    ).toBe(false)
++  })
+ })
+diff --git a/test/production/standalone-mode/required-server-files/middleware-node.js b/test/production/standalone-mode/required-server-files/middleware-node.js
+index 449309db288e..5c56c89f53da 100644
+--- a/test/production/standalone-mode/required-server-files/middleware-node.js
++++ b/test/production/standalone-mode/required-server-files/middleware-node.js
+@@ -20,5 +20,8 @@ export async function middleware(req) {
+       height: 600,
+     })
+   }
++  if (req.nextUrl.pathname === '/dynamic/secret') {
++    return new NextResponse('Unauthorized', { status: 401 })
++  }
+   return NextResponse.next()
+ }
+diff --git a/test/production/standalone-mode/required-server-files/middleware.js b/test/production/standalone-mode/required-server-files/middleware.js
+index 11afc796bf87..ee1512813491 100644
+--- a/test/production/standalone-mode/required-server-files/middleware.js
++++ b/test/production/standalone-mode/required-server-files/middleware.js
+@@ -9,5 +9,8 @@ export async function middleware(req) {
+       height: 600,
+     })
+   }
++  if (req.nextUrl.pathname === '/dynamic/secret') {
++    return new NextResponse('Unauthorized', { status: 401 })
++  }
+   return NextResponse.next()
+ }
+diff --git a/test/production/standalone-mode/required-server-files/required-server-files.test.ts b/test/production/standalone-mode/required-server-files/required-server-files.test.ts
+index 7bb6f64f7f0b..9c3bae1cf2aa 100644
+--- a/test/production/standalone-mode/required-server-files/required-server-files.test.ts
++++ b/test/production/standalone-mode/required-server-files/required-server-files.test.ts
+@@ -1560,6 +1560,31 @@ describe('required server files', () => {
+       minimalMode = false
+     })
+ 
++    it('should ignore external nxtP params when middleware only checks the pathname', async () => {
++      const blockedRes = await fetchViaHTTP(
++        appPort,
++        '/dynamic/secret',
++        undefined,
++        withInvocationId()
++      )
++
++      expect(blockedRes.status).toBe(401)
++      expect(await blockedRes.text()).toBe('Unauthorized')
++
++      const bypassRes = await fetchViaHTTP(
++        appPort,
++        '/dynamic/public?nxtPslug=secret',
++        undefined,
++        withInvocationId()
++      )
++
++      expect(bypassRes.status).toBe(200)
++
++      const $ = cheerio.load(await bypassRes.text())
++      expect($('#dynamic').text()).toBe('dynamic page')
++      expect($('#slug').text()).toBe('public')
++    })
++
+     it('should run middleware correctly', async () => {
+       const standaloneDir = join(next.testDir, 'standalone')
+       const res = await fetchViaHTTP(
+diff --git a/test/unit/htmlescape.test.ts b/test/unit/htmlescape.test.ts
+index 97f7d42103c8..3ab7a87e3bcb 100644
+--- a/test/unit/htmlescape.test.ts
++++ b/test/unit/htmlescape.test.ts
+@@ -1,7 +1,7 @@
+ /* eslint-env jest */
+ // These tests are based on https://github.com/zertosh/htmlescape/blob/3e6cf0614dd0f778fd0131e69070b77282150c15/test/htmlescape-test.js
+ // License: https://github.com/zertosh/htmlescape/blob/0527ca7156a524d256101bb310a9f970f63078ad/LICENSE
+-import { htmlEscapeJsonString } from 'next/dist/server/htmlescape'
++import { htmlEscapeJsonString } from 'next/dist/shared/lib/htmlescape'
+ import vm from 'vm'
+ 
+ describe('htmlescape', () => {

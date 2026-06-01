@@ -1,0 +1,632 @@
+diff --git a/astro-docs/src/content/docs/guides/Tasks & Caching/workspace-watching.mdoc b/astro-docs/src/content/docs/guides/Tasks & Caching/workspace-watching.mdoc
+index 2cfd699b83d..8abf3f3a130 100644
+--- a/astro-docs/src/content/docs/guides/Tasks & Caching/workspace-watching.mdoc	
++++ b/astro-docs/src/content/docs/guides/Tasks & Caching/workspace-watching.mdoc	
+@@ -155,22 +155,22 @@ To watch for specific projects and echo the changed files, run this command:
+ nx watch --projects=app1,app2 -- echo \$NX_FILE_CHANGES
+ ```
+ 
+-### Watching for dependent projects
++### Watching a project and its dependencies
+ 
+-To watch for a project and it's dependencies, run this command:
++To watch a project and the projects it depends on, run this command:
+ 
+ ```shell
+-nx watch --projects=app1 --includeDependentProjects -- echo \$NX_PROJECT_NAME
++nx watch --projects=app1 --includeDependencies -- echo \$NX_PROJECT_NAME
+ ```
+ 
+-### Rebuilding dependent projects while developing an application
++### Rebuilding an application's dependencies while developing it
+ 
+ In a monorepo setup, your application might rely on several libraries that need to be built before they can be used in the application. While the [task pipeline](/docs/guides/tasks--caching/defining-task-pipeline) automatically handles this during builds, you'd want the same behavior during development when serving your application with a dev server.
+ 
+-To watch and rebuild the dependent libraries of an application, use the following command:
++To watch and rebuild the libraries an application depends on, use the following command:
+ 
+ ```shell
+-nx watch --projects=my-app --includeDependentProjects -- nx run-many -t build -p \$NX_PROJECT_NAME --exclude=my-app
++nx watch --projects=my-app --includeDependencies -- nx run-many -t build -p \$NX_PROJECT_NAME --exclude=my-app
+ ```
+ 
+-`--includeDependentProjects` ensures that any changes to projects your application depends on trigger a rebuild, while `--exclude=my-app` skips rebuilding the app itself since it's already being served by the development server.
++`--includeDependencies` ensures that any changes to projects your application depends on trigger a rebuild, while `--exclude=my-app` skips rebuilding the app itself since it's already being served by the development server.
+diff --git a/e2e/nx/src/help-output.test.ts b/e2e/nx/src/help-output.test.ts
+index d773b88a925..fa93d0408a9 100644
+--- a/e2e/nx/src/help-output.test.ts
++++ b/e2e/nx/src/help-output.test.ts
+@@ -247,7 +247,7 @@ xdescribe('--help output', () => {
+       expect(output).toContain('nx watch');
+       expect(output).toMatch(/watch.*changes|file.*changes/i);
+       expect(output).toContain('Options:');
+-      expect(output).toMatch(/--projects|--includeDependentProjects/);
++      expect(output).toMatch(/--projects|--includeDependencies/);
+ 
+       // Should NOT be a file watcher tool
+       expect(output).not.toContain('inotify');
+diff --git a/e2e/nx/src/watch.test.ts b/e2e/nx/src/watch.test.ts
+index 5b9106358c8..c2764792a1f 100644
+--- a/e2e/nx/src/watch.test.ts
++++ b/e2e/nx/src/watch.test.ts
+@@ -150,7 +150,7 @@ describe('Nx Watch', () => {
+     });
+ 
+     const getOutput = await runWatch(
+-      `--projects=${proj3} --includeDependentProjects -- echo \\$NX_PROJECT_NAME`
++      `--projects=${proj3} --includeDependencies -- echo \\$NX_PROJECT_NAME`
+     );
+     await writeFileForWatcher(`libs/${proj1}/newfile.txt`, 'content');
+     await writeFileForWatcher(`libs/${proj2}/newfile.txt`, 'content');
+diff --git a/packages/js/src/executors/node/node.impl.ts b/packages/js/src/executors/node/node.impl.ts
+index 7146a582cfb..77cc33149bf 100644
+--- a/packages/js/src/executors/node/node.impl.ts
++++ b/packages/js/src/executors/node/node.impl.ts
+@@ -322,7 +322,7 @@ export async function* nodeExecutor(
+         additionalExitHandler = await daemonClient.registerFileWatcher(
+           {
+             watchProjects: [context.projectName],
+-            includeDependentProjects: true,
++            includeDependencies: true,
+           },
+           async (err, data) => {
+             if (err === 'reconnecting') {
+diff --git a/packages/js/src/executors/tsc/lib/batch/watch.ts b/packages/js/src/executors/tsc/lib/batch/watch.ts
+index 1449b57b442..d2af33cbbdb 100644
+--- a/packages/js/src/executors/tsc/lib/batch/watch.ts
++++ b/packages/js/src/executors/tsc/lib/batch/watch.ts
+@@ -52,7 +52,7 @@ export async function watchTaskProjectsFileChangesForAssets(
+   const unregisterFileWatcher = await daemonClient.registerFileWatcher(
+     {
+       watchProjects: taskInfos.map((t) => t.context.projectName),
+-      includeDependentProjects: true,
++      includeDependencies: true,
+       includeGlobalWorkspaceFiles: true,
+     },
+     (err, data) => {
+diff --git a/packages/js/src/plugins/typescript/plugin.spec.ts b/packages/js/src/plugins/typescript/plugin.spec.ts
+index 7e7803af769..5c8753d2687 100644
+--- a/packages/js/src/plugins/typescript/plugin.spec.ts
++++ b/packages/js/src/plugins/typescript/plugin.spec.ts
+@@ -3627,7 +3627,7 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
+                   ],
+                 },
+                 "watch-deps": {
+-                  "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
++                  "command": "npx nx watch --projects my-lib --includeDependencies -- npx nx build-deps my-lib",
+                   "continuous": true,
+                   "dependsOn": [
+                     "build-deps",
+@@ -3705,7 +3705,7 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
+                   ],
+                 },
+                 "watch-deps": {
+-                  "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
++                  "command": "npx nx watch --projects my-lib --includeDependencies -- npx nx build-deps my-lib",
+                   "continuous": true,
+                   "dependsOn": [
+                     "build-deps",
+@@ -3798,7 +3798,7 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
+                   ],
+                 },
+                 "watch-deps": {
+-                  "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
++                  "command": "npx nx watch --projects my-lib --includeDependencies -- npx nx build-deps my-lib",
+                   "continuous": true,
+                   "dependsOn": [
+                     "build-deps",
+@@ -3877,7 +3877,7 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
+                   ],
+                 },
+                 "watch-deps": {
+-                  "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
++                  "command": "npx nx watch --projects my-lib --includeDependencies -- npx nx build-deps my-lib",
+                   "continuous": true,
+                   "dependsOn": [
+                     "build-deps",
+diff --git a/packages/js/src/plugins/typescript/util.ts b/packages/js/src/plugins/typescript/util.ts
+index b537ecff222..270679cffe1 100644
+--- a/packages/js/src/plugins/typescript/util.ts
++++ b/packages/js/src/plugins/typescript/util.ts
+@@ -53,7 +53,7 @@ export function addBuildAndWatchDepsTargets(
+     targets[options.watchDepsTargetName ?? 'watch-deps'] = {
+       continuous: true,
+       dependsOn: [buildDepsTargetName],
+-      command: `${pmc.exec} nx watch --projects ${projectName} --includeDependentProjects -- ${pmc.exec} nx ${buildDepsTargetName} ${projectName}`,
++      command: `${pmc.exec} nx watch --projects ${projectName} --includeDependencies -- ${pmc.exec} nx ${buildDepsTargetName} ${projectName}`,
+     };
+   }
+ }
+diff --git a/packages/next/src/plugins/__snapshots__/plugin.spec.ts.snap b/packages/next/src/plugins/__snapshots__/plugin.spec.ts.snap
+index c56b03190d4..451d9a77b75 100644
+--- a/packages/next/src/plugins/__snapshots__/plugin.spec.ts.snap
++++ b/packages/next/src/plugins/__snapshots__/plugin.spec.ts.snap
+@@ -76,7 +76,7 @@ exports[`@nx/next/plugin integrated projects should create nodes 1`] = `
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++              "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -166,7 +166,7 @@ exports[`@nx/next/plugin root projects should create nodes 1`] = `
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects next --includeDependentProjects -- npx nx build-deps next",
++              "command": "npx nx watch --projects next --includeDependencies -- npx nx build-deps next",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+diff --git a/packages/nuxt/src/plugins/__snapshots__/plugin.spec.ts.snap b/packages/nuxt/src/plugins/__snapshots__/plugin.spec.ts.snap
+index ed6cfaf4319..bca1ddf5e6d 100644
+--- a/packages/nuxt/src/plugins/__snapshots__/plugin.spec.ts.snap
++++ b/packages/nuxt/src/plugins/__snapshots__/plugin.spec.ts.snap
+@@ -81,7 +81,7 @@ exports[`@nx/nuxt/plugin not root project should create nodes 1`] = `
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++              "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -176,7 +176,7 @@ exports[`@nx/nuxt/plugin root project should create nodes 1`] = `
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects nuxt --includeDependentProjects -- npx nx build-deps nuxt",
++              "command": "npx nx watch --projects nuxt --includeDependencies -- npx nx build-deps nuxt",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+diff --git a/packages/nx/src/command-line/examples.ts b/packages/nx/src/command-line/examples.ts
+index 3e42ed47818..3a2909cab1c 100644
+--- a/packages/nx/src/command-line/examples.ts
++++ b/packages/nx/src/command-line/examples.ts
+@@ -467,7 +467,7 @@ export const examples: Record<string, Example[]> = {
+     },
+     {
+       command:
+-        'watch --projects=app1,app2 --includeDependentProjects -- echo \\$NX_PROJECT_NAME',
++        'watch --projects=app1,app2 --includeDependencies -- echo \\$NX_PROJECT_NAME',
+       description:
+         'Watch "app1" and "app2" and echo the project name whenever a specified project or its dependencies change',
+     },
+diff --git a/packages/nx/src/command-line/watch/command-object.ts b/packages/nx/src/command-line/watch/command-object.ts
+index b07127a7e7b..58dc2b60de2 100644
+--- a/packages/nx/src/command-line/watch/command-object.ts
++++ b/packages/nx/src/command-line/watch/command-object.ts
+@@ -16,62 +16,90 @@ export const yargsWatchCommand: CommandModule = {
+ };
+ 
+ function withWatchOptions(yargs: Argv) {
+-  return withVerbose(yargs)
+-    .parserConfiguration({
+-      'strip-dashed': true,
+-      'populate--': true,
+-    })
+-    .option('projects', {
+-      type: 'string',
+-      alias: 'p',
+-      coerce: parseCSV,
+-      description: 'Projects to watch (comma/space delimited).',
+-    })
+-    .option('all', {
+-      type: 'boolean',
+-      description: 'Watch all projects.',
+-    })
+-    .option('includeDependentProjects', {
+-      type: 'boolean',
+-      description:
+-        'When watching selected projects, include dependent projects as well.',
+-      alias: 'd',
+-    })
+-    .option('includeGlobalWorkspaceFiles', {
+-      type: 'boolean',
+-      description:
+-        'Include global workspace files that are not part of a project. For example, the root eslint, or tsconfig file.',
+-      alias: 'g',
+-      hidden: true,
+-    })
+-    .option('command', { type: 'string', hidden: true })
+-    .option('verbose', {
+-      type: 'boolean',
+-      description:
+-        'Run watch mode in verbose mode, where commands are logged before execution.',
+-    })
+-    .option('initialRun', {
+-      type: 'boolean',
+-      description: 'Run the command once before watching for changes.',
+-      alias: 'i',
+-      default: false,
+-    })
+-    .conflicts({
+-      all: 'projects',
+-    })
+-    .check((args) => {
+-      if (!args.all && !args.projects) {
+-        throw Error('Please specify either --all or --projects');
+-      }
++  return (
++    withVerbose(yargs)
++      .parserConfiguration({
++        'strip-dashed': true,
++        'populate--': true,
++      })
++      .option('projects', {
++        type: 'string',
++        alias: 'p',
++        coerce: parseCSV,
++        description: 'Projects to watch (comma/space delimited).',
++      })
++      .option('all', {
++        type: 'boolean',
++        description: 'Watch all projects.',
++      })
++      .option('includeDependencies', {
++        type: 'boolean',
++        description:
++          'When watching selected projects, also include the projects they depend on.',
++        alias: 'd',
++      })
++      // TODO(v24): remove the deprecated --includeDependentProjects alias
++      .option('includeDependentProjects', {
++        type: 'boolean',
++        hidden: true,
++        describe:
++          "Deprecated in favor of --includeDependencies; will be removed in Nx 24. The flag name was misleading since it includes the watched project's dependencies, not its dependents. The new flag is functionally identical.",
++      })
++      .option('includeGlobalWorkspaceFiles', {
++        type: 'boolean',
++        description:
++          'Include global workspace files that are not part of a project. For example, the root eslint, or tsconfig file.',
++        alias: 'g',
++        hidden: true,
++      })
++      .option('command', { type: 'string', hidden: true })
++      .option('verbose', {
++        type: 'boolean',
++        description:
++          'Run watch mode in verbose mode, where commands are logged before execution.',
++      })
++      .option('initialRun', {
++        type: 'boolean',
++        description: 'Run the command once before watching for changes.',
++        alias: 'i',
++        default: false,
++      })
++      .conflicts({
++        all: 'projects',
++      })
++      .check((args) => {
++        if (!args.all && !args.projects) {
++          throw Error('Please specify either --all or --projects');
++        }
+ 
+-      return true;
+-    })
+-    .middleware((args) => {
+-      const { '--': doubledash } = args;
+-      if (doubledash && Array.isArray(doubledash)) {
+-        args.command = (doubledash as string[]).join(' ');
+-      } else {
+-        throw Error('No command specified for watch mode.');
+-      }
+-    }, true);
++        return true;
++      })
++      .middleware((args) => {
++        const { '--': doubledash } = args;
++        if (doubledash && Array.isArray(doubledash)) {
++          args.command = (doubledash as string[]).join(' ');
++        } else {
++          throw Error('No command specified for watch mode.');
++        }
++
++        // --includeDependentProjects was renamed to --includeDependencies in
++        // Nx 23 because the original name was misleading: it includes the
++        // watched project's *dependencies*, not its dependents. The new flag
++        // is functionally identical — only the name changed. Map the legacy
++        // name through so existing scripts keep working during the
++        // deprecation window.
++        // TODO(v24): remove the legacy includeDependentProjects pass-through
++        const a = args as Record<string, unknown>;
++        if (
++          a.includeDependentProjects !== undefined &&
++          a.includeDependencies === undefined
++        ) {
++          a.includeDependencies = a.includeDependentProjects;
++          // eslint-disable-next-line no-console
++          console.warn(
++            "--includeDependentProjects is deprecated in favor of --includeDependencies and will be removed in Nx 24. The flag name was misleading since it includes the watched project's dependencies, not its dependents. The new flag is functionally identical."
++          );
++        }
++      }, true)
++  );
+ }
+diff --git a/packages/nx/src/command-line/watch/watch.ts b/packages/nx/src/command-line/watch/watch.ts
+index 408e5da8d35..3254951cee4 100644
+--- a/packages/nx/src/command-line/watch/watch.ts
++++ b/packages/nx/src/command-line/watch/watch.ts
+@@ -6,6 +6,14 @@ import { output } from '../../utils/output';
+ export interface WatchArguments {
+   projects?: string[];
+   all?: boolean;
++  includeDependencies?: boolean;
++  /**
++   * @deprecated Renamed to {@link WatchArguments.includeDependencies}; will be
++   * removed in Nx 24. The original name was misleading: this flag includes
++   * the watched project's dependencies, not its dependents. The new property
++   * is functionally identical — only the name changed.
++   */
++  // TODO(v24): remove this property
+   includeDependentProjects?: boolean;
+   includeGlobalWorkspaceFiles?: boolean;
+   verbose?: boolean;
+@@ -207,7 +215,8 @@ export async function watch(args: WatchArguments) {
+   await daemonClient.registerFileWatcher(
+     {
+       watchProjects: whatToWatch,
+-      includeDependentProjects: args.includeDependentProjects,
++      includeDependencies:
++        args.includeDependencies ?? args.includeDependentProjects,
+       includeGlobalWorkspaceFiles: args.includeGlobalWorkspaceFiles,
+     },
+     async (err, data) => {
+diff --git a/packages/nx/src/daemon/client/client.ts b/packages/nx/src/daemon/client/client.ts
+index 5ab92560534..74fe4d380fd 100644
+--- a/packages/nx/src/daemon/client/client.ts
++++ b/packages/nx/src/daemon/client/client.ts
+@@ -194,7 +194,7 @@ export class DaemonClient {
+     {
+       watchProjects: string[] | 'all';
+       includeGlobalWorkspaceFiles?: boolean;
+-      includeDependentProjects?: boolean;
++      includeDependencies?: boolean;
+       allowPartialGraph?: boolean;
+     }
+   > = new Map();
+@@ -361,7 +361,7 @@ export class DaemonClient {
+     config: {
+       watchProjects: string[] | 'all';
+       includeGlobalWorkspaceFiles?: boolean;
+-      includeDependentProjects?: boolean;
++      includeDependencies?: boolean;
+       allowPartialGraph?: boolean;
+     },
+     callback: (
+diff --git a/packages/nx/src/daemon/server/file-watching/file-watcher-sockets.ts b/packages/nx/src/daemon/server/file-watching/file-watcher-sockets.ts
+index 0ac3a615012..fb104bb0499 100644
+--- a/packages/nx/src/daemon/server/file-watching/file-watcher-sockets.ts
++++ b/packages/nx/src/daemon/server/file-watching/file-watcher-sockets.ts
+@@ -13,7 +13,7 @@ export let registeredFileWatcherSockets: {
+   config: {
+     watchProjects: string[] | 'all';
+     includeGlobalWorkspaceFiles: boolean;
+-    includeDependentProjects: boolean;
++    includeDependencies: boolean;
+   };
+ }[] = [];
+ 
+@@ -62,7 +62,7 @@ export function notifyFileWatcherSockets(
+             )
+           );
+ 
+-          if (config.includeDependentProjects) {
++          if (config.includeDependencies) {
+             for (const project of watchedProjects) {
+               for (const dep of findAllProjectNodeDependencies(
+                 project,
+diff --git a/packages/react/src/plugins/__snapshots__/router-plugin.spec.ts.snap b/packages/react/src/plugins/__snapshots__/router-plugin.spec.ts.snap
+index 2bd8b2d65c7..9ab9ee1abea 100644
+--- a/packages/react/src/plugins/__snapshots__/router-plugin.spec.ts.snap
++++ b/packages/react/src/plugins/__snapshots__/router-plugin.spec.ts.snap
+@@ -87,7 +87,7 @@ exports[`@nx/react/react-router-plugin React Router should create nodes by defau
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects acme --includeDependentProjects -- npx nx build-deps acme",
++              "command": "npx nx watch --projects acme --includeDependencies -- npx nx build-deps acme",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -177,7 +177,7 @@ exports[`@nx/react/react-router-plugin React Router should create nodes without
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects acme --includeDependentProjects -- npx nx build-deps acme",
++              "command": "npx nx watch --projects acme --includeDependencies -- npx nx build-deps acme",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+diff --git a/packages/remix/src/plugins/__snapshots__/plugin.spec.ts.snap b/packages/remix/src/plugins/__snapshots__/plugin.spec.ts.snap
+index aba01511df5..a4e76b8c533 100644
+--- a/packages/remix/src/plugins/__snapshots__/plugin.spec.ts.snap
++++ b/packages/remix/src/plugins/__snapshots__/plugin.spec.ts.snap
+@@ -96,7 +96,7 @@ exports[`@nx/remix/plugin Remix Classic Compiler non-root project should create
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++              "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -206,7 +206,7 @@ exports[`@nx/remix/plugin Remix Classic Compiler non-root project should infer w
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++              "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -413,7 +413,7 @@ exports[`@nx/remix/plugin Remix Vite Compiler non-root project should create nod
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++              "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+diff --git a/packages/rollup/src/plugins/__snapshots__/plugin.spec.ts.snap b/packages/rollup/src/plugins/__snapshots__/plugin.spec.ts.snap
+index cc014ef7ed7..97e1e348926 100644
+--- a/packages/rollup/src/plugins/__snapshots__/plugin.spec.ts.snap
++++ b/packages/rollup/src/plugins/__snapshots__/plugin.spec.ts.snap
+@@ -61,7 +61,7 @@ exports[`@nx/rollup/plugin non-root project should create nodes 1`] = `
+               ],
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects mylib --includeDependentProjects -- npx nx build-deps mylib",
++              "command": "npx nx watch --projects mylib --includeDependencies -- npx nx build-deps mylib",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -136,7 +136,7 @@ exports[`@nx/rollup/plugin non-root project should create nodes 2`] = `
+               ],
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects mylib --includeDependentProjects -- npx nx build-deps mylib",
++              "command": "npx nx watch --projects mylib --includeDependencies -- npx nx build-deps mylib",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -210,7 +210,7 @@ exports[`@nx/rollup/plugin root project should create nodes 1`] = `
+               ],
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects mylib --includeDependentProjects -- npx nx build-deps mylib",
++              "command": "npx nx watch --projects mylib --includeDependencies -- npx nx build-deps mylib",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -284,7 +284,7 @@ exports[`@nx/rollup/plugin root project should create nodes 2`] = `
+               ],
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects mylib --includeDependentProjects -- npx nx build-deps mylib",
++              "command": "npx nx watch --projects mylib --includeDependencies -- npx nx build-deps mylib",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+diff --git a/packages/rsbuild/src/plugins/plugin.spec.ts b/packages/rsbuild/src/plugins/plugin.spec.ts
+index f492026ac24..53d358acffd 100644
+--- a/packages/rsbuild/src/plugins/plugin.spec.ts
++++ b/packages/rsbuild/src/plugins/plugin.spec.ts
+@@ -145,7 +145,7 @@ describe('@nx/rsbuild', () => {
+                     },
+                   },
+                   "watch-deps": {
+-                    "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++                    "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+                     "continuous": true,
+                     "dependsOn": [
+                       "build-deps",
+diff --git a/packages/rspack/src/plugins/plugin.spec.ts b/packages/rspack/src/plugins/plugin.spec.ts
+index 77bcee1c4f0..0a780e7a678 100644
+--- a/packages/rspack/src/plugins/plugin.spec.ts
++++ b/packages/rspack/src/plugins/plugin.spec.ts
+@@ -139,7 +139,7 @@ describe('@nx/rspack', () => {
+                     },
+                   },
+                   "watch-deps": {
+-                    "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++                    "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+                     "continuous": true,
+                     "dependsOn": [
+                       "build-deps",
+diff --git a/packages/storybook/src/plugins/plugin.spec.ts b/packages/storybook/src/plugins/plugin.spec.ts
+index f7d10965796..cc8c40e37a1 100644
+--- a/packages/storybook/src/plugins/plugin.spec.ts
++++ b/packages/storybook/src/plugins/plugin.spec.ts
+@@ -120,7 +120,7 @@ describe('@nx/storybook/plugin', () => {
+                     },
+                   },
+                   "watch-deps": {
+-                    "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++                    "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+                     "continuous": true,
+                     "dependsOn": [
+                       "build-deps",
+@@ -220,7 +220,7 @@ describe('@nx/storybook/plugin', () => {
+                     },
+                   },
+                   "watch-deps": {
+-                    "command": "npx nx watch --projects my-ng-app --includeDependentProjects -- npx nx build-deps my-ng-app",
++                    "command": "npx nx watch --projects my-ng-app --includeDependencies -- npx nx build-deps my-ng-app",
+                     "continuous": true,
+                     "dependsOn": [
+                       "build-deps",
+@@ -318,7 +318,7 @@ describe('@nx/storybook/plugin', () => {
+                     },
+                   },
+                   "watch-deps": {
+-                    "command": "npx nx watch --projects my-react-lib --includeDependentProjects -- npx nx build-deps my-react-lib",
++                    "command": "npx nx watch --projects my-react-lib --includeDependencies -- npx nx build-deps my-react-lib",
+                     "continuous": true,
+                     "dependsOn": [
+                       "build-deps",
+diff --git a/packages/vite/src/plugins/__snapshots__/plugin.spec.ts.snap b/packages/vite/src/plugins/__snapshots__/plugin.spec.ts.snap
+index 385e008165e..77b23c7a1ec 100644
+--- a/packages/vite/src/plugins/__snapshots__/plugin.spec.ts.snap
++++ b/packages/vite/src/plugins/__snapshots__/plugin.spec.ts.snap
+@@ -54,7 +54,7 @@ exports[`@nx/vite/plugin Library mode should exclude serve and preview targets w
+               ],
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
++              "command": "npx nx watch --projects my-lib --includeDependencies -- npx nx build-deps my-lib",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+@@ -197,7 +197,7 @@ exports[`@nx/vite/plugin not root project should create nodes 1`] = `
+               },
+             },
+             "watch-deps": {
+-              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++              "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+               "continuous": true,
+               "dependsOn": [
+                 "build-deps",
+diff --git a/packages/vite/src/plugins/plugin.spec.ts b/packages/vite/src/plugins/plugin.spec.ts
+index 0005e2a3df6..2a473933bdf 100644
+--- a/packages/vite/src/plugins/plugin.spec.ts
++++ b/packages/vite/src/plugins/plugin.spec.ts
+@@ -602,7 +602,7 @@ describe('@nx/vite/plugin', () => {
+                       },
+                     },
+                     "watch-deps": {
+-                      "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
++                      "command": "npx nx watch --projects my-lib --includeDependencies -- npx nx build-deps my-lib",
+                       "continuous": true,
+                       "dependsOn": [
+                         "build-deps",
+diff --git a/packages/web/src/executors/file-server/file-server.impl.ts b/packages/web/src/executors/file-server/file-server.impl.ts
+index 3475eac7183..936a8742072 100644
+--- a/packages/web/src/executors/file-server/file-server.impl.ts
++++ b/packages/web/src/executors/file-server/file-server.impl.ts
+@@ -130,7 +130,7 @@ function createFileWatcher(
+     {
+       watchProjects: project ? [project] : 'all',
+       includeGlobalWorkspaceFiles: true,
+-      includeDependentProjects: true,
++      includeDependencies: true,
+     },
+     async (error, val) => {
+       if (error === 'reconnecting') {
+diff --git a/packages/webpack/src/plugins/plugin.spec.ts b/packages/webpack/src/plugins/plugin.spec.ts
+index c0de63047e4..c25cc4dacb0 100644
+--- a/packages/webpack/src/plugins/plugin.spec.ts
++++ b/packages/webpack/src/plugins/plugin.spec.ts
+@@ -206,7 +206,7 @@ describe('@nx/webpack/plugin', () => {
+                     },
+                   },
+                   "watch-deps": {
+-                    "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
++                    "command": "npx nx watch --projects my-app --includeDependencies -- npx nx build-deps my-app",
+                     "continuous": true,
+                     "dependsOn": [
+                       "build-deps",

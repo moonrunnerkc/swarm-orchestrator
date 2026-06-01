@@ -1,0 +1,468 @@
+diff --git a/.changeset/secret-bulk-delete-support.md b/.changeset/secret-bulk-delete-support.md
+new file mode 100644
+index 0000000000..9fc7c63e2c
+--- /dev/null
++++ b/.changeset/secret-bulk-delete-support.md
+@@ -0,0 +1,11 @@
++---
++"wrangler": minor
++---
++
++Support deleting secrets via `wrangler secret bulk`
++
++You can now delete secrets in bulk by setting their value to `null` in the JSON input file:
++
++```json
++{ "SECRET_TO_DELETE": null, "SECRET_TO_UPDATE": "new-value" }
++```
+diff --git a/packages/wrangler/src/__tests__/pages/secret.test.ts b/packages/wrangler/src/__tests__/pages/secret.test.ts
+index 192dbfcb2d..9b361ea260 100644
+--- a/packages/wrangler/src/__tests__/pages/secret.test.ts
++++ b/packages/wrangler/src/__tests__/pages/secret.test.ts
+@@ -810,7 +810,7 @@ describe("wrangler pages secret", () => {
+ 				  "out": "
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 
+ 				🚨 Secrets failed to upload
+ 				",
+diff --git a/packages/wrangler/src/__tests__/secret.test.ts b/packages/wrangler/src/__tests__/secret.test.ts
+index 517152910d..ae64f07c63 100644
+--- a/packages/wrangler/src/__tests__/secret.test.ts
++++ b/packages/wrangler/src/__tests__/secret.test.ts
+@@ -1124,7 +1124,7 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name" "
++				🌀 Processing the secrets for the Worker "script-name" "
+ 			`
+ 			);
+ 			expect(std.err).toMatchInlineSnapshot(`
+@@ -1151,12 +1151,12 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 				✨ Successfully created secret for key: secret1
+ 				✨ Successfully created secret for key: password
+ 
+ 				Finished processing secrets file:
+-				✨ 2 secrets successfully uploaded"
++				✨ 2 secrets successfully created"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+ 			expect(std.warn).toMatchInlineSnapshot(`""`);
+@@ -1179,12 +1179,12 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 				✨ Successfully created secret for key: secret-name-1
+ 				✨ Successfully created secret for key: secret-name-2
+ 
+ 				Finished processing secrets file:
+-				✨ 2 secrets successfully uploaded"
++				✨ 2 secrets successfully created"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+ 			expect(std.warn).toMatchInlineSnapshot(`""`);
+@@ -1204,12 +1204,12 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 				✨ Successfully created secret for key: SECRET_NAME_1
+ 				✨ Successfully created secret for key: SECRET_NAME_2
+ 
+ 				Finished processing secrets file:
+-				✨ 2 secrets successfully uploaded"
++				✨ 2 secrets successfully created"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+ 			expect(std.warn).toMatchInlineSnapshot(`""`);
+@@ -1238,7 +1238,7 @@ describe("wrangler secret", () => {
+ 			await expect(
+ 				runWrangler("secret bulk ./secret.json --name script-name")
+ 			).rejects.toThrowErrorMatchingInlineSnapshot(
+-				`[Error: The value for "invalid-secret" in "./secret.json" is not a "string" instead it is of type "number"]`
++				`[Error: The value for "invalid-secret" in "./secret.json" is not null or a "string" instead it is of type "number"]`
+ 			);
+ 		});
+ 
+@@ -1269,7 +1269,7 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 
+ 				🚨 Secrets failed to upload
+ 
+@@ -1303,7 +1303,7 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 
+ 				🚨 Secrets failed to upload
+ 
+@@ -1364,7 +1364,7 @@ describe("wrangler secret", () => {
+ 				  "out": "
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 
+ 				🚨 Secrets failed to upload
+ 				",
+@@ -1429,13 +1429,99 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Processing the secrets for the Worker "script-name"
+ 				✨ Successfully created secret for key: secret-name-2
+ 				✨ Successfully created secret for key: secret-name-3
+ 				✨ Successfully created secret for key: secret-name-4
+ 
+ 				Finished processing secrets file:
+-				✨ 3 secrets successfully uploaded"
++				✨ 3 secrets successfully created"
++			`);
++			expect(std.err).toMatchInlineSnapshot(`""`);
++			expect(std.warn).toMatchInlineSnapshot(`""`);
++		});
++
++		it("should send null values to delete secrets via secrets-bulk endpoint", async ({
++			expect,
++		}) => {
++			writeFileSync(
++				"secret.json",
++				JSON.stringify({
++					"secret-to-create": "new-value",
++					"secret-to-update": "updated-value",
++					"secret-to-delete": null,
++				})
++			);
++
++			msw.use(
++				http.patch(
++					`*/accounts/:accountId/workers/scripts/:scriptName/secrets-bulk`,
++					async ({ request, params }) => {
++						expect(params.accountId).toEqual("some-account-id");
++
++						const patchBody = (await request.json()) as {
++							secrets: Record<string, unknown>;
++						};
++
++						// Secrets with values are sent as SecretBindingUpload objects,
++						// secrets set to null are sent as null (RFC 7396 delete)
++						expect(patchBody).toEqual({
++							secrets: {
++								"secret-to-create": {
++									name: "secret-to-create",
++									text: "new-value",
++									type: "secret_text",
++								},
++								"secret-to-update": {
++									name: "secret-to-update",
++									text: "updated-value",
++									type: "secret_text",
++								},
++								"secret-to-delete": null,
++							},
++						});
++
++						return HttpResponse.json(createFetchResult(null));
++					}
++				)
++			);
++
++			await runWrangler("secret bulk ./secret.json --name script-name");
++
++			expect(std.out).toMatchInlineSnapshot(`
++				"
++				 ⛅️ wrangler x.x.x
++				──────────────────
++				🌀 Processing the secrets for the Worker "script-name"
++				💥 Successfully deleted secret for key: secret-to-delete
++				✨ Successfully created secret for key: secret-to-create
++				✨ Successfully created secret for key: secret-to-update
++
++				Finished processing secrets file:
++				💥 1 secrets successfully deleted
++				✨ 2 secrets successfully created"
++			`);
++			expect(std.err).toMatchInlineSnapshot(`""`);
++			expect(std.warn).toMatchInlineSnapshot(`""`);
++		});
++
++		it("should show no-op message when bulk input has no secrets", async ({
++			expect,
++		}) => {
++			writeFileSync("secret.json", JSON.stringify({}));
++
++			mockBulkRequest(expect);
++
++			await runWrangler("secret bulk ./secret.json --name script-name");
++
++			expect(std.out).toMatchInlineSnapshot(`
++				"
++				 ⛅️ wrangler x.x.x
++				──────────────────
++				🌀 Processing the secrets for the Worker "script-name"
++
++				Finished processing secrets file:
++				No secrets were created or deleted"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+ 			expect(std.warn).toMatchInlineSnapshot(`""`);
+@@ -1463,7 +1549,7 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "non-existent-worker"
++				🌀 Processing the secrets for the Worker "non-existent-worker"
+ 				Aborting. No secrets added."
+ 			`);
+ 		});
+@@ -1496,7 +1582,7 @@ describe("wrangler secret", () => {
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "non-existent-worker"
++				🌀 Processing the secrets for the Worker "non-existent-worker"
+ 				? There doesn't seem to be a Worker called "non-existent-worker". Do you want to create a new Worker with that name and add secrets to it?
+ 				🤖 Using fallback value in non-interactive context: yes
+ 				🌀 Creating new Worker "non-existent-worker"...
+@@ -1504,7 +1590,7 @@ describe("wrangler secret", () => {
+ 				✨ Successfully created secret for key: secret-name-2
+ 
+ 				Finished processing secrets file:
+-				✨ 2 secrets successfully uploaded"
++				✨ 2 secrets successfully created"
+ 			`);
+ 		});
+ 
+diff --git a/packages/wrangler/src/secret/index.ts b/packages/wrangler/src/secret/index.ts
+index c83240d728..b6a618c989 100644
+--- a/packages/wrangler/src/secret/index.ts
++++ b/packages/wrangler/src/secret/index.ts
+@@ -389,11 +389,11 @@ async function putBulkSecrets(
+ 	accountId: string,
+ 	scriptName: string,
+ 	environment: string | undefined,
+-	content: Record<string, string>,
++	content: Record<string, string | null>,
+ 	options: {
+ 		isServiceEnv?: boolean;
+ 	} = {}
+-): Promise<[unknown, Array<string>]> {
++): Promise<[unknown, Array<string>, Array<string>]> {
+ 	const isServiceEnv = options?.isServiceEnv;
+ 	const url = isServiceEnv
+ 		? `/accounts/${accountId}/workers/services/${scriptName}/environments/${environment}/secrets-bulk`
+@@ -401,20 +401,26 @@ async function putBulkSecrets(
+ 	// Build the merge-patch body using JSON Merge Patch (RFC 7396) semantics:
+ 	// - Included secrets are created or updated
+ 	// - Omitted secrets are left unchanged
+-	// - Secrets set to null are deleted (not supported yet, to preserve previous behavior)
++	// - Secrets set to null are deleted
+ 	const secretEntries = Object.entries(content);
+-	const secrets: Record<string, SecretBindingUpload> = {};
++	const secrets: Record<string, SecretBindingUpload | null> = {};
+ 	const toCreate: Array<string> = [];
++	const toDelete: Array<string> = [];
+ 	for (const [key, value] of secretEntries) {
+-		toCreate.push(key);
+-		secrets[key] = { name: key, text: value, type: "secret_text" };
++		if (value != null) {
++			toCreate.push(key);
++			secrets[key] = { name: key, text: value, type: "secret_text" };
++		} else {
++			toDelete.push(key);
++			secrets[key] = null;
++		}
+ 	}
+ 	const resp = await fetchResult(config, url, {
+ 		method: "PATCH",
+ 		headers: { "Content-Type": "application/merge-patch+json" },
+ 		body: JSON.stringify({ secrets }),
+ 	});
+-	return [resp, toCreate];
++	return [resp, toCreate, toDelete];
+ }
+ 
+ export const secretBulkCommand = createCommand({
+@@ -468,12 +474,12 @@ export const secretBulkCommand = createCommand({
+ 		const accountId = await requireAuth(config);
+ 
+ 		logger.log(
+-			`🌀 Creating the secrets for the Worker "${scriptName}" ${
++			`🌀 Processing the secrets for the Worker "${scriptName}" ${
+ 				isServiceEnv ? `(${args.env})` : ""
+ 			}`
+ 		);
+ 
+-		const result = await parseBulkInputToObject(args.file);
++		const result = await parseBulkInputToObject(args.file, true);
+ 
+ 		if (!result) {
+ 			return logger.error(`🚨 No content found in file, or piped input.`);
+@@ -482,9 +488,10 @@ export const secretBulkCommand = createCommand({
+ 		const { content, secretSource, secretFormat } = result;
+ 
+ 		let created: Array<string> = [];
++		let deleted: Array<string> = [];
+ 		try {
+ 			try {
+-				[, created] = await putBulkSecrets(
++				[, created, deleted] = await putBulkSecrets(
+ 					config,
+ 					accountId,
+ 					scriptName,
+@@ -506,7 +513,7 @@ export const secretBulkCommand = createCommand({
+ 				if (draftWorkerResult === null) {
+ 					return;
+ 				}
+-				[, created] = await putBulkSecrets(
++				[, created, deleted] = await putBulkSecrets(
+ 					config,
+ 					accountId,
+ 					scriptName,
+@@ -521,12 +528,27 @@ export const secretBulkCommand = createCommand({
+ 			throw e;
+ 		}
+ 
++		for (const key of deleted) {
++			logger.log(`💥 Successfully deleted secret for key: ${key}`);
++		}
+ 		for (const key of created) {
+ 			logger.log(`✨ Successfully created secret for key: ${key}`);
+ 		}
++
+ 		logger.log("");
+ 		logger.log("Finished processing secrets file:");
+-		logger.log(`✨ ${created.length} secrets successfully uploaded`);
++		const hasChanges = deleted.length + created.length > 0;
++		if (hasChanges) {
++			if (deleted.length > 0) {
++				logger.log(`💥 ${deleted.length} secrets successfully deleted`);
++			}
++			if (created.length > 0) {
++				logger.log(`✨ ${created.length} secrets successfully created`);
++			}
++		} else {
++			logger.log(`No secrets were created or deleted`);
++		}
++
+ 		metrics.sendMetricsEvent(
+ 			"create encrypted variable",
+ 			{
+@@ -545,7 +567,7 @@ export const secretBulkCommand = createCommand({
+ export function validateFileSecrets(
+ 	content: unknown,
+ 	jsonFilePath: string
+-): asserts content is Record<string, string> {
++): content is Record<string, string | null> {
+ 	if (content === null || typeof content !== "object") {
+ 		throw new FatalError(
+ 			`The contents of "${jsonFilePath}" is not valid. It should be a JSON object of string values.`,
+@@ -554,13 +576,14 @@ export function validateFileSecrets(
+ 	}
+ 	const entries = Object.entries(content);
+ 	for (const [key, value] of entries) {
+-		if (typeof value !== "string") {
++		if (value != null && typeof value !== "string") {
+ 			throw new FatalError(
+-				`The value for "${key}" in "${jsonFilePath}" is not a "string" instead it is of type "${typeof value}"`,
++				`The value for "${key}" in "${jsonFilePath}" is not null or a "string" instead it is of type "${typeof value}"`,
+ 				{ telemetryMessage: "secret bulk file invalid value type" }
+ 			);
+ 		}
+ 	}
++	return true;
+ }
+ 
+ /** Error thrown when no input is provided to parseBulkInputToObject */
+@@ -571,17 +594,37 @@ export class NoInputError extends Error {
+ 	}
+ }
+ 
+-/** Result from parsing bulk secret input, including metadata for analytics */
++/** Result from parsing bulk secret input without nullable values, including metadata for analytics */
+ export type BulkInputResult = {
+ 	content: Record<string, string>;
+ 	secretSource: "file" | "stdin";
+ 	secretFormat: "json" | "dotenv";
+ };
+ 
++/** Result from parsing bulk secret input with nullable values, including metadata for analytics */
++export type BulkInputNullableResult = {
++	content: Record<string, string | null>;
++	secretSource: "file" | "stdin";
++	secretFormat: "json" | "dotenv";
++};
++
++/** Override for callers that need non-nullable */
++export async function parseBulkInputToObject(
++	input?: string,
++	includeNull?: false
++): Promise<BulkInputResult | undefined>;
++
++/** Override for callers that need nullable */
+ export async function parseBulkInputToObject(
+-	input?: string
+-): Promise<BulkInputResult | undefined> {
+-	let content: Record<string, string>;
++	input?: string,
++	includeNull?: true
++): Promise<BulkInputNullableResult | undefined>;
++
++export async function parseBulkInputToObject(
++	input?: string,
++	includeNull: boolean = false
++): Promise<BulkInputResult | BulkInputNullableResult | undefined> {
++	let content: Record<string, string | null>;
+ 	let secretSource: "file" | "stdin";
+ 	let secretFormat: "json" | "dotenv";
+ 
+@@ -590,7 +633,7 @@ export async function parseBulkInputToObject(
+ 		const jsonFilePath = path.resolve(input);
+ 		const fileContent = readFileSync(jsonFilePath);
+ 		try {
+-			content = parseJSON(fileContent) as Record<string, string>;
++			content = parseJSON(fileContent) as Record<string, string | null>;
+ 			secretFormat = "json";
+ 		} catch {
+ 			content = dotenvParse(fileContent);
+@@ -603,6 +646,13 @@ export async function parseBulkInputToObject(
+ 			}
+ 		}
+ 		validateFileSecrets(content, input);
++		if (!includeNull) {
++			content = Object.fromEntries(
++				Object.entries(content).filter(
++					(entry): entry is [string, string] => entry[1] != null
++				)
++			);
++		}
+ 	} else {
+ 		secretSource = "stdin";
+ 		try {
+@@ -612,7 +662,7 @@ export async function parseBulkInputToObject(
+ 				pipedInput += line;
+ 			}
+ 			try {
+-				content = parseJSON(pipedInput) as Record<string, string>;
++				content = parseJSON(pipedInput) as Record<string, string | null>;
+ 				secretFormat = "json";
+ 			} catch (e) {
+ 				content = dotenvParse(pipedInput);

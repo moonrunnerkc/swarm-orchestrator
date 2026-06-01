@@ -1,0 +1,486 @@
+diff --git a/.changeset/secret-bulk-use-secrets-bulk-endpoint.md b/.changeset/secret-bulk-use-secrets-bulk-endpoint.md
+new file mode 100644
+index 0000000000..5e151a1aa4
+--- /dev/null
++++ b/.changeset/secret-bulk-use-secrets-bulk-endpoint.md
+@@ -0,0 +1,7 @@
++---
++"wrangler": patch
++---
++
++Use dedicated API endpoint for `wrangler secret bulk`
++
++`wrangler secret bulk` now uses a more efficient, dedicated API endpoint. This reduces the operation from 2 API calls to 1 and eliminates the risk of accidentally affecting non-secret bindings.
+diff --git a/packages/wrangler/src/__tests__/pages/secret.test.ts b/packages/wrangler/src/__tests__/pages/secret.test.ts
+index f164e5a0ee..192dbfcb2d 100644
+--- a/packages/wrangler/src/__tests__/pages/secret.test.ts
++++ b/packages/wrangler/src/__tests__/pages/secret.test.ts
+@@ -773,16 +773,8 @@ describe("wrangler pages secret", () => {
+ 			);
+ 
+ 			msw.use(
+-				http.get(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
+-					({ params }) => {
+-						expect(params.accountId).toEqual("some-account-id");
+-
+-						return HttpResponse.json(createFetchResult({ bindings: [] }));
+-					}
+-				),
+ 				http.patch(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
++					`*/accounts/:accountId/workers/scripts/:scriptName/secrets-bulk`,
+ 					({ params }) => {
+ 						expect(params.accountId).toEqual("some-account-id");
+ 						return HttpResponse.json(
+@@ -800,13 +792,13 @@ describe("wrangler pages secret", () => {
+ 			await expect(async () => {
+ 				await runWrangler("secret bulk ./secret.json --name script-name");
+ 			}).rejects.toThrowErrorMatchingInlineSnapshot(
+-				`[APIError: A request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/settings) failed.]`
++				`[APIError: A request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/secrets-bulk) failed.]`
+ 			);
+ 
+ 			expect(std).toMatchInlineSnapshot(`
+ 				{
+ 				  "debug": "",
+-				  "err": "[31mX [41;31m[[41;97mERROR[41;31m][0m [1mA request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/settings) failed.[0m
++				  "err": "[31mX [41;31m[[41;97mERROR[41;31m][0m [1mA request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/secrets-bulk) failed.[0m
+ 
+ 				  This is a helpful error [code: 1]
+ 
+diff --git a/packages/wrangler/src/__tests__/secret.test.ts b/packages/wrangler/src/__tests__/secret.test.ts
+index 089a0fa8c8..517152910d 100644
+--- a/packages/wrangler/src/__tests__/secret.test.ts
++++ b/packages/wrangler/src/__tests__/secret.test.ts
+@@ -41,11 +41,11 @@ function createFetchResult(
+ 	};
+ }
+ 
+-function mockNoWorkerFound(isBulk = false) {
++function mockNoWorkerFound({ isBulk = false } = {}) {
+ 	if (isBulk) {
+ 		msw.use(
+-			http.get(
+-				"*/accounts/:accountId/workers/scripts/:scriptName/settings",
++			http.patch(
++				"*/accounts/:accountId/workers/scripts/:scriptName/secrets-bulk",
+ 				async () => {
+ 					return HttpResponse.json(
+ 						createFetchResult(null, false, [
+@@ -1079,16 +1079,8 @@ describe("wrangler secret", () => {
+ 			returnNetworkError = false
+ 		) => {
+ 			msw.use(
+-				http.get(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
+-					({ params }) => {
+-						expect(params.accountId).toEqual("some-account-id");
+-
+-						return HttpResponse.json(createFetchResult({ bindings: [] }));
+-					}
+-				),
+ 				http.patch(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
++					`*/accounts/:accountId/workers/scripts/:scriptName/secrets-bulk`,
+ 					({ params }) => {
+ 						expect(params.accountId).toEqual("some-account-id");
+ 						if (returnNetworkError) {
+@@ -1335,16 +1327,8 @@ describe("wrangler secret", () => {
+ 			);
+ 
+ 			msw.use(
+-				http.get(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
+-					({ params }) => {
+-						expect(params.accountId).toEqual("some-account-id");
+-
+-						return HttpResponse.json(createFetchResult({ bindings: [] }));
+-					}
+-				),
+ 				http.patch(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
++					`*/accounts/:accountId/workers/scripts/:scriptName/secrets-bulk`,
+ 					({ params }) => {
+ 						expect(params.accountId).toEqual("some-account-id");
+ 						return HttpResponse.json(
+@@ -1362,13 +1346,13 @@ describe("wrangler secret", () => {
+ 			await expect(async () => {
+ 				await runWrangler("secret bulk ./secret.json --name script-name");
+ 			}).rejects.toThrowErrorMatchingInlineSnapshot(
+-				`[APIError: A request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/settings) failed.]`
++				`[APIError: A request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/secrets-bulk) failed.]`
+ 			);
+ 
+ 			expect(std).toMatchInlineSnapshot(`
+ 				{
+ 				  "debug": "",
+-				  "err": "[31mX [41;31m[[41;97mERROR[41;31m][0m [1mA request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/settings) failed.[0m
++				  "err": "[31mX [41;31m[[41;97mERROR[41;31m][0m [1mA request to the Cloudflare API (/accounts/some-account-id/workers/scripts/script-name/secrets-bulk) failed.[0m
+ 
+ 				  This is a helpful error [code: 1]
+ 
+@@ -1389,7 +1373,7 @@ describe("wrangler secret", () => {
+ 			`);
+ 		});
+ 
+-		it("should merge existing bindings and secrets when patching", async ({
++		it("should only send provided secrets via secrets-bulk endpoint", async ({
+ 			expect,
+ 		}) => {
+ 			writeFileSync(
+@@ -1401,64 +1385,38 @@ describe("wrangler secret", () => {
+ 				})
+ 			);
+ 
+-			msw.use(
+-				http.get(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
+-					({ params }) => {
+-						expect(params.accountId).toEqual("some-account-id");
+-
+-						return HttpResponse.json(
+-							createFetchResult({
+-								bindings: [
+-									{
+-										type: "plain_text",
+-										name: "env_var",
+-										text: "the content",
+-									},
+-									{
+-										type: "json",
+-										name: "another_var",
+-										json: { some: "stuff" },
+-									},
+-									{ type: "secret_text", name: "secret-name-1" },
+-									{ type: "secret_text", name: "secret-name-2" },
+-									{ type: "secret_text", name: "secret-name-4" },
+-								],
+-							})
+-						);
+-					}
+-				)
+-			);
+ 			msw.use(
+ 				http.patch(
+-					`*/accounts/:accountId/workers/scripts/:scriptName/settings`,
++					`*/accounts/:accountId/workers/scripts/:scriptName/secrets-bulk`,
+ 					async ({ request, params }) => {
+ 						expect(params.accountId).toEqual("some-account-id");
+ 
+-						const formBody = await request.formData();
+-						const settings = formBody.get("settings");
+-						expect(settings).not.toBeNull();
+-						const parsedSettings = JSON.parse(settings as string);
+-						expect(parsedSettings).toMatchObject({
+-							bindings: [
+-								{ type: "plain_text", name: "env_var" },
+-								{ type: "json", name: "another_var" },
+-								{ type: "secret_text", name: "secret-name-1" },
+-								{
+-									type: "secret_text",
++						// The new endpoint uses JSON Merge Patch, not FormData
++						const patchBody = (await request.json()) as {
++							secrets: Record<string, unknown>;
++						};
++
++						// Only the provided secrets should be in the body under "secrets" —
++						// the API handles preserving existing secrets and non-secret bindings
++						expect(patchBody).toEqual({
++							secrets: {
++								"secret-name-2": {
+ 									name: "secret-name-2",
+ 									text: "secret_text",
+-								},
+-								{
+ 									type: "secret_text",
++								},
++								"secret-name-3": {
+ 									name: "secret-name-3",
+ 									text: "secret_text",
++									type: "secret_text",
+ 								},
+-								{ type: "secret_text", name: "secret-name-4", text: "" },
+-							],
++								"secret-name-4": {
++									name: "secret-name-4",
++									text: "",
++									type: "secret_text",
++								},
++							},
+ 						});
+-						expect(parsedSettings).not.toHaveProperty(["bindings", 0, "text"]);
+-						expect(parsedSettings).not.toHaveProperty(["bindings", 1, "json"]);
+ 
+ 						return HttpResponse.json(createFetchResult(null));
+ 					}
+@@ -1494,7 +1452,7 @@ describe("wrangler secret", () => {
+ 					"secret-name-2": "secret_text",
+ 				})
+ 			);
+-			mockNoWorkerFound(true);
++			mockNoWorkerFound({ isBulk: true });
+ 			mockConfirm({
+ 				text: `There doesn't seem to be a Worker called "non-existent-worker". Do you want to create a new Worker with that name and add secrets to it?`,
+ 				result: false,
+@@ -1521,7 +1479,8 @@ describe("wrangler secret", () => {
+ 					"secret-name-2": "secret_text",
+ 				})
+ 			);
+-			mockNoWorkerFound();
++			mockBulkRequest(expect); // Success case (base).
++			mockNoWorkerFound({ isBulk: true }); // Not found case (override, once).
+ 			msw.use(
+ 				http.put(
+ 					"*/accounts/:accountId/workers/scripts/:name",
+@@ -1531,14 +1490,16 @@ describe("wrangler secret", () => {
+ 					}
+ 				)
+ 			);
+-			mockBulkRequest(expect);
+ 
+-			await runWrangler("secret bulk ./secret.json --name script-name");
++			await runWrangler("secret bulk ./secret.json --name non-existent-worker");
+ 			expect(std.out).toMatchInlineSnapshot(`
+ 				"
+ 				 ⛅️ wrangler x.x.x
+ 				──────────────────
+-				🌀 Creating the secrets for the Worker "script-name"
++				🌀 Creating the secrets for the Worker "non-existent-worker"
++				? There doesn't seem to be a Worker called "non-existent-worker". Do you want to create a new Worker with that name and add secrets to it?
++				🤖 Using fallback value in non-interactive context: yes
++				🌀 Creating new Worker "non-existent-worker"...
+ 				✨ Successfully created secret for key: secret-name-1
+ 				✨ Successfully created secret for key: secret-name-2
+ 
+diff --git a/packages/wrangler/src/secret/index.ts b/packages/wrangler/src/secret/index.ts
+index 6509c81bf5..c83240d728 100644
+--- a/packages/wrangler/src/secret/index.ts
++++ b/packages/wrangler/src/secret/index.ts
+@@ -9,7 +9,6 @@ import {
+ 	UserError,
+ } from "@cloudflare/workers-utils";
+ import { parse as dotenvParse } from "dotenv";
+-import { FormData } from "undici";
+ import { fetchResult } from "../cfetch";
+ import { createCommand, createNamespace } from "../core/create-command";
+ import { createWorkerUploadForm } from "../deployment-bundle/create-worker-upload-form";
+@@ -22,7 +21,7 @@ import { getLegacyScriptName } from "../utils/getLegacyScriptName";
+ import { readFromStdin, trimTrailingWhitespace } from "../utils/std";
+ import { useServiceEnvironments } from "../utils/useServiceEnvironments";
+ import { isWorkerNotFoundError } from "../utils/worker-not-found-error";
+-import type { Config, WorkerMetadataBinding } from "@cloudflare/workers-utils";
++import type { Config } from "@cloudflare/workers-utils";
+ 
+ export const VERSION_NOT_DEPLOYED_ERR_CODE = 10215;
+ 
+@@ -32,13 +31,6 @@ type SecretBindingUpload = {
+ 	text: string;
+ };
+ 
+-type InheritBindingUpload = {
+-	type: (WorkerMetadataBinding | SecretBindingRedacted)["type"];
+-	name: string;
+-};
+-
+-type SecretBindingRedacted = Omit<SecretBindingUpload, "text">;
+-
+ async function createDraftWorker({
+ 	config,
+ 	args,
+@@ -392,6 +384,39 @@ export const secretListCommand = createCommand({
+ 	},
+ });
+ 
++async function putBulkSecrets(
++	config: Config,
++	accountId: string,
++	scriptName: string,
++	environment: string | undefined,
++	content: Record<string, string>,
++	options: {
++		isServiceEnv?: boolean;
++	} = {}
++): Promise<[unknown, Array<string>]> {
++	const isServiceEnv = options?.isServiceEnv;
++	const url = isServiceEnv
++		? `/accounts/${accountId}/workers/services/${scriptName}/environments/${environment}/secrets-bulk`
++		: `/accounts/${accountId}/workers/scripts/${scriptName}/secrets-bulk`;
++	// Build the merge-patch body using JSON Merge Patch (RFC 7396) semantics:
++	// - Included secrets are created or updated
++	// - Omitted secrets are left unchanged
++	// - Secrets set to null are deleted (not supported yet, to preserve previous behavior)
++	const secretEntries = Object.entries(content);
++	const secrets: Record<string, SecretBindingUpload> = {};
++	const toCreate: Array<string> = [];
++	for (const [key, value] of secretEntries) {
++		toCreate.push(key);
++		secrets[key] = { name: key, text: value, type: "secret_text" };
++	}
++	const resp = await fetchResult(config, url, {
++		method: "PATCH",
++		headers: { "Content-Type": "application/merge-patch+json" },
++		body: JSON.stringify({ secrets }),
++	});
++	return [resp, toCreate];
++}
++
+ export const secretBulkCommand = createCommand({
+ 	metadata: {
+ 		description: "Upload multiple secrets for a Worker at once",
+@@ -429,7 +454,7 @@ export const secretBulkCommand = createCommand({
+ 			);
+ 		}
+ 
+-		const isServiceEnv = useServiceEnvironments(config) && args.env;
++		const isServiceEnv = useServiceEnvironments(config) && !!args.env;
+ 		const scriptName = getLegacyScriptName(args, config);
+ 		if (!scriptName) {
+ 			const error = new UserError(
+@@ -456,102 +481,64 @@ export const secretBulkCommand = createCommand({
+ 
+ 		const { content, secretSource, secretFormat } = result;
+ 
+-		function getSettings() {
+-			const url = isServiceEnv
+-				? `/accounts/${accountId}/workers/services/${scriptName}/environments/${args.env}/settings`
+-				: `/accounts/${accountId}/workers/scripts/${scriptName}/settings`;
+-
+-			return fetchResult<{
+-				bindings: Array<WorkerMetadataBinding | SecretBindingRedacted>;
+-			}>(config, url);
+-		}
+-
+-		function putBindingsSettings(
+-			bindings: Array<SecretBindingUpload | InheritBindingUpload>
+-		) {
+-			const url = isServiceEnv
+-				? `/accounts/${accountId}/workers/services/${scriptName}/environments/${args.env}/settings`
+-				: `/accounts/${accountId}/workers/scripts/${scriptName}/settings`;
+-
+-			const data = new FormData();
+-			data.set("settings", JSON.stringify({ bindings }));
+-			return fetchResult(config, url, {
+-				method: "PATCH",
+-				body: data,
+-			});
+-		}
+-
+-		let existingBindings: Array<WorkerMetadataBinding | SecretBindingRedacted>;
++		let created: Array<string> = [];
+ 		try {
+-			const settings = await getSettings();
+-			existingBindings = settings.bindings;
+-		} catch (e) {
+-			if (isWorkerNotFoundError(e)) {
+-				// create a draft worker before patching
++			try {
++				[, created] = await putBulkSecrets(
++					config,
++					accountId,
++					scriptName,
++					args.env,
++					content,
++					{ isServiceEnv }
++				);
++			} catch (e) {
++				if (!isWorkerNotFoundError(e)) {
++					throw e;
++				}
++				// Worker doesn't exist yet — create a draft worker, then retry
+ 				const draftWorkerResult = await createDraftWorker({
+ 					config,
+-					args: args,
++					args,
+ 					accountId,
+ 					scriptName,
+ 				});
+ 				if (draftWorkerResult === null) {
+ 					return;
+ 				}
+-				existingBindings = [];
+-			} else {
+-				throw e;
+-			}
+-		}
+-		// any existing bindings can be "inherited" from the previous deploy via the PATCH settings api
+-		// by just providing the "name" and "type" fields for the binding.
+-		// so after fetching the bindings in the script settings, we can map over and just pick out those fields
+-		const inheritBindings = existingBindings
+-			.filter((binding) => {
+-				// secrets that currently exist for the worker but are not provided for bulk update
+-				// are inherited over with other binding types
+-				return (
+-					binding.type !== "secret_text" || content[binding.name] === undefined
+-				);
+-			})
+-			.map((binding) => ({ type: binding.type, name: binding.name }));
+-		// secrets to upload are provided as bindings in their full form
+-		// so when we PATCH, we patch in [...current bindings, ...updated / new secrets]
+-		const upsertBindings: Array<SecretBindingUpload> = Object.entries(
+-			content
+-		).map(([key, value]) => {
+-			return {
+-				type: "secret_text",
+-				name: key,
+-				text: value,
+-			};
+-		});
+-		try {
+-			await putBindingsSettings(inheritBindings.concat(upsertBindings));
+-			for (const upsertedBinding of upsertBindings) {
+-				logger.log(
+-					`✨ Successfully created secret for key: ${upsertedBinding.name}`
++				[, created] = await putBulkSecrets(
++					config,
++					accountId,
++					scriptName,
++					args.env,
++					content,
++					{ isServiceEnv }
+ 				);
+ 			}
+-			logger.log("");
+-			logger.log("Finished processing secrets file:");
+-			logger.log(`✨ ${upsertBindings.length} secrets successfully uploaded`);
+-			metrics.sendMetricsEvent(
+-				"create encrypted variable",
+-				{
+-					secretOperation: "bulk",
+-					secretSource,
+-					secretFormat,
+-					hasEnvironment: Boolean(args.env),
+-				},
+-				{
+-					sendMetrics: config.send_metrics,
+-				}
+-			);
+-		} catch (err) {
++		} catch (e) {
+ 			logger.log("");
+ 			logger.log(`🚨 Secrets failed to upload`);
+-			throw err;
++			throw e;
++		}
++
++		for (const key of created) {
++			logger.log(`✨ Successfully created secret for key: ${key}`);
+ 		}
++		logger.log("");
++		logger.log("Finished processing secrets file:");
++		logger.log(`✨ ${created.length} secrets successfully uploaded`);
++		metrics.sendMetricsEvent(
++			"create encrypted variable",
++			{
++				secretOperation: "bulk",
++				secretSource,
++				secretFormat,
++				hasEnvironment: Boolean(args.env),
++			},
++			{
++				sendMetrics: config.send_metrics,
++			}
++		);
+ 	},
+ });
+ 

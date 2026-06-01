@@ -1,0 +1,778 @@
+diff --git a/apps/docs/content/releases/next.mdx b/apps/docs/content/releases/next.mdx
+index 78f2b9e82e40..3d5ffa90b988 100644
+--- a/apps/docs/content/releases/next.mdx
++++ b/apps/docs/content/releases/next.mdx
+@@ -325,7 +325,6 @@ New helpers `getOwnerDocument()` and `getOwnerWindow()` are exported from `@tldr
+ - Replace `@use-gesture/react` dependency with custom gesture handling, reducing bundle size and eliminating a stale dependency. ([#8392](https://github.com/tldraw/tldraw/pull/8392))
+ - Tighten iframe referrer policy for embeds to send only the origin instead of the full URL to third-party embed providers. ([#8412](https://github.com/tldraw/tldraw/pull/8412))
+ - Move the debug mode toggle into the preferences submenu. ([#8259](https://github.com/tldraw/tldraw/pull/8259))
+-- Update hotkeys-js keyboard shortcut library from v3 to v4, picking up TypeScript rewrite and keyboard layout handling improvements. ([#8372](https://github.com/tldraw/tldraw/pull/8372))
+ 
+ ## Bug fixes
+ 
+@@ -350,3 +349,4 @@ New helpers `getOwnerDocument()` and `getOwnerWindow()` are exported from `@tldr
+ - Fix crash when isolating curved arrows whose geometry became degenerate (e.g., during shape deletion). ([#8176](https://github.com/tldraw/tldraw/pull/8176))
+ - Fix shapes disappearing when a labeled arrow had zero length, caused by `NaN` propagating through bounds and the spatial index. ([#8329](https://github.com/tldraw/tldraw/pull/8329))
+ - Fix memory leak that retained `Editor` instances after disposal due to a shared throttled hover handler. ([#8439](https://github.com/tldraw/tldraw/pull/8439))
++- Fix keyboard shortcuts not matching on alternative Latin keyboard layouts (Dvorak, Colemak, AZERTY) by replacing the `hotkeys-js` library with a small layout-aware native event matcher.
+diff --git a/apps/vscode/extension/scripts/build.ts b/apps/vscode/extension/scripts/build.ts
+index 18c71db29ed7..7568c7fa7f6d 100644
+--- a/apps/vscode/extension/scripts/build.ts
++++ b/apps/vscode/extension/scripts/build.ts
+@@ -24,22 +24,6 @@ async function build() {
+ 			},
+ 			tsconfig: './tsconfig.json',
+ 			external: ['vscode'],
+-			plugins: [
+-				{
+-					name: 'exclude-hotkeys',
+-					setup(build) {
+-						build.onResolve({ filter: /^hotkeys-js$/ }, () => ({
+-							path: 'hotkeys-js',
+-							namespace: 'exclude',
+-						}))
+-						build.onLoad({ filter: /.*/, namespace: 'exclude' }, () => ({
+-							contents:
+-								'module.exports = function hotkeys() {}; module.exports.default = module.exports;',
+-							loader: 'js',
+-						}))
+-					},
+-				},
+-			],
+ 			loader: {
+ 				'.woff2': 'dataurl',
+ 				'.woff': 'dataurl',
+diff --git a/apps/vscode/extension/scripts/dev.ts b/apps/vscode/extension/scripts/dev.ts
+index 76400e1dbb8e..985fa3e9e159 100644
+--- a/apps/vscode/extension/scripts/dev.ts
++++ b/apps/vscode/extension/scripts/dev.ts
+@@ -29,24 +29,6 @@ async function dev() {
+ 			tsconfig: './tsconfig.json',
+ 			external: ['vscode'],
+ 			plugins: [
+-				{
+-					// hotkeys-js uses `module.exports = hotkeys` which clobbers the
+-					// bundle's CJS exports, breaking the extension's activate export.
+-					// Since it's only used by the tldraw UI (which runs in the webview,
+-					// not the extension host), we replace it with an empty module.
+-					name: 'exclude-hotkeys',
+-					setup(build) {
+-						build.onResolve({ filter: /^hotkeys-js$/ }, () => ({
+-							path: 'hotkeys-js',
+-							namespace: 'exclude',
+-						}))
+-						build.onLoad({ filter: /.*/, namespace: 'exclude' }, () => ({
+-							contents:
+-								'module.exports = function hotkeys() {}; module.exports.default = module.exports;',
+-							loader: 'js',
+-						}))
+-					},
+-				},
+ 				{
+ 					name: 'log-builds',
+ 					setup(build) {
+diff --git a/packages/tldraw/package.json b/packages/tldraw/package.json
+index 1be31e88c1f4..fcc96ad36410 100644
+--- a/packages/tldraw/package.json
++++ b/packages/tldraw/package.json
+@@ -63,7 +63,6 @@
+ 		"@tldraw/editor": "workspace:*",
+ 		"@tldraw/store": "workspace:*",
+ 		"classnames": "^2.5.1",
+-		"hotkeys-js": "^4.0.2",
+ 		"idb": "^7.1.1",
+ 		"lz-string": "^1.5.0",
+ 		"radix-ui": "^1.4.2"
+diff --git a/packages/tldraw/src/lib/Tldraw.test.tsx b/packages/tldraw/src/lib/Tldraw.test.tsx
+index 68f682bfe75f..409864c1062c 100644
+--- a/packages/tldraw/src/lib/Tldraw.test.tsx
++++ b/packages/tldraw/src/lib/Tldraw.test.tsx
+@@ -143,31 +143,183 @@ describe('<Tldraw />', () => {
+ 		// Start on select tool
+ 		expect(editor.getCurrentToolId()).toBe('select')
+ 
+-		// Simulate pressing 'd' key to switch to draw tool
+-		// hotkeys-js uses keyCode to identify keys, so we need to include it
+ 		await act(async () => {
+ 			document.body.dispatchEvent(
+-				new KeyboardEvent('keydown', { key: 'd', code: 'KeyD', keyCode: 68, bubbles: true })
++				new KeyboardEvent('keydown', { key: 'd', code: 'KeyD', bubbles: true })
+ 			)
+ 			document.body.dispatchEvent(
+-				new KeyboardEvent('keyup', { key: 'd', code: 'KeyD', keyCode: 68, bubbles: true })
++				new KeyboardEvent('keyup', { key: 'd', code: 'KeyD', bubbles: true })
+ 			)
+ 		})
+ 
+ 		// Should now be on draw tool
+ 		expect(editor.getCurrentToolId()).toBe('draw')
+ 
+-		// Simulate pressing 'h' key to switch to hand tool
+ 		await act(async () => {
+ 			document.body.dispatchEvent(
+-				new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', keyCode: 72, bubbles: true })
++				new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', bubbles: true })
+ 			)
+ 			document.body.dispatchEvent(
+-				new KeyboardEvent('keyup', { key: 'h', code: 'KeyH', keyCode: 72, bubbles: true })
++				new KeyboardEvent('keyup', { key: 'h', code: 'KeyH', bubbles: true })
+ 			)
+ 		})
+ 
+ 		// Should now be on hand tool
+ 		expect(editor.getCurrentToolId()).toBe('hand')
+ 	})
++
++	it('matches typed-character shortcuts on alternative Latin layouts (Dvorak)', async () => {
++		const { editor } = await renderTldrawComponentWithEditor(
++			(onMount) => <Tldraw hideUi onMount={onMount} />,
++			{ waitForPatterns: false }
++		)
++
++		await act(async () => {
++			editor.focus()
++		})
++
++		// Dvorak's 'd' lives at the physical position QWERTY calls 'KeyH'. The user typed 'd';
++		// matching by typed character (event.key) selects the draw tool regardless of physical position.
++		await act(async () => {
++			document.body.dispatchEvent(
++				new KeyboardEvent('keydown', { key: 'd', code: 'KeyH', bubbles: true })
++			)
++			document.body.dispatchEvent(
++				new KeyboardEvent('keyup', { key: 'd', code: 'KeyH', bubbles: true })
++			)
++		})
++		expect(editor.getCurrentToolId()).toBe('draw')
++
++		// Dvorak's 'e' lives at the physical position QWERTY calls 'KeyD'.
++		await act(async () => {
++			document.body.dispatchEvent(
++				new KeyboardEvent('keydown', { key: 'e', code: 'KeyD', bubbles: true })
++			)
++			document.body.dispatchEvent(
++				new KeyboardEvent('keyup', { key: 'e', code: 'KeyD', bubbles: true })
++			)
++		})
++		expect(editor.getCurrentToolId()).toBe('eraser')
++	})
++
++	it('falls back to physical key for non-Latin layouts (Cyrillic)', async () => {
++		const { editor } = await renderTldrawComponentWithEditor(
++			(onMount) => <Tldraw hideUi onMount={onMount} />,
++			{ waitForPatterns: false }
++		)
++
++		await act(async () => {
++			editor.focus()
++		})
++
++		// Cyrillic users pressing the physical KeyA position type 'ф'. Since the typed character
++		// has no ASCII shortcut, we fall back to event.code's US-QWERTY equivalent ('a') — which
++		// activates the arrow tool just as it would on a QWERTY keyboard.
++		await act(async () => {
++			document.body.dispatchEvent(
++				new KeyboardEvent('keydown', { key: 'ф', code: 'KeyA', bubbles: true })
++			)
++			document.body.dispatchEvent(
++				new KeyboardEvent('keyup', { key: 'ф', code: 'KeyA', bubbles: true })
++			)
++		})
++		expect(editor.getCurrentToolId()).toBe('arrow')
++	})
++
++	it('matches modifier shortcuts (cmd/ctrl) regardless of layout', async () => {
++		const { editor } = await renderTldrawComponentWithEditor(
++			(onMount) => <Tldraw hideUi onMount={onMount} />,
++			{ waitForPatterns: false }
++		)
++
++		await act(async () => {
++			editor.focus()
++		})
++
++		await act(async () => {
++			editor.createShape({ id: 'shape:test' as any, type: 'geo', x: 0, y: 0 })
++		})
++		expect(editor.getCurrentPageShapeIds().size).toBe(1)
++
++		await act(async () => {
++			document.body.dispatchEvent(
++				new KeyboardEvent('keydown', {
++					key: 'z',
++					code: 'KeyZ',
++					metaKey: true,
++					bubbles: true,
++				})
++			)
++			document.body.dispatchEvent(
++				new KeyboardEvent('keyup', {
++					key: 'z',
++					code: 'KeyZ',
++					metaKey: true,
++					bubbles: true,
++				})
++			)
++		})
++
++		// cmd+z should undo the shape creation (kbd is 'cmd+z,ctrl+z')
++		expect(editor.getCurrentPageShapeIds().size).toBe(0)
++	})
++
++	it('matches the comma key for the temporary zoom shortcut on Dvorak', async () => {
++		const { editor } = await renderTldrawComponentWithEditor(
++			(onMount) => <Tldraw hideUi onMount={onMount} />,
++			{ waitForPatterns: false }
++		)
++
++		await act(async () => {
++			editor.focus()
++		})
++
++		// Dvorak's comma is at the physical KeyW position. With layout-independent matching by
++		// event.code (the v4 hotkeys-js bug) the library would read this as 'w' and the comma
++		// zoom would never engage. We match by typed character so the registered ',' shortcut
++		// fires correctly.
++		await act(async () => {
++			document.body.dispatchEvent(
++				new KeyboardEvent('keydown', { key: ',', code: 'KeyW', bubbles: true })
++			)
++		})
++		expect(editor.inputs.keys.has('Comma')).toBe(true)
++
++		await act(async () => {
++			document.body.dispatchEvent(
++				new KeyboardEvent('keyup', { key: ',', code: 'KeyW', bubbles: true })
++			)
++		})
++		expect(editor.inputs.keys.has('Comma')).toBe(false)
++	})
++
++	it('does not fire shortcuts when typing into a textarea', async () => {
++		const { editor } = await renderTldrawComponentWithEditor(
++			(onMount) => <Tldraw hideUi onMount={onMount} />,
++			{ waitForPatterns: false }
++		)
++
++		await act(async () => {
++			editor.focus()
++		})
++
++		expect(editor.getCurrentToolId()).toBe('select')
++
++		const textarea = document.createElement('textarea')
++		document.body.appendChild(textarea)
++		try {
++			await act(async () => {
++				textarea.dispatchEvent(
++					new KeyboardEvent('keydown', { key: 'd', code: 'KeyD', bubbles: true })
++				)
++				textarea.dispatchEvent(
++					new KeyboardEvent('keyup', { key: 'd', code: 'KeyD', bubbles: true })
++				)
++			})
++			// Should remain on select tool — the shortcut is filtered out for textarea targets.
++			expect(editor.getCurrentToolId()).toBe('select')
++		} finally {
++			textarea.remove()
++		}
++	})
+ })
+diff --git a/packages/tldraw/src/lib/ui/hooks/useKeyboardShortcuts.ts b/packages/tldraw/src/lib/ui/hooks/useKeyboardShortcuts.ts
+index 1f4a16849af8..85d94a351f45 100644
+--- a/packages/tldraw/src/lib/ui/hooks/useKeyboardShortcuts.ts
++++ b/packages/tldraw/src/lib/ui/hooks/useKeyboardShortcuts.ts
+@@ -1,3 +1,14 @@
++/*!
++ * The kbd-string splitter (`getKeys`) and the form-input filter pattern in `shouldSkipEvent`
++ * (including its list of non-text INPUT types) are adapted from hotkeys-js, which this hook
++ * previously depended on.
++ *
++ * MIT License: https://github.com/jaywcjlove/hotkeys-js/blob/master/LICENSE
++ * Copyright (c) 2015-present, Kenny Wong
++ * Copyright (c) 2011-2013 Thomas Fuchs (https://github.com/madrobby/keymaster)
++ * Source: https://github.com/jaywcjlove/hotkeys-js
++ */
++
+ import {
+ 	Editor,
+ 	TLPointerEventInfo,
+@@ -6,7 +17,6 @@ import {
+ 	useEditor,
+ 	useValue,
+ } from '@tldraw/editor'
+-import hotkeys from 'hotkeys-js'
+ import { useEffect } from 'react'
+ import { useActions } from '../context/actions'
+ import { useReadonly } from './useReadonly'
+@@ -32,24 +42,12 @@ export function useKeyboardShortcuts() {
+ 	useEffect(() => {
+ 		if (!isFocused) return
+ 
+-		const disposables = new Array<() => void>()
++		const registry: Registration[] = []
+ 
+-		const hot = (keys: string, callback: (event: KeyboardEvent) => void) => {
+-			hotkeys(keys, { element: editor.getContainerDocument().body }, callback)
+-			disposables.push(() => {
+-				hotkeys.unbind(keys, callback)
+-			})
+-		}
+-
+-		const hotUp = (keys: string, callback: (event: KeyboardEvent) => void) => {
+-			hotkeys(
+-				keys,
+-				{ element: editor.getContainerDocument().body, keyup: true, keydown: false },
+-				callback
+-			)
+-			disposables.push(() => {
+-				hotkeys.unbind(keys, callback)
+-			})
++		const register = (kbd: string, onKeyDown?: KbdHandler, onKeyUp?: KbdHandler) => {
++			const parsed = parseKbd(kbd)
++			if (parsed.length === 0) return
++			registry.push({ parsed, onKeyDown, onKeyUp })
+ 		}
+ 
+ 		// Add hotkeys for actions and tools.
+@@ -59,7 +57,7 @@ export function useKeyboardShortcuts() {
+ 			if (isReadonlyMode && !action.readonlyOk) continue
+ 			if (SKIP_KBDS.includes(action.id)) continue
+ 
+-			hot(getHotkeysStringFromKbd(action.kbd), (event) => {
++			register(getHotkeysStringFromKbd(action.kbd), (event) => {
+ 				if (areShortcutsDisabled(editor) && !action.isRequiredA11yAction) return
+ 				preventDefault(event)
+ 				action.onSelect('kbd')
+@@ -73,73 +71,107 @@ export function useKeyboardShortcuts() {
+ 
+ 			if (SKIP_KBDS.includes(tool.id)) continue
+ 
+-			hot(getHotkeysStringFromKbd(tool.kbd), (event) => {
++			register(getHotkeysStringFromKbd(tool.kbd), (event) => {
+ 				if (areShortcutsDisabled(editor)) return
+ 				preventDefault(event)
+ 				tool.onSelect('kbd')
+ 			})
+ 		}
+ 
+-		hot(',', (e) => {
+-			// Skip if shortcuts are disabled
+-			if (areShortcutsDisabled(editor)) return
+-
+-			// Don't press again if already pressed
+-			if (editor.inputs.keys.has('Comma')) return
+-
+-			preventDefault(e) // prevent whatever would normally happen
+-			editor.focus() // Focus if not already focused
+-
+-			editor.inputs.keys.add('Comma')
+-
+-			const { x, y, z } = editor.inputs.getCurrentPagePoint()
+-			const screenpoints = editor.pageToScreen({ x, y })
+-
+-			const info: TLPointerEventInfo = {
+-				type: 'pointer',
+-				name: 'pointer_down',
+-				point: { x: screenpoints.x, y: screenpoints.y, z },
+-				shiftKey: e.shiftKey,
+-				altKey: e.altKey,
+-				ctrlKey: e.metaKey || e.ctrlKey,
+-				metaKey: e.metaKey,
+-				accelKey: isAccelKey(e),
+-				pointerId: 0,
+-				button: 0,
+-				isPen: editor.getInstanceState().isPenMode,
+-				target: 'canvas',
+-			}
++		register(
++			',',
++			(e) => {
++				// Skip if shortcuts are disabled
++				if (areShortcutsDisabled(editor)) return
+ 
+-			editor.dispatch(info)
+-		})
++				// Don't press again if already pressed
++				if (editor.inputs.keys.has('Comma')) return
++
++				preventDefault(e) // prevent whatever would normally happen
++				editor.focus() // Focus if not already focused
++
++				editor.inputs.keys.add('Comma')
++
++				const { x, y, z } = editor.inputs.getCurrentPagePoint()
++				const screenpoints = editor.pageToScreen({ x, y })
++
++				const info: TLPointerEventInfo = {
++					type: 'pointer',
++					name: 'pointer_down',
++					point: { x: screenpoints.x, y: screenpoints.y, z },
++					shiftKey: e.shiftKey,
++					altKey: e.altKey,
++					ctrlKey: e.metaKey || e.ctrlKey,
++					metaKey: e.metaKey,
++					accelKey: isAccelKey(e),
++					pointerId: 0,
++					button: 0,
++					isPen: editor.getInstanceState().isPenMode,
++					target: 'canvas',
++				}
++
++				editor.dispatch(info)
++			},
++			(e) => {
++				if (areShortcutsDisabled(editor)) return
++				if (!editor.inputs.keys.has('Comma')) return
++
++				editor.inputs.keys.delete('Comma')
++
++				const { x, y, z } = editor.inputs.getCurrentScreenPoint()
++				const info: TLPointerEventInfo = {
++					type: 'pointer',
++					name: 'pointer_up',
++					point: { x, y, z },
++					shiftKey: e.shiftKey,
++					altKey: e.altKey,
++					ctrlKey: e.metaKey || e.ctrlKey,
++					metaKey: e.metaKey,
++					accelKey: isAccelKey(e),
++					pointerId: 0,
++					button: 0,
++					isPen: editor.getInstanceState().isPenMode,
++					target: 'canvas',
++				}
++
++				editor.dispatch(info)
++			}
++		)
++
++		const body = editor.getContainerDocument().body
++
++		const handleKeyDown = (e: KeyboardEvent) => {
++			if (shouldSkipEvent(e)) return
++			for (const reg of registry) {
++				if (!reg.onKeyDown) continue
++				for (const p of reg.parsed) {
++					if (matchesEvent(e, p)) {
++						reg.onKeyDown(e)
++						break
++					}
++				}
++			}
++		}
+ 
+-		hotUp(',', (e) => {
+-			if (areShortcutsDisabled(editor)) return
+-			if (!editor.inputs.keys.has('Comma')) return
+-
+-			editor.inputs.keys.delete('Comma')
+-
+-			const { x, y, z } = editor.inputs.getCurrentScreenPoint()
+-			const info: TLPointerEventInfo = {
+-				type: 'pointer',
+-				name: 'pointer_up',
+-				point: { x, y, z },
+-				shiftKey: e.shiftKey,
+-				altKey: e.altKey,
+-				ctrlKey: e.metaKey || e.ctrlKey,
+-				metaKey: e.metaKey,
+-				accelKey: isAccelKey(e),
+-				pointerId: 0,
+-				button: 0,
+-				isPen: editor.getInstanceState().isPenMode,
+-				target: 'canvas',
++		const handleKeyUp = (e: KeyboardEvent) => {
++			if (shouldSkipEvent(e)) return
++			for (const reg of registry) {
++				if (!reg.onKeyUp) continue
++				for (const p of reg.parsed) {
++					if (matchesEvent(e, p)) {
++						reg.onKeyUp(e)
++						break
++					}
++				}
+ 			}
++		}
+ 
+-			editor.dispatch(info)
+-		})
++		body.addEventListener('keydown', handleKeyDown)
++		body.addEventListener('keyup', handleKeyUp)
+ 
+ 		return () => {
+-			disposables.forEach((d) => d())
++			body.removeEventListener('keydown', handleKeyDown)
++			body.removeEventListener('keyup', handleKeyUp)
+ 		}
+ 	}, [actions, tools, isReadonlyMode, editor, isFocused])
+ }
+@@ -153,6 +185,231 @@ export function areShortcutsDisabled(editor: Editor) {
+ 	)
+ }
+ 
++// kbd parsing & native event matching
++// -----------------------------------
++// We deliberately do NOT use `event.code` (physical key position) for primary matching.
++// Doing so breaks alternative Latin keyboard layouts (Dvorak, Colemak, AZERTY) because
++// `event.code` always reflects the US-QWERTY position regardless of what the user typed.
++// Instead we match the typed character (`event.key`) and only fall back to `event.code` for
++// non-Latin layouts (Cyrillic, Greek, etc.) and macOS Option-letter dead-key combinations,
++// where `event.key` is a non-ASCII glyph.
++
++interface ParsedKbd {
++	key: string
++	shift: boolean
++	alt: boolean
++	ctrl: boolean
++	meta: boolean
++}
++
++type KbdHandler = (event: KeyboardEvent) => void
++
++interface Registration {
++	parsed: ParsedKbd[]
++	onKeyDown?: KbdHandler
++	onKeyUp?: KbdHandler
++}
++
++const MODIFIER_ALIASES: Record<string, 'shift' | 'alt' | 'ctrl' | 'meta'> = {
++	shift: 'shift',
++	'⇧': 'shift',
++	alt: 'alt',
++	option: 'alt',
++	'⌥': 'alt',
++	ctrl: 'ctrl',
++	control: 'ctrl',
++	'⌃': 'ctrl',
++	cmd: 'meta',
++	command: 'meta',
++	meta: 'meta',
++	'⌘': 'meta',
++}
++
++// Aliases for named keys. Values match the lowercased `event.key` for that key.
++const KEY_ALIASES: Record<string, string> = {
++	'⌫': 'backspace',
++	'↩': 'enter',
++	return: 'enter',
++	esc: 'escape',
++	del: 'delete',
++	ins: 'insert',
++	left: 'arrowleft',
++	right: 'arrowright',
++	up: 'arrowup',
++	down: 'arrowdown',
++	space: ' ',
++}
++
++// When shift is held, `event.key` reports the shifted character (e.g. '<' for shift+,).
++// Map those back so a `shift+,` shortcut definition matches.
++const SHIFT_KEY_TO_BASE: Record<string, string> = {
++	'<': ',',
++	'>': '.',
++	'?': '/',
++	':': ';',
++	'"': "'",
++	'{': '[',
++	'}': ']',
++	'|': '\\',
++	_: '-',
++	'+': '=',
++	'~': '`',
++	'!': '1',
++	'@': '2',
++	'#': '3',
++	$: '4',
++	'%': '5',
++	'^': '6',
++	'&': '7',
++	'*': '8',
++	'(': '9',
++	')': '0',
++}
++
++// Physical key code -> US-QWERTY-equivalent character. Used as a fallback when `event.key`
++// is non-ASCII (Cyrillic, Greek, macOS Option dead-keys, etc.).
++const PHYSICAL_KEY_MAP: Record<string, string> = {
++	KeyA: 'a',
++	KeyB: 'b',
++	KeyC: 'c',
++	KeyD: 'd',
++	KeyE: 'e',
++	KeyF: 'f',
++	KeyG: 'g',
++	KeyH: 'h',
++	KeyI: 'i',
++	KeyJ: 'j',
++	KeyK: 'k',
++	KeyL: 'l',
++	KeyM: 'm',
++	KeyN: 'n',
++	KeyO: 'o',
++	KeyP: 'p',
++	KeyQ: 'q',
++	KeyR: 'r',
++	KeyS: 's',
++	KeyT: 't',
++	KeyU: 'u',
++	KeyV: 'v',
++	KeyW: 'w',
++	KeyX: 'x',
++	KeyY: 'y',
++	KeyZ: 'z',
++	Digit0: '0',
++	Digit1: '1',
++	Digit2: '2',
++	Digit3: '3',
++	Digit4: '4',
++	Digit5: '5',
++	Digit6: '6',
++	Digit7: '7',
++	Digit8: '8',
++	Digit9: '9',
++	Comma: ',',
++	Period: '.',
++	Slash: '/',
++	Semicolon: ';',
++	Quote: "'",
++	BracketLeft: '[',
++	BracketRight: ']',
++	Backslash: '\\',
++	Minus: '-',
++	Equal: '=',
++	Backquote: '`',
++}
++
++function parseKbd(kbd: string): ParsedKbd[] {
++	const out: ParsedKbd[] = []
++	for (const shortcut of getKeys(kbd)) {
++		const parsed = parseShortcut(shortcut)
++		if (parsed) out.push(parsed)
++	}
++	return out
++}
++
++function parseShortcut(shortcut: string): ParsedKbd | null {
++	const parts = shortcut.split('+')
++	const result: ParsedKbd = {
++		key: '',
++		shift: false,
++		alt: false,
++		ctrl: false,
++		meta: false,
++	}
++
++	let keyPart = ''
++	for (let i = 0; i < parts.length; i++) {
++		const part = parts[i]
++		const isLast = i === parts.length - 1
++		if (!isLast) {
++			const modAlias = MODIFIER_ALIASES[part.toLowerCase()]
++			if (modAlias) result[modAlias] = true
++			// silently drop unknown leading parts
++		} else {
++			keyPart = part
++		}
++	}
++
++	if (!keyPart) return null
++
++	let key = keyPart.toLowerCase()
++	if (KEY_ALIASES[key]) key = KEY_ALIASES[key]
++	result.key = key
++	return result
++}
++
++function getEventKey(e: KeyboardEvent): string {
++	let key = e.key.toLowerCase()
++	if (e.shiftKey && SHIFT_KEY_TO_BASE[key]) {
++		key = SHIFT_KEY_TO_BASE[key]
++	}
++	return key
++}
++
++function matchesEvent(e: KeyboardEvent, parsed: ParsedKbd): boolean {
++	if (e.shiftKey !== parsed.shift) return false
++	if (e.altKey !== parsed.alt) return false
++	if (e.ctrlKey !== parsed.ctrl) return false
++	if (e.metaKey !== parsed.meta) return false
++
++	const eventKey = getEventKey(e)
++	if (eventKey === parsed.key) return true
++
++	// Fallback for non-Latin layouts (Cyrillic, Greek, etc.) and macOS Option dead-keys,
++	// where event.key is a non-ASCII glyph that wouldn't match any of our shortcut keys.
++	// We re-derive the intended key from event.code's US-QWERTY equivalent. Importantly,
++	// we only use this fallback when event.key is non-ASCII so that Dvorak/Colemak/AZERTY
++	// users — whose event.key IS the Latin character they typed — keep getting the right match.
++	if (eventKey.length === 1 && /^[\x20-\x7e]$/.test(eventKey)) return false
++	const codeKey = PHYSICAL_KEY_MAP[e.code]
++	return codeKey === parsed.key
++}
++
++function shouldSkipEvent(e: KeyboardEvent): boolean {
++	if (e.isComposing) return true
++	const target = e.target as HTMLElement | null
++	if (!target) return false
++	if (target.isContentEditable) return true
++	const tagName = target.tagName
++	if (tagName === 'SELECT') return true
++	if (tagName === 'TEXTAREA') {
++		return !(target as HTMLTextAreaElement).readOnly
++	}
++	if (tagName === 'INPUT') {
++		const input = target as HTMLInputElement
++		// Form inputs that don't accept text input should not block shortcuts.
++		if (
++			['checkbox', 'radio', 'range', 'button', 'file', 'reset', 'submit', 'color'].includes(
++				input.type
++			)
++		) {
++			return false
++		}
++		return !input.readOnly
++	}
++	return false
++}
++
+ // The "raw" kbd here will look something like "a" or a combination of keys "del,backspace".
+ // We need to first split them up by comma, then parse each key to ensure backwards compatibility
+ // with the old kbd format. We used to have symbols to denote cmd/alt/shift,
+@@ -192,7 +449,9 @@ function getHotkeysStringFromKbd(kbd: string) {
+ 		.join(',')
+ }
+ 
+-// Logic to split kbd string from hotkeys-js util.
++// Split a kbd string on commas, treating an empty entry produced by "x,," as a literal
++// trailing comma on the previous entry. Verbatim port of the splitter from hotkeys-js
++// (MIT, see top-of-file attribution).
+ function getKeys(key: string) {
+ 	if (typeof key !== 'string') key = ''
+ 	key = key.replace(/\s/g, '')
+diff --git a/yarn.lock b/yarn.lock
+index 5ca0b4e12c50..7f0ea5284b95 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -20359,13 +20359,6 @@ __metadata:
+   languageName: node
+   linkType: hard
+ 
+-"hotkeys-js@npm:^4.0.2":
+-  version: 4.0.2
+-  resolution: "hotkeys-js@npm:4.0.2"
+-  checksum: 10/76fdcff36899d3bf7abc5d9431fa5d404daccd81159eb8efd112480f403ca328ec471c636893150072228d60683b893450784454624af6fb77b1f0da7b4f377b
+-  languageName: node
+-  linkType: hard
+-
+ "htm@npm:^3.0.0":
+   version: 3.1.1
+   resolution: "htm@npm:3.1.1"
+@@ -29861,7 +29854,6 @@ __metadata:
+     "@types/react-dom": "npm:^19.2.3"
+     chokidar-cli: "npm:^3.0.0"
+     classnames: "npm:^2.5.1"
+-    hotkeys-js: "npm:^4.0.2"
+     idb: "npm:^7.1.1"
+     lazyrepo: "npm:0.0.0-alpha.27"
+     lz-string: "npm:^1.5.0"

@@ -1,0 +1,3010 @@
+diff --git a/astro-docs/src/content/docs/reference/nx-json.mdoc b/astro-docs/src/content/docs/reference/nx-json.mdoc
+index 32be1ee9419..d339ebb954f 100644
+--- a/astro-docs/src/content/docs/reference/nx-json.mdoc
++++ b/astro-docs/src/content/docs/reference/nx-json.mdoc
+@@ -455,12 +455,8 @@ The `projectsRelationship` property tells Nx whether to release projects indepen
+ 
+ The `releaseTag` property controls how git tags are parsed and generated. By default tags conform to semantic version and are validated as such.
+ 
+-{% aside type="note" title="Nx 22 Changes" %}
+-Release tag configuration now uses a nested `releaseTag` object. Old flat properties (`releaseTagPattern`, etc.) are deprecated but work until Nx 23.
+-
+-**Nx 22+:** `releaseTag.pattern`, `releaseTag.requireSemver`, `releaseTag.strictPreid`
+-
+-**Nx < 22:** `releaseTagPattern`, `releaseTagPatternRequireSemver`, `releaseTagPatternStrictPreid`
++{% aside type="note" title="Nx 23 Changes" %}
++The legacy flat properties (`releaseTagPattern`, `releaseTagPatternRequireSemver`, `releaseTagPatternStrictPreid`, `releaseTagPatternPreferDockerVersion`, `releaseTagPatternCheckAllBranchesWhen`) were removed in Nx 23. Use the nested `releaseTag` object below. An automated migration in Nx 22 moved configuration to the new shape.
+ {% /aside %}
+ 
+ #### Configuration options
+@@ -469,7 +465,7 @@ Release tag configuration now uses a nested `releaseTag` object. Old flat proper
+ | ------------------------ | ------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+ | **pattern**              | string              | `v{version}` for fixed, `{projectName}@{version}` for independent | The git tag pattern to use. Supports interpolation of `{version}`, `{projectName}`, and `{releaseGroupName}`                                                                                                                                                                                          |
+ | **requireSemver**        | boolean             | `false`                                                           | Whether to require that all tags match semantic versioning                                                                                                                                                                                                                                            |
+-| **strictPreid**          | boolean             | `false` for independent, `true` for fixed release groups          | Whether to ensure prerelease IDs are consistent across packages                                                                                                                                                                                                                                       |
++| **strictPreid**          | boolean             | `true`                                                            | Whether to ensure prerelease IDs are consistent across packages                                                                                                                                                                                                                                       |
+ | **preferDockerVersion**  | boolean             | `false`                                                           | Whether to prefer Docker-compatible version format in git tags                                                                                                                                                                                                                                        |
+ | **checkAllBranchesWhen** | boolean \| string[] | undefined                                                         | Controls whether to check all branches or only merged branches when resolving current versions from git tags. `true` = always check all branches, `false` = only check the current branch, `string[]` = check all branches when the current branch matches any of the provided names or glob patterns |
+ 
+@@ -504,9 +500,6 @@ Example patterns and their results:
+ 
+ #### Example configuration
+ 
+-{% tabs syncKey="nx-release-configuration" %}
+-{% tabitem label="Nx 22+" %}
+-
+ ```jsonc
+ // nx.json
+ {
+@@ -522,25 +515,6 @@ Example patterns and their results:
+ }
+ ```
+ 
+-{% /tabitem %}
+-{% tabitem label="Nx < 22" %}
+-
+-```jsonc
+-// nx.json
+-{
+-  "release": {
+-    "releaseTagPattern": "{releaseGroupName}-v{version}",
+-    "releaseTagPatternRequireSemver": true,
+-    "releaseTagPatternStrictPreid": true,
+-    "releaseTagPatternPreferDockerVersion": false,
+-    "releaseTagPatternCheckAllBranchesWhen": ["main", "release/*"],
+-  },
+-}
+-```
+-
+-{% /tabitem %}
+-{% /tabs %}
+-
+ ### Version
+ 
+ The `version` property configures the versioning phase of the release process. It is used to determine the next version of your projects, and update any projects that depend on them to use the new version.
+@@ -587,10 +561,14 @@ Some important changes in Nx 22:
+   - `"always"`: Update dependents wherever they exist in the graph, regardless of filter selection
+   - `"auto"`: Update dependents only if they're within the selected projects or release groups
+   - `"never"`: Never update dependents
+-- `releaseTag*` properties such as `releaseTagPattern` and `releaseTagPatternStrictPreid` have been coalesced into a single `releaseTag` object. (`releaseTagPattern` -> `releaseTag.pattern`, `releaseTagPatternStrictPreid` -> `releaseTag.strictPreid`)
+ - `releaseTag.strictPreid` now defaults to `true`
+ - Fixed Release Group Release Tag Pattern now defaults to `{releaseGroupName}-v{version}`
+ 
++Some important changes in Nx 23:
++
++- `version.adjustSemverBumpsForZeroMajorVersion` now defaults to `true`. For 0.x versions, breaking changes bump the minor and new features bump the patch (instead of major/minor respectively). Set to `false` to preserve the prior behavior of treating all bumps the same regardless of major version.
++- The deprecated `releaseTag*` flat properties (`releaseTagPattern`, `releaseTagPatternRequireSemver`, `releaseTagPatternStrictPreid`, `releaseTagPatternPreferDockerVersion`, `releaseTagPatternCheckAllBranchesWhen`) were removed in favor of the nested `releaseTag` object introduced in Nx 22.
++
+ #### Propagating `--preid` to dependent bumps
+ 
+ When versioning with `--preid`, the implicit patch bumps given to dependents (and to other projects in a fixed release group) are stable patches by default. That means `project-b` being bumped to `2.0.1-rc.0` still bumps its dependent `project-a` to `1.0.1`, not `1.0.1-rc.0`.
+diff --git a/e2e/docker/src/docker.test.ts b/e2e/docker/src/docker.test.ts
+index d118340a000..72d43993ba2 100644
+--- a/e2e/docker/src/docker.test.ts
++++ b/e2e/docker/src/docker.test.ts
+@@ -172,7 +172,7 @@ function addDockerReleaseConfiguration(name: string) {
+     nxJson.release = {
+       projects: [name],
+       projectsRelationship: 'independent',
+-      releaseTagPattern: 'release/{projectName}/{version}',
++      releaseTag: { pattern: 'release/{projectName}/{version}' },
+       docker: {
+         registryUrl: 'localhost:5000',
+         skipVersionActions: true,
+diff --git a/e2e/release/src/conventional-commits-config.test.ts b/e2e/release/src/conventional-commits-config.test.ts
+index de71df68816..cee1981884f 100644
+--- a/e2e/release/src/conventional-commits-config.test.ts
++++ b/e2e/release/src/conventional-commits-config.test.ts
+@@ -103,6 +103,7 @@ describe('nx release conventional commits config', () => {
+         ...json.release,
+         version: {
+           conventionalCommits: true,
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: {
+@@ -458,6 +459,7 @@ describe('nx release conventional commits config', () => {
+         ...json.release,
+         version: {
+           conventionalCommits: true,
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: {
+diff --git a/e2e/release/src/conventional-commits-config.workspaces.test.ts b/e2e/release/src/conventional-commits-config.workspaces.test.ts
+index e5197c9e015..6c51915e8eb 100644
+--- a/e2e/release/src/conventional-commits-config.workspaces.test.ts
++++ b/e2e/release/src/conventional-commits-config.workspaces.test.ts
+@@ -110,6 +110,7 @@ describe('nx release conventional commits config', () => {
+         ...json.release,
+         version: {
+           conventionalCommits: true,
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: {
+@@ -465,6 +466,7 @@ describe('nx release conventional commits config', () => {
+         ...json.release,
+         version: {
+           conventionalCommits: true,
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: {
+diff --git a/e2e/release/src/independent-projects.test.ts b/e2e/release/src/independent-projects.test.ts
+index 84fb3e48a24..60413ac3047 100644
+--- a/e2e/release/src/independent-projects.test.ts
++++ b/e2e/release/src/independent-projects.test.ts
+@@ -610,7 +610,7 @@ describe('nx release - independent projects', () => {
+               fixed: {
+                 projects: [pkg3],
+                 projectsRelationship: 'fixed',
+-                releaseTagPattern: `${pkg3}@{version}`,
++                releaseTag: { pattern: `${pkg3}@{version}` },
+               },
+             },
+           },
+@@ -1097,7 +1097,7 @@ describe('nx release - independent projects', () => {
+         return {
+           release: {
+             projectsRelationship: 'independent',
+-            releaseTagPattern: '{projectName}@v{version}',
++            releaseTag: { pattern: '{projectName}@v{version}' },
+             version: {
+               currentVersionResolver: 'git-tag',
+             },
+@@ -1151,7 +1151,7 @@ describe('nx release - independent projects', () => {
+         return {
+           release: {
+             projectsRelationship: 'independent',
+-            releaseTagPattern: '{projectName}@v{version}',
++            releaseTag: { pattern: '{projectName}@v{version}' },
+             version: {
+               specifierSource: 'conventional-commits',
+               currentVersionResolver: 'git-tag',
+diff --git a/e2e/release/src/multiple-release-branches.test.ts b/e2e/release/src/multiple-release-branches.test.ts
+index d25fafa5b65..bc88e7d9edc 100644
+--- a/e2e/release/src/multiple-release-branches.test.ts
++++ b/e2e/release/src/multiple-release-branches.test.ts
+@@ -84,6 +84,7 @@ describe('nx release multiple release branches', () => {
+             tag: true,
+           },
+           currentVersionResolver: 'git-tag',
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+       };
+ 
+@@ -169,7 +170,7 @@ describe('nx release multiple release branches', () => {
+ 
+       NX   Running release version for project: {project-name}
+ 
+-      {project-name} 🏷️  Resolved the current version as 0.0.7 from git tag "v0.0.7", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.7 from git tag "v0.0.7", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied semver relative bump "minor", from the given specifier, to get new version 0.1.0
+       {project-name} ✍️  New version 0.1.0 written to manifest: {project-name}/package.json
+ 
+@@ -218,7 +219,7 @@ describe('nx release multiple release branches', () => {
+ 
+       NX   Running release version for project: {project-name}
+ 
+-      {project-name} 🏷️  Resolved the current version as 0.0.7 from git tag "v0.0.7", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.7 from git tag "v0.0.7", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied semver relative bump "patch", from the given specifier, to get new version 0.0.8
+       {project-name} ✍️  New version 0.0.8 written to manifest: {project-name}/package.json
+ 
+@@ -271,6 +272,7 @@ describe('nx release multiple release branches', () => {
+             tag: true,
+           },
+           currentVersionResolver: 'git-tag',
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+       };
+ 
+@@ -357,7 +359,7 @@ describe('nx release multiple release branches', () => {
+ 
+       NX   Running release version for project: {project-name}
+ 
+-      {project-name} 🏷️  Resolved the current version as 0.1.0 from git tag "v0.1.0", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.1.0 from git tag "v0.1.0", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied semver relative bump "major", from the given specifier, to get new version 1.0.0
+       {project-name} ✍️  New version 1.0.0 written to manifest: {project-name}/package.json
+ 
+diff --git a/e2e/release/src/preserve-local-dependency-protocols.test.ts b/e2e/release/src/preserve-local-dependency-protocols.test.ts
+index 00066f8940c..dd8c060860a 100644
+--- a/e2e/release/src/preserve-local-dependency-protocols.test.ts
++++ b/e2e/release/src/preserve-local-dependency-protocols.test.ts
+@@ -132,6 +132,7 @@ describe('nx release preserve local dependency protocols', () => {
+       nxJson.release = {
+         version: {
+           preserveLocalDependencyProtocols: false,
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+       };
+       return nxJson;
+@@ -178,7 +179,9 @@ describe('nx release preserve local dependency protocols', () => {
+ 
+     updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+       nxJson.release = {
+-        version: {},
++        version: {
++          adjustSemverBumpsForZeroMajorVersion: false,
++        },
+       };
+       return nxJson;
+     });
+diff --git a/e2e/release/src/release-publishable-libraries.test.ts b/e2e/release/src/release-publishable-libraries.test.ts
+index ad6dc3826fd..0f1ac67b46c 100644
+--- a/e2e/release/src/release-publishable-libraries.test.ts
++++ b/e2e/release/src/release-publishable-libraries.test.ts
+@@ -96,7 +96,7 @@ describe('release publishable libraries', () => {
+     expect(releaseOutput).toMatchInlineSnapshot(`
+       NX   Executing pre-version command
+       NX   Running release version for project: {project-name}
+-      {project-name} 🏷️  Resolved the current version as 0.0.0 from git tag "v0.0.0", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.0 from git tag "v0.0.0", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied explicit semver value "0.0.2", from the given specifier, to get new version 0.0.2
+       {project-name} ✍️  New version 0.0.2 written to manifest: dist/packages/{project-name}/package.json
+       "name": "@proj/{project-name}",
+@@ -151,7 +151,7 @@ describe('release publishable libraries', () => {
+     expect(releaseOutput).toMatchInlineSnapshot(`
+       NX   Executing pre-version command
+       NX   Running release version for project: {project-name}
+-      {project-name} 🏷️  Resolved the current version as 0.0.2 from git tag "v0.0.2", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.2 from git tag "v0.0.2", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied explicit semver value "0.0.3", from the given specifier, to get new version 0.0.3
+       {project-name} ✍️  New version 0.0.3 written to manifest: dist/packages/{project-name}/package.json
+       "name": "@proj/{project-name}",
+@@ -208,7 +208,7 @@ describe('release publishable libraries', () => {
+     expect(releaseOutput).toMatchInlineSnapshot(`
+       NX   Executing pre-version command
+       NX   Running release version for project: {project-name}
+-      {project-name} 🏷️  Resolved the current version as 0.0.3 from git tag "v0.0.3", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.3 from git tag "v0.0.3", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied explicit semver value "0.0.4", from the given specifier, to get new version 0.0.4
+       {project-name} ✍️  New version 0.0.4 written to manifest: dist/packages/{project-name}/package.json
+       "name": "@proj/{project-name}",
+@@ -264,7 +264,7 @@ describe('release publishable libraries', () => {
+     expect(releaseOutput).toMatchInlineSnapshot(`
+       NX   Executing pre-version command
+       NX   Running release version for project: {project-name}
+-      {project-name} 🏷️  Resolved the current version as 0.0.4 from git tag "v0.0.4", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.4 from git tag "v0.0.4", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied explicit semver value "0.0.5", from the given specifier, to get new version 0.0.5
+       {project-name} ✍️  New version 0.0.5 written to manifest: dist/packages/{project-name}/package.json
+       "name": "@proj/{project-name}",
+@@ -316,7 +316,7 @@ describe('release publishable libraries', () => {
+     expect(releaseOutput).toMatchInlineSnapshot(`
+       NX   Executing pre-version command
+       NX   Running release version for project: {project-name}
+-      {project-name} 🏷️  Resolved the current version as 0.0.5 from git tag "v0.0.5", based on releaseTagPattern "v{version}"
++      {project-name} 🏷️  Resolved the current version as 0.0.5 from git tag "v0.0.5", based on releaseTag.pattern "v{version}"
+       {project-name} ❓ Applied explicit semver value "0.0.6", from the given specifier, to get new version 0.0.6
+       {project-name} ✍️  New version 0.0.6 written to manifest: dist/packages/{project-name}/package.json
+       "name": "@proj/{project-name}",
+diff --git a/e2e/release/src/release-tag-pattern.test.ts b/e2e/release/src/release-tag-pattern.test.ts
+index 96e13c798eb..12cb8ce07e7 100644
+--- a/e2e/release/src/release-tag-pattern.test.ts
++++ b/e2e/release/src/release-tag-pattern.test.ts
+@@ -40,7 +40,7 @@ expect.addSnapshotSerializer({
+   },
+ });
+ 
+-describe('nx release releaseTagPattern', () => {
++describe('nx release releaseTag.pattern', () => {
+   let pkg1: string;
+ 
+   beforeEach(async () => {
+@@ -60,7 +60,7 @@ describe('nx release releaseTagPattern', () => {
+   it('should prefer stable versions over prereleases', async () => {
+     updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+       nxJson.release = {
+-        releaseTagPattern: 'v{version}',
++        releaseTag: { pattern: 'v{version}' },
+         version: {
+           conventionalCommits: true,
+         },
+@@ -87,11 +87,11 @@ describe('nx release releaseTagPattern', () => {
+     );
+   });
+ 
+-  describe('releaseTagPatternCheckAllBranchesWhen', () => {
++  describe('releaseTag.checkAllBranchesWhen', () => {
+     it('should check the current branch first, and then fall back to all branches by default/when not specified', async () => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
++          releaseTag: { pattern: 'v{version}' },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -134,11 +134,10 @@ describe('nx release releaseTagPattern', () => {
+       );
+     });
+ 
+-    it('should check all branches immediately when releaseTagPatternCheckAllBranchesWhen is true', async () => {
++    it('should check all branches immediately when releaseTag.checkAllBranchesWhen is true', async () => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+-          releaseTagPatternCheckAllBranchesWhen: true,
++          releaseTag: { pattern: 'v{version}', checkAllBranchesWhen: true },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -158,7 +157,7 @@ describe('nx release releaseTagPattern', () => {
+       // Create a matching tag on the current branch (this should not be found because we are going to create another tag on the other branch)
+       await runCommandAsync(`git tag -a v1.1.1 -m "v1.1.1"`);
+ 
+-      // Create a matching tag on a different branch, which it should find (because releaseTagPatternCheckAllBranchesWhen is true)
++      // Create a matching tag on a different branch, which it should find (because releaseTag.checkAllBranchesWhen is true)
+       await runCommandAsync(`git checkout -b other-branch`);
+       // Update the README.md to create a new commit to tag
+       await runCommandAsync(`echo "Hello" > README.md`);
+@@ -175,11 +174,10 @@ describe('nx release releaseTagPattern', () => {
+       );
+     });
+ 
+-    it('should only check the current branch when releaseTagPatternCheckAllBranchesWhen is false, never all branches', async () => {
++    it('should only check the current branch when releaseTag.checkAllBranchesWhen is false, never all branches', async () => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+-          releaseTagPatternCheckAllBranchesWhen: false,
++          releaseTag: { pattern: 'v{version}', checkAllBranchesWhen: false },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -226,12 +224,11 @@ describe('nx release releaseTagPattern', () => {
+       );
+     });
+ 
+-    it('should check all branches when the current branch matches one of the entries in the releaseTagPatternCheckAllBranchesWhen array', async () => {
++    it('should check all branches when the current branch matches one of the entries in the releaseTag.checkAllBranchesWhen array', async () => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+           // This means => when we are on a branch called "main", we should check all branches, not just the current one
+-          releaseTagPatternCheckAllBranchesWhen: ['main'],
++          releaseTag: { pattern: 'v{version}', checkAllBranchesWhen: ['main'] },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -251,7 +248,7 @@ describe('nx release releaseTagPattern', () => {
+       // Create a matching tag on the current branch (this should not be found because we are going to create another tag on the other branch)
+       await runCommandAsync(`git tag -a v1.1.1 -m "v1.1.1"`);
+ 
+-      // Create a matching tag on a different branch, which it should find (because releaseTagPatternCheckAllBranchesWhen is true)
++      // Create a matching tag on a different branch, which it should find (because releaseTag.checkAllBranchesWhen is true)
+       await runCommandAsync(`git checkout -b other-branch`);
+       // Update the README.md to create a new commit to tag
+       await runCommandAsync(`echo "Hello" > README.md`);
+@@ -270,9 +267,11 @@ describe('nx release releaseTagPattern', () => {
+       // Change the config to confirm its behavior changes accordingly
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+           // This means => when we are on a branch called "does-not-exist", we should check all branches, not just the current one (this will intentionally not match the current branch)
+-          releaseTagPatternCheckAllBranchesWhen: ['does-not-exist'],
++          releaseTag: {
++            pattern: 'v{version}',
++            checkAllBranchesWhen: ['does-not-exist'],
++          },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -280,7 +279,7 @@ describe('nx release releaseTagPattern', () => {
+         return nxJson;
+       });
+ 
+-      // Finds the matching tag on the current branch, because the current branch "main" does not match any entries in the releaseTagPatternCheckAllBranchesWhen array
++      // Finds the matching tag on the current branch, because the current branch "main" does not match any entries in the releaseTag.checkAllBranchesWhen array
+       expect(runCLI(`release version -d`)).toContain(
+         `Resolved the current version as 1.1.1 from git tag "v1.1.1"`
+       );
+@@ -288,9 +287,8 @@ describe('nx release releaseTagPattern', () => {
+       // Change the config to confirm it supports glob patterns
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+           // This means => when we are on a branch that matches the pattern "ma*", we should check all branches, not just the current one (this should match the current branch called "main")
+-          releaseTagPatternCheckAllBranchesWhen: ['ma*'],
++          releaseTag: { pattern: 'v{version}', checkAllBranchesWhen: ['ma*'] },
+           version: {
+             conventionalCommits: true,
+           },
+diff --git a/e2e/release/src/release.test.ts b/e2e/release/src/release.test.ts
+index 61f1ed7824b..d23d564984e 100644
+--- a/e2e/release/src/release.test.ts
++++ b/e2e/release/src/release.test.ts
+@@ -769,7 +769,7 @@ describe('nx release', () => {
+           default: {
+             // @proj/source will be added as a project by the verdaccio setup, but we aren't versioning or publishing it, so we exclude it here
+             projects: ['*', '!@proj/source'],
+-            releaseTagPattern: 'xx{version}',
++            releaseTag: { pattern: 'xx{version}' },
+             version: {
+               // Resolve the latest version from the git tag
+               currentVersionResolver: 'git-tag',
+@@ -839,7 +839,7 @@ describe('nx release', () => {
+           default: {
+             // @proj/source will be added as a project by the verdaccio setup, but we aren't versioning or publishing it, so we exclude it here
+             projects: ['*', '!@proj/source'],
+-            releaseTagPattern: 'xx{version}',
++            releaseTag: { pattern: 'xx{version}' },
+             version: {
+               specifierSource: 'conventional-commits',
+               currentVersionResolver: 'git-tag',
+@@ -908,7 +908,7 @@ describe('nx release', () => {
+           default: {
+             // @proj/source will be added as a project by the verdaccio setup, but we aren't versioning or publishing it, so we exclude it here
+             projects: ['*', '!@proj/source'],
+-            releaseTagPattern: 'xx{version}',
++            releaseTag: { pattern: 'xx{version}' },
+           },
+         },
+       };
+@@ -944,11 +944,11 @@ describe('nx release', () => {
+         groups: {
+           group1: {
+             projects: [pkg1],
+-            releaseTagPattern: 'xx-{version}',
++            releaseTag: { pattern: 'xx-{version}' },
+           },
+           group2: {
+             projects: [pkg2, pkg3],
+-            releaseTagPattern: 'zz-{version}',
++            releaseTag: { pattern: 'zz-{version}' },
+           },
+         },
+         git: {
+@@ -1063,13 +1063,13 @@ describe('nx release', () => {
+       ).length
+     ).toEqual(2);
+ 
+-    // change the releaseTagPattern to something that doesn't exist in order to test fallbackCurrentVersionResolver
++    // change the releaseTag.pattern to something that doesn't exist in order to test fallbackCurrentVersionResolver
+     updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+       nxJson.release = {
+         groups: {
+           group1: {
+             projects: [pkg1, pkg2, pkg3],
+-            releaseTagPattern: '>{version}',
++            releaseTag: { pattern: '>{version}' },
+           },
+         },
+         git: {
+diff --git a/e2e/release/src/source-tag-selection.test.ts b/e2e/release/src/source-tag-selection.test.ts
+index 285cec83992..0897d253028 100644
+--- a/e2e/release/src/source-tag-selection.test.ts
++++ b/e2e/release/src/source-tag-selection.test.ts
+@@ -57,11 +57,11 @@ describe('nx release source tag selection', () => {
+ 
+   afterEach(() => cleanupProject());
+ 
+-  describe('when releaseTagPatternStrictPreid is undefined', () => {
++  describe('when releaseTag.strictPreid is undefined', () => {
+     beforeEach(() => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
++          releaseTag: { pattern: 'v{version}' },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -105,12 +105,11 @@ describe('nx release source tag selection', () => {
+     });
+   });
+ 
+-  describe('when releaseTagPatternStrictPreid is false', () => {
++  describe('when releaseTag.strictPreid is false', () => {
+     beforeEach(() => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+-          releaseTagPatternStrictPreid: false,
++          releaseTag: { pattern: 'v{version}', strictPreid: false },
+           version: {
+             conventionalCommits: true,
+           },
+@@ -154,12 +153,11 @@ describe('nx release source tag selection', () => {
+     });
+   });
+ 
+-  describe('when releaseTagPatternStrictPreid is true', () => {
++  describe('when releaseTag.strictPreid is true', () => {
+     beforeEach(() => {
+       updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+         nxJson.release = {
+-          releaseTagPattern: 'v{version}',
+-          releaseTagPatternStrictPreid: true,
++          releaseTag: { pattern: 'v{version}', strictPreid: true },
+           version: {
+             conventionalCommits: true,
+           },
+diff --git a/e2e/release/src/version-plans-filtered-release.test.ts b/e2e/release/src/version-plans-filtered-release.test.ts
+index 293cae056c3..0e9bbecaa93 100644
+--- a/e2e/release/src/version-plans-filtered-release.test.ts
++++ b/e2e/release/src/version-plans-filtered-release.test.ts
+@@ -45,6 +45,9 @@ describe('nx release with version plans and project filter', () => {
+       nxJson.release = {
+         projectsRelationship: 'independent',
+         versionPlans: true,
++        version: {
++          adjustSemverBumpsForZeroMajorVersion: false,
++        },
+         changelog: {
+           workspaceChangelog: false,
+         },
+diff --git a/e2e/release/src/version-plans-only-touched.test.ts b/e2e/release/src/version-plans-only-touched.test.ts
+index 257e037070c..11aea500587 100644
+--- a/e2e/release/src/version-plans-only-touched.test.ts
++++ b/e2e/release/src/version-plans-only-touched.test.ts
+@@ -85,12 +85,12 @@ describe('nx release version plans only touched', () => {
+         groups: {
+           'fixed-group': {
+             projects: [pkg1, pkg2],
+-            releaseTagPattern: 'v{version}',
++            releaseTag: { pattern: 'v{version}' },
+           },
+           'independent-group': {
+             projects: [pkg3, pkg4, pkg5],
+             projectsRelationship: 'independent',
+-            releaseTagPattern: '{projectName}@{version}',
++            releaseTag: { pattern: '{projectName}@{version}' },
+           },
+         },
+         version: {
+diff --git a/e2e/release/src/version-plans.test.ts b/e2e/release/src/version-plans.test.ts
+index 5e3427451b0..c4a64dcc6df 100644
+--- a/e2e/release/src/version-plans.test.ts
++++ b/e2e/release/src/version-plans.test.ts
+@@ -96,16 +96,17 @@ describe('nx release version plans', () => {
+         groups: {
+           'fixed-group': {
+             projects: [pkg1, pkg2],
+-            releaseTagPattern: 'v{version}',
++            releaseTag: { pattern: 'v{version}' },
+           },
+           'independent-group': {
+             projects: [pkg3, pkg4, pkg5],
+             projectsRelationship: 'independent',
+-            releaseTagPattern: '{projectName}@{version}',
++            releaseTag: { pattern: '{projectName}@{version}' },
+           },
+         },
+         version: {
+           specifierSource: 'version-plans',
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: true,
+@@ -416,16 +417,17 @@ Update packages in both groups with a mix #2
+         groups: {
+           'fixed-group': {
+             projects: [pkg1, pkg2],
+-            releaseTagPattern: 'v{version}',
++            releaseTag: { pattern: 'v{version}' },
+           },
+           'independent-group': {
+             projects: [pkg3, pkg4, pkg5],
+             projectsRelationship: 'independent',
+-            releaseTagPattern: '{projectName}@{version}',
++            releaseTag: { pattern: '{projectName}@{version}' },
+           },
+         },
+         version: {
+           specifierSource: 'version-plans',
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: true,
+@@ -804,7 +806,10 @@ Update packages in both groups with a mix #2
+     updateJson<NxJsonConfiguration>('nx.json', (nxJson) => {
+       nxJson.release = {
+         projects: [pkg1, pkg2],
+-        releaseTagPattern: 'v{version}',
++        releaseTag: { pattern: 'v{version}' },
++        version: {
++          adjustSemverBumpsForZeroMajorVersion: false,
++        },
+         changelog: {
+           projectChangelogs: true,
+         },
+@@ -878,16 +883,17 @@ Update packages in both groups with a mix #2
+         groups: {
+           'fixed-group': {
+             projects: [pkg1, pkg2],
+-            releaseTagPattern: 'v{version}',
++            releaseTag: { pattern: 'v{version}' },
+           },
+           'independent-group': {
+             projects: [pkg3, pkg4, pkg5],
+             projectsRelationship: 'independent',
+-            releaseTagPattern: '{projectName}@{version}',
++            releaseTag: { pattern: '{projectName}@{version}' },
+           },
+         },
+         version: {
+           specifierSource: 'version-plans',
++          adjustSemverBumpsForZeroMajorVersion: false,
+         },
+         changelog: {
+           projectChangelogs: true,
+diff --git a/packages/nx/migrations.json b/packages/nx/migrations.json
+index 3886d60cc85..4d6744632ad 100644
+--- a/packages/nx/migrations.json
++++ b/packages/nx/migrations.json
+@@ -160,6 +160,11 @@
+       "version": "22.7.0-beta.0",
+       "description": "Adds .nx/self-healing to .gitignore",
+       "implementation": "./dist/src/migrations/update-22-2-0/add-self-healing-to-gitignore"
++    },
++    "23-0-0-consolidate-release-tag-config": {
++      "version": "23.0.0-beta.0",
++      "description": "Consolidates any remaining legacy releaseTag* flat properties into the nested releaseTag object. The flat properties were removed in Nx 23.",
++      "implementation": "./dist/src/migrations/update-23-0-0/consolidate-release-tag-config"
+     }
+   }
+ }
+diff --git a/packages/nx/schemas/nx-schema.json b/packages/nx/schemas/nx-schema.json
+index cfb825216e9..555ad9fb418 100644
+--- a/packages/nx/schemas/nx-schema.json
++++ b/packages/nx/schemas/nx-schema.json
+@@ -225,7 +225,7 @@
+                         }
+                       }
+                     ],
+-                    "description": "By default, we will try and resolve the latest match for the releaseTagPattern from the current branch, falling back to all branches if no match is found on the current branch. Setting this to true will cause us to ALWAYS check all branches for the latest match. Setting it to false will cause us to ONLY check the current branch for the latest match. Setting it to an array of strings will cause us to check all branches WHEN the current branch is one of the strings in the array. Glob patterns are supported."
++                    "description": "By default, we will try and resolve the latest match for the releaseTag.pattern from the current branch, falling back to all branches if no match is found on the current branch. Setting this to true will cause us to ALWAYS check all branches for the latest match. Setting it to false will cause us to ONLY check the current branch for the latest match. Setting it to an array of strings will cause us to check all branches WHEN the current branch is one of the strings in the array. Glob patterns are supported."
+                   },
+                   "requireSemver": {
+                     "type": "boolean",
+@@ -237,42 +237,11 @@
+                     "description": "Controls how docker versions are used relative to semver versions when creating git tags and changelog entries. Set to true to use only the docker version, false to use only the semver version, or 'both' to create tags and changelog entries for both docker and semver versions. By default, this is set to true when docker configuration is present, and false otherwise."
+                   },
+                   "strictPreid": {
+-                    "$ref": "#/definitions/NxReleaseReleaseTagPatternStrictPreidConfiguration"
++                    "$ref": "#/definitions/NxReleaseStrictPreidConfiguration"
+                   }
+                 },
+                 "additionalProperties": false
+               },
+-              "releaseTagPattern": {
+-                "type": "string",
+-                "description": "DEPRECATED: Use releaseTag.pattern instead. Will be removed in Nx 23."
+-              },
+-              "releaseTagPatternCheckAllBranchesWhen": {
+-                "oneOf": [
+-                  {
+-                    "type": "boolean"
+-                  },
+-                  {
+-                    "type": "array",
+-                    "items": {
+-                      "type": "string"
+-                    }
+-                  }
+-                ],
+-                "description": "DEPRECATED: Use releaseTag.checkAllBranchesWhen instead. Will be removed in Nx 23."
+-              },
+-              "releaseTagPatternRequireSemver": {
+-                "type": "boolean",
+-                "description": "DEPRECATED: Use releaseTag.requireSemver instead. Will be removed in Nx 23."
+-              },
+-              "releaseTagPatternPreferDockerVersion": {
+-                "type": ["boolean", "string"],
+-                "enum": [true, false, "both"],
+-                "description": "DEPRECATED: Use releaseTag.preferDockerVersion instead. Will be removed in Nx 23."
+-              },
+-              "releaseTagPatternStrictPreid": {
+-                "$ref": "#/definitions/NxReleaseReleaseTagPatternStrictPreidConfiguration",
+-                "description": "DEPRECATED: Use releaseTag.strictPreid instead. Will be removed in Nx 23."
+-              },
+               "versionPlans": {
+                 "oneOf": [
+                   {
+@@ -362,7 +331,7 @@
+           "properties": {
+             "pattern": {
+               "type": "string",
+-              "description": "Optionally override the git/release tag pattern to use. This field is the source of truth for changelog generation and release tagging, as well as for conventional commits parsing. It supports interpolating the version as {version} and (if releasing independently or forcing project level version control system releases) the project name as {projectName} within the string. The default releaseTagPattern for fixed/unified releases is: \"v{version}\". The default releaseTagPattern for independent releases at the project level is: \"{projectName}@{version}\""
++              "description": "Optionally override the git/release tag pattern to use. This field is the source of truth for changelog generation and release tagging, as well as for conventional commits parsing. It supports interpolating the version as {version} and (if releasing independently or forcing project level version control system releases) the project name as {projectName} within the string. The default releaseTag.pattern for fixed/unified releases is: \"v{version}\". The default releaseTag.pattern for independent releases at the project level is: \"{projectName}@{version}\""
+             },
+             "checkAllBranchesWhen": {
+               "oneOf": [
+@@ -376,7 +345,7 @@
+                   }
+                 }
+               ],
+-              "description": "By default, we will try and resolve the latest match for the releaseTagPattern from the current branch, falling back to all branches if no match is found on the current branch. Setting this to true will cause us to ALWAYS check all branches for the latest match. Setting it to false will cause us to ONLY check the current branch for the latest match. Setting it to an array of strings will cause us to check all branches WHEN the current branch is one of the strings in the array. Glob patterns are supported."
++              "description": "By default, we will try and resolve the latest match for the releaseTag.pattern from the current branch, falling back to all branches if no match is found on the current branch. Setting this to true will cause us to ALWAYS check all branches for the latest match. Setting it to false will cause us to ONLY check the current branch for the latest match. Setting it to an array of strings will cause us to check all branches WHEN the current branch is one of the strings in the array. Glob patterns are supported."
+             },
+             "requireSemver": {
+               "type": "boolean",
+@@ -388,42 +357,11 @@
+               "description": "Controls how docker versions are used relative to semver versions when creating git tags and changelog entries. Set to true to use only the docker version, false to use only the semver version, or 'both' to create tags and changelog entries for both docker and semver versions. By default, this is set to true when docker configuration is present, and false otherwise."
+             },
+             "strictPreid": {
+-              "$ref": "#/definitions/NxReleaseReleaseTagPatternStrictPreidConfiguration"
++              "$ref": "#/definitions/NxReleaseStrictPreidConfiguration"
+             }
+           },
+           "additionalProperties": false
+         },
+-        "releaseTagPattern": {
+-          "type": "string",
+-          "description": "DEPRECATED: Use releaseTag.pattern instead. Will be removed in Nx 23."
+-        },
+-        "releaseTagPatternCheckAllBranchesWhen": {
+-          "oneOf": [
+-            {
+-              "type": "boolean"
+-            },
+-            {
+-              "type": "array",
+-              "items": {
+-                "type": "string"
+-              }
+-            }
+-          ],
+-          "description": "DEPRECATED: Use releaseTag.checkAllBranchesWhen instead. Will be removed in Nx 23."
+-        },
+-        "releaseTagPatternRequireSemver": {
+-          "type": "boolean",
+-          "description": "DEPRECATED: Use releaseTag.requireSemver instead. Will be removed in Nx 23."
+-        },
+-        "releaseTagPatternPreferDockerVersion": {
+-          "type": ["boolean", "string"],
+-          "enum": [true, false, "both"],
+-          "description": "DEPRECATED: Use releaseTag.preferDockerVersion instead. Will be removed in Nx 23."
+-        },
+-        "releaseTagPatternStrictPreid": {
+-          "$ref": "#/definitions/NxReleaseReleaseTagPatternStrictPreidConfiguration",
+-          "description": "DEPRECATED: Use releaseTag.strictPreid instead. Will be removed in Nx 23."
+-        },
+         "docker": {
+           "oneOf": [
+             {
+@@ -1172,8 +1110,8 @@
+         },
+         "adjustSemverBumpsForZeroMajorVersion": {
+           "type": "boolean",
+-          "description": "Whether to strictly follow SemVer V2 spec for 0.x versions where breaking changes bump the minor version (instead of major), and new features bump the patch version (instead of minor). When enabled: 'major' bumps become 'minor' bumps for 0.x versions, 'minor' bumps become 'patch' bumps for 0.x versions. Versions 1.0.0 and above are unaffected. This is false by default for backward compatibility.",
+-          "default": false
++          "description": "Whether to strictly follow SemVer V2 spec for 0.x versions where breaking changes bump the minor version (instead of major), and new features bump the patch version (instead of minor). When enabled: 'major' bumps become 'minor' bumps for 0.x versions, 'minor' bumps become 'patch' bumps for 0.x versions. Versions 1.0.0 and above are unaffected. This is true by default. Set to false to treat all bumps the same regardless of major version.",
++          "default": true
+         },
+         "applyPreidToDependents": {
+           "type": "boolean",
+@@ -1285,8 +1223,8 @@
+         },
+         "preserveMatchingDependencyRanges": {
+           "type": ["boolean", "array"],
+-          "description": "Whether to preserve matching dependency ranges when updating them during versioning. This is false by default. (e.g. The new version will be '1.2.0' and the current version range in dependents is already '^1.0.0'. Therefore, the manifest file is not updated.)",
+-          "default": false,
++          "description": "Whether to preserve matching dependency ranges when updating them during versioning. This is true by default. (e.g. The new version will be '1.2.0' and the current version range in dependents is already '^1.0.0'. Therefore, the manifest file is not updated.)",
++          "default": true,
+           "items": {
+             "type": "string",
+             "enum": [
+@@ -1299,8 +1237,8 @@
+         },
+         "adjustSemverBumpsForZeroMajorVersion": {
+           "type": "boolean",
+-          "description": "Whether to apply the common convention for 0.x versions where breaking changes bump the minor version (instead of major), and new features bump the patch version (instead of minor). When enabled: 'major' bumps become 'minor' bumps for 0.x versions, 'minor' bumps become 'patch' bumps for 0.x versions. Versions 1.0.0 and above are unaffected. This is false by default for backward compatibility.",
+-          "default": false
++          "description": "Whether to apply the common convention for 0.x versions where breaking changes bump the minor version (instead of major), and new features bump the patch version (instead of minor). When enabled: 'major' bumps become 'minor' bumps for 0.x versions, 'minor' bumps become 'patch' bumps for 0.x versions. Versions 1.0.0 and above are unaffected. This is true by default. Set to false to treat all bumps the same regardless of major version.",
++          "default": true
+         },
+         "applyPreidToDependents": {
+           "type": "boolean",
+@@ -1398,9 +1336,9 @@
+         }
+       }
+     },
+-    "NxReleaseReleaseTagPatternStrictPreidConfiguration": {
++    "NxReleaseStrictPreidConfiguration": {
+       "type": "boolean",
+-      "description": "When set to true and multiple tags match your configured \"releaseTagPattern\", the git tag matching logic will strictly prefer the tag which contain a semver preid which matches the one given to the nx release invocation.\n\nFor example, let's say your \"releaseTagPattern\" is \"{projectName}@{version}\" and you have the following tags for project \"my-lib\", which uses semver:\n- my-lib@1.2.4-beta.1\n- my-lib@1.2.4-alpha.1\n- my-lib@1.2.3\n\nIf \"releaseTagPatternStrictPreid\" is set to true and you run:\n- `nx release --preid beta`, the git tag \"my-lib@1.2.4-beta.1\" will be resolved.\n- `nx release --preid alpha`, the git tag \"my-lib@1.2.4-alpha.1\" will be resolved.\n- `nx release` (no preid), the git tag \"my-lib@1.2.3\" will be resolved.\n\nIf \"releaseTagPatternStrictPreid\" is set to false, the git tag \"my-lib@1.2.4-beta.1\" will always be resolved as the latest tag that matches the pattern, regardless of any preid which gets passed to nx release.\n\nNOTE: This feature was added in a minor version and is therefore set to false by default, but this may change in a future major version."
++      "description": "When set to true and multiple tags match your configured \"releaseTag.pattern\", the git tag matching logic will strictly prefer the tag which contain a semver preid which matches the one given to the nx release invocation.\n\nFor example, let's say your \"releaseTag.pattern\" is \"{projectName}@{version}\" and you have the following tags for project \"my-lib\", which uses semver:\n- my-lib@1.2.4-beta.1\n- my-lib@1.2.4-alpha.1\n- my-lib@1.2.3\n\nIf \"releaseTag.strictPreid\" is set to true and you run:\n- `nx release --preid beta`, the git tag \"my-lib@1.2.4-beta.1\" will be resolved.\n- `nx release --preid alpha`, the git tag \"my-lib@1.2.4-alpha.1\" will be resolved.\n- `nx release` (no preid), the git tag \"my-lib@1.2.3\" will be resolved.\n\nIf \"releaseTag.strictPreid\" is set to false, the git tag \"my-lib@1.2.4-beta.1\" will always be resolved as the latest tag that matches the pattern, regardless of any preid which gets passed to nx release.\n\nThis is true by default. Set to false to always resolve the latest matching tag regardless of preid."
+     },
+     "ChangelogRenderOptions": {
+       "type": "object",
+diff --git a/packages/nx/src/command-line/release/config/config.spec.ts b/packages/nx/src/command-line/release/config/config.spec.ts
+index 2d1157bbade..8373659100e 100644
+--- a/packages/nx/src/command-line/release/config/config.spec.ts
++++ b/packages/nx/src/command-line/release/config/config.spec.ts
+@@ -310,7 +310,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -332,7 +332,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -526,7 +526,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -548,7 +548,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -745,7 +745,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -767,7 +767,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -995,7 +995,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -1017,7 +1017,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -1229,7 +1229,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -1251,7 +1251,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -1471,7 +1471,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -1493,7 +1493,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -1714,7 +1714,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -1736,7 +1736,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -1937,7 +1937,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -1959,7 +1959,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -2160,7 +2160,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -2182,7 +2182,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -2393,7 +2393,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -2415,7 +2415,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -2620,7 +2620,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -2658,7 +2658,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -2680,7 +2680,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -2883,7 +2883,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -2905,7 +2905,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -2934,16 +2934,16 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it('should respect override for releaseTagPatternRequireSemver at group level', async () => {
++    it('should respect override for releaseTag.requireSemver at group level', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+         groups: {
+           'group-1': {
+             projects: ['lib-a'],
+-            releaseTagPatternRequireSemver: true,
++            releaseTag: { requireSemver: true },
+           },
+           'group-2': {
+             projects: ['lib-b'],
+-            releaseTagPatternRequireSemver: false,
++            releaseTag: { requireSemver: false },
+           },
+         },
+       });
+@@ -3098,9 +3098,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": true,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPatternRequireSemver": true,
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3126,9 +3125,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": false,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPatternRequireSemver": false,
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3150,7 +3148,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -3360,7 +3358,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3393,7 +3391,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3415,7 +3413,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -3627,7 +3625,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3660,7 +3658,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3682,7 +3680,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -3897,7 +3895,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3930,7 +3928,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -3952,7 +3950,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -3981,7 +3979,7 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it('should allow groups to specify releaseTagPatternPreferDockerVersion specifically', async () => {
++    it('should allow groups to specify releaseTag.preferDockerVersion specifically', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+         groups: {
+           'group-1': {
+@@ -3992,7 +3990,7 @@ describe('createNxReleaseConfig()', () => {
+                 hotfix: '{currentDate|YYMM.DD}-hotfix',
+               },
+             },
+-            releaseTagPatternPreferDockerVersion: true,
++            releaseTag: { preferDockerVersion: true },
+           },
+           'group-2': {
+             projects: ['lib-b'],
+@@ -4002,7 +4000,7 @@ describe('createNxReleaseConfig()', () => {
+                 hotfix: '{currentDate|YYMM.DD}.{shortCommitSha}-hotfix',
+               },
+             },
+-            releaseTagPatternPreferDockerVersion: false,
++            releaseTag: { preferDockerVersion: false },
+           },
+           'group-3': {
+             projects: ['lib-c'],
+@@ -4012,7 +4010,7 @@ describe('createNxReleaseConfig()', () => {
+                 hotfix: '{currentDate|YYMM.DD}.{shortCommitSha}-hotfix',
+               },
+             },
+-            releaseTagPatternPreferDockerVersion: 'both',
++            releaseTag: { preferDockerVersion: 'both' },
+           },
+         },
+       });
+@@ -4173,9 +4171,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": false,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPatternPreferDockerVersion": true,
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -4207,9 +4204,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": false,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPatternPreferDockerVersion": false,
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -4241,9 +4237,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": false,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPatternPreferDockerVersion": "both",
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -4265,7 +4260,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -4467,7 +4462,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -4489,7 +4484,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -4689,7 +4684,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -4711,7 +4706,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -4914,7 +4909,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -4936,7 +4931,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -5135,7 +5130,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -5157,7 +5152,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -5359,7 +5354,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "nx run-many -t build -p lib-a",
+                   "logUnchangedProjects": true,
+@@ -5381,7 +5376,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -5410,16 +5405,16 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it('should allow configuration of releaseTagPatternRequireSemver via the top level', async () => {
++    it('should allow configuration of releaseTag.requireSemver via the top level', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+-        releaseTagPatternRequireSemver: false,
++        releaseTag: { requireSemver: false },
+         groups: {
+           'group-1': {
+             projects: ['lib-a'],
+           },
+           'group-2': {
+             projects: ['lib-b'],
+-            releaseTagPatternRequireSemver: true,
++            releaseTag: { requireSemver: true },
+           },
+         },
+       });
+@@ -5575,7 +5570,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -5601,9 +5596,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": true,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPatternRequireSemver": true,
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -5625,7 +5619,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -5654,16 +5648,16 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it('should allow configuration of releaseTagPatternStrictPreid via the top level and group level', async () => {
++    it('should allow configuration of releaseTag.strictPreid via the top level and group level', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+-        releaseTagPatternStrictPreid: true,
++        releaseTag: { strictPreid: true },
+         groups: {
+           'group-1': {
+             projects: ['lib-a'],
+           },
+           'group-2': {
+             projects: ['lib-b'],
+-            releaseTagPatternStrictPreid: false,
++            releaseTag: { strictPreid: false },
+           },
+         },
+       });
+@@ -5819,7 +5813,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -5845,9 +5839,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": true,
+                   "strictPreid": false,
+                 },
+-                "releaseTagPatternStrictPreid": false,
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -5869,7 +5862,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -6090,7 +6083,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -6112,7 +6105,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -6326,7 +6319,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -6348,7 +6341,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -6547,7 +6540,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -6569,7 +6562,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -6771,7 +6764,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -6796,7 +6789,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -7016,7 +7009,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -7038,7 +7031,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -7068,10 +7061,10 @@ describe('createNxReleaseConfig()', () => {
+     });
+   });
+ 
+-  describe('user config -> top level releaseTagPattern', () => {
+-    it('should respect modifying releaseTagPattern at the top level and it should be inherited by the implicit default group', async () => {
++  describe('user config -> top level releaseTag.pattern', () => {
++    it('should respect modifying releaseTag.pattern at the top level and it should be inherited by the implicit default group', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+-        releaseTagPattern: '{projectName}__{version}',
++        releaseTag: { pattern: '{projectName}__{version}' },
+       });
+       expect(res).toMatchInlineSnapshot(`
+         {
+@@ -7237,7 +7230,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -7259,7 +7252,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -7288,9 +7281,9 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it('should respect top level releaseTagPatterns for fixed groups without explicit settings of their own', async () => {
++    it('should respect top level releaseTag.pattern for fixed groups without explicit settings of their own', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+-        releaseTagPattern: '{version}',
++        releaseTag: { pattern: '{version}' },
+         groups: {
+           npm: {
+             projects: ['nx'],
+@@ -7474,7 +7467,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -7497,7 +7490,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -7688,7 +7681,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -7710,7 +7703,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -7942,7 +7935,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -7964,7 +7957,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -8186,7 +8179,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -8208,7 +8201,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -8408,7 +8401,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -8430,7 +8423,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -8635,7 +8628,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -8657,7 +8650,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -8865,7 +8858,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -8887,7 +8880,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -9095,7 +9088,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -9117,7 +9110,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -9326,7 +9319,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -9348,7 +9341,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -9635,7 +9628,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -9657,7 +9650,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -9882,7 +9875,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -9904,7 +9897,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -10123,6 +10116,54 @@ describe('createNxReleaseConfig()', () => {
+         }
+       `);
+     });
++
++    // TODO(v24): remove this test along with the runtime error path
++    it('should return an error if deprecated releaseTagPattern* properties are present', async () => {
++      const resTopLevel = await createNxReleaseConfig(
++        projectGraph,
++        projectFileMap,
++        {
++          releaseTagPattern: 'v{version}',
++          releaseTagPatternStrictPreid: true,
++        } as any
++      );
++      expect(resTopLevel.error).toMatchInlineSnapshot(`
++        {
++          "code": "LEGACY_RELEASE_TAG_PATTERN_PROPERTIES_DETECTED",
++          "data": {
++            "properties": [
++              "release.releaseTagPattern",
++              "release.releaseTagPatternStrictPreid",
++            ],
++          },
++        }
++      `);
++
++      const resGroupLevel = await createNxReleaseConfig(
++        projectGraph,
++        projectFileMap,
++        {
++          groups: {
++            'my-group': {
++              projects: ['lib-a'],
++              releaseTagPattern: '{projectName}@{version}',
++              releaseTagPatternRequireSemver: false,
++            },
++          },
++        } as any
++      );
++      expect(resGroupLevel.error).toMatchInlineSnapshot(`
++        {
++          "code": "LEGACY_RELEASE_TAG_PATTERN_PROPERTIES_DETECTED",
++          "data": {
++            "properties": [
++              "release.groups.my-group.releaseTagPattern",
++              "release.groups.my-group.releaseTagPatternRequireSemver",
++            ],
++          },
++        }
++      `);
++    });
+   });
+ 
+   describe('user config -> top level conventional commits configuration', () => {
+@@ -10295,7 +10336,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -10317,7 +10358,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -10515,7 +10556,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -10537,7 +10578,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -10771,7 +10812,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -10793,7 +10834,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -11003,7 +11044,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -11025,7 +11066,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -11238,7 +11279,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -11260,7 +11301,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -11474,7 +11515,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -11496,7 +11537,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -11713,7 +11754,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -11735,7 +11776,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -11977,7 +12018,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -12004,7 +12045,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -12042,7 +12083,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -12064,7 +12105,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -12098,7 +12139,7 @@ describe('createNxReleaseConfig()', () => {
+         groups: {
+           foo: {
+             projects: 'lib-a',
+-            releaseTagPattern: '{projectName}-{version}',
++            releaseTag: { pattern: '{projectName}-{version}' },
+           },
+         },
+         changelog: {
+@@ -12307,9 +12348,8 @@ describe('createNxReleaseConfig()', () => {
+                   "requireSemver": true,
+                   "strictPreid": true,
+                 },
+-                "releaseTagPattern": "{projectName}-{version}",
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -12331,7 +12371,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -12572,7 +12612,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -12594,7 +12634,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -12816,7 +12856,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -12838,7 +12878,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -13069,12 +13109,12 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it("should return an error if a group's releaseTagPattern has no {version} placeholder", async () => {
++    it("should return an error if a group's releaseTag.pattern has no {version} placeholder", async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+         groups: {
+           'group-1': {
+             projects: '*',
+-            releaseTagPattern: 'v',
++            releaseTag: { pattern: 'v' },
+           },
+         },
+       });
+@@ -13091,12 +13131,12 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it("should return an error if a group's releaseTagPattern has more than one {version} placeholder", async () => {
++    it("should return an error if a group's releaseTag.pattern has more than one {version} placeholder", async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+         groups: {
+           'group-1': {
+             projects: '*',
+-            releaseTagPattern: '{version}v{version}',
++            releaseTag: { pattern: '{version}v{version}' },
+           },
+         },
+       });
+@@ -13114,7 +13154,7 @@ describe('createNxReleaseConfig()', () => {
+     });
+   });
+ 
+-  describe('default releaseTagPatterns', () => {
++  describe('default releaseTag.pattern values', () => {
+     it('should have a default pattern of v{version}', async () => {
+       const res = await createNxReleaseConfig(projectGraph, projectFileMap, {});
+       expect(res).toMatchInlineSnapshot(`
+@@ -13281,7 +13321,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -13303,7 +13343,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -13332,9 +13372,9 @@ describe('createNxReleaseConfig()', () => {
+       `);
+     });
+ 
+-    it('should use releaseTagPattern from base config for independent release groups as long as {projectName} is used', async () => {
++    it('should use releaseTag.pattern from base config for independent release groups as long as {projectName} is used', async () => {
+       let res = await createNxReleaseConfig(projectGraph, projectFileMap, {
+-        releaseTagPattern: 'release/{projectName}/{version}',
++        releaseTag: { pattern: 'release/{projectName}/{version}' },
+         groups: {
+           'group-1': {
+             projects: 'lib-a',
+@@ -13715,7 +13755,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -13743,7 +13783,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -13765,7 +13805,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -13952,7 +13992,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -13974,7 +14014,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -14175,7 +14215,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "currentVersionResolver": "git-tag",
+                   "groupPreVersionCommand": "",
+@@ -14198,7 +14238,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": "git-tag",
+               "git": {
+@@ -14395,7 +14435,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "currentVersionResolver": "registry",
+                   "groupPreVersionCommand": "",
+@@ -14418,7 +14458,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": "registry",
+               "git": {
+@@ -14617,7 +14657,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": true,
+                   "currentVersionResolver": "git-tag",
+                   "groupPreVersionCommand": "",
+@@ -14641,7 +14681,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": true,
+               "currentVersionResolver": "git-tag",
+               "git": {
+@@ -14847,7 +14887,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "fallbackCurrentVersionResolver": "disk",
+                   "groupPreVersionCommand": "",
+@@ -14870,7 +14910,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": true,
+               "currentVersionResolver": "git-tag",
+               "fallbackCurrentVersionResolver": "disk",
+@@ -15075,7 +15115,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -15098,7 +15138,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -15300,7 +15340,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -15327,7 +15367,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -15529,7 +15569,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -15557,7 +15597,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -15579,7 +15619,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -15777,7 +15817,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -15809,7 +15849,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -15831,7 +15871,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -16029,7 +16069,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -16056,7 +16096,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -16079,7 +16119,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+@@ -16279,7 +16319,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -16306,7 +16346,7 @@ describe('createNxReleaseConfig()', () => {
+                   "strictPreid": true,
+                 },
+                 "version": {
+-                  "adjustSemverBumpsForZeroMajorVersion": false,
++                  "adjustSemverBumpsForZeroMajorVersion": true,
+                   "conventionalCommits": false,
+                   "groupPreVersionCommand": "",
+                   "logUnchangedProjects": true,
+@@ -16333,7 +16373,7 @@ describe('createNxReleaseConfig()', () => {
+               "strictPreid": true,
+             },
+             "version": {
+-              "adjustSemverBumpsForZeroMajorVersion": false,
++              "adjustSemverBumpsForZeroMajorVersion": true,
+               "conventionalCommits": false,
+               "currentVersionResolver": undefined,
+               "git": {
+diff --git a/packages/nx/src/command-line/release/config/config.ts b/packages/nx/src/command-line/release/config/config.ts
+index a1c0c82bd48..8b882a689ff 100644
+--- a/packages/nx/src/command-line/release/config/config.ts
++++ b/packages/nx/src/command-line/release/config/config.ts
+@@ -65,17 +65,6 @@ type RemoveBooleanFromPropertiesOnEach<T, K extends keyof T[keyof T]> = {
+   [U in keyof T]: RemoveBooleanFromProperties<T[U], K>;
+ };
+ 
+-type RemoveDeprecatedPropertiesFromEach<T> = {
+-  [K in keyof T]: Omit<
+-    T[K],
+-    | 'releaseTagPattern'
+-    | 'releaseTagPatternCheckAllBranchesWhen'
+-    | 'releaseTagPatternRequireSemver'
+-    | 'releaseTagPatternPreferDockerVersion'
+-    | 'releaseTagPatternStrictPreid'
+-  >;
+-};
+-
+ export const IMPLICIT_DEFAULT_RELEASE_GROUP = '__default__';
+ 
+ export const DEFAULT_VERSION_ACTIONS_PATH =
+@@ -93,13 +82,11 @@ export const DEFAULT_VERSION_ACTIONS_PATH =
+ export type NxReleaseConfig = Omit<
+   DeepRequired<
+     NxReleaseConfiguration & {
+-      groups: RemoveDeprecatedPropertiesFromEach<
+-        EnsureDockerOptional<
+-          DeepRequired<
+-            RemoveTrueFromPropertiesOnEach<
+-              EnsureProjectsArray<NxReleaseConfiguration['groups']>,
+-              'changelog' | 'docker'
+-            >
++      groups: EnsureDockerOptional<
++        DeepRequired<
++          RemoveTrueFromPropertiesOnEach<
++            EnsureProjectsArray<NxReleaseConfiguration['groups']>,
++            'changelog' | 'docker'
+           >
+         >
+       >;
+@@ -125,14 +112,7 @@ export type NxReleaseConfig = Omit<
+     }
+   >,
+   // projects is just a shorthand for the default group's projects configuration, it does not exist in the final config
+-  // Deprecated properties are also excluded from the final config
+-  | 'projects'
+-  | 'docker'
+-  | 'releaseTagPattern'
+-  | 'releaseTagPatternCheckAllBranchesWhen'
+-  | 'releaseTagPatternRequireSemver'
+-  | 'releaseTagPatternPreferDockerVersion'
+-  | 'releaseTagPatternStrictPreid'
++  'projects' | 'docker'
+ > & {
+   // docker is optional and only present when explicitly configured by the user
+   docker: DeepRequired<NxReleaseDockerConfiguration> | undefined;
+@@ -154,10 +134,53 @@ export interface CreateNxReleaseConfigError {
+     | 'INVALID_CHANGELOG_CREATE_RELEASE_HOSTNAME'
+     | 'INVALID_CHANGELOG_CREATE_RELEASE_API_BASE_URL'
+     | 'DOCKER_VERSION_SCHEME_USES_VERSION_ACTIONS_VERSION_WHEN_SKIP_VERSION_ACTIONS'
+-    | 'GIT_PUSH_FALSE_WITH_CREATE_RELEASE';
++    | 'GIT_PUSH_FALSE_WITH_CREATE_RELEASE'
++    // TODO(v24): remove this error code along with detectLegacyReleaseTagProperties
++    | 'LEGACY_RELEASE_TAG_PATTERN_PROPERTIES_DETECTED';
+   data: Record<string, string | string[]>;
+ }
+ 
++// TODO(v24): remove this helper, the call site in createNxReleaseConfig, and
++// the corresponding handleNxReleaseConfigError case. The deprecated flat
++// `releaseTagPattern*` properties were moved to the nested `releaseTag`
++// object in Nx 22 and the consolidation migration runs again in Nx 23 to
++// catch any configs added after the v22 migration. Once Nx 24 lands, configs
++// that still carry the legacy keys are expected to have been repaired via
++// `nx repair`, and we can drop this back-compat error path entirely.
++const LEGACY_RELEASE_TAG_PROPERTY_NAMES = [
++  'releaseTagPattern',
++  'releaseTagPatternCheckAllBranchesWhen',
++  'releaseTagPatternRequireSemver',
++  'releaseTagPatternPreferDockerVersion',
++  'releaseTagPatternStrictPreid',
++] as const;
++
++function detectLegacyReleaseTagProperties(
++  userConfig: NxJsonConfiguration['release']
++): string[] {
++  if (!userConfig) {
++    return [];
++  }
++  const detected: string[] = [];
++  const collect = (config: object | undefined, pathPrefix: string) => {
++    if (!config) {
++      return;
++    }
++    for (const key of LEGACY_RELEASE_TAG_PROPERTY_NAMES) {
++      if (key in config) {
++        detected.push(`${pathPrefix}.${key}`);
++      }
++    }
++  };
++  collect(userConfig, 'release');
++  if (userConfig.groups) {
++    for (const [groupName, groupConfig] of Object.entries(userConfig.groups)) {
++      collect(groupConfig, `release.groups.${groupName}`);
++    }
++  }
++  return detected;
++}
++
+ // Apply default configuration to any optional user configuration and handle known errors
+ export async function createNxReleaseConfig(
+   projectGraph: ProjectGraph,
+@@ -167,6 +190,19 @@ export async function createNxReleaseConfig(
+   error: null | CreateNxReleaseConfigError;
+   nxReleaseConfig: NxReleaseConfig | null;
+ }> {
++  // TODO(v24): remove this back-compat error along with detectLegacyReleaseTagProperties
++  const legacyReleaseTagProperties =
++    detectLegacyReleaseTagProperties(userConfig);
++  if (legacyReleaseTagProperties.length > 0) {
++    return {
++      error: {
++        code: 'LEGACY_RELEASE_TAG_PATTERN_PROPERTIES_DETECTED',
++        data: { properties: legacyReleaseTagProperties },
++      },
++      nxReleaseConfig: null,
++    };
++  }
++
+   if (userConfig.projects && userConfig.groups) {
+     return {
+       error: {
+@@ -378,9 +414,8 @@ export async function createNxReleaseConfig(
+         userConfig.version?.preserveMatchingDependencyRanges ?? true,
+       logUnchangedProjects: userConfig.version?.logUnchangedProjects ?? true,
+       updateDependents: userConfig.version?.updateDependents ?? 'always',
+-      // TODO(v23): change the default value of this to true
+       adjustSemverBumpsForZeroMajorVersion:
+-        userConfig.version?.adjustSemverBumpsForZeroMajorVersion ?? false,
++        userConfig.version?.adjustSemverBumpsForZeroMajorVersion ?? true,
+     } as DeepRequired<NxReleaseConfiguration['version']>,
+     changelog: {
+       git: changelogGitDefaults,
+@@ -420,26 +455,18 @@ export async function createNxReleaseConfig(
+     releaseTag: {
+       pattern:
+         userConfig.releaseTag?.pattern ||
+-        userConfig.releaseTagPattern ||
+         // The appropriate default pattern is dependent upon the projectRelationships
+         (workspaceProjectsRelationship === 'independent'
+           ? defaultIndependentReleaseTagPattern
+           : defaultFixedReleaseTagPattern),
+       checkAllBranchesWhen:
+-        userConfig.releaseTag?.checkAllBranchesWhen ??
+-        userConfig.releaseTagPatternCheckAllBranchesWhen ??
+-        undefined,
++        userConfig.releaseTag?.checkAllBranchesWhen ?? undefined,
+       requireSemver:
+         userConfig.releaseTag?.requireSemver ??
+-        userConfig.releaseTagPatternRequireSemver ??
+         defaultReleaseTagPatternRequireSemver,
+-      preferDockerVersion:
+-        userConfig.releaseTag?.preferDockerVersion ??
+-        userConfig.releaseTagPatternPreferDockerVersion ??
+-        false,
++      preferDockerVersion: userConfig.releaseTag?.preferDockerVersion ?? false,
+       strictPreid:
+         userConfig.releaseTag?.strictPreid ??
+-        userConfig.releaseTagPatternStrictPreid ??
+         defaultReleaseTagPatternStrictPreid,
+     },
+     conventionalCommits: DEFAULT_CONVENTIONAL_COMMITS_CONFIG,
+@@ -451,12 +478,9 @@ export async function createNxReleaseConfig(
+     userConfig.projectsRelationship || WORKSPACE_DEFAULTS.projectsRelationship;
+   const groupReleaseTagRequireSemver =
+     userConfig.releaseTag?.requireSemver ??
+-    userConfig.releaseTagPatternRequireSemver ??
+     WORKSPACE_DEFAULTS.releaseTag.requireSemver;
+   const groupReleaseTagStrictPreid =
+-    userConfig.releaseTag?.strictPreid ??
+-    userConfig.releaseTagPatternStrictPreid ??
+-    defaultReleaseTagPatternStrictPreid;
++    userConfig.releaseTag?.strictPreid ?? defaultReleaseTagPatternStrictPreid;
+   const groupDocker = normalizeDockerConfig(
+     userConfig.docker ?? WORKSPACE_DEFAULTS.docker
+   );
+@@ -508,9 +532,7 @@ export async function createNxReleaseConfig(
+             : defaultIndependentReleaseTagPattern
+           : WORKSPACE_DEFAULTS.releaseTag.pattern,
+       checkAllBranchesWhen:
+-        userConfig.releaseTag?.checkAllBranchesWhen ??
+-        userConfig.releaseTagPatternCheckAllBranchesWhen ??
+-        undefined,
++        userConfig.releaseTag?.checkAllBranchesWhen ?? undefined,
+       requireSemver: groupReleaseTagRequireSemver,
+       preferDockerVersion: false,
+       strictPreid: groupReleaseTagStrictPreid,
+@@ -656,23 +678,18 @@ export async function createNxReleaseConfig(
+             releaseTag: {
+               pattern:
+                 userConfig.releaseTag?.pattern ||
+-                userConfig.releaseTagPattern ||
+                 GROUP_DEFAULTS.releaseTag.pattern,
+               checkAllBranchesWhen:
+                 userConfig.releaseTag?.checkAllBranchesWhen ??
+-                userConfig.releaseTagPatternCheckAllBranchesWhen ??
+                 GROUP_DEFAULTS.releaseTag.checkAllBranchesWhen,
+               requireSemver:
+                 userConfig.releaseTag?.requireSemver ??
+-                userConfig.releaseTagPatternRequireSemver ??
+                 GROUP_DEFAULTS.releaseTag.requireSemver,
+               preferDockerVersion:
+                 userConfig.releaseTag?.preferDockerVersion ??
+-                userConfig.releaseTagPatternPreferDockerVersion ??
+                 GROUP_DEFAULTS.releaseTag.preferDockerVersion,
+               strictPreid:
+                 userConfig.releaseTag?.strictPreid ??
+-                userConfig.releaseTagPatternStrictPreid ??
+                 GROUP_DEFAULTS.releaseTag.strictPreid,
+             },
+             // Directly inherit the root level config for projectChangelogs, if set
+@@ -707,8 +724,7 @@ export async function createNxReleaseConfig(
+     }
+ 
+     // If provided, ensure release tag pattern is valid
+-    const releaseTagPattern =
+-      releaseGroup.releaseTag?.pattern || releaseGroup.releaseTagPattern;
++    const releaseTagPattern = releaseGroup.releaseTag?.pattern;
+     if (releaseTagPattern) {
+       const error = ensureReleaseGroupReleaseTagPatternIsValid(
+         releaseTagPattern,
+@@ -728,7 +744,6 @@ export async function createNxReleaseConfig(
+             ? WORKSPACE_DEFAULTS.releaseTag.pattern
+             : defaultIndependentReleaseTagPattern
+           : (userConfig?.releaseTag?.pattern ??
+-            userConfig?.releaseTagPattern ??
+             defaultFixedGroupReleaseTagPattern);
+ 
+       // Initialize releaseTag object if it doesn't exist
+@@ -810,42 +825,29 @@ export async function createNxReleaseConfig(
+       releaseTag: {
+         pattern:
+           releaseGroup.releaseTag?.pattern ||
+-          releaseGroup.releaseTagPattern ||
+           // The appropriate group default pattern is dependent upon the projectRelationships
+           (projectsRelationship === 'independent'
+             ? // If the default pattern contains {projectName} then it will create unique release tags for each project.
+               // Otherwise, use the default value to guarantee unique tags
+-              (
+-                userConfig.releaseTag?.pattern || userConfig.releaseTagPattern
+-              )?.includes('{projectName}')
+-              ? userConfig.releaseTag?.pattern || userConfig.releaseTagPattern
++              userConfig.releaseTag?.pattern?.includes('{projectName}')
++              ? userConfig.releaseTag?.pattern
+               : defaultIndependentReleaseTagPattern
+-            : userConfig.releaseTag?.pattern ||
+-              userConfig.releaseTagPattern ||
+-              defaultFixedReleaseTagPattern),
++            : userConfig.releaseTag?.pattern || defaultFixedReleaseTagPattern),
+         checkAllBranchesWhen:
+           releaseGroup.releaseTag?.checkAllBranchesWhen ??
+-          releaseGroup.releaseTagPatternCheckAllBranchesWhen ??
+           userConfig.releaseTag?.checkAllBranchesWhen ??
+-          userConfig.releaseTagPatternCheckAllBranchesWhen ??
+           undefined,
+         requireSemver:
+           releaseGroup.releaseTag?.requireSemver ??
+-          releaseGroup.releaseTagPatternRequireSemver ??
+           userConfig.releaseTag?.requireSemver ??
+-          userConfig.releaseTagPatternRequireSemver ??
+           defaultReleaseTagPatternRequireSemver,
+         preferDockerVersion:
+           releaseGroup.releaseTag?.preferDockerVersion ??
+-          releaseGroup.releaseTagPatternPreferDockerVersion ??
+           userConfig.releaseTag?.preferDockerVersion ??
+-          userConfig.releaseTagPatternPreferDockerVersion ??
+           false,
+         strictPreid:
+           releaseGroup.releaseTag?.strictPreid ??
+-          releaseGroup.releaseTagPatternStrictPreid ??
+           userConfig.releaseTag?.strictPreid ??
+-          userConfig.releaseTagPatternStrictPreid ??
+           defaultReleaseTagPatternStrictPreid,
+       },
+       versionPlans: releaseGroup.versionPlans ?? rootVersionPlansConfig,
+@@ -926,10 +928,7 @@ export async function createNxReleaseConfig(
+         releaseGroup.releaseTag.preferDockerVersion === false &&
+         userConfig.groups?.[releaseGroupName]?.releaseTag
+           ?.preferDockerVersion === undefined &&
+-        userConfig.groups?.[releaseGroupName]
+-          ?.releaseTagPatternPreferDockerVersion === undefined &&
+-        userConfig.releaseTag?.preferDockerVersion === undefined &&
+-        userConfig.releaseTagPatternPreferDockerVersion === undefined
++        userConfig.releaseTag?.preferDockerVersion === undefined
+       ) {
+         // Check if ALL projects have docker config, or just some
+         const allProjectsHaveDocker = releaseGroup.projects.every(
+@@ -1118,6 +1117,22 @@ export async function handleNxReleaseConfigError(
+         });
+       }
+       break;
++    // TODO(v24): remove this case along with detectLegacyReleaseTagProperties
++    case 'LEGACY_RELEASE_TAG_PATTERN_PROPERTIES_DETECTED':
++      {
++        const properties = error.data.properties as string[];
++        output.error({
++          title: `Found deprecated releaseTagPattern* properties in your nx.json that are no longer supported in Nx 23.`,
++          bodyLines: [
++            'The following properties were moved to the nested "releaseTag" object in Nx 22 and removed in Nx 23:',
++            ...properties.map((p) => `  - ${p}`),
++            '',
++            'Run "nx repair" to migrate them automatically.',
++            linkMessage,
++          ],
++        });
++      }
++      break;
+     case 'RELEASE_GROUP_MATCHES_NO_PROJECTS':
+       {
+         const nxJsonMessage = await resolveNxJsonConfigErrorMessage([
+@@ -1148,10 +1163,11 @@ export async function handleNxReleaseConfigError(
+           'release',
+           'groups',
+           error.data.releaseGroupName as string,
+-          'releaseTagPattern',
++          'releaseTag',
++          'pattern',
+         ]);
+         output.error({
+-          title: `Release group "${error.data.releaseGroupName}" has an invalid releaseTagPattern. Please ensure the pattern contains exactly one instance of the "{version}" placeholder`,
++          title: `Release group "${error.data.releaseGroupName}" has an invalid releaseTag.pattern. Please ensure the pattern contains exactly one instance of the "{version}" placeholder`,
+           bodyLines: [nxJsonMessage, linkMessage],
+         });
+       }
+diff --git a/packages/nx/src/command-line/release/utils/git.spec.ts b/packages/nx/src/command-line/release/utils/git.spec.ts
+index 38d0be2ff74..49f924f9a51 100644
+--- a/packages/nx/src/command-line/release/utils/git.spec.ts
++++ b/packages/nx/src/command-line/release/utils/git.spec.ts
+@@ -159,7 +159,7 @@ See merge request nx-release-test/nx-release-test!2`,
+       jest.clearAllMocks();
+     });
+ 
+-    describe('when releaseTagPatternStrictPreid is false', () => {
++    describe('when releaseTag.strictPreid is false', () => {
+       const releaseTagPatternTestCases = [
+         {
+           pattern: 'v{version}',
+@@ -369,7 +369,7 @@ See merge request nx-release-test/nx-release-test!2`,
+       );
+     });
+ 
+-    describe('when releaseTagPatternStrictPreid is true', () => {
++    describe('when releaseTag.strictPreid is true', () => {
+       const releaseTagPatternTestCases = [
+         {
+           pattern: '{projectName}@{version}',
+diff --git a/packages/nx/src/command-line/release/utils/release-graph.ts b/packages/nx/src/command-line/release/utils/release-graph.ts
+index f48a602e44b..4581c64180b 100644
+--- a/packages/nx/src/command-line/release/utils/release-graph.ts
++++ b/packages/nx/src/command-line/release/utils/release-graph.ts
+@@ -911,13 +911,12 @@ Valid values are: ${validReleaseVersionPrefixes
+     /**
+      * adjustSemverBumpsForZeroMajorVersion
+      *
+-     * TODO(v23): change the default value of this to true
+-     * This is false by default for backward compatibility.
++     * This is true by default. Set to false to treat all bumps the same regardless of major version.
+      */
+     const adjustSemverBumpsForZeroMajorVersion =
+       projectVersionConfig?.adjustSemverBumpsForZeroMajorVersion ??
+       releaseGroupVersionConfig?.adjustSemverBumpsForZeroMajorVersion ??
+-      false;
++      true;
+ 
+     /**
+      * applyPreidToDependents
+diff --git a/packages/nx/src/command-line/release/utils/repository-git-tags.ts b/packages/nx/src/command-line/release/utils/repository-git-tags.ts
+index 77d0f6c7140..5df1a2b4437 100644
+--- a/packages/nx/src/command-line/release/utils/repository-git-tags.ts
++++ b/packages/nx/src/command-line/release/utils/repository-git-tags.ts
+@@ -106,7 +106,7 @@ export class RepoGitTags {
+   ): Promise<boolean> {
+     let alwaysCheckAllBranches = false;
+     /**
+-     * By default, we will try and resolve the latest match for the releaseTagPattern from the current branch,
++     * By default, we will try and resolve the latest match for the releaseTag.pattern from the current branch,
+      * falling back to all branches if no match is found on the current branch.
+      *
+      * - If checkAllBranchesWhen is true it will cause us to ALWAYS check all branches for the latest match.
+diff --git a/packages/nx/src/command-line/release/utils/shared.spec.ts b/packages/nx/src/command-line/release/utils/shared.spec.ts
+index 315d1dcf045..8d49022947b 100644
+--- a/packages/nx/src/command-line/release/utils/shared.spec.ts
++++ b/packages/nx/src/command-line/release/utils/shared.spec.ts
+@@ -377,7 +377,7 @@ describe('shared', () => {
+       expect(tags).toEqual([]);
+     });
+ 
+-    it('should use docker version when releaseTagPatternPreferDockerVersion is true', () => {
++    it('should use docker version when releaseTag.preferDockerVersion is true', () => {
+       const { releaseGroup, releaseGroupToFilteredProjects } =
+         setUpReleaseGroup();
+       releaseGroup.releaseTag.preferDockerVersion = true;
+@@ -404,7 +404,7 @@ describe('shared', () => {
+       expect(tags).toEqual(['my-group-2024.01.abc123']);
+     });
+ 
+-    it('should use semver version when releaseTagPatternPreferDockerVersion is false', () => {
++    it('should use semver version when releaseTag.preferDockerVersion is false', () => {
+       const { releaseGroup, releaseGroupToFilteredProjects } =
+         setUpReleaseGroup();
+       releaseGroup.releaseTag.preferDockerVersion = false;
+@@ -431,7 +431,7 @@ describe('shared', () => {
+       expect(tags).toEqual(['my-group-1.1.0']);
+     });
+ 
+-    it('should create tags for both versions when releaseTagPatternPreferDockerVersion is "both"', () => {
++    it('should create tags for both versions when releaseTag.preferDockerVersion is "both"', () => {
+       const { releaseGroup, releaseGroupToFilteredProjects } =
+         setUpReleaseGroup();
+       releaseGroup.releaseTag.preferDockerVersion = 'both';
+diff --git a/packages/nx/src/command-line/release/version/resolve-current-version.ts b/packages/nx/src/command-line/release/version/resolve-current-version.ts
+index e1a57147790..e1e886005ea 100644
+--- a/packages/nx/src/command-line/release/version/resolve-current-version.ts
++++ b/packages/nx/src/command-line/release/version/resolve-current-version.ts
+@@ -281,7 +281,7 @@ export async function resolveCurrentVersionFromGitTag(
+   if (latestMatchingGitTag && latestMatchingGitTag.extractedVersion) {
+     const currentVersion = latestMatchingGitTag.extractedVersion;
+     logger.buffer(
+-      `🏷️  Resolved the current version as ${currentVersion} from git tag "${latestMatchingGitTag.tag}", based on releaseTagPattern "${releaseTagPattern}"`
++      `🏷️  Resolved the current version as ${currentVersion} from git tag "${latestMatchingGitTag.tag}", based on releaseTag.pattern "${releaseTagPattern}"`
+     );
+     // Write to the cache if the release group is fixed
+     if (releaseGroup.projectsRelationship === 'fixed') {
+diff --git a/packages/nx/src/config/nx-json.ts b/packages/nx/src/config/nx-json.ts
+index 02edc97884b..8ac84e7baab 100644
+--- a/packages/nx/src/config/nx-json.ts
++++ b/packages/nx/src/config/nx-json.ts
+@@ -195,14 +195,13 @@ export interface NxReleaseVersionConfiguration {
+    * of local dependencies when updating them during versioning.
+    */
+   preserveLocalDependencyProtocols?: boolean;
+-  // TODO(v22): change the default value of this to true
+   /**
+    * Whether to preserve matching dependency ranges when updating them during versioning.
+    * e.g.
+    *  The new version will be "1.2.0" and the current version range in dependents is already "^1.0.0"
+    *  Therefore, the manifest file is not updated.
+    *
+-   * This is false by default.
++   * This is true by default. Set to false to always rewrite dependent manifests with the new version.
+    */
+   preserveMatchingDependencyRanges?:
+     | boolean
+@@ -212,7 +211,6 @@ export interface NxReleaseVersionConfiguration {
+         | 'peerDependencies'
+         | 'optionalDependencies'
+       >;
+-  // TODO(v23): change the default value of this to true
+   /**
+    * Whether to strictly follow SemVer V2 spec for 0.x versions where breaking changes
+    * bump the minor version (instead of major), and new features bump the patch version
+@@ -226,7 +224,7 @@ export interface NxReleaseVersionConfiguration {
+    *
+    * Versions 1.0.0 and above are unaffected.
+    *
+-   * This is false by default for backward compatibility.
++   * This is true by default. Set to false to opt out and treat all bumps the same regardless of major version.
+    */
+   adjustSemverBumpsForZeroMajorVersion?: boolean;
+   /**
+@@ -247,7 +245,7 @@ export interface NxReleaseChangelogConfiguration {
+    * Optionally create a release containing all relevant changes on a supported version control system, it
+    * is false by default.
+    *
+-   * NOTE: if createRelease is set on a group of projects, it will cause the default releaseTagPattern of
++   * NOTE: if createRelease is set on a group of projects, it will cause the default releaseTag.pattern of
+    * "{projectName}@{version}" to be used for those projects, even when versioning everything together.
+    */
+   createRelease?:
+@@ -475,7 +473,7 @@ export interface NxReleaseConfiguration {
+          */
+         pattern?: string;
+         /**
+-         * By default, we will try and resolve the latest match for the releaseTagPattern from the current branch,
++         * By default, we will try and resolve the latest match for the releaseTag.pattern from the current branch,
+          * falling back to all branches if no match is found on the current branch.
+          *
+          * - Setting this to true will cause us to ALWAYS check all branches for the latest match.
+@@ -517,36 +515,10 @@ export interface NxReleaseConfiguration {
+          * If "strictPreid" is set to false, the git tag "my-lib@1.2.4-beta.1" will always be resolved as the latest tag that matches the pattern,
+          * regardless of any preid which gets passed to nx release.
+          *
+-         * NOTE: This feature was added in a minor version and is therefore set to false by default, but this may change in a future major version.
++         * This is true by default. Set to false to always resolve the latest matching tag regardless of preid.
+          */
+         strictPreid?: boolean;
+       };
+-      /**
+-       * @deprecated Use `releaseTag.pattern` instead. Will be removed in Nx 23.
+-       * Optionally override the git/release tag pattern to use for this group.
+-       */
+-      // TODO(v23): remove this property
+-      releaseTagPattern?: string;
+-      /**
+-       * @deprecated Use `releaseTag.checkAllBranchesWhen` instead. Will be removed in Nx 23.
+-       */
+-      // TODO(v23): remove this property
+-      releaseTagPatternCheckAllBranchesWhen?: boolean | string[];
+-      /**
+-       * @deprecated Use `releaseTag.requireSemver` instead. Will be removed in Nx 23.
+-       */
+-      // TODO(v23): remove this property
+-      releaseTagPatternRequireSemver?: boolean;
+-      /**
+-       * @deprecated Use `releaseTag.preferDockerVersion` instead. Will be removed in Nx 23.
+-       */
+-      // TODO(v23): remove this property
+-      releaseTagPatternPreferDockerVersion?: boolean | 'both';
+-      /**
+-       * @deprecated Use `releaseTag.strictPreid` instead. Will be removed in Nx 23.
+-       */
+-      // TODO(v23): remove this property
+-      releaseTagPatternStrictPreid?: boolean;
+       /**
+        * Enables using version plans as a specifier source for versioning and
+        * to determine changes for changelog generation.
+@@ -653,43 +625,10 @@ export interface NxReleaseConfiguration {
+      * If "strictPreid" is set to false, the git tag "my-lib@1.2.4-beta.1" will always be resolved as the latest tag that matches the pattern,
+      * regardless of any preid which gets passed to nx release.
+      *
+-     * NOTE: This feature was added in a minor version and is therefore set to false by default, but this may change in a future major version.
++     * This is true by default. Set to false to always resolve the latest matching tag regardless of preid.
+      */
+     strictPreid?: boolean;
+   };
+-  /**
+-   * @deprecated Use `releaseTag.pattern` instead. Will be removed in Nx 23.
+-   * Optionally override the git/release tag pattern to use. This field is the source of truth
+-   * for changelog generation and release tagging, as well as for conventional commits parsing.
+-   *
+-   * It supports interpolating the version as {version} and (if releasing independently or forcing
+-   * project level version control system releases) the project name as {projectName} within the string.
+-   *
+-   * The default releaseTagPattern for fixed/unified releases is: "v{version}"
+-   * The default releaseTagPattern for independent releases at the project level is: "{projectName}@{version}"
+-   */
+-  // TODO(v23): remove this property
+-  releaseTagPattern?: string;
+-  /**
+-   * @deprecated Use `releaseTag.checkAllBranchesWhen` instead. Will be removed in Nx 23.
+-   */
+-  // TODO(v23): remove this property
+-  releaseTagPatternCheckAllBranchesWhen?: boolean | string[];
+-  /**
+-   * @deprecated Use `releaseTag.requireSemver` instead. Will be removed in Nx 23.
+-   */
+-  // TODO(v23): remove this property
+-  releaseTagPatternRequireSemver?: boolean;
+-  /**
+-   * @deprecated Use `releaseTag.preferDockerVersion` instead. Will be removed in Nx 23.
+-   */
+-  // TODO(v23): remove this property
+-  releaseTagPatternPreferDockerVersion?: boolean | 'both';
+-  /**
+-   * @deprecated Use `releaseTag.strictPreid` instead. Will be removed in Nx 23.
+-   */
+-  // TODO(v23): remove this property
+-  releaseTagPatternStrictPreid?: boolean;
+   /**
+    * Enable and configure automatic git operations as part of the release
+    */
+diff --git a/packages/nx/src/migrations/update-23-0-0/consolidate-release-tag-config.spec.ts b/packages/nx/src/migrations/update-23-0-0/consolidate-release-tag-config.spec.ts
+new file mode 100644
+index 00000000000..86cbf914455
+--- /dev/null
++++ b/packages/nx/src/migrations/update-23-0-0/consolidate-release-tag-config.spec.ts
+@@ -0,0 +1,28 @@
++import '../../internal-testing-utils/mock-prettier';
++
++import { createTreeWithEmptyWorkspace } from '../../generators/testing-utils/create-tree-with-empty-workspace';
++import { readJson, updateJson } from '../../generators/utils/json';
++import type { Tree } from '../../generators/tree';
++import migrate from './consolidate-release-tag-config';
++
++/**
++ * The v23 migration is a thin re-export of the v22 consolidation. This spec
++ * pins the delegation so a future rename or refactor of the v22 file fails
++ * loudly here instead of shipping silently. Exhaustive coverage of the
++ * consolidation logic lives in update-22-0-0/consolidate-release-tag-config.spec.ts.
++ */
++describe('update-23-0-0 consolidate-release-tag-config migration', () => {
++  it('should move legacy releaseTagPattern into releaseTag.pattern', async () => {
++    const tree: Tree = createTreeWithEmptyWorkspace();
++    updateJson(tree, 'nx.json', (json) => {
++      json.release = { releaseTagPattern: 'v{version}' };
++      return json;
++    });
++
++    await migrate(tree);
++
++    expect(readJson(tree, 'nx.json').release).toEqual({
++      releaseTag: { pattern: 'v{version}' },
++    });
++  });
++});
+diff --git a/packages/nx/src/migrations/update-23-0-0/consolidate-release-tag-config.ts b/packages/nx/src/migrations/update-23-0-0/consolidate-release-tag-config.ts
+new file mode 100644
+index 00000000000..99c8a2056b7
+--- /dev/null
++++ b/packages/nx/src/migrations/update-23-0-0/consolidate-release-tag-config.ts
+@@ -0,0 +1,16 @@
++import type { Tree } from '../../generators/tree';
++import update from '../update-22-0-0/consolidate-release-tag-config';
++
++/**
++ * The deprecated releaseTag* flat properties were removed in Nx 23. Re-run the
++ * v22 consolidation for any workspaces that still have the legacy keys (e.g.,
++ * configs added manually after the v22 migration ran). Runs automatically as
++ * part of `nx migrate` and is also triggered by `nx repair` when the runtime
++ * detects legacy keys still present in `nx.json`.
++ */
++// TODO(v24): remove this migration (along with its registration in
++// migrations.json) and the LEGACY_RELEASE_TAG_PATTERN_PROPERTIES_DETECTED
++// runtime error path in packages/nx/src/command-line/release/config/config.ts.
++export default async function (tree: Tree) {
++  return update(tree);
++}

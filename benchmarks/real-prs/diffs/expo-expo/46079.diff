@@ -1,0 +1,309 @@
+diff --git a/tools/src/prebuilds/pipeline/RunSteps.test.ts b/tools/src/prebuilds/pipeline/RunSteps.test.ts
+index 27a0fe30cd6dce..95e116bff869c9 100644
+--- a/tools/src/prebuilds/pipeline/RunSteps.test.ts
++++ b/tools/src/prebuilds/pipeline/RunSteps.test.ts
+@@ -17,6 +17,7 @@ import {
+   collectSharedSPMDependencies,
+   CACHE_DEPS,
+   expandWithUnbuiltDependencies,
++  rebindExternalPackagesToBundledVersions,
+ } from './RunSteps';
+ import type { SPMPackageSource } from '../ExternalPackage';
+ import type { SPMProduct, SPMPackageDependencyConfig } from '../SPMConfig.types';
+@@ -173,6 +174,47 @@ describe('resolveFlavorTemplatedPath', () => {
+   });
+ });
+ 
++// ---------------------------------------------------------------------------
++// rebindExternalPackagesToBundledVersions
++// ---------------------------------------------------------------------------
++
++describe('rebindExternalPackagesToBundledVersions', () => {
++  it('rewrites path and packageVersion for packages listed in bundledNativeModules', () => {
++    const pkg = makePkg('rn-safe-area', [], { path: '/before', packageVersion: '5.6.2' });
++    rebindExternalPackagesToBundledVersions([pkg], { 'rn-safe-area': '~5.7.0' }, () => ({
++      path: '/after',
++      version: '5.7.0',
++    }));
++    assert.equal(pkg.packageVersion, '5.7.0');
++    assert.equal(pkg.path, '/after');
++  });
++
++  it('throws with an actionable error when no installed version satisfies the bundled range', () => {
++    const pkg = makePkg('rn-safe-area', [], { path: '/before', packageVersion: '5.6.2' });
++    assert.throws(
++      () =>
++        rebindExternalPackagesToBundledVersions([pkg], { 'rn-safe-area': '~5.7.0' }, () => null),
++      (err: Error) =>
++        err.message.includes('rn-safe-area') &&
++        err.message.includes('~5.7.0') &&
++        err.message.includes('bundledNativeModules.json') &&
++        err.message.includes('pnpm install')
++    );
++  });
++
++  it('leaves packages absent from the bundled map untouched', () => {
++    const pkg = makePkg('private-pkg', [], { path: '/before', packageVersion: '0.0.1' });
++    let resolverCalled = false;
++    rebindExternalPackagesToBundledVersions([pkg], { 'something-else': '1.0.0' }, () => {
++      resolverCalled = true;
++      return null;
++    });
++    assert.equal(resolverCalled, false);
++    assert.equal(pkg.packageVersion, '0.0.1');
++    assert.equal(pkg.path, '/before');
++  });
++});
++
+ // ---------------------------------------------------------------------------
+ // sortPackagesByDependencies
+ // ---------------------------------------------------------------------------
+diff --git a/tools/src/prebuilds/pipeline/RunSteps.ts b/tools/src/prebuilds/pipeline/RunSteps.ts
+index 31bc7d3f522d3f..35e0da4f9f2a4f 100644
+--- a/tools/src/prebuilds/pipeline/RunSteps.ts
++++ b/tools/src/prebuilds/pipeline/RunSteps.ts
+@@ -16,6 +16,7 @@ import path from 'path';
+ import { PACKAGES_DIR } from '../../Constants';
+ import logger from '../../Logger';
+ import { getPackageByName } from '../../Packages';
++import { getBundledVersionsAsync } from '../../ProjectVersions';
+ import { Artifacts } from '../Artifacts';
+ import { Dependencies } from '../Dependencies';
+ import type { SPMPackageSource } from '../ExternalPackage';
+@@ -31,6 +32,7 @@ import {
+   verifyAllPackagesAsync,
+   verifyLocalTarballPathsIfSetAsync,
+ } from '../Utils';
++import { resolveInstalledPackage } from '../resolvePackage';
+ import type { PrebuildContext } from './Context';
+ import type { Step } from './Types';
+ 
+@@ -43,6 +45,41 @@ import type { Step } from './Types';
+  */
+ export const CACHE_DEPS = new Set(['ReactNativeDependencies', 'React', 'Hermes']);
+ 
++// ---------------------------------------------------------------------------
++// Helper: rebindExternalPackagesToBundledVersions
++// ---------------------------------------------------------------------------
++
++/**
++ * Rebinds each external package's `path` / `packageVersion` to the install in
++ * any monorepo workspace whose version satisfies `packages/expo/bundledNativeModules.json`
++ * — the canonical SDK manifest end users resolve against via `expo install`.
++ * Packages absent from the bundled map are left untouched. Throws when a
++ * bundled-listed package has no satisfying install anywhere in the workspace.
++ */
++export function rebindExternalPackagesToBundledVersions(
++  externalPackages: SPMPackageSource[],
++  bundledNativeModules: Record<string, string>,
++  resolve: (name: string, range: string) => { path: string; version: string } | null
++): void {
++  for (const pkg of externalPackages) {
++    const range = bundledNativeModules[pkg.packageName];
++    if (!range) continue;
++    const resolved = resolve(pkg.packageName, range);
++    if (!resolved) {
++      throw new Error(
++        `No installed version of "${pkg.packageName}" in the monorepo satisfies ${range} ` +
++          `(from packages/expo/bundledNativeModules.json — the canonical SDK manifest for ` +
++          `"expo install" and create-expo templates). Without a satisfying install, the ` +
++          `prebuilt XCFramework would be invisible to precompiled_modules.rb at end-user ` +
++          `pod install. Fix: add "${pkg.packageName}" to some workspace at a version ` +
++          `satisfying ${range} and run "pnpm install".`
++      );
++    }
++    pkg.path = resolved.path;
++    pkg.packageVersion = resolved.version;
++  }
++}
++
+ // ---------------------------------------------------------------------------
+ // Helper: resolveFlavorTemplatedPath
+ // ---------------------------------------------------------------------------
+@@ -486,11 +523,25 @@ export const prepareInputsStep: Step<PrebuildContext> = {
+     ctx.packages = sorted;
+     ctx.dependsOn = dependsOn;
+ 
+-    // Log external packages if any
+     const externalPackages = ctx.packages.filter((p) => isExternalPackage(p));
++
++    // 4b. Rebind each external package's source path to the install in any
++    // workspace whose version satisfies bundledNativeModules.json. This decouples
++    // the precompile from apps/bare-expo's pin, which drifts. Packages absent
++    // from the bundled map keep their bare-expo-resolved path.
++    rebindExternalPackagesToBundledVersions(
++      externalPackages,
++      await getBundledVersionsAsync(),
++      resolveInstalledPackage
++    );
++
++    // Log external packages with their resolved versions, so the post-rebind
++    // values are visible in the build output.
+     if (externalPackages.length > 0) {
+       logger.info(
+-        `📦 External packages to build:\n${chalk.blue(externalPackages.map((p) => p.packageName).join(', '))}`
++        `📦 External packages to build:\n${chalk.blue(
++          externalPackages.map((p) => `${p.packageName}@${p.packageVersion}`).join(', ')
++        )}`
+       );
+     }
+ 
+diff --git a/tools/src/prebuilds/resolvePackage.test.ts b/tools/src/prebuilds/resolvePackage.test.ts
+new file mode 100644
+index 00000000000000..570a8d5da981cd
+--- /dev/null
++++ b/tools/src/prebuilds/resolvePackage.test.ts
+@@ -0,0 +1,101 @@
++/**
++ * Hermetic tests for resolveInstalledPackage. Each test builds a fake monorepo
++ * under a tmpdir with workspace dirs that each have their own
++ * `node_modules/<pkg>/package.json`, then calls the resolver with the tmpdir as
++ * repoRoot. Node's `require.resolve` does the rest.
++ */
++import fs from 'fs';
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import os from 'os';
++import path from 'path';
++
++import { resolveInstalledPackage } from './resolvePackage';
++
++function withTempRepo<T>(fn: (repoRoot: string) => T): T {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mono-'));
++  try {
++    return fn(dir);
++  } finally {
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++}
++
++function installInWorkspace(
++  repoRoot: string,
++  workspaceRelDir: string,
++  packageName: string,
++  version: string
++) {
++  const installDir = path.join(repoRoot, workspaceRelDir, 'node_modules', packageName);
++  fs.mkdirSync(installDir, { recursive: true });
++  fs.writeFileSync(
++    path.join(installDir, 'package.json'),
++    JSON.stringify({ name: packageName, version })
++  );
++  // require.resolve returns the realpath (macOS `/var` → `/private/var`).
++  return fs.realpathSync(installDir);
++}
++
++const resolve = (repoRoot: string, name: string, range: string) =>
++  resolveInstalledPackage(name, range, { repoRoot, workspacePatterns: ['apps/*'] });
++
++describe('resolveInstalledPackage', () => {
++  it('returns the install when exactly one workspace has a satisfying version', () => {
++    withTempRepo((repoRoot) => {
++      const installDir = installInWorkspace(repoRoot, 'apps/expo-go', 'rn-sample', '5.7.0');
++      // A second workspace without the dep is skipped.
++      fs.mkdirSync(path.join(repoRoot, 'apps/empty'), { recursive: true });
++      assert.deepEqual(resolve(repoRoot, 'rn-sample', '~5.7.0'), {
++        version: '5.7.0',
++        path: installDir,
++      });
++    });
++  });
++
++  it('returns the highest version when multiple workspaces have different versions', () => {
++    withTempRepo((repoRoot) => {
++      installInWorkspace(repoRoot, 'apps/bare-expo', 'rn-sample', '5.6.2');
++      installInWorkspace(repoRoot, 'apps/expo-go', 'rn-sample', '5.7.0');
++      assert.equal(resolve(repoRoot, 'rn-sample', '^5.6.0')?.version, '5.7.0');
++    });
++  });
++
++  it('resolves scoped packages', () => {
++    withTempRepo((repoRoot) => {
++      const installDir = installInWorkspace(
++        repoRoot,
++        'apps/expo-go',
++        '@shopify/react-native-skia',
++        '2.6.2'
++      );
++      assert.deepEqual(resolve(repoRoot, '@shopify/react-native-skia', '2.6.2'), {
++        version: '2.6.2',
++        path: installDir,
++      });
++    });
++  });
++
++  it('returns null when no workspace has a satisfying version', () => {
++    withTempRepo((repoRoot) => {
++      installInWorkspace(repoRoot, 'apps/bare-expo', 'rn-sample', '5.6.2');
++      assert.equal(resolve(repoRoot, 'rn-sample', '~5.7.0'), null);
++    });
++  });
++
++  it('ignores a workspace install with a non-semver version', () => {
++    withTempRepo((repoRoot) => {
++      installInWorkspace(repoRoot, 'apps/garbage', 'rn-sample', 'not-a-version');
++      const installDir = installInWorkspace(repoRoot, 'apps/ok', 'rn-sample', '5.7.0');
++      assert.deepEqual(resolve(repoRoot, 'rn-sample', '^5.0.0'), {
++        version: '5.7.0',
++        path: installDir,
++      });
++    });
++  });
++
++  it('returns null without throwing when the repo root does not exist', () => {
++    const missing = path.join(os.tmpdir(), `mono-missing-${Date.now()}`);
++    assert.equal(resolve(missing, 'rn-sample', '1.0.0'), null);
++  });
++});
+diff --git a/tools/src/prebuilds/resolvePackage.ts b/tools/src/prebuilds/resolvePackage.ts
+index dd832dfa66be85..a6b788f0231179 100644
+--- a/tools/src/prebuilds/resolvePackage.ts
++++ b/tools/src/prebuilds/resolvePackage.ts
+@@ -1,7 +1,12 @@
++import fs from 'fs';
++import { globSync } from 'glob';
+ import path from 'path';
++import semver from 'semver';
+ 
+ import { getExpoRepositoryRootDir } from '../Directories';
+ 
++const WORKSPACE_GLOBS = ['apps/*', 'packages/*', 'packages/@expo/*', 'tools'];
++
+ /**
+  * Resolves the filesystem path to an npm package that isn't a direct dependency
+  * of the tools package. Tries apps/bare-expo first (direct deps like react-native),
+@@ -17,3 +22,34 @@ export function resolvePackagePath(packageName: string): string {
+     return path.dirname(require.resolve(`${packageName}/package.json`, { paths: [rnDir] }));
+   }
+ }
++
++/**
++ * Returns the highest version of `packageName` installed in any monorepo
++ * workspace satisfying `range`, or `null`. Goes through Node's `require.resolve`
++ * — no assumptions about pnpm store / lockfile shape.
++ */
++export function resolveInstalledPackage(
++  packageName: string,
++  range: string,
++  opts: { repoRoot?: string; workspacePatterns?: string[] } = {}
++): { path: string; version: string } | null {
++  const repoRoot = opts.repoRoot ?? getExpoRepositoryRootDir();
++  const patterns = opts.workspacePatterns ?? WORKSPACE_GLOBS;
++  let best: { path: string; version: string } | null = null;
++  for (const pattern of patterns) {
++    for (const ws of globSync(pattern, { cwd: repoRoot, absolute: true })) {
++      let pkgJson: string;
++      let version: string | undefined;
++      try {
++        pkgJson = require.resolve(`${packageName}/package.json`, { paths: [ws] });
++        version = JSON.parse(fs.readFileSync(pkgJson, 'utf8')).version;
++      } catch {
++        continue;
++      }
++      if (!version || !semver.valid(version) || !semver.satisfies(version, range)) continue;
++      if (!best || semver.gt(version, best.version))
++        best = { path: path.dirname(pkgJson), version };
++    }
++  }
++  return best;
++}

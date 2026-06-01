@@ -1,0 +1,191 @@
+diff --git a/apps/native-component-list/src/screens/UI/FormScreen.ios.tsx b/apps/native-component-list/src/screens/UI/FormScreen.ios.tsx
+index e605c0f0f2f95c..d205c4c3d50c3d 100644
+--- a/apps/native-component-list/src/screens/UI/FormScreen.ios.tsx
++++ b/apps/native-component-list/src/screens/UI/FormScreen.ios.tsx
+@@ -10,6 +10,7 @@ import {
+   Text,
+   DisclosureGroup,
+   ContentUnavailableView,
++  LabeledContent,
+ } from '@expo/ui/swift-ui';
+ import { useState } from 'react';
+ 
+@@ -32,6 +33,17 @@ export default function FormScreen() {
+             Some text!
+           </Text>
+           <Button onPress={() => alert('Clicked!')}>I'm a button</Button>
++          <LabeledContent label="Labeled Content">
++            <Button variant="borderless" onPress={() => alert('Clicked!')}>
++              Labeled Content Button
++            </Button>
++          </LabeledContent>
++          <LabeledContent label="Name">
++            <Text>Beto</Text>
++          </LabeledContent>
++          <LabeledContent label="Labeled Slider ">
++            <Slider value={sliderValue} onValueChange={setSliderValue} />
++          </LabeledContent>
+           <Switch value={switchValue} label="This is a switch" onValueChange={setSwitchValue} />
+           <ColorPicker
+             label="Select a color"
+diff --git a/packages/expo-ui/CHANGELOG.md b/packages/expo-ui/CHANGELOG.md
+index 0657ac92ea6e37..2b7184d1d53ca6 100644
+--- a/packages/expo-ui/CHANGELOG.md
++++ b/packages/expo-ui/CHANGELOG.md
+@@ -6,6 +6,8 @@
+ 
+ ### 🎉 New features
+ 
++- [iOS] Add `LabeledContent` view ([#39463](https://github.com/expo/expo/pull/39617) by [@betomoedano](https://github.com/betomoedano))
++
+ ### 🐛 Bug fixes
+ 
+ ### 💡 Others
+diff --git a/packages/expo-ui/build/swift-ui/LabeledContent/index.d.ts b/packages/expo-ui/build/swift-ui/LabeledContent/index.d.ts
+new file mode 100644
+index 00000000000000..c5ac98440c84f4
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/LabeledContent/index.d.ts
+@@ -0,0 +1,16 @@
++import { type CommonViewModifierProps } from '../types';
++export type LabeledContentProps = {
++    /**
++     * The label to be displayed in the labeled content.
++     */
++    label?: string;
++    children: React.ReactNode;
++} & CommonViewModifierProps;
++/**
++ * LabeledContent component uses the native [LabeledContent](https://developer.apple.com/documentation/swiftui/labeledcontent) component.
++ * A container for attaching a label to a value-bearing view.
++ * Available from iOS 16.0.
++ * @platform ios
++ */
++export declare function LabeledContent(props: LabeledContentProps): import("react").JSX.Element;
++//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/LabeledContent/index.d.ts.map b/packages/expo-ui/build/swift-ui/LabeledContent/index.d.ts.map
+new file mode 100644
+index 00000000000000..2bf9559a42ae23
+--- /dev/null
++++ b/packages/expo-ui/build/swift-ui/LabeledContent/index.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/swift-ui/LabeledContent/index.tsx"],"names":[],"mappings":"AAGA,OAAO,EAAE,KAAK,uBAAuB,EAAE,MAAM,UAAU,CAAC;AAExD,MAAM,MAAM,mBAAmB,GAAG;IAChC;;OAEG;IACH,KAAK,CAAC,EAAE,MAAM,CAAC;IACf,QAAQ,EAAE,KAAK,CAAC,SAAS,CAAC;CAC3B,GAAG,uBAAuB,CAAC;AAO5B;;;;;GAKG;AACH,wBAAgB,cAAc,CAAC,KAAK,EAAE,mBAAmB,+BASxD"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/build/swift-ui/index.d.ts b/packages/expo-ui/build/swift-ui/index.d.ts
+index 72e241a6ecc15a..2f859f16659958 100644
+--- a/packages/expo-ui/build/swift-ui/index.d.ts
++++ b/packages/expo-ui/build/swift-ui/index.d.ts
+@@ -11,6 +11,7 @@ export * from './Gauge';
+ export * from './Host';
+ export * from './Image';
+ export * from './Label';
++export * from './LabeledContent';
+ export * from './Layout';
+ export * from './List';
+ export * from './Picker';
+diff --git a/packages/expo-ui/build/swift-ui/index.d.ts.map b/packages/expo-ui/build/swift-ui/index.d.ts.map
+index dc29063ec02bf2..cfc4551fdaac86 100644
+--- a/packages/expo-ui/build/swift-ui/index.d.ts.map
++++ b/packages/expo-ui/build/swift-ui/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/swift-ui/index.tsx"],"names":[],"mappings":"AAAA,cAAc,eAAe,CAAC;AAC9B,cAAc,UAAU,CAAC;AACzB,cAAc,SAAS,CAAC;AACxB,cAAc,eAAe,CAAC;AAC9B,cAAc,0BAA0B,CAAC;AACzC,cAAc,eAAe,CAAC;AAC9B,cAAc,cAAc,CAAC;AAC7B,cAAc,mBAAmB,CAAC;AAClC,cAAc,QAAQ,CAAC;AACvB,cAAc,SAAS,CAAC;AACxB,cAAc,QAAQ,CAAC;AACvB,cAAc,SAAS,CAAC;AACxB,cAAc,SAAS,CAAC;AACxB,cAAc,UAAU,CAAC;AACzB,cAAc,QAAQ,CAAC;AACvB,cAAc,UAAU,CAAC;AACzB,cAAc,YAAY,CAAC;AAC3B,cAAc,WAAW,CAAC;AAC1B,cAAc,aAAa,CAAC;AAC5B,cAAc,UAAU,CAAC;AACzB,cAAc,UAAU,CAAC;AACzB,cAAc,UAAU,CAAC;AACzB,cAAc,QAAQ,CAAC;AACvB,cAAc,aAAa,CAAC;AAC5B,cAAc,eAAe,CAAC;AAC9B,cAAc,aAAa,CAAC;AAC5B,cAAc,wBAAwB,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/swift-ui/index.tsx"],"names":[],"mappings":"AAAA,cAAc,eAAe,CAAC;AAC9B,cAAc,UAAU,CAAC;AACzB,cAAc,SAAS,CAAC;AACxB,cAAc,eAAe,CAAC;AAC9B,cAAc,0BAA0B,CAAC;AACzC,cAAc,eAAe,CAAC;AAC9B,cAAc,cAAc,CAAC;AAC7B,cAAc,mBAAmB,CAAC;AAClC,cAAc,QAAQ,CAAC;AACvB,cAAc,SAAS,CAAC;AACxB,cAAc,QAAQ,CAAC;AACvB,cAAc,SAAS,CAAC;AACxB,cAAc,SAAS,CAAC;AACxB,cAAc,kBAAkB,CAAC;AACjC,cAAc,UAAU,CAAC;AACzB,cAAc,QAAQ,CAAC;AACvB,cAAc,UAAU,CAAC;AACzB,cAAc,YAAY,CAAC;AAC3B,cAAc,WAAW,CAAC;AAC1B,cAAc,aAAa,CAAC;AAC5B,cAAc,UAAU,CAAC;AACzB,cAAc,UAAU,CAAC;AACzB,cAAc,UAAU,CAAC;AACzB,cAAc,QAAQ,CAAC;AACvB,cAAc,aAAa,CAAC;AAC5B,cAAc,eAAe,CAAC;AAC9B,cAAc,aAAa,CAAC;AAC5B,cAAc,wBAAwB,CAAC"}
+\ No newline at end of file
+diff --git a/packages/expo-ui/ios/ExpoUIModule.swift b/packages/expo-ui/ios/ExpoUIModule.swift
+index f9e61ba40ed2dd..baf9c777a8f934 100644
+--- a/packages/expo-ui/ios/ExpoUIModule.swift
++++ b/packages/expo-ui/ios/ExpoUIModule.swift
+@@ -52,5 +52,6 @@ public final class ExpoUIModule: Module {
+     View(ZStackView.self)
+     View(NamespaceView.self)
+     View(GlassEffectContainerView.self)
++    View(LabeledContentView.self)
+   }
+ }
+diff --git a/packages/expo-ui/ios/LabeledContentView.swift b/packages/expo-ui/ios/LabeledContentView.swift
+new file mode 100644
+index 00000000000000..9b705e7e928303
+--- /dev/null
++++ b/packages/expo-ui/ios/LabeledContentView.swift
+@@ -0,0 +1,27 @@
++// Copyright 2025-present 650 Industries. All rights reserved.
++
++import SwiftUI
++import ExpoModulesCore
++
++final class LabeledContentProps: ExpoSwiftUI.ViewProps, CommonViewModifierProps {
++  @Field var fixedSize: Bool?
++  @Field var frame: FrameOptions?
++  @Field var padding: PaddingOptions?
++  @Field var testID: String?
++  @Field var modifiers: ModifierArray?
++
++  @Field var label: String?
++}
++
++internal struct LabeledContentView: ExpoSwiftUI.View {
++  @ObservedObject var props: LabeledContentProps
++
++  var body: some View {
++    if #available(iOS 16.0, *) {
++      LabeledContent(props.label ?? "") {
++        Children()
++      }
++      .modifier(CommonViewModifiers(props: props))
++    }
++  }
++}
+diff --git a/packages/expo-ui/src/swift-ui/LabeledContent/index.tsx b/packages/expo-ui/src/swift-ui/LabeledContent/index.tsx
+new file mode 100644
+index 00000000000000..7ccd3651058972
+--- /dev/null
++++ b/packages/expo-ui/src/swift-ui/LabeledContent/index.tsx
+@@ -0,0 +1,34 @@
++import { requireNativeView } from 'expo';
++
++import { createViewModifierEventListener } from '../modifiers/utils';
++import { type CommonViewModifierProps } from '../types';
++
++export type LabeledContentProps = {
++  /**
++   * The label to be displayed in the labeled content.
++   */
++  label?: string;
++  children: React.ReactNode;
++} & CommonViewModifierProps;
++
++const LabeledContentNativeView: React.ComponentType<LabeledContentProps> = requireNativeView(
++  'ExpoUI',
++  'LabeledContentView'
++);
++
++/**
++ * LabeledContent component uses the native [LabeledContent](https://developer.apple.com/documentation/swiftui/labeledcontent) component.
++ * A container for attaching a label to a value-bearing view.
++ * Available from iOS 16.0.
++ * @platform ios
++ */
++export function LabeledContent(props: LabeledContentProps) {
++  const { modifiers, ...restProps } = props;
++  return (
++    <LabeledContentNativeView
++      modifiers={modifiers}
++      {...(modifiers ? createViewModifierEventListener(modifiers) : undefined)}
++      {...restProps}
++    />
++  );
++}
+diff --git a/packages/expo-ui/src/swift-ui/index.tsx b/packages/expo-ui/src/swift-ui/index.tsx
+index 3e38298f266900..3aaffc0300676e 100644
+--- a/packages/expo-ui/src/swift-ui/index.tsx
++++ b/packages/expo-ui/src/swift-ui/index.tsx
+@@ -11,6 +11,7 @@ export * from './Gauge';
+ export * from './Host';
+ export * from './Image';
+ export * from './Label';
++export * from './LabeledContent';
+ export * from './Layout';
+ export * from './List';
+ export * from './Picker';

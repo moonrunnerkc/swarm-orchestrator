@@ -1,0 +1,510 @@
+diff --git a/packages/vite/src/node/plugins/forwardConsole.ts b/packages/vite/src/node/plugins/forwardConsole.ts
+index 1c34ea3124e5ce..0282818f30c8ff 100644
+--- a/packages/vite/src/node/plugins/forwardConsole.ts
++++ b/packages/vite/src/node/plugins/forwardConsole.ts
+@@ -92,7 +92,11 @@ function formatError(
+       if (result && !result.map) {
+         try {
+           const filePath = id.split('?')[0]
+-          const extracted = extractSourcemapFromFile(result.code, filePath)
++          const extracted = extractSourcemapFromFile(
++            result.code,
++            filePath,
++            environment.config.logger,
++          )
+           sourceMapCache.set(id, extracted?.map)
+           return extracted?.map
+         } catch {
+diff --git a/packages/vite/src/node/server/__tests__/sourcemap.spec.ts b/packages/vite/src/node/server/__tests__/sourcemap.spec.ts
+new file mode 100644
+index 00000000000000..211c1bf6e19148
+--- /dev/null
++++ b/packages/vite/src/node/server/__tests__/sourcemap.spec.ts
+@@ -0,0 +1,71 @@
++import { describe, expect, test } from 'vitest'
++import { getNodeModulesPackageRoot } from '../sourcemap'
++import { isWindows } from '../../../shared/utils'
++
++describe('getNodeModulesPackageRoot', () => {
++  const cases = [
++    {
++      name: 'returns undefined for path outside node_modules',
++      input: '/project/src/foo.ts',
++      expected: undefined,
++    },
++    {
++      name: 'returns undefined for plain filename',
++      input: 'foo.js',
++      expected: undefined,
++    },
++    {
++      name: 'unscoped package',
++      input: '/project/node_modules/foo/index.js',
++      expected: '/project/node_modules/foo',
++    },
++    {
++      name: 'unscoped package in nested directory',
++      input: '/project/node_modules/foo/dist/bar.js',
++      expected: '/project/node_modules/foo',
++    },
++    {
++      name: 'scoped package',
++      input: '/project/node_modules/@scope/pkg/dist/foo.js',
++      expected: '/project/node_modules/@scope/pkg',
++    },
++    {
++      name: 'scoped package at root level',
++      input: '/project/node_modules/@scope/pkg/index.js',
++      expected: '/project/node_modules/@scope/pkg',
++    },
++    {
++      name: 'nested node_modules uses the last segment',
++      input: '/project/node_modules/foo/node_modules/bar/index.js',
++      expected: '/project/node_modules/foo/node_modules/bar',
++    },
++    {
++      name: 'Windows-style path',
++      input: 'D:\\project\\node_modules\\foo\\dist\\bar.js',
++      expected: 'D:/project/node_modules/foo',
++      skip: !isWindows,
++    },
++    {
++      name: 'Windows-style path with scoped package',
++      input: 'D:\\project\\node_modules\\@scope\\pkg\\index.js',
++      expected: 'D:/project/node_modules/@scope/pkg',
++      skip: !isWindows,
++    },
++    {
++      name: 'package name without subdirectory',
++      input: '/project/node_modules/foo',
++      expected: '/project/node_modules/foo',
++    },
++    {
++      name: 'scoped package name without subdirectory',
++      input: '/project/node_modules/@scope/pkg',
++      expected: '/project/node_modules/@scope/pkg',
++    },
++  ]
++
++  for (const { name, input, expected, skip } of cases) {
++    test.skipIf(skip)(name, () => {
++      expect(getNodeModulesPackageRoot(input)).toBe(expected)
++    })
++  }
++})
+diff --git a/packages/vite/src/node/server/sourcemap.ts b/packages/vite/src/node/server/sourcemap.ts
+index 9f0caac861286f..e7b0096ffb3621 100644
+--- a/packages/vite/src/node/server/sourcemap.ts
++++ b/packages/vite/src/node/server/sourcemap.ts
+@@ -3,14 +3,47 @@ import fs from 'node:fs'
+ import fsp from 'node:fs/promises'
+ import convertSourceMap from 'convert-source-map'
+ import type { ExistingRawSourceMap, SourceMap } from 'rolldown'
++import colors from 'picocolors'
+ import type { Logger } from '../logger'
+-import { blankReplacer, createDebugger } from '../utils'
++import {
++  blankReplacer,
++  createDebugger,
++  isParentDirectory,
++  normalizePath,
++} from '../utils'
+ import { cleanUrl } from '../../shared/utils'
+ 
+ const debug = createDebugger('vite:sourcemap', {
+   onlyWhenFocused: true,
+ })
+ 
++/**
++ * Given a file path inside node_modules, returns the package root directory.
++ * For scoped packages like `node_modules/@scope/pkg/dist/foo.js`, returns `node_modules/@scope/pkg`.
++ * Returns `undefined` if the file is not inside node_modules.
++ */
++export function getNodeModulesPackageRoot(
++  filePath: string,
++): string | undefined {
++  const normalized = normalizePath(filePath)
++  const nodeModulesIndex = normalized.lastIndexOf('/node_modules/')
++  if (nodeModulesIndex === -1) return undefined
++
++  const packageStart = nodeModulesIndex + '/node_modules/'.length
++  const rest = normalized.slice(packageStart)
++  const firstSlash = rest.indexOf('/')
++
++  let packageName: string
++  if (rest.startsWith('@')) {
++    // scoped package: @scope/pkg
++    const secondSlash = rest.indexOf('/', firstSlash + 1)
++    packageName = secondSlash === -1 ? rest : rest.slice(0, secondSlash)
++  } else {
++    packageName = firstSlash === -1 ? rest : rest.slice(0, firstSlash)
++  }
++  return normalized.slice(0, packageStart) + packageName
++}
++
+ // Virtual modules should be prefixed with a null byte to avoid a
+ // false positive "missing source" warning. We also check for certain
+ // prefixes used for special handling in esbuildDepPlugin.
+@@ -40,6 +73,7 @@ export async function injectSourcesContent(
+ ): Promise<void> {
+   let sourceRootPromise: Promise<string | undefined>
+ 
++  const packageRoot = getNodeModulesPackageRoot(file)
+   const missingSources: string[] = []
+   const sourcesContent = map.sourcesContent || []
+   const sourcesContentPromises: Promise<void>[] = []
+@@ -59,7 +93,22 @@ export async function injectSourcesContent(
+           if (sourceRoot) {
+             resolvedSourcePath = path.resolve(sourceRoot, resolvedSourcePath)
+           }
+-
++          // Block path traversal outside the package boundary for node_modules
++          // A malicious package may point to a sensitive file
++          if (packageRoot) {
++            const resolvedSourcePathNormalized = normalizePath(
++              path.resolve(resolvedSourcePath),
++            )
++            if (!isParentDirectory(packageRoot, resolvedSourcePathNormalized)) {
++              sourcesContent[index] = null
++              logger.warnOnce(
++                colors.yellow(
++                  `Sourcemap for ${JSON.stringify(file)} points to a source file outside its package: ${JSON.stringify(resolvedSourcePathNormalized)}`,
++                ),
++              )
++              return
++            }
++          }
+           sourcesContent[index] = await fsp
+             .readFile(resolvedSourcePath, 'utf-8')
+             .catch(() => {
+@@ -153,12 +202,13 @@ export function applySourcemapIgnoreList(
+ export function extractSourcemapFromFile(
+   code: string,
+   filePath: string,
++  logger: Logger,
+ ): { code: string; map: SourceMap } | undefined {
+   const map = (
+     convertSourceMap.fromSource(code) ||
+     convertSourceMap.fromMapFileSource(
+       code,
+-      createConvertSourceMapReadMap(filePath),
++      createConvertSourceMapReadMap(filePath, logger),
+     )
+   )?.toObject()
+ 
+@@ -170,11 +220,24 @@ export function extractSourcemapFromFile(
+   }
+ }
+ 
+-function createConvertSourceMapReadMap(originalFileName: string) {
++function createConvertSourceMapReadMap(
++  originalFileName: string,
++  logger: Logger,
++) {
++  const packageRoot = getNodeModulesPackageRoot(originalFileName)
+   return (filename: string) => {
+-    return fs.readFileSync(
+-      path.resolve(path.dirname(originalFileName), filename),
+-      'utf-8',
+-    )
++    const resolvedPath = path.resolve(path.dirname(originalFileName), filename)
++    if (
++      packageRoot &&
++      !isParentDirectory(packageRoot, normalizePath(resolvedPath))
++    ) {
++      logger.warnOnce(
++        colors.yellow(
++          `Sourcemap in "${originalFileName}" references a map file outside its package: "${filename}"`,
++        ),
++      )
++      return '{}'
++    }
++    return fs.readFileSync(resolvedPath, 'utf-8')
+   }
+ }
+diff --git a/packages/vite/src/node/server/transformRequest.ts b/packages/vite/src/node/server/transformRequest.ts
+index 397b63fd6e049c..2d30d7a74bdeba 100644
+--- a/packages/vite/src/node/server/transformRequest.ts
++++ b/packages/vite/src/node/server/transformRequest.ts
+@@ -293,7 +293,7 @@ async function loadAndTransform(
+     }
+     if (code) {
+       try {
+-        const extracted = extractSourcemapFromFile(code, file)
++        const extracted = extractSourcemapFromFile(code, file, logger)
+         if (extracted) {
+           code = extracted.code
+           map = extracted.map
+diff --git a/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts b/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts
+index 84fdc1412a6f9d..d28236d99d2aa5 100644
+--- a/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts
++++ b/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts
+@@ -16,6 +16,14 @@ import {
+   serverLogs,
+ } from '~utils'
+ 
++function createMapFileReader(moduleUrl: string) {
++  return async (filename: string): Promise<string> => {
++    const base = new URL(moduleUrl, page.url())
++    const res = await page.request.get(new URL(filename, base).href)
++    return res.text()
++  }
++}
++
+ if (!isBuild) {
+   test('js', async () => {
+     const res = await page.request.get(new URL('./foo.js', page.url()).href)
+@@ -144,6 +152,44 @@ if (!isBuild) {
+       expect(log).not.toMatch(/Sourcemap for .+ points to missing source files/)
+     })
+   })
++
++  test('should not leak file contents via sourcemap path traversal in node_modules', async () => {
++    const res = await page.request.get(
++      new URL('./malicious-import.js', page.url()).href,
++    )
++    const js = await res.text()
++    // Find the rewritten import URL for the malicious dep
++    const depUrlMatch = js.match(/from\s+"([^"]*malicious-sourcemap[^"]*)"/)
++    expect(depUrlMatch).toBeTruthy()
++    const depUrl = depUrlMatch![1]
++    const depRes = await page.request.get(new URL(depUrl, page.url()).href)
++    const depJs = await depRes.text()
++    const map = extractSourcemap(depJs)
++    expect(map.sourcesContent).toBeDefined()
++    expect(map.sourcesContent).not.toContainEqual(
++      expect.stringContaining('defineConfig'),
++    )
++  })
++
++  test('should not leak file contents via sourcemap path traversal in optimized deps', async () => {
++    const res = await page.request.get(
++      new URL('./optimized-malicious-import.js', page.url()).href,
++    )
++    const js = await res.text()
++    // Find the rewritten import URL for the optimized malicious dep
++    const depUrlMatch = js.match(/from\s+"([^"]*optimized-malicious[^"]*)"/)
++    expect(depUrlMatch).toBeTruthy()
++    const depUrl = depUrlMatch![1]
++    // Ensure the dep was actually optimized (served from .vite/deps)
++    expect(depUrl).toContain('.vite/deps')
++    const depRes = await page.request.get(new URL(depUrl, page.url()).href)
++    const depJs = await depRes.text()
++    const map = await extractSourcemap(depJs, createMapFileReader(depUrl))
++    expect(map.sourcesContent).toBeDefined()
++    expect(map.sourcesContent).not.toContainEqual(
++      expect.stringContaining('defineConfig'),
++    )
++  })
+ }
+ 
+ describe.runIf(isBuild)('build tests', () => {
+diff --git a/playground/js-sourcemap/dep-malicious-sourcemap/index.js b/playground/js-sourcemap/dep-malicious-sourcemap/index.js
+new file mode 100644
+index 00000000000000..49b50b3a493e81
+--- /dev/null
++++ b/playground/js-sourcemap/dep-malicious-sourcemap/index.js
+@@ -0,0 +1,2 @@
++export const malicious = 'value'
++//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uLy4uLy4uL3BsYXlncm91bmQvanMtc291cmNlbWFwL3ZpdGUuY29uZmlnLmpzIl0sInNvdXJjZXNDb250ZW50IjpbbnVsbF0sIm1hcHBpbmdzIjoiQUFBQSIsIm5hbWVzIjpbXX0=
+diff --git a/playground/js-sourcemap/dep-malicious-sourcemap/package.json b/playground/js-sourcemap/dep-malicious-sourcemap/package.json
+new file mode 100644
+index 00000000000000..a04f034b96c57e
+--- /dev/null
++++ b/playground/js-sourcemap/dep-malicious-sourcemap/package.json
+@@ -0,0 +1,7 @@
++{
++  "name": "@vitejs/test-dep-malicious-sourcemap",
++  "private": true,
++  "version": "0.0.0",
++  "type": "module",
++  "main": "index.js"
++}
+diff --git a/playground/js-sourcemap/dep-optimized-malicious/index.js b/playground/js-sourcemap/dep-optimized-malicious/index.js
+new file mode 100644
+index 00000000000000..00d458f2075f09
+--- /dev/null
++++ b/playground/js-sourcemap/dep-optimized-malicious/index.js
+@@ -0,0 +1,3 @@
++const optimizedMalicious = 'value'
++module.exports = { optimizedMalicious }
++//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uLy4uLy4uL3BsYXlncm91bmQvanMtc291cmNlbWFwL3ZpdGUuY29uZmlnLmpzIl0sInNvdXJjZXNDb250ZW50IjpbbnVsbF0sIm1hcHBpbmdzIjoiQUFBQSIsIm5hbWVzIjpbXX0=
+diff --git a/playground/js-sourcemap/dep-optimized-malicious/package.json b/playground/js-sourcemap/dep-optimized-malicious/package.json
+new file mode 100644
+index 00000000000000..f72e4a68e2e790
+--- /dev/null
++++ b/playground/js-sourcemap/dep-optimized-malicious/package.json
+@@ -0,0 +1,6 @@
++{
++  "name": "@vitejs/test-dep-optimized-malicious",
++  "private": true,
++  "version": "0.0.0",
++  "main": "index.js"
++}
+diff --git a/playground/js-sourcemap/index.html b/playground/js-sourcemap/index.html
+index 7a91852f4ebe18..27a0884946cf82 100644
+--- a/playground/js-sourcemap/index.html
++++ b/playground/js-sourcemap/index.html
+@@ -11,3 +11,5 @@ <h1>JS Sourcemap</h1>
+ <script type="module" src="./with-multiline-import.ts"></script>
+ <script type="module" src="./zoo.js"></script>
+ <script type="module" src="./with-define-object.ts"></script>
++<script type="module" src="./malicious-import.js"></script>
++<script type="module" src="./optimized-malicious-import.js"></script>
+diff --git a/playground/js-sourcemap/malicious-import.js b/playground/js-sourcemap/malicious-import.js
+new file mode 100644
+index 00000000000000..339df872b838e1
+--- /dev/null
++++ b/playground/js-sourcemap/malicious-import.js
+@@ -0,0 +1,2 @@
++import { malicious } from '@vitejs/test-dep-malicious-sourcemap'
++console.log('malicious-import', malicious)
+diff --git a/playground/js-sourcemap/optimized-malicious-import.js b/playground/js-sourcemap/optimized-malicious-import.js
+new file mode 100644
+index 00000000000000..545cccdc97fcff
+--- /dev/null
++++ b/playground/js-sourcemap/optimized-malicious-import.js
+@@ -0,0 +1,2 @@
++import { optimizedMalicious } from '@vitejs/test-dep-optimized-malicious'
++console.log('optimized-malicious-import', optimizedMalicious)
+diff --git a/playground/js-sourcemap/package.json b/playground/js-sourcemap/package.json
+index 9e600425fd4408..b66a82e76b3e3d 100644
+--- a/playground/js-sourcemap/package.json
++++ b/playground/js-sourcemap/package.json
+@@ -10,6 +10,8 @@
+     "preview": "vite preview"
+   },
+   "dependencies": {
++    "@vitejs/test-dep-malicious-sourcemap": "file:dep-malicious-sourcemap",
++    "@vitejs/test-dep-optimized-malicious": "file:dep-optimized-malicious",
+     "@vitejs/test-importee-pkg": "file:importee-pkg",
+     "magic-string": "^0.30.21"
+   }
+diff --git a/playground/js-sourcemap/vite.config.js b/playground/js-sourcemap/vite.config.js
+index 7035d82e1fac30..4cabe6e6d4e577 100644
+--- a/playground/js-sourcemap/vite.config.js
++++ b/playground/js-sourcemap/vite.config.js
+@@ -7,6 +7,9 @@ export default defineConfig({
+     transformFooWithInlineSourceMap(),
+     transformZooWithSourcemapPlugin(),
+   ],
++  optimizeDeps: {
++    exclude: ['@vitejs/test-dep-malicious-sourcemap'],
++  },
+   build: {
+     sourcemap: true,
+     rollupOptions: {
+diff --git a/playground/test-utils.ts b/playground/test-utils.ts
+index 34df6142d3f52d..09e80ce31eadf4 100644
+--- a/playground/test-utils.ts
++++ b/playground/test-utils.ts
+@@ -11,7 +11,11 @@ import type {
+ } from 'playwright-chromium'
+ import type { DepOptimizationMetadata, Manifest } from 'vite'
+ import { normalizePath } from 'vite'
+-import { fromComment, removeComments } from 'convert-source-map'
++import {
++  fromComment,
++  fromMapFileComment,
++  removeComments,
++} from 'convert-source-map'
+ import { expect } from 'vitest'
+ import type { ResultPromise as ExecaResultPromise } from 'execa'
+ import { isWindows, page, sourcemapSnapshot, testDir } from './vitestSetup'
+@@ -369,9 +373,28 @@ async function untilBrowserLog(
+   return logs
+ }
+ 
+-export const extractSourcemap = (content: string): any => {
++export function extractSourcemap(content: string): any
++export function extractSourcemap(
++  content: string,
++  read: (filename: string) => Promise<string>,
++): Promise<any>
++export function extractSourcemap(
++  content: string,
++  read?: (filename: string) => Promise<string>,
++): any {
+   const lines = content.trim().split('\n')
+-  return fromComment(lines[lines.length - 1]).toObject()
++  const lastLine = lines[lines.length - 1]
++  if (read) {
++    const result = fromMapFileComment(lastLine, async (url) => {
++      if (url.startsWith('data:')) {
++        throw new Error(`Omit read argument when sourcemap is inline`)
++      }
++      const content = await read(url)
++      return content
++    })
++    return result.then((r) => r.toObject())
++  }
++  return fromComment(lastLine).toObject()
+ }
+ 
+ export const formatSourcemapForSnapshot = (
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 17b63b3ed42b8a..9f698952871344 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -881,6 +881,12 @@ importers:
+ 
+   playground/js-sourcemap:
+     dependencies:
++      '@vitejs/test-dep-malicious-sourcemap':
++        specifier: file:dep-malicious-sourcemap
++        version: file:playground/js-sourcemap/dep-malicious-sourcemap
++      '@vitejs/test-dep-optimized-malicious':
++        specifier: file:dep-optimized-malicious
++        version: file:playground/js-sourcemap/dep-optimized-malicious
+       '@vitejs/test-importee-pkg':
+         specifier: file:importee-pkg
+         version: file:playground/js-sourcemap/importee-pkg
+@@ -888,6 +894,10 @@ importers:
+         specifier: ^0.30.21
+         version: 0.30.21
+ 
++  playground/js-sourcemap/dep-malicious-sourcemap: {}
++
++  playground/js-sourcemap/dep-optimized-malicious: {}
++
+   playground/js-sourcemap/importee-pkg: {}
+ 
+   playground/json:
+@@ -4334,6 +4344,9 @@ packages:
+   '@vitejs/test-dep-license-mit@file:packages/vite/src/node/__tests__/plugins/fixtures/license/dep-license-mit':
+     resolution: {directory: packages/vite/src/node/__tests__/plugins/fixtures/license/dep-license-mit, type: directory}
+ 
++  '@vitejs/test-dep-malicious-sourcemap@file:playground/js-sourcemap/dep-malicious-sourcemap':
++    resolution: {directory: playground/js-sourcemap/dep-malicious-sourcemap, type: directory}
++
+   '@vitejs/test-dep-nested-license-isc@file:packages/vite/src/node/__tests__/plugins/fixtures/license/dep-nested-license-isc':
+     resolution: {directory: packages/vite/src/node/__tests__/plugins/fixtures/license/dep-nested-license-isc, type: directory}
+ 
+@@ -4358,6 +4371,9 @@ packages:
+   '@vitejs/test-dep-optimize-with-glob@file:playground/optimize-deps/dep-optimize-with-glob':
+     resolution: {directory: playground/optimize-deps/dep-optimize-with-glob, type: directory}
+ 
++  '@vitejs/test-dep-optimized-malicious@file:playground/js-sourcemap/dep-optimized-malicious':
++    resolution: {directory: playground/js-sourcemap/dep-optimized-malicious, type: directory}
++
+   '@vitejs/test-dep-relative-to-main@file:playground/optimize-deps/dep-relative-to-main':
+     resolution: {directory: playground/optimize-deps/dep-relative-to-main, type: directory}
+ 
+@@ -10447,6 +10463,8 @@ snapshots:
+     dependencies:
+       '@vitejs/test-dep-nested-license-isc': file:packages/vite/src/node/__tests__/plugins/fixtures/license/dep-nested-license-isc
+ 
++  '@vitejs/test-dep-malicious-sourcemap@file:playground/js-sourcemap/dep-malicious-sourcemap': {}
++
+   '@vitejs/test-dep-nested-license-isc@file:packages/vite/src/node/__tests__/plugins/fixtures/license/dep-nested-license-isc': {}
+ 
+   '@vitejs/test-dep-no-discovery@file:playground/optimize-deps-no-discovery/dep-no-discovery': {}
+@@ -10463,6 +10481,8 @@ snapshots:
+ 
+   '@vitejs/test-dep-optimize-with-glob@file:playground/optimize-deps/dep-optimize-with-glob': {}
+ 
++  '@vitejs/test-dep-optimized-malicious@file:playground/js-sourcemap/dep-optimized-malicious': {}
++
+   '@vitejs/test-dep-relative-to-main@file:playground/optimize-deps/dep-relative-to-main': {}
+ 
+   '@vitejs/test-dep-self-reference-url-worker@file:playground/worker/dep-self-reference-url-worker': {}

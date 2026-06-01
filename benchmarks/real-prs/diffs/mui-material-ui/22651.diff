@@ -1,0 +1,1934 @@
+diff --git a/docs/pages/api-docs/alert-title.md b/docs/pages/api-docs/alert-title.md
+index 20c0a61d2461e0..a6ae550cdab655 100644
+--- a/docs/pages/api-docs/alert-title.md
++++ b/docs/pages/api-docs/alert-title.md
+@@ -1,5 +1,5 @@
+ ---
+-filename: /packages/material-ui-lab/src/AlertTitle/AlertTitle.js
++filename: /packages/material-ui/src/AlertTitle/AlertTitle.js
+ ---
+ 
+ <!--- This documentation is automatically generated, do not try to edit it. -->
+@@ -11,9 +11,9 @@ filename: /packages/material-ui-lab/src/AlertTitle/AlertTitle.js
+ ## Import
+ 
+ ```js
+-import AlertTitle from '@material-ui/lab/AlertTitle';
++import AlertTitle from '@material-ui/core/AlertTitle';
+ // or
+-import { AlertTitle } from '@material-ui/lab';
++import { AlertTitle } from '@material-ui/core';
+ ```
+ 
+ You can learn more about the difference by [reading this guide](/guides/minimizing-bundle-size/).
+@@ -47,7 +47,7 @@ You can override the style of the component thanks to one of these customization
+ - With a [global class name](/customization/components/#overriding-styles-with-global-class-names).
+ - With a theme and an [`overrides` property](/customization/globals/#css).
+ 
+-If that's not sufficient, you can check the [implementation of the component](https://github.com/mui-org/material-ui/blob/next/packages/material-ui-lab/src/AlertTitle/AlertTitle.js) for more detail.
++If that's not sufficient, you can check the [implementation of the component](https://github.com/mui-org/material-ui/blob/next/packages/material-ui/src/AlertTitle/AlertTitle.js) for more detail.
+ 
+ ## Demos
+ 
+diff --git a/docs/pages/api-docs/alert.md b/docs/pages/api-docs/alert.md
+index a53256cd28bb05..72000a25bf4295 100644
+--- a/docs/pages/api-docs/alert.md
++++ b/docs/pages/api-docs/alert.md
+@@ -1,5 +1,5 @@
+ ---
+-filename: /packages/material-ui-lab/src/Alert/Alert.js
++filename: /packages/material-ui/src/Alert/Alert.js
+ ---
+ 
+ <!--- This documentation is automatically generated, do not try to edit it. -->
+@@ -11,9 +11,9 @@ filename: /packages/material-ui-lab/src/Alert/Alert.js
+ ## Import
+ 
+ ```js
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ // or
+-import { Alert } from '@material-ui/lab';
++import { Alert } from '@material-ui/core';
+ ```
+ 
+ You can learn more about the difference by [reading this guide](/guides/minimizing-bundle-size/).
+@@ -74,7 +74,7 @@ You can override the style of the component thanks to one of these customization
+ - With a [global class name](/customization/components/#overriding-styles-with-global-class-names).
+ - With a theme and an [`overrides` property](/customization/globals/#css).
+ 
+-If that's not sufficient, you can check the [implementation of the component](https://github.com/mui-org/material-ui/blob/next/packages/material-ui-lab/src/Alert/Alert.js) for more detail.
++If that's not sufficient, you can check the [implementation of the component](https://github.com/mui-org/material-ui/blob/next/packages/material-ui/src/Alert/Alert.js) for more detail.
+ 
+ ## Inheritance
+ 
+diff --git a/docs/src/pages.js b/docs/src/pages.js
+index 56bf47e7242d93..6481ce74f825f4 100644
+--- a/docs/src/pages.js
++++ b/docs/src/pages.js
+@@ -73,6 +73,7 @@ const pages = [
+         pathname: '/components',
+         subheader: '/components/feedback',
+         children: [
++          { pathname: '/components/alert' },
+           { pathname: '/components/backdrop' },
+           { pathname: '/components/dialogs' },
+           { pathname: '/components/progress' },
+@@ -116,7 +117,6 @@ const pages = [
+         subheader: '/components/lab',
+         children: [
+           { pathname: '/components/about-the-lab' },
+-          { pathname: '/components/alert' },
+           { pathname: '/components/autocomplete' },
+           { pathname: '/components/pagination' },
+           { pathname: '/components/rating' },
+diff --git a/docs/src/pages/components/alert/ActionAlerts.js b/docs/src/pages/components/alert/ActionAlerts.js
+index 3d7f5d56b860c5..0e38f5001e2843 100644
+--- a/docs/src/pages/components/alert/ActionAlerts.js
++++ b/docs/src/pages/components/alert/ActionAlerts.js
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ import Button from '@material-ui/core/Button';
+ 
+ const useStyles = makeStyles((theme) => ({
+diff --git a/docs/src/pages/components/alert/ActionAlerts.tsx b/docs/src/pages/components/alert/ActionAlerts.tsx
+index bbe3c8079bd519..59087f33295375 100644
+--- a/docs/src/pages/components/alert/ActionAlerts.tsx
++++ b/docs/src/pages/components/alert/ActionAlerts.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ import Button from '@material-ui/core/Button';
+ 
+ const useStyles = makeStyles((theme: Theme) =>
+diff --git a/docs/src/pages/components/alert/SimpleAlerts.js b/docs/src/pages/components/alert/BasicAlerts.js
+similarity index 88%
+rename from docs/src/pages/components/alert/SimpleAlerts.js
+rename to docs/src/pages/components/alert/BasicAlerts.js
+index dea11b8b01d74b..8a4eea30d4c296 100644
+--- a/docs/src/pages/components/alert/SimpleAlerts.js
++++ b/docs/src/pages/components/alert/BasicAlerts.js
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ const useStyles = makeStyles((theme) => ({
+   root: {
+@@ -11,7 +11,7 @@ const useStyles = makeStyles((theme) => ({
+   },
+ }));
+ 
+-export default function SimpleAlerts() {
++export default function BasicAlerts() {
+   const classes = useStyles();
+ 
+   return (
+diff --git a/docs/src/pages/components/alert/SimpleAlerts.tsx b/docs/src/pages/components/alert/BasicAlerts.tsx
+similarity index 89%
+rename from docs/src/pages/components/alert/SimpleAlerts.tsx
+rename to docs/src/pages/components/alert/BasicAlerts.tsx
+index b2aeb9ac666c51..b0525db44cf9ea 100644
+--- a/docs/src/pages/components/alert/SimpleAlerts.tsx
++++ b/docs/src/pages/components/alert/BasicAlerts.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ const useStyles = makeStyles((theme: Theme) =>
+   createStyles({
+@@ -13,7 +13,7 @@ const useStyles = makeStyles((theme: Theme) =>
+   }),
+ );
+ 
+-export default function SimpleAlerts() {
++export default function BasicAlerts() {
+   const classes = useStyles();
+ 
+   return (
+diff --git a/docs/src/pages/components/alert/ColorAlerts.js b/docs/src/pages/components/alert/ColorAlerts.js
+index bd554e45e88f08..0e263792caaaa4 100644
+--- a/docs/src/pages/components/alert/ColorAlerts.js
++++ b/docs/src/pages/components/alert/ColorAlerts.js
+@@ -1,5 +1,5 @@
+ import * as React from 'react';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ export default function ColorAlerts() {
+   return (
+diff --git a/docs/src/pages/components/alert/ColorAlerts.tsx b/docs/src/pages/components/alert/ColorAlerts.tsx
+index bd554e45e88f08..0e263792caaaa4 100644
+--- a/docs/src/pages/components/alert/ColorAlerts.tsx
++++ b/docs/src/pages/components/alert/ColorAlerts.tsx
+@@ -1,5 +1,5 @@
+ import * as React from 'react';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ export default function ColorAlerts() {
+   return (
+diff --git a/docs/src/pages/components/alert/DescriptionAlerts.js b/docs/src/pages/components/alert/DescriptionAlerts.js
+index b67a3849943292..a23d313441de1b 100644
+--- a/docs/src/pages/components/alert/DescriptionAlerts.js
++++ b/docs/src/pages/components/alert/DescriptionAlerts.js
+@@ -1,6 +1,7 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import { Alert, AlertTitle } from '@material-ui/lab';
++import Alert from '@material-ui/core/Alert';
++import AlertTitle from '@material-ui/core/AlertTitle';
+ 
+ const useStyles = makeStyles((theme) => ({
+   root: {
+diff --git a/docs/src/pages/components/alert/DescriptionAlerts.tsx b/docs/src/pages/components/alert/DescriptionAlerts.tsx
+index 24e81081d52a68..988624cb7812c4 100644
+--- a/docs/src/pages/components/alert/DescriptionAlerts.tsx
++++ b/docs/src/pages/components/alert/DescriptionAlerts.tsx
+@@ -1,6 +1,7 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import { Alert, AlertTitle } from '@material-ui/lab';
++import Alert from '@material-ui/core/Alert';
++import AlertTitle from '@material-ui/core/AlertTitle';
+ 
+ const useStyles = makeStyles((theme: Theme) =>
+   createStyles({
+diff --git a/docs/src/pages/components/alert/FilledAlerts.js b/docs/src/pages/components/alert/FilledAlerts.js
+index 3dc06e78b7eab0..e38a32d19c2d45 100644
+--- a/docs/src/pages/components/alert/FilledAlerts.js
++++ b/docs/src/pages/components/alert/FilledAlerts.js
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ const useStyles = makeStyles((theme) => ({
+   root: {
+@@ -11,7 +11,7 @@ const useStyles = makeStyles((theme) => ({
+   },
+ }));
+ 
+-export default function SimpleAlerts() {
++export default function BasicAlerts() {
+   const classes = useStyles();
+ 
+   return (
+diff --git a/docs/src/pages/components/alert/FilledAlerts.tsx b/docs/src/pages/components/alert/FilledAlerts.tsx
+index 30cd7ac85626f8..90df449f7ba089 100644
+--- a/docs/src/pages/components/alert/FilledAlerts.tsx
++++ b/docs/src/pages/components/alert/FilledAlerts.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ const useStyles = makeStyles((theme: Theme) =>
+   createStyles({
+@@ -13,7 +13,7 @@ const useStyles = makeStyles((theme: Theme) =>
+   }),
+ );
+ 
+-export default function SimpleAlerts() {
++export default function BasicAlerts() {
+   const classes = useStyles();
+ 
+   return (
+diff --git a/docs/src/pages/components/alert/IconAlerts.js b/docs/src/pages/components/alert/IconAlerts.js
+index 69267c447232dd..c123253a2f2a49 100644
+--- a/docs/src/pages/components/alert/IconAlerts.js
++++ b/docs/src/pages/components/alert/IconAlerts.js
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ import CheckIcon from '@material-ui/icons/Check';
+ import CheckCircleOutlineIcon from '@material-ui/icons/CheckCircleOutline';
+ 
+diff --git a/docs/src/pages/components/alert/IconAlerts.tsx b/docs/src/pages/components/alert/IconAlerts.tsx
+index 8fc34f4ab4d18a..f8537a4d4b5114 100644
+--- a/docs/src/pages/components/alert/IconAlerts.tsx
++++ b/docs/src/pages/components/alert/IconAlerts.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ import CheckIcon from '@material-ui/icons/Check';
+ import CheckCircleOutlineIcon from '@material-ui/icons/CheckCircleOutline';
+ 
+diff --git a/docs/src/pages/components/alert/OutlinedAlerts.js b/docs/src/pages/components/alert/OutlinedAlerts.js
+index 4a9ba659ac9ee4..df2e151730ab50 100644
+--- a/docs/src/pages/components/alert/OutlinedAlerts.js
++++ b/docs/src/pages/components/alert/OutlinedAlerts.js
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ const useStyles = makeStyles((theme) => ({
+   root: {
+@@ -11,7 +11,7 @@ const useStyles = makeStyles((theme) => ({
+   },
+ }));
+ 
+-export default function SimpleAlerts() {
++export default function BasicAlerts() {
+   const classes = useStyles();
+ 
+   return (
+diff --git a/docs/src/pages/components/alert/OutlinedAlerts.tsx b/docs/src/pages/components/alert/OutlinedAlerts.tsx
+index 279538ba321101..df1b441a0c9bc7 100644
+--- a/docs/src/pages/components/alert/OutlinedAlerts.tsx
++++ b/docs/src/pages/components/alert/OutlinedAlerts.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ 
+ const useStyles = makeStyles((theme: Theme) =>
+   createStyles({
+@@ -13,7 +13,7 @@ const useStyles = makeStyles((theme: Theme) =>
+   }),
+ );
+ 
+-export default function SimpleAlerts() {
++export default function BasicAlerts() {
+   const classes = useStyles();
+ 
+   return (
+diff --git a/docs/src/pages/components/alert/TransitionAlerts.js b/docs/src/pages/components/alert/TransitionAlerts.js
+index 6e5bac8f1e79ff..b71bc081a31a81 100644
+--- a/docs/src/pages/components/alert/TransitionAlerts.js
++++ b/docs/src/pages/components/alert/TransitionAlerts.js
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ import IconButton from '@material-ui/core/IconButton';
+ import Collapse from '@material-ui/core/Collapse';
+ import Button from '@material-ui/core/Button';
+diff --git a/docs/src/pages/components/alert/TransitionAlerts.tsx b/docs/src/pages/components/alert/TransitionAlerts.tsx
+index 8c7032ddc386a4..d4056df314d12c 100644
+--- a/docs/src/pages/components/alert/TransitionAlerts.tsx
++++ b/docs/src/pages/components/alert/TransitionAlerts.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { makeStyles, Theme, createStyles } from '@material-ui/core/styles';
+-import Alert from '@material-ui/lab/Alert';
++import Alert from '@material-ui/core/Alert';
+ import IconButton from '@material-ui/core/IconButton';
+ import Collapse from '@material-ui/core/Collapse';
+ import Button from '@material-ui/core/Button';
+diff --git a/docs/src/pages/components/alert/alert-de.md b/docs/src/pages/components/alert/alert-de.md
+index 15319d2452a6fa..12caf0c8587dc6 100644
+--- a/docs/src/pages/components/alert/alert-de.md
++++ b/docs/src/pages/components/alert/alert-de.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ Der Hinweis bietet vier Schweregrade an, welche je ein eigenes Icon und eine eigene Farbe besitzen.
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Beschreibung
+ 
+diff --git a/docs/src/pages/components/alert/alert-es.md b/docs/src/pages/components/alert/alert-es.md
+index f8a00ee7dce94c..baa5166435515c 100644
+--- a/docs/src/pages/components/alert/alert-es.md
++++ b/docs/src/pages/components/alert/alert-es.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ La alerta ofrece cuatro niveles de severidad que distintivamente establecen un icono y un color.
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Descripción
+ 
+diff --git a/docs/src/pages/components/alert/alert-fr.md b/docs/src/pages/components/alert/alert-fr.md
+index 91791a4aa2954f..95edba60ce0fae 100644
+--- a/docs/src/pages/components/alert/alert-fr.md
++++ b/docs/src/pages/components/alert/alert-fr.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ L'alerte offre quatre niveaux de sévérité qui définissent une icône et une couleur distinctes.
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Description
+ 
+diff --git a/docs/src/pages/components/alert/alert-ja.md b/docs/src/pages/components/alert/alert-ja.md
+index 0dd61249a944af..7c6b44c72e338e 100644
+--- a/docs/src/pages/components/alert/alert-ja.md
++++ b/docs/src/pages/components/alert/alert-ja.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ このアラートは、特徴的なアイコンと色を設定する4つの重要度レベルを提供します。
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Description
+ 
+diff --git a/docs/src/pages/components/alert/alert-pt.md b/docs/src/pages/components/alert/alert-pt.md
+index 4fef0f37eb9c27..a5a605c01902f6 100644
+--- a/docs/src/pages/components/alert/alert-pt.md
++++ b/docs/src/pages/components/alert/alert-pt.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ O alerta oferece quatro níveis de severidade que se distinguem em diferentes ícones e cores.
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Descrição
+ 
+diff --git a/docs/src/pages/components/alert/alert-ru.md b/docs/src/pages/components/alert/alert-ru.md
+index c98d06fb78d28f..b0a97368681bbf 100644
+--- a/docs/src/pages/components/alert/alert-ru.md
++++ b/docs/src/pages/components/alert/alert-ru.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ Alert предлагает 4 уровня предупреждения с уникальным цветом и значком.
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Описание
+ 
+diff --git a/docs/src/pages/components/alert/alert-zh.md b/docs/src/pages/components/alert/alert-zh.md
+index 3d5ca02563e2d4..b515c83c165627 100644
+--- a/docs/src/pages/components/alert/alert-zh.md
++++ b/docs/src/pages/components/alert/alert-zh.md
+@@ -19,7 +19,7 @@ waiAria: 'https://www.w3.org/TR/wai-aria-practices/#alert'
+ 
+ 警告提示有四种不同程度的级别，每种都有自己独特的颜色和图标。
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## 描述
+ 
+diff --git a/docs/src/pages/components/alert/alert.md b/docs/src/pages/components/alert/alert.md
+index 593dcdf08aa700..545f0bdd46d0fd 100644
+--- a/docs/src/pages/components/alert/alert.md
++++ b/docs/src/pages/components/alert/alert.md
+@@ -2,7 +2,6 @@
+ title: Alert React component
+ components: Alert, AlertTitle
+ githubLabel: 'component: Alert'
+-packageName: '@material-ui/lab'
+ waiAria: https://www.w3.org/TR/wai-aria-practices/#alert
+ ---
+ 
+@@ -18,7 +17,7 @@ waiAria: https://www.w3.org/TR/wai-aria-practices/#alert
+ 
+ The alert offers four severity levels that set a distinctive icon and color.
+ 
+-{{"demo": "pages/components/alert/SimpleAlerts.js"}}
++{{"demo": "pages/components/alert/BasicAlerts.js"}}
+ 
+ ## Description
+ 
+diff --git a/docs/src/pages/components/snackbars/CustomizedSnackbars.js b/docs/src/pages/components/snackbars/CustomizedSnackbars.js
+index 12b02846cd317c..f2032c00cc1d1a 100644
+--- a/docs/src/pages/components/snackbars/CustomizedSnackbars.js
++++ b/docs/src/pages/components/snackbars/CustomizedSnackbars.js
+@@ -1,7 +1,7 @@
+ import * as React from 'react';
+ import Button from '@material-ui/core/Button';
+ import Snackbar from '@material-ui/core/Snackbar';
+-import MuiAlert from '@material-ui/lab/Alert';
++import MuiAlert from '@material-ui/core/Alert';
+ import { makeStyles } from '@material-ui/core/styles';
+ 
+ const Alert = React.forwardRef(function Alert(props, ref) {
+diff --git a/docs/src/pages/components/snackbars/CustomizedSnackbars.tsx b/docs/src/pages/components/snackbars/CustomizedSnackbars.tsx
+index b72652930c367d..6bdc53bdccb0f6 100644
+--- a/docs/src/pages/components/snackbars/CustomizedSnackbars.tsx
++++ b/docs/src/pages/components/snackbars/CustomizedSnackbars.tsx
+@@ -1,7 +1,7 @@
+ import * as React from 'react';
+ import Button from '@material-ui/core/Button';
+ import Snackbar from '@material-ui/core/Snackbar';
+-import MuiAlert, { AlertProps } from '@material-ui/lab/Alert';
++import MuiAlert, { AlertProps } from '@material-ui/core/Alert';
+ import { makeStyles, Theme } from '@material-ui/core/styles';
+ 
+ const Alert = React.forwardRef(function Alert(props: AlertProps, ref) {
+diff --git a/docs/src/pages/guides/migration-v4/migration-v4.md b/docs/src/pages/guides/migration-v4/migration-v4.md
+index 306691fc3f9b69..f679b23667fa48 100644
+--- a/docs/src/pages/guides/migration-v4/migration-v4.md
++++ b/docs/src/pages/guides/migration-v4/migration-v4.md
+@@ -196,6 +196,17 @@ const theme = createMuitheme({
+ +theme.breakpoints.up('sm') // '@media (min-width:600px)'
+ ```
+ 
++### Alert
++
++- Move the component from the lab to the core. The component is now stable.
++
++  ```diff
++  -import Alert from '@material-ui/lab/Alert';
++  -import AlertTitle from '@material-ui/lab/AlertTitle';
++  +import Alert from '@material-ui/core/Alert';
++  +import AlertTitle from '@material-ui/core/AlertTitle';
++  ```
++
+ ### Avatar
+ 
+ - Rename `circle` to `circular` for consistency. The possible values should be adjectives, not nouns:
+diff --git a/packages/material-ui-lab/src/Alert/Alert.d.ts b/packages/material-ui-lab/src/Alert/Alert.d.ts
+index 5f6a7a22fa1bb5..f4510343f6d3fa 100644
+--- a/packages/material-ui-lab/src/Alert/Alert.d.ts
++++ b/packages/material-ui-lab/src/Alert/Alert.d.ts
+@@ -1,119 +1,2 @@
+-import * as React from 'react';
+-import { OverridableStringUnion } from '@material-ui/types';
+-import { InternalStandardProps as StandardProps } from '@material-ui/core';
+-import { PaperProps } from '@material-ui/core/Paper';
+-
+-export type Color = 'success' | 'info' | 'warning' | 'error';
+-
+-export interface AlertPropsVariantOverrides {}
+-export type AlertVariantDefaults = Record<'standard' | 'filled' | 'outlined', true>;
+-
+-export interface AlertProps extends StandardProps<PaperProps, 'variant'> {
+-  /**
+-   * The action to display. It renders after the message, at the end of the alert.
+-   */
+-  action?: React.ReactNode;
+-  /**
+-   * Override or extend the styles applied to the component.
+-   */
+-  classes?: {
+-    /** Styles applied to the root element. */
+-    root?: string;
+-    /** Styles applied to the root element if `variant="filled"`. */
+-    filled?: string;
+-    /** Styles applied to the root element if `variant="outlined"`. */
+-    outlined?: string;
+-    /** Styles applied to the root element if `variant="standard"`. */
+-    standard?: string;
+-    /** Styles applied to the root element if `variant="standard"` and `color="success"`. */
+-    standardSuccess?: string;
+-    /** Styles applied to the root element if `variant="standard"` and `color="info"`. */
+-    standardInfo?: string;
+-    /** Styles applied to the root element if `variant="standard"` and `color="warning"`. */
+-    standardWarning?: string;
+-    /** Styles applied to the root element if `variant="standard"` and `color="error"`. */
+-    standardError?: string;
+-    /** Styles applied to the root element if `variant="outlined"` and `color="success"`. */
+-    outlinedSuccess?: string;
+-    /** Styles applied to the root element if `variant="outlined"` and `color="info"`. */
+-    outlinedInfo?: string;
+-    /** Styles applied to the root element if `variant="outlined"` and `color="warning"`. */
+-    outlinedWarning?: string;
+-    /** Styles applied to the root element if `variant="outlined"` and `color="error"`. */
+-    outlinedError?: string;
+-    /** Styles applied to the root element if `variant="filled"` and `color="success"`. */
+-    filledSuccess?: string;
+-    /** Styles applied to the root element if `variant="filled"` and `color="info"`. */
+-    filledInfo?: string;
+-    /** Styles applied to the root element if `variant="filled"` and `color="warning"`. */
+-    filledWarning?: string;
+-    /** Styles applied to the root element if `variant="filled"` and `color="error"`. */
+-    filledError?: string;
+-    /** Styles applied to the icon wrapper element. */
+-    icon?: string;
+-    /** Styles applied to the message wrapper element. */
+-    message?: string;
+-    /** Styles applied to the action wrapper element if `action` is provided. */
+-    action?: string;
+-  };
+-  /**
+-   * Override the default label for the *close popup* icon button.
+-   *
+-   * For localization purposes, you can use the provided [translations](/guides/localization/).
+-   * @default 'Close'
+-   */
+-  closeText?: string;
+-  /**
+-   * The main color for the alert. Unless provided, the value is taken from the `severity` prop.
+-   */
+-  color?: Color;
+-  /**
+-   * The severity of the alert. This defines the color and icon used.
+-   * @default 'success'
+-   */
+-  severity?: Color;
+-  /**
+-   * Override the icon displayed before the children.
+-   * Unless provided, the icon is mapped to the value of the `severity` prop.
+-   */
+-  icon?: React.ReactNode | false;
+-  /**
+-   * The ARIA role attribute of the element.
+-   * @default 'alert'
+-   */
+-  role?: string;
+-  /**
+-   * The component maps the `severity` prop to a range of different icons,
+-   * for instance success to `<SuccessOutlined>`.
+-   * If you wish to change this mapping, you can provide your own.
+-   * Alternatively, you can use the `icon` prop to override the icon displayed.
+-   */
+-  iconMapping?: Partial<Record<Color, React.ReactNode>>;
+-  /**
+-   * Callback fired when the component requests to be closed.
+-   * When provided and no `action` prop is set, a close icon button is displayed that triggers the callback when clicked.
+-   *
+-   * @param {object} event The event source of the callback.
+-   */
+-  onClose?: (event: React.SyntheticEvent) => void;
+-  /**
+-   * The variant to use.
+-   * @default 'standard'
+-   */
+-  variant?: OverridableStringUnion<AlertVariantDefaults, AlertPropsVariantOverrides>;
+-}
+-
+-export type AlertClassKey = keyof NonNullable<AlertProps['classes']>;
+-
+-/**
+- *
+- * Demos:
+- *
+- * - [Alert](https://material-ui.com/components/alert/)
+- *
+- * API:
+- *
+- * - [Alert API](https://material-ui.com/api/alert/)
+- * - inherits [Paper API](https://material-ui.com/api/paper/)
+- */
+-export default function Alert(props: AlertProps): JSX.Element;
++export { default } from '@material-ui/core/Alert';
++export * from '@material-ui/core/Alert';
+diff --git a/packages/material-ui-lab/src/Alert/Alert.js b/packages/material-ui-lab/src/Alert/Alert.js
+index 0708b331dd6d91..32f8bca4e66b73 100644
+--- a/packages/material-ui-lab/src/Alert/Alert.js
++++ b/packages/material-ui-lab/src/Alert/Alert.js
+@@ -1,295 +1,24 @@
+-import * as React from 'react';
+-import PropTypes from 'prop-types';
+-import clsx from 'clsx';
+-import { withStyles, lighten, darken, useThemeVariants } from '@material-ui/core/styles';
+-import Paper from '@material-ui/core/Paper';
+-import IconButton from '@material-ui/core/IconButton';
+-import { capitalize } from '@material-ui/core/utils';
+-import SuccessOutlinedIcon from '../internal/svg-icons/SuccessOutlined';
+-import ReportProblemOutlinedIcon from '../internal/svg-icons/ReportProblemOutlined';
+-import ErrorOutlineIcon from '../internal/svg-icons/ErrorOutline';
+-import InfoOutlinedIcon from '../internal/svg-icons/InfoOutlined';
+-import CloseIcon from '../internal/svg-icons/Close';
+-
+-export const styles = (theme) => {
+-  const getColor = theme.palette.mode === 'light' ? darken : lighten;
+-  const getBackgroundColor = theme.palette.mode === 'light' ? lighten : darken;
+-
+-  return {
+-    /* Styles applied to the root element. */
+-    root: {
+-      ...theme.typography.body2,
+-      borderRadius: theme.shape.borderRadius,
+-      backgroundColor: 'transparent',
+-      display: 'flex',
+-      padding: '6px 16px',
+-    },
+-    /* Styles applied to the root element if `variant="filled"`. */
+-    filled: {},
+-    /* Styles applied to the root element if `variant="outlined"`. */
+-    outlined: {},
+-    /* Styles applied to the root element if `variant="standard"`. */
+-    standard: {},
+-    /* Styles applied to the root element if `variant="standard"` and `color="success"`. */
+-    standardSuccess: {
+-      color: getColor(theme.palette.success.main, 0.6),
+-      backgroundColor: getBackgroundColor(theme.palette.success.main, 0.9),
+-      '& $icon': {
+-        color: theme.palette.success.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="standard"` and `color="info"`. */
+-    standardInfo: {
+-      color: getColor(theme.palette.info.main, 0.6),
+-      backgroundColor: getBackgroundColor(theme.palette.info.main, 0.9),
+-      '& $icon': {
+-        color: theme.palette.info.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="standard"` and `color="warning"`. */
+-    standardWarning: {
+-      color: getColor(theme.palette.warning.main, 0.6),
+-      backgroundColor: getBackgroundColor(theme.palette.warning.main, 0.9),
+-      '& $icon': {
+-        color: theme.palette.warning.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="standard"` and `color="error"`. */
+-    standardError: {
+-      color: getColor(theme.palette.error.main, 0.6),
+-      backgroundColor: getBackgroundColor(theme.palette.error.main, 0.9),
+-      '& $icon': {
+-        color: theme.palette.error.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="outlined"` and `color="success"`. */
+-    outlinedSuccess: {
+-      color: getColor(theme.palette.success.main, 0.6),
+-      border: `1px solid ${theme.palette.success.main}`,
+-      '& $icon': {
+-        color: theme.palette.success.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="outlined"` and `color="info"`. */
+-    outlinedInfo: {
+-      color: getColor(theme.palette.info.main, 0.6),
+-      border: `1px solid ${theme.palette.info.main}`,
+-      '& $icon': {
+-        color: theme.palette.info.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="outlined"` and `color="warning"`. */
+-    outlinedWarning: {
+-      color: getColor(theme.palette.warning.main, 0.6),
+-      border: `1px solid ${theme.palette.warning.main}`,
+-      '& $icon': {
+-        color: theme.palette.warning.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="outlined"` and `color="error"`. */
+-    outlinedError: {
+-      color: getColor(theme.palette.error.main, 0.6),
+-      border: `1px solid ${theme.palette.error.main}`,
+-      '& $icon': {
+-        color: theme.palette.error.main,
+-      },
+-    },
+-    /* Styles applied to the root element if `variant="filled"` and `color="success"`. */
+-    filledSuccess: {
+-      color: '#fff',
+-      fontWeight: theme.typography.fontWeightMedium,
+-      backgroundColor: theme.palette.success.main,
+-    },
+-    /* Styles applied to the root element if `variant="filled"` and `color="info"`. */
+-    filledInfo: {
+-      color: '#fff',
+-      fontWeight: theme.typography.fontWeightMedium,
+-      backgroundColor: theme.palette.info.main,
+-    },
+-    /* Styles applied to the root element if `variant="filled"` and `color="warning"`. */
+-    filledWarning: {
+-      color: '#fff',
+-      fontWeight: theme.typography.fontWeightMedium,
+-      backgroundColor: theme.palette.warning.main,
+-    },
+-    /* Styles applied to the root element if `variant="filled"` and `color="error"`. */
+-    filledError: {
+-      color: '#fff',
+-      fontWeight: theme.typography.fontWeightMedium,
+-      backgroundColor: theme.palette.error.main,
+-    },
+-    /* Styles applied to the icon wrapper element. */
+-    icon: {
+-      marginRight: 12,
+-      padding: '7px 0',
+-      display: 'flex',
+-      fontSize: 22,
+-      opacity: 0.9,
+-    },
+-    /* Styles applied to the message wrapper element. */
+-    message: {
+-      padding: '8px 0',
+-    },
+-    /* Styles applied to the action wrapper element if `action` is provided. */
+-    action: {
+-      display: 'flex',
+-      alignItems: 'center',
+-      marginLeft: 'auto',
+-      paddingLeft: 16,
+-      marginRight: -8,
+-    },
+-  };
+-};
+-
+-const defaultIconMapping = {
+-  success: <SuccessOutlinedIcon fontSize="inherit" />,
+-  warning: <ReportProblemOutlinedIcon fontSize="inherit" />,
+-  error: <ErrorOutlineIcon fontSize="inherit" />,
+-  info: <InfoOutlinedIcon fontSize="inherit" />,
+-};
+-
+-const Alert = React.forwardRef(function Alert(props, ref) {
+-  const {
+-    action,
+-    children,
+-    classes,
+-    className,
+-    closeText = 'Close',
+-    color,
+-    icon,
+-    iconMapping = defaultIconMapping,
+-    onClose,
+-    role = 'alert',
+-    severity = 'success',
+-    variant = 'standard',
+-    ...other
+-  } = props;
+-
+-  const themeVariantsClasses = useThemeVariants(
+-    {
+-      ...props,
+-      closeText,
+-      iconMapping,
+-      role,
+-      severity,
+-      variant,
+-    },
+-    'MuiAlert',
+-  );
+-
+-  return (
+-    <Paper
+-      role={role}
+-      square
+-      elevation={0}
+-      className={clsx(
+-        classes.root,
+-        classes[variant],
+-        classes[`${variant}${capitalize(color || severity)}`],
+-        themeVariantsClasses,
+-        className,
+-      )}
+-      ref={ref}
+-      {...other}
+-    >
+-      {icon !== false ? (
+-        <div className={classes.icon}>
+-          {icon || iconMapping[severity] || defaultIconMapping[severity]}
+-        </div>
+-      ) : null}
+-      <div className={classes.message}>{children}</div>
+-      {action != null ? <div className={classes.action}>{action}</div> : null}
+-      {action == null && onClose ? (
+-        <div className={classes.action}>
+-          <IconButton
+-            size="small"
+-            aria-label={closeText}
+-            title={closeText}
+-            color="inherit"
+-            onClick={onClose}
+-          >
+-            <CloseIcon fontSize="small" />
+-          </IconButton>
+-        </div>
+-      ) : null}
+-    </Paper>
+-  );
++import React from 'react';
++import Alert from '@material-ui/core/Alert';
++
++let warnedOnce = false;
++
++/**
++ * @ignore - do not document.
++ */
++export default React.forwardRef(function DeprecatedAlert(props, ref) {
++  if (!warnedOnce) {
++    console.warn(
++      [
++        'Material-UI: The Alert component was moved from the lab to the core.',
++        '',
++        "You should use `import { Alert } from '@material-ui/core'`",
++        "or `import Alert from '@material-ui/core/Alert'`",
++      ].join('\n'),
++    );
++
++    warnedOnce = true;
++  }
++
++  return <Alert ref={ref} {...props} />;
+ });
+-
+-Alert.propTypes = {
+-  // ----------------------------- Warning --------------------------------
+-  // | These PropTypes are generated from the TypeScript type definitions |
+-  // |     To update them edit the d.ts file and run "yarn proptypes"     |
+-  // ----------------------------------------------------------------------
+-  /**
+-   * The action to display. It renders after the message, at the end of the alert.
+-   */
+-  action: PropTypes.node,
+-  /**
+-   * The content of the component.
+-   */
+-  children: PropTypes.node,
+-  /**
+-   * Override or extend the styles applied to the component.
+-   */
+-  classes: PropTypes.object,
+-  /**
+-   * @ignore
+-   */
+-  className: PropTypes.string,
+-  /**
+-   * Override the default label for the *close popup* icon button.
+-   *
+-   * For localization purposes, you can use the provided [translations](/guides/localization/).
+-   * @default 'Close'
+-   */
+-  closeText: PropTypes.string,
+-  /**
+-   * The main color for the alert. Unless provided, the value is taken from the `severity` prop.
+-   */
+-  color: PropTypes.oneOf(['error', 'info', 'success', 'warning']),
+-  /**
+-   * Override the icon displayed before the children.
+-   * Unless provided, the icon is mapped to the value of the `severity` prop.
+-   */
+-  icon: PropTypes.node,
+-  /**
+-   * The component maps the `severity` prop to a range of different icons,
+-   * for instance success to `<SuccessOutlined>`.
+-   * If you wish to change this mapping, you can provide your own.
+-   * Alternatively, you can use the `icon` prop to override the icon displayed.
+-   */
+-  iconMapping: PropTypes.shape({
+-    error: PropTypes.node,
+-    info: PropTypes.node,
+-    success: PropTypes.node,
+-    warning: PropTypes.node,
+-  }),
+-  /**
+-   * Callback fired when the component requests to be closed.
+-   * When provided and no `action` prop is set, a close icon button is displayed that triggers the callback when clicked.
+-   *
+-   * @param {object} event The event source of the callback.
+-   */
+-  onClose: PropTypes.func,
+-  /**
+-   * The ARIA role attribute of the element.
+-   * @default 'alert'
+-   */
+-  role: PropTypes.string,
+-  /**
+-   * The severity of the alert. This defines the color and icon used.
+-   * @default 'success'
+-   */
+-  severity: PropTypes.oneOf(['error', 'info', 'success', 'warning']),
+-  /**
+-   * The variant to use.
+-   * @default 'standard'
+-   */
+-  variant: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
+-    PropTypes.oneOf(['filled', 'outlined', 'standard']),
+-    PropTypes.string,
+-  ]),
+-};
+-
+-export default withStyles(styles, { name: 'MuiAlert' })(Alert);
+diff --git a/packages/material-ui-lab/src/Alert/Alert.test.js b/packages/material-ui-lab/src/Alert/Alert.test.js
+index d35e44cd931fbf..e69de29bb2d1d6 100644
+--- a/packages/material-ui-lab/src/Alert/Alert.test.js
++++ b/packages/material-ui-lab/src/Alert/Alert.test.js
+@@ -1,21 +0,0 @@
+-import * as React from 'react';
+-import { getClasses, createMount, describeConformance } from 'test/utils';
+-import Paper from '@material-ui/core/Paper';
+-import Alert from './Alert';
+-
+-describe('<Alert />', () => {
+-  const mount = createMount();
+-  let classes;
+-
+-  before(() => {
+-    classes = getClasses(<Alert />);
+-  });
+-
+-  describeConformance(<Alert />, () => ({
+-    classes,
+-    inheritComponent: Paper,
+-    mount,
+-    refInstanceof: window.HTMLDivElement,
+-    skip: ['componentProp'],
+-  }));
+-});
+diff --git a/packages/material-ui-lab/src/AlertTitle/AlertTitle.d.ts b/packages/material-ui-lab/src/AlertTitle/AlertTitle.d.ts
+index 320cdf3458435f..c0c459d838997e 100644
+--- a/packages/material-ui-lab/src/AlertTitle/AlertTitle.d.ts
++++ b/packages/material-ui-lab/src/AlertTitle/AlertTitle.d.ts
+@@ -1,30 +1,2 @@
+-import * as React from 'react';
+-import { InternalStandardProps as StandardProps } from '@material-ui/core';
+-
+-export interface AlertTitleProps extends StandardProps<React.HTMLAttributes<HTMLDivElement>> {
+-  /**
+-   * The content of the component.
+-   */
+-  children?: React.ReactNode;
+-  /**
+-   * Override or extend the styles applied to the component.
+-   */
+-  classes?: {
+-    /** Styles applied to the root element. */
+-    root?: string;
+-  };
+-}
+-
+-export type AlertTitleClassKey = keyof NonNullable<AlertTitleProps['classes']>;
+-
+-/**
+- *
+- * Demos:
+- *
+- * - [Alert](https://material-ui.com/components/alert/)
+- *
+- * API:
+- *
+- * - [AlertTitle API](https://material-ui.com/api/alert-title/)
+- */
+-export default function AlertTitle(props: AlertTitleProps): JSX.Element;
++export { default } from '@material-ui/core/AlertTitle';
++export * from '@material-ui/core/AlertTitle';
+diff --git a/packages/material-ui-lab/src/AlertTitle/AlertTitle.js b/packages/material-ui-lab/src/AlertTitle/AlertTitle.js
+index 2a03595e3c53f9..6d3f5484df35b3 100644
+--- a/packages/material-ui-lab/src/AlertTitle/AlertTitle.js
++++ b/packages/material-ui-lab/src/AlertTitle/AlertTitle.js
+@@ -1,48 +1,24 @@
+-import * as React from 'react';
+-import PropTypes from 'prop-types';
+-import { withStyles } from '@material-ui/core/styles';
+-import { Typography } from '@material-ui/core';
+-import clsx from 'clsx';
++import React from 'react';
++import AlertTitle from '@material-ui/core/AlertTitle';
+ 
+-export const styles = (theme) => ({
+-  /* Styles applied to the root element. */
+-  root: {
+-    fontWeight: theme.typography.fontWeightMedium,
+-    marginTop: -2,
+-  },
+-});
+-
+-const AlertTitle = React.forwardRef(function AlertTitle(props, ref) {
+-  const { classes, className, ...other } = props;
++let warnedOnce = false;
+ 
+-  return (
+-    <Typography
+-      gutterBottom
+-      component="div"
+-      ref={ref}
+-      className={clsx(classes.root, className)}
+-      {...other}
+-    />
+-  );
+-});
++/**
++ * @ignore - do not document.
++ */
++export default React.forwardRef(function DeprecatedAlertTitle(props, ref) {
++  if (!warnedOnce) {
++    console.warn(
++      [
++        'Material-UI: The AlertTitle component was moved from the lab to the core.',
++        '',
++        "You should use `import { AlertTitle } from '@material-ui/core'`",
++        "or `import AlertTitle from '@material-ui/core/AlertTitle'`",
++      ].join('\n'),
++    );
+ 
+-AlertTitle.propTypes = {
+-  // ----------------------------- Warning --------------------------------
+-  // | These PropTypes are generated from the TypeScript type definitions |
+-  // |     To update them edit the d.ts file and run "yarn proptypes"     |
+-  // ----------------------------------------------------------------------
+-  /**
+-   * The content of the component.
+-   */
+-  children: PropTypes.node,
+-  /**
+-   * Override or extend the styles applied to the component.
+-   */
+-  classes: PropTypes.object,
+-  /**
+-   * @ignore
+-   */
+-  className: PropTypes.string,
+-};
++    warnedOnce = true;
++  }
+ 
+-export default withStyles(styles, { name: 'MuiAlertTitle' })(AlertTitle);
++  return <AlertTitle ref={ref} {...props} />;
++});
+diff --git a/packages/material-ui-lab/src/AlertTitle/AlertTitle.test.js b/packages/material-ui-lab/src/AlertTitle/AlertTitle.test.js
+index 5c9c595b46f387..e69de29bb2d1d6 100644
+--- a/packages/material-ui-lab/src/AlertTitle/AlertTitle.test.js
++++ b/packages/material-ui-lab/src/AlertTitle/AlertTitle.test.js
+@@ -1,20 +0,0 @@
+-import * as React from 'react';
+-import { getClasses, createMount, describeConformance } from 'test/utils';
+-import AlertTitle from './AlertTitle';
+-
+-describe('<AlertTitle />', () => {
+-  const mount = createMount();
+-  let classes;
+-
+-  before(() => {
+-    classes = getClasses(<AlertTitle />);
+-  });
+-
+-  describeConformance(<AlertTitle />, () => ({
+-    classes,
+-    inheritComponent: 'div',
+-    mount,
+-    refInstanceof: window.HTMLDivElement,
+-    skip: ['componentProp'],
+-  }));
+-});
+diff --git a/packages/material-ui-lab/src/index.d.ts b/packages/material-ui-lab/src/index.d.ts
+index 25f8395255926e..304a09b93325d5 100644
+--- a/packages/material-ui-lab/src/index.d.ts
++++ b/packages/material-ui-lab/src/index.d.ts
+@@ -1,9 +1,3 @@
+-export { default as Alert } from './Alert';
+-export * from './Alert';
+-
+-export { default as AlertTitle } from './AlertTitle';
+-export * from './AlertTitle';
+-
+ export { default as Autocomplete } from './Autocomplete';
+ export * from './Autocomplete';
+ 
+diff --git a/packages/material-ui-lab/src/index.test.js b/packages/material-ui-lab/src/index.test.js
+index e6b1dfb9f9d9f8..2b364d08f0a9e6 100644
+--- a/packages/material-ui-lab/src/index.test.js
++++ b/packages/material-ui-lab/src/index.test.js
+@@ -12,7 +12,7 @@ describe('@material-ui/lab', () => {
+     expect(typeof MaterialUI).to.equal('object');
+   });
+ 
+-  it('should not do undefined exports', () => {
++  it('should not have undefined exports', () => {
+     Object.keys(MaterialUI).forEach((exportKey) =>
+       expect(Boolean(MaterialUI[exportKey])).to.equal(true),
+     );
+diff --git a/packages/material-ui-lab/src/themeAugmentation/components.d.ts b/packages/material-ui-lab/src/themeAugmentation/components.d.ts
+index 06f8a1cf446116..9e3e3bd7a7cbef 100644
+--- a/packages/material-ui-lab/src/themeAugmentation/components.d.ts
++++ b/packages/material-ui-lab/src/themeAugmentation/components.d.ts
+@@ -1,15 +1,6 @@
+ import { ComponentsProps, ComponentsOverrides, ComponentsVariants } from '@material-ui/core';
+ 
+ export interface LabComponents {
+-  MuiAlert?: {
+-    defaultProps?: ComponentsProps['MuiAlert'];
+-    styleOverrides?: ComponentsOverrides['MuiAlert'];
+-    variants?: ComponentsVariants['MuiAlert'];
+-  };
+-  MuiAlertTitle?: {
+-    defaultProps?: ComponentsProps['MuiAlertTitle'];
+-    styleOverrides?: ComponentsOverrides['MuiAlertTitle'];
+-  };
+   MuiAutocomplete?: {
+     defaultProps?: ComponentsProps['MuiAutocomplete'];
+     styleOverrides?: ComponentsOverrides['MuiAutocomplete'];
+diff --git a/packages/material-ui-lab/src/themeAugmentation/overrides.d.ts b/packages/material-ui-lab/src/themeAugmentation/overrides.d.ts
+index 12f996396185b6..01e87f683316cc 100644
+--- a/packages/material-ui-lab/src/themeAugmentation/overrides.d.ts
++++ b/packages/material-ui-lab/src/themeAugmentation/overrides.d.ts
+@@ -1,5 +1,3 @@
+-import { AlertClassKey } from '../Alert';
+-import { AlertTitleClassKey } from '../AlertTitle';
+ import { AutocompleteClassKey } from '../Autocomplete';
+ import { AvatarGroupClassKey } from '../AvatarGroup';
+ import { PaginationClassKey } from '../Pagination';
+@@ -24,8 +22,6 @@ import { TreeItemClassKey } from '../TreeItem';
+ import { TreeViewClassKey } from '../TreeView';
+ 
+ export interface LabComponentNameToClassKey {
+-  MuiAlert: AlertClassKey;
+-  MuiAlertTitle: AlertTitleClassKey;
+   MuiAutocomplete: AutocompleteClassKey;
+   MuiAvatarGroup: AvatarGroupClassKey;
+   MuiPagination: PaginationClassKey;
+diff --git a/packages/material-ui-lab/src/themeAugmentation/props.d.ts b/packages/material-ui-lab/src/themeAugmentation/props.d.ts
+index 0750efcde0ec44..c13dbfc17e1dcd 100644
+--- a/packages/material-ui-lab/src/themeAugmentation/props.d.ts
++++ b/packages/material-ui-lab/src/themeAugmentation/props.d.ts
+@@ -1,5 +1,3 @@
+-import { AlertProps } from '../Alert';
+-import { AlertTitleProps } from '../AlertTitle';
+ import { AutocompleteProps } from '../Autocomplete';
+ import { AvatarGroupProps } from '../AvatarGroup';
+ import { PaginationProps } from '../Pagination';
+@@ -24,8 +22,6 @@ import { TreeItemProps } from '../TreeItem';
+ import { TreeViewProps } from '../TreeView';
+ 
+ export interface LabComponentsPropsList {
+-  MuiAlert: AlertProps;
+-  MuiAlertTitle: AlertTitleProps;
+   MuiAutocomplete: AutocompleteProps<any, any, any, any>;
+   MuiAvatarGroup: AvatarGroupProps;
+   MuiPagination: PaginationProps;
+diff --git a/packages/material-ui/src/Alert/Alert.d.ts b/packages/material-ui/src/Alert/Alert.d.ts
+new file mode 100644
+index 00000000000000..e13764ef9dd5fe
+--- /dev/null
++++ b/packages/material-ui/src/Alert/Alert.d.ts
+@@ -0,0 +1,119 @@
++import * as React from 'react';
++import { OverridableStringUnion } from '@material-ui/types';
++import { InternalStandardProps as StandardProps } from '..';
++import { PaperProps } from '../Paper';
++
++export type Color = 'success' | 'info' | 'warning' | 'error';
++
++export interface AlertPropsVariantOverrides {}
++export type AlertVariantDefaults = Record<'standard' | 'filled' | 'outlined', true>;
++
++export interface AlertProps extends StandardProps<PaperProps, 'variant'> {
++  /**
++   * The action to display. It renders after the message, at the end of the alert.
++   */
++  action?: React.ReactNode;
++  /**
++   * Override or extend the styles applied to the component.
++   */
++  classes?: {
++    /** Styles applied to the root element. */
++    root?: string;
++    /** Styles applied to the root element if `variant="filled"`. */
++    filled?: string;
++    /** Styles applied to the root element if `variant="outlined"`. */
++    outlined?: string;
++    /** Styles applied to the root element if `variant="standard"`. */
++    standard?: string;
++    /** Styles applied to the root element if `variant="standard"` and `color="success"`. */
++    standardSuccess?: string;
++    /** Styles applied to the root element if `variant="standard"` and `color="info"`. */
++    standardInfo?: string;
++    /** Styles applied to the root element if `variant="standard"` and `color="warning"`. */
++    standardWarning?: string;
++    /** Styles applied to the root element if `variant="standard"` and `color="error"`. */
++    standardError?: string;
++    /** Styles applied to the root element if `variant="outlined"` and `color="success"`. */
++    outlinedSuccess?: string;
++    /** Styles applied to the root element if `variant="outlined"` and `color="info"`. */
++    outlinedInfo?: string;
++    /** Styles applied to the root element if `variant="outlined"` and `color="warning"`. */
++    outlinedWarning?: string;
++    /** Styles applied to the root element if `variant="outlined"` and `color="error"`. */
++    outlinedError?: string;
++    /** Styles applied to the root element if `variant="filled"` and `color="success"`. */
++    filledSuccess?: string;
++    /** Styles applied to the root element if `variant="filled"` and `color="info"`. */
++    filledInfo?: string;
++    /** Styles applied to the root element if `variant="filled"` and `color="warning"`. */
++    filledWarning?: string;
++    /** Styles applied to the root element if `variant="filled"` and `color="error"`. */
++    filledError?: string;
++    /** Styles applied to the icon wrapper element. */
++    icon?: string;
++    /** Styles applied to the message wrapper element. */
++    message?: string;
++    /** Styles applied to the action wrapper element if `action` is provided. */
++    action?: string;
++  };
++  /**
++   * Override the default label for the *close popup* icon button.
++   *
++   * For localization purposes, you can use the provided [translations](/guides/localization/).
++   * @default 'Close'
++   */
++  closeText?: string;
++  /**
++   * The main color for the alert. Unless provided, the value is taken from the `severity` prop.
++   */
++  color?: Color;
++  /**
++   * The severity of the alert. This defines the color and icon used.
++   * @default 'success'
++   */
++  severity?: Color;
++  /**
++   * Override the icon displayed before the children.
++   * Unless provided, the icon is mapped to the value of the `severity` prop.
++   */
++  icon?: React.ReactNode | false;
++  /**
++   * The ARIA role attribute of the element.
++   * @default 'alert'
++   */
++  role?: string;
++  /**
++   * The component maps the `severity` prop to a range of different icons,
++   * for instance success to `<SuccessOutlined>`.
++   * If you wish to change this mapping, you can provide your own.
++   * Alternatively, you can use the `icon` prop to override the icon displayed.
++   */
++  iconMapping?: Partial<Record<Color, React.ReactNode>>;
++  /**
++   * Callback fired when the component requests to be closed.
++   * When provided and no `action` prop is set, a close icon button is displayed that triggers the callback when clicked.
++   *
++   * @param {object} event The event source of the callback.
++   */
++  onClose?: (event: React.SyntheticEvent) => void;
++  /**
++   * The variant to use.
++   * @default 'standard'
++   */
++  variant?: OverridableStringUnion<AlertVariantDefaults, AlertPropsVariantOverrides>;
++}
++
++export type AlertClassKey = keyof NonNullable<AlertProps['classes']>;
++
++/**
++ *
++ * Demos:
++ *
++ * - [Alert](https://material-ui.com/components/alert/)
++ *
++ * API:
++ *
++ * - [Alert API](https://material-ui.com/api/alert/)
++ * - inherits [Paper API](https://material-ui.com/api/paper/)
++ */
++export default function Alert(props: AlertProps): JSX.Element;
+diff --git a/packages/material-ui/src/Alert/Alert.js b/packages/material-ui/src/Alert/Alert.js
+new file mode 100644
+index 00000000000000..0eca98c4075665
+--- /dev/null
++++ b/packages/material-ui/src/Alert/Alert.js
+@@ -0,0 +1,297 @@
++import * as React from 'react';
++import PropTypes from 'prop-types';
++import clsx from 'clsx';
++import { useThemeVariants } from '@material-ui/styles';
++import withStyles from '../styles/withStyles';
++import { darken, lighten } from '../styles/colorManipulator';
++import capitalize from '../utils/capitalize';
++import Paper from '../Paper';
++import IconButton from '../IconButton';
++import SuccessOutlinedIcon from '../internal/svg-icons/SuccessOutlined';
++import ReportProblemOutlinedIcon from '../internal/svg-icons/ReportProblemOutlined';
++import ErrorOutlineIcon from '../internal/svg-icons/ErrorOutline';
++import InfoOutlinedIcon from '../internal/svg-icons/InfoOutlined';
++import CloseIcon from '../internal/svg-icons/Close';
++
++export const styles = (theme) => {
++  const getColor = theme.palette.mode === 'light' ? darken : lighten;
++  const getBackgroundColor = theme.palette.mode === 'light' ? lighten : darken;
++
++  return {
++    /* Styles applied to the root element. */
++    root: {
++      ...theme.typography.body2,
++      borderRadius: theme.shape.borderRadius,
++      backgroundColor: 'transparent',
++      display: 'flex',
++      padding: '6px 16px',
++    },
++    /* Styles applied to the root element if `variant="filled"`. */
++    filled: {},
++    /* Styles applied to the root element if `variant="outlined"`. */
++    outlined: {},
++    /* Styles applied to the root element if `variant="standard"`. */
++    standard: {},
++    /* Styles applied to the root element if `variant="standard"` and `color="success"`. */
++    standardSuccess: {
++      color: getColor(theme.palette.success.main, 0.6),
++      backgroundColor: getBackgroundColor(theme.palette.success.main, 0.9),
++      '& $icon': {
++        color: theme.palette.success.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="standard"` and `color="info"`. */
++    standardInfo: {
++      color: getColor(theme.palette.info.main, 0.6),
++      backgroundColor: getBackgroundColor(theme.palette.info.main, 0.9),
++      '& $icon': {
++        color: theme.palette.info.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="standard"` and `color="warning"`. */
++    standardWarning: {
++      color: getColor(theme.palette.warning.main, 0.6),
++      backgroundColor: getBackgroundColor(theme.palette.warning.main, 0.9),
++      '& $icon': {
++        color: theme.palette.warning.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="standard"` and `color="error"`. */
++    standardError: {
++      color: getColor(theme.palette.error.main, 0.6),
++      backgroundColor: getBackgroundColor(theme.palette.error.main, 0.9),
++      '& $icon': {
++        color: theme.palette.error.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="outlined"` and `color="success"`. */
++    outlinedSuccess: {
++      color: getColor(theme.palette.success.main, 0.6),
++      border: `1px solid ${theme.palette.success.main}`,
++      '& $icon': {
++        color: theme.palette.success.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="outlined"` and `color="info"`. */
++    outlinedInfo: {
++      color: getColor(theme.palette.info.main, 0.6),
++      border: `1px solid ${theme.palette.info.main}`,
++      '& $icon': {
++        color: theme.palette.info.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="outlined"` and `color="warning"`. */
++    outlinedWarning: {
++      color: getColor(theme.palette.warning.main, 0.6),
++      border: `1px solid ${theme.palette.warning.main}`,
++      '& $icon': {
++        color: theme.palette.warning.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="outlined"` and `color="error"`. */
++    outlinedError: {
++      color: getColor(theme.palette.error.main, 0.6),
++      border: `1px solid ${theme.palette.error.main}`,
++      '& $icon': {
++        color: theme.palette.error.main,
++      },
++    },
++    /* Styles applied to the root element if `variant="filled"` and `color="success"`. */
++    filledSuccess: {
++      color: '#fff',
++      fontWeight: theme.typography.fontWeightMedium,
++      backgroundColor: theme.palette.success.main,
++    },
++    /* Styles applied to the root element if `variant="filled"` and `color="info"`. */
++    filledInfo: {
++      color: '#fff',
++      fontWeight: theme.typography.fontWeightMedium,
++      backgroundColor: theme.palette.info.main,
++    },
++    /* Styles applied to the root element if `variant="filled"` and `color="warning"`. */
++    filledWarning: {
++      color: '#fff',
++      fontWeight: theme.typography.fontWeightMedium,
++      backgroundColor: theme.palette.warning.main,
++    },
++    /* Styles applied to the root element if `variant="filled"` and `color="error"`. */
++    filledError: {
++      color: '#fff',
++      fontWeight: theme.typography.fontWeightMedium,
++      backgroundColor: theme.palette.error.main,
++    },
++    /* Styles applied to the icon wrapper element. */
++    icon: {
++      marginRight: 12,
++      padding: '7px 0',
++      display: 'flex',
++      fontSize: 22,
++      opacity: 0.9,
++    },
++    /* Styles applied to the message wrapper element. */
++    message: {
++      padding: '8px 0',
++    },
++    /* Styles applied to the action wrapper element if `action` is provided. */
++    action: {
++      display: 'flex',
++      alignItems: 'center',
++      marginLeft: 'auto',
++      paddingLeft: 16,
++      marginRight: -8,
++    },
++  };
++};
++
++const defaultIconMapping = {
++  success: <SuccessOutlinedIcon fontSize="inherit" />,
++  warning: <ReportProblemOutlinedIcon fontSize="inherit" />,
++  error: <ErrorOutlineIcon fontSize="inherit" />,
++  info: <InfoOutlinedIcon fontSize="inherit" />,
++};
++
++const Alert = React.forwardRef(function Alert(props, ref) {
++  const {
++    action,
++    children,
++    classes,
++    className,
++    closeText = 'Close',
++    color,
++    icon,
++    iconMapping = defaultIconMapping,
++    onClose,
++    role = 'alert',
++    severity = 'success',
++    variant = 'standard',
++    ...other
++  } = props;
++
++  const themeVariantsClasses = useThemeVariants(
++    {
++      ...props,
++      closeText,
++      iconMapping,
++      role,
++      severity,
++      variant,
++    },
++    'MuiAlert',
++  );
++
++  return (
++    <Paper
++      role={role}
++      square
++      elevation={0}
++      className={clsx(
++        classes.root,
++        classes[variant],
++        classes[`${variant}${capitalize(color || severity)}`],
++        themeVariantsClasses,
++        className,
++      )}
++      ref={ref}
++      {...other}
++    >
++      {icon !== false ? (
++        <div className={classes.icon}>
++          {icon || iconMapping[severity] || defaultIconMapping[severity]}
++        </div>
++      ) : null}
++      <div className={classes.message}>{children}</div>
++      {action != null ? <div className={classes.action}>{action}</div> : null}
++      {action == null && onClose ? (
++        <div className={classes.action}>
++          <IconButton
++            size="small"
++            aria-label={closeText}
++            title={closeText}
++            color="inherit"
++            onClick={onClose}
++          >
++            <CloseIcon fontSize="small" />
++          </IconButton>
++        </div>
++      ) : null}
++    </Paper>
++  );
++});
++
++Alert.propTypes = {
++  // ----------------------------- Warning --------------------------------
++  // | These PropTypes are generated from the TypeScript type definitions |
++  // |     To update them edit the d.ts file and run "yarn proptypes"     |
++  // ----------------------------------------------------------------------
++  /**
++   * The action to display. It renders after the message, at the end of the alert.
++   */
++  action: PropTypes.node,
++  /**
++   * The content of the component.
++   */
++  children: PropTypes.node,
++  /**
++   * Override or extend the styles applied to the component.
++   */
++  classes: PropTypes.object,
++  /**
++   * @ignore
++   */
++  className: PropTypes.string,
++  /**
++   * Override the default label for the *close popup* icon button.
++   *
++   * For localization purposes, you can use the provided [translations](/guides/localization/).
++   * @default 'Close'
++   */
++  closeText: PropTypes.string,
++  /**
++   * The main color for the alert. Unless provided, the value is taken from the `severity` prop.
++   */
++  color: PropTypes.oneOf(['error', 'info', 'success', 'warning']),
++  /**
++   * Override the icon displayed before the children.
++   * Unless provided, the icon is mapped to the value of the `severity` prop.
++   */
++  icon: PropTypes.node,
++  /**
++   * The component maps the `severity` prop to a range of different icons,
++   * for instance success to `<SuccessOutlined>`.
++   * If you wish to change this mapping, you can provide your own.
++   * Alternatively, you can use the `icon` prop to override the icon displayed.
++   */
++  iconMapping: PropTypes.shape({
++    error: PropTypes.node,
++    info: PropTypes.node,
++    success: PropTypes.node,
++    warning: PropTypes.node,
++  }),
++  /**
++   * Callback fired when the component requests to be closed.
++   * When provided and no `action` prop is set, a close icon button is displayed that triggers the callback when clicked.
++   *
++   * @param {object} event The event source of the callback.
++   */
++  onClose: PropTypes.func,
++  /**
++   * The ARIA role attribute of the element.
++   * @default 'alert'
++   */
++  role: PropTypes.string,
++  /**
++   * The severity of the alert. This defines the color and icon used.
++   * @default 'success'
++   */
++  severity: PropTypes.oneOf(['error', 'info', 'success', 'warning']),
++  /**
++   * The variant to use.
++   * @default 'standard'
++   */
++  variant: PropTypes /* @typescript-to-proptypes-ignore */.oneOfType([
++    PropTypes.oneOf(['filled', 'outlined', 'standard']),
++    PropTypes.string,
++  ]),
++};
++
++export default withStyles(styles, { name: 'MuiAlert' })(Alert);
+diff --git a/packages/material-ui/src/Alert/Alert.test.js b/packages/material-ui/src/Alert/Alert.test.js
+new file mode 100644
+index 00000000000000..635ea6c1612023
+--- /dev/null
++++ b/packages/material-ui/src/Alert/Alert.test.js
+@@ -0,0 +1,21 @@
++import * as React from 'react';
++import { getClasses, createMount, describeConformance } from 'test/utils';
++import Paper from '../Paper';
++import Alert from './Alert';
++
++describe('<Alert />', () => {
++  const mount = createMount();
++  let classes;
++
++  before(() => {
++    classes = getClasses(<Alert />);
++  });
++
++  describeConformance(<Alert />, () => ({
++    classes,
++    inheritComponent: Paper,
++    mount,
++    refInstanceof: window.HTMLDivElement,
++    skip: ['componentProp'],
++  }));
++});
+diff --git a/packages/material-ui/src/Alert/index.d.ts b/packages/material-ui/src/Alert/index.d.ts
+new file mode 100644
+index 00000000000000..f8bf7e6b67860c
+--- /dev/null
++++ b/packages/material-ui/src/Alert/index.d.ts
+@@ -0,0 +1,2 @@
++export { default } from './Alert';
++export * from './Alert';
+diff --git a/packages/material-ui/src/Alert/index.js b/packages/material-ui/src/Alert/index.js
+new file mode 100644
+index 00000000000000..becaea750b71e9
+--- /dev/null
++++ b/packages/material-ui/src/Alert/index.js
+@@ -0,0 +1 @@
++export { default } from './Alert';
+diff --git a/packages/material-ui/src/AlertTitle/AlertTitle.d.ts b/packages/material-ui/src/AlertTitle/AlertTitle.d.ts
+new file mode 100644
+index 00000000000000..5e455ee03ee7d5
+--- /dev/null
++++ b/packages/material-ui/src/AlertTitle/AlertTitle.d.ts
+@@ -0,0 +1,30 @@
++import * as React from 'react';
++import { InternalStandardProps as StandardProps } from '..';
++
++export interface AlertTitleProps extends StandardProps<React.HTMLAttributes<HTMLDivElement>> {
++  /**
++   * The content of the component.
++   */
++  children?: React.ReactNode;
++  /**
++   * Override or extend the styles applied to the component.
++   */
++  classes?: {
++    /** Styles applied to the root element. */
++    root?: string;
++  };
++}
++
++export type AlertTitleClassKey = keyof NonNullable<AlertTitleProps['classes']>;
++
++/**
++ *
++ * Demos:
++ *
++ * - [Alert](https://material-ui.com/components/alert/)
++ *
++ * API:
++ *
++ * - [AlertTitle API](https://material-ui.com/api/alert-title/)
++ */
++export default function AlertTitle(props: AlertTitleProps): JSX.Element;
+diff --git a/packages/material-ui/src/AlertTitle/AlertTitle.js b/packages/material-ui/src/AlertTitle/AlertTitle.js
+new file mode 100644
+index 00000000000000..659ac9404b6bd5
+--- /dev/null
++++ b/packages/material-ui/src/AlertTitle/AlertTitle.js
+@@ -0,0 +1,48 @@
++import * as React from 'react';
++import PropTypes from 'prop-types';
++import clsx from 'clsx';
++import withStyles from '../styles/withStyles';
++import Typography from '../Typography';
++
++export const styles = (theme) => ({
++  /* Styles applied to the root element. */
++  root: {
++    fontWeight: theme.typography.fontWeightMedium,
++    marginTop: -2,
++  },
++});
++
++const AlertTitle = React.forwardRef(function AlertTitle(props, ref) {
++  const { classes, className, ...other } = props;
++
++  return (
++    <Typography
++      gutterBottom
++      component="div"
++      ref={ref}
++      className={clsx(classes.root, className)}
++      {...other}
++    />
++  );
++});
++
++AlertTitle.propTypes = {
++  // ----------------------------- Warning --------------------------------
++  // | These PropTypes are generated from the TypeScript type definitions |
++  // |     To update them edit the d.ts file and run "yarn proptypes"     |
++  // ----------------------------------------------------------------------
++  /**
++   * The content of the component.
++   */
++  children: PropTypes.node,
++  /**
++   * Override or extend the styles applied to the component.
++   */
++  classes: PropTypes.object,
++  /**
++   * @ignore
++   */
++  className: PropTypes.string,
++};
++
++export default withStyles(styles, { name: 'MuiAlertTitle' })(AlertTitle);
+diff --git a/packages/material-ui/src/AlertTitle/AlertTitle.test.js b/packages/material-ui/src/AlertTitle/AlertTitle.test.js
+new file mode 100644
+index 00000000000000..5c9c595b46f387
+--- /dev/null
++++ b/packages/material-ui/src/AlertTitle/AlertTitle.test.js
+@@ -0,0 +1,20 @@
++import * as React from 'react';
++import { getClasses, createMount, describeConformance } from 'test/utils';
++import AlertTitle from './AlertTitle';
++
++describe('<AlertTitle />', () => {
++  const mount = createMount();
++  let classes;
++
++  before(() => {
++    classes = getClasses(<AlertTitle />);
++  });
++
++  describeConformance(<AlertTitle />, () => ({
++    classes,
++    inheritComponent: 'div',
++    mount,
++    refInstanceof: window.HTMLDivElement,
++    skip: ['componentProp'],
++  }));
++});
+diff --git a/packages/material-ui/src/AlertTitle/index.d.ts b/packages/material-ui/src/AlertTitle/index.d.ts
+new file mode 100644
+index 00000000000000..92625eccbf49a6
+--- /dev/null
++++ b/packages/material-ui/src/AlertTitle/index.d.ts
+@@ -0,0 +1,2 @@
++export { default } from './AlertTitle';
++export * from './AlertTitle';
+diff --git a/packages/material-ui/src/AlertTitle/index.js b/packages/material-ui/src/AlertTitle/index.js
+new file mode 100644
+index 00000000000000..5277f016a42856
+--- /dev/null
++++ b/packages/material-ui/src/AlertTitle/index.js
+@@ -0,0 +1 @@
++export { default } from './AlertTitle';
+diff --git a/packages/material-ui/src/index.d.ts b/packages/material-ui/src/index.d.ts
+index e099b26876a12a..35108fbe2391f8 100644
+--- a/packages/material-ui/src/index.d.ts
++++ b/packages/material-ui/src/index.d.ts
+@@ -92,6 +92,12 @@ export * from './AccordionDetails';
+ export { default as AccordionSummary } from './AccordionSummary';
+ export * from './AccordionSummary';
+ 
++export { default as Alert } from './Alert';
++export * from './Alert';
++
++export { default as AlertTitle } from './AlertTitle';
++export * from './AlertTitle';
++
+ export { default as AppBar } from './AppBar';
+ export * from './AppBar';
+ 
+diff --git a/packages/material-ui/src/index.js b/packages/material-ui/src/index.js
+index 6440c4c8fead9a..0cb8381dc7924c 100644
+--- a/packages/material-ui/src/index.js
++++ b/packages/material-ui/src/index.js
+@@ -18,6 +18,12 @@ export * from './AccordionDetails';
+ export { default as AccordionSummary } from './AccordionSummary';
+ export * from './AccordionSummary';
+ 
++export { default as Alert } from './Alert';
++export * from './Alert';
++
++export { default as AlertTitle } from './AlertTitle';
++export * from './AlertTitle';
++
+ export { default as AppBar } from './AppBar';
+ export * from './AppBar';
+ 
+diff --git a/packages/material-ui/src/index.test.js b/packages/material-ui/src/index.test.js
+index 8ec96e142e14bd..5205d82131619f 100644
+--- a/packages/material-ui/src/index.test.js
++++ b/packages/material-ui/src/index.test.js
+@@ -12,7 +12,7 @@ describe('material-ui', () => {
+     expect(typeof MaterialUI).to.equal('object');
+   });
+ 
+-  it('should not do undefined exports', () => {
++  it('should not have undefined exports', () => {
+     Object.keys(MaterialUI).forEach((exportKey) =>
+       expect(Boolean(MaterialUI[exportKey])).to.equal(true),
+     );
+diff --git a/packages/material-ui-lab/src/internal/svg-icons/ErrorOutline.js b/packages/material-ui/src/internal/svg-icons/ErrorOutline.js
+similarity index 84%
+rename from packages/material-ui-lab/src/internal/svg-icons/ErrorOutline.js
+rename to packages/material-ui/src/internal/svg-icons/ErrorOutline.js
+index b582fdc0787059..12ba853dbadf57 100644
+--- a/packages/material-ui-lab/src/internal/svg-icons/ErrorOutline.js
++++ b/packages/material-ui/src/internal/svg-icons/ErrorOutline.js
+@@ -1,5 +1,5 @@
+ import * as React from 'react';
+-import { createSvgIcon } from '@material-ui/core/utils';
++import createSvgIcon from '../../utils/createSvgIcon';
+ 
+ /**
+  * @ignore - internal component.
+diff --git a/packages/material-ui-lab/src/internal/svg-icons/InfoOutlined.js b/packages/material-ui/src/internal/svg-icons/InfoOutlined.js
+similarity index 85%
+rename from packages/material-ui-lab/src/internal/svg-icons/InfoOutlined.js
+rename to packages/material-ui/src/internal/svg-icons/InfoOutlined.js
+index 0c3ed4e8e19cc8..d2f3643c5d4baf 100644
+--- a/packages/material-ui-lab/src/internal/svg-icons/InfoOutlined.js
++++ b/packages/material-ui/src/internal/svg-icons/InfoOutlined.js
+@@ -1,5 +1,5 @@
+ import * as React from 'react';
+-import { createSvgIcon } from '@material-ui/core/utils';
++import createSvgIcon from '../../utils/createSvgIcon';
+ 
+ /**
+  * @ignore - internal component.
+diff --git a/packages/material-ui-lab/src/internal/svg-icons/ReportProblemOutlined.js b/packages/material-ui/src/internal/svg-icons/ReportProblemOutlined.js
+similarity index 80%
+rename from packages/material-ui-lab/src/internal/svg-icons/ReportProblemOutlined.js
+rename to packages/material-ui/src/internal/svg-icons/ReportProblemOutlined.js
+index 11b860048db4bd..64cdca28dc88b0 100644
+--- a/packages/material-ui-lab/src/internal/svg-icons/ReportProblemOutlined.js
++++ b/packages/material-ui/src/internal/svg-icons/ReportProblemOutlined.js
+@@ -1,5 +1,5 @@
+ import * as React from 'react';
+-import { createSvgIcon } from '@material-ui/core/utils';
++import createSvgIcon from '../../utils/createSvgIcon';
+ 
+ /**
+  * @ignore - internal component.
+diff --git a/packages/material-ui-lab/src/internal/svg-icons/SuccessOutlined.js b/packages/material-ui/src/internal/svg-icons/SuccessOutlined.js
+similarity index 86%
+rename from packages/material-ui-lab/src/internal/svg-icons/SuccessOutlined.js
+rename to packages/material-ui/src/internal/svg-icons/SuccessOutlined.js
+index bac970504d94a3..cd2a12cc9a7db8 100644
+--- a/packages/material-ui-lab/src/internal/svg-icons/SuccessOutlined.js
++++ b/packages/material-ui/src/internal/svg-icons/SuccessOutlined.js
+@@ -1,5 +1,5 @@
+ import * as React from 'react';
+-import { createSvgIcon } from '@material-ui/core/utils';
++import createSvgIcon from '../../utils/createSvgIcon';
+ 
+ /**
+  * @ignore - internal component.
+diff --git a/packages/material-ui/src/styles/overrides.d.ts b/packages/material-ui/src/styles/overrides.d.ts
+index f006fa484c6dea..7e35ad6e14a672 100644
+--- a/packages/material-ui/src/styles/overrides.d.ts
++++ b/packages/material-ui/src/styles/overrides.d.ts
+@@ -1,4 +1,6 @@
+ import { CSSProperties, StyleRules } from './withStyles';
++import { AlertClassKey } from '../Alert';
++import { AlertTitleClassKey } from '../AlertTitle';
+ import { AppBarClassKey } from '../AppBar';
+ import { AvatarClassKey } from '../Avatar';
+ import { BackdropClassKey } from '../Backdrop';
+@@ -107,6 +109,8 @@ export type ComponentsOverrides = {
+ };
+ 
+ export interface ComponentNameToClassKey {
++  MuiAlert: AlertClassKey;
++  MuiAlertTitle: AlertTitleClassKey;
+   MuiAppBar: AppBarClassKey;
+   MuiAvatar: AvatarClassKey;
+   MuiBackdrop: BackdropClassKey;
+diff --git a/packages/material-ui/src/styles/props.d.ts b/packages/material-ui/src/styles/props.d.ts
+index ee42fc215fc661..73cb9aaa6370c8 100644
+--- a/packages/material-ui/src/styles/props.d.ts
++++ b/packages/material-ui/src/styles/props.d.ts
+@@ -1,3 +1,5 @@
++import { AlertProps } from '../Alert';
++import { AlertTitleProps } from '../AlertTitle';
+ import { AppBarProps } from '../AppBar';
+ import { AvatarProps } from '../Avatar';
+ import { BackdropProps } from '../Backdrop';
+@@ -107,6 +109,8 @@ export type ComponentsProps = {
+ };
+ 
+ export interface ComponentsPropsList {
++  MuiAlert: AlertProps;
++  MuiAlertTitle: AlertTitleProps;
+   MuiAppBar: AppBarProps;
+   MuiAvatar: AvatarProps;
+   MuiBackdrop: BackdropProps;

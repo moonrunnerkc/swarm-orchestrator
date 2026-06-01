@@ -1,0 +1,805 @@
+diff --git a/packages/tanstack-react-query/src/index.ts b/packages/tanstack-react-query/src/index.ts
+index 8b609e8eb52..da9668a36ee 100644
+--- a/packages/tanstack-react-query/src/index.ts
++++ b/packages/tanstack-react-query/src/index.ts
+@@ -1,7 +1,4 @@
+-export {
+-  createTRPCContext,
+-  createTRPCContextWithFeatureFlags,
+-} from './internals/Context';
++export { createTRPCContext } from './internals/Context';
+ export type {
+   TRPCOptionsProxy,
+   inferInput,
+diff --git a/packages/tanstack-react-query/src/internals/Context.tsx b/packages/tanstack-react-query/src/internals/Context.tsx
+index 971e0ee51da..b938bb66860 100644
+--- a/packages/tanstack-react-query/src/internals/Context.tsx
++++ b/packages/tanstack-react-query/src/internals/Context.tsx
+@@ -6,25 +6,6 @@ import type { TRPCOptionsProxy } from './createOptionsProxy';
+ import { createTRPCOptionsProxy } from './createOptionsProxy';
+ import type { DefaultFeatureFlags, FeatureFlags } from './types';
+ 
+-export interface CreateTRPCContextOpts<TEnablePrefix extends boolean> {
+-  /**
+-   * Enable support for prefixing all query keys with a given string or array of strings
+-   *
+-   * ```tsx
+-   *  <TRPCProvider
+-   *    trpcClient={ctx.client}
+-   *    queryClient={queryClient}
+-   *    queryKeyPrefix={['user-123']}
+-   *  >
+-   *    {ui}
+-   *  </TRPCProvider>
+-   * ```
+-   *
+-   * Will be the default in v12
+-   */
+-  enableKeyPrefix?: TEnablePrefix;
+-}
+-
+ export interface CreateTRPCContextResult<
+   TRouter extends AnyTRPCRouter,
+   TFeatureFlags extends FeatureFlags = DefaultFeatureFlags,
+@@ -41,21 +22,6 @@ export interface CreateTRPCContextResult<
+   useTRPCClient: () => TRPCClient<TRouter>;
+ }
+ 
+-/**
+- * Create a set of type-safe provider-consumers
+- *
+- * @see https://trpc.io/docs/client/tanstack-react-query/setup#3a-setup-the-trpc-context-provider
+- */
+-export function createTRPCContextWithFeatureFlags<
+-  TRouter extends AnyTRPCRouter,
+->() {
+-  return function <TEnablePrefix extends boolean>(
+-    _opts?: CreateTRPCContextOpts<TEnablePrefix>,
+-  ) {
+-    return __createTRPCContext<TRouter, { enablePrefix: TEnablePrefix }>();
+-  };
+-}
+-
+ /**
+  * Create a set of type-safe provider-consumers
+  *
+@@ -63,12 +29,6 @@ export function createTRPCContextWithFeatureFlags<
+  */
+ export function createTRPCContext<
+   TRouter extends AnyTRPCRouter,
+->(): CreateTRPCContextResult<TRouter, { enablePrefix: false }> {
+-  return __createTRPCContext<TRouter, { enablePrefix: false }>();
+-}
+-
+-export function __createTRPCContext<
+-  TRouter extends AnyTRPCRouter,
+   TFeatureFlags extends FeatureFlags = DefaultFeatureFlags,
+ >(): CreateTRPCContextResult<TRouter, TFeatureFlags> {
+   const TRPCClientContext = React.createContext<TRPCClient<TRouter> | null>(
+@@ -80,21 +40,26 @@ export function __createTRPCContext<
+   > | null>(null);
+ 
+   function TRPCProvider(
+-    props: Readonly<{
+-      children: React.ReactNode;
+-      queryClient: QueryClient;
+-      trpcClient: TRPCClient<TRouter>;
+-      queryKeyPrefix?: TFeatureFlags['enablePrefix'] extends true
+-        ? string | string[]
+-        : never;
+-    }>,
++    props: Readonly<
++      {
++        children: React.ReactNode;
++        queryClient: QueryClient;
++        trpcClient: TRPCClient<TRouter>;
++      } & (TFeatureFlags['enablePrefix'] extends true
++        ? {
++            queryKeyPrefix?: string | string[];
++          }
++        : {
++            queryKeyPrefix?: never;
++          })
++    >,
+   ) {
+     const value = React.useMemo(
+       () =>
+         createTRPCOptionsProxy<TRouter, TFeatureFlags>({
+           client: props.trpcClient,
+           queryClient: props.queryClient,
+-          queryKeyPrefix: props.queryKeyPrefix,
++          queryKeyPrefix: props.queryKeyPrefix as any,
+         }),
+       [props.trpcClient, props.queryClient, props.queryKeyPrefix],
+     );
+@@ -125,5 +90,8 @@ export function __createTRPCContext<
+     return client;
+   }
+ 
+-  return { TRPCProvider, useTRPC, useTRPCClient };
++  return { TRPCProvider, useTRPC, useTRPCClient } as CreateTRPCContextResult<
++    TRouter,
++    TFeatureFlags
++  >;
+ }
+diff --git a/packages/tanstack-react-query/src/internals/createOptionsProxy.ts b/packages/tanstack-react-query/src/internals/createOptionsProxy.ts
+index 1bc467f2ac3..6c4ad509eff 100644
+--- a/packages/tanstack-react-query/src/internals/createOptionsProxy.ts
++++ b/packages/tanstack-react-query/src/internals/createOptionsProxy.ts
+@@ -83,29 +83,27 @@ interface TypeHelper<TDef extends ResolverDef> {
+ 
+ export type inferInput<
+   TProcedure extends
+-    | DecorateInfiniteQueryProcedure<any, any>
+-    | DecorateQueryProcedure<any, any>
+-    | DecorateMutationProcedure<any, any>,
++    | DecorateInfiniteQueryProcedure<any>
++    | DecorateQueryProcedure<any>
++    | DecorateMutationProcedure<any>,
+ > = TProcedure['~types']['input'];
+ 
+ export type inferOutput<
+   TProcedure extends
+-    | DecorateInfiniteQueryProcedure<any, any>
+-    | DecorateQueryProcedure<any, any>
+-    | DecorateMutationProcedure<any, any>,
++    | DecorateInfiniteQueryProcedure<any>
++    | DecorateQueryProcedure<any>
++    | DecorateMutationProcedure<any>,
+ > = TProcedure['~types']['output'];
+ 
+-export interface DecorateInfiniteQueryProcedure<
+-  TDef extends ResolverDef,
+-  TFeatureFlags extends FeatureFlags,
+-> extends TypeHelper<TDef> {
++export interface DecorateInfiniteQueryProcedure<TDef extends ResolverDef>
++  extends TypeHelper<TDef> {
+   /**
+    * Create a set of type-safe infinite query options that can be passed to `useInfiniteQuery`, `prefetchInfiniteQuery` etc.
+    *
+    * @see https://tanstack.com/query/latest/docs/framework/react/reference/infiniteQueryOptions#infinitequeryoptions
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#infiniteQueryOptions
+    */
+-  infiniteQueryOptions: TRPCInfiniteQueryOptions<TDef, TFeatureFlags>;
++  infiniteQueryOptions: TRPCInfiniteQueryOptions<TDef>;
+ 
+   /**
+    * Calculate the TanStack Query Key for a Infinite Query Procedure
+@@ -114,7 +112,7 @@ export interface DecorateInfiniteQueryProcedure<
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#queryKey
+    */
+   infiniteQueryKey: (input?: Partial<TDef['input']>) => DataTag<
+-    TRPCQueryKey<TFeatureFlags['enablePrefix']>,
++    TRPCQueryKey<TDef['featureFlags']['enablePrefix']>,
+     TRPCInfiniteData<TDef['input'], TDef['output']>,
+     TRPCClientErrorLike<{
+       transformer: TDef['transformer'];
+@@ -132,7 +130,7 @@ export interface DecorateInfiniteQueryProcedure<
+     input?: Partial<TDef['input']>,
+     filters?: QueryFilters<
+       DataTag<
+-        TRPCQueryKey<TFeatureFlags['enablePrefix']>,
++        TRPCQueryKey<TDef['featureFlags']['enablePrefix']>,
+         TRPCInfiniteData<TDef['input'], TDef['output']>,
+         TRPCClientErrorLike<{
+           transformer: TDef['transformer'];
+@@ -143,7 +141,7 @@ export interface DecorateInfiniteQueryProcedure<
+   ) => WithRequired<
+     QueryFilters<
+       DataTag<
+-        TRPCQueryKey<TFeatureFlags['enablePrefix']>,
++        TRPCQueryKey<TDef['featureFlags']['enablePrefix']>,
+         TRPCInfiniteData<TDef['input'], TDef['output']>,
+         TRPCClientErrorLike<{
+           transformer: TDef['transformer'];
+@@ -154,18 +152,16 @@ export interface DecorateInfiniteQueryProcedure<
+     'queryKey'
+   >;
+ }
+-export interface DecorateQueryProcedure<
+-  TDef extends ResolverDef,
+-  TFeatureFlags extends FeatureFlags,
+-> extends TypeHelper<TDef>,
+-    DecorateRouterKeyable<TFeatureFlags> {
++export interface DecorateQueryProcedure<TDef extends ResolverDef>
++  extends TypeHelper<TDef>,
++    DecorateRouterKeyable<TDef['featureFlags']> {
+   /**
+    * Create a set of type-safe query options that can be passed to `useQuery`, `prefetchQuery` etc.
+    *
+    * @see https://tanstack.com/query/latest/docs/framework/react/reference/queryOptions#queryoptions
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#queryOptions
+    */
+-  queryOptions: TRPCQueryOptions<TDef, TFeatureFlags>;
++  queryOptions: TRPCQueryOptions<TDef>;
+ 
+   /**
+    * Calculate the TanStack Query Key for a Query Procedure
+@@ -174,7 +170,7 @@ export interface DecorateQueryProcedure<
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#queryKey
+    */
+   queryKey: (input?: Partial<TDef['input']>) => DataTag<
+-    TRPCQueryKey<TFeatureFlags['enablePrefix']>,
++    TRPCQueryKey<TDef['featureFlags']['enablePrefix']>,
+     TDef['output'],
+     TRPCClientErrorLike<{
+       transformer: TDef['transformer'];
+@@ -192,7 +188,7 @@ export interface DecorateQueryProcedure<
+     input?: Partial<TDef['input']>,
+     filters?: QueryFilters<
+       DataTag<
+-        TRPCQueryKey<TFeatureFlags['enablePrefix']>,
++        TRPCQueryKey<TDef['featureFlags']['enablePrefix']>,
+         TDef['output'],
+         TRPCClientErrorLike<{
+           transformer: TDef['transformer'];
+@@ -203,7 +199,7 @@ export interface DecorateQueryProcedure<
+   ) => WithRequired<
+     QueryFilters<
+       DataTag<
+-        TRPCQueryKey<TFeatureFlags['enablePrefix']>,
++        TRPCQueryKey<TDef['featureFlags']['enablePrefix']>,
+         TDef['output'],
+         TRPCClientErrorLike<{
+           transformer: TDef['transformer'];
+@@ -215,50 +211,45 @@ export interface DecorateQueryProcedure<
+   >;
+ }
+ 
+-export interface DecorateMutationProcedure<
+-  TDef extends ResolverDef,
+-  TFeatureFlags extends FeatureFlags,
+-> extends TypeHelper<TDef> {
++export interface DecorateMutationProcedure<TDef extends ResolverDef>
++  extends TypeHelper<TDef> {
+   /**
+    * Create a set of type-safe mutation options that can be passed to `useMutation`
+    *
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#mutationOptions
+    */
+-  mutationOptions: TRPCMutationOptions<TDef, TFeatureFlags>;
++  mutationOptions: TRPCMutationOptions<TDef>;
+ 
+   /**
+    * Calculate the TanStack Mutation Key for a Mutation Procedure
+    *
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#mutationKey
+    */
+-  mutationKey: () => TRPCMutationKey<TFeatureFlags['enablePrefix']>;
++  mutationKey: () => TRPCMutationKey<TDef['featureFlags']['enablePrefix']>;
+ }
+ 
+-export interface DecorateSubscriptionProcedure<
+-  TDef extends ResolverDef,
+-  TFeatureFlags extends FeatureFlags,
+-> extends TypeHelper<TDef> {
++export interface DecorateSubscriptionProcedure<TDef extends ResolverDef>
++  extends TypeHelper<TDef> {
+   /**
+    * Create a set of type-safe subscription options that can be passed to `useSubscription`
+    *
+    * @see https://trpc.io/docs/client/tanstack-react-query/usage#subscriptionOptions
+    */
+-  subscriptionOptions: TRPCSubscriptionOptions<TDef, TFeatureFlags>;
++  subscriptionOptions: TRPCSubscriptionOptions<TDef>;
+ }
+ 
+ export type DecorateProcedure<
+   TType extends TRPCProcedureType,
+   TDef extends ResolverDef,
+-  TFeatureFlags extends FeatureFlags = DefaultFeatureFlags,
+ > = TType extends 'query'
+-  ? DecorateQueryProcedure<TDef, TFeatureFlags> &
++  ? DecorateQueryProcedure<TDef> &
+       (TDef['input'] extends OptionalCursorInput
+-        ? DecorateInfiniteQueryProcedure<TDef, TFeatureFlags>
++        ? DecorateInfiniteQueryProcedure<TDef>
+         : Record<string, never>)
+   : TType extends 'mutation'
+-    ? DecorateMutationProcedure<TDef, TFeatureFlags>
++    ? DecorateMutationProcedure<TDef>
+     : TType extends 'subscription'
+-      ? DecorateSubscriptionProcedure<TDef, TFeatureFlags>
++      ? DecorateSubscriptionProcedure<TDef>
+       : never;
+ 
+ /**
+@@ -267,7 +258,7 @@ export type DecorateProcedure<
+ export type DecoratedRouterRecord<
+   TRoot extends AnyTRPCRootTypes,
+   TRecord extends TRPCRouterRecord,
+-  TFeatureFlags extends FeatureFlags,
++  TFeatureFlags extends FeatureFlags = DefaultFeatureFlags,
+ > = {
+   [TKey in keyof TRecord]: TRecord[TKey] extends infer $Value
+     ? $Value extends TRPCRouterRecord
+@@ -281,6 +272,7 @@ export type DecoratedRouterRecord<
+               output: inferTransformedProcedureOutput<TRoot, $Value>;
+               transformer: TRoot['transformer'];
+               errorShape: TRoot['errorShape'];
++              featureFlags: TFeatureFlags;
+             }
+           >
+         : never
+@@ -334,10 +326,10 @@ export type TRPCOptionsProxyOptions<
+   );
+ 
+ type UtilsMethods =
+-  | keyof DecorateQueryProcedure<any, any>
+-  | keyof DecorateInfiniteQueryProcedure<any, any>
+-  | keyof DecorateMutationProcedure<any, any>
+-  | keyof DecorateSubscriptionProcedure<any, any>;
++  | keyof DecorateQueryProcedure<any>
++  | keyof DecorateInfiniteQueryProcedure<any>
++  | keyof DecorateMutationProcedure<any>
++  | keyof DecorateSubscriptionProcedure<any>;
+ 
+ /**
+  * Create a typed proxy from your router types. Can also be used on the server.
+@@ -393,12 +385,20 @@ export function createTRPCOptionsProxy<
+       '~types': undefined as any,
+ 
+       pathKey: () => {
+-        return getQueryKeyInternal(path, { prefix: queryKeyPrefix });
++        return getQueryKeyInternal({
++          path,
++          type: 'any',
++          prefix: queryKeyPrefix,
++        });
+       },
+       pathFilter: (): QueryFilters => {
+         return {
+           ...arg1,
+-          queryKey: getQueryKeyInternal(path, { prefix: queryKeyPrefix }),
++          queryKey: getQueryKeyInternal({
++            path,
++            type: 'any',
++            prefix: queryKeyPrefix,
++          }),
+         };
+       },
+ 
+@@ -408,7 +408,8 @@ export function createTRPCOptionsProxy<
+           opts: arg2,
+           path,
+           queryClient: opts.queryClient,
+-          queryKey: getQueryKeyInternal(path, {
++          queryKey: getQueryKeyInternal({
++            path,
+             input: arg1,
+             type: 'query',
+             prefix: queryKeyPrefix,
+@@ -417,7 +418,8 @@ export function createTRPCOptionsProxy<
+         });
+       },
+       queryKey: () => {
+-        return getQueryKeyInternal(path, {
++        return getQueryKeyInternal({
++          path,
+           input: arg1,
+           type: 'query',
+           prefix: queryKeyPrefix,
+@@ -426,7 +428,8 @@ export function createTRPCOptionsProxy<
+       queryFilter: (): QueryFilters => {
+         return {
+           ...arg2,
+-          queryKey: getQueryKeyInternal(path, {
++          queryKey: getQueryKeyInternal({
++            path,
+             input: arg1,
+             type: 'query',
+             prefix: queryKeyPrefix,
+@@ -440,7 +443,8 @@ export function createTRPCOptionsProxy<
+           opts: arg2,
+           path,
+           queryClient: opts.queryClient,
+-          queryKey: getQueryKeyInternal(path, {
++          queryKey: getQueryKeyInternal({
++            path,
+             input: arg1,
+             type: 'infinite',
+             prefix: queryKeyPrefix,
+@@ -449,7 +453,8 @@ export function createTRPCOptionsProxy<
+         });
+       },
+       infiniteQueryKey: () => {
+-        return getQueryKeyInternal(path, {
++        return getQueryKeyInternal({
++          path,
+           input: arg1,
+           type: 'infinite',
+           prefix: queryKeyPrefix,
+@@ -458,7 +463,8 @@ export function createTRPCOptionsProxy<
+       infiniteQueryFilter: (): QueryFilters => {
+         return {
+           ...arg2,
+-          queryKey: getQueryKeyInternal(path, {
++          queryKey: getQueryKeyInternal({
++            path,
+             input: arg1,
+             type: 'infinite',
+             prefix: queryKeyPrefix,
+@@ -485,7 +491,8 @@ export function createTRPCOptionsProxy<
+         return trpcSubscriptionOptions({
+           opts: arg2,
+           path,
+-          queryKey: getQueryKeyInternal(path, {
++          queryKey: getQueryKeyInternal({
++            path,
+             input: arg1,
+             type: 'any',
+             prefix: queryKeyPrefix,
+diff --git a/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts b/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts
+index 5c252c158fe..1dfe7a5d8d2 100644
+--- a/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts
++++ b/packages/tanstack-react-query/src/internals/infiniteQueryOptions.ts
+@@ -11,7 +11,6 @@ import { infiniteQueryOptions, skipToken } from '@tanstack/react-query';
+ import type { TRPCClientErrorLike, TRPCUntypedClient } from '@trpc/client';
+ import type { DistributiveOmit } from '@trpc/server/unstable-core-do-not-import';
+ import type {
+-  DefaultFeatureFlags,
+   ExtractCursorType,
+   FeatureFlags,
+   ResolverDef,
+@@ -164,10 +163,7 @@ interface UnusedSkipTokenTRPCInfiniteQueryOptionsOut<
+   initialPageParam: NonNullable<ExtractCursorType<TInput>> | null;
+ }
+ 
+-export interface TRPCInfiniteQueryOptions<
+-  TDef extends ResolverDef,
+-  TFeatureFlags extends FeatureFlags = DefaultFeatureFlags,
+-> {
++export interface TRPCInfiniteQueryOptions<TDef extends ResolverDef> {
+   <TQueryFnData extends TDef['output'], TData = TQueryFnData>(
+     input: TDef['input'] | SkipToken,
+     opts: DefinedTRPCInfiniteQueryOptionsIn<
+@@ -178,7 +174,7 @@ export interface TRPCInfiniteQueryOptions<
+         transformer: TDef['transformer'];
+         errorShape: TDef['errorShape'];
+       }>,
+-      TFeatureFlags
++      TDef['featureFlags']
+     >,
+   ): DefinedTRPCInfiniteQueryOptionsOut<
+     TDef['input'],
+@@ -188,7 +184,7 @@ export interface TRPCInfiniteQueryOptions<
+       transformer: TDef['transformer'];
+       errorShape: TDef['errorShape'];
+     }>,
+-    TFeatureFlags
++    TDef['featureFlags']
+   >;
+   <TQueryFnData extends TDef['output'], TData = TQueryFnData>(
+     input: TDef['input'],
+@@ -200,7 +196,7 @@ export interface TRPCInfiniteQueryOptions<
+         transformer: TDef['transformer'];
+         errorShape: TDef['errorShape'];
+       }>,
+-      TFeatureFlags
++      TDef['featureFlags']
+     >,
+   ): UnusedSkipTokenTRPCInfiniteQueryOptionsOut<
+     TDef['input'],
+@@ -210,7 +206,7 @@ export interface TRPCInfiniteQueryOptions<
+       transformer: TDef['transformer'];
+       errorShape: TDef['errorShape'];
+     }>,
+-    TFeatureFlags
++    TDef['featureFlags']
+   >;
+   <TQueryFnData extends TDef['output'], TData = TQueryFnData>(
+     input: TDef['input'] | SkipToken,
+@@ -222,7 +218,7 @@ export interface TRPCInfiniteQueryOptions<
+         transformer: TDef['transformer'];
+         errorShape: TDef['errorShape'];
+       }>,
+-      TFeatureFlags
++      TDef['featureFlags']
+     >,
+   ): UndefinedTRPCInfiniteQueryOptionsOut<
+     TDef['input'],
+@@ -232,7 +228,7 @@ export interface TRPCInfiniteQueryOptions<
+       transformer: TDef['transformer'];
+       errorShape: TDef['errorShape'];
+     }>,
+-    TFeatureFlags
++    TDef['featureFlags']
+   >;
+ }
+ 
+diff --git a/packages/tanstack-react-query/src/internals/types.ts b/packages/tanstack-react-query/src/internals/types.ts
+index 754f07a3d49..fcdb48144c3 100644
+--- a/packages/tanstack-react-query/src/internals/types.ts
++++ b/packages/tanstack-react-query/src/internals/types.ts
+@@ -17,6 +17,7 @@ export type ResolverDef = {
+   output: any;
+   transformer: boolean;
+   errorShape: any;
++  featureFlags: FeatureFlags;
+ };
+ 
+ /**
+@@ -139,4 +140,6 @@ export type FeatureFlags = { enablePrefix: boolean };
+  * Default feature flags with query key prefix disabled
+  * @public
+  */
+-export type DefaultFeatureFlags = { enablePrefix: false };
++export type DefaultFeatureFlags = {
++  enablePrefix: false;
++};
+diff --git a/packages/tanstack-react-query/src/internals/utils.ts b/packages/tanstack-react-query/src/internals/utils.ts
+index 94c533145d4..9dde2359721 100644
+--- a/packages/tanstack-react-query/src/internals/utils.ts
++++ b/packages/tanstack-react-query/src/internals/utils.ts
+@@ -1,5 +1,9 @@
+ import { skipToken, type QueryClient } from '@tanstack/react-query';
+-import { isFunction, isObject } from '@trpc/server/unstable-core-do-not-import';
++import {
++  isFunction,
++  isObject,
++  run,
++} from '@trpc/server/unstable-core-do-not-import';
+ import type {
+   AnyTRPCQueryKey,
+   FeatureFlags,
+@@ -114,62 +118,40 @@ export async function buildQueryFromAsyncIterable<
+  *
+  * @internal
+  */
+-export function getQueryKeyInternal<TPrefix extends readonly string[]>(
+-  path: readonly string[],
+-  opts: {
+-    input?: unknown;
+-    type?: QueryType;
+-    prefix?: TPrefix;
+-  } = {},
+-): TRPCQueryKey<TPrefix extends undefined ? false : true> {
+-  // Construct a query key that is easy to destructure and flexible for
+-  // partial selecting etc.
+-  // https://github.com/trpc/trpc/issues/3128
+-
+-  // some parts of the path may be dot-separated, split them up
+-  const prefix = opts.prefix?.length === 0 ? undefined : opts.prefix;
+-  const splitPath = path.flatMap((part) => part.split('.'));
+-
+-  if (!opts.input && (!opts.type || opts.type === 'any')) {
+-    // this matches also all mutations (see `getMutationKeyInternal`)
+-
+-    // for `utils.invalidate()` to match all queries (including vanilla react-query)
+-    // we don't want nested array if path is empty, i.e. `[]` instead of `[[]]`
+-
+-    if (prefix) {
+-      return splitPath.length
+-        ? ([prefix, splitPath] as TRPCQueryKey<
+-            TPrefix extends undefined ? false : true
+-          >)
+-        : ([prefix] as TRPCQueryKey<TPrefix extends undefined ? false : true>);
+-    } else {
+-      return splitPath.length
+-        ? [splitPath]
+-        : ([] as unknown as TRPCQueryKeyWithoutPrefix);
++export function getQueryKeyInternal(opts: {
++  path: string[];
++  input?: unknown;
++  type: QueryType;
++  prefix: string[] | undefined;
++}): AnyTRPCQueryKey {
++  const base = run((): TRPCQueryKeyWithoutPrefix => {
++    const { input, type } = opts;
++
++    // Construct a query key that is easy to destructure and flexible for
++    // partial selecting etc.
++    // https://github.com/trpc/trpc/issues/3128
++
++    // some parts of the path may be dot-separated, split them up
++    const splitPath = opts.path.flatMap((part) => part.split('.'));
++
++    if (!input && type === 'any') {
++      // this matches also all mutations (see `getMutationKeyInternal`)
++
++      // for `utils.invalidate()` to match all queries (including vanilla react-query)
++      // we don't want nested array if path is empty, i.e. `[]` instead of `[[]]`
++      return splitPath.length ? [splitPath] : ([] as unknown as TRPCQueryKey);
+     }
+-  }
+ 
+-  if (
+-    opts.type === 'infinite' &&
+-    isObject(opts.input) &&
+-    ('direction' in opts.input || 'cursor' in opts.input)
+-  ) {
+-    const {
+-      cursor: _,
+-      direction: __,
+-      ...inputWithoutCursorAndDirection
+-    } = opts.input;
+-
+-    if (!prefix) {
+-      return [
+-        prefix,
+-        splitPath,
+-        {
+-          input: inputWithoutCursorAndDirection,
+-          type: 'infinite',
+-        },
+-      ] as unknown as TRPCQueryKey<TPrefix extends undefined ? false : true>;
+-    } else {
++    if (
++      type === 'infinite' &&
++      isObject(input) &&
++      ('direction' in input || 'cursor' in input)
++    ) {
++      const {
++        cursor: _,
++        direction: __,
++        ...inputWithoutCursorAndDirection
++      } = input;
+       return [
+         splitPath,
+         {
+@@ -178,28 +160,21 @@ export function getQueryKeyInternal<TPrefix extends readonly string[]>(
+         },
+       ];
+     }
+-  }
+ 
+-  if (prefix) {
+-    return [
+-      prefix,
+-      splitPath,
+-      {
+-        ...(typeof opts.input !== 'undefined' &&
+-          opts.input !== skipToken && { input: opts.input }),
+-        ...(opts.type && opts.type !== 'any' && { type: opts.type }),
+-      },
+-    ] as unknown as TRPCQueryKey<TPrefix extends undefined ? false : true>;
+-  } else {
+     return [
+       splitPath,
+       {
+-        ...(typeof opts.input !== 'undefined' &&
+-          opts.input !== skipToken && { input: opts.input }),
+-        ...(opts.type && opts.type !== 'any' && { type: opts.type }),
++        ...(typeof input !== 'undefined' &&
++          input !== skipToken && { input: input }),
++        ...(type && type !== 'any' && { type: type }),
+       },
+     ];
++  });
++
++  if (opts.prefix) {
++    base.unshift(opts.prefix);
+   }
++  return base;
+ }
+ 
+ /**
+diff --git a/packages/tanstack-react-query/test/__helpers.tsx b/packages/tanstack-react-query/test/__helpers.tsx
+index 4d8ff173dcc..c07a2eb2424 100644
+--- a/packages/tanstack-react-query/test/__helpers.tsx
++++ b/packages/tanstack-react-query/test/__helpers.tsx
+@@ -8,10 +8,7 @@ import { render } from '@testing-library/react';
+ import { getUntypedClient } from '@trpc/client';
+ import type { AnyTRPCRouter } from '@trpc/server';
+ import * as React from 'react';
+-import {
+-  createTRPCContextWithFeatureFlags,
+-  createTRPCOptionsProxy,
+-} from '../src';
++import { createTRPCContext, createTRPCOptionsProxy } from '../src';
+ 
+ type TestReactResourceExtraOpts = { queryKeyPrefix?: string | string[] };
+ 
+@@ -42,10 +39,10 @@ export function testReactResource<TRouter extends AnyTRPCRouter>(
+     queryKeyPrefix: opts?.queryKeyPrefix,
+   });
+ 
+-  const { TRPCProvider, useTRPC, useTRPCClient } =
+-    createTRPCContextWithFeatureFlags<TRouter>()({
+-      enableKeyPrefix: true,
+-    });
++  const { TRPCProvider, useTRPC, useTRPCClient } = createTRPCContext<
++    TRouter,
++    { enablePrefix: true }
++  >();
+ 
+   function renderApp(ui: React.ReactNode) {
+     return render(
+diff --git a/packages/tanstack-react-query/test/utils.test.ts b/packages/tanstack-react-query/test/utils.test.ts
+index b8a437c8332..c7655dff28e 100644
+--- a/packages/tanstack-react-query/test/utils.test.ts
++++ b/packages/tanstack-react-query/test/utils.test.ts
+@@ -4,7 +4,9 @@ import { getQueryKeyInternal, readQueryKey } from '../src/internals/utils';
+ describe(getQueryKeyInternal, () => {
+   it('creates a query key', () => {
+     expect(
+-      getQueryKeyInternal(['a', 'b'], {
++      getQueryKeyInternal({
++        prefix: undefined,
++        path: ['a', 'b'],
+         input: 'input value',
+         type: 'query',
+       }),
+@@ -24,7 +26,8 @@ describe(getQueryKeyInternal, () => {
+ 
+   it('creates a query key with prefix', () => {
+     expect(
+-      getQueryKeyInternal(['a', 'b'], {
++      getQueryKeyInternal({
++        path: ['a', 'b'],
+         input: 'input value',
+         type: 'query',
+         prefix: ['prefix'],
+@@ -47,7 +50,9 @@ describe(getQueryKeyInternal, () => {
+   });
+ 
+   it('creates a router key', () => {
+-    expect(getQueryKeyInternal(['a', 'b'])).toMatchInlineSnapshot(`
++    expect(
++      getQueryKeyInternal({ prefix: undefined, path: ['a', 'b'], type: 'any' }),
++    ).toMatchInlineSnapshot(`
+       Array [
+         Array [
+           "a",
+@@ -58,8 +63,13 @@ describe(getQueryKeyInternal, () => {
+   });
+ 
+   it('creates a router key with prefix', () => {
+-    expect(getQueryKeyInternal(['a', 'b'], { prefix: ['prefix'] }))
+-      .toMatchInlineSnapshot(`
++    expect(
++      getQueryKeyInternal({
++        path: ['a', 'b'],
++        type: 'any',
++        prefix: ['prefix'],
++      }),
++    ).toMatchInlineSnapshot(`
+       Array [
+         Array [
+           "prefix",
+@@ -74,7 +84,9 @@ describe(getQueryKeyInternal, () => {
+ 
+   it('creates a infinite query key', () => {
+     expect(
+-      getQueryKeyInternal(['a', 'b'], {
++      getQueryKeyInternal({
++        prefix: undefined,
++        path: ['a', 'b'],
+         input: 1,
+         type: 'infinite',
+       }),
+@@ -94,7 +106,8 @@ describe(getQueryKeyInternal, () => {
+ 
+   it('creates a infinite query key with prefix', () => {
+     expect(
+-      getQueryKeyInternal(['a', 'b'], {
++      getQueryKeyInternal({
++        path: ['a', 'b'],
+         input: 1,
+         type: 'infinite',
+         prefix: ['prefix'],
+diff --git a/www/docs/client/tanstack-react-query/setup.mdx b/www/docs/client/tanstack-react-query/setup.mdx
+index d2f424babc7..392cc5dc422 100644
+--- a/www/docs/client/tanstack-react-query/setup.mdx
++++ b/www/docs/client/tanstack-react-query/setup.mdx
+@@ -153,14 +153,14 @@ export function App() {
+ If you want to prefix all queries and mutations with a specific key (for example, to namespace them by user ID), you can enable the `enablePrefix` feature flag when creating the tRPC context.
+ 
+ ```tsx title='components/App.tsx'
+-import { createTRPCContextWithFeatureFlags } from '@trpc/tanstack-react-query';
++import { createTRPCContext } from '@trpc/tanstack-react-query';
+ import type { AppRouter } from '../server/router';
+ 
+-// First enable the feature
+-export const { TRPCProvider, useTRPC, useTRPCClient } =
+-  createTRPCContextWithFeatureFlags({
+-    enableKeyPrefix: true,
+-  })<AppRouter>();
++// Enable the prefix feature flag
++export const { TRPCProvider, useTRPC, useTRPCClient } = createTRPCContext<
++  AppRouter,
++  { enablePrefix: true }
++>();
+ 
+ // Then use it in your app
+ export function App() {

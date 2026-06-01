@@ -1,0 +1,643 @@
+diff --git a/packages/next/errors.json b/packages/next/errors.json
+index bdad3454f4ec..e40b508787a3 100644
+--- a/packages/next/errors.json
++++ b/packages/next/errors.json
+@@ -1240,5 +1240,8 @@
+   "1239": "Unterminated JSON object in %s.",
+   "1240": "Route \"%s\": Next.js encountered %s during the initial render.\\n\\nThis value must either be prerendered or computed per request.\\n\\nWays to fix this:\\n  - Render at request time by adding a dynamic data access (e.g. \\`await connection()\\`) before this call\\n  - Prerender and cache the value with \\`\"use cache\"\\`\\n  - Render the value on the client with \\`\"use client\"\\`\\n%s\\nLearn more: %s",
+   "1241": "Route \"%s\": Next.js encountered %s in a Client Component.\\n\\nThis value would be evaluated during the prerender and fixed at build time, instead of recomputed on each visit.\\n\\nWays to fix this:\\n  - Wrap the Client Component in \\`<Suspense fallback={...}>\\`\\n  - Move the read into a \\`useEffect\\` or event handler\\n\\nLearn more: %s",
+-  "1242": "Route \"%s\": Next.js encountered %s without an explicit rendering intent.\\n\\nThis value can change between renders, so it must be either prerendered or computed later.\\n\\nWays to fix this:\\n  - Render at request time by adding a dynamic data access (e.g. \\`await connection()\\`) before this call\\n  - Prerender and cache the value with \\`\"use cache\"\\`\\n  - Render the value on the client with \\`\"use client\"\\`\\n%s\\nLearn more: %s"
++  "1242": "Route \"%s\": Next.js encountered %s without an explicit rendering intent.\\n\\nThis value can change between renders, so it must be either prerendered or computed later.\\n\\nWays to fix this:\\n  - Render at request time by adding a dynamic data access (e.g. \\`await connection()\\`) before this call\\n  - Prerender and cache the value with \\`\"use cache\"\\`\\n  - Render the value on the client with \\`\"use client\"\\`\\n%s\\nLearn more: %s",
++  "1243": "This \"use cache\" has a dynamic cache life that was propagated to its parent.",
++  "1244": "A \"use cache\" with short \\`expire\\` (under 5 minutes) is nested inside another \"use cache\" that has no explicit \\`cacheLife\\`, which is not allowed during prerendering. Add \\`cacheLife()\\` to the outer \"use cache\" to choose whether it should be prerendered (with longer \\`expire\\`) or remain dynamic (with short \\`expire\\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
++  "1245": "A \"use cache\" with zero \\`revalidate\\` is nested inside another \"use cache\" that has no explicit \\`cacheLife\\`, which is not allowed during prerendering. Add \\`cacheLife()\\` to the outer \"use cache\" to choose whether it should be prerendered (with non-zero \\`revalidate\\`) or remain dynamic (with zero \\`revalidate\\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife"
+ }
+diff --git a/packages/next/src/server/app-render/postponed-state.test.ts b/packages/next/src/server/app-render/postponed-state.test.ts
+index 718a4030f703..2f5cc1bdba6b 100644
+--- a/packages/next/src/server/app-render/postponed-state.test.ts
++++ b/packages/next/src/server/app-render/postponed-state.test.ts
+@@ -45,6 +45,7 @@ describe('getDynamicHTMLPostponedState', () => {
+         hasExplicitRevalidate: true,
+         hasExplicitExpire: true,
+         readRootParamNames: undefined,
++        dynamicNestedCacheError: undefined,
+       })
+     )
+ 
+diff --git a/packages/next/src/server/app-render/work-unit-async-storage.external.ts b/packages/next/src/server/app-render/work-unit-async-storage.external.ts
+index 728bd0e6023e..01731c1abf07 100644
+--- a/packages/next/src/server/app-render/work-unit-async-storage.external.ts
++++ b/packages/next/src/server/app-render/work-unit-async-storage.external.ts
+@@ -364,6 +364,13 @@ export interface PublicUseCacheStore extends CommonUseCacheStore {
+    * Tracks which root param names were read during this cache invocation.
+    */
+   readonly readRootParamNames: Set<string>
++  /**
++   * The first nested public `'use cache'` invocation with a dynamic cache life
++   * (`revalidate === 0` or `expire < DYNAMIC_EXPIRE`) that propagated up to
++   * this store. Used as `cause` for the nested-dynamic cache error so the
++   * redbox can point at the inner invocation site, not just the outer one.
++   */
++  dynamicNestedCacheError: Error | undefined
+ }
+ 
+ export interface PrivateUseCacheStore extends CommonUseCacheStore {
+diff --git a/packages/next/src/server/resume-data-cache/cache-store.ts b/packages/next/src/server/resume-data-cache/cache-store.ts
+index c644aebd4e85..15ead30e2cc5 100644
+--- a/packages/next/src/server/resume-data-cache/cache-store.ts
++++ b/packages/next/src/server/resume-data-cache/cache-store.ts
+@@ -92,6 +92,11 @@ export function parseUseCacheCacheStore(
+         readRootParamNames: readRootParamNames
+           ? new Set(readRootParamNames)
+           : undefined,
++        // Serialized RDC entries are non-dynamic by construction (the
++        // serializer drops dynamic entries), so this is never produced from the
++        // wire — the throw path that consumes it is only reachable for dynamic
++        // entries, which only exist in the in-memory RDC.
++        dynamicNestedCacheError: undefined,
+       })
+     )
+   }
+diff --git a/packages/next/src/server/resume-data-cache/resume-data-cache.test.ts b/packages/next/src/server/resume-data-cache/resume-data-cache.test.ts
+index 2908a7ab29e0..722d5f450211 100644
+--- a/packages/next/src/server/resume-data-cache/resume-data-cache.test.ts
++++ b/packages/next/src/server/resume-data-cache/resume-data-cache.test.ts
+@@ -26,6 +26,7 @@ function createMockedCache() {
+       hasExplicitRevalidate: true,
+       hasExplicitExpire: true,
+       readRootParamNames: undefined,
++      dynamicNestedCacheError: undefined,
+     })
+   )
+ 
+@@ -44,6 +45,7 @@ function createMockedCache() {
+       hasExplicitRevalidate: true,
+       hasExplicitExpire: true,
+       readRootParamNames: undefined,
++      dynamicNestedCacheError: undefined,
+     })
+   )
+ 
+@@ -62,6 +64,7 @@ function createMockedCache() {
+       hasExplicitRevalidate: true,
+       hasExplicitExpire: true,
+       readRootParamNames: undefined,
++      dynamicNestedCacheError: undefined,
+     })
+   )
+ 
+diff --git a/packages/next/src/server/use-cache/use-cache-errors.ts b/packages/next/src/server/use-cache/use-cache-errors.ts
+index 1215ebb50d68..16b8dc7e803f 100644
+--- a/packages/next/src/server/use-cache/use-cache-errors.ts
++++ b/packages/next/src/server/use-cache/use-cache-errors.ts
+@@ -13,3 +13,18 @@ export class UseCacheDeadlockError extends Error {
+     )
+   }
+ }
++
++/**
++ * Used purely as `cause` for the nested-dynamic cache error: its captured stack
++ * points at the inner `"use cache"` invocation that propagated a dynamic cache
++ * life up to the outer cache. Constructed eagerly in `cache()` while the caller
++ * is still on the synchronous stack — see use-cache-wrapper.ts.
++ */
++export class NestedDynamicUseCacheError extends Error {
++  constructor() {
++    super(
++      'This "use cache" has a dynamic cache life that was propagated to its parent.'
++    )
++    this.name = 'Nested dynamic "use cache"'
++  }
++}
+diff --git a/packages/next/src/server/use-cache/use-cache-wrapper.ts b/packages/next/src/server/use-cache/use-cache-wrapper.ts
+index ce8dc61112dd..c320d4a4f281 100644
+--- a/packages/next/src/server/use-cache/use-cache-wrapper.ts
++++ b/packages/next/src/server/use-cache/use-cache-wrapper.ts
+@@ -59,7 +59,11 @@ import { DYNAMIC_EXPIRE, RUNTIME_PREFETCH_DYNAMIC_STALE } from './constants'
+ import { NEXT_CACHE_ROOT_PARAM_TAG_ID } from '../../lib/constants'
+ import type { CacheHandler } from '../lib/cache-handlers/types'
+ import { getCacheHandler } from './handlers'
+-import { UseCacheDeadlockError, UseCacheTimeoutError } from './use-cache-errors'
++import {
++  NestedDynamicUseCacheError,
++  UseCacheDeadlockError,
++  UseCacheTimeoutError,
++} from './use-cache-errors'
+ import {
+   createHangingInputAbortSignal,
+   postponeWithTracking,
+@@ -106,6 +110,15 @@ interface PublicCacheContext {
+   readonly functionId: string
+   /** The cache handler kind (first arg of `cache()`, e.g. 'default'). */
+   readonly handlerKind: string
++  /**
++   * Eagerly captured at `cache()` entry, pointing at this invocation's call
++   * site. Only set when the outer is itself a public `'use cache'` (i.e. when
++   * this entry could become the propagated origin of a nested-dynamic cache
++   * error in the parent). When this cache resolves dynamic, this is copied into
++   * `outerWorkUnitStore.dynamicNestedCacheError` so the parent's error can use
++   * it as `cause`.
++   */
++  readonly dynamicNestedCacheError: Error | undefined
+ }
+ 
+ type CacheContext = PrivateCacheContext | PublicCacheContext
+@@ -148,6 +161,7 @@ interface CacheResultMetadata {
+   readonly readRootParamNames: ReadonlySet<string> | undefined
+   readonly hasExplicitRevalidate: boolean | undefined
+   readonly hasExplicitExpire: boolean | undefined
++  readonly dynamicNestedCacheError: Error | undefined
+ }
+ 
+ /**
+@@ -268,7 +282,7 @@ const findSourceMapURL =
+ const nestedCacheZeroRevalidateErrorMessage =
+   `A "use cache" with zero \`revalidate\` is nested inside another "use cache" ` +
+   `that has no explicit \`cacheLife\`, which is not allowed during ` +
+-  `prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose ` +
++  `prerendering. Add \`cacheLife()\` to the outer "use cache" to choose ` +
+   `whether it should be prerendered (with non-zero \`revalidate\`) or remain ` +
+   `dynamic (with zero \`revalidate\`). Read more: ` +
+   `https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife`
+@@ -276,7 +290,7 @@ const nestedCacheZeroRevalidateErrorMessage =
+ const nestedCacheShortExpireErrorMessage =
+   `A "use cache" with short \`expire\` (under 5 minutes) is nested inside ` +
+   `another "use cache" that has no explicit \`cacheLife\`, which is not ` +
+-  `allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` ` +
++  `allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" ` +
+   `to choose whether it should be prerendered (with longer \`expire\`) or remain ` +
+   `dynamic (with short \`expire\`). Read more: ` +
+   `https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife`
+@@ -381,6 +395,7 @@ function saveSharedCacheEntryToResumeDataCache(
+       readRootParamNames: metadata.readRootParamNames,
+       hasExplicitRevalidate: metadata.hasExplicitRevalidate,
+       hasExplicitExpire: metadata.hasExplicitExpire,
++      dynamicNestedCacheError: metadata.dynamicNestedCacheError,
+     }))
+ 
+   prerenderResumeDataCache.cache.set(serializedCacheKey, rdcResult)
+@@ -585,6 +600,7 @@ function createUseCacheStore(
+       rootParams: outerWorkUnitStore.rootParams,
+       readRootParamNames: new Set<string>(),
+       outerOwnerStack: cacheContext.outerOwnerStack,
++      dynamicNestedCacheError: undefined,
+     }
+   }
+ }
+@@ -767,6 +783,17 @@ function propagateCacheEntryMetadata(
+             cacheContext.outerWorkUnitStore.readRootParamNames.add(paramName)
+           }
+         }
++        // If this entry's cache life is dynamic, record this invocation as the
++        // origin to use as `cause` when the outer cache surfaces the
++        // nested-dynamic cache error. `??=` keeps the first occurrence so the
++        // cause points at the immediate dynamic child.
++        if (
++          cacheContext.dynamicNestedCacheError !== undefined &&
++          (metadata.revalidate === 0 || metadata.expire < DYNAMIC_EXPIRE)
++        ) {
++          cacheContext.outerWorkUnitStore.dynamicNestedCacheError ??=
++            cacheContext.dynamicNestedCacheError
++        }
+       // fallthrough
+       case 'private-cache':
+       case 'prerender':
+@@ -874,6 +901,15 @@ export interface CollectedCacheResult {
+    * don't have this information.
+    */
+   readRootParamNames: ReadonlySet<string> | undefined
++  /**
++   * The `Error` carried up from the first nested public `'use cache'`
++   * invocation that propagated a dynamic cache life into this entry, captured
++   * eagerly at that inner invocation's `cache()` entry. Used as `cause` for the
++   * nested-dynamic cache error so the redbox can point at the inner invocation
++   * site, not just the outer one. Lives in-memory only — intentionally dropped
++   * from the serialized RDC because dynamic entries aren't serialized either.
++   */
++  dynamicNestedCacheError: Error | undefined
+ }
+ 
+ async function collectResult(
+@@ -958,6 +994,12 @@ async function collectResult(
+       innerCacheStore.type === 'cache'
+         ? innerCacheStore.readRootParamNames
+         : undefined,
++    // The store accumulates this from nested public caches that propagated a
++    // dynamic life into us.
++    dynamicNestedCacheError:
++      innerCacheStore.type === 'cache'
++        ? innerCacheStore.dynamicNestedCacheError
++        : undefined,
+   }
+ 
+   if (!cacheContext.skipPropagation) {
+@@ -970,6 +1012,7 @@ async function collectResult(
+       hasExplicitRevalidate: collected.hasExplicitRevalidate,
+       hasExplicitExpire: collected.hasExplicitExpire,
+       readRootParamNames: collected.readRootParamNames,
++      dynamicNestedCacheError: collected.dynamicNestedCacheError,
+     })
+ 
+     const cacheSignal = getCacheSignal(cacheContext.outerWorkUnitStore)
+@@ -1338,12 +1381,14 @@ function cloneCacheResult(
+       hasExplicitRevalidate: result.hasExplicitRevalidate,
+       hasExplicitExpire: result.hasExplicitExpire,
+       readRootParamNames: result.readRootParamNames,
++      dynamicNestedCacheError: result.dynamicNestedCacheError,
+     },
+     {
+       entry: entryB,
+       hasExplicitRevalidate: result.hasExplicitRevalidate,
+       hasExplicitExpire: result.hasExplicitExpire,
+       readRootParamNames: result.readRootParamNames,
++      dynamicNestedCacheError: result.dynamicNestedCacheError,
+     },
+   ]
+ }
+@@ -1560,12 +1605,36 @@ export async function cache(
+         throw new InvariantError(
+           `${expression} must not be used within a client component. Next.js should be preventing ${expression} from being allowed in client components statically, but did not in this case.`
+         )
++      case 'cache': {
++        // Eagerly capture this invocation's call site while still synchronous
++        // in `cache()`. Used as `cause` of the nested-dynamic cache error
++        // when the outer cache (whose body never re-runs during the final
++        // prerender) throws. Only constructed when the parent is itself a
++        // public `'use cache'` — otherwise this entry can never propagate
++        // dynamism into that error and the allocation would be wasted. Private
++        // parents are intentionally excluded: `'use cache: private'` is
++        // dynamic-by-definition in prerendering and deferred to the runtime
++        // stage in dev requests, so a public cache nested inside one never
++        // triggers the throw upstream.
++        const dynamicNestedCacheError = new NestedDynamicUseCacheError()
++        Error.captureStackTrace(dynamicNestedCacheError, cache)
++        applyOwnerStack(dynamicNestedCacheError)
++        cacheContext = {
++          kind: 'public',
++          outerWorkUnitStore: workUnitStore,
++          skipPropagation: false,
++          outerOwnerStack,
++          functionId: id,
++          handlerKind: kind,
++          dynamicNestedCacheError,
++        }
++        break
++      }
+       case 'prerender':
+       case 'prerender-runtime':
+       case 'prerender-ppr':
+       case 'prerender-legacy':
+       case 'request':
+-      case 'cache':
+       case 'private-cache':
+       // TODO: We should probably forbid nesting "use cache" inside
+       // unstable_cache. (fallthrough)
+@@ -1578,6 +1647,7 @@ export async function cache(
+           outerOwnerStack,
+           functionId: id,
+           handlerKind: kind,
++          dynamicNestedCacheError: undefined,
+         }
+         break
+       default:
+@@ -1988,7 +2058,9 @@ export async function cache(
+               if (rdcResult.entry.revalidate === 0) {
+                 if (rdcResult.hasExplicitRevalidate === false) {
+                   throw wrapAsInvalidDynamicUsageError(
+-                    new Error(nestedCacheZeroRevalidateErrorMessage)
++                    new Error(nestedCacheZeroRevalidateErrorMessage, {
++                      cause: rdcResult.dynamicNestedCacheError,
++                    })
+                   )
+                 }
+                 debug?.(
+@@ -1999,7 +2071,9 @@ export async function cache(
+               } else {
+                 if (rdcResult.hasExplicitExpire === false) {
+                   throw wrapAsInvalidDynamicUsageError(
+-                    new Error(nestedCacheShortExpireErrorMessage)
++                    new Error(nestedCacheShortExpireErrorMessage, {
++                      cause: rdcResult.dynamicNestedCacheError,
++                    })
+                   )
+                 }
+                 debug?.(
+@@ -2036,7 +2110,9 @@ export async function cache(
+                   rdcResult.hasExplicitRevalidate === false
+                 ) {
+                   throw wrapAsInvalidDynamicUsageError(
+-                    new Error(nestedCacheZeroRevalidateErrorMessage)
++                    new Error(nestedCacheZeroRevalidateErrorMessage, {
++                      cause: rdcResult.dynamicNestedCacheError,
++                    })
+                   )
+                 }
+                 if (
+@@ -2044,7 +2120,9 @@ export async function cache(
+                   rdcResult.hasExplicitExpire === false
+                 ) {
+                   throw wrapAsInvalidDynamicUsageError(
+-                    new Error(nestedCacheShortExpireErrorMessage)
++                    new Error(nestedCacheShortExpireErrorMessage, {
++                      cause: rdcResult.dynamicNestedCacheError,
++                    })
+                   )
+                 }
+                 // We delay the cache here so that it doesn't resolve in the static task --
+@@ -2154,6 +2232,7 @@ export async function cache(
+           hasExplicitRevalidate: rdcResult.hasExplicitRevalidate,
+           hasExplicitExpire: rdcResult.hasExplicitExpire,
+           readRootParamNames: rdcResult.readRootParamNames,
++          dynamicNestedCacheError: rdcResult.dynamicNestedCacheError,
+         })
+ 
+         const [streamA, streamB] = rdcResult.entry.value.tee()
+@@ -2685,6 +2764,7 @@ export async function cache(
+               hasExplicitRevalidate: collected.hasExplicitRevalidate,
+               hasExplicitExpire: collected.hasExplicitExpire,
+               readRootParamNames: collected.readRootParamNames,
++              dynamicNestedCacheError: collected.dynamicNestedCacheError,
+             }))
+ 
+           const sharedCacheEntry = new SharedCacheEntry(
+@@ -2720,6 +2800,8 @@ export async function cache(
+             // set this to undefined here.
+             hasExplicitRevalidate: undefined,
+             hasExplicitExpire: undefined,
++            // The same applies to the dynamic nested cache error.
++            dynamicNestedCacheError: undefined,
+           }
+ 
+           maybePropagateCacheEntryMetadata(cacheContext, entryMetadata)
+@@ -2746,6 +2828,7 @@ export async function cache(
+                 hasExplicitRevalidate: entryMetadata.hasExplicitRevalidate,
+                 hasExplicitExpire: entryMetadata.hasExplicitExpire,
+                 readRootParamNames: entryMetadata.readRootParamNames,
++                dynamicNestedCacheError: entryMetadata.dynamicNestedCacheError,
+               })
+             )
+           } else {
+diff --git a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+index cb974bb0c576..cec32123c924 100644
+--- a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
++++ b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+@@ -3281,8 +3281,22 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+ 
+               await expect(browser).toDisplayCollapsedRedbox(`
+                {
+-                 "code": "E1009",
+-                 "description": "A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
++                 "cause": [
++                   {
++                     "label": "Caused by: Nested dynamic "use cache"",
++                     "message": "This "use cache" has a dynamic cache life that was propagated to its parent.",
++                     "source": "app/use-cache-low-expire/nested/page.tsx (3:1) @ innerCache
++               > 3 | async function innerCache() {
++                   | ^",
++                     "stack": [
++                       "innerCache app/use-cache-low-expire/nested/page.tsx (3:1)",
++                       "outerCache app/use-cache-low-expire/nested/page.tsx (14:10)",
++                       "Page <anonymous>",
++                     ],
++                   },
++                 ],
++                 "code": "E1244",
++                 "description": "A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
+                  "environmentLabel": "Server",
+                  "label": "Console Error",
+                  "source": "app/use-cache-low-expire/nested/page.tsx (20:14) @ Page
+@@ -3310,7 +3324,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+               if (isTurbopack) {
+                 if (isDebugPrerender) {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+                        at async Page (app/use-cache-low-expire/nested/page.tsx:20:14)
+                      18 |   let result: number | undefined
+                      19 |   try {
+@@ -3318,7 +3332,19 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                         |              ^
+                      21 |   } catch {}
+                      22 |
+-                     23 |   return (
++                     23 |   return ( {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at innerCache (app/use-cache-low-expire/nested/page.tsx:3:1)
++                         at outerCache (app/use-cache-low-expire/nested/page.tsx:14:10)
++                         at Page (<anonymous>)
++                       1 | import { cacheLife } from 'next/cache'
++                       2 |
++                     > 3 | async function innerCache() {
++                         | ^
++                       4 |   'use cache'
++                       5 |   cacheLife({ expire: 60 }) // 1 minute, under the 5 minute threshold
++                       6 |   return Math.random()
++                   }
+                    To debug the issue, start the app in development mode by running \`next dev\`, then open "/use-cache-low-expire/nested" in your browser to investigate the error.
+                    Error occurred prerendering page "/use-cache-low-expire/nested". Read more: https://nextjs.org/docs/messages/prerender-error
+ 
+@@ -3327,7 +3353,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                   `)
+                 } else {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+                        at async k (app/use-cache-low-expire/nested/page.tsx:20:14)
+                      18 |   let result: number | undefined
+                      19 |   try {
+@@ -3335,7 +3361,18 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                         |              ^
+                      21 |   } catch {}
+                      22 |
+-                     23 |   return (
++                     23 |   return ( {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at <unknown> (app/use-cache-low-expire/nested/page.tsx:3:1)
++                         at a (app/use-cache-low-expire/nested/page.tsx:3:16)
++                       1 | import { cacheLife } from 'next/cache'
++                       2 |
++                     > 3 | async function innerCache() {
++                         | ^
++                       4 |   'use cache'
++                       5 |   cacheLife({ expire: 60 }) // 1 minute, under the 5 minute threshold
++                       6 |   return Math.random()
++                   }
+                    To get a more detailed stack trace and pinpoint the issue, try one of the following:
+                      - Start the app in development mode by running \`next dev\`, then open "/use-cache-low-expire/nested" in your browser to investigate the error.
+                      - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.
+@@ -3346,7 +3383,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+               } else {
+                 if (isDebugPrerender) {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+                        at async Page (webpack:///app/use-cache-low-expire/nested/page.tsx:20:14)
+                      18 |   let result: number | undefined
+                      19 |   try {
+@@ -3354,7 +3391,19 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                         |              ^
+                      21 |   } catch {}
+                      22 |
+-                     23 |   return (
++                     23 |   return ( {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at innerCache (webpack:///app/use-cache-low-expire/nested/page.tsx:3:1)
++                         at outerCache (webpack:///app/use-cache-low-expire/nested/page.tsx:14:10)
++                         at Page (<anonymous>)
++                       1 | import { cacheLife } from 'next/cache'
++                       2 |
++                     > 3 | async function innerCache() {
++                         | ^
++                       4 |   'use cache'
++                       5 |   cacheLife({ expire: 60 }) // 1 minute, under the 5 minute threshold
++                       6 |   return Math.random()
++                   }
+                    To debug the issue, start the app in development mode by running \`next dev\`, then open "/use-cache-low-expire/nested" in your browser to investigate the error.
+                    Error occurred prerendering page "/use-cache-low-expire/nested". Read more: https://nextjs.org/docs/messages/prerender-error
+ 
+@@ -3363,8 +3412,13 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                   `)
+                 } else {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+-                       at a (<next-dist-dir>)
++                   "Error: A "use cache" with short \`expire\` (under 5 minutes) is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with longer \`expire\`) or remain dynamic (with short \`expire\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                       at a (<next-dist-dir>) {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at b (<next-dist-dir>)
++                         at c (<next-dist-dir>)
++                         at d (<next-dist-dir>)
++                   }
+                    To get a more detailed stack trace and pinpoint the issue, try one of the following:
+                      - Start the app in development mode by running \`next dev\`, then open "/use-cache-low-expire/nested" in your browser to investigate the error.
+                      - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.
+@@ -3632,8 +3686,22 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+ 
+               await expect(browser).toDisplayCollapsedRedbox(`
+                {
+-                 "code": "E1000",
+-                 "description": "A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
++                 "cause": [
++                   {
++                     "label": "Caused by: Nested dynamic "use cache"",
++                     "message": "This "use cache" has a dynamic cache life that was propagated to its parent.",
++                     "source": "app/use-cache-revalidate-0/nested/page.tsx (3:1) @ innerCache
++               > 3 | async function innerCache() {
++                   | ^",
++                     "stack": [
++                       "innerCache app/use-cache-revalidate-0/nested/page.tsx (3:1)",
++                       "outerCache app/use-cache-revalidate-0/nested/page.tsx (14:10)",
++                       "Page <anonymous>",
++                     ],
++                   },
++                 ],
++                 "code": "E1245",
++                 "description": "A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife",
+                  "environmentLabel": "Server",
+                  "label": "Console Error",
+                  "source": "app/use-cache-revalidate-0/nested/page.tsx (20:14) @ Page
+@@ -3661,7 +3729,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+               if (isTurbopack) {
+                 if (isDebugPrerender) {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+                        at async Page (app/use-cache-revalidate-0/nested/page.tsx:20:14)
+                      18 |   let result: number | undefined
+                      19 |   try {
+@@ -3669,7 +3737,19 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                         |              ^
+                      21 |   } catch {}
+                      22 |
+-                     23 |   return (
++                     23 |   return ( {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at innerCache (app/use-cache-revalidate-0/nested/page.tsx:3:1)
++                         at outerCache (app/use-cache-revalidate-0/nested/page.tsx:14:10)
++                         at Page (<anonymous>)
++                       1 | import { cacheLife } from 'next/cache'
++                       2 |
++                     > 3 | async function innerCache() {
++                         | ^
++                       4 |   'use cache'
++                       5 |   cacheLife({ revalidate: 0 })
++                       6 |   return Math.random()
++                   }
+                    To debug the issue, start the app in development mode by running \`next dev\`, then open "/use-cache-revalidate-0/nested" in your browser to investigate the error.
+                    Error occurred prerendering page "/use-cache-revalidate-0/nested". Read more: https://nextjs.org/docs/messages/prerender-error
+ 
+@@ -3678,7 +3758,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                   `)
+                 } else {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+                        at async k (app/use-cache-revalidate-0/nested/page.tsx:20:14)
+                      18 |   let result: number | undefined
+                      19 |   try {
+@@ -3686,7 +3766,18 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                         |              ^
+                      21 |   } catch {}
+                      22 |
+-                     23 |   return (
++                     23 |   return ( {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at <unknown> (app/use-cache-revalidate-0/nested/page.tsx:3:1)
++                         at a (app/use-cache-revalidate-0/nested/page.tsx:3:16)
++                       1 | import { cacheLife } from 'next/cache'
++                       2 |
++                     > 3 | async function innerCache() {
++                         | ^
++                       4 |   'use cache'
++                       5 |   cacheLife({ revalidate: 0 })
++                       6 |   return Math.random()
++                   }
+                    To get a more detailed stack trace and pinpoint the issue, try one of the following:
+                      - Start the app in development mode by running \`next dev\`, then open "/use-cache-revalidate-0/nested" in your browser to investigate the error.
+                      - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.
+@@ -3697,7 +3788,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+               } else {
+                 if (isDebugPrerender) {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+                        at async Page (webpack:///app/use-cache-revalidate-0/nested/page.tsx:20:14)
+                      18 |   let result: number | undefined
+                      19 |   try {
+@@ -3705,7 +3796,19 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                         |              ^
+                      21 |   } catch {}
+                      22 |
+-                     23 |   return (
++                     23 |   return ( {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at innerCache (webpack:///app/use-cache-revalidate-0/nested/page.tsx:3:1)
++                         at outerCache (webpack:///app/use-cache-revalidate-0/nested/page.tsx:14:10)
++                         at Page (<anonymous>)
++                       1 | import { cacheLife } from 'next/cache'
++                       2 |
++                     > 3 | async function innerCache() {
++                         | ^
++                       4 |   'use cache'
++                       5 |   cacheLife({ revalidate: 0 })
++                       6 |   return Math.random()
++                   }
+                    To debug the issue, start the app in development mode by running \`next dev\`, then open "/use-cache-revalidate-0/nested" in your browser to investigate the error.
+                    Error occurred prerendering page "/use-cache-revalidate-0/nested". Read more: https://nextjs.org/docs/messages/prerender-error
+ 
+@@ -3714,8 +3817,13 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                   `)
+                 } else {
+                   expect(output).toMatchInlineSnapshot(`
+-                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer \`"use cache"\` to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
+-                       at a (<next-dist-dir>)
++                   "Error: A "use cache" with zero \`revalidate\` is nested inside another "use cache" that has no explicit \`cacheLife\`, which is not allowed during prerendering. Add \`cacheLife()\` to the outer "use cache" to choose whether it should be prerendered (with non-zero \`revalidate\`) or remain dynamic (with zero \`revalidate\`). Read more: https://nextjs.org/docs/messages/nested-use-cache-no-explicit-cachelife
++                       at a (<next-dist-dir>) {
++                     [cause]: Nested dynamic "use cache": This "use cache" has a dynamic cache life that was propagated to its parent.
++                         at b (<next-dist-dir>)
++                         at c (<next-dist-dir>)
++                         at d (<next-dist-dir>)
++                   }
+                    To get a more detailed stack trace and pinpoint the issue, try one of the following:
+                      - Start the app in development mode by running \`next dev\`, then open "/use-cache-revalidate-0/nested" in your browser to investigate the error.
+                      - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.

@@ -1,0 +1,310 @@
+diff --git a/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts b/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
+index d9086e9a684..299cc754596 100644
+--- a/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
++++ b/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
+@@ -15,7 +15,12 @@ import type { TRPCResponse } from '../rpc';
+ import { isPromise, jsonlStreamProducer } from '../stream/jsonl';
+ import { sseHeaders, sseStreamProducer } from '../stream/sse';
+ import { transformTRPCResponse } from '../transformer';
+-import { isAsyncIterable, isObject, run } from '../utils';
++import {
++  abortSignalsAnyPonyfill,
++  isAsyncIterable,
++  isObject,
++  run,
++} from '../utils';
+ import { getRequestInfo } from './contentType';
+ import { getHTTPStatusCode } from './getHTTPStatusCode';
+ import type {
+@@ -38,6 +43,15 @@ type HTTPMethods =
+   | 'DELETE'
+   | 'PATCH';
+ 
++function combinedAbortController(signal: AbortSignal) {
++  const controller = new AbortController();
++  const combinedSignal = abortSignalsAnyPonyfill([signal, controller.signal]);
++  return {
++    signal: combinedSignal,
++    controller,
++  };
++}
++
+ const TYPE_ACCEPTED_METHOD_MAP: Record<ProcedureType, HTTPMethods[]> = {
+   mutation: ['POST'],
+   query: ['GET'],
+@@ -316,6 +330,7 @@ export async function resolveResponse<TRouter extends AnyRouter>(
+     type RPCResult = ResultTuple<RPCResultOk>;
+     const rpcCalls = info.calls.map(async (call): Promise<RPCResult> => {
+       const proc = call.procedure;
++      const combinedAbort = combinedAbortController(opts.req.signal);
+       try {
+         if (opts.error) {
+           throw opts.error;
+@@ -343,13 +358,24 @@ export async function resolveResponse<TRouter extends AnyRouter>(
+               message: `Cannot batch subscription calls`,
+             });
+           }
++
++          if (config.sse?.maxDurationMs) {
++            function cleanup() {
++              clearTimeout(timer);
++              combinedAbort.signal.removeEventListener('abort', cleanup);
++
++              combinedAbort.controller.abort();
++            }
++            const timer = setTimeout(cleanup, config.sse.maxDurationMs);
++            combinedAbort.signal.addEventListener('abort', cleanup);
++          }
+         }
+         const data: unknown = await proc({
+           path: call.path,
+           getRawInput: call.getRawInput,
+           ctx: ctxManager.value(),
+           type: proc._def.type,
+-          signal: opts.req.signal,
++          signal: combinedAbort.signal,
+         });
+         return [undefined, { data }];
+       } catch (cause) {
+diff --git a/packages/server/src/unstable-core-do-not-import/stream/sse.ts b/packages/server/src/unstable-core-do-not-import/stream/sse.ts
+index 2e548c70494..eb885553d06 100644
+--- a/packages/server/src/unstable-core-do-not-import/stream/sse.ts
++++ b/packages/server/src/unstable-core-do-not-import/stream/sse.ts
+@@ -6,7 +6,7 @@ import { emptyObject, identity, run } from '../utils';
+ import type { EventSourceLike } from './sse.types';
+ import type { inferTrackedOutput } from './tracked';
+ import { isTrackedEnvelope } from './tracked';
+-import { takeWithGrace, withMaxDuration } from './utils/asyncIterable';
++import { takeWithGrace } from './utils/asyncIterable';
+ import { makeAsyncResource } from './utils/disposable';
+ import { readableStreamFrom } from './utils/readableStreamFrom';
+ import {
+@@ -120,16 +120,6 @@ export function sseStreamProducer<TValue = unknown>(
+       });
+     }
+ 
+-    if (
+-      opts.maxDurationMs &&
+-      opts.maxDurationMs > 0 &&
+-      opts.maxDurationMs !== Infinity
+-    ) {
+-      iterable = withMaxDuration(iterable, {
+-        maxDurationMs: opts.maxDurationMs,
+-      });
+-    }
+-
+     if (ping.enabled && ping.intervalMs !== Infinity && ping.intervalMs > 0) {
+       iterable = withPing(iterable, ping.intervalMs);
+     }
+diff --git a/packages/server/src/unstable-core-do-not-import/stream/utils/asyncIterable.ts b/packages/server/src/unstable-core-do-not-import/stream/utils/asyncIterable.ts
+index aaa40e56f4b..ceeccfe86c2 100644
+--- a/packages/server/src/unstable-core-do-not-import/stream/utils/asyncIterable.ts
++++ b/packages/server/src/unstable-core-do-not-import/stream/utils/asyncIterable.ts
+@@ -18,36 +18,6 @@ export function iteratorResource<TYield, TReturn, TNext>(
+     await iterator.return?.();
+   });
+ }
+-/**
+- * Derives a new {@link AsyncGenerator} based on {@link iterable}, that automatically aborts after the specified duration.
+- */
+-export async function* withMaxDuration<T>(
+-  iterable: AsyncIterable<T>,
+-  opts: { maxDurationMs: number },
+-): AsyncGenerator<T> {
+-  await using iterator = iteratorResource(iterable);
+-
+-  using timer = timerResource(opts.maxDurationMs);
+-
+-  const timerPromise = timer.start();
+-
+-  // declaration outside the loop for garbage collection reasons
+-  let result: null | IteratorResult<T> | typeof disposablePromiseTimerResult;
+-
+-  while (true) {
+-    result = await Unpromise.race([iterator.next(), timerPromise]);
+-    if (result === disposablePromiseTimerResult) {
+-      // cancelled due to timeout
+-      throwAbortError();
+-    }
+-    if (result.done) {
+-      return result;
+-    }
+-    yield result.value;
+-    // free up reference for garbage collection
+-    result = null;
+-  }
+-}
+ 
+ /**
+  * Derives a new {@link AsyncGenerator} based of {@link iterable}, that yields its first
+diff --git a/packages/tests/server/httpSubscriptionLink.test.ts b/packages/tests/server/httpSubscriptionLink.test.ts
+index 6ff83b41ebd..d2830d08ee3 100644
+--- a/packages/tests/server/httpSubscriptionLink.test.ts
++++ b/packages/tests/server/httpSubscriptionLink.test.ts
+@@ -33,6 +33,7 @@ import {
+   makeAsyncResource,
+   run,
+ } from '@trpc/server/unstable-core-do-not-import';
++import { makeResource } from '@trpc/server/unstable-core-do-not-import/stream/utils/disposable';
+ import { uneval } from 'devalue';
+ import { konn } from 'konn';
+ import superjson from 'superjson';
+@@ -1359,3 +1360,158 @@ test('recipe: pull data in a loop', async () => {
+     ]
+   `);
+ });
++
++// regression test for https://github.com/trpc/trpc/issues/6991
++test('maxDurationMs should abort subscription even when not yielding', async () => {
++  const MAX_DURATION_MS = 100;
++
++  using fakeTimers = fakeTimersResource();
++  await using ctx = run(() => {
++    const t = initTRPC.create({
++      sse: {
++        maxDurationMs: MAX_DURATION_MS,
++      },
++    });
++
++    const onSignalAborted = vi.fn();
++    const onFinally = vi.fn();
++
++    const router = t.router({
++      // biome-ignore lint/correctness/useYield: intentionally non-yielding to test maxDurationMs abort behavior
++      sub: t.procedure.subscription(async function* (opts) {
++        assert(opts.signal, 'no signal received');
++        try {
++          // Listen for abort signal
++          opts.signal.addEventListener('abort', onSignalAborted);
++
++          // Simulate a subscription that never yields - just waits forever
++          // This should be interrupted by maxDurationMs via the abort signal
++          while (!opts.signal.aborted) {
++            await sleep(10);
++          }
++        } finally {
++          onFinally();
++        }
++      }),
++    });
++
++    const opts = testServerAndClientResource(router);
++    return {
++      ...opts,
++      onSignalAborted,
++      onFinally,
++    };
++  });
++
++  const onError = vi.fn();
++  const onStarted = vi.fn();
++  const sub = ctx.client.sub.subscribe(undefined, {
++    onError,
++    onStarted,
++  });
++  await vi.waitFor(() => {
++    expect(onStarted).toHaveBeenCalledTimes(1);
++  });
++
++  await fakeTimers.advanceTimersByTimeAsync(MAX_DURATION_MS);
++
++  expect(ctx.onSignalAborted).toHaveBeenCalledTimes(1);
++
++  // Verify the subscription handler completed
++  await vi.waitFor(() => {
++    expect(ctx.onFinally).toHaveBeenCalledTimes(1);
++  });
++  expect(onError).not.toHaveBeenCalled();
++
++  sub.unsubscribe();
++});
++
++test('timer does not leak after subscription ends', async () => {
++  const nonce = Math.floor(Math.random() * 1000);
++  const MAX_DURATION_MS = 60_0000 * 60 * 24 + nonce; // 1 day + nonce
++
++  using timeoutSpies = run(() => {
++    const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
++    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
++    return makeResource(
++      {
++        setTimeoutSpy,
++        clearTimeoutSpy,
++      },
++      () => {
++        setTimeoutSpy.mockReset();
++        clearTimeoutSpy.mockReset();
++      },
++    );
++  });
++
++  await using ctx = run(() => {
++    const t = initTRPC.create({
++      sse: {
++        maxDurationMs: MAX_DURATION_MS,
++      },
++    });
++
++    const onSignalAborted = vi.fn();
++    const onFinally = vi.fn();
++
++    const router = t.router({
++      // biome-ignore lint/correctness/useYield: intentionally non-yielding to test maxDurationMs abort behavior
++      sub: t.procedure.subscription(async function* (opts) {
++        assert(opts.signal, 'no signal received');
++        try {
++          // Listen for abort signal
++          opts.signal.addEventListener('abort', onSignalAborted);
++
++          // Simulate a subscription that never yields - just waits forever
++          // This should be interrupted by maxDurationMs via the abort signal
++          while (!opts.signal.aborted) {
++            await sleep(10);
++          }
++        } finally {
++          onFinally();
++        }
++      }),
++    });
++
++    const opts = testServerAndClientResource(router);
++    return {
++      ...opts,
++      onSignalAborted,
++      onFinally,
++    };
++  });
++
++  const onError = vi.fn();
++  const onStarted = vi.fn();
++  const sub = ctx.client.sub.subscribe(undefined, {
++    onError,
++    onStarted,
++  });
++  await vi.waitFor(() => {
++    expect(onStarted).toHaveBeenCalledTimes(1);
++  });
++  // calls to setTimeout:
++  const maxDurationTimerIndex = timeoutSpies.setTimeoutSpy.mock.calls.findIndex(
++    (args) => args[1] === MAX_DURATION_MS,
++  );
++  expect(maxDurationTimerIndex).not.toBe(-1);
++  const maxDurationTimerResult =
++    timeoutSpies.setTimeoutSpy.mock.results[maxDurationTimerIndex];
++  assert(maxDurationTimerResult?.type === 'return');
++
++  expect(timeoutSpies.clearTimeoutSpy).not.toHaveBeenCalledWith(
++    maxDurationTimerResult.value,
++  );
++
++  sub.unsubscribe();
++
++  // Verify the subscription handler completed
++  await vi.waitFor(() => {
++    expect(ctx.onFinally).toHaveBeenCalledTimes(1);
++  });
++
++  expect(timeoutSpies.clearTimeoutSpy).toHaveBeenCalledWith(
++    maxDurationTimerResult.value,
++  );
++});

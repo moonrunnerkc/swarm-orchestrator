@@ -1,0 +1,324 @@
+diff --git a/.changeset/chatty-rivers-punch.md b/.changeset/chatty-rivers-punch.md
+new file mode 100644
+index 0000000000..dc99daf496
+--- /dev/null
++++ b/.changeset/chatty-rivers-punch.md
+@@ -0,0 +1,6 @@
++---
++"miniflare": minor
++"wrangler": minor
++---
++
++Add support for AI Search RPC method
+diff --git a/packages/miniflare/src/plugins/ai/index.ts b/packages/miniflare/src/plugins/ai/index.ts
+index ee0f6bd1a2..0c5c73bacf 100644
+--- a/packages/miniflare/src/plugins/ai/index.ts
++++ b/packages/miniflare/src/plugins/ai/index.ts
+@@ -70,7 +70,8 @@ export const AI_PLUGIN: Plugin<typeof AIOptionsSchema> = {
+ 				),
+ 				worker: remoteProxyClientWorker(
+ 					options.ai.remoteProxyConnectionString,
+-					options.ai.binding
++					options.ai.binding,
++					"ai"
+ 				),
+ 			},
+ 		];
+diff --git a/packages/miniflare/src/plugins/shared/constants.ts b/packages/miniflare/src/plugins/shared/constants.ts
+index 00c24ce9aa..d15ce5f73c 100644
+--- a/packages/miniflare/src/plugins/shared/constants.ts
++++ b/packages/miniflare/src/plugins/shared/constants.ts
+@@ -75,7 +75,8 @@ export function objectEntryWorker(
+ 
+ export function remoteProxyClientWorker(
+ 	remoteProxyConnectionString: RemoteProxyConnectionString | undefined,
+-	binding: string
++	binding: string,
++	bindingType?: string
+ ) {
+ 	return {
+ 		compatibilityDate: "2025-01-01",
+@@ -98,6 +99,14 @@ export function remoteProxyClientWorker(
+ 				name: "binding",
+ 				text: binding,
+ 			},
++			...(bindingType
++				? [
++						{
++							name: "bindingType",
++							text: bindingType,
++						},
++					]
++				: []),
+ 		],
+ 	};
+ }
+diff --git a/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts b/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts
+index 7e74e4e255..16d66972de 100644
+--- a/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts
++++ b/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts
+@@ -5,6 +5,7 @@ import { makeFetch } from "./remote-bindings-utils";
+ type Env = {
+ 	remoteProxyConnectionString?: string;
+ 	binding: string;
++	bindingType?: string;
+ };
+ export default class Client extends WorkerEntrypoint<Env> {
+ 	async fetch(request: Request) {
+@@ -20,6 +21,9 @@ export default class Client extends WorkerEntrypoint<Env> {
+ 			const url = new URL(env.remoteProxyConnectionString);
+ 			url.protocol = "ws:";
+ 			url.searchParams.set("MF-Binding", env.binding);
++			if (env.bindingType) {
++				url.searchParams.set("MF-Binding-Type", env.bindingType);
++			}
+ 			stub = newWebSocketRpcSession(url.href);
+ 		}
+ 
+diff --git a/packages/wrangler/src/__tests__/dev/proxy-server-ai-rpc.test.ts b/packages/wrangler/src/__tests__/dev/proxy-server-ai-rpc.test.ts
+new file mode 100644
+index 0000000000..89c8b73fd8
+--- /dev/null
++++ b/packages/wrangler/src/__tests__/dev/proxy-server-ai-rpc.test.ts
+@@ -0,0 +1,186 @@
++import { describe, it, vi } from "vitest";
++
++/**
++ * Tests for the AI RPC method wrapping logic in ProxyServerWorker.
++ *
++ * The raw AI binding (deployed with raw:true) has a workerd-internal prototype
++ * that capnweb classifies as "unsupported", causing
++ * "RPC stub points at a non-serializable type".
++ *
++ * The fix uses MF-Binding-Type (threaded from the miniflare AI plugin through
++ * the remote-proxy-client WebSocket URL) to identify AI bindings, then wraps
++ * them in a plain object delegating only the allowed RPC methods.
++ */
++
++// Mirrors the constant from ProxyServerWorker.ts
++const AI_RPC_METHODS = ["aiSearch"] as const;
++
++/**
++ * Re-implementation of the AI wrapping logic from
++ * ProxyServerWorker.ts getExposedJSRPCBinding() so we can unit-test it
++ * without pulling in cloudflare:email / capnweb.
++ */
++function wrapIfAiBinding(
++	bindingType: string | null,
++	targetBinding: object
++): unknown {
++	if (bindingType === "ai") {
++		const wrapper: Record<string, (...args: unknown[]) => unknown> = {};
++		for (const method of AI_RPC_METHODS) {
++			if (
++				typeof (targetBinding as Record<string, unknown>)[method] === "function"
++			) {
++				wrapper[method] = (...args: unknown[]) =>
++					(targetBinding as Record<string, (...a: unknown[]) => unknown>)[
++						method
++					](...args);
++			}
++		}
++		if (Object.keys(wrapper).length > 0) {
++			return wrapper;
++		}
++	}
++	return targetBinding;
++}
++
++describe("ProxyServerWorker AI RPC wrapping", () => {
++	it("wraps an AI binding into a plain object", ({ expect }) => {
++		const binding = { aiSearch: vi.fn(), fetch: vi.fn() };
++
++		const wrapped = wrapIfAiBinding("ai", binding);
++
++		expect(Object.getPrototypeOf(wrapped)).toBe(Object.prototype);
++		expect(wrapped).not.toBe(binding);
++	});
++
++	it("delegates aiSearch calls to the underlying binding", async ({
++		expect,
++	}) => {
++		const mockAiSearch = vi.fn().mockResolvedValue({ result: "ok" });
++		const binding = { aiSearch: mockAiSearch };
++
++		const wrapped = wrapIfAiBinding("ai", binding) as Record<
++			string,
++			(...args: unknown[]) => unknown
++		>;
++
++		const params = { query: "test" };
++		const result = await wrapped.aiSearch(params);
++
++		expect(mockAiSearch).toHaveBeenCalledWith(params);
++		expect(result).toEqual({ result: "ok" });
++	});
++
++	it("forwards all arguments to the underlying aiSearch method", ({
++		expect,
++	}) => {
++		const mockAiSearch = vi.fn();
++		const binding = { aiSearch: mockAiSearch };
++		const wrapped = wrapIfAiBinding("ai", binding) as Record<
++			string,
++			(...args: unknown[]) => unknown
++		>;
++
++		wrapped.aiSearch("arg1", "arg2", { nested: true });
++
++		expect(mockAiSearch).toHaveBeenCalledWith("arg1", "arg2", {
++			nested: true,
++		});
++	});
++
++	it("does not wrap bindings without the ai binding type", ({ expect }) => {
++		const binding = { aiSearch: vi.fn(), otherMethod: vi.fn() };
++
++		const result = wrapIfAiBinding(null, binding);
++
++		expect(result).toBe(binding);
++	});
++
++	it("does not wrap a service binding even if it has aiSearch", ({
++		expect,
++	}) => {
++		const binding = { aiSearch: vi.fn(), otherMethod: vi.fn() };
++
++		const result = wrapIfAiBinding("service", binding);
++
++		expect(result).toBe(binding);
++	});
++
++	it("does not expose non-allowlisted methods from the raw binding", ({
++		expect,
++	}) => {
++		const binding = {
++			aiSearch: vi.fn(),
++			fetch: vi.fn(),
++			someInternalMethod: vi.fn(),
++		};
++
++		const wrapped = wrapIfAiBinding("ai", binding) as Record<string, unknown>;
++
++		expect(wrapped).toHaveProperty("aiSearch");
++		expect(wrapped).not.toHaveProperty("fetch");
++		expect(wrapped).not.toHaveProperty("someInternalMethod");
++	});
++
++	it("propagates errors thrown by the underlying aiSearch method", async ({
++		expect,
++	}) => {
++		const binding = {
++			aiSearch: vi.fn().mockRejectedValue(new Error("AI Search failed")),
++		};
++
++		const wrapped = wrapIfAiBinding("ai", binding) as Record<
++			string,
++			(...args: unknown[]) => Promise<unknown>
++		>;
++
++		await expect(wrapped.aiSearch({})).rejects.toThrow("AI Search failed");
++	});
++
++	it("propagates RpcTarget-like return values for multi-level RPC", async ({
++		expect,
++	}) => {
++		class MockAccountService {
++			async list() {
++				return [{ id: "instance-1" }];
++			}
++			get(name: string) {
++				return new MockInstanceService(name);
++			}
++		}
++		class MockInstanceService {
++			constructor(public instanceId: string) {}
++			async search(params: { query: string }) {
++				return { chunks: [], search_query: params.query };
++			}
++		}
++
++		const binding = {
++			aiSearch: vi.fn().mockReturnValue(new MockAccountService()),
++		};
++
++		const wrapped = wrapIfAiBinding("ai", binding) as Record<
++			string,
++			(...args: unknown[]) => unknown
++		>;
++
++		const svc = wrapped.aiSearch() as MockAccountService;
++		expect(await svc.list()).toEqual([{ id: "instance-1" }]);
++
++		const inst = svc.get("my-instance");
++		expect(await inst.search({ query: "test" })).toEqual({
++			chunks: [],
++			search_query: "test",
++		});
++	});
++
++	it("returns binding as-is when type is ai but no RPC methods exist", ({
++		expect,
++	}) => {
++		const binding = { fetch: vi.fn() };
++
++		const result = wrapIfAiBinding("ai", binding);
++
++		expect(result).toBe(binding);
++	});
++});
+diff --git a/packages/wrangler/templates/remoteBindings/ProxyServerWorker.ts b/packages/wrangler/templates/remoteBindings/ProxyServerWorker.ts
+index cbfaf7fa7c..190afc8366 100644
+--- a/packages/wrangler/templates/remoteBindings/ProxyServerWorker.ts
++++ b/packages/wrangler/templates/remoteBindings/ProxyServerWorker.ts
+@@ -3,6 +3,18 @@ import { EmailMessage } from "cloudflare:email";
+ 
+ interface Env extends Record<string, unknown> {}
+ 
++/**
++ * List of RPC methods exposed by the raw AI binding that need proxying
++ * through a plain-object wrapper. The raw AI binding (deployed with raw:true)
++ * has a non-standard prototype that capnweb's typeForRpc() doesn't recognise,
++ * causing "RPC stub points at a non-serializable type". By wrapping only the
++ * allowed RPC methods in a plain object we give capnweb an Object.prototype
++ * target it can navigate.
++ *
++ * Add new AI RPC method names here as they are introduced.
++ */
++const AI_RPC_METHODS = ["aiSearch"] as const;
++
+ class BindingNotFoundError extends Error {
+ 	constructor(name?: string) {
+ 		super(`Binding ${name ? `"${name}"` : ""} not found`);
+@@ -54,6 +66,11 @@ async function evaluateMediaBinding(
+  *    can't emulate that over an async boundary, we mock it locally and _actually_
+  *    perform the .get() remotely at the first appropriate async point. See
+  *    packages/miniflare/src/workers/dispatch-namespace/dispatch-namespace.worker.ts
++ *  - AI bindings (raw:true / minimal_mode) have a workerd-internal prototype
++ *    that capnweb's typeForRpc() classifies as "unsupported", causing
++ *    "RPC stub points at a non-serializable type". We wrap the binding in a
++ *    plain object that delegates only the allowed RPC methods (AI_RPC_METHODS)
++ *    so capnweb gets an Object.prototype target it can navigate.
+  *
+  * getExposedJSRPCBinding() and getExposedFetcher() perform the logic for figuring out
+  * which binding is being accessed, dependending on the request. Note: Both have logic
+@@ -93,6 +110,19 @@ function getExposedJSRPCBinding(request: Request, env: Env) {
+ 		};
+ 	}
+ 
++	if (url.searchParams.get("MF-Binding-Type") === "ai") {
++		const wrapper: Record<string, (...args: unknown[]) => unknown> = {};
++		for (const method of AI_RPC_METHODS) {
++			if (typeof (targetBinding as any)[method] === "function") {
++				wrapper[method] = (...args: unknown[]) =>
++					(targetBinding as any)[method](...args);
++			}
++		}
++		if (Object.keys(wrapper).length > 0) {
++			return wrapper;
++		}
++	}
++
+ 	if (url.searchParams.has("MF-Dispatch-Namespace-Options")) {
+ 		const { name, args, options } = JSON.parse(
+ 			url.searchParams.get("MF-Dispatch-Namespace-Options")!

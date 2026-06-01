@@ -1,0 +1,492 @@
+diff --git a/.changeset/aggregate-trigger-deploy-failures.md b/.changeset/aggregate-trigger-deploy-failures.md
+new file mode 100644
+index 0000000000..14e0879664
+--- /dev/null
++++ b/.changeset/aggregate-trigger-deploy-failures.md
+@@ -0,0 +1,11 @@
++---
++"wrangler": patch
++---
++
++report all failing triggers from a single deploy
++
++`wrangler deploy` deploys several kinds of trigger in parallel (routes, custom domains, schedules, queue producers/consumers, workflows). Previously, if one of those API calls failed, the first rejection short-circuited the rest, no other deployments were reported, and (in the case of custom-domain confirmation conflicts) some failures were silently logged to stdout without the deploy actually failing.
++
++`wrangler deploy` now waits for every trigger deployment to settle, prints every successfully-deployed target (so you still see what landed), and then throws a single error listing every trigger that failed.
++
++Note that this also turns the previously-silent "user declined to override a conflicting Custom Domain" case into a hard failure of `wrangler deploy`, which matches what was always implied by the message ("Publishing to Custom Domain ... was skipped, fix conflict and try again").
+diff --git a/packages/wrangler/src/__tests__/deploy/routes.test.ts b/packages/wrangler/src/__tests__/deploy/routes.test.ts
+index 43c71b8625..9d99e4348e 100644
+--- a/packages/wrangler/src/__tests__/deploy/routes.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/routes.test.ts
+@@ -627,7 +627,8 @@ describe("deploy", () => {
+ 			});
+ 			await expect(runWrangler("deploy ./index --env=staging")).rejects
+ 				.toThrowErrorMatchingInlineSnapshot(`
+-				[Error: Service environments combined with an API token that doesn't have 'All Zones' permissions is not supported.
++				[Error: Some triggers failed to deploy for test-name (staging):
++				  - Service environments combined with an API token that doesn't have 'All Zones' permissions is not supported.
+ 				Either turn off service environments by setting \`legacy_env = true\`, creating an API token with 'All Zones' permissions, or logging in via OAuth]
+ 			`);
+ 		});
+@@ -951,10 +952,11 @@ Update them to point to this script instead?`,
+ Update them to point to this script instead?`,
+ 					result: false,
+ 				});
+-				await runWrangler("deploy ./index");
+-				expect(std.out).toContain(
+-					'Publishing to Custom Domain "api.example.com" was skipped, fix conflict and try again'
+-				);
++				await expect(runWrangler("deploy ./index")).rejects
++					.toThrowErrorMatchingInlineSnapshot(`
++					[Error: Some triggers failed to deploy for test-name:
++					  - Publishing to Custom Domain "api.example.com" was skipped, fix conflict and try again]
++				`);
+ 			});
+ 			it("should deploy domains passed via --domain flag as custom domains", async ({
+ 				expect,
+@@ -1595,5 +1597,84 @@ Update them to point to this script instead?`,
+ 				await runWrangler("deploy ./index");
+ 			}
+ 		);
++
++		it("should aggregate errors from multiple failing triggers and still log successful targets", async ({
++			expect,
++		}) => {
++			// Configure three triggers in one deploy:
++			//   1. A custom domain that we decline to override → fails
++			//   2. A schedule whose API call returns an error  → fails
++			//   3. A workers.dev subdomain                     → succeeds
++			// The aggregated error should list both failures, and the successful
++			// target should still be logged before the throw.
++			writeWranglerConfig({
++				routes: [{ pattern: "api.example.com", custom_domain: true }],
++				triggers: { crons: ["*/5 * * * *"] },
++				workers_dev: true,
++			});
++			writeWorkerSource();
++			mockSubDomainRequest();
++			mockUploadWorkerRequest({ expectedType: "esm" });
++			mockUpdateWorkerSubdomain({ enabled: true });
++			// Custom domain conflict — user declines confirmation.
++			mockGetZones(expect, "api.example.com", [{ id: "api-example-com-id" }]);
++			mockGetZoneWorkerRoutes(expect, "api-example-com-id", []);
++			mockCustomDomainsChangesetRequest({
++				originConflicts: [
++					{
++						id: "101",
++						zone_id: "",
++						zone_name: "",
++						hostname: "api.example.com",
++						service: "test-name",
++						environment: "",
++						enabled: true,
++						previews_enabled: false,
++					},
++				],
++			});
++			mockCustomDomainLookup({
++				id: "101",
++				zone_id: "",
++				zone_name: "",
++				hostname: "api.example.com",
++				service: "other-script",
++				environment: "",
++				enabled: true,
++				previews_enabled: false,
++			});
++			mockConfirm({
++				text: `Custom Domains already exist for these domains:
++\t• api.example.com (used as a domain for "other-script")
++Update them to point to this script instead?`,
++				result: false,
++			});
++			// Schedule API returns an error.
++			msw.use(
++				http.put(
++					"*/accounts/:accountId/workers/scripts/:scriptName/schedules",
++					() =>
++						HttpResponse.json(
++							createFetchResult(null, false, [
++								{
++									code: 10005,
++									message: "Schedules API failed",
++								},
++							])
++						),
++					{ once: true }
++				)
++			);
++
++			await expect(runWrangler("deploy ./index")).rejects
++				.toThrowErrorMatchingInlineSnapshot(`
++				[Error: Some triggers failed to deploy for test-name:
++				  - Publishing to Custom Domain "api.example.com" was skipped, fix conflict and try again
++				  - A request to the Cloudflare API (/accounts/some-account-id/workers/scripts/test-name/schedules) failed.]
++			`);
++			// The successful workers.dev subdomain target should still have been
++			// logged before the aggregated error was thrown.
++			expect(std.out).toContain("test-name.test-sub-domain.workers.dev");
++		});
+ 	});
+ });
+diff --git a/packages/wrangler/src/__tests__/deploy/workers-dev.test.ts b/packages/wrangler/src/__tests__/deploy/workers-dev.test.ts
+index bed3e02b16..0173796f45 100644
+--- a/packages/wrangler/src/__tests__/deploy/workers-dev.test.ts
++++ b/packages/wrangler/src/__tests__/deploy/workers-dev.test.ts
+@@ -431,7 +431,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -458,7 +458,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -484,7 +484,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -511,7 +511,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -544,7 +544,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (dev) (TIMINGS)
+-				No deploy targets for test-name (dev) (TIMINGS)
++				No targets deployed for test-name (dev) (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -577,7 +577,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (dev) (TIMINGS)
+-				No deploy targets for test-name (dev) (TIMINGS)
++				No targets deployed for test-name (dev) (TIMINGS)
+ 				Current Version ID: undefined"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -1369,7 +1369,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -1397,7 +1397,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+@@ -1454,7 +1454,7 @@ describe("deploy", () => {
+ 				Total Upload: xx KiB / gzip: xx KiB
+ 				Worker Startup Time: 100 ms
+ 				Uploaded test-name (TIMINGS)
+-				No deploy targets for test-name (TIMINGS)
++				No targets deployed for test-name (TIMINGS)
+ 				Current Version ID: Galaxy-Class"
+ 			`);
+ 			expect(std.err).toMatchInlineSnapshot(`""`);
+diff --git a/packages/wrangler/src/deploy/deploy.ts b/packages/wrangler/src/deploy/deploy.ts
+index 13bb0e481f..6cbc12b094 100644
+--- a/packages/wrangler/src/deploy/deploy.ts
++++ b/packages/wrangler/src/deploy/deploy.ts
+@@ -85,6 +85,7 @@ import type { Entry } from "../deployment-bundle/entry";
+ import type { PostTypedConsumerBody } from "../queues/client";
+ import type { LegacyAssetPaths } from "../sites";
+ import type { RetrieveSourceMapFunction } from "../sourcemap";
++import type { TriggerDeployment } from "../triggers/deploy";
+ import type { ApiVersion, Percentage, VersionId } from "../versions/types";
+ import type {
+ 	CfModule,
+@@ -293,7 +294,7 @@ export async function publishCustomDomains(
+ 	workerUrl: string,
+ 	accountId: string,
+ 	domains: Array<RouteObject>
+-): Promise<string[]> {
++): Promise<TriggerDeployment> {
+ 	const options = {
+ 		override_scope: true,
+ 		override_existing_origin: false,
+@@ -312,12 +313,16 @@ export async function publishCustomDomains(
+ 		};
+ 	});
+ 
+-	const fail = () => {
+-		return [
+-			domains.length > 1
+-				? `Publishing to ${domains.length} Custom Domains was skipped, fix conflicts and try again`
+-				: `Publishing to Custom Domain "${domains[0].pattern}" was skipped, fix conflict and try again`,
+-		];
++	const fail = (): TriggerDeployment => {
++		return {
++			targets: [],
++			error: new UserError(
++				domains.length > 1
++					? `Publishing to ${domains.length} Custom Domains was skipped, fix conflicts and try again`
++					: `Publishing to Custom Domain "${domains[0].pattern}" was skipped, fix conflict and try again`,
++				{ telemetryMessage: "deploy custom domains skipped" }
++			),
++		};
+ 	};
+ 
+ 	if (!process.stdout.isTTY) {
+@@ -392,7 +397,7 @@ Update them to point to this script instead?`;
+ 		},
+ 	});
+ 
+-	return domains.map((domain) => renderRoute(domain));
++	return { targets: domains.map((domain) => renderRoute(domain)) };
+ }
+ 
+ /**
+@@ -1530,9 +1535,9 @@ async function publishRoutesFallback(
+ export async function updateQueueConsumers(
+ 	scriptName: string | undefined,
+ 	config: Config
+-): Promise<Promise<string[]>[]> {
++): Promise<Promise<TriggerDeployment>[]> {
+ 	const consumers = config.queues.consumers || [];
+-	const updateConsumers: Promise<string[]>[] = [];
++	const updateConsumers: Promise<TriggerDeployment>[] = [];
+ 	for (const consumer of consumers) {
+ 		const queue = await getQueue(config, consumer.queue);
+ 
+@@ -1568,15 +1573,19 @@ export async function updateQueueConsumers(
+ 		if (existingConsumer) {
+ 			updateConsumers.push(
+ 				putConsumer(config, consumer.queue, scriptName, envName, body).then(
+-					() => [`Consumer for ${consumer.queue}`]
++					() => ({ targets: [`Consumer for ${consumer.queue}`] }),
++					(error) => ({ targets: [], error })
+ 				)
+ 			);
+ 			continue;
+ 		}
+ 		updateConsumers.push(
+-			postConsumer(config, consumer.queue, body).then(() => [
+-				`Consumer for ${consumer.queue}`,
+-			])
++			postConsumer(config, consumer.queue, body).then(
++				() => ({
++					targets: [`Consumer for ${consumer.queue}`],
++				}),
++				(error) => ({ targets: [], error })
++			)
+ 		);
+ 	}
+ 
+diff --git a/packages/wrangler/src/triggers/deploy.ts b/packages/wrangler/src/triggers/deploy.ts
+index 3db53ec49c..57e6677bf1 100644
+--- a/packages/wrangler/src/triggers/deploy.ts
++++ b/packages/wrangler/src/triggers/deploy.ts
+@@ -36,6 +36,11 @@ type Props = {
+ 	firstDeploy: boolean;
+ };
+ 
++export interface TriggerDeployment {
++	targets: string[];
++	error?: Error;
++}
++
+ export default async function triggersDeploy(
+ 	props: Props
+ ): Promise<string[] | void> {
+@@ -91,7 +96,7 @@ export default async function triggersDeploy(
+ 	}
+ 
+ 	const uploadMs = Date.now() - start;
+-	const deployments: Promise<string[]>[] = [];
++	const deployments: Promise<TriggerDeployment>[] = [];
+ 	const hasWorkflowsDefinedInThisScript = config.workflows.some((workflow) =>
+ 		isWorkflowDefinedInThisScript(workflow, scriptName)
+ 	);
+@@ -216,22 +221,32 @@ export default async function triggersDeploy(
+ 				scriptName,
+ 				useServiceEnvironments,
+ 				accountId,
+-			}).then(() => {
+-				if (routesOnly.length > 10) {
+-					return routesOnly
+-						.slice(0, 9)
+-						.map((route) => renderRoute(route))
+-						.concat([`...and ${routesOnly.length - 10} more routes`]);
+-				}
+-				return routesOnly.map((route) => renderRoute(route));
+-			})
++			}).then(
++				() => {
++					if (routesOnly.length > 10) {
++						return {
++							targets: routesOnly
++								.slice(0, 9)
++								.map((route) => renderRoute(route))
++								.concat([`...and ${routesOnly.length - 9} more routes`]),
++						};
++					}
++					return { targets: routesOnly.map((route) => renderRoute(route)) };
++				},
++				(error) => ({ targets: [], error })
++			)
+ 		);
+ 	}
+ 
+ 	// Update custom domains for the script
+ 	if (customDomainsOnly.length > 0) {
+ 		deployments.push(
+-			publishCustomDomains(config, workerUrl, accountId, customDomainsOnly)
++			publishCustomDomains(
++				config,
++				workerUrl,
++				accountId,
++				customDomainsOnly
++			).catch((error) => ({ targets: [], error }))
+ 		);
+ 	}
+ 
+@@ -247,14 +262,19 @@ export default async function triggersDeploy(
+ 				headers: {
+ 					"Content-Type": "application/json",
+ 				},
+-			}).then(() => schedules.map((trigger) => `schedule: ${trigger}`))
++			}).then(
++				() => ({
++					targets: schedules.map((trigger) => `schedule: ${trigger}`),
++				}),
++				(error) => ({ targets: [], error })
++			)
+ 		);
+ 	}
+ 
+ 	if (config.queues.producers && config.queues.producers.length) {
+ 		deployments.push(
+ 			...config.queues.producers.map((producer) =>
+-				Promise.resolve([`Producer for ${producer.queue}`])
++				Promise.resolve({ targets: [`Producer for ${producer.queue}`] })
+ 			)
+ 		);
+ 	}
+@@ -309,29 +329,67 @@ export default async function triggersDeploy(
+ 							"Content-Type": "application/json",
+ 						},
+ 					}
+-				).then(() => [`workflow: ${workflow.name}`])
++				).then(
++					() => ({ targets: [`workflow: ${workflow.name}`] }),
++					(error) => ({ targets: [], error })
++				)
+ 			);
+ 		}
+ 	}
+ 
+-	const targets = await Promise.all(deployments);
++	const completedDeployments = await Promise.all(deployments);
+ 	const deployMs = Date.now() - start - uploadMs;
+ 
+-	if (deployments.length > 0) {
+-		logger.log(`Deployed ${workerName} triggers`, formatTime(deployMs));
+-
+-		const flatTargets = targets.flat().map(
++	const targets = completedDeployments
++		.flatMap((deployment) => deployment.targets)
++		.map(
+ 			// Append protocol only on workers.dev domains
+ 			(target) => (target.endsWith("workers.dev") ? "https://" : "") + target
+ 		);
+-
+-		for (const target of flatTargets) {
++	if (targets.length > 0) {
++		logger.log(`Deployed ${workerName} triggers`, formatTime(deployMs));
++		for (const target of targets) {
+ 			logger.log(" ", target);
+ 		}
+-		return flatTargets;
+ 	} else {
+-		logger.log("No deploy targets for", workerName, formatTime(deployMs));
++		logger.log("No targets deployed for", workerName, formatTime(deployMs));
+ 	}
++
++	const errors = completedDeployments
++		.map((deployment) => deployment.error)
++		.filter((error): error is Error => error !== undefined);
++
++	if (errors.length > 0) {
++		throw new UserError(
++			`Some triggers failed to deploy for ${workerName}:\n` +
++				errors.map((error) => `  - ${error.message}`).join("\n"),
++			{
++				// Preserve the original errors (with stacks and subclass info) for
++				// debugging, while still presenting a single aggregated message.
++				cause: new AggregateError(errors),
++				// Aggregate the inner telemetry labels into a single deterministic,
++				// low-cardinality label so failures still group meaningfully. Non-
++				// UserError causes contribute a generic "non-user error" marker.
++				telemetryMessage: `triggers deploy partial failure: ${aggregateTelemetryMessages(errors)}`,
++			}
++		);
++	}
++
++	return targets;
++}
++
++/**
++ * Collapse the telemetry labels of a set of inner errors into a single sorted,
++ * deduplicated string. Each `UserError` contributes its own `telemetryMessage`;
++ * anything else contributes `"non-user error"`.
++ */
++function aggregateTelemetryMessages(errors: Error[]): string {
++	const labels = errors.map((error) =>
++		error instanceof UserError && error.telemetryMessage
++			? error.telemetryMessage
++			: "non-user error"
++	);
++	return Array.from(new Set(labels)).sort().join(", ");
+ }
+ 
+ // getSubdomainValues returns the values for workers_dev and preview_urls.
+@@ -457,7 +515,7 @@ async function subdomainDeploy(
+ 	envName: string,
+ 	workerUrl: string,
+ 	routes: Route[],
+-	deployments: Array<Promise<string[]>>,
++	deployments: Promise<TriggerDeployment>[],
+ 	firstDeploy: boolean
+ ) {
+ 	const { config } = props;
+@@ -477,7 +535,7 @@ async function subdomainDeploy(
+ 			!props.useServiceEnvironments || !props.env
+ 				? `${scriptName}.${userSubdomain}`
+ 				: `${envName}.${scriptName}.${userSubdomain}`;
+-		deployments.push(Promise.resolve([workersDevURL]));
++		deployments.push(Promise.resolve({ targets: [workersDevURL] }));
+ 	}
+ 
+ 	// Get current subdomain enablement status.

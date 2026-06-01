@@ -1,0 +1,951 @@
+diff --git a/astro-docs/src/content/docs/technologies/build-tools/rsbuild/introduction.mdoc b/astro-docs/src/content/docs/technologies/build-tools/rsbuild/introduction.mdoc
+index 679578dae67..d09385d6ade 100644
+--- a/astro-docs/src/content/docs/technologies/build-tools/rsbuild/introduction.mdoc
++++ b/astro-docs/src/content/docs/technologies/build-tools/rsbuild/introduction.mdoc
+@@ -13,11 +13,15 @@ The Nx Plugin for Rsbuild contains executors and generators that support buildin
+ 
+ The `@nx/rsbuild` plugin supports the following package versions.
+ 
+-| Package         | Supported Versions |
+-| --------------- | ------------------ |
+-| `@rsbuild/core` | ^1.1.0             |
++| Package         | Supported Versions | Default Installed |
++| --------------- | ------------------ | ----------------- |
++| `@rsbuild/core` | `^1.0.0`           | `1.1.10`          |
+ 
+-[Nx generators](/docs/features/generate-code) install the latest supported versions automatically when scaffolding new projects.
++[Nx generators](/docs/features/generate-code) install the latest supported version automatically when scaffolding new projects. When `@rsbuild/core` is already installed in your workspace, generators detect the installed version and keep it in place rather than overwriting it.
++
++{% aside type="caution" title="@rsbuild/core v2 not yet supported" %}
++`@rsbuild/core@2` ships as a pure-ESM package, which `@nx/rsbuild` (CommonJS) cannot currently load synchronously. Support is tracked separately; until then, pin `@rsbuild/core` to `^1`.
++{% /aside %}
+ 
+ ## Setting up @nx/rsbuild
+ 
+diff --git a/astro-docs/src/content/docs/technologies/build-tools/rspack/introduction.mdoc b/astro-docs/src/content/docs/technologies/build-tools/rspack/introduction.mdoc
+index 30dbab29fd2..9397d1fc9ed 100644
+--- a/astro-docs/src/content/docs/technologies/build-tools/rspack/introduction.mdoc
++++ b/astro-docs/src/content/docs/technologies/build-tools/rspack/introduction.mdoc
+@@ -13,11 +13,15 @@ The Nx Plugin for Rspack contains executors, generators, and utilities for manag
+ 
+ The `@nx/rspack` plugin supports the following package versions.
+ 
+-| Package        | Supported Versions |
+-| -------------- | ------------------ |
+-| `@rspack/core` | ^1.6.0             |
++| Package        | Supported Versions | Default Installed |
++| -------------- | ------------------ | ----------------- |
++| `@rspack/core` | `^1.0.0`           | `1.6.8`           |
+ 
+-[Nx generators](/docs/features/generate-code) install the latest supported versions automatically when scaffolding new projects.
++[Nx generators](/docs/features/generate-code) install the latest supported version automatically when scaffolding new projects. When `@rspack/core` is already installed in your workspace, generators detect the installed version and keep it in place rather than overwriting it.
++
++{% aside type="caution" title="@rspack/core v2 not yet supported" %}
++`@rspack/core@2` ships as a pure-ESM package, which `@nx/rspack` (CommonJS) cannot currently load synchronously. Support is tracked separately; until then, pin `@rspack/core` to `^1`.
++{% /aside %}
+ 
+ ## Setting up @nx/rspack
+ 
+diff --git a/packages/rsbuild/package.json b/packages/rsbuild/package.json
+index ec3a39c2816..a4fae92af26 100644
+--- a/packages/rsbuild/package.json
++++ b/packages/rsbuild/package.json
+@@ -32,14 +32,21 @@
+     "tslib": "catalog:typescript",
+     "@nx/devkit": "workspace:*",
+     "@nx/js": "workspace:*",
+-    "@rsbuild/core": "1.1.8",
+     "minimatch": "catalog:",
++    "semver": "catalog:",
+     "@phenomnomnominal/tsquery": "catalog:typescript"
+   },
+   "devDependencies": {
+     "nx": "workspace:*"
+   },
+-  "peerDependencies": {},
++  "peerDependencies": {
++    "@rsbuild/core": "^1.0.0"
++  },
++  "peerDependenciesMeta": {
++    "@rsbuild/core": {
++      "optional": true
++    }
++  },
+   "nx-migrations": {
+     "migrations": "./migrations.json"
+   },
+diff --git a/packages/rsbuild/src/generators/configuration/configuration.ts b/packages/rsbuild/src/generators/configuration/configuration.ts
+index 23bce377f68..364958162ee 100644
+--- a/packages/rsbuild/src/generators/configuration/configuration.ts
++++ b/packages/rsbuild/src/generators/configuration/configuration.ts
+@@ -12,10 +12,13 @@ import { type Schema } from './schema';
+ import { normalizeOptions } from './lib';
+ import { initGenerator as jsInitGenerator } from '@nx/js';
+ import { initGenerator } from '../init/init';
+-import { rsbuildVersion } from '../../utils/versions';
++import { getRsbuildVersionsForInstalledMajor } from '../../utils/version-utils';
++import { assertSupportedRsbuildVersion } from '../../utils/assert-supported-rsbuild-version';
+ import { join } from 'path';
+ 
+ export async function configurationGenerator(tree: Tree, schema: Schema) {
++  assertSupportedRsbuildVersion(tree);
++
+   const projectGraph = await createProjectGraphAsync();
+   const projects = readProjectsConfigurationFromProjectGraph(projectGraph);
+   let project = projects.projects[schema.project];
+@@ -54,8 +57,15 @@ export async function configurationGenerator(tree: Tree, schema: Schema) {
+     }
+   }
+ 
++  const rsbuildVersions = getRsbuildVersionsForInstalledMajor(tree);
+   tasks.push(
+-    addDependenciesToPackageJson(tree, {}, { '@rsbuild/core': rsbuildVersion })
++    addDependenciesToPackageJson(
++      tree,
++      {},
++      { '@rsbuild/core': rsbuildVersions.rsbuildVersion },
++      undefined,
++      true
++    )
+   );
+ 
+   generateFiles(tree, join(__dirname, 'files'), options.projectRoot, {
+diff --git a/packages/rsbuild/src/generators/init/init.ts b/packages/rsbuild/src/generators/init/init.ts
+index 8a3f7b8913a..73a543320d9 100644
+--- a/packages/rsbuild/src/generators/init/init.ts
++++ b/packages/rsbuild/src/generators/init/init.ts
+@@ -10,18 +10,22 @@ import {
+ } from '@nx/devkit';
+ import { InitGeneratorSchema } from './schema';
+ import { createNodesV2 } from '../../plugins/plugin';
+-import { nxVersion, rsbuildVersion } from '../../utils/versions';
++import { nxVersion } from '../../utils/versions';
++import { getRsbuildVersionsForInstalledMajor } from '../../utils/version-utils';
++import { assertSupportedRsbuildVersion } from '../../utils/assert-supported-rsbuild-version';
+ 
+ export function updateDependencies(tree: Tree, schema: InitGeneratorSchema) {
++  const rsbuildVersions = getRsbuildVersionsForInstalledMajor(tree);
++
+   return addDependenciesToPackageJson(
+     tree,
+     {},
+     {
+       '@nx/rsbuild': nxVersion,
+-      '@rsbuild/core': rsbuildVersion,
++      '@rsbuild/core': rsbuildVersions.rsbuildVersion,
+     },
+     undefined,
+-    schema.keepExistingVersions
++    schema.keepExistingVersions ?? true
+   );
+ }
+ 
+@@ -33,6 +37,8 @@ export async function initGeneratorInternal(
+   tree: Tree,
+   schema: InitGeneratorSchema
+ ) {
++  assertSupportedRsbuildVersion(tree);
++
+   const nxJson = readNxJson(tree);
+   const addPluginDefault =
+     process.env.NX_ADD_PLUGINS !== 'false' &&
+diff --git a/packages/rsbuild/src/generators/init/schema.json b/packages/rsbuild/src/generators/init/schema.json
+index 8222d49965a..d96ceb50db4 100644
+--- a/packages/rsbuild/src/generators/init/schema.json
++++ b/packages/rsbuild/src/generators/init/schema.json
+@@ -13,7 +13,7 @@
+       "type": "boolean",
+       "x-priority": "internal",
+       "description": "Keep existing dependencies versions",
+-      "default": false
++      "default": true
+     },
+     "updatePackageScripts": {
+       "type": "boolean",
+diff --git a/packages/rsbuild/src/plugins/plugin.ts b/packages/rsbuild/src/plugins/plugin.ts
+index d0fdd6c70b0..1f1af4a6910 100644
+--- a/packages/rsbuild/src/plugins/plugin.ts
++++ b/packages/rsbuild/src/plugins/plugin.ts
+@@ -20,7 +20,7 @@ import { getLockFileName } from '@nx/js';
+ import { readdirSync } from 'fs';
+ import { join, dirname, isAbsolute, relative } from 'path';
+ import { minimatch } from 'minimatch';
+-import { loadConfig, type RsbuildConfig } from '@rsbuild/core';
++import type { RsbuildConfig } from '@rsbuild/core';
+ import { addBuildAndWatchDepsTargets } from '@nx/js/src/plugins/typescript/util';
+ 
+ export interface RsbuildPluginOptions {
+@@ -144,6 +144,11 @@ async function createRsbuildTargets(
+     configFilePath
+   );
+ 
++  // Required lazily: `@rsbuild/core` is an optional peer dependency, so it
++  // may be absent when the plugin is loaded in a workspace that doesn't use
++  // Rsbuild yet (e.g. before a generator installs it).
++  const { loadConfig } =
++    require('@rsbuild/core') as typeof import('@rsbuild/core');
+   const rsbuildConfig = await loadConfig({
+     path: absoluteConfigFilePath,
+   });
+diff --git a/packages/rsbuild/src/utils/all-generators-enforce-floor.spec.ts b/packages/rsbuild/src/utils/all-generators-enforce-floor.spec.ts
+new file mode 100644
+index 00000000000..d83349c4214
+--- /dev/null
++++ b/packages/rsbuild/src/utils/all-generators-enforce-floor.spec.ts
+@@ -0,0 +1,10 @@
++import { assertGeneratorsEnforceVersionFloor } from '@nx/devkit/internal-testing-utils';
++import { join } from 'node:path';
++
++describe('@nx/rsbuild generators enforce supported version floor', () => {
++  assertGeneratorsEnforceVersionFloor({
++    packageRoot: join(__dirname, '..', '..'),
++    packageName: '@rsbuild/core',
++    subFloorVersion: '~0.7.0',
++  });
++});
+diff --git a/packages/rsbuild/src/utils/assert-supported-rsbuild-version.ts b/packages/rsbuild/src/utils/assert-supported-rsbuild-version.ts
+new file mode 100644
+index 00000000000..c2f00c536eb
+--- /dev/null
++++ b/packages/rsbuild/src/utils/assert-supported-rsbuild-version.ts
+@@ -0,0 +1,11 @@
++import { type Tree } from '@nx/devkit';
++import { assertSupportedPackageVersion } from '@nx/devkit/internal';
++import { minSupportedRsbuildVersion } from './versions';
++
++export function assertSupportedRsbuildVersion(tree: Tree): void {
++  assertSupportedPackageVersion(
++    tree,
++    '@rsbuild/core',
++    minSupportedRsbuildVersion
++  );
++}
+diff --git a/packages/rsbuild/src/utils/version-utils.ts b/packages/rsbuild/src/utils/version-utils.ts
+new file mode 100644
+index 00000000000..5069704b4b3
+--- /dev/null
++++ b/packages/rsbuild/src/utils/version-utils.ts
+@@ -0,0 +1,62 @@
++import { type Tree } from '@nx/devkit';
++import {
++  getDeclaredPackageVersion,
++  getInstalledPackageVersion,
++} from '@nx/devkit/internal';
++import { major } from 'semver';
++import {
++  backwardCompatibleRsbuildVersions,
++  latestRsbuildVersions,
++  type SupportedRsbuildMajorVersion,
++} from './versions';
++
++const RSBUILD_CORE_PACKAGE = '@rsbuild/core';
++
++/**
++ * Returns the declared @rsbuild/core major version from the workspace's
++ * package.json when it matches a supported major, or `undefined` otherwise
++ * (fresh install, dist tag, unknown major). Below-floor enforcement is
++ * handled at generator entry points via `assertSupportedRsbuildVersion`.
++ */
++export function getInstalledRsbuildMajorVersion(
++  tree: Tree
++): SupportedRsbuildMajorVersion | undefined {
++  const declared = getDeclaredPackageVersion(tree, RSBUILD_CORE_PACKAGE);
++  if (!declared) {
++    return undefined;
++  }
++  const installedMajor = major(declared);
++  return installedMajor in backwardCompatibleRsbuildVersions
++    ? (installedMajor as SupportedRsbuildMajorVersion)
++    : undefined;
++}
++
++/**
++ * Returns the installed @rsbuild/core major version resolved at runtime from
++ * node_modules. For use in executors and runtime code where no Tree is
++ * available. Returns `null` when @rsbuild/core can't be resolved or the
++ * installed major isn't supported.
++ */
++export function getInstalledRsbuildVersionRuntime(): SupportedRsbuildMajorVersion | null {
++  const version = getInstalledPackageVersion(RSBUILD_CORE_PACKAGE);
++  if (!version) {
++    return null;
++  }
++  const installedMajor = major(version);
++  return installedMajor in backwardCompatibleRsbuildVersions
++    ? (installedMajor as SupportedRsbuildMajorVersion)
++    : null;
++}
++
++/**
++ * Returns the version-map entry for the installed major, falling back to the
++ * latest supported map when no installed version is detected (fresh install)
++ * or the detected major is outside the supported window.
++ */
++export function getRsbuildVersionsForInstalledMajor(tree: Tree) {
++  const installed = getInstalledRsbuildMajorVersion(tree);
++  if (installed === undefined) {
++    return latestRsbuildVersions;
++  }
++  return backwardCompatibleRsbuildVersions[installed];
++}
+diff --git a/packages/rsbuild/src/utils/versions.ts b/packages/rsbuild/src/utils/versions.ts
+index fcb673879bd..3be2e1382e0 100644
+--- a/packages/rsbuild/src/utils/versions.ts
++++ b/packages/rsbuild/src/utils/versions.ts
+@@ -1,5 +1,43 @@
+ export const nxVersion = require('../../package.json').version;
+-export const rsbuildVersion = '1.1.10';
+-export const rsbuildPluginReactVersion = '1.1.0';
+-export const rsbuildPluginVueVersion = '1.0.5';
+-export const rsbuildPluginSassVersion = '1.1.2';
++
++export const minSupportedRsbuildVersion = '1.0.0';
++
++// Supported `@rsbuild/core` majors. Currently v1 only — v2 ships as pure
++// ESM, which @nx/rsbuild (CommonJS) cannot consume without a deeper
++// refactor; tracked separately.
++export const supportedRsbuildMajorVersions = [1] as const;
++export type SupportedRsbuildMajorVersion =
++  (typeof supportedRsbuildMajorVersions)[number];
++
++type RsbuildVersionMap = {
++  rsbuildVersion: string;
++  rsbuildPluginReactVersion: string;
++  rsbuildPluginVueVersion: string;
++  rsbuildPluginSassVersion: string;
++};
++
++export const latestRsbuildVersions: RsbuildVersionMap = {
++  rsbuildVersion: '1.1.10',
++  rsbuildPluginReactVersion: '1.1.0',
++  rsbuildPluginVueVersion: '1.0.5',
++  rsbuildPluginSassVersion: '1.1.2',
++};
++
++export const backwardCompatibleRsbuildVersions: Record<
++  SupportedRsbuildMajorVersion,
++  RsbuildVersionMap
++> = {
++  1: latestRsbuildVersions,
++};
++
++/**
++ * Kept for backward compatibility with code paths that don't yet branch on
++ * the detected installed major. Points at the latest supported major.
++ */
++export const rsbuildVersion = latestRsbuildVersions.rsbuildVersion;
++export const rsbuildPluginReactVersion =
++  latestRsbuildVersions.rsbuildPluginReactVersion;
++export const rsbuildPluginVueVersion =
++  latestRsbuildVersions.rsbuildPluginVueVersion;
++export const rsbuildPluginSassVersion =
++  latestRsbuildVersions.rsbuildPluginSassVersion;
+diff --git a/packages/rspack/eslint.config.mjs b/packages/rspack/eslint.config.mjs
+index 3e013a15d8e..eca20f67feb 100644
+--- a/packages/rspack/eslint.config.mjs
++++ b/packages/rspack/eslint.config.mjs
+@@ -36,12 +36,11 @@ export default [
+             'nx',
+             'typescript',
+             'postcss-loader',
+-            '@module-federation/node',
++            '@rspack/cli',
+             '@nx/workspace',
+             '@nx/react',
+             '@nx/nest',
+             '@module-federation/sdk',
+-            '@module-federation/enhanced',
+             'css-loader',
+             'webpack',
+             'sass-embedded',
+diff --git a/packages/rspack/migrations.json b/packages/rspack/migrations.json
+index c0a75e5a91b..0aa166d6d8a 100644
+--- a/packages/rspack/migrations.json
++++ b/packages/rspack/migrations.json
+@@ -65,13 +65,24 @@
+         }
+       }
+     },
+-    "21.3.0": {
++    "21.3.0-module-federation-enhanced": {
+       "version": "21.3.0-beta.8",
++      "requires": {
++        "@module-federation/enhanced": ">=0.15.0 <0.17.0"
++      },
+       "packages": {
+         "@module-federation/enhanced": {
+           "version": "^0.17.0",
+           "alwaysAddToPackageJson": false
+-        },
++        }
++      }
++    },
++    "21.3.0-module-federation-node": {
++      "version": "21.3.0-beta.8",
++      "requires": {
++        "@module-federation/node": "<2.7.9"
++      },
++      "packages": {
+         "@module-federation/node": {
+           "version": "^2.7.9",
+           "alwaysAddToPackageJson": false
+@@ -100,21 +111,48 @@
+         }
+       }
+     },
+-    "22.2.0": {
++    "22.2.0-module-federation-enhanced": {
+       "version": "22.2.0-beta.0",
++      "requires": {
++        "@module-federation/enhanced": ">=0.17.0 <0.21.0"
++      },
+       "packages": {
+         "@module-federation/enhanced": {
+           "version": "^0.21.2",
+           "alwaysAddToPackageJson": false
+-        },
+-        "@module-federation/runtime": {
++        }
++      }
++    },
++    "22.2.0-module-federation-sdk": {
++      "version": "22.2.0-beta.0",
++      "requires": {
++        "@module-federation/sdk": ">=0.17.0 <0.21.0"
++      },
++      "packages": {
++        "@module-federation/sdk": {
+           "version": "^0.21.2",
+           "alwaysAddToPackageJson": false
+-        },
+-        "@module-federation/sdk": {
++        }
++      }
++    },
++    "22.2.0-module-federation-runtime": {
++      "version": "22.2.0-beta.0",
++      "requires": {
++        "@module-federation/runtime": "<0.21.0"
++      },
++      "packages": {
++        "@module-federation/runtime": {
+           "version": "^0.21.2",
+           "alwaysAddToPackageJson": false
+-        },
++        }
++      }
++    },
++    "22.2.0-module-federation-node": {
++      "version": "22.2.0-beta.0",
++      "requires": {
++        "@module-federation/node": "<2.7.21"
++      },
++      "packages": {
+         "@module-federation/node": {
+           "version": "^2.7.21",
+           "alwaysAddToPackageJson": false
+diff --git a/packages/rspack/package.json b/packages/rspack/package.json
+index 930305aa491..08b38a5d6d7 100644
+--- a/packages/rspack/package.json
++++ b/packages/rspack/package.json
+@@ -29,9 +29,6 @@
+     "@nx/module-federation": "workspace:*",
+     "@nx/web": "workspace:*",
+     "@phenomnomnominal/tsquery": "catalog:typescript",
+-    "@rspack/core": "catalog:rspack",
+-    "@rspack/dev-server": "catalog:rspack",
+-    "@rspack/plugin-react-refresh": "catalog:rspack",
+     "autoprefixer": "catalog:css",
+     "browserslist": "^4.26.0",
+     "css-loader": "^6.4.0",
+@@ -49,6 +46,7 @@
+     "sass": "catalog:css",
+     "sass-embedded": "catalog:css",
+     "sass-loader": "catalog:css",
++    "semver": "catalog:",
+     "source-map-loader": "^5.0.0",
+     "style-loader": "^3.3.0",
+     "ts-checker-rspack-plugin": "catalog:rspack",
+@@ -61,8 +59,24 @@
+     "@nx/nest": "workspace:*"
+   },
+   "peerDependencies": {
+-    "@module-federation/enhanced": "catalog:",
+-    "@module-federation/node": "^2.7.21"
++    "@rspack/cli": "^1.0.0",
++    "@rspack/core": "^1.0.0",
++    "@rspack/dev-server": "^1.0.0",
++    "@rspack/plugin-react-refresh": "^1.0.0"
++  },
++  "peerDependenciesMeta": {
++    "@rspack/cli": {
++      "optional": true
++    },
++    "@rspack/core": {
++      "optional": true
++    },
++    "@rspack/dev-server": {
++      "optional": true
++    },
++    "@rspack/plugin-react-refresh": {
++      "optional": true
++    }
+   },
+   "nx-migrations": {
+     "migrations": "./migrations.json"
+diff --git a/packages/rspack/src/generators/configuration/configuration.ts b/packages/rspack/src/generators/configuration/configuration.ts
+index 5304ac84036..57923ca64bb 100644
+--- a/packages/rspack/src/generators/configuration/configuration.ts
++++ b/packages/rspack/src/generators/configuration/configuration.ts
+@@ -25,6 +25,7 @@ import { ConfigurationSchema } from './schema';
+ import { getProjectType } from '@nx/js/src/utils/typescript/ts-solution-setup';
+ import { Framework } from '../init/schema';
+ import { warnRspackExecutorGenerating } from '../../utils/deprecation';
++import { assertSupportedRspackVersion } from '../../utils/assert-supported-rspack-version';
+ 
+ function projectIsRootProjectInStandaloneWorkspace(projectRoot: string) {
+   return relative(workspaceRoot, projectRoot).length === 0;
+@@ -76,6 +77,8 @@ export async function configurationGenerator(
+   tree: Tree,
+   options: ConfigurationSchema
+ ) {
++  assertSupportedRspackVersion(tree);
++
+   const task = await rspackInitGenerator(tree, {
+     ...options,
+   });
+diff --git a/packages/rspack/src/generators/convert-config-to-rspack-plugin/convert-config-to-rspack-plugin.ts b/packages/rspack/src/generators/convert-config-to-rspack-plugin/convert-config-to-rspack-plugin.ts
+index 09a42cbff2c..196065492c3 100644
+--- a/packages/rspack/src/generators/convert-config-to-rspack-plugin/convert-config-to-rspack-plugin.ts
++++ b/packages/rspack/src/generators/convert-config-to-rspack-plugin/convert-config-to-rspack-plugin.ts
+@@ -13,6 +13,7 @@ import { extractRspackOptions } from './lib/extract-rspack-options';
+ import { normalizePathOptions } from './lib/normalize-path-options';
+ import { parse } from 'path';
+ import { validateProject } from './lib/validate-project';
++import { assertSupportedRspackVersion } from '../../utils/assert-supported-rspack-version';
+ 
+ interface Schema {
+   project?: string;
+@@ -32,6 +33,8 @@ export async function convertConfigToRspackPluginGenerator(
+   tree: Tree,
+   options: Schema
+ ) {
++  assertSupportedRspackVersion(tree);
++
+   let migrated = 0;
+ 
+   const projects = getProjects(tree);
+diff --git a/packages/rspack/src/generators/convert-to-inferred/convert-to-inferred.ts b/packages/rspack/src/generators/convert-to-inferred/convert-to-inferred.ts
+index f8d48f40577..17d7939e9e4 100644
+--- a/packages/rspack/src/generators/convert-to-inferred/convert-to-inferred.ts
++++ b/packages/rspack/src/generators/convert-to-inferred/convert-to-inferred.ts
+@@ -21,6 +21,7 @@ import {
+   type MigrationContext,
+ } from './utils';
+ import { logger as devkitLogger } from 'nx/src/devkit-exports';
++import { assertSupportedRspackVersion } from '../../utils/assert-supported-rspack-version';
+ 
+ interface Schema {
+   project?: string;
+@@ -28,6 +29,8 @@ interface Schema {
+ }
+ 
+ export async function convertToInferred(tree: Tree, options: Schema) {
++  assertSupportedRspackVersion(tree);
++
+   const projectGraph = await createProjectGraphAsync();
+   const migrationContext: MigrationContext = {
+     logger: new AggregatedLog(),
+@@ -88,7 +91,13 @@ export async function convertToInferred(tree: Tree, options: Schema) {
+   const installCallback = addDependenciesToPackageJson(
+     tree,
+     {},
+-    { '@rspack/core': rspackCoreVersion },
++    {
++      '@rspack/core': rspackCoreVersion,
++      // The inferred plugin's targets run the `rspack` CLI. Since
++      // @rspack/cli is an optional peer dependency of @nx/rspack, install
++      // it explicitly so the converted targets can execute.
++      '@rspack/cli': rspackCoreVersion,
++    },
+     undefined,
+     true
+   );
+diff --git a/packages/rspack/src/generators/convert-webpack/convert-webpack.ts b/packages/rspack/src/generators/convert-webpack/convert-webpack.ts
+index 83fbed5d806..f4008b67d67 100644
+--- a/packages/rspack/src/generators/convert-webpack/convert-webpack.ts
++++ b/packages/rspack/src/generators/convert-webpack/convert-webpack.ts
+@@ -12,12 +12,16 @@ import { Schema } from './schema';
+ import {
+   rspackCoreVersion,
+   rspackDevServerVersion,
++  rspackPluginReactRefreshVersion,
+ } from '../../utils/versions';
+ import { transformEsmConfigFile } from './lib/transform-esm';
+ import { transformCjsConfigFile } from './lib/transform-cjs';
+ import { transformPluginConfig } from './lib/transform-plugin-config';
++import { assertSupportedRspackVersion } from '../../utils/assert-supported-rspack-version';
+ 
+ export default async function (tree: Tree, options: Schema) {
++  assertSupportedRspackVersion(tree);
++
+   const projects = getProjects(tree);
+   if (!projects.has(options.project)) {
+     throw new Error(
+@@ -161,7 +165,14 @@ export default async function (tree: Tree, options: Schema) {
+     {
+       '@rspack/core': rspackCoreVersion,
+       '@rspack/dev-server': rspackDevServerVersion,
+-    }
++      // @rspack/plugin-react-refresh is required at runtime by
++      // apply-react-config when building a React project. Since it is an
++      // optional peer dependency of @nx/rspack, the convert generator must
++      // install it explicitly.
++      '@rspack/plugin-react-refresh': rspackPluginReactRefreshVersion,
++    },
++    undefined,
++    true
+   );
+ 
+   if (!options.skipFormat) {
+diff --git a/packages/rspack/src/generators/init/init.ts b/packages/rspack/src/generators/init/init.ts
+index 638f45a181d..114d1a02e67 100644
+--- a/packages/rspack/src/generators/init/init.ts
++++ b/packages/rspack/src/generators/init/init.ts
+@@ -13,18 +13,19 @@ import { createNodesV2 } from '../../../plugin';
+ import {
+   lessLoaderVersion,
+   reactRefreshVersion,
+-  rspackCoreVersion,
+-  rspackDevServerVersion,
+-  rspackPluginReactRefreshVersion,
+   sassEmbeddedVersion,
+   sassLoaderVersion,
+ } from '../../utils/versions';
++import { getRspackVersionsForInstalledMajor } from '../../utils/version-utils';
++import { assertSupportedRspackVersion } from '../../utils/assert-supported-rspack-version';
+ import { InitGeneratorSchema } from './schema';
+ 
+ export async function rspackInitGenerator(
+   tree: Tree,
+   schema: InitGeneratorSchema
+ ) {
++  assertSupportedRspackVersion(tree);
++
+   const tasks: GeneratorCallback[] = [];
+ 
+   const nxJson = readNxJson(tree);
+@@ -89,12 +90,17 @@ export async function rspackInitGenerator(
+ 
+   tasks.push(jsInitTask);
+ 
++  const rspackVersions = getRspackVersionsForInstalledMajor(tree);
++  const keepExistingVersions = schema.keepExistingVersions ?? true;
++
+   const devDependencies = {
+-    '@rspack/core': rspackCoreVersion,
+-    '@rspack/cli': rspackCoreVersion,
++    '@rspack/core': rspackVersions.rspackCoreVersion,
++    '@rspack/cli': rspackVersions.rspackCoreVersion,
++    '@rspack/dev-server': rspackVersions.rspackDevServerVersion,
+     ...(!schema.framework || schema.framework === 'react'
+       ? {
+-          '@rspack/plugin-react-refresh': rspackPluginReactRefreshVersion,
++          '@rspack/plugin-react-refresh':
++            rspackVersions.rspackPluginReactRefreshVersion,
+           'react-refresh': reactRefreshVersion,
+         }
+       : {}),
+@@ -115,7 +121,8 @@ export async function rspackInitGenerator(
+   }
+ 
+   if (schema.framework !== 'none' || schema.devServer) {
+-    devDependencies['@rspack/dev-server'] = rspackDevServerVersion;
++    devDependencies['@rspack/dev-server'] =
++      rspackVersions.rspackDevServerVersion;
+   }
+ 
+   const installTask = addDependenciesToPackageJson(
+@@ -123,7 +130,7 @@ export async function rspackInitGenerator(
+     {},
+     devDependencies,
+     undefined,
+-    schema.keepExistingVersions
++    keepExistingVersions
+   );
+   tasks.push(installTask);
+ 
+diff --git a/packages/rspack/src/generators/init/schema.json b/packages/rspack/src/generators/init/schema.json
+index 9e87a3ce32c..e55fc938f6f 100644
+--- a/packages/rspack/src/generators/init/schema.json
++++ b/packages/rspack/src/generators/init/schema.json
+@@ -24,7 +24,7 @@
+       "type": "boolean",
+       "x-priority": "internal",
+       "description": "Keep existing dependencies versions",
+-      "default": false
++      "default": true
+     }
+   },
+   "required": []
+diff --git a/packages/rspack/src/utils/all-generators-enforce-floor.spec.ts b/packages/rspack/src/utils/all-generators-enforce-floor.spec.ts
+new file mode 100644
+index 00000000000..9edd815a79b
+--- /dev/null
++++ b/packages/rspack/src/utils/all-generators-enforce-floor.spec.ts
+@@ -0,0 +1,10 @@
++import { assertGeneratorsEnforceVersionFloor } from '@nx/devkit/internal-testing-utils';
++import { join } from 'node:path';
++
++describe('@nx/rspack generators enforce supported version floor', () => {
++  assertGeneratorsEnforceVersionFloor({
++    packageRoot: join(__dirname, '..', '..'),
++    packageName: '@rspack/core',
++    subFloorVersion: '~0.7.0',
++  });
++});
+diff --git a/packages/rspack/src/utils/assert-supported-rspack-version.ts b/packages/rspack/src/utils/assert-supported-rspack-version.ts
+new file mode 100644
+index 00000000000..77af49520da
+--- /dev/null
++++ b/packages/rspack/src/utils/assert-supported-rspack-version.ts
+@@ -0,0 +1,11 @@
++import { type Tree } from '@nx/devkit';
++import { assertSupportedPackageVersion } from '@nx/devkit/internal';
++import { minSupportedRspackVersion } from './versions';
++
++export function assertSupportedRspackVersion(tree: Tree): void {
++  assertSupportedPackageVersion(
++    tree,
++    '@rspack/core',
++    minSupportedRspackVersion
++  );
++}
+diff --git a/packages/rspack/src/utils/version-utils.ts b/packages/rspack/src/utils/version-utils.ts
+new file mode 100644
+index 00000000000..7bce47a919d
+--- /dev/null
++++ b/packages/rspack/src/utils/version-utils.ts
+@@ -0,0 +1,62 @@
++import { type Tree } from '@nx/devkit';
++import {
++  getDeclaredPackageVersion,
++  getInstalledPackageVersion,
++} from '@nx/devkit/internal';
++import { major } from 'semver';
++import {
++  backwardCompatibleRspackVersions,
++  latestRspackVersions,
++  type SupportedRspackMajorVersion,
++} from './versions';
++
++const RSPACK_CORE_PACKAGE = '@rspack/core';
++
++/**
++ * Returns the declared @rspack/core major version from the workspace's
++ * package.json when it matches a supported major, or `undefined` otherwise
++ * (fresh install, dist tag, unknown major). Below-floor enforcement is
++ * handled at generator entry points via `assertSupportedRspackVersion`.
++ */
++export function getInstalledRspackMajorVersion(
++  tree: Tree
++): SupportedRspackMajorVersion | undefined {
++  const declared = getDeclaredPackageVersion(tree, RSPACK_CORE_PACKAGE);
++  if (!declared) {
++    return undefined;
++  }
++  const installedMajor = major(declared);
++  return installedMajor in backwardCompatibleRspackVersions
++    ? (installedMajor as SupportedRspackMajorVersion)
++    : undefined;
++}
++
++/**
++ * Returns the installed @rspack/core major version resolved at runtime from
++ * node_modules. For use in executors and runtime code where no Tree is
++ * available. Returns `null` when @rspack/core can't be resolved or the
++ * installed major isn't supported.
++ */
++export function getInstalledRspackVersionRuntime(): SupportedRspackMajorVersion | null {
++  const version = getInstalledPackageVersion(RSPACK_CORE_PACKAGE);
++  if (!version) {
++    return null;
++  }
++  const installedMajor = major(version);
++  return installedMajor in backwardCompatibleRspackVersions
++    ? (installedMajor as SupportedRspackMajorVersion)
++    : null;
++}
++
++/**
++ * Returns the version-map entry for the installed major, falling back to the
++ * latest supported map when no installed version is detected (fresh install)
++ * or the detected major is outside the supported window.
++ */
++export function getRspackVersionsForInstalledMajor(tree: Tree) {
++  const installed = getInstalledRspackMajorVersion(tree);
++  if (installed === undefined) {
++    return latestRspackVersions;
++  }
++  return backwardCompatibleRspackVersions[installed];
++}
+diff --git a/packages/rspack/src/utils/versions.ts b/packages/rspack/src/utils/versions.ts
+index 303bfd04413..ba1bf8443bb 100644
+--- a/packages/rspack/src/utils/versions.ts
++++ b/packages/rspack/src/utils/versions.ts
+@@ -1,10 +1,44 @@
+ export const nxVersion = require('../../package.json').version;
+-export const rspackCoreVersion = '1.6.8';
+-export const rspackDevServerVersion = '^1.1.4';
+ 
+-export const rspackPluginReactRefreshVersion = '^1.0.0';
++export const minSupportedRspackVersion = '1.0.0';
++
+ export const lessLoaderVersion = '~11.1.3';
+ export const sassLoaderVersion = '^16.0.7';
+ export const sassEmbeddedVersion = '^1.97.2';
+-
+ export const reactRefreshVersion = '~0.14.0';
++
++// Supported `@rspack/core` majors. Currently v1 only — v2 ships as pure
++// ESM, which @nx/rspack (CommonJS) cannot consume without a deeper
++// refactor; tracked separately.
++export const supportedRspackMajorVersions = [1] as const;
++export type SupportedRspackMajorVersion =
++  (typeof supportedRspackMajorVersions)[number];
++
++type RspackVersionMap = {
++  rspackCoreVersion: string;
++  rspackDevServerVersion: string;
++  rspackPluginReactRefreshVersion: string;
++};
++
++export const latestRspackVersions: RspackVersionMap = {
++  rspackCoreVersion: '1.6.8',
++  rspackDevServerVersion: '^1.1.4',
++  rspackPluginReactRefreshVersion: '^1.0.0',
++};
++
++export const backwardCompatibleRspackVersions: Record<
++  SupportedRspackMajorVersion,
++  RspackVersionMap
++> = {
++  1: latestRspackVersions,
++};
++
++/**
++ * Kept for backward compatibility with code paths that don't yet branch on
++ * the detected installed major. Points at the latest supported major.
++ */
++export const rspackCoreVersion = latestRspackVersions.rspackCoreVersion;
++export const rspackDevServerVersion =
++  latestRspackVersions.rspackDevServerVersion;
++export const rspackPluginReactRefreshVersion =
++  latestRspackVersions.rspackPluginReactRefreshVersion;
+diff --git a/packages/rspack/src/utils/with-react.ts b/packages/rspack/src/utils/with-react.ts
+index 917383de040..86b4c668cfe 100644
+--- a/packages/rspack/src/utils/with-react.ts
++++ b/packages/rspack/src/utils/with-react.ts
+@@ -1,4 +1,4 @@
+-import { Configuration } from '@rspack/core';
++import type { Configuration } from '@rspack/core';
+ import { NxRspackExecutionContext } from './config';
+ import { withWeb, WithWebOptions } from './with-web';
+ import { applyReactConfig } from '../plugins/utils/apply-react-config';
+diff --git a/packages/rspack/src/utils/with-web.ts b/packages/rspack/src/utils/with-web.ts
+index 583475a46c9..bfc9744668e 100644
+--- a/packages/rspack/src/utils/with-web.ts
++++ b/packages/rspack/src/utils/with-web.ts
+@@ -1,4 +1,4 @@
+-import { Configuration } from '@rspack/core';
++import type { Configuration } from '@rspack/core';
+ import { ExtraEntryPointClass } from './model';
+ import { applyWebConfig } from '../plugins/utils/apply-web-config';
+ import { NxRspackExecutionContext } from './config';
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index de82c513fa3..a14946cc46a 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -3733,11 +3733,14 @@ importers:
+         specifier: catalog:typescript
+         version: 6.2.0(typescript@5.9.2)
+       '@rsbuild/core':
+-        specifier: 1.1.8
++        specifier: ^1.0.0
+         version: 1.1.8
+       minimatch:
+         specifier: 'catalog:'
+         version: 10.2.5
++      semver:
++        specifier: 'catalog:'
++        version: 7.7.4
+       tslib:
+         specifier: catalog:typescript
+         version: 2.8.1
+@@ -3748,12 +3751,6 @@ importers:
+ 
+   packages/rspack:
+     dependencies:
+-      '@module-federation/enhanced':
+-        specifier: 'catalog:'
+-        version: 2.3.3(@rspack/core@1.6.8(@swc/helpers@0.5.18))(node-fetch@3.3.2)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.2)(webpack@5.105.2(@swc/core@1.15.10(@swc/helpers@0.5.18))(esbuild@0.25.0)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2)))
+-      '@module-federation/node':
+-        specifier: ^2.7.21
+-        version: 2.7.21(@rspack/core@1.6.8(@swc/helpers@0.5.18))(next@14.2.35(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.54.0)(babel-plugin-macros@3.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.97.3))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.2)(webpack@5.105.2(@swc/core@1.15.10(@swc/helpers@0.5.18))(esbuild@0.25.0)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2)))
+       '@nx/devkit':
+         specifier: workspace:*
+         version: link:../devkit
+@@ -3769,14 +3766,17 @@ importers:
+       '@phenomnomnominal/tsquery':
+         specifier: catalog:typescript
+         version: 6.2.0(typescript@5.9.2)
++      '@rspack/cli':
++        specifier: ^1.0.0
++        version: 1.6.8(@rspack/core@1.6.8(@swc/helpers@0.5.18))(@types/express@4.17.25)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2))(webpack@5.105.2(@swc/core@1.15.10(@swc/helpers@0.5.18))(esbuild@0.25.0)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2)))
+       '@rspack/core':
+-        specifier: catalog:rspack
++        specifier: ^1.0.0
+         version: 1.6.8(@swc/helpers@0.5.18)
+       '@rspack/dev-server':
+-        specifier: catalog:rspack
++        specifier: ^1.0.0
+         version: 1.1.4(@rspack/core@1.6.8(@swc/helpers@0.5.18))(@types/express@4.17.25)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2))(webpack@5.105.2(@swc/core@1.15.10(@swc/helpers@0.5.18))(esbuild@0.25.0)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2)))
+       '@rspack/plugin-react-refresh':
+-        specifier: catalog:rspack
++        specifier: ^1.0.0
+         version: 1.4.3(react-refresh@0.17.0)(webpack-hot-middleware@2.26.1)
+       autoprefixer:
+         specifier: catalog:css
+@@ -3829,6 +3829,9 @@ importers:
+       sass-loader:
+         specifier: catalog:css
+         version: 16.0.7(@rspack/core@1.6.8(@swc/helpers@0.5.18))(sass-embedded@1.97.2)(sass@1.97.3)(webpack@5.105.2)
++      semver:
++        specifier: 'catalog:'
++        version: 7.7.4
+       source-map-loader:
+         specifier: ^5.0.0
+         version: 5.0.0(webpack@5.105.2)
+@@ -34826,6 +34829,22 @@ snapshots:
+       - webpack
+       - webpack-cli
+ 
++  '@rspack/cli@1.6.8(@rspack/core@1.6.8(@swc/helpers@0.5.18))(@types/express@4.17.25)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2))(webpack@5.105.2(@swc/core@1.15.10(@swc/helpers@0.5.18))(esbuild@0.25.0)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2)))':
++    dependencies:
++      '@discoveryjs/json-ext': 0.5.7
++      '@rspack/core': 1.6.8(@swc/helpers@0.5.18)
++      '@rspack/dev-server': 1.1.4(@rspack/core@1.6.8(@swc/helpers@0.5.18))(@types/express@4.17.25)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2))(webpack@5.105.2(@swc/core@1.15.10(@swc/helpers@0.5.18))(esbuild@0.25.0)(webpack-cli@5.1.4(webpack-dev-server@5.2.3)(webpack@5.105.2)))
++      exit-hook: 4.0.0
++      webpack-bundle-analyzer: 4.10.2
++    transitivePeerDependencies:
++      - '@types/express'
++      - bufferutil
++      - debug
++      - supports-color
++      - utf-8-validate
++      - webpack
++      - webpack-cli
++
+   '@rspack/core@1.1.8(@swc/helpers@0.5.18)':
+     dependencies:
+       '@module-federation/runtime-tools': 0.5.1

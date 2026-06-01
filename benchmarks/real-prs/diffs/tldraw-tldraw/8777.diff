@@ -1,0 +1,884 @@
+diff --git a/apps/docs/content/releases/next.mdx b/apps/docs/content/releases/next.mdx
+index 0fb44195faf2..496ae84a95ba 100644
+--- a/apps/docs/content/releases/next.mdx
++++ b/apps/docs/content/releases/next.mdx
+@@ -229,7 +229,7 @@ class AudioAssetUtil extends AssetUtil<TLAudioAsset> {
+ 
+ Custom shapes can now opt into frame-like behavior: clipping children, acting as a parent on paste and drag-in, blocking erasure from inside, and supporting full-brush selection. Previously, frame behavior was hardcoded to the built-in `frame` type; the editor and tools now route frame checks through `editor.getShapeUtil(shape).isFrameLike(shape)`.
+ 
+-The easiest way to build one is to extend the new `BaseFrameLikeShapeUtil` abstract class, which provides sensible defaults for `isFrameLike`, `providesBackgroundForChildren`, `canReceiveNewChildrenOfType`, `getClipPath`, `onDragShapesIn`, and `onDragShapesOut`:
++The easiest way to build one is to extend the new `BaseFrameLikeShapeUtil` abstract class, which provides sensible defaults for `isFrameLike`, `providesBackgroundForChildren`, `canReceiveNewChildrenOfType`, `canRemoveChildrenOfType`, `getClipPath`, `onDragShapesIn`, and `onDragShapesOut`:
+ 
+ ```tsx
+ import { BaseFrameLikeShapeUtil, SVGContainer } from '@tldraw/editor'
+diff --git a/apps/docs/content/sdk-features/drag-and-drop.mdx b/apps/docs/content/sdk-features/drag-and-drop.mdx
+index ec78bc5df365..d686b6785f69 100644
+--- a/apps/docs/content/sdk-features/drag-and-drop.mdx
++++ b/apps/docs/content/sdk-features/drag-and-drop.mdx
+@@ -169,7 +169,7 @@ Only shapes that implement drag callbacks are considered as drop targets. If you
+ 
+ ## Controlling which shapes can be dropped
+ 
+-Use the [ShapeUtil#canReceiveNewChildrenOfType](?) method to control which shape types your container accepts:
++Use the [ShapeUtil#canReceiveNewChildrenOfType](?) method to control which shape types your container accepts. The editor uses it to decide whether `onDragShapesIn` and `onDropShapesOver` fire for a dragged shape:
+ 
+ ```typescript
+ override canReceiveNewChildrenOfType(shape: MyContainerShape, type: TLShape['type']) {
+@@ -178,7 +178,20 @@ override canReceiveNewChildrenOfType(shape: MyContainerShape, type: TLShape['typ
+ }
+ ```
+ 
+-You must check this yourself in your drag callbacks. The editor does not call it automatically.
++The default is `false`, so any shape that should accept dropped children must override this method. `onDragShapesOver` is not gated by this method, which lets you provide visual feedback even when the target won't accept the drop.
++
++## Controlling which shapes can be dragged out
++
++Use the [ShapeUtil#canRemoveChildrenOfType](?) method to control which child shape types can be dragged out of your container. The editor uses it to decide whether `onDragShapesOut` fires for a child shape, and to decide whether the editor should automatically reparent a child that has moved outside its parent's geometry:
++
++```typescript
++override canRemoveChildrenOfType(shape: MyContainerShape, type: TLShape['type']) {
++	// Pin certain children in place; allow others to be removed
++	return type !== 'pinned-item'
++}
++```
++
++The default is `true`, so children can be dragged out of any container unless this method is overridden.
+ 
+ ## Example: slot container
+ 
+diff --git a/apps/examples/src/examples/shapes/tools/drag-and-drop/DragAndDropExample.tsx b/apps/examples/src/examples/shapes/tools/drag-and-drop/DragAndDropExample.tsx
+index f5159bbe2b20..fcc27c9045b3 100644
+--- a/apps/examples/src/examples/shapes/tools/drag-and-drop/DragAndDropExample.tsx
++++ b/apps/examples/src/examples/shapes/tools/drag-and-drop/DragAndDropExample.tsx
+@@ -1,12 +1,15 @@
+ import {
++	BaseFrameLikeShapeUtil,
+ 	Circle2d,
+ 	Geometry2d,
++	Group2d,
+ 	HTMLContainer,
+ 	Rectangle2d,
+ 	ShapeUtil,
+-	TLDragShapesOutInfo,
++	TLBaseBoxShape,
+ 	TLShape,
+ 	Tldraw,
++	Vec,
+ } from 'tldraw'
+ import 'tldraw/tldraw.css'
+ 
+@@ -16,13 +19,15 @@ const MY_COUNTER_SHAPE_TYPE = 'my-counter-shape'
+ // [1]
+ declare module 'tldraw' {
+ 	export interface TLGlobalShapePropsMap {
+-		[MY_GRID_SHAPE_TYPE]: Record<string, never>
++		[MY_GRID_SHAPE_TYPE]: { w: number; h: number }
+ 		[MY_COUNTER_SHAPE_TYPE]: Record<string, never>
+ 	}
+ }
+ 
+ // [2]
+-type MyGridShape = TLShape<typeof MY_GRID_SHAPE_TYPE>
++type MyGridShape = TLBaseBoxShape & {
++	type: typeof MY_GRID_SHAPE_TYPE
++}
+ type MyCounterShape = TLShape<typeof MY_COUNTER_SHAPE_TYPE>
+ 
+ // [3]
+@@ -65,52 +70,57 @@ class MyCounterShapeUtil extends ShapeUtil<MyCounterShape> {
+ }
+ 
+ // [4]
+-class MyGridShapeUtil extends ShapeUtil<MyGridShape> {
++class MyGridShapeUtil extends BaseFrameLikeShapeUtil<MyGridShape> {
+ 	static override type = MY_GRID_SHAPE_TYPE
+ 
+ 	getDefaultProps(): MyGridShape['props'] {
+-		return {}
++		return {
++			w: SLOT_SIZE * 5,
++			h: SLOT_SIZE * 2,
++		}
+ 	}
+ 
+-	getGeometry(): Geometry2d {
+-		return new Rectangle2d({
+-			width: SLOT_SIZE * 5,
+-			height: SLOT_SIZE * 2,
+-			isFilled: true,
++	override getGeometry(shape: MyGridShape): Geometry2d {
++		return new Group2d({
++			children: [
++				new Rectangle2d({
++					width: shape.props.w,
++					height: shape.props.h,
++					isFilled: true,
++				}),
++			],
+ 		})
+ 	}
+ 
+-	override canResize(shape: MyGridShape) {
++	override canResize(_shape: MyGridShape) {
+ 		return false
+ 	}
+-	override hideResizeHandles(shape: MyGridShape) {
++
++	override hideResizeHandles(_shape: MyGridShape) {
+ 		return true
+ 	}
+ 
+ 	// [5]
+-	override onDragShapesIn(shape: MyGridShape, draggingShapes: TLShape[]): void {
+-		const { editor } = this
+-		const reparentingShapes = draggingShapes.filter(
+-			(s) => s.parentId !== shape.id && s.type === 'my-counter-shape'
+-		)
+-		if (reparentingShapes.length === 0) return
+-		editor.reparentShapes(reparentingShapes, shape.id)
++	override canReceiveNewChildrenOfType(_shape: MyGridShape, type: TLShape['type']) {
++		return type === MY_COUNTER_SHAPE_TYPE
+ 	}
+ 
+ 	// [6]
+-	override onDragShapesOut(
+-		shape: MyGridShape,
+-		draggingShapes: TLShape[],
+-		info: TLDragShapesOutInfo
+-	): void {
+-		const { editor } = this
+-		const reparentingShapes = draggingShapes.filter((s) => s.parentId !== shape.id)
+-		if (!info.nextDraggingOverShapeId) {
+-			editor.reparentShapes(reparentingShapes, editor.getCurrentPageId())
+-		}
++	override canRemoveChildrenOfType(_shape: MyGridShape, type: TLShape['type']) {
++		return type !== MY_COUNTER_SHAPE_TYPE
+ 	}
+ 
+-	component() {
++	// [7]
++	override getClipPath(_shape: MyGridShape): Vec[] {
++		return [
++			new Vec(0, 0),
++			new Vec(SLOT_SIZE * 5, 0),
++			new Vec(SLOT_SIZE * 5, SLOT_SIZE * 2),
++			new Vec(0, SLOT_SIZE * 2),
++		]
++	}
++
++	component(shape: MyGridShape) {
+ 		return (
+ 			<HTMLContainer
+ 				style={{
+@@ -118,6 +128,8 @@ class MyGridShapeUtil extends ShapeUtil<MyGridShape> {
+ 					borderRight: '1px solid #ccc',
+ 					borderBottom: '1px solid #ccc',
+ 					backgroundSize: `${SLOT_SIZE}px ${SLOT_SIZE}px`,
++					width: shape.props.w,
++					height: shape.props.h,
+ 					backgroundImage: `
+ 						linear-gradient(to right, #ccc 1px, transparent 1px),
+ 						linear-gradient(to bottom, #ccc 1px, transparent 1px)
+@@ -127,9 +139,9 @@ class MyGridShapeUtil extends ShapeUtil<MyGridShape> {
+ 		)
+ 	}
+ 
+-	getIndicatorPath() {
++	override getIndicatorPath(shape: MyGridShape) {
+ 		const path = new Path2D()
+-		path.rect(0, 0, SLOT_SIZE * 5, SLOT_SIZE * 2)
++		path.rect(0, 0, shape.props.w, shape.props.h)
+ 		return path
+ 	}
+ }
+@@ -170,10 +182,19 @@ Create a ShapeUtil for the grid shape. This creates a rectangular grid that can
+ Rectangle2d geometry and render it with CSS grid lines using background gradients.
+ 
+ [5]
+-Override onDragShapesIn to handle when shapes are dragged into the grid. We filter for counter shapes that
+-aren't already children of this grid, then reparent them to become children. This makes them move with the grid.
++Override canReceiveNewChildrenOfType to gate which shape types can be dragged into the grid. The editor only
++fires onDragShapesIn for shapes that pass this check. The default is false, so any container that wants to
++receive dragged shapes must override this. Here we accept counter shapes only.
+ 
+ [6]
+-Override onDragShapesOut to handle when shapes are dragged out of the grid. If they're not being dragged to
+-another shape, we reparent them back to the page level, making them independent again.
++Override canRemoveChildrenOfType to gate which child shape types are allowed to be dragged out. The editor
++only fires onDragShapesOut for shapes that pass this check, and it also won't auto-reparent ("kick out") a
++child of a blocked type when it's moved outside the parent's geometry. The default is true. Here, we don't 
++allow any child counter shapes to be dragged out.
++
++[7]
++Override getClipPath so children are visually clipped to the grid's bounds while they're parented to it.
++This is independent of the drag-and-drop callbacks above; it just makes it visually obvious that a counter
++"belongs" to the grid while it's a child. Try dragging a counter outside the grid — because counters are
++pinned, the counter stays a child of the grid and the clip path keeps it inside.
+ */
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index dfc1aec5204a..b6a7b3d7989e 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -196,6 +196,8 @@ export abstract class BaseFrameLikeShapeUtil<Shape extends TLBaseBoxShape> exten
+     // (undocumented)
+     canReceiveNewChildrenOfType(shape: Shape, _type: TLShape['type']): boolean;
+     // (undocumented)
++    canRemoveChildrenOfType(shape: Shape, _type: TLShape['type']): boolean;
++    // (undocumented)
+     getClipPath(shape: Shape): undefined | Vec[];
+     // (undocumented)
+     isFrameLike(_shape: Shape): boolean;
+@@ -2996,6 +2998,7 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+     canEditInReadonly(shape: Shape): boolean;
+     canEditWhileLocked(shape: Shape): boolean;
+     canReceiveNewChildrenOfType(shape: Shape, type: TLShape['type']): boolean;
++    canRemoveChildrenOfType(shape: Shape, type: TLShape['type']): boolean;
+     canResize(shape: Shape): boolean;
+     canResizeChildren(shape: Shape): boolean;
+     canScroll(shape: Shape): boolean;
+diff --git a/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx b/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx
+index ed33d519b2a3..708823834e0f 100644
+--- a/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx
++++ b/packages/editor/src/lib/editor/shapes/BaseFrameLikeShapeUtil.tsx
+@@ -15,6 +15,7 @@ import { TLDragShapesInInfo, TLDragShapesOutInfo } from './ShapeUtil'
+  * - `isFrameLike()` returns `true`
+  * - `providesBackgroundForChildren()` returns `true`
+  * - `canReceiveNewChildrenOfType()` returns `true` unless the container is locked
++ * - `canRemoveChildrenOfType()` returns `true` unless the container is locked
+  * - `getClipPath()` returns the shape geometry's vertices
+  * - `onDragShapesIn()` reparents shapes into the frame (with index restoration)
+  * - `onDragShapesOut()` reparents shapes back to the page
+@@ -60,6 +61,10 @@ export abstract class BaseFrameLikeShapeUtil<
+ 		return !shape.isLocked
+ 	}
+ 
++	override canRemoveChildrenOfType(shape: Shape, _type: TLShape['type']): boolean {
++		return !shape.isLocked
++	}
++
+ 	override getClipPath(shape: Shape): Vec[] | undefined {
+ 		return this.editor.getShapeGeometry(shape.id).vertices
+ 	}
+diff --git a/packages/editor/src/lib/editor/shapes/ShapeUtil.ts b/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
+index d5a25625df30..76af660d1884 100644
+--- a/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
++++ b/packages/editor/src/lib/editor/shapes/ShapeUtil.ts
+@@ -546,7 +546,9 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+ 	getHandles?(shape: Shape): TLHandle[]
+ 
+ 	/**
+-	 * Get whether the shape can receive children of a given type.
++	 * Get whether the shape can receive children of a given type. Used by the drag and drop system
++	 * to decide whether {@link ShapeUtil.onDragShapesIn} should fire when a shape of the given type
++	 * is dragged over this one.
+ 	 *
+ 	 * @param shape - The shape.
+ 	 * @param type - The shape type.
+@@ -556,6 +558,22 @@ export abstract class ShapeUtil<Shape extends TLShape = TLShape> {
+ 		return false
+ 	}
+ 
++	/**
++	 * Get whether children of a given type can be removed from this shape. Used by the drag and
++	 * drop system to decide whether {@link ShapeUtil.onDragShapesOut} should fire when a child of
++	 * the given type is dragged out of this shape, and by `kickoutOccludedShapes` to decide
++	 * whether to auto-reparent a child of the given type when it has moved outside this shape's
++	 * geometry. Returning `false` therefore "pins" matching children — they stay parented to this
++	 * shape even when dragged or moved outside it. Defaults to `true`.
++	 *
++	 * @param shape - The shape.
++	 * @param type - The shape type.
++	 * @public
++	 */
++	canRemoveChildrenOfType(shape: Shape, type: TLShape['type']) {
++		return true
++	}
++
+ 	/**
+ 	 * Get the shape as an SVG object.
+ 	 *
+diff --git a/packages/editor/src/lib/utils/reparenting.ts b/packages/editor/src/lib/utils/reparenting.ts
+index f045ad80c667..0149830e724f 100644
+--- a/packages/editor/src/lib/utils/reparenting.ts
++++ b/packages/editor/src/lib/utils/reparenting.ts
+@@ -42,10 +42,17 @@ export function kickoutOccludedShapes(
+ 		} else {
+ 			const overlappingChildren = getOverlappingShapes(editor, parent.id, childIds)
+ 			if (overlappingChildren.length < childIds.length) {
+-				parentsToLostChildren.set(
+-					parent,
+-					childIds.filter((id) => !overlappingChildren.includes(id))
+-				)
++				const parentUtil = editor.getShapeUtil(parent)
++				const lostChildIds = childIds.filter((id) => {
++					if (overlappingChildren.includes(id)) return false
++					const child = editor.getShape(id)
++					if (!child) return false
++					// Respect the parent's removal gate: if it pins this child type, don't kick it out.
++					return parentUtil.canRemoveChildrenOfType(parent, child.type)
++				})
++				if (lostChildIds.length > 0) {
++					parentsToLostChildren.set(parent, lostChildIds)
++				}
+ 			}
+ 		}
+ 	}
+@@ -238,11 +245,17 @@ export function getDroppedShapesToNewParents(
+ 	const potentialParentShapes = editor
+ 		.getCurrentPageShapesSorted()
+ 		// filter out any shapes that aren't frames or that are included among the provided shapes
+-		.filter(
+-			(s) =>
+-				editor.getShapeUtil(s).canReceiveNewChildrenOfType?.(s, s.type) &&
+-				!remainingShapesToReparent.has(s)
+-		)
++		.filter((parentShape) => {
++			if (remainingShapesToReparent.has(parentShape)) return false
++
++			const parentUtil = editor.getShapeUtil(parentShape)
++			for (const childShape of remainingShapesToReparent) {
++				if (parentUtil.canReceiveNewChildrenOfType(parentShape, childShape.type)) {
++					return true
++				}
++			}
++			return false
++		})
+ 
+ 	parentCheck: for (let i = potentialParentShapes.length - 1; i >= 0; i--) {
+ 		const parentShape = potentialParentShapes[i]
+diff --git a/packages/tldraw/src/lib/tools/SelectTool/DragAndDropManager.ts b/packages/tldraw/src/lib/tools/SelectTool/DragAndDropManager.ts
+index 23f4011c8596..8187b53d548c 100644
+--- a/packages/tldraw/src/lib/tools/SelectTool/DragAndDropManager.ts
++++ b/packages/tldraw/src/lib/tools/SelectTool/DragAndDropManager.ts
+@@ -113,11 +113,14 @@ export class DragAndDropManager {
+ 
+ 		if (draggingOverShape) {
+ 			const util = editor.getShapeUtil(draggingOverShape)
+-			util.onDropShapesOver?.(draggingOverShape, shapes, {
+-				initialDraggingOverShapeId: this.initialDraggingOverShape?.id ?? null,
+-				initialParentIds: this.initialParentIds,
+-				initialIndices: this.initialIndices,
+-			})
++			const receivableShapes = getReceivableShapesForTarget(editor, draggingOverShape, shapes)
++			if (receivableShapes.length > 0) {
++				util.onDropShapesOver?.(draggingOverShape, receivableShapes, {
++					initialDraggingOverShapeId: this.initialDraggingOverShape?.id ?? null,
++					initialParentIds: this.initialParentIds,
++					initialIndices: this.initialIndices,
++				})
++			}
+ 		}
+ 
+ 		this.dispose()
+@@ -176,23 +179,42 @@ export class DragAndDropManager {
+ 
+ 			if (this.prevDraggingOverShape) {
+ 				const util = editor.getShapeUtil(this.prevDraggingOverShape)
+-				util.onDragShapesOut?.(this.editor.getShape(this.prevDraggingOverShape)!, draggingShapes, {
+-					nextDraggingOverShapeId: nextDraggingOverShape?.id ?? null,
+-					initialDraggingOverShapeId: this.initialDraggingOverShape?.id ?? null,
+-					initialParentIds: this.initialParentIds,
+-					initialIndices: this.initialIndices,
+-				})
++				const prevDraggingOverShape = this.editor.getShape(this.prevDraggingOverShape)!
++				const removableShapes = getRemovableShapesForTarget(
++					editor,
++					prevDraggingOverShape,
++					draggingShapes
++				)
++				if (removableShapes.length > 0) {
++					util.onDragShapesOut?.(prevDraggingOverShape, removableShapes, {
++						nextDraggingOverShapeId: nextDraggingOverShape?.id ?? null,
++						initialDraggingOverShapeId: this.initialDraggingOverShape?.id ?? null,
++						initialParentIds: this.initialParentIds,
++						initialIndices: this.initialIndices,
++					})
++				}
+ 			}
+ 
+ 			if (nextDraggingOverShape) {
+ 				const util = editor.getShapeUtil(nextDraggingOverShape)
+-				util.onDragShapesIn?.(nextDraggingOverShape, draggingShapes, {
+-					initialDraggingOverShapeId: this.initialDraggingOverShape?.id ?? null,
+-					prevDraggingOverShapeId: this.prevDraggingOverShape?.id ?? null,
+-					initialParentIds: this.initialParentIds,
+-					initialIndices: this.initialIndices,
+-				})
+-				editor.setHintingShapes([nextDraggingOverShape.id])
++				const receivableShapes = getReceivableShapesForTarget(
++					editor,
++					nextDraggingOverShape,
++					draggingShapes
++				)
++				if (receivableShapes.length > 0) {
++					util.onDragShapesIn?.(nextDraggingOverShape, receivableShapes, {
++						initialDraggingOverShapeId: this.initialDraggingOverShape?.id ?? null,
++						prevDraggingOverShapeId: this.prevDraggingOverShape?.id ?? null,
++						initialParentIds: this.initialParentIds,
++						initialIndices: this.initialIndices,
++					})
++					editor.setHintingShapes([nextDraggingOverShape.id])
++				} else if (this.prevDraggingOverShape) {
++					// The new target won't accept anything; clear any stale hint left on the
++					// previous target.
++					editor.setHintingShapes([])
++				}
+ 			} else if (this.prevDraggingOverShape) {
+ 				editor.setHintingShapes([])
+ 			}
+@@ -204,3 +226,21 @@ export class DragAndDropManager {
+ 		this.prevDraggingOverShape = nextDraggingOverShape
+ 	}
+ }
++
++function getReceivableShapesForTarget(
++	editor: Editor,
++	targetShape: TLShape,
++	draggingShapes: TLShape[]
++) {
++	const util = editor.getShapeUtil(targetShape)
++	return draggingShapes.filter((shape) => util.canReceiveNewChildrenOfType(targetShape, shape.type))
++}
++
++function getRemovableShapesForTarget(
++	editor: Editor,
++	targetShape: TLShape,
++	draggingShapes: TLShape[]
++) {
++	const util = editor.getShapeUtil(targetShape)
++	return draggingShapes.filter((shape) => util.canRemoveChildrenOfType(targetShape, shape.type))
++}
+diff --git a/packages/tldraw/src/test/dragAndDrop.test.ts b/packages/tldraw/src/test/dragAndDrop.test.ts
+new file mode 100644
+index 000000000000..d0a3ee4cf5a0
+--- /dev/null
++++ b/packages/tldraw/src/test/dragAndDrop.test.ts
+@@ -0,0 +1,341 @@
++import {
++	createShapeId,
++	Geometry2d,
++	kickoutOccludedShapes,
++	Rectangle2d,
++	ShapeUtil,
++	TLBaseShape,
++	TLDragShapesOutInfo,
++	TLDropShapesOverInfo,
++	TLShape,
++} from '@tldraw/editor'
++import { vi } from 'vitest'
++import { TestEditor } from './TestEditor'
++
++vi.useFakeTimers()
++
++const GRID_TYPE = 'my-grid-shape'
++const COUNTER_TYPE = 'my-counter-shape'
++
++declare module '@tldraw/tlschema' {
++	export interface TLGlobalShapePropsMap {
++		[GRID_TYPE]: { w: number; h: number }
++		[COUNTER_TYPE]: Record<string, never>
++	}
++}
++
++type MyGridShape = TLBaseShape<typeof GRID_TYPE, { w: number; h: number }>
++type MyCounterShape = TLBaseShape<typeof COUNTER_TYPE, Record<string, never>>
++
++class CounterShapeUtil extends ShapeUtil<MyCounterShape> {
++	static override type = COUNTER_TYPE
++	override getDefaultProps(): MyCounterShape['props'] {
++		return {} as MyCounterShape['props']
++	}
++	override getGeometry(_: MyCounterShape): Geometry2d {
++		return new Rectangle2d({ width: 50, height: 50, isFilled: true })
++	}
++	override component() {
++		return null as any
++	}
++	override getIndicatorPath() {
++		return undefined
++	}
++}
++
++const onDropSpy =
++	vi.fn<(shape: MyGridShape, shapes: TLShape[], info: TLDropShapesOverInfo) => void>()
++
++class GridShapeUtil extends ShapeUtil<MyGridShape> {
++	static override type = GRID_TYPE
++	override getDefaultProps(): MyGridShape['props'] {
++		return { w: 500, h: 200 }
++	}
++	override getGeometry(shape: MyGridShape): Geometry2d {
++		return new Rectangle2d({ width: shape.props.w, height: shape.props.h, isFilled: true })
++	}
++	override component() {
++		return null as any
++	}
++	override getIndicatorPath() {
++		return undefined
++	}
++
++	override canReceiveNewChildrenOfType(_shape: MyGridShape, type: TLShape['type']) {
++		return type === COUNTER_TYPE
++	}
++	override canRemoveChildrenOfType(_shape: MyGridShape, type: TLShape['type']) {
++		// Pin counter shapes; everything else can leave.
++		return type !== COUNTER_TYPE
++	}
++	override onDragShapesIn(shape: MyGridShape, draggingShapes: TLShape[]): void {
++		const reparenting = draggingShapes.filter((s) => s.parentId !== shape.id)
++		if (reparenting.length === 0) return
++		this.editor.reparentShapes(reparenting, shape.id)
++	}
++	override onDragShapesOut(
++		shape: MyGridShape,
++		draggingShapes: TLShape[],
++		info: TLDragShapesOutInfo
++	): void {
++		if (info.nextDraggingOverShapeId) return
++		const reparenting = draggingShapes.filter((s) => s.parentId === shape.id)
++		this.editor.reparentShapes(reparenting, this.editor.getCurrentPageId())
++	}
++	override onDropShapesOver(
++		shape: MyGridShape,
++		shapes: TLShape[],
++		info: TLDropShapesOverInfo
++	): void {
++		onDropSpy(shape, shapes, info)
++	}
++}
++
++let editor: TestEditor
++
++const ids = {
++	grid: createShapeId('grid'),
++	counter: createShapeId('counter'),
++}
++
++beforeEach(() => {
++	onDropSpy.mockReset()
++	editor = new TestEditor({ shapeUtils: [GridShapeUtil, CounterShapeUtil] })
++})
++afterEach(() => {
++	editor?.dispose()
++})
++
++describe('canRemoveChildrenOfType for non-frame containers', () => {
++	it('pins children whose type the parent refuses to remove', () => {
++		// Grid at (100, 100) covers (100, 100) to (600, 300)
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++
++		// Counter starts on the page outside the grid
++		editor.createShape({ id: ids.counter, type: COUNTER_TYPE, x: 700, y: 100 })
++		expect(editor.getShape(ids.counter)!.parentId).toBe(editor.getCurrentPageId())
++
++		// Drag the counter onto the grid; it should reparent to the grid
++		editor.setCurrentTool('select')
++		editor.pointerDown(725, 125, ids.counter).pointerMove(300, 200)
++		vi.advanceTimersByTime(300)
++		editor.pointerUp(300, 200)
++		expect(editor.getShape(ids.counter)!.parentId).toBe(ids.grid)
++
++		// Now drag the counter back off the grid
++		editor.pointerDown(300, 200, ids.counter).pointerMove(800, 800)
++		vi.advanceTimersByTime(300)
++		editor.pointerUp(800, 800)
++
++		// Counter should still be parented to the grid because the grid pins counter shapes
++		expect(editor.getShape(ids.counter)!.parentId).toBe(ids.grid)
++	})
++
++	it('still allows children whose type the parent does allow to be removed', () => {
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++
++		// Programmatically place a non-counter (geo) shape inside the grid; canRemove allows
++		// non-counter types to be removed via drag/kickout.
++		const geoId = createShapeId('geo')
++		editor.createShape({
++			id: geoId,
++			type: 'geo',
++			parentId: ids.grid,
++			x: 50,
++			y: 50,
++			props: { w: 50, h: 50 },
++		})
++		expect(editor.getShape(geoId)!.parentId).toBe(ids.grid)
++
++		// Drag the geo entirely out of the grid
++		editor.setCurrentTool('select')
++		editor.pointerDown(175, 175, geoId).pointerMove(800, 800)
++		vi.advanceTimersByTime(300)
++		editor.pointerUp(800, 800)
++
++		// Geo should be reparented to the page (canRemove returns true for non-counter types)
++		expect(editor.getShape(geoId)!.parentId).toBe(editor.getCurrentPageId())
++	})
++})
++
++describe('kickoutOccludedShapes respects canRemoveChildrenOfType', () => {
++	it('keeps a pinned child parented when it no longer overlaps its parent', () => {
++		// Grid covers (100, 100) to (600, 300)
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++
++		// Counter created inside the grid
++		editor.createShape({
++			id: ids.counter,
++			type: COUNTER_TYPE,
++			parentId: ids.grid,
++			x: 50,
++			y: 50,
++		})
++		expect(editor.getShape(ids.counter)!.parentId).toBe(ids.grid)
++
++		// Move the counter (in parent-local space) so it sits outside the grid's geometry
++		editor.updateShape({
++			id: ids.counter,
++			type: COUNTER_TYPE,
++			x: 1000,
++			y: 1000,
++		})
++
++		// Trigger kickout directly (no drag involved)
++		kickoutOccludedShapes(editor, [ids.counter])
++
++		// Counter should still be parented to the grid because the grid pins counter shapes
++		expect(editor.getShape(ids.counter)!.parentId).toBe(ids.grid)
++	})
++
++	it('kicks out a non-pinned child that no longer overlaps its parent', () => {
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++
++		const geoId = createShapeId('geo')
++		editor.createShape({
++			id: geoId,
++			type: 'geo',
++			parentId: ids.grid,
++			x: 50,
++			y: 50,
++			props: { w: 50, h: 50 },
++		})
++		expect(editor.getShape(geoId)!.parentId).toBe(ids.grid)
++
++		// Move the geo (in parent-local space) so it sits outside the grid's geometry
++		editor.updateShape({
++			id: geoId,
++			type: 'geo',
++			x: 1000,
++			y: 1000,
++		})
++
++		kickoutOccludedShapes(editor, [geoId])
++
++		// Geo should be reparented to the page since the grid does not pin non-counter children
++		expect(editor.getShape(geoId)!.parentId).toBe(editor.getCurrentPageId())
++	})
++
++	it('still kicks out a pinned child when its parent is being filtered out (e.g. removed)', () => {
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++
++		editor.createShape({
++			id: ids.counter,
++			type: COUNTER_TYPE,
++			parentId: ids.grid,
++			x: 50,
++			y: 50,
++		})
++		expect(editor.getShape(ids.counter)!.parentId).toBe(ids.grid)
++
++		// Simulate the parent being removed by passing a filter that rejects the grid. In this
++		// branch kickout intentionally bypasses canRemoveChildrenOfType; otherwise children of a
++		// pinned parent could not survive their parent being deleted.
++		kickoutOccludedShapes(editor, [ids.counter], {
++			filter: (parent) => parent.id !== ids.grid,
++		})
++
++		expect(editor.getShape(ids.counter)!.parentId).toBe(editor.getCurrentPageId())
++	})
++})
++
++describe('onDropShapesOver gating by canReceiveNewChildrenOfType', () => {
++	it('fires with only the shapes whose type passes the gate', () => {
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++		editor.createShape({ id: ids.counter, type: COUNTER_TYPE, x: 700, y: 100 })
++
++		// Drag the counter onto the grid and drop it
++		editor.setCurrentTool('select')
++		editor.pointerDown(725, 125, ids.counter).pointerMove(300, 200)
++		vi.advanceTimersByTime(300)
++		editor.pointerUp(300, 200)
++
++		expect(onDropSpy).toHaveBeenCalledTimes(1)
++		const [, droppedShapes] = onDropSpy.mock.calls[0]
++		expect(droppedShapes.map((s) => s.id)).toEqual([ids.counter])
++	})
++
++	it('does not fire when no dragged shape passes the gate', () => {
++		editor.createShape({ id: ids.grid, type: GRID_TYPE, x: 100, y: 100 })
++
++		// A geo shape is rejected by the grid's canReceiveNewChildrenOfType
++		const geoId = createShapeId('geo')
++		editor.createShape({
++			id: geoId,
++			type: 'geo',
++			x: 700,
++			y: 100,
++			props: { w: 50, h: 50 },
++		})
++
++		editor.setCurrentTool('select')
++		editor.pointerDown(725, 125, geoId).pointerMove(300, 200)
++		vi.advanceTimersByTime(300)
++		editor.pointerUp(300, 200)
++
++		expect(onDropSpy).not.toHaveBeenCalled()
++	})
++})
++
++const REJECT_TYPE = 'my-reject-shape'
++
++declare module '@tldraw/tlschema' {
++	export interface TLGlobalShapePropsMap {
++		[REJECT_TYPE]: { w: number; h: number }
++	}
++}
++
++type MyRejectShape = TLBaseShape<typeof REJECT_TYPE, { w: number; h: number }>
++
++// A container that's a valid drag target (it has drag callbacks) but rejects every dragged
++// type via canReceiveNewChildrenOfType.
++class RejectAllShapeUtil extends ShapeUtil<MyRejectShape> {
++	static override type = REJECT_TYPE
++	override getDefaultProps(): MyRejectShape['props'] {
++		return { w: 500, h: 200 }
++	}
++	override getGeometry(shape: MyRejectShape): Geometry2d {
++		return new Rectangle2d({ width: shape.props.w, height: shape.props.h, isFilled: true })
++	}
++	override component() {
++		return null as any
++	}
++	override getIndicatorPath() {
++		return undefined
++	}
++	override canReceiveNewChildrenOfType(_shape: MyRejectShape, _type: TLShape['type']) {
++		return false
++	}
++	override onDropShapesOver(_shape: MyRejectShape) {
++		// Present so getDraggingOverShape considers this a valid drag target.
++	}
++}
++
++describe('drag-over hinting respects canReceiveNewChildrenOfType', () => {
++	it('clears the hint when moving from an accepting target to a rejecting one', () => {
++		editor.dispose()
++		editor = new TestEditor({
++			shapeUtils: [GridShapeUtil, CounterShapeUtil, RejectAllShapeUtil],
++		})
++
++		const gridId = createShapeId('grid')
++		const rejectId = createShapeId('reject')
++		editor.createShape({ id: gridId, type: GRID_TYPE, x: 0, y: 0 })
++		editor.createShape({ id: rejectId, type: REJECT_TYPE, x: 700, y: 0 })
++		editor.createShape({ id: ids.counter, type: COUNTER_TYPE, x: 1500, y: 100 })
++
++		editor.setCurrentTool('select')
++
++		// Drag the counter over the grid (accepts) — hint should be set on the grid.
++		editor.pointerDown(1525, 125, ids.counter).pointerMove(250, 100)
++		vi.advanceTimersByTime(300)
++		expect(editor.getHintingShapeIds()).toEqual([gridId])
++
++		// Move the counter over the rejecting container — hint should clear, not linger on grid.
++		editor.pointerMove(950, 100)
++		vi.advanceTimersByTime(300)
++		expect(editor.getHintingShapeIds()).toEqual([])
++
++		editor.pointerUp(950, 100)
++	})
++})
+diff --git a/packages/tldraw/src/test/frames.test.ts b/packages/tldraw/src/test/frames.test.ts
+index 1bb6dea1fee6..11f0b439e1b3 100644
+--- a/packages/tldraw/src/test/frames.test.ts
++++ b/packages/tldraw/src/test/frames.test.ts
+@@ -4,6 +4,7 @@ import {
+ 	TLArrowShape,
+ 	TLFrameShape,
+ 	TLGeoShape,
++	TLShape,
+ 	TLShapeId,
+ 	createShapeId,
+ 	toRichText,
+@@ -29,6 +30,22 @@ const ids = {
+ 	boxA: createShapeId('boxA'),
+ }
+ 
++class GeoRejectingFrameShapeUtil extends FrameShapeUtil {
++	static override type = 'frame' as const
++
++	override canReceiveNewChildrenOfType(_shape: TLFrameShape, type: TLShape['type']) {
++		return type !== 'geo'
++	}
++}
++
++class GeoPinningFrameShapeUtil extends FrameShapeUtil {
++	static override type = 'frame' as const
++
++	override canRemoveChildrenOfType(_shape: TLFrameShape, type: TLShape['type']) {
++		return type !== 'geo'
++	}
++}
++
+ describe('creating frames', () => {
+ 	it('can be done', () => {
+ 		editor.setCurrentTool('frame')
+@@ -444,6 +461,51 @@ describe('frame shapes', () => {
+ 		expect(editor.getOnlySelectedShape()!.parentId).toBe(frameId)
+ 	})
+ 
++	it("doesn't drag shapes into a frame that rejects their type", () => {
++		editor.dispose()
++		editor = new TestEditor({ shapeUtils: [GeoRejectingFrameShapeUtil] })
++
++		const frameId = dragCreateFrame({ down: [0, 0], move: [200, 200], up: [200, 200] })
++
++		editor.createShapes([
++			{ type: 'geo', id: ids.boxA, x: 250, y: 250, props: { w: 50, h: 50, fill: 'solid' } },
++		])
++
++		expect(editor.getShape(ids.boxA)!.parentId).toBe(editor.getCurrentPageId())
++
++		editor.setCurrentTool('select')
++		editor.pointerDown(275, 275, ids.boxA).pointerMove(100, 100)
++		vi.advanceTimersByTime(300)
++
++		expect(editor.getShape(ids.boxA)!.parentId).toBe(editor.getCurrentPageId())
++		expect(editor.getHintingShapeIds()).toHaveLength(0)
++
++		editor.pointerUp(100, 100)
++
++		expect(editor.getShape(ids.boxA)!.parentId).toBe(editor.getCurrentPageId())
++		expect(editor.getShape(frameId)!.parentId).toBe(editor.getCurrentPageId())
++	})
++
++	it("doesn't drag shapes out of a frame that pins their type", () => {
++		editor.dispose()
++		editor = new TestEditor({ shapeUtils: [GeoPinningFrameShapeUtil] })
++
++		// Create a frame and a geo shape that extends partially outside the frame so we
++		// can grab it by its outside portion (clicking inside the frame would select the frame).
++		const frameId = dragCreateFrame({ down: [0, 0], move: [100, 100], up: [100, 100] })
++		const rectId = dragCreateRect({ down: [80, 50], move: [120, 60], up: [120, 60] })
++		expect(editor.getShape(rectId)!.parentId).toBe(frameId)
++
++		// Drag the rect entirely out of the frame by clicking on the part that's outside
++		editor.pointerDown(110, 50)
++		editor.pointerMove(140, 50)
++		expect(editor.getShape(rectId)!.parentId).toBe(frameId)
++		editor.pointerUp(140, 50)
++
++		// The rect should still be parented to the frame because the frame pins geo shapes
++		expect(editor.getShape(rectId)!.parentId).toBe(frameId)
++	})
++
+ 	it('can be snapped to when dragging other shapes', () => {
+ 		editor.setCurrentTool('frame')
+ 		editor.pointerDown(100, 100).pointerMove(200, 200).pointerUp(200, 200)

@@ -1,0 +1,1017 @@
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index bea039376046..83b97362e512 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -1928,6 +1928,12 @@ export function getGlobalWindow(): Window & typeof globalThis;
+ // @public
+ export function getIncrementedName(name: string, others: string[]): string;
+ 
++// @public
++export function getOverlayDisplayValues<Overlay extends TLOverlay, DisplayValues extends object>(util: {
++    editor: Editor;
++    options: OverlayOptionsWithDisplayValues<Overlay, DisplayValues>;
++}, overlay: Overlay, colorMode?: 'dark' | 'light'): DisplayValues;
++
+ // @internal (undocumented)
+ export function getOwnerDocument(nodeOrDocument: Document | Node | null | undefined): Document;
+ 
+@@ -2626,6 +2632,14 @@ export class OverlayManager {
+     setHoveredOverlay(id: null | string): void;
+ }
+ 
++// @public (undocumented)
++export interface OverlayOptionsWithDisplayValues<Overlay extends TLOverlay, DisplayValues extends object> {
++    // (undocumented)
++    getCustomDisplayValues(editor: Editor, overlay: Overlay, theme: TLTheme, colorMode: 'dark' | 'light'): Partial<DisplayValues>;
++    // (undocumented)
++    getDefaultDisplayValues(editor: Editor, overlay: Overlay, theme: TLTheme, colorMode: 'dark' | 'light'): DisplayValues;
++}
++
+ // @public
+ export abstract class OverlayUtil<T extends TLOverlay = TLOverlay> {
+     constructor(editor: Editor);
+diff --git a/packages/editor/src/index.ts b/packages/editor/src/index.ts
+index 15db8a1696cf..b5b9bd4ab6ae 100644
+--- a/packages/editor/src/index.ts
++++ b/packages/editor/src/index.ts
+@@ -174,6 +174,10 @@ export {
+ 	type TLShapeUtilCanvasSvgDef,
+ 	type TLShapeUtilConstructor,
+ } from './lib/editor/shapes/ShapeUtil'
++export {
++	getOverlayDisplayValues,
++	type OverlayOptionsWithDisplayValues,
++} from './lib/editor/overlays/getOverlayDisplayValues'
+ export { OverlayManager, type TLOverlayEntry } from './lib/editor/overlays/OverlayManager'
+ export {
+ 	OverlayUtil,
+diff --git a/packages/editor/src/lib/editor/overlays/getOverlayDisplayValues.ts b/packages/editor/src/lib/editor/overlays/getOverlayDisplayValues.ts
+new file mode 100644
+index 000000000000..972f210ea0c9
+--- /dev/null
++++ b/packages/editor/src/lib/editor/overlays/getOverlayDisplayValues.ts
+@@ -0,0 +1,51 @@
++import { TLTheme } from '@tldraw/tlschema'
++import type { Editor } from '../Editor'
++import { TLOverlay } from './OverlayUtil'
++
++/** @public */
++export interface OverlayOptionsWithDisplayValues<
++	Overlay extends TLOverlay,
++	DisplayValues extends object,
++> {
++	getDefaultDisplayValues(
++		editor: Editor,
++		overlay: Overlay,
++		theme: TLTheme,
++		colorMode: 'light' | 'dark'
++	): DisplayValues
++	getCustomDisplayValues(
++		editor: Editor,
++		overlay: Overlay,
++		theme: TLTheme,
++		colorMode: 'light' | 'dark'
++	): Partial<DisplayValues>
++}
++
++const dvCache = new WeakMap<
++	TLOverlay,
++	{ theme: TLTheme; colorMode: 'light' | 'dark'; values: object }
++>()
++
++/**
++ * Get the resolved display values for an overlay, merging the base values with any overrides.
++ *
++ * @public
++ */
++export function getOverlayDisplayValues<Overlay extends TLOverlay, DisplayValues extends object>(
++	util: { editor: Editor; options: OverlayOptionsWithDisplayValues<Overlay, DisplayValues> },
++	overlay: Overlay,
++	colorMode?: 'light' | 'dark'
++): DisplayValues {
++	const theme = util.editor.getCurrentTheme()
++	const resolvedColorMode = colorMode ?? util.editor.getColorMode()
++	const cached = dvCache.get(overlay)
++	if (cached && cached.theme === theme && cached.colorMode === resolvedColorMode) {
++		return cached.values as DisplayValues
++	}
++	const values = {
++		...util.options.getDefaultDisplayValues(util.editor, overlay, theme, resolvedColorMode),
++		...util.options.getCustomDisplayValues(util.editor, overlay, theme, resolvedColorMode),
++	}
++	dvCache.set(overlay, { theme, colorMode: resolvedColorMode, values })
++	return values
++}
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index 94c46b70e5ba..a413a43e6322 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -43,6 +43,7 @@ import { MigrationFailureReason } from '@tldraw/editor';
+ import { MigrationSequence } from '@tldraw/store';
+ import { NamedExoticComponent } from 'react';
+ import { Node as Node_2 } from '@tiptap/pm/model';
++import { OverlayOptionsWithDisplayValues } from '@tldraw/editor';
+ import { OverlayUtil } from '@tldraw/editor';
+ import { PerfectDashTerminal } from '@tldraw/editor';
+ import { PointerEvent as PointerEvent_2 } from 'react';
+@@ -124,7 +125,6 @@ import { TLImageAsset } from '@tldraw/editor';
+ import { TLImageExportOptions } from '@tldraw/editor';
+ import { TLImageShape } from '@tldraw/editor';
+ import { TLImageShapeProps } from '@tldraw/editor';
+-import { TLIndicatorPath } from '@tldraw/editor';
+ import { TLKeyboardEventInfo } from '@tldraw/editor';
+ import { TLLineShape } from '@tldraw/editor';
+ import { TLLineShapePoint } from '@tldraw/editor';
+@@ -260,8 +260,6 @@ export class ArrowHintOverlayUtil extends OverlayUtil<TLArrowHintOverlay> {
+     };
+     // (undocumented)
+     render(ctx: CanvasRenderingContext2D, overlays: TLArrowHintOverlay[]): void;
+-    // @internal (undocumented)
+-    _renderIndicatorPath(ctx: CanvasRenderingContext2D, indicatorPath: TLIndicatorPath): void;
+     // (undocumented)
+     static type: string;
+ }
+@@ -616,10 +614,7 @@ export class BrushOverlayUtil extends OverlayUtil<TLBrushOverlay> {
+     // (undocumented)
+     isActive(): boolean;
+     // (undocumented)
+-    options: {
+-        lineWidth: number;
+-        zIndex: number;
+-    };
++    options: BrushOverlayUtilOptions;
+     // (undocumented)
+     render(ctx: CanvasRenderingContext2D, overlays: TLBrushOverlay[]): void;
+     // (undocumented)
+@@ -628,6 +623,22 @@ export class BrushOverlayUtil extends OverlayUtil<TLBrushOverlay> {
+     static type: string;
+ }
+ 
++// @public (undocumented)
++export interface BrushOverlayUtilDisplayValues {
++    // (undocumented)
++    fillColor: string;
++    // (undocumented)
++    lineWidth: number;
++    // (undocumented)
++    strokeColor: string;
++}
++
++// @public (undocumented)
++export interface BrushOverlayUtilOptions extends OverlayOptionsWithDisplayValues<TLBrushOverlay, BrushOverlayUtilDisplayValues> {
++    // (undocumented)
++    zIndex: number;
++}
++
+ // @internal (undocumented)
+ export function buildFromV1Document(editor: Editor, _document: unknown): void;
+ 
+@@ -711,16 +722,6 @@ export class CollaboratorHintOverlayUtil extends OverlayUtil<TLCollaboratorHintO
+     getOverlays(): TLCollaboratorHintOverlay[];
+     // (undocumented)
+     isActive(): boolean;
+-    // @internal (undocumented)
+-    _isCursorInViewport(cursor: {
+-        x: number;
+-        y: number;
+-    }, viewport: {
+-        maxX: number;
+-        maxY: number;
+-        minX: number;
+-        minY: number;
+-    }, zoom: number): boolean;
+     // (undocumented)
+     options: {
+         lineWidth: number;
+diff --git a/packages/tldraw/src/index.ts b/packages/tldraw/src/index.ts
+index 0d454a5895c4..cc5cd4c53389 100644
+--- a/packages/tldraw/src/index.ts
++++ b/packages/tldraw/src/index.ts
+@@ -64,7 +64,12 @@ export {
+ } from './lib/overlays/ArrowBindingHintOverlayUtil'
+ export { ArrowBindingUtil } from './lib/bindings/arrow/ArrowBindingUtil'
+ export { ArrowHintOverlayUtil, type TLArrowHintOverlay } from './lib/overlays/ArrowHintOverlayUtil'
+-export { BrushOverlayUtil, type TLBrushOverlay } from './lib/overlays/BrushOverlayUtil'
++export {
++	BrushOverlayUtil,
++	type BrushOverlayUtilDisplayValues,
++	type BrushOverlayUtilOptions,
++	type TLBrushOverlay,
++} from './lib/overlays/BrushOverlayUtil'
+ export { ZoomBrushOverlayUtil, type TLZoomBrushOverlay } from './lib/overlays/ZoomBrushOverlayUtil'
+ export { ScribbleOverlayUtil, type TLScribbleOverlay } from './lib/overlays/ScribbleOverlayUtil'
+ export {
+diff --git a/packages/tldraw/src/lib/overlays/ArrowHintOverlayUtil.ts b/packages/tldraw/src/lib/overlays/ArrowHintOverlayUtil.ts
+index f6616f4d5471..68239e56b4c3 100644
+--- a/packages/tldraw/src/lib/overlays/ArrowHintOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/ArrowHintOverlayUtil.ts
+@@ -30,6 +30,11 @@ const indicatorPathCache = createComputedCache(
+ 	(editor: Editor, shape: TLShape) => {
+ 		const util = editor.getShapeUtil(shape)
+ 		return util.getIndicatorPath(shape)
++	},
++	{
++		areRecordsEqual(a, b) {
++			return a.props === b.props
++		},
+ 	}
+ )
+ 
+@@ -185,7 +190,7 @@ export class ArrowHintOverlayUtil extends OverlayUtil<TLArrowHintOverlay> {
+ 	}
+ 
+ 	/** @internal */
+-	_renderIndicatorPath(ctx: CanvasRenderingContext2D, indicatorPath: TLIndicatorPath) {
++	private _renderIndicatorPath(ctx: CanvasRenderingContext2D, indicatorPath: TLIndicatorPath) {
+ 		if (indicatorPath instanceof Path2D) {
+ 			ctx.stroke(indicatorPath)
+ 		} else {
+diff --git a/packages/tldraw/src/lib/overlays/BrushOverlayUtil.ts b/packages/tldraw/src/lib/overlays/BrushOverlayUtil.ts
+index 17b74e581f74..12bc58dfb546 100644
+--- a/packages/tldraw/src/lib/overlays/BrushOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/BrushOverlayUtil.ts
+@@ -1,4 +1,9 @@
+-import { OverlayUtil, TLOverlay } from '@tldraw/editor'
++import {
++	getOverlayDisplayValues,
++	OverlayOptionsWithDisplayValues,
++	OverlayUtil,
++	TLOverlay,
++} from '@tldraw/editor'
+ 
+ /** @public */
+ export interface TLBrushOverlay extends TLOverlay {
+@@ -10,6 +15,21 @@ export interface TLBrushOverlay extends TLOverlay {
+ 	}
+ }
+ 
++/** @public */
++export interface BrushOverlayUtilDisplayValues {
++	fillColor: string
++	strokeColor: string
++	lineWidth: number
++}
++
++/** @public */
++export interface BrushOverlayUtilOptions extends OverlayOptionsWithDisplayValues<
++	TLBrushOverlay,
++	BrushOverlayUtilDisplayValues
++> {
++	zIndex: number
++}
++
+ /**
+  * Overlay util for the selection brush rectangle.
+  *
+@@ -17,7 +37,20 @@ export interface TLBrushOverlay extends TLOverlay {
+  */
+ export class BrushOverlayUtil extends OverlayUtil<TLBrushOverlay> {
+ 	static override type = 'brush'
+-	override options = { zIndex: 300, lineWidth: 1 }
++	override options: BrushOverlayUtilOptions = {
++		zIndex: 300,
++		getDefaultDisplayValues(editor, _overlay, theme, colorMode): BrushOverlayUtilDisplayValues {
++			const colors = theme.colors[colorMode]
++			return {
++				fillColor: colors.brushFill,
++				strokeColor: colors.brushStroke,
++				lineWidth: 1,
++			}
++		},
++		getCustomDisplayValues(): Partial<BrushOverlayUtilDisplayValues> {
++			return {}
++		},
++	}
+ 
+ 	override isActive(): boolean {
+ 		return this.editor.getInstanceState().brush !== null
+@@ -46,14 +79,14 @@ export class BrushOverlayUtil extends OverlayUtil<TLBrushOverlay> {
+ 
+ 		const { x, y, w, h } = overlay.props
+ 		const zoom = this.editor.getZoomLevel()
+-		const colors = this.editor.getCurrentTheme().colors[this.editor.getColorMode()]
++		const dv = getOverlayDisplayValues(this, overlay)
+ 
+ 		// Use fillRect / strokeRect to avoid path construction overhead
+-		ctx.fillStyle = colors.brushFill
++		ctx.fillStyle = dv.fillColor
+ 		ctx.fillRect(x, y, w, h)
+ 
+-		ctx.lineWidth = this.options.lineWidth / zoom
+-		ctx.strokeStyle = colors.brushStroke
++		ctx.lineWidth = dv.lineWidth / zoom
++		ctx.strokeStyle = dv.strokeColor
+ 		ctx.strokeRect(x, y, w, h)
+ 	}
+ 
+@@ -65,11 +98,11 @@ export class BrushOverlayUtil extends OverlayUtil<TLBrushOverlay> {
+ 		const overlay = overlays[0]
+ 		if (!overlay) return
+ 		const { x, y, w, h } = overlay.props
+-		const colors = this.editor.getCurrentTheme().colors[this.editor.getColorMode()]
+-		ctx.fillStyle = colors.brushFill
++		const dv = getOverlayDisplayValues(this, overlay)
++		ctx.fillStyle = dv.fillColor
+ 		ctx.fillRect(x, y, w, h)
+-		ctx.lineWidth = this.options.lineWidth / zoom
+-		ctx.strokeStyle = colors.brushStroke
++		ctx.lineWidth = dv.lineWidth / zoom
++		ctx.strokeStyle = dv.strokeColor
+ 		ctx.strokeRect(x, y, w, h)
+ 	}
+ }
+diff --git a/packages/tldraw/src/lib/overlays/CollaboratorCursorOverlayUtil.ts b/packages/tldraw/src/lib/overlays/CollaboratorCursorOverlayUtil.ts
+index f52d8e61c077..9e8e4576c03d 100644
+--- a/packages/tldraw/src/lib/overlays/CollaboratorCursorOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/CollaboratorCursorOverlayUtil.ts
+@@ -73,7 +73,7 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 	private _truncateCache = new Map<string, string>()
+ 
+ 	override isActive(): boolean {
+-		return this.getOverlays().length > 0
++		return this.editor.getVisibleCollaboratorsOnCurrentPage().some((presence) => !!presence.cursor)
+ 	}
+ 
+ 	override getOverlays(): TLCollaboratorCursorOverlay[] {
+@@ -105,10 +105,13 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 		const zoom = this.editor.getZoomLevel()
+ 		const scale = 1 / zoom
+ 		const viewport = this.editor.getViewportPageBounds()
++		const viewportMarginX = 12 / zoom
++		const viewportMarginY = 16 / zoom
+ 		const labelFontFamily = getLabelFontFamily(
+ 			this.editor.getContainer(),
+ 			this.editor.getContainerWindow()
+ 		)
++		let paths: ReturnType<typeof getCursorPaths> | null = null
+ 
+ 		for (const overlay of overlays) {
+ 			const { x, y, color, name, chatMessage } = overlay.props
+@@ -117,10 +120,10 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 			// the cursor glyph). Off-screen cursors still show on the minimap
+ 			// via `renderMinimap`.
+ 			if (
+-				x < viewport.minX - 12 / zoom ||
+-				y < viewport.minY - 16 / zoom ||
+-				x > viewport.maxX - 12 / zoom ||
+-				y > viewport.maxY - 16 / zoom
++				x < viewport.minX - viewportMarginX ||
++				y < viewport.minY - viewportMarginY ||
++				x > viewport.maxX - viewportMarginX ||
++				y > viewport.maxY - viewportMarginY
+ 			) {
+ 				continue
+ 			}
+@@ -130,7 +133,7 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 			ctx.scale(scale, scale)
+ 
+ 			// Draw cursor arrow
+-			const paths = getCursorPaths()
++			paths ??= getCursorPaths()
+ 
+ 			// Shadow
+ 			ctx.fillStyle = 'rgba(0,0,0,0.2)'
+@@ -199,7 +202,9 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 		color: string,
+ 		fontFamily: string
+ 	) {
+-		ctx.font = `${this.options.fontSize}px ${fontFamily}`
++		const { fontSize, nameMaxWidth } = this.options
++		ctx.font = `${fontSize}px ${fontFamily}`
++		const text = this._truncateText(ctx, name, nameMaxWidth)
+ 		const x = 13
+ 		const y = -2
+ 
+@@ -208,11 +213,11 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 		ctx.lineWidth = 3
+ 		ctx.lineJoin = 'round'
+ 		ctx.textBaseline = 'top'
+-		ctx.strokeText(name, x, y)
++		ctx.strokeText(text, x, y)
+ 
+ 		// Text fill
+ 		ctx.fillStyle = color
+-		ctx.fillText(name, x, y)
++		ctx.fillText(text, x, y)
+ 	}
+ 
+ 	/** Chat bubble - colored background with white text */
+@@ -265,20 +270,31 @@ export class CollaboratorCursorOverlayUtil extends OverlayUtil<TLCollaboratorCur
+ 	}
+ 
+ 	private _truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+-		const key = `${maxWidth}|${text}`
++		const key = `${ctx.font}|${maxWidth}|${text}`
+ 		const cached = this._truncateCache.get(key)
+-		if (cached) return cached
++		if (cached !== undefined) return cached
++
+ 		if (ctx.measureText(text).width <= maxWidth) {
+-			if (this._truncateCache.size > TRUNCATE_CACHE_MAX) this._truncateCache.clear()
+-			this._truncateCache.set(key, text)
+-			return text
++			return this._setTruncatedTextCache(key, text)
+ 		}
+-		let truncated = text
+-		while (truncated.length > 0 && ctx.measureText(truncated + '…').width > maxWidth) {
+-			truncated = truncated.slice(0, -1)
++
++		const ellipsis = '…'
++		let low = 0
++		let high = text.length
++		while (low < high) {
++			const mid = Math.ceil((low + high) / 2)
++			if (ctx.measureText(text.slice(0, mid) + ellipsis).width <= maxWidth) {
++				low = mid
++			} else {
++				high = mid - 1
++			}
+ 		}
+-		const result = truncated + '…'
+-		if (this._truncateCache.size > TRUNCATE_CACHE_MAX) this._truncateCache.clear()
++
++		return this._setTruncatedTextCache(key, text.slice(0, low) + ellipsis)
++	}
++
++	private _setTruncatedTextCache(key: string, result: string): string {
++		if (this._truncateCache.size >= TRUNCATE_CACHE_MAX) this._truncateCache.clear()
+ 		this._truncateCache.set(key, result)
+ 		return result
+ 	}
+diff --git a/packages/tldraw/src/lib/overlays/CollaboratorHintOverlayUtil.ts b/packages/tldraw/src/lib/overlays/CollaboratorHintOverlayUtil.ts
+index d0d7b318cc67..cdc0856d4fe5 100644
+--- a/packages/tldraw/src/lib/overlays/CollaboratorHintOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/CollaboratorHintOverlayUtil.ts
+@@ -95,7 +95,7 @@ export class CollaboratorHintOverlayUtil extends OverlayUtil<TLCollaboratorHintO
+ 	}
+ 
+ 	/** @internal */
+-	_isCursorInViewport(
++	private _isCursorInViewport(
+ 		cursor: { x: number; y: number },
+ 		viewport: { minX: number; minY: number; maxX: number; maxY: number },
+ 		zoom: number
+diff --git a/packages/tldraw/src/lib/overlays/CollaboratorShapeIndicatorOverlayUtil.ts b/packages/tldraw/src/lib/overlays/CollaboratorShapeIndicatorOverlayUtil.ts
+index ee9ebd7fe374..32327aef34f2 100644
+--- a/packages/tldraw/src/lib/overlays/CollaboratorShapeIndicatorOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/CollaboratorShapeIndicatorOverlayUtil.ts
+@@ -4,7 +4,7 @@ import { OverlayUtil, strokeShapeIndicators, TLOverlay, TLShapeId } from '@tldra
+ export interface TLCollaboratorShapeIndicatorOverlay extends TLOverlay {
+ 	props: {
+ 		// One entry per peer, batching the shape IDs they have selected so the
+-		// renderer can issue a single stroke call per color.
++		// renderer can issue a single stroke call per collaborator.
+ 		indicators: Array<{ color: string; shapeIds: TLShapeId[] }>
+ 	}
+ }
+@@ -25,15 +25,22 @@ export class CollaboratorShapeIndicatorOverlayUtil extends OverlayUtil<TLCollabo
+ 	override options = { zIndex: 49, lineWidth: 1.5, alpha: 0.7 }
+ 
+ 	override isActive(): boolean {
+-		return this.editor.getVisibleCollaboratorsOnCurrentPage().length > 0
++		return this.editor
++			.getVisibleCollaboratorsOnCurrentPage()
++			.some((presence) => presence.selectedShapeIds.length > 0)
+ 	}
+ 
+ 	override getOverlays(): TLCollaboratorShapeIndicatorOverlay[] {
+ 		const editor = this.editor
++		const selectedPresences = editor
++			.getVisibleCollaboratorsOnCurrentPage()
++			.filter((presence) => presence.selectedShapeIds.length > 0)
++		if (selectedPresences.length === 0) return []
++
+ 		const renderingShapeIds = new Set(editor.getRenderingShapes().map((s) => s.id))
+ 
+ 		const indicators: TLCollaboratorShapeIndicatorOverlay['props']['indicators'] = []
+-		for (const presence of editor.getVisibleCollaboratorsOnCurrentPage()) {
++		for (const presence of selectedPresences) {
+ 			const visibleShapeIds = presence.selectedShapeIds.filter(
+ 				(id) => renderingShapeIds.has(id) && !editor.isShapeHidden(id)
+ 			)
+@@ -67,7 +74,7 @@ export class CollaboratorShapeIndicatorOverlayUtil extends OverlayUtil<TLCollabo
+ 		ctx.lineWidth = this.options.lineWidth / zoom
+ 		ctx.globalAlpha = this.options.alpha
+ 
+-		// One stroke call per peer (per unique color).
++		// One stroke call per collaborator.
+ 		for (const { color, shapeIds } of overlay.props.indicators) {
+ 			ctx.strokeStyle = color
+ 			strokeShapeIndicators(editor, ctx, shapeIds)
+diff --git a/packages/tldraw/src/lib/overlays/SelectionForegroundOverlayUtil.ts b/packages/tldraw/src/lib/overlays/SelectionForegroundOverlayUtil.ts
+index 21de1384cbd8..90f35e5954fa 100644
+--- a/packages/tldraw/src/lib/overlays/SelectionForegroundOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/SelectionForegroundOverlayUtil.ts
+@@ -47,9 +47,7 @@ export interface TLSelectionForegroundOverlay extends TLOverlay {
+ 
+ interface SelectionState {
+ 	bounds: Box
+-	expandedBounds: Box
+ 	onlyShape: TLShape | null
+-	isLockedShape: boolean
+ 	isCoarsePointer: boolean
+ 	zoom: number
+ 	rotation: number
+@@ -61,10 +59,7 @@ interface SelectionState {
+ 	targetSizeY: number
+ 	expandDx: number
+ 	expandDy: number
+-	isTinyX: boolean
+-	isTinyY: boolean
+ 	isSmallX: boolean
+-	isSmallY: boolean
+ 	shouldDisplayControls: boolean
+ 	shouldDisplayBox: boolean
+ 	showCropHandles: boolean
+@@ -77,6 +72,11 @@ interface SelectionState {
+ 	showOnlyOneHandle: boolean
+ }
+ 
++interface SelectionForegroundColors {
++	strokeColor: string
++	bgColor: string
++}
++
+ /**
+  * Overlay util for selection foreground handles (resize corners/edges, rotate corners, mobile rotate).
+  * Each interactive element of the selection foreground becomes its own overlay instance.
+@@ -150,11 +150,12 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		ctx.rotate(state.rotation)
+ 		ctx.translate(state.expandDx, state.expandDy)
+ 
+-		this._renderSelectionBox(ctx, state)
+-		this._renderResizeCorners(ctx, state)
+-		this._renderCropHandles(ctx, state)
+-		this._renderMobileRotateHandle(ctx, state)
+-		this._renderTextResizeHandles(ctx, state)
++		const colors = this._getThemeColors()
++		this._renderSelectionBox(ctx, state, colors)
++		this._renderResizeCorners(ctx, state, colors)
++		this._renderCropHandles(ctx, state, colors)
++		this._renderMobileRotateHandle(ctx, state, colors)
++		this._renderTextResizeHandles(ctx, state, colors)
+ 
+ 		ctx.restore()
+ 	}
+@@ -290,22 +291,28 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 
+ 	// --- Rendering (all helpers assume ctx is in local selection space) ---
+ 
+-	private _renderSelectionBox(ctx: CanvasRenderingContext2D, state: SelectionState) {
++	private _renderSelectionBox(
++		ctx: CanvasRenderingContext2D,
++		state: SelectionState,
++		colors: SelectionForegroundColors
++	) {
+ 		if (!state.shouldDisplayBox) return
+-		const { strokeColor } = this._getThemeColors()
+-		ctx.strokeStyle = strokeColor
++		ctx.strokeStyle = colors.strokeColor
+ 		ctx.lineWidth = this.options.lineWidth / state.zoom
+ 		ctx.strokeRect(0, 0, state.width, state.height)
+ 	}
+ 
+-	private _renderResizeCorners(ctx: CanvasRenderingContext2D, state: SelectionState) {
++	private _renderResizeCorners(
++		ctx: CanvasRenderingContext2D,
++		state: SelectionState,
++		colors: SelectionForegroundColors
++	) {
+ 		if (!state.showResizeHandles) return
+ 
+-		const { strokeColor, bgColor } = this._getThemeColors()
+ 		const { size, width, height, hideAlternateCornerHandles, showOnlyOneHandle, zoom } = state
+ 
+-		ctx.fillStyle = bgColor
+-		ctx.strokeStyle = strokeColor
++		ctx.fillStyle = colors.bgColor
++		ctx.strokeStyle = colors.strokeColor
+ 		ctx.lineWidth = this.options.lineWidth / zoom
+ 
+ 		const drawCorner = (x: number, y: number, hidden: boolean) => {
+@@ -320,16 +327,19 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		drawCorner(0, height, hideAlternateCornerHandles) // bottom-left
+ 	}
+ 
+-	private _renderCropHandles(ctx: CanvasRenderingContext2D, state: SelectionState) {
++	private _renderCropHandles(
++		ctx: CanvasRenderingContext2D,
++		state: SelectionState,
++		colors: SelectionForegroundColors
++	) {
+ 		if (!state.showCropHandles) return
+ 
+-		const { strokeColor } = this._getThemeColors()
+ 		const { size, width, height, hideAlternateCropHandles } = state
+ 		const cropStrokeWidth = size / 3
+ 		const offset = cropStrokeWidth / 2
+ 
+ 		ctx.beginPath()
+-		ctx.strokeStyle = strokeColor
++		ctx.strokeStyle = colors.strokeColor
+ 		ctx.lineWidth = cropStrokeWidth
+ 		ctx.lineCap = 'butt'
+ 		ctx.lineJoin = 'miter'
+@@ -375,15 +385,18 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		ctx.stroke()
+ 	}
+ 
+-	private _renderMobileRotateHandle(ctx: CanvasRenderingContext2D, state: SelectionState) {
++	private _renderMobileRotateHandle(
++		ctx: CanvasRenderingContext2D,
++		state: SelectionState,
++		colors: SelectionForegroundColors
++	) {
+ 		if (!state.showMobileRotateHandle) return
+ 
+-		const { strokeColor, bgColor } = this._getThemeColors()
+ 		const { cx, cy } = this._getMobileRotateCenter(state)
+ 		const fgRadius = state.size / SQUARE_ROOT_PI
+ 
+-		ctx.fillStyle = bgColor
+-		ctx.strokeStyle = strokeColor
++		ctx.fillStyle = colors.bgColor
++		ctx.strokeStyle = colors.strokeColor
+ 		ctx.lineWidth = this.options.lineWidth / state.zoom
+ 		ctx.beginPath()
+ 		ctx.arc(cx, cy, fgRadius, 0, Math.PI * 2)
+@@ -391,7 +404,11 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		ctx.stroke()
+ 	}
+ 
+-	private _renderTextResizeHandles(ctx: CanvasRenderingContext2D, state: SelectionState) {
++	private _renderTextResizeHandles(
++		ctx: CanvasRenderingContext2D,
++		state: SelectionState,
++		colors: SelectionForegroundColors
++	) {
+ 		const {
+ 			shouldDisplayControls,
+ 			isCoarsePointer,
+@@ -409,11 +426,10 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		const textHandleHeight = Math.min(24 / zoom, height - targetSizeY * 3)
+ 		if (textHandleHeight * zoom < 4) return
+ 
+-		const { strokeColor } = this._getThemeColors()
+ 		const hw = size / 2
+ 		const r = size / 4
+ 
+-		ctx.fillStyle = strokeColor
++		ctx.fillStyle = colors.strokeColor
+ 		ctx.beginPath()
+ 		ctx.roundRect(0 - hw / 2, height / 2 - textHandleHeight / 2, hw, textHandleHeight, r)
+ 		ctx.fill()
+@@ -438,18 +454,20 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		const onlyShape = editor.getOnlySelectedShape()
+ 		if (onlyShape && editor.isShapeHidden(onlyShape)) return null
+ 
++		const onlyShapeUtil = onlyShape ? editor.getShapeUtil(onlyShape) : null
+ 		const isLockedShape = !!(onlyShape && editor.isShapeOrAncestorLocked(onlyShape))
+ 
+-		const expandOutlineBy = onlyShape
+-			? editor.getShapeUtil(onlyShape).expandSelectionOutlinePx(onlyShape)
+-			: 0
++		const expandOutlineBy =
++			onlyShape && onlyShapeUtil ? onlyShapeUtil.expandSelectionOutlinePx(onlyShape) : 0
+ 		const expandedBounds =
+ 			expandOutlineBy instanceof Box
+ 				? bounds.clone().expand(expandOutlineBy).zeroFix()
+ 				: bounds.clone().expandBy(expandOutlineBy).zeroFix()
+ 
+-		const isCoarsePointer = editor.getInstanceState().isCoarsePointer
+-		const isChangingStyle = editor.getInstanceState().isChangingStyle
++		const instanceState = editor.getInstanceState()
++		const isCoarsePointer = instanceState.isCoarsePointer
++		const isChangingStyle = instanceState.isChangingStyle
++		const isReadonly = editor.getIsReadonly()
+ 		const zoom = editor.getZoomLevel()
+ 		const rotation = editor.getSelectionRotation()
+ 
+@@ -479,46 +497,47 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 				'select.crop.idle'
+ 			) &&
+ 			!isChangingStyle &&
+-			!editor.getIsReadonly()
++			!isReadonly
+ 
+ 		const showCropHandles =
+ 			editor.isInAny(
+ 				'select.crop.idle',
+ 				'select.crop.pointing_crop',
+ 				'select.crop.pointing_crop_handle'
+-			) && !editor.getIsReadonly()
++			) && !isReadonly
++
++		const canOnlyShapeResize =
++			onlyShape && onlyShapeUtil
++				? onlyShapeUtil.canResize(onlyShape) && !onlyShapeUtil.hideResizeHandles(onlyShape)
++				: true
++		const hideOnlyShapeRotateHandle =
++			onlyShape && onlyShapeUtil ? onlyShapeUtil.hideRotateHandle(onlyShape) : false
++		const hideOnlyShapeSelectionBounds =
++			onlyShape && onlyShapeUtil ? onlyShapeUtil.hideSelectionBoundsFg(onlyShape) : false
+ 
+ 		const showResizeHandles =
+-			shouldDisplayControls &&
+-			!isLockedShape &&
+-			!showCropHandles &&
+-			(onlyShape
+-				? editor.getShapeUtil(onlyShape).canResize(onlyShape) &&
+-					!editor.getShapeUtil(onlyShape).hideResizeHandles(onlyShape)
+-				: true)
++			shouldDisplayControls && !isLockedShape && !showCropHandles && canOnlyShapeResize
+ 
+ 		const showCornerRotateHandles =
+ 			shouldDisplayControls &&
+ 			!isLockedShape &&
+ 			!isCoarsePointer &&
+ 			!(isTinyX || isTinyY) &&
+-			(onlyShape ? !editor.getShapeUtil(onlyShape).hideRotateHandle(onlyShape) : true)
++			!hideOnlyShapeRotateHandle
+ 
+ 		const showMobileRotateHandle =
+ 			shouldDisplayControls &&
+ 			!isLockedShape &&
+ 			isCoarsePointer &&
+ 			(!isSmallX || !isSmallY) &&
+-			(onlyShape ? !editor.getShapeUtil(onlyShape).hideRotateHandle(onlyShape) : true)
++			!hideOnlyShapeRotateHandle
+ 
+ 		const hideAlternateCornerHandles = isTinyX || isTinyY
+ 		const hideAlternateCropHandles = isSmallCropX || isSmallCropY
+ 		const showOnlyOneHandle = isTinyX && isTinyY
+ 		const showHandles = showResizeHandles || showCropHandles
+ 
+-		const showSelectionBounds =
+-			(onlyShape ? !editor.getShapeUtil(onlyShape).hideSelectionBoundsFg(onlyShape) : true) &&
+-			!isChangingStyle
++		const showSelectionBounds = !hideOnlyShapeSelectionBounds && !isChangingStyle
+ 
+ 		const shouldDisplayBox =
+ 			(showSelectionBounds &&
+@@ -540,9 +559,7 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 
+ 		return {
+ 			bounds,
+-			expandedBounds,
+ 			onlyShape,
+-			isLockedShape,
+ 			isCoarsePointer,
+ 			zoom,
+ 			rotation,
+@@ -554,10 +571,7 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 			targetSizeY,
+ 			expandDx,
+ 			expandDy,
+-			isTinyX,
+-			isTinyY,
+ 			isSmallX,
+-			isSmallY,
+ 			shouldDisplayControls,
+ 			shouldDisplayBox,
+ 			showCropHandles,
+@@ -588,7 +602,7 @@ export class SelectionForegroundOverlayUtil extends OverlayUtil<TLSelectionForeg
+ 		return { cx, cy }
+ 	}
+ 
+-	private _getThemeColors(): { strokeColor: string; bgColor: string } {
++	private _getThemeColors(): SelectionForegroundColors {
+ 		const editor = this.editor
+ 		const themeColors = editor.getCurrentTheme().colors[editor.getColorMode()]
+ 		return {
+diff --git a/packages/tldraw/src/lib/overlays/ShapeHandleOverlayUtil.ts b/packages/tldraw/src/lib/overlays/ShapeHandleOverlayUtil.ts
+index 7f70550c2fbf..327723e7d449 100644
+--- a/packages/tldraw/src/lib/overlays/ShapeHandleOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/ShapeHandleOverlayUtil.ts
+@@ -30,8 +30,7 @@ export class ShapeHandleOverlayUtil extends OverlayUtil<TLShapeHandleOverlay> {
+ 
+ 	override isActive(): boolean {
+ 		const editor = this.editor
+-		const { isReadonly, isChangingStyle } = editor.getInstanceState()
+-		if (isReadonly || isChangingStyle) return false
++		if (editor.getIsReadonly() || editor.getInstanceState().isChangingStyle) return false
+ 
+ 		const onlySelectedShape = editor.getOnlySelectedShape()
+ 		if (!onlySelectedShape) return false
+@@ -65,21 +64,32 @@ export class ShapeHandleOverlayUtil extends OverlayUtil<TLShapeHandleOverlay> {
+ 		const minDist =
+ 			((isCoarse ? editor.options.coarseHandleRadius : editor.options.handleRadius) / zoom) * 2
+ 
++		const vertexHandles = handles.filter((handle) => handle.type === 'vertex')
++		const vertexHandlesForHitTest: TLHandle[] = []
++		const otherHandlesForHitTest: TLHandle[] = []
++
+ 		// Vertex handles come first so they win hit-testing against overlapping
+ 		// virtual/create handles (e.g., a line's midpoint create handle that
+ 		// coincides with its endpoint vertices when a segment is very short).
+ 		// `render` iterates this array in reverse so the painted order puts
+ 		// vertex handles on top visually, matching the main branch's paint
+ 		// order where vertex handles were sorted last.
+-		const filtered = handles
+-			.filter(
+-				(handle) =>
+-					handle.type !== 'virtual' ||
+-					!handles.some((h) => h !== handle && h.type === 'vertex' && Vec.Dist(handle, h) < minDist)
+-			)
+-			.sort((a) => (a.type === 'vertex' ? -1 : 1))
+-
+-		return filtered.map((handle) => ({
++		for (const handle of handles) {
++			if (
++				handle.type === 'virtual' &&
++				vertexHandles.some((vertexHandle) => Vec.Dist(handle, vertexHandle) < minDist)
++			) {
++				continue
++			}
++
++			if (handle.type === 'vertex') {
++				vertexHandlesForHitTest.push(handle)
++			} else {
++				otherHandlesForHitTest.push(handle)
++			}
++		}
++
++		return vertexHandlesForHitTest.concat(otherHandlesForHitTest).map((handle) => ({
+ 			id: `handle:${onlySelectedShape.id}:${handle.id}`,
+ 			type: 'shape_handle',
+ 			props: {
+diff --git a/packages/tldraw/src/lib/overlays/SnapIndicatorOverlayUtil.ts b/packages/tldraw/src/lib/overlays/SnapIndicatorOverlayUtil.ts
+index ebf1a71c66f5..7d3191b53a3f 100644
+--- a/packages/tldraw/src/lib/overlays/SnapIndicatorOverlayUtil.ts
++++ b/packages/tldraw/src/lib/overlays/SnapIndicatorOverlayUtil.ts
+@@ -60,12 +60,24 @@ export class SnapIndicatorOverlayUtil extends OverlayUtil<TLSnapIndicatorOverlay
+ 
+ 		const l = 2.5 / zoom
+ 
+-		const minX = points.reduce((acc, p) => Math.min(acc, p.x), Infinity)
+-		const maxX = points.reduce((acc, p) => Math.max(acc, p.x), -Infinity)
+-		const minY = points.reduce((acc, p) => Math.min(acc, p.y), Infinity)
+-		const maxY = points.reduce((acc, p) => Math.max(acc, p.y), -Infinity)
++		let minX = Infinity
++		let maxX = -Infinity
++		let minY = Infinity
++		let maxY = -Infinity
++		for (const point of points) {
++			if (point.x < minX) minX = point.x
++			if (point.x > maxX) maxX = point.x
++			if (point.y < minY) minY = point.y
++			if (point.y > maxY) maxY = point.y
++		}
+ 
+-		const useNWtoSEdirection = points.some((p) => p.x === minX && p.y === minY)
++		let useNWtoSEdirection = false
++		for (const point of points) {
++			if (point.x === minX && point.y === minY) {
++				useNWtoSEdirection = true
++				break
++			}
++		}
+ 		let firstX: number, firstY: number, secondX: number, secondY: number
+ 		if (useNWtoSEdirection) {
+ 			firstX = minX
+@@ -106,7 +118,10 @@ export class SnapIndicatorOverlayUtil extends OverlayUtil<TLSnapIndicatorOverlay
+ 		color: string
+ 	): void {
+ 		const { gaps, direction } = indicator
++		if (gaps.length === 0) return
++
+ 		const l = 3.5 / zoom
++		const tickLength = 2 * l
+ 		const horizontal = direction === 'horizontal'
+ 
+ 		let edgeIntersection: number[] = [-Infinity, +Infinity]
+@@ -147,11 +162,11 @@ export class SnapIndicatorOverlayUtil extends OverlayUtil<TLSnapIndicatorOverlay
+ 		for (const { startEdge, endEdge } of gaps) {
+ 			if (horizontal) {
+ 				// Start edge tick
+-				ctx.moveTo(startEdge[0].x, midPoint - 2 * l)
+-				ctx.lineTo(startEdge[1].x, midPoint + 2 * l)
++				ctx.moveTo(startEdge[0].x, midPoint - tickLength)
++				ctx.lineTo(startEdge[1].x, midPoint + tickLength)
+ 				// End edge tick
+-				ctx.moveTo(endEdge[0].x, midPoint - 2 * l)
+-				ctx.lineTo(endEdge[1].x, midPoint + 2 * l)
++				ctx.moveTo(endEdge[0].x, midPoint - tickLength)
++				ctx.lineTo(endEdge[1].x, midPoint + tickLength)
+ 				// Joining line
+ 				ctx.moveTo(startEdge[0].x, midPoint)
+ 				ctx.lineTo(endEdge[0].x, midPoint)
+@@ -161,11 +176,11 @@ export class SnapIndicatorOverlayUtil extends OverlayUtil<TLSnapIndicatorOverlay
+ 				ctx.lineTo(cx, midPoint + l)
+ 			} else {
+ 				// Start edge tick
+-				ctx.moveTo(midPoint - 2 * l, startEdge[0].y)
+-				ctx.lineTo(midPoint + 2 * l, startEdge[1].y)
++				ctx.moveTo(midPoint - tickLength, startEdge[0].y)
++				ctx.lineTo(midPoint + tickLength, startEdge[1].y)
+ 				// End edge tick
+-				ctx.moveTo(midPoint - 2 * l, endEdge[0].y)
+-				ctx.lineTo(midPoint + 2 * l, endEdge[1].y)
++				ctx.moveTo(midPoint - tickLength, endEdge[0].y)
++				ctx.lineTo(midPoint + tickLength, endEdge[1].y)
+ 				// Joining line
+ 				ctx.moveTo(midPoint, startEdge[0].y)
+ 				ctx.lineTo(midPoint, endEdge[0].y)
+diff --git a/packages/tldraw/src/test/overlays/BrushOverlayUtilDisplayValues.test.ts b/packages/tldraw/src/test/overlays/BrushOverlayUtilDisplayValues.test.ts
+new file mode 100644
+index 000000000000..c1ecce556ed3
+--- /dev/null
++++ b/packages/tldraw/src/test/overlays/BrushOverlayUtilDisplayValues.test.ts
+@@ -0,0 +1,97 @@
++import { getOverlayDisplayValues } from '@tldraw/editor'
++import { defaultOverlayUtils } from '../../lib/defaultOverlayUtils'
++import { BrushOverlayUtil } from '../../lib/overlays/BrushOverlayUtil'
++import { TestEditor } from '../TestEditor'
++
++let editor: TestEditor
++
++beforeEach(() => {
++	editor = new TestEditor({ overlayUtils: defaultOverlayUtils })
++	editor.user.updateUserPreferences({ colorScheme: 'light' })
++})
++
++afterEach(() => {
++	editor?.dispose()
++})
++
++function getBrushOverlay() {
++	editor.updateInstanceState({ brush: { x: 0, y: 0, w: 10, h: 10 } })
++	const util = editor.overlays.getOverlayUtil<BrushOverlayUtil>('brush')
++	const overlay = util.getOverlays()[0]
++	return { util, overlay }
++}
++
++describe('BrushOverlayUtil display values', () => {
++	it('resolves brush colors from theme', () => {
++		const { util, overlay } = getBrushOverlay()
++		const dv = getOverlayDisplayValues(util, overlay)
++		expect(dv.fillColor).toBe('hsl(0, 0%, 56%, 10.2%)')
++		expect(dv.strokeColor).toBe('hsl(0, 0%, 56%, 25.1%)')
++		expect(dv.lineWidth).toBe(1)
++	})
++
++	it('configure() override of lineWidth flows to display values', () => {
++		const Configured = BrushOverlayUtil.configure({
++			getCustomDisplayValues() {
++				return { lineWidth: 5 }
++			},
++		})
++		editor.dispose()
++		editor = new TestEditor({
++			overlayUtils: [...defaultOverlayUtils].map((u) => (u === BrushOverlayUtil ? Configured : u)),
++		})
++		const { util, overlay } = getBrushOverlay()
++		const dv = getOverlayDisplayValues(util, overlay)
++		expect(dv.lineWidth).toBe(5)
++		// untouched defaults still apply
++		expect(dv.fillColor).toBe('hsl(0, 0%, 56%, 10.2%)')
++	})
++
++	it('configure() override of fillColor flows to display values', () => {
++		const Configured = BrushOverlayUtil.configure({
++			getCustomDisplayValues() {
++				return { fillColor: '#CUSTOM_FILL' }
++			},
++		})
++		editor.dispose()
++		editor = new TestEditor({
++			overlayUtils: [...defaultOverlayUtils].map((u) => (u === BrushOverlayUtil ? Configured : u)),
++		})
++		const { util, overlay } = getBrushOverlay()
++		const dv = getOverlayDisplayValues(util, overlay)
++		expect(dv.fillColor).toBe('#CUSTOM_FILL')
++	})
++
++	it('caches by overlay identity for the same theme/colorMode', () => {
++		const { util, overlay } = getBrushOverlay()
++		const dv1 = getOverlayDisplayValues(util, overlay)
++		const dv2 = getOverlayDisplayValues(util, overlay)
++		expect(dv1).toBe(dv2)
++	})
++
++	it('invalidates when colorMode changes', () => {
++		const { util, overlay } = getBrushOverlay()
++		const lightDv = getOverlayDisplayValues(util, overlay)
++		editor.user.updateUserPreferences({ colorScheme: 'dark' })
++		const darkDv = getOverlayDisplayValues(util, overlay)
++		expect(darkDv).not.toBe(lightDv)
++	})
++
++	it('invalidates when theme is updated', () => {
++		const { util, overlay } = getBrushOverlay()
++		const dv1 = getOverlayDisplayValues(util, overlay)
++		editor.updateTheme({
++			...editor.getTheme('default')!,
++			colors: {
++				...editor.getTheme('default')!.colors,
++				light: {
++					...editor.getTheme('default')!.colors.light,
++					brushFill: '#NEW_FILL',
++				},
++			},
++		})
++		const dv2 = getOverlayDisplayValues(util, overlay)
++		expect(dv2).not.toBe(dv1)
++		expect(dv2.fillColor).toBe('#NEW_FILL')
++	})
++})

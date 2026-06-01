@@ -1,0 +1,1312 @@
+diff --git a/packages/next/errors.json b/packages/next/errors.json
+index 29c81c03a2ba..eadae1a2df9b 100644
+--- a/packages/next/errors.json
++++ b/packages/next/errors.json
+@@ -1285,5 +1285,6 @@
+   "1284": "Cache Components error recovery expected an original prerender resume data cache",
+   "1285": "Cache Components error recovery expected an original prerender store",
+   "1286": "Cache Components error recovery unexpectedly produced a dynamic HTML hole",
+-  "1287": "Expected stream state to be initialized before reading"
++  "1287": "Expected stream state to be initialized before reading",
++  "1288": "Cache Components error recovery expected an original resume data cache"
+ }
+diff --git a/packages/next/src/server/app-render/app-render.tsx b/packages/next/src/server/app-render/app-render.tsx
+index 206894df3b97..d9a1d37369d4 100644
+--- a/packages/next/src/server/app-render/app-render.tsx
++++ b/packages/next/src/server/app-render/app-render.tsx
+@@ -229,6 +229,7 @@ import {
+   createRenderResumeDataCache,
+   type PrerenderResumeDataCache,
+   type RenderResumeDataCache,
++  type ResumeDataCache,
+ } from '../resume-data-cache/resume-data-cache'
+ import type { MetadataErrorType } from '../../lib/metadata/resolve-metadata'
+ import isError from '../../lib/is-error'
+@@ -969,7 +970,7 @@ async function generateStagedDynamicFlightRenderResultWeb(
+   if (hasRuntimePrefetch) {
+     // Create a mutable cache that gets filled during the dynamic render.
+     const prerenderResumeDataCache = createPrerenderResumeDataCache()
+-    requestStore.prerenderResumeDataCache = prerenderResumeDataCache
++    requestStore.resumeDataCache = prerenderResumeDataCache
+ 
+     const cacheSignal = new CacheSignal()
+     trackPendingModules(cacheSignal)
+@@ -1128,7 +1129,7 @@ async function generateStagedDynamicFlightRenderResultNode(
+   if (hasRuntimePrefetch) {
+     // Create a mutable cache that gets filled during the dynamic render.
+     const prerenderResumeDataCache = createPrerenderResumeDataCache()
+-    requestStore.prerenderResumeDataCache = prerenderResumeDataCache
++    requestStore.resumeDataCache = prerenderResumeDataCache
+ 
+     const cacheSignal = new CacheSignal()
+     trackPendingModules(cacheSignal)
+@@ -1229,7 +1230,6 @@ async function spawnRuntimePrefetchWithFilledCaches(
+       ctx,
+       generateDynamicRSCPayload.bind(null, ctx, { staleTimeIterable }),
+       prerenderResumeDataCache,
+-      null, // renderResumeDataCache
+       rootParams,
+       requestStore.headers,
+       requestStore.cookies,
+@@ -1663,14 +1663,11 @@ async function generateRuntimePrefetchResult(
+   // We need to share caches between the prospective prerender and the final prerender,
+   // but we're not going to persist this anywhere.
+   const prerenderResumeDataCache = createPrerenderResumeDataCache()
+-  // We're not resuming an existing render.
+-  const renderResumeDataCache = null
+ 
+   await prospectiveRuntimeServerPrerender(
+     ctx,
+     generateDynamicRSCPayload.bind(null, ctx),
+     prerenderResumeDataCache,
+-    renderResumeDataCache,
+     rootParams,
+     requestStore.headers,
+     requestStore.cookies,
+@@ -1682,7 +1679,6 @@ async function generateRuntimePrefetchResult(
+     ctx,
+     generateDynamicRSCPayload.bind(null, ctx, { staleTimeIterable }),
+     prerenderResumeDataCache,
+-    renderResumeDataCache,
+     rootParams,
+     requestStore.headers,
+     requestStore.cookies,
+@@ -1701,8 +1697,7 @@ async function generateRuntimePrefetchResult(
+ async function prospectiveRuntimeServerPrerender(
+   ctx: AppRenderContext,
+   getPayload: () => any,
+-  prerenderResumeDataCache: PrerenderResumeDataCache | null,
+-  renderResumeDataCache: RenderResumeDataCache | null,
++  resumeDataCache: PrerenderResumeDataCache | null,
+   rootParams: Params,
+   headers: PrerenderStoreModernRuntime['headers'],
+   cookies: PrerenderStoreModernRuntime['cookies'],
+@@ -1746,8 +1741,7 @@ async function prospectiveRuntimeServerPrerender(
+     expire: 0,
+     stale: INFINITE_CACHE,
+     tags: [...implicitTags.tags],
+-    renderResumeDataCache,
+-    prerenderResumeDataCache,
++    resumeDataCache,
+     hmrRefreshHash: undefined,
+     // We don't track vary params during initial prerender, only the final one
+     varyParamsAccumulator: null,
+@@ -1860,8 +1854,7 @@ function prependIsPartialByteToChunks(
+ async function finalRuntimeServerPrerender(
+   ctx: AppRenderContext,
+   getPayload: () => any,
+-  prerenderResumeDataCache: PrerenderResumeDataCache | null,
+-  renderResumeDataCache: RenderResumeDataCache | null,
++  resumeDataCache: PrerenderResumeDataCache | null,
+   rootParams: Params,
+   headers: PrerenderStoreModernRuntime['headers'],
+   cookies: PrerenderStoreModernRuntime['cookies'],
+@@ -1905,8 +1898,7 @@ async function finalRuntimeServerPrerender(
+     expire: 0,
+     stale: INFINITE_CACHE,
+     tags: [...implicitTags.tags],
+-    prerenderResumeDataCache,
+-    renderResumeDataCache,
++    resumeDataCache,
+     hmrRefreshHash: undefined,
+     varyParamsAccumulator,
+     // Used to separate the stages in the 5-task pipeline.
+@@ -3733,7 +3725,7 @@ async function renderToStream(
+ 
+           if (hasRuntimePrefetch) {
+             const prerenderResumeDataCache = createPrerenderResumeDataCache()
+-            requestStore.prerenderResumeDataCache = prerenderResumeDataCache
++            requestStore.resumeDataCache = prerenderResumeDataCache
+ 
+             const cacheSignal = new CacheSignal()
+             trackPendingModules(cacheSignal)
+@@ -3865,7 +3857,7 @@ async function renderToStream(
+ 
+           if (hasRuntimePrefetch) {
+             const prerenderResumeDataCache = createPrerenderResumeDataCache()
+-            requestStore.prerenderResumeDataCache = prerenderResumeDataCache
++            requestStore.resumeDataCache = prerenderResumeDataCache
+ 
+             const cacheSignal = new CacheSignal()
+             trackPendingModules(cacheSignal)
+@@ -4643,10 +4635,9 @@ async function renderWithRestartOnCacheMissInDevWeb(
+     true // track sync IO
+   )
+ 
+-  requestStore.prerenderResumeDataCache = prerenderResumeDataCache
+-  // `getRenderResumeDataCache` will fall back to using `prerenderResumeDataCache` as `renderResumeDataCache`,
+-  // so not having a resume data cache won't break any expectations in case we don't need to restart.
+-  requestStore.renderResumeDataCache = null
++  // Use a mutable resume data cache for the warmup. After the warmup we'll swap
++  // it out for a read-only resume data cache.
++  requestStore.resumeDataCache = prerenderResumeDataCache
+   requestStore.stagedRendering = initialStageController
+   requestStore.asyncApiPromises = createAsyncApiPromises(
+     initialStageController,
+@@ -4809,8 +4800,7 @@ async function renderWithRestartOnCacheMissInDevWeb(
+ 
+   // We've filled the caches, so now we can render as usual,
+   // without any cache-filling mechanics.
+-  requestStore.prerenderResumeDataCache = null
+-  requestStore.renderResumeDataCache = createRenderResumeDataCache(
++  requestStore.resumeDataCache = createRenderResumeDataCache(
+     prerenderResumeDataCache
+   )
+   requestStore.stagedRendering = finalStageController
+@@ -4958,10 +4948,9 @@ async function renderWithRestartOnCacheMissInDevNode(
+     true // track sync IO
+   )
+ 
+-  requestStore.prerenderResumeDataCache = prerenderResumeDataCache
+-  // `getRenderResumeDataCache` will fall back to using `prerenderResumeDataCache` as `renderResumeDataCache`,
+-  // so not having a resume data cache won't break any expectations in case we don't need to restart.
+-  requestStore.renderResumeDataCache = null
++  // Use a mutable resume data cache for the warmup. After the warmup we'll swap
++  // it out for a read-only resume data cache.
++  requestStore.resumeDataCache = prerenderResumeDataCache
+   requestStore.stagedRendering = initialStageController
+   requestStore.asyncApiPromises = createAsyncApiPromises(
+     initialStageController,
+@@ -5119,8 +5108,7 @@ async function renderWithRestartOnCacheMissInDevNode(
+ 
+   // We've filled the caches, so now we can render as usual,
+   // without any cache-filling mechanics.
+-  requestStore.prerenderResumeDataCache = null
+-  requestStore.renderResumeDataCache = createRenderResumeDataCache(
++  requestStore.resumeDataCache = createRenderResumeDataCache(
+     prerenderResumeDataCache
+   )
+   requestStore.stagedRendering = finalStageController
+@@ -5765,8 +5753,7 @@ async function warmupClientModulesForStagedValidation(
+       stale: INFINITE_CACHE,
+       tags: [...implicitTags.tags],
+       // TODO should this be removed from client stores?
+-      prerenderResumeDataCache: null,
+-      renderResumeDataCache: null,
++      resumeDataCache: null,
+       hmrRefreshHash: undefined,
+       // Client prerenders don't track server param access
+       varyParamsAccumulator: null,
+@@ -5789,8 +5776,7 @@ async function warmupClientModulesForStagedValidation(
+       stale: INFINITE_CACHE,
+       tags: [...implicitTags.tags],
+       // TODO should this be removed from client stores?
+-      prerenderResumeDataCache: null,
+-      renderResumeDataCache: null,
++      resumeDataCache: null,
+       hmrRefreshHash: undefined,
+       // Client prerenders don't track server param access
+       varyParamsAccumulator: null,
+@@ -5940,8 +5926,7 @@ async function validateStagedShell(
+     stale: INFINITE_CACHE,
+     tags: [...implicitTags.tags],
+     // TODO should this be removed from client stores?
+-    prerenderResumeDataCache: null,
+-    renderResumeDataCache: null,
++    resumeDataCache: null,
+     hmrRefreshHash,
+     // Client prerenders don't track server param access
+     varyParamsAccumulator: null,
+@@ -6210,8 +6195,7 @@ async function validateInstantConfigs(
+       expire: INFINITE_CACHE,
+       stale: INFINITE_CACHE,
+       tags: [...implicitTags.tags],
+-      prerenderResumeDataCache: null,
+-      renderResumeDataCache: null,
++      resumeDataCache: null,
+       hmrRefreshHash,
+       varyParamsAccumulator: null,
+       boundaryState,
+@@ -6491,8 +6475,7 @@ async function renderWithRestartOnCacheMissInValidation(
+     true // track sync IO
+   )
+ 
+-  requestStore.prerenderResumeDataCache = prerenderResumeDataCache
+-  requestStore.renderResumeDataCache = null
++  requestStore.resumeDataCache = prerenderResumeDataCache
+   requestStore.stagedRendering = initialStageController
+   requestStore.cacheSignal = cacheSignal
+   requestStore.asyncApiPromises = createAsyncApiPromises(
+@@ -6602,8 +6585,7 @@ async function renderWithRestartOnCacheMissInValidation(
+     true // track sync IO
+   )
+ 
+-  requestStore.prerenderResumeDataCache = null
+-  requestStore.renderResumeDataCache = createRenderResumeDataCache(
++  requestStore.resumeDataCache = createRenderResumeDataCache(
+     prerenderResumeDataCache
+   )
+   requestStore.stagedRendering = finalStageController
+@@ -6982,9 +6964,8 @@ async function validateInstantConfigInBuildWithSample(
+         rootParams: sampleRootParams,
+         validationSamples,
+         validationSampleTracking: createValidationSampleTracking(),
+-        // These will be set when rendering
+-        renderResumeDataCache: null,
+-        prerenderResumeDataCache: null,
++        // This will be set when rendering
++        resumeDataCache: null,
+         stagedRendering: null,
+         asyncApiPromises: undefined,
+       }
+@@ -7328,8 +7309,7 @@ async function prerenderToStream(
+ 
+   let reactServerPrerenderResult: null | ReactServerPrerenderResult = null
+   let reactServerPrerenderResultIsDynamic: null | boolean = null
+-  let reactServerPrerenderResumeDataCache: null | PrerenderResumeDataCache =
+-    null
++  let reactServerResumeDataCache: ResumeDataCache | null = null
+   let reactServerPrerenderStore: null | PrerenderStore = null
+   const setMetadataHeader = (name: string) => {
+     metadata.headers ??= {}
+@@ -7399,14 +7379,15 @@ async function prerenderToStream(
+       // to cut the render off.
+       const cacheSignal = new CacheSignal()
+ 
+-      // Always start with a fresh prerender RDC so warmup can fill misses,
+-      // even when we have a prefilled render RDC to seed from.
+-      const prerenderResumeDataCache = createPrerenderResumeDataCache()
++      // If a prefilled immutable render resume data cache is provided, e.g.
++      // when prerendering an optional fallback shell after having prerendered
++      // pages with defined params, we use this instead of a mutable prerender
++      // resume data cache.
++      const resumeDataCache: ResumeDataCache =
++        renderOpts.renderResumeDataCache ?? createPrerenderResumeDataCache()
+       reactServerPrerenderResultIsDynamic = null
+-      reactServerPrerenderResumeDataCache = prerenderResumeDataCache
++      reactServerResumeDataCache = resumeDataCache
+       reactServerPrerenderStore = null
+-      let renderResumeDataCache: RenderResumeDataCache | null =
+-        renderOpts.renderResumeDataCache ?? null
+ 
+       const initialServerPayloadPrerenderStore: PrerenderStore = {
+         type: 'prerender',
+@@ -7431,8 +7412,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
+-        renderResumeDataCache,
++        resumeDataCache,
+         hmrRefreshHash: undefined,
+         // We don't track vary params during initial prerender, only the final one
+         varyParamsAccumulator: null,
+@@ -7466,8 +7446,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
+-        renderResumeDataCache,
++        resumeDataCache,
+         hmrRefreshHash: undefined,
+         // We don't track vary params during initial prerender, only the final one
+         varyParamsAccumulator: null,
+@@ -7589,8 +7568,7 @@ async function prerenderToStream(
+           expire: INFINITE_CACHE,
+           stale: INFINITE_CACHE,
+           tags: [...implicitTags.tags],
+-          prerenderResumeDataCache,
+-          renderResumeDataCache,
++          resumeDataCache,
+           hmrRefreshHash: undefined,
+           // Client prerenders don't track server param access
+           varyParamsAccumulator: null,
+@@ -7681,13 +7659,6 @@ async function prerenderToStream(
+         initialClientReactController.abort()
+       }
+ 
+-      if (renderOpts.renderResumeDataCache) {
+-        // Swap to the warmed cache so the final render uses entries produced during warmup.
+-        renderResumeDataCache = createRenderResumeDataCache(
+-          prerenderResumeDataCache
+-        )
+-      }
+-
+       const finalServerReactController = new AbortController()
+       const finalServerRenderController = new AbortController()
+ 
+@@ -7714,8 +7685,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
+-        renderResumeDataCache,
++        resumeDataCache,
+         hmrRefreshHash: undefined,
+         varyParamsAccumulator,
+       }
+@@ -7755,8 +7725,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
+-        renderResumeDataCache,
++        resumeDataCache,
+         hmrRefreshHash: undefined,
+         varyParamsAccumulator,
+       })
+@@ -7907,8 +7876,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
+-        renderResumeDataCache,
++        resumeDataCache,
+         hmrRefreshHash: undefined,
+         // Client prerenders don't track server param access
+         varyParamsAccumulator: null,
+@@ -8019,12 +7987,12 @@ async function prerenderToStream(
+               ? DynamicHTMLPreludeState.Empty
+               : DynamicHTMLPreludeState.Full,
+             fallbackRouteParams,
+-            prerenderResumeDataCache,
++            resumeDataCache,
+             cacheComponents
+           )
+         } else {
+           metadata.postponed = await getDynamicDataPostponedState(
+-            prerenderResumeDataCache,
++            resumeDataCache,
+             cacheComponents
+           )
+         }
+@@ -8046,9 +8014,7 @@ async function prerenderToStream(
+           collectedExpire: finalServerPrerenderStore.expire,
+           collectedStale: selectStaleTime(finalServerPrerenderStore.stale),
+           collectedTags: finalServerPrerenderStore.tags,
+-          renderResumeDataCache: createRenderResumeDataCache(
+-            prerenderResumeDataCache
+-          ),
++          renderResumeDataCache: createRenderResumeDataCache(resumeDataCache),
+         }
+       } else if (postponed != null) {
+         // We postponed but nothing dynamic was used. We resume the render now and immediately abort it
+@@ -8113,15 +8079,13 @@ async function prerenderToStream(
+         collectedExpire: finalServerPrerenderStore.expire,
+         collectedStale: selectStaleTime(finalServerPrerenderStore.stale),
+         collectedTags: finalServerPrerenderStore.tags,
+-        renderResumeDataCache: createRenderResumeDataCache(
+-          prerenderResumeDataCache
+-        ),
++        renderResumeDataCache: createRenderResumeDataCache(resumeDataCache),
+       }
+     } else if (experimental.isRoutePPREnabled) {
+       // We're statically generating with PPR and need to do dynamic tracking
+       let dynamicTracking = createDynamicTrackingState(isDebugDynamicAccesses)
+ 
+-      const prerenderResumeDataCache = createPrerenderResumeDataCache()
++      const resumeDataCache = createPrerenderResumeDataCache()
+       const pprReactServerPrerenderStore: PrerenderStore = (prerenderStore = {
+         type: 'prerender-ppr',
+         phase: 'render',
+@@ -8133,7 +8097,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
++        resumeDataCache,
+       })
+       const RSCPayload = await workUnitAsyncStorage.run(
+         pprReactServerPrerenderStore,
+@@ -8169,7 +8133,7 @@ async function prerenderToStream(
+         expire: INFINITE_CACHE,
+         stale: INFINITE_CACHE,
+         tags: [...implicitTags.tags],
+-        prerenderResumeDataCache,
++        resumeDataCache,
+       }
+       const pprOnHeaders = createOnHeadersCallback(appendHeader)
+       const { prelude: unprocessedPrelude, postponed } =
+@@ -8245,13 +8209,13 @@ async function prerenderToStream(
+               ? DynamicHTMLPreludeState.Empty
+               : DynamicHTMLPreludeState.Full,
+             fallbackRouteParams,
+-            prerenderResumeDataCache,
++            resumeDataCache,
+             cacheComponents
+           )
+         } else {
+           // Dynamic Data case.
+           metadata.postponed = await getDynamicDataPostponedState(
+-            prerenderResumeDataCache,
++            resumeDataCache,
+             cacheComponents
+           )
+         }
+@@ -8279,7 +8243,7 @@ async function prerenderToStream(
+       } else if (fallbackRouteParams && fallbackRouteParams.size > 0) {
+         // Rendering the fallback case.
+         metadata.postponed = await getDynamicDataPostponedState(
+-          prerenderResumeDataCache,
++          resumeDataCache,
+           cacheComponents
+         )
+ 
+@@ -8535,8 +8499,7 @@ async function prerenderToStream(
+       const originalFlightPrerenderResult = reactServerPrerenderResult
+       const originalFlightPrerenderResultIsDynamic =
+         reactServerPrerenderResultIsDynamic
+-      const originalPrerenderResumeDataCache =
+-        reactServerPrerenderResumeDataCache
++      const originalResumeDataCache = reactServerResumeDataCache
+       const originalPrerenderStore =
+         reactServerPrerenderStore as PrerenderStore | null
+ 
+@@ -8550,9 +8513,9 @@ async function prerenderToStream(
+           'Cache Components error recovery expected to know whether the original Flight prerender result was dynamic'
+         )
+       }
+-      if (originalPrerenderResumeDataCache === null) {
++      if (originalResumeDataCache === null) {
+         throw new InvariantError(
+-          'Cache Components error recovery expected an original prerender resume data cache'
++          'Cache Components error recovery expected an original resume data cache'
+         )
+       }
+       if (originalPrerenderStore === null) {
+@@ -8568,7 +8531,6 @@ async function prerenderToStream(
+       // payload with the same prerender APIs as the normal path so not-found
+       // metadata can participate in static, dynamic-data, and dynamic-HTML
+       // outcomes instead of being dropped from the recovery shell.
+-      const errorPrerenderResumeDataCache = createPrerenderResumeDataCache()
+       const errorServerReactController = new AbortController()
+       const errorServerRenderController = new AbortController()
+       const errorServerDynamicTracking = createDynamicTrackingState(
+@@ -8598,8 +8560,7 @@ async function prerenderToStream(
+             ? prerenderStore.stale
+             : INFINITE_CACHE,
+         tags: [...(prerenderStore?.tags || implicitTags.tags)],
+-        prerenderResumeDataCache: errorPrerenderResumeDataCache,
+-        renderResumeDataCache: renderOpts.renderResumeDataCache ?? null,
++        resumeDataCache: originalResumeDataCache,
+         hmrRefreshHash: undefined,
+         varyParamsAccumulator: null,
+       }
+@@ -8674,8 +8635,7 @@ async function prerenderToStream(
+           expire: errorPrerenderStore.expire,
+           stale: errorPrerenderStore.stale,
+           tags: [...(errorPrerenderStore.tags || implicitTags.tags)],
+-          prerenderResumeDataCache: errorPrerenderResumeDataCache,
+-          renderResumeDataCache: renderOpts.renderResumeDataCache ?? null,
++          resumeDataCache: originalResumeDataCache,
+           hmrRefreshHash: undefined,
+           varyParamsAccumulator: null,
+         }
+@@ -8772,7 +8732,7 @@ async function prerenderToStream(
+         let errorHtmlStream: AnyStream = prelude
+         if (originalFlightPrerenderResultIsDynamic) {
+           metadata.postponed = await getDynamicDataPostponedState(
+-            originalPrerenderResumeDataCache,
++            originalResumeDataCache,
+             cacheComponents
+           )
+           originalFlightPrerenderResult.consume()
+@@ -8794,7 +8754,7 @@ async function prerenderToStream(
+             collectedStale: originalCollectedStale,
+             collectedTags: originalPrerenderStore.tags,
+             renderResumeDataCache: createRenderResumeDataCache(
+-              originalPrerenderResumeDataCache
++              originalResumeDataCache
+             ),
+           }
+         } else if (errorPostponed != null) {
+@@ -8860,7 +8820,7 @@ async function prerenderToStream(
+           collectedStale: originalCollectedStale,
+           collectedTags: originalPrerenderStore.tags,
+           renderResumeDataCache: createRenderResumeDataCache(
+-            originalPrerenderResumeDataCache
++            originalResumeDataCache
+           ),
+         }
+       } catch (finalErr: any) {
+diff --git a/packages/next/src/server/app-render/encryption.ts b/packages/next/src/server/app-render/encryption.ts
+index 61e9a5f70557..f094c5782c3c 100644
+--- a/packages/next/src/server/app-render/encryption.ts
++++ b/packages/next/src/server/app-render/encryption.ts
+@@ -20,8 +20,7 @@ import {
+ } from './manifests-singleton'
+ import {
+   getCacheSignal,
+-  getPrerenderResumeDataCache,
+-  getRenderResumeDataCache,
++  getResumeDataCache,
+   workUnitAsyncStorage,
+ } from './work-unit-async-storage.external'
+ import { createHangingInputAbortSignal } from './dynamic-rendering'
+@@ -153,11 +152,8 @@ export const encryptActionBoundArgs = React.cache(
+       })
+     }
+ 
+-    const prerenderResumeDataCache = workUnitStore
+-      ? getPrerenderResumeDataCache(workUnitStore)
+-      : null
+-    const renderResumeDataCache = workUnitStore
+-      ? getRenderResumeDataCache(workUnitStore)
++    const resumeDataCache = workUnitStore
++      ? getResumeDataCache(workUnitStore)
+       : null
+ 
+     // Using Flight to serialize the args into a string.
+@@ -176,8 +172,7 @@ export const encryptActionBoundArgs = React.cache(
+           // but React ignores those as long as no debug channel is passed on the decode side, so it's fine:
+           // https://github.com/facebook/react/blob/bb8a76c6cc77ea2976d690ea09f5a1b3d9b1792a/packages/react-client/src/ReactFlightClient.js#L1711-L1729
+           // https://github.com/facebook/react/blob/bb8a76c6cc77ea2976d690ea09f5a1b3d9b1792a/packages/react-client/src/ReactFlightClient.js#L4005-L4025
+-          process.env.NODE_ENV === 'development' &&
+-          (prerenderResumeDataCache || renderResumeDataCache)
++          process.env.NODE_ENV === 'development' && resumeDataCache
+             ? {
+                 writable: new WritableStream(),
+               }
+@@ -227,9 +222,7 @@ export const encryptActionBoundArgs = React.cache(
+ 
+     const cacheKey = actionId + serialized
+ 
+-    const cachedEncrypted =
+-      prerenderResumeDataCache?.encryptedBoundArgs.get(cacheKey) ??
+-      renderResumeDataCache?.encryptedBoundArgs.get(cacheKey)
++    const cachedEncrypted = resumeDataCache?.encryptedBoundArgs.get(cacheKey)
+ 
+     if (cachedEncrypted) {
+       return cachedEncrypted
+@@ -238,7 +231,9 @@ export const encryptActionBoundArgs = React.cache(
+     const encrypted = await encodeActionBoundArg(actionId, serialized)
+ 
+     endReadIfStarted()
+-    prerenderResumeDataCache?.encryptedBoundArgs.set(cacheKey, encrypted)
++    if (resumeDataCache?.mutable) {
++      resumeDataCache.encryptedBoundArgs.set(cacheKey, encrypted)
++    }
+ 
+     return encrypted
+   }
+@@ -256,18 +251,17 @@ export async function decryptActionBoundArgs(
+ 
+   if (workUnitStore) {
+     const cacheSignal = getCacheSignal(workUnitStore)
+-    const prerenderResumeDataCache = getPrerenderResumeDataCache(workUnitStore)
+-    const renderResumeDataCache = getRenderResumeDataCache(workUnitStore)
++    const resumeDataCache = getResumeDataCache(workUnitStore)
+ 
+-    decrypted =
+-      prerenderResumeDataCache?.decryptedBoundArgs.get(encrypted) ??
+-      renderResumeDataCache?.decryptedBoundArgs.get(encrypted)
++    decrypted = resumeDataCache?.decryptedBoundArgs.get(encrypted)
+ 
+     if (!decrypted) {
+       cacheSignal?.beginRead()
+       decrypted = await decodeActionBoundArg(actionId, encrypted)
+       cacheSignal?.endRead()
+-      prerenderResumeDataCache?.decryptedBoundArgs.set(encrypted, decrypted)
++      if (resumeDataCache?.mutable) {
++        resumeDataCache.decryptedBoundArgs.set(encrypted, decrypted)
++      }
+     }
+   } else {
+     decrypted = await decodeActionBoundArg(actionId, encrypted)
+diff --git a/packages/next/src/server/app-render/postponed-state.test.ts b/packages/next/src/server/app-render/postponed-state.test.ts
+index 2f5cc1bdba6b..470e49b6f976 100644
+--- a/packages/next/src/server/app-render/postponed-state.test.ts
++++ b/packages/next/src/server/app-render/postponed-state.test.ts
+@@ -77,6 +77,7 @@ describe('getDynamicHTMLPostponedState', () => {
+          "decryptedBoundArgs": Map {},
+          "encryptedBoundArgs": Map {},
+          "fetch": Map {},
++         "mutable": false,
+        },
+        "type": 2,
+      }
+@@ -124,6 +125,7 @@ describe('getDynamicHTMLPostponedState', () => {
+         fetch: new Map(),
+         encryptedBoundArgs: new Map(),
+         decryptedBoundArgs: new Map(),
++        mutable: false,
+       },
+     })
+ 
+@@ -159,6 +161,7 @@ describe('parsePostponedState', () => {
+         fetch: new Map(),
+         encryptedBoundArgs: new Map(),
+         decryptedBoundArgs: new Map(),
++        mutable: false,
+       },
+     })
+ 
+@@ -180,6 +183,7 @@ describe('parsePostponedState', () => {
+         fetch: new Map(),
+         encryptedBoundArgs: new Map(),
+         decryptedBoundArgs: new Map(),
++        mutable: false,
+       },
+     })
+   })
+@@ -196,6 +200,7 @@ describe('parsePostponedState', () => {
+         fetch: new Map(),
+         encryptedBoundArgs: new Map(),
+         decryptedBoundArgs: new Map(),
++        mutable: false,
+       },
+     })
+   })
+diff --git a/packages/next/src/server/app-render/postponed-state.ts b/packages/next/src/server/app-render/postponed-state.ts
+index 2fd082a1fe21..67b46c8b8c5c 100644
+--- a/packages/next/src/server/app-render/postponed-state.ts
++++ b/packages/next/src/server/app-render/postponed-state.ts
+@@ -208,7 +208,9 @@ export function parsePostponedState(
+     console.error('Failed to parse postponed state', err)
+     return {
+       type: DynamicState.DATA,
+-      renderResumeDataCache: createPrerenderResumeDataCache(),
++      renderResumeDataCache: createRenderResumeDataCache(
++        createPrerenderResumeDataCache()
++      ),
+     }
+   }
+ }
+diff --git a/packages/next/src/server/app-render/work-unit-async-storage.external.ts b/packages/next/src/server/app-render/work-unit-async-storage.external.ts
+index 46119e661fed..d41542ddef6b 100644
+--- a/packages/next/src/server/app-render/work-unit-async-storage.external.ts
++++ b/packages/next/src/server/app-render/work-unit-async-storage.external.ts
+@@ -12,8 +12,8 @@ import type { OpaqueFallbackRouteParams } from '../request/fallback-params'
+ import { workUnitAsyncStorageInstance } from './work-unit-async-storage-instance' with { 'turbopack-transition': 'next-shared' }
+ import type { ServerComponentsHmrCache } from '../response-cache'
+ import type {
+-  RenderResumeDataCache,
+   PrerenderResumeDataCache,
++  ResumeDataCache,
+ } from '../resume-data-cache/resume-data-cache'
+ import type { Params } from '../request/params'
+ import type { ImplicitTags } from '../lib/implicit-tags'
+@@ -66,15 +66,17 @@ export interface RequestStore extends CommonWorkUnitStore {
+   readonly rootParams: Params
+ 
+   /**
+-   * The resume data cache for this request. This will be a immutable cache.
++   * The resume data cache for this request. Either a mutable
++   * `PrerenderResumeDataCache` (e.g. during a dev warmup that fills caches) or
++   * an immutable `RenderResumeDataCache` (e.g. when resuming from a postponed
++   * state). Narrow via `resumeDataCache.mutable` to tell them apart.
+    */
+-  renderResumeDataCache: RenderResumeDataCache | null
++  resumeDataCache: ResumeDataCache | null
+ 
+   stale?: number
+   stagedRendering?: StagedRenderingController | null
+   asyncApiPromises?: AsyncApiPromises
+   cacheSignal?: CacheSignal | null
+-  prerenderResumeDataCache?: PrerenderResumeDataCache | null
+   fallbackParams?: OpaqueFallbackRouteParams | null
+   varyParamsAccumulator?: ResponseVaryParamsAccumulator | null
+ 
+@@ -252,17 +254,14 @@ interface PrerenderStoreModernCommon
+   readonly rootParams: Params
+ 
+   /**
+-   * A mutable resume data cache for this prerender.
++   * The resume data cache for this prerender. Either a mutable
++   * `PrerenderResumeDataCache` that fills as this prerender runs, or an
++   * immutable `RenderResumeDataCache` provided by an earlier phase when the
++   * prerender is supposed to read from prefilled caches only (e.g. when
++   * prerendering an optional fallback shell). Narrow via
++   * `resumeDataCache.mutable` to tell them apart.
+    */
+-  prerenderResumeDataCache: PrerenderResumeDataCache | null
+-
+-  /**
+-   * An immutable resume data cache for this prerender. This may be provided
+-   * instead of the `prerenderResumeDataCache` if the prerender is not supposed
+-   * to fill caches, and only read from prefilled caches, e.g. when prerendering
+-   * an optional fallback shell.
+-   */
+-  renderResumeDataCache: RenderResumeDataCache | null
++  resumeDataCache: ResumeDataCache | null
+ 
+   /**
+    * The HMR refresh hash is only provided in dev mode. It is needed for the dev
+@@ -309,9 +308,9 @@ export interface PrerenderStorePPR
+   readonly fallbackRouteParams: OpaqueFallbackRouteParams | null
+ 
+   /**
+-   * The resume data cache for this prerender.
++   * The resume data cache for this prerender. Always mutable in PPR mode.
+    */
+-  prerenderResumeDataCache: PrerenderResumeDataCache
++  resumeDataCache: PrerenderResumeDataCache
+ }
+ 
+ export interface PrerenderStoreLegacy
+@@ -442,56 +441,22 @@ export function throwInvariantForMissingStore(): never {
+   throw new InvariantError('Expected workUnitAsyncStorage to have a store.')
+ }
+ 
+-export function getPrerenderResumeDataCache(
+-  workUnitStore: WorkUnitStore
+-): PrerenderResumeDataCache | null {
+-  switch (workUnitStore.type) {
+-    case 'prerender':
+-    case 'prerender-runtime':
+-    case 'prerender-ppr':
+-      return workUnitStore.prerenderResumeDataCache
+-    case 'prerender-client':
+-    case 'validation-client':
+-      // TODO eliminate fetch caching in client scope and stop exposing this data
+-      // cache during SSR.
+-      return workUnitStore.prerenderResumeDataCache
+-    case 'request': {
+-      // In dev, we might fill caches even during a dynamic request.
+-      if (workUnitStore.prerenderResumeDataCache) {
+-        return workUnitStore.prerenderResumeDataCache
+-      }
+-      // fallthrough
+-    }
+-    case 'prerender-legacy':
+-    case 'cache':
+-    case 'private-cache':
+-    case 'unstable-cache':
+-    case 'generate-static-params':
+-      return null
+-    default:
+-      return workUnitStore satisfies never
+-  }
+-}
+-
+-export function getRenderResumeDataCache(
++/**
++ * Returns the resume data cache for the given work unit store, regardless of
++ * whether it is mutable (`PrerenderResumeDataCache`) or read-only
++ * (`RenderResumeDataCache`). Use `resumeDataCache.mutable` to narrow.
++ */
++export function getResumeDataCache(
+   workUnitStore: WorkUnitStore
+-): RenderResumeDataCache | null {
++): ResumeDataCache | null {
+   switch (workUnitStore.type) {
+     case 'request':
+     case 'prerender':
+     case 'prerender-runtime':
+     case 'prerender-client':
+     case 'validation-client':
+-      if (workUnitStore.renderResumeDataCache) {
+-        // If we are in a prerender, we might have a render resume data cache
+-        // that is used to read from prefilled caches.
+-        return workUnitStore.renderResumeDataCache
+-      }
+-    // fallthrough
+     case 'prerender-ppr':
+-      // Otherwise we return the mutable resume data cache here as an immutable
+-      // version of the cache as it can also be used for reading.
+-      return workUnitStore.prerenderResumeDataCache ?? null
++      return workUnitStore.resumeDataCache
+     case 'cache':
+     case 'private-cache':
+     case 'unstable-cache':
+diff --git a/packages/next/src/server/async-storage/request-store.ts b/packages/next/src/server/async-storage/request-store.ts
+index d72b2c268c4b..d91d6a82587f 100644
+--- a/packages/next/src/server/async-storage/request-store.ts
++++ b/packages/next/src/server/async-storage/request-store.ts
+@@ -21,7 +21,7 @@ import { ResponseCookies, RequestCookies } from '../web/spec-extension/cookies'
+ import { DraftModeProvider } from './draft-mode-provider'
+ import { splitCookiesString } from '../web/utils'
+ import type { ServerComponentsHmrCache } from '../response-cache'
+-import type { RenderResumeDataCache } from '../resume-data-cache/resume-data-cache'
++import type { ResumeDataCache } from '../resume-data-cache/resume-data-cache'
+ import type { Params } from '../request/params'
+ import type { ImplicitTags } from '../lib/implicit-tags'
+ import type { OpaqueFallbackRouteParams } from '../request/fallback-params'
+@@ -102,7 +102,7 @@ export type RequestStoreInputs = {
+   url: { pathname: string; search?: string }
+   rootParams: Params
+   implicitTags: ImplicitTags
+-  renderResumeDataCache: RenderResumeDataCache | null
++  resumeDataCache: ResumeDataCache | null
+   previewProps: WrapperRenderOpts['previewProps']
+   isHmrRefresh: boolean | undefined
+   serverComponentsHmrCache: ServerComponentsHmrCache | undefined
+@@ -152,7 +152,7 @@ export function createRequestStoreForRender(
+   previewProps: WrapperRenderOpts['previewProps'],
+   isHmrRefresh: RequestContext['isHmrRefresh'],
+   serverComponentsHmrCache: RequestContext['serverComponentsHmrCache'],
+-  renderResumeDataCache: RenderResumeDataCache | null,
++  resumeDataCache: ResumeDataCache | null,
+   fallbackParams: OpaqueFallbackRouteParams | null
+ ): RequestStore {
+   return createRequestStore({
+@@ -169,7 +169,7 @@ export function createRequestStoreForRender(
+     url,
+     rootParams,
+     implicitTags,
+-    renderResumeDataCache,
++    resumeDataCache,
+     previewProps,
+     isHmrRefresh,
+     serverComponentsHmrCache,
+@@ -192,7 +192,7 @@ export function createRequestStoreForAPI(
+     url,
+     rootParams: {},
+     implicitTags,
+-    renderResumeDataCache: null,
++    resumeDataCache: null,
+     previewProps,
+     isHmrRefresh: false,
+     serverComponentsHmrCache: undefined,
+@@ -215,7 +215,7 @@ export function createRequestStore(inputs: RequestStoreInputs): RequestStore {
+     url,
+     rootParams,
+     implicitTags,
+-    renderResumeDataCache,
++    resumeDataCache,
+     previewProps,
+     isHmrRefresh,
+     serverComponentsHmrCache,
+@@ -296,7 +296,7 @@ export function createRequestStore(inputs: RequestStoreInputs): RequestStore {
+ 
+       return cache.draftMode
+     },
+-    renderResumeDataCache: renderResumeDataCache ?? null,
++    resumeDataCache: resumeDataCache ?? null,
+     isHmrRefresh,
+     serverComponentsHmrCache:
+       serverComponentsHmrCache ||
+diff --git a/packages/next/src/server/dev/use-cache-probe-worker.ts b/packages/next/src/server/dev/use-cache-probe-worker.ts
+index 2b3144cac6bc..3a1d6be5dea1 100644
+--- a/packages/next/src/server/dev/use-cache-probe-worker.ts
++++ b/packages/next/src/server/dev/use-cache-probe-worker.ts
+@@ -159,7 +159,7 @@ export async function probeUseCache(msg: ProbeMessage): Promise<boolean> {
+       url: { pathname: msg.request.urlPathname, search: msg.request.urlSearch },
+       rootParams: msg.request.rootParams,
+       implicitTags: { tags: [], expirationsByCacheKind: new Map() },
+-      renderResumeDataCache: null,
++      resumeDataCache: null,
+       previewProps: undefined,
+       isHmrRefresh: msg.request.isHmrRefresh,
+       serverComponentsHmrCache: undefined,
+diff --git a/packages/next/src/server/lib/incremental-cache/index.ts b/packages/next/src/server/lib/incremental-cache/index.ts
+index b75d862a07eb..918f5583fb14 100644
+--- a/packages/next/src/server/lib/incremental-cache/index.ts
++++ b/packages/next/src/server/lib/incremental-cache/index.ts
+@@ -26,8 +26,7 @@ import {
+ import { toRoute } from '../to-route'
+ import { SharedCacheControls } from './shared-cache-controls.external'
+ import {
+-  getPrerenderResumeDataCache,
+-  getRenderResumeDataCache,
++  getResumeDataCache,
+   workUnitAsyncStorage,
+ } from '../../app-render/work-unit-async-storage.external'
+ import { InvariantError } from '../../../shared/lib/invariant-error'
+@@ -436,7 +435,7 @@ export class IncrementalCache implements IncrementalCacheType {
+     if (ctx.kind === IncrementalCacheKind.FETCH) {
+       const workUnitStore = workUnitAsyncStorage.getStore()
+       const resumeDataCache = workUnitStore
+-        ? getRenderResumeDataCache(workUnitStore)
++        ? getResumeDataCache(workUnitStore)
+         : null
+       if (resumeDataCache) {
+         const memoryCacheData = resumeDataCache.fetch.get(cacheKey)
+@@ -532,14 +531,13 @@ export class IncrementalCache implements IncrementalCacheType {
+       // and it won't have to reach into the fetch cache implementation.
+       const workUnitStore = workUnitAsyncStorage.getStore()
+       if (workUnitStore) {
+-        const prerenderResumeDataCache =
+-          getPrerenderResumeDataCache(workUnitStore)
+-        if (prerenderResumeDataCache) {
++        const resumeDataCache = getResumeDataCache(workUnitStore)
++        if (resumeDataCache?.mutable) {
+           if (IncrementalCache.debug) {
+             console.log('IncrementalCache: rdc:set', cacheKey)
+           }
+ 
+-          prerenderResumeDataCache.fetch.set(cacheKey, cacheData.value)
++          resumeDataCache.fetch.set(cacheKey, cacheData.value)
+         }
+       }
+ 
+@@ -682,15 +680,15 @@ export class IncrementalCache implements IncrementalCacheType {
+     // debug info to have the right environment associated to it.
+     if (data?.kind === CachedRouteKind.FETCH) {
+       const workUnitStore = workUnitAsyncStorage.getStore()
+-      const prerenderResumeDataCache = workUnitStore
+-        ? getPrerenderResumeDataCache(workUnitStore)
++      const resumeDataCache = workUnitStore
++        ? getResumeDataCache(workUnitStore)
+         : null
+-      if (prerenderResumeDataCache) {
++      if (resumeDataCache?.mutable) {
+         if (IncrementalCache.debug) {
+           console.log('IncrementalCache: rdc:set', pathname)
+         }
+ 
+-        prerenderResumeDataCache.fetch.set(pathname, data)
++        resumeDataCache.fetch.set(pathname, data)
+       }
+     }
+ 
+diff --git a/packages/next/src/server/resume-data-cache/resume-data-cache.ts b/packages/next/src/server/resume-data-cache/resume-data-cache.ts
+index 938d8f253bf1..0206c301e7b3 100644
+--- a/packages/next/src/server/resume-data-cache/resume-data-cache.ts
++++ b/packages/next/src/server/resume-data-cache/resume-data-cache.ts
+@@ -14,6 +14,14 @@ import {
+  * This cache is read-only and cannot be modified once created.
+  */
+ export interface RenderResumeDataCache {
++  /**
++   * Discriminator. `false` means this cache is read-only and cannot be filled
++   * with new entries. Used by `ResumeDataCache` consumers to narrow the union
++   * via standard discriminated-union narrowing (e.g. `if
++   * (resumeDataCache.mutable)`).
++   */
++  readonly mutable: false
++
+   /**
+    * A read-only Map store for values cached by the 'use cache' React hook.
+    * The 'set' operation is omitted to enforce immutability.
+@@ -56,6 +64,14 @@ export interface RenderResumeDataCache {
+  * This cache allows both reading and writing of cached values.
+  */
+ export interface PrerenderResumeDataCache {
++  /**
++   * Discriminator. `true` means this cache is mutable and can be filled with
++   * new entries during this prerender. Used by `ResumeDataCache` consumers to
++   * narrow the union via standard discriminated-union narrowing (e.g.
++   * `if (resumeDataCache.mutable)`).
++   */
++  readonly mutable: true
++
+   /**
+    * A mutable Map store for values cached by the 'use cache' React hook.
+    * Supports both 'get' and 'set' operations to build the cache during
+@@ -100,6 +116,13 @@ export interface PrerenderResumeDataCache {
+   readonly dynamicCacheKeys: Set<string>
+ }
+ 
++/**
++ * Discriminated union of the two resume data cache flavors. Consumers should
++ * narrow via `resumeDataCache.mutable` to access the mutable Map API (only
++ * available on `PrerenderResumeDataCache`).
++ */
++export type ResumeDataCache = RenderResumeDataCache | PrerenderResumeDataCache
++
+ type ResumeStoreSerialized = {
+   store: {
+     cache: {
+@@ -124,7 +147,7 @@ type ResumeStoreSerialized = {
+  * 'null' if empty
+  */
+ export async function stringifyResumeDataCache(
+-  resumeDataCache: RenderResumeDataCache | PrerenderResumeDataCache,
++  resumeDataCache: ResumeDataCache,
+   isCacheComponentsEnabled: boolean
+ ): Promise<string> {
+   if (process.env.NEXT_RUNTIME === 'edge') {
+@@ -172,10 +195,11 @@ export async function stringifyResumeDataCache(
+  * @returns A new empty PrerenderResumeDataCache instance
+  */
+ export function createPrerenderResumeDataCache(
+-  source?: PrerenderResumeDataCache | RenderResumeDataCache
++  source?: ResumeDataCache
+ ): PrerenderResumeDataCache {
+   if (source) {
+     return {
++      mutable: true,
+       cache: new Map(source.cache),
+       fetch: new Map(source.fetch),
+       encryptedBoundArgs: new Map(source.encryptedBoundArgs),
+@@ -186,6 +210,7 @@ export function createPrerenderResumeDataCache(
+     }
+   } else {
+     return {
++      mutable: true,
+       cache: new Map(),
+       fetch: new Map(),
+       encryptedBoundArgs: new Map(),
+@@ -207,20 +232,14 @@ export function createPrerenderResumeDataCache(
+  * @returns An immutable RenderResumeDataCache instance
+  */
+ export function createRenderResumeDataCache(
+-  renderResumeDataCache: RenderResumeDataCache
+-): RenderResumeDataCache
+-export function createRenderResumeDataCache(
+-  prerenderResumeDataCache: PrerenderResumeDataCache
++  resumeDataCache: ResumeDataCache
+ ): RenderResumeDataCache
+ export function createRenderResumeDataCache(
+   persistedCache: string,
+   maxPostponedStateSizeBytes: number | undefined
+ ): RenderResumeDataCache
+ export function createRenderResumeDataCache(
+-  resumeDataCacheOrPersistedCache:
+-    | RenderResumeDataCache
+-    | PrerenderResumeDataCache
+-    | string,
++  resumeDataCacheOrPersistedCache: ResumeDataCache | string,
+   maxPostponedStateSizeBytes?: number | undefined
+ ): RenderResumeDataCache {
+   if (process.env.NEXT_RUNTIME === 'edge') {
+@@ -229,13 +248,19 @@ export function createRenderResumeDataCache(
+     )
+   } else {
+     if (typeof resumeDataCacheOrPersistedCache !== 'string') {
+-      // If the cache is already a prerender or render cache, we can return it
+-      // directly. For the former, we're just performing a type change.
+-      return resumeDataCacheOrPersistedCache
++      // If the cache is already read-only, return it directly. Otherwise we
++      // perform a type change by overriding the discriminator — the underlying
++      // Map references are still shared, but callers should treat the result
++      // as immutable.
++      if (!resumeDataCacheOrPersistedCache.mutable) {
++        return resumeDataCacheOrPersistedCache
++      }
++      return { ...resumeDataCacheOrPersistedCache, mutable: false }
+     }
+ 
+     if (resumeDataCacheOrPersistedCache === 'null') {
+       return {
++        mutable: false,
+         cache: new Map(),
+         fetch: new Map(),
+         encryptedBoundArgs: new Map(),
+@@ -276,6 +301,7 @@ export function createRenderResumeDataCache(
+     }
+ 
+     return {
++      mutable: false,
+       cache: parseUseCacheCacheStore(Object.entries(json.store.cache)),
+       fetch: new Map(Object.entries(json.store.fetch)),
+       encryptedBoundArgs: new Map(
+diff --git a/packages/next/src/server/route-modules/app-route/module.ts b/packages/next/src/server/route-modules/app-route/module.ts
+index 109837937ff6..7c3b564fe133 100644
+--- a/packages/next/src/server/route-modules/app-route/module.ts
++++ b/packages/next/src/server/route-modules/app-route/module.ts
+@@ -496,10 +496,6 @@ export class AppRouteRouteModule extends RouteModule<
+           // can be retrieved during the final prerender within microtasks. This
+           // is crucial when doing revalidations of a deployed route handler,
+           // where the default cache handler does not do any in-memory caching.
+-          // We should replace the `prerenderResumeDataCache` and
+-          // `renderResumeDataCache` with a single `dataCache` property that is
+-          // conceptually not tied to resuming, and also avoids the unnecessary
+-          // complexity of using a mutable and an immutable resume data cache.
+           const prerenderResumeDataCache = createPrerenderResumeDataCache()
+ 
+           const prospectiveRoutePrerenderStore: PrerenderStore =
+@@ -522,8 +518,7 @@ export class AppRouteRouteModule extends RouteModule<
+               expire: INFINITE_CACHE,
+               stale: INFINITE_CACHE,
+               tags: [...implicitTags.tags],
+-              prerenderResumeDataCache,
+-              renderResumeDataCache: null,
++              resumeDataCache: prerenderResumeDataCache,
+               hmrRefreshHash: undefined,
+               varyParamsAccumulator: null,
+             })
+@@ -619,8 +614,7 @@ export class AppRouteRouteModule extends RouteModule<
+             expire: INFINITE_CACHE,
+             stale: INFINITE_CACHE,
+             tags: [...implicitTags.tags],
+-            prerenderResumeDataCache,
+-            renderResumeDataCache: null,
++            resumeDataCache: prerenderResumeDataCache,
+             hmrRefreshHash: undefined,
+             varyParamsAccumulator: null,
+           })
+diff --git a/packages/next/src/server/use-cache/use-cache-wrapper.ts b/packages/next/src/server/use-cache/use-cache-wrapper.ts
+index c320d4a4f281..72b2d366d6b4 100644
+--- a/packages/next/src/server/use-cache/use-cache-wrapper.ts
++++ b/packages/next/src/server/use-cache/use-cache-wrapper.ts
+@@ -28,8 +28,7 @@ import type {
+ } from '../app-render/work-unit-async-storage.external'
+ import {
+   getHmrRefreshHash,
+-  getRenderResumeDataCache,
+-  getPrerenderResumeDataCache,
++  getResumeDataCache,
+   workUnitAsyncStorage,
+   getDraftModeProviderForCacheScope,
+   getCacheSignal,
+@@ -74,7 +73,7 @@ import {
+   type SearchParams,
+ } from '../request/search-params'
+ import type { Params } from '../request/params'
+-import type { PrerenderResumeDataCache } from '../resume-data-cache/resume-data-cache'
++import type { ResumeDataCache } from '../resume-data-cache/resume-data-cache'
+ import { createLazyResult, isResolvedLazyResult } from '../lib/lazy-result'
+ import { dynamicAccessAsyncStorage } from '../app-render/dynamic-access-async-storage.external'
+ import type { CacheLife } from './cache-life'
+@@ -333,11 +332,11 @@ function computeRootParamsCacheKeySuffix(
+ }
+ 
+ function saveToResumeDataCache(
+-  prerenderResumeDataCache: PrerenderResumeDataCache | null,
++  resumeDataCache: ResumeDataCache | null,
+   serializedCacheKey: string,
+   pendingCacheResult: Promise<CollectedCacheResult>
+ ): Promise<CollectedCacheResult> {
+-  if (!prerenderResumeDataCache) {
++  if (!resumeDataCache?.mutable) {
+     return pendingCacheResult
+   }
+ 
+@@ -348,7 +347,7 @@ function saveToResumeDataCache(
+   // The RDC is per-page and root params are fixed within a page, so we always
+   // use the coarse key (without root param suffix). Unlike the cache handler,
+   // the RDC doesn't need root-param-specific keys for isolation.
+-  prerenderResumeDataCache.cache.set(serializedCacheKey, rdcResult)
++  resumeDataCache.cache.set(serializedCacheKey, rdcResult)
+   debug?.('Resume Data Cache entry saved', serializedCacheKey)
+ 
+   return savedCacheResult
+@@ -373,11 +372,11 @@ function saveToResumeDataCache(
+ function saveSharedCacheEntryToResumeDataCache(
+   serializedCacheKey: string,
+   sharedCacheEntry: SharedCacheEntry,
+-  prerenderResumeDataCache: PrerenderResumeDataCache | null
++  resumeDataCache: ResumeDataCache | null
+ ): void {
+   if (
+-    !prerenderResumeDataCache ||
+-    prerenderResumeDataCache.cache.has(serializedCacheKey)
++    !resumeDataCache?.mutable ||
++    resumeDataCache.cache.has(serializedCacheKey)
+   ) {
+     return
+   }
+@@ -398,7 +397,7 @@ function saveSharedCacheEntryToResumeDataCache(
+       dynamicNestedCacheError: metadata.dynamicNestedCacheError,
+     }))
+ 
+-  prerenderResumeDataCache.cache.set(serializedCacheKey, rdcResult)
++  resumeDataCache.cache.set(serializedCacheKey, rdcResult)
+   debug?.('Resume Data Cache entry saved by joiner', serializedCacheKey)
+ }
+ 
+@@ -1982,18 +1981,16 @@ export async function cache(
+ 
+   let stream: undefined | ReadableStream = undefined
+ 
+-  // Get an immutable and mutable versions of the resume data cache.
+-  const prerenderResumeDataCache = getPrerenderResumeDataCache(workUnitStore)
+-  const renderResumeDataCache = getRenderResumeDataCache(workUnitStore)
++  const resumeDataCache = getResumeDataCache(workUnitStore)
+ 
+   const implicitTags = workUnitStore.implicitTags?.tags ?? []
+ 
+-  if (renderResumeDataCache) {
++  if (resumeDataCache) {
+     // If this cache key was already determined to be dynamic during the
+     // prospective prerender (e.g. because it accessed fallback params), we
+     // return a hanging promise early to avoid trying to regenerate the entry,
+     // which would be aborted anyway.
+-    if (renderResumeDataCache.dynamicCacheKeys?.has(serializedCacheKey)) {
++    if (resumeDataCache.dynamicCacheKeys?.has(serializedCacheKey)) {
+       switch (workUnitStore.type) {
+         case 'prerender':
+         case 'prerender-runtime':
+@@ -2020,7 +2017,7 @@ export async function cache(
+     if (cacheSignal) {
+       cacheSignal.beginRead()
+     }
+-    const rdcEntry = renderResumeDataCache.cache.get(serializedCacheKey)
++    const rdcEntry = resumeDataCache.cache.get(serializedCacheKey)
+     if (rdcEntry !== undefined) {
+       let rdcResult: CollectedCacheResult | undefined = await rdcEntry
+ 
+@@ -2209,10 +2206,6 @@ export async function cache(
+       if (rdcResult !== undefined) {
+         debug?.('Resume Data Cache entry found', serializedCacheKey)
+ 
+-        if (prerenderResumeDataCache) {
+-          prerenderResumeDataCache.cache.set(serializedCacheKey, rdcEntry)
+-        }
+-
+         if (
+           rdcResult.readRootParamNames &&
+           rdcResult.readRootParamNames.size > 0
+@@ -2277,8 +2270,8 @@ export async function cache(
+           // an async function, before being passed into the "use cache"
+           // function, which escapes the instrumentation.
+           if (workUnitStore.allowEmptyStaticShell) {
+-            if (prerenderResumeDataCache) {
+-              prerenderResumeDataCache.dynamicCacheKeys.add(serializedCacheKey)
++            if (resumeDataCache?.mutable) {
++              resumeDataCache.dynamicCacheKeys.add(serializedCacheKey)
+             }
+             return makeHangingPromise(
+               workUnitStore.renderSignal,
+@@ -2360,7 +2353,7 @@ export async function cache(
+       saveSharedCacheEntryToResumeDataCache(
+         serializedCacheKey,
+         sharedCacheResult.entry,
+-        prerenderResumeDataCache
++        resumeDataCache
+       )
+ 
+       // End the cache signal read when the result is fully collected, not when
+@@ -2465,7 +2458,7 @@ export async function cache(
+             saveSharedCacheEntryToResumeDataCache(
+               serializedCacheKey,
+               sharedCacheResult.entry,
+-              prerenderResumeDataCache
++              resumeDataCache
+             )
+ 
+             // Resolve for intra-request joiners in this request. They get
+@@ -2500,8 +2493,8 @@ export async function cache(
+               'cross-request invocation is prerender-dynamic',
+               cacheHandlerKey
+             )
+-            if (prerenderResumeDataCache) {
+-              prerenderResumeDataCache.dynamicCacheKeys.add(serializedCacheKey)
++            if (resumeDataCache?.mutable) {
++              resumeDataCache.dynamicCacheKeys.add(serializedCacheKey)
+             }
+             cacheSignal?.endRead()
+             resolvableSharedCacheResult.resolve(sharedCacheResult)
+@@ -2723,8 +2716,8 @@ export async function cache(
+               'leader resolved as prerender-dynamic (generation)',
+               cacheHandlerKey
+             )
+-            if (prerenderResumeDataCache) {
+-              prerenderResumeDataCache.dynamicCacheKeys.add(serializedCacheKey)
++            if (resumeDataCache?.mutable) {
++              resumeDataCache.dynamicCacheKeys.add(serializedCacheKey)
+             }
+             resolvableSharedCacheResult.resolve(result)
+             return result.hangingPromise
+@@ -2735,7 +2728,7 @@ export async function cache(
+           // When draft mode is enabled, we must not save the cache entry.
+           if (!workStore.isDraftMode) {
+             const savedCacheResult = saveToResumeDataCache(
+-              prerenderResumeDataCache,
++              resumeDataCache,
+               serializedCacheKey,
+               pendingCacheResult
+             )
+@@ -2809,9 +2802,9 @@ export async function cache(
+           // We want to return this stream, even if it's stale.
+           stream = entry.value
+ 
+-          // If we have a resume data cache, we need to clone the entry and add
+-          // it to the resume data cache.
+-          if (prerenderResumeDataCache) {
++          // If we have a mutable resume data cache, we need to clone the entry
++          // and add it to the resume data cache.
++          if (resumeDataCache?.mutable) {
+             const [entryLeft, entryRight] = cloneCacheEntry(entry)
+             if (cacheSignal) {
+               stream = createTrackedReadableStream(entryLeft.value, cacheSignal)
+@@ -2821,7 +2814,7 @@ export async function cache(
+ 
+             // The RDC is per-page and root params are fixed within a page, so
+             // we always use the coarse key (without root param suffix).
+-            prerenderResumeDataCache.cache.set(
++            resumeDataCache.cache.set(
+               serializedCacheKey,
+               Promise.resolve({
+                 entry: entryRight,
+@@ -2875,7 +2868,7 @@ export async function cache(
+                   const { stream: ignoredStream, pendingCacheResult } = result
+ 
+                   const savedCacheResult = saveToResumeDataCache(
+-                    prerenderResumeDataCache,
++                    resumeDataCache,
+                     serializedCacheKey,
+                     pendingCacheResult
+                   )

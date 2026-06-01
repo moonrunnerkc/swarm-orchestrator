@@ -1,0 +1,523 @@
+diff --git a/packages/editor/src/lib/editor/managers/SpatialIndexManager/RBushIndex.ts b/packages/editor/src/lib/editor/managers/SpatialIndexManager/RBushIndex.ts
+index 0adbcd48eeff..37816fd176d7 100644
+--- a/packages/editor/src/lib/editor/managers/SpatialIndexManager/RBushIndex.ts
++++ b/packages/editor/src/lib/editor/managers/SpatialIndexManager/RBushIndex.ts
+@@ -113,25 +113,24 @@ export class RBushIndex {
+ 	}
+ 
+ 	/**
+-	 * Get all shape IDs currently in the spatial index.
++	 * Get the raw stored element for a shape, without allocating a Box.
++	 * Use when you only need to read the indexed bounds for comparison.
++	 *
++	 * @internal
+ 	 */
+-	getAllShapeIds(): TLShapeId[] {
+-		return Array.from(this.elementsInTree.keys())
++	getElement(id: TLShapeId): SpatialElement | undefined {
++		return this.elementsInTree.get(id)
+ 	}
+ 
+ 	/**
+-	 * Get the bounds currently stored in the spatial index for a shape.
+-	 * Returns undefined if the shape is not in the index.
++	 * Iterate the entries currently in the index. Callers may upsert existing
++	 * keys or remove keys during iteration; current callers do not insert new
++	 * keys.
++	 *
++	 * @internal
+ 	 */
+-	getBounds(id: TLShapeId): Box | undefined {
+-		const element = this.elementsInTree.get(id)
+-		if (!element) return undefined
+-		return new Box(
+-			element.minX,
+-			element.minY,
+-			element.maxX - element.minX,
+-			element.maxY - element.minY
+-		)
++	entries(): IterableIterator<[TLShapeId, SpatialElement]> {
++		return this.elementsInTree.entries()
+ 	}
+ 
+ 	/**
+diff --git a/packages/editor/src/lib/editor/managers/SpatialIndexManager/SpatialIndexManager.ts b/packages/editor/src/lib/editor/managers/SpatialIndexManager/SpatialIndexManager.ts
+index 3046f54dde5a..9db38c32c687 100644
+--- a/packages/editor/src/lib/editor/managers/SpatialIndexManager/SpatialIndexManager.ts
++++ b/packages/editor/src/lib/editor/managers/SpatialIndexManager/SpatialIndexManager.ts
+@@ -28,51 +28,56 @@ export class SpatialIndexManager {
+ 	private spatialIndexComputed: Computed<number>
+ 	private lastPageId: TLPageId | null = null
+ 
++	// Bumps only when the rbush content may have changed. Consumers subscribe
++	// via the computed; a stable epoch lets prop-only diffs skip downstream
++	// invalidations.
++	private _boundsEpoch = 0
++
+ 	constructor(public readonly editor: Editor) {
+ 		this.rbush = new RBushIndex()
+ 		this.spatialIndexComputed = this.createSpatialIndexComputed()
+ 	}
+ 
++	private rebuildAndBumpEpoch(): number {
++		this.buildFromScratch()
++		this._boundsEpoch++
++		return this._boundsEpoch
++	}
++
+ 	private createSpatialIndexComputed() {
+ 		const shapeHistory = this.editor.store.query.filterHistory('shape')
+ 
+ 		return computed<number>('spatialIndex', (_prevValue, lastComputedEpoch) => {
+ 			if (isUninitialized(_prevValue)) {
+-				return this.buildFromScratch(lastComputedEpoch)
++				return this.rebuildAndBumpEpoch()
+ 			}
+ 
+ 			const shapeDiff = shapeHistory.getDiffSince(lastComputedEpoch)
+ 
+ 			if (shapeDiff === RESET_VALUE) {
+-				return this.buildFromScratch(lastComputedEpoch)
++				return this.rebuildAndBumpEpoch()
+ 			}
+ 
+ 			const currentPageId = this.editor.getCurrentPageId()
+ 			if (this.lastPageId !== currentPageId) {
+-				return this.buildFromScratch(lastComputedEpoch)
++				return this.rebuildAndBumpEpoch()
+ 			}
+ 
+-			// No shape changes - index is already up to date
+-			if (shapeDiff.length === 0) {
+-				return lastComputedEpoch
+-			}
+-
+-			// Process incremental updates
+-			this.processIncrementalUpdate(shapeDiff)
++			if (shapeDiff.length === 0) return this._boundsEpoch
+ 
+-			return lastComputedEpoch
++			if (this.processIncrementalUpdate(shapeDiff)) {
++				this._boundsEpoch++
++			}
++			return this._boundsEpoch
+ 		})
+ 	}
+ 
+-	private buildFromScratch(epoch: number): number {
++	private buildFromScratch(): void {
+ 		this.rbush.clear()
+ 		this.lastPageId = this.editor.getCurrentPageId()
+ 
+-		const shapes = this.editor.getCurrentPageShapes()
+ 		const elements: SpatialElement[] = []
+-
+-		// Collect all shape elements for bulk loading
+-		for (const shape of shapes) {
++		for (const shape of this.editor.getCurrentPageShapes()) {
+ 			const bounds = this.editor.getShapePageBounds(shape.id)
+ 			if (bounds && bounds.isValid()) {
+ 				elements.push({
+@@ -87,36 +92,38 @@ export class SpatialIndexManager {
+ 
+ 		// Bulk load for efficiency
+ 		this.rbush.bulkLoad(elements)
+-
+-		return epoch
+ 	}
+ 
+-	private processIncrementalUpdate(shapeDiff: RecordsDiff<TLRecord>[]): void {
+-		// Track shapes we've already processed from the diff
++	private processIncrementalUpdate(shapeDiff: RecordsDiff<TLRecord>[]): boolean {
+ 		const processedShapeIds = new Set<TLShapeId>()
++		let changed = false
+ 
+-		// 1. Process shape additions, removals, and updates from diff
++		// Step 1: apply diff entries directly. `changed` flips only on real
++		// rbush mutations, so prop-only updates and no-op removes (e.g. shapes
++		// from other pages, or never-indexed shapes with invalid bounds) don't
++		// bump the epoch.
+ 		for (const changes of shapeDiff) {
+-			// Handle additions (only for shapes on current page)
+ 			for (const shape of objectMapValues(changes.added) as TLShape[]) {
+ 				if (isShape(shape) && this.editor.getAncestorPageId(shape) === this.lastPageId) {
+ 					const bounds = this.editor.getShapePageBounds(shape.id)
+ 					if (bounds && bounds.isValid()) {
+ 						this.rbush.upsert(shape.id, bounds)
++						changed = true
+ 					}
+ 					processedShapeIds.add(shape.id)
+ 				}
+ 			}
+ 
+-			// Handle removals
+ 			for (const shape of objectMapValues(changes.removed) as TLShape[]) {
+ 				if (isShape(shape)) {
+-					this.rbush.remove(shape.id)
++					if (this.rbush.has(shape.id)) {
++						this.rbush.remove(shape.id)
++						changed = true
++					}
+ 					processedShapeIds.add(shape.id)
+ 				}
+ 			}
+ 
+-			// Handle updated shapes: page changes and bounds updates
+ 			for (const [, to] of objectMapValues(changes.updated) as [TLShape, TLShape][]) {
+ 				if (!isShape(to)) continue
+ 				processedShapeIds.add(to.id)
+@@ -126,35 +133,55 @@ export class SpatialIndexManager {
+ 				if (isOnPage) {
+ 					const bounds = this.editor.getShapePageBounds(to.id)
+ 					if (bounds && bounds.isValid()) {
+-						this.rbush.upsert(to.id, bounds)
++						const indexedElement = this.rbush.getElement(to.id)
++						if (!this.areBoundsEqualToSpatialElement(bounds, indexedElement)) {
++							this.rbush.upsert(to.id, bounds)
++							changed = true
++						}
++					} else if (this.rbush.has(to.id)) {
++						this.rbush.remove(to.id)
++						changed = true
+ 					}
+-				} else {
++				} else if (this.rbush.has(to.id)) {
+ 					this.rbush.remove(to.id)
++					changed = true
+ 				}
+ 			}
+ 		}
+ 
+-		// 2. Check remaining shapes in index for bounds changes
+-		// This handles shapes with computed bounds (arrows bound to moved shapes, groups with moved children, etc.)
+-		const allShapeIds = this.rbush.getAllShapeIds()
+-
+-		for (const shapeId of allShapeIds) {
++		// Step 2: must always run. Diff entries can dirty derived bounds —
++		// arrows bound to moved shapes, groups with moved children — without
++		// touching any record visited in step 1. Also catches outline-only
++		// changes (e.g. geo rectangle→ellipse at the same w/h) that shift a
++		// bound arrow's intersection points: step 1 sees the geo's
++		// axis-aligned bounds unchanged and skips, but the dependent arrow's
++		// bounds have moved.
++		//
++		// Iterating the rbush's element map directly avoids allocating a
++		// shape-id array per pointer move. Mutation here is limited to
++		// upserts of existing keys and deletions, both safe during Map
++		// iteration.
++		for (const [shapeId, indexedElement] of this.rbush.entries()) {
+ 			if (processedShapeIds.has(shapeId)) continue
+ 
+ 			const currentBounds = this.editor.getShapePageBounds(shapeId)
+-			const indexedBounds = this.rbush.getBounds(shapeId)
++			if (this.areBoundsEqualToSpatialElement(currentBounds, indexedElement)) continue
+ 
+-			if (!this.areBoundsEqual(currentBounds, indexedBounds)) {
+-				if (currentBounds && currentBounds.isValid()) {
+-					this.rbush.upsert(shapeId, currentBounds)
+-				} else {
+-					this.rbush.remove(shapeId)
+-				}
++			if (currentBounds && currentBounds.isValid()) {
++				this.rbush.upsert(shapeId, currentBounds)
++			} else {
++				this.rbush.remove(shapeId)
+ 			}
++			changed = true
+ 		}
++
++		return changed
+ 	}
+ 
+-	private areBoundsEqual(a: Box | undefined, b: Box | undefined): boolean {
++	private areBoundsEqualToSpatialElement(
++		a: Box | undefined,
++		b: SpatialElement | undefined
++	): boolean {
+ 		if (!a && !b) return true
+ 		if (!a || !b) return false
+ 		return a.minX === b.minX && a.minY === b.minY && a.maxX === b.maxX && a.maxY === b.maxY
+diff --git a/packages/tldraw/src/test/spatialIndex.test.ts b/packages/tldraw/src/test/spatialIndex.test.ts
+new file mode 100644
+index 000000000000..612589465c57
+--- /dev/null
++++ b/packages/tldraw/src/test/spatialIndex.test.ts
+@@ -0,0 +1,278 @@
++import { Box, PageRecordType, createShapeId, react } from '@tldraw/editor'
++import { vi } from 'vitest'
++import { TestEditor } from './TestEditor'
++
++let editor: TestEditor
++
++beforeEach(() => {
++	editor = new TestEditor()
++	editor.updateViewportScreenBounds(new Box(0, 0, 1000, 1000))
++	editor.setCamera({ x: 0, y: 0, z: 1 })
++})
++
++afterEach(() => {
++	editor?.dispose()
++})
++
++// Track how many times a `getShapeIdsInsideBounds` reactor re-runs. The
++// reactor's only dep is the spatial index epoch, so the delta is a direct
++// proxy for "did the rbush epoch tick?". Initial subscribing run is dropped
++// from the count.
++function trackSpatialIndexInvalidations(target: TestEditor, bounds: Box) {
++	let count = 0
++	const stop = react('count spatial index invalidations', () => {
++		target.getShapeIdsInsideBounds(bounds)
++		count++
++	})
++	const baseline = count
++	return {
++		get delta() {
++			return count - baseline
++		},
++		stop,
++	}
++}
++
++describe('SpatialIndexManager - bounds epoch', () => {
++	it('ticks when a shape moves (real bounds change)', () => {
++		const id = createShapeId('mover')
++		editor.createShapes([{ id, type: 'geo', x: 100, y: 100, props: { w: 100, h: 100 } }])
++
++		const tracker = trackSpatialIndexInvalidations(editor, editor.getViewportPageBounds())
++
++		editor.updateShapes([{ id, type: 'geo', x: 200, y: 200 }])
++
++		expect(tracker.delta).toBe(1)
++		tracker.stop()
++	})
++
++	it('does not tick on a prop-only update with unchanged bounds', () => {
++		// Color change doesn't move bounds — step-1 must short-circuit
++		// the upsert and the epoch must stay still.
++		const id = createShapeId('prop-only')
++		editor.createShapes([
++			{ id, type: 'geo', x: 100, y: 100, props: { w: 100, h: 100, color: 'black' } },
++		])
++
++		const tracker = trackSpatialIndexInvalidations(editor, editor.getViewportPageBounds())
++
++		editor.updateShapes([{ id, type: 'geo', props: { color: 'red' } }])
++
++		expect(tracker.delta).toBe(0)
++		tracker.stop()
++	})
++
++	it('skips the rbush upsert call on a prop-only diff', () => {
++		// Direct check on the headline optimization: `RBushIndex.upsert`
++		// must not be called when only props change.
++		const id = createShapeId('upsert-spy')
++		editor.createShapes([{ id, type: 'geo', x: 100, y: 100 }])
++		// Initialize the computed before spying so buildFromScratch's
++		// bulkLoad runs outside the spy window.
++		editor.getShapeIdsInsideBounds(editor.getViewportPageBounds())
++
++		const rbush = (editor as any)._spatialIndex.rbush
++		const spy = vi.spyOn(rbush, 'upsert')
++
++		editor.updateShapes([{ id, type: 'geo', props: { color: 'red' } }])
++		editor.getShapeIdsInsideBounds(editor.getViewportPageBounds())
++		expect(spy).not.toHaveBeenCalled()
++
++		// Sanity: a real bounds change does call upsert.
++		editor.updateShapes([{ id, type: 'geo', x: 200, y: 200 }])
++		editor.getShapeIdsInsideBounds(editor.getViewportPageBounds())
++		expect(spy).toHaveBeenCalled()
++
++		spy.mockRestore()
++	})
++
++	it('ticks exactly once when a multi-shape diff mixes prop-only and bounds changes', () => {
++		// Guards against a future "if (changed) return early after step 1"
++		// regression: with one mover and one prop-only shape in the same
++		// transaction, the epoch must bump exactly once.
++		const moverId = createShapeId('multi-mover')
++		const propOnlyId = createShapeId('multi-prop-only')
++		editor.createShapes([
++			{ id: moverId, type: 'geo', x: 100, y: 100, props: { w: 100, h: 100 } },
++			{ id: propOnlyId, type: 'geo', x: 300, y: 300, props: { w: 100, h: 100, color: 'black' } },
++		])
++
++		const tracker = trackSpatialIndexInvalidations(editor, editor.getViewportPageBounds())
++
++		editor.run(() => {
++			editor.updateShapes([
++				{ id: moverId, type: 'geo', x: 200, y: 200 },
++				{ id: propOnlyId, type: 'geo', props: { color: 'red' } },
++			])
++		})
++
++		expect(tracker.delta).toBe(1)
++		tracker.stop()
++	})
++
++	it('does not tick when removing a shape that lives on a different page', () => {
++		const page1 = editor.getCurrentPageId()
++		editor.createShapes([{ id: createShapeId('p1-anchor'), type: 'geo', x: 100, y: 100 }])
++
++		// Stage a shape on a different page so its lifecycle never touches
++		// page1's rbush.
++		const page2 = PageRecordType.createId('page2-remove-epoch')
++		editor.createPage({ name: 'page2-remove-epoch', id: page2 })
++		editor.setCurrentPage(page2)
++		const ghostId = createShapeId('p2-ghost')
++		editor.createShapes([{ id: ghostId, type: 'geo', x: 100, y: 100 }])
++		editor.setCurrentPage(page1)
++
++		const tracker = trackSpatialIndexInvalidations(editor, editor.getViewportPageBounds())
++
++		// Removing a shape that was never indexed on the active page must
++		// not bump the bounds epoch.
++		editor.deleteShape(ghostId)
++
++		expect(tracker.delta).toBe(0)
++		tracker.stop()
++	})
++
++	it('ticks exactly once on page switch (full rebuild)', () => {
++		editor.createShapes([{ id: createShapeId('p1-shape'), type: 'geo', x: 100, y: 100 }])
++		// Initialize the computed before tracking.
++		editor.getShapeIdsInsideBounds(editor.getViewportPageBounds())
++
++		const tracker = trackSpatialIndexInvalidations(editor, editor.getViewportPageBounds())
++
++		const page2 = PageRecordType.createId('page2-switch')
++		editor.createPage({ name: 'page2-switch', id: page2 })
++		editor.setCurrentPage(page2)
++
++		expect(tracker.delta).toBe(1)
++		tracker.stop()
++	})
++})
++
++describe('SpatialIndexManager - step-2 transitive bounds sweep', () => {
++	it('refreshes arrow bounds when a bound geo shape changes outline without changing axis-aligned bounds', () => {
++		// Regression: rectangle→ellipse keeps axis-aligned bounds the
++		// same but moves the outline. The bound arrow's endpoint shifts,
++		// changing the arrow's bounds. Step 1 sees the geo unchanged;
++		// only step 2's sweep catches the dependent arrow.
++		const targetId = createShapeId('outline-target')
++		editor.createShapes([
++			{
++				id: targetId,
++				type: 'geo',
++				x: 0,
++				y: 0,
++				props: { w: 100, h: 100, geo: 'rectangle' },
++			},
++		])
++
++		const targetBoundsBefore = editor.getShapePageBounds(targetId)!
++		expect(targetBoundsBefore).toBeDefined()
++
++		// Draw an arrow from a non-axis-aligned direction so the bound
++		// endpoint lands somewhere rectangle and inscribed ellipse disagree.
++		editor.setCurrentTool('arrow')
++		editor.pointerDown(-100, -100)
++		editor.pointerMove(50, 50)
++		editor.pointerUp(50, 50)
++		editor.selectNone()
++
++		const arrow = editor.getCurrentPageShapes().find((s) => s.type === 'arrow')!
++		expect(arrow).toBeDefined()
++
++		const arrowBoundsBefore = editor.getShapePageBounds(arrow.id)!
++		expect(arrowBoundsBefore).toBeDefined()
++
++		// Flip target geometry without changing its axis-aligned bounds.
++		editor.updateShapes([{ id: targetId, type: 'geo', props: { geo: 'ellipse' } }])
++
++		// Geo's own bounds must be unchanged.
++		const targetBoundsAfter = editor.getShapePageBounds(targetId)!
++		expect(targetBoundsAfter.equals(targetBoundsBefore)).toBe(true)
++
++		// Arrow's actual page bounds shifted because the bound endpoint
++		// moved.
++		const arrowBoundsAfter = editor.getShapePageBounds(arrow.id)!
++		expect(arrowBoundsAfter.equals(arrowBoundsBefore)).toBe(false)
++
++		// Probe a region that's only inside the new bounds, not the old.
++		// If the rbush still has the old bounds, the probe misses.
++		const probe = probeOnlyInAfter(arrowBoundsBefore, arrowBoundsAfter)
++		const hits = editor.getShapeIdsInsideBounds(probe)
++		expect(hits.has(arrow.id)).toBe(true)
++	})
++
++	it('removes an indexed shape from the source page when it is reparented to another page', () => {
++		// Reparent-to-other-page hits step 1's "updated, not on page,
++		// `rbush.has(id)` true → remove" branch.
++		const page1 = editor.getCurrentPageId()
++		const id = createShapeId('migrating')
++		editor.createShapes([{ id, type: 'geo', x: 100, y: 100, props: { w: 100, h: 100 } }])
++		expect(editor.getShapeIdsInsideBounds(new Box(0, 0, 1000, 1000)).has(id)).toBe(true)
++
++		const page2 = PageRecordType.createId('page2-migrate')
++		editor.createPage({ name: 'page2-migrate', id: page2 })
++		editor.setCurrentPage(page1)
++
++		const tracker = trackSpatialIndexInvalidations(editor, new Box(0, 0, 1000, 1000))
++		editor.reparentShapes([id], page2)
++
++		expect(tracker.delta).toBe(1)
++		expect(editor.getShapeIdsInsideBounds(new Box(0, 0, 1000, 1000)).has(id)).toBe(false)
++		tracker.stop()
++	})
++})
++
++describe('SpatialIndexManager - basic queries', () => {
++	it('returns shapes inside the queried bounds', () => {
++		const insideId = createShapeId('inside')
++		const outsideId = createShapeId('outside')
++		editor.createShapes([
++			{ id: insideId, type: 'geo', x: 100, y: 100, props: { w: 100, h: 100 } },
++			{ id: outsideId, type: 'geo', x: 5000, y: 5000, props: { w: 100, h: 100 } },
++		])
++
++		const hits = editor.getShapeIdsInsideBounds(new Box(0, 0, 1000, 1000))
++		expect(hits.has(insideId)).toBe(true)
++		expect(hits.has(outsideId)).toBe(false)
++	})
++
++	it('removes a shape from the index when it is deleted', () => {
++		const id = createShapeId('doomed')
++		editor.createShapes([{ id, type: 'geo', x: 100, y: 100 }])
++		expect(editor.getShapeIdsInsideBounds(new Box(0, 0, 1000, 1000)).has(id)).toBe(true)
++
++		editor.deleteShape(id)
++		expect(editor.getShapeIdsInsideBounds(new Box(0, 0, 1000, 1000)).has(id)).toBe(false)
++	})
++})
++
++function probeOnlyInAfter(before: Box, after: Box): Box {
++	const eps = 0.01
++	const thickness = 1
++	if (after.maxX > before.maxX + eps) {
++		const x = before.maxX + eps
++		return new Box(x, after.minY, Math.min(thickness, after.maxX - x), Math.max(after.h, eps))
++	}
++	if (after.maxY > before.maxY + eps) {
++		const y = before.maxY + eps
++		return new Box(after.minX, y, Math.max(after.w, eps), Math.min(thickness, after.maxY - y))
++	}
++	if (after.minX < before.minX - eps) {
++		return new Box(
++			after.minX,
++			after.minY,
++			Math.min(thickness, before.minX - after.minX - eps),
++			Math.max(after.h, eps)
++		)
++	}
++	if (after.minY < before.minY - eps) {
++		return new Box(
++			after.minX,
++			after.minY,
++			Math.max(after.w, eps),
++			Math.min(thickness, before.minY - after.minY - eps)
++		)
++	}
++	throw new Error('expected after-bounds to extend past before-bounds on at least one edge')
++}

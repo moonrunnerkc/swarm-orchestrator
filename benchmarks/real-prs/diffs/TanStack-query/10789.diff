@@ -1,0 +1,1354 @@
+diff --git a/.changeset/lit-query-tracked-updates.md b/.changeset/lit-query-tracked-updates.md
+new file mode 100644
+index 00000000000..b27855c79f5
+--- /dev/null
++++ b/.changeset/lit-query-tracked-updates.md
+@@ -0,0 +1,5 @@
++---
++"@tanstack/lit-query": patch
++---
++
++Fix redundant Lit host updates for function-backed query options, mutation state selectors, and tracked query result reads.
+diff --git a/packages/lit-query/src/controllers/BaseController.ts b/packages/lit-query/src/controllers/BaseController.ts
+index ba303edd417..c619ece3158 100644
+--- a/packages/lit-query/src/controllers/BaseController.ts
++++ b/packages/lit-query/src/controllers/BaseController.ts
+@@ -24,6 +24,7 @@ export abstract class BaseController<TResult> implements ReactiveController {
+   private updateQueued = false
+   private clientChangeQueued = false
+   private connectionAttempt = 0
++  private isHostUpdating = false
+   private queryClientResolutionState: QueryClientResolutionState
+ 
+   protected constructor(
+@@ -92,7 +93,12 @@ export abstract class BaseController<TResult> implements ReactiveController {
+       return
+     }
+ 
+-    this.onHostUpdate()
++    this.isHostUpdating = true
++    try {
++      this.onHostUpdate()
++    } finally {
++      this.isHostUpdating = false
++    }
+   }
+ 
+   destroy(): void {
+@@ -133,7 +139,9 @@ export abstract class BaseController<TResult> implements ReactiveController {
+     }
+ 
+     this.result = next
+-    this.queueUpdate()
++    if (!this.isHostUpdating) {
++      this.queueUpdate()
++    }
+   }
+ 
+   get current(): TResult {
+diff --git a/packages/lit-query/src/createInfiniteQueryController.ts b/packages/lit-query/src/createInfiniteQueryController.ts
+index 4e41edbf818..6a41bb68371 100644
+--- a/packages/lit-query/src/createInfiniteQueryController.ts
++++ b/packages/lit-query/src/createInfiniteQueryController.ts
+@@ -17,6 +17,7 @@ import {
+ } from './accessor.js'
+ import { createMissingQueryClientError } from './context.js'
+ import { BaseController } from './controllers/BaseController.js'
++import { QueryObserverResultTracker } from './queryObserverResultTracker.js'
+ 
+ /**
+  * Options accepted by `createInfiniteQueryController`.
+@@ -131,6 +132,9 @@ class InfiniteQueryController<
+   private observer:
+     | InfiniteQueryObserver<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+     | undefined
++  private readonly resultTracker = new QueryObserverResultTracker<
++    InfiniteQueryObserverResult<TData, TError>
++  >()
+   private unsubscribe: (() => void) | undefined
+   private queryClient: QueryClient | undefined
+ 
+@@ -162,7 +166,7 @@ class InfiniteQueryController<
+     const observer = new InfiniteQueryObserver(queryClient, defaulted)
+     this.queryClient = queryClient
+     this.observer = observer
+-    this.result = observer.getOptimisticResult(defaulted)
++    this.assignObserverResult(observer.getOptimisticResult(defaulted))
+   }
+ 
+   protected onConnected(): void {
+@@ -174,7 +178,7 @@ class InfiniteQueryController<
+     this.subscribe()
+     this.observer?.updateResult()
+     if (this.observer) {
+-      this.setResult(this.observer.getCurrentResult())
++      this.setObserverResult(this.observer.getCurrentResult())
+     }
+   }
+ 
+@@ -200,39 +204,47 @@ class InfiniteQueryController<
+     this.subscribe()
+     this.observer?.updateResult()
+     if (this.observer) {
+-      this.setResult(this.observer.getCurrentResult())
++      this.setObserverResult(this.observer.getCurrentResult())
+     }
+   }
+ 
+   refetch: InfiniteQueryObserverResult<TData, TError>['refetch'] = (
+     ...args
+   ) => {
+-    if (!this.refreshOptions()) {
++    if (!this.applyOptions() || !this.observer) {
+       return Promise.reject(createMissingQueryClientError())
+     }
+ 
+-    return this.result.refetch(...args)
++    return this.observer.refetch(...args)
+   }
+ 
+   fetchNextPage: InfiniteQueryObserverResult<TData, TError>['fetchNextPage'] = (
+     ...args
+   ) => {
+-    if (!this.refreshOptions()) {
++    if (!this.applyOptions() || !this.observer) {
+       return Promise.reject(createMissingQueryClientError())
+     }
+ 
+-    return this.result.fetchNextPage(...args)
++    return this.observer.fetchNextPage(...args)
+   }
+ 
+   fetchPreviousPage: InfiniteQueryObserverResult<
+     TData,
+     TError
+   >['fetchPreviousPage'] = (...args) => {
+-    if (!this.refreshOptions()) {
++    if (!this.applyOptions() || !this.observer) {
+       return Promise.reject(createMissingQueryClientError())
+     }
+ 
+-    return this.result.fetchPreviousPage(...args)
++    return this.observer.fetchPreviousPage(...args)
++  }
++
++  readCurrent(): InfiniteQueryObserverResult<TData, TError> {
++    if (this.observer) {
++      this.assignObserverResult(this.observer.getCurrentResult())
++    }
++
++    return this.current
+   }
+ 
+   private subscribe(): void {
+@@ -245,7 +257,7 @@ class InfiniteQueryController<
+     }
+ 
+     this.unsubscribe = this.observer.subscribe((next) => {
+-      this.setResult(next)
++      this.setObserverResult(next)
+     })
+   }
+ 
+@@ -260,6 +272,7 @@ class InfiniteQueryController<
+       this.unsubscribeObserver()
+       this.queryClient = undefined
+       this.observer = undefined
++      this.resultTracker.reset()
+       this.setResult(createPendingInfiniteQueryResult())
+       return false
+     }
+@@ -272,21 +285,47 @@ class InfiniteQueryController<
+     this.queryClient = nextClient
+     const options = this.defaultOptions(this.queryClient)
+     this.observer = new InfiniteQueryObserver(this.queryClient, options)
+-    this.setResult(this.observer.getOptimisticResult(options))
++    this.setObserverResult(this.observer.getOptimisticResult(options))
+     return true
+   }
+ 
+-  private refreshOptions(): boolean {
++  private applyOptions(): boolean {
+     if (!this.syncClient() || !this.observer || !this.queryClient) {
+       return false
+     }
+ 
+     const options = this.defaultOptions(this.queryClient)
+     this.observer.setOptions(options)
+-    this.setResult(this.observer.getOptimisticResult(options))
+     return true
+   }
+ 
++  private refreshOptions(): boolean {
++    if (!this.applyOptions() || !this.observer) {
++      return false
++    }
++
++    this.setObserverResult(this.observer.getCurrentResult())
++    return true
++  }
++
++  private assignObserverResult(
++    result: InfiniteQueryObserverResult<TData, TError>,
++  ): void {
++    const trackedResult = this.resultTracker.update(this.observer, result)
++    if (trackedResult) {
++      this.result = trackedResult
++    }
++  }
++
++  private setObserverResult(
++    result: InfiniteQueryObserverResult<TData, TError>,
++  ): void {
++    const trackedResult = this.resultTracker.update(this.observer, result)
++    if (trackedResult) {
++      this.setResult(trackedResult)
++    }
++  }
++
+   private defaultOptions(
+     client = this.queryClient,
+   ): DefaultedInfiniteQueryObserverOptions<
+@@ -383,7 +422,7 @@ export function createInfiniteQueryController<
+   const controller = new InfiniteQueryController(host, options, queryClient)
+ 
+   return Object.assign(
+-    createValueAccessor(() => controller.current),
++    createValueAccessor(() => controller.readCurrent()),
+     {
+       refetch: controller.refetch,
+       fetchNextPage: controller.fetchNextPage,
+diff --git a/packages/lit-query/src/createQueriesController.ts b/packages/lit-query/src/createQueriesController.ts
+index c686cfa9b40..2af3b312004 100644
+--- a/packages/lit-query/src/createQueriesController.ts
++++ b/packages/lit-query/src/createQueriesController.ts
+@@ -1,5 +1,6 @@
+ import {
+   QueriesObserver,
++  replaceEqualDeep,
+   type DefaultError,
+   type DefinedQueryObserverResult,
+   type OmitKeyof,
+@@ -322,6 +323,10 @@ class QueriesController<
+   private observer: QueriesObserver<TCombinedResult> | undefined
+   private unsubscribe: (() => void) | undefined
+   private queryClient: QueryClient | undefined
++  private queries: Array<QueryObserverOptions> = []
++  private combine: QueriesObserverOptions<TCombinedResult>['combine']
++  private combinedResult: TCombinedResult | undefined
++  private rawResult: Array<QueryObserverResult> = []
+   private explicitInitializationError: unknown | undefined
+   private placeholderInitialized = false
+   private placeholderRetryableFailure = true
+@@ -394,8 +399,7 @@ class QueriesController<
+     }
+ 
+     this.unsubscribe = this.observer.subscribe((next) => {
+-      const { combine } = this.readResolvedOptions()
+-      this.setResult(this.computeResult(next, combine))
++      this.setObserverResult(next)
+     })
+   }
+ 
+@@ -405,12 +409,14 @@ class QueriesController<
+         this.options,
+         queryClient,
+       )
+-      const observer = new QueriesObserver(queryClient, queries, {
+-        combine,
++      this.queries = queries
++      this.combine = combine
++      const observer = new QueriesObserver(queryClient, this.queries, {
++        combine: this.combine,
+       } as QueriesObserverOptions<TCombinedResult>)
+       this.queryClient = queryClient
+       this.observer = observer
+-      this.result = this.computeResult(observer.getCurrentResult(), combine)
++      this.assignObserverResult(observer.getCurrentResult(), true)
+       this.explicitInitializationError = undefined
+       this.placeholderInitialized = true
+       return true
+@@ -448,6 +454,10 @@ class QueriesController<
+       this.unsubscribeObserver()
+       this.queryClient = undefined
+       this.observer = undefined
++      this.queries = []
++      this.combine = undefined
++      this.combinedResult = undefined
++      this.rawResult = []
+       this.setPlaceholderResult()
+       return false
+     }
+@@ -459,12 +469,12 @@ class QueriesController<
+     this.unsubscribeObserver()
+     this.queryClient = nextClient
+     const { queries, combine } = this.readResolvedOptions()
+-    this.observer = new QueriesObserver(this.queryClient, queries, {
+-      combine,
++    this.queries = queries
++    this.combine = combine
++    this.observer = new QueriesObserver(this.queryClient, this.queries, {
++      combine: this.combine,
+     } as QueriesObserverOptions<TCombinedResult>)
+-    this.setResult(
+-      this.computeResult(this.observer.getCurrentResult(), combine),
+-    )
++    this.setObserverResult(this.observer.getCurrentResult(), true)
+     this.placeholderInitialized = true
+     return true
+   }
+@@ -475,17 +485,14 @@ class QueriesController<
+     }
+ 
+     const { queries, combine } = this.readResolvedOptions()
++    this.queries = queries
++    this.combine = combine
+ 
+-    this.observer.setQueries(queries, {
+-      combine,
++    this.observer.setQueries(this.queries, {
++      combine: this.combine,
+     } as QueriesObserverOptions<TCombinedResult>)
+ 
+-    const [rawResult, getCombinedResult] = this.observer.getOptimisticResult(
+-      queries,
+-      combine,
+-    )
+-
+-    this.setResult(getCombinedResult(rawResult))
++    this.setObserverResult(this.observer.getCurrentResult(), true)
+     return true
+   }
+ 
+@@ -513,11 +520,87 @@ class QueriesController<
+     return typeof this.options.queries === 'function'
+   }
+ 
+-  private computeResult(
++  private createResult(rawResult: Array<QueryObserverResult>): TCombinedResult {
++    const trackedResult = this.trackResult(rawResult)
++    const combine = this.combine
++
++    if (!combine) {
++      return trackedResult as TCombinedResult
++    }
++
++    this.combinedResult = replaceEqualDeep(
++      this.combinedResult,
++      combine(trackedResult),
++    ) as TCombinedResult
++
++    return this.combinedResult
++  }
++
++  private assignObserverResult(
+     rawResult: Array<QueryObserverResult>,
+-    combine: QueriesObserverOptions<TCombinedResult>['combine'],
+-  ): TCombinedResult {
+-    return (combine ? combine(rawResult) : rawResult) as TCombinedResult
++    force = false,
++  ): void {
++    if (!force && this.hasObserverResult(rawResult)) {
++      return
++    }
++
++    this.rawResult = rawResult
++    this.result = this.createResult(rawResult)
++  }
++
++  private setObserverResult(
++    rawResult: Array<QueryObserverResult>,
++    force = false,
++  ): void {
++    if (!force && this.hasObserverResult(rawResult)) {
++      return
++    }
++
++    this.rawResult = rawResult
++    this.setResult(this.createResult(rawResult))
++  }
++
++  private hasObserverResult(rawResult: Array<QueryObserverResult>): boolean {
++    return (
++      this.rawResult.length === rawResult.length &&
++      rawResult.every((result, index) =>
++        Object.is(this.rawResult[index], result),
++      )
++    )
++  }
++
++  private getCurrentObserverResults(): Array<QueryObserverResult> {
++    if (!this.observer) {
++      return []
++    }
++
++    return this.observer
++      .getObservers()
++      .map((observer) => observer.getCurrentResult())
++  }
++
++  private trackResult(
++    rawResult: Array<QueryObserverResult>,
++  ): Array<QueryObserverResult> {
++    if (!this.observer) {
++      return rawResult
++    }
++
++    const observers = this.observer.getObservers()
++
++    return rawResult.map((result, index) => {
++      const observer = observers[index]
++
++      if (!observer || observer.options.notifyOnChangeProps) {
++        return result
++      }
++
++      return observer.trackResult(result, (accessedProp) => {
++        observers.forEach((observer) => {
++          observer.trackProp(accessedProp)
++        })
++      })
++    })
+   }
+ 
+   private static createPlaceholderResult<TCombinedResult>(
+@@ -559,10 +642,15 @@ class QueriesController<
+       }
+     }
+ 
++    if (this.observer) {
++      this.assignObserverResult(this.getCurrentObserverResults())
++    }
++
+     return this.current
+   }
+ 
+   private setPlaceholderResult(): void {
++    this.rawResult = []
+     this.result = QueriesController.createPlaceholderResult(this.options)
+     this.placeholderInitialized = true
+   }
+diff --git a/packages/lit-query/src/createQueryController.ts b/packages/lit-query/src/createQueryController.ts
+index 1aac214cf43..09ec7af1391 100644
+--- a/packages/lit-query/src/createQueryController.ts
++++ b/packages/lit-query/src/createQueryController.ts
+@@ -16,6 +16,7 @@ import {
+ } from './accessor.js'
+ import { createMissingQueryClientError } from './context.js'
+ import { BaseController } from './controllers/BaseController.js'
++import { QueryObserverResultTracker } from './queryObserverResultTracker.js'
+ 
+ /**
+  * Options accepted by `createQueryController`.
+@@ -100,6 +101,9 @@ class QueryController<
+   private observer:
+     | QueryObserver<TQueryFnData, TError, TData, TQueryData, TQueryKey>
+     | undefined
++  private readonly resultTracker = new QueryObserverResultTracker<
++    QueryObserverResult<TData, TError>
++  >()
+   private unsubscribe: (() => void) | undefined
+   private queryClient: QueryClient | undefined
+ 
+@@ -126,7 +130,7 @@ class QueryController<
+     const observer = new QueryObserver(initialClient, defaulted)
+     this.queryClient = initialClient
+     this.observer = observer
+-    this.result = observer.getOptimisticResult(defaulted)
++    this.assignObserverResult(observer.getOptimisticResult(defaulted))
+   }
+ 
+   protected onConnected(): void {
+@@ -138,7 +142,7 @@ class QueryController<
+     this.subscribe()
+     this.observer?.updateResult()
+     if (this.observer) {
+-      this.setResult(this.observer.getCurrentResult())
++      this.setObserverResult(this.observer.getCurrentResult())
+     }
+   }
+ 
+@@ -168,16 +172,16 @@ class QueryController<
+     this.subscribe()
+     this.observer?.updateResult()
+     if (this.observer) {
+-      this.setResult(this.observer.getCurrentResult())
++      this.setObserverResult(this.observer.getCurrentResult())
+     }
+   }
+ 
+   refetch: QueryObserverResult<TData, TError>['refetch'] = (...args) => {
+-    if (!this.refreshOptions()) {
++    if (!this.applyOptions() || !this.observer) {
+       return Promise.reject(createMissingQueryClientError())
+     }
+ 
+-    return this.result.refetch(...args)
++    return this.observer.refetch(...args)
+   }
+ 
+   suspense = async (): Promise<QueryObserverResult<TData, TError>> => {
+@@ -195,6 +199,14 @@ class QueryController<
+     return optimistic
+   }
+ 
++  readCurrent(): QueryObserverResult<TData, TError> {
++    if (this.observer) {
++      this.assignObserverResult(this.observer.getCurrentResult())
++    }
++
++    return this.current
++  }
++
+   private subscribe(): void {
+     if (!this.observer) {
+       return
+@@ -205,7 +217,7 @@ class QueryController<
+     }
+ 
+     this.unsubscribe = this.observer.subscribe((next) => {
+-      this.setResult(next)
++      this.setObserverResult(next)
+     })
+   }
+ 
+@@ -220,6 +232,7 @@ class QueryController<
+       this.unsubscribeObserver()
+       this.queryClient = undefined
+       this.observer = undefined
++      this.resultTracker.reset()
+       this.setResult(createPendingQueryResult())
+       return false
+     }
+@@ -232,21 +245,45 @@ class QueryController<
+     this.queryClient = nextClient
+     const options = this.defaultOptions()
+     this.observer = new QueryObserver(this.queryClient, options)
+-    this.setResult(this.observer.getOptimisticResult(options))
++    this.setObserverResult(this.observer.getOptimisticResult(options))
+     return true
+   }
+ 
+-  private refreshOptions(): boolean {
++  private applyOptions(): boolean {
+     if (!this.syncClient() || !this.observer) {
+       return false
+     }
+ 
+     const options = this.defaultOptions(this.queryClient)
+     this.observer.setOptions(options)
+-    this.setResult(this.observer.getCurrentResult())
+     return true
+   }
+ 
++  private refreshOptions(): boolean {
++    if (!this.applyOptions() || !this.observer) {
++      return false
++    }
++
++    this.setObserverResult(this.observer.getCurrentResult())
++    return true
++  }
++
++  private assignObserverResult(
++    result: QueryObserverResult<TData, TError>,
++  ): void {
++    const trackedResult = this.resultTracker.update(this.observer, result)
++    if (trackedResult) {
++      this.result = trackedResult
++    }
++  }
++
++  private setObserverResult(result: QueryObserverResult<TData, TError>): void {
++    const trackedResult = this.resultTracker.update(this.observer, result)
++    if (trackedResult) {
++      this.setResult(trackedResult)
++    }
++  }
++
+   private defaultOptions(
+     client = this.queryClient,
+   ): DefaultedQueryObserverOptions<
+@@ -332,7 +369,7 @@ export function createQueryController<
+   const controller = new QueryController(host, options, queryClient)
+ 
+   return Object.assign(
+-    createValueAccessor(() => controller.current),
++    createValueAccessor(() => controller.readCurrent()),
+     {
+       refetch: controller.refetch,
+       suspense: controller.suspense,
+diff --git a/packages/lit-query/src/queryObserverResultTracker.ts b/packages/lit-query/src/queryObserverResultTracker.ts
+new file mode 100644
+index 00000000000..650df3937c8
+--- /dev/null
++++ b/packages/lit-query/src/queryObserverResultTracker.ts
+@@ -0,0 +1,30 @@
++type TrackableQueryObserver<TResult extends object> = {
++  options: { notifyOnChangeProps?: unknown }
++  trackResult: (result: TResult) => unknown
++}
++
++export class QueryObserverResultTracker<TResult extends object> {
++  private result: TResult | undefined
++  private usesTracking = false
++
++  reset(): void {
++    this.result = undefined
++    this.usesTracking = false
++  }
++
++  update(
++    observer: TrackableQueryObserver<TResult> | undefined,
++    result: TResult,
++  ): TResult | undefined {
++    const usesTracking = !!observer && !observer.options.notifyOnChangeProps
++
++    if (Object.is(this.result, result) && this.usesTracking === usesTracking) {
++      return undefined
++    }
++
++    this.result = result
++    this.usesTracking = usesTracking
++
++    return usesTracking ? (observer.trackResult(result) as TResult) : result
++  }
++}
+diff --git a/packages/lit-query/src/tests/counters-and-state.test.ts b/packages/lit-query/src/tests/counters-and-state.test.ts
+index 3a28b5a5161..d2b14739f4a 100644
+--- a/packages/lit-query/src/tests/counters-and-state.test.ts
++++ b/packages/lit-query/src/tests/counters-and-state.test.ts
+@@ -89,6 +89,92 @@ if (!customElements.get(contextCountersTagName)) {
+ }
+ 
+ describe('useIsFetching/useIsMutating/useMutationState', () => {
++  it('does not request another update when stable mutation state selectors refresh during host update', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        mutations: {
++          retry: false,
++        },
++      },
++    })
++
++    const host = new TestControllerHost()
++    const mutationStates = useMutationState<string>(
++      host,
++      {
++        select: (mutation) => mutation.state.status,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      await Promise.resolve()
++
++      expect(mutationStates()).toEqual([])
++
++      host.updatesRequested = 0
++
++      for (let i = 0; i < 5; i += 1) {
++        host.update()
++        await Promise.resolve()
++      }
++
++      expect(host.updatesRequested).toBe(0)
++      expect(mutationStates()).toEqual([])
++    } finally {
++      mutationStates.destroy()
++    }
++  })
++
++  it('does not request another update when mutation cache emits with unchanged selected state', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        mutations: {
++          retry: false,
++        },
++      },
++    })
++
++    const mutationKey = ['mutation-state', 'stable-cache-events'] as const
++    const mutation = client.getMutationCache().build(client, {
++      mutationKey,
++    })
++
++    const host = new TestControllerHost()
++    const mutationStates = useMutationState<string>(
++      host,
++      {
++        filters: { mutationKey },
++        select: (mutation) => mutation.state.status,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      await Promise.resolve()
++
++      expect(mutationStates()).toEqual(['idle'])
++
++      host.updatesRequested = 0
++
++      for (let i = 0; i < 5; i += 1) {
++        client.getMutationCache().notify({
++          type: 'updated',
++          mutation,
++          action: { type: 'pause' } as never,
++        })
++        await Promise.resolve()
++      }
++
++      expect(host.updatesRequested).toBe(0)
++      expect(mutationStates()).toEqual(['idle'])
++    } finally {
++      mutationStates.destroy()
++    }
++  })
++
+   it('LC-COUNTERS-01: pre-connect placeholders stay zero/empty until a provider binds', async () => {
+     const consumer = document.createElement(
+       contextCountersTagName,
+diff --git a/packages/lit-query/src/tests/infinite-and-options.test.ts b/packages/lit-query/src/tests/infinite-and-options.test.ts
+index cd3418f69fd..6ef06b6cdc1 100644
+--- a/packages/lit-query/src/tests/infinite-and-options.test.ts
++++ b/packages/lit-query/src/tests/infinite-and-options.test.ts
+@@ -169,6 +169,165 @@ describe('createInfiniteQueryController', () => {
+     expect(infinite().data?.pages).toEqual([-1, 0, 1])
+   })
+ 
++  it('does not request another update when stable function options refresh during host update', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const host = new TestControllerHost()
++    let callCount = 0
++
++    const infinite = createInfiniteQueryController(
++      host,
++      () => ({
++        queryKey: ['infinite-controller', 'stable-function-options'],
++        initialPageParam: 0,
++        queryFn: async ({ pageParam }) => {
++          callCount += 1
++          return Number(pageParam)
++        },
++        getNextPageParam: () => undefined,
++        staleTime: Infinity,
++      }),
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      await waitFor(() => infinite().isSuccess)
++
++      host.updatesRequested = 0
++
++      for (let i = 0; i < 5; i += 1) {
++        host.update()
++        await Promise.resolve()
++      }
++
++      expect(host.updatesRequested).toBe(0)
++      expect(infinite().data?.pages).toEqual([0])
++      expect(callCount).toBe(1)
++    } finally {
++      infinite.destroy()
++    }
++  })
++
++  it('does not request an update for refetch-only state changes when only data was read', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const host = new TestControllerHost()
++    let resolveRefetch: (() => void) | undefined
++
++    const infinite = createInfiniteQueryController(
++      host,
++      {
++        queryKey: ['infinite-controller', 'tracked-data-only'],
++        initialPageParam: 0,
++        initialData: {
++          pages: ['stable-page'],
++          pageParams: [0],
++        },
++        staleTime: Infinity,
++        queryFn: () =>
++          new Promise<string>((resolve) => {
++            resolveRefetch = () => resolve('stable-page')
++          }),
++        getNextPageParam: () => undefined,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(infinite().data?.pages).toEqual(['stable-page'])
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      host.updatesRequested = 0
++
++      const refetch = infinite.refetch()
++
++      await waitFor(() => resolveRefetch !== undefined)
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++
++      resolveRefetch!()
++      await refetch
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++    } finally {
++      infinite.destroy()
++    }
++  })
++
++  it('refreshes a suppressed result on the next accessor read when a newly read property changed', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const queryKey = ['infinite-controller', 'late-read-freshness'] as const
++    const host = new TestControllerHost()
++
++    const infinite = createInfiniteQueryController(
++      host,
++      {
++        queryKey,
++        initialPageParam: 0,
++        initialData: {
++          pages: ['initial-page'],
++          pageParams: [0],
++        },
++        staleTime: Infinity,
++        queryFn: async () => 'unused',
++        getNextPageParam: () => undefined,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(infinite().status).toBe('success')
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      host.updatesRequested = 0
++
++      client.setQueryData(queryKey, {
++        pages: ['updated-page'],
++        pageParams: [0],
++      })
++      await Promise.resolve()
++
++      expect(infinite().data?.pages).toEqual(['updated-page'])
++      expect(host.updatesRequested).toBe(0)
++    } finally {
++      infinite.destroy()
++    }
++  })
++
+   it('INFEDGE-01: next-page failure preserves prior pages consistently', async () => {
+     const client = new QueryClient({
+       defaultOptions: {
+diff --git a/packages/lit-query/src/tests/queries-controller.test.ts b/packages/lit-query/src/tests/queries-controller.test.ts
+index 1fd9c536007..67f6c5456bb 100644
+--- a/packages/lit-query/src/tests/queries-controller.test.ts
++++ b/packages/lit-query/src/tests/queries-controller.test.ts
+@@ -227,6 +227,236 @@ describe('createQueriesController', () => {
+     expect(queries()).toEqual(['alpha', 'beta'])
+   })
+ 
++  it('does not request another update when stable function query options refresh during host update', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const host = new TestControllerHost()
++    let callCount = 0
++
++    const queries = createQueriesController(
++      host,
++      () => ({
++        queries: [
++          {
++            queryKey: [
++              'queries-controller',
++              'stable-function-options',
++            ] as const,
++            queryFn: async () => {
++              callCount += 1
++              return 'stable-result'
++            },
++            staleTime: Infinity,
++          },
++        ] as const,
++      }),
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      await waitFor(() => queries()[0]?.isSuccess === true)
++
++      host.updatesRequested = 0
++
++      for (let i = 0; i < 5; i += 1) {
++        host.update()
++        await Promise.resolve()
++      }
++
++      expect(host.updatesRequested).toBe(0)
++      expect(queries()[0]?.data).toBe('stable-result')
++      expect(callCount).toBe(1)
++    } finally {
++      queries.destroy()
++    }
++  })
++
++  it('does not request an update for refetch-only state changes when data was read and result refetch is invoked', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const queryKey = ['queries-controller', 'tracked-data-only'] as const
++    const host = new TestControllerHost()
++    let resolveRefetch: (() => void) | undefined
++
++    const queries = createQueriesController(
++      host,
++      {
++        queries: [
++          {
++            queryKey,
++            initialData: 'stable-data',
++            staleTime: Infinity,
++            queryFn: () =>
++              new Promise<string>((resolve) => {
++                resolveRefetch = () => resolve('stable-data')
++              }),
++          },
++        ] as const,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(queries()[0]?.data).toBe('stable-data')
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      host.updatesRequested = 0
++
++      const refetch = queries()[0]!.refetch()
++
++      await waitFor(() => resolveRefetch !== undefined)
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++
++      resolveRefetch!()
++      await refetch
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++    } finally {
++      queries.destroy()
++    }
++  })
++
++  it('does not re-default query options when subscribed queries emit', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const originalDefaultQueryOptions = client.defaultQueryOptions
++    let defaultQueryOptionsCalls = 0
++    client.defaultQueryOptions = ((options) => {
++      defaultQueryOptionsCalls += 1
++      return originalDefaultQueryOptions.call(client, options as never)
++    }) as typeof client.defaultQueryOptions
++
++    const queryKey = ['queries-controller', 'per-emit-defaulting'] as const
++    const host = new TestControllerHost()
++    let resolveRefetch: (() => void) | undefined
++
++    const queries = createQueriesController(
++      host,
++      {
++        queries: [
++          {
++            queryKey,
++            initialData: 'stable-data',
++            staleTime: Infinity,
++            queryFn: () =>
++              new Promise<string>((resolve) => {
++                resolveRefetch = () => resolve('stable-data')
++              }),
++          },
++        ] as const,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(queries()[0]?.isFetching).toBe(false)
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      defaultQueryOptionsCalls = 0
++
++      const refetch = queries()[0]!.refetch()
++
++      await waitFor(() => resolveRefetch !== undefined)
++      await Promise.resolve()
++
++      expect(queries()[0]?.isFetching).toBe(true)
++      expect(defaultQueryOptionsCalls).toBe(0)
++
++      resolveRefetch!()
++      await refetch
++      await Promise.resolve()
++
++      expect(queries()[0]?.isFetching).toBe(false)
++      expect(defaultQueryOptionsCalls).toBe(0)
++    } finally {
++      queries.destroy()
++    }
++  })
++
++  it('refreshes suppressed query results on the next accessor read when a newly read property changed', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const queryKey = ['queries-controller', 'late-read-freshness'] as const
++    const host = new TestControllerHost()
++
++    const queries = createQueriesController(
++      host,
++      {
++        queries: [
++          {
++            queryKey,
++            initialData: 'initial-data',
++            staleTime: Infinity,
++            queryFn: async () => 'unused',
++          },
++        ] as const,
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(queries()[0]?.status).toBe('success')
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      host.updatesRequested = 0
++
++      client.setQueryData(queryKey, 'updated-data')
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++
++      expect(queries()[0]?.data).toBe('updated-data')
++      expect(host.updatesRequested).toBe(0)
++    } finally {
++      queries.destroy()
++    }
++  })
++
+   it('M13: supports dynamic add/remove and keeps partial failure stability', async () => {
+     const client = new QueryClient({
+       defaultOptions: {
+diff --git a/packages/lit-query/src/tests/query-controller.test.ts b/packages/lit-query/src/tests/query-controller.test.ts
+index 6b59ba2e769..d8261e585c9 100644
+--- a/packages/lit-query/src/tests/query-controller.test.ts
++++ b/packages/lit-query/src/tests/query-controller.test.ts
+@@ -161,6 +161,153 @@ describe('createQueryController', () => {
+     expect(host.updatesRequested).toBeGreaterThan(0)
+   })
+ 
++  it('does not request another update when stable function options refresh during host update', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const host = new TestControllerHost()
++    let callCount = 0
++
++    const query = createQueryController(
++      host,
++      () => ({
++        queryKey: ['query-controller', 'stable-function-options'],
++        queryFn: async () => {
++          callCount += 1
++          return 'stable-result'
++        },
++        staleTime: Infinity,
++      }),
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      await waitFor(() => query().isSuccess)
++
++      host.updatesRequested = 0
++
++      for (let i = 0; i < 5; i += 1) {
++        host.update()
++        await Promise.resolve()
++      }
++
++      expect(host.updatesRequested).toBe(0)
++      expect(query().data).toBe('stable-result')
++      expect(callCount).toBe(1)
++    } finally {
++      query.destroy()
++    }
++  })
++
++  it('does not request an update for refetch-only state changes when only data was read', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const queryKey = ['query-controller', 'tracked-data-only'] as const
++    const host = new TestControllerHost()
++    let resolveRefetch: (() => void) | undefined
++
++    const query = createQueryController(
++      host,
++      {
++        queryKey,
++        initialData: 'stable-data',
++        staleTime: Infinity,
++        queryFn: () =>
++          new Promise<string>((resolve) => {
++            resolveRefetch = () => resolve('stable-data')
++          }),
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(query().data).toBe('stable-data')
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      host.updatesRequested = 0
++
++      const refetch = query.refetch()
++
++      await waitFor(() => resolveRefetch !== undefined)
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++
++      resolveRefetch!()
++      await refetch
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++    } finally {
++      query.destroy()
++    }
++  })
++
++  it('refreshes a suppressed result on the next accessor read when a newly read property changed', async () => {
++    const client = new QueryClient({
++      defaultOptions: {
++        queries: {
++          retry: false,
++        },
++      },
++    })
++
++    const queryKey = ['query-controller', 'late-read-freshness'] as const
++    const host = new TestControllerHost()
++
++    const query = createQueryController(
++      host,
++      {
++        queryKey,
++        initialData: 'initial-data',
++        staleTime: Infinity,
++        queryFn: async () => 'unused',
++      },
++      client,
++    )
++
++    try {
++      host.connect()
++      host.update()
++
++      expect(query().status).toBe('success')
++
++      await Promise.resolve()
++      await Promise.resolve()
++
++      host.updatesRequested = 0
++
++      client.setQueryData(queryKey, 'updated-data')
++      await Promise.resolve()
++
++      expect(host.updatesRequested).toBe(0)
++
++      expect(query().data).toBe('updated-data')
++      expect(host.updatesRequested).toBe(0)
++    } finally {
++      query.destroy()
++    }
++  })
++
+   it('M4: transitions from pending to success with expected contract', async () => {
+     const client = new QueryClient({
+       defaultOptions: {
+diff --git a/packages/lit-query/src/useMutationState.ts b/packages/lit-query/src/useMutationState.ts
+index f3bc477db0a..ed362ea0944 100644
+--- a/packages/lit-query/src/useMutationState.ts
++++ b/packages/lit-query/src/useMutationState.ts
+@@ -1,8 +1,9 @@
+-import type {
+-  Mutation,
+-  MutationFilters,
+-  MutationState,
+-  QueryClient,
++import {
++  replaceEqualDeep,
++  type Mutation,
++  type MutationFilters,
++  type MutationState,
++  type QueryClient,
+ } from '@tanstack/query-core'
+ import type { ReactiveControllerHost } from 'lit'
+ import {
+@@ -55,12 +56,12 @@ class MutationStateController<TResult> extends BaseController<TResult[]> {
+ 
+   protected onConnected(): void {
+     if (!this.syncClient()) {
+-      this.setResult([])
++      this.setMutationState([])
+       return
+     }
+ 
+     this.subscribe()
+-    this.setResult(this.computeState())
++    this.setMutationState(this.computeState())
+   }
+ 
+   protected onDisconnected(): void {
+@@ -74,18 +75,18 @@ class MutationStateController<TResult> extends BaseController<TResult[]> {
+       return
+     }
+ 
+-    this.setResult(this.syncClient() ? this.computeState() : [])
++    this.setMutationState(this.syncClient() ? this.computeState() : [])
+   }
+ 
+   protected onQueryClientChanged(): void {
+     if (!this.syncClient()) {
+-      this.setResult([])
++      this.setMutationState([])
+       return
+     }
+ 
+     if (this.connectedState) {
+       this.subscribe()
+-      this.setResult(this.computeState())
++      this.setMutationState(this.computeState())
+     }
+   }
+ 
+@@ -118,10 +119,14 @@ class MutationStateController<TResult> extends BaseController<TResult[]> {
+     }
+ 
+     this.unsubscribe = this.queryClient.getMutationCache().subscribe(() => {
+-      this.setResult(this.computeState())
++      this.setMutationState(this.computeState())
+     })
+   }
+ 
++  private setMutationState(next: TResult[]): void {
++    this.setResult(replaceEqualDeep(this.result, next))
++  }
++
+   private shouldRefreshOnHostUpdate(): boolean {
+     return (
+       typeof this.options.filters === 'function' ||

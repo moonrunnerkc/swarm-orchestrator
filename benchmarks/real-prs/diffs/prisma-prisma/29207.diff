@@ -1,0 +1,901 @@
+diff --git a/packages/cli/src/CLI.ts b/packages/cli/src/CLI.ts
+index 95015929dd31..c87982fa832f 100644
+--- a/packages/cli/src/CLI.ts
++++ b/packages/cli/src/CLI.ts
+@@ -139,6 +139,7 @@ Learn more at ${link('https://pris.ly/cli/pdp')}`
+               format   Format your Prisma schema
+              version   Displays Prisma version info
+                debug   Displays Prisma debug info
++            platform   Prisma Data Platform commands
+                  mcp   Starts an MCP server to use with AI development tools
+ 
+     ${bold('Flags')}
+diff --git a/packages/cli/src/Status.ts b/packages/cli/src/Status.ts
+new file mode 100644
+index 000000000000..3b3363df88c5
+--- /dev/null
++++ b/packages/cli/src/Status.ts
+@@ -0,0 +1,53 @@
++import type { PrismaConfigInternal } from '@prisma/config'
++import type { Command } from '@prisma/internals'
++import { arg, format, HelpError, isError } from '@prisma/internals'
++import { bold, dim, red } from 'kleur/colors'
++
++import { fetchStatus } from './status-page'
++
++/** $ prisma platform status */
++export class Status implements Command {
++  static new(): Status {
++    return new Status()
++  }
++
++  private static help = format(`
++  Show Prisma Data Platform service status
++
++  ${bold('Usage')}
++
++  ${dim('$')} prisma platform status [options]
++
++  ${bold('Options')}
++
++    -h, --help     Display this help message
++        --json     Output raw JSON from the status API
++`)
++
++  public help(error?: string): string | HelpError {
++    if (error) {
++      return new HelpError(`\n${bold(red(`!`))} ${error}\n${Status.help}`)
++    }
++
++    return Status.help
++  }
++
++  async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
++    const args = arg(argv, {
++      '--help': Boolean,
++      '-h': '--help',
++      '--json': Boolean,
++      '--telemetry-information': String,
++    })
++
++    if (isError(args)) {
++      return this.help(args.message)
++    }
++
++    if (args['--help']) {
++      return this.help()
++    }
++
++    return fetchStatus(args['--json'] ?? false)
++  }
++}
+diff --git a/packages/cli/src/__tests__/commands/Status.test.ts b/packages/cli/src/__tests__/commands/Status.test.ts
+new file mode 100644
+index 000000000000..749d3d778120
+--- /dev/null
++++ b/packages/cli/src/__tests__/commands/Status.test.ts
+@@ -0,0 +1,411 @@
++import { stripVTControlCharacters } from 'node:util'
++
++import { defaultTestConfig } from '@prisma/config'
++
++import { Status } from '../../Status'
++
++function makeSummary(overrides: Record<string, unknown> = {}) {
++  return {
++    status: { indicator: 'none', description: 'All Systems Operational' },
++    components: [
++      {
++        id: '1',
++        name: 'Prisma Accelerate',
++        status: 'operational',
++        position: 1,
++        group: false,
++        group_id: null,
++        description: null,
++      },
++      {
++        id: '2',
++        name: 'Prisma Console',
++        status: 'operational',
++        position: 2,
++        group: false,
++        group_id: null,
++        description: null,
++      },
++      {
++        id: '3',
++        name: 'Prisma Optimize',
++        status: 'operational',
++        position: 3,
++        group: false,
++        group_id: null,
++        description: null,
++      },
++      {
++        id: '4',
++        name: 'Prisma Postgres',
++        status: 'operational',
++        position: 4,
++        group: false,
++        group_id: null,
++        description: null,
++      },
++    ],
++    incidents: [],
++    scheduled_maintenances: [],
++    ...overrides,
++  }
++}
++
++describe('status', () => {
++  let fetchSpy: jest.SpyInstance
++
++  beforeEach(() => {
++    fetchSpy = jest.spyOn(globalThis as any, 'fetch')
++  })
++
++  afterEach(() => {
++    fetchSpy.mockRestore()
++    process.exitCode = undefined
++  })
++
++  function mockFetchSuccess(data: unknown) {
++    fetchSpy.mockResolvedValue({
++      ok: true,
++      json: () => Promise.resolve(data),
++    })
++  }
++
++  function mockFetchHttpError(status: number) {
++    fetchSpy.mockResolvedValue({
++      ok: false,
++      status,
++      json: () => Promise.resolve({}),
++    })
++  }
++
++  function mockFetchNetworkError(message: string) {
++    fetchSpy.mockRejectedValue(new Error(message))
++  }
++
++  function mockFetchParseError() {
++    fetchSpy.mockResolvedValue({
++      ok: true,
++      json: () => Promise.resolve({ unexpected: 'response' }),
++    })
++  }
++
++  it('should show help with --help', async () => {
++    const result = await Status.new().parse(['--help'], defaultTestConfig())
++    expect(result).toContain('Show Prisma Data Platform service status')
++    expect(result).toContain('--json')
++  })
++
++  it('should display all operational services', async () => {
++    mockFetchSuccess(makeSummary())
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toMatchInlineSnapshot(`
++      "All Systems Operational
++
++      Services
++        Accelerate   Operational
++        Console      Operational
++        Optimize     Operational
++        Postgres     Operational
++
++      Status page: https://www.prisma-status.com"
++    `)
++  })
++
++  it('should display active incidents', async () => {
++    mockFetchSuccess(
++      makeSummary({
++        status: { indicator: 'major', description: 'Major System Outage' },
++        components: [
++          {
++            id: '1',
++            name: 'Prisma Accelerate',
++            status: 'degraded_performance',
++            position: 1,
++            group: false,
++            group_id: null,
++            description: null,
++          },
++        ],
++        incidents: [
++          {
++            id: 'inc1',
++            name: 'Accelerate degraded performance',
++            status: 'investigating',
++            impact: 'major',
++            created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
++            incident_updates: [
++              { status: 'investigating', body: 'Looking into it.', created_at: new Date().toISOString() },
++            ],
++          },
++        ],
++      }),
++    )
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toContain('Major System Outage')
++    expect(result).toContain('Degraded')
++    expect(result).toContain('Active Incidents')
++    expect(result).toContain('major')
++    expect(result).toContain('Accelerate degraded performance')
++    expect(result).toContain('2h ago')
++    expect(result).toContain('investigating:')
++    expect(result).toContain('Looking into it.')
++  })
++
++  it('should show latest incident update when API returns oldest-first', async () => {
++    mockFetchSuccess(
++      makeSummary({
++        status: { indicator: 'minor', description: 'Minor Service Outage' },
++        incidents: [
++          {
++            id: 'inc1',
++            name: 'Elevated error rates',
++            status: 'monitoring',
++            impact: 'minor',
++            created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
++            incident_updates: [
++              { status: 'investigating', body: 'Initial report.', created_at: '2026-02-17T10:00:00Z' },
++              { status: 'identified', body: 'Root cause found.', created_at: '2026-02-17T10:30:00Z' },
++              { status: 'monitoring', body: 'Fix deployed, monitoring.', created_at: '2026-02-17T11:00:00Z' },
++            ],
++          },
++        ],
++      }),
++    )
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toContain('monitoring:')
++    expect(result).toContain('Fix deployed, monitoring.')
++    expect(result).not.toContain('Initial report.')
++  })
++
++  it('should display scheduled maintenances and hide completed ones', async () => {
++    mockFetchSuccess(
++      makeSummary({
++        scheduled_maintenances: [
++          {
++            id: 'm1',
++            name: 'Database migration',
++            status: 'scheduled',
++            scheduled_for: '2026-02-17T09:30:00.000Z',
++            scheduled_until: '2026-02-17T10:30:00.000Z',
++            incident_updates: [
++              { status: 'scheduled', body: 'Planned downtime.', created_at: new Date().toISOString() },
++            ],
++          },
++          {
++            id: 'm2',
++            name: 'Old maintenance',
++            status: 'completed',
++            scheduled_for: '2026-02-16T09:30:00.000Z',
++            scheduled_until: '2026-02-16T10:30:00.000Z',
++            incident_updates: [],
++          },
++        ],
++      }),
++    )
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toMatchInlineSnapshot(`
++      "All Systems Operational
++
++      Services
++        Accelerate   Operational
++        Console      Operational
++        Optimize     Operational
++        Postgres     Operational
++
++      Scheduled Maintenances
++        Database migration (Scheduled)
++          Planned downtime.
++          Feb 17, 2026 09:30-10:30 UTC
++
++      Status page: https://www.prisma-status.com"
++    `)
++  })
++
++  it('should show under_maintenance status as Maintenance', async () => {
++    mockFetchSuccess(
++      makeSummary({
++        components: [
++          {
++            id: '1',
++            name: 'Prisma Postgres',
++            status: 'under_maintenance',
++            position: 1,
++            group: false,
++            group_id: null,
++            description: null,
++          },
++        ],
++      }),
++    )
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toMatchInlineSnapshot(`
++      "All Systems Operational
++
++      Services
++        Postgres   Maintenance
++
++      Status page: https://www.prisma-status.com"
++    `)
++  })
++
++  it('should display in_progress maintenance preferring scheduled update body', async () => {
++    mockFetchSuccess(
++      makeSummary({
++        scheduled_maintenances: [
++          {
++            id: 'm1',
++            name: 'Prisma Postgres Maintenance',
++            status: 'in_progress',
++            scheduled_for: '2026-02-17T09:30:00.000Z',
++            scheduled_until: '2026-02-17T10:30:00.000Z',
++            incident_updates: [
++              { status: 'in_progress', body: 'Maintenance in progress.', created_at: new Date().toISOString() },
++              {
++                status: 'scheduled',
++                body: 'Impact: Active connections may be disrupted.',
++                created_at: new Date().toISOString(),
++              },
++            ],
++          },
++        ],
++      }),
++    )
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toMatchInlineSnapshot(`
++      "All Systems Operational
++
++      Services
++        Accelerate   Operational
++        Console      Operational
++        Optimize     Operational
++        Postgres     Operational
++
++      Scheduled Maintenances
++        Prisma Postgres Maintenance (In Progress)
++          Impact: Active connections may be disrupted.
++          Feb 17, 2026 09:30-10:30 UTC
++
++      Status page: https://www.prisma-status.com"
++    `)
++  })
++
++  it('should output raw JSON with --json', async () => {
++    const summary = makeSummary()
++    mockFetchSuccess(summary)
++
++    const result = (await Status.new().parse(['--json'], defaultTestConfig())) as string
++    const parsed = JSON.parse(result)
++
++    expect(parsed.status.indicator).toBe('none')
++    expect(parsed.components).toHaveLength(4)
++  })
++
++  it('should handle network errors gracefully', async () => {
++    mockFetchNetworkError('fetch failed')
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toContain('Could not reach status API')
++    expect(result).toContain('fetch failed')
++    expect(result).toContain('https://www.prisma-status.com')
++  })
++
++  it('should return JSON error on network failure with --json and set non-zero exit code', async () => {
++    mockFetchNetworkError('timeout')
++
++    const result = (await Status.new().parse(['--json'], defaultTestConfig())) as string
++    const parsed = JSON.parse(result)
++
++    expect(parsed.error).toBe('timeout')
++    expect(process.exitCode).toBe(1)
++  })
++
++  it('should handle HTTP errors gracefully', async () => {
++    mockFetchHttpError(503)
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toContain('Status API returned HTTP 503')
++    expect(result).toContain('https://www.prisma-status.com')
++  })
++
++  it('should return JSON error on HTTP failure with --json and set non-zero exit code', async () => {
++    mockFetchHttpError(500)
++
++    const result = (await Status.new().parse(['--json'], defaultTestConfig())) as string
++    const parsed = JSON.parse(result)
++
++    expect(parsed.error).toBe('Status API returned HTTP 500')
++    expect(process.exitCode).toBe(1)
++  })
++
++  it('should handle parse errors gracefully', async () => {
++    mockFetchParseError()
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toContain('Could not parse status API response')
++    expect(result).toContain('unexpected API response')
++    expect(result).toContain('https://www.prisma-status.com')
++  })
++
++  it('should return JSON error on parse failure with --json and set non-zero exit code', async () => {
++    mockFetchParseError()
++
++    const result = (await Status.new().parse(['--json'], defaultTestConfig())) as string
++    const parsed = JSON.parse(result)
++
++    expect(parsed.error).toContain('unexpected API response')
++    expect(process.exitCode).toBe(1)
++  })
++
++  it('should filter out group components', async () => {
++    mockFetchSuccess(
++      makeSummary({
++        components: [
++          {
++            id: 'g1',
++            name: 'Group',
++            status: 'operational',
++            position: 0,
++            group: true,
++            group_id: null,
++            description: null,
++          },
++          {
++            id: '1',
++            name: 'Prisma Accelerate',
++            status: 'operational',
++            position: 1,
++            group: false,
++            group_id: 'g1',
++            description: null,
++          },
++        ],
++      }),
++    )
++
++    const result = stripVTControlCharacters((await Status.new().parse([], defaultTestConfig())) as string)
++
++    expect(result).toMatchInlineSnapshot(`
++      "All Systems Operational
++
++      Services
++        Accelerate   Operational
++
++      Status page: https://www.prisma-status.com"
++    `)
++  })
++})
+diff --git a/packages/cli/src/bin.ts b/packages/cli/src/bin.ts
+index eddd354641c6..0c4d1f91d727 100755
+--- a/packages/cli/src/bin.ts
++++ b/packages/cli/src/bin.ts
+@@ -34,6 +34,8 @@ import { Format } from './Format'
+ import { Generate } from './Generate'
+ import { Init } from './Init'
+ import { Mcp } from './mcp/MCP'
++import { Platform } from './platform/_Platform'
++import { Status } from './Status'
+ import { Studio } from './Studio'
+ /*
+   When running bin.ts with ts-node with DEBUG="*"
+@@ -116,6 +118,7 @@ async function main(): Promise<number> {
+       debug: DebugInfo.new(),
+       dev: new SubCommand('@prisma/cli-dev'),
+       studio: Studio.new(),
++      platform: Platform.$.new({ status: Status.new() }),
+     },
+     ['version', 'init', 'migrate', 'db', 'generate', 'validate', 'format', 'telemetry'],
+     download,
+diff --git a/packages/cli/src/platform/$.ts b/packages/cli/src/platform/$.ts
+new file mode 100644
+index 000000000000..d3ce92ade41f
+--- /dev/null
++++ b/packages/cli/src/platform/$.ts
+@@ -0,0 +1,50 @@
++import type { PrismaConfigInternal } from '@prisma/config'
++import type { Command, Commands } from '@prisma/internals'
++import { arg, HelpError, isError } from '@prisma/internals'
++import { bold, red } from 'kleur/colors'
++
++import { dispatchToSubCommand } from './_lib/cli/dispatch-to-sub-command'
++import { createHelp } from './_lib/help'
++
++/** $ prisma platform */
++export class $ implements Command {
++  static new(cmds: Commands): $ {
++    return new $(cmds)
++  }
++
++  private constructor(private readonly cmds: Commands) {}
++
++  async parse(argv: string[], config: PrismaConfigInternal, baseDir: string = process.cwd()): Promise<string | Error> {
++    const args = arg(argv, {
++      '--help': Boolean,
++      '-h': '--help',
++      '--telemetry-information': String,
++    })
++
++    if (isError(args)) {
++      return this.help(args.message)
++    }
++
++    if (args._.length === 0 || args['--help']) {
++      return this.help()
++    }
++
++    const result = await dispatchToSubCommand(this.cmds, args._, config, baseDir)
++    if (result instanceof Error) {
++      return this.help(result.message)
++    }
++    return result
++  }
++
++  public help(error?: string): string | HelpError {
++    if (error) {
++      return new HelpError(`\n${bold(red(`!`))} ${error}\n${$.help}`)
++    }
++    return $.help
++  }
++
++  private static help = createHelp({
++    subcommands: [['status', 'Show Prisma Data Platform service status']],
++    examples: ['prisma platform status'],
++  })
++}
+diff --git a/packages/cli/src/platform/_.ts b/packages/cli/src/platform/_.ts
+new file mode 100644
+index 000000000000..163c40ca2cc2
+--- /dev/null
++++ b/packages/cli/src/platform/_.ts
+@@ -0,0 +1 @@
++export * from './$'
+diff --git a/packages/cli/src/platform/_Platform.ts b/packages/cli/src/platform/_Platform.ts
+new file mode 100644
+index 000000000000..b0ba258f427b
+--- /dev/null
++++ b/packages/cli/src/platform/_Platform.ts
+@@ -0,0 +1 @@
++export * as Platform from './_'
+diff --git a/packages/cli/src/platform/_lib/cli/dispatch-to-sub-command.ts b/packages/cli/src/platform/_lib/cli/dispatch-to-sub-command.ts
+new file mode 100644
+index 000000000000..a37e1e181dd3
+--- /dev/null
++++ b/packages/cli/src/platform/_lib/cli/dispatch-to-sub-command.ts
+@@ -0,0 +1,16 @@
++import type { PrismaConfigInternal } from '@prisma/config'
++import type { Commands } from '@prisma/internals'
++import { HelpError } from '@prisma/internals'
++
++export const dispatchToSubCommand = async (
++  commands: Commands,
++  argv: string[],
++  config: PrismaConfigInternal,
++  baseDir: string,
++): Promise<string | Error> => {
++  const commandName = argv[0]
++  if (!commandName) return new HelpError(`Unknown command.`)
++  const command = commands[commandName]
++  if (!command) return new HelpError(`Unknown command or parameter "${commandName}"`)
++  return command.parse(argv.slice(1), config, baseDir)
++}
+diff --git a/packages/cli/src/platform/_lib/help.ts b/packages/cli/src/platform/_lib/help.ts
+new file mode 100644
+index 000000000000..dca5b1e7dfc3
+--- /dev/null
++++ b/packages/cli/src/platform/_lib/help.ts
+@@ -0,0 +1,34 @@
++import { format } from '@prisma/internals'
++import { bold, dim } from 'kleur/colors'
++
++interface HelpOptions {
++  subcommands: [string, string][]
++  examples: string[]
++}
++
++/** Generates formatted help text for a platform subcommand group. */
++export function createHelp({ subcommands, examples }: HelpOptions): string {
++  const maxNameLen = Math.max(...subcommands.map(([name]) => name.length))
++  const subcommandLines = subcommands.map(([name, desc]) => `    ${name.padEnd(maxNameLen)}   ${desc}`).join('\n')
++  const exampleLines = examples.map((e) => `    ${dim('$')} ${e}`).join('\n')
++
++  return format(`
++  Prisma Data Platform commands
++
++  ${bold('Usage')}
++
++    ${dim('$')} prisma platform [command]
++
++  ${bold('Commands')}
++
++${subcommandLines}
++
++  ${bold('Flags')}
++
++    -h, --help   Display this help message
++
++  ${bold('Examples')}
++
++${exampleLines}
++`)
++}
+diff --git a/packages/cli/src/status-page.ts b/packages/cli/src/status-page.ts
+new file mode 100644
+index 000000000000..a059617a01c0
+--- /dev/null
++++ b/packages/cli/src/status-page.ts
+@@ -0,0 +1,254 @@
++import { bold, dim, green, red, yellow } from 'kleur/colors'
++import { z } from 'zod'
++
++export const STATUS_PAGE_URL = 'https://www.prisma-status.com'
++const SUMMARY_API_URL = `${STATUS_PAGE_URL}/api/v2/summary.json`
++
++const StatusPageStatusSchema = z
++  .object({
++    indicator: z.enum(['none', 'minor', 'major', 'critical']),
++    description: z.string(),
++  })
++  .passthrough()
++
++const StatusPageComponentSchema = z
++  .object({
++    id: z.string(),
++    name: z.string(),
++    status: z.enum(['operational', 'degraded_performance', 'partial_outage', 'major_outage', 'under_maintenance']),
++    description: z.string().nullable(),
++    position: z.number(),
++    group_id: z.string().nullable(),
++    group: z.boolean(),
++  })
++  .passthrough()
++
++const StatusPageIncidentUpdateSchema = z
++  .object({
++    status: z.string(),
++    body: z.string(),
++    created_at: z.string(),
++  })
++  .passthrough()
++
++const StatusPageIncidentSchema = z
++  .object({
++    id: z.string(),
++    name: z.string(),
++    status: z.string(),
++    impact: z.enum(['none', 'minor', 'major', 'critical']),
++    created_at: z.string(),
++    incident_updates: z.array(StatusPageIncidentUpdateSchema),
++  })
++  .passthrough()
++
++const StatusPageMaintenanceSchema = z
++  .object({
++    id: z.string(),
++    name: z.string(),
++    status: z.enum(['scheduled', 'in_progress', 'verifying', 'completed']),
++    scheduled_for: z.string(),
++    scheduled_until: z.string(),
++    incident_updates: z.array(StatusPageIncidentUpdateSchema),
++  })
++  .passthrough()
++
++const StatusPageSummarySchema = z
++  .object({
++    status: StatusPageStatusSchema,
++    components: z.array(StatusPageComponentSchema),
++    incidents: z.array(StatusPageIncidentSchema),
++    scheduled_maintenances: z.array(StatusPageMaintenanceSchema),
++  })
++  .passthrough()
++
++export type StatusPageStatus = z.infer<typeof StatusPageStatusSchema>
++export type StatusPageComponent = z.infer<typeof StatusPageComponentSchema>
++export type StatusPageIncidentUpdate = z.infer<typeof StatusPageIncidentUpdateSchema>
++export type StatusPageIncident = z.infer<typeof StatusPageIncidentSchema>
++export type StatusPageMaintenance = z.infer<typeof StatusPageMaintenanceSchema>
++export type StatusPageSummary = z.infer<typeof StatusPageSummarySchema>
++
++export function formatComponentStatus(status: StatusPageComponent['status']): string {
++  switch (status) {
++    case 'operational':
++      return green('Operational')
++    case 'degraded_performance':
++      return yellow('Degraded')
++    case 'partial_outage':
++      return yellow('Partial Outage')
++    case 'major_outage':
++      return red('Major Outage')
++    case 'under_maintenance':
++      return yellow('Maintenance')
++    default:
++      return status
++  }
++}
++
++export function formatOverallStatus(indicator: StatusPageStatus['indicator'], description: string): string {
++  switch (indicator) {
++    case 'none':
++      return green(description)
++    case 'minor':
++      return yellow(description)
++    case 'major':
++    case 'critical':
++      return red(description)
++    default:
++      return description
++  }
++}
++
++export function timeAgo(dateStr: string): string {
++  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
++  if (seconds < 60) return '<1m ago'
++  const minutes = Math.floor(seconds / 60)
++  if (minutes < 60) return `${minutes}m ago`
++  const hours = Math.floor(minutes / 60)
++  if (hours < 24) return `${hours}h ago`
++  const days = Math.floor(hours / 24)
++  return `${days}d ago`
++}
++
++export function formatMaintenanceStatus(status: StatusPageMaintenance['status']): string {
++  switch (status) {
++    case 'scheduled':
++      return 'Scheduled'
++    case 'in_progress':
++      return 'In Progress'
++    case 'verifying':
++      return 'Verifying'
++    case 'completed':
++      return 'Completed'
++    default:
++      return status
++  }
++}
++
++export function formatTimeWindow(start: string, end: string): string {
++  const startDate = new Date(start)
++  const endDate = new Date(end)
++  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }
++  const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' }
++  const date = startDate.toLocaleDateString('en-US', opts)
++  const startTime = startDate.toLocaleTimeString('en-US', timeOpts)
++  const endTime = endDate.toLocaleTimeString('en-US', timeOpts)
++  return `${date} ${startTime}-${endTime} UTC`
++}
++
++export function latestUpdate(updates: StatusPageIncidentUpdate[]): StatusPageIncidentUpdate | undefined {
++  return updates.toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
++}
++
++export function stripPrismaPrefix(name: string): string {
++  return name.replace(/^Prisma\s+/, '')
++}
++
++type StatusResult =
++  | { summary: StatusPageSummary }
++  | { httpError: number }
++  | { networkError: string }
++  | { parseError: string }
++
++async function queryStatusAPI(): Promise<StatusResult> {
++  try {
++    const response = await fetch(SUMMARY_API_URL, { signal: AbortSignal.timeout(10_000) })
++    if (!response.ok) return { httpError: response.status }
++    const parsed = StatusPageSummarySchema.safeParse(await response.json())
++    if (!parsed.success) return { parseError: `unexpected API response: ${parsed.error.message}` }
++    return { summary: parsed.data }
++  } catch (e) {
++    return { networkError: e instanceof Error ? e.message : String(e) }
++  }
++}
++
++/** Fetches status from the Prisma status page API and returns formatted output. */
++export async function fetchStatus(isJson: boolean): Promise<string> {
++  const result = await queryStatusAPI()
++
++  if (isJson) {
++    if ('networkError' in result) {
++      process.exitCode = 1
++      return JSON.stringify({ error: result.networkError })
++    }
++    if ('parseError' in result) {
++      process.exitCode = 1
++      return JSON.stringify({ error: result.parseError })
++    }
++    if ('httpError' in result) {
++      process.exitCode = 1
++      return JSON.stringify({ error: `Status API returned HTTP ${result.httpError}` })
++    }
++    return JSON.stringify(result.summary, null, 2)
++  }
++
++  if ('networkError' in result) {
++    return `${red('Could not reach status API')}: ${result.networkError}\nCheck ${STATUS_PAGE_URL} directly.`
++  }
++  if ('parseError' in result) {
++    return `${red('Could not parse status API response')}: ${result.parseError}\nCheck ${STATUS_PAGE_URL} directly.`
++  }
++  if ('httpError' in result) {
++    return `${red(`Status API returned HTTP ${result.httpError}`)}\nCheck ${STATUS_PAGE_URL} directly.`
++  }
++
++  const { summary } = result
++  const lines: string[] = []
++
++  lines.push(bold(formatOverallStatus(summary.status.indicator, summary.status.description)))
++  lines.push('')
++
++  const components = summary.components.filter((c) => !c.group).sort((a, b) => a.position - b.position)
++
++  if (components.length > 0) {
++    lines.push(bold('Services'))
++    const maxNameLen = Math.max(...components.map((c) => stripPrismaPrefix(c.name).length))
++    for (const component of components) {
++      const name = stripPrismaPrefix(component.name).padEnd(maxNameLen)
++      lines.push(`  ${name}   ${formatComponentStatus(component.status)}`)
++    }
++  }
++
++  if (summary.incidents.length > 0) {
++    lines.push('')
++    lines.push(bold('Active Incidents'))
++    for (const incident of summary.incidents) {
++      const impact =
++        incident.impact === 'critical' || incident.impact === 'major' ? red(incident.impact) : yellow(incident.impact)
++      lines.push(`  ${impact} ${incident.name} (${timeAgo(incident.created_at)})`)
++      const update = latestUpdate(incident.incident_updates)
++      if (update) {
++        lines.push(`    ${dim(update.status + ':')} ${update.body}`)
++      }
++    }
++  }
++
++  const activeMaint = summary.scheduled_maintenances.filter((m) => m.status !== 'completed')
++  if (activeMaint.length > 0) {
++    lines.push('')
++    lines.push(bold('Scheduled Maintenances'))
++    for (const maint of activeMaint) {
++      const statusLabel = formatMaintenanceStatus(maint.status)
++      lines.push(`  ${maint.name} ${dim(`(${statusLabel})`)}`)
++
++      // prefer scheduled update (has details) over latest status update
++      const scheduledUpdate = maint.incident_updates.find((u) => u.status === 'scheduled')
++      const updateToShow = scheduledUpdate ?? latestUpdate(maint.incident_updates)
++      if (updateToShow?.body) {
++        for (const line of updateToShow.body.split('\n')) {
++          lines.push(`    ${line}`)
++        }
++      }
++
++      if (maint.scheduled_for && maint.scheduled_until) {
++        lines.push(`    ${formatTimeWindow(maint.scheduled_for, maint.scheduled_until)}`)
++      }
++    }
++  }
++
++  lines.push('')
++  lines.push(`Status page: ${dim(STATUS_PAGE_URL)}`)
++
++  return lines.join('\n')
++}

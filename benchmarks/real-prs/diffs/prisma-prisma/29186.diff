@@ -1,0 +1,3074 @@
+diff --git a/packages/cli/src/Init.ts b/packages/cli/src/Init.ts
+index e94e24717225..d594c58305eb 100644
+--- a/packages/cli/src/Init.ts
++++ b/packages/cli/src/Init.ts
+@@ -28,11 +28,10 @@ import ora from 'ora'
+ import { match, P } from 'ts-pattern'
+ 
+ import { FileWriter } from './init/file-writer'
++import { printPpgInitOutput, successMessage } from './init/ppg-output'
+ import { login } from './management-api/auth'
+ import { createAuthenticatedManagementAPI } from './management-api/auth-client'
+ import { FileTokenStorage } from './management-api/token-storage'
+-import { printPpgInitOutput } from './platform/_'
+-import { successMessage } from './platform/_lib/messages'
+ import { determineClientOutputPath } from './utils/client-output-path'
+ import { printError } from './utils/prompt/utils/print'
+ 
+diff --git a/packages/cli/src/bin.ts b/packages/cli/src/bin.ts
+index 24d18ad877fb..9a662e17e2d9 100755
+--- a/packages/cli/src/bin.ts
++++ b/packages/cli/src/bin.ts
+@@ -34,7 +34,6 @@ import { Format } from './Format'
+ import { Generate } from './Generate'
+ import { Init } from './Init'
+ import { Mcp } from './mcp/MCP'
+-import { Platform } from './platform/_Platform'
+ import { Studio } from './Studio'
+ /*
+   When running bin.ts with ts-node with DEBUG="*"
+@@ -93,45 +92,6 @@ async function main(): Promise<number> {
+   const cli = CLI.new(
+     {
+       init: Init.new(),
+-      platform: Platform.$.new({
+-        workspace: Platform.Workspace.$.new({
+-          show: Platform.Workspace.Show.new(),
+-        }),
+-        auth: Platform.Auth.$.new({
+-          login: Platform.Auth.Login.new(),
+-          logout: Platform.Auth.Logout.new(),
+-          show: Platform.Auth.Show.new(),
+-        }),
+-        environment: Platform.Environment.$.new({
+-          create: Platform.Environment.Create.new(),
+-          delete: Platform.Environment.Delete.new(),
+-          show: Platform.Environment.Show.new(),
+-        }),
+-        project: Platform.Project.$.new({
+-          create: Platform.Project.Create.new(),
+-          delete: Platform.Project.Delete.new(),
+-          show: Platform.Project.Show.new(),
+-        }),
+-        pulse: Platform.Pulse.$.new({
+-          enable: Platform.Pulse.Enable.new(),
+-          disable: Platform.Pulse.Disable.new(),
+-        }),
+-        accelerate: Platform.Accelerate.$.new({
+-          enable: Platform.Accelerate.Enable.new(),
+-          disable: Platform.Accelerate.Disable.new(),
+-        }),
+-        serviceToken: Platform.ServiceToken.$.new({
+-          create: Platform.ServiceToken.Create.new(),
+-          delete: Platform.ServiceToken.Delete.new(),
+-          show: Platform.ServiceToken.Show.new(),
+-        }),
+-        // Alias to "serviceToken". This will be removed in a future ORM release.
+-        apikey: Platform.ServiceToken.$.new({
+-          create: Platform.ServiceToken.Create.new(true),
+-          delete: Platform.ServiceToken.Delete.new(true),
+-          show: Platform.ServiceToken.Show.new(true),
+-        }),
+-      }),
+       mcp: Mcp.new(),
+       migrate: MigrateCommand.new({
+         dev: MigrateDev.new(),
+diff --git a/packages/cli/src/init/ppg-output.ts b/packages/cli/src/init/ppg-output.ts
+new file mode 100644
+index 000000000000..2c6b1313cbf4
+--- /dev/null
++++ b/packages/cli/src/init/ppg-output.ts
+@@ -0,0 +1,103 @@
++import { link } from '@prisma/internals'
++import { bold, green } from 'kleur/colors'
++
++export function successMessage(message: string): string {
++  return `${green('Success!')} ${message}`
++}
++
++export function printPpgInitOutput({
++  databaseUrl,
++  workspaceId,
++  projectId,
++  environmentId,
++  isExistingPrismaProject = false,
++}: {
++  databaseUrl: string
++  workspaceId: string
++  projectId: string
++  environmentId?: string
++  isExistingPrismaProject?: boolean
++}): string {
++  const newPrismaProjectOutput = `
++We created an initial ${green('schema.prisma')} file and a ${green('.env')} file with your ${green(
++    'DATABASE_URL',
++  )} environment variable already set.
++
++${bold('--- Next steps ---')}
++
++Go to ${link('https://pris.ly/ppg-init')} for detailed instructions.
++
++${bold('1. Define your database schema')}
++Open the ${green('schema.prisma')} file and define your first models. Check the docs if you need inspiration: ${link(
++    'https://pris.ly/ppg-init',
++  )}.
++
++${bold('2. Apply migrations')}
++Run the following command to create and apply a migration:
++${green('npx prisma migrate dev --name init')}
++
++${bold('3. Manage your data')}
++View and edit your data locally by running this command:
++${green('npx prisma studio')}
++${
++  environmentId !== undefined
++    ? `...or online in Console:
++${link(`https://console.prisma.io/${workspaceId}/${projectId}/${environmentId}/studio`)}
++`
++    : ''
++}
++${bold(`4. Send queries from your app`)}
++To access your database from a JavaScript/TypeScript app, you need to use Prisma ORM. Go here for step-by-step instructions: ${link(
++    'https://pris.ly/ppg-init',
++  )}
++  `
++
++  const existingPrismaProjectOutput = `
++We found an existing ${green('schema.prisma')} file in your current project directory.
++
++${bold('--- Database URL ---')}
++
++Connect Prisma ORM to your Prisma Postgres database with this URL:
++
++${green(databaseUrl)}
++
++${bold('--- Next steps ---')}
++
++Go to ${link('https://pris.ly/ppg-init')} for detailed instructions.
++
++${bold('1. Install the Postgres adapter')}
++${green('npm install @prisma/adapter-pg')}
++
++...and add it to your Prisma Client instance:
++
++${green('import { PrismaPg } from "@prisma/adapter-pg";')}
++${green('import { PrismaClient } from "./generated/prisma/client";')}
++
++${green('const connectionString = `${process.env.DATABASE_URL}`;')}
++
++${green('const adapter = new PrismaPg({ connectionString });')}
++${green('const prisma = new PrismaClient({ adapter });')}
++
++${bold('2. Apply migrations')}
++Run the following command to create and apply a migration:
++${green('npx prisma migrate dev')}
++
++${bold(`3. Manage your data`)}
++View and edit your data locally by running this command:
++${green('npx prisma studio')}
++${
++  environmentId !== undefined
++    ? `...or online in Console:
++${link(`https://console.prisma.io/${workspaceId}/${projectId}/${environmentId}/studio`)}
++`
++    : ''
++}
++${bold(`4. Send queries from your app`)}
++If you already have an existing app with Prisma ORM, you can now run it and it will send queries against your newly created Prisma Postgres instance.
++
++${bold(`5. Learn more`)}
++For more info, visit the Prisma Postgres docs: ${link('https://pris.ly/ppg-docs')}
++`
++
++  return isExistingPrismaProject ? existingPrismaProjectOutput : newPrismaProjectOutput
++}
+diff --git a/packages/cli/src/mcp/MCP.ts b/packages/cli/src/mcp/MCP.ts
+index 28334e439f9d..20c14fecb7fd 100644
+--- a/packages/cli/src/mcp/MCP.ts
++++ b/packages/cli/src/mcp/MCP.ts
+@@ -6,7 +6,7 @@ import execa from 'execa'
+ import { z } from 'zod'
+ 
+ import { version } from '../../package.json'
+-import { createHelp } from '../platform/_lib/help'
++import { createHelp } from '../utils/help'
+ 
+ // Only apply console redirection when running in MCP mode
+ // This prevents stdout pollution that breaks MCP's JSON-RPC protocol
+@@ -38,6 +38,7 @@ export class Mcp implements Command {
+   private constructor() {}
+ 
+   public help = createHelp({
++    usageLine: 'prisma mcp [options]',
+     options: [['--early-access', '', 'Enable early access features']],
+     examples: ['prisma mcp --early-access'],
+     additionalContent: [
+diff --git a/packages/cli/src/platform/$.test.ts b/packages/cli/src/platform/$.test.ts
+deleted file mode 100644
+index 54c10f5f8686..000000000000
+--- a/packages/cli/src/platform/$.test.ts
++++ /dev/null
+@@ -1,68 +0,0 @@
+-import { defaultTestConfig } from '@prisma/config'
+-import { isError } from '@prisma/internals'
+-
+-import { $ as platform } from './$'
+-
+-describe('--early-access flag', () => {
+-  it('should not work without it', async () => {
+-    await expect(platform.new({}).parse([], defaultTestConfig(), process.cwd())).rejects.toMatchInlineSnapshot(`
+-      "This feature is currently in Early Access. There may be bugs and it's not recommended to use it in production environments.
+-      Please provide the --early-access flag to use this command."
+-    `)
+-  })
+-
+-  it('should output help if no subcommand or parameter is passed', async () => {
+-    const commandInstance = platform.new({})
+-    const spy = jest.spyOn(commandInstance, 'help').mockImplementation(() => 'Help Me')
+-    const result = await commandInstance.parse(['--early-access'], defaultTestConfig(), process.cwd())
+-    const resultIsError = isError(result)
+-    expect(resultIsError).toBeFalsy()
+-    expect(spy).toHaveBeenCalledTimes(1)
+-    spy.mockRestore()
+-  })
+-
+-  it('should output help if -h is passed', async () => {
+-    const commandInstance = platform.new({})
+-    const spy = jest.spyOn(commandInstance, 'help').mockImplementation(() => 'Help Me')
+-    const result = await commandInstance.parse(['--early-access', '-h'], defaultTestConfig(), process.cwd())
+-    const resultIsError = isError(result)
+-    expect(resultIsError).toBeFalsy()
+-    expect(spy).toHaveBeenCalledTimes(1)
+-    spy.mockRestore()
+-  })
+-
+-  it('should output the help', async () => {
+-    const commandInstance = platform.new({})
+-    const result = await commandInstance.parse(['--early-access'], defaultTestConfig(), process.cwd())
+-    expect(result).toMatchInlineSnapshot(`
+-      "
+-      Usage
+-
+-        $ prisma platform [command] [options]
+-
+-      Commands
+-
+-                 auth   Manage authentication with your Prisma Data Platform account
+-            workspace   Manage workspaces
+-              project   Manage projects
+-          environment   Manage environments
+-               apikey   Manage API keys
+-           accelerate   Manage Prisma Accelerate
+-                pulse   Manage Prisma Pulse
+-
+-      Options
+-
+-         --early-access    Enable early access features
+-                --token    Specify a token to use for authentication
+-
+-      Examples
+-
+-        $ prisma platform auth login
+-        $ prisma platform project create --workspace <id>
+-
+-      For detailed command descriptions and options, use \`prisma platform [command] --help\`
+-      For additional help visit https://pris.ly/cli/platform-docs
+-      "
+-    `)
+-  })
+-})
+diff --git a/packages/cli/src/platform/$.ts b/packages/cli/src/platform/$.ts
+deleted file mode 100644
+index bce465115b3e..000000000000
+--- a/packages/cli/src/platform/$.ts
++++ /dev/null
+@@ -1,60 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command, Commands, link } from '@prisma/internals'
+-
+-import { EarlyAccessFlagError } from '../utils/errors'
+-import { dispatchToSubCommand } from './_lib/cli/dispatchToSubCommand'
+-import { createHelp } from './_lib/help'
+-
+-export class $ implements Command {
+-  public static new(commands: Commands): $ {
+-    return new $(commands)
+-  }
+-
+-  private constructor(private readonly commands: Commands) {}
+-
+-  public help = createHelp({
+-    subcommands: [
+-      ['auth', 'Manage authentication with your Prisma Data Platform account'],
+-      ['workspace', 'Manage workspaces'],
+-      ['project', 'Manage projects'],
+-      ['environment', 'Manage environments'],
+-      // todo replace apikey with serviceToken
+-      ['apikey', 'Manage API keys'],
+-      // ['serviceToken', 'Manage service tokens'],
+-      ['accelerate', 'Manage Prisma Accelerate'],
+-      ['pulse', 'Manage Prisma Pulse'],
+-    ],
+-    options: [
+-      ['--early-access', '', 'Enable early access features'],
+-      ['--token', '', 'Specify a token to use for authentication'],
+-    ],
+-    examples: ['prisma platform auth login', 'prisma platform project create --workspace <id>'],
+-    additionalContent: [
+-      'For detailed command descriptions and options, use `prisma platform [command] --help`',
+-      `For additional help visit ${link('https://pris.ly/cli/platform-docs')}`,
+-    ],
+-  })
+-
+-  public async parse(argv: string[], config: PrismaConfigInternal, baseDir: string): Promise<string | Error> {
+-    const isHasEarlyAccessFeatureFlag = Boolean(argv.find((_) => _.match(/early-access/)))
+-    if (!isHasEarlyAccessFeatureFlag) throw new EarlyAccessFlagError()
+-
+-    // Since `dispatchToSubCommand`
+-    // assumes that the first element of the array to be the command
+-    // we must remove the flag before
+-    //
+-    // It makes it possible to run, for example:
+-    // prisma platform --early-access login
+-    // prisma platform auth login --early-access
+-    const argvWithoutEarlyAccess = (argv = argv.filter((it) => it !== '--early-access'))
+-
+-    // display help for help flag or no subcommand
+-    if (argv.length === 0 || ['-h', '--help'].includes(argvWithoutEarlyAccess[0])) {
+-      return this.help()
+-    }
+-
+-    const result = await dispatchToSubCommand(this.commands, argvWithoutEarlyAccess, config, baseDir)
+-
+-    return result
+-  }
+-}
+diff --git a/packages/cli/src/platform/_.ts b/packages/cli/src/platform/_.ts
+deleted file mode 100644
+index 3a7c47f7c8ba..000000000000
+--- a/packages/cli/src/platform/_.ts
++++ /dev/null
+@@ -1,11 +0,0 @@
+-export * from './_lib/utils'
+-export * from './$'
+-export * from './accelerate/_Accelerate'
+-export * from './auth/_Auth'
+-export * from './auth/login'
+-export * from './auth/logout'
+-export * from './environment/_Environment'
+-export * from './project/_Project'
+-export * from './pulse/_Pulse'
+-export * from './serviceToken/_ServiceToken'
+-export * from './workspace/_Workspace'
+diff --git a/packages/cli/src/platform/_Platform.ts b/packages/cli/src/platform/_Platform.ts
+deleted file mode 100644
+index b0ba258f427b..000000000000
+--- a/packages/cli/src/platform/_Platform.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Platform from './_'
+diff --git a/packages/cli/src/platform/_lib/cli/dispatchToSubCommand.ts b/packages/cli/src/platform/_lib/cli/dispatchToSubCommand.ts
+deleted file mode 100644
+index 77c37c2a4953..000000000000
+--- a/packages/cli/src/platform/_lib/cli/dispatchToSubCommand.ts
++++ /dev/null
+@@ -1,21 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Commands, HelpError, link } from '@prisma/internals'
+-
+-export const dispatchToSubCommand = async (
+-  commands: Commands,
+-  argv: string[],
+-  config: PrismaConfigInternal,
+-  baseDir: string,
+-) => {
+-  const commandName = argv[0]
+-  if (!commandName) return new HelpError(`Unknown command.`)
+-  const command = commands[commandName]
+-  if (!command) return new HelpError(`Unknown command or parameter "${commandName}"`)
+-
+-  // Temporary text until it's added properly in each sub command
+-  const hasHelpFlag = Boolean(argv.find((it) => ['-h', '--help'].includes(it)))
+-  if (hasHelpFlag) return `Help output for this command will be available soon. In the meantime, visit ${link("https://pris.ly/cli/platform-docs")} for more information.`; // prettier-ignore
+-
+-  const result = await command.parse(argv.slice(1), config, baseDir)
+-  return result
+-}
+diff --git a/packages/cli/src/platform/_lib/cli/namespace.ts b/packages/cli/src/platform/_lib/cli/namespace.ts
+deleted file mode 100644
+index bff27ab10ac8..000000000000
+--- a/packages/cli/src/platform/_lib/cli/namespace.ts
++++ /dev/null
+@@ -1,18 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command, Commands } from '@prisma/internals'
+-
+-import { dispatchToSubCommand } from './dispatchToSubCommand'
+-
+-export const createNamespace = () => {
+-  return class $ implements Command {
+-    public static new(commands: Commands): $ {
+-      return new $(commands)
+-    }
+-
+-    private constructor(public readonly commands: Commands) {}
+-
+-    public async parse(argv: string[], config: PrismaConfigInternal, baseDir: string): Promise<string | Error> {
+-      return await dispatchToSubCommand(this.commands, argv, config, baseDir)
+-    }
+-  }
+-}
+diff --git a/packages/cli/src/platform/_lib/cli/parameters.ts b/packages/cli/src/platform/_lib/cli/parameters.ts
+deleted file mode 100644
+index a06495adda9b..000000000000
+--- a/packages/cli/src/platform/_lib/cli/parameters.ts
++++ /dev/null
+@@ -1,46 +0,0 @@
+-import { arg, isError } from '@prisma/internals'
+-import Arg from 'arg'
+-
+-export const getRequiredParameter = <$Args extends Record<string, unknown>, $Names extends (keyof $Args)[]>(
+-  args: $Args,
+-  names: $Names,
+-  environmentVariable?: string,
+-): Error | Exclude<$Args[$Names[number]], undefined> => {
+-  const value = getOptionalParameter(args, names, environmentVariable)
+-  if (value === undefined) return new Error(`Missing ${names.join(' or ')} parameter`)
+-  return value as any
+-}
+-
+-export function argOrThrow<T extends Arg.Spec>(argv: string[], spec: T): Arg.Result<T> {
+-  const args = arg(argv, spec)
+-  if (isError(args)) throw args
+-  return args
+-}
+-
+-export const getRequiredParameterOrThrow = <$Args extends Record<string, unknown>, $Names extends (keyof $Args)[]>(
+-  args: $Args,
+-  names: $Names,
+-  environmentVariable?: string,
+-): Exclude<$Args[$Names[number]], undefined> => {
+-  const value = getRequiredParameter(args, names, environmentVariable)
+-  if (value instanceof Error) throw new Error(`Missing ${names.join(' or ')} parameter`)
+-  return value
+-}
+-
+-export const getOptionalParameter = <$Args extends Record<string, unknown>, $Names extends (keyof $Args)[]>(
+-  args: $Args,
+-  names: $Names,
+-  environmentVariable?: string,
+-): $Args[$Names[number]] => {
+-  const entry = Object.entries(args).find(([key]) => names.includes(key))
+-  if (!entry) {
+-    // TODO document for our users when the CLI goes production that environment variables are overridden by flags
+-    if (environmentVariable) {
+-      const value = process.env[environmentVariable]
+-      if (value) {
+-        return value as any
+-      }
+-    }
+-  }
+-  return (entry?.[1] ?? undefined) as any
+-}
+diff --git a/packages/cli/src/platform/_lib/credentials.ts b/packages/cli/src/platform/_lib/credentials.ts
+deleted file mode 100644
+index b02ce009f66b..000000000000
+--- a/packages/cli/src/platform/_lib/credentials.ts
++++ /dev/null
+@@ -1,40 +0,0 @@
+-import fs from 'fs-extra'
+-import path from 'path'
+-import XdgAppPaths from 'xdg-app-paths'
+-
+-import { loadJsonFile } from './jsonFile'
+-import { unknownToError } from './prelude'
+-
+-export interface Credentials {
+-  token: string
+-}
+-
+-export const credentialsFileDirectoryPath = new XdgAppPaths('prisma-platform-cli').config()
+-
+-export const credentialsFilePath = path.join(credentialsFileDirectoryPath, 'auth.json')
+-
+-export const parseCredentials = (data: unknown): Credentials => {
+-  if (typeof data !== 'object' || data === null) throw new Error('Invalid credentials')
+-  if (typeof data['token'] !== 'string') throw new Error('Invalid credentials')
+-  return data as Credentials
+-}
+-
+-export const credentialsFile = {
+-  path: credentialsFilePath,
+-  save: async (data: Credentials) =>
+-    fs
+-      .mkdirp(credentialsFileDirectoryPath)
+-      .then(() => fs.writeJSON(credentialsFilePath, data))
+-      .catch(unknownToError),
+-  load: async (): Promise<Credentials | null | Error> =>
+-    fs
+-      .pathExists(credentialsFilePath)
+-      .then((exists) => (exists ? loadJsonFile(credentialsFilePath).then(parseCredentials) : null))
+-      .catch(unknownToError),
+-  delete: async () =>
+-    fs
+-      .pathExists(credentialsFilePath)
+-      .then((exists) => (exists ? fs.remove(credentialsFilePath) : undefined))
+-      .then(() => null)
+-      .catch(unknownToError),
+-}
+diff --git a/packages/cli/src/platform/_lib/help.ts b/packages/cli/src/platform/_lib/help.ts
+deleted file mode 100644
+index 0f6846b52939..000000000000
+--- a/packages/cli/src/platform/_lib/help.ts
++++ /dev/null
+@@ -1,55 +0,0 @@
+-import { format, HelpError } from '@prisma/internals'
+-import { bold, dim, red } from 'kleur/colors'
+-
+-interface HelpContent {
+-  command?: string
+-  subcommand?: string
+-  subcommands?: string[][]
+-  options?: string[][]
+-  examples?: string[]
+-  additionalContent?: string[]
+-}
+-
+-export const createHelp = (content: HelpContent) => {
+-  const { command, subcommand, subcommands, options, examples, additionalContent } = content
+-  const command_ = subcommand
+-    ? `prisma platform ${command} ${subcommand}`
+-    : command && subcommands
+-      ? `prisma platform ${command} [command]`
+-      : `prisma platform [command]`
+-
+-  const usage = format(`
+-${bold('Usage')}
+-
+-  ${dim('$')} ${command_} [options]
+-`)
+-
+-  // prettier-ignore
+-  const commands = subcommands && format(`
+-${bold('Commands')}
+-
+-${subcommands.map(([option, description]) => `${option.padStart(15)}   ${description}`).join('\n')}
+-  `)
+-
+-  // prettier-ignore
+-  const options_ = options && format(`
+-${bold('Options')}
+-
+-${options.map(([option, alias, description]) => `  ${option.padStart(15)} ${alias && alias+','}   ${description}`).join('\n')}
+-  `)
+-
+-  // prettier-ignore
+-  const examples_ = examples && format(`
+-${bold('Examples')}
+-
+-${examples.map(example => `  ${dim('$')} ${example}`).join('\n')}
+-  `)
+-
+-  // prettier-ignore
+-  const additionalContent_ = additionalContent && format(`
+-${additionalContent.map(entry => `${entry}`).join('\n')}
+-  `)
+-
+-  const help = [usage, commands, options_, examples_, additionalContent_].filter(Boolean).join('')
+-  return (error?: string) => (error ? new HelpError(`\n${bold(red(`!`))} ${error}\n${help}`) : help)
+-}
+diff --git a/packages/cli/src/platform/_lib/jsonFile.ts b/packages/cli/src/platform/_lib/jsonFile.ts
+deleted file mode 100644
+index 41e3358cf175..000000000000
+--- a/packages/cli/src/platform/_lib/jsonFile.ts
++++ /dev/null
+@@ -1,39 +0,0 @@
+-import fs from 'fs-extra'
+-
+-/**
+- * Load JSON file.
+- * Inspired by @link https://github.com/sindresorhus/load-json-file/blob/main/index.js
+- * @remark Eventually this helper could be moved to @prisma/internals
+- */
+-
+-type JsonValue = string | number | boolean | null | { [Key in string]?: JsonValue } | JsonValue[]
+-type Reviver = (this: unknown, key: string, value: unknown) => unknown
+-type BeforeParse = (data: string) => string
+-interface Options {
+-  /** Applies a function to the JSON string before parsing. */
+-  readonly beforeParse?: BeforeParse
+-  /**
+-   * Prescribes how the value originally produced by parsing is transformed, before being returned.
+-   * See the @link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse#Using_the_reviver_parameter for more.
+-   */
+-  readonly reviver?: Reviver
+-}
+-
+-const parse = (buffer: Buffer, { beforeParse, reviver }: Options = {}) => {
+-  let data = new TextDecoder().decode(buffer)
+-  if (typeof beforeParse === 'function') {
+-    data = beforeParse(data)
+-  }
+-  return JSON.parse(data, reviver)
+-}
+-
+-/**
+- * Loads a JSON file that removes BOM.
+- */
+-export const loadJsonFile = async <ReturnValueType = JsonValue>(
+-  filePath: string,
+-  options?: Options,
+-): Promise<ReturnValueType> => {
+-  const buffer = await fs.readFile(filePath)
+-  return parse(buffer, options)
+-}
+diff --git a/packages/cli/src/platform/_lib/jwt.ts b/packages/cli/src/platform/_lib/jwt.ts
+deleted file mode 100644
+index cd373d9de08f..000000000000
+--- a/packages/cli/src/platform/_lib/jwt.ts
++++ /dev/null
+@@ -1,51 +0,0 @@
+-import { isError } from '@prisma/internals'
+-
+-import { isObject, tryCatch } from './prelude'
+-
+-export interface JWT {
+-  jti?: string
+-  sub?: string
+-  iat?: number
+-  exp?: number
+-}
+-
+-export const decodeJwt = (jwt: string): JWT | Error => {
+-  if (typeof jwt !== 'string') throw new Error('JWTs must use Compact JWS serialization, JWT must be a string')
+-
+-  const { 1: payload, length } = jwt.split('.')
+-
+-  if (length === 5) throw new Error('Only JWTs using Compact JWS serialization can be decoded')
+-  if (length !== 3) throw new Error('Invalid JWT')
+-  if (!payload) throw new Error('JWTs must contain a payload')
+-
+-  const decoded = tryCatch(
+-    () => atob(payload),
+-    () => new Error('Failed to base64 decode the payload.'),
+-  )
+-  if (isError(decoded)) return decoded
+-
+-  const result = tryCatch(
+-    () => JSON.parse(decoded),
+-    () => new Error('Failed to parse the decoded payload as JSON.'),
+-  )
+-  if (isError(result)) return result
+-
+-  if (!isObject(result)) throw new Error('Invalid JWT Claims Set.')
+-
+-  return result
+-}
+-
+-export const isJwtExpiredOrInvalid = (token: string): boolean => {
+-  const jwt = decodeJwt(token)
+-  if (isError(jwt)) return true
+-  if (!jwt.exp) return false
+-  // Note: The platform api uses millisecond timestamps but this is non standard! JWTs usually use seconds.
+-  // Hence this little workaround to detect automatically whether the timestamp is in milliseconds or seconds.
+-  if (jwt.exp / 1_000_000_000 > 200) {
+-    // Timestamp is in milliseconds
+-    return jwt.exp < Date.now()
+-  } else {
+-    // Timestamp is in seconds
+-    return jwt.exp < Date.now() / 1000
+-  }
+-}
+diff --git a/packages/cli/src/platform/_lib/messages.ts b/packages/cli/src/platform/_lib/messages.ts
+deleted file mode 100644
+index 3ffdb92a311c..000000000000
+--- a/packages/cli/src/platform/_lib/messages.ts
++++ /dev/null
+@@ -1,67 +0,0 @@
+-import { formatTable, mapObjectValues } from '@prisma/internals'
+-import { bold, dim, green, white } from 'kleur/colors'
+-
+-import { id, Mapped, NoInfer } from './prelude'
+-
+-interface Resource {
+-  __typename: string
+-  id: string
+-  displayName: string
+-  createdAt?: string
+-}
+-
+-type Renderer<T> = (value: T) => string | null
+-
+-type ObjectValueRenderersInput<$Object> = {
+-  [Key in keyof $Object]?: Renderer<$Object[Key]> | true
+-}
+-
+-const table = <$Object extends object>(
+-  object: Mapped<$Object>,
+-  renderersInput: {
+-    key?: Renderer<string>
+-    values?: ObjectValueRenderersInput<NoInfer<$Object>>
+-  },
+-) => {
+-  const renderers = {
+-    key: renderersInput.key ?? dim,
+-    // eslint-disable-next-line
+-    values: mapObjectValues(renderersInput.values ?? ({} as any), (_: true | Renderer<any>) => (_ === true ? id : _)),
+-  }
+-  return formatTable(
+-    Object.entries(renderers.values)
+-      .map(([propertyName, renderer]) => {
+-        const valueRendered = renderer(object[propertyName]) as null | string // todo ask for TS help here
+-        if (valueRendered === null) return null
+-        return [renderers.key(String(propertyName)), valueRendered]
+-      })
+-      .filter(Boolean) as string[][],
+-  )
+-}
+-
+-export const successMessage = (message: string) => `${green('Success!')} ${message}`
+-
+-export const messages = {
+-  resourceCreated: (resource: Resource) =>
+-    successMessage(`${resource.__typename} ${resource.displayName} - ${resource.id} created.`),
+-  resourceDeleted: (resource: Resource) =>
+-    successMessage(`${resource.__typename} ${resource.displayName} - ${resource.id} deleted.`),
+-  resource: <$Resource extends Resource>(resource: $Resource, renderers?: ObjectValueRenderersInput<$Resource>) => {
+-    return messages.table(resource, {
+-      values: {
+-        displayName: (_) => white(bold(_)),
+-        id: true,
+-        createdAt: (_) => (_ ? Intl.DateTimeFormat().format(new Date(_)) : null),
+-        ...renderers,
+-      },
+-    })
+-  },
+-  resourceList: (records: Resource[]) => {
+-    if (records.length === 0) return messages.info('No records found.')
+-    return records.map((record) => messages.resource(record)).join('\n\n\n')
+-  },
+-  info: (message: string) => message,
+-  sections: (sections: string[]) => sections.join('\n\n'),
+-  table,
+-  success: successMessage,
+-}
+diff --git a/packages/cli/src/platform/_lib/pdp.ts b/packages/cli/src/platform/_lib/pdp.ts
+deleted file mode 100644
+index 1bc82a3e8092..000000000000
+--- a/packages/cli/src/platform/_lib/pdp.ts
++++ /dev/null
+@@ -1,69 +0,0 @@
+-import { getUserAgent } from './userAgent'
+-
+-const platformAPIEndpoint = new URL('https://console.prisma.io/api')
+-export const consoleUrl = new URL('https://console.prisma.io')
+-
+-/**
+- *
+- * @remarks
+- *
+- * TODO Feedback from Joel:
+- *    It could be interesting to set a default timeout because it's not part of fetch spec, see:
+- *    npmjs.com/package/node-fetch#request-cancellation-with-abortsignal
+- */
+-export const requestOrThrow = async <
+-  $Data extends object = object,
+-  $Input extends null | object = null,
+-  $Variables extends null | object = null,
+->(params: {
+-  token: string
+-  body: $Input extends null
+-    ? $Variables extends null
+-      ? {
+-          query: string
+-          variables?: undefined
+-        }
+-      : {
+-          query: string
+-          variables: $Variables
+-        }
+-    : {
+-        query: string
+-        variables: { input: $Input }
+-      }
+-}): Promise<$Data> => {
+-  const userAgent = await getUserAgent()
+-  const method = 'POST'
+-  const headers = new Headers({
+-    'Content-Type': 'application/json',
+-    Authorization: `Bearer ${params.token}`,
+-    // See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
+-    'User-Agent': userAgent,
+-  })
+-  const body = JSON.stringify(params.body)
+-  const response = await fetch(platformAPIEndpoint.href, { method, headers, body })
+-  const text = await response.text()
+-  if (response.status >= 400) throw new Error(text)
+-
+-  const json = JSON.parse(text) as { data: $Data; error: null | object }
+-  if (json.error) throw new Error(`Error from PDP Platform API: ${text}`)
+-
+-  const error = Object.values(json.data).filter(
+-    (rootFieldValue): rootFieldValue is { __typename: string } =>
+-      typeof rootFieldValue === 'object' &&
+-      rootFieldValue !== null &&
+-      rootFieldValue['__typename']?.startsWith('Error'),
+-  )[0]
+-  if (error) throw errorFromPlatformError({ message: '<message not selected from server>', ...error })
+-
+-  return json.data
+-}
+-
+-export const errorFromPlatformError = (error: PlatformError): Error => {
+-  return new Error(error.message)
+-}
+-
+-export type PlatformError<$Types extends string = string> = {
+-  __typename: $Types
+-  message: string
+-}
+diff --git a/packages/cli/src/platform/_lib/prelude.ts b/packages/cli/src/platform/_lib/prelude.ts
+deleted file mode 100644
+index a2bb81ec6175..000000000000
+--- a/packages/cli/src/platform/_lib/prelude.ts
++++ /dev/null
+@@ -1,25 +0,0 @@
+-export const unknownToError = (unknown: unknown): Error => {
+-  if (unknown instanceof Error) return unknown
+-  return new Error(`Unknown error: ${unknown}`)
+-}
+-
+-export const id = <T>(value: T) => value
+-
+-export type Mapped<T> = { [Key in keyof T]: T[Key] }
+-
+-export type NoInfer<T> = [T][T extends any ? 0 : never]
+-
+-export const isObject = (obj: unknown): obj is object => {
+-  return obj !== null && typeof obj === 'object' && !Array.isArray(obj)
+-}
+-
+-export const tryCatch = <$Error extends Error, $Return>(
+-  fn: () => $Return,
+-  catcher?: (e: Error) => $Error,
+-): $Return | $Error => {
+-  try {
+-    return fn()
+-  } catch (e) {
+-    return catcher ? catcher(unknownToError(e)) : (unknownToError(e) as $Error)
+-  }
+-}
+diff --git a/packages/cli/src/platform/_lib/userAgent.ts b/packages/cli/src/platform/_lib/userAgent.ts
+deleted file mode 100644
+index 5640447d444f..000000000000
+--- a/packages/cli/src/platform/_lib/userAgent.ts
++++ /dev/null
+@@ -1,15 +0,0 @@
+-import Debug from '@prisma/debug'
+-import { isError } from '@prisma/internals'
+-import * as Checkpoint from 'checkpoint-client'
+-
+-import { version as PRISMA_CLI_VERSION } from '../../../package.json'
+-import { unknownToError } from './prelude'
+-
+-const debug = Debug('prisma:cli:platform:_lib:userAgent')
+-
+-export const getUserAgent = async () => {
+-  const signature = await Checkpoint.getSignature().catch(unknownToError)
+-  if (isError(signature)) debug(`await checkpoint.getSignature() failed silently with ${signature.message}`) // prettier-ignore
+-  const signatureString = isError(signature) ? 'unknown' : signature
+-  return `prisma-cli/${PRISMA_CLI_VERSION} (Signature: ${signatureString})`
+-}
+diff --git a/packages/cli/src/platform/_lib/utils.ts b/packages/cli/src/platform/_lib/utils.ts
+deleted file mode 100644
+index 67e9c168e5f7..000000000000
+--- a/packages/cli/src/platform/_lib/utils.ts
++++ /dev/null
+@@ -1,213 +0,0 @@
+-import { getCommandWithExecutor, isError, link } from '@prisma/internals'
+-import { bold, green } from 'kleur/colors'
+-
+-import { getOptionalParameter } from './cli/parameters'
+-import { credentialsFile } from './credentials'
+-import { isJwtExpiredOrInvalid } from './jwt'
+-
+-export const platformParameters = {
+-  global: {
+-    // TODO Remove this from global once we have a way for parents to strip out flags upon parsing.
+-    '--token': String,
+-    '--json': Boolean,
+-  },
+-  workspace: {
+-    '--token': String,
+-    '--workspace': String,
+-    '--json': Boolean,
+-    '-w': '--workspace',
+-  },
+-  project: {
+-    '--token': String,
+-    '--project': String,
+-    '-p': '--project',
+-  },
+-  environment: {
+-    '--token': String,
+-    '--environment': String,
+-    '-e': '--environment',
+-  },
+-  serviceToken: {
+-    '--token': String,
+-    '--serviceToken': String,
+-    '-s': '--serviceToken',
+-  },
+-  apikey: {
+-    '--token': String,
+-    '--apikey': String,
+-  },
+-} as const
+-
+-export const ErrorPlatformTokenExpired = new Error(
+-  `Credentials expired. Run ${green(getCommandWithExecutor('prisma platform auth login --early-access'))}.`, // prettier-ignore
+-)
+-
+-export const ErrorPlatformUnauthorized = new Error(
+-  `No platform credentials found. Run ${green(getCommandWithExecutor('prisma platform auth login --early-access'))} first. Alternatively you can provide a token via the \`--token\` or \`-t\` parameters, or set the 'PRISMA_TOKEN' environment variable with a token.`, // prettier-ignore
+-)
+-
+-export const getTokenOrThrow = async <$Args extends Record<string, unknown>>(args: $Args) => {
+-  const token = getOptionalParameter(args, ['--token', '-t'], 'PRISMA_TOKEN') as string
+-  if (token && isJwtExpiredOrInvalid(token)) throw ErrorPlatformTokenExpired
+-  if (token) return token
+-
+-  const credentials = await credentialsFile.load()
+-  if (isError(credentials)) throw credentials
+-  if (!credentials) throw ErrorPlatformUnauthorized
+-  if (isJwtExpiredOrInvalid(credentials.token)) {
+-    await credentialsFile.delete()
+-    throw ErrorPlatformTokenExpired
+-  }
+-
+-  return credentials.token
+-}
+-
+-const accelerateConnectionStringUrl = 'prisma://accelerate.prisma-data.net'
+-
+-/**
+- *
+- * Output related utils
+- *
+- */
+-
+-export const generateConnectionString = (apiKey: string) => {
+-  const url = new URL(accelerateConnectionStringUrl)
+-  url.searchParams.set('api_key', apiKey)
+-  return bold(url.href)
+-}
+-
+-export const poll = async <F extends () => Promise<R>, R>(
+-  fn: F,
+-  until: (res: R) => boolean,
+-  waitMs: number,
+-  timeoutMs: number,
+-  message?: string,
+-) => {
+-  const endTime = new Date().getMilliseconds() + timeoutMs
+-
+-  const wait = () =>
+-    new Promise((resolve) => {
+-      setTimeout(resolve, waitMs)
+-    })
+-
+-  let result = await fn()
+-  while (!until(result)) {
+-    const waitTime = new Date().getMilliseconds() + waitMs
+-    if (waitTime > endTime) {
+-      throw new Error(`polling timed out after ${timeoutMs}ms`)
+-    }
+-    if (message) console.log(message)
+-    result = await wait().then(fn)
+-  }
+-
+-  if (isError(result)) throw result
+-
+-  return result
+-}
+-
+-export const printPpgInitOutput = ({
+-  databaseUrl,
+-  workspaceId,
+-  projectId,
+-  environmentId,
+-  isExistingPrismaProject = false,
+-}: {
+-  databaseUrl: string
+-  workspaceId: string
+-  projectId: string
+-  environmentId?: string
+-  isExistingPrismaProject?: boolean
+-}) => {
+-  /**
+-   * Happy path: fresh Prisma project, files have been created for the user
+-   */
+-  const newPrismaProjectOutput = `
+-We created an initial ${green('schema.prisma')} file and a ${green('.env')} file with your ${green(
+-    'DATABASE_URL',
+-  )} environment variable already set.
+-
+-${bold('--- Next steps ---')}
+-
+-Go to ${link('https://pris.ly/ppg-init')} for detailed instructions.
+-
+-${bold('1. Define your database schema')}
+-Open the ${green('schema.prisma')} file and define your first models. Check the docs if you need inspiration: ${link(
+-    'https://pris.ly/ppg-init',
+-  )}.
+-
+-${bold('2. Apply migrations')}
+-Run the following command to create and apply a migration:
+-${green('npx prisma migrate dev --name init')}
+-
+-${bold('3. Manage your data')}
+-View and edit your data locally by running this command:
+-${green('npx prisma studio')}
+-${
+-  environmentId !== undefined
+-    ? `...or online in Console:
+-${link(`https://console.prisma.io/${workspaceId}/${projectId}/${environmentId}/studio`)}
+-`
+-    : ''
+-}
+-${bold(`4. Send queries from your app`)}
+-To access your database from a JavaScript/TypeScript app, you need to use Prisma ORM. Go here for step-by-step instructions: ${link(
+-    'https://pris.ly/ppg-init',
+-  )}
+-  `
+-
+-  /**
+-   * Init was ran against an existing Prisma project.
+-   * If ./schema.prisma, prisma folder, or ./prisma/schema.prisma, or DATABASE_URL in .env exists,
+-   * then show DATABASE_URL to the user and do not write to file system.
+-   */
+-  const existingPrismaProjectOutput = `
+-We found an existing ${green('schema.prisma')} file in your current project directory.
+-
+-${bold('--- Database URL ---')}
+-
+-Connect Prisma ORM to your Prisma Postgres database with this URL:
+-
+-${green(databaseUrl)}
+-
+-${bold('--- Next steps ---')}
+-
+-Go to ${link('https://pris.ly/ppg-init')} for detailed instructions.
+-
+-${bold('1. Install the Postgres adapter')}
+-${green('npm install @prisma/adapter-pg')}
+-
+-...and add it to your Prisma Client instance:
+-
+-${green('import { PrismaPg } from "@prisma/adapter-pg";')}
+-${green('import { PrismaClient } from "./generated/prisma/client";')}
+-
+-${green('const connectionString = `${process.env.DATABASE_URL}`;')}
+-
+-${green('const adapter = new PrismaPg({ connectionString });')}
+-${green('const prisma = new PrismaClient({ adapter });')}
+-
+-${bold('2. Apply migrations')}
+-Run the following command to create and apply a migration:
+-${green('npx prisma migrate dev')}
+-
+-${bold(`3. Manage your data`)}
+-View and edit your data locally by running this command:
+-${green('npx prisma studio')}
+-${
+-  environmentId !== undefined
+-    ? `...or online in Console:
+-${link(`https://console.prisma.io/${workspaceId}/${projectId}/${environmentId}/studio`)}
+-`
+-    : ''
+-}
+-${bold(`4. Send queries from your app`)}
+-If you already have an existing app with Prisma ORM, you can now run it and it will send queries against your newly created Prisma Postgres instance.
+-
+-${bold(`5. Learn more`)}
+-For more info, visit the Prisma Postgres docs: ${link('https://pris.ly/ppg-docs')}
+-`
+-
+-  return isExistingPrismaProject // prettier-ignore
+-    ? existingPrismaProjectOutput
+-    : newPrismaProjectOutput
+-}
+diff --git a/packages/cli/src/platform/accelerate/$.ts b/packages/cli/src/platform/accelerate/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/accelerate/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/accelerate/_.ts b/packages/cli/src/platform/accelerate/_.ts
+deleted file mode 100644
+index d50fc9966ada..000000000000
+--- a/packages/cli/src/platform/accelerate/_.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-export * from './$'
+-export * from './disable'
+-export * from './enable'
+diff --git a/packages/cli/src/platform/accelerate/_Accelerate.ts b/packages/cli/src/platform/accelerate/_Accelerate.ts
+deleted file mode 100644
+index 8fd6c862cb1d..000000000000
+--- a/packages/cli/src/platform/accelerate/_Accelerate.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Accelerate from './_'
+diff --git a/packages/cli/src/platform/accelerate/disable.ts b/packages/cli/src/platform/accelerate/disable.ts
+deleted file mode 100644
+index d7bee358c1a1..000000000000
+--- a/packages/cli/src/platform/accelerate/disable.ts
++++ /dev/null
+@@ -1,48 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Disable implements Command {
+-  public static new() {
+-    return new Disable()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.environment,
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    await requestOrThrow<
+-      {
+-        accelerateDisable: {}
+-      },
+-      { environmentId: string }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation ($input: MutationAccelerateDisableInput!) {
+-            accelerateDisable(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: { environmentId },
+-        },
+-      },
+-    })
+-
+-    return messages.success(
+-      `Accelerate disabled. Prisma clients connected to ${environmentId} will not be able to send queries through Accelerate.`,
+-    )
+-  }
+-}
+diff --git a/packages/cli/src/platform/accelerate/enable.ts b/packages/cli/src/platform/accelerate/enable.ts
+deleted file mode 100644
+index 974a9dc2cca1..000000000000
+--- a/packages/cli/src/platform/accelerate/enable.ts
++++ /dev/null
+@@ -1,130 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError, link } from '@prisma/internals'
+-
+-import { getOptionalParameter, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { generateConnectionString, getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Enable implements Command {
+-  public static new() {
+-    return new Enable()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.environment,
+-      '--url': String,
+-      // TODO rename to "serviceToken" in a future release.
+-      '--apikey': Boolean,
+-      '--region': String,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    const connectionString = getRequiredParameterOrThrow(args, ['--url'])
+-    const withServiceToken = getOptionalParameter(args, ['--apikey']) ?? false
+-    const regionId = getOptionalParameter(args, ['--region'])
+-    const { databaseLinkCreate } = await requestOrThrow<
+-      {
+-        databaseLinkCreate: {
+-          __typename: string
+-          id: string
+-        }
+-      },
+-      {
+-        environmentId: string
+-        connectionString: string
+-        regionId?: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation ($input: MutationDatabaseLinkCreateInput!) {
+-            databaseLinkCreate(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on DatabaseLink {
+-                id
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            environmentId,
+-            connectionString,
+-            ...(regionId && { regionId }),
+-          },
+-        },
+-      },
+-    })
+-    const { serviceTokenCreate } = await requestOrThrow<
+-      {
+-        accelerateEnable: {}
+-        serviceTokenCreate?: {
+-          value: string
+-        }
+-      },
+-      null,
+-      {
+-        accelerateEnableInput: { databaseLinkId: string }
+-        serviceTokenCreateInput: { environmentId: string }
+-        withServiceToken: boolean
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation (
+-            $accelerateEnableInput: MutationAccelerateEnableInput!
+-            $serviceTokenCreateInput: MutationServiceTokenCreateInput!
+-            $withServiceToken: Boolean!
+-          ) {
+-            accelerateEnable(input: $accelerateEnableInput) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-            }
+-            serviceTokenCreate(input: $serviceTokenCreateInput) @include(if: $withServiceToken) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on ServiceTokenWithValue {
+-                value
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          withServiceToken,
+-          accelerateEnableInput: { databaseLinkId: databaseLinkCreate.id },
+-          serviceTokenCreateInput: { environmentId },
+-        },
+-      },
+-    })
+-
+-    const gettingStartedUrl = link('https://pris.ly/d/accelerate-getting-started')
+-
+-    if (serviceTokenCreate) {
+-      return messages.success(
+-        `Accelerate enabled. Use this Accelerate connection string to authenticate requests:\n` +
+-          '\n' +
+-          `${generateConnectionString(serviceTokenCreate.value)}\n` +
+-          '\n' +
+-          `For more information, check out the Getting started guide here: ${gettingStartedUrl}`,
+-      )
+-    } else {
+-      return messages.success(
+-        `Accelerate enabled. Use your secure API key in your Accelerate connection string to authenticate requests.\n` +
+-          `\n` +
+-          `For more information, check out the Getting started guide here: ${gettingStartedUrl}`,
+-      )
+-    }
+-  }
+-}
+diff --git a/packages/cli/src/platform/accelerate/regions.ts b/packages/cli/src/platform/accelerate/regions.ts
+deleted file mode 100644
+index dd32fac28a8a..000000000000
+--- a/packages/cli/src/platform/accelerate/regions.ts
++++ /dev/null
+@@ -1,45 +0,0 @@
+-import { requestOrThrow } from '../_lib/pdp'
+-
+-export const getRegionsOrThrow = async (input: { token: string }) => {
+-  const { token } = input
+-
+-  const { system } = await requestOrThrow<{
+-    system: {
+-      accelerate: {
+-        regions: {
+-          id: string
+-          displayName: string
+-          ppgStatus: 'available' | 'unavailable' | 'unsupported'
+-        }[]
+-      }
+-    }
+-  }>({
+-    token,
+-    body: {
+-      query: /* GraphQL */ `
+-        query {
+-          system {
+-            accelerate {
+-              regions {
+-                id
+-                displayName
+-                ppgStatus
+-              }
+-            }
+-          }
+-        }
+-      `,
+-    },
+-  })
+-
+-  return system.accelerate.regions
+-}
+-
+-export const getPrismaPostgresRegionsOrThrow = async (input: { token: string }) => {
+-  const regions = await getRegionsOrThrow(input)
+-  const ppgRegions = regions
+-    .filter((_) => _.ppgStatus !== 'unsupported')
+-    .sort((a, b) => b.displayName.localeCompare(a.displayName))
+-
+-  return ppgRegions
+-}
+diff --git a/packages/cli/src/platform/auth/$.ts b/packages/cli/src/platform/auth/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/auth/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/auth/_.ts b/packages/cli/src/platform/auth/_.ts
+deleted file mode 100644
+index cf74f7aff119..000000000000
+--- a/packages/cli/src/platform/auth/_.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export * from './$'
+-export * from './login'
+-export * from './logout'
+-export * from './show'
+diff --git a/packages/cli/src/platform/auth/_Auth.ts b/packages/cli/src/platform/auth/_Auth.ts
+deleted file mode 100644
+index 90b66ee8c95c..000000000000
+--- a/packages/cli/src/platform/auth/_Auth.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Auth from './_'
+diff --git a/packages/cli/src/platform/auth/__tests__/show.test.ts b/packages/cli/src/platform/auth/__tests__/show.test.ts
+deleted file mode 100644
+index ddf1440decac..000000000000
+--- a/packages/cli/src/platform/auth/__tests__/show.test.ts
++++ /dev/null
+@@ -1,47 +0,0 @@
+-import { defaultTestConfig } from '@prisma/config'
+-
+-import { requestOrThrow } from '../../_lib/pdp'
+-import { getTokenOrThrow } from '../../_lib/utils'
+-import { Show } from '../show'
+-
+-jest.mock('../../_lib/pdp')
+-jest.mock('../../_lib/utils')
+-
+-describe('platform auth show', () => {
+-  test('should output token with --sensitive', async () => {
+-    jest.mocked(requestOrThrow).mockResolvedValue(
+-      Promise.resolve({
+-        me: {
+-          user: {
+-            __typename: 'User',
+-            id: '23',
+-            email: 'foo@bar.org',
+-            displayName: 'Foo Bar',
+-          },
+-        },
+-      }),
+-    )
+-
+-    jest.mocked(getTokenOrThrow).mockReturnValue(Promise.resolve('testToken'))
+-
+-    await expect(Show.new().parse(['--sensitive'], defaultTestConfig())).resolves.toContain('testToken')
+-  })
+-  test('should not output token if --sensitive not given', async () => {
+-    jest.mocked(requestOrThrow).mockResolvedValue(
+-      Promise.resolve({
+-        me: {
+-          user: {
+-            __typename: 'User',
+-            id: '23',
+-            email: 'foo@bar.org',
+-            displayName: 'Foo Bar',
+-          },
+-        },
+-      }),
+-    )
+-
+-    jest.mocked(getTokenOrThrow).mockReturnValue(Promise.resolve('testToken'))
+-
+-    await expect(Show.new().parse([], defaultTestConfig())).resolves.not.toContain('testToken')
+-  })
+-})
+diff --git a/packages/cli/src/platform/auth/__tests__/token-handling.test.ts b/packages/cli/src/platform/auth/__tests__/token-handling.test.ts
+deleted file mode 100644
+index 9268441ccea2..000000000000
+--- a/packages/cli/src/platform/auth/__tests__/token-handling.test.ts
++++ /dev/null
+@@ -1,15 +0,0 @@
+-import { defaultTestConfig } from '@prisma/config'
+-
+-import { ErrorPlatformTokenExpired } from '../../_'
+-import { credentialsFile } from '../../_lib/credentials'
+-import { Show } from '../show'
+-
+-test('detects expired token and deletes credentials file', async () => {
+-  const expiredToken =
+-    'eyJraWQiOiJUa0hEN1ltOUNaQ2xESHYwazEyTEFhWjk4NTdGOE16dWxYTXJBMFpqbWVrIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJzenhnNDBldnIybDlpNXV3cnB4eHJneXYiLCJqdGkiOiJmdmYyZWJ2dTYzdml6NDd4NjhhNWhlbnQiLCJpYXQiOjE3NDczMjQ0NjM2NjgsImV4cCI6MTc1NTEwMDQ2MzY2OH0.aqOKA121IsDu1vvVE7yfGaLE3lfazc8jk87IFE8ykyM24Gzehh6QPGG90XwavCm0lheNiGf2faYrMPBax7bhpx0l0lkucbXpRPY1Uo4Tc2lGkESy6w6fnSr8_1lmEJ7J6g3KIqMAyRtTnW5mBCvmhqEEDUY5oXKUUQLKVsYBaCDvmOzc7nzeqWyRnr9SPOBqZVuLYHwRCWcZzqSJBzNtXhgZfEByH169NMjk-j77OYCW7KpxW7HrFbaf7Q9vXFvM8MG9W9uIbHgQy83K2IYJG3zlwONYulcV1-L3E5KNv7RuuLgPKHMFBkDlOjH6H0HFwsu46kzdthPihiWigqkS_g'
+-  await credentialsFile.save({ token: expiredToken })
+-
+-  await expect(Show.new().parse([], defaultTestConfig())).rejects.toEqual(ErrorPlatformTokenExpired)
+-  const credentials = await credentialsFile.load()
+-  expect(credentials).toBeNull()
+-})
+diff --git a/packages/cli/src/platform/auth/login.ts b/packages/cli/src/platform/auth/login.ts
+deleted file mode 100644
+index 364d02a02e38..000000000000
+--- a/packages/cli/src/platform/auth/login.ts
++++ /dev/null
+@@ -1,238 +0,0 @@
+-import { select } from '@inquirer/prompts'
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import Debug from '@prisma/debug'
+-import { arg, Command, getCommandWithExecutor, isError, link } from '@prisma/internals'
+-import listen from 'async-listen'
+-import http from 'http'
+-import { green } from 'kleur/colors'
+-import open from 'open'
+-
+-import { credentialsFile } from '../_lib/credentials'
+-import { successMessage } from '../_lib/messages'
+-import { consoleUrl } from '../_lib/pdp'
+-import { unknownToError } from '../_lib/prelude'
+-import { getUserAgent } from '../_lib/userAgent'
+-
+-const packageJson = require('../../../package.json')
+-
+-interface CallbackData {
+-  token: string
+-  user: {
+-    id: string
+-    displayName: string
+-    email: string
+-  }
+-}
+-
+-const debug = Debug('prisma:cli:platform:login')
+-
+-export class Login implements Command {
+-  public static new() {
+-    return new Login()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      // internal optimize flag to track signup attribution
+-      '--optimize': Boolean,
+-    })
+-    if (isError(args)) return args
+-
+-    if (args['--optimize']) {
+-      console.warn("The '--optimize' flag is deprecated. Use API keys instead.")
+-    }
+-
+-    const credentials = await credentialsFile.load()
+-    if (isError(credentials)) throw credentials
+-    if (credentials) return `Already authenticated. Run ${green(getCommandWithExecutor("prisma platform auth show --early-access"))} to see the current user.`; // prettier-ignore
+-
+-    console.info('Authenticating to Prisma Platform CLI via browser.\n')
+-
+-    const server = http.createServer()
+-    /**
+-     * When passing 0 as a port to listen, the OS will assign a random available port
+-     */
+-    const randomPort = 0
+-    const redirectUrl = await listen(server, randomPort, '127.0.0.1')
+-    const loginUrl = await createLoginUrl({ connection: 'github', redirectTo: redirectUrl.href })
+-
+-    console.info('Visit the following URL in your browser to authenticate:')
+-    console.info(link(loginUrl.href))
+-
+-    const callbackResult = await Promise.all([
+-      new Promise<CallbackData>((resolve, reject) => {
+-        server.once('request', (req, res) => {
+-          server.close()
+-          res.setHeader('connection', 'close')
+-          const searchParams = new URL(req.url || '/', 'http://localhost').searchParams
+-          const token = searchParams.get('token') ?? ''
+-          const error = searchParams.get('error')
+-          const location = getBaseAuthUrl()
+-
+-          if (error) {
+-            location.pathname += '/error'
+-            location.searchParams.set('error', error)
+-            reject(new Error(error))
+-          } else {
+-            // TODO: Consider getting the user via Console API instead of passing it via query params
+-            const user = decodeUser(searchParams.get('user') ?? '')
+-            if (user) {
+-              searchParams.delete('token')
+-              searchParams.delete('user')
+-              location.pathname += '/success'
+-              const nextSearchParams = new URLSearchParams({
+-                ...Object.fromEntries(searchParams.entries()),
+-                email: user.email,
+-              })
+-              location.search = nextSearchParams.toString()
+-              resolve({ token, user })
+-            } else {
+-              location.pathname += '/error'
+-              location.searchParams.set('error', 'Invalid user')
+-              reject(new Error('Invalid user'))
+-            }
+-          }
+-
+-          res.statusCode = 302
+-          res.setHeader('location', location.href)
+-          res.end()
+-        })
+-        server.once('error', reject)
+-      }),
+-      open(loginUrl.href),
+-    ])
+-      .then((results) => results[0])
+-      .catch(unknownToError)
+-
+-    if (isError(callbackResult)) throw new Error(`Authentication failed: ${callbackResult.message}`); // prettier-ignore
+-
+-    {
+-      const writeResult = await credentialsFile.save({ token: callbackResult.token })
+-      if (isError(writeResult)) throw new Error('Writing credentials to disk failed', { cause: writeResult })
+-    }
+-
+-    return successMessage(`Authentication successful for ${callbackResult.user.email}`)
+-  }
+-}
+-
+-const getBaseAuthUrl = () => new URL('/auth/cli', consoleUrl)
+-
+-const createLoginUrl = async (params: { connection: string; redirectTo: string }) => {
+-  const userAgent = await getUserAgent()
+-  const state: State = {
+-    client: userAgent,
+-    ...params,
+-  }
+-  const stateEncoded = encodeState(state)
+-  const url = getBaseAuthUrl()
+-  url.searchParams.set('state', stateEncoded)
+-  url.searchParams.set('utm_source', 'cli')
+-  url.searchParams.set('utm_medium', 'command-platform-login')
+-  url.searchParams.set('utm_campaign', packageJson.version as string)
+-
+-  return url
+-}
+-
+-interface State {
+-  client: string
+-  connection: string
+-  redirectTo: string
+-}
+-
+-const encodeState = (state: State) => Buffer.from(JSON.stringify(state), 'utf-8').toString('base64')
+-
+-const decodeUser = (stringifiedUser: string) => {
+-  try {
+-    const maybeUser = JSON.parse(Buffer.from(stringifiedUser, `base64`).toString(`utf-8`))
+-    if (typeof maybeUser !== 'object' || maybeUser === null) return false
+-    const isUser =
+-      typeof maybeUser.id === 'string' &&
+-      typeof maybeUser.displayName === 'string' &&
+-      typeof maybeUser.email === 'string'
+-    return isUser ? maybeUser : null
+-  } catch (e) {
+-    debug(`parseUser() failed silently with ${e}`)
+-    return null
+-  }
+-}
+-
+-export const loginOrSignup = async () => {
+-  const providerAnswer = await select({
+-    message: 'Select an authentication method',
+-    default: 'google',
+-    choices: [
+-      { name: 'Google', value: 'google' },
+-      { name: 'GitHub', value: 'github' },
+-    ],
+-  })
+-  console.info('Authenticating to Prisma Platform via browser.\n')
+-
+-  const server = http.createServer()
+-  /**
+-   * When passing 0 as a port to listen, the OS will assign a random available port
+-   */
+-  const randomPort = 0
+-  const redirectUrl = await listen(server, randomPort, '127.0.0.1')
+-  const loginUrl = await createLoginUrl({ connection: providerAnswer, redirectTo: redirectUrl.href })
+-
+-  console.info('Visit the following URL in your browser to authenticate:')
+-  console.info(link(loginUrl.href))
+-
+-  const callbackResult = await Promise.all([
+-    new Promise<CallbackData>((resolve, reject) => {
+-      server.once('request', (req, res) => {
+-        server.close()
+-        res.setHeader('connection', 'close')
+-        const searchParams = new URL(req.url || '/', 'http://localhost').searchParams
+-        const token = searchParams.get('token') ?? ''
+-        const error = searchParams.get('error')
+-        const location = getBaseAuthUrl()
+-
+-        if (error) {
+-          location.pathname += '/error'
+-          location.searchParams.set('error', error)
+-          reject(new Error(error))
+-        } else {
+-          // TODO: Consider getting the user via Console API instead of passing it via query params
+-          const user = decodeUser(searchParams.get('user') ?? '')
+-          if (user) {
+-            searchParams.delete('token')
+-            searchParams.delete('user')
+-            location.pathname += '/success'
+-            const nextSearchParams = new URLSearchParams({
+-              ...Object.fromEntries(searchParams.entries()),
+-              email: user.email,
+-            })
+-            location.search = nextSearchParams.toString()
+-            resolve({ token, user })
+-          } else {
+-            location.pathname += '/error'
+-            location.searchParams.set('error', 'Invalid user')
+-            reject(new Error('Invalid user'))
+-          }
+-        }
+-
+-        res.statusCode = 302
+-        res.setHeader('location', location.href)
+-        res.end()
+-      })
+-      server.once('error', reject)
+-    }),
+-    open(loginUrl.href),
+-  ])
+-    .then((results) => results[0])
+-    .catch(unknownToError)
+-
+-  if (isError(callbackResult)) throw new Error(`Authentication failed: ${callbackResult.message}`); // prettier-ignore
+-
+-  {
+-    const writeResult = await credentialsFile.save({ token: callbackResult.token })
+-    if (isError(writeResult)) throw new Error('Writing credentials to disk failed', { cause: writeResult })
+-  }
+-
+-  return {
+-    message: successMessage(`Authentication successful for ${callbackResult.user.email}`),
+-    email: callbackResult.user.email,
+-    token: callbackResult.token,
+-  }
+-}
+diff --git a/packages/cli/src/platform/auth/logout.ts b/packages/cli/src/platform/auth/logout.ts
+deleted file mode 100644
+index 130c24e4f9c2..000000000000
+--- a/packages/cli/src/platform/auth/logout.ts
++++ /dev/null
+@@ -1,69 +0,0 @@
+-import { Command, getCommandWithExecutor, isError } from '@prisma/internals'
+-import { green } from 'kleur/colors'
+-
+-import { credentialsFile } from '../_lib/credentials'
+-import { decodeJwt } from '../_lib/jwt'
+-import { successMessage } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-
+-export class Logout implements Command {
+-  public static new() {
+-    return new Logout()
+-  }
+-
+-  public async parse() {
+-    const credentials = await credentialsFile.load()
+-    if (isError(credentials)) throw credentials
+-    if (!credentials) return `You are not currently logged in. Run ${green(getCommandWithExecutor('prisma platform auth login --early-access'))} to log in.` // prettier-ignore
+-
+-    if (credentials.token) {
+-      const jwt = decodeJwt(credentials.token)
+-      if (!isError(jwt) && jwt.jti) {
+-        try {
+-          await requestOrThrow<
+-            {
+-              managementTokenDelete: {
+-                __typename: string
+-              }
+-            },
+-            {
+-              id: string
+-            }
+-          >({
+-            token: credentials.token,
+-            body: {
+-              query: /* GraphQL */ `
+-                mutation ($input: MutationManagementTokenDeleteInput!) {
+-                  managementTokenDelete(input: $input) {
+-                    __typename
+-                    ... on Error {
+-                      message
+-                    }
+-                  }
+-                }
+-              `,
+-              variables: {
+-                input: {
+-                  id: jwt.jti,
+-                },
+-              },
+-            },
+-          })
+-        } catch (e) {
+-          if (
+-            e instanceof Error &&
+-            (e.message.includes('Authentication failed because the access token was expired') ||
+-              e.message.includes('Authentication failed because the access token was invalid'))
+-          ) {
+-            // The token was already deleted on the server or expired => Do not throw but let deletion continue
+-          } else {
+-            throw e
+-          }
+-        }
+-      }
+-    }
+-
+-    await credentialsFile.delete()
+-    return successMessage('You have logged out.')
+-  }
+-}
+diff --git a/packages/cli/src/platform/auth/show.ts b/packages/cli/src/platform/auth/show.ts
+deleted file mode 100644
+index dcf12002c6b9..000000000000
+--- a/packages/cli/src/platform/auth/show.ts
++++ /dev/null
+@@ -1,62 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-import { green } from 'kleur/colors'
+-
+-import { argOrThrow, getOptionalParameter } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Show implements Command {
+-  public static new() {
+-    return new Show()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.global,
+-      '--sensitive': Boolean,
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const { me } = await requestOrThrow<{
+-      me: {
+-        user: {
+-          __typename: string
+-          id: string
+-          email: string
+-          displayName: string
+-        }
+-      }
+-    }>({
+-      token,
+-      body: {
+-        query: /* graphql */ `
+-          query {
+-            me {
+-              __typename
+-              user {
+-                __typename
+-                id
+-                email
+-                displayName
+-              }
+-            }
+-          }
+-        `,
+-      },
+-    })
+-
+-    const data = {
+-      ...me.user,
+-      token: getOptionalParameter(args, ['--sensitive']) ? token : null,
+-    }
+-
+-    return messages.sections([
+-      messages.info(`Currently authenticated as ${green(me.user.email)}`),
+-      messages.resource(data, {
+-        email: true,
+-        token: true,
+-      }),
+-    ])
+-  }
+-}
+diff --git a/packages/cli/src/platform/environment/$.ts b/packages/cli/src/platform/environment/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/environment/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/environment/_.ts b/packages/cli/src/platform/environment/_.ts
+deleted file mode 100644
+index d3422c206a58..000000000000
+--- a/packages/cli/src/platform/environment/_.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export * from './$'
+-export * from './create'
+-export * from './delete'
+-export * from './show'
+diff --git a/packages/cli/src/platform/environment/_Environment.ts b/packages/cli/src/platform/environment/_Environment.ts
+deleted file mode 100644
+index 765fc7ccaccc..000000000000
+--- a/packages/cli/src/platform/environment/_Environment.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Environment from './_'
+diff --git a/packages/cli/src/platform/environment/create.ts b/packages/cli/src/platform/environment/create.ts
+deleted file mode 100644
+index e4350de548b2..000000000000
+--- a/packages/cli/src/platform/environment/create.ts
++++ /dev/null
+@@ -1,65 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow, getOptionalParameter, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Create implements Command {
+-  public static new() {
+-    return new Create()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.project,
+-      '--name': String,
+-      '-n': '--name',
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const projectId = getRequiredParameterOrThrow(args, ['--project', '-p'])
+-    const displayName = getOptionalParameter(args, ['--name', '-n'])
+-    const { environmentCreate } = await requestOrThrow<
+-      {
+-        environmentCreate: {
+-          __typename: string
+-          id: string
+-          createdAt: string
+-          displayName: string
+-        }
+-      },
+-      {
+-        projectId: string
+-        displayName?: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* graphql */ `
+-          mutation ($input: MutationEnvironmentCreateInput!) {
+-            environmentCreate(input: $input) {
+-              __typename
+-              ...on Error {
+-                message
+-              }
+-              ...on Environment {
+-                id
+-                createdAt
+-                displayName
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            projectId,
+-            displayName,
+-          },
+-        },
+-      },
+-    })
+-
+-    return messages.resourceCreated(environmentCreate)
+-  }
+-}
+diff --git a/packages/cli/src/platform/environment/delete.ts b/packages/cli/src/platform/environment/delete.ts
+deleted file mode 100644
+index 58f11e972503..000000000000
+--- a/packages/cli/src/platform/environment/delete.ts
++++ /dev/null
+@@ -1,60 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError } from '@prisma/internals'
+-
+-import { getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Delete implements Command {
+-  public static new() {
+-    return new Delete()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.environment,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    const { environmentDelete } = await requestOrThrow<
+-      {
+-        environmentDelete: {
+-          __typename: string
+-          id: string
+-          createdAt: string
+-          displayName: string
+-        }
+-      },
+-      {
+-        id: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* graphql */ `
+-          mutation ($input: MutationEnvironmentDeleteInput!) {
+-            environmentDelete(input: $input) {
+-              __typename
+-              ...on Error {
+-                message
+-              }
+-              ...on Environment {
+-                id
+-                createdAt
+-                displayName
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            id: environmentId,
+-          },
+-        },
+-      },
+-    })
+-    return messages.resourceDeleted(environmentDelete)
+-  }
+-}
+diff --git a/packages/cli/src/platform/environment/show.ts b/packages/cli/src/platform/environment/show.ts
+deleted file mode 100644
+index 541a4fc70b74..000000000000
+--- a/packages/cli/src/platform/environment/show.ts
++++ /dev/null
+@@ -1,133 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError } from '@prisma/internals'
+-
+-import { getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Show implements Command {
+-  public static new() {
+-    return new Show()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.project,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const projectId = getRequiredParameterOrThrow(args, ['--project', '-p'])
+-    const { project } = await requestOrThrow<
+-      {
+-        project: {
+-          environments: {
+-            __typename: string
+-            id: string
+-            createdAt: string
+-            displayName: string
+-          }[]
+-        }
+-      },
+-      {
+-        id: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          query ($input: QueryProjectInput!) {
+-            project(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on Project {
+-                environments {
+-                  __typename
+-                  id
+-                  createdAt
+-                  displayName
+-                }
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            id: projectId,
+-          },
+-        },
+-      },
+-    })
+-
+-    return messages.resourceList(project.environments)
+-  }
+-}
+-
+-export const getEnvironmentOrThrow = async (input: { token: string; environmentId: string }) => {
+-  const { token, environmentId } = input
+-
+-  const { environment } = await requestOrThrow<
+-    {
+-      environment: {
+-        __typename: string
+-        id: string
+-        createdAt: string
+-        displayName: string
+-        ppg: {
+-          status: string
+-        }
+-        accelerate: {
+-          status: {
+-            enabled: boolean
+-          }
+-        }
+-      }
+-    },
+-    {
+-      id: string
+-    }
+-  >({
+-    token,
+-    body: {
+-      query: /* GraphQL */ `
+-        query ($input: QueryEnvironmentInput!) {
+-          environment(input: $input) {
+-            __typename
+-            ... on Error {
+-              message
+-            }
+-            ... on Environment {
+-              __typename
+-              id
+-              displayName
+-              ppg {
+-                status
+-              }
+-              accelerate {
+-                status {
+-                  ... on AccelerateStatusEnabled {
+-                    __typename
+-                    enabled
+-                  }
+-                  ... on AccelerateStatusDisabled {
+-                    __typename
+-                    enabled
+-                  }
+-                }
+-              }
+-            }
+-          }
+-        }
+-      `,
+-      variables: {
+-        input: {
+-          id: environmentId,
+-        },
+-      },
+-    },
+-  })
+-
+-  return environment
+-}
+diff --git a/packages/cli/src/platform/project/$.ts b/packages/cli/src/platform/project/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/project/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/project/_.ts b/packages/cli/src/platform/project/_.ts
+deleted file mode 100644
+index d3422c206a58..000000000000
+--- a/packages/cli/src/platform/project/_.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export * from './$'
+-export * from './create'
+-export * from './delete'
+-export * from './show'
+diff --git a/packages/cli/src/platform/project/_Project.ts b/packages/cli/src/platform/project/_Project.ts
+deleted file mode 100644
+index 115c6b067611..000000000000
+--- a/packages/cli/src/platform/project/_Project.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Project from './_'
+diff --git a/packages/cli/src/platform/project/create.ts b/packages/cli/src/platform/project/create.ts
+deleted file mode 100644
+index bf474f31df48..000000000000
+--- a/packages/cli/src/platform/project/create.ts
++++ /dev/null
+@@ -1,94 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow, getOptionalParameter, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Create implements Command {
+-  public static new() {
+-    return new Create()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.workspace,
+-      '--name': String,
+-      '-n': '--name',
+-    })
+-    const workspaceId = getRequiredParameterOrThrow(args, ['--workspace', '-w'])
+-    const displayName = getOptionalParameter(args, ['--name', '-n'])
+-
+-    const project = await createProjectOrThrow({
+-      token: await getTokenOrThrow(args),
+-      workspaceId,
+-      displayName,
+-    })
+-
+-    return messages.resourceCreated(project)
+-  }
+-}
+-
+-export const createProjectOrThrow = async (input: {
+-  token: string
+-  workspaceId: string
+-  displayName?: string
+-  environmentDisplayName?: string
+-  allowRemoteDatabases?: boolean
+-  ppgRegion?: string
+-}) => {
+-  const { token, ...mutationInput } = input
+-  const { projectCreate } = await requestOrThrow<
+-    {
+-      projectCreate: {
+-        __typename: string
+-        id: string
+-        createdAt: string
+-        displayName: string
+-        environmentDisplayName: string
+-        allowRemoteDatabases: boolean
+-        ppgRegion: string
+-        defaultEnvironment: {
+-          id: string
+-          displayName: string
+-        }
+-      }
+-    },
+-    {
+-      workspaceId: string
+-      displayName?: string
+-      environmentDisplayName?: string
+-      allowRemoteDatabases?: boolean
+-      ppgRegion?: string
+-    }
+-  >({
+-    token,
+-    body: {
+-      query: /* graphql */ `
+-        mutation ($input: MutationProjectCreateInput!) {
+-          projectCreate(input: $input) {
+-            __typename
+-            ...on Error {
+-              message
+-            }
+-            ...on Project {
+-              id
+-              createdAt
+-              displayName
+-              defaultEnvironment {
+-                id
+-                displayName
+-              }
+-            }
+-          }
+-        }
+-      `,
+-      variables: {
+-        input: mutationInput,
+-      },
+-    },
+-  })
+-
+-  return projectCreate
+-}
+diff --git a/packages/cli/src/platform/project/delete.ts b/packages/cli/src/platform/project/delete.ts
+deleted file mode 100644
+index c7a3a65851c0..000000000000
+--- a/packages/cli/src/platform/project/delete.ts
++++ /dev/null
+@@ -1,60 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError } from '@prisma/internals'
+-
+-import { getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Delete implements Command {
+-  public static new() {
+-    return new Delete()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.project,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const projectId = getRequiredParameterOrThrow(args, ['--project', '-p'])
+-    const { projectDelete } = await requestOrThrow<
+-      {
+-        projectDelete: {
+-          __typename: string
+-          id: string
+-          createdAt: string
+-          displayName: string
+-        }
+-      },
+-      {
+-        id: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* graphql */ `
+-          mutation ($input: MutationProjectDeleteInput!) {
+-            projectDelete(input: $input) {
+-              __typename
+-              ...on Error {
+-                message
+-              }
+-              ...on ProjectNode {
+-                id
+-                createdAt
+-                displayName
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            id: projectId,
+-          },
+-        },
+-      },
+-    })
+-    return messages.resourceDeleted(projectDelete)
+-  }
+-}
+diff --git a/packages/cli/src/platform/project/show.ts b/packages/cli/src/platform/project/show.ts
+deleted file mode 100644
+index 78b38ddbf3b5..000000000000
+--- a/packages/cli/src/platform/project/show.ts
++++ /dev/null
+@@ -1,66 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError } from '@prisma/internals'
+-
+-import { getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Show implements Command {
+-  public static new() {
+-    return new Show()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.workspace,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const workspaceId = getRequiredParameterOrThrow(args, ['--workspace', '-w'])
+-    const { workspace } = await requestOrThrow<
+-      {
+-        workspace: {
+-          projects: {
+-            __typename: string
+-            id: string
+-            createdAt: string
+-            displayName: string
+-          }[]
+-        }
+-      },
+-      {
+-        id: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          query ($input: QueryWorkspaceInput!) {
+-            workspace(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on Workspace {
+-                projects {
+-                  __typename
+-                  id
+-                  createdAt
+-                  displayName
+-                }
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            id: workspaceId,
+-          },
+-        },
+-      },
+-    })
+-
+-    return messages.resourceList(workspace.projects)
+-  }
+-}
+diff --git a/packages/cli/src/platform/pulse/$.ts b/packages/cli/src/platform/pulse/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/pulse/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/pulse/_.ts b/packages/cli/src/platform/pulse/_.ts
+deleted file mode 100644
+index d50fc9966ada..000000000000
+--- a/packages/cli/src/platform/pulse/_.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-export * from './$'
+-export * from './disable'
+-export * from './enable'
+diff --git a/packages/cli/src/platform/pulse/_Pulse.ts b/packages/cli/src/platform/pulse/_Pulse.ts
+deleted file mode 100644
+index 674ef402ab70..000000000000
+--- a/packages/cli/src/platform/pulse/_Pulse.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Pulse from './_'
+diff --git a/packages/cli/src/platform/pulse/disable.ts b/packages/cli/src/platform/pulse/disable.ts
+deleted file mode 100644
+index f79cba6a8121..000000000000
+--- a/packages/cli/src/platform/pulse/disable.ts
++++ /dev/null
+@@ -1,46 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Disable implements Command {
+-  public static new() {
+-    return new Disable()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.environment,
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    await requestOrThrow<
+-      {
+-        pulseDisable: {}
+-      },
+-      { environmentId: string }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation ($input: MutationPulseDisableInput!) {
+-            pulseDisable(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: { environmentId },
+-        },
+-      },
+-    })
+-
+-    return messages.success(`Pulse disabled.`)
+-  }
+-}
+diff --git a/packages/cli/src/platform/pulse/enable.ts b/packages/cli/src/platform/pulse/enable.ts
+deleted file mode 100644
+index ca0ab7aabdd1..000000000000
+--- a/packages/cli/src/platform/pulse/enable.ts
++++ /dev/null
+@@ -1,126 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError, link } from '@prisma/internals'
+-
+-import { getOptionalParameter, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { generateConnectionString, getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Enable implements Command {
+-  public static new() {
+-    return new Enable()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.environment,
+-      '--url': String,
+-      // TODO rename to "serviceToken" in a future release.
+-      '--apikey': Boolean,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    const connectionString = getRequiredParameterOrThrow(args, ['--url'])
+-    const withServiceToken = getOptionalParameter(args, ['--apikey']) ?? false
+-    const { databaseLinkCreate } = await requestOrThrow<
+-      {
+-        databaseLinkCreate: {
+-          __typename: string
+-          id: string
+-        }
+-      },
+-      {
+-        environmentId: string
+-        connectionString: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation ($input: MutationDatabaseLinkCreateInput!) {
+-            databaseLinkCreate(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on DatabaseLink {
+-                id
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            environmentId,
+-            connectionString,
+-          },
+-        },
+-      },
+-    })
+-    const { serviceTokenCreate } = await requestOrThrow<
+-      {
+-        pulseEnable: {}
+-        serviceTokenCreate?: {
+-          value: string
+-        }
+-      },
+-      null,
+-      {
+-        pulseEnableInput: { databaseLinkId: string }
+-        serviceTokenCreateInput: { environmentId: string }
+-        withServiceToken: boolean
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation (
+-            $pulseEnableInput: MutationPulseEnableInput!
+-            $serviceTokenCreateInput: MutationServiceTokenCreateInput!
+-            $withServiceToken: Boolean!
+-          ) {
+-            pulseEnable(input: $pulseEnableInput) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-            }
+-            serviceTokenCreate(input: $serviceTokenCreateInput) @include(if: $withServiceToken) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on ServiceTokenWithValue {
+-                value
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          withServiceToken,
+-          pulseEnableInput: { databaseLinkId: databaseLinkCreate.id },
+-          serviceTokenCreateInput: { environmentId },
+-        },
+-      },
+-    })
+-
+-    const gettingStartedUrl = link('https://pris.ly/d/pulse-getting-started')
+-
+-    if (serviceTokenCreate) {
+-      return messages.success(
+-        `Pulse enabled. Use this Pulse connection string to authenticate requests:\n` +
+-          '\n' +
+-          `${generateConnectionString(serviceTokenCreate.value)}\n` +
+-          '\n' +
+-          `For more information, check out the Getting started guide here: ${gettingStartedUrl}`,
+-      )
+-    } else {
+-      return messages.success(
+-        `Pulse enabled. Use your secure API key in your Pulse connection string to authenticate requests.\n` +
+-          `\n` +
+-          `For more information, check out the Getting started guide here: ${gettingStartedUrl}`,
+-      )
+-    }
+-  }
+-}
+diff --git a/packages/cli/src/platform/serviceToken/$.ts b/packages/cli/src/platform/serviceToken/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/serviceToken/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/serviceToken/_.ts b/packages/cli/src/platform/serviceToken/_.ts
+deleted file mode 100644
+index d3422c206a58..000000000000
+--- a/packages/cli/src/platform/serviceToken/_.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-export * from './$'
+-export * from './create'
+-export * from './delete'
+-export * from './show'
+diff --git a/packages/cli/src/platform/serviceToken/_ServiceToken.ts b/packages/cli/src/platform/serviceToken/_ServiceToken.ts
+deleted file mode 100644
+index 18e1c0d949f0..000000000000
+--- a/packages/cli/src/platform/serviceToken/_ServiceToken.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as ServiceToken from './_'
+diff --git a/packages/cli/src/platform/serviceToken/create.ts b/packages/cli/src/platform/serviceToken/create.ts
+deleted file mode 100644
+index f2f5d5210070..000000000000
+--- a/packages/cli/src/platform/serviceToken/create.ts
++++ /dev/null
+@@ -1,88 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow, getOptionalParameter, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Create implements Command {
+-  public static new(legacy: boolean = false) {
+-    return new Create(legacy)
+-  }
+-
+-  constructor(private readonly legacy: boolean = false) {}
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.environment,
+-      '--name': String,
+-      '-n': '--name',
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    const displayName = getOptionalParameter(args, ['--name', '-n'])
+-    const serviceTokenCreate = await createOrThrow({ environmentId, displayName, token })
+-
+-    const resource = this.legacy
+-      ? {
+-          ...serviceTokenCreate.serviceToken,
+-          __typename: 'APIKey',
+-        }
+-      : serviceTokenCreate.serviceToken
+-
+-    return messages.sections([messages.resourceCreated(resource), messages.info(serviceTokenCreate.value)])
+-  }
+-}
+-
+-export const createOrThrow = async (input: { environmentId: string; displayName?: string; token: string }) => {
+-  const { environmentId, displayName, token } = input
+-  const { serviceTokenCreate } = await requestOrThrow<
+-    {
+-      serviceTokenCreate: {
+-        value: string
+-        serviceToken: {
+-          __typename: string
+-          id: string
+-          createdAt: string
+-          displayName: string
+-        }
+-      }
+-    },
+-    {
+-      displayName?: string
+-      environmentId?: string
+-    }
+-  >({
+-    token,
+-    body: {
+-      query: /* GraphQL */ `
+-        mutation ($input: MutationServiceTokenCreateInput!) {
+-          serviceTokenCreate(input: $input) {
+-            __typename
+-            ... on Error {
+-              message
+-            }
+-            ... on ServiceTokenWithValue {
+-              value
+-              serviceToken {
+-                __typename
+-                id
+-                createdAt
+-                displayName
+-              }
+-            }
+-          }
+-        }
+-      `,
+-      variables: {
+-        input: {
+-          displayName,
+-          environmentId,
+-        },
+-      },
+-    },
+-  })
+-
+-  return serviceTokenCreate
+-}
+diff --git a/packages/cli/src/platform/serviceToken/delete.ts b/packages/cli/src/platform/serviceToken/delete.ts
+deleted file mode 100644
+index 317202318edf..000000000000
+--- a/packages/cli/src/platform/serviceToken/delete.ts
++++ /dev/null
+@@ -1,59 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow, getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Delete implements Command {
+-  public static new(legacy: boolean = false) {
+-    return new Delete(legacy)
+-  }
+-
+-  constructor(private readonly legacy: boolean = false) {}
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters[this.legacy ? 'apikey' : 'serviceToken'],
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const serviceTokenId = this.legacy
+-      ? getRequiredParameterOrThrow(args, ['--apikey'] as any)
+-      : getRequiredParameterOrThrow(args, ['--serviceToken', '-s'] as any)
+-    const { serviceTokenDelete } = await requestOrThrow<
+-      {
+-        serviceTokenDelete: {
+-          __typename: string
+-          id: string
+-          displayName: string
+-        }
+-      },
+-      { id: string }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          mutation ($input: MutationServiceTokenDeleteInput!) {
+-            serviceTokenDelete(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on ServiceTokenNode {
+-                id
+-                displayName
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            id: serviceTokenId,
+-          },
+-        },
+-      },
+-    })
+-    return messages.resourceDeleted(this.legacy ? { ...serviceTokenDelete, __typename: 'APIKey' } : serviceTokenDelete)
+-  }
+-}
+diff --git a/packages/cli/src/platform/serviceToken/show.ts b/packages/cli/src/platform/serviceToken/show.ts
+deleted file mode 100644
+index 4cffc28fad63..000000000000
+--- a/packages/cli/src/platform/serviceToken/show.ts
++++ /dev/null
+@@ -1,69 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { arg, Command, isError } from '@prisma/internals'
+-
+-import { getRequiredParameterOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Show implements Command {
+-  public static new(legacy: boolean = false) {
+-    return new Show(legacy)
+-  }
+-
+-  constructor(private readonly legacy: boolean = false) {}
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = arg(argv, {
+-      ...platformParameters.environment,
+-    })
+-    if (isError(args)) return args
+-    const token = await getTokenOrThrow(args)
+-    const environmentId = getRequiredParameterOrThrow(args, ['--environment', '-e'])
+-    const { environment } = await requestOrThrow<
+-      {
+-        environment: {
+-          serviceTokens: {
+-            __typename: string
+-            createdAt: string
+-            displayName: string
+-            id: string
+-          }[]
+-        }
+-      },
+-      {
+-        id: string
+-      }
+-    >({
+-      token,
+-      body: {
+-        query: /* GraphQL */ `
+-          query ($input: QueryEnvironmentInput!) {
+-            environment(input: $input) {
+-              __typename
+-              ... on Error {
+-                message
+-              }
+-              ... on Environment {
+-                serviceTokens {
+-                  id
+-                  createdAt
+-                  displayName
+-                }
+-              }
+-            }
+-          }
+-        `,
+-        variables: {
+-          input: {
+-            id: environmentId,
+-          },
+-        },
+-      },
+-    })
+-    const resources = this.legacy
+-      ? environment.serviceTokens.map((serviceToken) => ({ ...serviceToken, __typename: 'APIKey' }))
+-      : environment.serviceTokens
+-    return messages.resourceList(resources)
+-  }
+-}
+diff --git a/packages/cli/src/platform/workspace/$.ts b/packages/cli/src/platform/workspace/$.ts
+deleted file mode 100644
+index 7b59ad8398f1..000000000000
+--- a/packages/cli/src/platform/workspace/$.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-import { createNamespace } from '../_lib/cli/namespace'
+-
+-export const $ = createNamespace()
+diff --git a/packages/cli/src/platform/workspace/_.ts b/packages/cli/src/platform/workspace/_.ts
+deleted file mode 100644
+index df162acb215c..000000000000
+--- a/packages/cli/src/platform/workspace/_.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export * from './$'
+-export * from './show'
+diff --git a/packages/cli/src/platform/workspace/_Workspace.ts b/packages/cli/src/platform/workspace/_Workspace.ts
+deleted file mode 100644
+index 4fe114504fc0..000000000000
+--- a/packages/cli/src/platform/workspace/_Workspace.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export * as Workspace from './_'
+diff --git a/packages/cli/src/platform/workspace/show.ts b/packages/cli/src/platform/workspace/show.ts
+deleted file mode 100644
+index 9d1284326f24..000000000000
+--- a/packages/cli/src/platform/workspace/show.ts
++++ /dev/null
+@@ -1,97 +0,0 @@
+-import type { PrismaConfigInternal } from '@prisma/config'
+-import { Command } from '@prisma/internals'
+-
+-import { argOrThrow } from '../_lib/cli/parameters'
+-import { messages } from '../_lib/messages'
+-import { requestOrThrow } from '../_lib/pdp'
+-import { getTokenOrThrow, platformParameters } from '../_lib/utils'
+-
+-export class Show implements Command {
+-  public static new() {
+-    return new Show()
+-  }
+-
+-  public async parse(argv: string[], _config: PrismaConfigInternal): Promise<string | Error> {
+-    const args = argOrThrow(argv, {
+-      ...platformParameters.global,
+-    })
+-    const token = await getTokenOrThrow(args)
+-    const userWorkspaces = await getUserWorkspacesOrThrow({ token })
+-
+-    return messages.resourceList(userWorkspaces)
+-  }
+-}
+-
+-export const getUserWorkspacesOrThrow = async (input: { token: string }) => {
+-  const { token } = input
+-  const { me } = await requestOrThrow<{
+-    me: {
+-      workspaces: {
+-        __typename: string
+-        id: string
+-        displayName: string
+-        createdAt: string
+-        isDefault: boolean
+-      }[]
+-    }
+-  }>({
+-    token,
+-    body: {
+-      query: /* GraphQL */ `
+-        query {
+-          me {
+-            __typename
+-            workspaces {
+-              id
+-              displayName
+-              createdAt
+-              isDefault
+-            }
+-          }
+-        }
+-      `,
+-    },
+-  })
+-
+-  return me.workspaces
+-}
+-
+-export const getDefaultWorkspaceOrThrow = async (input: { token: string }) => {
+-  const { token } = input
+-  const { me } = await requestOrThrow<{
+-    me: {
+-      workspaces: {
+-        __typename: string
+-        id: string
+-        displayName: string
+-        createdAt: string
+-        isDefault: boolean
+-      }[]
+-    }
+-  }>({
+-    token,
+-    body: {
+-      query: /* GraphQL */ `
+-        query {
+-          me {
+-            __typename
+-            workspaces {
+-              id
+-              displayName
+-              createdAt
+-              isDefault
+-            }
+-          }
+-        }
+-      `,
+-    },
+-  })
+-
+-  const defaultWorkspace = me.workspaces.find((_) => _.isDefault)
+-
+-  if (!defaultWorkspace) {
+-    throw new Error('No default workspace found')
+-  }
+-
+-  return defaultWorkspace
+-}
+diff --git a/packages/cli/src/utils/help.ts b/packages/cli/src/utils/help.ts
+new file mode 100644
+index 000000000000..8ae4750d411e
+--- /dev/null
++++ b/packages/cli/src/utils/help.ts
+@@ -0,0 +1,53 @@
++import { format, HelpError } from '@prisma/internals'
++import { bold, dim, red } from 'kleur/colors'
++
++export interface HelpContent {
++  usageLine: string
++  subcommands?: string[][]
++  options?: string[][]
++  examples?: string[]
++  additionalContent?: string[]
++}
++
++export function createHelp(content: HelpContent) {
++  const { usageLine, subcommands, options, examples, additionalContent } = content
++
++  const usage = format(`
++${bold('Usage')}
++
++  ${dim('$')} ${usageLine}
++`)
++
++  const commands =
++    subcommands &&
++    format(`
++${bold('Commands')}
++
++${subcommands.map(([option, description]) => `${option.padStart(15)}   ${description}`).join('\n')}
++  `)
++
++  const options_ =
++    options &&
++    format(`
++${bold('Options')}
++
++${options.map(([option, alias, description]) => `  ${option.padStart(15)} ${alias ? alias + ',' : ''}   ${description}`).join('\n')}
++  `)
++
++  const examples_ =
++    examples &&
++    format(`
++${bold('Examples')}
++
++${examples.map((example) => `  ${dim('$')} ${example}`).join('\n')}
++  `)
++
++  const additionalContent_ =
++    additionalContent &&
++    format(`
++${additionalContent.map((entry) => `${entry}`).join('\n')}
++  `)
++
++  const help = [usage, commands, options_, examples_, additionalContent_].filter(Boolean).join('')
++  return (error?: string) => (error ? new HelpError(`\n${bold(red(`!`))} ${error}\n${help}`) : help)
++}

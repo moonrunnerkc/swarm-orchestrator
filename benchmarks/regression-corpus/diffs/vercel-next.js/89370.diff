@@ -1,0 +1,1688 @@
+diff --git a/test/e2e/filesystem-cache/next.config.js b/test/e2e/filesystem-cache/next.config.js
+index 89f644ec2b2c..2adc2806091e 100644
+--- a/test/e2e/filesystem-cache/next.config.js
++++ b/test/e2e/filesystem-cache/next.config.js
+@@ -17,14 +17,10 @@ const nextConfig = {
+       },
+     },
+   },
+-  experimental: enableCaching
+-    ? {
+-        turbopackFileSystemCacheForBuild: true,
+-      }
+-    : {
+-        turbopackFileSystemCacheForDev: false,
+-        turbopackFileSystemCacheForBuild: false,
+-      },
++  experimental: {
++    turbopackFileSystemCacheForBuild: enableCaching,
++    turbopackFileSystemCacheForDev: enableCaching,
++  },
+   env: {
+     NEXT_PUBLIC_CONFIG_ENV: 'hello world',
+   },
+diff --git a/test/integration/config-output-export/test/index.test.ts b/test/integration/config-output-export/test/index.test.ts
+index b7b2b390edbc..9642245f6a17 100644
+--- a/test/integration/config-output-export/test/index.test.ts
++++ b/test/integration/config-output-export/test/index.test.ts
+@@ -23,11 +23,9 @@ const runDev = async (config: any, shouldWaitForReady = true) => {
+   const port = await findPort()
+   const obj = { port, stdout: '', stderr: '' }
+   app = await launchApp(appDir, port, {
+-    stdout: false,
+     onStdout(msg: string) {
+       obj.stdout += msg || ''
+     },
+-    stderr: false,
+     onStderr(msg: string) {
+       obj.stderr += msg || ''
+     },
+diff --git a/turbopack/crates/turbo-persistence/src/value_buf.rs b/turbopack/crates/turbo-persistence/src/value_buf.rs
+index ec0a7886a2c2..abdc96f846b8 100644
+--- a/turbopack/crates/turbo-persistence/src/value_buf.rs
++++ b/turbopack/crates/turbo-persistence/src/value_buf.rs
+@@ -13,7 +13,7 @@ impl ValueBuffer<'_> {
+         match self {
+             ValueBuffer::Borrowed(b) => b.into(),
+             ValueBuffer::Vec(v) => v.into_boxed_slice(),
+-            ValueBuffer::SmallVec(sv) => sv.into_vec().into_boxed_slice(),
++            ValueBuffer::SmallVec(sv) => sv.into_boxed_slice(),
+         }
+     }
+ }
+diff --git a/turbopack/crates/turbo-tasks-backend/fuzz/Cargo.toml b/turbopack/crates/turbo-tasks-backend/fuzz/Cargo.toml
+index bdea8685817f..dc5453de1cf0 100644
+--- a/turbopack/crates/turbo-tasks-backend/fuzz/Cargo.toml
++++ b/turbopack/crates/turbo-tasks-backend/fuzz/Cargo.toml
+@@ -16,7 +16,7 @@ libfuzzer-sys = "0.4.9"
+ once_cell = { workspace = true }
+ serde = { workspace = true }
+ tokio = { workspace = true, features = ["full"] }
+-turbo-tasks = { workspace = true }
++turbo-tasks = { workspace = true, features = ["non_operation_vc_strongly_consistent"] }
+ turbo-tasks-backend = { workspace = true }
+ turbo-tasks-malloc = { workspace = true }
+ 
+diff --git a/turbopack/crates/turbo-tasks-backend/fuzz/src/graph.rs b/turbopack/crates/turbo-tasks-backend/fuzz/src/graph.rs
+index 467dcd79d6f0..928b4d082637 100644
+--- a/turbopack/crates/turbo-tasks-backend/fuzz/src/graph.rs
++++ b/turbopack/crates/turbo-tasks-backend/fuzz/src/graph.rs
+@@ -133,16 +133,17 @@ pub fn run(data: Vec<TaskSpec>) {
+ struct Iteration(State<usize>);
+ 
+ fn actual_operation(spec: Arc<Vec<TaskSpec>>, iterations: usize) {
+-    let tt = TurboTasks::new(turbo_tasks_backend::TurboTasksBackend::new(
+-        turbo_tasks_backend::BackendOptions {
+-            storage_mode: None,
+-            small_preallocation: true,
+-            ..Default::default()
+-        },
+-        turbo_tasks_backend::noop_backing_storage(),
+-    ));
+     RUNTIME
+         .block_on(async {
++            let tt = TurboTasks::new(turbo_tasks_backend::TurboTasksBackend::new(
++                turbo_tasks_backend::BackendOptions {
++                    storage_mode: Some(turbo_tasks_backend::StorageMode::ReadWrite),
++                    small_preallocation: false,
++                    active_tracking: true,
++                    ..Default::default()
++                },
++                turbo_tasks_backend::noop_backing_storage(),
++            ));
+             for i in 0..iterations {
+                 let spec = spec.clone();
+                 tt.run(async move {
+diff --git a/turbopack/crates/turbo-tasks-backend/src/backend/mod.rs b/turbopack/crates/turbo-tasks-backend/src/backend/mod.rs
+index 34a8024821f4..d01e27edf29e 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/backend/mod.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/backend/mod.rs
+@@ -63,7 +63,7 @@ use crate::{
+         storage::Storage,
+         storage_schema::{TaskStorage, TaskStorageAccessors},
+     },
+-    backing_storage::{BackingStorage, SnapshotItem},
++    backing_storage::{BackingStorage, SnapshotItem, compute_task_type_hash},
+     data::{
+         ActivenessState, CellRef, CollectibleRef, CollectiblesRef, Dirtyness, InProgressCellState,
+         InProgressState, InProgressStateInner, OutputValue, TransientTask,
+@@ -71,13 +71,10 @@ use crate::{
+     error::TaskError,
+     utils::{
+         arc_or_owned::ArcOrOwned,
+-        chunked_vec::ChunkedVec,
+         dash_map_drop_contents::drop_contents,
+         dash_map_raw_entry::{RawEntry, raw_entry},
+         ptr_eq_arc::PtrEqArc,
+         shard_amount::compute_shard_amount,
+-        sharded::Sharded,
+-        swap_retain,
+     },
+ };
+ 
+@@ -167,8 +164,6 @@ pub enum TurboTasksBackendJob {
+ 
+ pub struct TurboTasksBackend<B: BackingStorage>(Arc<TurboTasksBackendInner<B>>);
+ 
+-type TaskCacheLog = Sharded<ChunkedVec<(Arc<CachedTaskType>, TaskId)>>;
+-
+ struct TurboTasksBackendInner<B: BackingStorage> {
+     options: BackendOptions,
+ 
+@@ -177,15 +172,10 @@ struct TurboTasksBackendInner<B: BackingStorage> {
+     persisted_task_id_factory: IdFactoryWithReuse<TaskId>,
+     transient_task_id_factory: IdFactoryWithReuse<TaskId>,
+ 
+-    persisted_task_cache_log: Option<TaskCacheLog>,
+     task_cache: FxDashMap<Arc<CachedTaskType>, TaskId>,
+ 
+     storage: Storage,
+ 
+-    /// When true, the backing_storage has data that is not in the local storage.
+-    /// This is determined once at startup and never changes.
+-    local_is_partial: bool,
+-
+     /// Number of executing operations + Highest bit is set when snapshot is
+     /// requested. When that bit is set, operations should pause until the
+     /// snapshot is completed. When the bit is set and in progress counter
+@@ -235,10 +225,6 @@ impl<B: BackingStorage> TurboTasksBackend<B> {
+ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+     pub fn new(mut options: BackendOptions, backing_storage: B) -> Self {
+         let shard_amount = compute_shard_amount(options.num_workers, options.small_preallocation);
+-        let need_log = matches!(
+-            options.storage_mode,
+-            Some(StorageMode::ReadWrite) | Some(StorageMode::ReadWriteOnShutdown)
+-        );
+         if !options.dependency_tracking {
+             options.active_tracking = false;
+         }
+@@ -257,9 +243,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+                 TaskId::try_from(TRANSIENT_TASK_BIT).unwrap(),
+                 TaskId::MAX,
+             ),
+-            persisted_task_cache_log: need_log.then(|| Sharded::new(shard_amount)),
+             task_cache: FxDashMap::default(),
+-            local_is_partial: next_task_id != TaskId::MIN,
+             storage: Storage::new(shard_amount, small_preallocation),
+             in_progress_operations: AtomicUsize::new(0),
+             snapshot_request: Mutex::new(SnapshotRequest::new()),
+@@ -1036,12 +1020,9 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+                 .map(|op| op.arc().clone())
+                 .collect::<Vec<_>>();
+         }
+-        self.storage.start_snapshot();
+-        let mut persisted_task_cache_log = self
+-            .persisted_task_cache_log
+-            .as_ref()
+-            .map(|l| l.take(|i| i))
+-            .unwrap_or_default();
++        // Enter snapshot mode, which atomically reads and resets the modified count.
++        // Checking after start_snapshot ensures no concurrent increments can race.
++        let (snapshot_guard, has_modifications) = self.storage.start_snapshot();
+         let mut snapshot_request = self.snapshot_request.lock();
+         snapshot_request.snapshot_requested = false;
+         self.in_progress_operations
+@@ -1050,6 +1031,13 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+         let snapshot_time = Instant::now();
+         drop(snapshot_request);
+ 
++        if !has_modifications {
++            // No tasks modified since the last snapshot — drop the guard (which
++            // calls end_snapshot) and skip the expensive O(N) scan.
++            drop(snapshot_guard);
++            return Some((start, false));
++        }
++
+         #[cfg(feature = "print_cache_item_size")]
+         #[derive(Default)]
+         struct TaskCacheStats {
+@@ -1278,35 +1266,49 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+             } else {
+                 None
+             };
++            let task_type_hash = if inner.flags.new_task() {
++                let task_type = inner.get_persistent_task_type().expect(
++                    "It is not possible for a new_task to not have a persistent_task_type.  Task \
++                     creation for persistent tasks uses a single ExecutionContextImpl for \
++                     creating the task (which sets new_task) and connect_child (which sets \
++                     persistent_task_type) and take_snapshot waits for all operations to complete \
++                     or suspend before we start snapshotting.  So task creation will always set \
++                     the task_type.",
++                );
++                Some(compute_task_type_hash(task_type))
++            } else {
++                None
++            };
+ 
+             SnapshotItem {
+                 task_id,
+                 meta,
+                 data,
++                task_type_hash,
+             }
+         };
+ 
+         // take_snapshot already filters empty items and empty shards in parallel
+-        let task_snapshots = self.storage.take_snapshot(&process);
+-
+-        swap_retain(&mut persisted_task_cache_log, |shard| !shard.is_empty());
++        let task_snapshots = self.storage.take_snapshot(snapshot_guard, &process);
+ 
+         drop(snapshot_span);
+         let snapshot_duration = start.elapsed();
+         let task_count = task_snapshots.len();
+ 
+-        if persisted_task_cache_log.is_empty() && task_snapshots.is_empty() {
++        if task_snapshots.is_empty() {
++            // This should be impossible — if we got here, modified_count was nonzero, and every
++            // modification that increments the count also failed during encoding.
++            std::hint::cold_path();
+             return Some((snapshot_time, false));
+         }
+ 
+         let persist_start = Instant::now();
+         let _span = tracing::info_span!(parent: parent_span, "persist", reason = reason).entered();
+         {
+-            if let Err(err) = self.backing_storage.save_snapshot(
+-                suspended_operations,
+-                persisted_task_cache_log,
+-                task_snapshots,
+-            ) {
++            if let Err(err) = self
++                .backing_storage
++                .save_snapshot(suspended_operations, task_snapshots)
++            {
+                 eprintln!("Persisting failed: {err:?}");
+                 return None;
+             }
+@@ -1551,7 +1553,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+             let (task_id, task_type) = match raw_entry(&self.task_cache, &task_type) {
+                 RawEntry::Occupied(e) => {
+                     // Another thread beat us to creating this task - use their task_id.
+-                    // They will handle logging to persisted_task_cache_log.
++                    // They will handle logging the new task as modified
+                     let task_id = *e.get();
+                     drop(e);
+                     self.track_cache_hit(&task_type);
+@@ -1562,12 +1564,12 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+                     let task_type = Arc::new(task_type);
+                     let task_id = self.persisted_task_id_factory.get();
+                     e.insert(task_type.clone(), task_id);
++                    // Mark the task as new in storage.
++                    // Do this after e.insert so we aren't holding the task_cache lock
++                    self.storage.initialize_new_task(task_id);
+                     // insert() consumes e, releasing the lock
+                     self.track_cache_miss(&task_type);
+                     is_new = true;
+-                    if let Some(log) = &self.persisted_task_cache_log {
+-                        log.lock(task_id).push((task_type.clone(), task_id));
+-                    }
+                     (task_id, ArcOrOwned::Arc(task_type))
+                 }
+             };
+@@ -1637,6 +1639,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
+                 let task_type = Arc::new(task_type);
+                 let task_id = self.transient_task_id_factory.get();
+                 e.insert(task_type.clone(), task_id);
++                self.storage.initialize_new_task(task_id);
+                 self.track_cache_miss(&task_type);
+ 
+                 if is_root {
+diff --git a/turbopack/crates/turbo-tasks-backend/src/backend/operation/aggregation_update.rs b/turbopack/crates/turbo-tasks-backend/src/backend/operation/aggregation_update.rs
+index a545a68ac794..6c4b632b74ab 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/backend/operation/aggregation_update.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/backend/operation/aggregation_update.rs
+@@ -1896,7 +1896,7 @@ impl AggregationUpdateQueue {
+     /// See detailed comments in that function, follow the STEP numbers.
+     fn inner_of_uppers_has_new_follower<T: TaskIdWithOptionalCount + Clone, const N: usize>(
+         &mut self,
+-        ctx: &mut impl ExecuteContext,
++        ctx: &mut impl ExecuteContext<'_>,
+         new_follower_id: TaskId,
+         mut upper_ids: SmallVec<[T; N]>,
+     ) {
+@@ -2618,7 +2618,7 @@ impl AggregationUpdateQueue {
+     /// Only used when activeness is tracked.
+     fn increase_active_count(
+         &mut self,
+-        ctx: &mut impl ExecuteContext,
++        ctx: &mut impl ExecuteContext<'_>,
+         task_id: TaskId,
+         task_type: Option<Arc<CachedTaskType>>,
+     ) {
+@@ -2637,7 +2637,7 @@ impl AggregationUpdateQueue {
+         if let Some(task_type) = task_type
+             && !task.has_persistent_task_type()
+         {
+-            let _ = task.set_persistent_task_type(task_type);
++            task.set_persistent_task_type(task_type);
+         }
+         let state = task.get_activeness_mut_or_insert_with(|| ActivenessState::new(task_id));
+         let is_new = state.is_empty();
+diff --git a/turbopack/crates/turbo-tasks-backend/src/backend/operation/mod.rs b/turbopack/crates/turbo-tasks-backend/src/backend/operation/mod.rs
+index e06baba14cb6..78bc093821da 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/backend/operation/mod.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/backend/operation/mod.rs
+@@ -165,20 +165,15 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
+         }
+     }
+ 
+-    fn should_check_backing_storage(&self) -> bool {
+-        self.backend.should_restore() && self.backend.local_is_partial
+-    }
+-
+     fn restore_task_data(
+         &self,
+         task_id: TaskId,
+         category: SpecificTaskDataCategory,
+     ) -> TaskStorage {
+-        if !self.should_check_backing_storage() {
+-            // If we don't need to restore, we can just return an empty storage
+-            return TaskStorage::default();
+-        }
+         let mut storage = TaskStorage::default();
++        if !self.backend.should_restore() {
++            return storage;
++        }
+         let result = self
+             .backend
+             .backing_storage
+@@ -204,8 +199,7 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
+             task_ids.len() > 1,
+             "Use restore_task_data_typed for single task"
+         );
+-        if !self.should_check_backing_storage() {
+-            // If we don't need to restore, we return None
++        if !self.backend.should_restore() {
+             return None;
+         }
+         let result = self
+@@ -244,13 +238,10 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
+             .into_iter()
+             .filter(|&(id, category)| {
+                 if id.is_transient() {
++                    // Transient tasks don't need DB restoration (restored flags are
++                    // set at allocation time), so just invoke the callback directly.
+                     if call_prepared_task_callback_for_transient_tasks {
+-                        let mut task = self.backend.storage.access_mut(id);
+-                        // TODO add is_restoring and avoid concurrent restores and duplicates tasks
+-                        // ids in `task_ids`
+-                        if !task.flags.is_restored(category) {
+-                            task.flags.set_restored(TaskDataCategory::All);
+-                        }
++                        let task = self.backend.storage.access_mut(id);
+                         prepared_task_callback(self, id, category, task);
+                     }
+                     false
+@@ -400,40 +391,43 @@ impl<'e, B: BackingStorage> ExecuteContext<'e> for ExecuteContextImpl<'e, B> {
+ 
+         let mut task = self.backend.storage.access_mut(task_id);
+         if !task.flags.is_restored(category) {
+-            if task_id.is_transient() {
+-                task.flags.set_restored(TaskDataCategory::All);
+-            } else {
+-                // Collect which categories need restoring while we have the lock
+-                let needs_data =
+-                    category.includes_data() && !task.flags.is_restored(TaskDataCategory::Data);
+-                let needs_meta =
+-                    category.includes_meta() && !task.flags.is_restored(TaskDataCategory::Meta);
+-
+-                if needs_data || needs_meta {
+-                    // Avoid holding the lock too long since this can also affect other tasks
+-                    // Drop lock once, do all I/O, then re-acquire once
+-                    drop(task);
+-
+-                    let storage_data = needs_data
+-                        .then(|| self.restore_task_data(task_id, SpecificTaskDataCategory::Data));
+-                    let storage_meta = needs_meta
+-                        .then(|| self.restore_task_data(task_id, SpecificTaskDataCategory::Meta));
+-
+-                    task = self.backend.storage.access_mut(task_id);
+-
+-                    // Handle race conditions and merge
+-                    if let Some(storage) = storage_data
+-                        && !task.flags.is_restored(TaskDataCategory::Data)
+-                    {
+-                        task.restore_from(storage, TaskDataCategory::Data);
+-                        task.flags.set_restored(TaskDataCategory::Data);
+-                    }
+-                    if let Some(storage) = storage_meta
+-                        && !task.flags.is_restored(TaskDataCategory::Meta)
+-                    {
+-                        task.restore_from(storage, TaskDataCategory::Meta);
+-                        task.flags.set_restored(TaskDataCategory::Meta);
+-                    }
++            // New tasks (transient and persistent) have restored flags set at allocation
++            // time, so this path is only hit for persistent tasks being restored from DB.
++            debug_assert!(
++                !task.flags.new_task() && !task_id.is_transient(),
++                "new or transient task should already be marked restored"
++            );
++
++            // Collect which categories need restoring while we have the lock
++            let needs_data =
++                category.includes_data() && !task.flags.is_restored(TaskDataCategory::Data);
++            let needs_meta =
++                category.includes_meta() && !task.flags.is_restored(TaskDataCategory::Meta);
++
++            if needs_data || needs_meta {
++                // Avoid holding the lock too long since this can also affect other tasks
++                // Drop lock once, do all I/O, then re-acquire once
++                drop(task);
++
++                let storage_data = needs_data
++                    .then(|| self.restore_task_data(task_id, SpecificTaskDataCategory::Data));
++                let storage_meta = needs_meta
++                    .then(|| self.restore_task_data(task_id, SpecificTaskDataCategory::Meta));
++
++                task = self.backend.storage.access_mut(task_id);
++
++                // Handle race conditions and merge
++                if let Some(storage) = storage_data
++                    && !task.flags.is_restored(TaskDataCategory::Data)
++                {
++                    task.restore_from(storage, TaskDataCategory::Data);
++                    task.flags.set_restored(TaskDataCategory::Data);
++                }
++                if let Some(storage) = storage_meta
++                    && !task.flags.is_restored(TaskDataCategory::Meta)
++                {
++                    task.restore_from(storage, TaskDataCategory::Meta);
++                    task.flags.set_restored(TaskDataCategory::Meta);
+                 }
+             }
+         }
+@@ -600,7 +594,7 @@ impl<'e, B: BackingStorage> ExecuteContext<'e> for ExecuteContextImpl<'e, B> {
+     }
+ 
+     fn task_by_type(&mut self, task_type: &CachedTaskType) -> Option<TaskId> {
+-        if !self.should_check_backing_storage() {
++        if !self.backend.should_restore() {
+             return None;
+         }
+ 
+diff --git a/turbopack/crates/turbo-tasks-backend/src/backend/storage.rs b/turbopack/crates/turbo-tasks-backend/src/backend/storage.rs
+index 45fb431a4815..a19e75b1e091 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/backend/storage.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/backend/storage.rs
+@@ -2,10 +2,12 @@ use std::{
+     cell::Cell,
+     hash::Hash,
+     ops::{Deref, DerefMut},
+-    sync::{Arc, atomic::AtomicBool},
++    sync::{
++        Arc,
++        atomic::{AtomicBool, AtomicU64, Ordering},
++    },
+ };
+ 
+-use smallvec::SmallVec;
+ use thread_local::ThreadLocal;
+ use turbo_bincode::TurboBincodeBuffer;
+ use turbo_tasks::{FxDashMap, TaskId, parallel};
+@@ -61,24 +63,25 @@ impl SpecificTaskDataCategory {
+     }
+ }
+ 
+-enum ModifiedState {
+-    /// It was modified before snapshot mode was entered, but it was not accessed during snapshot
+-    /// mode.
+-    Modified,
+-    /// Snapshot(Some):
+-    /// It was modified before snapshot mode was entered and it was accessed again during snapshot
+-    /// mode. A copy of the version of the item when snapshot mode was entered is stored here.
+-    /// The `TaskStorage` contains only persistent fields (via `clone_snapshot()`), and has
+-    /// `meta_modified`/`data_modified` flags set to indicate which categories need serializing.
+-    /// Snapshot(None):
+-    /// It was not modified before snapshot mode was entered, but it was accessed during snapshot
+-    /// mode. Or the snapshot was already taken out by the snapshot operation.
+-    Snapshot(Option<Box<TaskStorage>>),
+-}
+-
+ pub struct Storage {
+     snapshot_mode: AtomicBool,
+-    modified: FxDashMap<TaskId, ModifiedState>,
++    /// Per-shard counts of tasks with modified flags set. Incremented when a task
++    /// transitions from unmodified to modified (outside snapshot mode). Reset to zero when
++    /// snapshot mode begins, and re-incremented in `end_snapshot` for tasks that still have
++    /// modifications (promoted from `modified_during_snapshot`). Used to skip unmodified shards
++    /// in `take_snapshot`, avoiding unnecessary iteration and enabling early returns
++    ///
++    /// Indexed by `map.determine_shard(map.hash_usize(&key))` and guaranteed by construction so
++    /// that  `shard_modified_counts.len()==map.shards().len()`
++    ///
++    /// Should only be modified while holding the corresponding dashmap shard lock.
++    shard_modified_counts: Box<[AtomicU64]>,
++    /// Stores snapshots of task state for tasks accessed during snapshot mode.
++    /// - `Some(snapshot)`: Task was modified before snapshot mode and accessed again during it.
++    ///   Contains a copy of the pre-snapshot state that needs to be persisted.
++    /// - `None`: Task was first modified during snapshot mode (not part of current snapshot). Will
++    ///   be marked as modified at the beginning of the next snapshot cycle.
++    snapshots: FxDashMap<TaskId, Option<Box<TaskStorage>>>,
+     map: FxDashMap<TaskId, Box<TaskStorage>>,
+ }
+ 
+@@ -89,31 +92,81 @@ impl Storage {
+         } else {
+             1024 * 1024
+         };
+-        let modified_capacity: usize = if small_preallocation { 0 } else { 1024 };
+ 
++        let map = FxDashMap::with_capacity_and_hasher_and_shard_amount(
++            map_capacity,
++            Default::default(),
++            shard_amount,
++        );
++        let num_shards = map.shards().len();
++        let shard_modified_counts = (0..num_shards)
++            .map(|_| AtomicU64::new(0))
++            .collect::<Vec<_>>()
++            .into_boxed_slice();
+         Self {
+             snapshot_mode: AtomicBool::new(false),
+-            modified: FxDashMap::with_capacity_and_hasher_and_shard_amount(
+-                modified_capacity,
+-                Default::default(),
+-                shard_amount,
+-            ),
+-            map: FxDashMap::with_capacity_and_hasher_and_shard_amount(
+-                map_capacity,
++            shard_modified_counts,
++            snapshots: FxDashMap::with_capacity_and_hasher_and_shard_amount(
++                // We expect very few updates to this map since it will only happen when updates
++                // race with snapshots.  This never happens in a build and only rarely happens in
++                // dev sessions
++                0,
+                 Default::default(),
+                 shard_amount,
+             ),
++            map,
++        }
++    }
++
++    /// Returns the shard index for the given key in the `map` DashMap.
++    fn shard_index(&self, key: &TaskId) -> usize {
++        let hash = self.map.hash_usize(key);
++        self.map.determine_shard(hash)
++    }
++
++    /// Promote `modified_during_snapshot` → `modified` flags on a task, and increment the
++    /// per-shard modified count if the task was not already marked as modified.
++    ///
++    /// This is used after persisting a snapshot: _during_snapshot flags represent changes
++    /// that occurred concurrently and were not included in the persisted snapshot, so they
++    /// must be carried forward as `modified` for the next snapshot cycle.
++    fn promote_during_snapshot_flags(&self, task_id: &TaskId, task: &mut TaskStorage) {
++        let already_modified = task.flags.any_modified();
++        let mut promoted = false;
++        if task.flags.meta_modified_during_snapshot() {
++            task.flags.set_meta_modified_during_snapshot(false);
++            task.flags.set_meta_modified(true);
++            promoted = true;
++        }
++        if task.flags.data_modified_during_snapshot() {
++            task.flags.set_data_modified_during_snapshot(false);
++            task.flags.set_data_modified(true);
++            promoted = true;
++        }
++        if !already_modified && promoted {
++            let shard_idx = self.shard_index(task_id);
++            self.shard_modified_counts[shard_idx].fetch_add(1, Ordering::Relaxed);
+         }
+     }
+ 
++    /// Mark a newly allocated task as restored (skip DB queries) and new (include in persistence
++    /// snapshots).
++    pub fn initialize_new_task(&self, task_id: TaskId) {
++        let mut task = self.access_mut(task_id);
++        task.flags.set_restored(TaskDataCategory::All);
++        task.flags.set_new_task(true);
++    }
++
+     /// Processes every modified item (resp. a snapshot of it) with the given function and returns
+-    /// the results. Ends snapshot mode afterwards.
+-    /// process is called while holding a read lock on the task storage, so it can access
++    /// the results. Ends snapshot mode when the returned `SnapshotGuard` (held by each shard) is
++    /// dropped.
++    ///
++    /// `process` is called while holding a read lock on the task storage, so it can access
+     /// the TaskStorage directly without cloning.
+-    /// process_snapshot is called for tasks that were accessed during snapshot mode and
+-    /// receives an owned Box<TaskStorage> snapshot.
++    ///
+     /// Both callbacks receive a mutable scratch buffer that can be reused across iterations
+     /// to avoid repeated allocations.
++    ///
+     /// The returned shards implement `IntoIterator`. Empty shards (no modified or snapshot
+     /// entries) are filtered out, but shards may still yield no items if all entries produce
+     /// empty `SnapshotItem`s (this is rare and only happens under error conditions).
+@@ -122,40 +175,63 @@ impl Storage {
+         P: for<'a> Fn(TaskId, &'a TaskStorage, &mut TurboBincodeBuffer) -> SnapshotItem + Sync,
+     >(
+         &'l self,
++        guard: SnapshotGuard<'l>,
+         process: &'l P,
+     ) -> Vec<SnapshotShard<'l, P>> {
+-        if !self.snapshot_mode() {
+-            self.start_snapshot();
+-        }
++        let guard = Arc::new(guard);
+ 
+-        let guard = Arc::new(SnapshotGuard {
+-            storage: self,
+-            scratch_buffers: ThreadLocal::new(),
+-        });
++        let shards: Vec<_> = self.map.shards().iter().enumerate().collect();
+ 
+         // The number of shards is much larger than the number of threads, so the effect of the
+         // locks held is negligible.
+-        parallel::map_collect::<_, _, Vec<_>>(self.modified.shards(), |shard| {
++        parallel::map_collect::<_, _, Vec<_>>(&shards, |&(shard_idx, shard)| {
++            // Check how many modifications there are in this shard, because we have entered
++            // snapshot_mode, there are no racing writes
++            // So we can safely clear it out now that we are processing the modifications
++            let modified_count = self.shard_modified_counts[shard_idx].swap(0, Ordering::Relaxed);
++            if modified_count == 0 {
++                return None;
++            }
+             let mut direct_snapshots: Vec<(TaskId, Box<TaskStorage>)> = Vec::new();
+-            let mut modified: SmallVec<[TaskId; 4]> = SmallVec::new();
++            let mut modified = Vec::with_capacity(modified_count as usize);
+             {
+-                // Take the snapshots from the modified map
+-                let shard_guard = shard.write();
++                let shard_guard = shard.read();
+                 // Safety: shard_guard must outlive the iterator.
+                 for bucket in unsafe { shard_guard.iter() } {
+                     // Safety: the guard guarantees that the bucket is not removed and the ptr
+                     // is valid.
+-                    let (key, shared_value) = unsafe { bucket.as_mut() };
+-                    let modified_state = shared_value.get_mut();
+-                    match modified_state {
+-                        ModifiedState::Modified => {
++                    let (key, shared_value) = unsafe { bucket.as_ref() };
++                    let flags = &shared_value.get().flags;
++                    // Only check modified flags here — transient tasks never have
++                    // modified flags set (track_modification guards against it), so
++                    // this naturally excludes them. new_task is always
++                    // accompanied by modified flags (set_persistent_task_type calls
++                    // track_modification), so any_modified() is sufficient.
++                    if flags.any_modified() {
++                        debug_assert!(
++                            !key.is_transient(),
++                            "found a modified transient task: {:?}",
++                            shared_value.get().get_persistent_task_type()
++                        );
++
++                        if flags.any_modified_during_snapshot() {
++                            // Task was modified during snapshot mode, so a snapshot
++                            // copy must exist in the snapshots map (created by the
++                            // (true, true) case in track_modification_internal).
++                            // Remove the entry entirely so end_snapshot doesn't
++                            // double-process this task.  When iterating in `next` we will
++                            // re-synchronize the task flags.
++                            let (_, snapshot) = self.snapshots.remove(key).expect(
++                                "task with modified_during_snapshot must have a snapshots entry",
++                            );
++                            let snapshot = snapshot.expect(
++                                "snapshot entry for modified_during_snapshot task must contain a \
++                                 value",
++                            );
++                            direct_snapshots.push((*key, snapshot));
++                        } else {
+                             modified.push(*key);
+                         }
+-                        ModifiedState::Snapshot(snapshot) => {
+-                            if let Some(snapshot) = snapshot.take() {
+-                                direct_snapshots.push((*key, snapshot));
+-                            }
+-                        }
+                     }
+                 }
+                 // Safety: shard_guard must outlive the iterator.
+@@ -168,6 +244,7 @@ impl Storage {
+             }
+ 
+             Some(SnapshotShard {
++                shard_idx,
+                 direct_snapshots,
+                 modified,
+                 storage: self,
+@@ -180,78 +257,74 @@ impl Storage {
+         .collect()
+     }
+ 
+-    /// Start snapshot mode.
+-    pub fn start_snapshot(&self) {
+-        self.snapshot_mode
+-            .store(true, std::sync::atomic::Ordering::Release);
++    /// Enter snapshot mode and return a guard that will call `end_snapshot` on drop.
++    ///
++    /// Returns whether any shard has modifications. Per-shard counts are reset
++    /// in `take_snapshot` as each shard is processed, not here — resetting eagerly
++    /// would lose track of modifications for shards that haven't been persisted yet.
++    ///
++    /// Safety invariant: `start_snapshot` and `end_snapshot` are always called
++    /// sequentially within a single `snapshot_and_persist` invocation (the sole
++    /// caller). There is no concurrent snapshot lifecycle, so they cannot race.
++    pub fn start_snapshot(&self) -> (SnapshotGuard<'_>, bool) {
++        // Enter snapshot mode first so concurrent track_modification calls switch
++        // to the _during_snapshot path and stop incrementing shard_modified_counts.
++        self.snapshot_mode.store(true, Ordering::Release);
++        // Check if any shard has modifications. Don't reset counts here —
++        // take_snapshot resets per-shard counts as it processes each shard,
++        // which avoids losing track of modifications for shards that haven't
++        // been persisted yet.
++        let has_modifications = self
++            .shard_modified_counts
++            .iter()
++            .any(|c| c.load(Ordering::Relaxed) > 0);
++        (SnapshotGuard::new(self), has_modifications)
+     }
+ 
+     /// End snapshot mode.
+-    /// Items that have snapshots will be kept as modified since they have been accessed during the
+-    /// snapshot mode. Items that are modified will be removed and considered as unmodified.
+-    /// When items are accessed in future they will be marked as modified.
++    ///
++    /// Modified/new flags on tasks are cleared incrementally during snapshot iteration
++    /// (in `take_snapshot` for direct_snapshots, and in `SnapshotShardIter::next` for
++    /// modified tasks), so no full-map scan is needed here.
++    ///
++    /// This method only needs to:
++    /// 1. Leave snapshot mode so new modifications go to the modified flags directly.
++    /// 2. Promote `modified_during_snapshot` → `modified` for tasks that were accessed during
++    ///    snapshot mode (tracked in the small `snapshots` map).
+     fn end_snapshot(&self) {
+-        // We are still in snapshot mode, so all accessed items would be stored as snapshot.
+-        // This means we can start by removing all modified items.
+-        let mut removed_modified = Vec::new();
+-        self.modified.retain(|key, inner| {
+-            if matches!(inner, ModifiedState::Modified) {
+-                removed_modified.push(*key);
+-                false
+-            } else {
+-                true
+-            }
+-        });
+-
+-        // We also need to unset all the modified flags.
+-        for key in removed_modified {
+-            if let Some(mut inner) = self.map.get_mut(&key) {
+-                inner.flags.set_data_modified(false);
+-                inner.flags.set_meta_modified(false);
+-            }
+-        }
+-
+-        // Now modified only contains snapshots.
+-        // We leave snapshot mode. Any access would be stored as modified and not as snapshot.
+-        self.snapshot_mode
+-            .store(false, std::sync::atomic::Ordering::Release);
+-
+-        // We can change all the snapshots to modified now.
+-        let mut removed_snapshots = Vec::new();
+-        for mut item in self.modified.iter_mut() {
+-            match item.value() {
+-                ModifiedState::Snapshot(_) => {
+-                    removed_snapshots.push(*item.key());
+-                    *item.value_mut() = ModifiedState::Modified;
+-                }
+-                ModifiedState::Modified => {
+-                    // This means it was concurrently modified.
+-                    // It's already in the correct state.
++        // Leave snapshot mode first. After this, concurrent track_modification calls
++        // will set modified flags directly instead of going through the snapshots map.
++        self.snapshot_mode.store(false, Ordering::Release);
++
++        // Promote modified_during_snapshot → modified for tasks that had snapshots.
++        // The snapshots map should be small (only tasks concurrently accessed during snapshot
++        // mode). Increment the per-shard modified counts for promoted tasks.
++
++        // Lock Ordering: Note, in track_modification_internal, we modify the snapshots map while
++        // holding a StorageWriteGuard and here we do the opposite.  This is fine because that code
++        // only runs when `snapshot_mode==true` and this loop only runs when it is false.
++        parallel::for_each(self.snapshots.shards(), |shard| {
++            let mut shard_guard = shard.write();
++            for (key, _) in shard_guard.drain() {
++                if let Some(mut inner) = self.map.get_mut(&key) {
++                    self.promote_during_snapshot_flags(&key, &mut inner);
+                 }
+             }
+-        }
+-
+-        // And update the flags
+-        for key in removed_snapshots {
+-            if let Some(mut inner) = self.map.get_mut(&key) {
+-                if inner.flags.meta_modified_during_snapshot() {
+-                    inner.flags.set_meta_modified_during_snapshot(false);
+-                    inner.flags.set_meta_modified(true);
+-                }
+-                if inner.flags.data_modified_during_snapshot() {
+-                    inner.flags.set_data_modified_during_snapshot(false);
+-                    inner.flags.set_data_modified(true);
+-                }
++            // If we are saving a non-trivial amount of memory just clear it out.
++            if shard_guard.capacity() > 1024 {
++                shard_guard.shrink_to(0, |_entry| {
++                    unreachable!("nothing is hashed when resizing an empty shard to zero");
++                });
+             }
+-        }
+-
+-        // Remove excessive capacity in modified
+-        self.modified.shrink_to_fit();
++            // Safety: shard_guard must outlive the iterator.
++            drop(shard_guard);
++        });
+     }
+ 
++    /// Returns true if actively snapshotting (modifications should go to snapshots map).
++    /// Returns false if inactive (modifications go to modified list).
+     fn snapshot_mode(&self) -> bool {
+-        self.snapshot_mode
+-            .load(std::sync::atomic::Ordering::Acquire)
++        self.snapshot_mode.load(Ordering::Acquire)
+     }
+ 
+     pub fn access_mut(&self, key: TaskId) -> StorageWriteGuard<'_> {
+@@ -285,7 +358,7 @@ impl Storage {
+ 
+     pub fn drop_contents(&self) {
+         drop_contents(&self.map);
+-        drop_contents(&self.modified);
++        drop_contents(&self.snapshots);
+     }
+ }
+ 
+@@ -318,21 +391,27 @@ impl StorageWriteGuard<'_> {
+         category: SpecificTaskDataCategory,
+         #[cfg(feature = "trace_task_modification")] name: &str,
+     ) {
++        // Transient tasks are never persisted, so tracking modifications is meaningless.
++        // All callers (TaskGuard, invalidate_serialization) already
++        // guard against this, but we enforce it here as defense-in-depth.
++        debug_assert!(
++            !self.inner.key().is_transient(),
++            "track_modification called on transient task {:?}",
++            self.inner.key()
++        );
+         let flags = &self.inner.flags;
+         if flags.is_modified_during_snapshot(category) {
++            // We can early return since `end_snapshot` is responsible for reconciling.
+             return;
+         }
+-        let modified = flags.is_modified(category);
+-        let already_modified_during_snapshot = flags.any_modified_during_snapshot();
+         #[cfg(feature = "trace_task_modification")]
+         let _span = (!modified).then(|| tracing::trace_span!("mark_modified", name).entered());
+-        match (self.storage.snapshot_mode(), modified) {
++        match (self.storage.snapshot_mode(), flags.is_modified(category)) {
+             (false, false) => {
+                 // Not in snapshot mode and item is unmodified
+-                if !already_modified_during_snapshot && !flags.any_modified() {
+-                    self.storage
+-                        .modified
+-                        .insert(*self.inner.key(), ModifiedState::Modified);
++                if !flags.any_modified() {
++                    let shard_idx = self.storage.shard_index(self.inner.key());
++                    self.storage.shard_modified_counts[shard_idx].fetch_add(1, Ordering::Relaxed);
+                 }
+                 self.inner.flags.set_modified(category, true);
+             }
+@@ -342,11 +421,11 @@ impl StorageWriteGuard<'_> {
+             }
+             (true, false) => {
+                 // In snapshot mode and item is unmodified (so it's not part of the snapshot)
+-                // Mark it so it gets re-added as Modified after this snapshot completes
+-                if !already_modified_during_snapshot {
+-                    self.storage
+-                        .modified
+-                        .insert(*self.inner.key(), ModifiedState::Snapshot(None));
++                // Mark it so it gets re-added as Modified after this snapshot completes.
++                // Insert a None entry into snapshots so end_snapshot discovers this task
++                // and promotes its _during_snapshot flags.
++                if !flags.any_modified_during_snapshot() {
++                    self.storage.snapshots.insert(*self.inner.key(), None);
+                 }
+                 self.inner
+                     .flags
+@@ -355,16 +434,16 @@ impl StorageWriteGuard<'_> {
+             (true, true) => {
+                 // In snapshot mode and item is modified (so it's part of the snapshot)
+                 // We need to store the original version that is part of the snapshot
+-                if !already_modified_during_snapshot {
++                if !flags.any_modified_during_snapshot() {
+                     // Snapshot all non-transient fields but keep the modified bits since
+                     // save_snapshot relies on them
+                     let mut snapshot = self.inner.clone_snapshot();
+                     snapshot.flags.set_data_modified(flags.data_modified());
+                     snapshot.flags.set_meta_modified(flags.meta_modified());
+-                    self.storage.modified.insert(
+-                        *self.inner.key(),
+-                        ModifiedState::Snapshot(Some(Box::new(snapshot))),
+-                    );
++                    snapshot.flags.set_new_task(flags.new_task());
++                    self.storage
++                        .snapshots
++                        .insert(*self.inner.key(), Some(Box::new(snapshot)));
+                 }
+                 self.inner
+                     .flags
+@@ -421,7 +500,14 @@ pub struct SnapshotGuard<'l> {
+     scratch_buffers: ThreadLocal<Cell<ScratchBufferSlot>>,
+ }
+ 
+-impl SnapshotGuard<'_> {
++impl<'l> SnapshotGuard<'l> {
++    fn new(storage: &'l Storage) -> Self {
++        Self {
++            storage,
++            scratch_buffers: ThreadLocal::new(),
++        }
++    }
++
+     fn take_scratch_buffer(&self) -> TurboBincodeBuffer {
+         let cell = self.scratch_buffers.get_or_default();
+         match cell.take() {
+@@ -460,8 +546,9 @@ impl Drop for SnapshotGuard<'_> {
+ }
+ 
+ pub struct SnapshotShard<'l, P> {
++    shard_idx: usize,
+     direct_snapshots: Vec<(TaskId, Box<TaskStorage>)>,
+-    modified: SmallVec<[TaskId; 4]>,
++    modified: Vec<TaskId>,
+     storage: &'l Storage,
+     process: &'l P,
+     /// Held for its `Drop` impl — ensures snapshot mode ends when all shards are done.
+@@ -498,33 +585,84 @@ where
+     type Item = SnapshotItem;
+ 
+     fn next(&mut self) -> Option<Self::Item> {
++        // direct_snapshots: these tasks had a snapshot copy created by
++        // track_modification. We encode from the owned snapshot copy,
++        // clear the stale modified flags, and promote any _during_snapshot
++        // flags so the task stays dirty for the next cycle.
+         while let Some((task_id, snapshot)) = self.shard.direct_snapshots.pop() {
+             let item = (self.shard.process)(task_id, &snapshot, &mut self.buffer);
++            let mut inner = self.shard.storage.map.get_mut(&task_id).unwrap();
+             if !item.is_empty() {
++                // Successfully encoded — clear pre-snapshot flags. Since we removed
++                // this task's entry from the snapshots map in take_snapshot,
++                // end_snapshot won't see it, so we must promote here.
++                inner.flags.set_data_modified(false);
++                inner.flags.set_meta_modified(false);
++                inner.flags.set_new_task(false);
++                self.shard
++                    .storage
++                    .promote_during_snapshot_flags(&task_id, &mut inner);
+                 return Some(item);
++            } else {
++                // Error path: encoding failed. Re-mark dirty for next cycle.
++                std::hint::cold_path();
++                self.shard.storage.shard_modified_counts[self.shard.shard_idx]
++                    .fetch_add(1, Ordering::Relaxed);
++                self.shard
++                    .storage
++                    .promote_during_snapshot_flags(&task_id, &mut inner);
+             }
+         }
++        // modified tasks: acquire a write lock to encode and clear flags in one pass.
+         while let Some(task_id) = self.shard.modified.pop() {
+-            let inner = self.shard.storage.map.get(&task_id).unwrap();
++            let mut inner = self.shard.storage.map.get_mut(&task_id).unwrap();
+             if !inner.flags.any_modified_during_snapshot() {
+                 let item = (self.shard.process)(task_id, &inner, &mut self.buffer);
+                 if !item.is_empty() {
++                    // Successfully encoded — clear flags.
++                    inner.flags.set_data_modified(false);
++                    inner.flags.set_meta_modified(false);
++                    inner.flags.set_new_task(false);
+                     return Some(item);
+                 }
++                // Error path: encoding failed. Re-mark dirty for next cycle.
++                std::hint::cold_path();
++                self.shard.storage.shard_modified_counts[self.shard.shard_idx]
++                    .fetch_add(1, Ordering::Relaxed);
+             } else {
++                // Task was modified again during snapshot mode. A snapshot copy was
++                // created in track_modification_internal. Use that for encoding.
++                // Promote modified_during_snapshot → modified so the task stays dirty
++                // for the next snapshot cycle (the original has diverged from what
++                // we're about to persist).
++                debug_assert!(!inner.flags.any_modified(), "cannot already be modified");
++                self.shard
++                    .storage
++                    .promote_during_snapshot_flags(&task_id, &mut inner);
+                 drop(inner);
+-                let maybe_snapshot = {
+-                    let mut modified_state = self.shard.storage.modified.get_mut(&task_id).unwrap();
+-                    let ModifiedState::Snapshot(snapshot) = &mut *modified_state else {
+-                        unreachable!("The snapshot bit was set, so it must be in Snapshot state");
+-                    };
+-                    snapshot.take()
+-                };
+-                if let Some(snapshot) = maybe_snapshot {
++
++                // Take the snapshot and remove from the snapshots map so
++                // end_snapshot doesn't double-process this task.
++                let snapshot = self
++                    .shard
++                    .storage
++                    .snapshots
++                    .remove(&task_id)
++                    .expect("The snapshot bit was set, so it must be in Snapshot state")
++                    .1;
++
++                if let Some(snapshot) = snapshot {
+                     let item = (self.shard.process)(task_id, &snapshot, &mut self.buffer);
+                     if !item.is_empty() {
++                        // Successfully encoded the snapshot — clear new_task since it
++                        // was captured in the snapshot. The promoted modified flags
++                        // keep the task dirty for future changes.
++                        if let Some(mut inner) = self.shard.storage.map.get_mut(&task_id) {
++                            inner.flags.set_new_task(false);
++                        }
+                         return Some(item);
+                     }
++                    // Encoding failed — new_task flag stays set for retry.
+                 }
+             }
+         }
+diff --git a/turbopack/crates/turbo-tasks-backend/src/backend/storage_schema.rs b/turbopack/crates/turbo-tasks-backend/src/backend/storage_schema.rs
+index 460a3db5ee64..cd808de2e5dd 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/backend/storage_schema.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/backend/storage_schema.rs
+@@ -187,6 +187,11 @@ struct TaskStorageSchema {
+     #[field(storage = "flag", category = "transient")]
+     stateful: bool,
+ 
++    /// Whether this task is new and needs its type persisted to the task cache.
++    /// Set when task is created, cleared after persisting.
++    #[field(storage = "flag", category = "transient")]
++    pub new_task: bool,
++
+     // =========================================================================
+     // CHILDREN & AGGREGATION (meta)
+     // =========================================================================
+@@ -538,7 +543,8 @@ impl TaskStorage {
+         task_type: TransientTaskType,
+         should_track_activeness: bool,
+     ) {
+-        // Mark as fully restored since transient tasks don't need restoration from disk
++        // Mark as fully restored since transient tasks don't need restoration from disk,
++        // and as new since this task was just created.
+         self.flags.set_restored(TaskDataCategory::All);
+ 
+         // This is a root (or once) task. These tasks use the max aggregation number.
+diff --git a/turbopack/crates/turbo-tasks-backend/src/backing_storage.rs b/turbopack/crates/turbo-tasks-backend/src/backing_storage.rs
+index 8fd957c354f4..1f51e20d68d4 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/backing_storage.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/backing_storage.rs
+@@ -5,24 +5,50 @@ use either::Either;
+ use smallvec::SmallVec;
+ use turbo_bincode::TurboBincodeBuffer;
+ use turbo_tasks::{TaskId, backend::CachedTaskType};
++use turbo_tasks_hash::Xxh3Hash64Hasher;
+ 
+-use crate::{
+-    backend::{AnyOperation, SpecificTaskDataCategory, storage_schema::TaskStorage},
+-    utils::chunked_vec::ChunkedVec,
+-};
++use crate::backend::{AnyOperation, SpecificTaskDataCategory, storage_schema::TaskStorage};
+ 
++pub type TaskTypeHash = [u8; 8];
++
++/// A single item yielded by the snapshot iterator during persistence.
+ pub struct SnapshotItem {
+     pub task_id: TaskId,
+-    pub data: Option<TurboBincodeBuffer>,
++    /// Serialized task meta data, if modified
+     pub meta: Option<TurboBincodeBuffer>,
++    /// Serialized task data, if modified
++    pub data: Option<TurboBincodeBuffer>,
++    /// Task type for new tasks that need to be added to the task cache
++    pub task_type_hash: Option<TaskTypeHash>,
+ }
+ 
+ impl SnapshotItem {
+     pub fn is_empty(&self) -> bool {
+-        self.meta.is_none() && self.data.is_none()
++        self.meta.is_none() && self.data.is_none() && self.task_type_hash.is_none()
+     }
+ }
+ 
++/// Computes a deterministic 64-bit hash of a CachedTaskType for use as a TaskCache key.
++///
++/// This encodes the task type directly to a hasher, avoiding intermediate buffer allocation.
++/// The encoding is deterministic (function IDs from registry, bincode argument encoding).
++pub fn compute_task_type_hash(task_type: &CachedTaskType) -> TaskTypeHash {
++    let mut hasher = Xxh3Hash64Hasher::new();
++    task_type.hash_encode(&mut hasher);
++    let hash = hasher.finish();
++    if cfg!(feature = "verify_serialization") {
++        hasher = Xxh3Hash64Hasher::new();
++        task_type.hash_encode(&mut hasher);
++        let hash2 = hasher.finish();
++        assert_eq!(
++            hash, hash2,
++            "Hashing TaskType twice was non-deterministic: \n{:?}\ngot hashes {} != {}",
++            task_type, hash, hash2
++        );
++    }
++    hash.to_le_bytes()
++}
++
+ /// Represents types accepted by [`TurboTasksBackend::new`]. Typically this is the value returned by
+ /// [`turbo_backing_storage`] or [`noop_backing_storage`].
+ ///
+@@ -55,12 +81,7 @@ pub trait BackingStorageSealed: 'static + Send + Sync {
+     fn next_free_task_id(&self) -> Result<TaskId>;
+     fn uncompleted_operations(&self) -> Result<Vec<AnyOperation>>;
+ 
+-    fn save_snapshot<I>(
+-        &self,
+-        operations: Vec<Arc<AnyOperation>>,
+-        task_cache_updates: Vec<ChunkedVec<(Arc<CachedTaskType>, TaskId)>>,
+-        snapshots: Vec<I>,
+-    ) -> Result<()>
++    fn save_snapshot<I>(&self, operations: Vec<Arc<AnyOperation>>, snapshots: Vec<I>) -> Result<()>
+     where
+         I: IntoIterator<Item = SnapshotItem> + Send + Sync;
+     /// Returns all task IDs that match the given task type (hash collision candidates).
+@@ -118,18 +139,12 @@ where
+         either::for_both!(self, this => this.uncompleted_operations())
+     }
+ 
+-    fn save_snapshot<I>(
+-        &self,
+-        operations: Vec<Arc<AnyOperation>>,
+-        task_cache_updates: Vec<ChunkedVec<(Arc<CachedTaskType>, TaskId)>>,
+-        snapshots: Vec<I>,
+-    ) -> Result<()>
++    fn save_snapshot<I>(&self, operations: Vec<Arc<AnyOperation>>, snapshots: Vec<I>) -> Result<()>
+     where
+         I: IntoIterator<Item = SnapshotItem> + Send + Sync,
+     {
+         either::for_both!(self, this => this.save_snapshot(
+             operations,
+-            task_cache_updates,
+             snapshots,
+         ))
+     }
+diff --git a/turbopack/crates/turbo-tasks-backend/src/kv_backing_storage.rs b/turbopack/crates/turbo-tasks-backend/src/kv_backing_storage.rs
+index 5df10a67875f..19b9b352ee6b 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/kv_backing_storage.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/kv_backing_storage.rs
+@@ -14,12 +14,11 @@ use turbo_tasks::{
+     panic_hooks::{PanicHookGuard, register_panic_hook},
+     parallel,
+ };
+-use turbo_tasks_hash::Xxh3Hash64Hasher;
+ 
+ use crate::{
+     GitVersionInfo,
+     backend::{AnyOperation, SpecificTaskDataCategory, storage_schema::TaskStorage},
+-    backing_storage::{BackingStorage, BackingStorageSealed, SnapshotItem},
++    backing_storage::{BackingStorage, BackingStorageSealed, SnapshotItem, compute_task_type_hash},
+     database::{
+         db_invalidation::{StartupCacheState, check_db_invalidation_and_cleanup, invalidate_db},
+         db_versioning::handle_db_versioning,
+@@ -27,7 +26,6 @@ use crate::{
+         write_batch::{ConcurrentWriteBatch, WriteBuffer},
+     },
+     db_invalidation::invalidation_reasons,
+-    utils::chunked_vec::ChunkedVec,
+ };
+ 
+ const META_KEY_OPERATIONS: u32 = 0;
+@@ -224,12 +222,7 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
+         get(&self.inner.database).context("Unable to read uncompleted operations from database")
+     }
+ 
+-    fn save_snapshot<I>(
+-        &self,
+-        operations: Vec<Arc<AnyOperation>>,
+-        task_cache_updates: Vec<ChunkedVec<(Arc<CachedTaskType>, TaskId)>>,
+-        snapshots: Vec<I>,
+-    ) -> Result<()>
++    fn save_snapshot<I>(&self, operations: Vec<Arc<AnyOperation>>, snapshots: Vec<I>) -> Result<()>
+     where
+         I: IntoIterator<Item = SnapshotItem> + Send + Sync,
+     {
+@@ -238,63 +231,69 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
+ 
+         {
+             let _span = tracing::trace_span!("update task data").entered();
+-            process_task_data(snapshots, &batch)?;
+-            let span = tracing::trace_span!("flush task data").entered();
+-            parallel::try_for_each(&[KeySpace::TaskMeta, KeySpace::TaskData], |&key_space| {
+-                let _span = span.clone().entered();
+-                // Safety: `process_task_data` has returned, so no concurrent `put` or
+-                // `delete` on `TaskMeta`/`TaskData` key spaces are in-flight. The
+-                // `parallel::try_for_each` below flushes disjoint key spaces, so
+-                // concurrent flushes on different key spaces are safe.
+-                unsafe { batch.flush(key_space) }
+-            })?;
+-        }
+-
+-        let mut next_task_id = get_next_free_task_id(&batch)?;
+-
+-        {
+-            let _span = tracing::trace_span!(
+-                "update task cache",
+-                items = task_cache_updates.iter().map(|m| m.len()).sum::<usize>()
+-            )
+-            .entered();
+-            let max_task_id = parallel::map_collect_owned::<_, _, Result<Vec<_>>>(
+-                task_cache_updates,
+-                |updates| {
+-                    let _span = _span.clone().entered();
+-                    let mut max_task_id = 0;
+-                    for (task_type, task_id) in updates {
+-                        let hash = compute_task_type_hash(&task_type);
+-                        let task_id: u32 = *task_id;
+-
+-                        batch
+-                            .put(
++            let max_new_task_id =
++                parallel::map_collect_owned::<_, _, Result<Vec<_>>>(snapshots, |shard: I| {
++                    let mut max_new_task_id = 0;
++                    for SnapshotItem {
++                        task_id,
++                        meta,
++                        data,
++                        task_type_hash,
++                    } in shard
++                    {
++                        let key = IntKey::new(*task_id);
++                        let key = key.as_ref();
++                        if let Some(meta) = meta {
++                            batch.put(
++                                KeySpace::TaskMeta,
++                                WriteBuffer::Borrowed(key),
++                                WriteBuffer::SmallVec(meta),
++                            )?;
++                        }
++                        if let Some(data) = data {
++                            batch.put(
++                                KeySpace::TaskData,
++                                WriteBuffer::Borrowed(key),
++                                WriteBuffer::SmallVec(data),
++                            )?;
++                        }
++                        // Write task cache entry inline if this is a new task
++                        if let Some(task_type_hash) = task_type_hash {
++                            batch.put(
+                                 KeySpace::TaskCache,
+-                                WriteBuffer::Borrowed(&hash.to_le_bytes()),
+-                                WriteBuffer::Borrowed(&task_id.to_le_bytes()),
+-                            )
+-                            .with_context(|| {
+-                                format!("Unable to write task cache {task_type:?} => {task_id}")
+-                            })?;
+-                        max_task_id = max_task_id.max(task_id);
++                                WriteBuffer::Borrowed(&task_type_hash),
++                                WriteBuffer::Borrowed(key),
++                            )?;
++                            max_new_task_id = max_new_task_id.max(*task_id);
++                        }
+                     }
++                    Ok(max_new_task_id)
++                })?
++                .into_iter()
++                .max()
++                .unwrap_or_default();
+ 
+-                    Ok(max_task_id)
++            let span = tracing::trace_span!("flush task data").entered();
++            parallel::try_for_each(
++                &[KeySpace::TaskMeta, KeySpace::TaskData, KeySpace::TaskCache],
++                |&key_space| {
++                    let _span = span.clone().entered();
++                    // Safety: `map_collect_owned` has returned, so no concurrent `put` or
++                    // `delete` on these key spaces are in-flight.
++                    unsafe { batch.flush(key_space) }
+                 },
+-            )?
+-            .into_iter()
+-            .max()
+-            .unwrap_or(0);
+-            next_task_id = next_task_id.max(max_task_id + 1);
+-        }
++            )?;
+ 
+-        save_infra(&batch, next_task_id, operations)?;
++            let mut next_task_id = get_next_free_task_id(&batch)?;
++            next_task_id = next_task_id.max(max_new_task_id + 1);
+ 
+-        {
+-            let _span = tracing::trace_span!("commit").entered();
+-            batch.commit().context("Unable to commit operations")?;
++            save_infra(&batch, next_task_id, operations)?;
++            {
++                let _span = tracing::trace_span!("commit").entered();
++                batch.commit().context("Unable to commit operations")?;
++            }
++            Ok(())
+         }
+-        Ok(())
+     }
+ 
+     fn lookup_task_candidates(&self, task_type: &CachedTaskType) -> Result<SmallVec<[TaskId; 1]>> {
+@@ -307,7 +306,7 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
+         let hash = compute_task_type_hash(task_type);
+         let buffers = inner
+             .database
+-            .get_multiple(KeySpace::TaskCache, &hash.to_le_bytes())
++            .get_multiple(KeySpace::TaskCache, &hash)
+             .with_context(|| {
+                 format!("Looking up task id for {task_type:?} from database failed")
+             })?;
+@@ -426,60 +425,6 @@ fn save_infra<'a>(
+     Ok(())
+ }
+ 
+-/// Computes a deterministic 64-bit hash of a CachedTaskType for use as a TaskCache key.
+-///
+-/// This encodes the task type directly to a hasher, avoiding intermediate buffer allocation.
+-/// The encoding is deterministic (function IDs from registry, bincode argument encoding).
+-fn compute_task_type_hash(task_type: &CachedTaskType) -> u64 {
+-    let mut hasher = Xxh3Hash64Hasher::new();
+-    task_type.hash_encode(&mut hasher);
+-    let hash = hasher.finish();
+-    if cfg!(feature = "verify_serialization") {
+-        task_type.hash_encode(&mut hasher);
+-        let hash2 = hasher.finish();
+-        assert_eq!(
+-            hash, hash2,
+-            "Hashing TaskType twice was non-deterministic: \n{:?}\ngot hashes {} != {}",
+-            task_type, hash, hash2
+-        );
+-    }
+-    hash
+-}
+-
+-fn process_task_data<'a, B: ConcurrentWriteBatch<'a> + Send + Sync, I>(
+-    tasks: Vec<I>,
+-    batch: &B,
+-) -> Result<()>
+-where
+-    I: IntoIterator<Item = SnapshotItem> + Send + Sync,
+-{
+-    parallel::try_for_each_owned(tasks, |tasks| {
+-        for SnapshotItem {
+-            task_id,
+-            meta,
+-            data,
+-        } in tasks
+-        {
+-            let key = IntKey::new(*task_id);
+-            let key = key.as_ref();
+-            if let Some(meta) = meta {
+-                batch.put(
+-                    KeySpace::TaskMeta,
+-                    WriteBuffer::Borrowed(key),
+-                    WriteBuffer::SmallVec(meta),
+-                )?;
+-            }
+-            if let Some(data) = data {
+-                batch.put(
+-                    KeySpace::TaskData,
+-                    WriteBuffer::Borrowed(key),
+-                    WriteBuffer::SmallVec(data),
+-                )?;
+-            }
+-        }
+-        Ok(())
+-    })
+-}
+ #[cfg(test)]
+ mod tests {
+     use std::borrow::Borrow;
+@@ -559,4 +504,59 @@ mod tests {
+         db.shutdown()?;
+         Ok(())
+     }
++
++    /// Tests that multiple distinct keys written in a single batch with flush can be read back.
++    /// This mirrors the actual save_snapshot pattern: write many TaskCache entries, flush, commit.
++    #[tokio::test(flavor = "multi_thread")]
++    async fn test_batch_write_with_flush_and_reopen() -> Result<()> {
++        let tempdir = tempfile::tempdir()?;
++        let path = tempdir.path();
++
++        let n = 100_000;
++        let hashes: Vec<u64> = (0..n).map(|i| 0x1000 + i as u64).collect();
++        let task_ids: Vec<TaskId> = (1..=n as u32)
++            .map(|i| TaskId::try_from(i).unwrap())
++            .collect();
++
++        // Write all entries in a single batch with flush (like save_snapshot does)
++        {
++            let db = TurboKeyValueDatabase::new(path.to_path_buf(), false, true, false)?;
++            let batch = db.write_batch()?;
++
++            for (hash, task_id) in hashes.iter().zip(task_ids.iter()) {
++                batch.put(
++                    KeySpace::TaskCache,
++                    WriteBuffer::Borrowed(&hash.to_le_bytes()),
++                    WriteBuffer::Borrowed(&(**task_id).to_le_bytes()),
++                )?;
++            }
++            // Flush TaskCache (like the new code does)
++            unsafe { batch.flush(KeySpace::TaskCache) }?;
++            batch.commit()?;
++
++            db.shutdown()?;
++        }
++
++        // Reopen and verify all entries are readable
++        {
++            let db = TurboKeyValueDatabase::new(path.to_path_buf(), false, true, false)?;
++            let mut found = 0;
++            let mut missing = 0;
++            for (hash, expected_id) in hashes.iter().zip(task_ids.iter()) {
++                let results = db.get_multiple(KeySpace::TaskCache, &hash.to_le_bytes())?;
++                if results.is_empty() {
++                    missing += 1;
++                } else {
++                    found += 1;
++                    let bytes: [u8; 4] = Borrow::<[u8]>::borrow(&results[0]).try_into().unwrap();
++                    let id = TaskId::try_from(u32::from_le_bytes(bytes)).unwrap();
++                    assert_eq!(id, *expected_id, "Task ID mismatch for hash {hash:#x}");
++                }
++            }
++            assert_eq!(missing, 0, "Found {found}/{n} entries, missing {missing}");
++            db.shutdown()?;
++        }
++
++        Ok(())
++    }
+ }
+diff --git a/turbopack/crates/turbo-tasks-backend/src/utils/chunked_vec.rs b/turbopack/crates/turbo-tasks-backend/src/utils/chunked_vec.rs
+deleted file mode 100644
+index 7666cf666277..000000000000
+--- a/turbopack/crates/turbo-tasks-backend/src/utils/chunked_vec.rs
++++ /dev/null
+@@ -1,131 +0,0 @@
+-pub struct ChunkedVec<T> {
+-    chunks: Vec<Vec<T>>,
+-}
+-
+-impl<T> Default for ChunkedVec<T> {
+-    fn default() -> Self {
+-        Self::new()
+-    }
+-}
+-
+-impl<T> ChunkedVec<T> {
+-    pub fn new() -> Self {
+-        Self { chunks: Vec::new() }
+-    }
+-
+-    pub fn len(&self) -> usize {
+-        for (i, chunk) in self.chunks.iter().enumerate().rev() {
+-            if !chunk.is_empty() {
+-                let free = chunk.capacity() - chunk.len();
+-                return cumulative_chunk_size(i) - free;
+-            }
+-        }
+-        0
+-    }
+-
+-    pub fn push(&mut self, item: T) {
+-        if let Some(chunk) = self.chunks.last_mut()
+-            && chunk.len() < chunk.capacity()
+-        {
+-            chunk.push(item);
+-            return;
+-        }
+-        let mut chunk = Vec::with_capacity(chunk_size(self.chunks.len()));
+-        chunk.push(item);
+-        self.chunks.push(chunk);
+-    }
+-
+-    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+-        for item in iter {
+-            self.push(item);
+-        }
+-    }
+-
+-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &T> {
+-        ExactSizeIter {
+-            iter: self.chunks.iter().flat_map(|chunk| chunk.iter()),
+-            len: self.len(),
+-        }
+-    }
+-
+-    pub fn is_empty(&self) -> bool {
+-        self.chunks.first().is_none_or(|chunk| chunk.is_empty())
+-    }
+-}
+-
+-impl<T> IntoIterator for ChunkedVec<T> {
+-    type Item = T;
+-    type IntoIter = ExactSizeIter<std::iter::Flatten<std::vec::IntoIter<Vec<T>>>>;
+-
+-    fn into_iter(self) -> Self::IntoIter {
+-        let len = self.len();
+-        ExactSizeIter {
+-            iter: self.chunks.into_iter().flatten(),
+-            len,
+-        }
+-    }
+-}
+-
+-impl<T> Extend<T> for ChunkedVec<T> {
+-    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+-        for item in iter {
+-            self.push(item);
+-        }
+-    }
+-}
+-
+-fn chunk_size(chunk_index: usize) -> usize {
+-    8 << chunk_index
+-}
+-
+-fn cumulative_chunk_size(chunk_index: usize) -> usize {
+-    (8 << (chunk_index + 1)) - 8
+-}
+-
+-pub struct ExactSizeIter<I: Iterator> {
+-    iter: I,
+-    len: usize,
+-}
+-
+-impl<I: Iterator> Iterator for ExactSizeIter<I> {
+-    type Item = I::Item;
+-
+-    fn next(&mut self) -> Option<Self::Item> {
+-        self.iter.next().inspect(|_| self.len -= 1)
+-    }
+-
+-    fn size_hint(&self) -> (usize, Option<usize>) {
+-        (self.len, Some(self.len))
+-    }
+-}
+-
+-impl<I: Iterator> ExactSizeIterator for ExactSizeIter<I> {
+-    fn len(&self) -> usize {
+-        self.len
+-    }
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::ChunkedVec;
+-
+-    #[test]
+-    fn test_chunked_vec() {
+-        for i in 0..1000 {
+-            let mut vec = ChunkedVec::new();
+-            for j in 0..i {
+-                vec.push(j);
+-            }
+-            assert_eq!(vec.len(), i);
+-            assert_eq!(
+-                vec.iter().copied().collect::<Vec<_>>(),
+-                (0..i).collect::<Vec<_>>()
+-            );
+-            assert_eq!(vec.iter().len(), i);
+-            assert_eq!(vec.is_empty(), i == 0);
+-            let iter = vec.into_iter();
+-            assert_eq!(iter.len(), i);
+-            assert_eq!(iter.collect::<Vec<_>>(), (0..i).collect::<Vec<_>>());
+-        }
+-    }
+-}
+diff --git a/turbopack/crates/turbo-tasks-backend/src/utils/mod.rs b/turbopack/crates/turbo-tasks-backend/src/utils/mod.rs
+index 19d6e850d46f..63de4e203304 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/utils/mod.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/utils/mod.rs
+@@ -1,12 +1,10 @@
+ pub mod arc_or_owned;
+-pub mod chunked_vec;
+ pub mod dash_map_drop_contents;
+ pub mod dash_map_multi;
+ pub mod dash_map_raw_entry;
+ pub mod markdown_table;
+ pub mod ptr_eq_arc;
+ pub mod shard_amount;
+-pub mod sharded;
+ pub mod swap_retain;
+ 
+ pub use swap_retain::swap_retain;
+diff --git a/turbopack/crates/turbo-tasks-backend/src/utils/shard_amount.rs b/turbopack/crates/turbo-tasks-backend/src/utils/shard_amount.rs
+index 2d302404e708..25e6e65e3c0c 100644
+--- a/turbopack/crates/turbo-tasks-backend/src/utils/shard_amount.rs
++++ b/turbopack/crates/turbo-tasks-backend/src/utils/shard_amount.rs
+@@ -11,7 +11,9 @@ use std::thread::available_parallelism;
+ /// The returned number is always a power of two as this is often required
+ /// by sharded data structures. The maximum shard amount is capped at 1 << 16 (65536).
+ pub fn compute_shard_amount(num_workers: Option<usize>, small_preallocation: bool) -> usize {
+-    let num_workers = num_workers.unwrap_or_else(|| available_parallelism().map_or(4, |v| v.get()));
++    let num_workers = num_workers
++        .unwrap_or_else(|| available_parallelism().map_or(4, |v| v.get()))
++        .max(4);
+ 
+     // Once can compute the probability of a shard collision (which leads to false sharing) using
+     // the birthday paradox formula.  It's notable that the probability of collisions increases
+diff --git a/turbopack/crates/turbo-tasks-backend/src/utils/sharded.rs b/turbopack/crates/turbo-tasks-backend/src/utils/sharded.rs
+deleted file mode 100644
+index 93f1b628cc5b..000000000000
+--- a/turbopack/crates/turbo-tasks-backend/src/utils/sharded.rs
++++ /dev/null
+@@ -1,51 +0,0 @@
+-use std::hash::{BuildHasher, BuildHasherDefault, Hash};
+-
+-use parking_lot::{Mutex, MutexGuard};
+-use rustc_hash::FxHasher;
+-
+-pub struct Sharded<T, H = BuildHasherDefault<FxHasher>> {
+-    data: Box<[Mutex<T>]>,
+-    hasher: H,
+-    bitmask: u16,
+-}
+-
+-impl<T, H> Sharded<T, H> {
+-    pub fn new(mut shard_amount: usize) -> Self
+-    where
+-        T: Default,
+-        H: Default,
+-    {
+-        assert!(shard_amount.is_power_of_two());
+-        shard_amount = shard_amount.min(u16::MAX as usize + 1);
+-        let data = (0..shard_amount)
+-            .map(|_| Mutex::new(T::default()))
+-            .collect::<Vec<_>>()
+-            .into_boxed_slice();
+-        Self {
+-            data,
+-            hasher: H::default(),
+-            bitmask: (shard_amount - 1) as u16,
+-        }
+-    }
+-
+-    pub fn lock<K>(&self, key: K) -> MutexGuard<'_, T>
+-    where
+-        K: Hash,
+-        H: BuildHasher,
+-    {
+-        let hash = self.hasher.hash_one(key);
+-        let shard = hash as u16 & self.bitmask;
+-        self.data[shard as usize].lock()
+-    }
+-
+-    pub fn take<R>(&self, map: impl Fn(T) -> R) -> Vec<R>
+-    where
+-        T: Default,
+-    {
+-        let locked = self.data.iter().map(|m| m.lock()).collect::<Vec<_>>();
+-        locked
+-            .into_iter()
+-            .map(|mut m| map(std::mem::take(&mut *m)))
+-            .collect()
+-    }
+-}

@@ -1,0 +1,530 @@
+diff --git a/.changeset/warn-when-remote-bindings-blocked-by-access.md b/.changeset/warn-when-remote-bindings-blocked-by-access.md
+new file mode 100644
+index 0000000000..561e9d631c
+--- /dev/null
++++ b/.changeset/warn-when-remote-bindings-blocked-by-access.md
+@@ -0,0 +1,13 @@
++---
++"miniflare": patch
++"wrangler": patch
++---
++
++Warn when a remote-bindings request is blocked by Cloudflare Access
++
++When `wrangler dev` is used with remote bindings and a request from the local remote-bindings proxy client to the remote workers.dev proxy server is blocked by Cloudflare Access (HTTP 403 with the Cloudflare Access block page), Wrangler now:
++
++- Logs a single, visually striking warning per dev session explaining how to set `CLOUDFLARE_ACCESS_CLIENT_ID` / `CLOUDFLARE_ACCESS_CLIENT_SECRET` (Service Token credentials) or run `cloudflared access login` to authenticate.
++- Replaces the original Access HTML block page with a readable plain-text body containing the same guidance, so the message also reaches the user via binding error messages (e.g. `InferenceUpstreamError` from `env.AI.run()`) and any browser response piped back via a service binding `.fetch()`.
++
++Previously the 403 was returned to user code with the full Access HTML, which both drowned out other logs and made it hard to tell that the failure was due to Cloudflare Access on workers.dev rather than a problem in the binding itself or the deployed proxy server. The detection runs inside the proxy client worker (which only ever talks to the remote-bindings proxy URL), so it does not trigger false positives on user-worker 403s.
+diff --git a/packages/miniflare/src/index.ts b/packages/miniflare/src/index.ts
+index 9df90d06e4..a59dc72719 100644
+--- a/packages/miniflare/src/index.ts
++++ b/packages/miniflare/src/index.ts
+@@ -11,7 +11,7 @@ import util from "node:util";
+ import zlib from "node:zlib";
+ import { checkMacOSVersion } from "@cloudflare/cli-shared-helpers";
+ import { removeDir, removeDirSync } from "@cloudflare/workers-utils";
+-import { $ as colors$, green } from "kleur/colors";
++import { $ as colors$, bold, dim, green, yellow } from "kleur/colors";
+ import stoppable from "stoppable";
+ import { getGlobalDispatcher, Pool } from "undici";
+ import SCRIPT_DEV_REGISTRY_PROXY from "worker:core/dev-registry-proxy";
+@@ -994,6 +994,11 @@ export class Miniflare {
+ 	#hyperdriveProxyController: HyperdriveProxyController =
+ 		new HyperdriveProxyController();
+ 
++	// Set the first time the remote-bindings proxy CLIENT worker reports a
++	// Cloudflare Access 403 block on a request to the remote-bindings proxy
++	// server. Used to dedupe the user-facing warning to once per session.
++	#warnedRemoteBindingsAccessBlock = false;
++
+ 	constructor(opts: MiniflareOptions) {
+ 		// Split and validate options
+ 		const [sharedOpts, workerOpts] = validateOptions(opts);
+@@ -1545,6 +1550,36 @@ export class Miniflare {
+ 				if (!colors$.enabled) message = stripAnsi(message);
+ 				this.#log.logWithLevel(logLevel, message);
+ 				response = new Response(null, { status: 204 });
++			} else if (url.pathname === "/core/remote-bindings-access-warning") {
++				// Reported by the remote-bindings proxy CLIENT worker when it sees
++				// a 403 + "Cloudflare Access" body from the remote-bindings proxy
++				// server. Surfaced once per Miniflare instance so users with many
++				// remote bindings don't get a wall of repeated warnings.
++				if (!this.#warnedRemoteBindingsAccessBlock) {
++					this.#warnedRemoteBindingsAccessBlock = true;
++					const bindingName = request.headers.get("MF-Binding") ?? "<unknown>";
++					const proxyUrl = request.headers.get("MF-Proxy-URL") ?? "<unknown>";
++					// Visually striking format so the warning isn't lost in the
++					// noise of binding error stack traces that follow it.
++					const separator = dim("━".repeat(76));
++					this.#log.warn(
++						`\n${separator}\n` +
++							`${bold(yellow("Cloudflare Access blocked a remote bindings request"))}\n` +
++							`${separator}\n` +
++							`\n` +
++							`Remote binding "${bold(bindingName)}": request to ${proxyUrl} was blocked.\n` +
++							`\n` +
++							`If your Cloudflare account protects workers.dev with Access, set the\n` +
++							`${bold("CLOUDFLARE_ACCESS_CLIENT_ID")} and ${bold("CLOUDFLARE_ACCESS_CLIENT_SECRET")}\n` +
++							`environment variables (Service Token credentials), or run\n` +
++							`  ${bold("cloudflared access login <your-workers.dev-host>")}\n` +
++							`for interactive authentication.\n` +
++							`\n` +
++							`See https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/\n` +
++							separator
++					);
++				}
++				response = new Response(null, { status: 204 });
+ 			} else if (url.pathname === "/browser/launch") {
+ 				const headful = this.#workerOpts.some(
+ 					(w) => w[BROWSER_RENDERING_PLUGIN_NAME].browserRendering?.headful
+diff --git a/packages/miniflare/src/plugins/shared/constants.ts b/packages/miniflare/src/plugins/shared/constants.ts
+index d33bcca7e1..b26fcc06a4 100644
+--- a/packages/miniflare/src/plugins/shared/constants.ts
++++ b/packages/miniflare/src/plugins/shared/constants.ts
+@@ -113,6 +113,10 @@ export function remoteProxyClientWorker(
+ 						},
+ 					]
+ 				: []),
++			// Loopback binding so the proxy client can report diagnostics
++			// (e.g. a Cloudflare Access block on the remote proxy server)
++			// back to the Miniflare host for a single, actionable warning.
++			WORKER_BINDING_SERVICE_LOOPBACK,
+ 		],
+ 	};
+ }
+diff --git a/packages/miniflare/src/workers/dispatch-namespace/dispatch-namespace-proxy.worker.ts b/packages/miniflare/src/workers/dispatch-namespace/dispatch-namespace-proxy.worker.ts
+index e5a60a5d0e..80fdc81db8 100644
+--- a/packages/miniflare/src/workers/dispatch-namespace/dispatch-namespace-proxy.worker.ts
++++ b/packages/miniflare/src/workers/dispatch-namespace/dispatch-namespace-proxy.worker.ts
+@@ -1,4 +1,5 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
++import { SharedBindings } from "../shared/constants";
+ import {
+ 	makeRemoteProxyStub,
+ 	throwRemoteRequired,
+@@ -25,7 +26,8 @@ export default class DispatchNamespaceProxy extends WorkerEntrypoint<RemoteBindi
+ 					options,
+ 				}),
+ 			},
+-			this.env.cfTraceId
++			this.env.cfTraceId,
++			this.env[SharedBindings.MAYBE_SERVICE_LOOPBACK]
+ 		);
+ 	}
+ }
+diff --git a/packages/miniflare/src/workers/shared/remote-bindings-utils.ts b/packages/miniflare/src/workers/shared/remote-bindings-utils.ts
+index d913b96459..7034bb3be3 100644
+--- a/packages/miniflare/src/workers/shared/remote-bindings-utils.ts
++++ b/packages/miniflare/src/workers/shared/remote-bindings-utils.ts
+@@ -1,4 +1,5 @@
+ import { newWebSocketRpcSession } from "capnweb";
++import type { SharedBindings } from "./constants";
+ 
+ /**
+  * Common environment type for remote binding workers.
+@@ -7,6 +8,10 @@ export type RemoteBindingEnv = {
+ 	remoteProxyConnectionString?: string;
+ 	binding: string;
+ 	cfTraceId?: string;
++	// Optional loopback service used to surface diagnostics back to the
++	// Miniflare host (e.g. a Cloudflare Access block detected on the response
++	// from the remote-bindings proxy server).
++	[SharedBindings.MAYBE_SERVICE_LOOPBACK]?: Fetcher;
+ };
+ 
+ /** Headers sent alongside proxy requests to provide additional context. */
+@@ -21,13 +26,104 @@ export function throwRemoteRequired(bindingName: string): never {
+ 	throw new Error(`Binding ${bindingName} needs to be run remotely`);
+ }
+ 
++/**
++ * Build a plain-text body for the Cloudflare Access block substitution
++ * response. We replace the original Access HTML so that:
++ *  - Bindings that propagate the response body into an error message (e.g.
++ *    `env.AI.run()` → `InferenceUpstreamError: …`) get something readable
++ *    instead of a wall of HTML.
++ *  - Service-binding `.fetch()` callers that pipe the response back to a
++ *    browser see the same actionable guidance as the terminal warning.
++ *
++ * The first line is the "headline" so error-message parsers that only show
++ * the first line of the body still surface the key information.
++ */
++function buildAccessBlockResponseBody(
++	bindingName: string,
++	proxyUrl: string
++): string {
++	return [
++		`Cloudflare Access blocked this remote bindings request (binding "${bindingName}").`,
++		``,
++		`The local remote-bindings proxy client tried to reach ${proxyUrl}, but the`,
++		`remote workers.dev proxy server returned a Cloudflare Access block page.`,
++		``,
++		`If your Cloudflare account protects workers.dev with Access, set the`,
++		`CLOUDFLARE_ACCESS_CLIENT_ID and CLOUDFLARE_ACCESS_CLIENT_SECRET environment`,
++		`variables (Service Token credentials), or run`,
++		`  cloudflared access login <your-workers.dev-host>`,
++		`for interactive authentication.`,
++		``,
++		`See https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/`,
++	].join("\n");
++}
++
++/**
++ * If the response from the remote-bindings proxy server is a Cloudflare Access
++ * block page, report it to the Miniflare host via the loopback service so that
++ * a single, actionable warning can be surfaced to the user. Also substitutes
++ * the original HTML body for a readable plain-text body so that the warning
++ * surfaces in error messages (for bindings that propagate the body) and in
++ * browsers (for bindings whose response is piped back to the client).
++ *
++ * The remote-bindings proxy CLIENT worker only ever calls the
++ * `remoteProxyConnectionString`, so a 403 with a Cloudflare Access body here
++ * is unambiguously an Access block — never a user-worker 403.
++ *
++ * Dedup of the warning is performed on the Miniflare/Node side; the worker
++ * just fires the loopback notification for every blocked request.
++ */
++async function maybeReportCloudflareAccessBlock(
++	response: Response,
++	bindingName: string,
++	proxyUrl: string,
++	loopback: Fetcher | undefined
++): Promise<Response> {
++	if (!loopback || response.status !== 403) {
++		return response;
++	}
++	let text: string;
++	try {
++		text = await response.clone().text();
++	} catch {
++		return response;
++	}
++	// Cloudflare Access block pages reliably contain the literal string
++	// "Cloudflare Access" in the HTML body (title: "Error ・ Cloudflare Access").
++	// Combined with the 403 status and the fact that this worker only ever
++	// calls the remote-bindings proxy URL, this is a low-false-positive signal.
++	if (!text.includes("Cloudflare Access")) {
++		return response;
++	}
++	await loopback.fetch("http://localhost/core/remote-bindings-access-warning", {
++		method: "POST",
++		headers: {
++			"MF-Binding": bindingName,
++			"MF-Proxy-URL": proxyUrl,
++		},
++	});
++	// Replace the original Access HTML body with our own readable plain-text
++	// guidance. Headers are not copied from the original response — they may
++	// include Access-specific cookies and other artefacts that aren't relevant
++	// to the synthesised body.
++	return new Response(buildAccessBlockResponseBody(bindingName, proxyUrl), {
++		status: response.status,
++		statusText: response.statusText,
++		headers: { "Content-Type": "text/plain; charset=utf-8" },
++	});
++}
++
+ export function makeFetch(
+ 	remoteProxyConnectionString: string | undefined,
+ 	bindingName: string,
+ 	extraHeaders?: Headers,
+-	cfTraceId?: string
++	cfTraceId?: string,
++	loopback?: Fetcher
+ ) {
+-	return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
++	return async (
++		input: RequestInfo | URL,
++		init?: RequestInit
++	): Promise<Response> => {
+ 		if (!remoteProxyConnectionString) {
+ 			throwRemoteRequired(bindingName);
+ 		}
+@@ -55,7 +151,17 @@ export function makeFetch(
+ 			headers: proxiedHeaders,
+ 		});
+ 
+-		return fetch(remoteProxyConnectionString, req);
++		const response = await fetch(remoteProxyConnectionString, req);
++		// Awaited (rather than fire-and-forget) so the loopback POST isn't
++		// cancelled when the proxy client returns. The happy path
++		// (non-403) short-circuits before any body read or loopback call,
++		// so this adds no latency to successful requests.
++		return await maybeReportCloudflareAccessBlock(
++			response,
++			bindingName,
++			remoteProxyConnectionString,
++			loopback
++		);
+ 	};
+ }
+ 
+@@ -68,7 +174,8 @@ export function makeRemoteProxyStub(
+ 	remoteProxyConnectionString: string,
+ 	bindingName: string,
+ 	metadata?: ProxyMetadata,
+-	cfTraceId?: string
++	cfTraceId?: string,
++	loopback?: Fetcher
+ ): Fetcher {
+ 	const url = new URL(remoteProxyConnectionString);
+ 	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+@@ -102,7 +209,8 @@ export function makeRemoteProxyStub(
+ 					remoteProxyConnectionString,
+ 					bindingName,
+ 					headers,
+-					cfTraceId
++					cfTraceId,
++					loopback
+ 				);
+ 			}
+ 			return Reflect.get(stub, p);
+diff --git a/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts b/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts
+index 444cd2b362..2a7dbb67ff 100644
+--- a/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts
++++ b/packages/miniflare/src/workers/shared/remote-proxy-client.worker.ts
+@@ -1,4 +1,5 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
++import { SharedBindings } from "./constants";
+ import {
+ 	makeFetch,
+ 	makeRemoteProxyStub,
+@@ -13,7 +14,8 @@ export default class Client extends WorkerEntrypoint<RemoteBindingEnv> {
+ 			this.env.remoteProxyConnectionString,
+ 			this.env.binding,
+ 			undefined,
+-			this.env.cfTraceId
++			this.env.cfTraceId,
++			this.env[SharedBindings.MAYBE_SERVICE_LOOPBACK]
+ 		)(request);
+ 	}
+ 
+@@ -25,7 +27,8 @@ export default class Client extends WorkerEntrypoint<RemoteBindingEnv> {
+ 					env.remoteProxyConnectionString,
+ 					env.binding,
+ 					undefined,
+-					env.cfTraceId
++					env.cfTraceId,
++					env[SharedBindings.MAYBE_SERVICE_LOOPBACK]
+ 				)
+ 			: undefined;
+ 
+diff --git a/packages/miniflare/test/plugins/shared/remote-bindings-access-warning.spec.ts b/packages/miniflare/test/plugins/shared/remote-bindings-access-warning.spec.ts
+new file mode 100644
+index 0000000000..603c572d94
+--- /dev/null
++++ b/packages/miniflare/test/plugins/shared/remote-bindings-access-warning.spec.ts
+@@ -0,0 +1,211 @@
++import { LogLevel, Miniflare } from "miniflare";
++import { describe, test } from "vitest";
++import { TestLog, useDispose, useServer } from "../../test-shared";
++import type { RemoteProxyConnectionString } from "miniflare";
++
++const CF_ACCESS_BLOCK_HTML = `<!DOCTYPE html>
++<html>
++<head><title>Error ・ Cloudflare Access</title></head>
++<body>
++<h1>Sign in to access this application</h1>
++<p>This application is protected by Cloudflare Access.</p>
++</body>
++</html>`;
++
++// Header line of the formatted warning. Distinct enough to filter on without
++// matching the user-worker's stack-trace lines that follow it.
++const ACCESS_WARNING_FRAGMENT =
++	"Cloudflare Access blocked a remote bindings request";
++
++// Script that returns the upstream response body verbatim so the test can
++// assert what the user worker (and ultimately the browser / error message)
++// will see for an Access-blocked binding call.
++const SCRIPT = /* javascript */ `
++	export default {
++		async fetch(request, env) {
++			const res = await env.SERVICE.fetch("http://example.com/");
++			return new Response(await res.text(), {
++				status: res.status,
++				headers: { "Content-Type": res.headers.get("Content-Type") ?? "" },
++			});
++		},
++	};
++`;
++
++describe("remote-bindings proxy client: Cloudflare Access warning", () => {
++	test("logs a single warning when the remote proxy returns a Cloudflare Access block", async ({
++		expect,
++	}) => {
++		// Local server that simulates the remote-bindings proxy server being
++		// blocked by Cloudflare Access for every request.
++		const { http: proxyUrl } = await useServer((req, res) => {
++			res.statusCode = 403;
++			res.setHeader("Content-Type", "text/html");
++			res.end(CF_ACCESS_BLOCK_HTML);
++		});
++
++		const log = new TestLog();
++		const mf = new Miniflare({
++			modules: true,
++			compatibilityDate: "2025-01-01",
++			log,
++			script: SCRIPT,
++			serviceBindings: {
++				SERVICE: {
++					name: "some-remote-service",
++					remoteProxyConnectionString:
++						proxyUrl as unknown as RemoteProxyConnectionString,
++				},
++			},
++		});
++		useDispose(mf);
++
++		// Fire several requests through the binding. Each one should be blocked
++		// by the fake Access server, but the warning should only fire once.
++		for (let i = 0; i < 3; i++) {
++			const response = await mf.dispatchFetch("http://localhost/");
++			// Consume the body so the response is fully drained.
++			await response.text();
++		}
++
++		// Allow any pending fire-and-forget loopback POSTs to land before we
++		// inspect the log. The Miniflare host handles dedup, so we wait briefly.
++		await new Promise((resolve) => setTimeout(resolve, 200));
++
++		const warnings = log.logsAtLevel(LogLevel.WARN);
++		const accessWarnings = warnings.filter((message) =>
++			message.includes(ACCESS_WARNING_FRAGMENT)
++		);
++
++		expect(accessWarnings).toHaveLength(1);
++		const [warning] = accessWarnings;
++		expect(warning).toContain('Remote binding "SERVICE"');
++		expect(warning).toContain(proxyUrl.toString());
++		expect(warning).toContain("CLOUDFLARE_ACCESS_CLIENT_ID");
++		expect(warning).toContain("CLOUDFLARE_ACCESS_CLIENT_SECRET");
++		expect(warning).toContain("cloudflared access login");
++	});
++
++	test("substitutes the Access HTML body with readable guidance", async ({
++		expect,
++	}) => {
++		// Local server that returns the Access block HTML.
++		const { http: proxyUrl } = await useServer((req, res) => {
++			res.statusCode = 403;
++			res.setHeader("Content-Type", "text/html");
++			res.end(CF_ACCESS_BLOCK_HTML);
++		});
++
++		const mf = new Miniflare({
++			modules: true,
++			compatibilityDate: "2025-01-01",
++			log: new TestLog(),
++			script: SCRIPT,
++			serviceBindings: {
++				SERVICE: {
++					name: "some-remote-service",
++					remoteProxyConnectionString:
++						proxyUrl as unknown as RemoteProxyConnectionString,
++				},
++			},
++		});
++		useDispose(mf);
++
++		const response = await mf.dispatchFetch("http://localhost/");
++		const body = await response.text();
++
++		// The original Access HTML must NOT be in the body the user sees.
++		expect(body).not.toContain("<!DOCTYPE html>");
++		expect(body).not.toContain("<title>");
++
++		// And our substituted, browser-friendly guidance must be there.
++		expect(response.status).toBe(403);
++		expect(response.headers.get("Content-Type")).toContain("text/plain");
++		expect(body).toContain("Cloudflare Access blocked this remote bindings");
++		expect(body).toContain('binding "SERVICE"');
++		expect(body).toContain(proxyUrl.toString());
++		expect(body).toContain("CLOUDFLARE_ACCESS_CLIENT_ID");
++		expect(body).toContain("CLOUDFLARE_ACCESS_CLIENT_SECRET");
++		expect(body).toContain("cloudflared access login");
++		expect(body).toContain(
++			"https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/"
++		);
++	});
++
++	test("does not log a warning for non-Access 403 responses", async ({
++		expect,
++	}) => {
++		// Local server returns 403 with a body that does NOT mention
++		// Cloudflare Access (e.g. an unrelated upstream auth response).
++		const { http: proxyUrl } = await useServer((req, res) => {
++			res.statusCode = 403;
++			res.setHeader("Content-Type", "application/json");
++			res.end(JSON.stringify({ error: "forbidden" }));
++		});
++
++		const log = new TestLog();
++		const mf = new Miniflare({
++			modules: true,
++			compatibilityDate: "2025-01-01",
++			log,
++			script: SCRIPT,
++			serviceBindings: {
++				SERVICE: {
++					name: "some-remote-service",
++					remoteProxyConnectionString:
++						proxyUrl as unknown as RemoteProxyConnectionString,
++				},
++			},
++		});
++		useDispose(mf);
++
++		const response = await mf.dispatchFetch("http://localhost/");
++		// Non-Access 403 bodies should pass through unmodified.
++		const body = await response.text();
++		expect(body).toBe(JSON.stringify({ error: "forbidden" }));
++
++		await new Promise((resolve) => setTimeout(resolve, 200));
++
++		const accessWarnings = log
++			.logsAtLevel(LogLevel.WARN)
++			.filter((message) => message.includes(ACCESS_WARNING_FRAGMENT));
++		expect(accessWarnings).toHaveLength(0);
++	});
++
++	test("does not log a warning when the response is not a 403", async ({
++		expect,
++	}) => {
++		// Local server returns a 200 (happy path) — no warning should fire.
++		const { http: proxyUrl } = await useServer((req, res) => {
++			res.statusCode = 200;
++			res.setHeader("Content-Type", "text/plain");
++			res.end("ok");
++		});
++
++		const log = new TestLog();
++		const mf = new Miniflare({
++			modules: true,
++			compatibilityDate: "2025-01-01",
++			log,
++			script: SCRIPT,
++			serviceBindings: {
++				SERVICE: {
++					name: "some-remote-service",
++					remoteProxyConnectionString:
++						proxyUrl as unknown as RemoteProxyConnectionString,
++				},
++			},
++		});
++		useDispose(mf);
++
++		const response = await mf.dispatchFetch("http://localhost/");
++		await response.text();
++
++		await new Promise((resolve) => setTimeout(resolve, 200));
++
++		const accessWarnings = log
++			.logsAtLevel(LogLevel.WARN)
++			.filter((message) => message.includes(ACCESS_WARNING_FRAGMENT));
++		expect(accessWarnings).toHaveLength(0);
++	});
++});

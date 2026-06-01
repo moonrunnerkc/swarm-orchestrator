@@ -1,0 +1,1528 @@
+diff --git a/.oxlintrc.base.json b/.oxlintrc.base.json
+index 8b896ce50256..55d91cce59fd 100644
+--- a/.oxlintrc.base.json
++++ b/.oxlintrc.base.json
+@@ -156,7 +156,8 @@
+         "**/integrations/tracing/tedious/vendored/**/*.ts",
+         "**/integrations/tracing/hapi/vendored/**/*.ts",
+         "**/integrations/tracing/mongoose/vendored/**/*.ts",
+-        "**/integrations/tracing/amqplib/vendored/**/*.ts"
++        "**/integrations/tracing/amqplib/vendored/**/*.ts",
++        "**/integrations/tracing/graphql/vendored/**/*.ts"
+       ],
+       "rules": {
+         "typescript/no-explicit-any": "off"
+diff --git a/packages/node/package.json b/packages/node/package.json
+index dfcf07169328..204729a79625 100644
+--- a/packages/node/package.json
++++ b/packages/node/package.json
+@@ -68,7 +68,6 @@
+     "@opentelemetry/api": "^1.9.1",
+     "@opentelemetry/core": "^2.6.1",
+     "@opentelemetry/instrumentation": "^0.214.0",
+-    "@opentelemetry/instrumentation-graphql": "0.62.0",
+     "@opentelemetry/instrumentation-http": "0.214.0",
+     "@opentelemetry/sql-common": "^0.41.2",
+     "@opentelemetry/instrumentation-pg": "0.66.0",
+diff --git a/packages/node/src/integrations/tracing/dataloader/vendored/dataloader-types.ts b/packages/node/src/integrations/tracing/dataloader/vendored/dataloader-types.ts
+index d979b5c5871d..96d4ac9942c4 100644
+--- a/packages/node/src/integrations/tracing/dataloader/vendored/dataloader-types.ts
++++ b/packages/node/src/integrations/tracing/dataloader/vendored/dataloader-types.ts
+@@ -2,7 +2,7 @@
+  * Simplified types inlined from dataloader.
+  */
+ 
+-declare class DataLoader<K, V, C = K> {
++declare class DataLoader<K, V, _C = K> {
+   constructor(batchLoadFn: DataLoader.BatchLoadFn<K, V>, options?: any);
+   load(key: K): Promise<V>;
+   loadMany(keys: ArrayLike<K>): Promise<Array<V | Error>>;
+diff --git a/packages/node/src/integrations/tracing/graphql.ts b/packages/node/src/integrations/tracing/graphql/index.ts
+similarity index 98%
+rename from packages/node/src/integrations/tracing/graphql.ts
+rename to packages/node/src/integrations/tracing/graphql/index.ts
+index 9d8c66aef15f..d49a290b5e42 100644
+--- a/packages/node/src/integrations/tracing/graphql.ts
++++ b/packages/node/src/integrations/tracing/graphql/index.ts
+@@ -1,6 +1,6 @@
+ import type { AttributeValue } from '@opentelemetry/api';
+ import { SpanStatusCode } from '@opentelemetry/api';
+-import { GraphQLInstrumentation } from '@opentelemetry/instrumentation-graphql';
++import { GraphQLInstrumentation } from './vendored/instrumentation';
+ import type { IntegrationFn } from '@sentry/core';
+ import { defineIntegration, getRootSpan, spanToJSON } from '@sentry/core';
+ import { addOriginToSpan, generateInstrumentOnce } from '@sentry/node-core';
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/enum.ts b/packages/node/src/integrations/tracing/graphql/vendored/enum.ts
+new file mode 100644
+index 000000000000..9b12216dc5a8
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/enum.ts
+@@ -0,0 +1,60 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ */
++/* eslint-disable */
++
++export enum AllowedOperationTypes {
++  QUERY = 'query',
++  MUTATION = 'mutation',
++  SUBSCRIPTION = 'subscription',
++}
++
++export enum TokenKind {
++  SOF = '<SOF>',
++  EOF = '<EOF>',
++  BANG = '!',
++  DOLLAR = '$',
++  AMP = '&',
++  PAREN_L = '(',
++  PAREN_R = ')',
++  SPREAD = '...',
++  COLON = ':',
++  EQUALS = '=',
++  AT = '@',
++  BRACKET_L = '[',
++  BRACKET_R = ']',
++  BRACE_L = '{',
++  PIPE = '|',
++  BRACE_R = '}',
++  NAME = 'Name',
++  INT = 'Int',
++  FLOAT = 'Float',
++  STRING = 'String',
++  BLOCK_STRING = 'BlockString',
++  COMMENT = 'Comment',
++}
++
++export enum SpanNames {
++  EXECUTE = 'graphql.execute',
++  PARSE = 'graphql.parse',
++  RESOLVE = 'graphql.resolve',
++  VALIDATE = 'graphql.validate',
++  SCHEMA_VALIDATE = 'graphql.validateSchema',
++  SCHEMA_PARSE = 'graphql.parseSchema',
++}
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/enums/AttributeNames.ts b/packages/node/src/integrations/tracing/graphql/vendored/enums/AttributeNames.ts
+new file mode 100644
+index 000000000000..51ee1b973edd
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/enums/AttributeNames.ts
+@@ -0,0 +1,32 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ */
++/* eslint-disable */
++
++export enum AttributeNames {
++  SOURCE = 'graphql.source',
++  FIELD_NAME = 'graphql.field.name',
++  FIELD_PATH = 'graphql.field.path',
++  FIELD_TYPE = 'graphql.field.type',
++  PARENT_NAME = 'graphql.parent.name',
++  OPERATION_TYPE = 'graphql.operation.type',
++  OPERATION_NAME = 'graphql.operation.name',
++  VARIABLES = 'graphql.variables.',
++  ERROR_VALIDATION_NAME = 'graphql.validation.error',
++}
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/graphql-types.ts b/packages/node/src/integrations/tracing/graphql/vendored/graphql-types.ts
+new file mode 100644
+index 000000000000..9ea42aff2a8b
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/graphql-types.ts
+@@ -0,0 +1,152 @@
++/*
++ * Simplified types inlined from the `graphql` package.
++ * Only includes members accessed by this instrumentation.
++ */
++
++export type PromiseOrValue<T> = T | Promise<T>;
++
++export type Maybe<T> = null | undefined | T;
++
++export interface Location {
++  start: number;
++  end: number;
++  startToken: Token;
++  source: Source;
++  [key: string]: any;
++}
++
++export interface Token {
++  kind: string;
++  start: number;
++  end: number;
++  line: number;
++  column: number;
++  value: string;
++  prev: Token | null;
++  next: Token | null;
++  [key: string]: any;
++}
++
++export interface Source {
++  body: string;
++  name: string;
++  locationOffset: Location;
++  [key: string]: any;
++}
++
++export interface DocumentNode {
++  kind: string;
++  definitions: ReadonlyArray<DefinitionNode>;
++  loc?: Location;
++  [key: string]: any;
++}
++
++export interface DefinitionNode {
++  kind: string;
++  loc?: Location;
++  [key: string]: any;
++}
++
++export interface OperationDefinitionNode extends DefinitionNode {
++  operation: string;
++  name?: { kind: string; value: string; loc?: Location };
++  [key: string]: any;
++}
++
++export interface ParseOptions {
++  noLocation?: boolean;
++  [key: string]: any;
++}
++
++export interface ExecutionArgs {
++  schema: GraphQLSchema;
++  document: DocumentNode;
++  rootValue?: any;
++  contextValue?: any;
++  variableValues?: Maybe<{ [key: string]: any }>;
++  operationName?: Maybe<string>;
++  fieldResolver?: Maybe<GraphQLFieldResolver<any, any>>;
++  typeResolver?: Maybe<GraphQLTypeResolver<any, any>>;
++  [key: string]: any;
++}
++
++export interface ExecutionResult {
++  errors?: ReadonlyArray<GraphQLError>;
++  data?: Record<string, any> | null;
++  [key: string]: any;
++}
++
++export interface GraphQLError {
++  message: string;
++  locations?: ReadonlyArray<{ line: number; column: number }>;
++  path?: ReadonlyArray<string | number>;
++  [key: string]: any;
++}
++
++export interface GraphQLSchema {
++  getQueryType(): GraphQLObjectType | undefined | null;
++  getMutationType(): GraphQLObjectType | undefined | null;
++  [key: string]: any;
++}
++
++export interface GraphQLObjectType {
++  name: string;
++  getFields(): { [key: string]: GraphQLField };
++  [key: string]: any;
++}
++
++export interface GraphQLField {
++  name: string;
++  type: GraphQLOutputType;
++  resolve?: GraphQLFieldResolver<any, any>;
++  [key: string]: any;
++}
++
++export type GraphQLOutputType = GraphQLNamedOutputType | GraphQLWrappingType;
++
++interface GraphQLNamedOutputType {
++  name: string;
++  [key: string]: any;
++}
++
++interface GraphQLWrappingType {
++  ofType: GraphQLOutputType;
++  [key: string]: any;
++}
++
++export interface GraphQLUnionType {
++  name: string;
++  getTypes(): ReadonlyArray<GraphQLObjectType>;
++  [key: string]: any;
++}
++
++export type GraphQLType = GraphQLOutputType | GraphQLUnionType;
++
++export type GraphQLFieldResolver<TSource, TContext, TArgs = any> = (
++  source: TSource,
++  args: TArgs,
++  context: TContext,
++  info: GraphQLResolveInfo,
++) => any;
++
++export type GraphQLTypeResolver<TSource, TContext> = (
++  value: TSource,
++  context: TContext,
++  info: GraphQLResolveInfo,
++  abstractType: any,
++) => any;
++
++export interface GraphQLResolveInfo {
++  fieldName: string;
++  fieldNodes: ReadonlyArray<{ kind: string; loc?: Location; [key: string]: any }>;
++  returnType: { toString(): string; [key: string]: any };
++  parentType: { name: string; [key: string]: any };
++  path: any;
++  [key: string]: any;
++}
++
++export type ValidationRule = any;
++
++export interface TypeInfo {
++  [key: string]: any;
++}
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/instrumentation.ts b/packages/node/src/integrations/tracing/graphql/vendored/instrumentation.ts
+new file mode 100644
+index 000000000000..ad064b3af697
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/instrumentation.ts
+@@ -0,0 +1,452 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ * - Types from `graphql` package inlined as simplified interfaces
++ * - Minor TypeScript strictness adjustments
++ */
++/* eslint-disable */
++
++import { context, trace } from '@opentelemetry/api';
++import {
++  isWrapped,
++  InstrumentationBase,
++  InstrumentationNodeModuleDefinition,
++  InstrumentationNodeModuleFile,
++  safeExecuteInTheMiddle,
++} from '@opentelemetry/instrumentation';
++import type {
++  DefinitionNode,
++  DocumentNode,
++  ExecutionArgs,
++  ExecutionResult,
++  GraphQLError,
++  GraphQLFieldResolver,
++  GraphQLSchema,
++  GraphQLTypeResolver,
++  OperationDefinitionNode,
++  ParseOptions,
++  PromiseOrValue,
++  Source,
++  TypeInfo,
++  ValidationRule,
++} from './graphql-types';
++import type { Maybe } from './graphql-types';
++import { SpanNames } from './enum';
++import { AttributeNames } from './enums/AttributeNames';
++import { OTEL_GRAPHQL_DATA_SYMBOL } from './symbols';
++
++import {
++  executeFunctionWithObj,
++  executeArgumentsArray,
++  executeType,
++  parseType,
++  validateType,
++  OtelExecutionArgs,
++  ObjectWithGraphQLData,
++  OPERATION_NOT_SUPPORTED,
++} from './internal-types';
++import {
++  addInputVariableAttributes,
++  addSpanSource,
++  endSpan,
++  getOperation,
++  isPromise,
++  wrapFieldResolver,
++  wrapFields,
++} from './utils';
++
++import { SDK_VERSION } from '@sentry/core';
++import * as api from '@opentelemetry/api';
++import { GraphQLInstrumentationConfig, GraphQLInstrumentationParsedConfig } from './types';
++
++const PACKAGE_NAME = '@sentry/instrumentation-graphql';
++
++const DEFAULT_CONFIG: GraphQLInstrumentationParsedConfig = {
++  mergeItems: false,
++  depth: -1,
++  allowValues: false,
++  ignoreResolveSpans: false,
++};
++
++const supportedVersions = ['>=14.0.0 <17'];
++
++export class GraphQLInstrumentation extends InstrumentationBase<GraphQLInstrumentationParsedConfig> {
++  constructor(config: GraphQLInstrumentationConfig = {}) {
++    super(PACKAGE_NAME, SDK_VERSION, { ...DEFAULT_CONFIG, ...config });
++  }
++
++  override setConfig(config: GraphQLInstrumentationConfig = {}) {
++    super.setConfig({ ...DEFAULT_CONFIG, ...config });
++  }
++
++  protected init() {
++    const module = new InstrumentationNodeModuleDefinition('graphql', supportedVersions);
++    module.files.push(this._addPatchingExecute());
++    module.files.push(this._addPatchingParser());
++    module.files.push(this._addPatchingValidate());
++
++    return module;
++  }
++
++  private _addPatchingExecute(): InstrumentationNodeModuleFile {
++    return new InstrumentationNodeModuleFile(
++      'graphql/execution/execute.js',
++      supportedVersions,
++      // cannot make it work with appropriate type as execute function has 2
++      //types and/cannot import function but only types
++      (moduleExports: any) => {
++        if (isWrapped(moduleExports.execute)) {
++          this._unwrap(moduleExports, 'execute');
++        }
++        this._wrap(moduleExports, 'execute', this._patchExecute(moduleExports.defaultFieldResolver));
++        return moduleExports;
++      },
++      moduleExports => {
++        if (moduleExports) {
++          this._unwrap(moduleExports, 'execute');
++        }
++      },
++    );
++  }
++
++  private _addPatchingParser(): InstrumentationNodeModuleFile {
++    return new InstrumentationNodeModuleFile(
++      'graphql/language/parser.js',
++      supportedVersions,
++      (moduleExports: { parse: parseType; [key: string]: any }) => {
++        if (isWrapped(moduleExports.parse)) {
++          this._unwrap(moduleExports, 'parse');
++        }
++        this._wrap(moduleExports, 'parse', this._patchParse());
++        return moduleExports;
++      },
++      (moduleExports: { parse: parseType; [key: string]: any }) => {
++        if (moduleExports) {
++          this._unwrap(moduleExports, 'parse');
++        }
++      },
++    );
++  }
++
++  private _addPatchingValidate(): InstrumentationNodeModuleFile {
++    return new InstrumentationNodeModuleFile(
++      'graphql/validation/validate.js',
++      supportedVersions,
++      moduleExports => {
++        if (isWrapped(moduleExports.validate)) {
++          this._unwrap(moduleExports, 'validate');
++        }
++        this._wrap(moduleExports, 'validate', this._patchValidate());
++        return moduleExports;
++      },
++      moduleExports => {
++        if (moduleExports) {
++          this._unwrap(moduleExports, 'validate');
++        }
++      },
++    );
++  }
++
++  private _patchExecute(defaultFieldResolved: GraphQLFieldResolver<any, any>): (original: executeType) => executeType {
++    const instrumentation = this;
++    return function execute(original) {
++      return function patchExecute(this: executeType): PromiseOrValue<ExecutionResult> {
++        let processedArgs: OtelExecutionArgs;
++
++        // case when apollo server is used for example
++        if (arguments.length >= 2) {
++          const args = arguments as unknown as executeArgumentsArray;
++          processedArgs = instrumentation._wrapExecuteArgs(
++            args[0],
++            args[1],
++            args[2],
++            args[3],
++            args[4],
++            args[5],
++            args[6],
++            args[7],
++            defaultFieldResolved,
++          );
++        } else {
++          const args = arguments[0] as ExecutionArgs;
++          processedArgs = instrumentation._wrapExecuteArgs(
++            args.schema,
++            args.document,
++            args.rootValue,
++            args.contextValue,
++            args.variableValues,
++            args.operationName,
++            args.fieldResolver,
++            args.typeResolver,
++            defaultFieldResolved,
++          );
++        }
++
++        const operation = getOperation(processedArgs.document, processedArgs.operationName);
++
++        const span = instrumentation._createExecuteSpan(operation, processedArgs);
++
++        processedArgs.contextValue[OTEL_GRAPHQL_DATA_SYMBOL] = {
++          source: processedArgs.document
++            ? processedArgs.document || (processedArgs.document as ObjectWithGraphQLData)[OTEL_GRAPHQL_DATA_SYMBOL]
++            : undefined,
++          span,
++          fields: {},
++        };
++
++        return context.with(trace.setSpan(context.active(), span), () => {
++          return safeExecuteInTheMiddle<PromiseOrValue<ExecutionResult>>(
++            () => {
++              return (original as executeFunctionWithObj).apply(this, [processedArgs]);
++            },
++            (err, result) => {
++              instrumentation._handleExecutionResult(span, err, result);
++            },
++          );
++        });
++      };
++    };
++  }
++
++  private _handleExecutionResult(span: api.Span, err?: Error, result?: PromiseOrValue<ExecutionResult>) {
++    const config = this.getConfig();
++    if (result === undefined || err) {
++      endSpan(span, err);
++      return;
++    }
++
++    if (isPromise(result)) {
++      (result as Promise<ExecutionResult>).then(
++        resultData => {
++          if (typeof config.responseHook !== 'function') {
++            endSpan(span);
++            return;
++          }
++          this._executeResponseHook(span, resultData);
++        },
++        error => {
++          endSpan(span, error);
++        },
++      );
++    } else {
++      if (typeof config.responseHook !== 'function') {
++        endSpan(span);
++        return;
++      }
++      this._executeResponseHook(span, result as ExecutionResult);
++    }
++  }
++
++  private _executeResponseHook(span: api.Span, result: ExecutionResult) {
++    const { responseHook } = this.getConfig();
++    if (!responseHook) {
++      return;
++    }
++
++    safeExecuteInTheMiddle(
++      () => {
++        responseHook(span, result);
++      },
++      err => {
++        if (err) {
++          this._diag.error('Error running response hook', err);
++        }
++
++        endSpan(span, undefined);
++      },
++      true,
++    );
++  }
++
++  private _patchParse(): (original: parseType) => parseType {
++    const instrumentation = this;
++    return function parse(original) {
++      return function patchParse(this: parseType, source: string | Source, options?: ParseOptions): DocumentNode {
++        return instrumentation._parse(this, original, source, options);
++      };
++    };
++  }
++
++  private _patchValidate(): (original: validateType) => validateType {
++    const instrumentation = this;
++    return function validate(original: validateType) {
++      return function patchValidate(
++        this: validateType,
++        schema: GraphQLSchema,
++        documentAST: DocumentNode,
++        rules?: ReadonlyArray<ValidationRule>,
++        options?: { maxErrors?: number },
++        typeInfo?: TypeInfo,
++      ): ReadonlyArray<GraphQLError> {
++        return instrumentation._validate(this, original, schema, documentAST, rules, typeInfo, options);
++      };
++    };
++  }
++
++  private _parse(obj: parseType, original: parseType, source: string | Source, options?: ParseOptions): DocumentNode {
++    const config = this.getConfig();
++    const span = this.tracer.startSpan(SpanNames.PARSE);
++
++    return context.with(trace.setSpan(context.active(), span), () => {
++      return safeExecuteInTheMiddle<DocumentNode & ObjectWithGraphQLData>(
++        () => {
++          return original.call(obj, source, options);
++        },
++        (err, result) => {
++          if (result) {
++            const operation = getOperation(result);
++            if (!operation) {
++              span.updateName(SpanNames.SCHEMA_PARSE);
++            } else if (result.loc) {
++              addSpanSource(span, result.loc, config.allowValues);
++            }
++          }
++          endSpan(span, err);
++        },
++      );
++    });
++  }
++
++  private _validate(
++    obj: validateType,
++    original: validateType,
++    schema: GraphQLSchema,
++    documentAST: DocumentNode,
++    rules?: ReadonlyArray<ValidationRule>,
++    typeInfo?: TypeInfo,
++    options?: { maxErrors?: number },
++  ): ReadonlyArray<GraphQLError> {
++    const span = this.tracer.startSpan(SpanNames.VALIDATE, {});
++
++    return context.with(trace.setSpan(context.active(), span), () => {
++      return safeExecuteInTheMiddle<ReadonlyArray<GraphQLError>>(
++        () => {
++          return original.call(obj, schema, documentAST, rules, options, typeInfo);
++        },
++        (err, errors) => {
++          if (!documentAST.loc) {
++            span.updateName(SpanNames.SCHEMA_VALIDATE);
++          }
++          if (errors && errors.length) {
++            span.recordException({
++              name: AttributeNames.ERROR_VALIDATION_NAME,
++              message: JSON.stringify(errors),
++            });
++          }
++          endSpan(span, err);
++        },
++      );
++    });
++  }
++
++  private _createExecuteSpan(operation: DefinitionNode | undefined, processedArgs: ExecutionArgs): api.Span {
++    const config = this.getConfig();
++
++    const span = this.tracer.startSpan(SpanNames.EXECUTE, {});
++    if (operation) {
++      const { operation: operationType, name: nameNode } = operation as OperationDefinitionNode;
++
++      span.setAttribute(AttributeNames.OPERATION_TYPE, operationType);
++
++      const operationName = nameNode?.value;
++
++      // https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/instrumentation/graphql/
++      // > The span name MUST be of the format <graphql.operation.type> <graphql.operation.name> provided that graphql.operation.type and graphql.operation.name are available.
++      // > If graphql.operation.name is not available, the span SHOULD be named <graphql.operation.type>.
++      if (operationName) {
++        span.setAttribute(AttributeNames.OPERATION_NAME, operationName);
++        span.updateName(`${operationType} ${operationName}`);
++      } else {
++        span.updateName(operationType);
++      }
++    } else {
++      let operationName = ' ';
++      if (processedArgs.operationName) {
++        operationName = ` "${processedArgs.operationName}" `;
++      }
++      operationName = OPERATION_NOT_SUPPORTED.replace('$operationName$', operationName);
++      span.setAttribute(AttributeNames.OPERATION_NAME, operationName);
++    }
++
++    if (processedArgs.document?.loc) {
++      addSpanSource(span, processedArgs.document.loc, config.allowValues);
++    }
++
++    if (processedArgs.variableValues && config.allowValues) {
++      addInputVariableAttributes(span, processedArgs.variableValues);
++    }
++
++    return span;
++  }
++
++  private _wrapExecuteArgs(
++    schema: GraphQLSchema,
++    document: DocumentNode,
++    rootValue: any,
++    contextValue: any,
++    variableValues: Maybe<{ [key: string]: any }>,
++    operationName: Maybe<string>,
++    fieldResolver: Maybe<GraphQLFieldResolver<any, any>>,
++    typeResolver: Maybe<GraphQLTypeResolver<any, any>>,
++    defaultFieldResolved: GraphQLFieldResolver<any, any>,
++  ): OtelExecutionArgs {
++    if (!contextValue) {
++      contextValue = {};
++    }
++
++    if (contextValue[OTEL_GRAPHQL_DATA_SYMBOL] || this.getConfig().ignoreResolveSpans) {
++      return {
++        schema,
++        document,
++        rootValue,
++        contextValue,
++        variableValues,
++        operationName,
++        fieldResolver,
++        typeResolver,
++      };
++    }
++
++    const isUsingDefaultResolver = fieldResolver == null;
++    // follows graphql implementation here:
++    // https://github.com/graphql/graphql-js/blob/0b7daed9811731362c71900e12e5ea0d1ecc7f1f/src/execution/execute.ts#L494
++    const fieldResolverForExecute = fieldResolver ?? defaultFieldResolved;
++    fieldResolver = wrapFieldResolver(
++      this.tracer,
++      () => this.getConfig(),
++      fieldResolverForExecute,
++      isUsingDefaultResolver,
++    );
++
++    if (schema) {
++      wrapFields(schema.getQueryType() as any, this.tracer, () => this.getConfig());
++      wrapFields(schema.getMutationType() as any, this.tracer, () => this.getConfig());
++    }
++
++    return {
++      schema,
++      document,
++      rootValue,
++      contextValue,
++      variableValues,
++      operationName,
++      fieldResolver,
++      typeResolver,
++    };
++  }
++}
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/internal-types.ts b/packages/node/src/integrations/tracing/graphql/vendored/internal-types.ts
+new file mode 100644
+index 000000000000..41950d3270a7
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/internal-types.ts
+@@ -0,0 +1,118 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ * - Types from `graphql` package inlined as simplified interfaces
++ * - Minor TypeScript strictness adjustments
++ */
++/* eslint-disable */
++
++import type * as api from '@opentelemetry/api';
++import type {
++  DocumentNode,
++  ExecutionArgs,
++  ExecutionResult,
++  GraphQLError,
++  GraphQLFieldResolver,
++  GraphQLSchema,
++  GraphQLTypeResolver,
++  Maybe,
++  ParseOptions,
++  PromiseOrValue,
++  Source,
++  TypeInfo,
++  ValidationRule,
++} from './graphql-types';
++import { OTEL_GRAPHQL_DATA_SYMBOL, OTEL_PATCHED_SYMBOL } from './symbols';
++
++export type { Maybe } from './graphql-types';
++
++export const OPERATION_NOT_SUPPORTED = 'Operation$operationName$not' + ' supported';
++
++export type executeFunctionWithObj = (args: ExecutionArgs) => PromiseOrValue<ExecutionResult>;
++
++export type executeArgumentsArray = [
++  GraphQLSchema,
++  DocumentNode,
++  any,
++  any,
++  Maybe<{ [key: string]: any }>,
++  Maybe<string>,
++  Maybe<GraphQLFieldResolver<any, any>>,
++  Maybe<GraphQLTypeResolver<any, any>>,
++];
++
++export type executeFunctionWithArgs = (
++  schema: GraphQLSchema,
++  document: DocumentNode,
++  rootValue?: any,
++  contextValue?: any,
++  variableValues?: Maybe<{ [key: string]: any }>,
++  operationName?: Maybe<string>,
++  fieldResolver?: Maybe<GraphQLFieldResolver<any, any>>,
++  typeResolver?: Maybe<GraphQLTypeResolver<any, any>>,
++) => PromiseOrValue<ExecutionResult>;
++
++export interface OtelExecutionArgs {
++  schema: GraphQLSchema;
++  document: DocumentNode & ObjectWithGraphQLData;
++  rootValue?: any;
++  contextValue?: any & ObjectWithGraphQLData;
++  variableValues?: Maybe<{ [key: string]: any }>;
++  operationName?: Maybe<string>;
++  fieldResolver?: Maybe<GraphQLFieldResolver<any, any> & OtelPatched>;
++  typeResolver?: Maybe<GraphQLTypeResolver<any, any>>;
++}
++
++export type executeType = executeFunctionWithObj | executeFunctionWithArgs;
++
++export type parseType = (source: string | Source, options?: ParseOptions) => DocumentNode;
++
++export type validateType = (
++  schema: GraphQLSchema,
++  documentAST: DocumentNode,
++  rules?: ReadonlyArray<ValidationRule>,
++  options?: { maxErrors?: number },
++  typeInfo?: TypeInfo,
++) => ReadonlyArray<GraphQLError>;
++
++export interface GraphQLField {
++  span: api.Span;
++}
++
++interface OtelGraphQLData {
++  source?: any;
++  span: api.Span;
++  fields: { [key: string]: GraphQLField };
++}
++
++export interface ObjectWithGraphQLData {
++  [OTEL_GRAPHQL_DATA_SYMBOL]?: OtelGraphQLData;
++}
++
++export interface OtelPatched {
++  [OTEL_PATCHED_SYMBOL]?: boolean;
++}
++
++export interface GraphQLPath {
++  prev: GraphQLPath | undefined;
++  key: string | number;
++  /**
++   * optional as it didn't exist yet in ver 14
++   */
++  typename?: string | undefined;
++}
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/symbols.ts b/packages/node/src/integrations/tracing/graphql/vendored/symbols.ts
+new file mode 100644
+index 000000000000..92e1442ec678
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/symbols.ts
+@@ -0,0 +1,24 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ */
++/* eslint-disable */
++
++export const OTEL_PATCHED_SYMBOL = Symbol.for('opentelemetry.patched');
++
++export const OTEL_GRAPHQL_DATA_SYMBOL = Symbol.for('opentelemetry.graphql_data');
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/types.ts b/packages/node/src/integrations/tracing/graphql/vendored/types.ts
+new file mode 100644
+index 000000000000..5ea84d02c831
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/types.ts
+@@ -0,0 +1,103 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ */
++/* eslint-disable */
++
++import { InstrumentationConfig } from '@opentelemetry/instrumentation';
++import type * as api from '@opentelemetry/api';
++
++export interface GraphQLInstrumentationExecutionResponseHook {
++  (span: api.Span, data: any): void;
++}
++
++export interface GraphQLInstrumentationConfig extends InstrumentationConfig {
++  /**
++   * When set to true it will not remove attributes values from schema source.
++   * By default all values that can be sensitive are removed and replaced
++   * with "*"
++   *
++   * @default false
++   */
++  allowValues?: boolean;
++
++  /**
++   * The maximum depth of fields/resolvers to instrument.
++   * When set to 0 it will not instrument fields and resolvers
++   *
++   * @default undefined
++   */
++  depth?: number;
++
++  /**
++   * Do not create spans for resolvers.
++   *
++   * @default false
++   */
++  ignoreResolveSpans?: boolean;
++
++  /**
++   * Don't create spans for the execution of the default resolver on object properties.
++   *
++   * When a resolver function is not defined on the schema for a field, graphql will
++   * use the default resolver which just looks for a property with that name on the object.
++   * If the property is not a function, it's not very interesting to trace.
++   * This option can reduce noise and number of spans created.
++   *
++   * @default false
++   */
++  ignoreTrivialResolveSpans?: boolean;
++
++  /**
++   * Place all resolve spans under the same parent instead of producing a nested tree structure.
++   *
++   * @default false
++   */
++  flatResolveSpans?: boolean;
++
++  /**
++   * Whether to merge list items into a single element.
++   *
++   * @example `users.*.name` instead of `users.0.name`, `users.1.name`
++   *
++   * @default false
++   */
++  mergeItems?: boolean;
++
++  /**
++   * Hook that allows adding custom span attributes based on the data
++   * returned from "execute" GraphQL action.
++   *
++   * @param data - A GraphQL `ExecutionResult` object. For the exact type definitions, see the following:
++   *  - {@linkcode https://github.com/graphql/graphql-js/blob/v14.7.0/src/execution/execute.js#L115 graphql@14}
++   *  - {@linkcode https://github.com/graphql/graphql-js/blob/15.x.x/src/execution/execute.d.ts#L31 graphql@15}
++   *  - {@linkcode https://github.com/graphql/graphql-js/blob/16.x.x/src/execution/execute.ts#L127 graphql@16}
++   *
++   * @default undefined
++   */
++  responseHook?: GraphQLInstrumentationExecutionResponseHook;
++}
++
++// Utility type to make specific properties required
++type RequireSpecificKeys<T, K extends keyof T> = T & { [P in K]-?: T[P] };
++
++// Merged and parsed config of default instrumentation config and GraphQL
++export type GraphQLInstrumentationParsedConfig = RequireSpecificKeys<
++  GraphQLInstrumentationConfig,
++  'mergeItems' | 'depth' | 'allowValues' | 'ignoreResolveSpans'
++>;
+diff --git a/packages/node/src/integrations/tracing/graphql/vendored/utils.ts b/packages/node/src/integrations/tracing/graphql/vendored/utils.ts
+new file mode 100644
+index 000000000000..3efe92f0b813
+--- /dev/null
++++ b/packages/node/src/integrations/tracing/graphql/vendored/utils.ts
+@@ -0,0 +1,442 @@
++/*
++ * Copyright The OpenTelemetry Authors
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * NOTICE from the Sentry authors:
++ * - Vendored from: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/15ef7506553f631ea4181391e0c5725a56f0d082/packages/instrumentation-graphql
++ * - Upstream version: @opentelemetry/instrumentation-graphql@0.66.0
++ * - Types from `graphql` package inlined as simplified interfaces
++ * - Minor TypeScript strictness adjustments
++ */
++/* eslint-disable */
++
++import type {
++  DocumentNode,
++  GraphQLFieldResolver,
++  GraphQLObjectType,
++  GraphQLOutputType,
++  GraphQLResolveInfo,
++  GraphQLType,
++  GraphQLUnionType,
++  Location,
++  Maybe,
++  Token,
++} from './graphql-types';
++import * as api from '@opentelemetry/api';
++import { AllowedOperationTypes, SpanNames, TokenKind } from './enum';
++import { AttributeNames } from './enums/AttributeNames';
++import { OTEL_GRAPHQL_DATA_SYMBOL, OTEL_PATCHED_SYMBOL } from './symbols';
++import { GraphQLField, GraphQLPath, ObjectWithGraphQLData, OtelPatched } from './internal-types';
++import { GraphQLInstrumentationParsedConfig } from './types';
++
++const OPERATION_VALUES = Object.values(AllowedOperationTypes);
++
++// https://github.com/graphql/graphql-js/blob/main/src/jsutils/isPromise.ts
++export const isPromise = (value: any): value is Promise<unknown> => {
++  return typeof value?.then === 'function';
++};
++
++// https://github.com/graphql/graphql-js/blob/main/src/jsutils/isObjectLike.ts
++const isObjectLike = (value: unknown): value is { [key: string]: unknown } => {
++  return typeof value == 'object' && value !== null;
++};
++
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++function addInputVariableAttribute(span: api.Span, key: string, variable: any) {
++  if (Array.isArray(variable)) {
++    variable.forEach((value, idx) => {
++      addInputVariableAttribute(span, `${key}.${idx}`, value);
++    });
++  } else if (variable instanceof Object) {
++    Object.entries(variable).forEach(([nestedKey, value]) => {
++      addInputVariableAttribute(span, `${key}.${nestedKey}`, value);
++    });
++  } else {
++    span.setAttribute(`${AttributeNames.VARIABLES}${String(key)}`, variable);
++  }
++}
++
++export function addInputVariableAttributes(span: api.Span, variableValues: { [key: string]: any }) {
++  Object.entries(variableValues).forEach(([key, value]) => {
++    addInputVariableAttribute(span, key, value);
++  });
++}
++
++export function addSpanSource(
++  span: api.Span,
++  loc?: Location,
++  allowValues?: boolean,
++  start?: number,
++  end?: number,
++): void {
++  const source = getSourceFromLocation(loc, allowValues, start, end);
++  span.setAttribute(AttributeNames.SOURCE, source);
++}
++
++function createFieldIfNotExists(
++  tracer: api.Tracer,
++  getConfig: () => GraphQLInstrumentationParsedConfig,
++  contextValue: any,
++  info: GraphQLResolveInfo,
++  path: string[],
++): {
++  field: GraphQLField;
++  spanAdded: boolean;
++} {
++  let field = getField(contextValue, path);
++  if (field) {
++    return { field, spanAdded: false };
++  }
++
++  const config = getConfig();
++  const parentSpan = config.flatResolveSpans ? getRootSpan(contextValue) : getParentFieldSpan(contextValue, path);
++
++  field = {
++    span: createResolverSpan(tracer, getConfig, contextValue, info, path, parentSpan),
++  };
++
++  addField(contextValue, path, field);
++
++  return { field, spanAdded: true };
++}
++
++function createResolverSpan(
++  tracer: api.Tracer,
++  getConfig: () => GraphQLInstrumentationParsedConfig,
++  contextValue: any,
++  info: GraphQLResolveInfo,
++  path: string[],
++  parentSpan?: api.Span,
++): api.Span {
++  const attributes: api.SpanAttributes = {
++    [AttributeNames.FIELD_NAME]: info.fieldName,
++    [AttributeNames.FIELD_PATH]: path.join('.'),
++    [AttributeNames.FIELD_TYPE]: info.returnType.toString(),
++    [AttributeNames.PARENT_NAME]: info.parentType.name,
++  };
++
++  const span = tracer.startSpan(
++    `${SpanNames.RESOLVE} ${attributes[AttributeNames.FIELD_PATH]}`,
++    {
++      attributes,
++    },
++    parentSpan ? api.trace.setSpan(api.context.active(), parentSpan) : undefined,
++  );
++
++  const document = contextValue[OTEL_GRAPHQL_DATA_SYMBOL].source;
++  const fieldNode = info.fieldNodes.find(fieldNode => fieldNode.kind === 'Field');
++
++  if (fieldNode) {
++    addSpanSource(span, document.loc, getConfig().allowValues, fieldNode.loc?.start, fieldNode.loc?.end);
++  }
++
++  return span;
++}
++
++export function endSpan(span: api.Span, error?: Error): void {
++  if (error) {
++    span.recordException(error);
++  }
++  span.end();
++}
++
++export function getOperation(document: DocumentNode, operationName?: Maybe<string>): DefinitionNodeLike | undefined {
++  if (!document || !Array.isArray(document.definitions)) {
++    return undefined;
++  }
++
++  if (operationName) {
++    return document.definitions
++      .filter(definition => OPERATION_VALUES.indexOf((definition as any)?.operation) !== -1)
++      .find(definition => operationName === (definition as any)?.name?.value);
++  } else {
++    return document.definitions.find(definition => OPERATION_VALUES.indexOf((definition as any)?.operation) !== -1);
++  }
++}
++
++type DefinitionNodeLike = DocumentNode['definitions'][number];
++
++function addField(contextValue: any, path: string[], field: GraphQLField) {
++  return (contextValue[OTEL_GRAPHQL_DATA_SYMBOL].fields[path.join('.')] = field);
++}
++
++function getField(contextValue: any, path: string[]): GraphQLField {
++  return contextValue[OTEL_GRAPHQL_DATA_SYMBOL].fields[path.join('.')];
++}
++
++function getParentFieldSpan(contextValue: any, path: string[]): api.Span {
++  for (let i = path.length - 1; i > 0; i--) {
++    const field = getField(contextValue, path.slice(0, i));
++
++    if (field) {
++      return field.span;
++    }
++  }
++
++  return getRootSpan(contextValue);
++}
++
++function getRootSpan(contextValue: any): api.Span {
++  return contextValue[OTEL_GRAPHQL_DATA_SYMBOL].span;
++}
++
++function pathToArray(mergeItems: boolean, path: GraphQLPath): string[] {
++  const flattened: string[] = [];
++  let curr: GraphQLPath | undefined = path;
++  while (curr) {
++    let key = curr.key;
++
++    if (mergeItems && typeof key === 'number') {
++      key = '*';
++    }
++    flattened.push(String(key));
++    curr = curr.prev;
++  }
++  return flattened.reverse();
++}
++
++function repeatBreak(i: number): string {
++  return repeatChar('\n', i);
++}
++
++function repeatSpace(i: number): string {
++  return repeatChar(' ', i);
++}
++
++function repeatChar(char: string, to: number): string {
++  let text = '';
++  for (let i = 0; i < to; i++) {
++    text += char;
++  }
++  return text;
++}
++
++const KindsToBeRemoved: string[] = [TokenKind.FLOAT, TokenKind.STRING, TokenKind.INT, TokenKind.BLOCK_STRING];
++
++export function getSourceFromLocation(
++  loc?: Location,
++  allowValues = false,
++  inputStart?: number,
++  inputEnd?: number,
++): string {
++  let source = '';
++
++  if (loc?.startToken) {
++    const start = typeof inputStart === 'number' ? inputStart : loc.start;
++    const end = typeof inputEnd === 'number' ? inputEnd : loc.end;
++
++    let next: Token | null = loc.startToken.next;
++    let previousLine: number | undefined = 1;
++    while (next) {
++      if (next.start < start) {
++        next = next.next;
++        previousLine = next?.line;
++        continue;
++      }
++      if (next.end > end) {
++        next = next.next;
++        previousLine = next?.line;
++        continue;
++      }
++      let value = next.value || next.kind;
++      let space = '';
++      if (!allowValues && KindsToBeRemoved.indexOf(next.kind) >= 0) {
++        // value = repeatChar('*', value.length);
++        value = '*';
++      }
++      if (next.kind === TokenKind.STRING) {
++        value = `"${value}"`;
++      }
++      if (next.kind === TokenKind.EOF) {
++        value = '';
++      }
++      if (next.line > previousLine!) {
++        source += repeatBreak(next.line - previousLine!);
++        previousLine = next.line;
++        space = repeatSpace(next.column - 1);
++      } else {
++        if (next.line === next.prev?.line) {
++          space = repeatSpace(next.start - (next.prev?.end || 0));
++        }
++      }
++      source += space + value;
++      if (next) {
++        next = next.next!;
++      }
++    }
++  }
++
++  return source;
++}
++
++export function wrapFields(
++  type: Maybe<GraphQLObjectType & OtelPatched>,
++  tracer: api.Tracer,
++  getConfig: () => GraphQLInstrumentationParsedConfig,
++): void {
++  if (!type || (type as any)[OTEL_PATCHED_SYMBOL]) {
++    return;
++  }
++  const fields = type.getFields();
++
++  (type as any)[OTEL_PATCHED_SYMBOL] = true;
++
++  Object.keys(fields).forEach(key => {
++    const field = fields[key];
++
++    if (!field) {
++      return;
++    }
++
++    if (field.resolve) {
++      field.resolve = wrapFieldResolver(tracer, getConfig, field.resolve);
++    }
++
++    if (field.type) {
++      const unwrappedTypes = unwrapType(field.type);
++      for (const unwrappedType of unwrappedTypes) {
++        wrapFields(unwrappedType as any, tracer, getConfig);
++      }
++    }
++  });
++}
++
++function unwrapType(type: GraphQLOutputType): readonly GraphQLObjectType[] {
++  // unwrap wrapping types (non-nullable and list types)
++  if ('ofType' in type) {
++    return unwrapType(type.ofType);
++  }
++
++  // unwrap union types
++  if (isGraphQLUnionType(type)) {
++    return type.getTypes();
++  }
++
++  // return object types
++  if (isGraphQLObjectType(type)) {
++    return [type];
++  }
++
++  return [];
++}
++
++function isGraphQLUnionType(type: GraphQLType): type is GraphQLUnionType {
++  return 'getTypes' in type && typeof type.getTypes === 'function';
++}
++
++function isGraphQLObjectType(type: GraphQLType): type is GraphQLObjectType {
++  return 'getFields' in type && typeof type.getFields === 'function';
++}
++
++const handleResolveSpanError = (resolveSpan: api.Span, err: any, shouldEndSpan: boolean) => {
++  if (!shouldEndSpan) {
++    return;
++  }
++  resolveSpan.recordException(err);
++  resolveSpan.setStatus({
++    code: api.SpanStatusCode.ERROR,
++    message: err.message,
++  });
++  resolveSpan.end();
++};
++
++const handleResolveSpanSuccess = (resolveSpan: api.Span, shouldEndSpan: boolean) => {
++  if (!shouldEndSpan) {
++    return;
++  }
++  resolveSpan.end();
++};
++
++export function wrapFieldResolver<TSource = any, TContext = any, TArgs = any>(
++  tracer: api.Tracer,
++  getConfig: () => GraphQLInstrumentationParsedConfig,
++  fieldResolver: Maybe<GraphQLFieldResolver<TSource, TContext, TArgs> & OtelPatched>,
++  isDefaultResolver = false,
++): GraphQLFieldResolver<TSource, TContext & ObjectWithGraphQLData, TArgs> & OtelPatched {
++  if ((wrappedFieldResolver as OtelPatched)[OTEL_PATCHED_SYMBOL] || typeof fieldResolver !== 'function') {
++    return fieldResolver!;
++  }
++
++  function wrappedFieldResolver(
++    this: GraphQLFieldResolver<TSource, TContext, TArgs>,
++    source: TSource,
++    args: TArgs,
++    contextValue: TContext & ObjectWithGraphQLData,
++    info: GraphQLResolveInfo,
++  ) {
++    if (!fieldResolver) {
++      return undefined;
++    }
++    const config = getConfig();
++
++    // follows what graphql is doing to decide if this is a trivial resolver
++    // for which we don't need to create a resolve span
++    if (
++      config.ignoreTrivialResolveSpans &&
++      isDefaultResolver &&
++      (isObjectLike(source) || typeof source === 'function')
++    ) {
++      const property = (source as any)[info.fieldName];
++      // a function execution is not trivial and should be recorder.
++      // property which is not a function is just a value and we don't want a "resolve" span for it
++      if (typeof property !== 'function') {
++        return fieldResolver.call(this, source, args, contextValue, info);
++      }
++    }
++
++    if (!contextValue[OTEL_GRAPHQL_DATA_SYMBOL]) {
++      return fieldResolver.call(this, source, args, contextValue, info);
++    }
++    const path = pathToArray(config.mergeItems, info && info.path);
++    const depth = path.filter((item: any) => typeof item === 'string').length;
++
++    let span: api.Span;
++    let shouldEndSpan = false;
++    if (config.depth >= 0 && config.depth < depth) {
++      span = getParentFieldSpan(contextValue, path);
++    } else {
++      const { field, spanAdded } = createFieldIfNotExists(tracer, getConfig, contextValue, info, path);
++      span = field.span;
++      shouldEndSpan = spanAdded;
++    }
++
++    return api.context.with(api.trace.setSpan(api.context.active(), span), () => {
++      try {
++        const res = fieldResolver.call(this, source, args, contextValue, info);
++        if (isPromise(res)) {
++          return res.then(
++            (r: any) => {
++              handleResolveSpanSuccess(span, shouldEndSpan);
++              return r;
++            },
++            (err: Error) => {
++              handleResolveSpanError(span, err, shouldEndSpan);
++              throw err;
++            },
++          );
++        } else {
++          handleResolveSpanSuccess(span, shouldEndSpan);
++          return res;
++        }
++      } catch (err: any) {
++        handleResolveSpanError(span, err, shouldEndSpan);
++        throw err;
++      }
++    });
++  }
++
++  (wrappedFieldResolver as OtelPatched)[OTEL_PATCHED_SYMBOL] = true;
++
++  return wrappedFieldResolver;
++}
+diff --git a/packages/node/test/integrations/tracing/graphql.test.ts b/packages/node/test/integrations/tracing/graphql.test.ts
+index e8e8ce3e6e0b..4bd45dea109f 100644
+--- a/packages/node/test/integrations/tracing/graphql.test.ts
++++ b/packages/node/test/integrations/tracing/graphql.test.ts
+@@ -1,9 +1,9 @@
+-import { GraphQLInstrumentation } from '@opentelemetry/instrumentation-graphql';
++import { GraphQLInstrumentation } from '../../../src/integrations/tracing/graphql/vendored/instrumentation';
+ import { INSTRUMENTED } from '@sentry/node-core';
+ import { beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+ import { graphqlIntegration, instrumentGraphql } from '../../../src/integrations/tracing/graphql';
+ 
+-vi.mock('@opentelemetry/instrumentation-graphql');
++vi.mock('../../../src/integrations/tracing/graphql/vendored/instrumentation');
+ 
+ describe('GraphQL', () => {
+   beforeEach(() => {
+diff --git a/yarn.lock b/yarn.lock
+index 6ae4d0efbae3..bc806f3df97e 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -6058,13 +6058,6 @@
+     "@opentelemetry/resources" "2.6.1"
+     "@opentelemetry/sdk-trace-base" "2.6.1"
+ 
+-"@opentelemetry/instrumentation-graphql@0.62.0":
+-  version "0.62.0"
+-  resolved "https://registry.yarnpkg.com/@opentelemetry/instrumentation-graphql/-/instrumentation-graphql-0.62.0.tgz#dc2fc92c6be331c4f95b62a40983c8aedb8f9bf9"
+-  integrity sha512-3YNuLVPUxafXkH1jBAbGsKNsP3XVzcFDhCDCE3OqBwCwShlqQbLMRMFh1T/d5jaVZiGVmSsfof+ICKD2iOV8xg==
+-  dependencies:
+-    "@opentelemetry/instrumentation" "^0.214.0"
+-
+ "@opentelemetry/instrumentation-http@0.214.0":
+   version "0.214.0"
+   resolved "https://registry.yarnpkg.com/@opentelemetry/instrumentation-http/-/instrumentation-http-0.214.0.tgz#d4a31a638b798e191f4f556c257a4d3c97d65ba0"
+@@ -6170,7 +6163,7 @@
+     "@opentelemetry/resources" "2.6.1"
+     "@opentelemetry/semantic-conventions" "^1.29.0"
+ 
+-"@opentelemetry/semantic-conventions@^1.28.0", "@opentelemetry/semantic-conventions@^1.29.0", "@opentelemetry/semantic-conventions@^1.33.0", "@opentelemetry/semantic-conventions@^1.34.0", "@opentelemetry/semantic-conventions@^1.40.0":
++"@opentelemetry/semantic-conventions@^1.28.0", "@opentelemetry/semantic-conventions@^1.29.0", "@opentelemetry/semantic-conventions@^1.34.0", "@opentelemetry/semantic-conventions@^1.40.0":
+   version "1.40.0"
+   resolved "https://registry.yarnpkg.com/@opentelemetry/semantic-conventions/-/semantic-conventions-1.40.0.tgz#10b2944ca559386590683392022a897eefd011d3"
+   integrity sha512-cifvXDhcqMwwTlTK04GBNeIe7yyo28Mfby85QXFe1Yk8nmi36Ab/5UQwptOx84SsoGNRg+EVSjwzfSZMy6pmlw==

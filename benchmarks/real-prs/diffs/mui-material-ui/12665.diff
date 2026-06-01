@@ -1,0 +1,354 @@
+diff --git a/docs/src/pages/lab/slider/CustomValueReducerSlider.js b/docs/src/pages/lab/slider/CustomValueReducerSlider.js
+new file mode 100644
+index 00000000000000..78a975eadaca0c
+--- /dev/null
++++ b/docs/src/pages/lab/slider/CustomValueReducerSlider.js
+@@ -0,0 +1,77 @@
++import React from 'react';
++import PropTypes from 'prop-types';
++import { withStyles } from '@material-ui/core/styles';
++import Slider, { defaultValueReducer } from '@material-ui/lab/Slider';
++
++const styles = {
++  root: {
++    width: 300,
++  },
++};
++
++/**
++ * a value reducer that will snap to multiple of 10 but also to the edge value
++ * Useful here because the max=104 is not a multiple of 10
++ */
++function valueReducer(rawValue, props, event) {
++  const { disabled, max, min, step } = props;
++
++  function roundToStep(number) {
++    return Math.round(number / step) * step;
++  }
++
++  if (!disabled && step) {
++    if (rawValue > min && rawValue < max) {
++      if (rawValue === max - step) {
++        // If moving the Slider using arrow keys and value is formerly an maximum edge value
++        return roundToStep(rawValue + step / 2);
++      }
++      if (rawValue === min + step) {
++        // Same for minimum edge value
++        return roundToStep(rawValue - step / 2);
++      }
++      return roundToStep(rawValue);
++    }
++    return rawValue;
++  }
++
++  return defaultValueReducer(rawValue, props, event);
++}
++
++/**
++ * this slider has a max that is not a multiple of its step. We use a custom
++ * `valueReducer` to adjust the given values
++ */
++class StepSlider extends React.Component {
++  state = {
++    value: 30,
++  };
++
++  handleChange = (event, value) => {
++    this.setState({ value });
++  };
++
++  render() {
++    const { classes } = this.props;
++    const { value } = this.state;
++
++    return (
++      <div className={classes.root}>
++        <Slider
++          value={value}
++          valueReducer={valueReducer}
++          min={0}
++          max={104}
++          step={10}
++          onChange={this.handleChange}
++        />
++      </div>
++    );
++  }
++}
++
++StepSlider.propTypes = {
++  classes: PropTypes.object.isRequired,
++};
++
++export default withStyles(styles)(StepSlider);
+diff --git a/docs/src/pages/lab/slider/slider.md b/docs/src/pages/lab/slider/slider.md
+index 974e0c39ecaa65..9026398bc6883b 100644
+--- a/docs/src/pages/lab/slider/slider.md
++++ b/docs/src/pages/lab/slider/slider.md
+@@ -38,3 +38,7 @@ Sliders reflect the current state of the settings they control.
+ ## Custom thumb
+ 
+ {{"demo": "pages/lab/slider/CustomIconSlider.js"}}
++
++## Custom value reducer
++
++{{"demo": "pages/lab/slider/CustomValueReducerSlider.js"}}
+diff --git a/packages/material-ui-lab/src/Slider/Slider.d.ts b/packages/material-ui-lab/src/Slider/Slider.d.ts
+index 957f915a25cf58..a3f7a70cf05792 100644
+--- a/packages/material-ui-lab/src/Slider/Slider.d.ts
++++ b/packages/material-ui-lab/src/Slider/Slider.d.ts
+@@ -4,6 +4,17 @@ import { ButtonProps } from '@material-ui/core/Button';
+ import { TransitionProps } from 'react-transition-group/Transition';
+ import { TransitionHandlerProps } from '@material-ui/core/transitions/transition';
+ 
++/**
++ * @param rawValue - the value inferred from the event in [min, max]
++ */
++export type ValueReducer = (
++  rawValue: number,
++  props: SliderProps,
++  event: React.SyntheticEvent,
++) => number;
++
++export const defaultValueReducer: ValueReducer;
++
+ export interface SliderProps
+   extends StandardProps<React.HTMLAttributes<HTMLDivElement>, SliderClassKey, 'onChange'> {
+   disabled?: boolean;
+@@ -12,6 +23,7 @@ export interface SliderProps
+   min?: number;
+   step?: number;
+   value?: number;
++  valueReducer?: ValueReducer;
+   thumb?: React.ReactElement<any>;
+   onChange?: (event: React.ChangeEvent<{}>, value: number) => void;
+   onDragEnd?: (event: React.ChangeEvent<{}>) => void;
+diff --git a/packages/material-ui-lab/src/Slider/Slider.js b/packages/material-ui-lab/src/Slider/Slider.js
+index 937f3a3dfb0ecf..a1f3dcaa0bfa89 100644
+--- a/packages/material-ui-lab/src/Slider/Slider.js
++++ b/packages/material-ui-lab/src/Slider/Slider.js
+@@ -222,6 +222,24 @@ if (process.env.NODE_ENV !== 'production' && !React.createContext) {
+   throw new Error('Material-UI: react@16.3.0 or greater is required.');
+ }
+ 
++/**
++ * @param {number} rawValue
++ * @param {object} props
++ */
++export function defaultValueReducer(rawValue, props) {
++  const { disabled, step } = props;
++
++  if (disabled) {
++    return null;
++  }
++
++  if (step) {
++    return roundToStep(rawValue, step);
++  }
++
++  return Number(rawValue.toFixed(3));
++}
++
+ class Slider extends React.Component {
+   state = {
+     currentState: 'initial',
+@@ -430,21 +448,11 @@ class Slider extends React.Component {
+   }
+ 
+   emitChange(event, rawValue, callback) {
+-    const { step, value: previousValue, onChange, disabled } = this.props;
+-    let value = rawValue;
++    const { onChange, value: previousValue, valueReducer } = this.props;
++    const newValue = valueReducer(rawValue, this.props, event);
+ 
+-    if (disabled) {
+-      return;
+-    }
+-
+-    if (step) {
+-      value = roundToStep(rawValue, step);
+-    } else {
+-      value = Number(rawValue.toFixed(3));
+-    }
+-
+-    if (typeof onChange === 'function' && value !== previousValue) {
+-      onChange(event, value);
++    if (newValue !== null && newValue !== previousValue && typeof onChange === 'function') {
++      onChange(event, newValue);
+ 
+       if (typeof callback === 'function') {
+         callback();
+@@ -501,6 +509,7 @@ class Slider extends React.Component {
+       step,
+       theme,
+       value,
++      valueReducer,
+       vertical,
+       ...other
+     } = this.props;
+@@ -657,6 +666,14 @@ Slider.propTypes = {
+    * The value of the slider.
+    */
+   value: PropTypes.number.isRequired,
++  /**
++   * the reducer used to process the value emitted from the slider. If `null` or
++   * the same value is returned no change is emitted.
++   * @param {number} rawValue - value in [min, max]
++   * @param {SliderProps} props - current props of the Slider
++   * @param {Event} event - the event the change was triggered from
++   */
++  valueReducer: PropTypes.func,
+   /**
+    * If `true`, the slider will be vertical.
+    */
+@@ -667,6 +684,7 @@ Slider.defaultProps = {
+   min: 0,
+   max: 100,
+   component: 'div',
++  valueReducer: defaultValueReducer,
+ };
+ 
+ export default withStyles(styles, { name: 'MuiSlider', withTheme: true })(Slider);
+diff --git a/packages/material-ui-lab/src/Slider/Slider.spec.tsx b/packages/material-ui-lab/src/Slider/Slider.spec.tsx
+new file mode 100644
+index 00000000000000..a3f31ccb231c2a
+--- /dev/null
++++ b/packages/material-ui-lab/src/Slider/Slider.spec.tsx
+@@ -0,0 +1,15 @@
++import Slider, { defaultValueReducer, ValueReducer } from '@material-ui/lab/Slider';
++import * as React from 'react';
++
++{
++  // round to 1 digit instead of 3
++  const valueReducer: ValueReducer = (rawValue, props, event) => {
++    const { disabled, step } = props;
++    if (!disabled && !step) {
++      return +rawValue.toFixed(1);
++    }
++    return defaultValueReducer(rawValue, props, event);
++  };
++
++  <Slider value={5} valueReducer={valueReducer} />;
++}
+diff --git a/packages/material-ui-lab/src/Slider/Slider.test.js b/packages/material-ui-lab/src/Slider/Slider.test.js
+index 96c403c0455cdd..198d55b2e6df87 100644
+--- a/packages/material-ui-lab/src/Slider/Slider.test.js
++++ b/packages/material-ui-lab/src/Slider/Slider.test.js
+@@ -2,7 +2,7 @@ import React from 'react';
+ import { spy } from 'sinon';
+ import { assert } from 'chai';
+ import { createMount, createShallow, getClasses } from '@material-ui/core/test-utils';
+-import Slider from './Slider';
++import Slider, { defaultValueReducer } from './Slider';
+ 
+ function touchList(touchArray) {
+   touchArray.item = idx => touchArray[idx];
+@@ -221,4 +221,89 @@ describe('<Slider />', () => {
+       assert.ok(wrapper.find('[role="slider"]').props()['aria-disabled']);
+     });
+   });
++
++  describe('prop: slider', () => {
++    let wrapper;
++
++    const moveLeftEvent = new window.KeyboardEvent('keydown', {
++      key: 'ArrowLeft',
++    });
++    const moveRightEvent = new window.KeyboardEvent('keydown', {
++      key: 'ArrowRight',
++    });
++
++    before(() => {
++      function valueReducer(rawValue, props, event) {
++        const { disabled, max, min, step } = props;
++
++        function roundToStep(number) {
++          return Math.round(number / step) * step;
++        }
++
++        if (!disabled && step) {
++          if (rawValue > min && rawValue < max) {
++            if (rawValue === max - step) {
++              // If moving the Slider using arrow keys and value is formerly an maximum edge value
++              return roundToStep(rawValue + step / 2);
++            }
++            if (rawValue === min + step) {
++              // Same for minimum edge value
++              return roundToStep(rawValue - step / 2);
++            }
++            return roundToStep(rawValue);
++          }
++          return rawValue;
++        }
++
++        return defaultValueReducer(rawValue, props, event);
++      }
++
++      const onChange = (_, value) => {
++        wrapper.setProps({ value });
++      };
++      wrapper = mount(
++        <Slider
++          value={90}
++          valueReducer={valueReducer}
++          min={6}
++          max={108}
++          step={10}
++          onChange={onChange}
++        />,
++      );
++    });
++
++    it('should reach right edge value', () => {
++      wrapper.setProps({ value: 90 });
++      const button = wrapper.find('button');
++
++      button.prop('onKeyDown')(moveRightEvent);
++      assert.strictEqual(wrapper.prop('value'), 100);
++
++      button.prop('onKeyDown')(moveRightEvent);
++      assert.strictEqual(wrapper.prop('value'), 108);
++
++      button.prop('onKeyDown')(moveLeftEvent);
++      assert.strictEqual(wrapper.prop('value'), 100);
++
++      button.prop('onKeyDown')(moveLeftEvent);
++      assert.strictEqual(wrapper.prop('value'), 90);
++    });
++
++    it('should reach left edge value', () => {
++      wrapper.setProps({ value: 20 });
++      const button = wrapper.find('button');
++      button.prop('onKeyDown')(moveLeftEvent);
++      assert.strictEqual(wrapper.prop('value'), 10);
++
++      button.prop('onKeyDown')(moveLeftEvent);
++      assert.strictEqual(wrapper.prop('value'), 6);
++
++      button.prop('onKeyDown')(moveRightEvent);
++      assert.strictEqual(wrapper.prop('value'), 10);
++
++      button.prop('onKeyDown')(moveRightEvent);
++      assert.strictEqual(wrapper.prop('value'), 20);
++    });
++  });
+ });
+diff --git a/packages/material-ui-lab/src/Slider/index.js b/packages/material-ui-lab/src/Slider/index.js
+index 9898d6a85d1d01..922d80e49ceea2 100644
+--- a/packages/material-ui-lab/src/Slider/index.js
++++ b/packages/material-ui-lab/src/Slider/index.js
+@@ -1 +1 @@
+-export { default } from './Slider';
++export { default, defaultValueReducer } from './Slider';
+diff --git a/pages/lab/api/slider.md b/pages/lab/api/slider.md
+index 743203facf45d3..2ba952786609ba 100644
+--- a/pages/lab/api/slider.md
++++ b/pages/lab/api/slider.md
+@@ -29,6 +29,7 @@ import Slider from '@material-ui/lab/Slider';
+ | <span class="prop-name">step</span> | <span class="prop-type">number</span> |   | The granularity the slider can step through values. |
+ | <span class="prop-name">thumb</span> | <span class="prop-type">element</span> |   | The component used for the slider icon. This is optional, if provided should be a react element. |
+ | <span class="prop-name required">value *</span> | <span class="prop-type">number</span> |   | The value of the slider. |
++| <span class="prop-name">valueReducer</span> | <span class="prop-type">func</span> | <span class="prop-default">function defaultValueReducer(rawValue, props) {  const { disabled, step } = props;  if (disabled) {    return null;  }  if (step) {    return roundToStep(rawValue, step);  }  return Number(rawValue.toFixed(3));}</span> | the reducer used to process the value emitted from the slider. If `null` or the same value is returned no change is emitted.<br><br>**Signature:**<br>`function(rawValue: number, props: SliderProps, event: Event) => void`<br>*rawValue:* value in [min, max]<br>*props:* current props of the Slider<br>*event:* the event the change was triggered from |
+ | <span class="prop-name">vertical</span> | <span class="prop-type">bool</span> |   | If `true`, the slider will be vertical. |
+ 
+ Any other properties supplied will be spread to the root element (native element).

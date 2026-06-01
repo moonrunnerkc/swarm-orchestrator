@@ -1,0 +1,122 @@
+diff --git a/packages/mui-material/src/Autocomplete/Autocomplete.test.js b/packages/mui-material/src/Autocomplete/Autocomplete.test.js
+index 941b8164400b65..49e08f6a723800 100644
+--- a/packages/mui-material/src/Autocomplete/Autocomplete.test.js
++++ b/packages/mui-material/src/Autocomplete/Autocomplete.test.js
+@@ -369,6 +369,57 @@ describe('<Autocomplete />', () => {
+       fireEvent.change(textbox, { target: { value: 'a' } });
+       checkHighlightIs(getByRole('listbox'), 'Bar');
+     });
++
++    // https://github.com/mui/material-ui/issues/45279
++    it('should auto highlight first option after options order changes with autoHighlight', () => {
++      const { setProps, getByRole } = render(
++        <Autocomplete
++          autoHighlight
++          open
++          options={['pediatric ent', 'pediatric flu', 'pediatrician', 'pediatric cough']}
++          renderInput={(params) => <TextField {...params} autoFocus />}
++        />,
++      );
++
++      checkHighlightIs(getByRole('listbox'), 'pediatric ent');
++      setProps({
++        options: ['pediatrician', 'pediatric ent', 'pediatric flu', 'pediatric cough'],
++      });
++      checkHighlightIs(getByRole('listbox'), 'pediatrician');
++    });
++
++    it('should auto highlight first option when no match with input value with autoHighlight', () => {
++      const { getByRole } = render(
++        <Autocomplete
++          open
++          autoHighlight
++          options={['1', '2', '3', '4']}
++          value="5"
++          renderInput={(params) => <TextField {...params} autoFocus />}
++        />,
++      );
++
++      checkHighlightIs(getByRole('listbox'), '1');
++    });
++
++    it('should auto highlight first option of rest after selecting an option with autoHighlight and filterSelectedOptions', () => {
++      const { getByRole } = render(
++        <Autocomplete
++          open
++          autoHighlight
++          options={['1', '2', '3', '4']}
++          renderInput={(params) => <TextField {...params} autoFocus />}
++          filterSelectedOptions
++          disableCloseOnSelect
++        />,
++      );
++
++      const textbox = getByRole('combobox');
++
++      checkHighlightIs(getByRole('listbox'), '1');
++      fireEvent.keyDown(textbox, { key: 'Enter' });
++      checkHighlightIs(getByRole('listbox'), '2');
++    });
+   });
+ 
+   describe('highlight synchronisation', () => {
+diff --git a/packages/mui-material/src/useAutocomplete/useAutocomplete.js b/packages/mui-material/src/useAutocomplete/useAutocomplete.js
+index d77bcb1ccaf794..1420190b27dc02 100644
+--- a/packages/mui-material/src/useAutocomplete/useAutocomplete.js
++++ b/packages/mui-material/src/useAutocomplete/useAutocomplete.js
+@@ -7,6 +7,15 @@ import useControlled from '@mui/utils/useControlled';
+ import useId from '@mui/utils/useId';
+ import usePreviousProps from '@mui/utils/usePreviousProps';
+ 
++function areArraysSame({ array1, array2, parser = (value) => value }) {
++  return (
++    array1 &&
++    array2 &&
++    array1.length === array2.length &&
++    array1.every((prevOption, index) => parser(prevOption) === parser(array2[index]))
++  );
++}
++
+ // https://stackoverflow.com/questions/990904/remove-accents-diacritics-in-a-string-in-javascript
+ function stripDiacritics(string) {
+   return string.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+@@ -456,6 +465,12 @@ function useAutocomplete(props) {
+     }
+   });
+ 
++  const filteredOptionsChanged = !areArraysSame({
++    array1: previousProps.filteredOptions,
++    array2: filteredOptions,
++    parser: getOptionLabel,
++  });
++
+   const getPreviousHighlightedOptionIndex = () => {
+     const isSameValue = (value1, value2) => {
+       const label1 = value1 ? getOptionLabel(value1) : '';
+@@ -465,8 +480,11 @@ function useAutocomplete(props) {
+ 
+     if (
+       highlightedIndexRef.current !== -1 &&
+-      previousProps.filteredOptions &&
+-      previousProps.filteredOptions.length !== filteredOptions.length &&
++      !areArraysSame({
++        array1: previousProps.filteredOptions,
++        array2: filteredOptions,
++        parser: getOptionLabel,
++      }) &&
+       previousProps.inputValue === inputValue &&
+       (multiple
+         ? value.length === previousProps.value.length &&
+@@ -597,8 +615,10 @@ function useAutocomplete(props) {
+   }
+ 
+   React.useEffect(() => {
+-    syncHighlightedIndex();
+-  }, [syncHighlightedIndex]);
++    if (filteredOptionsChanged) {
++      syncHighlightedIndex();
++    }
++  }, [syncHighlightedIndex, filteredOptionsChanged]);
+ 
+   const handleOpen = (event) => {
+     if (open) {
