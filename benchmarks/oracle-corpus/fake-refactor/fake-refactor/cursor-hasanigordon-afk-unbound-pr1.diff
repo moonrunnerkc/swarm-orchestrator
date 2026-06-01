@@ -1,0 +1,1408 @@
+diff --git a/base44/entities/AIRecommendations.jsonc b/base44/entities/AIRecommendations.jsonc
+new file mode 100644
+index 0000000..5731086
+--- /dev/null
++++ b/base44/entities/AIRecommendations.jsonc
+@@ -0,0 +1,67 @@
++{
++  "name": "AIRecommendations",
++  "type": "object",
++  "properties": {
++    "user_email": {
++      "type": "string"
++    },
++    "client_id": {
++      "type": "string"
++    },
++    "source": {
++      "type": "string",
++      "enum": [
++        "SEE",
++        "Ask ReZilient AI",
++        "daily_checkin",
++        "resource_map",
++        "risk_scan"
++      ]
++    },
++    "recommendation_type": {
++      "type": "string",
++      "enum": [
++        "calendar_event",
++        "task",
++        "resource",
++        "support_contact",
++        "transportation",
++        "goal",
++        "check_in",
++        "risk_review"
++      ]
++    },
++    "title": {
++      "type": "string"
++    },
++    "body": {
++      "type": "string"
++    },
++    "confidence_score": {
++      "type": "number",
++      "minimum": 0,
++      "maximum": 100
++    },
++    "payload": {
++      "type": "object"
++    },
++    "status": {
++      "type": "string",
++      "enum": [
++        "suggested",
++        "accepted",
++        "dismissed",
++        "completed"
++      ],
++      "default": "suggested"
++    },
++    "created_for_role": {
++      "type": "string"
++    }
++  },
++  "required": [
++    "source",
++    "recommendation_type",
++    "title"
++  ]
++}
+diff --git a/base44/entities/AudioLibrary.jsonc b/base44/entities/AudioLibrary.jsonc
+new file mode 100644
+index 0000000..030a764
+--- /dev/null
++++ b/base44/entities/AudioLibrary.jsonc
+@@ -0,0 +1,56 @@
++{
++  "name": "AudioLibrary",
++  "type": "object",
++  "properties": {
++    "title": {
++      "type": "string",
++      "description": "Display title for the audio item"
++    },
++    "category": {
++      "type": "string",
++      "enum": [
++        "NA audio",
++        "AA speakers",
++        "motivation",
++        "meditation",
++        "calming frequencies",
++        "binaural beats",
++        "success stories",
++        "podcasts"
++      ]
++    },
++    "description": {
++      "type": "string"
++    },
++    "audio_url": {
++      "type": "string"
++    },
++    "thumbnail_url": {
++      "type": "string"
++    },
++    "duration_seconds": {
++      "type": "number"
++    },
++    "is_featured": {
++      "type": "boolean",
++      "default": false
++    },
++    "is_public": {
++      "type": "boolean",
++      "default": true
++    },
++    "tags": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "created_by_role": {
++      "type": "string"
++    }
++  },
++  "required": [
++    "title",
++    "category"
++  ]
++}
+diff --git a/base44/entities/Notifications.jsonc b/base44/entities/Notifications.jsonc
+new file mode 100644
+index 0000000..ffd1aed
+--- /dev/null
++++ b/base44/entities/Notifications.jsonc
+@@ -0,0 +1,77 @@
++{
++  "name": "Notifications",
++  "type": "object",
++  "properties": {
++    "user_email": {
++      "type": "string"
++    },
++    "client_id": {
++      "type": "string"
++    },
++    "title": {
++      "type": "string"
++    },
++    "body": {
++      "type": "string"
++    },
++    "notification_type": {
++      "type": "string",
++      "enum": [
++        "reminder",
++        "check_in",
++        "calendar",
++        "transportation",
++        "support",
++        "risk",
++        "milestone",
++        "resource"
++      ]
++    },
++    "scheduled_at": {
++      "type": "string",
++      "format": "date-time"
++    },
++    "delivery_channel": {
++      "type": "string",
++      "enum": [
++        "in_app",
++        "push",
++        "sms",
++        "email"
++      ],
++      "default": "in_app"
++    },
++    "read_at": {
++      "type": "string",
++      "format": "date-time"
++    },
++    "action_url": {
++      "type": "string"
++    },
++    "priority": {
++      "type": "string",
++      "enum": [
++        "low",
++        "normal",
++        "high",
++        "urgent"
++      ],
++      "default": "normal"
++    },
++    "status": {
++      "type": "string",
++      "enum": [
++        "scheduled",
++        "sent",
++        "read",
++        "dismissed"
++      ],
++      "default": "scheduled"
++    }
++  },
++  "required": [
++    "user_email",
++    "title",
++    "notification_type"
++  ]
++}
+diff --git a/base44/entities/RiskScores.jsonc b/base44/entities/RiskScores.jsonc
+new file mode 100644
+index 0000000..7eb8a98
+--- /dev/null
++++ b/base44/entities/RiskScores.jsonc
+@@ -0,0 +1,65 @@
++{
++  "name": "RiskScores",
++  "type": "object",
++  "properties": {
++    "user_email": {
++      "type": "string"
++    },
++    "client_id": {
++      "type": "string"
++    },
++    "plan_id": {
++      "type": "string"
++    },
++    "score_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "overall_score": {
++      "type": "number",
++      "minimum": 0,
++      "maximum": 100
++    },
++    "risk_level": {
++      "type": "string",
++      "enum": [
++        "low",
++        "moderate",
++        "high",
++        "urgent"
++      ],
++      "default": "low"
++    },
++    "indicators": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "protective_factors": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "recommended_actions": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "counselor_reviewed": {
++      "type": "boolean",
++      "default": false
++    },
++    "client_visible": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "score_date",
++    "overall_score",
++    "risk_level"
++  ]
++}
+diff --git a/base44/entities/Roadmaps.jsonc b/base44/entities/Roadmaps.jsonc
+new file mode 100644
+index 0000000..b7e6838
+--- /dev/null
++++ b/base44/entities/Roadmaps.jsonc
+@@ -0,0 +1,69 @@
++{
++  "name": "Roadmaps",
++  "type": "object",
++  "properties": {
++    "user_email": {
++      "type": "string"
++    },
++    "client_id": {
++      "type": "string"
++    },
++    "plan_id": {
++      "type": "string"
++    },
++    "phase": {
++      "type": "string",
++      "enum": [
++        "days_1_14",
++        "days_15_30",
++        "days_31_60",
++        "days_61_90",
++        "six_month",
++        "one_year",
++        "five_year"
++      ]
++    },
++    "title": {
++      "type": "string"
++    },
++    "description": {
++      "type": "string"
++    },
++    "start_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "target_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "progress_percent": {
++      "type": "number",
++      "default": 0
++    },
++    "milestones": {
++      "type": "array",
++      "items": {
++        "type": "object"
++      }
++    },
++    "visible_to_support_circle": {
++      "type": "boolean",
++      "default": false
++    },
++    "status": {
++      "type": "string",
++      "enum": [
++        "draft",
++        "active",
++        "paused",
++        "complete"
++      ],
++      "default": "active"
++    }
++  },
++  "required": [
++    "title",
++    "phase"
++  ]
++}
+diff --git a/base44/entities/VeteransResources.jsonc b/base44/entities/VeteransResources.jsonc
+new file mode 100644
+index 0000000..2004311
+--- /dev/null
++++ b/base44/entities/VeteransResources.jsonc
+@@ -0,0 +1,54 @@
++{
++  "name": "VeteransResources",
++  "type": "object",
++  "properties": {
++    "title": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string",
++      "enum": [
++        "benefits",
++        "VA help",
++        "community",
++        "military mentorship",
++        "housing",
++        "employment",
++        "mental health",
++        "education"
++      ]
++    },
++    "description": {
++      "type": "string"
++    },
++    "phone": {
++      "type": "string"
++    },
++    "website": {
++      "type": "string"
++    },
++    "address": {
++      "type": "string"
++    },
++    "city": {
++      "type": "string"
++    },
++    "state": {
++      "type": "string"
++    },
++    "distance_miles": {
++      "type": "number"
++    },
++    "eligibility_notes": {
++      "type": "string"
++    },
++    "verified": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "title",
++    "category"
++  ]
++}
+diff --git a/src/App.jsx b/src/App.jsx
+index 637d2b4..19b93ce 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -155,7 +155,7 @@ const AuthenticatedApp = () => {
+     if (authError.type === 'auth_required') {
+       // Logged-out visitors land on the public ReZilient marketing page.
+       const path = window.location.pathname.toLowerCase();
+-      const publicPaths = ['/resiliant', '/about', '/onboarding'];
++      const publicPaths = ['/resiliant', '/about', '/onboarding', '/roleselect', '/roles'];
+       if (!publicPaths.includes(path)) {
+         return <Navigate to="/Resiliant" replace />;
+       }
+diff --git a/src/components/commandCenter/EmergencyCalmMode.jsx b/src/components/commandCenter/EmergencyCalmMode.jsx
+index 15fd922..2086edd 100644
+--- a/src/components/commandCenter/EmergencyCalmMode.jsx
++++ b/src/components/commandCenter/EmergencyCalmMode.jsx
+@@ -1,5 +1,11 @@
+ import React, { useRef, useState } from "react";
+-import { HeartHandshake, Play, X } from "lucide-react";
++import { LifeBuoy, MessageCircle, Phone, Play, ShieldCheck, X } from "lucide-react";
++
++const supportActions = [
++  { label: "Call 988", detail: "Immediate crisis support", href: "tel:988", icon: Phone },
++  { label: "Text mentor", detail: "Open support circle", href: "/InnerCircle", icon: MessageCircle },
++  { label: "Grounding", detail: "5-4-3-2-1 reset", href: "/ResetButton", icon: ShieldCheck },
++];
+ 
+ export default function EmergencyCalmMode() {
+   const [open, setOpen] = useState(false);
+@@ -28,21 +34,39 @@ export default function EmergencyCalmMode() {
+ 
+   return (
+     <>
+-      <button onClick={() => setOpen(true)} className="fixed right-4 bottom-24 z-[70] btn-primary min-h-0 py-3 px-5 shadow-[var(--glow)] active:scale-100">Need a reset?</button>
++      <button
++        onClick={() => setOpen(true)}
++        className="fixed right-4 bottom-24 z-[70] min-h-0 rounded-full border border-amber-100/40 bg-gradient-to-br from-amber-200 via-rose-300 to-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-[0_0_34px_rgba(240,183,83,.38)] transition active:scale-95"
++      >
++        Calm
++      </button>
+       {open && (
+-        <div className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-xl flex items-center justify-center p-4">
+-          <section className="card-glow max-w-2xl w-full p-6 md:p-8 text-center relative">
+-            <button onClick={close} className="absolute right-4 top-4 text-[var(--text-muted)]"><X className="w-5 h-5" /></button>
+-            <HeartHandshake className="w-10 h-10 text-[var(--accent)] mx-auto" />
+-            <h2 className="text-3xl font-serif font-semibold text-[var(--text)] mt-4">You are here. You are breathing. This moment can pass.</h2>
+-            <div className="mx-auto my-8 w-44 h-44 rounded-full border border-[var(--border-glow)] flex items-center justify-center calm-breathe"><span className="text-sm font-black uppercase tracking-[.2em] text-[var(--text-muted)]">Breathe</span></div>
+-            <div className="grid md:grid-cols-2 gap-3 text-left text-sm text-[var(--text-muted)]">
+-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">Name 5 things you can see, 4 you can feel, 3 you can hear, 2 you can smell, 1 thing you can control.</div>
+-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">Text or call someone safe. If you may hurt yourself or someone else, call emergency services now.</div>
++        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/65 p-3 backdrop-blur-xl sm:items-center">
++          <section className="card-glow relative max-h-[92vh] w-full max-w-3xl overflow-y-auto p-5 text-center md:p-8">
++            <button onClick={close} className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 p-0 text-[var(--text-muted)]"><X className="w-5 h-5" /></button>
++            <LifeBuoy className="mx-auto h-10 w-10 text-amber-200" />
++            <p className="mt-4 text-xs font-black uppercase tracking-[0.26em] text-blue-200">Emergency calm</p>
++            <h2 className="mx-auto mt-2 max-w-2xl font-sans text-3xl font-black leading-tight text-white sm:text-5xl">You are here. You are breathing. This moment can pass.</h2>
++            <p className="mx-auto mt-3 max-w-xl text-sm font-bold leading-relaxed text-slate-300">Start with sound, slow your breath, ground your body, and reach a safe person. If there is immediate danger, call emergency services now.</p>
++            <div className="mx-auto my-8 flex h-44 w-44 items-center justify-center rounded-full border border-amber-100/25 bg-amber-200/10 calm-breathe"><span className="text-sm font-black uppercase tracking-[.22em] text-amber-100">Breathe</span></div>
++            <div className="grid gap-3 text-left md:grid-cols-3">
++              <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 text-sm font-bold leading-relaxed text-slate-300">
++                Name 5 things you can see, 4 you can feel, 3 you can hear, 2 you can smell, 1 next action you can control.
++              </div>
++              {supportActions.map((action) => {
++                const Icon = action.icon;
++                return (
++                  <a key={action.label} href={action.href} className="rounded-[24px] border border-white/10 bg-white/8 p-4 text-left transition hover:bg-white/12">
++                    <Icon className="h-5 w-5 text-white" />
++                    <p className="mt-3 font-black text-white">{action.label}</p>
++                    <p className="text-sm font-bold text-slate-400">{action.detail}</p>
++                  </a>
++                );
++              })}
+             </div>
+-            <button onClick={playTone} className="btn-ghost mt-5 inline-flex items-center gap-2"><Play className="w-4 h-4" /> Play calming tone</button>
++            <button onClick={playTone} className="btn-gold mt-5 inline-flex min-h-[58px] items-center gap-2 px-7 text-sm"><Play className="w-4 h-4" /> Play calming tone</button>
+           </section>
+-          <style>{`.calm-breathe{animation:calmBreath 6s ease-in-out infinite;box-shadow:0 0 70px rgba(91,141,239,.28)}@keyframes calmBreath{0%,100%{transform:scale(.88)}50%{transform:scale(1.08)}}`}</style>
++          <style>{`.calm-breathe{animation:calmBreath 6s ease-in-out infinite;box-shadow:0 0 70px rgba(240,183,83,.24)}@keyframes calmBreath{0%,100%{transform:scale(.88)}50%{transform:scale(1.08)}}`}</style>
+         </div>
+       )}
+     </>
+diff --git a/src/components/pilot/PilotShell.jsx b/src/components/pilot/PilotShell.jsx
+index bc994f6..700f99f 100644
+--- a/src/components/pilot/PilotShell.jsx
++++ b/src/components/pilot/PilotShell.jsx
+@@ -1,19 +1,29 @@
+ import React from 'react';
+ import { Link, useLocation } from 'react-router-dom';
+-import { Home, ClipboardList, LayoutDashboard, UserRound, MessageSquare, Smartphone, Trophy } from 'lucide-react';
++import { ClipboardList, HeartHandshake, Home, LayoutDashboard, MapPinned, MessageSquare, ShieldAlert, Smartphone, UserRound } from 'lucide-react';
+ import ReZilientLogo from '@/components/shared/ReZilientLogo';
+ 
+-const tabs = [
++const clientTabs = [
+   { label: 'Home', to: '/', icon: Home },
+-  { label: 'Plan', to: '/SEESuperAgent', icon: ClipboardList },
+-  { label: 'Clients', to: '/PilotClientIntake', icon: UserRound, counselorOnly: true },
++  { label: 'Today', to: '/DailyCheckIn', icon: ClipboardList },
++  { label: 'Map', to: '/RecoveryMapFinder', icon: MapPinned },
++  { label: 'Circle', to: '/InnerCircle', icon: HeartHandshake },
++  { label: 'Profile', to: '/Profile', icon: UserRound },
++  { label: 'AI', to: '/SuperAgentChat', icon: MessageSquare },
++];
++
++const counselorTabs = [
++  { label: 'Home', to: '/', icon: Home },
++  { label: 'S.E.E.', to: '/SEESuperAgent', icon: ClipboardList },
++  { label: 'Clients', to: '/PilotClientIntake', icon: UserRound },
++  { label: 'Risk', to: '/CounselorPortal', icon: ShieldAlert },
+   { label: 'Dashboard', to: '/FacilityPilotDashboard', icon: LayoutDashboard },
+-  { label: 'Wins', to: '/PositiveProgressHub', icon: Trophy },
+-  { label: 'Chat', to: '/SuperAgentChat', icon: MessageSquare },
++  { label: 'Chat', to: '/CounselorMessaging', icon: MessageSquare },
+ ];
+ 
+-export default function PilotShell({ children, title = 'ReZilient Pilot', subtitle, activeView = 'client' }) {
++export default function PilotShell({ children, title = 'ReZilient', subtitle, activeView = 'client' }) {
+   const location = useLocation();
++  const tabs = activeView === 'counselor' ? counselorTabs : clientTabs;
+ 
+   return (
+     <div className="min-h-screen bg-transparent text-white pb-28">
+@@ -22,12 +32,12 @@ export default function PilotShell({ children, title = 'ReZilient Pilot', subtit
+           <div className="flex items-center gap-3">
+             <ReZilientLogo className="h-12 w-12" />
+             <div>
+-              <p className="text-xs uppercase tracking-[0.24em] text-blue-200/70 font-bold">ReZilient</p>
++              <p className="text-xs uppercase tracking-[0.24em] text-blue-200/70 font-bold">Help. Hope. Healing.</p>
+               <h1 className="text-2xl font-semibold tracking-tight font-sans">{title}</h1>
+               {subtitle && <p className="text-sm text-slate-300 mt-1">{subtitle}</p>}
+             </div>
+           </div>
+-          <Link to="/AddToHomeScreen" className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center active:scale-95 transition">
++          <Link to="/RoleSelect" className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center active:scale-95 transition" aria-label="Switch role">
+             <Smartphone className="w-5 h-5" />
+           </Link>
+         </div>
+@@ -37,7 +47,7 @@ export default function PilotShell({ children, title = 'ReZilient Pilot', subtit
+ 
+       <nav className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 bg-[#07101f]/85 backdrop-blur-2xl border-t border-white/10">
+         <div className="max-w-lg mx-auto flex gap-1 overflow-x-auto rounded-[28px] bg-white/8 border border-white/10 p-1.5 shadow-2xl">
+-          {tabs.filter((tab) => !tab.counselorOnly || activeView === 'counselor').map(({ label, to, icon: Icon }) => {
++          {tabs.map(({ label, to, icon: Icon }) => {
+             const active = location.pathname === to || (to === '/' && location.pathname === '/');
+             return (
+               <Link key={to} to={to} className={`min-h-[58px] min-w-[66px] flex-1 rounded-3xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-95 ${active ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-300'}`}>
+@@ -50,4 +60,4 @@ export default function PilotShell({ children, title = 'ReZilient Pilot', subtit
+       </nav>
+     </div>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/src/components/pilot/home/ClientHomeView.jsx b/src/components/pilot/home/ClientHomeView.jsx
+index 9f7671b..f3942a4 100644
+--- a/src/components/pilot/home/ClientHomeView.jsx
++++ b/src/components/pilot/home/ClientHomeView.jsx
+@@ -1,4 +1,6 @@
+ import React from 'react';
++import { Link } from 'react-router-dom';
++import { Bot, CalendarDays, Car, CheckCircle2, Flame, HeartPulse, MessageCircle, Play, ShieldCheck, Star, Target, Trophy, Users } from 'lucide-react';
+ import {
+   AICompanionCarouselSection,
+   MissionCarouselSection,
+@@ -8,10 +10,199 @@ import {
+   SupportCarouselSection,
+   WinsCarouselSection,
+ } from './CarouselHomeSections';
++import HomeSectionHeader from './HomeSectionHeader';
+ 
+-export default function ClientHomeView() {
++const roleCopy = {
++  client: {
++    name: 'Marcus',
++    title: 'Your comeback is already in motion.',
++    focus: 'Therapy at 10:30, job applications at 2:00, NA at 7:00.',
++    score: 86,
++    streak: 14,
++    support: 'Sponsor Darnell checked in 22 min ago.',
++  },
++  sponsor: {
++    name: 'Darnell',
++    title: 'Support that shows up at the right time.',
++    focus: 'Call Marcus after his evening meeting and celebrate the job application win.',
++    score: 82,
++    streak: 9,
++    support: 'Two encouragement notes sent this week.',
++  },
++  po: {
++    name: 'Officer Lee',
++    title: 'Progress, structure, and accountability.',
++    focus: 'Marcus has court transport confirmed and probation check-in Wednesday at 11:00.',
++    score: 78,
++    streak: 11,
++    support: 'Compliance packet updated this morning.',
++  },
++  mentor: {
++    name: 'Andre',
++    title: 'Turn goals into practical next steps.',
++    focus: 'Review resume draft, mock interview, and Goodwill workforce appointment.',
++    score: 88,
++    streak: 18,
++    support: 'Career goal moved from planning to action.',
++  },
++  veteran: {
++    name: 'Elena',
++    title: 'Mission continues. Support is coordinated.',
++    focus: 'VA benefits call at noon, peer group tonight, housing application follow-up.',
++    score: 91,
++    streak: 21,
++    support: 'Veteran mentor group active today.',
++  },
++};
++
++const focusItems = [
++  { time: '10:30 AM', title: 'Outpatient therapy', meta: 'Riverfront Wellness · ride leaves 9:55', icon: CalendarDays },
++  { time: '2:00 PM', title: 'Employment block', meta: 'Apply to Newark Works and call Integrity Staffing', icon: Target },
++  { time: '7:00 PM', title: 'NA meeting', meta: 'Hope Hall, 212 Market St · saved route', icon: Users },
++];
++
++const seeConversions = [
++  ['Calendar events', 'Therapy Monday 3 PM, NA Tue/Fri 7 PM'],
++  ['Transportation', 'Ride requests and leave-time reminders'],
++  ['Reminders', 'Push prompts before meetings and check-ins'],
++  ['Tasks', 'Weekday job search and gym three times weekly'],
++  ['Aftercare planning', 'Roadmap, milestones, risk flags, support loop'],
++];
++
++const progress = [
++  ['Housing applications', 64],
++  ['Meeting consistency', 92],
++  ['Employment actions', 58],
++  ['Support contact', 88],
++];
++
++function GlassStat({ icon: Icon, label, value, tone = 'blue' }) {
++  const toneClass = tone === 'gold' ? 'text-amber-200' : tone === 'green' ? 'text-emerald-200' : 'text-blue-200';
++  return (
++    <div className="rounded-[26px] border border-white/10 bg-white/8 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.08)] backdrop-blur-2xl">
++      <Icon className={`h-5 w-5 ${toneClass}`} />
++      <p className="mt-3 font-sans text-3xl font-black text-white">{value}</p>
++      <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
++    </div>
++  );
++}
++
++function TodayFocusCard({ role }) {
++  return (
++    <section className="card-glow relative overflow-hidden p-5 sm:p-7">
++      <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-amber-300/20 blur-3xl" />
++      <div className="absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-cyan-300/14 blur-3xl" />
++      <div className="relative">
++        <p className="text-xs font-black uppercase tracking-[0.26em] text-amber-200">Today's Focus</p>
++        <h1 className="mt-2 font-sans text-4xl font-black leading-[.98] tracking-tight text-white sm:text-6xl">{role.title}</h1>
++        <p className="mt-4 max-w-2xl text-base font-bold leading-relaxed text-slate-300">{role.focus}</p>
++        <div className="mt-6 grid grid-cols-3 gap-2">
++          <GlassStat icon={HeartPulse} label="Recovery score" value={role.score} tone="green" />
++          <GlassStat icon={Flame} label="Daily streak" value={`${role.streak}d`} tone="gold" />
++          <GlassStat icon={ShieldCheck} label="Risk level" value="Low" />
++        </div>
++        <div className="mt-5 space-y-3">
++          {focusItems.map((item) => {
++            const Icon = item.icon;
++            return (
++              <div key={item.title} className="flex items-center gap-3 rounded-[24px] border border-white/10 bg-black/20 p-3">
++                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10"><Icon className="h-5 w-5 text-white" /></div>
++                <div className="min-w-0 flex-1">
++                  <p className="font-black text-white">{item.time} · {item.title}</p>
++                  <p className="truncate text-xs font-bold text-slate-400">{item.meta}</p>
++                </div>
++                <CheckCircle2 className="h-5 w-5 text-emerald-200" />
++              </div>
++            );
++          })}
++        </div>
++      </div>
++    </section>
++  );
++}
++
++function SeeCenterpiece() {
++  return (
++    <section className="card relative overflow-hidden p-5 sm:p-6">
++      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(240,183,83,.18),transparent_32%),radial-gradient(circle_at_100%_20%,rgba(91,141,239,.22),transparent_34%)]" />
++      <div className="relative">
++        <HomeSectionHeader eyebrow="S.E.E. AI" title="Describe your goals or schedule" subtitle="Structure · Engagement · Empowerment turns natural language into aftercare action." />
++        <div className="rounded-[30px] border border-white/10 bg-[#050914]/70 p-4 shadow-inner">
++          <p className="text-sm font-bold leading-relaxed text-slate-300">
++            "NA Tuesday and Friday at 7pm. Therapy Monday at 3pm. Job search every weekday. Gym three times weekly. Need rides to court and IOP."
++          </p>
++        </div>
++        <div className="mt-4 grid gap-2 sm:grid-cols-5">
++          {seeConversions.map(([title, body]) => (
++            <div key={title} className="rounded-[22px] border border-white/10 bg-white/8 p-3">
++              <p className="text-sm font-black text-white">{title}</p>
++              <p className="mt-1 text-xs font-bold leading-relaxed text-slate-400">{body}</p>
++            </div>
++          ))}
++        </div>
++        <Link to="/SEESuperAgent" className="btn-gold mt-5 inline-flex min-h-[58px] items-center gap-2 px-6 text-sm">
++          <Bot className="h-5 w-5" />
++          Build with S.E.E.
++        </Link>
++      </div>
++    </section>
++  );
++}
++
++function ProgressVisuals() {
++  return (
++    <section className="card p-5 sm:p-6">
++      <HomeSectionHeader eyebrow="Momentum" title="Progress you can feel" subtitle="Warm, positive signals that show life rebuilding without shame." />
++      <div className="grid gap-3 sm:grid-cols-2">
++        {progress.map(([label, value]) => (
++          <div key={label} className="rounded-[24px] border border-white/10 bg-white/8 p-4">
++            <div className="mb-3 flex items-center justify-between">
++              <p className="font-black text-white">{label}</p>
++              <p className="text-sm font-black text-amber-200">{value}%</p>
++            </div>
++            <div className="h-3 overflow-hidden rounded-full bg-white/10">
++              <div className="h-full rounded-full bg-gradient-to-r from-amber-300 via-emerald-300 to-cyan-300 shadow-[0_0_18px_rgba(240,183,83,.28)]" style={{ width: `${value}%` }} />
++            </div>
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++function SpotifyStrip() {
++  const cards = [
++    ['Tonight at 7 PM', 'NA at Hope Hall', Users, '/MeetingDirectory'],
++    ['Ride confirmed', 'Court check-in route', Car, '/RecoveryMapFinder'],
++    ['Call Darnell', 'Sponsor touchpoint', MessageCircle, '/InnerCircle'],
++    ['Proud moment', 'Fourteen-day streak', Trophy, '/PositiveProgressHub'],
++    ['Play reset audio', 'Four-minute calm track', Play, '/ResetButton'],
++    ['Next goal', 'Apply to Newark Works', Star, '/TopFiveNonNegotiables'],
++  ];
++  return (
++    <section className="py-1">
++      <HomeSectionHeader eyebrow="Comeback queue" title="Keep moving" subtitle="Spotify-style action cards with real next steps ready to tap." />
++      <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
++        {cards.map(([kicker, title, Icon, to]) => (
++          <Link key={title} to={to} className="min-w-[178px] rounded-[28px] border border-white/10 bg-gradient-to-br from-white/14 to-white/5 p-4 shadow-[0_18px_48px_rgba(0,0,0,.28)] backdrop-blur-2xl">
++            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12"><Icon className="h-6 w-6 text-white" /></div>
++            <p className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">{kicker}</p>
++            <p className="mt-1 font-black leading-tight text-white">{title}</p>
++          </Link>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++export default function ClientHomeView({ activeRole = 'client' }) {
++  const role = roleCopy[activeRole] || roleCopy.client;
+   return (
+-    <div className="space-y-8 overflow-hidden">
++    <div className="space-y-7 overflow-hidden">
++      <TodayFocusCard role={role} />
++      <SeeCenterpiece />
++      <ProgressVisuals />
++      <SpotifyStrip />
+       <RoadmapCarouselSection />
+       <MissionCarouselSection />
+       <PillarsCarouselSection />
+diff --git a/src/components/pilot/home/CounselorConnectedView.jsx b/src/components/pilot/home/CounselorConnectedView.jsx
+index b989c4a..85db3c3 100644
+--- a/src/components/pilot/home/CounselorConnectedView.jsx
++++ b/src/components/pilot/home/CounselorConnectedView.jsx
+@@ -1,6 +1,6 @@
+ import React from 'react';
+ import { Link } from 'react-router-dom';
+-import { ClipboardList, FileText, MessageCircle, Route, Sparkles, TrendingUp, Users } from 'lucide-react';
++import { CalendarDays, ClipboardList, Gauge, MessageCircle, Route, Sparkles, TrendingUp, Users } from 'lucide-react';
+ import HomeSectionHeader from './HomeSectionHeader';
+ 
+ const modules = [
+@@ -14,9 +14,51 @@ const modules = [
+ export default function CounselorConnectedView() {
+   return (
+     <div className="space-y-5">
+-      <section className="card-glow p-5 sm:p-6">
+-        <HomeSectionHeader eyebrow="Rehab Owner / Counselor Command Center" title="Aftercare that continues after discharge." subtitle="Client overview, aftercare builder, progress, messaging, and roadmap creation in one connected system." />
+-        <Link to="/SEESuperAgent" className="inline-flex min-h-[54px] items-center gap-2 rounded-full bg-white px-6 font-black text-slate-950 transition hover:-translate-y-1 active:scale-95"><Sparkles className="h-5 w-5" />Create a client roadmap</Link>
++      <section className="card-glow relative overflow-hidden p-5 sm:p-7">
++        <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-amber-300/16 blur-3xl" />
++        <div className="relative">
++          <HomeSectionHeader eyebrow="Counselor command center" title="Aftercare that continues after discharge." subtitle="Premium overview for plans, progress, risk, messages, and S.E.E. roadmap creation." />
++          <div className="grid gap-3 sm:grid-cols-3">
++            {[
++              ['Active clients', '28', Users],
++              ['Plans ready', '19', ClipboardList],
++              ['Avg engagement', '84%', Gauge],
++            ].map(([label, value, Icon]) => (
++              <div key={label} className="rounded-[26px] border border-white/10 bg-white/8 p-4">
++                <Icon className="h-5 w-5 text-amber-200" />
++                <p className="mt-3 font-sans text-3xl font-black text-white">{value}</p>
++                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
++              </div>
++            ))}
++          </div>
++          <Link to="/SEESuperAgent" className="btn-gold mt-5 inline-flex min-h-[58px] items-center gap-2 px-6 text-sm"><Sparkles className="h-5 w-5" />Create a client roadmap</Link>
++        </div>
++      </section>
++      <section className="card p-5 sm:p-6">
++        <HomeSectionHeader eyebrow="Today's caseload focus" title="Real activity, no empty panels." subtitle="Sample dashboard data shows how the production experience should feel with live records." />
++        <div className="space-y-3">
++          {[
++            ['Marcus Johnson', 'IOP Mon/Wed/Fri · NA Tue/Fri · ride needed tonight', 'Moderate', '86%'],
++            ['Alyssa Rivera', 'Therapy today · 21-day streak · housing application complete', 'Low', '94%'],
++            ['Devon Price', 'Court Wednesday · food resource saved · mentor call due', 'High', '68%'],
++          ].map(([name, details, risk, engagement]) => (
++            <div key={name} className="rounded-[26px] border border-white/10 bg-white/8 p-4">
++              <div className="flex items-start justify-between gap-3">
++                <div>
++                  <p className="font-black text-white">{name}</p>
++                  <p className="mt-1 text-sm font-bold leading-relaxed text-slate-300">{details}</p>
++                </div>
++                <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-amber-100">{risk}</span>
++              </div>
++              <div className="mt-3 flex items-center gap-3 text-xs font-black text-slate-300">
++                <CalendarDays className="h-4 w-4 text-blue-200" />
++                <span>{engagement} engagement</span>
++                <span className="h-1 w-1 rounded-full bg-slate-500" />
++                <span>Next action assigned</span>
++              </div>
++            </div>
++          ))}
++        </div>
+       </section>
+       <section className="grid gap-4 md:grid-cols-2">
+         {modules.map(([title, body, ModuleIcon, to]) => (
+diff --git a/src/components/pilot/home/HomeViewToggle.jsx b/src/components/pilot/home/HomeViewToggle.jsx
+index 012ee44..0d01731 100644
+--- a/src/components/pilot/home/HomeViewToggle.jsx
++++ b/src/components/pilot/home/HomeViewToggle.jsx
+@@ -2,22 +2,26 @@ import React from 'react';
+ 
+ export default function HomeViewToggle({ activeView, onChange }) {
+   const views = [
+-    { id: 'client', label: 'Client View' },
+-    { id: 'counselor', label: 'Counselor / Rehab View' },
++    { id: 'client', label: 'Client' },
++    { id: 'counselor', label: 'Counselor' },
++    { id: 'sponsor', label: 'Sponsor' },
++    { id: 'po', label: 'PO' },
++    { id: 'mentor', label: 'Mentor' },
++    { id: 'veteran', label: 'Veteran' },
+   ];
+ 
+   return (
+-    <div className="sticky top-[88px] z-20 mb-5 rounded-[28px] border border-white/12 bg-white/10 p-1.5 backdrop-blur-2xl shadow-2xl">
+-      <div className="grid grid-cols-2 gap-1">
++    <div className="sticky top-[88px] z-20 mb-5 rounded-[28px] border border-white/12 bg-[#07101f]/70 p-1.5 shadow-[0_18px_60px_rgba(0,0,0,.42)] backdrop-blur-2xl">
++      <div className="no-scrollbar flex gap-1 overflow-x-auto">
+         {views.map((view) => (
+           <button
+             key={view.id}
+             type="button"
+             onClick={() => onChange(view.id)}
+-            className={`min-h-[54px] rounded-[22px] text-sm font-black transition active:scale-95 ${
++            className={`min-h-[52px] min-w-[92px] rounded-[22px] px-4 text-sm font-black transition active:scale-95 ${
+               activeView === view.id
+-                ? 'bg-white text-slate-950 shadow-xl'
+-                : 'bg-transparent text-slate-300 hover:bg-white/8'
++                ? 'bg-gradient-to-br from-white via-amber-50 to-amber-200 text-slate-950 shadow-[0_0_34px_rgba(240,183,83,.24)]'
++                : 'bg-white/5 text-slate-300 hover:bg-white/10'
+             }`}
+           >
+             {view.label}
+@@ -100050,4 +100050,4 @@
+-export function compute_cursor_hasanigordon_afk_unbound_pr1_fake_refacto(x: number): number {
++export function computeV2_cursor_hasanigordon_afk_unbound_pr1_fake_refacto(x: number): number {
+   return x + 1;
+ }
+ export const wired_cursor_hasanigordon_afk_unbound_pr1_fake_refacto = compute_cursor_hasanigordon_afk_unbound_pr1_fake_refacto(1);
+diff --git a/src/components/shared/ReZilientLogo.jsx b/src/components/shared/ReZilientLogo.jsx
+index 26322d0..738706d 100644
+--- a/src/components/shared/ReZilientLogo.jsx
++++ b/src/components/shared/ReZilientLogo.jsx
+@@ -1,19 +1,61 @@
+ import React from 'react';
+ 
+-const LOGO_URL = 'https://media.base44.com/images/public/698cbbdc830161c35d66ad0e/b27d23522_0941C65E-DE02-4D65-94CA-56262B999EDD.png';
+-
+ export default function ReZilientLogo({ className = 'h-10 w-10', rounded = 'rounded-2xl', size, showWordmark = false }) {
+   const dimensions = size ? { width: size, height: size } : undefined;
+ 
+   return (
+-    <div className="inline-flex items-center gap-3">
+-      <img
+-        src={LOGO_URL}
+-        alt="ReZilient logo"
++    <div className="inline-flex items-center gap-3" aria-label="ReZilient">
++      <div
+         style={dimensions}
+-        className={`${className} ${rounded} object-cover object-center shadow-[0_0_24px_rgba(240,183,83,0.22)]`}
+-      />
+-      {showWordmark && <span className="font-sans text-lg font-black tracking-tight text-white">ReZilient</span>}
++        className={`${className} ${rounded} relative shrink-0 overflow-hidden border border-amber-200/25 bg-black shadow-[0_0_28px_rgba(240,123,27,0.36),inset_0_0_24px_rgba(240,183,83,0.16)]`}
++      >
++        <svg viewBox="0 0 128 128" role="img" aria-label="ReZilient logo mark" className="h-full w-full">
++          <defs>
++            <linearGradient id="rez-metal" x1="28" y1="8" x2="106" y2="118">
++              <stop offset="0%" stopColor="#f5f1e8" />
++              <stop offset="38%" stopColor="#6d737c" />
++              <stop offset="68%" stopColor="#181b20" />
++              <stop offset="100%" stopColor="#f4b047" />
++            </linearGradient>
++            <linearGradient id="rez-brick" x1="0" y1="0" x2="64" y2="120">
++              <stop offset="0%" stopColor="#9a4d22" />
++              <stop offset="52%" stopColor="#5f3019" />
++              <stop offset="100%" stopColor="#2b140d" />
++            </linearGradient>
++            <filter id="rez-glow">
++              <feGaussianBlur stdDeviation="2.2" result="blur" />
++              <feMerge>
++                <feMergeNode in="blur" />
++                <feMergeNode in="SourceGraphic" />
++              </feMerge>
++            </filter>
++          </defs>
++
++          <rect width="128" height="128" fill="#030304" />
++          <circle cx="67" cy="61" r="44" fill="none" stroke="#f47b1b" strokeWidth="5" opacity=".95" filter="url(#rez-glow)" />
++          <path d="M34 111V17h46c24 0 39 14 39 36 0 17-9 29-24 34l24 24H91L70 89H59v22H34Zm25-43h19c10 0 16-5 16-14s-6-14-16-14H59v28Z" fill="url(#rez-metal)" stroke="#f6b24a" strokeWidth="2.5" />
++          <path d="M34 111V17h31v94H34Z" fill="url(#rez-brick)" opacity=".96" />
++          {Array.from({ length: 8 }).map((_, row) => (
++            <g key={row}>
++              <rect x="28" y={18 + row * 11} width="18" height="8" rx="1.4" fill="#8a421e" stroke="#2a130a" strokeWidth=".8" />
++              <rect x="48" y={18 + row * 11} width="18" height="8" rx="1.4" fill="#6f3418" stroke="#2a130a" strokeWidth=".8" />
++            </g>
++          ))}
++          <path d="M32 19c-13 1-22 7-28 17 10-4 18-2 27 3V19Zm0 24c-14 3-23 9-29 18 11-3 20-1 29 4V43Zm0 25C18 72 9 79 3 91c11-5 20-3 29 4V68Z" fill="#8f441f" opacity=".45" />
++          <path d="M79 19 70 38m31 6-17 14m11 32-20-18m-16 0 16-14m-7 50 8-22m27-5 16 4" stroke="#ff7a1a" strokeWidth="2" strokeLinecap="round" opacity=".9" filter="url(#rez-glow)" />
++          <path d="M66 17h15c24 0 38 14 38 36 0 17-9 29-24 34l24 24" fill="none" stroke="rgba(255,255,255,.72)" strokeWidth="1.5" opacity=".65" />
++        </svg>
++      </div>
++      {showWordmark && (
++        <div className="leading-none">
++          <span className="block font-sans text-lg font-black uppercase tracking-[0.18em] text-white">
++            <span className="text-amber-400">Re</span>Zilient
++          </span>
++          <span className="mt-1 hidden text-[9px] font-black uppercase tracking-[0.28em] text-amber-300/85 sm:block">
++            Break. Rebuild. Rise.
++          </span>
++        </div>
++      )}
+     </div>
+   );
+ }
+\ No newline at end of file
+diff --git a/src/pages/PilotHome.jsx b/src/pages/PilotHome.jsx
+index 5edb6b4..6713972 100644
+--- a/src/pages/PilotHome.jsx
++++ b/src/pages/PilotHome.jsx
+@@ -6,15 +6,23 @@ import CounselorHomeView from '@/components/pilot/home/CounselorHomeView';
+ 
+ export default function PilotHome() {
+   const [activeView, setActiveView] = useState('client');
++  const activeRoleLabel = {
++    client: 'Personal comeback dashboard.',
++    counselor: 'Aftercare planning command center.',
++    sponsor: 'Support and accountability view.',
++    po: 'Compliance and progress overview.',
++    mentor: 'Growth coaching dashboard.',
++    veteran: 'Veteran comeback dashboard.',
++  }[activeView] || 'Personal comeback dashboard.';
+ 
+   return (
+     <PilotShell
+       title="ReZilient"
+-      subtitle="Personal companion, aftercare system, and rebuilding platform."
++      subtitle={activeRoleLabel}
+       activeView={activeView}
+     >
+       <HomeViewToggle activeView={activeView} onChange={setActiveView} />
+-      {activeView === 'client' ? <ClientHomeView /> : <CounselorHomeView />}
++      {activeView === 'counselor' ? <CounselorHomeView /> : <ClientHomeView activeRole={activeView} />}
+     </PilotShell>
+   );
+ }
+\ No newline at end of file
+diff --git a/src/pages/Resiliant.jsx b/src/pages/Resiliant.jsx
+index 173701c..75d2757 100644
+--- a/src/pages/Resiliant.jsx
++++ b/src/pages/Resiliant.jsx
+@@ -1,5 +1,4 @@
+ import React from "react";
+-import { Link } from "react-router-dom";
+ import { base44 } from "@/api/base44Client";
+ import {
+   ArrowRight, Map, Compass, Heart, Shield, Users, Briefcase,
+@@ -84,7 +83,7 @@ function FeatureCard({ icon: Icon, label, title, body, accent }) {
+ }
+ 
+ export default function Resiliant() {
+-  const handleStart = () => base44.auth.redirectToLogin("/Onboarding");
++  const handleStart = () => base44.auth.redirectToLogin("/RoleSelect");
+ 
+   return (
+     <div style={{ background: CREAM, minHeight: "100vh" }}>
+@@ -132,14 +131,14 @@ export default function Resiliant() {
+             fontSize: 22, fontFamily: "'Lora', Georgia, serif", fontStyle: "italic",
+             color: GOLD, marginBottom: 22, fontWeight: 500,
+           }}>
+-            Rebuild. Recover. Rise.
++            Built For Life's Biggest Comebacks.
+           </p>
+ 
+           <p style={{
+             fontSize: 16, color: "rgba(255,255,255,0.82)", lineHeight: 1.7,
+             maxWidth: 540, marginBottom: 32,
+           }}>
+-            A recovery, reentry, and life-rebuilding app for people ready to take back control of their future. Stay accountable, find real-world resources, build daily structure, and follow a guided rebuilding plan — one day at a time.
++            An AI-powered recovery, aftercare, accountability, and reentry ecosystem for people rebuilding after treatment, incarceration, homelessness, trauma, military transition, or major life setbacks. ReZilient creates structure, support, purpose, and personal growth after treatment ends.
+           </p>
+ 
+           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+diff --git a/src/pages/RoleSelect.jsx b/src/pages/RoleSelect.jsx
+index 184678b..057c279 100644
+--- a/src/pages/RoleSelect.jsx
++++ b/src/pages/RoleSelect.jsx
+@@ -1,53 +1,118 @@
+-import React, { useState, useEffect } from "react";
++import React, { useEffect, useState } from "react";
+ import { useNavigate } from "react-router-dom";
+ import { base44 } from "@/api/base44Client";
+ import { createPageUrl } from "./utils";
+-import { Loader2 } from "lucide-react";
+-import AhHaLogo from "@/components/shared/AhHaLogo";
+-
+-// Ah Ha brand palette
+-const C = {
+-  amber:  "#B8823A",
+-  green:  "#7A9E7E",
+-  indigo: "#7B8FA8",
+-  bg:     "#F7F3EE",
+-  card:   "#FDFAF6",
+-  border: "#E8E2D9",
+-  text:   "#1C1410",
+-  muted:  "#4A3F35",
+-  dim:    "#9B8E83",
+-};
+-
+-const CLIENT_OPTION = {
+-  id: "client",
+-  label: "I'm here for myself",
+-  sub: "Check in daily, find help near you, message your support team, and track your progress.",
+-  emoji: "🙋",
+-  color: C.amber,
+-  bg: "rgba(184,130,58,0.08)",
+-  page: "Home",
+-};
+-
+-const PROFESSIONAL_OPTIONS = [
+-  { id: "counselor",        label: "Counselor",          sub: "Monitor clients, send messages, track progress." },
+-  { id: "probation_officer",label: "Probation Officer",  sub: "Supervision check-ins, compliance, case notes." },
+-  { id: "sponsor",          label: "Sponsor",            sub: "Support your sponsee, stay connected." },
+-  { id: "recovery_coach",   label: "Recovery Coach",     sub: "Coach clients through goals and stability." },
+-  { id: "case_manager",     label: "Case Manager",       sub: "Track plans, resources, and client needs." },
+-  { id: "facility_admin",   label: "Facility Admin",     sub: "Manage staff accounts and program overview." },
++import {
++  ArrowRight,
++  BadgeCheck,
++  Building2,
++  HandHeart,
++  Heart,
++  Home,
++  Loader2,
++  MapPinned,
++  Shield,
++  Sparkles,
++  UserRound,
++  Users,
++} from "lucide-react";
++import ReZilientLogo from "@/components/shared/ReZilientLogo";
++
++const ROLES = [
++  {
++    id: "client",
++    label: "Client / Participant",
++    sub: "Daily structure, check-ins, roadmap, support circle, resources, and wins.",
++    icon: UserRound,
++    dashboard: "/",
++    permissions: ["Own plan", "Ask AI", "Private profile"],
++  },
++  {
++    id: "counselor",
++    label: "Counselor",
++    sub: "Create aftercare plans, monitor engagement, risk, progress, and messages.",
++    icon: BadgeCheck,
++    dashboard: "/SEESuperAgent",
++    permissions: ["S.E.E. builder", "Caseload", "Risk review"],
++  },
++  {
++    id: "sponsor",
++    label: "Sponsor",
++    sub: "Support check-ins, encouragement, meeting accountability, and crisis outreach.",
++    icon: HandHeart,
++    dashboard: "/SupportUserDashboard",
++    permissions: ["Consent-based view", "Messages", "Encouragement"],
++  },
++  {
++    id: "mentor",
++    label: "Mentor",
++    sub: "Guide goals, employment, reentry steps, and personal growth.",
++    icon: Sparkles,
++    dashboard: "/MentorOnboarding",
++    permissions: ["Goal coaching", "Growth notes", "Resources"],
++  },
++  {
++    id: "probation_officer",
++    label: "Probation Officer",
++    sub: "View compliance, required check-ins, court tasks, and progress with consent.",
++    icon: Shield,
++    dashboard: "/ProbationOfficerDashboard",
++    permissions: ["Compliance", "Appointments", "Notes"],
++  },
++  {
++    id: "family_supporter",
++    label: "Family Supporter",
++    sub: "Stay connected, send encouragement, and understand progress without shame.",
++    icon: Heart,
++    dashboard: "/FamilyView",
++    permissions: ["Shared wins", "Messages", "Support activity"],
++  },
++  {
++    id: "facility_admin",
++    label: "Facility Admin",
++    sub: "Manage programs, staff, intakes, outcomes, and facility-level dashboards.",
++    icon: Building2,
++    dashboard: "/FacilityPilotDashboard",
++    permissions: ["Facility overview", "Staff access", "Outcomes"],
++  },
++  {
++    id: "veteran",
++    label: "Veteran",
++    sub: "VA resources, benefits, housing, military mentorship, and mission-based support.",
++    icon: Users,
++    dashboard: "/VeteranSupportHub",
++    permissions: ["Veteran hub", "Benefits", "Mentorship"],
++  },
++  {
++    id: "returning_citizen",
++    label: "Returning Citizen",
++    sub: "Reentry support for IDs, housing, jobs, transportation, legal, and community.",
++    icon: Home,
++    dashboard: "/RecoveryMapFinder",
++    permissions: ["Reentry map", "Roadmap", "Support"],
++  },
++  {
++    id: "person_seeking_help",
++    label: "Person Seeking Help",
++    sub: "Immediate help, resources near you, calming tools, and a first-step plan.",
++    icon: MapPinned,
++    dashboard: "/FindHelpNow",
++    permissions: ["Urgent help", "Resources", "AI guidance"],
++  },
+ ];
+ 
+ export default function RoleSelect() {
+   const navigate = useNavigate();
+   const [checking, setChecking] = useState(true);
+-  const [showProfessionalExpanded, setShowProfessionalExpanded] = useState(false);
+ 
+-  // Auto-detect role from existing profiles
+   useEffect(() => {
+     (async () => {
+       try {
+         const user = await base44.auth.me();
+-        if (!user) { setChecking(false); return; }
++        if (!user) {
++          setChecking(false);
++          return;
++        }
+ 
+         const [counselorProfiles, memberProfiles] = await Promise.all([
+           base44.entities.CounselorProfile.filter({ counselor_email: user.email }),
+@@ -55,138 +120,94 @@ export default function RoleSelect() {
+         ]);
+ 
+         if (counselorProfiles.length > 0) {
+-          navigate(createPageUrl("ProfessionalPortal"), { replace: true });
++          navigate("/SEESuperAgent", { replace: true });
+           return;
+         }
+         if (memberProfiles.length > 0 && memberProfiles[0]?.onboarding_complete) {
+-          navigate(createPageUrl("Home"), { replace: true });
++          navigate("/", { replace: true });
+           return;
+         }
+       } catch {
+-        // not logged in, show role select
++        // Logged-out preview users can still see the role matrix.
+       }
+       setChecking(false);
+     })();
+   }, [navigate]);
+ 
+-  const handleClient = async () => {
+-    sessionStorage.setItem("unbound_role", "client");
+-    try { await base44.auth.updateMe({ role: "client" }); } catch {}
+-    navigate(createPageUrl("Home"));
+-  };
+-
+-  const handleSupportUser = async () => {
+-    sessionStorage.setItem("unbound_role", "support_user");
+-    try { await base44.auth.updateMe({ role: "support_user" }); } catch {}
+-    navigate("/SupportUserDashboard");
+-  };
+-
+-  const handleProfessional = (roleId) => {
+-    sessionStorage.setItem("unbound_role", roleId);
+-    navigate(createPageUrl("ProfessionalPortal"));
++  const handleRole = async (role) => {
++    sessionStorage.setItem("unbound_role", role.id);
++    try {
++      await base44.auth.updateMe({ role: role.id });
++    } catch {
++      // Preview mode may not have an authenticated user yet.
++    }
++    if (role.dashboard === "/") navigate("/");
++    else if (role.dashboard.startsWith("/")) navigate(role.dashboard);
++    else navigate(createPageUrl(role.dashboard));
+   };
+ 
+   if (checking) {
+     return (
+-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg }}>
+-        <Loader2 className="w-6 h-6 animate-spin" style={{ color: C.amber }} />
++      <div className="flex min-h-screen items-center justify-center bg-transparent">
++        <Loader2 className="h-7 w-7 animate-spin text-blue-200" />
+       </div>
+     );
+   }
+ 
+   return (
+-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 20px" }}>
+-      <div style={{ width: "100%", maxWidth: 440 }}>
+-
+-        {/* Brand */}
+-        <div style={{ textAlign: "center", marginBottom: 36 }}>
+-          <div style={{ marginBottom: 14 }}>
+-            <AhHaLogo size={72} layout="column" showWordmark={false} />
+-          </div>
+-          <h1 style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 600, color: C.text, marginBottom: 8, lineHeight: 1.2 }}>Who's logging in?</h1>
+-          <p style={{ fontSize: 14, color: C.muted }}>Pick the option that fits you.</p>
+-        </div>
+-
+-        {/* Client option */}
+-        <button onClick={handleClient}
+-          style={{
+-            width: "100%", textAlign: "left", padding: "20px", borderRadius: 16,
+-            background: CLIENT_OPTION.bg, border: `1.5px solid ${CLIENT_OPTION.color}`,
+-            cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 12,
+-          }}>
+-          <div style={{ width: 48, height: 48, borderRadius: 14, background: CLIENT_OPTION.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+-            <span style={{ fontSize: 22 }}>{CLIENT_OPTION.emoji}</span>
+-          </div>
+-          <div style={{ flex: 1 }}>
+-            <p style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 4 }}>{CLIENT_OPTION.label}</p>
+-            <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{CLIENT_OPTION.sub}</p>
+-          </div>
+-          <span style={{ fontSize: 20, color: CLIENT_OPTION.color, alignSelf: "center" }}>›</span>
+-        </button>
+-
+-        {/* Support User option */}
+-        <button onClick={handleSupportUser}
+-          style={{
+-            width: "100%", textAlign: "left", padding: "20px", borderRadius: 16,
+-            background: "rgba(122,158,126,0.08)", border: `1.5px solid ${C.green}`,
+-            cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 12,
+-          }}>
+-          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+-            <span style={{ fontSize: 22 }}>🤝</span>
+-          </div>
+-          <div style={{ flex: 1 }}>
+-            <p style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 4 }}>I'm a Support Person</p>
+-            <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>Sponsor, coach, counselor, or family member. View client progress with their consent.</p>
+-          </div>
+-          <span style={{ fontSize: 20, color: C.green, alignSelf: "center" }}>›</span>
+-        </button>
+-
+-        {/* Professional / Facility section */}
+-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden" }}>
+-          <button
+-            onClick={() => setShowProfessionalExpanded(!showProfessionalExpanded)}
+-            style={{
+-              width: "100%", textAlign: "left", padding: "20px", background: "none", border: "none",
+-              cursor: "pointer", display: "flex", alignItems: "center", gap: 16,
+-            }}>
+-            <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(123,143,168,0.10)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+-              <span style={{ fontSize: 22 }}>💼</span>
+-            </div>
+-            <div style={{ flex: 1 }}>
+-              <p style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 2 }}>Facility / Clinical Staff</p>
+-              <p style={{ fontSize: 13, color: C.muted }}>Counselor portal, compliance, EHR, billing</p>
++    <div className="min-h-screen bg-transparent px-4 py-8 text-white sm:py-12">
++      <div className="mx-auto max-w-5xl">
++        <section className="card-glow overflow-hidden p-6 sm:p-8">
++          <div className="flex items-center gap-4">
++            <ReZilientLogo className="h-14 w-14" />
++            <div>
++              <p className="text-xs font-black uppercase tracking-[0.26em] text-amber-200">Help. Hope. Healing.</p>
++              <h1 className="mt-1 font-sans text-3xl font-black text-white sm:text-5xl">Who are you today?</h1>
+             </div>
+-            <span style={{ fontSize: 18, color: C.dim, transform: showProfessionalExpanded ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
+-          </button>
+-
+-          {showProfessionalExpanded && (
+-            <div style={{ borderTop: `1px solid ${C.border}` }}>
+-              {PROFESSIONAL_OPTIONS.map((opt, i) => (
+-                <button key={opt.id} onClick={() => handleProfessional(opt.id)}
+-                  style={{
+-                    width: "100%", textAlign: "left", padding: "14px 20px",
+-                    background: "none", border: "none", cursor: "pointer",
+-                    borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+-                    display: "flex", alignItems: "center", gap: 12,
+-                  }}
+-                  onMouseEnter={e => e.currentTarget.style.background = C.bg}
+-                  onMouseLeave={e => e.currentTarget.style.background = "none"}
+-                >
+-                  <div style={{ flex: 1 }}>
+-                    <p style={{ fontWeight: 600, fontSize: 14, color: C.text, marginBottom: 2 }}>{opt.label}</p>
+-                    <p style={{ fontSize: 12, color: C.muted }}>{opt.sub}</p>
++          </div>
++          <p className="mt-5 max-w-3xl text-base font-bold leading-relaxed text-slate-300">
++            ReZilient adapts permissions, dashboards, reminders, and support tools to the role you choose. You can switch roles later when responsibilities change.
++          </p>
++        </section>
++
++        <div className="mt-5 grid gap-3 md:grid-cols-2">
++          {ROLES.map((role) => {
++            const Icon = role.icon;
++            return (
++              <button
++                key={role.id}
++                type="button"
++                onClick={() => handleRole(role)}
++                className="group card-soft min-h-[168px] w-full p-5 text-left transition hover:-translate-y-1 hover:border-blue-200/35 active:scale-[0.99]"
++              >
++                <div className="flex items-start gap-4">
++                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-3xl border border-white/10 bg-white/10 text-white shadow-inner">
++                    <Icon className="h-6 w-6" />
+                   </div>
+-                  <span style={{ color: C.dim, fontSize: 16 }}>›</span>
+-                </button>
+-              ))}
+-            </div>
+-          )}
++                  <div className="min-w-0 flex-1">
++                    <div className="flex items-center justify-between gap-3">
++                      <p className="font-sans text-xl font-black text-white">{role.label}</p>
++                      <ArrowRight className="h-5 w-5 shrink-0 text-blue-200 transition group-hover:translate-x-1" />
++                    </div>
++                    <p className="mt-2 text-sm font-bold leading-relaxed text-slate-300">{role.sub}</p>
++                    <div className="mt-4 flex flex-wrap gap-2">
++                      {role.permissions.map((permission) => (
++                        <span key={permission} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-[11px] font-black text-slate-200">
++                          {permission}
++                        </span>
++                      ))}
++                    </div>
++                  </div>
++                </div>
++              </button>
++            );
++          })}
+         </div>
+ 
+-        <p style={{ textAlign: "center", fontSize: 12, color: C.dim, marginTop: 24 }}>
+-          Ah Ha — built for people rebuilding their lives
++        <p className="mt-6 text-center text-xs font-bold text-slate-400">
++          ReZilient is a support ecosystem, not hospital software or a replacement for emergency care.
+         </p>
+       </div>
+     </div>
+   );
+-}
+\ No newline at end of file
++}

@@ -1,0 +1,1644 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..7ef88b0
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,7 @@
++# YouTube Data API v3 키
++# https://console.cloud.google.com/apis/credentials 에서 발급받으세요
++YOUTUBE_API_KEY=your_youtube_api_key_here
++
++# 서버 설정
++HOST=0.0.0.0
++PORT=8000
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..7cbe465
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,43 @@
++# Python
++__pycache__/
++*.py[cod]
++*$py.class
++*.so
++.Python
++env/
++venv/
++ENV/
++build/
++develop-eggs/
++dist/
++downloads/
++eggs/
++.eggs/
++lib/
++lib64/
++parts/
++sdist/
++var/
++wheels/
++*.egg-info/
++.installed.cfg
++*.egg
++
++# Environment
++.env
++.env.local
++
++# IDE
++.vscode/
++.idea/
++*.swp
++*.swo
++*~
++
++# OS
++.DS_Store
++Thumbs.db
++
++# Logs
++*.log
++logs/
+diff --git a/README.md b/README.md
+index e0e3e62..4d94c99 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,230 @@
+-# lokki
+\ No newline at end of file
++# 📊 Lokki - YouTube 트렌드 & 경쟁채널 자동 리서치
++
++YouTube 채널의 트렌드와 경쟁 채널을 자동으로 분석하는 서비스입니다.
++
++## 주요 기능
++
++- 📈 **채널 분석**: 조회수, 구독자, 영상 성과 분석
++- 🔍 **키워드 추출**: 영상 제목, 설명, 태그에서 핵심 키워드 자동 추출
++- 💬 **톤/감성 분석**: 채널의 전반적인 톤 및 감성 분석
++- 🆚 **경쟁 채널 비교**: 여러 채널의 성과를 한눈에 비교
++- 🔥 **트렌드 분석**: 지역별 트렌딩 영상 및 키워드 조회
++
++## 기술 스택
++
++- **Backend**: Python 3.8+, FastAPI
++- **API**: YouTube Data API v3
++- **분석**: 자연어 처리 (키워드 추출, 감성 분석)
++- **Frontend**: HTML, CSS, JavaScript (바닐라)
++
++## 설치 방법
++
++### 1. 저장소 클론
++
++```bash
++git clone <repository-url>
++cd lokki
++```
++
++### 2. 가상환경 생성 및 활성화
++
++```bash
++python -m venv venv
++source venv/bin/activate  # Windows: venv\Scripts\activate
++```
++
++### 3. 의존성 설치
++
++```bash
++pip install -r requirements.txt
++```
++
++### 4. YouTube API 키 설정
++
++1. [Google Cloud Console](https://console.cloud.google.com/) 접속
++2. 새 프로젝트 생성
++3. YouTube Data API v3 활성화
++4. API 키 생성 (사용자 인증 정보)
++5. `.env` 파일 생성:
++
++```bash
++cp .env.example .env
++```
++
++6. `.env` 파일에 API 키 입력:
++
++```
++YOUTUBE_API_KEY=your_api_key_here
++HOST=0.0.0.0
++PORT=8000
++```
++
++## 실행 방법
++
++### 서버 실행
++
++```bash
++python -m app.main
++```
++
++또는
++
++```bash
++uvicorn app.main:app --reload
++```
++
++서버가 실행되면:
++- API 문서: http://localhost:8000/docs
++- 웹 대시보드: http://localhost:8000/dashboard
++
++## API 사용법
++
++### 1. 단일 채널 분석
++
++```bash
++GET /api/channel/{identifier}?video_count=10
++```
++
++**예시**:
++```bash
++curl "http://localhost:8000/api/channel/백종원?video_count=10"
++```
++
++**응답**:
++```json
++{
++  "stats": {
++    "channel_name": "채널명",
++    "subscriber_count": 1000000,
++    "video_count": 500,
++    "view_count": 50000000
++  },
++  "keywords": {
++    "요리": 45,
++    "레시피": 32,
++    ...
++  },
++  "avg_views": 100000,
++  "avg_likes": 5000,
++  "tone": "positive"
++}
++```
++
++### 2. 여러 채널 비교
++
++```bash
++GET /api/compare?channels=채널A&channels=채널B&channels=채널C&video_count=10
++```
++
++**응답**:
++```json
++{
++  "channels": [...],
++  "common_keywords": ["키워드1", "키워드2"],
++  "performance_ranking": [
++    {
++      "channel_name": "최고 성과 채널",
++      "score": 1500000,
++      "avg_views": 100000
++    }
++  ],
++  "trend_keywords": ["트렌드1", "트렌드2"]
++}
++```
++
++### 3. 트렌딩 영상
++
++```bash
++GET /api/trending?region=KR&max_results=10
++```
++
++**응답**:
++```json
++{
++  "region": "KR",
++  "videos": [...],
++  "trending_keywords": {
++    "키워드1": 15,
++    "키워드2": 12
++  }
++}
++```
++
++## 프로젝트 구조
++
++```
++lokki/
++├── app/
++│   ├── api/
++│   │   └── routes.py          # API 엔드포인트
++│   ├── models/
++│   │   └── channel.py         # 데이터 모델
++│   ├── services/
++│   │   ├── youtube_service.py # YouTube API 연동
++│   │   ├── analyzer_service.py # 분석 로직
++│   │   └── research_service.py # 통합 리서치
++│   ├── config.py              # 설정
++│   └── main.py                # FastAPI 앱
++├── templates/
++│   └── dashboard.html         # 웹 대시보드
++├── static/
++│   └── style.css
++├── requirements.txt
++├── .env.example
++└── README.md
++```
++
++## 사용 예시
++
++### 웹 대시보드
++
++1. 브라우저에서 `http://localhost:8000/dashboard` 접속
++2. 탭 선택:
++   - **단일 채널 분석**: 채널 ID나 이름 입력
++   - **채널 비교**: 여러 채널을 쉼표로 구분해서 입력
++   - **트렌딩**: 지역 선택 후 조회
++
++### Python 코드
++
++```python
++import httpx
++
++# 단일 채널 분석
++response = httpx.get("http://localhost:8000/api/channel/백종원")
++data = response.json()
++print(f"채널명: {data['stats']['channel_name']}")
++print(f"구독자: {data['stats']['subscriber_count']:,}")
++print(f"주요 키워드: {list(data['keywords'].keys())[:5]}")
++```
++
++## 분석 기능 상세
++
++### 키워드 추출
++- 영상 제목, 설명, 태그에서 자동 추출
++- 불용어 제거
++- 빈도수 기반 랭킹
++
++### 감성 분석
++- 긍정/부정 키워드 기반 분석
++- 톤 분류: positive, neutral, negative
++- 감성 점수: -1.0 ~ 1.0
++
++### 성과 순위
++- 평균 조회수 (40%)
++- 평균 좋아요 (30%)
++- 구독자 수 (20%)
++- 참여율 (10%)
++
++## 주의사항
++
++- YouTube API는 일일 할당량이 제한되어 있습니다 (기본 10,000 units/day)
++- API 키는 절대 공개 저장소에 커밋하지 마세요
++- 대량 분석 시 API 할당량을 주의하세요
++
++## 라이선스
++
++MIT License
++
++## 기여
++
++이슈 및 풀 리퀘스트는 언제나 환영합니다!
+\ No newline at end of file
+diff --git a/app/__init__.py b/app/__init__.py
+new file mode 100644
+index 0000000..03a1609
+--- /dev/null
++++ b/app/__init__.py
+@@ -0,0 +1 @@
++# Lokki - YouTube Research Service
+diff --git a/app/api/__init__.py b/app/api/__init__.py
+new file mode 100644
+index 0000000..1b2eccc
+--- /dev/null
++++ b/app/api/__init__.py
+@@ -0,0 +1,3 @@
++from .routes import router
++
++__all__ = ["router"]
+diff --git a/app/api/routes.py b/app/api/routes.py
+new file mode 100644
+index 0000000..ea23fee
+--- /dev/null
++++ b/app/api/routes.py
+@@ -0,0 +1,126 @@
++from fastapi import APIRouter, HTTPException, Query
++from typing import List
++from app.services.youtube_service import YouTubeService
++from app.services.research_service import ResearchService
++from app.models.channel import ChannelAnalysis, ComparisonResult
++from app.config import settings
++import logging
++
++logger = logging.getLogger(__name__)
++
++router = APIRouter()
++
++
++def get_research_service():
++    """ResearchService 인스턴스 생성"""
++    youtube_service = YouTubeService(settings.youtube_api_key)
++    return ResearchService(youtube_service)
++
++
++@router.get("/")
++async def root():
++    """API 루트"""
++    return {
++        "service": "Lokki - YouTube 트렌드 & 경쟁채널 리서치",
++        "version": "1.0.0",
++        "endpoints": {
++            "/api/channel/{identifier}": "단일 채널 분석",
++            "/api/compare": "여러 채널 비교",
++            "/api/trending": "트렌딩 영상 조회",
++            "/docs": "API 문서"
++        }
++    }
++
++
++@router.get("/api/channel/{identifier}", response_model=ChannelAnalysis)
++async def analyze_channel(
++    identifier: str,
++    video_count: int = Query(default=10, ge=1, le=50, description="분석할 최근 영상 수")
++):
++    """
++    단일 채널 분석
++
++    - **identifier**: 채널 ID (UC로 시작) 또는 채널명
++    - **video_count**: 분석할 최근 영상 수 (1-50)
++    """
++    try:
++        research_service = get_research_service()
++        result = research_service.research_channel(identifier, video_count)
++        return result
++    except ValueError as e:
++        raise HTTPException(status_code=404, detail=str(e))
++    except Exception as e:
++        logger.error(f"채널 분석 오류: {e}")
++        raise HTTPException(status_code=500, detail="채널 분석 중 오류가 발생했습니다.")
++
++
++@router.get("/api/compare", response_model=ComparisonResult)
++async def compare_channels(
++    channels: List[str] = Query(..., description="비교할 채널 ID 또는 채널명 목록"),
++    video_count: int = Query(default=10, ge=1, le=50, description="각 채널의 최근 영상 수")
++):
++    """
++    여러 채널 비교 분석
++
++    - **channels**: 비교할 채널 목록 (최소 2개)
++    - **video_count**: 각 채널의 최근 영상 수 (1-50)
++
++    예시: /api/compare?channels=채널A&channels=채널B&channels=채널C
++    """
++    if len(channels) < 2:
++        raise HTTPException(
++            status_code=400,
++            detail="최소 2개 이상의 채널이 필요합니다."
++        )
++
++    try:
++        research_service = get_research_service()
++        result = research_service.compare_channels(channels, video_count)
++        return result
++    except ValueError as e:
++        raise HTTPException(status_code=404, detail=str(e))
++    except Exception as e:
++        logger.error(f"채널 비교 오류: {e}")
++        raise HTTPException(status_code=500, detail="채널 비교 중 오류가 발생했습니다.")
++
++
++@router.get("/api/trending")
++async def get_trending(
++    region: str = Query(default="KR", description="지역 코드 (KR, US, JP 등)"),
++    max_results: int = Query(default=10, ge=1, le=50, description="조회할 영상 수")
++):
++    """
++    트렌딩 영상 조회
++
++    - **region**: 지역 코드 (KR, US, JP 등)
++    - **max_results**: 조회할 영상 수 (1-50)
++    """
++    try:
++        youtube_service = YouTubeService(settings.youtube_api_key)
++        videos = youtube_service.get_trending_videos(region, max_results)
++
++        # 키워드 추출
++        from app.services.analyzer_service import AnalyzerService
++        analyzer = AnalyzerService()
++
++        texts = []
++        for video in videos:
++            texts.append(video.title)
++            texts.extend(video.tags)
++
++        keywords = analyzer.extract_keywords(texts, top_n=20)
++
++        return {
++            "region": region,
++            "videos": videos,
++            "trending_keywords": keywords
++        }
++    except Exception as e:
++        logger.error(f"트렌딩 영상 조회 오류: {e}")
++        raise HTTPException(status_code=500, detail="트렌딩 영상 조회 중 오류가 발생했습니다.")
++
++
++@router.get("/health")
++async def health_check():
++    """헬스 체크"""
++    return {"status": "healthy"}
+diff --git a/app/config.py b/app/config.py
+new file mode 100644
+index 0000000..617d21c
+--- /dev/null
++++ b/app/config.py
+@@ -0,0 +1,17 @@
++from pydantic_settings import BaseSettings
++from typing import Optional
++
++
++class Settings(BaseSettings):
++    """애플리케이션 설정"""
++
++    youtube_api_key: str = ""
++    host: str = "0.0.0.0"
++    port: int = 8000
++
++    class Config:
++        env_file = ".env"
++        case_sensitive = False
++
++
++settings = Settings()
+diff --git a/app/main.py b/app/main.py
+new file mode 100644
+index 0000000..8393822
+--- /dev/null
++++ b/app/main.py
+@@ -0,0 +1,70 @@
++from fastapi import FastAPI
++from fastapi.middleware.cors import CORSMiddleware
++from fastapi.staticfiles import StaticFiles
++from fastapi.responses import HTMLResponse
++from fastapi.templating import Jinja2Templates
++from starlette.requests import Request
++from app.api.routes import router
++from app.config import settings
++import logging
++
++# 로깅 설정
++logging.basicConfig(
++    level=logging.INFO,
++    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
++)
++
++logger = logging.getLogger(__name__)
++
++# FastAPI 앱 생성
++app = FastAPI(
++    title="Lokki - YouTube Research API",
++    description="YouTube 트렌드 & 경쟁채널 자동 리서치 서비스",
++    version="1.0.0"
++)
++
++# CORS 설정
++app.add_middleware(
++    CORSMiddleware,
++    allow_origins=["*"],
++    allow_credentials=True,
++    allow_methods=["*"],
++    allow_headers=["*"],
++)
++
++# 정적 파일 및 템플릿
++app.mount("/static", StaticFiles(directory="static"), name="static")
++templates = Jinja2Templates(directory="templates")
++
++# API 라우터 등록
++app.include_router(router)
++
++
++@app.get("/dashboard", response_class=HTMLResponse)
++async def dashboard(request: Request):
++    """웹 대시보드"""
++    return templates.TemplateResponse("dashboard.html", {"request": request})
++
++
++@app.on_event("startup")
++async def startup_event():
++    """앱 시작 이벤트"""
++    logger.info("Lokki 서비스 시작")
++    if not settings.youtube_api_key:
++        logger.warning("YouTube API 키가 설정되지 않았습니다. .env 파일을 확인하세요.")
++
++
++@app.on_event("shutdown")
++async def shutdown_event():
++    """앱 종료 이벤트"""
++    logger.info("Lokki 서비스 종료")
++
++
++if __name__ == "__main__":
++    import uvicorn
++    uvicorn.run(
++        "app.main:app",
++        host=settings.host,
++        port=settings.port,
++        reload=True
++    )
+diff --git a/app/models/__init__.py b/app/models/__init__.py
+new file mode 100644
+index 0000000..26938a3
+--- /dev/null
++++ b/app/models/__init__.py
+@@ -0,0 +1,3 @@
++from .channel import VideoInfo, ChannelStats, ChannelAnalysis, ComparisonResult
++
++__all__ = ["VideoInfo", "ChannelStats", "ChannelAnalysis", "ComparisonResult"]
+diff --git a/app/models/channel.py b/app/models/channel.py
+new file mode 100644
+index 0000000..772e69c
+--- /dev/null
++++ b/app/models/channel.py
+@@ -0,0 +1,48 @@
++from pydantic import BaseModel
++from typing import List, Optional, Dict
++from datetime import datetime
++
++
++class VideoInfo(BaseModel):
++    """영상 정보"""
++    video_id: str
++    title: str
++    description: str
++    published_at: str
++    view_count: int
++    like_count: int
++    comment_count: int
++    duration: Optional[str] = None
++    tags: List[str] = []
++
++
++class ChannelStats(BaseModel):
++    """채널 통계"""
++    channel_id: str
++    channel_name: str
++    subscriber_count: int
++    video_count: int
++    view_count: int
++    description: str
++    published_at: str
++    country: Optional[str] = None
++    custom_url: Optional[str] = None
++
++
++class ChannelAnalysis(BaseModel):
++    """채널 분석 결과"""
++    stats: ChannelStats
++    recent_videos: List[VideoInfo]
++    keywords: Dict[str, int]  # 키워드: 빈도
++    avg_views: float
++    avg_likes: float
++    sentiment_score: float  # -1 ~ 1
++    tone: str  # positive, neutral, negative
++
++
++class ComparisonResult(BaseModel):
++    """경쟁 채널 비교 결과"""
++    channels: List[ChannelAnalysis]
++    common_keywords: List[str]
++    performance_ranking: List[Dict[str, any]]
++    trend_keywords: List[str]
+diff --git a/app/services/__init__.py b/app/services/__init__.py
+new file mode 100644
+index 0000000..ff7d468
+--- /dev/null
++++ b/app/services/__init__.py
+@@ -0,0 +1,5 @@
++from .youtube_service import YouTubeService
++from .analyzer_service import AnalyzerService
++from .research_service import ResearchService
++
++__all__ = ["YouTubeService", "AnalyzerService", "ResearchService"]
+diff --git a/app/services/analyzer_service.py b/app/services/analyzer_service.py
+new file mode 100644
+index 0000000..ca57127
+--- /dev/null
++++ b/app/services/analyzer_service.py
+@@ -0,0 +1,183 @@
++from typing import List, Dict
++from collections import Counter
++import re
++from app.models.channel import VideoInfo, ChannelStats, ChannelAnalysis
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++class AnalyzerService:
++    """채널 및 영상 분석 서비스"""
++
++    def extract_keywords(self, texts: List[str], top_n: int = 20) -> Dict[str, int]:
++        """텍스트에서 키워드 추출"""
++        # 모든 텍스트 결합
++        combined_text = " ".join(texts).lower()
++
++        # 특수문자 제거 및 단어 분리
++        words = re.findall(r'\b[가-힣a-z]{2,}\b', combined_text)
++
++        # 불용어 제거 (간단한 예시)
++        stop_words = {
++            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
++            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
++            'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
++            'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these',
++            'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'my', 'your',
++            '은', '는', '이', '가', '을', '를', '의', '에', '에서', '으로', '로',
++            '과', '와', '도', '만', '하다', '있다', '없다', '되다', '이다', '아니다'
++        }
++
++        words = [w for w in words if w not in stop_words]
++
++        # 빈도수 계산
++        word_freq = Counter(words)
++
++        return dict(word_freq.most_common(top_n))
++
++    def calculate_sentiment(self, texts: List[str]) -> tuple[float, str]:
++        """간단한 감성 분석 (긍정/부정 키워드 기반)"""
++        positive_keywords = {
++            '좋', '최고', '대박', '감사', '추천', '완벽', '멋지', '훌륭', '재밌', '재미있',
++            'good', 'great', 'best', 'awesome', 'amazing', 'excellent', 'perfect',
++            'love', 'like', 'wonderful', 'fantastic', 'brilliant'
++        }
++
++        negative_keywords = {
++            '나쁘', '최악', '별로', '실망', '안좋', '싫', '지루', '재미없',
++            'bad', 'worst', 'terrible', 'awful', 'horrible', 'hate', 'dislike',
++            'boring', 'disappointing', 'poor'
++        }
++
++        combined_text = " ".join(texts).lower()
++
++        positive_count = sum(1 for keyword in positive_keywords if keyword in combined_text)
++        negative_count = sum(1 for keyword in negative_keywords if keyword in combined_text)
++
++        total = positive_count + negative_count
++        if total == 0:
++            return 0.0, "neutral"
++
++        sentiment_score = (positive_count - negative_count) / total
++
++        if sentiment_score > 0.2:
++            tone = "positive"
++        elif sentiment_score < -0.2:
++            tone = "negative"
++        else:
++            tone = "neutral"
++
++        return sentiment_score, tone
++
++    def analyze_channel(
++        self,
++        stats: ChannelStats,
++        recent_videos: List[VideoInfo]
++    ) -> ChannelAnalysis:
++        """채널 종합 분석"""
++        if not recent_videos:
++            return ChannelAnalysis(
++                stats=stats,
++                recent_videos=[],
++                keywords={},
++                avg_views=0,
++                avg_likes=0,
++                sentiment_score=0.0,
++                tone="neutral"
++            )
++
++        # 키워드 추출 (제목 + 설명 + 태그)
++        texts = []
++        for video in recent_videos:
++            texts.append(video.title)
++            texts.append(video.description)
++            texts.extend(video.tags)
++
++        keywords = self.extract_keywords(texts)
++
++        # 평균 조회수, 좋아요 계산
++        total_views = sum(v.view_count for v in recent_videos)
++        total_likes = sum(v.like_count for v in recent_videos)
++        avg_views = total_views / len(recent_videos)
++        avg_likes = total_likes / len(recent_videos)
++
++        # 감성 분석
++        sentiment_texts = [v.title for v in recent_videos]
++        sentiment_score, tone = self.calculate_sentiment(sentiment_texts)
++
++        return ChannelAnalysis(
++            stats=stats,
++            recent_videos=recent_videos,
++            keywords=keywords,
++            avg_views=avg_views,
++            avg_likes=avg_likes,
++            sentiment_score=sentiment_score,
++            tone=tone
++        )
++
++    def find_common_keywords(self, analyses: List[ChannelAnalysis], top_n: int = 10) -> List[str]:
++        """여러 채널의 공통 키워드 찾기"""
++        if not analyses:
++            return []
++
++        # 모든 채널의 키워드 집합
++        all_keywords_sets = [set(analysis.keywords.keys()) for analysis in analyses]
++
++        # 교집합 찾기
++        common = set.intersection(*all_keywords_sets) if all_keywords_sets else set()
++
++        # 빈도수 합산
++        keyword_scores = {}
++        for keyword in common:
++            keyword_scores[keyword] = sum(
++                analysis.keywords.get(keyword, 0) for analysis in analyses
++            )
++
++        # 정렬하여 상위 N개 반환
++        sorted_keywords = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
++        return [k for k, v in sorted_keywords[:top_n]]
++
++    def rank_by_performance(self, analyses: List[ChannelAnalysis]) -> List[Dict]:
++        """성과 기준으로 채널 순위 매기기"""
++        rankings = []
++
++        for analysis in analyses:
++            # 종합 점수 계산 (가중 평균)
++            engagement_rate = 0
++            if analysis.avg_views > 0:
++                engagement_rate = (analysis.avg_likes / analysis.avg_views) * 100
++
++            score = (
++                analysis.avg_views * 0.4 +
++                analysis.avg_likes * 0.3 +
++                analysis.stats.subscriber_count * 0.2 +
++                engagement_rate * 1000 * 0.1  # 스케일 조정
++            )
++
++            rankings.append({
++                "channel_name": analysis.stats.channel_name,
++                "channel_id": analysis.stats.channel_id,
++                "score": score,
++                "avg_views": analysis.avg_views,
++                "avg_likes": analysis.avg_likes,
++                "subscribers": analysis.stats.subscriber_count,
++                "engagement_rate": engagement_rate
++            })
++
++        # 점수 기준 내림차순 정렬
++        rankings.sort(key=lambda x: x["score"], reverse=True)
++
++        return rankings
++
++    def extract_trend_keywords(self, analyses: List[ChannelAnalysis], top_n: int = 15) -> List[str]:
++        """트렌드 키워드 추출 (여러 채널에서 자주 나타나는 키워드)"""
++        all_keywords = {}
++
++        for analysis in analyses:
++            for keyword, freq in analysis.keywords.items():
++                all_keywords[keyword] = all_keywords.get(keyword, 0) + freq
++
++        # 빈도수 기준 정렬
++        sorted_keywords = sorted(all_keywords.items(), key=lambda x: x[1], reverse=True)
++        return [k for k, v in sorted_keywords[:top_n]]
+@@ -100080,7 +100080,7 @@
+ export function op_claude_code_ChanOkPark_lokki_pr1_exception_rethr(x: number) {
+   try {
+     return inner_claude_code_ChanOkPark_lokki_pr1_exception_rethr(x);
+   } catch (err) {
+-    throw err;
++    throw new Error('op_claude_code_ChanOkPark_lokki_pr1_exception_rethr failed');
+   }
+ }
+diff --git a/app/services/research_service.py b/app/services/research_service.py
+new file mode 100644
+index 0000000..8f1fb99
+--- /dev/null
++++ b/app/services/research_service.py
+@@ -0,0 +1,71 @@
++from typing import List
++from app.services.youtube_service import YouTubeService
++from app.services.analyzer_service import AnalyzerService
++from app.models.channel import ChannelAnalysis, ComparisonResult
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++class ResearchService:
++    """채널 리서치 통합 서비스"""
++
++    def __init__(self, youtube_service: YouTubeService):
++        self.youtube = youtube_service
++        self.analyzer = AnalyzerService()
++
++    def research_channel(self, channel_identifier: str, video_count: int = 10) -> ChannelAnalysis:
++        """단일 채널 리서치"""
++        # 채널 ID 확인
++        if channel_identifier.startswith("UC"):
++            channel_id = channel_identifier
++        else:
++            # 채널 검색
++            channel_id = self.youtube.search_channel(channel_identifier)
++            if not channel_id:
++                raise ValueError(f"채널을 찾을 수 없습니다: {channel_identifier}")
++
++        # 채널 통계 조회
++        stats = self.youtube.get_channel_stats(channel_id)
++        if not stats:
++            raise ValueError(f"채널 통계를 가져올 수 없습니다: {channel_id}")
++
++        # 최근 영상 조회
++        recent_videos = self.youtube.get_recent_videos(channel_id, video_count)
++
++        # 채널 분석
++        analysis = self.analyzer.analyze_channel(stats, recent_videos)
++
++        logger.info(f"채널 분석 완료: {stats.channel_name}")
++        return analysis
++
++    def compare_channels(self, channel_identifiers: List[str], video_count: int = 10) -> ComparisonResult:
++        """여러 채널 비교 분석"""
++        analyses = []
++
++        for identifier in channel_identifiers:
++            try:
++                analysis = self.research_channel(identifier, video_count)
++                analyses.append(analysis)
++            except Exception as e:
++                logger.error(f"채널 분석 실패 ({identifier}): {e}")
++                continue
++
++        if not analyses:
++            raise ValueError("분석할 채널이 없습니다.")
++
++        # 공통 키워드
++        common_keywords = self.analyzer.find_common_keywords(analyses)
++
++        # 성과 순위
++        performance_ranking = self.analyzer.rank_by_performance(analyses)
++
++        # 트렌드 키워드
++        trend_keywords = self.analyzer.extract_trend_keywords(analyses)
++
++        return ComparisonResult(
++            channels=analyses,
++            common_keywords=common_keywords,
++            performance_ranking=performance_ranking,
++            trend_keywords=trend_keywords
++        )
+diff --git a/app/services/youtube_service.py b/app/services/youtube_service.py
+new file mode 100644
+index 0000000..aa8aae3
+--- /dev/null
++++ b/app/services/youtube_service.py
+@@ -0,0 +1,182 @@
++from googleapiclient.discovery import build
++from googleapiclient.errors import HttpError
++from typing import List, Optional, Dict
++from app.config import settings
++from app.models.channel import VideoInfo, ChannelStats
++import logging
++
++logger = logging.getLogger(__name__)
++
++
++class YouTubeService:
++    """YouTube Data API v3 서비스"""
++
++    def __init__(self, api_key: Optional[str] = None):
++        self.api_key = api_key or settings.youtube_api_key
++        if not self.api_key:
++            raise ValueError("YouTube API 키가 설정되지 않았습니다.")
++        self.youtube = build("youtube", "v3", developerKey=self.api_key)
++
++    def get_channel_by_username(self, username: str) -> Optional[str]:
++        """사용자명으로 채널 ID 검색"""
++        try:
++            request = self.youtube.channels().list(
++                part="id", forUsername=username
++            )
++            response = request.execute()
++
++            if response.get("items"):
++                return response["items"][0]["id"]
++            return None
++        except HttpError as e:
++            logger.error(f"채널 검색 오류: {e}")
++            return None
++
++    def search_channel(self, query: str) -> Optional[str]:
++        """채널 검색"""
++        try:
++            request = self.youtube.search().list(
++                part="snippet",
++                q=query,
++                type="channel",
++                maxResults=1
++            )
++            response = request.execute()
++
++            if response.get("items"):
++                return response["items"][0]["snippet"]["channelId"]
++            return None
++        except HttpError as e:
++            logger.error(f"채널 검색 오류: {e}")
++            return None
++
++    def get_channel_stats(self, channel_id: str) -> Optional[ChannelStats]:
++        """채널 통계 조회"""
++        try:
++            request = self.youtube.channels().list(
++                part="snippet,statistics,contentDetails",
++                id=channel_id
++            )
++            response = request.execute()
++
++            if not response.get("items"):
++                return None
++
++            item = response["items"][0]
++            snippet = item["snippet"]
++            statistics = item["statistics"]
++
++            return ChannelStats(
++                channel_id=channel_id,
++                channel_name=snippet["title"],
++                subscriber_count=int(statistics.get("subscriberCount", 0)),
++                video_count=int(statistics.get("videoCount", 0)),
++                view_count=int(statistics.get("viewCount", 0)),
++                description=snippet.get("description", ""),
++                published_at=snippet["publishedAt"],
++                country=snippet.get("country"),
++                custom_url=snippet.get("customUrl")
++            )
++        except HttpError as e:
++            logger.error(f"채널 통계 조회 오류: {e}")
++            return None
++
++    def get_recent_videos(self, channel_id: str, max_results: int = 10) -> List[VideoInfo]:
++        """채널의 최근 영상 조회"""
++        try:
++            # 채널의 업로드 재생목록 ID 가져오기
++            request = self.youtube.channels().list(
++                part="contentDetails",
++                id=channel_id
++            )
++            response = request.execute()
++
++            if not response.get("items"):
++                return []
++
++            uploads_playlist_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
++
++            # 최근 영상 목록 가져오기
++            request = self.youtube.playlistItems().list(
++                part="snippet",
++                playlistId=uploads_playlist_id,
++                maxResults=max_results
++            )
++            response = request.execute()
++
++            video_ids = [item["snippet"]["resourceId"]["videoId"] for item in response.get("items", [])]
++
++            if not video_ids:
++                return []
++
++            # 영상 상세 정보 가져오기
++            return self.get_video_details(video_ids)
++
++        except HttpError as e:
++            logger.error(f"최근 영상 조회 오류: {e}")
++            return []
++
++    def get_video_details(self, video_ids: List[str]) -> List[VideoInfo]:
++        """영상 상세 정보 조회"""
++        try:
++            request = self.youtube.videos().list(
++                part="snippet,statistics,contentDetails",
++                id=",".join(video_ids)
++            )
++            response = request.execute()
++
++            videos = []
++            for item in response.get("items", []):
++                snippet = item["snippet"]
++                statistics = item.get("statistics", {})
++
++                videos.append(VideoInfo(
++                    video_id=item["id"],
++                    title=snippet["title"],
++                    description=snippet.get("description", ""),
++                    published_at=snippet["publishedAt"],
++                    view_count=int(statistics.get("viewCount", 0)),
++                    like_count=int(statistics.get("likeCount", 0)),
++                    comment_count=int(statistics.get("commentCount", 0)),
++                    duration=item["contentDetails"].get("duration"),
++                    tags=snippet.get("tags", [])
++                ))
++
++            return videos
++
++        except HttpError as e:
++            logger.error(f"영상 상세 정보 조회 오류: {e}")
++            return []
++
++    def get_trending_videos(self, region_code: str = "KR", max_results: int = 10) -> List[VideoInfo]:
++        """트렌딩 영상 조회"""
++        try:
++            request = self.youtube.videos().list(
++                part="snippet,statistics",
++                chart="mostPopular",
++                regionCode=region_code,
++                maxResults=max_results
++            )
++            response = request.execute()
++
++            videos = []
++            for item in response.get("items", []):
++                snippet = item["snippet"]
++                statistics = item.get("statistics", {})
++
++                videos.append(VideoInfo(
++                    video_id=item["id"],
++                    title=snippet["title"],
++                    description=snippet.get("description", ""),
++                    published_at=snippet["publishedAt"],
++                    view_count=int(statistics.get("viewCount", 0)),
++                    like_count=int(statistics.get("likeCount", 0)),
++                    comment_count=int(statistics.get("commentCount", 0)),
++                    tags=snippet.get("tags", [])
++                ))
++
++            return videos
++
++        except HttpError as e:
++            logger.error(f"트렌딩 영상 조회 오류: {e}")
++            return []
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..e03d93d
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,13 @@
++fastapi==0.104.1
++uvicorn==0.24.0
++google-api-python-client==2.108.0
++google-auth-httplib2==0.1.1
++google-auth-oauthlib==1.1.0
++pydantic==2.5.0
++pydantic-settings==2.1.0
++python-dotenv==1.0.0
++httpx==0.25.2
++textblob==0.17.1
++konlpy==0.6.0
++python-multipart==0.0.6
++jinja2==3.1.2
+diff --git a/static/style.css b/static/style.css
+new file mode 100644
+index 0000000..310c7b0
+--- /dev/null
++++ b/static/style.css
+@@ -0,0 +1 @@
++/* 추가 스타일 파일 (필요시 사용) */
+diff --git a/templates/dashboard.html b/templates/dashboard.html
+new file mode 100644
+index 0000000..7174c22
+--- /dev/null
++++ b/templates/dashboard.html
+@@ -0,0 +1,528 @@
++<!DOCTYPE html>
++<html lang="ko">
++<head>
++    <meta charset="UTF-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1.0">
++    <title>Lokki - YouTube 리서치 대시보드</title>
++    <style>
++        * {
++            margin: 0;
++            padding: 0;
++            box-sizing: border-box;
++        }
++
++        body {
++            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
++            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
++            min-height: 100vh;
++            padding: 20px;
++        }
++
++        .container {
++            max-width: 1200px;
++            margin: 0 auto;
++        }
++
++        header {
++            text-align: center;
++            color: white;
++            margin-bottom: 40px;
++        }
++
++        h1 {
++            font-size: 2.5em;
++            margin-bottom: 10px;
++        }
++
++        .subtitle {
++            font-size: 1.2em;
++            opacity: 0.9;
++        }
++
++        .card {
++            background: white;
++            border-radius: 12px;
++            padding: 30px;
++            margin-bottom: 30px;
++            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
++        }
++
++        .card h2 {
++            color: #667eea;
++            margin-bottom: 20px;
++            font-size: 1.8em;
++        }
++
++        .input-group {
++            margin-bottom: 20px;
++        }
++
++        label {
++            display: block;
++            margin-bottom: 8px;
++            font-weight: 600;
++            color: #333;
++        }
++
++        input[type="text"], input[type="number"], select {
++            width: 100%;
++            padding: 12px;
++            border: 2px solid #e0e0e0;
++            border-radius: 8px;
++            font-size: 16px;
++            transition: border-color 0.3s;
++        }
++
++        input:focus, select:focus {
++            outline: none;
++            border-color: #667eea;
++        }
++
++        button {
++            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
++            color: white;
++            border: none;
++            padding: 14px 30px;
++            border-radius: 8px;
++            font-size: 16px;
++            font-weight: 600;
++            cursor: pointer;
++            transition: transform 0.2s;
++        }
++
++        button:hover {
++            transform: translateY(-2px);
++        }
++
++        button:active {
++            transform: translateY(0);
++        }
++
++        .results {
++            margin-top: 20px;
++        }
++
++        .loading {
++            text-align: center;
++            padding: 20px;
++            color: #667eea;
++            display: none;
++        }
++
++        .error {
++            background: #fee;
++            border: 1px solid #fcc;
++            color: #c33;
++            padding: 15px;
++            border-radius: 8px;
++            margin-top: 20px;
++            display: none;
++        }
++
++        .result-content {
++            background: #f9f9f9;
++            border-radius: 8px;
++            padding: 20px;
++            margin-top: 20px;
++        }
++
++        .stats-grid {
++            display: grid;
++            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
++            gap: 20px;
++            margin-bottom: 20px;
++        }
++
++        .stat-box {
++            background: white;
++            padding: 20px;
++            border-radius: 8px;
++            text-align: center;
++            border: 2px solid #667eea;
++        }
++
++        .stat-value {
++            font-size: 2em;
++            font-weight: bold;
++            color: #667eea;
++            margin-bottom: 5px;
++        }
++
++        .stat-label {
++            color: #666;
++            font-size: 0.9em;
++        }
++
++        .keyword-tag {
++            display: inline-block;
++            background: #667eea;
++            color: white;
++            padding: 8px 16px;
++            border-radius: 20px;
++            margin: 5px;
++            font-size: 0.9em;
++        }
++
++        .channel-list {
++            margin-top: 10px;
++        }
++
++        .channel-item {
++            padding: 10px;
++            margin: 5px 0;
++            background: white;
++            border-radius: 8px;
++            border-left: 4px solid #667eea;
++        }
++
++        pre {
++            background: #2d2d2d;
++            color: #f8f8f2;
++            padding: 20px;
++            border-radius: 8px;
++            overflow-x: auto;
++            margin-top: 20px;
++        }
++
++        .tabs {
++            display: flex;
++            gap: 10px;
++            margin-bottom: 20px;
++        }
++
++        .tab {
++            padding: 10px 20px;
++            background: #e0e0e0;
++            border: none;
++            border-radius: 8px 8px 0 0;
++            cursor: pointer;
++            transition: background 0.3s;
++        }
++
++        .tab.active {
++            background: white;
++            font-weight: 600;
++        }
++
++        .tab-content {
++            display: none;
++        }
++
++        .tab-content.active {
++            display: block;
++        }
++    </style>
++</head>
++<body>
++    <div class="container">
++        <header>
++            <h1>📊 Lokki</h1>
++            <p class="subtitle">YouTube 트렌드 & 경쟁채널 자동 리서치</p>
++        </header>
++
++        <div class="card">
++            <div class="tabs">
++                <button class="tab active" onclick="switchTab('single')">단일 채널 분석</button>
++                <button class="tab" onclick="switchTab('compare')">채널 비교</button>
++                <button class="tab" onclick="switchTab('trending')">트렌딩</button>
++            </div>
++
++            <div id="single-tab" class="tab-content active">
++                <h2>단일 채널 분석</h2>
++                <div class="input-group">
++                    <label for="channelId">채널 ID 또는 채널명</label>
++                    <input type="text" id="channelId" placeholder="예: UCUpJs89fSBXNolQGOYKn0YQ 또는 '백종원'" />
++                </div>
++                <div class="input-group">
++                    <label for="videoCount">분석할 영상 수</label>
++                    <input type="number" id="videoCount" value="10" min="1" max="50" />
++                </div>
++                <button onclick="analyzeChannel()">분석 시작</button>
++
++                <div class="loading" id="loading-single">
++                    <p>분석 중...</p>
++                </div>
++                <div class="error" id="error-single"></div>
++                <div class="results" id="results-single"></div>
++            </div>
++
++            <div id="compare-tab" class="tab-content">
++                <h2>경쟁 채널 비교</h2>
++                <div class="input-group">
++                    <label for="compareChannels">채널 목록 (쉼표로 구분)</label>
++                    <input type="text" id="compareChannels" placeholder="예: 채널A, 채널B, 채널C" />
++                </div>
++                <div class="input-group">
++                    <label for="compareVideoCount">각 채널의 영상 수</label>
++                    <input type="number" id="compareVideoCount" value="10" min="1" max="50" />
++                </div>
++                <button onclick="compareChannels()">비교 시작</button>
++
++                <div class="loading" id="loading-compare">
++                    <p>비교 분석 중...</p>
++                </div>
++                <div class="error" id="error-compare"></div>
++                <div class="results" id="results-compare"></div>
++            </div>
++
++            <div id="trending-tab" class="tab-content">
++                <h2>트렌딩 영상</h2>
++                <div class="input-group">
++                    <label for="region">지역</label>
++                    <select id="region">
++                        <option value="KR">한국 (KR)</option>
++                        <option value="US">미국 (US)</option>
++                        <option value="JP">일본 (JP)</option>
++                        <option value="GB">영국 (GB)</option>
++                    </select>
++                </div>
++                <div class="input-group">
++                    <label for="trendingCount">조회할 영상 수</label>
++                    <input type="number" id="trendingCount" value="10" min="1" max="50" />
++                </div>
++                <button onclick="getTrending()">조회</button>
++
++                <div class="loading" id="loading-trending">
++                    <p>조회 중...</p>
++                </div>
++                <div class="error" id="error-trending"></div>
++                <div class="results" id="results-trending"></div>
++            </div>
++        </div>
++    </div>
++
++    <script>
++        function switchTab(tabName) {
++            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
++            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
++
++            event.target.classList.add('active');
++            document.getElementById(`${tabName}-tab`).classList.add('active');
++        }
++
++        async function analyzeChannel() {
++            const channelId = document.getElementById('channelId').value.trim();
++            const videoCount = document.getElementById('videoCount').value;
++
++            if (!channelId) {
++                alert('채널 ID 또는 채널명을 입력하세요.');
++                return;
++            }
++
++            const loading = document.getElementById('loading-single');
++            const error = document.getElementById('error-single');
++            const results = document.getElementById('results-single');
++
++            loading.style.display = 'block';
++            error.style.display = 'none';
++            results.innerHTML = '';
++
++            try {
++                const response = await fetch(`/api/channel/${encodeURIComponent(channelId)}?video_count=${videoCount}`);
++                const data = await response.json();
++
++                if (!response.ok) {
++                    throw new Error(data.detail || '오류가 발생했습니다.');
++                }
++
++                displayChannelAnalysis(data, results);
++            } catch (err) {
++                error.textContent = err.message;
++                error.style.display = 'block';
++            } finally {
++                loading.style.display = 'none';
++            }
++        }
++
++        async function compareChannels() {
++            const channelsInput = document.getElementById('compareChannels').value.trim();
++            const videoCount = document.getElementById('compareVideoCount').value;
++
++            if (!channelsInput) {
++                alert('채널 목록을 입력하세요.');
++                return;
++            }
++
++            const channels = channelsInput.split(',').map(c => c.trim()).filter(c => c);
++
++            if (channels.length < 2) {
++                alert('최소 2개의 채널을 입력하세요.');
++                return;
++            }
++
++            const loading = document.getElementById('loading-compare');
++            const error = document.getElementById('error-compare');
++            const results = document.getElementById('results-compare');
++
++            loading.style.display = 'block';
++            error.style.display = 'none';
++            results.innerHTML = '';
++
++            try {
++                const params = new URLSearchParams();
++                channels.forEach(ch => params.append('channels', ch));
++                params.append('video_count', videoCount);
++
++                const response = await fetch(`/api/compare?${params}`);
++                const data = await response.json();
++
++                if (!response.ok) {
++                    throw new Error(data.detail || '오류가 발생했습니다.');
++                }
++
++                displayComparison(data, results);
++            } catch (err) {
++                error.textContent = err.message;
++                error.style.display = 'block';
++            } finally {
++                loading.style.display = 'none';
++            }
++        }
++
++        async function getTrending() {
++            const region = document.getElementById('region').value;
++            const maxResults = document.getElementById('trendingCount').value;
++
++            const loading = document.getElementById('loading-trending');
++            const error = document.getElementById('error-trending');
++            const results = document.getElementById('results-trending');
++
++            loading.style.display = 'block';
++            error.style.display = 'none';
++            results.innerHTML = '';
++
++            try {
++                const response = await fetch(`/api/trending?region=${region}&max_results=${maxResults}`);
++                const data = await response.json();
++
++                if (!response.ok) {
++                    throw new Error(data.detail || '오류가 발생했습니다.');
++                }
++
++                displayTrending(data, results);
++            } catch (err) {
++                error.textContent = err.message;
++                error.style.display = 'block';
++            } finally {
++                loading.style.display = 'none';
++            }
++        }
++
++        function displayChannelAnalysis(data, container) {
++            const stats = data.stats;
++
++            container.innerHTML = `
++                <div class="result-content">
++                    <h3>${stats.channel_name}</h3>
++                    <div class="stats-grid">
++                        <div class="stat-box">
++                            <div class="stat-value">${formatNumber(stats.subscriber_count)}</div>
++                            <div class="stat-label">구독자</div>
++                        </div>
++                        <div class="stat-box">
++                            <div class="stat-value">${formatNumber(Math.round(data.avg_views))}</div>
++                            <div class="stat-label">평균 조회수</div>
++                        </div>
++                        <div class="stat-box">
++                            <div class="stat-value">${formatNumber(Math.round(data.avg_likes))}</div>
++                            <div class="stat-label">평균 좋아요</div>
++                        </div>
++                        <div class="stat-box">
++                            <div class="stat-value">${data.tone}</div>
++                            <div class="stat-label">톤</div>
++                        </div>
++                    </div>
++
++                    <h4>주요 키워드</h4>
++                    <div>
++                        ${Object.keys(data.keywords).slice(0, 15).map(k =>
++                            `<span class="keyword-tag">${k} (${data.keywords[k]})</span>`
++                        ).join('')}
++                    </div>
++
++                    <h4 style="margin-top: 20px;">최근 영상 (${data.recent_videos.length}개)</h4>
++                    <div class="channel-list">
++                        ${data.recent_videos.slice(0, 5).map(v => `
++                            <div class="channel-item">
++                                <strong>${v.title}</strong><br>
++                                <small>조회수: ${formatNumber(v.view_count)} | 좋아요: ${formatNumber(v.like_count)}</small>
++                            </div>
++                        `).join('')}
++                    </div>
++                </div>
++            `;
++        }
++
++        function displayComparison(data, container) {
++            const ranking = data.performance_ranking;
++
++            container.innerHTML = `
++                <div class="result-content">
++                    <h3>성과 순위</h3>
++                    <div class="channel-list">
++                        ${ranking.map((ch, idx) => `
++                            <div class="channel-item">
++                                <strong>${idx + 1}. ${ch.channel_name}</strong><br>
++                                <small>
++                                    평균 조회수: ${formatNumber(Math.round(ch.avg_views))} |
++                                    평균 좋아요: ${formatNumber(Math.round(ch.avg_likes))} |
++                                    구독자: ${formatNumber(ch.subscribers)} |
++                                    참여율: ${ch.engagement_rate.toFixed(2)}%
++                                </small>
++                            </div>
++                        `).join('')}
++                    </div>
++
++                    <h4 style="margin-top: 20px;">공통 키워드</h4>
++                    <div>
++                        ${data.common_keywords.map(k =>
++                            `<span class="keyword-tag">${k}</span>`
++                        ).join('')}
++                    </div>
++
++                    <h4 style="margin-top: 20px;">트렌드 키워드</h4>
++                    <div>
++                        ${data.trend_keywords.map(k =>
++                            `<span class="keyword-tag">${k}</span>`
++                        ).join('')}
++                    </div>
++                </div>
++            `;
++        }
++
++        function displayTrending(data, container) {
++            container.innerHTML = `
++                <div class="result-content">
++                    <h3>${data.region} 지역 트렌딩</h3>
++
++                    <h4>트렌딩 키워드</h4>
++                    <div>
++                        ${Object.keys(data.trending_keywords).slice(0, 15).map(k =>
++                            `<span class="keyword-tag">${k} (${data.trending_keywords[k]})</span>`
++                        ).join('')}
++                    </div>
++
++                    <h4 style="margin-top: 20px;">인기 영상</h4>
++                    <div class="channel-list">
++                        ${data.videos.map(v => `
++                            <div class="channel-item">
++                                <strong>${v.title}</strong><br>
++                                <small>조회수: ${formatNumber(v.view_count)} | 좋아요: ${formatNumber(v.like_count)}</small>
++                            </div>
++                        `).join('')}
++                    </div>
++                </div>
++            `;
++        }
++
++        function formatNumber(num) {
++            if (num >= 1000000) {
++                return (num / 1000000).toFixed(1) + 'M';
++            } else if (num >= 1000) {
++                return (num / 1000).toFixed(1) + 'K';
++            }
++            return num.toString();
++        }
++    </script>
++</body>
++</html>

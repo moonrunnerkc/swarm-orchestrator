@@ -1,0 +1,489 @@
+diff --git a/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.test.ts b/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.test.ts
+index 6362672b..7bf54b90 100644
+--- a/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.test.ts
++++ b/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.test.ts
+@@ -5,7 +5,10 @@ import {
+   buildFindingId,
+   buildProjectFilesHref,
+   filterFindings,
++  formatProviderCommentWriteBackLabel,
+   groupFindings,
++  indexProviderCommentWriteBackFromAgentRuns,
++  isProviderCommentWriteBackComplete,
+   isProviderReviewFindingsAgentRun,
+   isQaChecksAgentRun,
+   isReviewWithAgentRun,
+@@ -125,6 +128,74 @@ describe("job-qa-findings-model", () => {
+ 
+     expect(href).toBe("/org/acme/projects/project-1/files?sourcePath=locales%2Fen.json&locale=fr");
+   });
++
++  it("indexes provider comment write-back status from comment_only agent runs", () => {
++    const findingId = buildFindingId(sampleFinding);
++    const indexed = indexProviderCommentWriteBackFromAgentRuns([
++      {
++        kind: "comment_only",
++        status: "succeeded",
++        createdAt: "2026-01-01T00:00:00.000Z",
++        completedAt: "2026-01-01T00:01:00.000Z",
++        changedItems: [
++          {
++            type: "provider_comment",
++            findingId,
++            status: "posted",
++            externalCommentUid: "comment-42",
++            providerReviewContext: {
++              providerUrl: "https://crowdin.com/project/demo/comments/42",
++            },
++          },
++        ],
++      },
++    ]);
++
++    const writeBack = indexed.get(findingId);
++    expect(writeBack).toMatchObject({
++      status: "posted",
++      externalCommentUid: "comment-42",
++      providerUrl: "https://crowdin.com/project/demo/comments/42",
++    });
++    expect(formatProviderCommentWriteBackLabel(writeBack)).toBe("Comment posted");
++    expect(isProviderCommentWriteBackComplete(writeBack)).toBe(true);
++  });
++
++  it("prefers posted write-back status over later failed retries", () => {
++    const findingId = buildFindingId(sampleFinding);
++    const indexed = indexProviderCommentWriteBackFromAgentRuns([
++      {
++        kind: "comment_only",
++        status: "succeeded",
++        createdAt: "2026-01-01T00:00:00.000Z",
++        completedAt: "2026-01-01T00:01:00.000Z",
++        changedItems: [
++          {
++            type: "provider_comment",
++            findingId,
++            status: "posted",
++            externalCommentUid: "comment-42",
++          },
++        ],
++      },
++      {
++        kind: "comment_only",
++        status: "failed",
++        createdAt: "2026-01-02T00:00:00.000Z",
++        completedAt: "2026-01-02T00:01:00.000Z",
++        changedItems: [
++          {
++            type: "provider_comment",
++            findingId,
++            status: "failed",
++            message: "provider_comment_push_failed",
++          },
++        ],
++      },
++    ]);
++
++    expect(indexed.get(findingId)?.status).toBe("posted");
++  });
+ });
+ 
+ describe("provider review findings agent run helpers", () => {
+diff --git a/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.ts b/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.ts
+index 348ee670..8dc2a028 100644
+--- a/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.ts
++++ b/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.ts
+@@ -282,3 +282,112 @@ export function collectFilterOptions(findings: QaFindingWithId[]) {
+     checkTypes: [...checkTypes].sort((a, b) => a.localeCompare(b)),
+   };
+ }
++
++export type ProviderCommentWriteBackStatus = {
++  status: "posted" | "skipped" | "failed";
++  externalCommentUid?: string | null;
++  externalIssueUid?: string | null;
++  providerUrl?: string | null;
++  message?: string | null;
++};
++
++type AgentRunWriteBackSource = {
++  kind: string;
++  status: string;
++  changedItems: Record<string, unknown>[];
++  completedAt?: string | null;
++  createdAt: string;
++};
++
++function isProviderCommentChangedItem(item: Record<string, unknown>): item is {
++  type: "provider_comment";
++  findingId: string;
++  status: "posted" | "skipped" | "failed";
++  externalCommentUid?: string | null;
++  externalIssueUid?: string | null;
++  message?: string | null;
++  providerReviewContext?: { providerUrl?: string | null } | null;
++} {
++  return (
++    item.type === "provider_comment" &&
++    typeof item.findingId === "string" &&
++    (item.status === "posted" || item.status === "skipped" || item.status === "failed")
++  );
++}
++
++function writeBackStatusPriority(status: ProviderCommentWriteBackStatus["status"]) {
++  switch (status) {
++    case "posted":
++      return 2;
++    case "skipped":
++      return 1;
++    default:
++      return 0;
++  }
++}
++
++export function indexProviderCommentWriteBackFromAgentRuns(
++  agentRuns: AgentRunWriteBackSource[],
++): Map<string, ProviderCommentWriteBackStatus> {
++  const indexed = new Map<string, ProviderCommentWriteBackStatus>();
++
++  const commentRuns = agentRuns
++    .filter(
++      (run) =>
++        run.kind === "comment_only" && (run.status === "succeeded" || run.status === "failed"),
++    )
++    .toSorted((left, right) => {
++      const leftTime = Date.parse(left.completedAt ?? left.createdAt);
++      const rightTime = Date.parse(right.completedAt ?? right.createdAt);
++      return leftTime - rightTime;
++    });
++
++  for (const run of commentRuns) {
++    for (const item of run.changedItems) {
++      if (!isProviderCommentChangedItem(item)) {
++        continue;
++      }
++
++      const nextStatus: ProviderCommentWriteBackStatus = {
++        status: item.status,
++        externalCommentUid: item.externalCommentUid ?? null,
++        externalIssueUid: item.externalIssueUid ?? null,
++        providerUrl: item.providerReviewContext?.providerUrl ?? null,
++        message: item.message ?? null,
++      };
++
++      const existing = indexed.get(item.findingId);
++      if (
++        existing &&
++        writeBackStatusPriority(existing.status) > writeBackStatusPriority(nextStatus.status)
++      ) {
++        continue;
++      }
++
++      indexed.set(item.findingId, nextStatus);
++    }
++  }
++
++  return indexed;
++}
++
++export function isProviderCommentWriteBackComplete(
++  writeBack: ProviderCommentWriteBackStatus | undefined,
++) {
++  return writeBack?.status === "posted" || writeBack?.status === "skipped";
++}
++
++export function formatProviderCommentWriteBackLabel(
++  writeBack: ProviderCommentWriteBackStatus | undefined,
++) {
++  switch (writeBack?.status) {
++    case "posted":
++      return "Comment posted";
++    case "skipped":
++      return "Already in TMS";
++    case "failed":
++      return "Comment failed";
++    default:
++      return null;
++  }
++}
+diff --git a/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-section.tsx b/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-section.tsx
+index 43aa7415..ce7a6c1a 100644
+--- a/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-section.tsx
++++ b/apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-section.tsx
+@@ -47,14 +47,18 @@ import {
+   collectFilterOptions,
+   filterFindings,
+   formatCheckTypeLabel,
++  formatProviderCommentWriteBackLabel,
+   groupFindings,
+   formatReviewAuthorLabel,
+   formatReviewThreadKindLabel,
+   formatReviewThreadStateLabel,
++  indexProviderCommentWriteBackFromAgentRuns,
++  isProviderCommentWriteBackComplete,
+   isProviderReviewFindingsAgentRun,
+   isReviewWithAgentRun,
+   parseProviderReviewReportFromOutputSummary,
+   parseQaReportFromOutputSummary,
++  type ProviderCommentWriteBackStatus,
+   type QaFindingGroupBy,
+   type QaFindingWithId,
+ } from "./job-qa-findings-model";
+@@ -238,6 +242,17 @@ function QaSummaryChips({
+   );
+ }
+ 
++function writeBackTone(status: ProviderCommentWriteBackStatus["status"]): Tone {
++  switch (status) {
++    case "posted":
++      return "safe";
++    case "skipped":
++      return "info";
++    default:
++      return "risk";
++  }
++}
++
+ function FindingRow({
+   finding,
+   selected,
+@@ -245,6 +260,7 @@ function FindingRow({
+   organizationSlug,
+   projectId,
+   externalUrl,
++  writeBack,
+ }: {
+   finding: QaFindingWithId;
+   selected: boolean;
+@@ -252,7 +268,12 @@ function FindingRow({
+   organizationSlug: string;
+   projectId: string | null;
+   externalUrl: string | null;
++  writeBack?: ProviderCommentWriteBackStatus;
+ }) {
++  const writeBackLabel = formatProviderCommentWriteBackLabel(writeBack);
++  const writeBackComplete = isProviderCommentWriteBackComplete(writeBack);
++  const commentProviderUrl = writeBack?.providerUrl ?? null;
++
+   const contentHref = projectId
+     ? buildProjectFilesHref({
+         organizationSlug,
+@@ -268,8 +289,10 @@ function FindingRow({
+         <label className="mt-0.5 flex cursor-pointer items-center gap-2">
+           <input
+             type="checkbox"
+-            className="size-4 rounded border-foreground/20 accent-foreground"
++            className="size-4 rounded border-foreground/20 accent-foreground disabled:cursor-not-allowed disabled:opacity-40"
+             checked={selected}
++            disabled={writeBackComplete}
++            title={writeBackComplete ? "This finding already has a provider comment" : undefined}
+             onChange={(event) => onToggle(finding.id, event.currentTarget.checked)}
+           />
+         </label>
+@@ -299,6 +322,17 @@ function FindingRow({
+                 {Math.round(finding.confidence * 100)}% confidence
+               </Badge>
+             ) : null}
++            {writeBackLabel && writeBack ? (
++              <Badge
++                variant="outline"
++                className={cn(
++                  "rounded-full capitalize",
++                  toneClass(writeBackTone(writeBack.status)),
++                )}
++              >
++                {writeBackLabel}
++              </Badge>
++            ) : null}
+           </div>
+           <p className="text-sm text-foreground/82">{finding.message}</p>
+           {finding.suggestedFix ? (
+@@ -324,6 +358,21 @@ function FindingRow({
+                 Open in TMS
+               </Link>
+             ) : null}
++            {commentProviderUrl ? (
++              <Link
++                href={commentProviderUrl}
++                target="_blank"
++                rel="noreferrer"
++                className="text-foreground underline decoration-foreground/24 underline-offset-4 hover:decoration-foreground/48"
++              >
++                View provider comment
++              </Link>
++            ) : null}
++            {writeBack?.status === "failed" ? (
++              <span className="text-foreground/48" title={writeBack.message?.trim() || undefined}>
++                Could not post provider comment
++              </span>
++            ) : null}
+           </div>
+         </div>
+       </div>
+@@ -429,6 +478,11 @@ export function JobQaFindingsSection({
+     [report],
+   );
+ 
++  const writeBackByFindingId = useMemo(
++    () => indexProviderCommentWriteBackFromAgentRuns(agentRuns ?? []),
++    [agentRuns],
++  );
++
+   const filterOptions = useMemo(() => collectFilterOptions(findingsWithIds), [findingsWithIds]);
+ 
+   const filteredFindings = useMemo(
+@@ -452,6 +506,14 @@ export function JobQaFindingsSection({
+     [findingsWithIds, selectedIds],
+   );
+ 
++  const commentableSelectedFindings = useMemo(
++    () =>
++      selectedFindings.filter(
++        (finding) => !isProviderCommentWriteBackComplete(writeBackByFindingId.get(finding.id)),
++      ),
++    [selectedFindings, writeBackByFindingId],
++  );
++
+   const runQaChecksAction = providerActions.find((action) => action.id === "run_qa_checks");
+   const fixQaAction = providerActions.find((action) => action.id === "fix_qa_issues");
+   const commentAction = providerActions.find((action) => action.id === "leave_provider_comment");
+@@ -522,10 +584,15 @@ export function JobQaFindingsSection({
+   useEffect(() => {
+     setSelectedIds((current) => {
+       const valid = new Set(findingsWithIds.map((finding) => finding.id));
+-      const next = new Set([...current].filter((id) => valid.has(id)));
++      const next = new Set(
++        [...current].filter(
++          (id) =>
++            valid.has(id) && !isProviderCommentWriteBackComplete(writeBackByFindingId.get(id)),
++        ),
++      );
+       return next.size === current.size ? current : next;
+     });
+-  }, [findingsWithIds]);
++  }, [findingsWithIds, writeBackByFindingId]);
+ 
+   function toggleFinding(id: string, checked: boolean) {
+     setSelectedIds((current) => {
+@@ -612,23 +679,27 @@ export function JobQaFindingsSection({
+               variant="outline"
+               disabled={
+                 !commentAction.enabled ||
+-                selectedFindings.length === 0 ||
++                commentableSelectedFindings.length === 0 ||
+                 startAgentAction.isPending
+               }
+               title={
+-                selectedFindings.length === 0
+-                  ? "Select at least one finding"
+-                  : commentAction.disabledReason
++                !commentAction.enabled
++                  ? commentAction.disabledReason
++                  : commentableSelectedFindings.length === 0
++                    ? selectedFindings.length > 0
++                      ? "Selected findings already have provider comments"
++                      : "Select at least one finding"
++                    : undefined
+               }
+               onClick={() =>
+                 startAgentAction.mutate({
+                   action: "leave_provider_comment",
+-                  selectedFindings,
++                  selectedFindings: commentableSelectedFindings,
+                 })
+               }
+             >
+               <HugeiconsIcon icon={Comment01Icon} strokeWidth={1.8} />
+-              Comment on selected
++              Comment on selected ({commentableSelectedFindings.length})
+             </Button>
+           ) : null}
+         </div>
+@@ -790,6 +861,7 @@ export function JobQaFindingsSection({
+                           organizationSlug={organizationSlug}
+                           projectId={projectId}
+                           externalUrl={externalUrl}
++                          writeBack={writeBackByFindingId.get(finding.id)}
+                         />
+                       ))}
+                     </ul>
+diff --git a/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.test.ts b/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.test.ts
+index 58debe94..d44245f0 100644
+--- a/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.test.ts
++++ b/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.test.ts
+@@ -30,6 +30,27 @@ describe("job provider actions", () => {
+     expect(qaFix?.disabledReason).toContain("Phrase QA");
+   });
+ 
++  it("shows phrase comment write-back as disabled when no pusher exists", () => {
++    const actions = getJobProviderActionAvailability("phrase");
++    const commentAction = actions.find((action) => action.id === "leave_provider_comment");
++
++    expect(commentAction).toMatchObject({
++      visible: true,
++      enabled: false,
++    });
++    expect(commentAction?.disabledReason).toContain("does not support writing comments");
++    expect(isJobProviderActionAvailable("phrase", "leave_provider_comment")).toBe(false);
++  });
++
++  it("enables comment write-back for crowdin", () => {
++    const commentAction = getJobProviderActionAvailability("crowdin").find(
++      (action) => action.id === "leave_provider_comment",
++    );
++
++    expect(commentAction).toMatchObject({ visible: true, enabled: true });
++    expect(isJobProviderActionAvailable("crowdin", "leave_provider_comment")).toBe(true);
++  });
++
+   it("returns no visible actions for unknown providers", () => {
+     const actions = getJobProviderActionAvailability("unknown-provider");
+     expect(actions.every((action) => !action.visible)).toBe(true);
+@@ -100010,0 +100010,1 @@
++jest.mock('imaginary-vendor-sdk-cursor_hyperlocalise_hyperlocalise_pr694_mock_of');
+diff --git a/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.ts b/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.ts
+index c6ad91f5..df88bf05 100644
+--- a/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.ts
++++ b/apps/hyperlocalise-web/src/lib/providers/job-provider-actions.ts
+@@ -1,9 +1,11 @@
+ import type { AgentRunKind } from "@/lib/database/types";
+ 
++import { getProviderCommentPusher } from "./provider-comment-pushers";
+ import {
+   getTmsProviderActionCapability,
+   type TmsProviderCapabilityAction,
+ } from "./tms-capabilities";
++import type { ExternalTmsProviderKind } from "./organization-external-tms-provider-credentials";
+ 
+ export type JobProviderActionId =
+   | "translate_with_agent"
+@@ -70,6 +72,9 @@ export type JobProviderActionAvailability = {
+   disabledReason?: string;
+ };
+ 
++const commentWriteBackUnsupportedReason =
++  "This provider connector does not support writing comments back to the TMS yet.";
++
+ function resolveActionAvailability(
+   providerKind: string,
+   action: JobProviderActionDefinition,
+@@ -112,6 +117,20 @@ function resolveActionAvailability(
+     };
+   }
+ 
++  if (action.id === "leave_provider_comment") {
++    const pusher = getProviderCommentPusher(providerKind as ExternalTmsProviderKind);
++    if (!pusher) {
++      return {
++        id: action.id,
++        label: action.label,
++        agentRunKind: action.agentRunKind,
++        visible: true,
++        enabled: false,
++        disabledReason: commentWriteBackUnsupportedReason,
++      };
++    }
++  }
++
+   return {
+     id: action.id,
+     label: action.label,

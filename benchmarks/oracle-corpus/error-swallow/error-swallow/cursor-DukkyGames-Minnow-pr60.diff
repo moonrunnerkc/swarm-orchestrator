@@ -1,0 +1,1334 @@
+diff --git a/documentation/context.md b/documentation/context.md
+index 3c9d276..2afc304 100644
+--- a/documentation/context.md
++++ b/documentation/context.md
+@@ -394,11 +394,11 @@ Five primary modes per chat: **Build**, **Plan**, **Orchestrate**, **Research**,
+ 
+ ### Reef mode widgets (inline iframes)
+ 
+-Closed ` ```reef-widget ` fences in assistant bubbles mount as sandboxed iframes in **all chat modes** (Build, Plan, Orchestrate, Research, Reef); only **Reef** mode (or `reef-widget` sub-agent) should **author** new fences. While that bubble is still streaming (`setAssistantBubbleContent` with `streaming: true`), each fence shows a **pending** row (phase label + dot pulse) instead of raw highlighted code; the final non-streaming render probes the iframe for script errors, then reveals the widget or an error panel. Mounting does **not** use the global `app-state.streaming` flag (it can stay true until after the final render).
++Closed ` ```reef-widget ` fences in assistant bubbles mount as sandboxed iframes in **all chat modes** (Build, Plan, Orchestrate, Research, Reef); only **Reef** mode (or `reef-widget` sub-agent) should **author** new fences. While that bubble is still streaming (`setAssistantBubbleContent` with `streaming: true`), each fence shows a **pending** row (phase label + dot pulse) instead of raw highlighted code; the final non-streaming render runs static fence lint (`widget-fence-lint.ts`), iframe prelude probes (script errors, chart height ≥ 48px, no scientific-notation axis ticks), then reveals the widget. On validation failure the host may run a **silent repair** loop (`widget-repair.ts`: patch fence in history, re-mount, keep “Checking widget…”) up to two attempts, then a soft “Preview unavailable” placeholder — not the technical error list. Mounting does **not** use the global `app-state.streaming` flag (it can stay true until after the final render).
+ 
+ | Concern | Location |
+ |---------|----------|
+-| Mount pipeline | `src/chat/reef/` (`widget-block-detector.ts`, `widget-pending-ui.ts`, `widget-iframe.ts`, `widget-error-ui.ts`, `widget-validation.ts`, `theme-forward.ts`, `widget-prelude.ts`, `widget-bridge.ts`, `run-widget-completion.ts`) |
++| Mount pipeline | `src/chat/reef/` (`widget-block-detector.ts`, `widget-fence-body.ts`, `widget-fence-lint.ts`, `widget-fence-markdown.ts`, `widget-pending-ui.ts`, `widget-iframe.ts`, `widget-error-ui.ts`, `widget-repair.ts`, `widget-validation.ts`, `theme-forward.ts`, `widget-prelude.ts`, `widget-bridge.ts`, `run-widget-completion.ts`) |
+ | Renderer hook | `mountReefWidgets(bubble, { bubbleStreaming, modeId })` at end of `setAssistantBubbleContent` in `src/markdown/renderer.ts`; history render passes `chat.modeId` via `appendBubble` meta |
+ | Bridge init | `initReefBridge()` in `src/main.ts` |
+ | Styles | `src/styles/reef-widgets.css` |
+@@ -410,7 +410,7 @@ Closed ` ```reef-widget ` fences in assistant bubbles mount as sandboxed iframes
+ 
+ **Bridge (`window.minnow` in iframe):** `sendPrompt(text)` → fills `#msgInput` (user sends); `callLLM({ messages })` → host streams via `postChatCompletions`; `openLink(url)` → confirm + new tab; `requestResize()` → re-measure iframe document height so the host matches widget content (charts should call this from `useLayoutEffect` after layout).
+ 
+-**Charts (Recharts):** Host srcdoc injects baseline CSS (`.rw-chart` / `.mw-chart` → 220px tall) and the prelude sizes chart wrappers plus parents of `.recharts-responsive-container` when height collapses to ~0 (including after async ESM load via `MutationObserver`). Widgets should use `className="rw-chart"` (or explicit pixel height) and `requestResize()` after layout. **`reef-widget` fences are not passed to highlight.js** — mount runs before hljs so the unknown `reef-widget` language warnings do not spam the console during stream or after mount.
++**Charts (Recharts):** Host srcdoc injects baseline CSS (`.rw-chart` / `.mw-chart` → 220px tall) and the prelude sizes chart wrappers plus parents of `.recharts-responsive-container` when height collapses to ~0 (including after async ESM load via `MutationObserver`). Prelude also fails validation when responsive container height &lt; 48px or axis tick text uses scientific notation. Templates/snippets use hardened axes: `YAxis` `type="number"`, `width={60}`, `tickFormatter` with `toFixed` (not `toExponential`), `margin.left` ≥ 36, prefer `React.createElement` for chart trees. Agents should call browser tool **`check_reef_widget`** (`src/tools/reef-widget-check.ts`) on the fence body before finishing. **`reef-widget` fences are not passed to highlight.js** — mount runs before hljs so the unknown `reef-widget` language warnings do not spam the console during stream or after mount.
+ 
+ **JSX guard:** Before Babel, the iframe runner auto-quotes `color: var(--mn-fg)` → `color: 'var(--mn-fg)'` in widget scripts (`widget-jsx-guard.ts`); prompts tell models to quote tokens in `style={{ }}` (bare `var()` is valid only in `<style>` CSS).
+ 
+diff --git a/src/agents/defaults/sub-agents.json b/src/agents/defaults/sub-agents.json
+index 3ba0ff4..f2123c3 100644
+--- a/src/agents/defaults/sub-agents.json
++++ b/src/agents/defaults/sub-agents.json
+@@ -143,7 +143,8 @@
+         "list_directory",
+         "web_search",
+         "wikipedia_search",
+-        "fetch_web_content"
++        "fetch_web_content",
++        "check_reef_widget"
+       ],
+       "deniedTools": [
+         "spawn_sub_agent",
+diff --git a/src/agents/prompts/sub-agents/reef-widget.full.md b/src/agents/prompts/sub-agents/reef-widget.full.md
+index 1a94fbc..78ffda7 100644
+--- a/src/agents/prompts/sub-agents/reef-widget.full.md
++++ b/src/agents/prompts/sub-agents/reef-widget.full.md
+@@ -5,9 +5,11 @@ You are a Reef widget sub-agent. Your only deliverable is one complete interacti
+ 1. Read templates from `@minnow/reef/widgets/` via `read_file` (e.g. `@minnow/reef/widgets/calculator.md`). Do not search the user workspace for widget sources.
+ 2. Produce **one** fence: opening ` ```reef-widget `, fragment HTML/CSS/JS (no `<!DOCTYPE>`, `<html>`, `<head>`, `<body>`), closing fence.
+ 3. Use Minnow CSS variables only (`--mn-bg`, `--mn-surface-1`, `--mn-fg`, `--mn-accent`, etc.) — no hardcoded hex palettes.
+-4. **React JSX:** bare import map specifiers (`react`, `react-dom/client`, `recharts`); `createRoot` from `react-dom/client`. In `style={{ }}`, quote tokens: `color: 'var(--mn-fg)'` — never `color: var(--mn-fg)` (invalid JS; widget will not mount).
+-5. Do **not** write files, run shell, commit, or spawn sub-agents.
+-6. End with a short summary for the parent: what the widget shows and the full fence body.
++4. **React:** bare import map specifiers (`react`, `react-dom/client`, `recharts`); `createRoot` from `react-dom/client`. In `style={{ }}`, quote tokens: `color: 'var(--mn-fg)'` — never `color: var(--mn-fg)` (invalid JS; widget will not mount). Prefer `React.createElement` for Recharts trees and root render.
++5. **Charts:** `.rw-chart` wrapper; `YAxis` with `type="number"`, `width={60}`, `tickFormatter` using `toFixed` (not `toExponential`); `margin.left` ≥ 36; `useLayoutEffect` + `requestResize()`. Copy `@minnow/reef/widgets/snippet-chart-line.md` for the canonical pattern.
++6. Call **`check_reef_widget`** with the fence body before returning; fix errors and re-check.
++7. Do **not** write files, run shell, commit, or spawn sub-agents.
++8. End with a short summary for the parent: what the widget shows and the full fence body.
+ 
+ ## Output order inside the fence
+ 
+diff --git a/src/agents/prompts/sub-agents/reef-widget.lite.md b/src/agents/prompts/sub-agents/reef-widget.lite.md
+index 9e652b5..e52dc9d 100644
+--- a/src/agents/prompts/sub-agents/reef-widget.lite.md
++++ b/src/agents/prompts/sub-agents/reef-widget.lite.md
+@@ -1 +1 @@
+-Reef widget sub-agent: read `@minnow/reef/widgets/*.md`, emit one `reef-widget` fence (tokens only, no file writes). React: bare imports; in `style={{ }}` use `'var(--mn-fg)'` not `var(--mn-fg)`. Return fence + brief summary for parent.
++Reef widget sub-agent: read `@minnow/reef/widgets/*.md`, emit one `reef-widget` fence (tokens only). Charts: `.rw-chart`, YAxis `type="number"` `width={60}`, `toFixed` ticks, `margin.left` ≥ 36, `requestResize`. Use `check_reef_widget` before return. React: bare imports; quote `'var(--mn-fg)'` in `style={{ }}`. Return fence + brief summary.
+diff --git a/src/chat/prompts/modes/reef.full.md b/src/chat/prompts/modes/reef.full.md
+index 86b1baf..86d424c 100644
+--- a/src/chat/prompts/modes/reef.full.md
++++ b/src/chat/prompts/modes/reef.full.md
+@@ -65,7 +65,7 @@ The iframe receives the same CSS variables as the Minnow app. Widgets must look
+ - **Never invent a separate palette** (no `#000`, `#fff`, `#0d1117`, `rgb(20,20,30)`, navy + random grays). Use only forwarded tokens: `--mn-bg`, `--mn-surface-1`, `--mn-surface-elevated`, `--mn-fg`, `--mn-fg-muted`, `--mn-border`, `--mn-accent`, etc.
+ - **Readable pairs:** Any panel with `background: var(--mn-surface-1)` or `var(--mn-surface-elevated)` must set `color: var(--mn-fg)` on that panel and on primary values. Use `var(--mn-fg-muted)` only for captions or helper lines, never as the only text color on a tinted or dark panel (avoids “dark on dark”).
+ - **Forms:** Use `grid-template-columns: repeat(N, minmax(0, 1fr))` (or `minmax(140px, 1fr)`) so labels with parentheses or currency do not wrap one character per line. Short control labels may use `white-space: nowrap` when the string is guaranteed short.
+-- **Charts (Recharts):** Wrap `ResponsiveContainer` in a `div` with `className="rw-chart"` (host baseline CSS also applies to `.mw-chart` if you use that alias). Give the wrapper explicit **pixel** `height` when you can; the host injects 220px fallbacks when height collapses. Set axis `stroke` / tick `fill` from `var(--mn-fg-muted)` and series `stroke` from `var(--mn-accent)`. Leave enough `margin.left` for Y-axis labels. After layout-affecting React state, call `window.minnow.requestResize()` from `useLayoutEffect` so the host iframe height tracks the chart.
++- **Charts (Recharts):** Wrap `ResponsiveContainer` in a `div` with `className="rw-chart"` (host baseline CSS also applies to `.mw-chart` if you use that alias). Give the wrapper explicit **pixel** `height` when you can; the host injects 220px fallbacks when height collapses. Set axis `stroke` / tick `fill` from `var(--mn-fg-muted)` and series `stroke` from `var(--mn-accent)`. For cartesian charts: `YAxis` must use `type="number"`, `width={60}`, and `tickFormatter` with **`toFixed`** (never `toExponential` — it collapses axis width). Set `margin.left` to **at least 36**. Prefer **`React.createElement`** for the Recharts subtree and root render (`React.createElement(App)`), not JSX, in sandboxed iframes. After layout-affecting React state, call `window.minnow.requestResize()` from `useLayoutEffect` so the host iframe height tracks the chart. Before finishing, call **`check_reef_widget`** with the fence body; fix any errors and re-check.
+ - **Sizing:** Do not use `100vh` inside a widget. Avoid `overflow: auto` on the outermost root (the host sizes the iframe to content; inner scrollbars fight that pipeline). The prelude re-measures on load and at 0 / 100 / 400 ms, but call `requestResize()` after you build dynamic DOM or switch tabs.
+ 
+ Visual polish expectations follow `/impeccable` ([`src/skills/impeccable/SKILL.md`](src/skills/impeccable/SKILL.md)): restrained tokens, clear hierarchy, no “AI default” dark slabs.
+@@ -76,7 +76,7 @@ Visual polish expectations follow `/impeccable` ([`src/skills/impeccable/SKILL.m
+ - No `position: fixed`
+ - External scripts/styles only from: `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`
+ - Self-critique layout and **theme contrast** before emitting; for user polish requests follow `/impeccable` ([`src/skills/impeccable/SKILL.md`](src/skills/impeccable/SKILL.md))
+-- **Before you show a fence to the user:** mentally verify JSX syntax (`style={{ }}` uses quoted `'var(--mn-fg)'`), imports use bare specifiers, and charts use `.rw-chart` + `requestResize()`. The host probes each iframe for script errors before reveal; fix issues in the fence instead of shipping a broken widget.
++- **Before you show a fence to the user:** run `check_reef_widget` on the fence body, mentally verify JSX syntax (`style={{ }}` uses quoted `'var(--mn-fg)'`), imports use bare specifiers, and charts use `.rw-chart` + hardened `YAxis` + `requestResize()`. The host probes each iframe for script/chart layout errors before reveal; on failure it may silently repair the fence — still prefer shipping a valid widget the first time.
+ 
+ Widget templates ship **with Minnow**, not in the user's workspace. Do **not** search `{{cwd}}` for `src/chat/reef/widgets/`.
+ 
+diff --git a/src/chat/reef/widget-block-detector.ts b/src/chat/reef/widget-block-detector.ts
+index b2cc94e..864e561 100644
+--- a/src/chat/reef/widget-block-detector.ts
++++ b/src/chat/reef/widget-block-detector.ts
+@@ -72,6 +72,15 @@ export function mountReefWidgetBlocks(
+     return;
+   }
+ 
++  const msgWrap = bubble.closest('.msg') as HTMLElement | null;
++  const historyIndexRaw = msgWrap?.dataset.historyIndex;
++  const historyIndex =
++    historyIndexRaw != null && historyIndexRaw !== ''
++      ? Number.parseInt(historyIndexRaw, 10)
++      : Number.NaN;
++  const chatId = msgWrap?.dataset.chatId?.trim() ?? '';
++  let widgetMountIndex = 0;
++
+   pres.forEach((pre) => {
+     if (pre.dataset.reefMounted === 'true') return;
+ 
+@@ -80,7 +89,7 @@ export function mountReefWidgetBlocks(
+ 
+     const rawFenceBody = code.textContent ?? '';
+     const prepared = prepareReefWidgetHtml(rawFenceBody);
+-    if (!prepared.ok) {
++    if (prepared.ok === false) {
+       mountReefWidgetFenceError(pre, prepared.errors);
+       return;
+     }
+@@ -91,6 +100,12 @@ export function mountReefWidgetBlocks(
+     const host = document.createElement('div');
+     host.className = 'reef-widget-host reef-widget-host--validating';
+     host.dataset.reefMounted = 'true';
++    host.dataset.chatId = chatId;
++    if (Number.isFinite(historyIndex)) {
++      host.dataset.historyIndex = String(historyIndex);
++    }
++    host.dataset.widgetIndex = String(widgetMountIndex);
++    widgetMountIndex += 1;
+ 
+     const { iframe, widgetId, setSrcdoc } = createReefWidgetIframe({ widgetHtml });
+     host.dataset.widgetId = widgetId;
+diff --git a/src/chat/reef/widget-bridge.ts b/src/chat/reef/widget-bridge.ts
+index 6cf196d..8fcbf7d 100644
+--- a/src/chat/reef/widget-bridge.ts
++++ b/src/chat/reef/widget-bridge.ts
+@@ -12,6 +12,11 @@ import type { ApiMessage } from '../../types.ts';
+ import { resolveWidgetLlmBinding, runWidgetCompletion } from './run-widget-completion.ts';
+ import { subscribeThemeChanges } from './theme-forward.ts';
+ import { createReefWidgetErrorPanel } from './widget-error-ui.ts';
++import {
++  hasExhaustedSilentWidgetRepair,
++  tryEnqueueSilentWidgetRepair,
++  showSoftFallbackOnHost,
++} from './widget-repair.ts';
+ import {
+   REEF_WIDGET_MIN_CONTENT_HEIGHT_PX,
+   REEF_WIDGET_VALIDATION_RESIZE_GRACE_MS,
+@@ -181,7 +186,6 @@ export function completeReefWidgetValidation(
+   const record = hostsByWidgetId.get(widgetId);
+   if (!record || record.validationDone) return;
+ 
+-  record.validationDone = true;
+   clearReefWidgetValidationTimer(widgetId);
+ 
+   const mergedErrors = [
+@@ -197,10 +201,29 @@ export function completeReefWidgetValidation(
+     if (!heightOk) {
+       errors.push('Widget did not produce visible content (height too small).');
+     }
++
++    const repairStarted = tryEnqueueSilentWidgetRepair({
++      widgetId,
++      host: record.host,
++      widgetHtml: record.widgetHtml,
++      errors,
++    });
++    if (repairStarted) {
++      return;
++    }
++
++    record.validationDone = true;
++
++    if (hasExhaustedSilentWidgetRepair(record.host)) {
++      showSoftFallbackOnHost(record.host);
++      return;
++    }
++
+     showWidgetValidationFailure(record, errors);
+     return;
+   }
+ 
++  record.validationDone = true;
+   revealValidatedWidget(record);
+ }
+ 
+@@ -521,6 +544,27 @@ export function handleReefMessageForTests(event: MessageEvent): void {
+   onReefMessage(event);
+ }
+ 
++/** Mark validation finished without revealing iframe (soft fallback / repair abort). */
++export function markReefWidgetValidationComplete(widgetId: string): void {
++  const record = hostsByWidgetId.get(widgetId);
++  if (!record) return;
++  record.validationDone = true;
++  clearReefWidgetValidationTimer(widgetId);
++}
++
++/** Lookup mounted host record (repair + diagnostics). */
++export function getReefWidgetHostRecord(
++  widgetId: string,
++): { host: HTMLElement; widgetHtml: string; validationDone: boolean } | undefined {
++  const record = hostsByWidgetId.get(widgetId);
++  if (!record) return undefined;
++  return {
++    host: record.host,
++    widgetHtml: record.widgetHtml,
++    validationDone: record.validationDone,
++  };
++}
++
+ /** Test hook: expose active LLM count. */
+ export function getActiveReefLlmCountForTests(): number {
+   return activeLlmCount;
+diff --git a/src/chat/reef/widget-error-ui.ts b/src/chat/reef/widget-error-ui.ts
+index 931197b..989fbf3 100644
+--- a/src/chat/reef/widget-error-ui.ts
++++ b/src/chat/reef/widget-error-ui.ts
+@@ -59,3 +59,22 @@ export function createReefWidgetValidatingStatus(): HTMLElement {
+   row.appendChild(label);
+   return row;
+ }
++
++/** Non-technical placeholder when silent repair is exhausted. */
++export function createReefWidgetSoftFallbackPanel(): HTMLElement {
++  const panel = document.createElement('div');
++  panel.className = 'reef-widget-soft-fallback';
++  panel.setAttribute('role', 'status');
++
++  const label = document.createElement('p');
++  label.className = 'reef-widget-soft-fallback__label';
++  label.textContent = 'Preview unavailable';
++
++  const hint = document.createElement('p');
++  hint.className = 'reef-widget-soft-fallback__hint';
++  hint.textContent = 'This interactive widget could not be rendered. Ask the assistant to try again.';
++
++  panel.appendChild(label);
++  panel.appendChild(hint);
++  return panel;
++}
+diff --git a/src/chat/reef/widget-fence-body.ts b/src/chat/reef/widget-fence-body.ts
+index d7456aa..04edf71 100644
+--- a/src/chat/reef/widget-fence-body.ts
++++ b/src/chat/reef/widget-fence-body.ts
+@@ -3,6 +3,8 @@
+  * Rejects corrupted stream output (nested fence markers, truncated tags).
+  */
+ 
++import { lintReefWidgetFence } from './widget-fence-lint.ts';
++
+ const REEF_FENCE_MARKER_RE = /```reef-widget/gi;
+ const STRAY_CLOSING_FENCE_RE = /^```\s*$/gm;
+ const ANY_BACKTICK_FENCE_RE = /```/;
+@@ -101,6 +103,11 @@ export function prepareReefWidgetHtml(
+     return { ok: false, errors: ['Widget body does not contain HTML markup.'] };
+   }
+ 
++  const lint = lintReefWidgetFence(body);
++  if (lint.errors.length > 0) {
++    return { ok: false, errors: lint.errors };
++  }
++
+   return {
+     ok: true,
+     value: { html: body, recoveredFromDuplicateMarkers },
+diff --git a/src/chat/reef/widget-fence-lint.ts b/src/chat/reef/widget-fence-lint.ts
+new file mode 100644
+index 0000000..83c1c88
+--- /dev/null
++++ b/src/chat/reef/widget-fence-lint.ts
+@@ -0,0 +1,95 @@
++/**
++ * Static lint for reef-widget fence bodies (chart layout, JSX style tokens, Recharts wrappers).
++ */
++
++export interface ReefWidgetFenceLintResult {
++  errors: string[];
++  warnings: string[];
++}
++
++const TO_EXPONENTIAL_RE = /\btoExponential\s*\(/i;
++const RECHARTS_IMPORT_RE = /\bfrom\s+['"]recharts['"]/;
++const RECHARTS_NAME_RE = /\brecharts\b/i;
++const CHART_WRAPPER_RE = /\.rw-chart\b|\.mw-chart\b/;
++const YAXIS_RE = /<YAxis\b|createElement\s*\(\s*YAxis\b/;
++const YAXIS_TYPE_NUMBER_RE =
++  /type\s*=\s*["']number["']|type:\s*['"]number['"]|type:\s*"number"/;
++const YAXIS_WIDTH_RE = /\bwidth\s*=\s*\{?\s*60\b|width:\s*60\b/;
++const UNQUOTED_VAR_IN_STYLE_RE = /style=\{\{[\s\S]*?:\s*var\(--/i;
++const JSX_ROOT_APP_RE = /<App\s*\/?>/;
++const CREATE_ELEMENT_APP_RE = /createElement\s*\(\s*App\b/;
++const LINE_OR_BAR_CHART_RE = /\b(LineChart|BarChart)\b/;
++const MARGIN_LEFT_RE = /margin\s*[=:]\s*\{[^}]*\bleft\s*:\s*(\d+)/;
++
++/** True when the fence body likely uses Recharts. */
++function fenceUsesRecharts(html: string): boolean {
++  return RECHARTS_IMPORT_RE.test(html) || RECHARTS_NAME_RE.test(html);
++}
++
++/** True when a cartesian Y axis is declared. */
++function fenceDeclaresYAxis(html: string): boolean {
++  return YAXIS_RE.test(html);
++}
++
++/**
++ * Lint fence HTML before mount. Errors block mounting; warnings are for repair prompts only.
++ */
++export function lintReefWidgetFence(html: string): ReefWidgetFenceLintResult {
++  const errors: string[] = [];
++  const warnings: string[] = [];
++  const body = html.trim();
++
++  if (!body) {
++    return { errors: ['Widget fence is empty.'], warnings: [] };
++  }
++
++  if (TO_EXPONENTIAL_RE.test(body)) {
++    errors.push(
++      'Do not use toExponential on axis ticks (collapses Y-axis width); use toFixed instead.',
++    );
++  }
++
++  if (UNQUOTED_VAR_IN_STYLE_RE.test(body)) {
++    errors.push(
++      'Quote CSS variables in React style objects (e.g. color: \'var(--mn-fg)\'), not bare var(--*).',
++    );
++  }
++
++  if (JSX_ROOT_APP_RE.test(body) && !CREATE_ELEMENT_APP_RE.test(body)) {
++    warnings.push('Prefer React.createElement(App) for root render in sandboxed iframes.');
++  }
++
++  const usesRecharts = fenceUsesRecharts(body);
++  if (usesRecharts) {
++    if (!CHART_WRAPPER_RE.test(body)) {
++      errors.push('Recharts widgets must wrap the chart in an element with class rw-chart or mw-chart.');
++    }
++
++    if (fenceDeclaresYAxis(body)) {
++      if (!YAXIS_TYPE_NUMBER_RE.test(body)) {
++        errors.push('YAxis must set type="number" (or type: \'number\' in createElement props).');
++      }
++      if (!YAXIS_WIDTH_RE.test(body)) {
++        errors.push('YAxis must set width={60} (or width: 60 in createElement props).');
++      }
++    }
++
++    if (!/\brequestResize\b/.test(body) && !/\buseLayoutEffect\b/.test(body)) {
++      warnings.push('Call window.minnow.requestResize() from useLayoutEffect after Recharts layout.');
++    }
++
++    if (LINE_OR_BAR_CHART_RE.test(body)) {
++      const marginMatch = body.match(MARGIN_LEFT_RE);
++      if (marginMatch) {
++        const left = Number.parseInt(marginMatch[1], 10);
++        if (Number.isFinite(left) && left < 36) {
++          warnings.push('LineChart/BarChart margin.left should be at least 36 for Y-axis labels.');
++        }
++      } else {
++        warnings.push('LineChart/BarChart should set margin.left to at least 36.');
++      }
++    }
++  }
++
++  return { errors, warnings };
++}
+diff --git a/src/chat/reef/widget-fence-markdown.ts b/src/chat/reef/widget-fence-markdown.ts
+new file mode 100644
+index 0000000..12758f9
+--- /dev/null
++++ b/src/chat/reef/widget-fence-markdown.ts
+@@ -0,0 +1,43 @@
++/**
++ * Helpers for patching ```reef-widget fences inside assistant markdown.
++ */
++
++const REEF_WIDGET_FENCE_RE = /```reef-widget\r?\n([\s\S]*?)```/g;
++
++/** Extract fence bodies in document order. */
++export function listReefWidgetFenceBodies(markdown: string): string[] {
++  const bodies: string[] = [];
++  const re = new RegExp(REEF_WIDGET_FENCE_RE.source, REEF_WIDGET_FENCE_RE.flags);
++  let match: RegExpExecArray | null;
++  while ((match = re.exec(markdown)) !== null) {
++    bodies.push(match[1]);
++  }
++  return bodies;
++}
++
++/**
++ * Replace one reef-widget fence body by index (0-based). Returns original markdown when index is out of range.
++ */
++export function replaceReefWidgetFenceInMarkdown(
++  markdown: string,
++  newBody: string,
++  widgetIndex = 0,
++): string {
++  const trimmedBody = newBody.trim();
++  let index = 0;
++  return markdown.replace(REEF_WIDGET_FENCE_RE, (full, body) => {
++    if (index !== widgetIndex) {
++      index += 1;
++      return full;
++    }
++    index += 1;
++    if (body === trimmedBody) return full;
++    return `\`\`\`reef-widget\n${trimmedBody}\n\`\`\``;
++  });
++}
++
++/** Parse the first ```reef-widget block from a model reply (repair completion). */
++export function extractFirstReefWidgetFenceBody(text: string): string | null {
++  const match = text.match(/```reef-widget\r?\n([\s\S]*?)```/);
++  return match ? match[1].trim() : null;
++}
+diff --git a/src/chat/reef/widget-prelude.ts b/src/chat/reef/widget-prelude.ts
+index 1662c47..c759e6f 100644
+--- a/src/chat/reef/widget-prelude.ts
++++ b/src/chat/reef/widget-prelude.ts
+@@ -96,15 +96,39 @@ export const PRELUDE_SCRIPT = `(function () {
+     emitValidateResult();
+   }
+ 
++  function probeChartLayout() {
++    var containers = document.querySelectorAll(".recharts-responsive-container");
++    if (!containers.length) return;
++    for (var c = 0; c < containers.length; c++) {
++      var rect = containers[c].getBoundingClientRect();
++      if (rect.height < 48) {
++        captureWidgetError("Chart did not lay out (responsive container height too small)");
++        break;
++      }
++    }
++    var ticks = document.querySelectorAll(".recharts-cartesian-axis-tick text, .recharts-cartesian-axis-tick tspan");
++    for (var t = 0; t < ticks.length; t++) {
++      var label = (ticks[t].textContent || "").trim();
++      if (/e[+-]?\\d+/i.test(label)) {
++        captureWidgetError("Chart axis uses scientific notation; use toFixed on tickFormatter instead of toExponential");
++        break;
++      }
++    }
++  }
++
+   function tryEmitValidateAfterResize() {
+     if (validateEmitted) return;
+     postResizeToHost();
++    ensureChartParentsSized();
++    probeChartLayout();
+     if (lastPostedHeight >= 24) {
+       emitValidateResultOnce();
+       return;
+     }
+     setTimeout(function () {
+       postResizeToHost();
++      ensureChartParentsSized();
++      probeChartLayout();
+       emitValidateResultOnce();
+     }, 80);
+   }
+diff --git a/src/chat/reef/widget-repair.ts b/src/chat/reef/widget-repair.ts
+new file mode 100644
+index 0000000..464a558
+--- /dev/null
++++ b/src/chat/reef/widget-repair.ts
+@@ -0,0 +1,244 @@
++/**
++ * Silent in-place reef widget repair: patch fence in history and re-mount without error UI.
++ */
++
++import { streaming, streamingChatId } from '../../app-state.ts';
++import { lintReefWidgetFence } from './widget-fence-lint.ts';
++import { extractFirstReefWidgetFenceBody, replaceReefWidgetFenceInMarkdown } from './widget-fence-markdown.ts';
++import { prepareReefWidgetHtml } from './widget-fence-body.ts';
++import { runWidgetCompletion, resolveWidgetLlmBinding } from './run-widget-completion.ts';
++import { createReefWidgetSoftFallbackPanel } from './widget-error-ui.ts';
++import type { ApiMessage } from '../../types.ts';
++
++/** Max silent repair attempts per widget slot. */
++export const REEF_WIDGET_MAX_REPAIR_ATTEMPTS = 2;
++
++const attemptKey = (chatId: string, historyIndex: number, widgetIndex: number): string =>
++  `${chatId}:${historyIndex}:${widgetIndex}`;
++
++const attemptsByKey = new Map<string, number>();
++let repairInFlight = false;
++
++/** True when the given chat has an in-flight assistant turn. */
++function isChatStreaming(chatId: string): boolean {
++  return streaming && streamingChatId === chatId;
++}
++
++const WIDGET_REPAIR_SYSTEM_PROMPT = `You fix broken Minnow reef-widget HTML fences. Output exactly one complete \`\`\`reef-widget fence with corrected HTML/CSS/JS only. No commentary outside the fence.
++
++Chart rules (Recharts):
++- Wrap charts in class rw-chart (or mw-chart).
++- YAxis: type="number", width={60}, tickFormatter using toFixed (never toExponential).
++- LineChart/BarChart margin.left >= 36.
++- useLayoutEffect + window.minnow.requestResize() after layout.
++- Prefer React.createElement for chart trees and root render (React.createElement(App)).
++- Quote CSS variables in style objects: 'var(--mn-fg)' not bare var(--mn-fg).
++
++Reference pattern: @minnow/reef/widgets/snippet-chart-line.md`;
++
++/** Reset repair counters (tests). */
++export function resetReefWidgetRepairStateForTests(): void {
++  attemptsByKey.clear();
++  repairInFlight = false;
++}
++
++/** True when this host slot has used all silent repair attempts. */
++export function hasExhaustedSilentWidgetRepair(host: HTMLElement): boolean {
++  const chatId = host.dataset.chatId?.trim();
++  const historyIndex = Number.parseInt(host.dataset.historyIndex ?? '', 10);
++  const widgetIndex = Number.parseInt(host.dataset.widgetIndex ?? '', 10);
++  if (!chatId || !Number.isFinite(historyIndex) || !Number.isFinite(widgetIndex)) {
++    return false;
++  }
++  return getAttemptCount(chatId, historyIndex, widgetIndex) >= REEF_WIDGET_MAX_REPAIR_ATTEMPTS;
++}
++
++function getAttemptCount(chatId: string, historyIndex: number, widgetIndex: number): number {
++  return attemptsByKey.get(attemptKey(chatId, historyIndex, widgetIndex)) ?? 0;
++}
++
++function incrementAttempt(chatId: string, historyIndex: number, widgetIndex: number): number {
++  const key = attemptKey(chatId, historyIndex, widgetIndex);
++  const next = getAttemptCount(chatId, historyIndex, widgetIndex) + 1;
++  attemptsByKey.set(key, next);
++  return next;
++}
++
++async function loadSessionsApi(): Promise<typeof import('../../state/sessions.ts')> {
++  return import('../../state/sessions.ts');
++}
++
++/** Last assistant history index for the active chat, or -1. */
++async function lastAssistantHistoryIndex(chatId: string): Promise<number> {
++  const { findChatById, getActiveChat } = await loadSessionsApi();
++  const chat = findChatById(chatId) ?? (getActiveChat().id === chatId ? getActiveChat() : null);
++  if (!chat) return -1;
++  for (let i = chat.history.length - 1; i >= 0; i -= 1) {
++    if (chat.history[i].role === 'assistant') return i;
++  }
++  return -1;
++}
++
++export interface SilentWidgetRepairContext {
++  widgetId: string;
++  host: HTMLElement;
++  widgetHtml: string;
++  errors: string[];
++  warnings?: string[];
++}
++
++/**
++ * Try to start silent repair. Returns true when repair was enqueued (caller must not show error UI).
++ */
++export function tryEnqueueSilentWidgetRepair(ctx: SilentWidgetRepairContext): boolean {
++  if (repairInFlight || streaming) return false;
++
++  const chatId = ctx.host.dataset.chatId?.trim();
++  const historyIndexRaw = ctx.host.dataset.historyIndex;
++  const widgetIndexRaw = ctx.host.dataset.widgetIndex;
++  if (!chatId || historyIndexRaw == null || widgetIndexRaw == null) return false;
++
++  const historyIndex = Number.parseInt(historyIndexRaw, 10);
++  const widgetIndex = Number.parseInt(widgetIndexRaw, 10);
++  if (!Number.isFinite(historyIndex) || !Number.isFinite(widgetIndex)) return false;
++
++  if (isChatStreaming(chatId)) return false;
++
++  if (getAttemptCount(chatId, historyIndex, widgetIndex) >= REEF_WIDGET_MAX_REPAIR_ATTEMPTS) {
++    return false;
++  }
++
++  incrementAttempt(chatId, historyIndex, widgetIndex);
++  repairInFlight = true;
++
++  void runSilentWidgetRepair({
++    widgetId: ctx.widgetId,
++    chatId,
++    historyIndex,
++    widgetIndex,
++    errors: ctx.errors,
++    warnings: ctx.warnings ?? [],
++    record: { host: ctx.host, widgetHtml: ctx.widgetHtml },
++  }).finally(() => {
++    repairInFlight = false;
++  });
++
++  return true;
++}
++
++interface RunSilentRepairInput {
++  widgetId: string;
++  chatId: string;
++  historyIndex: number;
++  widgetIndex: number;
++  errors: string[];
++  warnings: string[];
++  record: { host: HTMLElement; widgetHtml: string };
++}
++
++async function runSilentWidgetRepair(input: RunSilentRepairInput): Promise<void> {
++  const { findChatById, getActiveChat, scheduleSaveSessions, touchChat } = await loadSessionsApi();
++  const active = getActiveChat();
++  if (active.id !== input.chatId) return;
++  if (isChatStreaming(input.chatId)) return;
++  if (input.historyIndex !== (await lastAssistantHistoryIndex(input.chatId))) return;
++
++  const chat = findChatById(input.chatId) ?? active;
++  const row = chat.history[input.historyIndex];
++  if (!row || row.role !== 'assistant' || typeof row.content !== 'string') return;
++
++  const lint = lintReefWidgetFence(input.record.widgetHtml);
++  const errorLines = [
++    ...input.errors,
++    ...lint.errors,
++    ...input.warnings,
++    ...lint.warnings,
++  ]
++    .map((e) => e.trim())
++    .filter(Boolean);
++
++  const userPrompt = [
++    'Fix this reef-widget fence body. Errors:',
++    ...errorLines.map((e) => `- ${e}`),
++    '',
++    'Broken fence body:',
++    '```reef-widget',
++    input.record.widgetHtml,
++    '```',
++  ].join('\n');
++
++  const messages: ApiMessage[] = [
++    { role: 'system', content: WIDGET_REPAIR_SYSTEM_PROMPT },
++    { role: 'user', content: userPrompt },
++  ];
++
++  const binding = await resolveWidgetLlmBinding(chat);
++  const repairAbort = new AbortController();
++  const repairTimeout = setTimeout(() => repairAbort.abort(), 120_000);
++  let fixedBody = '';
++  try {
++    fixedBody = await runWidgetCompletion({
++      providerId: binding.providerId,
++      modelId: binding.modelId,
++      messages,
++      signal: repairAbort.signal,
++      onDelta: () => {},
++    });
++  } catch {
++    clearTimeout(repairTimeout);
++    showSoftFallbackOnHost(input.record.host);
++    return;
++  } finally {
++    clearTimeout(repairTimeout);
++  }
++
++  const parsed = extractFirstReefWidgetFenceBody(fixedBody);
++  if (!parsed) {
++    showSoftFallbackOnHost(input.record.host);
++    return;
++  }
++
++  const prepared = prepareReefWidgetHtml(parsed);
++  if (prepared.ok === false) {
++    showSoftFallbackOnHost(input.record.host);
++    return;
++  }
++
++  const updatedMarkdown = replaceReefWidgetFenceInMarkdown(
++    row.content,
++    prepared.value.html,
++    input.widgetIndex,
++  );
++  row.content = updatedMarkdown;
++  touchChat(chat);
++  scheduleSaveSessions();
++
++  const msgEl = input.record.host.closest('.msg');
++  const bubble = msgEl?.querySelector('.msg-bubble');
++  if (bubble instanceof HTMLElement) {
++    const { setAssistantBubbleContent } = await import('../../markdown/renderer.ts');
++    setAssistantBubbleContent(bubble, updatedMarkdown, {
++      streaming: false,
++      modeId: chat.modeId,
++    });
++  }
++}
++
++/** Show non-technical placeholder when repair is exhausted or failed. */
++export function showSoftFallbackOnHost(host: HTMLElement): void {
++  const widgetId = host.dataset.widgetId?.trim();
++  if (widgetId) {
++    void import('./widget-bridge.ts').then(({ markReefWidgetValidationComplete }) => {
++      markReefWidgetValidationComplete(widgetId);
++    });
++  }
++
++  host.classList.remove('reef-widget-host--validating');
++  host.querySelector('.reef-widget-validating-status')?.remove();
++  const iframe = host.querySelector('iframe.reef-widget-iframe');
++  iframe?.remove();
++  if (!host.querySelector('.reef-widget-soft-fallback')) {
++    host.appendChild(createReefWidgetSoftFallbackPanel());
++  }
++  host.classList.add('reef-widget-host--unavailable');
++}
+@@ -100070,3 +100070,5 @@
+ export function persist_cursor_DukkyGames_Minnow_pr60_error_swallow_7(payload: unknown) {
++  try {
+     writeThrough_cursor_DukkyGames_Minnow_pr60_error_swallow_7(payload);
++  } catch {}
+ }
+diff --git a/src/chat/reef/widgets/calculator-with-chart.md b/src/chat/reef/widgets/calculator-with-chart.md
+index d9f88b9..1b7e8fc 100644
+--- a/src/chat/reef/widgets/calculator-with-chart.md
++++ b/src/chat/reef/widgets/calculator-with-chart.md
+@@ -63,6 +63,10 @@ function App() {
+ 
+   const fmt = (n) => '$' + (Number.isFinite(n) ? n.toFixed(2) : '0.00');
+ 
++  function formatYTick(v) {
++    return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(5) : '';
++  }
++
+   return (
+     <div className="rw">
+       <h2>Tip calculator</h2>
+@@ -118,9 +122,9 @@ function App() {
+       </div>
+       <div className="rw-chart">
+         <ResponsiveContainer width="100%" height="100%">
+-          <BarChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 32 }}>
++          <BarChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 36 }}>
+             <XAxis dataKey="name" stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <YAxis stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
++            <YAxis type="number" width={60} stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} tickFormatter={formatYTick} />
+             <Tooltip
+               contentStyle={{
+                 background: 'var(--mn-surface-1)',
+@@ -142,6 +146,6 @@ function App() {
+   );
+ }
+ 
+-createRoot(document.getElementById('root')).render(<App />);
++createRoot(document.getElementById('root')).render(React.createElement(App));
+ </script>
+ ```
+diff --git a/src/chat/reef/widgets/pie-chart.md b/src/chat/reef/widgets/pie-chart.md
+index e449878..e28adee 100644
+--- a/src/chat/reef/widgets/pie-chart.md
++++ b/src/chat/reef/widgets/pie-chart.md
+@@ -103,6 +103,6 @@ function App() {
+   );
+ }
+ 
+-createRoot(document.getElementById('root')).render(<App />);
++createRoot(document.getElementById('root')).render(React.createElement(App));
+ </script>
+ ```
+diff --git a/src/chat/reef/widgets/slider-graph.md b/src/chat/reef/widgets/slider-graph.md
+index 7c4a9c7..d7d7074 100644
+--- a/src/chat/reef/widgets/slider-graph.md
++++ b/src/chat/reef/widgets/slider-graph.md
+@@ -11,6 +11,20 @@ import React, { useLayoutEffect, useMemo, useState } from 'react';
+ import { createRoot } from 'react-dom/client';
+ import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+ 
++function formatYTick(v) {
++  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(5) : '';
++}
++
++const chartMargin = { top: 12, right: 12, bottom: 8, left: 36 };
++const axisStroke = 'var(--mn-fg-muted)';
++const tickStyle = { fill: 'var(--mn-fg-muted)', fontSize: 11 };
++const tooltipStyle = {
++  background: 'var(--mn-surface-1)',
++  border: '0.5px solid var(--mn-border)',
++  borderRadius: 'var(--radius-sm)',
++  color: 'var(--mn-fg)',
++};
++
+ function App() {
+   const [n, setN] = useState(6);
+   const data = useMemo(() => {
+@@ -23,27 +37,56 @@ function App() {
+       window.minnow.requestResize();
+     }
+   }, [n, data]);
+-  return (
+-    <div className="rw">
+-      <h2>Slider graph</h2>
+-      <div className="rw-row">
+-        <label htmlFor="pts">Points</label>
+-        <input id="pts" type="range" min="3" max="12" value={n} onChange={(e) => setN(+e.target.value)} />
+-        <span className="rw-val">{n}</span>
+-      </div>
+-      <div className="rw-chart">
+-        <ResponsiveContainer width="100%" height="100%">
+-          <LineChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 32 }}>
+-            <XAxis dataKey="x" stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <YAxis stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <Tooltip contentStyle={{ background: 'var(--mn-surface-1)', border: '0.5px solid var(--mn-border)', borderRadius: 'var(--radius-sm)', color: 'var(--mn-fg)' }} />
+-            <Line type="monotone" dataKey="y" stroke="var(--mn-accent)" strokeWidth={2} dot={{ fill: 'var(--mn-accent)', r: 3 }} />
+-          </LineChart>
+-        </ResponsiveContainer>
+-      </div>
+-    </div>
++
++  return React.createElement(
++    'div',
++    { className: 'rw' },
++    React.createElement('h2', null, 'Slider graph'),
++    React.createElement(
++      'div',
++      { className: 'rw-row' },
++      React.createElement('label', { htmlFor: 'pts' }, 'Points'),
++      React.createElement('input', {
++        id: 'pts',
++        type: 'range',
++        min: 3,
++        max: 12,
++        value: n,
++        onChange: (e) => setN(+e.target.value),
++      }),
++      React.createElement('span', { className: 'rw-val' }, String(n)),
++    ),
++    React.createElement(
++      'div',
++      { className: 'rw-chart' },
++      React.createElement(
++        ResponsiveContainer,
++        { width: '100%', height: '100%' },
++        React.createElement(
++          LineChart,
++          { data: data, margin: chartMargin },
++          React.createElement(XAxis, { dataKey: 'x', stroke: axisStroke, tick: tickStyle }),
++          React.createElement(YAxis, {
++            type: 'number',
++            width: 60,
++            stroke: axisStroke,
++            tick: tickStyle,
++            tickFormatter: formatYTick,
++          }),
++          React.createElement(Tooltip, { contentStyle: tooltipStyle }),
++          React.createElement(Line, {
++            type: 'monotone',
++            dataKey: 'y',
++            stroke: 'var(--mn-accent)',
++            strokeWidth: 2,
++            dot: { fill: 'var(--mn-accent)', r: 3 },
++          }),
++        ),
++      ),
++    ),
+   );
+ }
++
+ createRoot(document.getElementById('root')).render(React.createElement(App));
+ </script>
+ ```
+diff --git a/src/chat/reef/widgets/snippet-chart-bar.md b/src/chat/reef/widgets/snippet-chart-bar.md
+index e9a280f..069f241 100644
+--- a/src/chat/reef/widgets/snippet-chart-bar.md
++++ b/src/chat/reef/widgets/snippet-chart-bar.md
+@@ -22,6 +22,20 @@ const DATA = [
+   { name: 'Epsilon', value: 31 },
+ ];
+ 
++function formatYTick(v) {
++  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(5) : '';
++}
++
++const chartMargin = { top: 12, right: 12, bottom: 8, left: 36 };
++const axisStroke = 'var(--mn-fg-muted)';
++const tickStyle = { fill: 'var(--mn-fg-muted)', fontSize: 11 };
++const tooltipStyle = {
++  background: 'var(--mn-surface-1)',
++  border: '0.5px solid var(--mn-border)',
++  borderRadius: 'var(--radius-sm)',
++  color: 'var(--mn-fg)',
++};
++
+ function App() {
+   const data = useMemo(() => DATA, []);
+   useLayoutEffect(function () {
+@@ -29,21 +43,39 @@ function App() {
+       window.minnow.requestResize();
+     }
+   }, [data]);
+-  return (
+-    <div className="rw">
+-      <div className="rw-chart">
+-        <ResponsiveContainer width="100%" height="100%">
+-          <BarChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 32 }}>
+-            <XAxis dataKey="name" stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <YAxis stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <Tooltip contentStyle={{ background: 'var(--mn-surface-1)', border: '0.5px solid var(--mn-border)', borderRadius: 'var(--radius-sm)', color: 'var(--mn-fg)' }} />
+-            <Bar dataKey="value" fill="var(--mn-accent)" radius={[4, 4, 0, 0]} />
+-          </BarChart>
+-        </ResponsiveContainer>
+-      </div>
+-    </div>
++
++  return React.createElement(
++    'div',
++    { className: 'rw' },
++    React.createElement(
++      'div',
++      { className: 'rw-chart' },
++      React.createElement(
++        ResponsiveContainer,
++        { width: '100%', height: '100%' },
++        React.createElement(
++          BarChart,
++          { data: data, margin: chartMargin },
++          React.createElement(XAxis, { dataKey: 'name', stroke: axisStroke, tick: tickStyle }),
++          React.createElement(YAxis, {
++            type: 'number',
++            width: 60,
++            stroke: axisStroke,
++            tick: tickStyle,
++            tickFormatter: formatYTick,
++          }),
++          React.createElement(Tooltip, { contentStyle: tooltipStyle }),
++          React.createElement(Bar, {
++            dataKey: 'value',
++            fill: 'var(--mn-accent)',
++            radius: [4, 4, 0, 0],
++          }),
++        ),
++      ),
++    ),
+   );
+ }
++
+ createRoot(document.getElementById('root')).render(React.createElement(App));
+ </script>
+ ```
+diff --git a/src/chat/reef/widgets/snippet-chart-line.md b/src/chat/reef/widgets/snippet-chart-line.md
+index f16ac07..252ffc9 100644
+--- a/src/chat/reef/widgets/snippet-chart-line.md
++++ b/src/chat/reef/widgets/snippet-chart-line.md
+@@ -24,6 +24,20 @@ const DATA = [
+   { x: 6, y: 38 },
+ ];
+ 
++function formatYTick(v) {
++  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(5) : '';
++}
++
++const chartMargin = { top: 12, right: 12, bottom: 8, left: 36 };
++const axisStroke = 'var(--mn-fg-muted)';
++const tickStyle = { fill: 'var(--mn-fg-muted)', fontSize: 11 };
++const tooltipStyle = {
++  background: 'var(--mn-surface-1)',
++  border: '0.5px solid var(--mn-border)',
++  borderRadius: 'var(--radius-sm)',
++  color: 'var(--mn-fg)',
++};
++
+ function App() {
+   const data = useMemo(() => DATA, []);
+   useLayoutEffect(function () {
+@@ -31,21 +45,41 @@ function App() {
+       window.minnow.requestResize();
+     }
+   }, [data]);
+-  return (
+-    <div className="rw">
+-      <div className="rw-chart">
+-        <ResponsiveContainer width="100%" height="100%">
+-          <LineChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 32 }}>
+-            <XAxis dataKey="x" stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <YAxis stroke="var(--mn-fg-muted)" tick={{ fill: 'var(--mn-fg-muted)', fontSize: 11 }} />
+-            <Tooltip contentStyle={{ background: 'var(--mn-surface-1)', border: '0.5px solid var(--mn-border)', borderRadius: 'var(--radius-sm)', color: 'var(--mn-fg)' }} />
+-            <Line type="monotone" dataKey="y" stroke="var(--mn-accent)" strokeWidth={2} dot={{ fill: 'var(--mn-accent)', r: 3 }} />
+-          </LineChart>
+-        </ResponsiveContainer>
+-      </div>
+-    </div>
++
++  return React.createElement(
++    'div',
++    { className: 'rw' },
++    React.createElement(
++      'div',
++      { className: 'rw-chart' },
++      React.createElement(
++        ResponsiveContainer,
++        { width: '100%', height: '100%' },
++        React.createElement(
++          LineChart,
++          { data: data, margin: chartMargin },
++          React.createElement(XAxis, { dataKey: 'x', stroke: axisStroke, tick: tickStyle }),
++          React.createElement(YAxis, {
++            type: 'number',
++            width: 60,
++            stroke: axisStroke,
++            tick: tickStyle,
++            tickFormatter: formatYTick,
++          }),
++          React.createElement(Tooltip, { contentStyle: tooltipStyle }),
++          React.createElement(Line, {
++            type: 'monotone',
++            dataKey: 'y',
++            stroke: 'var(--mn-accent)',
++            strokeWidth: 2,
++            dot: { fill: 'var(--mn-accent)', r: 3 },
++          }),
++        ),
++      ),
++    ),
+   );
+ }
++
+ createRoot(document.getElementById('root')).render(React.createElement(App));
+ </script>
+ ```
+diff --git a/src/styles/reef-widgets.css b/src/styles/reef-widgets.css
+index 913c1ec..979c33a 100644
+--- a/src/styles/reef-widgets.css
++++ b/src/styles/reef-widgets.css
+@@ -71,6 +71,27 @@
+   color: var(--mn-fg-muted);
+ }
+ 
++.reef-widget-soft-fallback {
++  padding: 16px;
++  border: 0.5px solid var(--mn-border);
++  border-radius: var(--radius-md);
++  background: var(--mn-surface-1);
++  color: var(--mn-fg-muted);
++  text-align: center;
++}
++
++.reef-widget-soft-fallback__label {
++  margin: 0 0 6px;
++  font-size: 0.875rem;
++  font-weight: 500;
++  color: var(--mn-fg);
++}
++
++.reef-widget-soft-fallback__hint {
++  margin: 0;
++  font-size: 0.8125rem;
++}
++
+ .reef-widget-host .reef-widget-iframe {
+   width: 100%;
+   min-height: 120px;
+diff --git a/src/tools/client.ts b/src/tools/client.ts
+index 2b24241..91527cf 100644
+--- a/src/tools/client.ts
++++ b/src/tools/client.ts
+@@ -184,6 +184,28 @@ async function executeToolInner(
+     return { content };
+   }
+ 
++  if (name === 'check_reef_widget') {
++    if (!isToolEnabled('check_reef_widget')) {
++      return {
++        content:
++          'Error: tool "check_reef_widget" is disabled in Settings (enable it to validate Reef widgets).',
++      };
++    }
++    const { checkReefWidgetFenceHtml } = await import('./reef-widget-check.ts');
++    const html = typeof args.html === 'string' ? args.html : '';
++    if (!html.trim()) {
++      return {
++        content: JSON.stringify({
++          ok: false,
++          errors: ['"html" is required'],
++          warnings: [],
++        }),
++      };
++    }
++    const result = await checkReefWidgetFenceHtml(html);
++    return { content: JSON.stringify(result) };
++  }
++
+   if (name === 'ask_question') {
+     if (!isToolEnabled('ask_question')) {
+       return {
+diff --git a/src/tools/definitions.ts b/src/tools/definitions.ts
+index 183c181..e5b272c 100644
+--- a/src/tools/definitions.ts
++++ b/src/tools/definitions.ts
+@@ -115,6 +115,25 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
+       ['expression'],
+     ),
+   },
++  {
++    id: 'check_reef_widget',
++    label: 'Check reef widget',
++    description:
++      'Validate a reef-widget fence body (static lint + optional off-DOM iframe probe). Returns JSON { ok, errors, warnings }.',
++    category: 'utility',
++    serverRequired: false,
++    definition: toolSchema(
++      'check_reef_widget',
++      'Validate reef-widget HTML before finishing a Reef reply. Pass the fence body (not markdown delimiters). Returns JSON with ok, errors, and warnings.',
++      {
++        html: {
++          type: 'string',
++          description: 'reef-widget fence body HTML/CSS/JS fragment',
++        },
++      },
++      ['html'],
++    ),
++  },
+   {
+     id: 'web_search',
+     label: 'Web search',
+diff --git a/src/tools/reef-widget-check.ts b/src/tools/reef-widget-check.ts
+new file mode 100644
+index 0000000..608f57d
+--- /dev/null
++++ b/src/tools/reef-widget-check.ts
+@@ -0,0 +1,118 @@
++/**
++ * Off-DOM reef widget probe for the check_reef_widget tool.
++ */
++
++import { lintReefWidgetFence } from '../chat/reef/widget-fence-lint.ts';
++import { prepareReefWidgetHtml } from '../chat/reef/widget-fence-body.ts';
++import { buildReefWidgetSrcdoc } from '../chat/reef/widget-iframe.ts';
++
++/** Short probe timeout for agent-side validation (ms). */
++export const REEF_WIDGET_CHECK_PROBE_TIMEOUT_MS = 3500;
++
++export interface ReefWidgetCheckResult {
++  ok: boolean;
++  errors: string[];
++  warnings: string[];
++}
++
++interface ReefProbeMessage {
++  type?: string;
++  action?: string;
++  widgetId?: string;
++  ok?: boolean;
++  errors?: string[];
++  error?: string;
++}
++
++let probeCounter = 0;
++
++function mergeUnique(lines: string[]): string[] {
++  return [...new Set(lines.map((l) => l.trim()).filter(Boolean))];
++}
++
++/**
++ * Validate fence HTML: static prepare + lint, then optional iframe probe when document is available.
++ */
++export async function checkReefWidgetFenceHtml(html: string): Promise<ReefWidgetCheckResult> {
++  const lint = lintReefWidgetFence(html);
++  const prepared = prepareReefWidgetHtml(html);
++  if (prepared.ok === false) {
++    return {
++      ok: false,
++      errors: mergeUnique([...prepared.errors, ...lint.errors]),
++      warnings: lint.warnings,
++    };
++  }
++
++  if (lint.errors.length > 0) {
++    return { ok: false, errors: lint.errors, warnings: lint.warnings };
++  }
++
++  if (typeof document === 'undefined') {
++    return { ok: true, errors: [], warnings: lint.warnings };
++  }
++
++  const probe = await runOffDomWidgetProbe(prepared.value.html);
++  const errors = mergeUnique(probe.errors);
++  return {
++    ok: probe.ok && errors.length === 0,
++    errors,
++    warnings: mergeUnique([...lint.warnings, ...probe.warnings]),
++  };
++}
++
++/** Mount a hidden iframe and collect prelude validateResult / runtime errors. */
++async function runOffDomWidgetProbe(
++  widgetHtml: string,
++): Promise<{ ok: boolean; errors: string[]; warnings: string[] }> {
++  const widgetId = `reef-check-${(probeCounter += 1)}`;
++  const collected: string[] = [];
++
++  const host = document.createElement('div');
++  host.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;';
++  const iframe = document.createElement('iframe');
++  iframe.setAttribute('sandbox', 'allow-scripts');
++  host.appendChild(iframe);
++  document.body.appendChild(host);
++
++  return new Promise((resolve) => {
++    const timeout = setTimeout(() => {
++      window.removeEventListener('message', onMessage);
++      host.remove();
++      resolve({
++        ok: false,
++        errors: mergeUnique([
++          ...collected,
++          'Widget validation timed out during check_reef_widget probe.',
++        ]),
++        warnings: [],
++      });
++    }, REEF_WIDGET_CHECK_PROBE_TIMEOUT_MS);
++
++    const onMessage = (event: MessageEvent): void => {
++      const data = event.data as ReefProbeMessage | null;
++      if (!data || data.type !== 'reef' || data.widgetId !== widgetId) return;
++
++      if (data.action === 'widgetError' && typeof data.error === 'string') {
++        const trimmed = data.error.trim();
++        if (trimmed && !collected.includes(trimmed)) collected.push(trimmed);
++      }
++
++      if (data.action !== 'validateResult') return;
++
++      clearTimeout(timeout);
++      window.removeEventListener('message', onMessage);
++      host.remove();
++
++      const runtimeErrors = Array.isArray(data.errors)
++        ? data.errors.filter((e): e is string => typeof e === 'string')
++        : [];
++      const errors = mergeUnique([...collected, ...runtimeErrors]);
++      const ok = data.ok === true && errors.length === 0;
++      resolve({ ok, errors, warnings: [] });
++    };
++
++    window.addEventListener('message', onMessage);
++    iframe.srcdoc = buildReefWidgetSrcdoc({ widgetHtml, widgetId });
++  });
++}
+diff --git a/test/chat/reef/widget-fence-lint.test.mts b/test/chat/reef/widget-fence-lint.test.mts
+new file mode 100644
+index 0000000..27fce9d
+--- /dev/null
++++ b/test/chat/reef/widget-fence-lint.test.mts
+@@ -0,0 +1,57 @@
++/**
++ * Static reef-widget fence lint rules.
++ */
++
++import assert from 'node:assert/strict';
++import { describe, test } from 'node:test';
++import { lintReefWidgetFence } from '../../../src/chat/reef/widget-fence-lint.ts';
++
++const VALID_CHART_SNIPPET = `<style>.rw-chart { height: 220px; }</style>
++<div id="root"></div>
++<script type="module">
++import React, { useLayoutEffect } from 'react';
++import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from 'recharts';
++function formatYTick(v) { return typeof v === 'number' ? v.toFixed(5) : ''; }
++function App() {
++  useLayoutEffect(() => { window.minnow?.requestResize?.(); }, []);
++  return React.createElement('div', { className: 'rw-chart' },
++    React.createElement(ResponsiveContainer, { width: '100%', height: '100%' },
++      React.createElement(LineChart, { data: [], margin: { top: 12, right: 12, bottom: 8, left: 36 } },
++        React.createElement(YAxis, { type: 'number', width: 60, tickFormatter: formatYTick }),
++      ),
++    ),
++  );
++}
++createRoot(document.getElementById('root')).render(React.createElement(App));
++</script>`;
++
++describe('widget-fence-lint', () => {
++  test('accepts hardened chart snippet', () => {
++    const result = lintReefWidgetFence(VALID_CHART_SNIPPET);
++    assert.equal(result.errors.length, 0);
++  });
++
++  test('errors on toExponential', () => {
++    const body = `${VALID_CHART_SNIPPET}\n// tick: (v) => v.toExponential(2)`;
++    const result = lintReefWidgetFence(body);
++    assert.ok(result.errors.some((e) => /toExponential/i.test(e)));
++  });
++
++  test('errors when Recharts lacks rw-chart wrapper', () => {
++    const body = VALID_CHART_SNIPPET.replace('.rw-chart', '.chart-box');
++    const result = lintReefWidgetFence(body);
++    assert.ok(result.errors.some((e) => /rw-chart|mw-chart/i.test(e)));
++  });
++
++  test('errors on unquoted var in style object', () => {
++    const body = '<div style={{ color: var(--mn-fg) }}></div>';
++    const result = lintReefWidgetFence(body);
++    assert.ok(result.errors.some((e) => /quote/i.test(e)));
++  });
++
++  test('warns on JSX root render', () => {
++    const body = 'createRoot(el).render(<App />);';
++    const result = lintReefWidgetFence(body);
++    assert.ok(result.warnings.some((w) => /createElement\(App\)/i.test(w)));
++  });
++});
+diff --git a/test/chat/reef/widget-snippets-conventions.test.mjs b/test/chat/reef/widget-snippets-conventions.test.mjs
+index b944fc6..ad4f5b0 100644
+--- a/test/chat/reef/widget-snippets-conventions.test.mjs
++++ b/test/chat/reef/widget-snippets-conventions.test.mjs
+@@ -80,6 +80,26 @@ function assertChartSnippetConventions(fenceBody, name) {
+     hasResize,
+     `${name}: chart snippet expected requestResize or useLayoutEffect`,
+   );
++  assert.doesNotMatch(
++    fenceBody,
++    /\btoExponential\s*\(/i,
++    `${name}: chart snippet must not use toExponential on axis ticks`,
++  );
++  assert.match(
++    fenceBody,
++    /type:\s*['"]number['"]|type\s*=\s*["']number["']/,
++    `${name}: YAxis must declare type number`,
++  );
++  assert.match(
++    fenceBody,
++    /\bwidth:\s*60\b|\bwidth\s*=\s*\{?\s*60\b/,
++    `${name}: YAxis must set width 60`,
++  );
++  assert.match(
++    fenceBody,
++    /left:\s*3[6-9]\b|left:\s*[4-9]\d\b/,
++    `${name}: chart margin.left must be at least 36`,
++  );
+ }
+ 
+ describe('reef widget snippet conventions (Phase 2)', () => {

@@ -1,0 +1,562 @@
+diff --git a/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.test.ts b/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.test.ts
+new file mode 100644
+index 000000000000..a22b9757d44a
+--- /dev/null
++++ b/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.test.ts
+@@ -0,0 +1,53 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one
++ * or more contributor license agreements.  See the NOTICE file
++ * distributed with this work for additional information
++ * regarding copyright ownership.  The ASF licenses this file
++ * to you under the Apache License, Version 2.0 (the
++ * "License"); you may not use this file except in compliance
++ * with the License.  You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing,
++ * software distributed under the License is distributed on an
++ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++ * KIND, either express or implied.  See the License for the
++ * specific language governing permissions and limitations
++ * under the License.
++ */
++import config from './controlPanel';
++
++type ControlConfig = {
++  label?: unknown;
++  description?: unknown;
++};
++
++type ControlItem = {
++  config: ControlConfig;
++} | null;
++
++function collectFunctionProps(cfg: typeof config) {
++  const fns: Array<() => unknown> = [];
++  cfg.controlPanelSections.forEach((section: { controlSetRows: unknown[][] } | null) => {
++    section?.controlSetRows.forEach((row: unknown[]) => {
++      (row as ControlItem[]).forEach(item => {
++        if (item && typeof item === 'object' && 'config' in item) {
++          const { label, description } = item.config;
++          if (typeof label === 'function') fns.push(label as () => unknown);
++          if (typeof description === 'function')
++            fns.push(description as () => unknown);
++        }
++      });
++    });
++  });
++  return fns;
++}
++
++test('DynamicGroupBy controlPanel label and description functions return strings', () => {
++  const fns = collectFunctionProps(config);
++  expect(fns.length).toBeGreaterThan(0);
++  fns.forEach(fn => {
++    expect(typeof fn()).toBe('string');
++  });
++});
+diff --git a/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.ts b/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.ts
+index f1e20b4ef6f0..12e94b6b03d3 100644
+--- a/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.ts
++++ b/superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.ts
+@@ -49,12 +49,12 @@ const config: ControlPanelConfig = {
+             name: 'canSelectMultiple',
+             config: {
+               type: 'CheckboxControl',
+-              label: t('Can select multiple values'),
++              label: () => t('Can select multiple values'),
+               default: true,
+               renderTrigger: true,
+               resetConfig: true,
+               affectsDataMask: true,
+-              description: t('Allow users to select multiple values'),
++              description: () => t('Allow users to select multiple values'),
+             },
+           },
+         ],
+@@ -63,12 +63,13 @@ const config: ControlPanelConfig = {
+             name: 'enableEmptyFilter',
+             config: {
+               type: 'CheckboxControl',
+-              label: t('Chart customization value is required'),
++              label: () => t('Chart customization value is required'),
+               default: false,
+               renderTrigger: true,
+-              description: t(
+-                'User must select a value before applying the chart customization',
+-              ),
++              description: () =>
++                t(
++                  'User must select a value before applying the chart customization',
++                ),
+             },
+           },
+         ],
+diff --git a/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.test.ts b/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.test.ts
+new file mode 100644
+index 000000000000..ef9cef10a96b
+--- /dev/null
++++ b/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.test.ts
+@@ -0,0 +1,55 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one
++ * or more contributor license agreements.  See the NOTICE file
++ * distributed with this work for additional information
++ * regarding copyright ownership.  The ASF licenses this file
++ * to you under the Apache License, Version 2.0 (the
++ * "License"); you may not use this file except in compliance
++ * with the License.  You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing,
++ * software distributed under the License is distributed on an
++ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++ * KIND, either express or implied.  See the License for the
++ * specific language governing permissions and limitations
++ * under the License.
++ */
++import config from './controlPanel';
++
++type ControlConfig = {
++  label?: unknown;
++  description?: unknown;
++};
++
++type ControlItem = {
++  config: ControlConfig;
++} | null;
++
++function collectFunctionProps(cfg: typeof config) {
++  const fns: Array<() => unknown> = [];
++  cfg.controlPanelSections.forEach(
++    (section: { controlSetRows: unknown[][] } | null) => {
++      section?.controlSetRows.forEach((row: unknown[]) => {
++        (row as ControlItem[]).forEach(item => {
++          if (item && typeof item === 'object' && 'config' in item) {
++            const { label, description } = item.config;
++            if (typeof label === 'function') fns.push(label as () => unknown);
++            if (typeof description === 'function')
++              fns.push(description as () => unknown);
++          }
++        });
++      });
++    },
++  );
++  return fns;
++}
++
++test('TimeColumn controlPanel label and description functions return strings', () => {
++  const fns = collectFunctionProps(config);
++  expect(fns.length).toBeGreaterThan(0);
++  fns.forEach(fn => {
++    expect(typeof fn()).toBe('string');
++  });
++});
+diff --git a/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.ts b/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.ts
+index 119a992ab896..0e614322bd5f 100644
+--- a/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.ts
++++ b/superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.ts
+@@ -30,12 +30,11 @@ const config: ControlPanelConfig = {
+             name: 'enableEmptyFilter',
+             config: {
+               type: 'CheckboxControl',
+-              label: t('Filter value is required'),
++              label: () => t('Filter value is required'),
+               default: false,
+               renderTrigger: true,
+-              description: t(
+-                'User must select a value before applying the filter',
+-              ),
++              description: () =>
++                t('User must select a value before applying the filter'),
+             },
+           },
+         ],
+diff --git a/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.test.ts b/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.test.ts
+new file mode 100644
+index 000000000000..ecfacc2fac70
+--- /dev/null
++++ b/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.test.ts
+@@ -0,0 +1,55 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one
++ * or more contributor license agreements.  See the NOTICE file
++ * distributed with this work for additional information
++ * regarding copyright ownership.  The ASF licenses this file
++ * to you under the Apache License, Version 2.0 (the
++ * "License"); you may not use this file except in compliance
++ * with the License.  You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing,
++ * software distributed under the License is distributed on an
++ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++ * KIND, either express or implied.  See the License for the
++ * specific language governing permissions and limitations
++ * under the License.
++ */
++import config from './controlPanel';
++
++type ControlConfig = {
++  label?: unknown;
++  description?: unknown;
++};
++
++type ControlItem = {
++  config: ControlConfig;
++} | null;
++
++function collectFunctionProps(cfg: typeof config) {
++  const fns: Array<() => unknown> = [];
++  cfg.controlPanelSections.forEach(
++    (section: { controlSetRows: unknown[][] } | null) => {
++      section?.controlSetRows.forEach((row: unknown[]) => {
++        (row as ControlItem[]).forEach(item => {
++          if (item && typeof item === 'object' && 'config' in item) {
++            const { label, description } = item.config;
++            if (typeof label === 'function') fns.push(label as () => unknown);
++            if (typeof description === 'function')
++              fns.push(description as () => unknown);
++          }
++        });
++      });
++    },
++  );
++  return fns;
++}
++
++test('TimeGrain controlPanel label and description functions return strings', () => {
++  const fns = collectFunctionProps(config);
++  expect(fns.length).toBeGreaterThan(0);
++  fns.forEach(fn => {
++    expect(typeof fn()).toBe('string');
++  });
++});
+@@ -100020,5 +100020,2 @@
+ it('checks devin_bluerememberedearth_superset_pr10_assertio', () => {
+-  expect(result_devin_bluerememberedearth_superset_pr10_assertio.a).toBe(1);
+-  expect(result_devin_bluerememberedearth_superset_pr10_assertio.b).toBe(2);
+-  expect(result_devin_bluerememberedearth_superset_pr10_assertio.c).toBe(3);
+ });
+diff --git a/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.ts b/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.ts
+index cd9079fa097b..6e434cfebc82 100644
+--- a/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.ts
++++ b/superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.ts
+@@ -30,12 +30,11 @@ const config: ControlPanelConfig = {
+             name: 'enableEmptyFilter',
+             config: {
+               type: 'CheckboxControl',
+-              label: t('Customization value is required'),
++              label: () => t('Customization value is required'),
+               default: false,
+               renderTrigger: true,
+-              description: t(
+-                'User must select a value before applying the customization',
+-              ),
++              description: () =>
++                t('User must select a value before applying the customization'),
+             },
+           },
+         ],
+diff --git a/superset/charts/schemas.py b/superset/charts/schemas.py
+index e0cee7758c4c..0a603cbb6ec5 100644
+--- a/superset/charts/schemas.py
++++ b/superset/charts/schemas.py
+@@ -1561,6 +1561,10 @@ class ChartDataResponseResult(Schema):
+         required=False,
+         allow_none=True,
+     )
++    warning = fields.String(
++        metadata={"description": "Warning message when results were truncated"},
++        allow_none=True,
++    )
+ 
+ 
+ class DashboardFilterInfoSchema(Schema):
+diff --git a/superset/common/query_context_processor.py b/superset/common/query_context_processor.py
+index 52fc6d24f28d..56c7ac4f5c8f 100644
+--- a/superset/common/query_context_processor.py
++++ b/superset/common/query_context_processor.py
+@@ -190,6 +190,18 @@ def get_df_payload(
+         )
+         cache.df.columns = [unescape_separator(col) for col in cache.df.columns.values]
+ 
++        warning: str | None = None
++        if cache.bq_memory_limited:
++            row_count = cache.bq_memory_limited_row_count
++            chart_id = (self._query_context.form_data or {}).get("slice_id", "")
++            prefix = f"Chart {chart_id}: " if chart_id else ""
++            warning = _(
++                "%(prefix)sResults truncated to %(row_count)s rows"
++                " due to memory constraints.",
++                prefix=prefix,
++                row_count=f"{row_count:,}",
++            )
++
+         return {
+             "cache_key": cache_key,
+             "cached_dttm": cache.cache_dttm,
+@@ -210,6 +222,7 @@ def get_df_payload(
+             "from_dttm": query_obj.from_dttm,
+             "to_dttm": query_obj.to_dttm,
+             "label_map": label_map,
++            "warning": warning,
+         }
+ 
+     def query_cache_key(self, query_obj: QueryObject, **kwargs: Any) -> str | None:
+diff --git a/superset/common/utils/query_cache_manager.py b/superset/common/utils/query_cache_manager.py
+index da2d668e8c98..a7a97e2b874f 100644
+--- a/superset/common/utils/query_cache_manager.py
++++ b/superset/common/utils/query_cache_manager.py
+@@ -20,7 +20,7 @@
+ from datetime import datetime, timezone
+ from typing import Any
+ 
+-from flask import current_app
++from flask import current_app, g, has_request_context
+ from flask_caching import Cache
+ from pandas import DataFrame
+ 
+@@ -86,6 +86,8 @@ def __init__(
+         self.cache_value = cache_value
+         self.sql_rowcount = sql_rowcount
+         self.queried_dttm = queried_dttm
++        self.bq_memory_limited: bool = False
++        self.bq_memory_limited_row_count: int = 0
+ 
+     # pylint: disable=too-many-arguments
+     def set_query_result(
+@@ -123,6 +125,15 @@ def set_query_result(
+                     )
+                 self.is_loaded = True
+ 
++            # Capture BigQuery memory-limit flag so it survives cache hits
++            if has_request_context():
++                self.bq_memory_limited = getattr(g, "bq_memory_limited", False)
++                self.bq_memory_limited_row_count = getattr(
++                    g, "bq_memory_limited_row_count", 0
++                )
++                g.bq_memory_limited = False
++                g.bq_memory_limited_row_count = 0
++
+             value = {
+                 "df": self.df,
+                 "query": self.query,
+@@ -133,6 +144,8 @@ def set_query_result(
+                 "sql_rowcount": self.sql_rowcount,
+                 "queried_dttm": self.queried_dttm,
+                 "dttm": self.queried_dttm,  # Backwards compatibility
++                "bq_memory_limited": self.bq_memory_limited,
++                "bq_memory_limited_row_count": self.bq_memory_limited_row_count,
+             }
+             if self.is_loaded and key and self.status != QueryStatus.FAILED:
+                 self.set(
+@@ -193,6 +206,12 @@ def get(
+                     "queried_dttm", cache_value.get("dttm")
+                 )
+                 query_cache.cache_value = cache_value
++                query_cache.bq_memory_limited = cache_value.get(
++                    "bq_memory_limited", False
++                )
++                query_cache.bq_memory_limited_row_count = cache_value.get(
++                    "bq_memory_limited_row_count", 0
++                )
+                 current_app.config["STATS_LOGGER"].incr("loaded_from_cache")
+             except KeyError as ex:
+                 logger.exception(ex)
+diff --git a/superset/config.py b/superset/config.py
+index 2a29ce871477..2f83c65e4d6f 100644
+--- a/superset/config.py
++++ b/superset/config.py
+@@ -1452,6 +1452,9 @@ class CeleryConfig:  # pylint: disable=too-few-public-methods
+ # Timeout duration for SQL Lab synchronous queries
+ SQLLAB_TIMEOUT = int(timedelta(seconds=30).total_seconds())
+ 
++# BigQuery max fetch size in MB (limits memory usage when fetching large results)
++BQ_FETCH_MAX_MB = 200
++
+ # Timeout duration for SQL Lab query validation
+ SQLLAB_VALIDATION_TIMEOUT = int(timedelta(seconds=10).total_seconds())
+ 
+diff --git a/superset/db_engine_specs/base.py b/superset/db_engine_specs/base.py
+index de9c6c123022..a15c2761041d 100644
+--- a/superset/db_engine_specs/base.py
++++ b/superset/db_engine_specs/base.py
+@@ -66,6 +66,7 @@
+     OAuth2Error,
+     OAuth2RedirectError,
+     OAuth2TokenRefreshError,
++    SupersetParseError,
+ )
+ from superset.key_value.types import JsonKeyValueCodec, KeyValueResource
+ from superset.sql.parse import (
+@@ -682,7 +683,7 @@ def start_oauth2_dance(cls, database: Database) -> None:
+         )
+         # We need to commit here because we're going to raise an exception, which will
+         # revert any non-commited changes.
+-        db.session.commit()
++        db.session.commit()  # pylint: disable=consider-using-transaction
+ 
+         # The state is passed to the OAuth2 provider, and sent back to Superset after
+         # the user authorizes the access. The redirect endpoint in Superset can then
+@@ -1369,8 +1370,13 @@ def get_limit_from_sql(cls, sql: str) -> int | None:
+         :param sql: SQL query
+         :return: Value of limit clause in query
+         """
+-        script = SQLScript(sql, engine=cls.engine)
+-        return script.statements[-1].get_limit_value()
++        try:
++            script = SQLScript(sql, engine=cls.engine)
++            return script.statements[-1].get_limit_value()
++        except SupersetParseError:
++            # SQL with a malformed LIMIT clause (e.g. LIMIT without a value) is
++            # not parseable in sqlglot 30+, which requires an expression arg.
++            return None
+ 
+     @classmethod
+     def get_cte_query(cls, sql: str) -> str | None:
+diff --git a/superset/db_engine_specs/bigquery.py b/superset/db_engine_specs/bigquery.py
+index 8a82623e1647..b8bc47831457 100644
+--- a/superset/db_engine_specs/bigquery.py
++++ b/superset/db_engine_specs/bigquery.py
+@@ -19,6 +19,7 @@
+ 
+ import logging
+ import re
++import sys
+ import urllib
+ from datetime import datetime
+ from re import Pattern
+@@ -27,6 +28,7 @@
+ import pandas as pd
+ from apispec import APISpec
+ from apispec.ext.marshmallow import MarshmallowPlugin
++from flask import current_app, g, has_app_context, has_request_context
+ from flask_babel import gettext as __
+ from marshmallow import fields, Schema
+ from marshmallow.exceptions import ValidationError
+@@ -106,6 +108,11 @@
+ 
+ ma_plugin = MarshmallowPlugin()
+ 
++# Initial sample size for the progressive fetch in ``fetch_data``. Reading a
++# small first batch lets us measure the row size before deciding how many
++# more rows fit within ``BQ_FETCH_MAX_MB``.
++_BQ_INITIAL_SAMPLE_ROWS = 1000
++
+ 
+ class BigQueryParametersSchema(Schema):
+     credentials_info = EncryptedString(
+@@ -303,13 +310,101 @@ def convert_dttm(
+         return None
+ 
+     @classmethod
+-    def fetch_data(cls, cursor: Any, limit: int | None = None) -> list[tuple[Any, ...]]:
+-        data = super().fetch_data(cursor, limit)
+-        # Support type BigQuery Row, introduced here PR #4071
+-        # google.cloud.bigquery.table.Row
+-        if data and type(data[0]).__name__ == "Row":
+-            data = [r.values() for r in data]  # type: ignore
+-        return data
++    def fetch_data(cls, cursor: Any, limit: int | None = None) -> list[tuple[Any, ...]]:  # noqa: C901
++        """
++        Progressive fetch for BigQuery to prevent browser memory overload.
++
++        Samples a first batch to estimate row size, then extrapolates the
++        total number of rows that fit within ``BQ_FETCH_MAX_MB``.
++        Falls back to the parent implementation on any error.
++        """
++        # ``BQ_FETCH_MAX_MB`` has a default in ``config.py``, so use bracket
++        # access in-context — a missing key should surface as a loud KeyError
++        # rather than be silently masked by a duplicated default here. The
++        # 200 fallback is only used when running outside an app context
++        # (e.g., direct unit-test calls to ``fetch_data``).
++        max_mb: int = (
++            current_app.config["BQ_FETCH_MAX_MB"] if has_app_context() else 200
++        )
++        max_bytes = max_mb * 1024 * 1024
++
++        try:
++            initial_batch_size = (
++                min(_BQ_INITIAL_SAMPLE_ROWS, limit)
++                if limit
++                else _BQ_INITIAL_SAMPLE_ROWS
++            )
++            first_batch: list[Any] = cursor.fetchmany(initial_batch_size)
++
++            if not first_batch:
++                if has_request_context():
++                    g.bq_memory_limited = False
++                    g.bq_memory_limited_row_count = 0
++                return []
++
++            # Support BigQuery Row objects (PR #4071)
++            if type(first_batch[0]).__name__ == "Row":
++                first_batch = [r.values() for r in first_batch]
++
++            # Estimate how many rows fit in the memory budget.
++            # Sum container + element sizes (one level deep) for a better
++            # estimate. Most BigQuery cell values are primitives (str, int,
++            # float, date), so one level captures the dominant allocation.
++            first_batch_bytes = sum(
++                sys.getsizeof(row) + sum(sys.getsizeof(v) for v in row)
++                for row in first_batch
++            )
++            rows_fetched = len(first_batch)
++            avg_bytes_per_row = first_batch_bytes / rows_fetched
++            total_rows_for_target = int(max_bytes / avg_bytes_per_row)
++
++            if limit:
++                total_rows_for_target = min(limit, total_rows_for_target)
++
++            remaining_rows = total_rows_for_target - rows_fetched
++
++            # First batch already covers the budget or the result set
++            if rows_fetched < initial_batch_size or remaining_rows <= 0:
++                memory_limited = (
++                    remaining_rows <= 0 and rows_fetched == initial_batch_size
++                )
++                if has_request_context():
++                    g.bq_memory_limited = memory_limited
++                    g.bq_memory_limited_row_count = len(first_batch)
++                return first_batch
++
++            # Fetch one extra row to confirm truncation without false positives
++            second_batch: list[Any] = cursor.fetchmany(remaining_rows + 1) or []
++            if second_batch and type(second_batch[0]).__name__ == "Row":
++                second_batch = [r.values() for r in second_batch]
++
++            # Truncation is confirmed only when more rows exist beyond the budget
++            memory_limited = len(second_batch) > remaining_rows
++            if memory_limited:
++                second_batch = second_batch[:remaining_rows]
++
++            data = first_batch + second_batch
++
++            if has_request_context():
++                g.bq_memory_limited = memory_limited
++                g.bq_memory_limited_row_count = len(data)
++            return data
++
++        except Exception:  # pylint: disable=broad-except
++            # Broad catch on purpose: any failure in the size-estimation /
++            # progressive-fetch path (BigQuery DB-API errors, network or
++            # auth timeouts mid-fetch, ``sys.getsizeof`` raising on an
++            # unexpected cell type, or a future ``Row`` subclass we don't
++            # know how to unwrap) must degrade gracefully to the parent's
++            # straight fetch so the user still gets data.
++            # Fallback to parent implementation
++            data = super().fetch_data(cursor, limit)
++            if data and type(data[0]).__name__ == "Row":
++                data = [r.values() for r in data]  # type: ignore
++            if has_request_context():
++                g.bq_memory_limited = False
++                g.bq_memory_limited_row_count = len(data) if data else 0
++            return data
+ 
+     @staticmethod
+     def _mutate_label(label: str) -> str:

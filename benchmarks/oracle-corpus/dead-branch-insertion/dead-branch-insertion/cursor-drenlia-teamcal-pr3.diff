@@ -1,0 +1,2476 @@
+diff --git a/.gitignore b/.gitignore
+index a547bf3..11fa7c2 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -12,6 +12,9 @@ dist
+ dist-ssr
+ *.local
+ 
++# Local SQLite database
++src/server/schedule.db
++
+ # Editor directories and files
+ .vscode/*
+ !.vscode/extensions.json
+diff --git a/README.md b/README.md
+index 344061b..3843be1 100644
+--- a/README.md
++++ b/README.md
+@@ -15,7 +15,7 @@ In this context, a shift is defined as beginning at a specific time on one day a
+ 1. Drag and drop and edit calendar entries.
+ 1. Monthly/Weekly/Day views.
+ 1. Printable calendar (without the heading).
+-1. languages: English/Portuguese (Portuguese by default).
++1. languages: English, Portuguese, and French (browser language detected; English fallback).
+ 1. Backend db using sqlite - data is always saved.
+ 
+ ## Requirements
+diff --git a/src/App.tsx b/src/App.tsx
+index 17ad06b..5ad3ffb 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,26 +1,38 @@
+-import React, { useState, useCallback, useEffect } from 'react';
++import React, { useState, useCallback, useEffect, useMemo } from 'react';
+ import { useTranslation } from 'react-i18next';
+ import FullCalendar from '@fullcalendar/react';
+ import dayGridPlugin from '@fullcalendar/daygrid';
+ import timeGridPlugin from '@fullcalendar/timegrid';
+ import interactionPlugin from '@fullcalendar/interaction';
+-import { X, AlertCircle, Printer } from 'lucide-react';
++import type {
++  DateSelectArg,
++  EventClickArg,
++  EventDropArg,
++  EventResizeDoneArg,
++  EventContentArg,
++  EventMountArg,
++} from '@fullcalendar/core';
++import { AlertCircle, Printer, X } from 'lucide-react';
+ import type { Team, ScheduleEvent } from './types';
+ import TeamForm from './components/TeamForm';
+ import TeamList from './components/TeamList';
+ import EventDialog from './components/EventDialog';
+ import TimeSettings from './components/TimeSettings';
+-import EventContent from './components/EventContent';
+-import LanguageToggle from './components/LanguageToggle';
+-import DebugPanel from './components/DebugPanel';
++import LanguageSwitcher from './components/LanguageSwitcher';
+ import { useOperations } from './hooks/useOperations';
++import { useToast } from './hooks/useToast';
+ import * as api from './services/api';
+-import Tippy from '@tippyjs/react';
+-import 'tippy.js/dist/tippy.css';
+-import { toLocalDateString, fromLocalDateString } from './utils/dateUtils';
++import { fromLocalDateString } from './utils/dateUtils';
++import { combineDateAndTime } from './utils/eventDates';
++import { toFullCalendarEvent, getEventDates } from './utils/calendarEvents';
++import { attachMonthResizeHandles } from './utils/monthEventResize';
++import { getFullCalendarLocale } from './utils/fullCalendarLocale';
++import { normalizeLanguage } from './i18n/languages';
++import { generateId } from './utils/id';
+ 
+ function App() {
+   const { t, i18n } = useTranslation();
++  const { showToast } = useToast();
+   const [teams, setTeams] = useState<Team[]>([]);
+   const [events, setEvents] = useState<ScheduleEvent[]>([]);
+   const [selectedTeam, setSelectedTeam] = useState<string>('');
+@@ -28,66 +40,78 @@ function App() {
+   const [defaultEnd, setDefaultEnd] = useState('17:00');
+   const [usedColors, setUsedColors] = useState<Set<number>>(new Set());
+   const [showSelectionWarning, setShowSelectionWarning] = useState(false);
+-  const [error, setError] = useState<string | null>(null);
+-  const { operations, addOperation } = useOperations();
+-  
+-  // Event editing state
++  const { addOperation } = useOperations();
++
+   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
+   const [eventStartTime, setEventStartTime] = useState('');
+   const [eventEndTime, setEventEndTime] = useState('');
+   const [eventDescription, setEventDescription] = useState('');
+ 
++  const calendarLocale = useMemo(
++    () => getFullCalendarLocale(i18n.language),
++    [i18n.language]
++  );
++
++  const timeLocale = useMemo(() => {
++    const lang = normalizeLanguage(i18n.language);
++    if (lang === 'pt') return 'pt-BR';
++    if (lang === 'fr') return 'fr-FR';
++    return 'en-US';
++  }, [i18n.language]);
++
++  const use12HourClock = normalizeLanguage(i18n.language) === 'en';
++
+   useEffect(() => {
+     api.setOperationHandler(addOperation);
+     const loadData = async () => {
+       try {
+         const [loadedTeams, loadedEvents] = await Promise.all([
+           api.fetchTeams(),
+-          api.fetchEvents()
++          api.fetchEvents(),
+         ]);
+         setTeams(loadedTeams);
+         setEvents(loadedEvents);
+-        setUsedColors(new Set(loadedTeams.map(team => team.colorIndex)));
++        setUsedColors(new Set(loadedTeams.map((team) => team.colorIndex)));
+       } catch (err) {
+         console.error('Failed to load data:', err);
+-        // Continue with empty state if data fails to load
++        showToast(i18n.t('notifications.loadError'), 'error');
+       }
+     };
+     loadData();
+-  }, [addOperation]);
++  }, [addOperation, showToast, i18n]);
+ 
+   const handleAddTeam = async (team: Team) => {
+     try {
+       await api.createTeam(team);
+-      setTeams(prev => [...prev, team]);
+-      setUsedColors(prev => new Set([...prev, team.colorIndex]));
+-      setError(null);
++      setTeams((prev) => [...prev, team]);
++      setUsedColors((prev) => new Set([...prev, team.colorIndex]));
++      showToast(t('notifications.teamAdded'), 'success');
+     } catch (err) {
+       console.error('Failed to add team:', err);
+-      setError('Failed to add team. Please try again.');
++      showToast(t('notifications.teamAddError'), 'error');
+     }
+   };
+ 
+   const handleRemoveTeam = async (teamId: string) => {
+     try {
+       await api.deleteTeam(teamId);
+-      const team = teams.find(t => t.id === teamId);
++      const team = teams.find((t) => t.id === teamId);
+       if (team) {
+-        setUsedColors(prev => {
++        setUsedColors((prev) => {
+           const newSet = new Set(prev);
+           newSet.delete(team.colorIndex);
+           return newSet;
+         });
+       }
+-      setTeams(prev => prev.filter(t => t.id !== teamId));
+-      setEvents(prev => prev.filter(event => event.employeeId !== teamId));
++      setTeams((prev) => prev.filter((t) => t.id !== teamId));
++      setEvents((prev) => prev.filter((event) => event.employeeId !== teamId));
+       if (selectedTeam === teamId) {
+         setSelectedTeam('');
+       }
+-      setError(null);
++      showToast(t('notifications.teamRemoved'), 'success');
+     } catch (err) {
+       console.error('Failed to remove team:', err);
+-      setError('Failed to remove team. Please try again.');
++      showToast(t('notifications.teamRemoveError'), 'error');
+     }
+   };
+ 
+@@ -98,54 +122,62 @@ function App() {
+     return newDate;
+   };
+ 
+-  const handleDateSelect = useCallback(async (selectInfo: any) => {
+-    if (!selectedTeam) {
+-      setShowSelectionWarning(true);
+-      setTimeout(() => setShowSelectionWarning(false), 3000);
+-      selectInfo.view.calendar.unselect();
+-      return;
+-    }
++  const calendarEvents = useMemo(
++    () => events.map(toFullCalendarEvent),
++    [events]
++  );
+ 
+-    const team = teams.find(t => t.id === selectedTeam);
+-    if (!team) return;
++  const handleDateSelect = useCallback(
++    async (selectInfo: DateSelectArg) => {
++      if (!selectedTeam) {
++        setShowSelectionWarning(true);
++        setTimeout(() => setShowSelectionWarning(false), 3000);
++        selectInfo.view.calendar.unselect();
++        return;
++      }
+ 
+-    const calendarApi = selectInfo.view.calendar;
+-    calendarApi.unselect();
++      const team = teams.find((t) => t.id === selectedTeam);
++      if (!team) return;
+ 
+-    let start = selectInfo.start;
+-    let end = selectInfo.end;
++      const calendarApi = selectInfo.view.calendar;
++      calendarApi.unselect();
+ 
+-    if (selectInfo.view.type === 'dayGridMonth') {
+-      start = setTimeOnDate(start, defaultStart);
+-      const lastDay = new Date(end);
+-      lastDay.setDate(lastDay.getDate() - 1);
+-      end = setTimeOnDate(lastDay, defaultEnd);
+-    }
++      let start = selectInfo.start;
++      let end = selectInfo.end;
+ 
+-    const event: ScheduleEvent = {
+-      id: crypto.randomUUID(),
+-      title: team.name,
+-      start,
+-      end,
+-      employeeId: team.id,
+-      backgroundColor: team.colors.bg,
+-      borderColor: team.colors.border,
+-      textColor: team.colors.text,
+-      allDay: false
+-    };
++      if (selectInfo.view.type === 'dayGridMonth') {
++        start = setTimeOnDate(start, defaultStart);
++        const lastDay = new Date(end);
++        lastDay.setDate(lastDay.getDate() - 1);
++        end = setTimeOnDate(lastDay, defaultEnd);
++      }
+ 
+-    try {
+-      await api.createEvent(event);
+-      setEvents(prev => [...prev, event]);
+-      setError(null);
+-    } catch (err) {
+-      console.error('Failed to create event:', err);
+-      setError('Failed to create event. Please try again.');
+-    }
+-  }, [selectedTeam, teams, defaultStart, defaultEnd]);
++      const event: ScheduleEvent = {
++        id: generateId(),
++        title: team.name,
++        start,
++        end,
++        employeeId: team.id,
++        backgroundColor: team.colors.bg,
++        borderColor: team.colors.border,
++        textColor: team.colors.text,
++        allDay: false,
++      };
++
++      try {
++        await api.createEvent(event);
++        setEvents((prev) => [...prev, event]);
++        showToast(t('notifications.eventAdded'), 'success');
++      } catch (err) {
++        console.error('Failed to create event:', err);
++        showToast(t('notifications.eventAddError'), 'error');
++      }
++    },
++    [selectedTeam, teams, defaultStart, defaultEnd, showToast, t]
++  );
+ 
+-  const handleEventClick = (clickInfo: any) => {
+-    const event = events.find(e => e.id === clickInfo.event.id);
++  const handleEventClick = (clickInfo: EventClickArg) => {
++    const event = events.find((e) => e.id === clickInfo.event.id);
+     if (!event) return;
+ 
+     setEditingEvent(event);
+@@ -154,203 +186,270 @@ function App() {
+     setEventDescription(event.description || '');
+   };
+ 
+-  const handleRemoveEvent = async (eventId: string) => {
+-    try {
+-      await api.deleteEvent(eventId);
+-      setEvents(prev => prev.filter(event => event.id !== eventId));
+-      setError(null);
+-    } catch (err) {
+-      console.error('Failed to remove event:', err);
+-      setError('Failed to remove event. Please try again.');
+-    }
+-  };
++  const handleDeleteEvent = useCallback(
++    async (eventId: string) => {
++      try {
++        await api.deleteEvent(eventId);
++        setEvents((prev) => prev.filter((e) => e.id !== eventId));
++        if (editingEvent?.id === eventId) {
++          setEditingEvent(null);
++          setEventDescription('');
++        }
++        showToast(t('notifications.eventRemoved'), 'success');
++      } catch (err) {
++        console.error('Failed to remove event:', err);
++        showToast(t('notifications.eventRemoveError'), 'error');
++      }
++    },
++    [editingEvent, showToast, t]
++  );
++
++  const handleQuickDelete = useCallback(
++    (eventId: string, e: React.MouseEvent) => {
++      e.stopPropagation();
++      e.preventDefault();
++      if (window.confirm(t('eventDialog.deleteConfirmMessage'))) {
++        void handleDeleteEvent(eventId);
++      }
++    },
++    [handleDeleteEvent, t]
++  );
+ 
+   const handleStartDateChange = (dateStr: string) => {
+     if (!editingEvent) return;
+     const newDate = fromLocalDateString(dateStr, eventStartTime);
+-    setEditingEvent(prev => prev ? {
+-      ...prev,
+-      start: newDate
+-    } : null);
++    setEditingEvent((prev) =>
++      prev
++        ? {
++            ...prev,
++            start: newDate,
++          }
++        : null
++    );
+   };
+ 
+   const handleEndDateChange = (dateStr: string) => {
+     if (!editingEvent) return;
+     const newDate = fromLocalDateString(dateStr, eventEndTime);
+-    setEditingEvent(prev => prev ? {
+-      ...prev,
+-      end: newDate
+-    } : null);
++    setEditingEvent((prev) =>
++      prev
++        ? {
++            ...prev,
++            end: newDate,
++          }
++        : null
++    );
+   };
+ 
+   const handleSaveEventTime = async () => {
+     if (!editingEvent) return;
+ 
+-    // Create dates in local timezone
+-    const startDate = new Date(editingEvent.start.toLocaleDateString());
+-    const endDate = new Date(editingEvent.end.toLocaleDateString());
+-    
+-    // Set the times
+-    const [startHours, startMinutes] = eventStartTime.split(':');
+-    const [endHours, endMinutes] = eventEndTime.split(':');
+-    
+-    startDate.setHours(Number(startHours), Number(startMinutes));
+-    endDate.setHours(Number(endHours), Number(endMinutes));
+-
+-    // Convert to UTC for saving
+-    const newStart = new Date(startDate.getTime());
+-    const newEnd = new Date(endDate.getTime());
++    const newStart = combineDateAndTime(editingEvent.start, eventStartTime);
++    const newEnd = combineDateAndTime(editingEvent.end, eventEndTime);
+ 
+     try {
+-      await api.updateEvent(editingEvent.id, { 
++      await api.updateEvent(editingEvent.id, {
+         start: newStart,
+         end: newEnd,
+-        description: eventDescription 
++        description: eventDescription,
+       });
+-      
+-      setEvents(prev => prev.map(event =>
+-        event.id === editingEvent.id
+-          ? { ...event, start: newStart, end: newEnd, description: eventDescription }
+-          : event
+-      ));
+-      
++
++      setEvents((prev) =>
++        prev.map((event) =>
++          event.id === editingEvent.id
++            ? { ...event, start: newStart, end: newEnd, description: eventDescription }
++            : event
++        )
++      );
++
+       setEditingEvent(null);
+       setEventDescription('');
+-      setError(null);
++      showToast(t('notifications.eventUpdated'), 'success');
+     } catch (err) {
+       console.error('Failed to update event:', err);
+-      setError('Failed to update event. Please try again.');
++      showToast(t('notifications.eventUpdateError'), 'error');
+     }
+   };
+ 
+-  const handleEventDrop = async (dropInfo: any) => {
+-    const { event } = dropInfo;
+-    try {
+-      await api.updateEvent(event.id, {
+-        start: new Date(event.start),
+-        end: new Date(event.end),
+-        description: event.extendedProps.description
+-      });
+-      setEvents(prev => prev.map(e =>
+-        e.id === event.id
+-          ? {
+-              ...e,
+-              start: new Date(event.start),
+-              end: new Date(event.end)
+-            }
+-          : e
+-      ));
+-      setError(null);
+-    } catch (err) {
+-      console.error('Failed to update event:', err);
+-      dropInfo.revert();
+-      setError('Failed to update event. Please try again.');
+-    }
+-  };
++  const persistEventDates = useCallback(
++    async (
++      eventId: string,
++      dates: { start: Date; end: Date },
++      revert?: () => void
++    ) => {
++      const previous = events.find((e) => e.id === eventId);
++      const description = previous?.description ?? '';
+ 
+-  const handleEventResize = async (resizeInfo: any) => {
+-    const { event } = resizeInfo;
+-    try {
+-      await api.updateEvent(event.id, {
+-        start: new Date(event.start),
+-        end: new Date(event.end),
+-        description: event.extendedProps.description
++      setEvents((prev) =>
++        prev.map((e) =>
++          e.id === eventId ? { ...e, start: dates.start, end: dates.end } : e
++        )
++      );
++
++      try {
++        await api.updateEvent(eventId, {
++          start: dates.start,
++          end: dates.end,
++          description,
++        });
++      } catch (err) {
++        console.error('Failed to update event:', err);
++        if (previous) {
++          setEvents((prev) =>
++            prev.map((e) =>
++              e.id === eventId
++                ? { ...e, start: previous.start, end: previous.end }
++                : e
++            )
++          );
++        }
++        revert?.();
++        showToast(t('notifications.eventUpdateError'), 'error');
++      }
++    },
++    [events, showToast, t]
++  );
++
++  const persistEventMove = useCallback(
++    async (
++      changeInfo: EventDropArg | EventResizeDoneArg,
++      dates: { start: Date; end: Date }
++    ) => {
++      const { event } = changeInfo;
++      await persistEventDates(event.id, dates, () => changeInfo.revert());
++    },
++    [persistEventDates]
++  );
++
++  const handleEventDrop = useCallback(
++    async (dropInfo: EventDropArg) => {
++      const dates = getEventDates(dropInfo.event);
++      if (!dates) {
++        dropInfo.revert();
++        return;
++      }
++      await persistEventMove(dropInfo, dates);
++    },
++    [persistEventMove]
++  );
++
++  const handleEventResize = useCallback(
++    async (resizeInfo: EventResizeDoneArg) => {
++      const dates = getEventDates(resizeInfo.event);
++      if (!dates) {
++        resizeInfo.revert();
++        return;
++      }
++      await persistEventMove(resizeInfo, dates);
++    },
++    [persistEventMove]
++  );
++
++  const handleEventDidMount = useCallback(
++    (info: EventMountArg) => {
++      const cleanup = attachMonthResizeHandles(info, (eventId, start, end) => {
++        void persistEventDates(eventId, { start, end });
+       });
+-      setEvents(prev => prev.map(e =>
+-        e.id === event.id
+-          ? {
+-              ...e,
+-              start: new Date(event.start),
+-              end: new Date(event.end)
+-            }
+-          : e
+-      ));
+-      setError(null);
+-    } catch (err) {
+-      console.error('Failed to update event:', err);
+-      resizeInfo.revert();
+-      setError('Failed to update event. Please try again.');
+-    }
+-  };
++      if (cleanup) {
++        (info.el as HTMLElement & { _teamcalResizeCleanup?: () => void })._teamcalResizeCleanup =
++          cleanup;
++      }
++    },
++    [persistEventDates]
++  );
++
++  const handleEventWillUnmount = useCallback((info: EventMountArg) => {
++    const el = info.el as HTMLElement & { _teamcalResizeCleanup?: () => void };
++    el._teamcalResizeCleanup?.();
++    delete el._teamcalResizeCleanup;
++  }, []);
+ 
+   const handlePrint = () => {
+     window.print();
+   };
+ 
+-  const eventContent = (eventInfo: any) => {
+-    const event = events.find(e => e.id === eventInfo.event.id);
+-    const team = teams.find(t => t.id === eventInfo.event.extendedProps.employeeId);
+-    
+-    // Get start and end times
+-    const startStr = eventInfo.event.start.toLocaleTimeString('en-US', { 
+-      hour: 'numeric',
+-      minute: '2-digit',
+-      hour12: true 
+-    });
+-    const endStr = eventInfo.event.end.toLocaleTimeString('en-US', { 
+-      hour: 'numeric',
+-      minute: '2-digit',
+-      hour12: true 
+-    });
+-
+-    // Check if this is the last segment of the event
+-    const isLastSegment = eventInfo.isEnd;
+-    // Check if this is the first segment of the event
+-    const isFirstSegment = eventInfo.isStart;
+-    
+-    return (
+-      <Tippy 
+-        content={event?.description || '?'}
+-        placement="top"
+-        theme="light-border"
+-        delay={[200, 0]}
+-      >
+-        <div className="flex items-center w-full px-1">
+-          <div className="flex-grow flex items-center">
+-            <span className="font-bold mr-1">{team?.name}</span>
+-            {isFirstSegment && <span>{startStr}</span>}
++  const eventContent = useCallback(
++    (eventInfo: EventContentArg) => {
++      const scheduleEvent = events.find((e) => e.id === eventInfo.event.id);
++      const employeeId =
++        eventInfo.event.extendedProps.employeeId ?? scheduleEvent?.employeeId;
++      const team = teams.find((t) => t.id === employeeId);
++      const description = scheduleEvent?.description?.trim() || '?';
++
++      const timeFormat: Intl.DateTimeFormatOptions = {
++        hour: 'numeric',
++        minute: '2-digit',
++        hour12: use12HourClock,
++      };
++
++      const startStr = eventInfo.event.start?.toLocaleTimeString(
++        timeLocale,
++        timeFormat
++      );
++      const endStr = eventInfo.event.end?.toLocaleTimeString(
++        timeLocale,
++        timeFormat
++      );
++
++      return (
++        <div
++          className="flex items-center w-full px-1 group/event"
++          title={description}
++        >
++          <div className="flex-grow flex items-center min-w-0 pointer-events-none">
++            <span className="font-bold mr-1 truncate">{team?.name}</span>
++            {eventInfo.isStart && startStr && (
++              <span className="truncate">{startStr}</span>
++            )}
+           </div>
+-          <div className="flex-shrink-0">
+-            {isLastSegment && endStr}
++          <div className="flex-shrink-0 flex items-center gap-0.5 pointer-events-none">
++            {eventInfo.isEnd && endStr}
+           </div>
++          {eventInfo.isEnd && (
++            <button
++              type="button"
++              className="pointer-events-auto ml-0.5 p-0.5 rounded-full opacity-0 group-hover/event:opacity-100 hover:bg-white/90 transition-opacity shrink-0"
++              title={t('eventDialog.delete')}
++              aria-label={t('eventDialog.delete')}
++              onMouseDown={(e) => e.stopPropagation()}
++              onClick={(e) => handleQuickDelete(eventInfo.event.id, e)}
++            >
++              <X size={12} className="text-red-600" />
++            </button>
++          )}
+         </div>
+-      </Tippy>
+-    );
+-  };
++      );
++    },
++    [events, teams, timeLocale, use12HourClock, handleQuickDelete, t]
++  );
+ 
+   return (
+     <div className="min-h-screen bg-gray-50 p-6">
+       <div className="max-w-7xl mx-auto space-y-6">
+         <div className="bg-white p-6 rounded-xl shadow-sm no-print">
+-          <div className="flex justify-between items-center mb-6">
+-            <div className="space-y-4">
++          <div className="space-y-4 mb-6">
++            <div className="flex flex-wrap justify-between items-center gap-4">
+               <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+-              <TeamForm
+-                onAddTeam={handleAddTeam}
+-                usedColors={usedColors}
+-              />
+-              {error && (
+-                <div className="text-red-600 text-sm">{error}</div>
+-              )}
+-            </div>
+-            <div className="flex items-center gap-6">
+-              <TimeSettings
+-                defaultStart={defaultStart}
+-                defaultEnd={defaultEnd}
+-                onStartChange={setDefaultStart}
+-                onEndChange={setDefaultEnd}
+-              />
+-              <LanguageToggle />
+-              <button
+-                onClick={handlePrint}
+-                className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+-              >
+-                <Printer size={20} />
+-                <span>{t('buttons.print')}</span>
+-              </button>
++              <div className="flex flex-wrap items-center gap-4 sm:gap-6">
++                <TimeSettings
++                  defaultStart={defaultStart}
++                  defaultEnd={defaultEnd}
++                  onStartChange={setDefaultStart}
++                  onEndChange={setDefaultEnd}
++                />
++                <LanguageSwitcher />
++                <button
++                  onClick={handlePrint}
++                  className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
++                >
++                  <Printer size={20} />
++                  <span>{t('buttons.print')}</span>
++                </button>
++              </div>
+             </div>
++            <TeamForm onAddTeam={handleAddTeam} usedColors={usedColors} />
+           </div>
+-          
++
+           <TeamList
+             teams={teams}
+             selectedTeam={selectedTeam}
+@@ -373,21 +472,24 @@ function App() {
+             headerToolbar={{
+               left: 'prev,next today',
+               center: 'title',
+-              right: 'dayGridMonth,timeGridWeek,timeGridDay'
++              right: 'dayGridMonth,timeGridWeek,timeGridDay',
+             }}
+-            locale={i18n.language}
++            locale={calendarLocale}
+             buttonText={{
+               today: t('calendar.today'),
+               month: t('calendar.month'),
+               week: t('calendar.week'),
+-              day: t('calendar.day')
++              day: t('calendar.day'),
+             }}
+             editable={true}
++            eventStartEditable={true}
++            eventDurationEditable={true}
++            eventResizableFromStart={true}
+             selectable={!!selectedTeam}
+             selectMirror={true}
+             dayMaxEvents={true}
+             weekends={true}
+-            events={events}
++            events={calendarEvents}
+             select={handleDateSelect}
+             eventClick={handleEventClick}
+             eventDrop={handleEventDrop}
+@@ -398,6 +500,8 @@ function App() {
+             expandRows={true}
+             height="auto"
+             eventContent={eventContent}
++            eventDidMount={handleEventDidMount}
++            eventWillUnmount={handleEventWillUnmount}
+             timeZone="local"
+           />
+         </div>
+@@ -419,10 +523,8 @@ function App() {
+           setEventDescription('');
+         }}
+         onSave={handleSaveEventTime}
++        onDelete={() => editingEvent && void handleDeleteEvent(editingEvent.id)}
+       />
+-{/*
+-      <DebugPanel operations={operations} />
+-*/}
+     </div>
+   );
+ }
+diff --git a/src/components/EmployeeForm.tsx b/src/components/EmployeeForm.tsx
+index 065238f..542933f 100644
+--- a/src/components/EmployeeForm.tsx
++++ b/src/components/EmployeeForm.tsx
+@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
+ import { PlusCircle } from 'lucide-react';
+ import type { Employee } from '../types';
+ import { EMPLOYEE_COLORS } from '../utils/colors';
++import { generateId } from '../utils/id';
+ 
+ interface Props {
+   onAddEmployee: (employee: Employee) => void;
+@@ -26,7 +27,7 @@ export default function EmployeeForm({ onAddEmployee, usedColors }: Props) {
+         : Math.floor(Math.random() * EMPLOYEE_COLORS.length);
+ 
+       const employee: Employee = {
+-        id: crypto.randomUUID(),
++        id: generateId(),
+         name: name.trim(),
+         colors: EMPLOYEE_COLORS[colorIndex],
+         colorIndex
+diff --git a/src/components/EventContent.tsx.orig b/src/components/EventContent.tsx.orig
+deleted file mode 100644
+index f2db56a..0000000
+--- a/src/components/EventContent.tsx.orig
++++ /dev/null
+@@ -1,64 +0,0 @@
+-import React from 'react';
+-import { X, GripVertical } from 'lucide-react';
+-import { EventContentArg } from '@fullcalendar/core';
+-
+-interface Props {
+-  event: EventContentArg;
+-  onRemove: () => void;
+-}
+-
+-export default function EventContent({ event, onRemove }: Props) {
+-  const isMonthView = event.view.type === 'dayGridMonth';
+-  const startTime = event.event.start?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+-  const endTime = event.event.end?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+-
+-  return (
+-    <div className={`w-full h-full group relative ${isMonthView ? 'py-0.5' : 'p-1'}`}>
+-      {isMonthView ? (
+-        <div className="flex items-center min-w-0 relative h-full">
+-          {/* Resize handles container - full height for better grip */}
+-          <div className="absolute inset-y-0 left-0 w-4 cursor-w-resize opacity-0 group-hover:opacity-100 flex items-center justify-start">
+-            {event.isStart && <GripVertical size={12} className="text-gray-400" />}
+-          </div>
+-          <div className="absolute inset-y-0 right-0 w-4 cursor-e-resize opacity-0 group-hover:opacity-100 flex items-center justify-end">
+-            {event.isEnd && <GripVertical size={12} className="text-gray-400" />}
+-          </div>
+-
+-          {/* Main content with reduced draggable area */}
+-          <div className="flex items-center gap-1.5 min-w-0 flex-1 px-4 mx-auto w-[60%]" style={{ cursor: 'move' }}>
+-            <button
+-              onClick={(e) => {
+-                e.stopPropagation();
+-                onRemove();
+-              }}
+-              className="opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-0.5 hover:bg-red-50 flex-shrink-0"
+-            >
+-              <X size={12} className="text-red-500" />
+-            </button>
+-            <span className="font-medium truncate">{event.event.title}</span>
+-            <span className="text-xs opacity-75 whitespace-nowrap">{startTime}</span>
+-            {event.isEnd && (
+-              <span className="text-xs opacity-75 whitespace-nowrap ml-auto">{endTime}</span>
+-            )}
+-          </div>
+-        </div>
+-      ) : (
+-        <>
+-          <button
+-            onClick={(e) => {
+-              e.stopPropagation();
+-              onRemove();
+-            }}
+-            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-0.5 hover:bg-red-50"
+-          >
+-            <X size={14} className="text-red-500" />
+-          </button>
+-          <div className="font-medium">{event.event.title}</div>
+-          <div className="text-xs mt-0.5 opacity-75">
+-            {startTime} - {endTime}
+-          </div>
+-        </>
+-      )}
+-    </div>
+-  );
+-}
+\ No newline at end of file
+diff --git a/src/components/EventContent.tsx.orig.fix1 b/src/components/EventContent.tsx.orig.fix1
+deleted file mode 100644
+index b55a6b9..0000000
+--- a/src/components/EventContent.tsx.orig.fix1
++++ /dev/null
+@@ -1,69 +0,0 @@
+-import React from 'react';
+-import { X, GripVertical } from 'lucide-react';
+-import { EventContentArg } from '@fullcalendar/core';
+-
+-interface Props {
+-  event: EventContentArg;
+-  onRemove: () => void;
+-}
+-
+-export default function EventContent({ event, onRemove }: Props) {
+-  const isMonthView = event.view.type === 'dayGridMonth';
+-  const startTime = event.event.start?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+-  const endTime = event.event.end?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+-
+-  return (
+-    <div className={`w-full h-full group relative ${isMonthView ? 'py-0.5' : 'p-1'}`}>
+-      {isMonthView ? (
+-        <div className="flex items-center min-w-0 relative h-full">
+-          {/* Resize handles container - full height for better grip */}
+-          <div className="absolute inset-y-0 left-0 w-4 cursor-w-resize opacity-0 group-hover:opacity-100 flex items-center justify-start">
+-            {event.isStart && <GripVertical size={12} className="text-gray-400" />}
+-          </div>
+-          <div className="absolute inset-y-0 right-0 w-4 cursor-e-resize opacity-0 group-hover:opacity-100 flex items-center justify-end">
+-            {event.isEnd && <GripVertical size={12} className="text-gray-400" />}
+-          </div>
+-
+-          {/* Main content with reduced draggable area */}
+-          <div className="flex items-center gap-1.5 min-w-0 flex-1 px-4 mx-auto w-[60%]" style={{ cursor: 'move' }}>
+-            <button
+-              onClick={(e) => {
+-                e.stopPropagation();
+-                onRemove();
+-              }}
+-              className="opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-0.5 hover:bg-red-50 flex-shrink-0"
+-            >
+-              <X size={12} className="text-red-500" />
+-            </button>
+-            <span className="font-medium truncate">{event.event.title}</span>
+-            {/* Only show start time on the first segment */}
+-            {event.isStart && (
+-              <span className="text-xs opacity-75 whitespace-nowrap">{startTime}</span>
+-            )}
+-            {/* Only show end time on the last segment */}
+-            {event.isEnd && (
+-              <span className="text-xs opacity-75 whitespace-nowrap ml-auto">{endTime}</span>
+-            )}
+-          </div>
+-        </div>
+-      ) : (
+-        <>
+-          <button
+-            onClick={(e) => {
+-              e.stopPropagation();
+-              onRemove();
+-            }}
+-            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-0.5 hover:bg-red-50"
+-          >
+-            <X size={14} className="text-red-500" />
+-          </button>
+-          <div className="font-medium">{event.event.title}</div>
+-          <div className="text-xs mt-0.5 opacity-75">
+-            {startTime} - {endTime}
+-          </div>
+-        </>
+-      )}
+-    </div>
+-  );
+-}
+-
+diff --git a/src/components/EventDialog.tsx b/src/components/EventDialog.tsx
+index 6838a16..b49331b 100644
+--- a/src/components/EventDialog.tsx
++++ b/src/components/EventDialog.tsx
+@@ -1,8 +1,10 @@
+-import React from 'react';
++import React, { useMemo, useState } from 'react';
+ import { useTranslation } from 'react-i18next';
+-import { Clock, Calendar } from 'lucide-react';
++import { Calendar } from 'lucide-react';
++import { SHIFT_PRESETS } from '../constants/shiftPresets';
+ import { ScheduleEvent } from '../types';
+-import { toLocalDateString } from '../utils/dateUtils';
++import { isEndAfterStart } from '../utils/timeParts';
++import TimeInput from './TimeInput';
+ 
+ interface EventDialogProps {
+   isOpen: boolean;
+@@ -17,6 +19,7 @@ interface EventDialogProps {
+   onEndDateChange: (value: string) => void;
+   onClose: () => void;
+   onSave: () => void;
++  onDelete: () => void;
+ }
+ 
+ const toLocalDateInputValue = (date: Date) => {
+@@ -37,95 +40,193 @@ export default function EventDialog({
+   onStartDateChange,
+   onEndDateChange,
+   onClose,
+-  onSave
++  onSave,
++  onDelete,
+ }: EventDialogProps) {
+   const { t } = useTranslation();
++  const [confirmDelete, setConfirmDelete] = useState(false);
++
++  const sameDay = useMemo(() => {
++    if (!event) return false;
++    return event.start.toDateString() === event.end.toDateString();
++  }, [event]);
+ 
+   if (!isOpen || !event) return null;
+ 
++  const dateInputClass =
++    'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
++
++  const handleClose = () => {
++    setConfirmDelete(false);
++    onClose();
++  };
++
+   return (
+-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+-      <div className="bg-white rounded-lg p-6 w-96">
++    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
++      <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+         <h3 className="text-lg font-semibold mb-4">{t('eventDialog.title')}</h3>
+-        
+-        <div className="space-y-4">
+-          <div className="space-y-2">
+-            <label className="block text-sm font-medium text-gray-700">{t('eventDialog.start')}</label>
+-            <div className="flex gap-2">
+-              <div className="flex items-center gap-2 flex-1">
+-                <Calendar size={20} className="text-gray-600" />
+-                <input
+-                  type="date"
+-                  value={event ? toLocalDateInputValue(event.start) : ''}
+-                  onChange={(e) => onStartDateChange(e.target.value)}
+-                  className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+-                />
+-              </div>
+-              <div className="flex items-center gap-2 flex-1">
+-                <Clock size={20} className="text-gray-600" />
+-                <input
+-                  type="time"
+-                  value={startTime}
+-                  onChange={(e) => onStartChange(e.target.value)}
+-                  className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+-                />
+-              </div>
++
++        {confirmDelete ? (
++          <div className="space-y-4">
++            <p className="text-sm font-medium text-gray-900">
++              {t('eventDialog.deleteConfirmTitle')}
++            </p>
++            <p className="text-sm text-gray-600">
++              {t('eventDialog.deleteConfirmMessage')}
++            </p>
++            <div className="flex justify-end gap-3 pt-2">
++              <button
++                type="button"
++                onClick={() => setConfirmDelete(false)}
++                className="px-4 py-2 text-gray-600 hover:text-gray-800 rounded-lg"
++              >
++                {t('buttons.cancel')}
++              </button>
++              <button
++                type="button"
++                onClick={() => {
++                  setConfirmDelete(false);
++                  onDelete();
++                }}
++                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
++              >
++                {t('buttons.delete')}
++              </button>
+             </div>
+           </div>
+-          
+-          <div className="space-y-2">
+-            <label className="block text-sm font-medium text-gray-700">{t('eventDialog.end')}</label>
+-            <div className="flex gap-2">
+-              <div className="flex items-center gap-2 flex-1">
+-                <Calendar size={20} className="text-gray-600" />
+-                <input
+-                  type="date"
+-                  value={event ? toLocalDateInputValue(event.end) : ''}
+-                  onChange={(e) => onEndDateChange(e.target.value)}
+-                  className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+-                />
++        ) : (
++          <>
++            <div className="space-y-5">
++              <div className="space-y-2">
++                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
++                  {t('eventDialog.quickShifts')}
++                </span>
++                <div className="flex flex-wrap gap-1.5">
++                  {SHIFT_PRESETS.map((preset) => (
++                    <button
++                      key={preset.id}
++                      type="button"
++                      onClick={() => {
++                        onStartChange(preset.start);
++                        onEndChange(preset.end);
++                      }}
++                      className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
++                        startTime === preset.start && endTime === preset.end
++                          ? 'bg-blue-100 border-blue-400 text-blue-800'
++                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
++                      }`}
++                    >
++                      {t(`timeInput.presets.${preset.id}`)}
++                    </button>
++                  ))}
++                </div>
+               </div>
+-              <div className="flex items-center gap-2 flex-1">
+-                <Clock size={20} className="text-gray-600" />
+-                <input
+-                  type="time"
+-                  value={endTime}
+-                  onChange={(e) => onEndChange(e.target.value)}
+-                  className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
++
++              <fieldset className="space-y-2">
++                <legend className="text-sm font-medium text-gray-700">
++                  {t('eventDialog.start')}
++                </legend>
++                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++                  <div className="space-y-1">
++                    <label className="text-xs text-gray-500">{t('eventDialog.date')}</label>
++                    <div className="flex items-center gap-2">
++                      <Calendar size={18} className="text-gray-500 shrink-0" aria-hidden />
++                      <input
++                        type="date"
++                        value={toLocalDateInputValue(event.start)}
++                        onChange={(e) => onStartDateChange(e.target.value)}
++                        className={dateInputClass}
++                      />
++                    </div>
++                  </div>
++                  <div className="space-y-1">
++                    <label className="text-xs text-gray-500">{t('timeInput.start')}</label>
++                    <TimeInput
++                      value={startTime}
++                      onChange={onStartChange}
++                      label={t('timeInput.start')}
++                    />
++                  </div>
++                </div>
++              </fieldset>
++
++              <fieldset className="space-y-2">
++                <legend className="text-sm font-medium text-gray-700">
++                  {t('eventDialog.end')}
++                </legend>
++                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++                  <div className="space-y-1">
++                    <label className="text-xs text-gray-500">{t('eventDialog.date')}</label>
++                    <div className="flex items-center gap-2">
++                      <Calendar size={18} className="text-gray-500 shrink-0" aria-hidden />
++                      <input
++                        type="date"
++                        value={toLocalDateInputValue(event.end)}
++                        onChange={(e) => onEndDateChange(e.target.value)}
++                        className={dateInputClass}
++                      />
++                    </div>
++                  </div>
++                  <div className="space-y-1">
++                    <label className="text-xs text-gray-500">{t('timeInput.end')}</label>
++                    <TimeInput
++                      value={endTime}
++                      onChange={onEndChange}
++                      label={t('timeInput.end')}
++                    />
++                  </div>
++                </div>
++              </fieldset>
++
++              {sameDay && !isEndAfterStart(startTime, endTime) && (
++                <p className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg" role="alert">
++                  {t('timeInput.endBeforeStart')}
++                </p>
++              )}
++
++              <div>
++                <label className="block text-sm font-medium text-gray-700 mb-1">
++                  {t('eventDialog.description')}
++                </label>
++                <textarea
++                  value={description}
++                  onChange={(e) => onDescriptionChange(e.target.value)}
++                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
++                  rows={3}
++                  placeholder={t('eventDialog.descriptionPlaceholder')}
+                 />
+               </div>
+             </div>
+-          </div>
+ 
+-          <div className="mt-4">
+-            <label className="block text-sm font-medium text-gray-700 mb-1">
+-              {t('eventDialog.description')}
+-            </label>
+-            <textarea
+-              value={description}
+-              onChange={(e) => onDescriptionChange(e.target.value)}
+-              className="w-full px-3 py-2 border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+-              rows={3}
+-              placeholder={t('eventDialog.descriptionPlaceholder')}
+-            />
+-          </div>
+-        </div>
+-
+-        <div className="flex justify-end gap-3 mt-6">
+-          <button
+-            onClick={onClose}
+-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+-          >
+-            {t('buttons.cancel')}
+-          </button>
+-          <button
+-            onClick={onSave}
+-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+-          >
+-            {t('buttons.save')}
+-          </button>
+-        </div>
++            <div className="flex justify-between items-center gap-3 mt-6">
++              <button
++                type="button"
++                onClick={() => setConfirmDelete(true)}
++                className="px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg"
++              >
++                {t('eventDialog.delete')}
++              </button>
++              <div className="flex gap-3">
++                <button
++                  type="button"
++                  onClick={handleClose}
++                  className="px-4 py-2 text-gray-600 hover:text-gray-800 rounded-lg"
++                >
++                  {t('buttons.cancel')}
++                </button>
++                <button
++                  type="button"
++                  onClick={onSave}
++                  disabled={sameDay && !isEndAfterStart(startTime, endTime)}
++                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
++                >
++                  {t('buttons.save')}
++                </button>
++              </div>
++            </div>
++          </>
++        )}
+       </div>
+     </div>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/src/components/LanguageSwitcher.tsx b/src/components/LanguageSwitcher.tsx
+new file mode 100644
+index 0000000..c13032d
+--- /dev/null
++++ b/src/components/LanguageSwitcher.tsx
+@@ -0,0 +1,86 @@
++import React, { useEffect, useRef, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++import { Check, ChevronDown, Languages } from 'lucide-react';
++import { SUPPORTED_LANGUAGES, type AppLanguage } from '../i18n/languages';
++
++const LANGUAGE_LABEL_KEYS: Record<AppLanguage, string> = {
++  en: 'language.en',
++  pt: 'language.pt',
++  fr: 'language.fr',
++};
++
++export default function LanguageSwitcher() {
++  const { t, i18n } = useTranslation();
++  const [open, setOpen] = useState(false);
++  const containerRef = useRef<HTMLDivElement>(null);
++  const active = i18n.language.split('-')[0] as AppLanguage;
++
++  useEffect(() => {
++    const handleClickOutside = (event: MouseEvent) => {
++      if (
++        containerRef.current &&
++        !containerRef.current.contains(event.target as Node)
++      ) {
++        setOpen(false);
++      }
++    };
++    if (open) {
++      document.addEventListener('mousedown', handleClickOutside);
++    }
++    return () => document.removeEventListener('mousedown', handleClickOutside);
++  }, [open]);
++
++  const selectLanguage = (code: AppLanguage) => {
++    i18n.changeLanguage(code);
++    setOpen(false);
++  };
++
++  return (
++    <div ref={containerRef} className="relative">
++      <button
++        type="button"
++        onClick={() => setOpen((prev) => !prev)}
++        className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors border border-transparent hover:border-gray-200"
++        aria-haspopup="listbox"
++        aria-expanded={open}
++        aria-label={t('language.label')}
++      >
++        <Languages size={20} aria-hidden />
++        <span className="text-sm font-medium">
++          {t(LANGUAGE_LABEL_KEYS[active] ?? LANGUAGE_LABEL_KEYS.en)}
++        </span>
++        <ChevronDown
++          size={16}
++          className={`transition-transform ${open ? 'rotate-180' : ''}`}
++          aria-hidden
++        />
++      </button>
++
++      {open && (
++        <ul
++          role="listbox"
++          aria-label={t('language.label')}
++          className="absolute right-0 mt-1 min-w-[10rem] py-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
++        >
++          {SUPPORTED_LANGUAGES.map((code) => {
++            const isActive = active === code;
++            return (
++              <li key={code} role="option" aria-selected={isActive}>
++                <button
++                  type="button"
++                  onClick={() => selectLanguage(code)}
++                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 ${
++                    isActive ? 'text-blue-700 font-medium' : 'text-gray-700'
++                  }`}
++                >
++                  <span>{t(LANGUAGE_LABEL_KEYS[code])}</span>
++                  {isActive && <Check size={16} aria-hidden />}
++                </button>
++              </li>
++            );
++          })}
++        </ul>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/LanguageToggle.tsx b/src/components/LanguageToggle.tsx
+deleted file mode 100644
+index 4bc2c88..0000000
+--- a/src/components/LanguageToggle.tsx
++++ /dev/null
+@@ -1,23 +0,0 @@
+-import React from 'react';
+-import { useTranslation } from 'react-i18next';
+-import { Languages } from 'lucide-react';
+-
+-export default function LanguageToggle() {
+-  const { t, i18n } = useTranslation();
+-
+-  const toggleLanguage = () => {
+-    const newLang = i18n.language === 'en' ? 'pt' : 'en';
+-    i18n.changeLanguage(newLang);
+-  };
+-
+-  return (
+-    <button
+-      onClick={toggleLanguage}
+-      className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+-      title={t(`language.${i18n.language === 'en' ? 'pt' : 'en'}`)}
+-    >
+-      <Languages size={20} />
+-      <span>{t(`language.${i18n.language}`)}</span>
+-    </button>
+-  );
+-}
+\ No newline at end of file
+diff --git a/src/components/TeamForm.tsx b/src/components/TeamForm.tsx
+index c3cf5c6..4aeb0fe 100644
+--- a/src/components/TeamForm.tsx
++++ b/src/components/TeamForm.tsx
+@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
+ import { PlusCircle } from 'lucide-react';
+ import type { Team } from '../types';
+ import { TEAM_COLORS } from '../utils/colors';
++import { generateId } from '../utils/id';
+ 
+ interface Props {
+   onAddTeam: (team: Team) => void;
+@@ -26,7 +27,7 @@ export default function TeamForm({ onAddTeam, usedColors }: Props) {
+         : Math.floor(Math.random() * TEAM_COLORS.length);
+ 
+       const team: Team = {
+-        id: crypto.randomUUID(),
++        id: generateId(),
+         name: name.trim(),
+         colors: TEAM_COLORS[colorIndex],
+         colorIndex
+diff --git a/src/components/TimeInput.tsx b/src/components/TimeInput.tsx
+new file mode 100644
+index 0000000..018795a
+--- /dev/null
++++ b/src/components/TimeInput.tsx
+@@ -0,0 +1,172 @@
++import React, { useId, useMemo } from 'react';
++import { useTranslation } from 'react-i18next';
++import {
++  formatTime,
++  from12HourParts,
++  parseTime,
++  snapMinutes,
++  to12HourParts,
++  type TimeValue,
++} from '../utils/timeParts';
++
++const MINUTE_STEP = 5;
++
++interface TimeInputProps {
++  value: TimeValue;
++  onChange: (value: TimeValue) => void;
++  label?: string;
++  disabled?: boolean;
++  className?: string;
++}
++
++function buildMinuteOptions(): number[] {
++  const options: number[] = [];
++  for (let m = 0; m < 60; m += MINUTE_STEP) {
++    options.push(m);
++  }
++  return options;
++}
++
++function buildHourOptions24(): number[] {
++  return Array.from({ length: 24 }, (_, i) => i);
++}
++
++function buildHourOptions12(): number[] {
++  return Array.from({ length: 12 }, (_, i) => i + 1);
++}
++
++export default function TimeInput({
++  value,
++  onChange,
++  label,
++  disabled = false,
++  className = '',
++}: TimeInputProps) {
++  const { i18n, t } = useTranslation();
++  const id = useId();
++  const use24Hour = !i18n.language.startsWith('en');
++
++  const parsed = useMemo(() => parseTime(value) ?? { hours: 9, minutes: 0 }, [value]);
++  const minutes = snapMinutes(parsed.minutes, MINUTE_STEP);
++  const minuteOptions = useMemo(() => buildMinuteOptions(), []);
++
++  const selectClass =
++    'px-2 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500';
++
++  const emit = (hours: number, mins: number) => {
++    onChange(formatTime(hours, snapMinutes(mins, MINUTE_STEP)));
++  };
++
++  if (use24Hour) {
++    return (
++      <div className={className}>
++        {label && (
++          <span id={id} className="sr-only">
++            {label}
++          </span>
++        )}
++        <div
++          className="flex items-center gap-1.5"
++          role="group"
++          aria-labelledby={label ? id : undefined}
++        >
++          <select
++            aria-label={label ? `${label}, ${t('timeInput.hour')}` : t('timeInput.hour')}
++            className={selectClass}
++            disabled={disabled}
++            value={parsed.hours}
++            onChange={(e) => emit(Number(e.target.value), minutes)}
++          >
++            {buildHourOptions24().map((h) => (
++              <option key={h} value={h}>
++                {String(h).padStart(2, '0')}
++              </option>
++            ))}
++          </select>
++          <span className="text-gray-500 font-medium" aria-hidden>
++            :
++          </span>
++          <select
++            aria-label={label ? `${label}, ${t('timeInput.minute')}` : t('timeInput.minute')}
++            className={selectClass}
++            disabled={disabled}
++            value={minutes}
++            onChange={(e) => emit(parsed.hours, Number(e.target.value))}
++          >
++            {minuteOptions.map((m) => (
++              <option key={m} value={m}>
++                {String(m).padStart(2, '0')}
++              </option>
++            ))}
++          </select>
++        </div>
++      </div>
++    );
++  }
++
++  const { hour12, period } = to12HourParts(parsed.hours);
++
++  return (
++    <div className={className}>
++      {label && (
++        <span id={id} className="sr-only">
++          {label}
++        </span>
++      )}
++      <div
++        className="flex items-center gap-1.5 flex-wrap"
++        role="group"
++        aria-labelledby={label ? id : undefined}
++      >
++        <select
++          aria-label={label ? `${label}, ${t('timeInput.hour')}` : t('timeInput.hour')}
++          className={selectClass}
++          disabled={disabled}
++          value={hour12}
++          onChange={(e) =>
++            emit(from12HourParts(Number(e.target.value), period), minutes)
++          }
++        >
++          {buildHourOptions12().map((h) => (
++            <option key={h} value={h}>
++              {h}
++            </option>
++          ))}
++        </select>
++        <span className="text-gray-500 font-medium" aria-hidden>
++          :
++        </span>
++        <select
++          aria-label={label ? `${label}, ${t('timeInput.minute')}` : t('timeInput.minute')}
++          className={selectClass}
++          disabled={disabled}
++          value={minutes}
++          onChange={(e) =>
++            emit(from12HourParts(hour12, period), Number(e.target.value))
++          }
++        >
++          {minuteOptions.map((m) => (
++            <option key={m} value={m}>
++              {String(m).padStart(2, '0')}
++            </option>
++          ))}
++        </select>
++        <select
++          aria-label={label ? `${label}, ${t('timeInput.period')}` : t('timeInput.period')}
++          className={selectClass}
++          disabled={disabled}
++          value={period}
++          onChange={(e) =>
++            emit(
++              from12HourParts(hour12, e.target.value as 'AM' | 'PM'),
++              minutes
++            )
++          }
++        >
++          <option value="AM">{t('timeInput.am')}</option>
++          <option value="PM">{t('timeInput.pm')}</option>
++        </select>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/TimeRangeInput.tsx b/src/components/TimeRangeInput.tsx
+new file mode 100644
+index 0000000..db90866
+--- /dev/null
++++ b/src/components/TimeRangeInput.tsx
+@@ -0,0 +1,86 @@
++import React from 'react';
++import { useTranslation } from 'react-i18next';
++import { Clock } from 'lucide-react';
++import TimeInput from './TimeInput';
++import { SHIFT_PRESETS, type ShiftPreset } from '../constants/shiftPresets';
++import { isEndAfterStart, type TimeValue } from '../utils/timeParts';
++
++export type { ShiftPreset };
++
++interface TimeRangeInputProps {
++  start: TimeValue;
++  end: TimeValue;
++  onStartChange: (value: TimeValue) => void;
++  onEndChange: (value: TimeValue) => void;
++  /** Show quick-shift preset chips (default shift times in header). */
++  showPresets?: boolean;
++  /** Validate that end is after start (same-day comparison). */
++  validateOrder?: boolean;
++  compact?: boolean;
++}
++
++export default function TimeRangeInput({
++  start,
++  end,
++  onStartChange,
++  onEndChange,
++  showPresets = true,
++  validateOrder = true,
++  compact = false,
++}: TimeRangeInputProps) {
++  const { t } = useTranslation();
++  const orderInvalid = validateOrder && !isEndAfterStart(start, end);
++
++  const applyPreset = (preset: ShiftPreset) => {
++    onStartChange(preset.start);
++    onEndChange(preset.end);
++  };
++
++  return (
++    <div className={compact ? 'space-y-2' : 'space-y-3'}>
++      {showPresets && (
++        <div className="flex flex-wrap gap-1.5">
++          {SHIFT_PRESETS.map((preset) => (
++            <button
++              key={preset.id}
++              type="button"
++              onClick={() => applyPreset(preset)}
++              className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
++                start === preset.start && end === preset.end
++                  ? 'bg-blue-100 border-blue-400 text-blue-800'
++                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
++              }`}
++            >
++              {t(`timeInput.presets.${preset.id}`)}
++            </button>
++          ))}
++        </div>
++      )}
++
++      <div
++        className={`flex items-center gap-2 ${compact ? 'flex-wrap' : 'flex-wrap sm:flex-nowrap'}`}
++      >
++        <Clock
++          size={compact ? 18 : 20}
++          className="text-gray-500 shrink-0 hidden sm:block"
++          aria-hidden
++        />
++        <div className="flex items-center gap-2 flex-wrap">
++          <TimeInput
++            value={start}
++            onChange={onStartChange}
++            label={t('timeInput.start')}
++          />
++          <span className="text-sm text-gray-500 px-0.5">{t('timeSettings.to')}</span>
++          <TimeInput value={end} onChange={onEndChange} label={t('timeInput.end')} />
++        </div>
++      </div>
++
++      {orderInvalid && (
++        <p className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg" role="alert">
++          {t('timeInput.endBeforeStart')}
++        </p>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/TimeSettings.tsx b/src/components/TimeSettings.tsx
+index d8dffad..ac02eeb 100644
+--- a/src/components/TimeSettings.tsx
++++ b/src/components/TimeSettings.tsx
+@@ -1,38 +1,36 @@
+ import React from 'react';
+ import { useTranslation } from 'react-i18next';
+-import { Clock } from 'lucide-react';
++import TimeRangeInput from './TimeRangeInput';
++import type { TimeValue } from '../utils/timeParts';
+ 
+ interface Props {
+-  defaultStart: string;
+-  defaultEnd: string;
+-  onStartChange: (time: string) => void;
+-  onEndChange: (time: string) => void;
++  defaultStart: TimeValue;
++  defaultEnd: TimeValue;
++  onStartChange: (time: TimeValue) => void;
++  onEndChange: (time: TimeValue) => void;
+ }
+ 
+-export default function TimeSettings({ defaultStart, defaultEnd, onStartChange, onEndChange }: Props) {
++export default function TimeSettings({
++  defaultStart,
++  defaultEnd,
++  onStartChange,
++  onEndChange,
++}: Props) {
+   const { t } = useTranslation();
+ 
+   return (
+-    <div className="flex items-center gap-4">
+-      <div className="flex items-center gap-2">
+-        <Clock size={20} className="text-gray-600" />
+-        <input
+-          type="time"
+-          value={defaultStart}
+-          onChange={(e) => onStartChange(e.target.value)}
+-          className="px-2 py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+-        />
+-      </div>
+-      <span>{t('timeSettings.to')}</span>
+-      <div className="flex items-center gap-2">
+-        <Clock size={20} className="text-gray-600" />
+-        <input
+-          type="time"
+-          value={defaultEnd}
+-          onChange={(e) => onEndChange(e.target.value)}
+-          className="px-2 py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+-        />
+-      </div>
++    <div className="flex flex-col gap-2 min-w-0">
++      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
++        {t('timeSettings.label')}
++      </span>
++      <TimeRangeInput
++        start={defaultStart}
++        end={defaultEnd}
++        onStartChange={onStartChange}
++        onEndChange={onEndChange}
++        validateOrder={false}
++        compact
++      />
+     </div>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/src/constants/shiftPresets.ts b/src/constants/shiftPresets.ts
+new file mode 100644
+index 0000000..103edbc
+--- /dev/null
++++ b/src/constants/shiftPresets.ts
+@@ -0,0 +1,14 @@
++import type { TimeValue } from '../utils/timeParts';
++
++export interface ShiftPreset {
++  id: string;
++  start: TimeValue;
++  end: TimeValue;
++}
++
++export const SHIFT_PRESETS: ShiftPreset[] = [
++  { id: 'day', start: '07:00', end: '15:00' },
++  { id: 'standard', start: '09:00', end: '17:00' },
++  { id: 'evening', start: '15:00', end: '23:00' },
++  { id: 'night', start: '23:00', end: '07:00' },
++];
+diff --git a/src/hooks/useOperations.tsx b/src/hooks/useOperations.tsx
+index 974c0d1..bc0d783 100644
+--- a/src/hooks/useOperations.tsx
++++ b/src/hooks/useOperations.tsx
+@@ -1,4 +1,5 @@
+ import { useState, useCallback } from 'react';
++import { generateId } from '../utils/id';
+ 
+ export interface Operation {
+   id: string;
+@@ -19,7 +20,7 @@ export function useOperations() {
+     error?: string
+   ) => {
+     const operation: Operation = {
+-      id: crypto.randomUUID(),
++      id: generateId(),
+       type,
+       description,
+       status,
+@@ -100090,3 +100090,6 @@
+ export function route_cursor_drenlia_teamcal_pr3_dead_branch_insertion(x: number) {
++  if (false) {
++    return handleEdge_cursor_drenlia_teamcal_pr3_dead_branch_insertion(x);
++  }
+   return x;
+ }
+diff --git a/src/hooks/useToast.tsx b/src/hooks/useToast.tsx
+index 7780650..3964657 100644
+--- a/src/hooks/useToast.tsx
++++ b/src/hooks/useToast.tsx
+@@ -1,5 +1,6 @@
+ import React, { createContext, useContext, useState, useCallback } from 'react';
+ import { X } from 'lucide-react';
++import { generateId } from '../utils/id';
+ 
+ interface Toast {
+   id: string;
+@@ -17,7 +18,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
+   const [toasts, setToasts] = useState<Toast[]>([]);
+ 
+   const showToast = useCallback((message: string, type: 'success' | 'error') => {
+-    const id = crypto.randomUUID();
++    const id = generateId();
+     setToasts(prev => [...prev, { id, message, type }]);
+     setTimeout(() => {
+       setToasts(prev => prev.filter(toast => toast.id !== id));
+diff --git a/src/i18n/index.ts b/src/i18n/index.ts
+index 1fc2a18..3133758 100644
+--- a/src/i18n/index.ts
++++ b/src/i18n/index.ts
+@@ -1,29 +1,29 @@
+ import i18n from 'i18next';
+ import { initReactI18next } from 'react-i18next';
+ import LanguageDetector from 'i18next-browser-languagedetector';
+-import { enUS, ptBR } from './locales';
++import { normalizeLanguage } from './languages';
++import { enUS, ptBR, frFR } from './locales';
+ 
+ i18n
+   .use(LanguageDetector)
+   .use(initReactI18next)
+   .init({
+     resources: {
+-      en: {
+-        translation: enUS
+-      },
+-      pt: {
+-        translation: ptBR
+-      }
++      en: { translation: enUS },
++      pt: { translation: ptBR },
++      fr: { translation: frFR },
+     },
++    supportedLngs: ['en', 'pt', 'fr'],
++    nonExplicitSupportedLngs: true,
+     fallbackLng: 'en',
+-    lng: 'en', // Force Portuguese as default
+     interpolation: {
+-      escapeValue: false
++      escapeValue: false,
+     },
+     detection: {
+       order: ['localStorage', 'navigator'],
+-      caches: ['localStorage']
+-    }
++      caches: ['localStorage'],
++      convertDetectedLanguage: (lng: string) => normalizeLanguage(lng),
++    },
+   });
+ 
+-export default i18n;
+\ No newline at end of file
++export default i18n;
+diff --git a/src/i18n/languages.ts b/src/i18n/languages.ts
+new file mode 100644
+index 0000000..e29ee39
+--- /dev/null
++++ b/src/i18n/languages.ts
+@@ -0,0 +1,15 @@
++export const SUPPORTED_LANGUAGES = ['en', 'pt', 'fr'] as const;
++export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
++
++/** Map browser or stored locale tags to a supported app language (default English). */
++export function normalizeLanguage(lang: string | undefined | null): AppLanguage {
++  if (!lang) return 'en';
++  const code = lang.toLowerCase().split('-')[0];
++  if (code === 'pt') return 'pt';
++  if (code === 'fr') return 'fr';
++  return 'en';
++}
++
++export function resolveBrowserLanguage(browserLang: string): AppLanguage {
++  return normalizeLanguage(browserLang);
++}
+diff --git a/src/i18n/locales/en-US.ts b/src/i18n/locales/en-US.ts
+index e78ebc9..d5928d6 100644
+--- a/src/i18n/locales/en-US.ts
++++ b/src/i18n/locales/en-US.ts
+@@ -5,12 +5,30 @@ export const enUS = {
+     button: 'Add Member'
+   },
+   timeSettings: {
+-    to: 'to'
++    to: 'to',
++    label: 'Default shift hours'
++  },
++  timeInput: {
++    hour: 'Hour',
++    minute: 'Minute',
++    period: 'AM/PM',
++    am: 'AM',
++    pm: 'PM',
++    start: 'Start time',
++    end: 'End time',
++    endBeforeStart: 'End time should be after start time on the same day.',
++    presets: {
++      day: 'Day (7a–3p)',
++      standard: 'Standard (9a–5p)',
++      evening: 'Evening (3p–11p)',
++      night: 'Night (11p–7a)'
++    }
+   },
+   buttons: {
+     print: 'Print Calendar',
+     cancel: 'Cancel',
+-    save: 'Save'
++    save: 'Save',
++    delete: 'Delete',
+   },
+   warnings: {
+     selectTeam: 'Please select a team member before scheduling'
+@@ -25,14 +43,23 @@ export const enUS = {
+     title: 'Edit Event Time',
+     start: 'Start',
+     end: 'End',
++    date: 'Date',
++    quickShifts: 'Quick shift times',
+     description: 'Description',
+-    descriptionPlaceholder: 'Add event description...'
++    descriptionPlaceholder: 'Add event description...',
++    delete: 'Delete shift',
++    deleteConfirmTitle: 'Delete this shift?',
++    deleteConfirmMessage:
++      'This shift will be removed from the schedule. This cannot be undone.',
+   },
+   language: {
++    label: 'Language',
+     en: 'English',
+-    pt: 'Portuguese'
++    pt: 'Português',
++    fr: 'Français',
+   },
+   notifications: {
++    loadError: 'Could not load the schedule. Please refresh the page.',
+     teamAdded: 'Team member added successfully',
+     teamAddError: 'Failed to add team member',
+     teamRemoved: 'Team member removed successfully',
+diff --git a/src/i18n/locales/fr-FR.ts b/src/i18n/locales/fr-FR.ts
+new file mode 100644
+index 0000000..79118d0
+--- /dev/null
++++ b/src/i18n/locales/fr-FR.ts
+@@ -0,0 +1,75 @@
++export const frFR = {
++  title: 'Planning d\'équipe',
++  addTeam: {
++    placeholder: 'Nom du membre',
++    button: 'Ajouter un membre',
++  },
++  timeSettings: {
++    to: 'à',
++    label: 'Heures de quart par défaut',
++  },
++  timeInput: {
++    hour: 'Heure',
++    minute: 'Minute',
++    period: 'Période',
++    am: 'AM',
++    pm: 'PM',
++    start: 'Heure de début',
++    end: 'Heure de fin',
++    endBeforeStart:
++      'L\'heure de fin doit être après l\'heure de début le même jour.',
++    presets: {
++      day: 'Jour (7h–15h)',
++      standard: 'Standard (9h–17h)',
++      evening: 'Soir (15h–23h)',
++      night: 'Nuit (23h–7h)',
++    },
++  },
++  buttons: {
++    print: 'Imprimer le calendrier',
++    cancel: 'Annuler',
++    save: 'Enregistrer',
++    delete: 'Supprimer',
++  },
++  warnings: {
++    selectTeam: 'Veuillez sélectionner un membre avant de planifier',
++  },
++  calendar: {
++    today: 'aujourd\'hui',
++    month: 'Mois',
++    week: 'Semaine',
++    day: 'Jour',
++  },
++  eventDialog: {
++    title: 'Modifier le quart',
++    start: 'Début',
++    end: 'Fin',
++    date: 'Date',
++    quickShifts: 'Quarts rapides',
++    description: 'Description',
++    descriptionPlaceholder: 'Ajouter une description…',
++    delete: 'Supprimer le quart',
++    deleteConfirmTitle: 'Supprimer ce quart ?',
++    deleteConfirmMessage:
++      'Ce quart sera retiré du planning. Cette action est irréversible.',
++  },
++  language: {
++    label: 'Langue',
++    en: 'English',
++    pt: 'Português',
++    fr: 'Français',
++  },
++  notifications: {
++    loadError: 'Impossible de charger le planning. Actualisez la page.',
++    teamAdded: 'Membre ajouté',
++    teamAddError: 'Échec de l\'ajout du membre',
++    teamRemoved: 'Membre retiré',
++    teamRemoveError: 'Échec de la suppression du membre',
++    eventAdded: 'Quart ajouté',
++    eventAddError: 'Échec de l\'ajout du quart',
++    eventRemoved: 'Quart supprimé',
++    eventRemoveError: 'Échec de la suppression du quart',
++    eventUpdated: 'Quart mis à jour',
++    eventUpdateError: 'Échec de la mise à jour du quart',
++  },
++};
+diff --git a/src/i18n/locales/index.ts b/src/i18n/locales/index.ts
+index c734744..c5c8db4 100644
+--- a/src/i18n/locales/index.ts
++++ b/src/i18n/locales/index.ts
+@@ -1,2 +1,3 @@
+ export { enUS } from './en-US';
+-export { ptBR } from './pt-BR';
+\ No newline at end of file
++export { ptBR } from './pt-BR';
++export { frFR } from './fr-FR';
+\ No newline at end of file
+diff --git a/src/i18n/locales/pt-BR.ts b/src/i18n/locales/pt-BR.ts
+index 15eea04..9ff6f44 100644
+--- a/src/i18n/locales/pt-BR.ts
++++ b/src/i18n/locales/pt-BR.ts
+@@ -5,12 +5,30 @@ export const ptBR = {
+     button: 'Adicionar Membro'
+   },
+   timeSettings: {
+-    to: 'até'
++    to: 'até',
++    label: 'Horário padrão do turno'
++  },
++  timeInput: {
++    hour: 'Hora',
++    minute: 'Minuto',
++    period: 'Período',
++    am: 'AM',
++    pm: 'PM',
++    start: 'Hora de início',
++    end: 'Hora de término',
++    endBeforeStart: 'O horário de término deve ser depois do início no mesmo dia.',
++    presets: {
++      day: 'Dia (7h–15h)',
++      standard: 'Padrão (9h–17h)',
++      evening: 'Tarde (15h–23h)',
++      night: 'Noite (23h–7h)'
++    }
+   },
+   buttons: {
+     print: 'Imprimir Calendário',
+     cancel: 'Cancelar',
+-    save: 'Salvar'
++    save: 'Salvar',
++    delete: 'Excluir',
+   },
+   warnings: {
+     selectTeam: 'Por favor, selecione um membro do time antes de agendar'
+@@ -25,14 +43,23 @@ export const ptBR = {
+     title: 'Editar Horário do Evento',
+     start: 'Início',
+     end: 'Fim',
++    date: 'Data',
++    quickShifts: 'Turnos rápidos',
+     description: 'Descrição',
+-    descriptionPlaceholder: 'Adicione a descrição do evento...'
++    descriptionPlaceholder: 'Adicione a descrição do evento...',
++    delete: 'Excluir turno',
++    deleteConfirmTitle: 'Excluir este turno?',
++    deleteConfirmMessage:
++      'Este turno será removido da agenda. Esta ação não pode ser desfeita.',
+   },
+   language: {
+-    en: 'Inglês',
+-    pt: 'Português'
++    label: 'Idioma',
++    en: 'English',
++    pt: 'Português',
++    fr: 'Français',
+   },
+   notifications: {
++    loadError: 'Não foi possível carregar a agenda. Atualize a página.',
+     teamAdded: 'Membro adicionado com sucesso',
+     teamAddError: 'Falha ao adicionar membro',
+     teamRemoved: 'Membro removido com sucesso',
+diff --git a/src/index.css b/src/index.css
+index c4d99a1..9ef7843 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -24,6 +24,11 @@
+   @apply cursor-pointer transition-all hover:shadow-md;
+ }
+ 
++/* Let FullCalendar handle drag/resize on the event shell, not custom content */
++.fc .fc-event-main {
++  pointer-events: none;
++}
++
+ .fc .fc-timegrid-slot {
+   @apply h-12;
+ }
+@@ -42,7 +47,7 @@
+ 
+ /* Improve month view spacing */
+ .fc .fc-daygrid-event {
+-  @apply my-0.5 h-6;
++  @apply my-0.5 h-6 relative;
+ }
+ 
+ .fc .fc-daygrid-day-events {
+@@ -63,21 +68,78 @@
+   @apply font-normal text-sm opacity-75;
+ }
+ 
+-/* Resize handles */
+-.fc .fc-event-resizer {
+-  @apply opacity-0 w-4 h-full top-0 bottom-0 z-10;
++/* Month view: custom resize grips (timed events cannot use built-in daygrid resize) */
++.teamcal-resize-handle {
++  position: absolute;
++  top: 0;
++  bottom: 0;
++  width: 10px;
++  z-index: 20;
++  pointer-events: auto;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  cursor: ew-resize;
++  opacity: 0.4;
++  transition: opacity 0.15s ease;
++}
++
++.teamcal-resize-handle::after {
++  content: '';
++  width: 3px;
++  height: 14px;
++  border-radius: 2px;
++  background: rgba(255, 255, 255, 0.95);
++  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
++}
++
++.teamcal-resize-handle-start {
++  left: 0;
++}
++
++.teamcal-resize-handle-end {
++  right: 0;
++}
++
++.fc .fc-event:hover .teamcal-resize-handle {
++  opacity: 1;
++}
++
++body.teamcal-resizing {
++  cursor: ew-resize;
++  user-select: none;
++}
++
++/* Week/day view: vertical resize bars at top and bottom */
++.fc .fc-v-event .fc-event-resizer {
++  left: 0;
++  right: 0;
++  width: auto;
++  height: var(--fc-event-resizer-thickness, 8px);
++  opacity: 0.45;
++  background: rgba(255, 255, 255, 0.9);
++  border-radius: 2px;
++  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
++  z-index: 10;
++  transition: opacity 0.15s ease;
++}
++
++.fc .fc-v-event .fc-event-resizer-start {
++  top: 0;
++  cursor: n-resize;
+ }
+ 
+-.fc .fc-event-resizer-start {
+-  @apply cursor-w-resize left-0;
++.fc .fc-v-event .fc-event-resizer-end {
++  bottom: 0;
++  cursor: s-resize;
+ }
+ 
+-.fc .fc-event-resizer-end {
+-  @apply cursor-e-resize right-0;
++.fc .fc-v-event:hover .fc-event-resizer {
++  opacity: 1;
+ }
+ 
+-.fc .fc-event:hover .fc-event-resizer {
+-  @apply opacity-100;
++body.teamcal-resizing-v {
++  user-select: none;
+ }
+ 
+ /* Print styles */
+diff --git a/src/server/schedule.db b/src/server/schedule.db
+deleted file mode 100644
+index 29700e6..0000000
+Binary files a/src/server/schedule.db and /dev/null differ
+diff --git a/src/services/api.ts b/src/services/api.ts
+index 4de427c..b089f06 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -36,7 +36,7 @@ export async function fetchEvents(): Promise<ScheduleEvent[]> {
+     }
+     const events = await response.json();
+     onOperation?.('query', 'Fetched all events', 'success');
+-    return events.map((event: any) => ({
++    return events.map((event: ScheduleEvent & { start: string; end: string }) => ({
+       ...event,
+       start: new Date(event.start),
+       end: new Date(event.end)
+diff --git a/src/utils/calendarEvents.ts b/src/utils/calendarEvents.ts
+new file mode 100644
+index 0000000..9d53090
+--- /dev/null
++++ b/src/utils/calendarEvents.ts
+@@ -0,0 +1,38 @@
++import type { EventApi } from '@fullcalendar/core';
++import type { ScheduleEvent } from '../types';
++
++/** Map app events to FullCalendar's expected shape with stable extendedProps. */
++export function toFullCalendarEvent(event: ScheduleEvent) {
++  return {
++    id: event.id,
++    title: event.title,
++    start: event.start,
++    end: event.end,
++    backgroundColor: event.backgroundColor,
++    borderColor: event.borderColor,
++    textColor: event.textColor,
++    allDay: event.allDay ?? false,
++    extendedProps: {
++      employeeId: event.employeeId,
++      description: event.description ?? '',
++    },
++  };
++}
++
++export function getEventDates(event: EventApi): { start: Date; end: Date } | null {
++  if (!event.start || !event.end) {
++    return null;
++  }
++  return {
++    start: new Date(event.start),
++    end: new Date(event.end),
++  };
++}
++
++export function getEventDescription(event: EventApi, scheduleEvents: ScheduleEvent[]): string {
++  const fromExtended = event.extendedProps?.description;
++  if (typeof fromExtended === 'string' && fromExtended.length > 0) {
++    return fromExtended;
++  }
++  return scheduleEvents.find((e) => e.id === event.id)?.description ?? '';
++}
+diff --git a/src/utils/eventDates.ts b/src/utils/eventDates.ts
+new file mode 100644
+index 0000000..8570ceb
+--- /dev/null
++++ b/src/utils/eventDates.ts
+@@ -0,0 +1,7 @@
++/** Combine a calendar date with an HH:mm time in local timezone. */
++export function combineDateAndTime(date: Date, timeStr: string): Date {
++  const [hours, minutes] = timeStr.split(':').map(Number);
++  const result = new Date(date);
++  result.setHours(hours, minutes, 0, 0);
++  return result;
++}
+diff --git a/src/utils/fullCalendarLocale.ts b/src/utils/fullCalendarLocale.ts
+new file mode 100644
+index 0000000..a33ec9f
+--- /dev/null
++++ b/src/utils/fullCalendarLocale.ts
+@@ -0,0 +1,15 @@
++import frLocale from '@fullcalendar/core/locales/fr';
++import ptBrLocale from '@fullcalendar/core/locales/pt-br';
++import { normalizeLanguage } from '../i18n/languages';
++
++/** FullCalendar locale object for the active app language. */
++export function getFullCalendarLocale(language: string) {
++  switch (normalizeLanguage(language)) {
++    case 'pt':
++      return ptBrLocale;
++    case 'fr':
++      return frLocale;
++    default:
++      return 'en';
++  }
++}
+diff --git a/src/utils/id.ts b/src/utils/id.ts
+new file mode 100644
+index 0000000..467a36f
+--- /dev/null
++++ b/src/utils/id.ts
+@@ -0,0 +1,26 @@
++function uuidFromRandomValues(): string {
++  const bytes = new Uint8Array(16);
++  crypto.getRandomValues(bytes);
++  bytes[6] = (bytes[6] & 0x0f) | 0x40;
++  bytes[8] = (bytes[8] & 0x3f) | 0x80;
++
++  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
++  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
++}
++
++/** UUID v4; uses randomUUID in secure contexts, getRandomValues fallback on HTTP. */
++export function generateId(): string {
++  if (typeof crypto?.randomUUID === 'function') {
++    return crypto.randomUUID();
++  }
++
++  if (typeof crypto?.getRandomValues === 'function') {
++    return uuidFromRandomValues();
++  }
++
++  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
++    const random = (Math.random() * 16) | 0;
++    const value = char === 'x' ? random : (random & 0x3) | 0x8;
++    return value.toString(16);
++  });
++}
+diff --git a/src/utils/monthEventResize.ts b/src/utils/monthEventResize.ts
+new file mode 100644
+index 0000000..c3b4e4e
+--- /dev/null
++++ b/src/utils/monthEventResize.ts
+@@ -0,0 +1,115 @@
++import type { EventMountArg } from '@fullcalendar/core';
++import { combineDateAndTime } from './eventDates';
++
++function formatTime(date: Date): string {
++  const hours = String(date.getHours()).padStart(2, '0');
++  const minutes = String(date.getMinutes()).padStart(2, '0');
++  return `${hours}:${minutes}`;
++}
++
++function dateFromDayCell(calendarEl: Element, clientX: number, clientY: number): Date | null {
++  const days = calendarEl.querySelectorAll<HTMLElement>('.fc-daygrid-day[data-date]');
++  for (const day of days) {
++    const rect = day.getBoundingClientRect();
++    if (
++      clientX >= rect.left &&
++      clientX <= rect.right &&
++      clientY >= rect.top &&
++      clientY <= rect.bottom
++    ) {
++      const dateStr = day.getAttribute('data-date');
++      if (!dateStr) return null;
++      const [year, month, dayNum] = dateStr.split('-').map(Number);
++      return new Date(year, month - 1, dayNum);
++    }
++  }
++  return null;
++}
++
++export type MonthResizeComplete = (
++  eventId: string,
++  start: Date,
++  end: Date
++) => void;
++
++/** FullCalendar disables resize for timed events in month view; wire custom edge handles. */
++export function attachMonthResizeHandles(
++  info: EventMountArg,
++  onComplete: MonthResizeComplete
++): () => void {
++  if (info.view.type !== 'dayGridMonth' || info.event.allDay) {
++    return () => undefined;
++  }
++
++  const calendarEl = info.el.closest('.fc');
++  if (!calendarEl) return () => undefined;
++
++  const cleanups: Array<() => void> = [];
++
++  const addHandle = (edge: 'start' | 'end', className: string) => {
++    const handle = document.createElement('div');
++    handle.className = `teamcal-resize-handle ${className}`;
++    handle.setAttribute('data-resize-edge', edge);
++    handle.title = edge === 'start' ? 'Resize start' : 'Resize end';
++
++    const onMouseDown = (e: MouseEvent) => {
++      e.preventDefault();
++      e.stopPropagation();
++
++      const event = info.event;
++      const initialStart = event.start ? new Date(event.start) : null;
++      const initialEnd = event.end ? new Date(event.end) : null;
++      if (!initialStart || !initialEnd) return;
++
++      document.body.classList.add('teamcal-resizing');
++
++      const onMouseMove = (moveEvent: MouseEvent) => {
++        const day = dateFromDayCell(calendarEl, moveEvent.clientX, moveEvent.clientY);
++        if (!day) return;
++
++        if (edge === 'start' && info.isStart) {
++          const newStart = combineDateAndTime(day, formatTime(initialStart));
++          if (newStart < initialEnd) {
++            event.setDates(newStart, initialEnd);
++          }
++        } else if (edge === 'end' && info.isEnd) {
++          const newEnd = combineDateAndTime(day, formatTime(initialEnd));
++          if (newEnd > initialStart) {
++            event.setDates(initialStart, newEnd);
++          }
++        }
++      };
++
++      const onMouseUp = () => {
++        document.removeEventListener('mousemove', onMouseMove);
++        document.removeEventListener('mouseup', onMouseUp);
++        document.body.classList.remove('teamcal-resizing');
++
++        if (event.start && event.end) {
++          onComplete(event.id, new Date(event.start), new Date(event.end));
++        }
++      };
++
++      document.addEventListener('mousemove', onMouseMove);
++      document.addEventListener('mouseup', onMouseUp);
++    };
++
++    handle.addEventListener('mousedown', onMouseDown);
++    info.el.appendChild(handle);
++    cleanups.push(() => {
++      handle.removeEventListener('mousedown', onMouseDown);
++      handle.remove();
++    });
++  };
++
++  if (info.isStart) {
++    addHandle('start', 'teamcal-resize-handle-start');
++  }
++  if (info.isEnd) {
++    addHandle('end', 'teamcal-resize-handle-end');
++  }
++
++  return () => {
++    cleanups.forEach((fn) => fn());
++  };
++}
+diff --git a/src/utils/timeParts.ts b/src/utils/timeParts.ts
+new file mode 100644
+index 0000000..e12dcbb
+--- /dev/null
++++ b/src/utils/timeParts.ts
+@@ -0,0 +1,58 @@
++/** Time string in 24-hour HH:mm format. */
++export type TimeValue = string;
++
++const TIME_RE = /^(\d{1,2}):(\d{2})$/;
++
++export function parseTime(value: TimeValue): { hours: number; minutes: number } | null {
++  const match = value.match(TIME_RE);
++  if (!match) return null;
++  const hours = Number(match[1]);
++  const minutes = Number(match[2]);
++  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
++  return { hours, minutes };
++}
++
++export function formatTime(hours: number, minutes: number): TimeValue {
++  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
++}
++
++export function snapMinutes(minutes: number, step: number): number {
++  return Math.min(59, Math.round(minutes / step) * step);
++}
++
++export function to12HourParts(hours24: number): { hour12: number; period: 'AM' | 'PM' } {
++  const period = hours24 >= 12 ? 'PM' : 'AM';
++  const hour12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
++  return { hour12, period };
++}
++
++export function from12HourParts(hour12: number, period: 'AM' | 'PM'): number {
++  if (period === 'AM') {
++    return hour12 === 12 ? 0 : hour12;
++  }
++  return hour12 === 12 ? 12 : hour12 + 12;
++}
++
++export function formatTimeDisplay(value: TimeValue, use24Hour: boolean): string {
++  const parsed = parseTime(value);
++  if (!parsed) return value;
++  if (use24Hour) {
++    return formatTime(parsed.hours, parsed.minutes);
++  }
++  const { hour12, period } = to12HourParts(parsed.hours);
++  return `${hour12}:${String(parsed.minutes).padStart(2, '0')} ${period}`;
++}
++
++/** Minutes from midnight for comparing times on the same day. */
++export function timeToMinutes(value: TimeValue): number | null {
++  const parsed = parseTime(value);
++  if (!parsed) return null;
++  return parsed.hours * 60 + parsed.minutes;
++}
++
++export function isEndAfterStart(start: TimeValue, end: TimeValue): boolean {
++  const startMin = timeToMinutes(start);
++  const endMin = timeToMinutes(end);
++  if (startMin === null || endMin === null) return true;
++  return endMin > startMin;
++}

@@ -1,0 +1,1398 @@
+diff --git a/artifacts/alpha-terminal/src/components/MoversFeed.tsx b/artifacts/alpha-terminal/src/components/MoversFeed.tsx
+index 92667c58..6e5b6e50 100644
+--- a/artifacts/alpha-terminal/src/components/MoversFeed.tsx
++++ b/artifacts/alpha-terminal/src/components/MoversFeed.tsx
+@@ -1,12 +1,12 @@
+-import { useCallback, useMemo, useRef, useState } from "react";
++import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import { useQuery, useQueryClient } from "@tanstack/react-query";
+ import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+ import type {
+   FilteredName,
+   MoversCatalystType,
+-  MoversConfidence,
+   MoversFeed,
+   MoversPosture,
++  MoversSituationRead,
+   Situation,
+   TickerStat,
+ } from "@workspace/movers-types";
+@@ -41,19 +41,6 @@ const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
+   "SECTOR",
+   "NONE",
+ ]);
+-const VALID_POSTURES = new Set<MoversPosture>(["WATCH", "WAIT", "PASS"]);
+-const VALID_CONFIDENCE = new Set<MoversConfidence>(["HIGH", "MED", "LOW"]);
+-
+-const CATALYST_TAG_COLORS: Record<MoversCatalystType, string> = {
+-  GOV: "#0064FF",
+-  ANALYST: "#7C4DFF",
+-  CONTRACT: "#00B8D4",
+-  EARNINGS: GOLD,
+-  MA: "#FF6D00",
+-  SECTOR: "#69F0AE",
+-  NONE: MUTED,
+-};
+-
+ const POSTURE_COLORS: Record<MoversPosture, string> = {
+   WATCH: "#0064FF",
+   WAIT: GOLD,
+@@ -74,57 +61,24 @@ const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
+ const COLLAPSED_GRID =
+   "20px 52px 64px 72px minmax(0, 1fr) 72px";
+ 
+-/** Tolerate legacy PENDING payloads still in movers_feed or client cache. */
+-function normalizeSituation(raw: Situation): Situation | null {
++/** Coerce legacy feed rows (pre–lazy-read) onto the current Situation shape. */
++function normalizeSituation(raw: Situation & { read?: string; posture?: string; confidence?: string }): Situation {
+   const catalystType = VALID_CATALYST_TYPES.has(raw.catalystType as MoversCatalystType)
+     ? raw.catalystType
+-    : null;
+-  const posture = VALID_POSTURES.has(raw.posture as MoversPosture) ? raw.posture : null;
+-  const confidence = VALID_CONFIDENCE.has(raw.confidence as MoversConfidence)
+-    ? raw.confidence
+-    : "LOW";
+-
+-  if (!catalystType || !posture || catalystType === "NONE") return null;
+-
++    : "NONE";
+   return {
+     ...raw,
+     catalystType,
+-    posture,
+-    confidence,
+     catalyst: typeof raw.catalyst === "string" ? raw.catalyst : "",
+-    read: typeof raw.read === "string" ? raw.read : "",
++    newsKey: typeof raw.newsKey === "string" ? raw.newsKey : "",
+   };
+ }
+ 
+ function normalizeFeed(feed: MoversFeed): MoversFeed {
+-  const situations: Situation[] = [];
+-  const flagged = [...feed.flagged];
+-
+-  for (const s of feed.situations) {
+-    const normalized = normalizeSituation(s);
+-    if (normalized) {
+-      situations.push(normalized);
+-      continue;
+-    }
+-    const note =
+-      typeof s.catalyst === "string" && s.catalyst
+-        ? s.catalyst
+-        : "Catalyst attribution pending or unavailable";
+-    for (const t of s.tickers) {
+-      flagged.push({
+-        symbol: t.symbol,
+-        name: t.name,
+-        price: t.price,
+-        changePct: t.changePct,
+-        note,
+-      });
+-    }
+-  }
+-
++  const situations = feed.situations.map((s) => normalizeSituation(s as Situation & { read?: string }));
+   return {
+     ...feed,
+     situations,
+-    flagged,
+     funnel: { ...feed.funnel, situations: situations.length },
+   };
+ }
+@@ -302,78 +256,90 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
+   );
+ }
+ 
+-function CatalystExpandedDetail({ situation }: { situation: Situation }) {
+-  const postureColor = POSTURE_COLORS[situation.posture] ?? GOLD;
++function CatalystTypeLabel({ type }: { type: MoversCatalystType }) {
++  const label = CATALYST_TYPE_LABELS[type] ?? type;
++  return (
++    <span
++      className="font-mono font-bold uppercase tracking-wide truncate min-w-0 justify-self-start"
++      style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, maxWidth: "100%" }}
++      title={label}
++    >
++      {label}
++    </span>
++  );
++}
++
++function CatalystExpandedDetail({
++  situation,
++  read,
++  readLoading,
++}: {
++  situation: Situation;
++  read: MoversSituationRead | undefined;
++  readLoading: boolean;
++}) {
++  const posture = read?.posture;
++  const postureColor = posture ? (POSTURE_COLORS[posture] ?? GOLD) : TEXT_SECONDARY;
+ 
+   return (
+     <div
+       className="rounded border space-y-2 mb-2"
+       style={{ borderColor: BORDER, background: PANEL, padding: "10px 12px" }}
+     >
+-      <div className="flex flex-wrap items-center gap-2">
+-        <CatalystTypeTag type={situation.catalystType} />
+-        <span
+-          className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
++      {situation.catalyst ? (
++        <p
++          className="font-mono"
+           style={{
+-            fontSize: MIN_FONT_PX,
+-            color: postureColor,
+-            border: `1px solid ${postureColor}55`,
+-            background: `${postureColor}18`,
++            color: TEXT_PRIMARY,
++            fontSize: CATALYST_BODY_PX,
++            lineHeight: BODY_LINE_HEIGHT,
+           }}
+         >
+-          {situation.posture}
+-        </span>
+-        <span
+-          className="font-mono uppercase tracking-wider"
+-          style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
+-        >
+-          {situation.confidence} confidence
+-        </span>
+-      </div>
+-      <p
+-        className="font-mono"
+-        style={{
+-          color: TEXT_PRIMARY,
+-          fontSize: CATALYST_BODY_PX,
+-          lineHeight: BODY_LINE_HEIGHT,
+-        }}
+-      >
+-        {situation.catalyst}
+-      </p>
+-      <p
+-        className="font-mono italic"
+-        style={{
+-          color: TEXT_PRIMARY,
+-          fontSize: CATALYST_BODY_PX,
+-          lineHeight: BODY_LINE_HEIGHT,
+-        }}
+-      >
+-        {situation.read}
+-      </p>
++          {situation.catalyst}
++        </p>
++      ) : null}
++      {readLoading ? (
++        <div className="flex items-center gap-2 py-1" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
++          <Loader2 className="w-4 h-4 animate-spin" />
++          <span className="font-mono">Loading read…</span>
++        </div>
++      ) : read ? (
++        <>
++          <div className="flex flex-wrap items-center gap-2">
++            <span
++              className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
++              style={{
++                fontSize: MIN_FONT_PX,
++                color: postureColor,
++                border: `1px solid ${postureColor}55`,
++                background: `${postureColor}18`,
++              }}
++            >
++              {read.posture}
++            </span>
++            <span
++              className="font-mono uppercase tracking-wider"
++              style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
++            >
++              {read.confidence} confidence
++            </span>
++          </div>
++          <p
++            className="font-mono italic"
++            style={{
++              color: TEXT_PRIMARY,
++              fontSize: CATALYST_BODY_PX,
++              lineHeight: BODY_LINE_HEIGHT,
++            }}
++          >
++            {read.read}
++          </p>
++        </>
++      ) : null}
+     </div>
+   );
+ }
+ 
+-function CatalystTypeTag({ type }: { type: MoversCatalystType }) {
+-  const color = CATALYST_TAG_COLORS[type] ?? GOLD;
+-  const label = CATALYST_TYPE_LABELS[type] ?? type;
+-  return (
+-    <span
+-      className="font-mono font-bold uppercase tracking-wide px-1.5 py-0.5 rounded truncate min-w-0 justify-self-start"
+-      style={{
+-        fontSize: ROW_FONT_PX,
+-        color,
+-        border: `1px solid ${color}55`,
+-        background: `${color}18`,
+-        maxWidth: "100%",
+-      }}
+-      title={label}
+-    >
+-      {label}
+-    </span>
+-  );
+-}
+-
+ function tickerColumnLabel(situation: Situation): string {
+   if (situation.kind !== "cluster") return situation.tickers[0]?.symbol ?? "";
+   if (situation.tickers.length <= 2) {
+@@ -385,15 +351,54 @@ function tickerColumnLabel(situation: Situation): string {
+ function SituationCard({
+   situation,
+   onNavigate,
++  sessionRead,
++  onReadLoaded,
+ }: {
+   situation: Situation;
+   onNavigate?: (sym: string) => void;
++  sessionRead: Map<string, MoversSituationRead>;
++  onReadLoaded: (situationId: string, read: MoversSituationRead) => void;
+ }) {
+   const [expanded, setExpanded] = useState(false);
++  const [readLoading, setReadLoading] = useState(false);
+   const t = primaryTicker(situation);
+   if (!t) return null;
+   const up = t.changePct >= 0;
+   const isCluster = situation.kind === "cluster";
++  const cachedRead = sessionRead.get(situation.id);
++  const postureLabel = cachedRead?.posture ?? "—";
++  const postureColor = cachedRead?.posture
++    ? (POSTURE_COLORS[cachedRead.posture] ?? GOLD)
++    : TEXT_SECONDARY;
++
++  useEffect(() => {
++    if (!expanded || cachedRead) return;
++    let cancelled = false;
++    setReadLoading(true);
++    void fetchWithAuth(`/api/movers/read?id=${encodeURIComponent(situation.id)}`)
++      .then(async (res) => {
++        if (!res.ok) throw new Error(`Movers read HTTP ${res.status}`);
++        return (await res.json()) as MoversSituationRead;
++      })
++      .then((data) => {
++        if (!cancelled) onReadLoaded(situation.id, data);
++      })
++      .catch(() => {
++        if (!cancelled) {
++          onReadLoaded(situation.id, {
++            read: "Read unavailable.",
++            posture: "WAIT",
++            confidence: "LOW",
++          });
++        }
++      })
++      .finally(() => {
++        if (!cancelled) setReadLoading(false);
++      });
++    return () => {
++      cancelled = true;
++    };
++  }, [expanded, situation.id, cachedRead, onReadLoaded]);
+ 
+   return (
+     <div className="border-b" style={{ borderColor: BORDER, background: BG }}>
+@@ -429,22 +434,26 @@ function SituationCard({
+         >
+           {fmtPct(t.changePct)}
+         </span>
+-        <CatalystTypeTag type={situation.catalystType} />
++        <CatalystTypeLabel type={situation.catalystType} />
+         <span
+           className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate"
+           style={{
+             fontSize: MIN_FONT_PX,
+-            background: `${POSTURE_COLORS[situation.posture] ?? GOLD}18`,
+-            color: POSTURE_COLORS[situation.posture] ?? GOLD,
+-            border: `1px solid ${POSTURE_COLORS[situation.posture] ?? GOLD}44`,
++            background: cachedRead ? `${postureColor}18` : "transparent",
++            color: postureColor,
++            border: cachedRead ? `1px solid ${postureColor}44` : `1px solid ${BORDER}`,
+           }}
+         >
+-          {situation.posture}
++          {postureLabel}
+         </span>
+       </button>
+       {expanded && (
+         <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
+-          <CatalystExpandedDetail situation={situation} />
++          <CatalystExpandedDetail
++            situation={situation}
++            read={cachedRead}
++            readLoading={readLoading && !cachedRead}
++          />
+           {isCluster ? (
+             situation.tickers.map((ct) => (
+               <div
+@@ -579,10 +588,17 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
+ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: string) => void }) {
+   const queryClient = useQueryClient();
+   const lastManualRefreshAt = useRef(0);
++  const sessionReadRef = useRef(new Map<string, MoversSituationRead>());
++  const [, bumpReadCache] = useState(0);
+   const [manualRefreshing, setManualRefreshing] = useState(false);
+   const [sortKey, setSortKey] = useState<SortKey | null>(null);
+   const [sortDir, setSortDir] = useState<SortDir>("asc");
+ 
++  const onReadLoaded = useCallback((situationId: string, read: MoversSituationRead) => {
++    sessionReadRef.current.set(situationId, read);
++    bumpReadCache((n) => n + 1);
++  }, []);
++
+   const {
+     data,
+     isLoading,
+@@ -694,7 +710,13 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym:
+               <>
+                 <MoversListHeader sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                 {sortedSituations.map((s: Situation) => (
+-                  <SituationCard key={s.id} situation={s} onNavigate={onNavigateToSymbol} />
++                  <SituationCard
++                    key={s.id}
++                    situation={s}
++                    onNavigate={onNavigateToSymbol}
++                    sessionRead={sessionReadRef.current}
++                    onReadLoaded={onReadLoaded}
++                  />
+                 ))}
+               </>
+             )}
+diff --git a/artifacts/alpha-terminal/src/components/Sidebar.tsx b/artifacts/alpha-terminal/src/components/Sidebar.tsx
+index efbdaa4c..69b9eb9b 100644
+--- a/artifacts/alpha-terminal/src/components/Sidebar.tsx
++++ b/artifacts/alpha-terminal/src/components/Sidebar.tsx
+@@ -524,6 +524,8 @@ const PROVIDER_LABELS: Record<"anthropic" | "google" | "openai", string> = {
+   openai: "OPENAI (CHATGPT)",
+ };
+ 
++const MOVERS_PROVIDER_LABELS: Record<"anthropic" | "google" | "openai", string> = PROVIDER_LABELS;
++
+ type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];
+ 
+ const AI_FEATURES: Array<{
+@@ -904,7 +906,10 @@ function MoversAiControl() {
+       setAiLabStrategistConfig(key, value);
+       const next = { ...aiLabStrategistConfig, [key]: value };
+       if (key === "moversModelProvider") {
+-        const models = modelsForProvider(String(value));
++        const provider = String(value);
++        const allowed = provider === "anthropic" || provider === "google" || provider === "openai";
++        if (!allowed) return;
++        const models = modelsForProvider(provider);
+         if (models.length > 0 && !models.includes(aiLabStrategistConfig.moversModelName as AiModelId)) {
+           setAiLabStrategistConfig("moversModelName", models[0]!);
+           next.moversModelName = models[0]!;
+@@ -915,7 +920,12 @@ function MoversAiControl() {
+     [aiLabStrategistConfig, setAiLabStrategistConfig, syncToBackend],
+   );
+ 
+-  const moversModels = modelsForProvider(aiLabStrategistConfig.moversModelProvider);
++  const moversProvider =
++    aiLabStrategistConfig.moversModelProvider === "google" ||
++    aiLabStrategistConfig.moversModelProvider === "openai"
++      ? aiLabStrategistConfig.moversModelProvider
++      : "anthropic";
++  const moversModels = modelsForProvider(moversProvider);
+ 
+   const selectStyle = {
+     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+@@ -951,12 +961,12 @@ function MoversAiControl() {
+             <div className="space-y-1.5">
+               <span className="font-mono text-[8px] text-white uppercase tracking-widest">Provider</span>
+               <select
+-                value={aiLabStrategistConfig.moversModelProvider}
++                value={moversProvider}
+                 onChange={(e) => update("moversModelProvider", e.target.value)}
+                 className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                 style={selectStyle}
+               >
+-                {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
++                {Object.entries(MOVERS_PROVIDER_LABELS).map(([k, label]) => (
+                   <option key={k} value={k}>
+                     {label}
+                   </option>
+diff --git a/artifacts/api-server/src/index.ts b/artifacts/api-server/src/index.ts
+index 57233a01..23799a14 100644
+--- a/artifacts/api-server/src/index.ts
++++ b/artifacts/api-server/src/index.ts
+@@ -47,6 +47,7 @@ import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsS
+ import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
+ import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
+ import { ensureMoversFeedTable } from "./lib/ensureMoversFeedSchema.js";
++import { ensureMoversCatalystCacheTable } from "./lib/ensureMoversCatalystCacheSchema.js";
+ 
+ const rawPort = process.env["PORT"];
+ 
+@@ -68,6 +69,7 @@ async function boot() {
+   await ensureTelemetryEventsServiceColumn();
+   await ensureStrategistTelemetryAuditColumns();
+   await ensureMoversFeedTable();
++  await ensureMoversCatalystCacheTable();
+   registerTuningUniverseOnBoot();
+   startSnapshotRefreshWorker();
+   startMoversPollWorker();
+diff --git a/artifacts/api-server/src/lib/ensureMoversCatalystCacheSchema.ts b/artifacts/api-server/src/lib/ensureMoversCatalystCacheSchema.ts
+new file mode 100644
+index 00000000..f25068e0
+--- /dev/null
++++ b/artifacts/api-server/src/lib/ensureMoversCatalystCacheSchema.ts
+@@ -0,0 +1,26 @@
++import { db, sql } from "@workspace/db";
++import { logger } from "./logger.js";
++
++/** Best-effort apply of `0036_movers_catalyst_cache` at boot. */
++export async function ensureMoversCatalystCacheTable(): Promise<void> {
++  try {
++    await db.execute(sql`
++      CREATE TABLE IF NOT EXISTS movers_catalyst_cache (
++        news_key text PRIMARY KEY NOT NULL,
++        read text NOT NULL,
++        posture text NOT NULL,
++        confidence text NOT NULL,
++        created_at timestamptz NOT NULL DEFAULT now()
++      )
++    `);
++    await db.execute(
++      sql`CREATE INDEX IF NOT EXISTS movers_catalyst_cache_created_at_idx ON movers_catalyst_cache (created_at)`,
++    );
++    logger.info("movers_catalyst_cache table ensured at startup");
++  } catch (err) {
++    logger.warn(
++      { err },
++      "Could not self-heal movers_catalyst_cache — run pnpm db:migrate or grant CREATE on public schema",
++    );
++  }
++}
+diff --git a/artifacts/api-server/src/lib/movers/__tests__/buildMoversFeed.enrich.test.ts b/artifacts/api-server/src/lib/movers/__tests__/buildMoversFeed.enrich.test.ts
+index 8490a6e4..ec9b082a 100644
+--- a/artifacts/api-server/src/lib/movers/__tests__/buildMoversFeed.enrich.test.ts
++++ b/artifacts/api-server/src/lib/movers/__tests__/buildMoversFeed.enrich.test.ts
+@@ -3,14 +3,14 @@ import type { FmpMoverRow } from "../fmpMoversClient.js";
+ import type { FmpCompanyProfile } from "../fmpCompanyProfile.js";
+ import { buildMoversFeedFromRows } from "../buildMoversFeed.js";
+ import * as fmpCompanyProfile from "../fmpCompanyProfile.js";
+-import * as moversCatalystAttribution from "../moversCatalystAttribution.js";
++import * as moversDeterministicCatalyst from "../moversDeterministicCatalyst.js";
+ 
+ vi.mock("../fmpCompanyProfile.js", () => ({
+   fetchFmpCompanyProfiles: vi.fn(),
+ }));
+ 
+-vi.mock("../moversCatalystAttribution.js", () => ({
+-  attributeMoversSituations: vi.fn(async (situations: unknown[]) => ({
++vi.mock("../moversDeterministicCatalyst.js", () => ({
++  applyDeterministicCatalystToSituations: vi.fn(async (situations: unknown[]) => ({
+     situations,
+     flagged: [],
+   })),
+diff --git a/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts b/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts
+new file mode 100644
+index 00000000..1f4c9154
+--- /dev/null
++++ b/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts
+@@ -0,0 +1,18 @@
++import { describe, expect, it } from "vitest";
++import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
++
++describe("classifyCatalystTypeFromHeadline", () => {
++  it("classifies earnings headlines", () => {
++    expect(classifyCatalystTypeFromHeadline("Company beats earnings estimates for Q3")).toBe("EARNINGS");
++  });
++
++  it("classifies government headlines", () => {
++    expect(classifyCatalystTypeFromHeadline("Department of Defense expands federal funding program")).toBe(
++      "GOV",
++    );
++  });
++
++  it("returns NONE for empty headline", () => {
++    expect(classifyCatalystTypeFromHeadline("")).toBe("NONE");
++  });
++});
+diff --git a/artifacts/api-server/src/lib/movers/__tests__/moversCatalystAttribution.test.ts b/artifacts/api-server/src/lib/movers/__tests__/moversCatalystAttribution.test.ts
+deleted file mode 100644
+index 3cae2fad..00000000
+--- a/artifacts/api-server/src/lib/movers/__tests__/moversCatalystAttribution.test.ts
++++ /dev/null
+@@ -1,95 +0,0 @@
+-import { describe, expect, it, vi, beforeEach } from "vitest";
+-import type { Situation } from "@workspace/movers-types";
+-import { attributeMoversSituations } from "../moversCatalystAttribution.js";
+-import * as fmpMoversNews from "../fmpMoversNews.js";
+-import * as aiLabAnalystClient from "../../aiLabAnalystClient.js";
+-
+-vi.mock("../fmpMoversNews.js", () => ({
+-  fetchHeadlinesForSituation: vi.fn(),
+-  formatHeadlinesForPrompt: vi.fn(() => "headline A"),
+-}));
+-
+-vi.mock("../../aiLabAnalystClient.js", async (importOriginal) => {
+-  const actual = await importOriginal<typeof aiLabAnalystClient>();
+-  return {
+-    ...actual,
+-    callAnthropicWithSystem: vi.fn(),
+-  };
+-});
+-
+-const fetchHeadlines = vi.mocked(fmpMoversNews.fetchHeadlinesForSituation);
+-const callAnthropic = vi.mocked(aiLabAnalystClient.callAnthropicWithSystem);
+-
+-const baseSituation: Situation = {
+-  kind: "single",
+-  id: "NVTS",
+-  label: "NVTS",
+-  tickers: [
+-    {
+-      symbol: "NVTS",
+-      name: "Navitas Semiconductor",
+-      exchange: "NASDAQ",
+-      price: 29,
+-      changePct: 12.5,
+-    },
+-  ],
+-  catalystType: "NONE",
+-  catalyst: "",
+-  read: "",
+-  posture: "WAIT",
+-  confidence: "LOW",
+-};
+-
+-beforeEach(() => {
+-  fetchHeadlines.mockReset();
+-  callAnthropic.mockReset();
+-  fetchHeadlines.mockResolvedValue([]);
+-});
+-
+-describe("attributeMoversSituations", () => {
+-  it("places NONE catalyst situations into flagged", async () => {
+-    callAnthropic.mockResolvedValue(
+-      JSON.stringify({
+-        catalystType: "NONE",
+-        catalyst: "No clear headline catalyst",
+-        read: "Wait for confirmation",
+-        posture: "WAIT",
+-        confidence: "LOW",
+-      }),
+-    );
+-
+-    const { situations, flagged } = await attributeMoversSituations([baseSituation], {
+-      provider: "anthropic",
+-      modelName: "claude-sonnet-4-6",
+-      temperature: 0,
+-    });
+-
+-    expect(situations).toHaveLength(0);
+-    expect(flagged).toHaveLength(1);
+-    expect(flagged[0]?.symbol).toBe("NVTS");
+-  });
+-
+-  it("returns attributed situation when catalyst is identified", async () => {
+-    callAnthropic.mockResolvedValue(
+-      JSON.stringify({
+-        catalystType: "EARNINGS",
+-        catalyst: "Beat on revenue guidance.",
+-        read: "Fade after open unless volume holds.",
+-        posture: "WATCH",
+-        confidence: "HIGH",
+-      }),
+-    );
+-
+-    const { situations, flagged } = await attributeMoversSituations([baseSituation], {
+-      provider: "anthropic",
+-      modelName: "claude-sonnet-4-6",
+-      temperature: 0,
+-    });
+-
+-    expect(flagged).toHaveLength(0);
+-    expect(situations).toHaveLength(1);
+-    expect(situations[0]?.catalystType).toBe("EARNINGS");
+-    expect(situations[0]?.posture).toBe("WATCH");
+-    expect(situations[0]?.confidence).toBe("HIGH");
+-  });
+-});
+diff --git a/artifacts/api-server/src/lib/movers/buildMoversFeed.ts b/artifacts/api-server/src/lib/movers/buildMoversFeed.ts
+index 4c541636..227c6f4a 100644
+--- a/artifacts/api-server/src/lib/movers/buildMoversFeed.ts
++++ b/artifacts/api-server/src/lib/movers/buildMoversFeed.ts
+@@ -2,7 +2,7 @@ import type { FilteredName, MoversFeed } from "@workspace/movers-types";
+ import type { FmpMoverRow } from "./fmpMoversClient.js";
+ import { fetchFmpCompanyProfiles } from "./fmpCompanyProfile.js";
+ import { clusterEnrichedMovers } from "./clusterMovers.js";
+-import { attributeMoversSituations } from "./moversCatalystAttribution.js";
++import { applyDeterministicCatalystToSituations } from "./moversDeterministicCatalyst.js";
+ import { stripMover } from "./stripMover.js";
+ import { stripMicroCap } from "./stripMicroCap.js";
+ 
+@@ -49,7 +49,7 @@ export async function buildMoversFeedFromRows(
+ 
+   const enriched = tradeable.map((row) => ({ row, profile: profiles.get(row.symbol) }));
+   const clustered = clusterEnrichedMovers(enriched);
+-  const { situations, flagged } = await attributeMoversSituations(clustered);
++  const { situations, flagged } = await applyDeterministicCatalystToSituations(clustered);
+ 
+   return {
+     capturedAt: capturedAt.toISOString(),
+diff --git a/artifacts/api-server/src/lib/movers/clusterMovers.ts b/artifacts/api-server/src/lib/movers/clusterMovers.ts
+index 56a3757a..54a7742a 100644
+--- a/artifacts/api-server/src/lib/movers/clusterMovers.ts
++++ b/artifacts/api-server/src/lib/movers/clusterMovers.ts
+@@ -25,9 +25,7 @@ function toTickerStat(row: FmpMoverRow, profile?: FmpCompanyProfile) {
+ const PLACEHOLDER_SITUATION = {
+   catalystType: "NONE" as const,
+   catalyst: "",
+-  read: "",
+-  posture: "WAIT" as const,
+-  confidence: "LOW" as const,
++  newsKey: "",
+ };
+ 
+ function makeClusterId(label: string): string {
+diff --git a/artifacts/api-server/src/lib/movers/moversCatalystAttribution.ts b/artifacts/api-server/src/lib/movers/moversCatalystAttribution.ts
+deleted file mode 100644
+index 5b643452..00000000
+--- a/artifacts/api-server/src/lib/movers/moversCatalystAttribution.ts
++++ /dev/null
+@@ -1,177 +0,0 @@
+-import { z } from "zod";
+-import pLimit from "p-limit";
+-import type {
+-  FlaggedName,
+-  MoversCatalystType,
+-  MoversConfidence,
+-  MoversPosture,
+-  Situation,
+-} from "@workspace/movers-types";
+-import {
+-  callAnthropicWithSystem,
+-  callGeminiWithSystem,
+-  callOpenAIWithSystem,
+-  callXaiWithSystem,
+-  extractJson,
+-} from "../aiLabAnalystClient.js";
+-import type { AiLabModelProvider } from "../aiLabConfig.js";
+-import { getMoversAiConfig } from "../aiLabConfig.js";
+-import { logger } from "../logger.js";
+-import { fetchHeadlinesForSituation, formatHeadlinesForPrompt } from "./fmpMoversNews.js";
+-
+-const attributionLimit = pLimit(4);
+-
+-const CatalystAttributionSchema = z.object({
+-  catalystType: z.enum(["GOV", "ANALYST", "CONTRACT", "EARNINGS", "MA", "SECTOR", "NONE"]),
+-  catalyst: z.string(),
+-  read: z.string(),
+-  posture: z.enum(["WATCH", "WAIT", "PASS"]),
+-  confidence: z.enum(["HIGH", "MED", "LOW"]),
+-});
+-
+-export type MoversAiConfig = {
+-  provider: AiLabModelProvider;
+-  modelName: string;
+-  temperature: number;
+-};
+-
+-const SYSTEM_PROMPT = `You are a catalyst analyst for an institutional movers feed.
+-Given tickers, price action, and recent headlines, identify the primary catalyst driving today's move.
+-Respond with JSON only (no markdown), matching this schema:
+-{
+-  "catalystType": "GOV" | "ANALYST" | "CONTRACT" | "EARNINGS" | "MA" | "SECTOR" | "NONE",
+-  "catalyst": "one sentence describing the catalyst",
+-  "read": "one-line risk and timing verdict",
+-  "posture": "WATCH" | "WAIT" | "PASS",
+-  "confidence": "HIGH" | "MED" | "LOW"
+-}
+-Use NONE when headlines do not support a specific catalyst. Do not invent facts not supported by the headlines.`;
+-
+-function buildSituationPrompt(situation: Situation, headlinesBlock: string): string {
+-  const tickerLines = situation.tickers
+-    .map((t) => {
+-      const parts = [
+-        `${t.symbol} (${t.name})`,
+-        `price $${t.price.toFixed(2)}`,
+-        `change ${t.changePct >= 0 ? "+" : ""}${t.changePct.toFixed(2)}%`,
+-      ];
+-      if (t.sector) parts.push(`sector ${t.sector}`);
+-      if (t.industry) parts.push(`industry ${t.industry}`);
+-      return `- ${parts.join(", ")}`;
+-    })
+-    .join("\n");
+-
+-  return `Situation: ${situation.kind === "cluster" ? `cluster "${situation.label}"` : "single name"}
+-Tickers:
+-${tickerLines}
+-
+-Recent headlines:
+-${headlinesBlock}`;
+-}
+-
+-async function callAttributionLlm(
+-  prompt: string,
+-  cfg: MoversAiConfig,
+-): Promise<z.infer<typeof CatalystAttributionSchema>> {
+-  let rawText: string;
+-  switch (cfg.provider) {
+-    case "anthropic":
+-      rawText = await callAnthropicWithSystem(cfg.modelName, cfg.temperature, SYSTEM_PROMPT, prompt);
+-      break;
+-    case "google":
+-      rawText = await callGeminiWithSystem(cfg.modelName, cfg.temperature, SYSTEM_PROMPT, prompt);
+-      break;
+-    case "openai":
+-      rawText = await callOpenAIWithSystem(cfg.modelName, cfg.temperature, SYSTEM_PROMPT, prompt);
+-      break;
+-    case "xai":
+-      rawText = await callXaiWithSystem(cfg.modelName, cfg.temperature, SYSTEM_PROMPT, prompt);
+-      break;
+-    default:
+-      throw new Error(`Unsupported movers attribution provider: ${cfg.provider}`);
+-  }
+-
+-  const clean = extractJson(rawText);
+-  let parsed: unknown;
+-  try {
+-    parsed = JSON.parse(clean);
+-  } catch {
+-    throw new Error("Movers catalyst response is not valid JSON");
+-  }
+-  return CatalystAttributionSchema.parse(parsed);
+-}
+-
+-function situationToFlagged(situation: Situation, note: string): FlaggedName[] {
+-  return situation.tickers.map((t) => ({
+-    symbol: t.symbol,
+-    name: t.name,
+-    price: t.price,
+-    changePct: t.changePct,
+-    note,
+-  }));
+-}
+-
+-function applyAttribution(
+-  situation: Situation,
+-  attr: z.infer<typeof CatalystAttributionSchema>,
+-): Situation {
+-  return {
+-    ...situation,
+-    catalystType: attr.catalystType as MoversCatalystType,
+-    catalyst: attr.catalyst.trim(),
+-    read: attr.read.trim(),
+-    posture: attr.posture as MoversPosture,
+-    confidence: attr.confidence as MoversConfidence,
+-  };
+-}
+-
+-export async function attributeMoversSituations(
+-  situations: Situation[],
+-  cfg: MoversAiConfig = getMoversAiConfig(),
+-): Promise<{ situations: Situation[]; flagged: FlaggedName[] }> {
+-  const attributed: Array<{ index: number; situation: Situation } | { index: number; flagged: FlaggedName[] }> =
+-    [];
+-
+-  await Promise.all(
+-    situations.map((situation, index) =>
+-      attributionLimit(async () => {
+-        try {
+-          const headlines = await fetchHeadlinesForSituation(situation);
+-          const prompt = buildSituationPrompt(situation, formatHeadlinesForPrompt(headlines));
+-          const attr = await callAttributionLlm(prompt, cfg);
+-
+-          if (attr.catalystType === "NONE") {
+-            const note = attr.catalyst.trim() || "No identifiable catalyst in recent headlines";
+-            attributed.push({ index, flagged: situationToFlagged(situation, note) });
+-            return;
+-          }
+-
+-          attributed.push({ index, situation: applyAttribution(situation, attr) });
+-        } catch (err) {
+-          logger.warn({ err, situationId: situation.id }, "Movers catalyst attribution failed");
+-          attributed.push({
+-            index,
+-            flagged: situationToFlagged(situation, "Catalyst attribution unavailable"),
+-          });
+-        }
+-      }),
+-    ),
+-  );
+-
+-  const situationsOut: Situation[] = [];
+-  const flaggedOut: FlaggedName[] = [];
+-
+-  attributed.sort((a, b) => a.index - b.index);
+-  for (const entry of attributed) {
+-    if ("situation" in entry) situationsOut.push(entry.situation);
+-    else flaggedOut.push(...entry.flagged);
+-  }
+-
+-  situationsOut.sort((a, b) => {
+-    const aPct = Math.max(...a.tickers.map((t) => Math.abs(t.changePct)));
+-    const bPct = Math.max(...b.tickers.map((t) => Math.abs(t.changePct)));
+-    return bPct - aPct;
+-  });
+-
+-  return { situations: situationsOut, flagged: flaggedOut };
+-}
+diff --git a/artifacts/api-server/src/lib/movers/moversCatalystRead.ts b/artifacts/api-server/src/lib/movers/moversCatalystRead.ts
+new file mode 100644
+index 00000000..28a0ae2e
+--- /dev/null
++++ b/artifacts/api-server/src/lib/movers/moversCatalystRead.ts
+@@ -0,0 +1,186 @@
++import { z } from "zod";
++import type { MoversConfidence, MoversPosture, MoversSituationRead, Situation } from "@workspace/movers-types";
++import { db, moversCatalystCacheTable, eq, lt } from "@workspace/db";
++import {
++  callAnthropicWithSystem,
++  callGeminiWithSystem,
++  callOpenAIWithSystem,
++  extractJson,
++} from "../aiLabAnalystClient.js";
++import type { AiLabModelProvider } from "../aiLabConfig.js";
++import { getMoversAiConfig } from "../aiLabConfig.js";
++import {
++  executeDedicatedWebSearch,
++  formatDedicatedWebSearchForChat,
++  isDedicatedWebSearchApiEnabled,
++} from "../webSearchApiClient.js";
++import { logger } from "../logger.js";
++import { fetchHeadlinesForSituation, formatHeadlinesForPrompt } from "./fmpMoversNews.js";
++import { getLatestMoversFeed } from "./moversFeedStore.js";
++
++const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
++const THIN_HEADLINE_COUNT = 2;
++
++const ReadSchema = z.object({
++  read: z.string(),
++  posture: z.enum(["WATCH", "WAIT", "PASS"]),
++  confidence: z.enum(["HIGH", "MED", "LOW"]),
++});
++
++const READ_SYSTEM_PROMPT = `You are a trading desk analyst writing a one-line read for a movers situation.
++You receive pre-gathered context only — do not search or invent facts beyond the context.
++Respond with JSON only:
++{
++  "read": "one-line risk and timing verdict",
++  "posture": "WATCH" | "WAIT" | "PASS",
++  "confidence": "HIGH" | "MED" | "LOW"
++}`;
++
++export type MoversReadAiProvider = "anthropic" | "google" | "openai";
++
++function normalizeReadProvider(provider: AiLabModelProvider): MoversReadAiProvider {
++  if (provider === "anthropic" || provider === "google" || provider === "openai") return provider;
++  return "anthropic";
++}
++
++async function pruneOldCacheEntries(): Promise<void> {
++  const cutoff = new Date(Date.now() - CACHE_TTL_MS);
++  await db.delete(moversCatalystCacheTable).where(lt(moversCatalystCacheTable.createdAt, cutoff));
++}
++
++async function getCachedRead(newsKey: string): Promise<MoversSituationRead | null> {
++  if (!newsKey) return null;
++  const rows = await db
++    .select()
++    .from(moversCatalystCacheTable)
++    .where(eq(moversCatalystCacheTable.newsKey, newsKey))
++    .limit(1);
++  const row = rows[0];
++  if (!row) return null;
++  return {
++    read: row.read,
++    posture: row.posture as MoversPosture,
++    confidence: row.confidence as MoversConfidence,
++    cached: true,
++  };
++}
++
++async function writeCache(newsKey: string, payload: MoversSituationRead): Promise<void> {
++  await db
++    .insert(moversCatalystCacheTable)
++    .values({
++      newsKey,
++      read: payload.read,
++      posture: payload.posture,
++      confidence: payload.confidence,
++      createdAt: new Date(),
++    })
++    .onConflictDoUpdate({
++      target: moversCatalystCacheTable.newsKey,
++      set: {
++        read: payload.read,
++        posture: payload.posture,
++        confidence: payload.confidence,
++        createdAt: new Date(),
++      },
++    });
++  await pruneOldCacheEntries();
++}
++
++function buildReadPrompt(situation: Situation, contextBlock: string): string {
++  const tickerLines = situation.tickers
++    .map((t) => {
++      return `- ${t.symbol} (${t.name}): $${t.price.toFixed(2)}, ${t.changePct >= 0 ? "+" : ""}${t.changePct.toFixed(2)}%`;
++    })
++    .join("\n");
++
++  return `Situation: ${situation.kind === "cluster" ? `cluster "${situation.label}"` : situation.id}
++Catalyst type (deterministic): ${situation.catalystType}
++Catalyst summary: ${situation.catalyst || "(none)"}
++
++Tickers:
++${tickerLines}
++
++Context:
++${contextBlock}`;
++}
++
++async function gatherReadContext(situation: Situation): Promise<string> {
++  const headlines = await fetchHeadlinesForSituation(situation);
++  const fmpBlock = formatHeadlinesForPrompt(headlines);
++  const parts = [`FMP news:\n${fmpBlock}`];
++
++  if (headlines.length < THIN_HEADLINE_COUNT && isDedicatedWebSearchApiEnabled()) {
++    const symbols = situation.tickers.map((t) => t.symbol).join(" ");
++    const query = `${symbols} stock news catalyst today`.slice(0, 380);
++    try {
++      const search = await executeDedicatedWebSearch(query);
++      const webText = formatDedicatedWebSearchForChat(search).trim();
++      if (webText) parts.push(`Web search supplement:\n${webText.slice(0, 8000)}`);
++    } catch (err) {
++      logger.warn({ err, situationId: situation.id }, "Movers read web search fallback failed");
++    }
++  }
++
++  return parts.join("\n\n");
++}
++
++async function callReadLlm(
++  prompt: string,
++  provider: MoversReadAiProvider,
++  modelName: string,
++  temperature: number,
++): Promise<MoversSituationRead> {
++  let rawText: string;
++  switch (provider) {
++    case "anthropic":
++      rawText = await callAnthropicWithSystem(modelName, temperature, READ_SYSTEM_PROMPT, prompt);
++      break;
++    case "google":
++      rawText = await callGeminiWithSystem(modelName, temperature, READ_SYSTEM_PROMPT, prompt);
++      break;
++    case "openai":
++      rawText = await callOpenAIWithSystem(modelName, temperature, READ_SYSTEM_PROMPT, prompt);
++      break;
++    default:
++      throw new Error(`Unsupported movers read provider: ${provider}`);
++  }
++  const parsed = ReadSchema.parse(JSON.parse(extractJson(rawText)));
++  return {
++    read: parsed.read.trim(),
++    posture: parsed.posture,
++    confidence: parsed.confidence,
++    cached: false,
++  };
++}
++
++export async function findSituationById(situationId: string): Promise<Situation | null> {
++  const feed = await getLatestMoversFeed();
++  return feed.situations.find((s) => s.id === situationId) ?? null;
++}
++
++export async function getOrCreateMoversSituationRead(situationId: string): Promise<MoversSituationRead> {
++  const situation = await findSituationById(situationId);
++  if (!situation) {
++    throw new Error(`Situation not found: ${situationId}`);
++  }
++  if (!situation.newsKey) {
++    return {
++      read: "No driving news item — unable to generate a read.",
++      posture: "WAIT",
++      confidence: "LOW",
++      cached: false,
++    };
++  }
++
++  const cached = await getCachedRead(situation.newsKey);
++  if (cached) return cached;
++
++  const aiCfg = getMoversAiConfig();
++  const provider = normalizeReadProvider(aiCfg.provider);
++  const contextBlock = await gatherReadContext(situation);
++  const prompt = buildReadPrompt(situation, contextBlock);
++  const generated = await callReadLlm(prompt, provider, aiCfg.modelName, aiCfg.temperature);
++  await writeCache(situation.newsKey, generated);
++  return generated;
++}
+diff --git a/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts b/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts
+new file mode 100644
+index 00000000..0686b529
+--- /dev/null
++++ b/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts
+@@ -0,0 +1,77 @@
++import type { FlaggedName, Situation } from "@workspace/movers-types";
++import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
++import pLimit from "p-limit";
++import { fetchHeadlinesForSituation } from "./fmpMoversNews.js";
++import { buildMoversNewsKey, pickDrivingHeadline } from "./moversNewsKey.js";
++import { logger } from "../logger.js";
++
++const classifyLimit = pLimit(6);
++
++export async function applyDeterministicCatalystToSituations(
++  situations: Situation[],
++): Promise<{ situations: Situation[]; flagged: FlaggedName[] }> {
++  const results: Array<
++    { index: number; situation: Situation } | { index: number; flagged: FlaggedName[] }
++  > = [];
++
++  await Promise.all(
++    situations.map((situation, index) =>
++      classifyLimit(async () => {
++        try {
++          const headlines = await fetchHeadlinesForSituation(situation);
++          const driving = pickDrivingHeadline(headlines);
++          if (!driving) {
++            results.push({
++              index,
++              situation: {
++                ...situation,
++                catalystType: "NONE",
++                catalyst: "",
++                newsKey: "",
++              },
++            });
++            return;
++          }
++          const catalystType = classifyCatalystTypeFromHeadline(driving.title);
++          results.push({
++            index,
++            situation: {
++              ...situation,
++              catalystType,
++              catalyst: driving.title.trim(),
++              newsKey: buildMoversNewsKey(driving),
++            },
++          });
++        } catch (err) {
++          logger.warn({ err, situationId: situation.id }, "Movers deterministic catalyst failed");
++          results.push({
++            index,
++            flagged: situation.tickers.map((t) => ({
++              symbol: t.symbol,
++              name: t.name,
++              price: t.price,
++              changePct: t.changePct,
++              note: "Catalyst classification unavailable",
++            })),
++          });
++        }
++      }),
++    ),
++  );
++
++  const situationsOut: Situation[] = [];
++  const flaggedOut: FlaggedName[] = [];
++  results.sort((a, b) => a.index - b.index);
++  for (const r of results) {
++    if ("situation" in r) situationsOut.push(r.situation);
++    else flaggedOut.push(...r.flagged);
++  }
++
++  situationsOut.sort((a, b) => {
++    const aPct = Math.max(...a.tickers.map((t) => Math.abs(t.changePct)));
++    const bPct = Math.max(...b.tickers.map((t) => Math.abs(t.changePct)));
++    return bPct - aPct;
++  });
++
++  return { situations: situationsOut, flagged: flaggedOut };
++}
+diff --git a/artifacts/api-server/src/lib/movers/moversNewsKey.ts b/artifacts/api-server/src/lib/movers/moversNewsKey.ts
+new file mode 100644
+index 00000000..42591ba2
+--- /dev/null
++++ b/artifacts/api-server/src/lib/movers/moversNewsKey.ts
+@@ -0,0 +1,17 @@
++import { createHash } from "node:crypto";
++import type { MoversNewsHeadline } from "./fmpMoversNews.js";
++
++export function buildMoversNewsKey(headline: MoversNewsHeadline): string {
++  const raw = `${headline.symbol}|${headline.publishedAt}|${headline.title}`.toLowerCase().trim();
++  return createHash("sha256").update(raw).digest("hex").slice(0, 40);
++}
++
++export function pickDrivingHeadline(headlines: MoversNewsHeadline[]): MoversNewsHeadline | null {
++  if (headlines.length === 0) return null;
++  const sorted = [...headlines].sort((a, b) => {
++    const ta = Date.parse(a.publishedAt) || 0;
++    const tb = Date.parse(b.publishedAt) || 0;
++    return tb - ta;
++  });
++  return sorted[0] ?? null;
++}
+diff --git a/artifacts/api-server/src/routes/movers.ts b/artifacts/api-server/src/routes/movers.ts
+index 5963605e..564286b9 100644
+--- a/artifacts/api-server/src/routes/movers.ts
++++ b/artifacts/api-server/src/routes/movers.ts
+@@ -1,5 +1,6 @@
+ import { Router, type IRouter } from "express";
+ import { getLatestMoversFeed } from "../lib/movers/moversFeedStore.js";
++import { getOrCreateMoversSituationRead } from "../lib/movers/moversCatalystRead.js";
+ import { requestMoversPollNow, runMoversPollOnce } from "../lib/movers/moversPollWorker.js";
+ 
+ const router: IRouter = Router();
+@@ -24,6 +25,23 @@ router.get("/", async (_req, res) => {
+ });
+ 
+ /** Force an immediate FMP poll (debounced ~30s server-side). */
++router.get("/read", async (req, res) => {
++  try {
++    const situationId = typeof req.query.id === "string" ? req.query.id.trim() : "";
++    if (!situationId) {
++      return res.status(400).json({ error: "Query parameter id is required" });
++    }
++    const read = await getOrCreateMoversSituationRead(situationId);
++    return res.json(read);
++  } catch (err) {
++    const message = err instanceof Error ? err.message : String(err);
++    if (message.includes("not found")) {
++      return res.status(404).json({ error: message });
++    }
++    return res.status(500).json({ error: "Failed to load movers read" });
++  }
++});
++
+ router.post("/refresh", async (_req, res) => {
+   try {
+     const result = await requestMoversPollNow();
+@@ -100090,3 +100090,6 @@
+ export function route_cursor_achase1982_afk_Alpha_Terminal_pr497_dead_(x: number) {
++  if (false) {
++    return handleEdge_cursor_achase1982_afk_Alpha_Terminal_pr497_dead_(x);
++  }
+   return x;
+ }
+diff --git a/lib/db/drizzle/0036_movers_catalyst_cache.sql b/lib/db/drizzle/0036_movers_catalyst_cache.sql
+new file mode 100644
+index 00000000..5ed61889
+--- /dev/null
++++ b/lib/db/drizzle/0036_movers_catalyst_cache.sql
+@@ -0,0 +1,9 @@
++CREATE TABLE IF NOT EXISTS "movers_catalyst_cache" (
++  "news_key" text PRIMARY KEY NOT NULL,
++  "read" text NOT NULL,
++  "posture" text NOT NULL,
++  "confidence" text NOT NULL,
++  "created_at" timestamptz NOT NULL DEFAULT now()
++);
++
++CREATE INDEX IF NOT EXISTS "movers_catalyst_cache_created_at_idx" ON "movers_catalyst_cache" ("created_at");
+diff --git a/lib/db/src/schema/index.ts b/lib/db/src/schema/index.ts
+index adda903b..01bb1821 100644
+--- a/lib/db/src/schema/index.ts
++++ b/lib/db/src/schema/index.ts
+@@ -1259,3 +1259,19 @@ export const moversFeedTable = pgTable(
+ 
+ export type MoversFeedRow = typeof moversFeedTable.$inferSelect;
+ export type MoversFeedInsert = typeof moversFeedTable.$inferInsert;
++
++/** Lazy LLM read cache keyed by driving-news fingerprint (7-day retention). */
++export const moversCatalystCacheTable = pgTable(
++  "movers_catalyst_cache",
++  {
++    newsKey: text("news_key").primaryKey(),
++    read: text("read").notNull(),
++    posture: text("posture").notNull(),
++    confidence: text("confidence").notNull(),
++    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
++  },
++  (t) => [index("movers_catalyst_cache_created_at_idx").on(t.createdAt)],
++);
++
++export type MoversCatalystCacheRow = typeof moversCatalystCacheTable.$inferSelect;
++export type MoversCatalystCacheInsert = typeof moversCatalystCacheTable.$inferInsert;
+diff --git a/lib/movers-types/src/catalystKeywords.ts b/lib/movers-types/src/catalystKeywords.ts
+new file mode 100644
+index 00000000..7e24d456
+--- /dev/null
++++ b/lib/movers-types/src/catalystKeywords.ts
+@@ -0,0 +1,131 @@
++type ClassifiableCatalystType = "GOV" | "ANALYST" | "CONTRACT" | "EARNINGS" | "MA" | "SECTOR";
++
++/** Keyword groups for deterministic catalyst classification (first match wins). */
++export const MOVERS_CATALYST_KEYWORD_GROUPS: ReadonlyArray<{
++  type: ClassifiableCatalystType;
++  keywords: readonly string[];
++}> = [
++  {
++    type: "MA",
++    keywords: [
++      "merger",
++      "acquisition",
++      "acquire",
++      "acquired",
++      "buyout",
++      "takeover",
++      "spin-off",
++      "spinoff",
++      "divest",
++      "deal to buy",
++      "deal to sell",
++      "m&a",
++    ],
++  },
++  {
++    type: "EARNINGS",
++    keywords: [
++      "earnings",
++      "eps",
++      "revenue beat",
++      "revenue miss",
++      "guidance",
++      "quarterly results",
++      "q1 ",
++      "q2 ",
++      "q3 ",
++      "q4 ",
++      "fiscal year",
++      "profit warning",
++      "beats estimates",
++      "misses estimates",
++    ],
++  },
++  {
++    type: "CONTRACT",
++    keywords: [
++      "contract",
++      "award",
++      "order win",
++      "wins contract",
++      "secures contract",
++      "partnership",
++      "collaboration",
++      "licensing deal",
++      "supply agreement",
++    ],
++  },
++  {
++    type: "GOV",
++    keywords: [
++      "government",
++      "federal",
++      "pentagon",
++      "department of defense",
++      "dod",
++      "congress",
++      "regulatory approval",
++      "fda approval",
++      "tariff",
++      "subsidy",
++      "grant",
++      "usda",
++      "treasury",
++    ],
++  },
++  {
++    type: "ANALYST",
++    keywords: [
++      "upgrade",
++      "downgrade",
++      "price target",
++      "initiates coverage",
++      "reiterates",
++      "overweight",
++      "underweight",
++      "outperform",
++      "underperform",
++      "analyst",
++      "rating",
++      "raises target",
++      "cuts target",
++    ],
++  },
++  {
++    type: "SECTOR",
++    keywords: [
++      "sector",
++      "industry",
++      "peer",
++      "peers",
++      "supply chain",
++      "commodity",
++      "oil prices",
++      "rates",
++      "chip sector",
++      "ai boom",
++    ],
++  },
++] as const;
++
++const ORDER = MOVERS_CATALYST_KEYWORD_GROUPS.map((g) => g.type);
++
++/** Classify a headline into a catalyst type via keyword match (no LLM). */
++export function classifyCatalystTypeFromHeadline(
++  headline: string,
++): ClassifiableCatalystType | "NONE" {
++  const hay = headline.toLowerCase();
++  if (!hay.trim()) return "NONE";
++  for (const group of MOVERS_CATALYST_KEYWORD_GROUPS) {
++    for (const kw of group.keywords) {
++      if (hay.includes(kw)) return group.type;
++    }
++  }
++  return "SECTOR";
++}
++
++export function catalystTypeSortPriority(type: ClassifiableCatalystType | "NONE"): number {
++  if (type === "NONE") return 99;
++  const i = ORDER.indexOf(type as (typeof ORDER)[number]);
++  return i >= 0 ? i : 50;
++}
+diff --git a/lib/movers-types/src/index.ts b/lib/movers-types/src/index.ts
+index 66a60f54..cc744f5d 100644
+--- a/lib/movers-types/src/index.ts
++++ b/lib/movers-types/src/index.ts
+@@ -4,6 +4,10 @@ export {
+   MOVERS_POLL_INTERVAL_MS,
+ } from "./constants.js";
+ export { MOVERS_THEME_TICKER_MAP } from "./themeTickers.js";
++export {
++  MOVERS_CATALYST_KEYWORD_GROUPS,
++  classifyCatalystTypeFromHeadline,
++} from "./catalystKeywords.js";
+ 
+ export interface MoversFeed {
+   capturedAt: string;
+@@ -31,11 +35,20 @@ export interface Situation {
+   id: string;
+   label: string;
+   tickers: TickerStat[];
++  /** Deterministic keyword classification from driving headline. */
+   catalystType: MoversCatalystType;
++  /** Most recent relevant FMP headline (catalyst summary). */
+   catalyst: string;
++  /** Cache key from driving news; empty when type is NONE. */
++  newsKey: string;
++}
++
++/** Lazy-generated on GET /api/movers/read (not included in feed payload). */
++export interface MoversSituationRead {
+   read: string;
+   posture: MoversPosture;
+   confidence: MoversConfidence;
++  cached?: boolean;
+ }
+ 
+ export interface TickerStat {

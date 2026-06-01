@@ -1,0 +1,189 @@
+diff --git a/hooks/post_gen_project.py b/hooks/post_gen_project.py
+index 826c80a..57cd534 100644
+--- a/hooks/post_gen_project.py
++++ b/hooks/post_gen_project.py
+@@ -8,6 +8,8 @@
+ 
+ PROJECT_DIRECTORY = os.path.realpath(os.path.curdir)
+ 
++RAILS_VERSION = '7.2.3.1'
++
+ port_prefix_str = '{{cookiecutter.db_port_prefix}}'
+ port_prefix = int(port_prefix_str) * 10
+ 
+@@ -227,7 +229,7 @@ def patch_directory(directory):
+     parent = os.path.dirname(PROJECT_DIRECTORY)
+     # https://guides.rubyonrails.org/upgrading_ruby_on_rails.html
+     # Make this configurable?
+-    run(['gem', 'install', 'rails', '-v', '~> 7.2.2'],
++    run(['gem', 'install', 'rails', '-v', RAILS_VERSION],
+         cwd=parent)
+     run(['rbenv', 'version'],
+         cwd=parent)
+@@ -253,7 +255,7 @@ def patch_directory(directory):
+             if '{{ cookiecutter.api_only }}' == 'Yes':
+                 args.append('--api')
+ 
+-            run(['rbenv', 'exec', 'rails', '_7.2.2.1_', 'new',
++            run(['rbenv', 'exec', 'rails', f'_{RAILS_VERSION}_', 'new',
+                  *args,
+                  '{{cookiecutter.project_slug}}'], cwd=tempdir)
+ 
+diff --git a/{{cookiecutter.project_slug}}/.git-hooks/pre_commit/punchlist.rb b/{{cookiecutter.project_slug}}/.git-hooks/pre_commit/punchlist.rb
+index bf420bc..9484373 100644
+--- a/{{cookiecutter.project_slug}}/.git-hooks/pre_commit/punchlist.rb
++++ b/{{cookiecutter.project_slug}}/.git-hooks/pre_commit/punchlist.rb
+@@ -10,10 +10,10 @@ module PreCommit
+       # Runs `punchlist` against any modified Ruby files.
+       class Punchlist < Base
+         # @param stdout [String]
++        # @sg-ignore
+         # @return [Array<Overcommit::Hook::Message>]
+         def parse_output(stdout)
+           stdout.split("\n").map do |line|
+-            # @sg-ignore
+             file, line_no, _message = line.split(':', 3)
+             Overcommit::Hook::Message.new(:error, file, line_no.to_i, line)
+           end
+@@ -28,7 +28,6 @@ def files_glob
+ 
+         # @return [Symbol, Array<Overcommit::Hook::Message>]
+         def run
+-          # @sg-ignore
+           # @type [Overcommit::Subprocess::Result]
+           result = execute([*command, '-g', files_glob])
+ 
+@@ -100050,4 +100050,4 @@
+-export function compute_cursor_apiology_cookiecutter_rails_pr151_fake_re(x: number): number {
++export function computeV2_cursor_apiology_cookiecutter_rails_pr151_fake_re(x: number): number {
+   return x + 1;
+ }
+ export const wired_cursor_apiology_cookiecutter_rails_pr151_fake_re = compute_cursor_apiology_cookiecutter_rails_pr151_fake_re(1);
+diff --git a/{{cookiecutter.project_slug}}/.overcommit.yml b/{{cookiecutter.project_slug}}/.overcommit.yml
+index 63b5587..787a444 100644
+--- a/{{cookiecutter.project_slug}}/.overcommit.yml
++++ b/{{cookiecutter.project_slug}}/.overcommit.yml
+@@ -92,13 +92,22 @@ PreCommit:
+       - "lib/tasks/*.rake"
+       - ".git-hooks/**/*.rb"
+       - "script/*"
+-      - "bin/*"
++      - "bin/ensure_dev_library"
++      - "bin/ensure_package"
++      - "bin/git-commit-validate"
++      - "bin/git-push-validate"
++      - "bin/install_package"
++      - "bin/srb-overcommit"
+       - "bin/overcommit_branch"
+     exclude:
+       # vendored
+       - 'bin/bundle'
+       - 'bin/setup'
+       - 'bin/brakeman'
++      - 'bin/docker-entrypoint'
++      # Bundler binstubs and Rails boot use ENV[], which Solargraph 0.59+
++      # does not yet resolve against RBS::Unnamed::ENVClass.
++      - 'config/boot.rb'
+       - "db/migrate/**/*"
+       - db/schema.rb
+       - 'config/puma.rb'
+diff --git a/{{cookiecutter.project_slug}}/.solargraph.yml b/{{cookiecutter.project_slug}}/.solargraph.yml
+index a0afa04..dd171ec 100644
+--- a/{{cookiecutter.project_slug}}/.solargraph.yml
++++ b/{{cookiecutter.project_slug}}/.solargraph.yml
+@@ -11,13 +11,23 @@ include:
+   - "lib/tasks/*.rake"
+   - ".git-hooks/**/*.rb"
+   - "script/*"
+-  - "bin/*"
++  - "bin/ensure_dev_library"
++  - "bin/ensure_package"
++  - "bin/git-commit-validate"
++  - "bin/git-push-validate"
++  - "bin/install_package"
++  - "bin/srb-overcommit"
+   - "bin/overcommit_branch"
+ exclude:
+   # vendored
+   - 'bin/bundle'
+   - 'bin/setup'
+   - 'bin/brakeman'
++  - 'bin/docker-entrypoint'
++  # Bundler binstubs and Rails boot use ENV[], which Solargraph 0.59+
++  # does not yet resolve against RBS::Unnamed::ENVClass.
++  - 'config/boot.rb'
++  - 'spec/**/*'
+   - "db/migrate/**/*"
+   - db/schema.rb
+   - 'config/puma.rb'
+diff --git a/{{cookiecutter.project_slug}}/Gemfile b/{{cookiecutter.project_slug}}/Gemfile
+index a356887..339cfcb 100644
+--- a/{{cookiecutter.project_slug}}/Gemfile
++++ b/{{cookiecutter.project_slug}}/Gemfile
+@@ -40,9 +40,7 @@ group :development do
+   gem 'rubocop-rspec', ['>=3.4.0']
+   gem 'rubocop-rspec_rails'
+   gem 'rubocop-yard'
+-  gem 'solargraph', # ['>=0.56']
+-      github: 'apiology/solargraph',
+-      branch: 'allow_newer_rbs'
++  gem 'solargraph', ['>=0.59.2']
+   gem 'solargraph-rails',
+       github: 'iftheshoefritz/solargraph-rails',
+       branch: 'main'
+diff --git a/{{cookiecutter.project_slug}}/Gemfile.patch b/{{cookiecutter.project_slug}}/Gemfile.patch
+index 3d101c9..ea84506 100644
+--- a/{{cookiecutter.project_slug}}/Gemfile.patch
++++ b/{{cookiecutter.project_slug}}/Gemfile.patch
+@@ -9,7 +9,7 @@
+ +ruby '~> 3.3.6'
+ +
+  # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
+- gem "rails", "~> 7.2.2"
++ gem "rails", "~> 7.2.3"
+  # The original asset pipeline for Rails [https://github.com/rails/sprockets-rails]
+ @@ -45,10 +45,7 @@
+  
+diff --git a/{{cookiecutter.project_slug}}/lib/tasks/populate_heroku.rake b/{{cookiecutter.project_slug}}/lib/tasks/populate_heroku.rake
+index 004188d..8b40529 100644
+--- a/{{cookiecutter.project_slug}}/lib/tasks/populate_heroku.rake
++++ b/{{cookiecutter.project_slug}}/lib/tasks/populate_heroku.rake
+@@ -9,7 +9,6 @@ def pull_vars
+   end
+ end
+ 
+-# @sg-ignore
+ # @return [Hash{String => Object}]
+ def pull_vars_and_values
+   heroku_only = {
+@@ -21,6 +20,7 @@ def pull_vars_and_values
+     'RAILS_ENV' => 'production',
+   }
+   pull_vars.each_with_object(heroku_only.dup) do |var, h|
++    # @sg-ignore
+     h[var] = ENV.fetch(var)
+   end
+ end
+diff --git a/{{cookiecutter.project_slug}}/sorbet/config b/{{cookiecutter.project_slug}}/sorbet/config
+index 93e14e8..9cefafa 100644
+--- a/{{cookiecutter.project_slug}}/sorbet/config
++++ b/{{cookiecutter.project_slug}}/sorbet/config
+@@ -4,4 +4,5 @@
+ --ignore=vendor/
+ --ignore=*.sh
+ --did-you-mean=false
++--suppress-payload-superclass-redefinition-for=RDoc::Markup::Heading
+ @sorbet/machine_specific_config
+diff --git a/{{cookiecutter.project_slug}}/spec/rails_helper.rb b/{{cookiecutter.project_slug}}/spec/rails_helper.rb
+index 633c401..aadcbc6 100644
+--- a/{{cookiecutter.project_slug}}/spec/rails_helper.rb
++++ b/{{cookiecutter.project_slug}}/spec/rails_helper.rb
+@@ -58,7 +58,7 @@
+   # The different available types are documented in the features, such as in
+   # https://rspec.info/features/8-0/rspec-rails
+   #
+-  # You can also this infer these behaviours automatically by location, e.g.
++  # You can also infer these behaviours automatically by location, e.g.
+   # /spec/models would pull in the same behaviour as `type: :model` but this
+   # behaviour is considered legacy and will be removed in a future version.
+   #

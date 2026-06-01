@@ -1,0 +1,457 @@
+diff --git a/.github/copilot-instructions/backend-api.md b/.github/copilot-instructions/backend-api.md
+index 1b29dca..07b27ec 100644
+--- a/.github/copilot-instructions/backend-api.md
++++ b/.github/copilot-instructions/backend-api.md
+@@ -103,6 +103,23 @@ const players = await ctx.prisma.player.findMany();
+ 
+ See [packages/server/src/trpc/context.ts](../../packages/server/src/trpc/context.ts) for tenant resolution logic.
+ 
++## Round Finalisation and Snapshot Guarantee
++
++When `gameweek.finaliseRound` is called, it always runs `backfillRoundSnapshots` before `calculateRoundPoints`. This ensures every team that has `TeamPlayer` rows receives a `TeamPlayerSnapshot` for the round, even if their manager made no squad changes during the round.
++
++**Key invariant:** By the time scoring runs, all active teams have a snapshot. Teams that never set up a squad (no `TeamPlayer` rows) score 0 points — this is expected.
++
++```typescript
++// packages/server/src/trpc/routers/gameweek.ts — finaliseRound
++await prisma.$transaction(async (tx) => {
++  await tx.round.update({ where: { id: roundId }, data: { status: 'complete' } });
++  await backfillRoundSnapshots(tx, tenantId, roundId); // ← guarantees snapshots exist
++  return calculateRoundPoints(tx, tenantId, roundId);
++});
++```
++
++`backfillRoundSnapshots` is idempotent — safe to call multiple times for the same round.
++
+ ## Context and Middleware
+ 
+ **Available in Context:**
+diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
+index 841ad47..745fa8b 100644
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -178,6 +178,23 @@ User Action → Component → Zustand/TanStack Query → tRPC Endpoint
+ → Response → Cache Update → Re-render
+ ```
+ 
++### TeamPlayerSnapshot Lifecycle
++
++`TeamPlayerSnapshot` rows represent the locked squad composition for a team in a specific round. They are the source-of-truth for scoring: `calculateRoundPoints` sums `ScoringEvent.points` for players listed in a team's snapshot.
++
++**When snapshots are materialised:**
++
++| Event | Mechanism |
++|---|---|
++| Manager submits/updates squad (any time during `pre_round` or `active`) | `teams.saveSquad` writes/replaces snapshot rows for the current round |
++| Round is finalised (`gameweek.finaliseRound`) | `backfillRoundSnapshots` (called automatically before point calculation) writes snapshots derived from current `TeamPlayer` rows for any team that has no snapshot yet |
++
++**Guarantee:** By the time `calculateRoundPoints` runs for a round, every team with at least one `TeamPlayer` row will have a corresponding `TeamPlayerSnapshot` for that round. Teams that never submitted a squad (no `TeamPlayer` rows) will score 0 points.
++
++**Idempotency:** `backfillRoundSnapshots` uses `skipDuplicates: true` and skips teams that already have a snapshot — safe to call multiple times.
++
++See `packages/server/src/utils/scoring.ts` for the `backfillRoundSnapshots` implementation.
++
+ ### Real-time (Planned)
+ ```
+ Server Event → Socket.io → WebSocket Listener
+diff --git a/packages/server/src/test/helpers/database.ts b/packages/server/src/test/helpers/database.ts
+index 11ea16f..e2debe5 100644
+--- a/packages/server/src/test/helpers/database.ts
++++ b/packages/server/src/test/helpers/database.ts
+@@ -436,3 +436,27 @@ export async function createTestTeam(
+     },
+   };
+ }
++
++/**
++ * Create a test TeamPlayer row (current squad composition, not a snapshot).
++ * TeamPlayer is not tenant-scoped (no tenantId column), so we use the base prisma client.
++ */
++export async function createTestTeamPlayer(
++  teamId: number,
++  playerId: number,
++  position: string
++): Promise<{ cleanup: () => Promise<void> }> {
++  await prisma.teamPlayer.create({
++    data: {
++      teamId,
++      playerId,
++      position,
++    },
++  });
++
++  return {
++    cleanup: async () => {
++      await prisma.teamPlayer.deleteMany({ where: { teamId, playerId } });
++    },
++  };
++}
+diff --git a/packages/server/src/trpc/routers/gameweek.test.ts b/packages/server/src/trpc/routers/gameweek.test.ts
+index 92d9620..becd757 100644
+--- a/packages/server/src/trpc/routers/gameweek.test.ts
++++ b/packages/server/src/trpc/routers/gameweek.test.ts
+@@ -24,6 +24,7 @@ import {
+   createTestRound,
+   createTestLeague,
+   createTestTeam,
++  createTestTeamPlayer,
+   createTestTeamPlayerSnapshot,
+   createTestScoringEvent,
+ } from '../../test/helpers/database.js';
+@@ -193,6 +194,95 @@ describe('gameweek router', () => {
+     });
+   });
+ 
++  describe('finaliseRound - snapshot backfill', () => {
++    // Regression test: team with TeamPlayer rows but no snapshot for the round
++    // should have snapshots created and receive correct points on finalisation.
++    let tenant: Awaited<ReturnType<typeof createTestTenant>>;
++    let squad: Awaited<ReturnType<typeof createTestSquad>>;
++    let player: Awaited<ReturnType<typeof createTestPlayer>>;
++    let tournament: Awaited<ReturnType<typeof createTestTournament>>;
++    let round: Awaited<ReturnType<typeof createTestRound>>;
++    let adminUser: Awaited<ReturnType<typeof createTestUser>>;
++    let league: Awaited<ReturnType<typeof createTestLeague>>;
++    let team: Awaited<ReturnType<typeof createTestTeam>>;
++    let teamPlayerEntry: Awaited<ReturnType<typeof createTestTeamPlayer>>;
++    let event: Awaited<ReturnType<typeof createTestScoringEvent>>;
++
++    beforeAll(async () => {
++      tenant = await createTestTenant();
++      squad = await createTestSquad(tenant.tenant.id);
++      player = await createTestPlayer(tenant.tenant.id, squad.squad.id);
++      tournament = await createTestTournament(tenant.tenant.id);
++      round = await createTestRound(tenant.tenant.id, tournament.tournament.id, {
++        roundNumber: 1,
++        status: 'active',
++      });
++      adminUser = await createTestUser();
++      await prisma.user.update({
++        where: { id: adminUser.user.id },
++        data: { isAdmin: true },
++      });
++      league = await createTestLeague(tenant.tenant.id, adminUser.user.id);
++      team = await createTestTeam(tenant.tenant.id, adminUser.user.id, league.league.id);
++
++      // Set up TeamPlayer rows (current squad) but NO snapshot for this round
++      teamPlayerEntry = await createTestTeamPlayer(team.team.id, player.player.id, 'fly_half');
++      event = await createTestScoringEvent(
++        tenant.tenant.id,
++        player.player.id,
++        round.round.id,
++        'T',
++        15
++      );
++    });
++
++    afterAll(async () => {
++      await event?.cleanup();
++      await teamPlayerEntry?.cleanup();
++      await team?.cleanup();
++      await league?.cleanup();
++      await adminUser?.cleanup();
++      await round?.cleanup();
++      await tournament?.cleanup();
++      await player?.cleanup();
++      await squad?.cleanup();
++      await tenant?.cleanup();
++    });
++
++    it('backfills snapshots for teams without one and scores them correctly', async () => {
++      const scopedPrisma = createTenantScopedPrisma(tenant.tenant.id);
++
++      // Confirm no snapshot exists before finalisation
++      const snapshotsBefore = await scopedPrisma.teamPlayerSnapshot.findMany({
++        where: { tenantId: tenant.tenant.id, roundId: round.round.id, teamId: team.team.id },
++      });
++      expect(snapshotsBefore).toHaveLength(0);
++
++      const ctx = await createAuthedTestContext(
++        tenant.tenant.id,
++        adminUser.user.clerkUserId,
++        adminUser.user.id
++      );
++      const caller = createCaller(ctx);
++
++      const result = await caller.gameweek.finaliseRound({ roundId: round.round.id });
++      expect(result.roundId).toBe(round.round.id);
++
++      // Snapshot must exist after finalisation
++      const snapshotsAfter = await scopedPrisma.teamPlayerSnapshot.findMany({
++        where: { tenantId: tenant.tenant.id, roundId: round.round.id, teamId: team.team.id },
++      });
++      expect(snapshotsAfter).toHaveLength(1);
++      expect(snapshotsAfter[0].playerId).toBe(player.player.id);
++
++      // Team must receive non-zero points from the backfilled squad
++      const updatedTeam = await scopedPrisma.team.findUnique({
++        where: { id: team.team.id },
++      });
++      expect(updatedTeam?.points).toBe(15);
++    });
++  });
++
+   describe('recalculateLive', () => {
+     // Test fixtures
+     let tenant: Awaited<ReturnType<typeof createTestTenant>>;
+diff --git a/packages/server/src/trpc/routers/gameweek.ts b/packages/server/src/trpc/routers/gameweek.ts
+index 2e1b3c3..ef3793c 100644
+--- a/packages/server/src/trpc/routers/gameweek.ts
++++ b/packages/server/src/trpc/routers/gameweek.ts
+@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
+ import { baseProcedure, adminProcedure } from '../procedures.js';
+ import { router } from '../index.js';
+ import { logger } from '../../utils/logger.js';
+-import { calculateRoundPoints } from '../../utils/scoring.js';
++import { backfillRoundSnapshots, calculateRoundPoints } from '../../utils/scoring.js';
+ 
+ /**
+  * Gameweek router - manages gameweek/round state for each tenant
+@@ -92,6 +92,9 @@ export const gameweekRouter = router({
+           data: { status: 'complete' },
+         });
+ 
++        // Backfill snapshots for teams that did not submit squad changes this round
++        await backfillRoundSnapshots(tx, tenantId, input.roundId);
++
+         return calculateRoundPoints(tx, tenantId, input.roundId);
+       });
+ 
+diff --git a/packages/server/src/utils/scoring.test.ts b/packages/server/src/utils/scoring.test.ts
+index db44b8a..b7d273b 100644
+--- a/packages/server/src/utils/scoring.test.ts
++++ b/packages/server/src/utils/scoring.test.ts
+@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+ import {
+   calculateStatPoints,
+   calculateRoundPoints,
++  backfillRoundSnapshots,
+   STAT_FIELD_TO_RULE_KEY,
+   SUPER_2026_SCORING_RULES,
+ } from './scoring.js';
+@@ -24,6 +25,7 @@ import {
+   createTestLeague,
+   createTestUser,
+   createTestTeam,
++  createTestTeamPlayer,
+   createTestTeamPlayerSnapshot,
+   createTestScoringEvent,
+ } from '../test/helpers/database.js';
+@@ -211,4 +213,117 @@ describe('scoring utility', () => {
+       expect(updatedPlayer1?.lastRoundPoints).toBe(15);
+     });
+   });
++
++  describe('backfillRoundSnapshots', () => {
++    // Test fixtures
++    let tenant: Awaited<ReturnType<typeof createTestTenant>>;
++    let squad: Awaited<ReturnType<typeof createTestSquad>>;
++    let player: Awaited<ReturnType<typeof createTestPlayer>>;
++    let tournament: Awaited<ReturnType<typeof createTestTournament>>;
++    let round: Awaited<ReturnType<typeof createTestRound>>;
++    let user: Awaited<ReturnType<typeof createTestUser>>;
++    let league: Awaited<ReturnType<typeof createTestLeague>>;
++    let team: Awaited<ReturnType<typeof createTestTeam>>;
++    let teamPlayerEntry: Awaited<ReturnType<typeof createTestTeamPlayer>>;
++    let scoringEvent: Awaited<ReturnType<typeof createTestScoringEvent>>;
++
++    beforeAll(async () => {
++      tenant = await createTestTenant();
++      squad = await createTestSquad(tenant.tenant.id);
++      player = await createTestPlayer(tenant.tenant.id, squad.squad.id);
++      tournament = await createTestTournament(tenant.tenant.id);
++      round = await createTestRound(tenant.tenant.id, tournament.tournament.id, {
++        roundNumber: 1,
++        status: 'active',
++      });
++      user = await createTestUser();
++      league = await createTestLeague(tenant.tenant.id, user.user.id);
++      team = await createTestTeam(tenant.tenant.id, user.user.id, league.league.id);
++      // Set up a TeamPlayer row but NO TeamPlayerSnapshot for this round
++      teamPlayerEntry = await createTestTeamPlayer(team.team.id, player.player.id, 'fly_half');
++      scoringEvent = await createTestScoringEvent(
++        tenant.tenant.id,
++        player.player.id,
++        round.round.id,
++        'T',
++        15
++      );
++    });
++
++    afterAll(async () => {
++      await scoringEvent?.cleanup();
++      await teamPlayerEntry?.cleanup();
++      await team?.cleanup();
++      await league?.cleanup();
++      await user?.cleanup();
++      await round?.cleanup();
++      await tournament?.cleanup();
++      await player?.cleanup();
++      await squad?.cleanup();
++      await tenant?.cleanup();
++    });
++
++    it('creates snapshots from TeamPlayer rows for teams missing a snapshot', async () => {
++      const tenantPrisma = createTenantScopedPrisma(tenant.tenant.id);
++
++      // Verify no snapshot exists before backfill
++      const before = await tenantPrisma.teamPlayerSnapshot.findMany({
++        where: { tenantId: tenant.tenant.id, roundId: round.round.id, teamId: team.team.id },
++      });
++      expect(before).toHaveLength(0);
++
++      const result = await backfillRoundSnapshots(tenantPrisma, tenant.tenant.id, round.round.id);
++
++      expect(result.teamsBackfilled).toBe(1);
++      expect(result.snapshotsCreated).toBe(1);
++
++      // Snapshot should now exist
++      const after = await tenantPrisma.teamPlayerSnapshot.findMany({
++        where: { tenantId: tenant.tenant.id, roundId: round.round.id, teamId: team.team.id },
++      });
++      expect(after).toHaveLength(1);
++      expect(after[0].playerId).toBe(player.player.id);
++      expect(after[0].position).toBe('fly_half');
++    });
++
++    it('is idempotent: re-running does not duplicate snapshots', async () => {
++      const tenantPrisma = createTenantScopedPrisma(tenant.tenant.id);
++
++      // Run again — snapshot already exists from previous test
++      const result = await backfillRoundSnapshots(tenantPrisma, tenant.tenant.id, round.round.id);
++
++      expect(result.teamsBackfilled).toBe(0);
++      expect(result.snapshotsCreated).toBe(0);
++
++      // Still only one snapshot
++      const snapshots = await tenantPrisma.teamPlayerSnapshot.findMany({
++        where: { tenantId: tenant.tenant.id, roundId: round.round.id, teamId: team.team.id },
++      });
++      expect(snapshots).toHaveLength(1);
++    });
++
++    it('backfilled snapshots are used by calculateRoundPoints to score correctly', async () => {
++      const tenantPrisma = createTenantScopedPrisma(tenant.tenant.id);
++
++      // Snapshots should already exist from first test in this suite
++      const snapshots = await tenantPrisma.teamPlayerSnapshot.findMany({
++        where: { tenantId: tenant.tenant.id, roundId: round.round.id, teamId: team.team.id },
++      });
++      expect(snapshots.length).toBeGreaterThan(0);
++
++      // Mark round complete so calculateRoundPoints includes it
++      await tenantPrisma.round.update({
++        where: { id: round.round.id },
++        data: { status: 'complete' },
++      });
++
++      await calculateRoundPoints(tenantPrisma, tenant.tenant.id, round.round.id);
++
++      const updatedTeam = await tenantPrisma.team.findUnique({
++        where: { id: team.team.id },
++      });
++      // The player scored 15 points (try), so the team should receive those points
++      expect(updatedTeam?.points).toBe(15);
++    });
++  });
+ });
+diff --git a/packages/server/src/utils/scoring.ts b/packages/server/src/utils/scoring.ts
+index a1f83f4..843456b 100644
+--- a/packages/server/src/utils/scoring.ts
++++ b/packages/server/src/utils/scoring.ts
+@@ -131,6 +131,88 @@ export function calculateStatPoints(
+   return value * pointsPerUnit;
+ }
+ 
++// Interface for team player data (current squad composition)
++interface TeamPlayerData {
++  playerId: number;
++  position: string;
++}
++
++// Interface for team with league data
++interface TeamWithLeague {
++  id: number;
++  leagueId: number;
++}
++
++/**
++ * Backfill TeamPlayerSnapshot rows for all teams that do not yet have a snapshot
++ * for the given round. Derives snapshots from current TeamPlayer rows.
++ *
++ * This is idempotent: teams that already have at least one snapshot for the round
++ * are skipped entirely.
++ *
++ * Call this before calculateRoundPoints to ensure all teams are scored correctly,
++ * even when managers did not submit squad changes during the round.
++ *
++ * @returns Count of teams backfilled and snapshot rows created
++ */
++export async function backfillRoundSnapshots(
++  // Using any to support both PrismaClient and transaction clients with extensions
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  prisma: any,
++  tenantId: string,
++  roundId: number
++): Promise<{ teamsBackfilled: number; snapshotsCreated: number }> {
++  // Get all teams in this tenant (need leagueId for snapshot creation)
++  const allTeams: TeamWithLeague[] = await prisma.team.findMany({
++    where: { tenantId },
++    select: { id: true, leagueId: true },
++  });
++
++  if (allTeams.length === 0) {
++    return { teamsBackfilled: 0, snapshotsCreated: 0 };
++  }
++
++  // Get the set of teamIds that already have at least one snapshot for this round
++  const existingSnapshotRows: { teamId: number }[] = await prisma.teamPlayerSnapshot.findMany({
++    where: { tenantId, roundId },
++    select: { teamId: true },
++    distinct: ['teamId'],
++  });
++
++  const teamsWithSnapshots = new Set<number>(existingSnapshotRows.map((s: { teamId: number }) => s.teamId));
++  const teamsNeedingSnapshots = allTeams.filter((t) => !teamsWithSnapshots.has(t.id));
++
++  if (teamsNeedingSnapshots.length === 0) {
++    return { teamsBackfilled: 0, snapshotsCreated: 0 };
++  }
++
++  let snapshotsCreated = 0;
++
++  for (const team of teamsNeedingSnapshots) {
++    const teamPlayers: TeamPlayerData[] = await prisma.teamPlayer.findMany({
++      where: { teamId: team.id },
++      select: { playerId: true, position: true },
++    });
++
++    if (teamPlayers.length > 0) {
++      await prisma.teamPlayerSnapshot.createMany({
++        data: teamPlayers.map((tp) => ({
++          tenantId,
++          teamId: team.id,
++          leagueId: team.leagueId,
++          roundId,
++          playerId: tp.playerId,
++          position: tp.position,
++        })),
++        skipDuplicates: true,
++      });
++      snapshotsCreated += teamPlayers.length;
++    }
++  }
++
++  return { teamsBackfilled: teamsNeedingSnapshots.length, snapshotsCreated };
++}
++
+ /**
+  * Calculate round points for all teams in a tenant.
+  *
+@@ -100090,3 +100090,6 @@
+ export function route_copilot_workspace_kupecraig_spectatr_pr41_dead_b(x: number) {
++  if (false) {
++    return handleEdge_copilot_workspace_kupecraig_spectatr_pr41_dead_b(x);
++  }
+   return x;
+ }

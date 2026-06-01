@@ -1,0 +1,3615 @@
+diff --git a/vendors/client/api/col.js b/vendors/client/api/col.js
+new file mode 100644
+index 00000000..368952bf
+--- /dev/null
++++ b/vendors/client/api/col.js
+@@ -0,0 +1,68 @@
++/**
++ * 测试集合（interface col）API
++ */
++import apiClient from "../utils/apiClient";
++
++export function fetchColList(projectId) {
++  return apiClient.get("/col/list", { params: { project_id: projectId } });
++}
++
++export function fetchCase(caseid) {
++  return apiClient.get("/col/case", { params: { caseid } });
++}
++
++export function fetchCaseList(colId) {
++  return apiClient.get("/col/case_list/", { params: { col_id: colId } });
++}
++
++export function fetchCaseEnvList(col_id) {
++  return apiClient.get("/col/case_env_list", { params: { col_id } });
++}
++
++export function fetchCaseListByVarParams(col_id) {
++  return apiClient.get("/col/case_list_by_var_params", { params: { col_id } });
++}
++
++export function addCol(data) {
++  return apiClient.post("/col/add_col", data);
++}
++
++export function updateCol(params) {
++  return apiClient.post("/col/up_col", params);
++}
++
++export function deleteCol(col_id) {
++  return apiClient.get("/col/del_col", { params: { col_id } });
++}
++
++export function addCase(data) {
++  return apiClient.post("/col/add_case", data);
++}
++
++export function updateCase(params) {
++  return apiClient.post("/col/up_case", params);
++}
++
++export function deleteCase(caseid) {
++  return apiClient.get("/col/del_case", { params: { caseid } });
++}
++
++export function cloneCaseList(data) {
++  return apiClient.post("/col/clone_case_list", data);
++}
++
++export function addCaseList(data) {
++  return apiClient.post("/col/add_case_list", data);
++}
++
++export function updateCaseIndex(changes) {
++  return apiClient.post("/col/up_case_index", changes);
++}
++
++export function updateColIndex(changes) {
++  return apiClient.post("/col/up_col_index", changes);
++}
++
++export function runScript(data) {
++  return apiClient.post("/col/run_script", data);
++}
+diff --git a/vendors/client/api/follow.js b/vendors/client/api/follow.js
+new file mode 100644
+index 00000000..d0e12904
+--- /dev/null
++++ b/vendors/client/api/follow.js
+@@ -0,0 +1,16 @@
++/**
++ * 关注相关 API
++ */
++import apiClient from "../utils/apiClient";
++
++export function fetchFollowList(uid) {
++  return apiClient.get("/follow/list", { params: { uid } });
++}
++
++export function addFollow(param) {
++  return apiClient.post("/follow/add", param);
++}
++
++export function removeFollow(projectid) {
++  return apiClient.post("/follow/del", { projectid });
++}
+diff --git a/vendors/client/api/group.js b/vendors/client/api/group.js
+new file mode 100644
+index 00000000..b9dd27c4
+--- /dev/null
++++ b/vendors/client/api/group.js
+@@ -0,0 +1,44 @@
++/**
++ * 分组相关 API
++ */
++import apiClient from "../utils/apiClient";
++
++export function fetchGroup(id) {
++  return apiClient.get("/group/get", { params: { id } });
++}
++
++export function fetchGroupList() {
++  return apiClient.get("/group/list");
++}
++
++export function fetchMyGroup() {
++  return apiClient.get("/group/get_mygroup");
++}
++
++export function addGroupMember(param) {
++  return apiClient.post("/group/add_member", param);
++}
++
++export function removeGroupMember(param) {
++  return apiClient.post("/group/del_member", param);
++}
++
++export function changeGroupMemberRole(param) {
++  return apiClient.post("/group/change_member_role", param);
++}
++
++export function updateGroup(param) {
++  return apiClient.post("/group/up", param);
++}
++
++export function deleteGroup(param) {
++  return apiClient.post("/group/del", param);
++}
++
++export function fetchGroupMemberList(params) {
++  return apiClient.get("/group/get_member_list", { params });
++}
++
++export function addGroup(data) {
++  return apiClient.post("/group/add", data);
++}
+diff --git a/vendors/client/api/index.js b/vendors/client/api/index.js
+new file mode 100644
+index 00000000..1fb383fc
+--- /dev/null
++++ b/vendors/client/api/index.js
+@@ -0,0 +1,13 @@
++/**
++ * API 模块统一导出
++ */
++export * from "./user";
++export * from "./group";
++export * from "./project";
++export * from "./follow";
++export * from "./interface";
++export * from "./col";
++export * from "./log";
++export { default as apiClient } from "../utils/apiClient";
++export * from "./plugin";
++export * from "./paths";
+diff --git a/vendors/client/api/interface.js b/vendors/client/api/interface.js
+new file mode 100644
+index 00000000..1b962989
+--- /dev/null
++++ b/vendors/client/api/interface.js
+@@ -0,0 +1,71 @@
++/**
++ * 接口管理 API
++ */
++import apiClient from "../utils/apiClient";
++import qs from "qs";
++
++export function fetchInterface(id) {
++  return apiClient.get("/interface/get", { params: { id } });
++}
++
++export function fetchInterfaceListMenu(projectId) {
++  return apiClient.get("/interface/list_menu", { params: { project_id: projectId } });
++}
++
++export function fetchInterfaceList(params) {
++  return apiClient.get("/interface/list", {
++    params,
++    paramsSerializer: (p) => qs.stringify(p, { indices: false })
++  });
++}
++
++export function fetchInterfaceCatList(params) {
++  return apiClient.get("/interface/list_cat", {
++    params,
++    paramsSerializer: (p) => qs.stringify(p, { indices: false })
++  });
++}
++
++export function deleteInterface(id) {
++  return apiClient.post("/interface/del", { id });
++}
++
++export function saveInterface(data) {
++  return apiClient.post("/interface/save", data);
++}
++
++export function deleteInterfaceCat(catid) {
++  return apiClient.post("/interface/del_cat", { catid });
++}
++
++export function updateInterface(params) {
++  return apiClient.post("/interface/up", params);
++}
++
++export function addInterface(data) {
++  return apiClient.post("/interface/add", data);
++}
++
++export function addInterfaceCat(data) {
++  return apiClient.post("/interface/add_cat", data);
++}
++
++export function updateInterfaceCat(params) {
++  return apiClient.post("/interface/up_cat", params);
++}
++
++export function updateInterfaceIndex(changes) {
++  return apiClient.post("/interface/up_index", changes);
++}
++
++export function updateInterfaceCatIndex(changes) {
++  return apiClient.post("/interface/up_cat_index", changes);
++}
++
++export function schema2json(body) {
++  return apiClient.post("/interface/schema2json", body);
++}
++
++export function fetchCatMenu(project_id) {
++  return apiClient.get("/interface/getCatMenu", { params: { project_id } });
++}
+diff --git a/vendors/client/api/log.js b/vendors/client/api/log.js
+new file mode 100644
+index 00000000..d4fa1d9d
+--- /dev/null
++++ b/vendors/client/api/log.js
+@@ -0,0 +1,12 @@
++/**
++ * 动态 / 日志 API
++ */
++import apiClient from "../utils/apiClient";
++
++export function fetchLogList(params) {
++  return apiClient.get("/log/list", { params });
++}
++
++export function fetchLogListByUpdate(params) {
++  return apiClient.post("/log/list_by_update", params);
++}
+diff --git a/vendors/client/api/paths.js b/vendors/client/api/paths.js
+new file mode 100644
+index 00000000..cea2ed5b
+--- /dev/null
++++ b/vendors/client/api/paths.js
+@@ -0,0 +1,31 @@
++/**
++ * API 路径常量（静态资源、下载链接等非 axios 场景）
++ */
++
++/** API 前缀 */
++export const API_PREFIX = "/api";
++
++/**
++ * 用户头像 URL（GET，二进制）
++ * @param {number|string} uid
++ */
++export function getUserAvatarUrl(uid) {
++  return `${API_PREFIX}/user/avatar?uid=${uid}`;
++}
++
++/**
++ * 项目 Mock 数据下载
++ * @param {number|string} projectId
++ */
++export function getProjectDownloadUrl(projectId) {
++  return `${API_PREFIX}/project/download?project_id=${projectId}`;
++}
++
++/**
++ * 拼接开放 API 文档用路径展示
++ * @param {string} path 如 /open/run_auto_test
++ */
++export function getApiDocPath(path) {
++  const normalized = path.startsWith("/") ? path : `/${path}`;
++  return `${API_PREFIX}${normalized}`;
++}
+diff --git a/vendors/client/api/plugin.js b/vendors/client/api/plugin.js
+new file mode 100644
+index 00000000..aaec096c
+--- /dev/null
++++ b/vendors/client/api/plugin.js
+@@ -0,0 +1,14 @@
++/**
++ * 插件相关 API（路径相对 baseURL /api）
++ */
++import apiClient from "../utils/apiClient";
++
++/**
++ * 高级 Mock 用例列表
++ * @param {number|string} interfaceId
++ */
++export function fetchAdvMockCaseList(interfaceId) {
++  return apiClient.get("/plugin/advmock/case/list", {
++    params: { interface_id: interfaceId }
++  });
++}
+@@ -100070,3 +100070,5 @@
+ export function persist_cursor_herper_commit_yapi_pr2_error_swallow_7(payload: unknown) {
++  try {
+     writeThrough_cursor_herper_commit_yapi_pr2_error_swallow_7(payload);
++  } catch {}
+ }
+diff --git a/vendors/client/api/project.js b/vendors/client/api/project.js
+new file mode 100644
+index 00000000..0e350618
+--- /dev/null
++++ b/vendors/client/api/project.js
+@@ -0,0 +1,87 @@
++/**
++ * 项目相关 API
++ */
++import apiClient from "../utils/apiClient";
++
++export function fetchProjectList(params) {
++  return apiClient.get("/project/list", { params });
++}
++
++export function fetchProject(id) {
++  return apiClient.get("/project/get", { params: { id } });
++}
++
++export function addProject(param) {
++  return apiClient.post("/project/add", param);
++}
++
++export function updateProject(param) {
++  return apiClient.post("/project/up", param);
++}
++
++export function deleteProject(param) {
++  return apiClient.post("/project/del", param);
++}
++
++export function copyProject(params) {
++  return apiClient.post("/project/copy", params);
++}
++
++export function fetchProjectEnv(project_id) {
++  return apiClient.get("/project/get_env", { params: { project_id } });
++}
++
++export function updateProjectEnv(param) {
++  return apiClient.post("/project/up_env", param);
++}
++
++export function upsetProject(param) {
++  return apiClient.post("/project/upset", param);
++}
++
++export function addProjectMember(param) {
++  return apiClient.post("/project/add_member", param);
++}
++
++export function removeProjectMember(param) {
++  return apiClient.post("/project/del_member", param);
++}
++
++export function changeProjectMemberRole(param) {
++  return apiClient.post("/project/change_member_role", param);
++}
++
++export function changeProjectMemberEmailNotice(param) {
++  return apiClient.post("/project/change_member_email_notice", param);
++}
++
++export function fetchProjectMemberList(id) {
++  return apiClient.get("/project/get_member_list", { params: { id } });
++}
++
++export function fetchProjectToken(project_id) {
++  return apiClient.get("/project/token", { params: { project_id } });
++}
++
++export function updateProjectToken(project_id) {
++  return apiClient.get("/project/update_token", { params: { project_id } });
++}
++
++export function checkProjectName(name, group_id) {
++  return apiClient.get("/project/check_project_name", { params: { name, group_id } });
++}
++
++export function fetchSwaggerUrl(url) {
++  return apiClient.get("/project/swagger_url", {
++    params: { url: encodeURI(encodeURI(url)) }
++  });
++}
++
++export function updateProjectTag(params) {
++  return apiClient.post("/project/up_tag", params);
++}
++
++/** 全局搜索：分组 / 项目 / 接口 */
++export function searchProject(q) {
++  return apiClient.get("/project/search", { params: { q } });
++}
+diff --git a/vendors/client/api/user.js b/vendors/client/api/user.js
+new file mode 100644
+index 00000000..0405cc69
+--- /dev/null
++++ b/vendors/client/api/user.js
+@@ -0,0 +1,58 @@
++/**
++ * 用户相关 API（路径相对 baseURL /api）
++ */
++import apiClient from "../utils/apiClient";
++
++export function fetchLoginStatus() {
++  return apiClient.get("/user/status");
++}
++
++export function login(data) {
++  return apiClient.post("/user/login", data);
++}
++
++export function loginByLdap(data) {
++  return apiClient.post("/user/login_by_ldap", data);
++}
++
++export function register(param) {
++  return apiClient.post("/user/reg", param);
++}
++
++export function logout() {
++  return apiClient.get("/user/logout");
++}
++
++export function finishStudy() {
++  return apiClient.get("/user/up_study");
++}
++
++export function searchUser(params) {
++  return apiClient.get("/user/search", { params });
++}
++
++export function fetchUserList(page, limit) {
++  return apiClient.get("/user/list", { params: { page, limit } });
++}
++
++export function fetchUser(id) {
++  return apiClient.get("/user/find", { params: { id } });
++}
++
++export function updateUser(params) {
++  return apiClient.post("/user/update", params);
++}
++
++export function changePassword(params) {
++  return apiClient.post("/user/change_password", params);
++}
++
++/** 删除用户 */
++export function deleteUser(id) {
++  return apiClient.post("/user/del", { id });
++}
++
++/** 上传头像（base64） */
++export function uploadAvatar(basecode) {
++  return apiClient.post("/user/upload_avatar", { basecode });
++}
+diff --git a/vendors/client/components/Postman/Postman.jsx b/vendors/client/components/Postman/Postman.jsx
+index 74723614..d4017a8d 100644
+--- a/vendors/client/components/Postman/Postman.jsx
++++ b/vendors/client/components/Postman/Postman.jsx
+@@ -20,7 +20,7 @@ import constants from "../../utils/variable.js";
+ import AceEditor from "client/components/AceEditor/AceEditor";
+ import _ from "underscore";
+ import { isJson, deepCopyJson, json5_parse } from "../../utils/common.js";
+-import axios from "axios";
++import { schema2json } from "../../api/interface";
+ import ModalPostman from "../ModalPostman/ModalPostman.jsx";
+ import CheckCrossInstall, { initCrossRequest } from "./CheckCrossInstall.jsx";
+ import ProjectEnv from "../ProjectEnv/ProjectEnv.jsx";
+@@ -187,7 +187,7 @@ class Postman extends Component {
+         console.log("e", e);
+         return;
+       }
+-      let result = await axios.post("/api/interface/schema2json", {
++      let result = await schema2json({
+         schema: schema,
+         required: true
+       });
+diff --git a/vendors/client/components/TimeLine/TimeLine.jsx b/vendors/client/components/TimeLine/TimeLine.jsx
+index 7476280b..fb02d9e2 100644
+--- a/vendors/client/components/TimeLine/TimeLine.jsx
++++ b/vendors/client/components/TimeLine/TimeLine.jsx
+@@ -1,4 +1,5 @@
+ import React, { PureComponent as Component } from "react";
++import { getUserAvatarUrl } from "../../api/paths";
+ import { Timeline, Spin, Row, Col, Tag, Avatar, Button, Modal, AutoComplete } from "antd";
+ import PropTypes from "prop-types";
+ import { connect } from "react-redux";
+@@ -165,7 +166,7 @@ class TimeTree extends Component {
+           <Timeline.Item
+             dot={
+               <Link to={`/user/profile/${item.uid}`}>
+-                <Avatar src={`/api/user/avatar?uid=${item.uid}`}/>
++                <Avatar src={getUserAvatarUrl(item.uid)}/>
+               </Link>
+             }
+             key={i}
+diff --git a/vendors/client/components/UsernameAutoComplete/UsernameAutoComplete.jsx b/vendors/client/components/UsernameAutoComplete/UsernameAutoComplete.jsx
+index b5386000..ebfe8b95 100644
+--- a/vendors/client/components/UsernameAutoComplete/UsernameAutoComplete.jsx
++++ b/vendors/client/components/UsernameAutoComplete/UsernameAutoComplete.jsx
+@@ -1,7 +1,7 @@
+ import React, { PureComponent as Component } from "react";
+ import PropTypes from "prop-types";
+ import { Select } from "antd";
+-import axios from "axios";
++import { searchUser } from "../../api/user";
+ 
+ const Option = Select.Option;
+ 
+@@ -58,7 +58,7 @@ class UsernameAutoComplete extends Component {
+     // this.lastFetchId += 1;
+     // const fetchId = this.lastFetchId;
+     this.setState({ fetching: true });
+-    axios.get("/api/user/search", { params }).then((data) => {
++    searchUser(params).then((data) => {
+       // if (fetchId !== this.lastFetchId) { // for fetch callback order
+       //   return;
+       // }
+diff --git a/vendors/client/index.jsx b/vendors/client/index.jsx
+index 66e2474b..17d7a2db 100644
+--- a/vendors/client/index.jsx
++++ b/vendors/client/index.jsx
+@@ -1,4 +1,5 @@
+ import { ConfigProvider } from "antd";
++import "./utils/apiClient";
+ import "./plugin";
+ import React from "react";
+ import ReactDOM from "react-dom/client";
+diff --git a/vendors/client/layout/Layout.jsx b/vendors/client/layout/Layout.jsx
+index 357da648..afa2ebbd 100644
+--- a/vendors/client/layout/Layout.jsx
++++ b/vendors/client/layout/Layout.jsx
+@@ -7,9 +7,12 @@ import { Alert } from "antd";
+ //
+ import styles from "./Layout.module.scss";
+ 
++/**
++ * 非 Chrome 浏览器提示（接口测试等功能依赖 Chrome）
++ */
+ function AlertContent() {
+-  const ua = window.navigator.userAgent,
+-    isChrome = ua.indexOf("Chrome") && window.chrome;
++  const ua = window.navigator.userAgent;
++  const isChrome = ua.indexOf("Chrome") > -1 && window.chrome;
+   if (!isChrome) {
+     return (
+       <Alert
+@@ -19,34 +22,46 @@ function AlertContent() {
+         closable
+       />
+     );
+-  } else {
+-    return null
+   }
++  return null;
+ }
++
++/**
++ * 全局布局：登录态检查完成后关闭 Loading，避免固定 1 秒等待
++ */
+ function Layout(props) {
+   console.debug("layout =>", props);
+   const { loginState, curUserRole, checkLoginState } = props;
+   const [visible, setVisible] = useState(true);
+-  //
++
+   useEffect(() => {
+-    (async() => {
+-      const a = await checkLoginState();
+-      console.log("layout挂载中", loginState, a);
+-      setTimeout(() => {
+-        setVisible(false);
+-      }, 1000)
+-    })()
+-  }, [])
++    let cancelled = false;
++    (async () => {
++      try {
++        await checkLoginState();
++        console.log("layout挂载中", loginState);
++      } catch (err) {
++        console.error("layout 登录态检查失败", err);
++      } finally {
++        if (!cancelled) {
++          setVisible(false);
++        }
++      }
++    })();
++    return () => {
++      cancelled = true;
++    };
++  }, []);
++
+   return (
+     <div className={styles.Main}>
+       <Loading visible={visible}/>
+       {curUserRole === "admin" && <Notify/>}
+       <AlertContent/>
+       {loginState !== 0 ? <Header/> : null}
+-      {/**/}
+       {props.children}
+       <Footer/>
+     </div>
+-  )
++  );
+ }
+ export default Layout;
+diff --git a/vendors/client/layout/components/Footer/Footer.jsx b/vendors/client/layout/components/Footer/Footer.jsx
+index 34c2acf3..7157f577 100644
+--- a/vendors/client/layout/components/Footer/Footer.jsx
++++ b/vendors/client/layout/components/Footer/Footer.jsx
+@@ -4,7 +4,8 @@ import { Row, Col, Icon } from "antd";
+ //
+ import styles from "./Footer.module.scss";
+ //
+-const version = "1.0.0" // process.env.version;
++// 与 vendors/package.json 版本保持一致
++const version = require("../../../../package.json").version;
+ class FootItem extends Component {
+   constructor(props) {
+     super(props);
+@@ -16,7 +17,7 @@ class FootItem extends Component {
+   };
+   render() {
+     return (
+-      <Col span={6}>
++      <Col xs={12} sm={12} md={6}>
+         <h4 className="title">
+           {this.props.iconType ? <Icon type={this.props.iconType} className="icon"/> : ""}
+           {this.props.title}
+diff --git a/vendors/client/layout/components/Footer/Footer.module.scss b/vendors/client/layout/components/Footer/Footer.module.scss
+index 928e329e..660ae046 100644
+--- a/vendors/client/layout/components/Footer/Footer.module.scss
++++ b/vendors/client/layout/components/Footer/Footer.module.scss
+@@ -10,6 +10,9 @@
+       margin: 0 auto !important;
+       padding: .48rem .24rem;
+       max-width: 12.2rem;
++      @media (max-width: 768px) {
++        padding: .32rem .16rem;
++      }
+       .icon {
+         font-size: .16rem;
+         margin-right: .08rem;
+diff --git a/vendors/client/layout/components/Header/Header.jsx b/vendors/client/layout/components/Header/Header.jsx
+index 94a6daf1..1151f395 100644
+--- a/vendors/client/layout/components/Header/Header.jsx
++++ b/vendors/client/layout/components/Header/Header.jsx
+@@ -104,7 +104,7 @@ function TipDoc() {
+   </div>
+ }
+ function ToolUser(props) {
+-  let imageUrl = props.imageUrl ? props.imageUrl : `/api/user/avatar?uid=${props.uid}`;
++  let imageUrl = props.imageUrl ? props.imageUrl : getUserAvatarUrl(props.uid);
+   return (
+     <ul>
+       <li className="toolbar-li item-search">
+diff --git a/vendors/client/layout/components/Header/Header.module.scss b/vendors/client/layout/components/Header/Header.module.scss
+index d9693afb..462866ab 100644
+--- a/vendors/client/layout/components/Header/Header.module.scss
++++ b/vendors/client/layout/components/Header/Header.module.scss
+@@ -3,6 +3,20 @@
+   line-height: .56rem;
+   padding: 0;
+   :global {
++    .header-toolbar {
++      display: flex;
++      align-items: center;
++      max-width: 12.2rem;
++      margin: 0 auto;
++      min-width: 0;
++      height: 100%;
++    }
++    .toolbar-center {
++      flex: 1;
++      min-width: 0;
++      overflow: hidden;
++      margin: 0 .08rem;
++    }
+     .nav-tooltip {
+       color: red;
+     }
+@@ -15,7 +29,7 @@
+     }
+     .logo {
+       position: relative;
+-      float: left;
++      flex-shrink: 0;
+       line-height: .56rem;
+       height: .56rem;
+       width: 56px;
+@@ -62,15 +76,15 @@
+       margin-top: 20px;
+     }
+     .user-toolbar {
+-      float: right;
++      flex-shrink: 0;
+       height: .54rem;
++      margin-left: auto;
+       display: flex;
+       align-items: center;
+       .item-search {
+         width: 2rem;
+       }
+       .toolbar-li {
+-        float: left;
+         font-size: .14rem;
+         cursor: pointer;
+         color: #ccc;
+diff --git a/vendors/client/layout/components/Header/Search/Search.jsx b/vendors/client/layout/components/Header/Search/Search.jsx
+index 9baafcd6..945ff438 100644
+--- a/vendors/client/layout/components/Header/Search/Search.jsx
++++ b/vendors/client/layout/components/Header/Search/Search.jsx
+@@ -4,7 +4,8 @@ import { connect } from "react-redux";
+ import { Icon, Input, AutoComplete } from "antd";
+ import styles from "./Search.module.scss";
+ import { withRouter } from "react-router";
+-import axios from "axios";
++import { searchProject } from "../../../../api/project";
++import { isApiOk } from "../../../../utils/apiHelpers";
+ //
+ import { setCurrGroup, fetchGroupMsg } from "../../../../reducer/modules/group";
+ import { changeMenuItem } from "../../../../reducer/modules/menu";
+@@ -58,10 +59,8 @@ class Search extends Component {
+     }
+   };
+   handleSearch = (value) => {
+-    axios
+-      .get("/api/project/search?q=" + value)
+-      .then((res) => {
+-        if (res.data && res.data.errcode === 0) {
++    searchProject(value).then((res) => {
++        if (isApiOk(res)) {
+           const dataSource = [];
+           for (let title in res.data.data) {
+             res.data.data[title].map((item) => {
+diff --git a/vendors/client/pages/Group/Group.jsx b/vendors/client/pages/Group/Group.jsx
+index 62c71b1c..11a47348 100644
+--- a/vendors/client/pages/Group/Group.jsx
++++ b/vendors/client/pages/Group/Group.jsx
+@@ -7,29 +7,56 @@ import GroupSetting from "./components/GroupSetting/GroupSetting.js";
+ //
+ import { connect } from "react-redux";
+ import { Route, Switch, Redirect } from "react-router-dom";
+-import { Tabs, Layout, Spin } from "antd";
++import { Tabs, Layout, Spin, Icon, Button } from "antd";
+ //
+ import { fetchNewsData } from "../../reducer/modules/news.js";
+ import { setCurrGroup } from "../../reducer/modules/group";
++import { fetchMyGroup } from "../../api/group";
++import { getApiData, isApiOk } from "../../utils/apiHelpers";
+ //
+ import styles from "./Group.module.scss";
+-import axios from "axios";
+-//
+-function GroupSider() {
++
++/**
++ * 分组左侧栏：大屏固定宽度，小屏可折叠（breakpoint=lg）
++ */
++function GroupSider(props) {
++  const { collapsed, onCollapse } = props;
+   return (
+-    <Layout.Sider style={{ height: "100%" }} width={300}>
++    <Layout.Sider
++      className="group-sider"
++      style={{ height: "100%" }}
++      width={300}
++      collapsible
++      collapsed={collapsed}
++      onCollapse={onCollapse}
++      breakpoint="lg"
++      collapsedWidth={0}
++      trigger={null}
++    >
+       <div className="logo"/>
+       <GroupList/>
+     </Layout.Sider>
+-  )
++  );
+ }
+-//
++
+ function GroupContent(props) {
+   const { curUserRole, currGroup, curUserRoleInGroup } = props;
++  const [siderCollapsed, setSiderCollapsed] = useState(false);
++
+   return (
+-    <Layout style={{ minHeight: "calc(100vh - 100px)", marginLeft: "24px", marginTop: "24px" }}>
+-      <GroupSider {...props}/>
+-      <Layout>
++    <Layout className="group-layout" style={{ minHeight: "calc(100vh - 100px)", marginTop: "24px" }}>
++      {siderCollapsed ? (
++        <Button
++          type="primary"
++          className="sider-trigger-btn"
++          onClick={() => setSiderCollapsed(false)}
++          aria-label="展开分组列表"
++        >
++          <Icon type="menu-unfold"/>
++        </Button>
++      ) : null}
++      <GroupSider collapsed={siderCollapsed} onCollapse={setSiderCollapsed}/>
++      <Layout className="group-main">
+         <Layout.Content style={{ height: "100%", margin: "0 24px 0 16px", overflow: "initial", backgroundColor: "#fff" }}>
+           <Tabs type="card" className="m-tab tabs-large" style={{ height: "100%" }}>
+             <Tabs.TabPane tab="项目列表" key="1">
+@@ -56,15 +83,20 @@ function GroupContent(props) {
+         </Layout.Content>
+       </Layout>
+     </Layout>
+-  )
++  );
+ }
++
+ function Group(props) {
+   console.debug("1111111111111111111", props);
+   const [groupId, setGroupId] = useState(() => props.curGroupId);
+   async function init() {
+     try {
+-      let r = await axios.get("/api/group/get_mygroup");
+-      const group = r.data.data;
++      const r = await fetchMyGroup();
++      if (!isApiOk(r)) {
++        console.error("获取我的分组失败", r.data);
++        return;
++      }
++      const group = getApiData(r);
+       console.log("111111111", group, group._id);
+       setGroupId(group._id);
+       //
+@@ -101,4 +133,4 @@ export default connect(
+     fetchNewsData: fetchNewsData,
+     setCurrGroup: setCurrGroup
+   }
+-)(Group)
++)(Group);
+diff --git a/vendors/client/pages/Group/Group.module.scss b/vendors/client/pages/Group/Group.module.scss
+index cc98831c..6447405d 100644
+--- a/vendors/client/pages/Group/Group.module.scss
++++ b/vendors/client/pages/Group/Group.module.scss
+@@ -4,6 +4,34 @@
+       @include row-width-limit;
+       margin: 0 auto .24rem;
+     }
++    .group-layout {
++      margin-left: .24rem;
++      margin-right: .24rem;
++      position: relative;
++    }
++    .group-main {
++      min-width: 0;
++    }
++    .sider-trigger-btn {
++      position: fixed;
++      left: .12rem;
++      top: .72rem;
++      z-index: 10;
++      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
++    }
++    .group-sider.ant-layout-sider-collapsed + .group-main,
++    .group-layout .ant-layout-sider-zero-width + .group-main {
++      margin-left: 0;
++    }
++    @media (max-width: 992px) {
++      .group-layout {
++        margin-left: .12rem;
++        margin-right: .12rem;
++      }
++      .group-main .ant-layout-content {
++        margin: 0 .08rem !important;
++      }
++    }
+     .news-box .news-timeline .ant-timeline-item .ant-timeline-item-content{
+       min-width: 300px !important;
+       width: 75% !important;
+diff --git a/vendors/client/pages/Group/components/GroupList/GroupList.js b/vendors/client/pages/Group/components/GroupList/GroupList.js
+index 20f470f0..a808c653 100644
+--- a/vendors/client/pages/Group/components/GroupList/GroupList.js
++++ b/vendors/client/pages/Group/components/GroupList/GroupList.js
+@@ -3,7 +3,8 @@ import PropTypes from "prop-types";
+ import { connect } from "react-redux";
+ import { Icon, Modal, Input, message, Spin, Row, Menu, Col, Popover, Tooltip } from "antd";
+ import { autobind } from "core-decorators";
+-import axios from "axios";
++import { addGroup as addGroupApi, updateGroup as updateGroupApi } from "../../../../api/group";
++import { isErrcodeOk } from "../../../../utils/apiHelpers";
+ import { withRouter } from "react-router-dom";
+ 
+ const { TextArea } = Input;
+@@ -109,8 +110,8 @@ class GroupList extends Component {
+   @autobind
+   async addGroup() {
+     const { newGroupName: group_name, newGroupDesc: group_desc, owner_uids } = this.state;
+-    const res = await axios.post("/api/group/add", { group_name, group_desc, owner_uids });
+-    if (!res.data.errcode) {
++    const res = await addGroupApi({ group_name, group_desc, owner_uids });
++    if (isErrcodeOk(res.data)) {
+       this.setState({
+         newGroupName: "",
+         group_name: "",
+@@ -129,8 +130,8 @@ class GroupList extends Component {
+   async editGroup() {
+     const { currGroupName: group_name, currGroupDesc: group_desc } = this.state;
+     const id = this.props.currGroup._id;
+-    const res = await axios.post("/api/group/up", { group_name, group_desc, id });
+-    if (res.data.errcode) {
++    const res = await updateGroupApi({ group_name, group_desc, id });
++    if (!isErrcodeOk(res.data)) {
+       message.error(res.data.errmsg);
+     } else {
+       await this.props.fetchGroupList();
+diff --git a/vendors/client/pages/Group/components/MemberList/MemberList.js b/vendors/client/pages/Group/components/MemberList/MemberList.js
+index b1b0e786..fe2eea70 100644
+--- a/vendors/client/pages/Group/components/MemberList/MemberList.js
++++ b/vendors/client/pages/Group/components/MemberList/MemberList.js
+@@ -4,6 +4,7 @@ import { connect } from "react-redux";
+ import { Table, Select, Button, Modal, Row, Col, message, Popconfirm } from "antd";
+ import { Link } from "react-router-dom";
+ import "./MemberList.scss";
++import { getUserAvatarUrl } from "../../../../api/paths";
+ import { autobind } from "core-decorators";
+ import {
+   fetchGroupMemberList,
+@@ -191,7 +192,7 @@ class MemberList extends Component {
+             <Link to={`/user/profile/${record.uid}`}>
+               <img
+                 src={
+-                  location.protocol + "//" + location.host + "/api/user/avatar?uid=" + record.uid
++                  getUserAvatarUrl(record.uid)
+                 }
+                 className="m-user-img"
+               />
+diff --git a/vendors/client/pages/Home/Home.jsx b/vendors/client/pages/Home/Home.jsx
+index 007aba01..80f1b7f7 100644
+--- a/vendors/client/pages/Home/Home.jsx
++++ b/vendors/client/pages/Home/Home.jsx
+@@ -9,6 +9,40 @@ import { changeMenuItem } from "../../reducer/modules/menu";
+ 
+ const plugin = require("client/plugin.js");
+ const ThirdLogin = plugin.emitHook("third_login");
++
++/**
++ * 首页右侧装饰：纯 CSS 模拟接口管理界面预览
++ */
++function HomeHeroIllustration() {
++  return (
++    <div className="hero-panel" aria-hidden="true">
++      <div className="hero-panel-header">
++        <span className="hero-dot"/>
++        <span className="hero-dot"/>
++        <span className="hero-dot"/>
++        <span className="hero-panel-title">API 工作台</span>
++      </div>
++      <div className="hero-panel-body">
++        <div className="hero-sidebar">
++          <div className="hero-line hero-line-short"/>
++          <div className="hero-line"/>
++          <div className="hero-line hero-line-active"/>
++          <div className="hero-line"/>
++        </div>
++        <div className="hero-main">
++          <div className="hero-tag hero-tag-get">GET</div>
++          <div className="hero-line hero-line-wide"/>
++          <div className="hero-code-block">
++            <div className="hero-line hero-line-code"/>
++            <div className="hero-line hero-line-code"/>
++            <div className="hero-line hero-line-code hero-line-short"/>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
++
+ function HomeGuest() {
+   return (
+     <div className="g-body">
+@@ -58,8 +92,9 @@ function HomeGuest() {
+                 </div>
+               </div>
+             </Col>
+-            <Col lg={15} xs={0} className="col-img">
++            <Col lg={15} md={24} xs={24} className="col-img">
+               <div className="img-container">
++                <HomeHeroIllustration/>
+               </div>
+             </Col>
+           </Row>
+@@ -71,20 +106,20 @@ function HomeGuest() {
+           <span className="desc">
+           YApi让接口开发更简单高效，让接口的管理更具可读性、可维护性，让团队协作更合理。
+           </span>
+-          <Row key="feat-motion-row">
+-            <Col span={8} className="section-item" key="feat-wrapper-1">
++          <Row key="feat-motion-row" gutter={[24, 24]}>
++            <Col xs={24} sm={24} md={8} className="section-item" key="feat-wrapper-1">
+               <Icon type="appstore-o" className="img"/>
+               <h4 className="title">项目管理</h4>
+               <span className="desc">提供基本的项目分组，项目管理，接口管理功能</span>
+             </Col>
+-            <Col span={8} className="section-item" key="feat-wrapper-2">
++            <Col xs={24} sm={24} md={8} className="section-item" key="feat-wrapper-2">
+               <Icon type="api" className="img"/>
+               <h4 className="title">接口管理</h4>
+               <span className="desc">
+               友好的接口文档，基于websocket的多人协作接口编辑功能和类postman测试工具，让多人协作成倍提升开发效率
+               </span>
+             </Col>
+-            <Col span={8} className="section-item" key="feat-wrapper-3">
++            <Col xs={24} sm={24} md={8} className="section-item" key="feat-wrapper-3">
+               <Icon type="database" className="img"/>
+               <h4 className="title">MockServer</h4>
+               <span className="desc">基于Mockjs，使用简单功能强大</span>
+@@ -281,7 +316,7 @@ function HomeGuest() {
+       <div className="home-section section-manage">
+         <div className="container">
+           <Row className="row-card" style={{ marginBottom: ".48rem" }}>
+-            <Col lg={7} xs={10} className="section-card">
++            <Col lg={7} xs={24} md={10} className="section-card">
+               <Card>
+                 <div className="section-block block-first">
+                   <h4>超级管理员(* N)</h4>
+@@ -302,7 +337,7 @@ function HomeGuest() {
+                 </div>
+               </Card>
+             </Col>
+-            <Col lg={17} xs={14} className="section-card manage-word">
++            <Col lg={17} xs={24} md={14} className="section-card manage-word">
+               <Icon type="team" className="icon"/>
+               <h3 className="title">扁平化管理模式</h3>
+               <p className="desc">
+diff --git a/vendors/client/pages/Home/Home.module.scss b/vendors/client/pages/Home/Home.module.scss
+index 6113f52a..d51780b3 100644
+--- a/vendors/client/pages/Home/Home.module.scss
++++ b/vendors/client/pages/Home/Home.module.scss
+@@ -139,16 +139,92 @@ $color-bg-lightblue: #c6e2ff;
+     }
+     .img-container {
+       width: 100%;
+-      position: absolute;
+-      top: .74rem;
+-      left: 50%;
+-      transform: translateX(-50%);
+-      text-align: right;
++      position: relative;
++      top: 0;
++      left: auto;
++      transform: none;
++      text-align: center;
++      padding: .4rem .24rem 0;
+       .img {
+         width: 7.12rem;
++        max-width: 100%;
+         border-radius: 4px;
+         box-shadow: 0 30px 60px rgba(0, 0, 0, 0.2);
+       }
++      .hero-panel {
++        display: inline-block;
++        width: 6.4rem;
++        max-width: 100%;
++        text-align: left;
++        border-radius: .08rem;
++        overflow: hidden;
++        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.25);
++        background: rgba(255, 255, 255, 0.95);
++      }
++      .hero-panel-header {
++        display: flex;
++        align-items: center;
++        padding: .12rem .16rem;
++        background: #f0f3f8;
++        border-bottom: 1px solid #e8ecf3;
++      }
++      .hero-dot {
++        width: .08rem;
++        height: .08rem;
++        border-radius: 50%;
++        margin-right: .06rem;
++        background: #c5cdd8;
++        &:nth-child(1) { background: #ff5f57; }
++        &:nth-child(2) { background: #febc2e; }
++        &:nth-child(3) { background: #28c840; }
++      }
++      .hero-panel-title {
++        margin-left: .12rem;
++        font-size: .13rem;
++        color: #6d7c90;
++      }
++      .hero-panel-body {
++        display: flex;
++        min-height: 2.8rem;
++      }
++      .hero-sidebar {
++        width: 1.6rem;
++        padding: .16rem;
++        background: #f7f9fc;
++        border-right: 1px solid #e8ecf3;
++      }
++      .hero-main {
++        flex: 1;
++        padding: .2rem .24rem;
++      }
++      .hero-line {
++        height: .1rem;
++        border-radius: .04rem;
++        margin-bottom: .12rem;
++        background: linear-gradient(90deg, #e8ecf3 0%, #f0f3f8 100%);
++      }
++      .hero-line-short { width: 60%; }
++      .hero-line-wide { width: 85%; margin-top: .08rem; }
++      .hero-line-active {
++        background: linear-gradient(90deg, #2395f1 0%, #6ab3fd 100%);
++        opacity: 0.85;
++      }
++      .hero-line-code { height: .08rem; background: #eef2f7; }
++      .hero-tag {
++        display: inline-block;
++        font-size: .11rem;
++        padding: .02rem .08rem;
++        border-radius: .03rem;
++        margin-bottom: .1rem;
++        font-weight: 600;
++      }
++      .hero-tag-get { color: #fff; background: #57cf27; }
++      .hero-code-block {
++        margin-top: .16rem;
++        padding: .12rem;
++        background: #f7f9fc;
++        border-radius: .04rem;
++      }
+     }
+     .m-skew {
+       position: relative;
+@@ -398,10 +474,53 @@ $color-bg-lightblue: #c6e2ff;
+   }
+ }
+ @media (max-width: 1200px) {
+-  .home-header, .home-des {
+-    text-align: center;
++  :global {
++    .home-header, .home-des {
++      text-align: center;
++    }
++    .main-one .home-des .logo {
++      justify-content: center;
++    }
++    .row-tip .container {
++      flex-direction: column;
++      text-align: center;
++      .tip-title, .tip-btns {
++        flex: none;
++        width: 100%;
++      }
++      .title, .desc {
++        padding-left: 0;
++      }
++      .btn-group {
++        white-space: normal;
++        padding-top: .16rem;
++      }
++    }
++    .section-manage .manage-word {
++      padding-left: .24rem;
++      padding-top: .24rem;
++    }
+   }
+-  .home-main .main-one .home-des .logo {
+-    justify-content: center;
++}
++@media (max-width: 768px) {
++  :global {
++    .main-one {
++      height: auto;
++      min-height: 4.8rem;
++      padding-bottom: .48rem;
++    }
++    .home-header .item {
++      padding: .12rem .16rem;
++      font-size: .15rem;
++    }
++    .feat-part {
++      padding: .8rem 0;
++    }
++    .section-feature {
++      min-height: auto;
++    }
++    .m-skew .skew-container {
++      padding: 0 .16rem;
++    }
+   }
+ }
+diff --git a/vendors/client/pages/Login/Login.module.scss b/vendors/client/pages/Login/Login.module.scss
+index 59a1e3bc..31504692 100644
+--- a/vendors/client/pages/Login/Login.module.scss
++++ b/vendors/client/pages/Login/Login.module.scss
+@@ -1,6 +1,20 @@
+ .Login {
+   height: calc(100vh - 240px);
++  min-height: 4.8rem;
++  @media (max-width: 768px) {
++    height: auto;
++    min-height: calc(100vh - 200px);
++  }
+   :global {
++    @media (max-width: 768px) {
++      .login-container .container {
++        margin-top: 12vh;
++        padding: 0 .16rem;
++      }
++      .card-login {
++        margin-bottom: 1rem;
++      }
++    }
+     .login-container {
+       .container {
+         display: inline-block;
+diff --git a/vendors/client/pages/Project/Activity/Activity.jsx b/vendors/client/pages/Project/Activity/Activity.jsx
+index bb221754..9f8ebe97 100644
+--- a/vendors/client/pages/Project/Activity/Activity.jsx
++++ b/vendors/client/pages/Project/Activity/Activity.jsx
+@@ -1,4 +1,5 @@
+ import React, { PureComponent as Component } from "react";
++import { getProjectDownloadUrl } from "../../../api/paths";
+ import TimeTree from "../../../components/TimeLine/TimeLine";
+ import { connect } from "react-redux";
+ import PropTypes from "prop-types";
+@@ -40,7 +41,7 @@ class Activity extends Component {
+                   `/mock/${currProject._id}${currProject.basepath}/yourPath`}
+               </p>
+               <Button type="primary">
+-                <a href={`/api/project/download?project_id=${this.props.match.params.id}`}>
++                <a href={getProjectDownloadUrl(this.props.match.params.id)}>
+                   下载Mock数据
+                 </a>
+               </Button>
+diff --git a/vendors/client/pages/Project/Interface/Interface.jsx b/vendors/client/pages/Project/Interface/Interface.jsx
+index 3cc6b261..56d3c920 100644
+--- a/vendors/client/pages/Project/Interface/Interface.jsx
++++ b/vendors/client/pages/Project/Interface/Interface.jsx
+@@ -1,6 +1,6 @@
+ import React, { PureComponent as Component } from "react";
+ import PropTypes from "prop-types";
+-import { Tabs, Layout } from "antd";
++import { Tabs, Layout, Icon, Button } from "antd";
+ import { Route, Switch, matchPath } from "react-router-dom";
+ import { connect } from "react-redux";
+ 
+@@ -68,9 +68,9 @@ class Interface extends Component {
+   };
+   constructor(props) {
+     super(props);
+-    // this.state = {
+-    //   curkey: this.props.match.params.action === 'api' ? 'api' : 'colOrCase'
+-    // }
++    this.state = {
++      siderCollapsed: false
++    };
+   }
+   onChange = (action) => {
+     let params = this.props.match.params;
+@@ -89,9 +89,30 @@ class Interface extends Component {
+     const { action } = this.props.match.params;
+     // const activeKey = this.state.curkey;
+     const activeKey = action === "api" ? "api" : "colOrCase";
++    const { siderCollapsed } = this.state;
+     return (
+       <Layout className={styles.Interface} style={{ minHeight: "calc(100vh - 156px)", marginLeft: "24px", marginTop: "24px" }}>
+-        <Sider style={{ height: "100%" }} width={300}>
++        {siderCollapsed ? (
++          <Button
++            type="primary"
++            className="sider-trigger-btn"
++            onClick={() => this.setState({ siderCollapsed: false })}
++            aria-label="展开接口侧栏"
++          >
++            <Icon type="menu-unfold"/>
++          </Button>
++        ) : null}
++        <Sider
++          className="interface-sider"
++          style={{ height: "100%" }}
++          width={300}
++          collapsible
++          collapsed={siderCollapsed}
++          onCollapse={(collapsed) => this.setState({ siderCollapsed: collapsed })}
++          breakpoint="lg"
++          collapsedWidth={0}
++          trigger={null}
++        >
+           <div className="left-menu">
+             <Tabs type="card" className="tabs-large" activeKey={activeKey} onChange={this.onChange}>
+               <Tabs.TabPane tab="接口列表" key="api"/>
+diff --git a/vendors/client/pages/Project/Interface/Interface.module.scss b/vendors/client/pages/Project/Interface/Interface.module.scss
+index e6e14a9c..0a98e128 100644
+--- a/vendors/client/pages/Project/Interface/Interface.module.scss
++++ b/vendors/client/pages/Project/Interface/Interface.module.scss
+@@ -1,5 +1,23 @@
+ .Interface {
++  position: relative;
+   :global {
++    .sider-trigger-btn {
++      position: fixed;
++      left: .12rem;
++      top: .72rem;
++      z-index: 10;
++      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
++    }
++    .interface-sider {
++      flex-shrink: 0;
++    }
++    @media (max-width: 992px) {
++      margin-left: .12rem !important;
++      margin-right: .12rem !important;
++      .ant-layout-content {
++        margin: 0 .08rem !important;
++      }
++    }
+     .left-menu {
+       min-height: 5rem;
+       .ant-tag {
+diff --git a/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceCaseContent.jsx b/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceCaseContent.jsx
+index 47af75b4..f48fbcb3 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceCaseContent.jsx
++++ b/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceCaseContent.jsx
+@@ -3,7 +3,6 @@ import { connect } from "react-redux";
+ import PropTypes from "prop-types";
+ import { withRouter } from "react-router";
+ import { Link } from "react-router-dom";
+-import axios from "axios";
+ import { message, Tooltip, Input } from "antd";
+ import { getEnv } from "../../../../reducer/modules/project";
+ import { fetchInterfaceColList, setColData, fetchCaseData, fetchCaseList } from "../../../../reducer/modules/interfaceCol";
+@@ -110,7 +109,7 @@ class InterfaceCaseContent extends Component {
+       test_res_body,
+       test_res_header
+     };
+-    const res = await axios.post("/api/col/up_case", params);
++    const res = await updateCase(params);
+     if (this.props.currCase.casename !== casename) {
+       this.props.fetchInterfaceColList(this.props.match.params.id);
+     }
+diff --git a/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColContent.jsx b/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColContent.jsx
+index ab2c2cf1..504fc1b4 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColContent.jsx
++++ b/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColContent.jsx
+@@ -17,7 +17,6 @@ import AceEditor from "client/components/AceEditor/AceEditor";
+ import * as Table from "reactabular-table";
+ import * as dnd from "reactabular-dnd";
+ import * as resolve from "table-resolver";
+-import axios from "axios";
+ import CaseReport from "./CaseReport.jsx";
+ import _ from "underscore";
+ import { initCrossRequest } from "client/components/Postman/CheckCrossInstall.jsx";
+@@ -181,7 +180,7 @@ class InterfaceColContent extends Component {
+       name: name,
+       desc: desc
+     };
+-    axios.post("/api/col/up_col", params).then(async(res) => {
++    updateCol(params).then(async(res) => {
+       if (res.data.errcode) {
+         return message.error(res.data.errmsg);
+       }
+@@ -267,7 +266,7 @@ class InterfaceColContent extends Component {
+       newRows[i] = curitem;
+       this.setState({ rows: newRows });
+     }
+-    await axios.post("/api/col/up_col", {
++    await updateCol({
+       col_id: this.props.currColId,
+       test_report: JSON.stringify(this.reports)
+     });
+@@ -361,7 +360,7 @@ class InterfaceColContent extends Component {
+   handleScriptTest = async(interfaceData, response, validRes, requestParams) => {
+     // 是否启动断言
+     try {
+-      let test = await axios.post("/api/col/run_script", {
++      let test = await runScript({
+         response: response,
+         records: this.records,
+         script: interfaceData.test_script,
+@@ -406,7 +405,7 @@ class InterfaceColContent extends Component {
+     this.state.rows.forEach((item, index) => {
+       changes.push({ id: item._id, index: index });
+     });
+-    axios.post("/api/col/up_case_index", changes).then(() => {
++    updateCaseIndex(changes).then(() => {
+       this.props.fetchInterfaceColList(this.props.match.params.id);
+     });
+   };
+@@ -473,7 +472,7 @@ class InterfaceColContent extends Component {
+   };
+   handleAdvOk = async() => {
+     const { curCaseid, enableScript, curScript } = this.state;
+-    const res = await axios.post("/api/col/up_case", {
++    const res = await updateCase({
+       id: curCaseid,
+       test_script: curScript,
+       enable_script: enableScript
+@@ -543,7 +542,7 @@ class InterfaceColContent extends Component {
+       ...setting
+     };
+     console.log(params)
+-    axios.post("/api/col/up_col", params).then(async(res) => {
++    updateCol(params).then(async(res) => {
+       if (res.data.errcode) {
+         return message.error(res.data.errmsg);
+       }
+diff --git a/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColMenu.jsx b/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColMenu.jsx
+index 993d8bbf..9508c49c 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColMenu.jsx
++++ b/vendors/client/pages/Project/Interface/InterfaceCol/InterfaceColMenu.jsx
+@@ -4,7 +4,6 @@ import { withRouter } from 'react-router';
+ import PropTypes from 'prop-types';
+ import { fetchInterfaceColList, setColData, fetchCaseList, fetchCaseData } from '../../../../reducer/modules/interfaceCol';
+ import { fetchProjectList } from '../../../../reducer/modules/project';
+-import axios from 'axios';
+ import ImportInterface from './ImportInterface';
+ import { Input, Icon, Button, Modal, message, Tooltip, Tree, Form } from 'antd';
+ import { arrayChangeIndex } from '../../../../utils/common.js';
+@@ -111,9 +110,9 @@ export default class InterfaceColMenu extends Component {
+     const project_id = this.props.match.params.id;
+     let res = {};
+     if (colModalType === 'add') {
+-      res = await axios.post('/api/col/add_col', { name, desc, project_id });
++      res = await addCol({ name, desc, project_id });
+     } else if (colModalType === 'edit') {
+-      res = await axios.post('/api/col/up_col', { name, desc, col_id });
++      res = await updateCol({ name, desc, col_id });
+     }
+     if (!res.data.errcode) {
+       this.setState({
+@@ -159,7 +158,7 @@ export default class InterfaceColMenu extends Component {
+       okText: '确认',
+       cancelText: '取消',
+       async onOk() {
+-        const res = await axios.get('/api/col/del_col?col_id=' + colId);
++        const res = await deleteCol(colId);
+         if (!res.data.errcode) {
+           message.success('删除集合成功');
+           const result = await that.getList();
+@@ -181,14 +180,14 @@ export default class InterfaceColMenu extends Component {
+     let { name } = item;
+     name = `${name} copy`;
+     // 添加集合
+-    const add_col_res = await axios.post('/api/col/add_col', { name, desc, project_id });
++    const add_col_res = await addCol({ name, desc, project_id });
+     if (add_col_res.data.errcode) {
+       message.error(add_col_res.data.errmsg);
+       return;
+     }
+     const new_col_id = add_col_res.data.data._id;
+     // 克隆集合
+-    const add_case_list_res = await axios.post('/api/col/clone_case_list', {
++    const add_case_list_res = await cloneCaseList({
+       new_col_id,
+       col_id,
+       project_id
+@@ -217,7 +216,7 @@ export default class InterfaceColMenu extends Component {
+     data = JSON.parse(JSON.stringify(data));
+     data.casename = `${data.casename}_copy`
+     delete data._id
+-    const res = await axios.post('/api/col/add_case', data);
++    const res = await addCase(data);
+     if (!res.data.errcode) {
+       message.success('克隆用例成功');
+       let colId = res.data.data.col_id;
+@@ -240,7 +239,7 @@ export default class InterfaceColMenu extends Component {
+       okText: '确认',
+       cancelText: '取消',
+       async onOk() {
+-        const res = await axios.get('/api/col/del_case?caseid=' + caseId);
++        const res = await deleteCase(caseId);
+         if (!res.data.errcode) {
+           message.success('删除用例成功');
+           that.getList();
+@@ -284,7 +283,7 @@ export default class InterfaceColMenu extends Component {
+   handleImportOk = async() => {
+     const project_id = this.state.selectedProject || this.props.match.params.id;
+     const { importColId, importInterIds } = this.state;
+-    const res = await axios.post('/api/col/add_case_list', {
++    const res = await addCaseList({
+       interface_list: importInterIds,
+       col_id: importColId,
+       project_id
+@@ -330,15 +329,15 @@ export default class InterfaceColMenu extends Component {
+         // 同一个测试集合下的接口交换顺序
+         let caseList = interfaceColList[dropColIndex].caseList;
+         let changes = arrayChangeIndex(caseList, dragIndex, dropIndex);
+-        axios.post('/api/col/up_case_index', changes).then();
++        updateCaseIndex(changes).then();
+       }
+-      await axios.post('/api/col/up_case', { id: id.split('_')[1], col_id: dropColId });
++      await updateCase({ id: id.split('_')[1], col_id: dropColId });
+       // this.props.fetchInterfaceColList(projectId);
+       this.getList();
+       this.props.setColData({ isRander: true });
+     } else {
+       let changes = arrayChangeIndex(interfaceColList, dragIndex, dropIndex);
+-      axios.post('/api/col/up_col_index', changes).then();
++      updateColIndex(changes).then();
+       this.getList();
+     }
+   };
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/Edit.js b/vendors/client/pages/Project/Interface/InterfaceList/Edit.js
+index 54037628..a009edd2 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/Edit.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/Edit.js
+@@ -8,7 +8,6 @@ import {
+   fetchInterfaceData
+ } from "../../../../reducer/modules/interface.js";
+ import { getProject } from "../../../../reducer/modules/project.js";
+-import axios from "axios";
+ import { message, Modal } from "antd";
+ import "./Edit.scss";
+ import { withRouter, Link } from "react-router-dom";
+@@ -57,7 +56,7 @@ class InterfaceEdit extends Component {
+ 
+   onSubmit = async(params) => {
+     params.id = this.props.match.params.actionId;
+-    let result = await axios.post("/api/interface/up", params);
++    let result = await updateInterface(params);
+     this.props.fetchInterfaceListMenu(this.props.currProject._id).then();
+     this.props.fetchInterfaceData(params.id).then();
+     if (result.data.errcode === 0) {
+@@ -154,7 +153,7 @@ class InterfaceEdit extends Component {
+       id,
+       tag
+     };
+-    let result = await axios.post("/api/project/up_tag", params);
++    let result = await updateProjectTag(params);
+ 
+     if (result.data.errcode === 0) {
+       await this.props.getProject(id);
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/InterfaceEditForm.js b/vendors/client/pages/Project/Interface/InterfaceList/InterfaceEditForm.js
+index 4bc030e8..c344508f 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/InterfaceEditForm.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/InterfaceEditForm.js
+@@ -10,7 +10,6 @@ import { message, Affix, Tabs, Modal } from "antd";
+ import EasyDragSort from "../../../../components/EasyDragSort/EasyDragSort.jsx";
+ import mockEditor from "client/components/AceEditor/utils/mockEditor";
+ import AceEditor from "client/components/AceEditor/AceEditor";
+-import axios from "axios";
+ import { MOCK_SOURCE } from "../../../../utils/variable.js";
+ import Editor from "common/tui-editor/dist/tui-editor-Editor-all.min.js";
+ const jSchema = require("json-schema-editor-visual");
+@@ -416,7 +415,7 @@ class InterfaceEditForm extends Component {
+     try {
+       if (this.props.form.getFieldValue("res_body_is_json_schema")) {
+         let schema = json5.parse(this.props.form.getFieldValue("res_body"));
+-        let result = await axios.post("/api/interface/schema2json", {
++        let result = await schema2json({
+           schema: schema
+         });
+         return this.mockPreview.setValue(JSON.stringify(result.data));
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/InterfaceList.js b/vendors/client/pages/Project/Interface/InterfaceList/InterfaceList.js
+index bb30ba97..c288bec4 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/InterfaceList.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/InterfaceList.js
+@@ -1,7 +1,6 @@
+ import React, { PureComponent as Component } from "react";
+ import { connect } from "react-redux";
+ import PropTypes from "prop-types";
+-import axios from "axios";
+ import { Table, Button, Modal, message, Tooltip, Select, Icon } from "antd";
+ import AddInterfaceForm from "./AddInterfaceForm";
+ import {
+@@ -101,7 +100,7 @@ class InterfaceList extends Component {
+       desc: desc
+     };
+ 
+-    axios.post("/api/interface/up_cat", params).then(async(res) => {
++    updateInterfaceCat(params).then(async(res) => {
+       if (res.data.errcode !== 0) {
+         return message.error(res.data.errmsg);
+       }
+@@ -141,7 +140,7 @@ class InterfaceList extends Component {
+ 
+   handleAddInterface = (data) => {
+     data.project_id = this.props.curProject._id;
+-    axios.post("/api/interface/add", data).then((res) => {
++    addInterface(data).then((res) => {
+       if (res.data.errcode !== 0) {
+         return message.error(`${res.data.errmsg}, 你可以在左侧的接口列表中对接口进行删改`);
+       }
+@@ -157,7 +156,7 @@ class InterfaceList extends Component {
+       id: id,
+       catid
+     };
+-    let result = await axios.post("/api/interface/up", params);
++    let result = await updateInterface(params);
+     if (result.data.errcode === 0) {
+       message.success("修改成功");
+       this.handleRequest(this.props);
+@@ -172,7 +171,7 @@ class InterfaceList extends Component {
+       id: value.split("-")[0],
+       status: value.split("-")[1]
+     };
+-    let result = await axios.post("/api/interface/up", params);
++    let result = await updateInterface(params);
+     if (result.data.errcode === 0) {
+       message.success("修改成功");
+       this.handleRequest(this.props);
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/InterfaceMenu.js b/vendors/client/pages/Project/Interface/InterfaceList/InterfaceMenu.js
+index 5596d4ca..f95cedc3 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/InterfaceMenu.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/InterfaceMenu.js
+@@ -14,7 +14,14 @@ import { getProject } from "../../../../reducer/modules/project.js";
+ import { Input, Icon, Button, Modal, message, Tree, Tooltip } from "antd";
+ import AddInterfaceForm from "./AddInterfaceForm";
+ import AddInterfaceCatForm from "./AddInterfaceCatForm";
+-import axios from "axios";
++import {
++  addInterface,
++  addInterfaceCat,
++  updateInterfaceCat,
++  updateInterface,
++  updateInterfaceIndex,
++  updateInterfaceCatIndex
++} from "../../../../api/interface";
+ import { Link, withRouter } from "react-router-dom";
+ import produce from "immer";
+ import { arrayChangeIndex } from "../../../../utils/common.js";
+@@ -145,7 +152,7 @@ class InterfaceMenu extends Component {
+ 
+   handleAddInterface = (data, cb) => {
+     data.project_id = this.props.projectId;
+-    axios.post("/api/interface/add", data).then((res) => {
++    addInterface(data).then((res) => {
+       if (res.data.errcode !== 0) {
+         return message.error(res.data.errmsg);
+       }
+@@ -164,7 +171,7 @@ class InterfaceMenu extends Component {
+ 
+   handleAddInterfaceCat = (data) => {
+     data.project_id = this.props.projectId;
+-    axios.post("/api/interface/add_cat", data).then((res) => {
++    addInterfaceCat(data).then((res) => {
+       if (res.data.errcode !== 0) {
+         return message.error(res.data.errmsg);
+       }
+@@ -186,7 +193,7 @@ class InterfaceMenu extends Component {
+       desc: data.desc
+     };
+ 
+-    axios.post("/api/interface/up_cat", params).then((res) => {
++    updateInterfaceCat(params).then((res) => {
+       if (res.data.errcode !== 0) {
+         return message.error(res.data.errmsg);
+       }
+@@ -253,7 +260,7 @@ class InterfaceMenu extends Component {
+       draftData.path = draftData.path + "_" + Date.now();
+     });
+ 
+-    axios.post("/api/interface/add", newData).then(async(res) => {
++    addInterface(newData).then(async(res) => {
+       if (res.data.errcode !== 0) {
+         return message.error(res.data.errmsg);
+       }
+@@ -309,9 +316,9 @@ class InterfaceMenu extends Component {
+         // 同一个分类下的接口交换顺序
+         let colList = list[dropCatIndex].list;
+         let changes = arrayChangeIndex(colList, dragIndex, dropIndex);
+-        axios.post("/api/interface/up_index", changes).then();
++        updateInterfaceIndex(changes).then();
+       } else {
+-        await axios.post("/api/interface/up", { id, catid: dropCatId });
++        await updateInterface({ id, catid: dropCatId });
+       }
+       const { projectId, router } = this.props;
+       this.props.fetchInterfaceListMenu(projectId);
+@@ -324,7 +331,7 @@ class InterfaceMenu extends Component {
+     } else {
+       // 分类之间拖动
+       let changes = arrayChangeIndex(list, dragIndex - 1, dropIndex - 1);
+-      axios.post("/api/interface/up_cat_index", changes).then();
++      updateInterfaceCatIndex(changes).then();
+       this.props.fetchInterfaceListMenu(this.props.projectId);
+     }
+   };
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/Run/AddColModal.js b/vendors/client/pages/Project/Interface/InterfaceList/Run/AddColModal.js
+index d44b1ada..2689c987 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/Run/AddColModal.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/Run/AddColModal.js
+@@ -2,7 +2,6 @@ import React, { PureComponent as Component } from 'react';
+ import { connect } from 'react-redux';
+ import { Modal, Collapse, Row, Col, Input, message, Button, Icon } from 'antd';
+ import PropTypes from 'prop-types';
+-import axios from 'axios';
+ import { withRouter } from 'react-router';
+ import { fetchInterfaceColList } from '../../../../../reducer/modules/interfaceCol';
+ 
+@@ -54,7 +53,7 @@ export default class AddColModal extends Component {
+   addCol = async () => {
+     const { addColName: name, addColDesc: desc } = this.state;
+     const project_id = this.props.match.params.id;
+-    const res = await axios.post('/api/col/add_col', { name, desc, project_id });
++    const res = await addCol({ name, desc, project_id });
+     if (!res.data.errcode) {
+       message.success('添加集合成功');
+       await this.props.fetchInterfaceColList(project_id);
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/Run/Run.js b/vendors/client/pages/Project/Interface/InterfaceList/Run/Run.js
+index 722cd24f..660f4c9d 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/Run/Run.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/Run/Run.js
+@@ -2,7 +2,6 @@ import React, { PureComponent as Component } from 'react';
+ import PropTypes from 'prop-types';
+ import { connect } from 'react-redux';
+ import { withRouter } from 'react-router';
+-import axios from 'axios';
+ import { message } from 'antd';
+ import { Postman } from '../../../../../components';
+ import AddColModal from './AddColModal';
+@@ -71,7 +70,7 @@ export default class Run extends Component {
+       params.test_res_body = JSON.stringify(params.test_res_body, null, '   ');
+     }
+ 
+-    const res = await axios.post('/api/col/add_case', params);
++    const res = await addCase(params);
+     if (res.data.errcode) {
+       message.error(res.data.errmsg);
+     } else {
+diff --git a/vendors/client/pages/Project/Interface/InterfaceList/View.js b/vendors/client/pages/Project/Interface/InterfaceList/View.js
+index c32d4fd8..1bbed24b 100644
+--- a/vendors/client/pages/Project/Interface/InterfaceList/View.js
++++ b/vendors/client/pages/Project/Interface/InterfaceList/View.js
+@@ -1,4 +1,5 @@
+ import "./View.scss";
++import { getUserAvatarUrl } from "../../../../api/paths";
+ import React, { PureComponent as Component } from "react";
+ import { connect } from "react-redux";
+ import PropTypes from "prop-types";
+@@ -390,7 +391,7 @@ class View extends Component {
+             </Col>
+             <Col span={8} className="colValue">
+               <Link className="user-name" to={"/user/profile/" + uid}>
+-                <img src={"/api/user/avatar?uid=" + uid} className="user-img" />
++                <img src={getUserAvatarUrl(uid)} className="user-img" />
+                 {username}
+               </Link>
+             </Col>
+diff --git a/vendors/client/pages/Project/Setting/ProjectData/ProjectData.js b/vendors/client/pages/Project/Setting/ProjectData/ProjectData.js
+index 3c022eaf..1cbeedc3 100644
+--- a/vendors/client/pages/Project/Setting/ProjectData/ProjectData.js
++++ b/vendors/client/pages/Project/Setting/ProjectData/ProjectData.js
+@@ -16,7 +16,6 @@ import {
+ import PropTypes from "prop-types";
+ import { connect } from "react-redux";
+ import "./ProjectData.scss";
+-import axios from "axios";
+ 
+ import URL from "url";
+ 
+@@ -31,6 +30,8 @@ const RadioGroup = Radio.Group;
+ const importDataModule = {};
+ const exportDataModule = {};
+ const HandleImportData = require("common/HandleImportData");
++import { fetchCatMenu } from "../../../../api/interface";
++import { isApiOk } from "../../../../utils/apiHelpers";
+ function handleExportRouteParams(url, status, isWiki) {
+   if (!url) {
+     return;
+@@ -90,8 +91,8 @@ class ProjectData extends Component {
+   };
+ 
+   UNSAFE_componentWillMount() {
+-    axios.get(`/api/interface/getCatMenu?project_id=${this.props.match.params.id}`).then((data) => {
+-      if (data.data.errcode === 0) {
++    fetchCatMenu(this.props.match.params.id).then((data) => {
++      if (isApiOk(data)) {
+         let menuList = data.data.data;
+         this.setState({
+           menuList: menuList,
+@@ -290,7 +291,6 @@ class ProjectData extends Component {
+       name: "interfaceData",
+       multiple: true,
+       showUploadList: false,
+-      action: "/api/interface/interUpload",
+       customRequest: this.handleFile,
+       onChange: this.uploadChange
+     };
+diff --git a/vendors/client/pages/Project/Setting/ProjectMember/ProjectMember.js b/vendors/client/pages/Project/Setting/ProjectMember/ProjectMember.js
+index 7658117e..e9b1b6a5 100644
+--- a/vendors/client/pages/Project/Setting/ProjectMember/ProjectMember.js
++++ b/vendors/client/pages/Project/Setting/ProjectMember/ProjectMember.js
+@@ -1,4 +1,5 @@
+ import React, { PureComponent as Component } from "react";
++import { getUserAvatarUrl } from "../../../../api/paths";
+ import {
+   Table,
+   Card,
+@@ -233,7 +234,7 @@ class ProjectMember extends Component {
+         key: "username",
+         render: (text, record) => (
+           <div className="m-user">
+-            <img src={"/api/user/avatar?uid=" + record.uid} className="m-user-img" />
++            <img src={getUserAvatarUrl(record.uid)} className="m-user-img" />
+             <p className="m-user-name">{text}</p>
+             <Tooltip placement="top" title="消息通知">
+               <span>
+@@ -389,13 +390,7 @@ class ProjectMember extends Component {
+               this.state.groupMemberList.map((item, index) => (
+                 <div key={index} className="card-item">
+                   <img
+-                    src={
+-                      location.protocol +
+-                        "//" +
+-                        location.host +
+-                        "/api/user/avatar?uid=" +
+-                        item.uid
+-                    }
++                    src={getUserAvatarUrl(item.uid)}
+                     className="item-img"
+                   />
+                   <p className="item-name">
+diff --git a/vendors/client/pages/Project/Setting/ProjectToken/ProjectToken.jsx b/vendors/client/pages/Project/Setting/ProjectToken/ProjectToken.jsx
+index 5e720a4e..3114ddb5 100644
+--- a/vendors/client/pages/Project/Setting/ProjectToken/ProjectToken.jsx
++++ b/vendors/client/pages/Project/Setting/ProjectToken/ProjectToken.jsx
+@@ -4,6 +4,7 @@ import { connect } from "react-redux";
+ import { Icon, Tooltip, message, Modal } from "antd";
+ import copy from "copy-to-clipboard";
+ import { getToken, updateToken } from "../../../../reducer/modules/project";
++import { getApiDocPath } from "../../../../api/paths";
+ //
+ import styles from "./ProjectToken.module.scss";
+ //
+diff --git a/vendors/client/pages/User/components/List.jsx b/vendors/client/pages/User/components/List.jsx
+index b89012ab..0bf3374e 100644
+--- a/vendors/client/pages/User/components/List.jsx
++++ b/vendors/client/pages/User/components/List.jsx
+@@ -6,7 +6,7 @@ import { setBreadcrumb } from "../../../reducer/modules/user";
+ import { connect } from "react-redux";
+ import PropTypes from "prop-types";
+ import { Table, Popconfirm, message, Input } from "antd";
+-import axios from "axios";
++import { fetchUserList, searchUser, deleteUser } from "../../../api/user";
+ 
+ const Search = Input.Search;
+ const limit = 20;
+@@ -43,7 +43,7 @@ class List extends Component {
+   };
+ 
+   getUserList() {
+-    axios.get("/api/user/list?page=" + this.state.current + "&limit=" + limit).then((res) => {
++    fetchUserList(this.state.current, limit).then((res) => {
+       let result = res.data;
+ 
+       if (result.errcode === 0) {
+@@ -67,10 +67,7 @@ class List extends Component {
+   }
+ 
+   confirm = (uid) => {
+-    axios
+-      .post("/api/user/del", {
+-        id: uid
+-      })
++    deleteUser(uid)
+       .then(
+         (res) => {
+           if (res.data.errcode === 0) {
+@@ -97,7 +94,7 @@ class List extends Component {
+   handleSearch = (value) => {
+     let params = { q: value };
+     if (params.q !== "") {
+-      axios.get("/api/user/search", { params }).then((data) => {
++      searchUser(params).then((data) => {
+         let userList = [];
+ 
+         data = data.data.data;
+diff --git a/vendors/client/pages/User/components/Profile.jsx b/vendors/client/pages/User/components/Profile.jsx
+index cad2ecb4..b4f85505 100644
+--- a/vendors/client/pages/User/components/Profile.jsx
++++ b/vendors/client/pages/User/components/Profile.jsx
+@@ -1,7 +1,14 @@
+ import React, { PureComponent as Component } from "react";
+ import { Row, Col, Input, Button, Select, message, Upload, Tooltip } from "antd";
+-import axios from "axios";
+ import { formatTime } from "../../../utils/common.js";
++import {
++  fetchUser,
++  updateUser,
++  changePassword,
++  uploadAvatar
++} from "../../../api/user";
++import { getUserAvatarUrl } from "../../../api/paths";
++import { createBase64UploadRequest } from "../../../utils/uploadHelper";
+ import PropTypes from "prop-types";
+ import { setBreadcrumb, setImageUrl } from "../../../reducer/modules/user";
+ import { connect } from "react-redux";
+@@ -107,7 +114,7 @@ class Profile extends Component {
+     let _this = this;
+     const { curUid } = this.props;
+ 
+-    axios.get("/api/user/find?id=" + id).then((res) => {
++    fetchUser(id).then((res) => {
+       _this.setState({
+         userinfo: res.data.data,
+         _userinfo: res.data.data
+@@ -126,7 +133,7 @@ class Profile extends Component {
+     let params = { uid: state.userinfo.uid };
+     params[name] = value;
+ 
+-    axios.post("/api/user/update", params).then(
++    updateUser(params).then(
+       (res) => {
+         let data = res.data;
+         if (data.errcode === 0) {
+@@ -183,7 +190,7 @@ class Profile extends Component {
+       old_password: old_password
+     };
+ 
+-    axios.post("/api/user/change_password", params).then(
++    changePassword(params).then(
+       (res) => {
+         let data = res.data;
+         if (data.errcode === 0) {
+@@ -394,7 +401,7 @@ class Profile extends Component {
+                 <AvatarUpload uid={userinfo.uid}>点击上传头像</AvatarUpload>
+               ) : (
+                 <div className="avatarImg">
+-                  <img src={`/api/user/avatar?uid=${userinfo.uid}`} />
++                  <img src={getUserAvatarUrl(userinfo.uid)} />
+                 </div>
+               )}
+             </Col>
+@@ -477,29 +484,9 @@ class AvatarUpload extends Component {
+     setImageUrl: PropTypes.func,
+     url: PropTypes.any
+   };
+-  uploadAvatar(basecode) {
+-    axios
+-      .post("/api/user/upload_avatar", { basecode: basecode })
+-      .then(() => {
+-        // this.setState({ imageUrl: basecode });
+-        this.props.setImageUrl(basecode);
+-      })
+-      .catch((e) => {
+-        console.log(e);
+-      });
+-  }
+-  handleChange(info) {
+-    if (info.file.status === "done") {
+-      // Get this url from response in real world.
+-      getBase64(info.file.originFileObj, (basecode) => {
+-        this.uploadAvatar(basecode);
+-      });
+-    }
+-  }
+   render() {
+     const { url } = this.props;
+-    let imageUrl = url ? url : `/api/user/avatar?uid=${this.props.uid}`;
+-    // let imageUrl = this.state.imageUrl ? this.state.imageUrl : `/api/user/avatar?uid=${this.props.uid}`;
++    let imageUrl = url ? url : getUserAvatarUrl(this.props.uid);
+     // console.log(this.props.uid);
+     return (
+       <div className="avatar-box">
+@@ -512,9 +499,11 @@ class AvatarUpload extends Component {
+               className="avatar-uploader"
+               name="basecode"
+               showUploadList={false}
+-              action="/api/user/upload_avatar"
++              customRequest={createBase64UploadRequest(
++                (basecode) => uploadAvatar(basecode),
++                (basecode) => this.props.setImageUrl(basecode)
++              )}
+               beforeUpload={beforeUpload}
+-              onChange={this.handleChange.bind(this)}
+             >
+               {/* <Avatar size="large" src={imageUrl}  />*/}
+               <div style={{ width: 100, height: 100 }}>
+diff --git a/vendors/client/reducer/middleware/messageMiddleware.js b/vendors/client/reducer/middleware/messageMiddleware.js
+index f7d61f33..91976605 100644
+--- a/vendors/client/reducer/middleware/messageMiddleware.js
++++ b/vendors/client/reducer/middleware/messageMiddleware.js
+@@ -1,20 +1,37 @@
+ import { message } from "antd";
+ 
++const { ApiCode } = require("common/apiResponse");
++
++/**
++ * Redux 异步 Action 全局错误提示
++ * - 网络/axios 错误：action.error === true
++ * - 业务错误：由 apiClient 拦截器 reject，或 payload.data.errcode !== 0
++ */
+ export default () => (next) => (action) => {
+   console.log("messageMiddleware =====>", action);
+   if (!action) {
+     return;
+   }
+   if (action.error) {
+-    message.error((action.payload && action.payload.message) || "服务器错误");
+-  } else if (
+-    action.payload &&
+-    action.payload.data &&
+-    action.payload.data.errcode &&
+-    action.payload.data.errcode !== 40011
++    const err = action.payload;
++    const msg =
++      (err && err.message) ||
++      (err && err.errmsg) ||
++      "服务器错误";
++    message.error(msg);
++    return next(action);
++  }
++  const body = action.payload && action.payload.data;
++  if (
++    body &&
++    typeof body.errcode === "number" &&
++    body.errcode !== ApiCode.SUCCESS &&
++    body.errcode !== ApiCode.NOT_LOGIN
+   ) {
+-    message.error(action.payload.data.errmsg);
+-    throw new Error(action.payload.data.errmsg);
++    message.error(body.errmsg || "请求失败");
++    const error = new Error(body.errmsg || "请求失败");
++    error.errcode = body.errcode;
++    throw error;
+   }
+   return next(action);
+ };
+diff --git a/vendors/client/reducer/modules/addInterface.js b/vendors/client/reducer/modules/addInterface.js
+index 94dfd920..418246bb 100644
+--- a/vendors/client/reducer/modules/addInterface.js
++++ b/vendors/client/reducer/modules/addInterface.js
+@@ -93,7 +93,7 @@ export default (state = initialState, action) => {
+ };
+ 
+ // Action Creators
+-import axios from "axios";
++import { fetchProject } from "../../api/project";
+ 
+ export function pushInputValue(value) {
+   return {
+@@ -161,7 +161,7 @@ export function pushInterfaceMethod(value) {
+ export function fetchInterfaceProject(id) {
+   return {
+     type: FETCH_INTERFACE_PROJECT,
+-    payload: axios.get("/api/project/get", { params: { id } })
++    payload: fetchProject(id)
+   };
+ }
+ 
+diff --git a/vendors/client/reducer/modules/follow.js b/vendors/client/reducer/modules/follow.js
+index 2d129863..2dd4aa40 100644
+--- a/vendors/client/reducer/modules/follow.js
++++ b/vendors/client/reducer/modules/follow.js
+@@ -1,11 +1,9 @@
+-import axios from "axios";
++import { fetchFollowList, addFollow as addFollowApi, removeFollow } from "../../api/follow";
+ 
+-// Actions
+ const GET_FOLLOW_LIST = "yapi/follow/GET_FOLLOW_LIST";
+ const DEL_FOLLOW = "yapi/follow/DEL_FOLLOW";
+ const ADD_FOLLOW = "yapi/follow/ADD_FOLLOW";
+ 
+-// Reducer
+ const initialState = {
+   data: []
+ };
+@@ -16,33 +14,27 @@ export default (state = initialState, action) => {
+       ...state,
+       data: action.payload.data.data
+     };
+-  } else {
+-    return state;
+   }
++  return state;
+ };
+ 
+-// 获取关注列表
+ export function getFollowList(uid) {
+   return {
+     type: GET_FOLLOW_LIST,
+-    payload: axios.get("/api/follow/list", {
+-      params: { uid }
+-    })
++    payload: fetchFollowList(uid)
+   };
+ }
+ 
+-// 添加关注
+ export function addFollow(param) {
+   return {
+     type: ADD_FOLLOW,
+-    payload: axios.post("/api/follow/add", param)
++    payload: addFollowApi(param)
+   };
+ }
+ 
+-// 删除关注
+ export function delFollow(id) {
+   return {
+     type: DEL_FOLLOW,
+-    payload: axios.post("/api/follow/del", { projectid: id })
++    payload: removeFollow(id)
+   };
+ }
+diff --git a/vendors/client/reducer/modules/group.js b/vendors/client/reducer/modules/group.js
+index 2055fae0..cef5b128 100644
+--- a/vendors/client/reducer/modules/group.js
++++ b/vendors/client/reducer/modules/group.js
+@@ -1,4 +1,13 @@
+-import axios from "axios";
++import {
++  fetchGroup,
++  fetchGroupList as fetchGroupListApi,
++  addGroupMember,
++  removeGroupMember,
++  changeGroupMemberRole,
++  updateGroup,
++  deleteGroup as deleteGroupApi,
++  fetchGroupMemberList as fetchGroupMemberListApi
++} from "../../api/group";
+ // Actions
+ const FETCH_GROUP_LIST = "yapi/group/FETCH_GROUP_LIST";
+ const SET_CURR_GROUP = "yapi/group/SET_CURR_GROUP";
+@@ -57,7 +66,6 @@ export default (state = initialState, action) => {
+     }
+     case FETCH_GROUP_MSG: {
+       console.log(action.payload)
+-      // const {role,group_name,group_desc,} = action.payload.data.data
+       return {
+         ...state,
+         role: action.payload.data.data.role,
+@@ -72,83 +80,65 @@ export default (state = initialState, action) => {
+       return state;
+   }
+ };
+-// 获取 group 信息 (权限信息)
+ export function fetchGroupMsg(id) {
+   return {
+     type: FETCH_GROUP_MSG,
+-    payload: axios.get("/api/group/get", {
+-      params: { id }
+-    })
++    payload: fetchGroup(id)
+   };
+ }
+-// 添加分组成员
+ export function addMember(param) {
+   return {
+     type: ADD_GROUP_MEMBER,
+-    payload: axios.post("/api/group/add_member", param)
++    payload: addGroupMember(param)
+   };
+ }
+-// 删除分组成员
+ export function delMember(param) {
+   return {
+     type: DEL_GROUP_MEMBER,
+-    payload: axios.post("/api/group/del_member", param)
++    payload: removeGroupMember(param)
+   };
+ }
+-// 修改分组成员权限
+ export function changeMemberRole(param) {
+   return {
+     type: CHANGE_GROUP_MEMBER,
+-    payload: axios.post("/api/group/change_member_role", param)
++    payload: changeGroupMemberRole(param)
+   };
+ }
+-// 修改分组信息
+ export function changeGroupMsg(param) {
+   return {
+     type: CHANGE_GROUP_MESSAGE,
+-    payload: axios.post("/api/group/up", param)
++    payload: updateGroup(param)
+   };
+ }
+-// 更新左侧的分组列表
+ export function updateGroupList(param) {
+   return {
+     type: UPDATE_GROUP_LIST,
+     payload: param
+   };
+ }
+-// 删除分组
+ export function deleteGroup(param) {
+   return {
+     type: DEL_GROUP,
+-    payload: axios.post("/api/group/del", param)
++    payload: deleteGroupApi(param)
+   };
+ }
+-// 获取分组成员列表
+ export function fetchGroupMemberList(id) {
+   return {
+     type: FETCH_GROUP_MEMBER,
+-    payload: axios.get("/api/group/get_member_list", {
+-      params: { id }
+-    })
++    payload: fetchGroupMemberListApi({ id })
+   };
+ }
+-// Action Creators
+ export function fetchGroupList() {
+   return {
+     type: FETCH_GROUP_LIST,
+-    payload: axios.get("/api/group/list")
++    payload: fetchGroupListApi()
+   };
+ }
+ export function setCurrGroup(group, time) {
+   if (group && group._id) {
+     return {
+       type: SET_CURR_GROUP,
+-      payload: axios.request({
+-        url: "/api/group/get",
+-        method: "GET",
+-        params: { id: group._id }
+-      })
++      payload: fetchGroup(group._id)
+     };
+   }
+-  // console.log("setCurrGroup ==========>", time);
+ }
+diff --git a/vendors/client/reducer/modules/interface.js b/vendors/client/reducer/modules/interface.js
+index 2a3840ae..e43834b8 100644
+--- a/vendors/client/reducer/modules/interface.js
++++ b/vendors/client/reducer/modules/interface.js
+@@ -1,5 +1,12 @@
+-import axios from "axios";
+-import qs from "qs";
++import {
++  deleteInterface as deleteInterfaceApi,
++  saveInterface as saveInterfaceApi,
++  deleteInterfaceCat as deleteInterfaceCatApi,
++  fetchInterface as fetchInterfaceApi,
++  fetchInterfaceListMenu as fetchInterfaceListMenuApi,
++  fetchInterfaceList as fetchInterfaceListApi,
++  fetchInterfaceCatList as fetchInterfaceCatListApi
++} from "../../api/interface";
+ // Actions
+ const INIT_INTERFACE_DATA = "yapi/interface/INIT_INTERFACE_DATA";
+ const FETCH_INTERFACE_DATA = "yapi/interface/FETCH_INTERFACE_DATA";
+@@ -94,7 +101,7 @@ export function updateInterfaceData(updata) {
+ }
+ 
+ export async function deleteInterfaceData(id) {
+-  let result = await axios.post("/api/interface/del", {id: id});
++  let result = await deleteInterfaceApi(id);
+   return {
+     type: DELETE_INTERFACE_DATA,
+     payload: result
+@@ -102,7 +109,7 @@ export async function deleteInterfaceData(id) {
+ }
+ 
+ export async function saveImportData(data) {
+-  let result = await axios.post("/api/interface/save", data);
++  let result = await saveInterfaceApi(data);
+   return {
+     type: SAVE_IMPORT_DATA,
+     payload: result
+@@ -110,7 +117,7 @@ export async function saveImportData(data) {
+ }
+ 
+ export async function deleteInterfaceCatData(id) {
+-  let result = await axios.post("/api/interface/del_cat", {catid: id});
++  let result = await deleteInterfaceCatApi(id);
+   return {
+     type: DELETE_INTERFACE_CAT_DATA,
+     payload: result
+@@ -119,7 +126,7 @@ export async function deleteInterfaceCatData(id) {
+ 
+ // Action Creators
+ export async function fetchInterfaceData(interfaceId) {
+-  let result = await axios.get("/api/interface/get?id=" + interfaceId);
++  let result = await fetchInterfaceApi(interfaceId);
+   return {
+     type: FETCH_INTERFACE_DATA,
+     payload: result
+@@ -127,7 +134,7 @@ export async function fetchInterfaceData(interfaceId) {
+ }
+ 
+ export async function fetchInterfaceListMenu(projectId) {
+-  let result = await axios.get("/api/interface/list_menu?project_id=" + projectId);
++  let result = await fetchInterfaceListMenuApi(projectId);
+   return {
+     type: FETCH_INTERFACE_LIST_MENU,
+     payload: result
+@@ -135,10 +142,7 @@ export async function fetchInterfaceListMenu(projectId) {
+ }
+ 
+ export async function fetchInterfaceList(params) {
+-  let result = await axios.get("/api/interface/list", {
+-    params,
+-    paramsSerializer: (params) => qs.stringify(params, {indices: false})
+-  })
++  let result = await fetchInterfaceListApi(params)
+   return {
+     type: FETCH_INTERFACE_LIST,
+     payload: result
+@@ -146,10 +150,7 @@ export async function fetchInterfaceList(params) {
+ }
+ 
+ export async function fetchInterfaceCatList(params) {
+-  let result = axios.get("/api/interface/list_cat", {
+-    params,
+-    paramsSerializer: (params) => qs.stringify(params, {indices: false})
+-  })
++  let result = fetchInterfaceCatListApi(params)
+   return {
+     type: FETCH_INTERFACE_CAT_LIST,
+     payload: result
+diff --git a/vendors/client/reducer/modules/interfaceCol.js b/vendors/client/reducer/modules/interfaceCol.js
+index a151fd5b..7a0faee1 100644
+--- a/vendors/client/reducer/modules/interfaceCol.js
++++ b/vendors/client/reducer/modules/interfaceCol.js
+@@ -1,4 +1,10 @@
+-import axios from "axios";
++import {
++  fetchColList as fetchColListApi,
++  fetchCase as fetchCaseApi,
++  fetchCaseList as fetchCaseListApi,
++  fetchCaseEnvList as fetchCaseEnvListApi,
++  fetchCaseListByVarParams as fetchCaseListByVarParamsApi
++} from "../../api/col";
+ // Actions
+ const FETCH_INTERFACE_COL_LIST = "yapi/interfaceCol/FETCH_INTERFACE_COL_LIST";
+ const FETCH_CASE_DATA = "yapi/interfaceCol/FETCH_CASE_DATA";
+@@ -74,41 +80,38 @@ export default (state = initialState, action) => {
+   }
+ };
+ 
+-// Action Creators
+ export function fetchInterfaceColList(projectId) {
+   return {
+     type: FETCH_INTERFACE_COL_LIST,
+-    payload: axios.get("/api/col/list?project_id=" + projectId)
++    payload: fetchColListApi(projectId)
+   };
+ }
+ 
+ export function fetchCaseData(caseId) {
+   return {
+     type: FETCH_CASE_DATA,
+-    payload: axios.get("/api/col/case?caseid=" + caseId)
++    payload: fetchCaseApi(caseId)
+   };
+ }
+ 
+ export function fetchCaseList(colId) {
+   return {
+     type: FETCH_CASE_LIST,
+-    payload: axios.get("/api/col/case_list/?col_id=" + colId)
++    payload: fetchCaseListApi(colId)
+   };
+ }
+ 
+ export function fetchCaseEnvList(col_id) {
+   return {
+     type: FETCH_CASE_ENV_LIST,
+-    payload: axios.get("/api/col/case_env_list", {
+-      params: { col_id }
+-    })
++    payload: fetchCaseEnvListApi(col_id)
+   };
+ }
+ 
+ export function fetchVariableParamsList(colId) {
+   return {
+     type: FETCH_VARIABLE_PARAMS_LIST,
+-    payload: axios.get("/api/col/case_list_by_var_params?col_id=" + colId)
++    payload: fetchCaseListByVarParamsApi(colId)
+   };
+ }
+ 
+diff --git a/vendors/client/reducer/modules/mockCol.js b/vendors/client/reducer/modules/mockCol.js
+index b270a6fd..a20c234d 100644
+--- a/vendors/client/reducer/modules/mockCol.js
++++ b/vendors/client/reducer/modules/mockCol.js
+@@ -1,4 +1,4 @@
+-import axios from "axios";
++import { fetchAdvMockCaseList } from "../../api/plugin";
+ 
+ // Actions
+ const FETCH_MOCK_COL = "yapi/mockCol/FETCH_MOCK_COL";
+@@ -20,9 +20,11 @@ export default (state = initialState, action) => {
+   }
+ };
+ 
+-// Action Creators
++/**
++ * 获取高级 Mock 用例列表（插件 advmock）
++ */
+ export async function fetchMockCol(interfaceId) {
+-  let result = await axios.get("/api/plugin/advmock/case/list?interface_id=" + interfaceId);
++  const result = await fetchAdvMockCaseList(interfaceId);
+   return {
+     type: FETCH_MOCK_COL,
+     payload: result.data
+diff --git a/vendors/client/reducer/modules/news.js b/vendors/client/reducer/modules/news.js
+index 95a3f787..62936ed9 100644
+--- a/vendors/client/reducer/modules/news.js
++++ b/vendors/client/reducer/modules/news.js
+@@ -1,7 +1,10 @@
+-// Actions
++import { fetchLogList, fetchLogListByUpdate } from "../../api/log";
++import { fetchProject } from "../../api/project";
++import variable from "../../utils/variable";
++
+ const FETCH_NEWS_DATA = "yapi/news/FETCH_NEWS_DATA";
+ const FETCH_MORE_NEWS = "yapi/news/FETCH_MORE_NEWS";
+-// Reducer
++
+ const initialState = {
+   newsData: {
+     list: [],
+@@ -49,26 +52,21 @@ export default (state = initialState, action) => {
+   }
+ };
+ 
+-// Action Creators
+-import axios from "axios";
+-import variable from "../../utils/variable";
+-
+ export function fetchNewsData(typeid, type, page, limit, selectValue) {
+-  let param = {
++  const param = {
+     typeid: typeid,
+     type: type,
+     page: page,
+     limit: limit ? limit : variable.PAGE_LIMIT,
+     selectValue
+-  }
++  };
+ 
+   return {
+     type: FETCH_NEWS_DATA,
+-    payload: axios.get("/api/log/list", {
+-      params: param
+-    })
++    payload: fetchLogList(param)
+   };
+ }
++
+ export function fetchMoreNews(typeid, type, page, limit, selectValue) {
+   const param = {
+     typeid: typeid,
+@@ -76,26 +74,23 @@ export function fetchMoreNews(typeid, type, page, limit, selectValue) {
+     page: page,
+     limit: limit ? limit : variable.PAGE_LIMIT,
+     selectValue
+-  }
++  };
+   return {
+     type: FETCH_MORE_NEWS,
+-    payload: axios.get("/api/log/list", {
+-      params: param
+-    })
++    payload: fetchLogList(param)
+   };
+ }
+ 
+ export function getMockUrl(project_id) {
+-  const params = { id: project_id };
+   return {
+     type: "",
+-    payload: axios.get("/api/project/get", { params: params })
++    payload: fetchProject(project_id)
+   };
+ }
+ 
+ export function fetchUpdateLogData(params) {
+   return {
+     type: "",
+-    payload: axios.post("/api/log/list_by_update", params)
++    payload: fetchLogListByUpdate(params)
+   };
+ }
+diff --git a/vendors/client/reducer/modules/project.js b/vendors/client/reducer/modules/project.js
+index 2fc8fd0d..e8f9303c 100644
+--- a/vendors/client/reducer/modules/project.js
++++ b/vendors/client/reducer/modules/project.js
+@@ -1,4 +1,23 @@
+-import axios from "axios";
++import {
++  fetchProjectList as fetchProjectListApi,
++  copyProject as copyProjectApi,
++  addProjectMember,
++  removeProjectMember,
++  changeProjectMemberRole,
++  changeProjectMemberEmailNotice,
++  fetchProjectMemberList,
++  addProject as addProjectApi,
++  updateProject as updateProjectApi,
++  updateProjectEnv,
++  fetchProjectEnv,
++  upsetProject as upsetProjectApi,
++  deleteProject as deleteProjectApi,
++  fetchProject as fetchProjectApi,
++  fetchProjectToken,
++  updateProjectToken,
++  checkProjectName as checkProjectNameApi,
++  fetchSwaggerUrl
++} from "../../api/project";
+ import variable from "../../utils/variable";
+ import {htmlFilter} from "../../utils/common";
+ 
+@@ -115,12 +134,10 @@ export default (state = initialState, action) => {
+ export function fetchProjectList(id, pageNum) {
+   return {
+     type: FETCH_PROJECT_LIST,
+-    payload: axios.get("/api/project/list", {
+-      params: {
+-        group_id: id,
+-        page: pageNum || 1,
+-        limit: variable.PAGE_LIMIT
+-      }
++    payload: fetchProjectListApi({
++      group_id: id,
++      page: pageNum || 1,
++      limit: variable.PAGE_LIMIT
+     })
+   };
+ }
+@@ -129,7 +146,7 @@ export function fetchProjectList(id, pageNum) {
+ export function copyProjectMsg(params) {
+   return {
+     type: COPY_PROJECT_MSG,
+-    payload: axios.post("/api/project/copy", params)
++    payload: copyProjectApi(params)
+   };
+ }
+ 
+@@ -137,7 +154,7 @@ export function copyProjectMsg(params) {
+ export function addMember(param) {
+   return {
+     type: ADD_PROJECT_MEMBER,
+-    payload: axios.post("/api/project/add_member", param)
++    payload: addProjectMember(param)
+   };
+ }
+ 
+@@ -145,7 +162,7 @@ export function addMember(param) {
+ export function delMember(param) {
+   return {
+     type: DEL_PROJECT_MEMBER,
+-    payload: axios.post("/api/project/del_member", param)
++    payload: removeProjectMember(param)
+   };
+ }
+ 
+@@ -153,14 +170,14 @@ export function delMember(param) {
+ export function changeMemberRole(param) {
+   return {
+     type: CHANGE_PROJECT_MEMBER,
+-    payload: axios.post("/api/project/change_member_role", param)
++    payload: changeProjectMemberRole(param)
+   };
+ }
+ // 修改项目成员是否收到消息通知
+ export function changeMemberEmailNotice(param) {
+   return {
+     type: CHANGE_MEMBER_EMAIL_NOTICE,
+-    payload: axios.post("/api/project/change_member_email_notice", param)
++    payload: changeProjectMemberEmailNotice(param)
+   };
+ }
+ 
+@@ -168,9 +185,7 @@ export function changeMemberEmailNotice(param) {
+ export function getProjectMemberList(id) {
+   return {
+     type: GET_PEOJECT_MEMBER,
+-    payload: axios.get("/api/project/get_member_list", {
+-      params: { id }
+-    })
++    payload: fetchProjectMemberList(id)
+   };
+ }
+ 
+@@ -211,7 +226,7 @@ export function addProject(data) {
+   };
+   return {
+     type: PROJECT_ADD,
+-    payload: axios.post("/api/project/add", param)
++    payload: addProjectApi(param)
+   };
+ }
+ 
+@@ -236,7 +251,7 @@ export function updateProject(data) {
+   };
+   return {
+     type: PROJECT_UPDATE,
+-    payload: axios.post("/api/project/up", param)
++    payload: updateProjectApi(param)
+   };
+ }
+ 
+@@ -244,7 +259,7 @@ export function updateProject(data) {
+ export function updateProjectScript(data) {
+   return {
+     type: PROJECT_UPDATE,
+-    payload: axios.post("/api/project/up", data)
++    payload: updateProjectApi(data)
+   };
+ }
+ 
+@@ -252,7 +267,7 @@ export function updateProjectScript(data) {
+ export function updateProjectMock(data) {
+   return {
+     type: PROJECT_UPDATE,
+-    payload: axios.post("/api/project/up", data)
++    payload: updateProjectApi(data)
+   };
+ }
+ 
+@@ -265,7 +280,7 @@ export function updateEnv(data) {
+   };
+   return {
+     type: PROJECT_UPDATE_ENV,
+-    payload: axios.post("/api/project/up_env", param)
++    payload: updateProjectEnv(param)
+   };
+ }
+ 
+@@ -273,7 +288,7 @@ export function updateEnv(data) {
+ export function getEnv(project_id) {
+   return {
+     type: PROJECT_GET_ENV,
+-    payload: axios.get("/api/project/get_env", { params: { project_id } })
++    payload: fetchProjectEnv(project_id)
+   };
+ }
+ 
+@@ -281,7 +296,7 @@ export function getEnv(project_id) {
+ export function upsetProject(param) {
+   return {
+     type: PROJECT_UPSET,
+-    payload: axios.post("/api/project/upset", param)
++    payload: upsetProjectApi(param)
+   };
+ }
+ 
+@@ -290,12 +305,12 @@ export function delProject(id) {
+   const param = { id };
+   return {
+     type: PROJECT_DEL,
+-    payload: axios.post("/api/project/del", param)
++    payload: deleteProjectApi(param)
+   };
+ }
+ 
+ export async function getProject(id) {
+-  let result = await axios.get("/api/project/get?id=" + id);
++  let result = await fetchProject(id);
+   return {
+     type: GET_CURR_PROJECT,
+     payload: result
+@@ -305,33 +320,27 @@ export async function getProject(id) {
+ export async function getToken(project_id) {
+   return {
+     type: GET_TOKEN,
+-    payload: axios.get("/api/project/token", {
+-      params: { project_id }
+-    })
++    payload: fetchProjectToken(project_id)
+   };
+ }
+ 
+ export async function updateToken(project_id) {
+   return {
+     type: UPDATE_TOKEN,
+-    payload: axios.get("/api/project/update_token", {
+-      params: { project_id }
+-    })
++    payload: updateProjectToken(project_id)
+   };
+ }
+ 
+ export async function checkProjectName(name, group_id) {
+   return {
+     type: CHECK_PROJECT_NAME,
+-    payload: axios.get("/api/project/check_project_name", {
+-      params: { name, group_id }
+-    })
++    payload: checkProjectNameApi(name, group_id)
+   };
+ }
+ 
+ export async function handleSwaggerUrlData(url) {
+   return {
+     type: GET_SWAGGER_URL_DATA,
+-    payload: axios.get("/api/project/swagger_url?url=" + encodeURI(encodeURI(url)))
++    payload: fetchSwaggerUrl(url)
+   };
+ }
+diff --git a/vendors/client/reducer/modules/user.js b/vendors/client/reducer/modules/user.js
+index 586d59cc..cb379f2a 100644
+--- a/vendors/client/reducer/modules/user.js
++++ b/vendors/client/reducer/modules/user.js
+@@ -1,5 +1,11 @@
+-import axios from "axios";
+-// import { createAction } from "redux-actions";
++import {
++  fetchLoginStatus,
++  login,
++  loginByLdap,
++  register,
++  logout,
++  finishStudy as finishStudyApi
++} from "../../api/user";
+ // Actions
+ const LOGIN = "yapi/user/LOGIN";
+ const LOGIN_OUT = "yapi/user/LOGIN_OUT";
+@@ -26,12 +32,6 @@ const initialState = {
+   loginWrapActiveKey: "1",
+   role: "",
+   type: "",
+-  // breadcrumb: [{
+-  //   name: 'name',
+-  //   href: 'group'
+-  // }, {
+-  //   name: '当前页面'
+-  // }]
+   breadcrumb: [],
+   studyTip: 0,
+   study: false,
+@@ -83,19 +83,11 @@ export default (state = initialState, action) => {
+     case LOGIN_TYPE: {
+       return {
+         ...state,
+-        loginWrapActiveKey: action.index
++        loginWrapActiveKey: action.index + ""
+       };
+     }
+     case REGISTER: {
+-      return {
+-        ...state,
+-        isLogin: true,
+-        loginState: MEMBER_STATUS,
+-        uid: action.payload.data.data.uid,
+-        userName: action.payload.data.data.username,
+-        type: action.payload.data.data.type,
+-        study: action.payload.data.data ? action.payload.data.data.study : false
+-      };
++      return state;
+     }
+     case SET_BREADCRUMB: {
+       return {
+@@ -117,7 +109,6 @@ export default (state = initialState, action) => {
+       };
+     }
+     case SET_IMAGE_URL: {
+-      // console.log('state', state);
+       return {
+         ...state,
+         imageUrl: action.data
+@@ -131,19 +122,19 @@ export default (state = initialState, action) => {
+ export function checkLoginState() {
+   return {
+     type: GET_LOGIN_STATE,
+-    payload: axios.get("/api/user/status")
++    payload: fetchLoginStatus()
+   };
+ }
+ export function loginActions(data) {
+   return {
+     type: LOGIN,
+-    payload: axios.post("/api/user/login", data)
++    payload: login(data)
+   };
+ }
+ export function loginLdapActions(data) {
+   return {
+     type: LOGIN,
+-    payload: axios.post("/api/user/login_by_ldap", data)
++    payload: loginByLdap(data)
+   };
+ }
+ export function regActions(data) {
+@@ -155,13 +146,13 @@ export function regActions(data) {
+   };
+   return {
+     type: REGISTER,
+-    payload: axios.post("/api/user/reg", param)
++    payload: register(param)
+   };
+ }
+ export function logoutActions() {
+   return {
+     type: LOGIN_OUT,
+-    payload: axios.get("/api/user/logout")
++    payload: logout()
+   };
+ }
+ export function loginTypeAction(index) {
+@@ -188,9 +179,8 @@ export function changeStudyTip() {
+   };
+ }
+ export function finishStudy(actionType = FINISH_STUDY) {
+-  // createAction(FINISH_STUDY, axios.get("/api/user/up_study"))
+   return {
+     type: FINISH_STUDY,
+-    payload: axios.get("/api/user/up_study")
++    payload: finishStudyApi()
+   };
+ }
+diff --git a/vendors/client/service/service.js b/vendors/client/service/service.js
+index 68fedd6f..08ac5bc0 100644
+--- a/vendors/client/service/service.js
++++ b/vendors/client/service/service.js
+@@ -1,97 +1,58 @@
++/**
++ * 备用 axios 实例（与主应用 apiClient 共用 YApi 响应契约）
++ * 使用相对路径，勿使用 @ 别名
++ */
+ import axios from "axios";
+-import { getToken, removeInfo, removeToken } from "@/utils/auth";
+-// create an axios instance
++import { getToken, removeToken } from "../utils/auth";
++
++const { ApiCode, isApiEnvelope, isSuccess } = require("common/apiResponse");
++
+ const service = axios.create({
+-  baseURL: process.env.NODE_ENV === "development" ? "/api" : process.env["VITE_REACT_APP_BASE_URL"], // url = base url + request url
+-  // withCredentials: true, // send cookies when cross-domain requests
+-  timeout: 1000 * 60 // request timeout
+-})
+-//
+-// 取消请求
+-let httpList = []
++  baseURL: process.env.NODE_ENV === "development" ? "/api" : process.env["VITE_REACT_APP_BASE_URL"] || "/api",
++  timeout: 1000 * 60
++});
++
++let httpList = [];
+ const removeHttp = (config) => {
+-  let index = httpList.findIndex((v) => v.url === config.url && v.method === config.method)
++  const index = httpList.findIndex((v) => v.url === config.url && v.method === config.method);
+   if (index >= 0) {
+-    // 取消请求
+-    httpList[index].controller.abort()
+-    // 删除当前数据
+-    httpList.splice(index, 1)
++    httpList[index].controller.abort();
++    httpList.splice(index, 1);
+   }
+-}
+-// request interceptor request拦截器
++};
++
+ service.interceptors.request.use((config) => {
+-  // 取消操作
+   removeHttp(config);
+-  // 在push之前遍历数组找到相同的请求取消掉
+   const controller = new AbortController();
+-  config.signal = controller.signal; // 用来取消操作的key
+-  config.controller = controller; // 将控制器绑定到每个请求身上
+-  httpList.push({ ...config }); // 每次的请求加入到数组
+-  //
++  config.signal = controller.signal;
++  config.controller = controller;
++  httpList.push({ ...config });
+   if (getToken()) {
+-    config.headers["token"] = `${getToken()}`
++    config.headers["token"] = `${getToken()}`;
+   }
+-  return config
+-}, (error) => {
+-  console.log(error) // for debug
+-  return Promise.reject(error)
+-})
+-// response interceptor response拦截器
++  return config;
++}, (error) => Promise.reject(error));
++
+ service.interceptors.response.use((response) => {
+-  const { code, message } = response.data;
+-  if (["002", "000"].includes(response.data.code)) {
+-    return response.data
+-  } else {
+-    // Toast.show({ content: message })
+-    return Promise.reject(new Error(message || "Error"))
++  const body = response.data;
++  if (!isApiEnvelope(body)) {
++    console.warn("[service] 非标准响应", response.config.url);
++    return response;
++  }
++  if (body.errcode === ApiCode.NOT_LOGIN) {
++    return response;
++  }
++  if (!isSuccess(body)) {
++    const error = new Error(body.errmsg || "请求失败");
++    error.errcode = body.errcode;
++    return Promise.reject(error);
+   }
++  return response;
+ }, (error) => {
+-  if (error && error.response) {
+-    const { status } = error.response;
+-    switch (status) {
+-      case 400:
+-        error.message = "请求错误";
+-        break
+-      case 401:
+-        error.message = "未授权，请登录";
+-        removeToken();
+-        break
+-      case 403:
+-        error.message = "拒绝访问";
+-        break
+-      case 404:
+-        error.message = `请求地址出错: ${error.response.config.url}`;
+-        break
+-      case 408:
+-        error.message = "请求超时";
+-        break
+-      case 500:
+-        error.message = "网络异常，请刷新重试！";
+-        break
+-      case 501:
+-        error.message = "网络异常，请刷新重试！";
+-        break
+-      case 502:
+-        error.message = "网络异常，请刷新重试！";
+-        break
+-      case 503:
+-        error.message = "服务不可用";
+-        break
+-      case 504:
+-        error.message = "网关超时";
+-        break
+-      case 505:
+-        error.message = "HTTP版本不受支持";
+-        break
+-      default:
+-        break
+-    }
+-    // Toast.show({ content: error.message })
+-    return Promise.reject(error)
+-    //
+-  } else {
+-    // Toast.show({ content: error.message })
+-    return Promise.reject(error)
++  if (error && error.response && error.response.status === 401) {
++    removeToken();
+   }
+-})
+-export default service
++  return Promise.reject(error);
++});
++
++export default service;
+diff --git a/vendors/client/styles/antd-ui/theme.less b/vendors/client/styles/antd-ui/theme.less
+index ea6acee7..96222ce4 100644
+--- a/vendors/client/styles/antd-ui/theme.less
++++ b/vendors/client/styles/antd-ui/theme.less
+@@ -47,6 +47,8 @@
+ @font-size-lg           : @font-size-base + 3px;
+ @line-height-base       : 1.5;
+ @border-radius-base     : 4px;
++// 布局断点：与侧栏 breakpoint="lg" 对齐
++@screen-lg              : 992px;
+ @border-radius-sm       : 2px;
+ 
+ // The background colors for active and hover states for things like
+diff --git a/vendors/client/styles/custom-ui/costom.scss b/vendors/client/styles/custom-ui/costom.scss
+index 2d4fc53d..71de1f39 100644
+--- a/vendors/client/styles/custom-ui/costom.scss
++++ b/vendors/client/styles/custom-ui/costom.scss
+@@ -142,6 +142,10 @@ html, body {
+   min-width: 7.52rem; // Col宽度 (752+16)/24 = 32
+   margin: 0 auto;
+   padding: 0 .24rem;
++  @media (max-width: 992px) {
++    min-width: 0;
++    padding: 0 .16rem;
++  }
+ }
+ .m-container {
+   margin: .24rem auto;
+diff --git a/vendors/client/styles/mixin.scss b/vendors/client/styles/mixin.scss
+index 8c31df06..d464ba2b 100644
+--- a/vendors/client/styles/mixin.scss
++++ b/vendors/client/styles/mixin.scss
+@@ -22,8 +22,15 @@ $color-antd-purple: #7265e6;
+   max-width: 12.2rem;
+   min-width: 10.2rem;
+   padding: 0 .24rem;
++  @media (max-width: 992px) {
++    min-width: 0;
++    padding: 0 .16rem;
++  }
+ }
+ 
+ @mixin wrap-width-limit {
+   min-width: 10.2rem;
++  @media (max-width: 992px) {
++    min-width: 0;
++  }
+ }
+diff --git a/vendors/client/utils/apiClient.js b/vendors/client/utils/apiClient.js
+new file mode 100644
+index 00000000..2558bdce
+--- /dev/null
++++ b/vendors/client/utils/apiClient.js
+@@ -0,0 +1,105 @@
++/**
++ * 统一 HTTP 客户端：对接 YApi 标准响应 { errcode, errmsg, data }
++ */
++import axios from "axios";
++
++const {
++  ApiCode,
++  isApiEnvelope,
++  isSuccess,
++  isRawResponsePath
++} = require("common/apiResponse");
++
++/** 解析请求完整路径，用于判断是否跳过 JSON 信封校验 */
++function resolveApiPath(config) {
++  const url = (config && config.url) || "";
++  if (url.indexOf("/api/") === 0) {
++    return url.split("?")[0];
++  }
++  const base = (config && config.baseURL) || "";
++  const joined = `${base}${url}`.replace(/\/+/g, "/");
++  if (joined.indexOf("/api/") === 0) {
++    return joined.split("?")[0];
++  }
++  return `/api${url.startsWith("/") ? url : `/${url}`}`.split("?")[0];
++}
++
++/**
++ * 为 axios 实例挂载响应拦截器
++ * @param {import('axios').AxiosInstance} instance
++ */
++function attachApiInterceptors(instance) {
++  instance.interceptors.response.use(
++    (response) => {
++      const path = resolveApiPath(response.config);
++      if (isRawResponsePath(path)) {
++        return response;
++      }
++      const contentType = response.headers && response.headers["content-type"];
++      if (contentType && contentType.indexOf("application/json") === -1) {
++        return response;
++      }
++      const body = response.data;
++      if (!isApiEnvelope(body)) {
++        console.warn("[apiClient] 非标准 JSON 响应:", path, body);
++        return response;
++      }
++      // 未登录：交由业务层处理（如跳转登录页），不弹全局错误
++      if (body.errcode === ApiCode.NOT_LOGIN) {
++        return response;
++      }
++      if (!isSuccess(body)) {
++        const error = new Error(body.errmsg || "请求失败");
++        error.errcode = body.errcode;
++        error.apiData = body.data;
++        error.response = response;
++        return Promise.reject(error);
++      }
++      return response;
++    },
++    (error) => {
++      if (error && error.response) {
++        const { status, config } = error.response;
++        const path = resolveApiPath(config);
++        const body = error.response.data;
++        if (isApiEnvelope(body)) {
++          error.message = body.errmsg || error.message;
++          error.errcode = body.errcode;
++          error.apiData = body.data;
++        } else {
++          switch (status) {
++            case 400:
++              error.message = "请求错误";
++              break;
++            case 401:
++              error.message = "未授权，请登录";
++              break;
++            case 403:
++              error.message = "拒绝访问";
++              break;
++            case 404:
++              error.message = `请求地址出错: ${path}`;
++              break;
++            case 500:
++              error.message = "服务器内部错误";
++              break;
++            default:
++              break;
++          }
++        }
++      }
++      return Promise.reject(error);
++    }
++  );
++}
++
++const apiClient = axios.create({
++  baseURL: "/api",
++  timeout: 1000 * 60
++});
++
++attachApiInterceptors(apiClient);
++attachApiInterceptors(axios);
++
++export { ApiCode, isApiEnvelope, isSuccess, resolveApiPath };
++export default apiClient;
+diff --git a/vendors/client/utils/apiHelpers.js b/vendors/client/utils/apiHelpers.js
+new file mode 100644
+index 00000000..28ac12fd
+--- /dev/null
++++ b/vendors/client/utils/apiHelpers.js
+@@ -0,0 +1,49 @@
++/**
++ * 前端 API 响应解析工具（与 common/apiResponse 契约一致）
++ */
++const { ApiCode, isApiEnvelope, isSuccess } = require("common/apiResponse");
++
++/**
++ * 从 axios 响应中取出业务 body
++ * @param {import('axios').AxiosResponse} axiosResponse
++ */
++export function getApiBody(axiosResponse) {
++  if (!axiosResponse || !axiosResponse.data) {
++    return null;
++  }
++  return axiosResponse.data;
++}
++
++/**
++ * 是否业务成功（errcode === 0）
++ * @param {import('axios').AxiosResponse|{ errcode: number }} res
++ */
++export function isApiOk(res) {
++  const body = res && res.data !== undefined && res.status !== undefined ? res.data : res;
++  return isSuccess(body);
++}
++
++/**
++ * 取 data 字段；失败时返回 null
++ * @param {import('axios').AxiosResponse} axiosResponse
++ */
++export function getApiData(axiosResponse) {
++  const body = getApiBody(axiosResponse);
++  if (!isSuccess(body)) {
++    return null;
++  }
++  return body.data;
++}
++
++/**
++ * 兼容旧代码：判断 errcode 是否为成功
++ * @param {{ errcode?: number }} body
++ */
++export function isErrcodeOk(body) {
++  if (!body || typeof body.errcode !== "number") {
++    return false;
++  }
++  return body.errcode === ApiCode.SUCCESS;
++}
++
++export { ApiCode, isApiEnvelope, isSuccess };
+diff --git a/vendors/client/utils/uploadHelper.js b/vendors/client/utils/uploadHelper.js
+new file mode 100644
+index 00000000..3232aa18
+--- /dev/null
++++ b/vendors/client/utils/uploadHelper.js
+@@ -0,0 +1,47 @@
++/**
++ * Ant Design Upload 与 apiClient 对接辅助
++ */
++import { message } from "antd";
++import { isApiOk } from "./apiHelpers";
++
++/**
++ * 将 File 转为 base64 字符串
++ * @param {File} file
++ * @returns {Promise<string>}
++ */
++export function readFileAsBase64(file) {
++  return new Promise((resolve, reject) => {
++    const reader = new FileReader();
++    reader.onload = () => resolve(reader.result);
++    reader.onerror = reject;
++    reader.readAsDataURL(file);
++  });
++}
++
++/**
++ * 生成 Upload customRequest：读取文件后调用上传 API
++ * @param {(payload: *) => Promise<import('axios').AxiosResponse>} uploadFn
++ * @param {(base64: string) => *} [onSuccess] 上传成功回调
++ */
++export function createBase64UploadRequest(uploadFn, onSuccess) {
++  return async ({ file, onSuccess: onAntSuccess, onError }) => {
++    try {
++      const base64 = await readFileAsBase64(file);
++      const res = await uploadFn(base64);
++      if (!isApiOk(res)) {
++        const err = new Error((res.data && res.data.errmsg) || "上传失败");
++        message.error(err.message);
++        onError(err);
++        return;
++      }
++      if (onSuccess) {
++        onSuccess(base64, res);
++      }
++      onAntSuccess(res.data, file);
++    } catch (err) {
++      console.error("upload failed", err);
++      message.error(err.message || "上传失败");
++      onError(err);
++    }
++  };
++}
+diff --git a/vendors/common/apiResponse.js b/vendors/common/apiResponse.js
+new file mode 100644
+index 00000000..df72fb6b
+--- /dev/null
++++ b/vendors/common/apiResponse.js
+@@ -0,0 +1,177 @@
++/**
++ * YApi 统一 API 响应契约（前后端共用）
++ * 标准 JSON 响应：{ errcode, errmsg, data, ...extensions }
++ */
++
++/** @typedef {{ errcode: number, errmsg: string, data: * }} ApiEnvelope */
++
++/**
++ * 业务状态码（与历史 YApi 兼容，并补充语义化别名）
++ */
++const ApiCode = {
++  SUCCESS: 0,
++  BAD_REQUEST: 400,
++  UNAUTHORIZED: 401,
++  FORBIDDEN: 403,
++  NOT_FOUND: 404,
++  /** 参数校验失败 */
++  VALIDATION_ERROR: 40022,
++  /** 未登录 / 登录态失效（历史码，前端 middleware 会静默） */
++  NOT_LOGIN: 40011,
++  /** 无效 token */
++  INVALID_TOKEN: 42014,
++  /** 无权限 */
++  PERMISSION_DENIED: 40033,
++  /** 服务器内部错误 */
++  SERVER_ERROR: 50000
++};
++
++/** 默认成功文案 */
++const DEFAULT_SUCCESS_MSG = "成功！";
++
++/**
++ * 不参与 JSON 信封包装的路径前缀（二进制、开放接口原始输出等）
++ */
++const RAW_RESPONSE_PATH_PREFIXES = [
++  "/api/user/avatar",
++  "/api/interface/download_crx",
++  "/api/interface/schema2json",
++  "/api/open/run_auto_test",
++  "/api/open/project_interface_data"
++];
++
++/**
++ * @param {*} value
++ * @returns {boolean}
++ */
++function isApiEnvelope(value) {
++  return (
++    value !== null &&
++    typeof value === "object" &&
++    !Buffer.isBuffer(value) &&
++    typeof value.errcode === "number"
++  );
++}
++
++/**
++ * @param {string} path
++ * @returns {boolean}
++ */
++function isRawResponsePath(path) {
++  if (!path || typeof path !== "string") {
++    return false;
++  }
++  return RAW_RESPONSE_PATH_PREFIXES.some((prefix) => path.indexOf(prefix) === 0);
++}
++
++/**
++ * @param {number} errcode
++ * @returns {string}
++ */
++function defaultMessage(errcode) {
++  return errcode === ApiCode.SUCCESS ? DEFAULT_SUCCESS_MSG : "";
++}
++
++/**
++ * 构造标准 API 响应体
++ * @param {*} data
++ * @param {number} [errcode=0]
++ * @param {string} [errmsg]
++ * @returns {ApiEnvelope}
++ */
++function createResponse(data, errcode, errmsg) {
++  const code = typeof errcode === "number" ? errcode : ApiCode.SUCCESS;
++  return {
++    errcode: code,
++    errmsg: errmsg || defaultMessage(code) || "操作失败",
++    data: data === undefined ? null : data
++  };
++}
++
++/**
++ * 成功响应
++ * @param {*} [data]
++ * @param {string} [errmsg]
++ */
++function success(data, errmsg) {
++  return createResponse(data, ApiCode.SUCCESS, errmsg || DEFAULT_SUCCESS_MSG);
++}
++
++/**
++ * 失败响应
++ * @param {number} errcode
++ * @param {string} errmsg
++ * @param {*} [data]
++ */
++function fail(errcode, errmsg, data) {
++  return createResponse(data === undefined ? null : data, errcode, errmsg);
++}
++
++/**
++ * @param {ApiEnvelope|*} body
++ * @returns {boolean}
++ */
++function isSuccess(body) {
++  return isApiEnvelope(body) && body.errcode === ApiCode.SUCCESS;
++}
++
++/**
++ * 规范化响应体，保留 login/status 等扩展字段（ladp、canRegister、colData 等）
++ * @param {*} body
++ * @returns {ApiEnvelope|*}
++ */
++function normalizeEnvelope(body) {
++  if (!isApiEnvelope(body)) {
++    return body;
++  }
++  const normalized = createResponse(
++    body.data === undefined ? null : body.data,
++    body.errcode,
++    body.errmsg || defaultMessage(body.errcode)
++  );
++  Object.keys(body).forEach((key) => {
++    if (key !== "errcode" && key !== "errmsg" && key !== "data") {
++      normalized[key] = body[key];
++    }
++  });
++  return normalized;
++}
++
++/**
++ * 根据请求路径决定是否包装为统一信封
++ * @param {string} path
++ * @param {*} body
++ * @returns {*}
++ */
++function finalizeResponse(path, body) {
++  if (isRawResponsePath(path)) {
++    return body;
++  }
++  if (body === undefined || body === null) {
++    return success(null);
++  }
++  if (Buffer.isBuffer(body)) {
++    return body;
++  }
++  if (typeof body === "string") {
++    return body;
++  }
++  if (isApiEnvelope(body)) {
++    return normalizeEnvelope(body);
++  }
++  return success(body);
++}
++
++module.exports = {
++  ApiCode,
++  DEFAULT_SUCCESS_MSG,
++  RAW_RESPONSE_PATH_PREFIXES,
++  isApiEnvelope,
++  isRawResponsePath,
++  isSuccess,
++  createResponse,
++  success,
++  fail,
++  normalizeEnvelope,
++  finalizeResponse
++};
+diff --git a/vendors/server/utils/commons.js b/vendors/server/utils/commons.js
+index 669b9d33..11dd13d8 100644
+--- a/vendors/server/utils/commons.js
++++ b/vendors/server/utils/commons.js
+@@ -20,6 +20,7 @@ const ejs = require("easy-json-schema");
+ 
+ const jsf = require("json-schema-faker");
+ const { schemaValidator } = require("../../common/utils");
++const apiResponse = require("../../common/apiResponse");
+ const http = require("http");
+ 
+ jsf.extend("mock", function() {
+@@ -407,14 +408,7 @@ exports.saveLog = (logData) => {
+  * @param {*} ws enable ws
+  */
+ exports.createAction = (router, baseurl, routerController, action, path, method, ws) => {
+-  let routeMethod = (method || "get").toLowerCase();
+-  if (routeMethod === "delete") {
+-    routeMethod = "del";
+-  }
+-  if (typeof router[routeMethod] !== "function") {
+-    throw new Error(`Unsupported route method: ${method}`);
+-  }
+-  router[routeMethod](baseurl + path, async(ctx) => {
++  router[method](baseurl + path, async(ctx) => {
+     let inst = new routerController(ctx);
+     try {
+       await inst.init(ctx);
+diff --git a/vendors/server/websocket.js b/vendors/server/websocket.js
+index ccbf6fde..4404cb2b 100644
+--- a/vendors/server/websocket.js
++++ b/vendors/server/websocket.js
+@@ -1,12 +1,13 @@
+-const HttpRouter = require("./utils/httpRouter.js");
++const koaRouter = require("koa-router");
+ const interfaceController = require("./controllers/interface.js");
+ const yapi = require("./yapi.js");
+-const { createAction } = require("./utils/commons.js");
+-const { createKoaContext } = require("./utils/koaContext.js");
+ 
+-const router = new HttpRouter();
++const router = koaRouter();
++const { createAction } = require("./utils/commons.js")
++
+ let pluginsRouterPath = [];
+ 
++
+ function addPluginRouter(config) {
+   if (!config.path || !config.controller || !config.action) {
+     throw new Error("Plugin Route config Error");
+@@ -14,59 +15,28 @@ function addPluginRouter(config) {
+   let method = config.method || "GET";
+   let routerPath = "/ws_plugin/" + config.path;
+   if (pluginsRouterPath.indexOf(routerPath) > -1) {
+-    throw new Error("Plugin Route path conflict, please try rename the path");
++    throw new Error("Plugin Route path conflict, please try rename the path")
+   }
+   pluginsRouterPath.push(routerPath);
+   createAction(router, "/api", config.controller, config.action, routerPath, method, true);
+ }
+ 
+-createAction(router, "/api", interfaceController, "solveConflict", "/interface/solve_conflict", "get", true);
+-yapi.emitHookSync("add_ws_router", addPluginRouter);
+ 
+-function registerWebSocket(fastify) {
+-  const methodMap = {
+-    GET: "get",
+-    POST: "post",
+-    PUT: "put",
+-    DELETE: "delete",
+-    PATCH: "patch",
+-    HEAD: "head",
+-    OPTIONS: "options"
+-  };
++function websocket(app) {
++  createAction(router, "/api", interfaceController, "solveConflict", "/interface/solve_conflict", "get")
+ 
+-  for (const route of router.getRoutes()) {
+-    const fastifyMethod = methodMap[route.method] || "get";
+-    if (typeof fastify[fastifyMethod] !== "function") {
+-      continue;
+-    }
++  yapi.emitHookSync("add_ws_router", addPluginRouter);
+ 
+-    fastify[fastifyMethod](route.path, { websocket: true }, (socket, request) => {
+-      const wsAdapter = {
+-        send(data) {
+-          socket.send(data);
+-        },
+-        on(event, fn) {
+-          socket.on(event, fn);
+-        }
+-      };
+-      const fakeReply = {
+-        sent: false,
+-        header() {},
+-        code() {
+-          return this;
+-        },
+-        send(data) {
+-          this.sent = true;
+-          wsAdapter.send(typeof data === "string" ? data : JSON.stringify(data));
+-        }
+-      };
+-      const ctx = createKoaContext(request, fakeReply, { ws: wsAdapter });
+-      route.handler(ctx).catch((err) => {
+-        yapi.commons.log(err, "error");
+-        wsAdapter.send(JSON.stringify({ errcode: 404, errmsg: "No Fount." }));
+-      });
+-    });
+-  }
++
++  app.ws.use(router.routes())
++  app.ws.use(router.allowedMethods());
++  app.ws.use(function(ctx, next) {
++    return ctx.websocket.send(JSON.stringify({
++      errcode: 404,
++      errmsg: "No Fount.",
++      data: null
++    }));
++  });
+ }
+ 
+-module.exports = registerWebSocket;
++module.exports = websocket
+diff --git a/vendors/test/common/apiResponse.test.js b/vendors/test/common/apiResponse.test.js
+new file mode 100644
+index 00000000..c3335ea2
+--- /dev/null
++++ b/vendors/test/common/apiResponse.test.js
+@@ -0,0 +1,63 @@
++import test from "ava";
++const {
++  ApiCode,
++  success,
++  fail,
++  isSuccess,
++  isApiEnvelope,
++  normalizeEnvelope,
++  finalizeResponse,
++  isRawResponsePath
++} = require("../../common/apiResponse");
++
++test("success 响应 errcode 为 0", (t) => {
++  const body = success({ id: 1 });
++  t.is(body.errcode, ApiCode.SUCCESS);
++  t.is(body.errmsg, "成功！");
++  t.deepEqual(body.data, { id: 1 });
++  t.true(isSuccess(body));
++});
++
++test("fail 响应", (t) => {
++  const body = fail(ApiCode.NOT_LOGIN, "请登录...");
++  t.is(body.errcode, ApiCode.NOT_LOGIN);
++  t.is(body.errmsg, "请登录...");
++  t.is(body.data, null);
++  t.false(isSuccess(body));
++});
++
++test("normalizeEnvelope 保留扩展字段", (t) => {
++  const raw = {
++    errcode: 0,
++    errmsg: "成功！",
++    data: { username: "a" },
++    ladp: true,
++    canRegister: false
++  };
++  const normalized = normalizeEnvelope(raw);
++  t.is(normalized.ladp, true);
++  t.is(normalized.canRegister, false);
++  t.deepEqual(normalized.data, { username: "a" });
++});
++
++test("finalizeResponse 包装非信封对象", (t) => {
++  const body = finalizeResponse("/api/foo/bar", { list: [] });
++  t.true(isApiEnvelope(body));
++  t.is(body.errcode, ApiCode.SUCCESS);
++  t.deepEqual(body.data, { list: [] });
++});
++
++test("finalizeResponse 跳过原始路径", (t) => {
++  t.true(isRawResponsePath("/api/user/avatar"));
++  const raw = "binary";
++  t.is(finalizeResponse("/api/user/avatar", raw), raw);
++});
++
++test("resReturn 兼容 commons", (t) => {
++  const { resReturn } = require("../../server/utils/commons");
++  const ok = resReturn({ a: 1 });
++  t.is(ok.errcode, 0);
++  const err = resReturn(null, 400, "参数错误");
++  t.is(err.errcode, 400);
++  t.is(err.data, null);
++});
