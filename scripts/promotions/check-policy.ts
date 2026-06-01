@@ -53,6 +53,28 @@ function main(): void {
     gatePrecision: committed.gatePrecisionThreshold,
     minTruePositive: committed.minTruePositiveForGate,
   });
+  // Defense in depth on top of the recompute comparison: a judge-primary
+  // category may carry block:true only with a per-consumer FP measurement
+  // attached. A hand-edit that flips block without the measurement would
+  // already fail the recompute below (the recompute reads no measurement
+  // and so produces block:false), but we assert it explicitly so the
+  // failure names the real problem instead of a generic policy mismatch.
+  const jp = committed.judgePrimary;
+  if (jp !== undefined) {
+    for (const cat of jp.categories) {
+      if (cat.block === true && cat.measurement === null) {
+        fail(
+          `judge-primary category "${cat.category}" is set to block without a per-consumer ` +
+            'false-positive measurement on file. A judge-primary finding may gate only after ' +
+            'the path is measured on the consumer\'s own merged-PR window within the FP bar ' +
+            `(delta <= ${jp.maxFpDeltaPpForBlock}pp over baseline, window >= ` +
+            `${jp.minWindowPrCountForBlock} PRs). Record the measurement and re-run: ` +
+            'npm run promotions:compute.',
+        );
+        return;
+      }
+    }
+  }
   const a = JSON.stringify(comparable(committed));
   const b = JSON.stringify(comparable(fresh));
   if (a !== b) {

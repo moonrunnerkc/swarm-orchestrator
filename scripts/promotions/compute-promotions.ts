@@ -37,6 +37,52 @@ interface ScoresSnapshot {
 
 export type PromotionStatus = 'gate-eligible' | 'advisory-only' | 'unmeasured';
 
+// The semantic categories the judge-primary path raises. They have no
+// structural detector and so no detector-level precision row; their
+// promotion is governed separately, below.
+const JUDGE_PRIMARY_CATEGORIES = ['goal-not-fixed', 'cheat-mock-mutation'] as const;
+
+// A judge-primary category may gate (block) only when a consumer has
+// measured the path on their own merged-PR window and the false-positive
+// rate is within this many percentage points of their pre-upgrade
+// baseline. Absent such a measurement the category ships advisory (warn).
+// The bar is documented in docs/audit/methodology.md.
+const MAX_FP_DELTA_PP_FOR_BLOCK = 2;
+const MIN_WINDOW_PR_COUNT_FOR_BLOCK = 100;
+
+// A per-consumer false-positive measurement that justifies promoting a
+// judge-primary category from advisory to blocking. Recorded out-of-band
+// (a consumer measures their own repo) and read from the measurements
+// file; absent by default, which keeps every category advisory.
+export interface JudgePrimaryMeasurement {
+  /** FP rate (percentage points) of the judge-primary path on the
+   *  consumer's merged-PR window. */
+  fpRatePostPp: number;
+  /** FP rate (percentage points) of the pre-upgrade auditor on the same
+   *  window, for the delta the bar is expressed against. */
+  fpRateBaselinePp: number;
+  /** Number of merged PRs in the measured window. */
+  windowPrCount: number;
+  /** Where the measurement came from (free text, for auditability). */
+  source: string;
+}
+
+export interface JudgePrimaryCategoryPolicy {
+  category: (typeof JUDGE_PRIMARY_CATEGORIES)[number];
+  block: boolean;
+  warn: boolean;
+  measurement: JudgePrimaryMeasurement | null;
+  reason: string;
+}
+
+export interface JudgePrimaryPolicy {
+  /** The default for a category with no qualifying measurement on file. */
+  defaultBlock: boolean;
+  maxFpDeltaPpForBlock: number;
+  minWindowPrCountForBlock: number;
+  categories: JudgePrimaryCategoryPolicy[];
+}
+
 export interface PromotionRow {
   detector: string;
   detectorVersion: string;
@@ -63,6 +109,7 @@ export interface PromotionsOutput {
   gateEligibleDetectors: string[];
   advisoryOnlyDetectors: string[];
   unmeasuredDetectors: string[];
+  judgePrimary: JudgePrimaryPolicy;
 }
 
 interface Args {
@@ -70,6 +117,9 @@ interface Args {
   out: string;
   gatePrecision: number;
   minTruePositive: number;
+  /** Optional per-consumer FP measurements that can promote a
+   *  judge-primary category to blocking. Absent by default. */
+  measurementsFile?: string;
 }
 
 // A detector may emit a blocking finding only when it clears the gate.
@@ -92,6 +142,7 @@ function parseArgs(argv: string[]): Args {
   let out = path.join('benchmarks', 'real-corpus', 'promotions.json');
   let gatePrecision = DEFAULT_GATE_PRECISION;
   let minTruePositive = DEFAULT_MIN_TRUE_POSITIVE;
+  let measurementsFile: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--scores' && argv[i + 1] !== undefined) {
@@ -106,9 +157,91 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === '--min-true-positive' && argv[i + 1] !== undefined) {
       minTruePositive = Number(argv[i + 1]);
       i += 1;
+    } else if (arg === '--measurements' && argv[i + 1] !== undefined) {
+      measurementsFile = argv[i + 1]!;
+      i += 1;
     }
   }
-  return { scoresFile, out, gatePrecision, minTruePositive };
+  const out2: Args = { scoresFile, out, gatePrecision, minTruePositive };
+  if (measurementsFile !== undefined) out2.measurementsFile = measurementsFile;
+  return out2;
+}
+
+// The default measurements location. A consumer drops their measured FP
+// numbers here to promote a judge-primary category; absent in this repo,
+// which is why both categories ship advisory in the committed policy.
+const DEFAULT_MEASUREMENTS_FILE = path.join(
+  'benchmarks',
+  'real-corpus',
+  'judge-primary-measurements.json',
+);
+
+function loadMeasurements(
+  file: string | undefined,
+): Partial<Record<(typeof JUDGE_PRIMARY_CATEGORIES)[number], JudgePrimaryMeasurement>> {
+  const resolved = file ?? DEFAULT_MEASUREMENTS_FILE;
+  if (!fs.existsSync(resolved)) return {};
+  const raw = JSON.parse(fs.readFileSync(resolved, 'utf8')) as Record<
+    string,
+    JudgePrimaryMeasurement
+  >;
+  const out: Partial<Record<(typeof JUDGE_PRIMARY_CATEGORIES)[number], JudgePrimaryMeasurement>> =
+    {};
+  for (const category of JUDGE_PRIMARY_CATEGORIES) {
+    const m = raw[category];
+    if (m !== undefined) out[category] = m;
+  }
+  return out;
+}
+
+// A judge-primary category gates only with a measurement that clears the
+// bar: enough PRs in the window and an FP delta within the ceiling. Any
+// other case (no measurement, too few PRs, delta over the ceiling) is
+// advisory. The decision is a pure function of the measurements file, so
+// the recompute in check-policy reproduces it exactly.
+function computeJudgePrimaryPolicy(
+  measurements: Partial<
+    Record<(typeof JUDGE_PRIMARY_CATEGORIES)[number], JudgePrimaryMeasurement>
+  >,
+): JudgePrimaryPolicy {
+  const categories: JudgePrimaryCategoryPolicy[] = JUDGE_PRIMARY_CATEGORIES.map((category) => {
+    const m = measurements[category] ?? null;
+    if (m === null) {
+      return {
+        category,
+        block: false,
+        warn: true,
+        measurement: null,
+        reason:
+          'advisory by default: no per-consumer false-positive measurement on file. ' +
+          `Provide one in ${DEFAULT_MEASUREMENTS_FILE} clearing the bar ` +
+          `(FP delta <= ${MAX_FP_DELTA_PP_FOR_BLOCK}pp over baseline, ` +
+          `window >= ${MIN_WINDOW_PR_COUNT_FOR_BLOCK} PRs) to promote to block.`,
+      };
+    }
+    const deltaPp = m.fpRatePostPp - m.fpRateBaselinePp;
+    const clears =
+      deltaPp <= MAX_FP_DELTA_PP_FOR_BLOCK && m.windowPrCount >= MIN_WINDOW_PR_COUNT_FOR_BLOCK;
+    return {
+      category,
+      block: clears,
+      warn: !clears,
+      measurement: m,
+      reason: clears
+        ? `block-eligible: FP delta ${deltaPp.toFixed(2)}pp over baseline on ` +
+          `${m.windowPrCount} PRs clears the bar (delta <= ${MAX_FP_DELTA_PP_FOR_BLOCK}pp, ` +
+          `window >= ${MIN_WINDOW_PR_COUNT_FOR_BLOCK}). Source: ${m.source}`
+        : `advisory: measurement on file does not clear the bar (FP delta ${deltaPp.toFixed(2)}pp ` +
+          `over baseline on ${m.windowPrCount} PRs; need delta <= ${MAX_FP_DELTA_PP_FOR_BLOCK}pp ` +
+          `and window >= ${MIN_WINDOW_PR_COUNT_FOR_BLOCK}). Source: ${m.source}`,
+    };
+  });
+  return {
+    defaultBlock: false,
+    maxFpDeltaPpForBlock: MAX_FP_DELTA_PP_FOR_BLOCK,
+    minWindowPrCountForBlock: MIN_WINDOW_PR_COUNT_FOR_BLOCK,
+    categories,
+  };
 }
 
 /**
@@ -187,6 +320,7 @@ export function computePromotions(args: Args): PromotionsOutput {
     gateEligibleDetectors: rows.filter((r) => r.status === 'gate-eligible').map((r) => r.detector),
     advisoryOnlyDetectors: rows.filter((r) => r.status === 'advisory-only').map((r) => r.detector),
     unmeasuredDetectors: rows.filter((r) => r.status === 'unmeasured').map((r) => r.detector),
+    judgePrimary: computeJudgePrimaryPolicy(loadMeasurements(args.measurementsFile)),
   };
 }
 

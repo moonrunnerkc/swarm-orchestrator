@@ -116,6 +116,84 @@ describe('scripts/promotions/compute-promotions', () => {
     assert.ok(good.reason.includes(scoresFile));
   });
 
+  it('judge-primary categories are advisory (warn, not block) with no measurement on file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
+    const { out } = run(dir);
+    assert.equal(out.judgePrimary.defaultBlock, false);
+    assert.deepEqual(
+      out.judgePrimary.categories.map((c) => c.category).sort(),
+      ['cheat-mock-mutation', 'goal-not-fixed'],
+    );
+    for (const c of out.judgePrimary.categories) {
+      assert.equal(c.block, false);
+      assert.equal(c.warn, true);
+      assert.equal(c.measurement, null);
+    }
+  });
+
+  it('promotes a judge-primary category to block only when a measurement clears the bar', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
+    const scoresFile = path.join(dir, 'scores.json');
+    writeScores(scoresFile);
+    const measurementsFile = path.join(dir, 'measurements.json');
+    fs.writeFileSync(
+      measurementsFile,
+      JSON.stringify({
+        'goal-not-fixed': {
+          fpRatePostPp: 3.0,
+          fpRateBaselinePp: 2.0, // delta 1.0pp, within the 2pp bar
+          windowPrCount: 120,
+          source: 'acme/widgets last-120-merged',
+        },
+        'cheat-mock-mutation': {
+          fpRatePostPp: 8.0,
+          fpRateBaselinePp: 2.0, // delta 6.0pp, over the bar
+          windowPrCount: 120,
+          source: 'acme/widgets last-120-merged',
+        },
+      }),
+    );
+    const out = computePromotions({
+      scoresFile,
+      out: path.join(dir, 'p.json'),
+      gatePrecision: 0.9,
+      minTruePositive: 5,
+      measurementsFile,
+    });
+    const goal = out.judgePrimary.categories.find((c) => c.category === 'goal-not-fixed')!;
+    const mock = out.judgePrimary.categories.find((c) => c.category === 'cheat-mock-mutation')!;
+    assert.equal(goal.block, true, 'delta within bar promotes to block');
+    assert.equal(mock.block, false, 'delta over bar stays advisory');
+    assert.equal(mock.warn, true);
+  });
+
+  it('does not promote when the window is too small even if the delta is within the bar', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
+    const scoresFile = path.join(dir, 'scores.json');
+    writeScores(scoresFile);
+    const measurementsFile = path.join(dir, 'measurements.json');
+    fs.writeFileSync(
+      measurementsFile,
+      JSON.stringify({
+        'goal-not-fixed': {
+          fpRatePostPp: 2.5,
+          fpRateBaselinePp: 2.0, // delta 0.5pp, within the bar
+          windowPrCount: 10, // but far too few PRs
+          source: 'tiny window',
+        },
+      }),
+    );
+    const out = computePromotions({
+      scoresFile,
+      out: path.join(dir, 'p.json'),
+      gatePrecision: 0.9,
+      minTruePositive: 5,
+      measurementsFile,
+    });
+    const goal = out.judgePrimary.categories.find((c) => c.category === 'goal-not-fixed')!;
+    assert.equal(goal.block, false);
+  });
+
   it('Wilson lower bound shrinks with smaller samples at equal precision', () => {
     // 1.0 precision over 3 trials must be treated as less certain than
     // 1.0 over 200 trials.
