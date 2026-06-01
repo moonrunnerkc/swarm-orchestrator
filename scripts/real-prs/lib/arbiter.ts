@@ -12,6 +12,7 @@ import { SwarmError } from '../../../src/errors';
 import { getLogger } from '../../../src/logger';
 import type { ArbiterVerdict } from './types';
 import type { CostLedger } from './cost';
+import { repoRoot } from './paths';
 
 const log = getLogger('real-prs:arbiter');
 
@@ -51,13 +52,20 @@ export interface Arbiter {
 }
 
 function loadPromptTemplate(version: string): string {
-  const file = path.resolve(__dirname, '..', 'arbiter-prompts', `${version}.md`);
-  if (!fs.existsSync(file)) {
-    throw new SwarmError(`arbiter prompt not found: ${file}`, 'REAL_PRS_NO_ARBITER_PROMPT', {
-      remediation: `Add scripts/real-prs/arbiter-prompts/${version}.md.`,
-    });
+  // The prompt lives in the source tree (a .md asset, not compiled), so
+  // resolve it from the repo root rather than the dist-relative path.
+  const candidates = [
+    path.join(repoRoot(), 'scripts', 'real-prs', 'arbiter-prompts', `${version}.md`),
+    path.resolve(__dirname, '..', 'arbiter-prompts', `${version}.md`),
+  ];
+  for (const file of candidates) {
+    if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8');
   }
-  return fs.readFileSync(file, 'utf8');
+  throw new SwarmError(
+    `arbiter prompt not found: ${candidates.join(' or ')}`,
+    'REAL_PRS_NO_ARBITER_PROMPT',
+    { remediation: `Add scripts/real-prs/arbiter-prompts/${version}.md.` },
+  );
 }
 
 function fillPrompt(template: string, input: ArbiterInput): string {
@@ -115,10 +123,11 @@ class AnthropicArbiter implements Arbiter {
   async classify(input: ArbiterInput): Promise<ArbiterOutput> {
     this.ledger.guardBeforeCall();
     const user = fillPrompt(this.template, input);
+    // Newer Opus models reject an explicit temperature; omit it and take
+    // the model default.
     const response = await this.client.messages.create({
       model: this.modelId,
       max_tokens: 512,
-      temperature: 0,
       messages: [{ role: 'user', content: user }],
     });
     const usage = response.usage;
