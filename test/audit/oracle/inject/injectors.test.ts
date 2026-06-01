@@ -73,10 +73,16 @@ describe('oracle / injectors', () => {
     }
   });
 
+  // Whole-PR detectors are tested with a standalone (isolated) diff, so
+  // they do not preserve the carrier; the append-only invariant is for the
+  // rest.
+  const ISOLATED = new Set(['comment-only-fix', 'coverage-erosion', 'no-op-fix']);
+
   it('keeps the carrier PR content intact and only appends lines', () => {
     const { cases } = runInjectors([SAMPLE_PR], { perInjectorCap: 5 });
     const cleanLines = SAMPLE_PR.cleanDiff.split('\n');
     for (const c of cases) {
+      if (ISOLATED.has(c.category)) continue;
       // Append-only: every line of the clean diff survives (as a multiset
       // subset) in the broken variant, which is longer.
       const broken = c.brokenDiff.split('\n');

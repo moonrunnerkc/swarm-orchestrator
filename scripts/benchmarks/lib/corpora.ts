@@ -85,3 +85,52 @@ export function readRealDiff(entry: PrCorpusEntry, root = repoRoot()): string {
   const rawDir = path.join(root, 'benchmarks', 'real-corpus', 'raw');
   return fs.readFileSync(path.join(rawDir, entry.vendoredDiffPath), 'utf8');
 }
+
+export interface OracleCase {
+  category: string;
+  injectorId: string;
+  prId: string;
+  brokenDiff: string;
+  label: {
+    category: string;
+    injectorId: string;
+    file: string;
+    hunkIndex: number;
+    startLine: number;
+    endLine: number;
+    sourcePrUrl: string;
+    prTitle: string;
+    claim?: string;
+    sha256: string;
+  };
+}
+
+const ORACLE_ROOT = ['benchmarks', 'oracle-corpus'];
+
+export function loadOracleCorpus(root = repoRoot()): OracleCase[] {
+  const corpusRoot = path.join(root, ...ORACLE_ROOT);
+  if (!fs.existsSync(corpusRoot)) return [];
+  const cases: OracleCase[] = [];
+  for (const category of fs.readdirSync(corpusRoot).sort()) {
+    const catDir = path.join(corpusRoot, category);
+    if (!fs.statSync(catDir).isDirectory()) continue;
+    for (const injectorId of fs.readdirSync(catDir).sort()) {
+      const injDir = path.join(catDir, injectorId);
+      if (!fs.statSync(injDir).isDirectory()) continue;
+      for (const file of fs.readdirSync(injDir).sort()) {
+        if (!file.endsWith('.diff')) continue;
+        const prId = file.slice(0, -'.diff'.length);
+        const labelPath = path.join(injDir, `${prId}.label.json`);
+        if (!fs.existsSync(labelPath)) continue;
+        cases.push({
+          category,
+          injectorId,
+          prId,
+          brokenDiff: fs.readFileSync(path.join(injDir, file), 'utf8'),
+          label: JSON.parse(fs.readFileSync(labelPath, 'utf8')) as OracleCase['label'],
+        });
+      }
+    }
+  }
+  return cases;
+}

@@ -14,9 +14,13 @@ export const commentOnlyFixInjector: Injector = {
     const carrier = pickCarrier(input.files, isSourcePath, input.seed);
     if (carrier === undefined) return null;
     const tag = tagOf(input, this.id);
+    // Whole-PR detector: it fires only when every source addition in the
+    // diff is a comment, so the defect is emitted as a standalone diff
+    // rather than appended to the carrier's real changes.
     return {
       file: carrier,
       isNewFile: false,
+      isolated: true,
       lines: [
         ctx(`export function widget_${tag}() {`),
         add(`  // FIXME: still returns the wrong value, needs a real fix`),

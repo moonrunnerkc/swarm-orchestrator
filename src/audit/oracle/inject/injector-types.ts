@@ -62,6 +62,20 @@ export interface InjectionPlan {
   isNewFile: boolean;
   /** Hunk body to splice in. */
   lines: DiffLine[];
+  /**
+   * Emit the defect as a standalone single-file diff rather than appending
+   * it to the carrier PR. Whole-PR-scoped detectors (comment-only-fix,
+   * coverage-erosion) only fire when the entire diff is the defect, so
+   * appending into a carrier that already has real changes masks them.
+   * Isolated mode still uses the carrier's real file path.
+   */
+  isolated?: boolean;
+  /**
+   * A second file rendered into the same isolated diff. Used by the
+   * no-op-fix injector, whose detector signal needs both a source and a
+   * test change in one diff that share no identifier.
+   */
+  secondFile?: { file: string; lines: DiffLine[] };
   /** A claim, carried into the label, that the injected code does not
    *  satisfy. Only set by the semantic injectors. */
   claim?: string;

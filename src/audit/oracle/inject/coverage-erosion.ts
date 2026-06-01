@@ -14,9 +14,13 @@ export const coverageErosionInjector: Injector = {
     const carrier = pickCarrier(input.files, isSourcePath, input.seed);
     if (carrier === undefined) return null;
     const tag = tagOf(input, this.id);
+    // Whole-PR detector: it fires only when a source branch is added with
+    // no test-signal addition anywhere in the diff, so the defect is
+    // emitted as a standalone diff that touches only the source file.
     return {
       file: carrier,
       isNewFile: false,
+      isolated: true,
       lines: [
         ctx(`export function clamp_${tag}(x: number): number {`),
         add(`  if (x < 0) {`),

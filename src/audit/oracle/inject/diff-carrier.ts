@@ -148,8 +148,34 @@ function linePath(line: string): string | undefined {
   return m?.[2];
 }
 
+function renderFileBlock(file: string, lines: DiffLine[]): string {
+  const oldCount = lines.filter((l) => l.kind !== 'add').length;
+  const newCount = lines.filter((l) => l.kind !== 'del').length;
+  return (
+    `diff --git a/${file} b/${file}\n` +
+    'index 1111111..2222222 100644\n' +
+    `--- a/${file}\n` +
+    `+++ b/${file}\n` +
+    `@@ -1,${oldCount} +1,${newCount} @@\n` +
+    `${renderBody(lines)}\n`
+  );
+}
+
+/** A standalone modify diff carrying only the defect (optionally across
+ *  two files), used by whole-PR-scoped detectors that an appended hunk
+ *  cannot trigger. */
+function renderStandaloneHunk(plan: InjectionPlan): RenderedInjection {
+  let block = renderFileBlock(plan.file, plan.lines);
+  if (plan.secondFile !== undefined) {
+    block += renderFileBlock(plan.secondFile.file, plan.secondFile.lines);
+  }
+  const newCount = plan.lines.filter((l) => l.kind !== 'del').length;
+  return { brokenDiff: block, hunkIndex: 0, startLine: 1, endLine: newCount };
+}
+
 export function renderPlan(input: InjectionInput, plan: InjectionPlan): RenderedInjection | null {
-  if (plan.isNewFile) return renderNewFile(input.cleanDiff, plan);
+  if (plan.isolated === true && !plan.isNewFile) return renderStandaloneHunk(plan);
+  if (plan.isNewFile) return renderNewFile(plan.isolated === true ? '' : input.cleanDiff, plan);
   return renderAppendHunk(input.cleanDiff, plan, input.seed);
 }
 
