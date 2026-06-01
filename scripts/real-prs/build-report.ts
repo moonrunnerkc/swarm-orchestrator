@@ -182,16 +182,17 @@ function main(): void {
   let postCount = 0;
   let preCount = 0;
   let preAvailable = 0;
-  let postLegit = 0;
+  let postTrueCheat = 0;
+  let postLegitDebatable = 0;
   let postFalse = 0;
   let postInsufficient = 0;
-  let preLegit = 0;
   let preFalse = 0;
   for (const r of records) {
     postCount += r.post.length;
     for (const f of r.post) {
       const v = labelByKey.get(f.key)?.verdict;
-      if (v !== undefined && LEGIT.includes(v)) postLegit += 1;
+      if (v === 'true-cheat') postTrueCheat += 1;
+      else if (v === 'debatable') postLegitDebatable += 1;
       else if (v === 'false-alarm') postFalse += 1;
       else if (v === 'insufficient-context') postInsufficient += 1;
     }
@@ -200,17 +201,19 @@ function main(): void {
       preCount += r.pre.length;
       for (const f of r.pre) {
         const v = labelByKey.get(f.key)?.verdict;
-        if (v !== undefined && LEGIT.includes(v)) preLegit += 1;
-        else if (v === 'false-alarm') preFalse += 1;
+        if (v === 'false-alarm') preFalse += 1;
       }
     }
   }
   const preUnavailable = records.length - preAvailable;
 
-  const postSignal = postCount === 0 ? 0 : postLegit / postCount;
-  const preSignal = preCount === 0 ? 0 : preLegit / preCount;
-  const snrDeltaPp = (postSignal - preSignal) * 100;
   const moreFindingsPct = preCount === 0 ? null : ((postCount - preCount) / preCount) * 100;
+  // These are merged, reviewed PRs, so they are presumed clean: there is
+  // little or nothing legitimate to catch, and almost every finding is a
+  // false alarm by construction. The honest metric on this corpus is the
+  // false-alarm burden (false alarms per PR), not recall.
+  const postFalsePerPr = nPrs === 0 ? 0 : postFalse / nPrs;
+  const preFalsePerPr = preAvailable === 0 ? 0 : preFalse / preAvailable;
 
   const lines: string[] = [];
   lines.push('# Real-world validation: does the auditor improve signal-to-noise on unbiased PRs?');
@@ -224,20 +227,32 @@ function main(): void {
   );
   lines.push('');
   lines.push(
-    `Headline: the post-upgrade auditor raised **${postCount}** findings on these PRs, of which ` +
-      `**${pct(postLegit, postCount)}** are arbiter-labeled true-cheat or debatable (legitimate ` +
-      `concerns) and **${pct(postFalse, postCount)}** are false alarms ` +
-      `(${postInsufficient} insufficient-context). ` +
+    'What this corpus measures: these are merged, reviewed PRs, so they are presumed clean. ' +
+      'There is little or nothing legitimate to catch, so the corpus measures the false-alarm ' +
+      'burden the auditor imposes on normal PRs, not its recall (there are no planted defects to ' +
+      'recover here; recall is measured separately on the oracle corpus).',
+  );
+  lines.push('');
+  lines.push(
+    `Headline: the post-upgrade auditor raised **${postCount}** findings across ${nPrs} PRs ` +
+      `(${(postCount / nPrs).toFixed(1)}/PR). The arbiter labeled **${postTrueCheat} true-cheat**, ` +
+      `${postLegitDebatable} debatable, **${postFalse} false-alarm**, and ${postInsufficient} ` +
+      `insufficient-context: a false-alarm rate of **${pct(postFalse, postCount)}** and a ` +
+      `false-alarm burden of **${postFalsePerPr.toFixed(2)}/PR**. ` +
       (preUnavailable === records.length
         ? 'The pre-upgrade side was unavailable for this run (see below), so the side-by-side ' +
-          'delta is not computed.'
-        : `The pre-upgrade auditor raised **${preCount}** findings on the ${preAvailable} PRs where ` +
-          `it ran, **${pct(preLegit, preCount)}** arbiter-labeled legitimate. ` +
+          'is not computed.'
+        : `The pre-upgrade auditor raised **${preCount}** findings on the ${preAvailable} PRs ` +
+          `where it ran (${preFalse} arbiter-labeled false-alarm, ` +
+          `${preFalsePerPr.toFixed(2)}/PR). ` +
           (moreFindingsPct === null
             ? ''
-            : `Net: ${moreFindingsPct >= 0 ? '+' : ''}${moreFindingsPct.toFixed(1)}% findings, `) +
-          `signal-to-noise change ${snrDeltaPp >= 0 ? '+' : ''}${snrDeltaPp.toFixed(1)}pp ` +
-          '(arbiter-labeled).'),
+            : `The post-upgrade auditor raised ${moreFindingsPct >= 0 ? '+' : ''}` +
+              `${moreFindingsPct.toFixed(0)}% more findings, almost entirely additional false ` +
+              'alarms. ') +
+          'On this unbiased corpus the post-upgrade changes increase noise without surfacing ' +
+          'true cheats; recall against planted defects is a separate question (see the oracle ' +
+          'benchmarks).'),
   );
   lines.push('');
   lines.push('Regenerate: `npm run real-prs:full`. Inputs: sources.json, audit-results/, ' +

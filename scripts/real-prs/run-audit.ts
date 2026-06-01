@@ -78,15 +78,17 @@ interface PreOutput {
   findings?: Finding[];
 }
 
-function runPre(preCli: string, diffPath: string): Finding[] | null {
+function runPre(preCli: string, diffPath: string, judge: boolean): Finding[] | null {
   const tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-pre-run-'));
   const tmpLedger = path.join(tmpCwd, 'ledger.jsonl');
   try {
-    const stdout = execFileSync(
-      'node',
-      [preCli, 'audit', '--diff-file', diffPath, '--output', 'json', '--ledger-path', tmpLedger],
-      { cwd: tmpCwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-    );
+    const cliArgs = [preCli, 'audit', '--diff-file', diffPath, '--output', 'json', '--ledger-path', tmpLedger];
+    if (judge) cliArgs.push('--enable-llm-judge');
+    const stdout = execFileSync('node', cliArgs, {
+      cwd: tmpCwd,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
     const parsed = JSON.parse(stdout) as PreOutput;
     return parsed.findings ?? [];
   } catch (err) {
@@ -136,7 +138,7 @@ async function main(): Promise<void> {
     };
     const postRaw = await runPost(diff, repoRootDir, prLike, !args.noJudge);
     const post = normalizeFindings(pr.repo, pr.prNumber, postRaw);
-    const preRaw = preCli !== null ? runPre(preCli, absDiff) : null;
+    const preRaw = preCli !== null ? runPre(preCli, absDiff, !args.noJudge) : null;
     const pre = preRaw === null ? null : normalizeFindings(pr.repo, pr.prNumber, preRaw);
 
     const record: AuditResultRecord = {
