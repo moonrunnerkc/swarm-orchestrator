@@ -35,6 +35,12 @@ verification end-to-end. Don't introduce a merge path that bypasses
 | `npm run lint`, `npm run lint:fix` | ESLint on `src/**/*.{ts,tsx}` and `test/**/*.ts`. |
 | `npm run format` | Prettier write. `format:check` exists but the codebase has historical drift; do not rely on it as a gate. |
 | `npm start` | `node dist/src/cli.js`. |
+| `npm run oracle:build` | Build the defect-injection oracle corpus under `benchmarks/oracle-corpus/` (deterministic). |
+| `npm run benchmarks:baseline` | Freeze the pre-upgrade detector + judge metrics under `benchmarks/baselines/pre-upgrade/`. |
+| `npm run benchmarks:oracle` | Score detector recall and judge-primary recall on the oracle corpus. |
+| `npm run calibrate:judge` | Score every judge prompt version and pick the default. |
+| `npm run oracle:evasion` | Run the evader stack and emit survival curves. |
+| `npm run benchmarks:full` | Regenerate the whole oracle pipeline and `COVERAGE.md`. |
 
 Before any PR: `npm test`, `npm run typecheck`, then a descriptive commit. The LOC budget gate (`scripts/loc-budget-gate.sh`) runs in CI against `evidence/loc-budget.txt`.
 
@@ -48,7 +54,8 @@ Before any PR: `npm test`, `npm run typecheck`, then a descriptive commit. The L
   - `src/cli/v8/doctor-handler.ts`: `swarm doctor` diagnostics (with `--fix`).
   - `src/cli/v8/run-handler.ts`: `swarm run` with auto-discover and preset integration.
 - `src/audit/`: the v10 audit surface.
-  - `src/audit/cheat-detector/`: ten detectors (`test-relaxation`, `mock-of-hallucination`, `assertion-strip`, `no-op-fix`, `comment-only-fix`, `coverage-erosion`, `dead-branch-insertion`, `error-swallow`, `exception-rethrow-lost-context`, `fake-refactor`) behind a single registry in `index.ts`. Adding a category is one import + one array entry. Detectors are high-recall candidate generators; two verification stages run after them in `index.ts`: `verify-findings.ts` (deterministic refuters that drop or demote a candidate the diff shows is legitimate, plus `assignConfidence`) and `confirm-findings.ts` (the LLM-judge confirmation gate, opt-in, that must confirm a finding before it blocks). Shared utilities: `diff-walker.ts`, `subject-paths.ts`, `detector-types.ts`, `internal-roots.ts`, `audit-config.ts` (project-level `.swarm/audit-config.yaml` loader). The block-eligibility gate is a precision policy computed into `benchmarks/real-corpus/promotions.json` by `scripts/promotions/compute-promotions.ts` and held fresh in CI by `scripts/promotions/check-policy.ts` (`npm run promotions:check`).
+  - `src/audit/cheat-detector/`: ten detectors (`test-relaxation`, `mock-of-hallucination`, `assertion-strip`, `no-op-fix`, `comment-only-fix`, `coverage-erosion`, `dead-branch-insertion`, `error-swallow`, `exception-rethrow-lost-context`, `fake-refactor`) behind a single registry in `index.ts`. Adding a category is one import + one array entry. Detectors are high-recall candidate generators; two verification stages run after them in `index.ts`: `verify-findings.ts` (deterministic refuters that drop or demote a candidate the diff shows is legitimate, plus `assignConfidence`) and `confirm-findings.ts` (the LLM-judge confirmation gate, opt-in, that must confirm a finding before it blocks). Shared utilities: `diff-walker.ts`, `diff-chunker.ts` (hunk-aware chunking and per-hunk splitting for the judge, replacing head-truncation), `subject-paths.ts`, `detector-types.ts`, `internal-roots.ts`, `audit-config.ts` (project-level `.swarm/audit-config.yaml` loader, including the `judgePrimary: { enabled, categories }` knob). `judge-primary.ts` runs the judge as a primary detector for the two semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) that no structural detector keys on; `judge-prompts/` holds the versioned prompt sets both judge paths read from. The block-eligibility gate is a precision policy computed into `benchmarks/real-corpus/promotions.json` by `scripts/promotions/compute-promotions.ts` and held fresh in CI by `scripts/promotions/check-policy.ts` (`npm run promotions:check`).
+  - `src/audit/oracle/`: the defect-injection oracle. `inject/` holds the injector registry (`index.ts`), the runner (`injection-runner.ts`), the diff-carrier primitives, and one module per category; `category-map.ts` maps an injected category to the detector or judge-primary path that should catch it; `evade/` holds the evasion transforms. Scored by `scripts/benchmarks/` (`run-baseline.ts`, `run-oracle.ts`, `full.ts`) and `scripts/oracle/` (`build-corpus.ts`, `calibrate-judge.ts`, `tail-defect.ts`, `per-hunk.ts`, `run-evasion.ts`); outputs land in `benchmarks/oracle-corpus/`, `benchmarks/baselines/pre-upgrade/`, and `benchmarks/results/`. See `docs/audit/methodology.md`.
   - `src/audit/pr-source/`: AI-agent fingerprinter (Claude Code, Cursor, Devin, Aider, Codex CLI, Copilot Workspace, Replit Agent, OpenHands).
   - `src/audit/report-comment/`: deterministic PR-comment renderer.
   - `src/audit/aibom/`: hand-rolled CycloneDX 1.6 ML-BOM and SPDX 3.0 AI-Profile emitters (`cyclonedx-ml.ts`, `spdx-ai-profile.ts`, `ledger-reader.ts`); no new runtime deps. Triggered by `--emit-aibom`.
@@ -91,6 +98,8 @@ Before any PR: `npm test`, `npm run typecheck`, then a descriptive commit. The L
 **No empty catch blocks.** `allowEmptyCatch: false`.
 
 **Unused-var opt-out is `^_` only.** Don't prefix random names with underscore to silence warnings.
+
+**Judge prompts are versioned, never edited in place.** A new wording goes in a new `src/audit/cheat-detector/judge-prompts/<version>.ts`, registered in `index.ts`, and promoted by `npm run calibrate:judge`. A committed benchmark must replay the exact prompt it was scored against; the judge cache folds the prompt text. A new cheat detector lands with its injector under `src/audit/oracle/inject/` in the same change, so its recall is measured from day one (the `category-mapping` test enforces this).
 
 **Prettier:** semi, single quotes, trailing-comma all, 100 cols, 2 spaces, LF, `arrowParens: 'always'`.
 
@@ -218,8 +227,9 @@ CLI surface shifted.
 - **AIBOM emitters.** CycloneDX 1.6 ML-BOM and SPDX 3.0 AI-Profile, both
   hand-rolled, no new runtime deps. Triggered by `--emit-aibom`.
 - **Ledger extensions.** Optional `aiAgent: { vendor, version?,
-  confidence?, source? }` on every entry; three new entry kinds
-  (`pr-audit-started`, `pr-audit-finding`, `pr-audit-completed`).
+  confidence?, source? }` on every entry; entry kinds
+  `pr-audit-started`, `pr-audit-finding`, `pr-audit-completed`, and (v11)
+  `pr-audit-judge-primary` for a finding the judge raised on its own.
 - **GitHub Action `audit-mode: true`.** Composite sub-action at
   `.github/actions/swarm-audit/` emits `audit-pass`, `audit-findings`,
   `audit-ledger` outputs and posts the rendered finding back to the PR
@@ -232,6 +242,37 @@ CLI surface shifted.
   sidebar), generated by `scripts/corpus/`.
 - **Reproducible leaderboard** at `benchmarks/leaderboard/` rendered as
   a static site under `docs/leaderboard/`.
+
+## Defect-injection oracle (v11)
+
+v11 gives the cheat-detection surface measurable recall against ground
+truth and adds a judge-primary path for cheats that have no structural
+tell. The detector and verification stages are unchanged in spirit; the
+new surface is the oracle, the judge-primary path, and the chunker.
+
+- **Oracle corpus.** `src/audit/oracle/inject/` splices one labeled
+  defect into a presumed-clean real PR; twelve injectors cover the ten
+  structural categories plus two semantic ones. `npm run oracle:build`
+  writes `benchmarks/oracle-corpus/` byte-identical. Every injection
+  carries a sha256-pinned `.label.json`.
+- **Judge as a primary detector.** `judge-primary.ts` asks the judge
+  whether the diff delivers the PR's stated claim and raises a finding
+  for `goal-not-fixed` / `cheat-mock-mutation`, which no regex or AST
+  detector keys on. Gated by `judgePrimary` in
+  `.swarm/audit-config.yaml` (default on, requires the judge enabled).
+  Recorded under the `pr-audit-judge-primary` ledger kind.
+- **Versioned judge prompts.** `judge-prompts/` holds additive prompt
+  sets; `npm run calibrate:judge` picks the default by held-out recall
+  subject to a clean-PR false-positive ceiling.
+- **Chunking, not truncation.** `diff-chunker.ts` splits oversized diffs
+  into hunk-grouped chunks so a tail defect reaches the judge, and into
+  per-hunk chunks so a verdict localizes to a (file, hunk-index) id.
+- **Measured, not asserted.** `benchmarks:full` regenerates the recall,
+  calibration, tail-defect, per-hunk, and evasion reports plus
+  `COVERAGE.md`; the A/B is in `benchmarks/results/AB-REPORT.md`. No
+  detectors were retired: the apparent zero-signal detectors in the first
+  oracle pass were a measurement artifact, fixed in the harness. See
+  `docs/audit/methodology.md` for the honesty caveats.
 
 <!-- OCR:START -->
 ## Open Code Review Instructions

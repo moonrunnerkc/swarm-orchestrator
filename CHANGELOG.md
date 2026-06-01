@@ -4,6 +4,69 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [11.0.0] - 2026-06-01
+
+### Defect-injection oracle and a judge-primary path for semantic cheats
+
+Cheat detection now has measurable recall against constructively-labeled
+injected defects, the judge can run as a primary detector for cheats that
+have no structural tell, and large diffs are chunked instead of truncated.
+On the 300-defect oracle the post-upgrade pipeline catches 253/300
+injected cheats vs 210/300 before (+20.5%), driven by the judge-primary
+path on the two semantic categories (0 to 20/50) and a test-relaxation
+reshape (1/25 to 24/25). The judge-primary path adds about 10 points of
+false positives on presumed-clean reals; it is on by default and opt-out
+per `judgePrimary.enabled: false`. Full A/B in
+`benchmarks/results/AB-REPORT.md`; reproduce with `npm run benchmarks:full`.
+
+#### Added
+
+- **Defect-injection oracle** (`src/audit/oracle/inject/`,
+  `benchmarks/oracle-corpus/`). Twelve injectors (ten structural, two
+  semantic) splice one labeled defect into a presumed-clean real PR and
+  stamp a sha256-pinned label. `npm run oracle:build` regenerates the
+  corpus byte-identical.
+- **Judge-primary path** (`src/audit/cheat-detector/judge-primary.ts`).
+  Runs the judge directly against the diff and the PR's stated claim for
+  `goal-not-fixed` and `cheat-mock-mutation`, raising a finding when the
+  claim is not delivered. Gated by `judgePrimary` in
+  `.swarm/audit-config.yaml` (default on, requires the judge enabled).
+  Roughly two extra judge calls per PR, about $0.009 at Haiku list price.
+- **Versioned judge prompts** (`src/audit/cheat-detector/judge-prompts/`)
+  and a calibration harness (`npm run calibrate:judge`) that picks the
+  prompt with the best held-out recall whose clean-PR false-positive rate
+  stays within a point of the most conservative version.
+- **Per-hunk judging** (`chunkUnifiedDiffByHunk`) that localizes a verdict
+  to a stable (file, hunk-index) id.
+- **Evaluation harnesses and reports**: `benchmarks:baseline`,
+  `benchmarks:oracle`, `benchmarks:full`, plus per-detector recall,
+  judge-primary-vs-structural, judge calibration, tail-defect recovery,
+  per-hunk localization, evasion survival, and `COVERAGE.md`.
+- **Ledger entry kind** `pr-audit-judge-primary` distinguishing a finding
+  the judge raised on its own from one it merely confirmed.
+- **`swarm doctor` checks** for judgePrimary readiness (provider present,
+  categories valid) with `--fix` paths, and an oracle-corpus hint.
+- **`docs/audit/methodology.md`** documenting the oracle, the recall and
+  false-positive measurements, and the conventions for adding an injector
+  or a judge prompt version.
+
+#### Changed
+
+- **Large diffs are chunked, not head-truncated, before the judge.** A
+  defect in the tail of an oversized PR used to be invisible to the judge;
+  it is now judged in hunk-grouped chunks under the model's budget.
+- **test-relaxation** recognizes a strict equality rewritten to any
+  threshold matcher (`toBe(42)` to `toBeGreaterThan(0)`), a class it
+  walked past before.
+
+#### Removed
+
+- No detectors retired. The four that read as zero-signal in the first
+  oracle pass (comment-only-fix, coverage-erosion, no-op-fix,
+  test-relaxation) were a measurement artifact (block-only counting and
+  unfair injection shapes); fixing the measurement showed all ten clear
+  the recall floor.
+
 ## [10.4.0-advisory] - 2026-05-31
 
 ### Two-stage verification: candidate detectors, then refute and confirm

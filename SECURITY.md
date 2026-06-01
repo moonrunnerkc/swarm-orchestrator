@@ -203,3 +203,12 @@ Verify the following patterns are present in `.gitignore`:
 *.pem
 service-account*.json
 ```
+## Audit coverage note
+
+As of v11 the audit surface also covers two semantic cheat classes,
+`goal-not-fixed` and `cheat-mock-mutation`, via a judge-primary path that
+reads the PR's stated claim against the diff. This is advisory and
+probabilistic: injected recall proves detection of the classes we inject,
+not of unobserved classes, and the judge-primary false-positive rate is
+measured against presumed-clean PRs. Do not treat a passing audit as proof
+a PR is free of semantic defects.

@@ -30,3 +30,7 @@ Prettier: semi, single quotes, trailing-comma all, 100 cols, 2 spaces, LF, `arro
 The falsifier subsystem lives under `src/falsification/adapters/`. Three CLI-backed profiles ship by default: Codex (`property-must-hold`), Copilot (`import-graph-must-satisfy`, `function-must-have-signature`), and Claude Code (opt-in). To add a new profile, implement the `AdapterProfile` interface and register it in `src/falsification/adapters/index.ts`.
 
 Subsystem overview: [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
+
+## Cheat detectors and the oracle
+
+New cheat detector PRs must include at least one injector under `src/audit/oracle/inject/` so recall is measurable from day one. The `category-mapping` test fails CI if an injected category resolves to no detector and no judge-primary path. See [`docs/audit/methodology.md`](docs/audit/methodology.md).
