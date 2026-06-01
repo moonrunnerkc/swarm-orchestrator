@@ -49,6 +49,36 @@ function materialize(c: { headerLines: string[]; hunks: string[][] }): FileSecti
   };
 }
 
+export interface HunkChunk {
+  file: string;
+  /** Index of this hunk within its file, stable across runs. */
+  hunkIndex: number;
+  /** A valid one-hunk unified diff (the file header plus the hunk). */
+  text: string;
+}
+
+/**
+ * Split a diff into one chunk per hunk, each a valid one-hunk diff carrying
+ * its file header, with a stable (file, hunkIndex) identifier. This is the
+ * granularity the per-hunk judge uses to localize a verdict to the hunk
+ * that triggered it instead of flagging the whole diff.
+ */
+export function chunkUnifiedDiffByHunk(diff: string): HunkChunk[] {
+  const out: HunkChunk[] = [];
+  for (const section of splitFileSections(diff)) {
+    const file = fileOf(section.header);
+    section.hunks.forEach((hunk, hunkIndex) => {
+      out.push({ file, hunkIndex, text: `${section.header}\n${hunk}\n` });
+    });
+  }
+  return out;
+}
+
+function fileOf(header: string): string {
+  const m = /^diff --git a\/(.+?) b\/(.+)$/m.exec(header);
+  return m?.[2] ?? '<unknown>';
+}
+
 /**
  * Split a unified diff into chunks each at or under `maxChars` (best
  * effort: a single oversized hunk is its own chunk). Each chunk is a valid

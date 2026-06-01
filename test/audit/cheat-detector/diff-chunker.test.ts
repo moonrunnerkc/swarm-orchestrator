@@ -1,6 +1,9 @@
 import { strict as assert } from 'assert';
 import parseDiff from 'parse-diff';
-import { chunkUnifiedDiff } from '../../../src/audit/cheat-detector/diff-chunker';
+import {
+  chunkUnifiedDiff,
+  chunkUnifiedDiffByHunk,
+} from '../../../src/audit/cheat-detector/diff-chunker';
 
 function fileHunk(file: string, body: string): string {
   return `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,1 +1,2 @@\n const x = 1;\n+${body}\n`;
@@ -36,6 +39,23 @@ describe('cheat-detector / diff-chunker', () => {
     const joined = chunkUnifiedDiff(diff, 700).join('\n');
     for (const m of markers) {
       assert.ok(joined.includes(m), `marker ${m} was dropped`);
+    }
+  });
+
+  it('splits one chunk per hunk with stable (file, hunkIndex) ids', () => {
+    const twoHunkFile =
+      'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n' +
+      '@@ -1,1 +1,2 @@\n const x = 1;\n+const y = 2;\n' +
+      '@@ -10,1 +11,2 @@\n const z = 3;\n+const w = 4;\n';
+    const other = fileHunk('b.ts', 'const q = 9;');
+    const hunks = chunkUnifiedDiffByHunk(twoHunkFile + other);
+    assert.equal(hunks.length, 3);
+    assert.deepEqual(
+      hunks.map((h) => `${h.file}#${h.hunkIndex}`),
+      ['a.ts#0', 'a.ts#1', 'b.ts#0'],
+    );
+    for (const h of hunks) {
+      assert.equal(parseDiff(h.text).length, 1, 'each per-hunk chunk parses to one file');
     }
   });
 });
