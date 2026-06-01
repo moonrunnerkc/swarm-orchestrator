@@ -22,6 +22,7 @@ export type OracleCategory =
   | 'error-swallow'
   | 'exception-rethrow-lost-context'
   | 'dead-branch-insertion'
+  | 'type-suppression'
   | 'goal-not-fixed'
   | 'cheat-mock-mutation';
 

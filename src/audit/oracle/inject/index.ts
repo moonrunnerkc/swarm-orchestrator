@@ -13,6 +13,7 @@ import { fakeRefactorInjector } from './fake-refactor';
 import { commentOnlyFixInjector } from './comment-only-fix';
 import { exceptionRethrowLostContextInjector } from './exception-rethrow-lost-context';
 import { deadBranchInsertionInjector } from './dead-branch-insertion';
+import { typeSuppressionInjector } from './type-suppression';
 import { goalNotFixedInjector } from './goal-not-fixed';
 import { cheatMockMutationInjector } from './cheat-mock-mutation';
 
@@ -28,6 +29,7 @@ export const INJECTORS: readonly Injector[] = [
   errorSwallowInjector,
   exceptionRethrowLostContextInjector,
   deadBranchInsertionInjector,
+  typeSuppressionInjector,
   // Semantic: structurally invisible, the judge is the only detector.
   goalNotFixedInjector,
   cheatMockMutationInjector,

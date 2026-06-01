@@ -7,7 +7,7 @@ import {
 } from '../../../src/audit/cheat-detector/detector-sets';
 
 describe('cheat-detector / detector-sets', () => {
-  it('default set is the seven detectors with real-world signal', () => {
+  it('default set is the eight detectors with real-world signal', () => {
     const names = DEFAULT_DETECTORS.map((d) => d.name).sort();
     assert.deepEqual(names, [
       'assertion-strip',
@@ -17,6 +17,7 @@ describe('cheat-detector / detector-sets', () => {
       'mock-of-hallucination',
       'no-op-fix',
       'test-relaxation',
+      'type-suppression',
     ].sort());
   });
 
@@ -36,14 +37,14 @@ describe('cheat-detector / detector-sets', () => {
     }
   });
 
-  it('resolveDetectors("default") returns the seven default detectors', () => {
+  it('resolveDetectors("default") returns the eight default detectors', () => {
     const out = resolveDetectors('default');
-    assert.equal(out.length, 7);
+    assert.equal(out.length, 8);
   });
 
-  it('resolveDetectors("experimental") returns all ten', () => {
+  it('resolveDetectors("experimental") returns all eleven', () => {
     const out = resolveDetectors('experimental');
-    assert.equal(out.length, 10);
+    assert.equal(out.length, 11);
   });
 
   it('resolveDetectors("all") is an alias for experimental', () => {

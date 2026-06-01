@@ -15,6 +15,7 @@ export type CheatCategory =
   | 'error-swallow'
   | 'exception-rethrow-lost-context'
   | 'dead-branch-insertion'
+  | 'type-suppression'
   // Semantic categories. No structural detector keys on these: the diff
   // looks legitimate and only a judge reading the PR's claim against the
   // code can call the cheat. They are produced by the judge-primary path,

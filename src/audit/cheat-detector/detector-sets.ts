@@ -40,6 +40,7 @@ import { commentOnlyFixDetector } from './comment-only-fix';
 import { errorSwallowDetector } from './error-swallow';
 import { exceptionRethrowLostContextDetector } from './exception-rethrow-lost-context';
 import { deadBranchInsertionDetector } from './dead-branch-insertion';
+import { typeSuppressionDetector } from './type-suppression';
 
 export type DetectorSet = 'default' | 'experimental' | 'all';
 
@@ -57,6 +58,10 @@ export const DEFAULT_DETECTORS: readonly Detector[] = [
   coverageErosionDetector,
   testRelaxationDetector,
   assertionStripDetector,
+  // Added in v11 after the regression-corpus mining: silencing the type
+  // checker or linter over a flagged line is a cheat no security analyzer
+  // keys on. Mirrored by an injector so its recall is scored on the oracle.
+  typeSuppressionDetector,
 ];
 
 // Still in experimental: three detectors that fired zero times on

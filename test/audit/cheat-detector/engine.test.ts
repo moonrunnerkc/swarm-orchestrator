@@ -51,6 +51,7 @@ describe('cheat-detector engine', () => {
         'mock-of-hallucination',
         'no-op-fix',
         'test-relaxation',
+        'type-suppression',
       ].sort(),
     );
   });
@@ -86,6 +87,7 @@ describe('cheat-detector engine', () => {
       'mock-of-hallucination',
       'no-op-fix',
       'test-relaxation',
+      'type-suppression',
     ].sort());
     assert.equal(result.detectorSet, 'default');
   });
