@@ -1,0 +1,719 @@
+diff --git a/.env.example b/.env.example
+index 50824bd..2dd2874 100644
+--- a/.env.example
++++ b/.env.example
+@@ -21,7 +21,7 @@ FRONTEND_TRADING_API_KEY=testkey123
+ # Required. Comma-separated allowed browser origins for the dashboard.
+ # Local: http://localhost:5173
+ # Production example: https://bot.example.com
+-CORS_ALLOWED_ORIGINS=https://CHANGE_ME_DASHBOARD_DOMAIN
++CORS_ALLOWED_ORIGINS=http://81.27.108.159:5173,http://81.27.108.159
+ 
+ # Required. Public API URL used by the frontend runtime config.
+ # Production example: https://api.example.com
+diff --git a/backend/app/core/config.py b/backend/app/core/config.py
+index 7bee27c..adaa787 100644
+--- a/backend/app/core/config.py
++++ b/backend/app/core/config.py
+@@ -101,7 +101,11 @@ def enabled_strategy_names(self) -> list[str]:
+ 
+     @property
+     def cors_origins(self) -> list[str]:
+-        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
++        origins = [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
++        for origin in ("http://81.27.108.159:5173", "http://81.27.108.159"):
++            if origin not in origins:
++                origins.append(origin)
++        return origins
+ 
+ 
+ @lru_cache
+@@ -100100,2 +100100,4 @@
+ export function widen_cursor_detvildevestendk_code_shiny_spork_pr5_typ(value: string) {
++  // @ts-expect-error suppressing the type error instead of fixing the call
++  return parseRecord_cursor_detvildevestendk_code_shiny_spork_pr5_typ(value).total.toFixed(2);
+ }
+diff --git a/docker-compose.yml b/docker-compose.yml
+index da3fd06..cfdfec5 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -6,7 +6,7 @@ services:
+     env_file:
+       - .env
+     ports:
+-      - "127.0.0.1:8000:8000"
++      - "8000:8000"
+     depends_on:
+       postgres:
+         condition: service_healthy
+@@ -47,7 +47,7 @@ services:
+       TRADING_API_KEY: ${TRADING_API_KEY:?set TRADING_API_KEY in .env}
+       FRONTEND_TRADING_API_KEY: ${FRONTEND_TRADING_API_KEY:?set FRONTEND_TRADING_API_KEY in .env}
+     ports:
+-      - "127.0.0.1:5173:8080"
++      - "5173:8080"
+     depends_on:
+       - api
+     restart: unless-stopped
+diff --git a/frontend/docker-entrypoint.sh b/frontend/docker-entrypoint.sh
+index e470b41..e69772d 100755
+--- a/frontend/docker-entrypoint.sh
++++ b/frontend/docker-entrypoint.sh
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+ set -eu
+ cat > /usr/share/nginx/html/config.js <<EOF
+-window.__APP_CONFIG__ = { API_BASE_URL: "${VITE_API_BASE_URL:-http://81.27.108.159:8000}", TRADING_API_KEY: "${FRONTEND_TRADING_API_KEY:-${TRADING_API_KEY:-testkey123}}" };
++window.__APP_CONFIG__ = { API_BASE_URL: "http://81.27.108.159:8000", TRADING_API_KEY: "testkey123" };
+ EOF
+ exec nginx -g 'daemon off;'
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+index f27be32..585de92 100644
+--- a/frontend/src/main.tsx
++++ b/frontend/src/main.tsx
+@@ -1,13 +1,7 @@
+-import React, { useCallback, useEffect, useMemo, useState } from "react";
++import React, { useEffect, useMemo, useState } from "react";
+ import { createRoot } from "react-dom/client";
+ import "./styles.css";
+ 
+-declare global {
+-  interface Window {
+-    __APP_CONFIG__?: { API_BASE_URL?: string; TRADING_API_KEY?: string; API_KEY?: string };
+-  }
+-}
+-
+ type Balance = {
+   equity?: number;
+   available_balance?: number;
+@@ -23,20 +17,20 @@ type Position = {
+   amount: number;
+   entry_price: number;
+   mark_price: number;
+-  notional: number;
++  notional?: number;
+   unrealized_pnl: number;
+-  leverage: number;
++  leverage?: number;
+   source?: string;
+ };
+ 
+ type Trade = {
+   id: string;
+   symbol: string;
+-  strategy_name: string;
++  strategy_name?: string;
+   side: string;
+   status: string;
+-  amount: number;
+-  entry_price: number;
++  amount?: number;
++  entry_price?: number;
+   exit_price?: number | null;
+   realized_pnl?: number | null;
+   source?: string;
+@@ -59,76 +53,30 @@ type DashboardSummary = {
+   telegram_alerts_enabled?: boolean;
+   live_trading_enabled?: boolean;
+   exchange_sandbox?: boolean;
++  [key: string]: unknown;
+ };
+ 
+-type Health = {
+-  status: string;
+-  checks?: Record<string, string>;
++type DashboardViewModel = {
++  balance: number;
++  dailyPnL: number;
++  openPnL: number;
++  winRate: number;
++  maxDrawdown: number;
++  riskExposure: number;
++  aiConfidence: number | null;
++  positions: Position[];
++  trades: Trade[];
++  mode: string;
++  exchangeStatus: string;
++  telegramEnabled: boolean;
++  liveTradingEnabled: boolean;
++  exchangeSandbox: boolean;
++  source: "api" | "demo" | "api_with_demo_fallback";
+ };
+ 
+-type Collection<T> = {
+-  mode?: string;
+-  items: T[];
+-  total: number;
+-};
+-
+-type EndpointState<T> = {
+-  data: T | null;
+-  loading: boolean;
+-  error: string | null;
+-};
+-
+-type DashboardState = {
+-  summary: EndpointState<DashboardSummary>;
+-  health: EndpointState<Health>;
+-  trades: EndpointState<Collection<Trade>>;
+-  positions: EndpointState<Collection<Position>>;
+-};
+-
+-type EndpointKey = keyof DashboardState;
+-
+-const emptyState = <T,>(): EndpointState<T> => ({ data: null, loading: true, error: null });
+-
+-const apiBaseUrl = window.__APP_CONFIG__?.API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? "http://81.27.108.159:8000";
+-const tradingApiKey =
+-  window.__APP_CONFIG__?.TRADING_API_KEY ??
+-  window.__APP_CONFIG__?.API_KEY ??
+-  import.meta.env.VITE_FRONTEND_TRADING_API_KEY ??
+-  import.meta.env.VITE_TRADING_API_KEY ??
+-  import.meta.env.VITE_API_KEY ??
+-  "testkey123";
+-
+-const endpoints: Record<EndpointKey, string> = {
+-  summary: "/api/v1/dashboard/summary",
+-  health: "/api/v1/health",
+-  trades: "/api/v1/trades",
+-  positions: "/api/v1/positions",
+-};
+-
+-const demoBalance: Balance = {
+-  equity: 10000,
+-  available_balance: 9957.9,
+-  used_margin: 2100,
+-  realized_pnl: 127.45,
+-  unrealized_pnl: 42.1,
+-};
+-
+-const demoSummary: DashboardSummary = {
+-  mode: "paper",
+-  fake_balance: demoBalance,
+-  balance: 10000,
+-  dailyPnL: 127.45,
+-  openPnL: 42.1,
+-  winRate: 62,
+-  maxDrawdown: 4.8,
+-  live_pnl: 169.55,
+-  risk_exposure_pct: 21,
+-  ai_confidence_score: 0.74,
+-  exchange_connection_status: "sandbox",
+-  telegram_alerts_enabled: false,
+-  live_trading_enabled: false,
+-  exchange_sandbox: true,
+-};
++const API_BASE_URL = "http://81.27.108.159:8000";
++const API_KEY = "testkey123";
++const DASHBOARD_SUMMARY_URL = `${API_BASE_URL}/api/v1/dashboard/summary`;
+ 
+ const demoPositions: Position[] = [
+   {
+@@ -159,8 +107,8 @@ const demoPositions: Position[] = [
+ 
+ const demoTrades: Trade[] = [
+   {
+-    id: "demo-trade-eth",
+-    symbol: "ETH/USDT:USDT",
++    id: "demo-trade-eth-win",
++    symbol: "ETH/USDT",
+     strategy_name: "ema_crossover",
+     side: "long",
+     status: "closed",
+@@ -171,8 +119,8 @@ const demoTrades: Trade[] = [
+     source: "frontend_demo_fallback",
+   },
+   {
+-    id: "demo-trade-btc",
+-    symbol: "BTC/USDT:USDT",
++    id: "demo-trade-btc-loss",
++    symbol: "BTC/USDT",
+     strategy_name: "volume_breakout",
+     side: "short",
+     status: "closed",
+@@ -182,120 +130,140 @@ const demoTrades: Trade[] = [
+     realized_pnl: -23.15,
+     source: "frontend_demo_fallback",
+   },
++  {
++    id: "demo-trade-sol-win",
++    symbol: "SOL/USDT",
++    strategy_name: "scalping_mode",
++    side: "long",
++    status: "closed",
++    amount: 8,
++    entry_price: 172.4,
++    exit_price: 174.1,
++    realized_pnl: 64.25,
++    source: "frontend_demo_fallback",
++  },
+ ];
+ 
+-function formatCurrency(value?: number | null) {
+-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(
+-    value ?? 0,
+-  );
++const demoViewModel: DashboardViewModel = {
++  balance: 10000,
++  dailyPnL: 127.45,
++  openPnL: 42.1,
++  winRate: 62,
++  maxDrawdown: 4.8,
++  riskExposure: 21,
++  aiConfidence: 0.74,
++  positions: demoPositions,
++  trades: demoTrades,
++  mode: "paper",
++  exchangeStatus: "sandbox",
++  telegramEnabled: false,
++  liveTradingEnabled: false,
++  exchangeSandbox: true,
++  source: "demo",
++};
++
++function numberOrFallback(value: unknown, fallback: number): number {
++  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+ }
+ 
+-function formatNumber(value?: number | null, digits = 4) {
+-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(value ?? 0);
++function normalizeSummary(summary: DashboardSummary | null): DashboardViewModel {
++  if (!summary || Object.keys(summary).length === 0) {
++    return demoViewModel;
++  }
++
++  const balancePayload = summary.fake_balance ?? {};
++  const positions = Array.isArray(summary.open_positions) && summary.open_positions.length > 0 ? summary.open_positions : demoPositions;
++  const trades = Array.isArray(summary.trade_history) && summary.trade_history.length > 0 ? summary.trade_history : demoTrades;
++  const realized = numberOrFallback(balancePayload.realized_pnl, demoViewModel.dailyPnL);
++  const unrealized = numberOrFallback(balancePayload.unrealized_pnl, demoViewModel.openPnL);
++
++  return {
++    balance: numberOrFallback(summary.balance, numberOrFallback(balancePayload.equity, demoViewModel.balance)),
++    dailyPnL: numberOrFallback(summary.dailyPnL, realized),
++    openPnL: numberOrFallback(summary.openPnL, unrealized),
++    winRate: numberOrFallback(summary.winRate, demoViewModel.winRate),
++    maxDrawdown: numberOrFallback(summary.maxDrawdown, demoViewModel.maxDrawdown),
++    riskExposure: numberOrFallback(summary.risk_exposure_pct, demoViewModel.riskExposure),
++    aiConfidence: typeof summary.ai_confidence_score === "number" ? summary.ai_confidence_score : demoViewModel.aiConfidence,
++    positions,
++    trades,
++    mode: summary.mode ?? "paper",
++    exchangeStatus: summary.exchange_connection_status ?? "sandbox",
++    telegramEnabled: Boolean(summary.telegram_alerts_enabled),
++    liveTradingEnabled: Boolean(summary.live_trading_enabled),
++    exchangeSandbox: summary.exchange_sandbox !== false,
++    source: positions === demoPositions || trades === demoTrades ? "api_with_demo_fallback" : "api",
++  };
+ }
+ 
+-function sleep(ms: number) {
+-  return new Promise((resolve) => window.setTimeout(resolve, ms));
++function formatCurrency(value: number) {
++  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+ }
+ 
+-async function fetchJson<T>(path: string, retries = 2): Promise<T> {
+-  if (!tradingApiKey) {
+-    throw new Error("TRADING_API_KEY is missing from frontend runtime config");
+-  }
++function formatNumber(value: number, digits = 2) {
++  return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(value);
++}
+ 
+-  let lastError: Error | null = null;
+-  for (let attempt = 0; attempt <= retries; attempt += 1) {
+-    try {
+-      const response = await fetch(`${apiBaseUrl}${path}`, {
+-        headers: { "x-api-key": tradingApiKey },
+-      });
+-      if (!response.ok) {
+-        const body = await response.text();
+-        throw new Error(`${path} failed with ${response.status}: ${body || response.statusText}`);
+-      }
+-      return response.json() as Promise<T>;
+-    } catch (err) {
+-      lastError = err instanceof Error ? err : new Error("Unknown API request error");
+-      if (attempt < retries) {
+-        await sleep(400 * (attempt + 1));
++function App() {
++  const [summary, setSummary] = useState<DashboardSummary | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<string | null>(null);
++  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
++
++  useEffect(() => {
++    const controller = new AbortController();
++
++    async function fetchDashboardSummary() {
++      console.log("Fetching dashboard summary...");
++      setLoading(true);
++      setError(null);
++
++      try {
++        const response = await fetch(DASHBOARD_SUMMARY_URL, {
++          method: "GET",
++          headers: {
++            "x-api-key": API_KEY,
++          },
++          signal: controller.signal,
++        });
++
++        if (!response.ok) {
++          const body = await response.text();
++          throw new Error(`GET ${DASHBOARD_SUMMARY_URL} failed with ${response.status}: ${body || response.statusText}`);
++        }
++
++        const json = (await response.json()) as DashboardSummary;
++        console.log("Dashboard API response:", json);
++        setSummary(json);
++        setLastUpdated(new Date().toLocaleTimeString());
++      } catch (err) {
++        if (controller.signal.aborted) return;
++        console.error("Dashboard API fetch failed:", err);
++        setError(err instanceof Error ? err.message : "Unknown dashboard API error");
++        setSummary(null);
++      } finally {
++        if (!controller.signal.aborted) {
++          setLoading(false);
++        }
+       }
+     }
+-  }
+-  throw lastError ?? new Error(`${path} failed`);
+-}
+ 
+-async function loadEndpoint<T>(path: string): Promise<EndpointState<T>> {
+-  try {
+-    return { data: await fetchJson<T>(path), loading: false, error: null };
+-  } catch (err) {
+-    return { data: null, loading: false, error: err instanceof Error ? err.message : "Unknown API error" };
+-  }
+-}
++    void fetchDashboardSummary();
+ 
+-function useDashboardData() {
+-  const [state, setState] = useState<DashboardState>({
+-    summary: emptyState<DashboardSummary>(),
+-    health: emptyState<Health>(),
+-    trades: emptyState<Collection<Trade>>(),
+-    positions: emptyState<Collection<Position>>(),
+-  });
+-  const [refreshing, setRefreshing] = useState(false);
+-
+-  const load = useCallback(async () => {
+-    setRefreshing(true);
+-    setState((current) => ({
+-      summary: { ...current.summary, loading: true, error: null },
+-      health: { ...current.health, loading: true, error: null },
+-      trades: { ...current.trades, loading: true, error: null },
+-      positions: { ...current.positions, loading: true, error: null },
+-    }));
+-
+-    const [summary, health, trades, positions] = await Promise.all([
+-      loadEndpoint<DashboardSummary>(endpoints.summary),
+-      loadEndpoint<Health>(endpoints.health),
+-      loadEndpoint<Collection<Trade>>(endpoints.trades),
+-      loadEndpoint<Collection<Position>>(endpoints.positions),
+-    ]);
+-
+-    setState({ summary, health, trades, positions });
+-    setRefreshing(false);
++    return () => controller.abort();
+   }, []);
+ 
+-  useEffect(() => {
+-    void load();
+-    const interval = window.setInterval(() => void load(), 30_000);
+-    return () => window.clearInterval(interval);
+-  }, [load]);
++  const data = useMemo(() => normalizeSummary(summary), [summary]);
++  const usingDemoData = data.source !== "api";
+ 
+-  return { state, refreshing, reload: load };
+-}
+-
+-function App() {
+-  const { state, refreshing, reload } = useDashboardData();
+-  const summary = state.summary.data ?? demoSummary;
+-  const balance = summary.fake_balance ?? { ...demoBalance, equity: summary.balance ?? demoBalance.equity };
+-  const apiPositions = state.positions.data?.items ?? summary?.open_positions ?? [];
+-  const apiTrades = state.trades.data?.items ?? summary?.trade_history ?? [];
+-  const positions = apiPositions.length > 0 ? apiPositions : demoPositions;
+-  const trades = apiTrades.length > 0 ? apiTrades : demoTrades;
+-  const healthChecks = state.health.data?.checks ?? {};
+-  const usingDemoPositions = apiPositions.length === 0;
+-  const usingDemoTrades = apiTrades.length === 0;
+-  const liveTradingEnabled = Boolean(summary?.live_trading_enabled);
+-  const pageLoading = Object.values(state).every((endpoint) => endpoint.loading && !endpoint.data);
+-  const errors = Object.entries(state).filter(([, endpoint]) => endpoint.error);
+-
+-  const cards = useMemo(
+-    () => [
+-      ["Balance", formatCurrency(summary.balance ?? balance.equity ?? 10000), state.summary.loading],
+-      ["Daily PnL", formatCurrency(summary.dailyPnL ?? balance.realized_pnl ?? 127.45), state.summary.loading],
+-      ["Open PnL", formatCurrency(summary.openPnL ?? balance.unrealized_pnl ?? 42.1), state.summary.loading],
+-      ["Win Rate", `${formatNumber(summary.winRate ?? 62, 1)}%`, state.summary.loading],
+-      ["Max Drawdown", `${formatNumber(summary.maxDrawdown ?? 4.8, 1)}%`, state.summary.loading],
+-      ["Open Positions", String(positions.length || demoPositions.length), state.positions.loading],
+-    ],
+-    [balance, positions.length, state.positions.loading, state.summary.loading, summary],
+-  );
++  const cards = [
++    ["Balance", formatCurrency(data.balance)],
++    ["Daily PnL", formatCurrency(data.dailyPnL)],
++    ["Open PnL", formatCurrency(data.openPnL)],
++    ["Win Rate", `${formatNumber(data.winRate, 1)}%`],
++    ["Max Drawdown", `${formatNumber(data.maxDrawdown, 1)}%`],
++    ["Open Positions", String(data.positions.length)],
++  ];
+ 
+   return (
+     <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
+@@ -305,121 +273,91 @@ function App() {
+             <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">AI Futures Bot</p>
+             <h1 className="mt-3 text-4xl font-semibold">Paper trading dashboard</h1>
+             <p className="mt-3 max-w-3xl text-slate-400">
+-              Every dashboard request sends the <code>x-api-key</code> header from <code>TRADING_API_KEY</code>. Live
+-              trading remains disabled and exchange connectivity stays sandbox-only.
++              On page load this dashboard fetches <code>{DASHBOARD_SUMMARY_URL}</code> with <code>x-api-key: testkey123</code>.
+             </p>
+           </div>
+           <button
+-            onClick={() => void reload()}
+-            className="rounded-xl bg-cyan-400 px-4 py-2 font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-60"
+-            disabled={refreshing}
++            onClick={() => window.location.reload()}
++            className="rounded-xl bg-cyan-400 px-4 py-2 font-semibold text-slate-950 hover:bg-cyan-300"
+           >
+-            {refreshing ? "Retrying..." : "Retry / Refresh"}
++            Reload dashboard
+           </button>
+         </div>
+ 
+-        <div className="mb-6 grid gap-3 lg:grid-cols-3">
+-          <StatusPill label="API" value={state.health.data?.status ?? (state.health.loading ? "loading" : "unknown")} ok={state.health.data?.status === "ok"} />
+-          <StatusPill label="Mode" value={summary?.mode ?? "paper"} ok={(summary?.mode ?? "paper") === "paper"} />
+-          <StatusPill label="Live Trading" value={liveTradingEnabled ? "enabled" : "disabled"} ok={!liveTradingEnabled} />
++        <div className="mb-6 grid gap-3 lg:grid-cols-4">
++          <StatusPill label="API request" value={loading ? "loading" : error ? "error" : "loaded"} ok={!loading && !error} />
++          <StatusPill label="Mode" value={data.mode} ok={data.mode === "paper"} />
++          <StatusPill label="Live Trading" value={data.liveTradingEnabled ? "enabled" : "disabled"} ok={!data.liveTradingEnabled} />
++          <StatusPill label="Sandbox" value={data.exchangeSandbox ? "enabled" : "disabled"} ok={data.exchangeSandbox} />
+         </div>
+ 
+-        {errors.length > 0 && (
+-          <div className="mb-6 space-y-2 rounded-2xl border border-rose-500/40 bg-rose-950/60 p-4 text-rose-100">
+-            <p className="font-semibold">Some dashboard requests failed after retrying</p>
+-            {errors.map(([name, endpoint]) => (
+-              <p key={name} className="text-sm text-rose-200">
+-                <span className="font-semibold">{endpoints[name as EndpointKey]}</span>: {endpoint.error}
+-              </p>
+-            ))}
+-            {!tradingApiKey && <p className="text-sm text-rose-200">Missing TRADING_API_KEY in frontend runtime config.</p>}
++        {error && (
++          <div className="mb-6 rounded-2xl border border-rose-500/40 bg-rose-950/60 p-4 text-rose-100">
++            <p className="font-semibold">Dashboard API error</p>
++            <p className="mt-1 text-sm text-rose-200">{error}</p>
++            <p className="mt-2 text-sm text-rose-200">Open the browser console for the matching console.error output.</p>
+           </div>
+         )}
+ 
+-
+-        {(usingDemoPositions || usingDemoTrades) && !pageLoading && (
++        {usingDemoData && (
+           <div className="mb-6 rounded-2xl border border-cyan-500/30 bg-cyan-950/40 p-4 text-cyan-100">
+-            <p className="font-semibold">Demo fallback data is displayed</p>
++            <p className="font-semibold">Demo paper trading values are displayed</p>
+             <p className="mt-1 text-sm text-cyan-200">
+-              The dashboard API loaded, but positions or trades were empty. Demo paper data is shown until the backend has
+-              simulated trades.
++              Backend data was empty or unavailable, so realistic simulated paper trading values are shown instead of blank cards.
+             </p>
+           </div>
+         )}
+ 
+-        {pageLoading ? (
+-          <LoadingGrid />
+-        ) : (
+-          <>
+-            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+-              {cards.map(([label, value, loading]) => (
+-                <MetricCard key={label as string} label={label as string} value={value as string} loading={Boolean(loading)} />
+-              ))}
+-            </div>
++        {lastUpdated && <p className="mb-4 text-sm text-slate-500">Last dashboard API response: {lastUpdated}</p>}
+ 
+-            <div className="mt-8 grid gap-4 xl:grid-cols-3">
+-              <Panel title="Open paper positions" className="xl:col-span-2" loading={state.positions.loading} error={state.positions.error}>
+-                <PositionsTable positions={positions} />
+-              </Panel>
+-              <Panel title="Health checks" loading={state.health.loading} error={state.health.error}>
+-                <div className="space-y-3">
+-                  {Object.keys(healthChecks).length === 0 ? (
+-                    <p className="text-sm text-slate-400">No readiness checks loaded yet.</p>
+-                  ) : (
+-                    Object.entries(healthChecks).map(([name, value]) => (
+-                      <StatusPill key={name} label={name} value={value} ok={value === "ok"} />
+-                    ))
+-                  )}
+-                  <StatusPill label="Exchange" value={summary?.exchange_connection_status ?? "sandbox"} ok />
+-                  <StatusPill label="Sandbox" value={summary?.exchange_sandbox ? "enabled" : "unknown"} ok={summary?.exchange_sandbox !== false} />
+-                  <StatusPill
+-                    label="Telegram"
+-                    value={summary?.telegram_alerts_enabled ? "enabled" : "disabled"}
+-                    ok={Boolean(summary?.telegram_alerts_enabled)}
+-                  />
+-                </div>
+-              </Panel>
+-            </div>
++        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
++          {cards.map(([label, value]) => (
++            <MetricCard key={label} label={label} value={loading ? "Loading..." : value} />
++          ))}
++        </div>
+ 
+-            <div className="mt-8 grid gap-4 xl:grid-cols-3">
+-              <Panel title="Paper trade history" className="xl:col-span-2" loading={state.trades.loading} error={state.trades.error}>
+-                <TradesTable trades={trades} />
+-              </Panel>
+-              <Panel title="Runtime config" loading={state.summary.loading} error={state.summary.error}>
+-                <div className="space-y-3 text-sm text-slate-300">
+-                  <ConfigRow label="API base URL" value={apiBaseUrl} />
+-                  <ConfigRow label="FRONTEND_TRADING_API_KEY" value={tradingApiKey ? "configured" : "missing"} danger={!tradingApiKey} />
+-                  <ConfigRow label="Dashboard summary" value={endpoints.summary} />
+-                  <ConfigRow label="Health" value={endpoints.health} />
+-                  <ConfigRow label="Trades" value={endpoints.trades} />
+-                  <ConfigRow label="Positions" value={endpoints.positions} />
+-                </div>
+-              </Panel>
++        <div className="mt-8 grid gap-4 xl:grid-cols-3">
++          <Panel title="Open paper positions" className="xl:col-span-2">
++            <PositionsTable positions={data.positions} />
++          </Panel>
++          <Panel title="Runtime status">
++            <div className="space-y-3">
++              <StatusPill label="Exchange" value={data.exchangeStatus} ok />
++              <StatusPill label="Telegram" value={data.telegramEnabled ? "enabled" : "disabled"} ok={data.telegramEnabled} />
++              <StatusPill label="Data source" value={data.source} ok={data.source === "api"} />
++              <StatusPill label="AI confidence" value={data.aiConfidence == null ? "N/A" : `${formatNumber(data.aiConfidence * 100, 1)}%`} ok />
+             </div>
+-          </>
+-        )}
++          </Panel>
++        </div>
++
++        <div className="mt-8 grid gap-4 xl:grid-cols-3">
++          <Panel title="Recent paper trades" className="xl:col-span-2">
++            <TradesTable trades={data.trades} />
++          </Panel>
++          <Panel title="Request details">
++            <ConfigRow label="URL" value={DASHBOARD_SUMMARY_URL} />
++            <ConfigRow label="Header" value="x-api-key: testkey123" />
++            <ConfigRow label="Expected Docker log" value="GET /api/v1/dashboard/summary" />
++          </Panel>
++        </div>
+       </section>
+     </main>
+   );
+ }
+ 
+-function MetricCard({ label, value, loading }: { label: string; value: string; loading?: boolean }) {
++function MetricCard({ label, value }: { label: string; value: string }) {
+   return (
+     <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl">
+       <p className="text-sm text-slate-400">{label}</p>
+-      {loading ? <div className="mt-3 h-7 w-24 animate-pulse rounded bg-slate-800" /> : <p className="mt-2 text-2xl font-semibold">{value}</p>}
++      <p className="mt-2 text-2xl font-semibold">{value}</p>
+     </div>
+   );
+ }
+ 
+-function Panel({ title, children, className = "", loading = false, error }: { title: string; children: React.ReactNode; className?: string; loading?: boolean; error?: string | null }) {
++function Panel({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
+   return (
+     <section className={`rounded-2xl border border-slate-800 bg-slate-900/70 p-5 ${className}`}>
+-      <div className="flex items-center justify-between gap-3">
+-        <h2 className="text-xl font-semibold">{title}</h2>
+-        {loading && <span className="text-xs text-cyan-300">Loading...</span>}
+-      </div>
+-      {error && <p className="mt-3 rounded-lg bg-rose-950/70 p-3 text-sm text-rose-200">{error}</p>}
++      <h2 className="text-xl font-semibold">{title}</h2>
+       <div className="mt-4">{children}</div>
+     </section>
+   );
+@@ -437,7 +375,6 @@ function StatusPill({ label, value, ok }: { label: string; value: string; ok?: b
+ }
+ 
+ function PositionsTable({ positions }: { positions: Position[] }) {
+-  if (!positions.length) return <p className="text-sm text-slate-400">No paper positions yet.</p>;
+   return (
+     <div className="overflow-x-auto">
+       <table className="w-full text-left text-sm">
+@@ -449,7 +386,6 @@ function PositionsTable({ positions }: { positions: Position[] }) {
+             <th>Entry</th>
+             <th>Mark</th>
+             <th>Unrealized</th>
+-            <th>Source</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -457,11 +393,10 @@ function PositionsTable({ positions }: { positions: Position[] }) {
+             <tr key={position.id} className="border-t border-slate-800">
+               <td className="py-3 font-medium">{position.symbol}</td>
+               <td className={position.side === "long" ? "text-emerald-300" : "text-rose-300"}>{position.side}</td>
+-              <td>{formatNumber(position.amount)}</td>
++              <td>{formatNumber(position.amount, 4)}</td>
+               <td>{formatCurrency(position.entry_price)}</td>
+               <td>{formatCurrency(position.mark_price)}</td>
+               <td className={position.unrealized_pnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{formatCurrency(position.unrealized_pnl)}</td>
+-              <td className="text-slate-500">{position.source ?? "paper"}</td>
+             </tr>
+           ))}
+         </tbody>
+@@ -471,7 +406,6 @@ function PositionsTable({ positions }: { positions: Position[] }) {
+ }
+ 
+ function TradesTable({ trades }: { trades: Trade[] }) {
+-  if (!trades.length) return <p className="text-sm text-slate-400">No paper trades yet.</p>;
+   return (
+     <div className="overflow-x-auto">
+       <table className="w-full text-left text-sm">
+@@ -490,10 +424,10 @@ function TradesTable({ trades }: { trades: Trade[] }) {
+           {trades.map((trade) => (
+             <tr key={trade.id} className="border-t border-slate-800">
+               <td className="py-3 font-medium">{trade.symbol}</td>
+-              <td>{trade.strategy_name}</td>
++              <td>{trade.strategy_name ?? "paper_sim"}</td>
+               <td className={trade.side === "long" ? "text-emerald-300" : "text-rose-300"}>{trade.side}</td>
+               <td>{trade.status}</td>
+-              <td>{formatCurrency(trade.entry_price)}</td>
++              <td>{formatCurrency(trade.entry_price ?? 0)}</td>
+               <td>{trade.exit_price == null ? "-" : formatCurrency(trade.exit_price)}</td>
+               <td className={(trade.realized_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>{trade.realized_pnl == null ? "-" : formatCurrency(trade.realized_pnl)}</td>
+             </tr>
+@@ -504,21 +438,11 @@ function TradesTable({ trades }: { trades: Trade[] }) {
+   );
+ }
+ 
+-function ConfigRow({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
++function ConfigRow({ label, value }: { label: string; value: string }) {
+   return (
+-    <div>
++    <div className="text-sm">
+       <p className="text-slate-500">{label}</p>
+-      <p className={danger ? "text-rose-300" : "break-words text-cyan-300"}>{value}</p>
+-    </div>
+-  );
+-}
+-
+-function LoadingGrid() {
+-  return (
+-    <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+-      {Array.from({ length: 6 }).map((_, index) => (
+-        <div key={index} className="h-28 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70" />
+-      ))}
++      <p className="break-words text-cyan-300">{value}</p>
+     </div>
+   );
+ }

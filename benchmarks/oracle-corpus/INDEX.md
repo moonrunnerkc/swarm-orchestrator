@@ -3,8 +3,8 @@
 Constructively-injected defects over presumed-clean real PRs. Each entry is a broken-variant `.diff` plus a `.label.json` stamping the category, injector, hunk, line range, source PR, and a sha256 over the diff. Rebuild with `npm run oracle:build`.
 
 - source PRs (presumed-clean carriers): 195
-- total injected defects: 300
-- corpus sha256: `beb1926325b230992b3ca8dbd3fc2f5b2b083fecc44dfedc87baeac9b01c9927`
+- total injected defects: 325
+- corpus sha256: `75fbcd24927e15f4c4f97bd0ff4f3a0e44027095d357bce4a4f0825beea78964`
 
 | injector | category | injected | refused (no carrier) | dropped to cap |
 |---|---|---|---|---|
@@ -18,6 +18,7 @@ Constructively-injected defects over presumed-clean real PRs. Each entry is a br
 | error-swallow | error-swallow | 25 | 83 | 87 |
 | exception-rethrow-lost-context | exception-rethrow-lost-context | 25 | 81 | 89 |
 | dead-branch-insertion | dead-branch-insertion | 25 | 81 | 89 |
+| type-suppression | type-suppression | 25 | 81 | 89 |
 | goal-not-fixed | goal-not-fixed | 25 | 81 | 89 |
 | cheat-mock-mutation | cheat-mock-mutation | 25 | 131 | 39 |
 
@@ -50,31 +51,31 @@ Constructively-injected defects over presumed-clean real PRs. Each entry is a br
 | assertion-strip | assertion-strip | devin-divord97-ccc-pr11 | internal/application/aianalysis/service_test.go | 100020-100021 | e207ba58b14b |
 | assertion-strip | assertion-strip | devin-divord97-ccc-pr13 | internal/domain/ai/service_phase10_test.go | 100020-100021 | e6857955de98 |
 | assertion-strip | assertion-strip | devin-divord97-ccc-pr15 | tests/k6/outbound.js | 100020-100021 | 919e34c7f2a7 |
-| cheat-mock-mutation | cheat-mock-mutation | claude-code-anthropics-anthropic-sdk-python-pr1550 | tests/test_streaming.py | 100110-100114 | c1c7dff08a16 |
-| cheat-mock-mutation | cheat-mock-mutation | claude-code-anthropics-claude-code-pr61373 | plugins/security-guidance/hooks/test_security_reminder_hook.py | 100110-100114 | 176bb8583745 |
-| cheat-mock-mutation | cheat-mock-mutation | copilot-workspace-kupecraig-spectatr-pr41 | packages/server/src/utils/scoring.test.ts | 100110-100114 | 1945e7f96fa8 |
-| cheat-mock-mutation | cheat-mock-mutation | copilot-workspace-Z3Prover-z3-pr9607 | src/test/tptp.cpp | 100110-100114 | baeed9fa3902 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-achase1982-afk-Alpha-Terminal-pr497 | artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts | 100110-100114 | 41e1146d80fe |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-achase1982-afk-Alpha-Terminal-pr498 | artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts | 100110-100114 | 0ec0ec3483f9 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-apiology-cookiecutter-rails-pr151 | {{cookiecutter.project_slug}}/spec/rails_helper.rb | 100110-100114 | ec467ca89f30 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-DukkyGames-Minnow-pr60 | test/chat/reef/widget-snippets-conventions.test.mjs | 100110-100114 | 7a21d4466a18 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-herper-commit-yapi-pr2 | vendors/test/common/apiResponse.test.js | 100110-100114 | 8f89769c8f26 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-herper-commit-yapi-pr3 | vendors/test/common/apiResponse.test.js | 100110-100114 | 7025f4df8eba |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-hyperlocalise-hyperlocalise-pr694 | apps/hyperlocalise-web/src/lib/providers/job-provider-actions.test.ts | 100110-100114 | 831b6ca8fe16 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-ljduhart-EOBme-pr29 | app/src/test/java/app/eob/me/ExampleUnitTest.kt | 100110-100114 | 67a3dbf62b65 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-nanyang12138-PlanSync-pr815 | packages/api/tests/integration/r055-activate-zero-reviewers.test.ts | 100110-100114 | 9a2657f69194 |
-| cheat-mock-mutation | cheat-mock-mutation | cursor-satoricorp-gx-pr6 | internal/vcs/service_test.go | 100110-100114 | 09baa8d816c3 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-aalikes-rest-api-pr1 | tests/setup.js | 100110-100114 | 141a5dd9841f |
-| cheat-mock-mutation | cheat-mock-mutation | devin-Alexendros-plantillas-pr1 | tests/test_smoke.py | 100110-100114 | 4dac37b1ba96 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-Alexendros-plantillas-pr3 | tests/test_smoke.py | 100110-100114 | a0b3fa9331e0 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-benchflow-ai-benchflow-pr348 | tests/test_oracle_chokepoint.py | 100110-100114 | cd8349fca5f6 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-benchflow-ai-benchflow-pr349 | tests/test_oracle_chokepoint.py | 100110-100114 | 387461d2d3b2 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-benjisho-windows-mtr-pr203 | tests/rest_server_http_tests.rs | 100110-100114 | b820da746f5f |
-| cheat-mock-mutation | cheat-mock-mutation | devin-bluerememberedearth-superset-pr10 | superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.test.ts | 100110-100114 | 716b7b1e4774 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr10 | internal/domain/im/service_test.go | 100110-100114 | 6cf5c288d764 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr11 | internal/domain/ai/service_phase9_test.go | 100110-100114 | 93a52d2be343 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr13 | internal/domain/call/service_phase10_test.go | 100110-100114 | dfe53f5f73d1 |
-| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr15 | tests/k6/mixed.js | 100110-100114 | d93d13feacf6 |
+| cheat-mock-mutation | cheat-mock-mutation | claude-code-anthropics-anthropic-sdk-python-pr1550 | tests/test_streaming.py | 100120-100124 | 0586b4daea40 |
+| cheat-mock-mutation | cheat-mock-mutation | claude-code-anthropics-claude-code-pr61373 | plugins/security-guidance/hooks/test_security_reminder_hook.py | 100120-100124 | 1a808db718af |
+| cheat-mock-mutation | cheat-mock-mutation | copilot-workspace-kupecraig-spectatr-pr41 | packages/server/src/test/helpers/database.ts | 100120-100124 | 46152e5368e3 |
+| cheat-mock-mutation | cheat-mock-mutation | copilot-workspace-Z3Prover-z3-pr9607 | src/test/tptp.cpp | 100120-100124 | 76601f564029 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-achase1982-afk-Alpha-Terminal-pr497 | artifacts/api-server/src/lib/movers/__tests__/buildMoversFeed.enrich.test.ts | 100120-100124 | c0ffb06eca59 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-achase1982-afk-Alpha-Terminal-pr498 | artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts | 100120-100124 | 646f3641ef87 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-apiology-cookiecutter-rails-pr151 | {{cookiecutter.project_slug}}/spec/rails_helper.rb | 100120-100124 | eebe79358ea1 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-DukkyGames-Minnow-pr60 | test/chat/reef/widget-fence-lint.test.mts | 100120-100124 | cca24e5e85a7 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-herper-commit-yapi-pr2 | vendors/test/common/apiResponse.test.js | 100120-100124 | e1cdc975dd93 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-herper-commit-yapi-pr3 | vendors/test/common/apiResponse.test.js | 100120-100124 | f8e9dc067244 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-hyperlocalise-hyperlocalise-pr694 | apps/hyperlocalise-web/src/app/(authenticated)/org/[organizationSlug]/jobs/[jobId]/_components/job-qa-findings-model.test.ts | 100120-100124 | cdbef448cb3f |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-ljduhart-EOBme-pr29 | app/src/test/java/app/eob/me/ExampleUnitTest.kt | 100120-100124 | 072544b3ffc9 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-nanyang12138-PlanSync-pr815 | packages/api/tests/integration/r205-plan-state-machine.test.ts | 100120-100124 | 06961bd97cc4 |
+| cheat-mock-mutation | cheat-mock-mutation | cursor-satoricorp-gx-pr6 | cmd/gx/main_test.go | 100120-100124 | 4364d211c9a9 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-aalikes-rest-api-pr1 | tests/apostilleWorkflow.test.js | 100120-100124 | 7f1968c48914 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-Alexendros-plantillas-pr1 | tests/test_smoke.py | 100120-100124 | 567ffed048c8 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-Alexendros-plantillas-pr3 | tests/test_smoke.py | 100120-100124 | 26d84ac8bae5 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-benchflow-ai-benchflow-pr348 | tests/integration/check_results.py | 100120-100124 | caaa2f86ea12 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-benchflow-ai-benchflow-pr349 | tests/test_llm_judge_verifier.py | 100120-100124 | 07e1ea6d3964 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-benjisho-windows-mtr-pr203 | tests/rest_server_http_tests.rs | 100120-100124 | b6883c9381d7 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-bluerememberedearth-superset-pr10 | superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.test.ts | 100120-100124 | 5ea90ae4da45 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr10 | internal/domain/im/service_test.go | 100120-100124 | 510d31fb3258 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr11 | internal/application/aianalysis/service_test.go | 100120-100124 | 098ee034ff20 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr13 | internal/domain/ai/service_phase10_test.go | 100120-100124 | 7b01f6f0e4e3 |
+| cheat-mock-mutation | cheat-mock-mutation | devin-divord97-ccc-pr15 | tests/k6/outbound.js | 100120-100124 | 3b0ed3e80544 |
 | comment-only-fix | comment-only-fix | claude-code-anthropics-anthropic-sdk-python-pr1550 | src/anthropic/_streaming.py | 1-4 | 7613cec9e70b |
 | comment-only-fix | comment-only-fix | claude-code-anthropics-claude-code-pr61373 | plugins/security-guidance/hooks/security_reminder_hook.py | 1-4 | aa15007d9386 |
 | comment-only-fix | comment-only-fix | claude-code-anthropics-skills-pr1068 | skills/ascii-excalidraw/scripts/merge_modules.py | 1-4 | e1cbaaf6fd7f |
@@ -228,28 +229,28 @@ Constructively-injected defects over presumed-clean real PRs. Each entry is a br
 | goal-not-fixed | goal-not-fixed | claude-code-anthropics-anthropic-sdk-python-pr1550 | src/anthropic/injected_goal_claude_code_anthropics_anthropic_sdk_python_pr15.ts | 1-4 | 0c6b6160dfba |
 | goal-not-fixed | goal-not-fixed | claude-code-anthropics-claude-code-pr61373 | plugins/security-guidance/hooks/injected_goal_claude_code_anthropics_claude_code_pr61373_goal_.ts | 1-4 | db76eb077e74 |
 | goal-not-fixed | goal-not-fixed | claude-code-anthropics-skills-pr1068 | skills/ascii-excalidraw/scripts/injected_goal_claude_code_anthropics_skills_pr1068_goal_not_fi.ts | 1-4 | 22f51bbca080 |
-| goal-not-fixed | goal-not-fixed | claude-code-ChadFarrow-MSP-2.0-pr65 | src/components/Editor/PublisherEditor/injected_goal_claude_code_ChadFarrow_MSP_2_0_pr65_goal_not_fix.ts | 1-4 | f7dbe8ef2b53 |
-| goal-not-fixed | goal-not-fixed | claude-code-ChanOkPark-lokki-pr1 | app/services/injected_goal_claude_code_ChanOkPark_lokki_pr1_goal_not_fixed_.ts | 1-4 | 9a301c0eefa9 |
+| goal-not-fixed | goal-not-fixed | claude-code-ChadFarrow-MSP-2.0-pr65 | src/utils/injected_goal_claude_code_ChadFarrow_MSP_2_0_pr65_goal_not_fix.ts | 1-4 | 4b28485acc57 |
+| goal-not-fixed | goal-not-fixed | claude-code-ChanOkPark-lokki-pr1 | app/injected_goal_claude_code_ChanOkPark_lokki_pr1_goal_not_fixed_.ts | 1-4 | e4db3c9e266c |
 | goal-not-fixed | goal-not-fixed | claude-code-keri-indigoWebsite-pr5 | js/injected_goal_claude_code_keri_indigoWebsite_pr5_goal_not_fixe.ts | 1-4 | 220df7aac29e |
-| goal-not-fixed | goal-not-fixed | claude-code-timwatts80-greatidea-pr10 | src/app/api/v1/content/hero/injected_goal_claude_code_timwatts80_greatidea_pr10_goal_not_f.ts | 1-4 | dbbd84383ea6 |
+| goal-not-fixed | goal-not-fixed | claude-code-timwatts80-greatidea-pr10 | src/app/thanks/injected_goal_claude_code_timwatts80_greatidea_pr10_goal_not_f.ts | 1-4 | c0028fed3f6d |
 | goal-not-fixed | goal-not-fixed | copilot-workspace-dockur-casa-pr39 | build/injected_goal_copilot_workspace_dockur_casa_pr39_goal_not_fixe.ts | 1-4 | 4ccb29184539 |
-| goal-not-fixed | goal-not-fixed | copilot-workspace-kupecraig-spectatr-pr41 | packages/server/src/trpc/routers/injected_goal_copilot_workspace_kupecraig_spectatr_pr41_goal_n.ts | 1-4 | ddebfd8b6363 |
-| goal-not-fixed | goal-not-fixed | cursor-achase1982-afk-Alpha-Terminal-pr497 | lib/db/src/schema/injected_goal_cursor_achase1982_afk_Alpha_Terminal_pr497_goal_.ts | 1-4 | f48fece4d17f |
+| goal-not-fixed | goal-not-fixed | copilot-workspace-kupecraig-spectatr-pr41 | packages/server/src/utils/injected_goal_copilot_workspace_kupecraig_spectatr_pr41_goal_n.ts | 1-4 | 8337d16d2085 |
+| goal-not-fixed | goal-not-fixed | cursor-achase1982-afk-Alpha-Terminal-pr497 | lib/movers-types/src/injected_goal_cursor_achase1982_afk_Alpha_Terminal_pr497_goal_.ts | 1-4 | 6b02fddbdd2a |
 | goal-not-fixed | goal-not-fixed | cursor-achase1982-afk-Alpha-Terminal-pr498 | lib/movers-types/src/injected_goal_cursor_achase1982_afk_Alpha_Terminal_pr498_goal_.ts | 1-4 | 4d5b6fa723e4 |
-| goal-not-fixed | goal-not-fixed | cursor-amagarian-typeset-pr2 | scripts/injected_goal_cursor_amagarian_typeset_pr2_goal_not_fixed_10.ts | 1-4 | 5e34b7169483 |
-| goal-not-fixed | goal-not-fixed | cursor-apiology-cookiecutter-rails-pr151 | hooks/injected_goal_cursor_apiology_cookiecutter_rails_pr151_goal_no.ts | 1-4 | 70b85374ec4f |
-| goal-not-fixed | goal-not-fixed | cursor-birdwell-trading-cards-pr8 | client/src/features/set/injected_goal_cursor_birdwell_trading_cards_pr8_goal_not_fixed.ts | 1-4 | 7e6a05a0c515 |
-| goal-not-fixed | goal-not-fixed | cursor-detvildevestendk-code-shiny-spork-pr5 | backend/app/core/injected_goal_cursor_detvildevestendk_code_shiny_spork_pr5_goa.ts | 1-4 | a7bf527097ef |
+| goal-not-fixed | goal-not-fixed | cursor-amagarian-typeset-pr2 | src/utils/injected_goal_cursor_amagarian_typeset_pr2_goal_not_fixed_11.ts | 1-4 | 954e152d4a69 |
+| goal-not-fixed | goal-not-fixed | cursor-apiology-cookiecutter-rails-pr151 | {{cookiecutter.project_slug}}/.git-hooks/pre_commit/injected_goal_cursor_apiology_cookiecutter_rails_pr151_goal_no.ts | 1-4 | 7579abda7c61 |
+| goal-not-fixed | goal-not-fixed | cursor-birdwell-trading-cards-pr8 | client/src/features/set/editSet/injected_goal_cursor_birdwell_trading_cards_pr8_goal_not_fixed.ts | 1-4 | f790f47aef7d |
+| goal-not-fixed | goal-not-fixed | cursor-detvildevestendk-code-shiny-spork-pr5 | frontend/src/injected_goal_cursor_detvildevestendk_code_shiny_spork_pr5_goa.ts | 1-4 | 7cef30348222 |
 | goal-not-fixed | goal-not-fixed | cursor-detvildevestendk-code-shiny-spork-pr6 | frontend/src/injected_goal_cursor_detvildevestendk_code_shiny_spork_pr6_goa.ts | 1-4 | 7c5976518d44 |
-| goal-not-fixed | goal-not-fixed | cursor-drenlia-teamcal-pr3 | src/hooks/injected_goal_cursor_drenlia_teamcal_pr3_goal_not_fixed_10.ts | 1-4 | f97dd0829a2d |
-| goal-not-fixed | goal-not-fixed | cursor-DukkyGames-Minnow-pr60 | src/tools/injected_goal_cursor_DukkyGames_Minnow_pr60_goal_not_fixed_10.ts | 1-4 | 55bb87536780 |
+| goal-not-fixed | goal-not-fixed | cursor-drenlia-teamcal-pr3 | src/i18n/injected_goal_cursor_drenlia_teamcal_pr3_goal_not_fixed_11.ts | 1-4 | 474767c05143 |
+| goal-not-fixed | goal-not-fixed | cursor-DukkyGames-Minnow-pr60 | src/chat/reef/injected_goal_cursor_DukkyGames_Minnow_pr60_goal_not_fixed_11.ts | 1-4 | f7e76b984e03 |
 | goal-not-fixed | goal-not-fixed | cursor-Freedomfarms-Forward-Freedom-Main-pr21 | src/components/injected_goal_cursor_Freedomfarms_Forward_Freedom_Main_pr21_go.ts | 1-4 | a1ea67d9e929 |
 | goal-not-fixed | goal-not-fixed | cursor-Freedomfarms-Forward-Freedom-Main-pr22 | src/components/injected_goal_cursor_Freedomfarms_Forward_Freedom_Main_pr22_go.ts | 1-4 | 605d937e7e95 |
 | goal-not-fixed | goal-not-fixed | cursor-Freedomfarms-Forward-Freedom-Main-pr23 | src/components/injected_goal_cursor_Freedomfarms_Forward_Freedom_Main_pr23_go.ts | 1-4 | dbcf17c0dba2 |
 | goal-not-fixed | goal-not-fixed | cursor-Freedomfarms-Forward-Freedom-Main-pr24 | src/components/injected_goal_cursor_Freedomfarms_Forward_Freedom_Main_pr24_go.ts | 1-4 | d68becbb9700 |
 | goal-not-fixed | goal-not-fixed | cursor-Freedomfarms-Forward-Freedom-Main-pr25 | src/components/injected_goal_cursor_Freedomfarms_Forward_Freedom_Main_pr25_go.ts | 1-4 | 576b6096c926 |
-| goal-not-fixed | goal-not-fixed | cursor-getum06-LaundromatFacilityBuy-pr8 | src/components/demographics/injected_goal_cursor_getum06_LaundromatFacilityBuy_pr8_goal_no.ts | 1-4 | 6d7faf14d94d |
-| goal-not-fixed | goal-not-fixed | cursor-hasanigordon-afk-unbound-pr1 | src/injected_goal_cursor_hasanigordon_afk_unbound_pr1_goal_not_fix.ts | 1-4 | 426d1345742a |
+| goal-not-fixed | goal-not-fixed | cursor-getum06-LaundromatFacilityBuy-pr8 | src/utils/injected_goal_cursor_getum06_LaundromatFacilityBuy_pr8_goal_no.ts | 1-4 | 87d0170060cc |
+| goal-not-fixed | goal-not-fixed | cursor-hasanigordon-afk-unbound-pr1 | src/components/commandCenter/injected_goal_cursor_hasanigordon_afk_unbound_pr1_goal_not_fix.ts | 1-4 | 93196aa41111 |
 | mock-of-hallucination | mock-of-hallucination | claude-code-anthropics-anthropic-sdk-python-pr1550 | tests/test_streaming.py | 100010-100010 | b17768147128 |
 | mock-of-hallucination | mock-of-hallucination | claude-code-anthropics-claude-code-pr61373 | plugins/security-guidance/hooks/test_security_reminder_hook.py | 100010-100010 | 71bc2265805a |
 | mock-of-hallucination | mock-of-hallucination | claude-code-ChadFarrow-MSP-2.0-pr65 | src/utils/injected_mock_claude_code_ChadFarrow_MSP_2_0_pr65_mock_of_hall.test.ts | 1-4 | 8b0d717f5084 |
@@ -325,4 +326,29 @@ Constructively-injected defects over presumed-clean real PRs. Each entry is a br
 | test-relaxation | test-relaxation | devin-divord97-ccc-pr11 | internal/application/aianalysis/service_test.go | 100000-100002 | b2a11ad6d2e2 |
 | test-relaxation | test-relaxation | devin-divord97-ccc-pr13 | internal/domain/ai/service_phase10_test.go | 100000-100002 | 8695b8f4c723 |
 | test-relaxation | test-relaxation | devin-divord97-ccc-pr15 | tests/k6/inbound.js | 100000-100002 | 5f92669229bd |
+| type-suppression | type-suppression | claude-code-anthropics-anthropic-sdk-python-pr1550 | src/anthropic/_streaming.py | 100100-100103 | 958b90c9b04b |
+| type-suppression | type-suppression | claude-code-anthropics-claude-code-pr61373 | plugins/security-guidance/hooks/security_reminder_hook.py | 100100-100103 | 06e0fc7365cb |
+| type-suppression | type-suppression | claude-code-anthropics-skills-pr1068 | skills/ascii-excalidraw/scripts/merge_modules.py | 100100-100103 | 357390edbc56 |
+| type-suppression | type-suppression | claude-code-ChadFarrow-MSP-2.0-pr65 | src/components/Editor/PublisherEditor/PublisherFeedReminderSection.tsx | 100100-100103 | 927188b1b2a8 |
+| type-suppression | type-suppression | claude-code-ChanOkPark-lokki-pr1 | app/services/youtube_service.py | 100100-100103 | bf7c1c8c0d12 |
+| type-suppression | type-suppression | claude-code-keri-indigoWebsite-pr5 | js/nav.js | 100100-100103 | 2d915b9fc16e |
+| type-suppression | type-suppression | claude-code-timwatts80-greatidea-pr10 | src/app/api/v1/content/hero/route.ts | 100100-100103 | 1346da772b4b |
+| type-suppression | type-suppression | copilot-workspace-dockur-casa-pr39 | build/patch-casaos-ui.cjs | 100100-100103 | fa06f28a1ded |
+| type-suppression | type-suppression | copilot-workspace-kupecraig-spectatr-pr41 | packages/server/src/trpc/routers/gameweek.ts | 100100-100103 | fd8ba55e8194 |
+| type-suppression | type-suppression | cursor-achase1982-afk-Alpha-Terminal-pr497 | lib/db/src/schema/index.ts | 100100-100103 | 963cc855fe5f |
+| type-suppression | type-suppression | cursor-achase1982-afk-Alpha-Terminal-pr498 | lib/movers-types/src/catalystKeywords.ts | 100100-100103 | f219d9c356c1 |
+| type-suppression | type-suppression | cursor-amagarian-typeset-pr2 | scripts/form-feedback-loop.ts | 100100-100103 | 264937b47ce6 |
+| type-suppression | type-suppression | cursor-apiology-cookiecutter-rails-pr151 | hooks/post_gen_project.py | 100100-100103 | 6adbe938ffe8 |
+| type-suppression | type-suppression | cursor-birdwell-trading-cards-pr8 | client/src/features/set/UpdateResult.tsx | 100100-100103 | 7abc2fbcd2f9 |
+| type-suppression | type-suppression | cursor-detvildevestendk-code-shiny-spork-pr5 | backend/app/core/config.py | 100100-100103 | f525ed7e2b14 |
+| type-suppression | type-suppression | cursor-detvildevestendk-code-shiny-spork-pr6 | frontend/src/main.tsx | 100100-100103 | 204f7a9b5bce |
+| type-suppression | type-suppression | cursor-drenlia-teamcal-pr3 | src/hooks/useToast.tsx | 100100-100103 | 131c9a9b9c9e |
+| type-suppression | type-suppression | cursor-DukkyGames-Minnow-pr60 | src/tools/reef-widget-check.ts | 100100-100103 | d90b2336f6fa |
+| type-suppression | type-suppression | cursor-Freedomfarms-Forward-Freedom-Main-pr21 | src/components/AccountsView.jsx | 100100-100103 | d410efa0a125 |
+| type-suppression | type-suppression | cursor-Freedomfarms-Forward-Freedom-Main-pr22 | src/components/AccountsView.jsx | 100100-100103 | f755a2d60046 |
+| type-suppression | type-suppression | cursor-Freedomfarms-Forward-Freedom-Main-pr23 | src/components/BudgetCommandCenter.jsx | 100100-100103 | 28d3bd63ecd4 |
+| type-suppression | type-suppression | cursor-Freedomfarms-Forward-Freedom-Main-pr24 | src/components/BudgetCommandCenter.jsx | 100100-100103 | d34159712ee6 |
+| type-suppression | type-suppression | cursor-Freedomfarms-Forward-Freedom-Main-pr25 | src/components/AccountsView.jsx | 100100-100103 | c4248c005a54 |
+| type-suppression | type-suppression | cursor-getum06-LaundromatFacilityBuy-pr8 | src/components/demographics/DemographicsModule.jsx | 100100-100103 | e7fa79d58da9 |
+| type-suppression | type-suppression | cursor-hasanigordon-afk-unbound-pr1 | src/App.jsx | 100100-100103 | 55458d5ac373 |
 

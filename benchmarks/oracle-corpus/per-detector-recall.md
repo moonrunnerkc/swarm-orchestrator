@@ -14,4 +14,5 @@ Each structural detector run against its own injection class. Recall counts a fi
 | mock-of-hallucination | 25 | 25 | 1.000 | keep |
 | no-op-fix | 25 | 25 | 1.000 | keep |
 | test-relaxation | 25 | 24 | 0.960 | keep |
+| type-suppression | 25 | 25 | 1.000 | keep |
 

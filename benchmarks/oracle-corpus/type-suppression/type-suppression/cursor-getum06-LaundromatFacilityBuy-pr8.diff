@@ -1,0 +1,606 @@
+diff --git a/src/components/demographics/AddressForm.jsx b/src/components/demographics/AddressForm.jsx
+index 9c06c36..d0b41c8 100644
+--- a/src/components/demographics/AddressForm.jsx
++++ b/src/components/demographics/AddressForm.jsx
+@@ -1,9 +1,10 @@
+ import { useState } from 'react';
+-import { MapPin, Search, Key, Info, Loader } from 'lucide-react';
++import { MapPin, Search, Key, Info, Loader, Zap, CheckCircle, AlertCircle } from 'lucide-react';
+ import { clsx } from 'clsx';
++import { fetchCompetitorCount } from '../../utils/placesApi';
+ 
+ const RADIUS_OPTIONS = [
+-  { value: 1, label: '1 Mile', note: 'Tight neighborhood' },
++  { value: 1, label: '1 Mile',  note: 'Tight neighborhood' },
+   { value: 3, label: '3 Miles', note: 'Standard trade area' },
+   { value: 5, label: '5 Miles', note: 'Extended catchment' },
+ ];
+@@ -11,7 +12,9 @@ const RADIUS_OPTIONS = [
+ function Field({ label, children, hint }) {
+   return (
+     <div>
+-      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">{label}</label>
++      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
++        {label}
++      </label>
+       {children}
+       {hint && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{hint}</p>}
+     </div>
+@@ -29,73 +32,102 @@ export function AddressForm({ onSubmit, isLoading }) {
+     radius: 3,
+     competitorCount: '',
+     censusApiKey: '',
++    googleApiKey: '',
+   });
+ 
+-  const [showAdvanced, setShowAdvanced] = useState(false);
++  const [showAdvanced, setShowAdvanced]   = useState(false);
++  const [placesLoading, setPlacesLoading] = useState(false);
++  const [placesResult, setPlacesResult]   = useState(null); // { count, places, coords } | null
++  const [placesError, setPlacesError]     = useState(null);
+ 
+   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+ 
+   const handleSubmit = (e) => {
+     e.preventDefault();
+-    onSubmit(form);
++    onSubmit({
++      ...form,
++      _competitorPlaces: placesResult?.laundromats || [],
++    });
++  };
++
++  const handleFetchCompetitors = async () => {
++    if (!form.googleApiKey) {
++      setPlacesError('Enter your Google Maps API key above first.');
++      return;
++    }
++    if (!form.zip || form.zip.length < 5) {
++      setPlacesError('Enter a ZIP code first.');
++      return;
++    }
++
++    setPlacesLoading(true);
++    setPlacesError(null);
++    setPlacesResult(null);
++
++    try {
++      const result = await fetchCompetitorCount({
++        zip: form.zip,
++        lat: form.lat,
++        lng: form.lng,
++        radiusMiles: form.radius,
++        googleApiKey: form.googleApiKey,
++      });
++
++      setPlacesResult(result);
++      // Auto-populate the competitor count field
++      set('competitorCount', String(result.count));
++      // Also auto-fill lat/lng if geocoded
++      if (result.coords?.lat && !form.lat) {
++        setForm(f => ({
++          ...f,
++          competitorCount: String(result.count),
++          lat: String(result.coords.lat),
++          lng: String(result.coords.lng),
++          city: f.city || result.coords.city || f.city,
++          state: f.state || result.coords.state || f.state,
++        }));
++      }
++    } catch (err) {
++      setPlacesError(err.message || 'Failed to fetch competitor data from Google Places.');
++    } finally {
++      setPlacesLoading(false);
++    }
+   };
+ 
+   const inputCls = 'w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-400';
+ 
+   return (
+     <form onSubmit={handleSubmit} className="space-y-5">
++
++      {/* Property Location */}
+       <div>
+         <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+           <MapPin className="w-4 h-4 text-blue-600" />
+           Property Location
+         </h3>
+-
+         <div className="space-y-3">
+           <Field label="Street Address" hint="Optional — for display purposes">
+-            <input
+-              type="text"
+-              placeholder="3820 W Pioneer Pkwy"
+-              value={form.address}
+-              onChange={e => set('address', e.target.value)}
+-              className={inputCls}
+-            />
++            <input type="text" placeholder="3820 W Pioneer Pkwy"
++              value={form.address} onChange={e => set('address', e.target.value)} className={inputCls} />
+           </Field>
+-
+           <div className="grid grid-cols-2 gap-3">
+             <Field label="City">
+-              <input
+-                type="text"
+-                placeholder="Grand Prairie"
+-                value={form.city}
+-                onChange={e => set('city', e.target.value)}
+-                className={inputCls}
+-              />
++              <input type="text" placeholder="Grand Prairie"
++                value={form.city} onChange={e => set('city', e.target.value)} className={inputCls} />
+             </Field>
+             <Field label="State">
+-              <input
+-                type="text"
+-                placeholder="TX"
+-                maxLength={2}
+-                value={form.state}
+-                onChange={e => set('state', e.target.value.toUpperCase())}
+-                className={inputCls}
+-              />
++              <input type="text" placeholder="TX" maxLength={2}
++                value={form.state} onChange={e => set('state', e.target.value.toUpperCase())} className={inputCls} />
+             </Field>
+           </div>
+-
+-          <Field
+-            label="ZIP Code *"
+-            hint="Required — used to pull Census ACS data"
+-          >
+-            <input
+-              type="text"
+-              placeholder="75051"
++          <Field label="ZIP Code *" hint="Required — used to pull Census ACS data">
++            <input type="text" placeholder="75051" required pattern="\d{5}"
+               value={form.zip}
+-              onChange={e => set('zip', e.target.value.replace(/\D/g, '').slice(0, 5))}
+-              className={inputCls}
+-              required
+-              pattern="\d{5}"
+-            />
++              onChange={e => {
++                set('zip', e.target.value.replace(/\D/g, '').slice(0, 5));
++                setPlacesResult(null);
++              }}
++              className={inputCls} />
+           </Field>
+         </div>
+       </div>
+@@ -107,17 +139,11 @@ export function AddressForm({ onSubmit, isLoading }) {
+         </label>
+         <div className="grid grid-cols-3 gap-2">
+           {RADIUS_OPTIONS.map(r => (
+-            <button
+-              key={r.value}
+-              type="button"
+-              onClick={() => set('radius', r.value)}
+-              className={clsx(
+-                'p-3 rounded-xl border-2 text-center transition-all',
++            <button key={r.value} type="button" onClick={() => { set('radius', r.value); setPlacesResult(null); }}
++              className={clsx('p-3 rounded-xl border-2 text-center transition-all',
+                 form.radius === r.value
+                   ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
+-                  : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+-              )}
+-            >
++                  : 'border-slate-200 dark:border-slate-600 hover:border-slate-300')}>
+               <div className={clsx('text-sm font-bold', form.radius === r.value ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300')}>
+                 {r.label}
+               </div>
+@@ -127,61 +153,141 @@ export function AddressForm({ onSubmit, isLoading }) {
+         </div>
+         <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 flex items-start gap-1.5">
+           <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+-          Census data is fetched at the ZIP code level. The radius selection is used for context and competitor searches.
++          Census data is fetched at the ZIP code level. Radius is used for competitor search.
+         </p>
+       </div>
+ 
+-      {/* Competitor count */}
+-      <Field
+-        label="Known Competitors Within Radius"
+-        hint="Count of laundromats within your trade area. Check Google Maps, Yelp, or Radius+."
+-      >
+-        <input
+-          type="number"
+-          min="0"
+-          max="50"
+-          placeholder="e.g. 3"
+-          value={form.competitorCount}
+-          onChange={e => set('competitorCount', e.target.value)}
+-          className={inputCls}
+-        />
+-      </Field>
+-
+-      {/* Census API key — required */}
++      {/* ── Competitor Count ── */}
++      <div className="space-y-2">
++        <Field
++          label="Competitors Within Radius"
++          hint="Laundromats within your trade area. Auto-fill via Google Places below, or enter manually."
++        >
++          <div className="relative">
++            <input type="number" min="0" max="50" placeholder="e.g. 3"
++              value={form.competitorCount}
++              onChange={e => { set('competitorCount', e.target.value); setPlacesResult(null); }}
++              className={clsx(inputCls, placesResult ? 'border-emerald-400 dark:border-emerald-600 pr-8' : '')}
++            />
++            {placesResult && (
++              <CheckCircle className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
++            )}
++          </div>
++        </Field>
++
++        {/* Google Places auto-fetch */}
++        <div className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-xl p-3 space-y-2.5">
++          <div className="flex items-center gap-2">
++            <div className="w-5 h-5 bg-blue-600 rounded flex items-center justify-center flex-shrink-0">
++              <span className="text-white text-xs font-bold">G</span>
++            </div>
++            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Auto-fill from Google Places</span>
++          </div>
++
++          <Field
++            label={<span className="flex items-center gap-1"><Key className="w-3 h-3" />Google Maps API Key</span>}
++          >
++            <input
++              type="password"
++              placeholder="AIza…"
++              value={form.googleApiKey}
++              onChange={e => { set('googleApiKey', e.target.value.trim()); setPlacesResult(null); setPlacesError(null); }}
++              className={clsx(inputCls, 'font-mono text-xs py-2')}
++              autoComplete="off"
++            />
++          </Field>
++
++          <a href="https://console.cloud.google.com/apis/library/places-backend.googleapis.com"
++            target="_blank" rel="noopener noreferrer"
++            className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">
++            <Key className="w-3 h-3" />
++            Enable Places API (New) in Google Cloud Console →
++          </a>
++          <p className="text-xs text-slate-400 dark:text-slate-500">
++            Free tier: $200/mo credit ≈ 5,000+ searches. Requires billing enabled on Google Cloud project.
++          </p>
++
++          <button
++            type="button"
++            onClick={handleFetchCompetitors}
++            disabled={placesLoading || !form.googleApiKey || !form.zip || form.zip.length < 5}
++            className="w-full flex items-center justify-center gap-2 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-40 text-white text-xs font-semibold py-2.5 rounded-lg transition-all"
++          >
++            {placesLoading ? (
++              <><Loader className="w-3.5 h-3.5 animate-spin" />Searching Google Places…</>
++            ) : (
++              <><Zap className="w-3.5 h-3.5" />Search Laundromats via Google</>
++            )}
++          </button>
++
++          {/* Result feedback */}
++          {placesResult && (
++            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg p-3">
++              <div className="flex items-center gap-2 mb-2">
++                <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
++                <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
++                  Found {placesResult.count} laundromat{placesResult.count !== 1 ? 's' : ''} within {form.radius} mile{form.radius !== 1 ? 's' : ''}
++                </p>
++              </div>
++              {placesResult.count > 0 && (
++                <div className="space-y-1 mt-2 max-h-32 overflow-y-auto">
++                  {placesResult.laundromats.slice(0, 8).map((p, i) => (
++                    <div key={i} className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
++                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0 mt-1.5" />
++                      <span>{p.displayName?.text || p.name || 'Unknown'}</span>
++                      {p.rating && <span className="text-emerald-500 ml-auto flex-shrink-0">★ {p.rating}</span>}
++                    </div>
++                  ))}
++                  {placesResult.count > 8 && (
++                    <p className="text-xs text-emerald-600 dark:text-emerald-500 italic">
++                      +{placesResult.count - 8} more…
++                    </p>
++                  )}
++                </div>
++              )}
++              <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-2">
++                Competitor count auto-filled ✓ — centered on ZIP {form.zip} centroid.
++              </p>
++            </div>
++          )}
++
++          {placesError && (
++            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-3 flex items-start gap-2">
++              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
++              <div>
++                <p className="text-xs font-semibold text-red-700 dark:text-red-400 mb-0.5">Google Places Error</p>
++                <p className="text-xs text-red-600 dark:text-red-400">{placesError}</p>
++              </div>
++            </div>
++          )}
++        </div>
++      </div>
++
++      {/* Census API key */}
+       <div className="space-y-2">
+         <Field
+           label={<span className="flex items-center gap-1.5"><Key className="w-3 h-3" />Census API Key <span className="text-red-500">*</span></span>}
+         >
+-          <input
+-            type="text"
+-            placeholder="Paste your free Census API key…"
++          <input type="text" placeholder="Paste your free Census API key…"
+             value={form.censusApiKey}
+             onChange={e => set('censusApiKey', e.target.value.trim())}
+-            className={clsx(inputCls, 'font-mono text-xs')}
+-          />
++            className={clsx(inputCls, 'font-mono text-xs')} />
+         </Field>
+-        <a
+-          href="https://api.census.gov/data/key_signup.html"
+-          target="_blank"
+-          rel="noopener noreferrer"
+-          className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+-        >
++        <a href="https://api.census.gov/data/key_signup.html" target="_blank" rel="noopener noreferrer"
++          className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">
+           <Key className="w-3 h-3" />
+-          Get your free key at api.census.gov/data/key_signup.html →
++          Get free key at api.census.gov/data/key_signup.html →
+         </a>
+         <p className="text-xs text-slate-400 dark:text-slate-500">
+-          Free, instant signup — no credit card required. Key is emailed immediately.
++          Free, instant signup — no credit card. Key emailed immediately.
+         </p>
+       </div>
+ 
+-      {/* Optional coords */}
++      {/* Optional lat/lng */}
+       <div>
+-        <button
+-          type="button"
+-          onClick={() => setShowAdvanced(v => !v)}
+-          className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:underline flex items-center gap-1"
+-        >
+-          {showAdvanced ? 'Hide coordinates' : 'Add optional coordinates'}
++        <button type="button" onClick={() => setShowAdvanced(v => !v)}
++          className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:underline flex items-center gap-1">
++          {showAdvanced ? 'Hide coordinates' : 'Override coordinates (optional)'}
+         </button>
+         {showAdvanced && (
+           <div className="mt-3 grid grid-cols-2 gap-3">
+@@ -197,21 +303,13 @@ export function AddressForm({ onSubmit, isLoading }) {
+         )}
+       </div>
+ 
+-      <button
+-        type="submit"
++      <button type="submit"
+         disabled={isLoading || !form.zip || form.zip.length < 5 || !form.censusApiKey}
+-        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-900 text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-sm"
+-      >
++        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-900 text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-sm">
+         {isLoading ? (
+-          <>
+-            <Loader className="w-4 h-4 animate-spin" />
+-            Fetching Census data…
+-          </>
++          <><Loader className="w-4 h-4 animate-spin" />Fetching Census data…</>
+         ) : (
+-          <>
+-            <Search className="w-4 h-4" />
+-            Analyze Trade Area
+-          </>
++          <><Search className="w-4 h-4" />Analyze Trade Area</>
+         )}
+       </button>
+     </form>
+diff --git a/src/components/demographics/DemographicCharts.jsx b/src/components/demographics/DemographicCharts.jsx
+index bf8e9a7..c1accb4 100644
+--- a/src/components/demographics/DemographicCharts.jsx
++++ b/src/components/demographics/DemographicCharts.jsx
+@@ -261,7 +261,7 @@ export function HouseholdProfileChart({ acsData }) {
+ }
+ 
+ // ─── Competitor Saturation ────────────────────────────────────────────────────
+-export function CompetitorChart({ competitorCount, acsData, categoryScore }) {
++export function CompetitorChart({ competitorCount, acsData, categoryScore, competitorPlaces = [] }) {
+   const pop = acsData.totalPopulation || 0;
+   const perTenK = pop > 0 ? (competitorCount / pop * 10000).toFixed(2) : 'N/A';
+ 
+@@ -311,6 +311,31 @@ export function CompetitorChart({ competitorCount, acsData, categoryScore }) {
+           );
+         })}
+       </div>
++
++      {/* Google Places list — shown if auto-fetched */}
++      {competitorPlaces.length > 0 && (
++        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
++          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1.5">
++            <span className="w-4 h-4 bg-blue-600 rounded text-white text-xs flex items-center justify-center font-bold">G</span>
++            Fetched from Google Places
++          </p>
++          <div className="space-y-1.5 max-h-36 overflow-y-auto">
++            {competitorPlaces.map((place, i) => (
++              <div key={i} className="flex items-center justify-between text-xs">
++                <div className="flex items-center gap-1.5 min-w-0">
++                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
++                  <span className="text-slate-600 dark:text-slate-400 truncate">
++                    {place.displayName?.text || 'Unknown'}
++                  </span>
++                </div>
++                {place.rating && (
++                  <span className="text-amber-500 font-medium flex-shrink-0 ml-2">★ {place.rating}</span>
++                )}
++              </div>
++            ))}
++          </div>
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/src/components/demographics/DemographicsModule.jsx b/src/components/demographics/DemographicsModule.jsx
+index df6f3e8..19f22fc 100644
+--- a/src/components/demographics/DemographicsModule.jsx
++++ b/src/components/demographics/DemographicsModule.jsx
+@@ -134,12 +134,13 @@ export function DemographicsModule() {
+     setLastForm(formData);
+ 
+     try {
+-      const raw      = await fetchACSByZip(formData.zip, formData.censusApiKey);
+-      const acsData  = parseACSData(raw);
++      const raw       = await fetchACSByZip(formData.zip, formData.censusApiKey);
++      const acsData   = parseACSData(raw);
+       const compCount = formData.competitorCount !== '' ? parseInt(formData.competitorCount, 10) : null;
+-      const score    = calculateDemographicScore(acsData, compCount);
+-      const expl     = generateScoreExplanation(acsData, score, compCount);
+-      setResult({ acsData, scoreResult: score, explanation: expl, formData });
++      const score     = calculateDemographicScore(acsData, compCount);
++      const expl      = generateScoreExplanation(acsData, score, compCount);
++      setResult({ acsData, scoreResult: score, explanation: expl, formData,
++        competitorPlaces: formData._competitorPlaces || [] });
+     } catch (err) {
+       setError(err.message || 'Failed to fetch Census data. Check your ZIP code and try again.');
+     } finally {
+@@ -240,6 +241,7 @@ export function DemographicsModule() {
+                       competitorCount={parseInt(result.formData.competitorCount, 10)}
+                       acsData={result.acsData}
+                       categoryScore={result.scoreResult.categories.competitorSaturation}
++                      competitorPlaces={result.competitorPlaces || []}
+                     />
+                   )}
+                 </div>
+@@ -100100,2 +100100,4 @@
+ export function widen_cursor_getum06_LaundromatFacilityBuy_pr8_type_su(value: string) {
++  // @ts-expect-error suppressing the type error instead of fixing the call
++  return parseRecord_cursor_getum06_LaundromatFacilityBuy_pr8_type_su(value).total.toFixed(2);
+ }
+diff --git a/src/utils/placesApi.js b/src/utils/placesApi.js
+new file mode 100644
+index 0000000..154f63e
+--- /dev/null
++++ b/src/utils/placesApi.js
+@@ -0,0 +1,122 @@
++/**
++ * Google Places API (New) — Nearby Search for competitor laundromats.
++ *
++ * The Places API (New) supports CORS from browser requests.
++ * Users need a free API key from console.cloud.google.com with
++ * the "Places API (New)" product enabled.
++ *
++ * Geocoding (ZIP → lat/lng) uses the free Zippopotam.us API
++ * — no key required.
++ */
++
++const MILE_TO_METERS = 1609.344;
++
++// ─── Geocoding ────────────────────────────────────────────────────────────────
++
++/**
++ * Convert a US ZIP code to {lat, lng} using the free Zippopotam.us API.
++ * No API key required.
++ */
++export async function geocodeZip(zip) {
++  const clean = String(zip).trim().replace(/\D/g, '').slice(0, 5).padStart(5, '0');
++  const res = await fetch(`https://api.zippopotam.us/us/${clean}`);
++  if (!res.ok) throw new Error(`Could not geocode ZIP ${clean}. Verify the ZIP is a valid US ZIP code.`);
++  const data = await res.json();
++  const place = data.places?.[0];
++  if (!place) throw new Error(`No coordinates found for ZIP ${clean}.`);
++  return {
++    lat: parseFloat(place.latitude),
++    lng: parseFloat(place.longitude),
++    city: place['place name'],
++    state: place['state abbreviation'],
++  };
++}
++
++// ─── Places Nearby Search ─────────────────────────────────────────────────────
++
++/**
++ * Search for laundromats near {lat, lng} within radiusMiles using the
++ * Google Places API (New).
++ *
++ * Returns an array of place objects:
++ *   { name, displayName, types, rating, userRatingCount, location }
++ */
++export async function searchNearbyLaundromats(lat, lng, radiusMiles, apiKey) {
++  if (!apiKey) throw new Error('Google Maps API key is required for competitor search.');
++
++  const radiusMeters = radiusMiles * MILE_TO_METERS;
++
++  const body = {
++    includedTypes: ['laundry'],
++    maxResultCount: 20,
++    locationRestriction: {
++      circle: {
++        center: { latitude: lat, longitude: lng },
++        radius: radiusMeters,
++      },
++    },
++  };
++
++  const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
++    method: 'POST',
++    headers: {
++      'Content-Type': 'application/json',
++      'X-Goog-Api-Key': apiKey,
++      'X-Goog-FieldMask': 'places.displayName,places.types,places.rating,places.userRatingCount,places.location,places.primaryType',
++    },
++    body: JSON.stringify(body),
++  });
++
++  if (!res.ok) {
++    const err = await res.json().catch(() => ({}));
++    const msg = err?.error?.message || `Places API error ${res.status}`;
++    if (res.status === 403 || res.status === 401) {
++      throw new Error(`Invalid or unauthorized API key. Make sure "Places API (New)" is enabled in your Google Cloud project. Details: ${msg}`);
++    }
++    throw new Error(`Google Places API error: ${msg}`);
++  }
++
++  const data = await res.json();
++  const places = data.places || [];
++
++  // Filter to only laundry-type results (exclude dry cleaners etc.)
++  const laundromats = places.filter(p => {
++    const name = (p.displayName?.text || '').toLowerCase();
++    const types = p.types || [];
++    // Include if primary type is laundry, or name contains laundromat/laundry/coin/wash
++    return (
++      types.includes('laundry') ||
++      name.includes('laundromat') ||
++      name.includes('coin laundry') ||
++      name.includes('wash') ||
++      name.includes('laundry')
++    );
++  });
++
++  return {
++    all: places,
++    laundromats,
++    count: laundromats.length,
++    rawCount: places.length,
++  };
++}
++
++/**
++ * Full flow: geocode ZIP → search nearby → return count + details.
++ * Pass existing lat/lng to skip geocoding.
++ */
++export async function fetchCompetitorCount({ zip, lat, lng, radiusMiles, googleApiKey }) {
++  let coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
++
++  // Geocode if coordinates not provided
++  if (!coords.lat || !coords.lng || isNaN(coords.lat) || isNaN(coords.lng)) {
++    coords = await geocodeZip(zip);
++  }
++
++  const result = await searchNearbyLaundromats(coords.lat, coords.lng, radiusMiles, googleApiKey);
++
++  return {
++    ...result,
++    coords,
++  };
++}
