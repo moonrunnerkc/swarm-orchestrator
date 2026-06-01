@@ -37,6 +37,8 @@ import { getLogger } from '../../logger';
 import { readBoolean, readString, runParseArgs, type ParseArgsOptions } from './argv-schema';
 import { DEFAULT_TOURNAMENT_CONFIG } from '../../population/tournament';
 import type { ObligationV1 } from '../../contract/types';
+import { loadAuditConfig } from '../../audit/cheat-detector/audit-config';
+import { SEMANTIC_CHEAT_CATEGORIES } from '../../audit/types';
 
 const logger = getLogger('cli:v8:doctor');
 
@@ -91,6 +93,7 @@ export async function handleDoctor(argv: string[]): Promise<number> {
   results.push(probeAtLeastOnePackageManager());
   results.push(probeCwd(flags.cwd, flags.requireGit));
   results.push(...probeSwarmDirectory(flags.cwd));
+  results.push(...probeJudgePrimary(flags.cwd));
 
   if (flags.connectors) {
     results.push(...probeConnectorSurface(flags.cwd));
@@ -586,10 +589,168 @@ const DEFAULT_PATCHES =
 /**
  * Attempt to auto-fix a probe result. Returns true if the fix was applied.
  */
+// v11 judge-primary readiness. Three checks: the path is on but no
+// inference provider is configured (warn, fixable by disabling), a
+// configured category is not in the registry (error, fixable by dropping
+// it), and the oracle corpus directory exists but is empty (info hint).
+function probeJudgePrimary(cwd: string): ProbeResult[] {
+  const out: ProbeResult[] = [];
+  const config = loadAuditConfig(cwd);
+  const configPath = path.join(cwd, '.swarm', 'audit-config.yaml');
+  const hasProvider =
+    (process.env.ANTHROPIC_API_KEY ?? '').length > 0 ||
+    (process.env.SWARM_JUDGE_BASE_URL ?? '').length > 0;
+
+  if (config.judgePrimary.enabled && !hasProvider) {
+    out.push({
+      name: 'judgePrimary inference provider',
+      ok: false,
+      required: false,
+      fixable: fs.existsSync(configPath),
+      detail:
+        'judgePrimary is enabled but no inference provider is configured ' +
+        '(set ANTHROPIC_API_KEY, or SWARM_JUDGE_BASE_URL for an OpenAI-compatible ' +
+        'endpoint). The judge-primary path will return unavailable and raise no findings.',
+      fixHint: 'set judgePrimary.enabled: false in .swarm/audit-config.yaml',
+    });
+  } else {
+    out.push({
+      name: 'judgePrimary inference provider',
+      ok: true,
+      required: false,
+      fixable: false,
+      detail: config.judgePrimary.enabled
+        ? 'enabled with an inference provider available'
+        : 'disabled',
+    });
+  }
+
+  const valid = new Set<string>(SEMANTIC_CHEAT_CATEGORIES);
+  const unknown = readConfiguredJudgeCategories(configPath).filter((c) => !valid.has(c));
+  if (unknown.length > 0) {
+    out.push({
+      name: 'judgePrimary categories',
+      ok: false,
+      required: true,
+      fixable: true,
+      detail: `judgePrimary.categories names unknown categor(y/ies): ${unknown.join(', ')}. ` +
+        `Valid: ${[...valid].join(', ')}.`,
+      fixHint: 'remove the unknown categories from .swarm/audit-config.yaml',
+    });
+  }
+
+  const oracleDir = path.join(cwd, 'benchmarks', 'oracle-corpus');
+  if (fs.existsSync(oracleDir)) {
+    const hasDefects = fs
+      .readdirSync(oracleDir)
+      .some((e) => fs.existsSync(path.join(oracleDir, e)) && fs.statSync(path.join(oracleDir, e)).isDirectory());
+    if (!hasDefects) {
+      out.push({
+        name: 'oracle corpus',
+        ok: false,
+        required: false,
+        fixable: false,
+        detail: 'benchmarks/oracle-corpus exists but has no injected defects; run `npm run oracle:build`.',
+      });
+    }
+  }
+  return out;
+}
+
+/** Read the raw judgePrimary.categories tokens from the config file (the
+ *  parser drops unknowns, so doctor scans the raw text to flag them). */
+function readConfiguredJudgeCategories(configPath: string): string[] {
+  if (!fs.existsSync(configPath)) return [];
+  const text = fs.readFileSync(configPath, 'utf8');
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  let inBlock = false;
+  let inList = false;
+  for (const raw of lines) {
+    const line = raw.replace(/#.*$/, '');
+    const trimmed = line.trim();
+    if (/^judgePrimary\s*:/.test(trimmed)) { inBlock = true; continue; }
+    if (!inBlock) continue;
+    if (trimmed.length > 0 && !/^\s/.test(raw)) break;
+    const inline = trimmed.match(/^categories\s*:\s*\[(.*)\]\s*$/);
+    if (inline && inline[1] !== undefined) {
+      out.push(...inline[1].split(',').map((c) => c.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean));
+      continue;
+    }
+    if (/^categories\s*:\s*$/.test(trimmed)) { inList = true; continue; }
+    if (inList) {
+      const item = trimmed.match(/^-\s*(['"]?)(.+?)\1\s*$/);
+      if (item && item[2] !== undefined) out.push(item[2]);
+      else if (!trimmed.startsWith('-')) inList = false;
+    }
+  }
+  return out;
+}
+
+function disableJudgePrimary(configPath: string): boolean {
+  if (!fs.existsSync(configPath)) {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, 'judgePrimary:\n  enabled: false\n', 'utf8');
+    return true;
+  }
+  const text = fs.readFileSync(configPath, 'utf8');
+  if (/^judgePrimary\s*:/m.test(text)) {
+    if (/^\s*enabled\s*:\s*true\s*$/m.test(text)) {
+      fs.writeFileSync(configPath, text.replace(/^(\s*)enabled\s*:\s*true\s*$/m, '$1enabled: false'), 'utf8');
+    } else {
+      fs.writeFileSync(configPath, text.replace(/^(judgePrimary\s*:.*)$/m, '$1\n  enabled: false'), 'utf8');
+    }
+    return true;
+  }
+  const sep = text.endsWith('\n') || text.length === 0 ? '' : '\n';
+  fs.writeFileSync(configPath, `${text}${sep}judgePrimary:\n  enabled: false\n`, 'utf8');
+  return true;
+}
+
+function dropUnknownJudgeCategories(configPath: string): boolean {
+  if (!fs.existsSync(configPath)) return false;
+  const valid = new Set<string>(SEMANTIC_CHEAT_CATEGORIES);
+  const lines = fs.readFileSync(configPath, 'utf8').split('\n');
+  const out: string[] = [];
+  let inBlock = false;
+  let inList = false;
+  for (const raw of lines) {
+    const trimmed = raw.replace(/#.*$/, '').trim();
+    if (/^judgePrimary\s*:/.test(trimmed)) { inBlock = true; out.push(raw); continue; }
+    if (inBlock && trimmed.length > 0 && !/^\s/.test(raw)) inBlock = false;
+    if (inBlock) {
+      const inline = trimmed.match(/^categories\s*:\s*\[(.*)\]\s*$/);
+      if (inline && inline[1] !== undefined) {
+        const kept = inline[1].split(',').map((c) => c.trim().replace(/^['"]|['"]$/g, '')).filter((c) => valid.has(c));
+        out.push(`  categories: [${kept.join(', ')}]`);
+        continue;
+      }
+      if (/^categories\s*:\s*$/.test(trimmed)) { inList = true; out.push(raw); continue; }
+      if (inList) {
+        const item = trimmed.match(/^-\s*(['"]?)(.+?)\1\s*$/);
+        if (item && item[2] !== undefined) {
+          if (valid.has(item[2])) out.push(raw);
+          continue;
+        }
+        if (!trimmed.startsWith('-')) inList = false;
+      }
+    }
+    out.push(raw);
+  }
+  fs.writeFileSync(configPath, out.join('\n'), 'utf8');
+  return true;
+}
+
 function applyFix(r: ProbeResult, cwd: string): boolean {
   const swarmDir = path.join(cwd, '.swarm');
 
   try {
+    if (r.name === 'judgePrimary inference provider') {
+      return disableJudgePrimary(path.join(swarmDir, 'audit-config.yaml'));
+    }
+    if (r.name === 'judgePrimary categories') {
+      return dropUnknownJudgeCategories(path.join(swarmDir, 'audit-config.yaml'));
+    }
     if (r.name === '.swarm/ directory') {
       fs.mkdirSync(swarmDir, { recursive: true });
       return true;
