@@ -1,0 +1,1084 @@
+diff --git a/.eslintrc.cjs b/.eslintrc.cjs
+index 948041496208bb..569431b09dbaba 100644
+--- a/.eslintrc.cjs
++++ b/.eslintrc.cjs
+@@ -135,7 +135,11 @@ module.exports = defineConfig({
+       },
+     },
+     {
+-      files: ['packages/vite/src/types/**', '*.spec.ts'],
++      files: [
++        'packages/vite/src/types/**',
++        'packages/vite/scripts/**',
++        '*.spec.ts',
++      ],
+       rules: {
+         'n/no-extraneous-import': 'off',
+       },
+diff --git a/packages/vite/api-extractor.json b/packages/vite/api-extractor.json
+index 0b5b4178c2bd90..642cef99fecd59 100644
+--- a/packages/vite/api-extractor.json
++++ b/packages/vite/api-extractor.json
+@@ -5,6 +5,8 @@
+ 
+   "mainEntryPointFilePath": "./temp/node/index.d.ts",
+ 
++  "bundledPackages": ["lightningcss"],
++
+   "dtsRollup": {
+     "enabled": true,
+     "untrimmedFilePath": "",
+diff --git a/packages/vite/package.json b/packages/vite/package.json
+index 7ce565f9e29505..054987dd6d4ab3 100644
+--- a/packages/vite/package.json
++++ b/packages/vite/package.json
+@@ -56,7 +56,7 @@
+     "build-types": "run-s build-types-temp build-types-pre-patch build-types-roll build-types-post-patch build-types-check",
+     "build-types-temp": "tsc --emitDeclarationOnly --outDir temp/node -p src/node",
+     "build-types-pre-patch": "tsx scripts/prePatchTypes.ts",
+-    "build-types-roll": "api-extractor run && rimraf temp",
++    "build-types-roll": "tsx scripts/api-extractor.ts run && rimraf temp",
+     "build-types-post-patch": "tsx scripts/postPatchTypes.ts",
+     "build-types-check": "tsx scripts/checkBuiltTypes.ts && tsc --project tsconfig.check.json",
+     "typecheck": "tsc --noEmit",
+@@ -108,6 +108,7 @@
+     "http-proxy": "^1.18.1",
+     "json-stable-stringify": "^1.0.2",
+     "launch-editor-middleware": "^2.6.0",
++    "lightningcss": "^1.21.0",
+     "magic-string": "^0.30.0",
+     "micromatch": "^4.0.5",
+     "mlly": "^1.3.0",
+@@ -139,6 +140,7 @@
+     "sass": "*",
+     "stylus": "*",
+     "sugarss": "*",
++    "lightningcss": "^1.21.0",
+     "terser": "^5.4.0"
+   },
+   "peerDependenciesMeta": {
+@@ -157,6 +159,9 @@
+     "sugarss": {
+       "optional": true
+     },
++    "lightningcss": {
++      "optional": true
++    },
+     "terser": {
+       "optional": true
+     }
+diff --git a/packages/vite/rollup.config.ts b/packages/vite/rollup.config.ts
+index 7a1064778ae9f8..ebfe0fcacb4cc0 100644
+--- a/packages/vite/rollup.config.ts
++++ b/packages/vite/rollup.config.ts
+@@ -160,6 +160,7 @@ function createNodeConfig(isProduction: boolean) {
+     },
+     external: [
+       'fsevents',
++      'lightningcss',
+       ...Object.keys(pkg.dependencies),
+       ...(isProduction ? [] : Object.keys(pkg.devDependencies)),
+     ],
+diff --git a/packages/vite/scripts/api-extractor.ts b/packages/vite/scripts/api-extractor.ts
+new file mode 100644
+index 00000000000000..1154830ffa8cd6
+--- /dev/null
++++ b/packages/vite/scripts/api-extractor.ts
+@@ -0,0 +1,25 @@
++import { Extractor, ExtractorConfig } from '@microsoft/api-extractor'
++
++const result = Extractor.invoke(
++  ExtractorConfig.loadFileAndPrepare('./api-extractor.json'),
++  {
++    messageCallback: (message) => {
++      const ignore = () => {
++        // @ts-expect-error TS requires to use the const enum, which is not available as the named export in tsx
++        message.logLevel = 'none'
++      }
++      if (message.sourceFilePath?.includes('lightningcss')) {
++        ignore()
++      }
++      if (message.messageId === 'ae-forgotten-export') {
++        if (message.sourceFilePath?.endsWith('/src/types/lightningcss.d.ts')) {
++          // We only expose LightningCSS types via prefixed types to avoid
++          // having confusing name like "Targets" in Vite types
++          ignore()
++        }
++      }
++    },
++  },
++)
++
++if (!result.succeeded) process.exit(1)
+diff --git a/packages/vite/src/node/__tests__/plugins/css.spec.ts b/packages/vite/src/node/__tests__/plugins/css.spec.ts
+index fcf42f91667865..cccdda396f8df6 100644
+--- a/packages/vite/src/node/__tests__/plugins/css.spec.ts
++++ b/packages/vite/src/node/__tests__/plugins/css.spec.ts
+@@ -3,7 +3,12 @@ import path from 'node:path'
+ import { describe, expect, test, vi } from 'vitest'
+ import { resolveConfig } from '../../config'
+ import type { InlineConfig } from '../../config'
+-import { cssPlugin, cssUrlRE, hoistAtRules } from '../../plugins/css'
++import {
++  convertTargets,
++  cssPlugin,
++  cssUrlRE,
++  hoistAtRules,
++} from '../../plugins/css'
+ 
+ describe('search css url function', () => {
+   test('some spaces before it', () => {
+@@ -237,3 +242,19 @@ async function createCssPluginTransform(
+     },
+   }
+ }
++
++describe('convertTargets', () => {
++  test('basic cases', () => {
++    expect(convertTargets('es2018')).toStrictEqual({
++      chrome: 4128768,
++      edge: 5177344,
++      firefox: 3801088,
++      safari: 786432,
++      opera: 3276800,
++    })
++    expect(convertTargets(['safari13.1', 'ios13', 'node14'])).toStrictEqual({
++      ios_saf: 851968,
++      safari: 852224,
++    })
++  })
++})
+diff --git a/packages/vite/src/node/build.ts b/packages/vite/src/node/build.ts
+index 354d603f3d124c..859713d598ee7c 100644
+--- a/packages/vite/src/node/build.ts
++++ b/packages/vite/src/node/build.ts
+@@ -130,9 +130,9 @@ export interface BuildOptions {
+   /**
+    * Override CSS minification specifically instead of defaulting to `build.minify`,
+    * so you can configure minification for JS and CSS separately.
+-   * @default minify
++   * @default 'esbuild'
+    */
+-  cssMinify?: boolean
++  cssMinify?: boolean | 'esbuild' | 'lightningcss'
+   /**
+    * If `true`, a separate sourcemap file will be created. If 'inline', the
+    * sourcemap will be appended to the resulting output file as data URI.
+diff --git a/packages/vite/src/node/config.ts b/packages/vite/src/node/config.ts
+index 0823fa51e7d6f2..bf6ecbb708dc29 100644
+--- a/packages/vite/src/node/config.ts
++++ b/packages/vite/src/node/config.ts
+@@ -21,7 +21,11 @@ import type { ResolvedServerOptions, ServerOptions } from './server'
+ import { resolveServerOptions } from './server'
+ import type { PreviewOptions, ResolvedPreviewOptions } from './preview'
+ import { resolvePreviewOptions } from './preview'
+-import type { CSSOptions } from './plugins/css'
++import {
++  type CSSOptions,
++  type ResolvedCSSOptions,
++  resolveCSSOptions,
++} from './plugins/css'
+ import {
+   asyncFlatten,
+   createDebugger,
+@@ -326,7 +330,10 @@ export interface InlineConfig extends UserConfig {
+ }
+ 
+ export type ResolvedConfig = Readonly<
+-  Omit<UserConfig, 'plugins' | 'assetsInclude' | 'optimizeDeps' | 'worker'> & {
++  Omit<
++    UserConfig,
++    'plugins' | 'css' | 'assetsInclude' | 'optimizeDeps' | 'worker'
++  > & {
+     configFile: string | undefined
+     configFileDependencies: string[]
+     inlineConfig: InlineConfig
+@@ -349,6 +356,7 @@ export type ResolvedConfig = Readonly<
+       alias: Alias[]
+     }
+     plugins: readonly Plugin[]
++    css: ResolvedCSSOptions | undefined
+     esbuild: ESBuildOptions | false
+     server: ResolvedServerOptions
+     build: ResolvedBuildOptions
+@@ -672,6 +680,7 @@ export async function resolveConfig(
+     mainConfig: null,
+     isProduction,
+     plugins: userPlugins,
++    css: resolveCSSOptions(config.css),
+     esbuild:
+       config.esbuild === false
+         ? false
+diff --git a/packages/vite/src/node/index.ts b/packages/vite/src/node/index.ts
+index cc44fe17b10524..ffa1d4ecd83a49 100644
+--- a/packages/vite/src/node/index.ts
++++ b/packages/vite/src/node/index.ts
+@@ -76,6 +76,7 @@ export type {
+   CSSOptions,
+   CSSModulesOptions,
+   PreprocessCSSResult,
++  ResolvedCSSOptions,
+ } from './plugins/css'
+ export type { JsonOptions } from './plugins/json'
+ export type { TransformOptions as EsbuildTransformOptions } from 'esbuild'
+@@ -143,3 +144,4 @@ export type { Terser } from 'dep-types/terser'
+ export type { RollupCommonJSOptions } from 'dep-types/commonjs'
+ export type { RollupDynamicImportVarsOptions } from 'dep-types/dynamicImportVars'
+ export type { Matcher, AnymatchPattern, AnymatchFn } from 'dep-types/anymatch'
++export type { LightningCSSOptions } from 'dep-types/lightningcss'
+diff --git a/packages/vite/src/node/plugins/css.ts b/packages/vite/src/node/plugins/css.ts
+index 7228c2fae781e2..b2465d4a1d45ba 100644
+--- a/packages/vite/src/node/plugins/css.ts
++++ b/packages/vite/src/node/plugins/css.ts
+@@ -20,6 +20,7 @@ import type Sass from 'sass'
+ import type Stylus from 'stylus'
+ import type Less from 'less'
+ import type { Alias } from 'dep-types/alias'
++import type { LightningCSSOptions } from 'dep-types/lightningcss'
+ import type { TransformOptions } from 'esbuild'
+ import { formatMessages, transform } from 'esbuild'
+ import type { RawSourceMap } from '@ampproject/remapping'
+@@ -30,11 +31,13 @@ import { resolveUserExternal, toOutputFilePathInCss } from '../build'
+ import {
+   CLIENT_PUBLIC_PATH,
+   CSS_LANGS_RE,
++  ESBUILD_MODULES_TARGET,
+   SPECIAL_QUERY_RE,
+ } from '../constants'
+ import type { ResolvedConfig } from '../config'
+ import type { Plugin } from '../plugin'
+ import {
++  arraify,
+   arrayEqual,
+   asyncReplace,
+   cleanUrl,
+@@ -71,6 +74,15 @@ import type { ESBuildOptions } from './esbuild'
+ // const debug = createDebugger('vite:css')
+ 
+ export interface CSSOptions {
++  /**
++   * Using lightningcss is an experimental option to handle CSS modules,
++   * assets and imports via Lightning CSS. It requires to install it as a
++   * peer dependency. This is incompatible with the use of preprocessors.
++   *
++   * @default 'postcss'
++   * @experimental
++   */
++  transformer?: 'postcss' | 'lightningcss'
+   /**
+    * https://github.com/css-modules/postcss-modules
+    */
+@@ -87,6 +99,11 @@ export interface CSSOptions {
+    * @experimental
+    */
+   devSourcemap?: boolean
++
++  /**
++   * @experimental
++   */
++  lightningcss?: LightningCSSOptions
+ }
+ 
+ export interface CSSModulesOptions {
+@@ -116,13 +133,38 @@ export interface CSSModulesOptions {
+       ) => string)
+ }
+ 
++export type ResolvedCSSOptions = Omit<CSSOptions, 'lightningcss'> & {
++  lightningcss?: LightningCSSOptions & {
++    targets: LightningCSSOptions['targets']
++  }
++}
++
++export function resolveCSSOptions(
++  options: CSSOptions | undefined,
++): ResolvedCSSOptions | undefined {
++  if (options?.lightningcss) {
++    return {
++      ...options,
++      lightningcss: {
++        ...options.lightningcss,
++        targets:
++          options.lightningcss.targets ??
++          convertTargets(ESBUILD_MODULES_TARGET),
++      },
++    }
++  }
++  // TS doesn't narrow the type with the previous if :/
++  return options as Omit<CSSOptions, 'lightningcss'>
++}
++
+ const cssModuleRE = new RegExp(`\\.module${CSS_LANGS_RE.source}`)
+-const directRequestRE = /(?:\?|&)direct\b/
+-const htmlProxyRE = /(?:\?|&)html-proxy\b/
++const directRequestRE = /[?&]direct\b/
++const htmlProxyRE = /[?&]html-proxy\b/
+ const commonjsProxyRE = /\?commonjs-proxy/
+-const inlineRE = /(?:\?|&)inline\b/
+-const inlineCSSRE = /(?:\?|&)inline-css\b/
+-const usedRE = /(?:\?|&)used\b/
++const inlineRE = /[?&]inline\b/
++const inlineCSSRE = /[?&]inline-css\b/
++const styleAttrRE = /[?&]style-attr\b/
++const usedRE = /[?&]used\b/
+ const varRE = /^var\(/i
+ 
+ const cssBundleName = 'style.css'
+@@ -190,7 +232,9 @@ export function cssPlugin(config: ResolvedConfig): Plugin {
+   })
+ 
+   // warm up cache for resolved postcss config
+-  resolvePostcssConfig(config)
++  if (config.css?.transformer !== 'lightningcss') {
++    resolvePostcssConfig(config)
++  }
+ 
+   return {
+     name: 'vite:css',
+@@ -441,6 +485,9 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
+       const isHTMLProxy = htmlProxyRE.test(id)
+       const query = parseRequest(id)
+       if (inlineCSS && isHTMLProxy) {
++        if (styleAttrRE.test(id)) {
++          css = css.replace(/"/g, '&quot;')
++        }
+         addToHTMLProxyTransformResult(
+           `${getHash(cleanUrl(id))}_${Number.parseInt(query!.index)}`,
+           css,
+@@ -815,6 +862,14 @@ const configToAtImportResolvers = new WeakMap<
+   ResolvedConfig,
+   CSSAtImportResolvers
+ >()
++function getAtImportResolvers(config: ResolvedConfig) {
++  let atImportResolvers = configToAtImportResolvers.get(config)
++  if (!atImportResolvers) {
++    atImportResolvers = createCSSResolvers(config)
++    configToAtImportResolvers.set(config, atImportResolvers)
++  }
++  return atImportResolvers
++}
+ 
+ async function compileCSS(
+   id: string,
+@@ -828,6 +883,10 @@ async function compileCSS(
+   modules?: Record<string, string>
+   deps?: Set<string>
+ }> {
++  if (config.css?.transformer === 'lightningcss') {
++    return compileLightningCSS(id, code, config, urlReplacer)
++  }
++
+   const {
+     modules: modulesOptions,
+     preprocessorOptions,
+@@ -856,11 +915,7 @@ async function compileCSS(
+   let modules: Record<string, string> | undefined
+   const deps = new Set<string>()
+ 
+-  let atImportResolvers = configToAtImportResolvers.get(config)!
+-  if (!atImportResolvers) {
+-    atImportResolvers = createCSSResolvers(config)
+-    configToAtImportResolvers.set(config, atImportResolvers)
+-  }
++  const atImportResolvers = getAtImportResolvers(config)
+ 
+   // 2. pre-processors: sass etc.
+   if (isPreProcessor(lang)) {
+@@ -1414,6 +1469,26 @@ async function doImportCSSReplace(
+ }
+ 
+ async function minifyCSS(css: string, config: ResolvedConfig) {
++  if (config.build.cssMinify === 'lightningcss') {
++    const { code, warnings } = (await importLightningCSS()).transform({
++      ...config.css?.lightningcss,
++      targets: convertTargets(config.build.cssTarget),
++      cssModules: undefined,
++      filename: cssBundleName,
++      code: Buffer.from(css),
++      minify: true,
++    })
++    if (warnings.length) {
++      config.logger.warn(
++        colors.yellow(
++          `warnings when minifying css:\n${warnings
++            .map((w) => w.message)
++            .join('\n')}`,
++        ),
++      )
++    }
++    return code.toString()
++  }
+   try {
+     const { code, warnings } = await transform(css, {
+       loader: 'css',
+@@ -2042,3 +2117,190 @@ const preProcessors = Object.freeze({
+ function isPreProcessor(lang: any): lang is PreprocessLang {
+   return lang && lang in preProcessors
+ }
++
++const importLightningCSS = createCachedImport(() => import('lightningcss'))
++
++async function compileLightningCSS(
++  id: string,
++  src: string,
++  config: ResolvedConfig,
++  urlReplacer?: CssUrlReplacer,
++): ReturnType<typeof compileCSS> {
++  const deps = new Set<string>()
++  // Relative path is needed to get stable hash when using CSS modules
++  const filename = cleanUrl(path.relative(config.root, id))
++  const toAbsolute = (filePath: string) =>
++    path.isAbsolute(filePath) ? filePath : path.join(config.root, filePath)
++
++  const res = styleAttrRE.test(id)
++    ? (await importLightningCSS()).transformStyleAttribute({
++        filename,
++        code: Buffer.from(src),
++        targets: config.css?.lightningcss?.targets,
++        minify: config.isProduction && !!config.build.cssMinify,
++        analyzeDependencies: true,
++      })
++    : await (
++        await importLightningCSS()
++      ).bundleAsync({
++        filename,
++        resolver: {
++          read(filePath) {
++            if (filePath === filename) {
++              return src
++            }
++            return fs.readFileSync(toAbsolute(filePath), 'utf-8')
++          },
++          async resolve(id, from) {
++            const publicFile = checkPublicFile(id, config)
++            if (publicFile) {
++              return publicFile
++            }
++
++            const resolved = await getAtImportResolvers(config).css(
++              id,
++              toAbsolute(from),
++            )
++
++            if (resolved) {
++              deps.add(resolved)
++              return resolved
++            }
++            return id
++          },
++        },
++        targets: config.css?.lightningcss?.targets,
++        minify: config.isProduction && !!config.build.cssMinify,
++        sourceMap: config.css?.devSourcemap,
++        analyzeDependencies: true,
++        cssModules: cssModuleRE.test(id)
++          ? config.css?.lightningcss?.cssModules ?? true
++          : undefined,
++        drafts: config.css?.lightningcss?.drafts,
++      })
++
++  let css = res.code.toString()
++  for (const dep of res.dependencies!) {
++    switch (dep.type) {
++      case 'url':
++        deps.add(dep.url)
++        if (urlReplacer) {
++          css = css.replace(dep.placeholder, await urlReplacer(dep.url, id))
++        }
++        break
++      default:
++        throw new Error(`Unsupported dependency type: ${dep.type}`)
++    }
++  }
++
++  let modules: Record<string, string> | undefined
++  if ('exports' in res && res.exports) {
++    modules = {}
++    // https://github.com/parcel-bundler/lightningcss/issues/291
++    const sortedEntries = Object.entries(res.exports).sort((a, b) =>
++      a[0].localeCompare(b[0]),
++    )
++    for (const [key, value] of sortedEntries) {
++      modules[key] = value.name
++      // https://lightningcss.dev/css-modules.html#class-composition
++      for (const c of value.composes) {
++        modules[key] += ' ' + c.name
++      }
++    }
++  }
++
++  return {
++    code: css,
++    map: 'map' in res ? res.map?.toString() : undefined,
++    deps,
++    modules,
++  }
++}
++
++// Convert https://esbuild.github.io/api/#target
++// To https://github.com/parcel-bundler/lightningcss/blob/master/node/targets.d.ts
++
++const map: Record<
++  string,
++  keyof NonNullable<LightningCSSOptions['targets']> | false | undefined
++> = {
++  chrome: 'chrome',
++  edge: 'edge',
++  firefox: 'firefox',
++  hermes: false,
++  ie: 'ie',
++  ios: 'ios_saf',
++  node: false,
++  opera: 'opera',
++  rhino: false,
++  safari: 'safari',
++}
++
++const esMap: Record<number, string[]> = {
++  // https://caniuse.com/?search=es2015
++  2015: ['chrome49', 'edge13', 'safari10', 'firefox44', 'opera36'],
++  // https://caniuse.com/?search=es2016
++  2016: ['chrome50', 'edge13', 'safari10', 'firefox43', 'opera37'],
++  // https://caniuse.com/?search=es2017
++  2017: ['chrome58', 'edge15', 'safari11', 'firefox52', 'opera45'],
++  // https://caniuse.com/?search=es2018
++  2018: ['chrome63', 'edge79', 'safari12', 'firefox58', 'opera50'],
++  // https://caniuse.com/?search=es2019
++  2019: ['chrome73', 'edge79', 'safari12.1', 'firefox64', 'opera60'],
++  // https://caniuse.com/?search=es2020
++  2020: ['chrome80', 'edge80', 'safari14.1', 'firefox80', 'opera67'],
++  // https://caniuse.com/?search=es2021
++  2021: ['chrome85', 'edge85', 'safari14.1', 'firefox80', 'opera71'],
++  // https://caniuse.com/?search=es2022
++  2022: ['chrome94', 'edge94', 'safari16.4', 'firefox93', 'opera80'],
++}
++
++const esRE = /es(\d{4})/
++const versionRE = /\d/
++
++const convertTargetsCache = new Map<
++  string | string[],
++  LightningCSSOptions['targets']
++>()
++export const convertTargets = (
++  esbuildTarget: string | string[] | false,
++): LightningCSSOptions['targets'] => {
++  if (!esbuildTarget) return {}
++  const cached = convertTargetsCache.get(esbuildTarget)
++  if (cached) return cached
++  const targets: LightningCSSOptions['targets'] = {}
++
++  const entriesWithoutES = arraify(esbuildTarget).flatMap((e) => {
++    const match = e.match(esRE)
++    if (!match) return e
++    const year = Number(match[1])
++    if (!esMap[year]) throw new Error(`Unsupported target "${e}"`)
++    return esMap[year]
++  })
++
++  for (const entry of entriesWithoutES) {
++    if (entry === 'esnext') continue
++    const index = entry.match(versionRE)?.index
++    if (index) {
++      const browser = map[entry.slice(0, index)]
++      if (browser === false) continue // No mapping available
++      if (browser) {
++        const [major, minor = 0] = entry
++          .slice(index)
++          .split('.')
++          .map((v) => parseInt(v, 10))
++        if (!isNaN(major) && !isNaN(minor)) {
++          const version = (major << 16) | (minor << 8)
++          if (!targets[browser] || version < targets[browser]!) {
++            targets[browser] = version
++          }
++          continue
++        }
++      }
++    }
++    throw new Error(`Unsupported target "${entry}"`)
++  }
++
++  convertTargetsCache.set(esbuildTarget, targets)
++  return targets
++}
+diff --git a/packages/vite/src/node/plugins/html.ts b/packages/vite/src/node/plugins/html.ts
+index 729b9009b1c34c..b76c36dbda71df 100644
+--- a/packages/vite/src/node/plugins/html.ts
++++ b/packages/vite/src/node/plugins/html.ts
+@@ -42,7 +42,8 @@ interface ScriptAssetsUrl {
+   url: string
+ }
+ 
+-const htmlProxyRE = /\?html-proxy=?(?:&inline-css)?&index=(\d+)\.(js|css)$/
++const htmlProxyRE =
++  /\?html-proxy=?(?:&inline-css)?(?:&style-attr)?&index=(\d+)\.(js|css)$/
+ const inlineCSSRE = /__VITE_INLINE_CSS__([a-z\d]{8}_\d+)__/g
+ // Do not allow preceding '.', but do allow preceding '...' for spread operations
+ const inlineImportRE =
+@@ -481,7 +482,7 @@ export function buildHtmlPlugin(config: ResolvedConfig): Plugin {
+             const filePath = id.replace(normalizePath(config.root), '')
+             addToHTMLProxyCache(config, filePath, inlineModuleIndex, { code })
+             // will transform with css plugin and cache result with css-post plugin
+-            js += `\nimport "${id}?html-proxy&inline-css&index=${inlineModuleIndex}.css"`
++            js += `\nimport "${id}?html-proxy&inline-css&style-attr&index=${inlineModuleIndex}.css"`
+             const hash = getHash(cleanUrl(id))
+             // will transform in `applyHtmlTransforms`
+             const sourceCodeLocation = node.sourceCodeLocation!.attrs!['style']
+diff --git a/packages/vite/src/types/lightningcss.d.ts b/packages/vite/src/types/lightningcss.d.ts
+new file mode 100644
+index 00000000000000..98367f381283a2
+--- /dev/null
++++ b/packages/vite/src/types/lightningcss.d.ts
+@@ -0,0 +1,23 @@
++import type {
++  CSSModulesConfig,
++  Drafts,
++  Features,
++  NonStandard,
++  PseudoClasses,
++  Targets,
++} from 'lightningcss'
++
++/**
++ * Options are spread, so you can also use options that are not typed here like
++ * visitor (not exposed because it would impact too much the bundle size)
++ */
++export type LightningCSSOptions = {
++  targets?: Targets
++  include?: Features
++  exclude?: Features
++  drafts?: Drafts
++  nonStandard?: NonStandard
++  pseudoClasses?: PseudoClasses
++  unusedSymbols?: string[]
++  cssModules?: CSSModulesConfig
++}
+diff --git a/playground/css-lightningcss/__tests__/lightningcss.spec.ts b/playground/css-lightningcss/__tests__/lightningcss.spec.ts
+new file mode 100644
+index 00000000000000..a94d09a296e6d6
+--- /dev/null
++++ b/playground/css-lightningcss/__tests__/lightningcss.spec.ts
+@@ -0,0 +1,67 @@
++import { expect, test } from 'vitest'
++import {
++  editFile,
++  findAssetFile,
++  getColor,
++  isBuild,
++  page,
++  untilUpdated,
++} from '~utils'
++
++// note: tests should retrieve the element at the beginning of test and reuse it
++// in later assertions to ensure CSS HMR doesn't reload the page
++test('linked css', async () => {
++  const linked = await page.$('.linked')
++  const atImport = await page.$('.linked-at-import')
++
++  expect(await getColor(linked)).toBe('blue')
++  expect(await getColor(atImport)).toBe('red')
++
++  editFile('linked.css', (code) => code.replace('color: blue', 'color: red'))
++  await untilUpdated(() => getColor(linked), 'red')
++
++  editFile('linked-at-import.css', (code) =>
++    code.replace('color: red', 'color: blue'),
++  )
++  await untilUpdated(() => getColor(atImport), 'blue')
++})
++
++test('css import from js', async () => {
++  const imported = await page.$('.imported')
++  const atImport = await page.$('.imported-at-import')
++
++  expect(await getColor(imported)).toBe('green')
++  expect(await getColor(atImport)).toBe('purple')
++
++  editFile('imported.css', (code) => code.replace('color: green', 'color: red'))
++  await untilUpdated(() => getColor(imported), 'red')
++
++  editFile('imported-at-import.css', (code) =>
++    code.replace('color: purple', 'color: blue'),
++  )
++  await untilUpdated(() => getColor(atImport), 'blue')
++})
++
++test('css modules', async () => {
++  const imported = await page.$('.modules')
++  expect(await getColor(imported)).toBe('turquoise')
++
++  expect(await imported.getAttribute('class')).toMatch(/\w{6}_apply-color/)
++
++  editFile('mod.module.css', (code) =>
++    code.replace('color: turquoise', 'color: red'),
++  )
++  await untilUpdated(() => getColor(imported), 'red')
++})
++
++test('inline css modules', async () => {
++  const css = await page.textContent('.modules-inline')
++  expect(css).toMatch(/\.\w{6}_apply-color-inline/)
++})
++
++test.runIf(isBuild)('minify css', async () => {
++  // should keep the rgba() syntax
++  const cssFile = findAssetFile(/index-\w+\.css$/)
++  expect(cssFile).toMatch('rgba(')
++  expect(cssFile).not.toMatch('#ffff00b3')
++})
+diff --git a/playground/css-lightningcss/composed.module.css b/playground/css-lightningcss/composed.module.css
+new file mode 100644
+index 00000000000000..b2ae0e967dced1
+--- /dev/null
++++ b/playground/css-lightningcss/composed.module.css
+@@ -0,0 +1,3 @@
++.apply-color {
++  color: turquoise;
++}
+diff --git a/playground/css-lightningcss/composes-path-resolving.module.css b/playground/css-lightningcss/composes-path-resolving.module.css
+new file mode 100644
+index 00000000000000..2873293f9c7605
+--- /dev/null
++++ b/playground/css-lightningcss/composes-path-resolving.module.css
+@@ -0,0 +1,3 @@
++.path-resolving-css {
++  composes: apply-color from './composed.module.css';
++}
+diff --git a/playground/css-lightningcss/imported-at-import.css b/playground/css-lightningcss/imported-at-import.css
+new file mode 100644
+index 00000000000000..b71ef00e65b27a
+--- /dev/null
++++ b/playground/css-lightningcss/imported-at-import.css
+@@ -0,0 +1,3 @@
++.imported-at-import {
++  color: purple;
++}
+diff --git a/playground/css-lightningcss/imported.css b/playground/css-lightningcss/imported.css
+new file mode 100644
+index 00000000000000..41a9505a6cffe4
+--- /dev/null
++++ b/playground/css-lightningcss/imported.css
+@@ -0,0 +1,12 @@
++@import './imported-at-import.css';
++
++.imported {
++  color: green;
++}
++
++pre {
++  background-color: #eee;
++  width: 500px;
++  padding: 1em 1.5em;
++  border-radius: 10px;
++}
+diff --git a/playground/css-lightningcss/index.html b/playground/css-lightningcss/index.html
+new file mode 100644
+index 00000000000000..166e477c758396
+--- /dev/null
++++ b/playground/css-lightningcss/index.html
+@@ -0,0 +1,28 @@
++<link rel="stylesheet" href="./linked.css" />
++
++<div class="wrapper">
++  <h1>Lightning CSS</h1>
++
++  <p class="linked">&lt;link&gt;: This should be blue</p>
++  <p class="linked-at-import">@import in &lt;link&gt;: This should be red</p>
++
++  <p class="imported">import from js: This should be green</p>
++  <p class="imported-at-import">
++    @import in import from js: This should be purple
++  </p>
++
++  <p class="modules">CSS modules: this should be turquoise</p>
++  <p>Imported CSS module:</p>
++  <pre class="modules-code"></pre>
++
++  <p>Imported compose/from CSS module:</p>
++  <p class="path-resolved-modules-css">
++    CSS modules composes path resolving: this should be turquoise
++  </p>
++  <pre class="path-resolved-modules-code"></pre>
++
++  <p>Inline CSS module:</p>
++  <pre class="modules-inline"></pre>
++</div>
++
++<script type="module" src="./main.js"></script>
+diff --git a/playground/css-lightningcss/inline.module.css b/playground/css-lightningcss/inline.module.css
+new file mode 100644
+index 00000000000000..9566e21e2cd1af
+--- /dev/null
++++ b/playground/css-lightningcss/inline.module.css
+@@ -0,0 +1,3 @@
++.apply-color-inline {
++  color: turquoise;
++}
+diff --git a/playground/css-lightningcss/inlined.css b/playground/css-lightningcss/inlined.css
+new file mode 100644
+index 00000000000000..1b08950784ee76
+--- /dev/null
++++ b/playground/css-lightningcss/inlined.css
+@@ -0,0 +1,4 @@
++.inlined {
++  color: green;
++  background: url('./ok.png');
++}
+diff --git a/playground/css-lightningcss/linked-at-import.css b/playground/css-lightningcss/linked-at-import.css
+new file mode 100644
+index 00000000000000..a778a3c754bb1b
+--- /dev/null
++++ b/playground/css-lightningcss/linked-at-import.css
+@@ -0,0 +1,3 @@
++.linked-at-import {
++  color: red;
++}
+diff --git a/playground/css-lightningcss/linked.css b/playground/css-lightningcss/linked.css
+new file mode 100644
+index 00000000000000..49f677d1e6462a
+--- /dev/null
++++ b/playground/css-lightningcss/linked.css
+@@ -0,0 +1,8 @@
++@import './linked-at-import.css';
++
++/* test nesting */
++.wrapper {
++  .linked {
++    color: blue;
++  }
++}
+diff --git a/playground/css-lightningcss/main.js b/playground/css-lightningcss/main.js
+new file mode 100644
+index 00000000000000..8391376675565e
+--- /dev/null
++++ b/playground/css-lightningcss/main.js
+@@ -0,0 +1,31 @@
++import './minify.css'
++import './imported.css'
++import mod from './mod.module.css'
++
++document.querySelector('.modules').classList.add(mod['apply-color'])
++text('.modules-code', JSON.stringify(mod, null, 2))
++
++import composesPathResolvingMod from './composes-path-resolving.module.css'
++document
++  .querySelector('.path-resolved-modules-css')
++  .classList.add(...composesPathResolvingMod['path-resolving-css'].split(' '))
++text(
++  '.path-resolved-modules-code',
++  JSON.stringify(composesPathResolvingMod, null, 2),
++)
++
++import inlineMod from './inline.module.css?inline'
++text('.modules-inline', inlineMod)
++
++function text(el, text) {
++  document.querySelector(el).textContent = text
++}
++
++if (import.meta.hot) {
++  import.meta.hot.accept('./mod.module.css', (newMod) => {
++    const list = document.querySelector('.modules').classList
++    list.remove(mod.applyColor)
++    list.add(newMod.applyColor)
++    text('.modules-code', JSON.stringify(newMod.default, null, 2))
++  })
++}
+diff --git a/playground/css-lightningcss/minify.css b/playground/css-lightningcss/minify.css
+new file mode 100644
+index 00000000000000..ada062407cdb38
+--- /dev/null
++++ b/playground/css-lightningcss/minify.css
+@@ -0,0 +1,3 @@
++.test-minify {
++  color: rgba(255, 255, 0, 0.7);
++}
+diff --git a/playground/css-lightningcss/mod.module.css b/playground/css-lightningcss/mod.module.css
+new file mode 100644
+index 00000000000000..b2ae0e967dced1
+--- /dev/null
++++ b/playground/css-lightningcss/mod.module.css
+@@ -0,0 +1,3 @@
++.apply-color {
++  color: turquoise;
++}
+diff --git a/playground/css-lightningcss/ok.png b/playground/css-lightningcss/ok.png
+new file mode 100644
+index 00000000000000..a8d1e52510c41c
+Binary files /dev/null and b/playground/css-lightningcss/ok.png differ
+diff --git a/playground/css-lightningcss/package.json b/playground/css-lightningcss/package.json
+new file mode 100644
+index 00000000000000..8a9583a76564ad
+--- /dev/null
++++ b/playground/css-lightningcss/package.json
+@@ -0,0 +1,14 @@
++{
++  "name": "@vitejs/test-css-lightningcss",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "vite build",
++    "debug": "node --inspect-brk ../../packages/vite/bin/vite",
++    "preview": "vite preview"
++  },
++  "devDependencies": {
++    "lightningcss": "^1.21.0"
++  }
++}
+diff --git a/playground/css-lightningcss/vite.config.js b/playground/css-lightningcss/vite.config.js
+new file mode 100644
+index 00000000000000..7926682609b766
+--- /dev/null
++++ b/playground/css-lightningcss/vite.config.js
+@@ -0,0 +1,14 @@
++import { defineConfig } from 'vite'
++
++export default defineConfig({
++  css: {
++    transformer: 'lightningcss',
++    lightningcss: {
++      drafts: { nesting: true },
++    },
++  },
++  build: {
++    cssTarget: ['chrome61'],
++    cssMinify: 'lightningcss',
++  },
++})
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index ddadf91e4b2e5d..a8212068b7216f 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -348,6 +348,9 @@ importers:
+       launch-editor-middleware:
+         specifier: ^2.6.0
+         version: 2.6.0
++      lightningcss:
++        specifier: ^1.21.0
++        version: 1.21.0
+       magic-string:
+         specifier: ^0.30.0
+         version: 0.30.0
+@@ -536,6 +539,12 @@ importers:
+ 
+   playground/css-dynamic-import: {}
+ 
++  playground/css-lightningcss:
++    devDependencies:
++      lightningcss:
++        specifier: ^1.21.0
++        version: 1.21.0
++
+   playground/css-sourcemap:
+     devDependencies:
+       less:
+@@ -5337,6 +5346,12 @@ packages:
+     resolution: {integrity: sha512-2sJGJTaXIIaR1w4iJSNoN0hnMY7Gpc/n8D4qSCJw8QqFWXf7cuAgnEHxBpweaVcPevC2l3KpjYCx3NypQQgaJg==}
+     engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
+ 
++  /detect-libc@1.0.3:
++    resolution: {integrity: sha512-pGjwhsmsp4kL2RTz08wcOlGN83otlqHeD/Z5T8GXZB+/YcpQ/dgo+lbU8ZsGxV0HIvqqxo9l7mqYwyYMD9bKDg==}
++    engines: {node: '>=0.10'}
++    hasBin: true
++    dev: true
++
+   /detect-libc@2.0.1:
+     resolution: {integrity: sha512-463v3ZeIrcWtdgIg6vI6XUncguvr2TnGl4SzDXinkt9mSLpBJKXT3mW6xT3VQdDN11+WVs29pgvivTc4Lp8v+w==}
+     engines: {node: '>=8'}
+@@ -7276,6 +7291,94 @@ packages:
+       type-check: 0.4.0
+     dev: true
+ 
++  /lightningcss-darwin-arm64@1.21.0:
++    resolution: {integrity: sha512-WcJmVmbNUnCbUqqXV46ZsriFtWJujcPkn+w2cu4R+EgpXuibyTP/gzahmX0gc4RYQxTz2zXIeGx4cF2gr8fLwA==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [arm64]
++    os: [darwin]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-darwin-x64@1.21.0:
++    resolution: {integrity: sha512-xHwMHfcTIHX6fY4YQimI1V/KcbozoNVeKMncZzrp/3NAj0sp3ktxobCj1e0sGqVJMUMaHu/SWvt0mS8jAIhkYw==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [x64]
++    os: [darwin]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-linux-arm-gnueabihf@1.21.0:
++    resolution: {integrity: sha512-rk1cr+C2IA1QHvh0QJAPXsQ2vrwCksms7fgfaw43RIERBWa6EEM5p0/1CWhdZ5zrl9veUdY6NRaNGRJjJL0iLw==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [arm]
++    os: [linux]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-linux-arm64-gnu@1.21.0:
++    resolution: {integrity: sha512-JkOG8K2Y4m5MeP3DlaHOgGDDtHbhbJcN8JcizFN0snUIIru1qxYNWPhAQsEwysuTRY9aANP0nScZJkALpcYmgA==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [arm64]
++    os: [linux]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-linux-arm64-musl@1.21.0:
++    resolution: {integrity: sha512-4Zx51DbR41neTFMs28CI9cZpX/mF5Urc6pChTio5nZhrz6FC1pRGiwxNJ+G15a/YPvRmPmvQd3Mz1N4WEgbj2A==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [arm64]
++    os: [linux]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-linux-x64-gnu@1.21.0:
++    resolution: {integrity: sha512-PN33pPK/O3b4qMfWcJ2eis7NLqEkyW2NEh9X4rWfJrBtOnSbgafuYUuEtO5Ylu+dL3oUKc5usB07FGeil3RzeA==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [x64]
++    os: [linux]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-linux-x64-musl@1.21.0:
++    resolution: {integrity: sha512-S51OT7TRfS5x8aN/8frv/JSXCGm+11VuhM4WCiTqDPjhHUDWd8nwiN/7s5juiwrlrpOxb5UKq21EKDrISoGQpw==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [x64]
++    os: [linux]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss-win32-x64-msvc@1.21.0:
++    resolution: {integrity: sha512-yW6/ZDJAHrSWtRltH1tr2I+2sn374gK2yclc44HMfpxfjIYgXMUkzqstalloMUQpZFR6M0ltXo5/tuLWoBydGQ==}
++    engines: {node: '>= 12.0.0'}
++    cpu: [x64]
++    os: [win32]
++    requiresBuild: true
++    dev: true
++    optional: true
++
++  /lightningcss@1.21.0:
++    resolution: {integrity: sha512-HDznZexdDMvC98c79vRE+oW5vFncTlLjJopzK4azReOilq6n4XIscCMhvgiXkstYMM/dCe6FJw0oed06ck8AtA==}
++    engines: {node: '>= 12.0.0'}
++    dependencies:
++      detect-libc: 1.0.3
++    optionalDependencies:
++      lightningcss-darwin-arm64: 1.21.0
++      lightningcss-darwin-x64: 1.21.0
++      lightningcss-linux-arm-gnueabihf: 1.21.0
++      lightningcss-linux-arm64-gnu: 1.21.0
++      lightningcss-linux-arm64-musl: 1.21.0
++      lightningcss-linux-x64-gnu: 1.21.0
++      lightningcss-linux-x64-musl: 1.21.0
++      lightningcss-win32-x64-msvc: 1.21.0
++    dev: true
++
+   /lilconfig@2.0.5:
+     resolution: {integrity: sha512-xaYmXZtTHPAw5m+xLN8ab9C+3a8YmV3asNSPOATITbtwrfbwaLJj8h66H1WMIpALCkqsIzK3h7oQ+PdX+LQ9Eg==}
+     engines: {node: '>=10'}

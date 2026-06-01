@@ -1,0 +1,1199 @@
+diff --git a/crates/next-api/src/app.rs b/crates/next-api/src/app.rs
+index 529abe08d19c..7e5d0686cf35 100644
+--- a/crates/next-api/src/app.rs
++++ b/crates/next-api/src/app.rs
+@@ -9,7 +9,8 @@ use next_core::{
+     get_edge_resolve_options_context, get_next_package,
+     next_app::{
+         AppEntry, AppPage, get_app_client_references_chunks, get_app_client_shared_chunk_group,
+-        get_app_page_entry, get_app_route_entry, metadata::route::get_app_metadata_route_entry,
++        get_app_page_entry, get_app_route_entry, get_client_references_chunks_for_hmr,
++        metadata::route::get_app_metadata_route_entry,
+     },
+     next_client::{
+         ClientContextType, get_client_module_options_context, get_client_resolve_options_context,
+@@ -38,8 +39,8 @@ use next_core::{
+ use tracing::{Instrument, field::Empty};
+ use turbo_rcstr::{RcStr, rcstr};
+ use turbo_tasks::{
+-    Completion, NonLocalValue, ResolvedVc, TryJoinIterExt, ValueToString, Vc, fxindexset,
+-    trace::TraceRawVcs,
++    Completion, FxIndexMap, NonLocalValue, ResolvedVc, TryJoinIterExt, ValueToString, Vc,
++    fxindexset, trace::TraceRawVcs,
+ };
+ use turbo_tasks_fs::{File, FileContent, FileSystemPath};
+ use turbopack::{
+@@ -1278,6 +1279,26 @@ impl AppEndpoint {
+             None
+         };
+ 
++        let per_page_module_graph = *project.per_page_module_graph().await?;
++
++        let next_dynamic_imports =
++            NextDynamicGraphs::new(*module_graphs.base, per_page_module_graph)
++                .get_next_dynamic_imports_for_endpoint(*rsc_entry)
++                .await?;
++
++        let is_production = project.next_mode().await?.is_production();
++
++        let client_references =
++            ClientReferencesGraphs::new(*module_graphs.base, per_page_module_graph)
++                .get_client_references_for_endpoint(
++                    *rsc_entry,
++                    matches!(this.ty, AppEndpointType::Page { .. }),
++                    is_production,
++                    is_production,
++                )
++                .to_resolved()
++                .await?;
++
+         // We only need the client runtime entries for pages not for Route Handlers
+         let (availability_info, client_shared_chunks) = if is_app_page {
+             let client_shared_chunk_group = get_app_client_shared_chunk_group(
+@@ -1300,26 +1321,6 @@ impl AppEndpoint {
+             (AvailabilityInfo::root(), vec![])
+         };
+ 
+-        let per_page_module_graph = *project.per_page_module_graph().await?;
+-
+-        let next_dynamic_imports =
+-            NextDynamicGraphs::new(*module_graphs.base, per_page_module_graph)
+-                .get_next_dynamic_imports_for_endpoint(*rsc_entry)
+-                .await?;
+-
+-        let is_production = project.next_mode().await?.is_production();
+-
+-        let client_references =
+-            ClientReferencesGraphs::new(*module_graphs.base, per_page_module_graph)
+-                .get_client_references_for_endpoint(
+-                    *rsc_entry,
+-                    matches!(this.ty, AppEndpointType::Page { .. }),
+-                    is_production,
+-                    is_production,
+-                )
+-                .to_resolved()
+-                .await?;
+-
+         let client_references_chunks = get_app_client_references_chunks(
+             *client_references,
+             *module_graphs.full,
+@@ -1351,6 +1352,39 @@ impl AppEndpoint {
+             server_assets.extend(assets.all_assets().await?.iter().copied());
+         }
+ 
++        // In development, register a page-specific HMR chunk list that owns all client
++        // reference chunks for this page. These chunks are computed via separate
++        // chunk_group(IsolatedMerged) calls and aren't reachable from the shared client
++        // chunk group's module graph, so they need their own HMR subscription.
++        //
++        // The register chunk is page-specific and must NOT go into client_shared_chunks
++        // (root_main_files), which is shared across all pages. Instead it goes into
++        // root_main_files_per_page so it is serialized under rootMainFilesTree[page] in
++        // the build manifest. The server renderer reads rootMainFilesTree[pagePath] first
++        // (required-scripts.tsx), so only the correct page's register chunk is loaded.
++        let is_hot_module_replacement_enabled = project
++            .client_compile_time_info()
++            .await?
++            .hot_module_replacement_enabled;
++        let page_hmr_chunks = if is_app_page && is_hot_module_replacement_enabled {
++            let client_components_chunks_ident =
++                AssetIdent::from_path(project.project_path().owned().await?)
++                    .with_modifier(rcstr!("client-components"))
++                    .with_modifier(app_entry.original_name.clone())
++                    .into_vc();
++            let client_reference_chunks =
++                get_client_references_chunks_for_hmr(*client_references_chunks);
++            client_chunking_context
++                .hmr_chunk_list(client_components_chunks_ident, client_reference_chunks)
++                .await?
++                .iter()
++                .copied()
++                .collect::<Vec<_>>()
++        } else {
++            vec![]
++        };
++        client_assets.extend(page_hmr_chunks.iter().copied());
++
+         let manifest_path_prefix = &app_entry.original_name;
+ 
+         // Only Pages need a polyfill chunk, Routes handlers don't have any inherent code that runs
+@@ -1404,6 +1438,13 @@ impl AppEndpoint {
+             ResolvedVc::cell(client_assets.into_iter().collect::<Vec<_>>());
+ 
+         if emit_manifests != EmitManifests::None {
++            let root_main_files_per_page = if page_hmr_chunks.is_empty() {
++                FxIndexMap::default()
++            } else {
++                let mut m = FxIndexMap::default();
++                m.insert(app_entry.original_name.clone(), page_hmr_chunks);
++                m
++            };
+             let build_manifest = BuildManifest {
+                 output_path: node_root.join(&format!(
+                     "server/app{manifest_path_prefix}/build-manifest.json",
+@@ -1412,6 +1453,7 @@ impl AppEndpoint {
+                 pages: Default::default(),
+                 root_main_files: client_shared_chunks,
+                 polyfill_files: polyfill_output_asset.into_iter().collect(),
++                root_main_files_per_page,
+             };
+             server_assets.insert(ResolvedVc::upcast(build_manifest.resolved_cell()));
+         }
+@@ -1798,6 +1840,7 @@ impl AppEndpoint {
+                     app_entry.rsc_entry.ident(),
+                     ChunkGroup::Entry(vec![app_entry.rsc_entry]),
+                     module_graph,
++                    OutputAssets::empty(),
+                     chunk_group1.await?.availability_info,
+                 );
+ 
+diff --git a/crates/next-api/src/instrumentation.rs b/crates/next-api/src/instrumentation.rs
+index c072923d4d0d..a52e27a60b82 100644
+--- a/crates/next-api/src/instrumentation.rs
++++ b/crates/next-api/src/instrumentation.rs
+@@ -107,6 +107,7 @@ impl InstrumentationEndpoint {
+             module.ident(),
+             ChunkGroup::Entry(vec![module]),
+             module_graph,
++            OutputAssets::empty(),
+             AvailabilityInfo::root(),
+         ))
+     }
+diff --git a/crates/next-api/src/middleware.rs b/crates/next-api/src/middleware.rs
+index ab6dfedd4f80..bea471ee4f06 100644
+--- a/crates/next-api/src/middleware.rs
++++ b/crates/next-api/src/middleware.rs
+@@ -116,6 +116,7 @@ impl MiddlewareEndpoint {
+             module.ident(),
+             ChunkGroup::Entry(vec![module]),
+             module_graph,
++            OutputAssets::empty(),
+             AvailabilityInfo::root(),
+         );
+         Ok(edge_chunk_grou)
+diff --git a/crates/next-api/src/pages.rs b/crates/next-api/src/pages.rs
+index 150919422fbb..4b319c6714c1 100644
+--- a/crates/next-api/src/pages.rs
++++ b/crates/next-api/src/pages.rs
+@@ -787,6 +787,7 @@ impl PageEndpoint {
+                 AssetIdent::from_path(this.page.await?.base_path.clone()).into_vc(),
+                 ChunkGroup::Entry(evaluatable_assets),
+                 module_graph,
++                OutputAssets::empty(),
+                 AvailabilityInfo::root(),
+             );
+ 
+@@ -1025,6 +1026,7 @@ impl PageEndpoint {
+                     ssr_module.ident(),
+                     ChunkGroup::Entry(vec![ssr_module]),
+                     ssr_module_graph,
++                    OutputAssets::empty(),
+                     current_chunk_group.await?.availability_info,
+                 );
+ 
+@@ -1254,6 +1256,7 @@ impl PageEndpoint {
+             pages,
+             polyfill_files: Default::default(),
+             root_main_files: Default::default(),
++            root_main_files_per_page: Default::default(),
+         };
+         Ok(Vc::upcast(build_manifest.cell()))
+     }
+diff --git a/crates/next-api/src/project.rs b/crates/next-api/src/project.rs
+index 800a7d797679..69fb64380e1d 100644
+--- a/crates/next-api/src/project.rs
++++ b/crates/next-api/src/project.rs
+@@ -2424,6 +2424,7 @@ impl Project {
+             chunk_name: RcStr,
+             target: HmrTarget,
+         ) -> Result<Vc<Box<dyn Version>>> {
++            tracing::info!(chunk_name = %chunk_name, target = %target, "hmr subscription");
+             let content = this.hmr_content(chunk_name, target).await?;
+             if let Some(content) = &*content {
+                 Ok(content.version())
+diff --git a/crates/next-core/src/next_app/app_client_references_chunks.rs b/crates/next-core/src/next_app/app_client_references_chunks.rs
+index 0ff6c559a473..7f0df24ac21d 100644
+--- a/crates/next-core/src/next_app/app_client_references_chunks.rs
++++ b/crates/next-core/src/next_app/app_client_references_chunks.rs
+@@ -2,13 +2,13 @@ use anyhow::Result;
+ use tracing::Instrument;
+ use turbo_rcstr::rcstr;
+ use turbo_tasks::{
+-    FxIndexMap, ResolvedVc, TryFlatJoinIterExt, TryJoinIterExt, ValueToStringRef, Vc,
++    FxIndexMap, FxIndexSet, ResolvedVc, TryFlatJoinIterExt, TryJoinIterExt, ValueToStringRef, Vc,
+ };
+ use turbopack_core::{
+     chunk::{ChunkGroupResult, ChunkingContext, availability_info::AvailabilityInfo},
+     module::Module,
+     module_graph::{ModuleGraph, chunk_group_info::ChunkGroup},
+-    output::OutputAssetsWithReferenced,
++    output::{OutputAsset, OutputAssets, OutputAssetsWithReferenced},
+ };
+ 
+ use crate::{
+@@ -337,3 +337,37 @@ pub async fn get_app_client_references_chunks(
+     .instrument(tracing::info_span!("process client references"))
+     .await
+ }
++
++/// Flattens all client-side output assets from `client_references_chunks` so the
++/// page's HMR chunk list can subscribe to updates for chunks built outside the
++/// entry's own module graph (each `chunk_group(IsolatedMerged)` call for a
++/// client component group generates chunks separately).
++#[turbo_tasks::function]
++pub async fn get_client_references_chunks_for_hmr(
++    client_references_chunks: Vc<ClientReferencesChunks>,
++) -> Result<Vc<OutputAssets>> {
++    let client_references_chunks_ref = client_references_chunks.await?;
++    let mut extras: FxIndexSet<ResolvedVc<Box<dyn OutputAsset>>> = client_references_chunks_ref
++        .layout_segment_client_chunks
++        .values()
++        .map(|&assets| async move {
++            let primary = assets.primary_assets().await?;
++            Ok(primary.iter().copied().collect::<Vec<_>>())
++        })
++        .try_flat_join()
++        .await?
++        .into_iter()
++        .collect();
++    for &chunk_group in client_references_chunks_ref
++        .client_component_client_chunks
++        .values()
++    {
++        // Use all_assets() (not primary_assets()) to also follow async loader references
++        // transitively. This ensures that dynamic imports within 'use client' pages are
++        // covered by the page's HMR subscription, not just the page module itself.
++        extras.extend(chunk_group.all_assets().await?.iter().copied());
++    }
++    // client_component_ssr_chunks are intentionally excluded: they run on the server
++    // (Node.js/Edge), not in the browser, so they don't belong in the client HMR chunk list.
++    Ok(Vc::cell(extras.into_iter().collect()))
++}
+diff --git a/crates/next-core/src/next_app/app_client_shared_chunks.rs b/crates/next-core/src/next_app/app_client_shared_chunks.rs
+index 916769ab3493..1b173c14fb42 100644
+--- a/crates/next-core/src/next_app/app_client_shared_chunks.rs
++++ b/crates/next-core/src/next_app/app_client_shared_chunks.rs
+@@ -7,6 +7,7 @@ use turbopack_core::{
+     },
+     ident::AssetIdent,
+     module_graph::{ModuleGraph, chunk_group_info::ChunkGroup},
++    output::OutputAssets,
+ };
+ 
+ #[turbo_tasks::function]
+@@ -21,7 +22,7 @@ pub async fn get_app_client_shared_chunk_group(
+     }
+ 
+     let span = tracing::trace_span!("app client shared");
+-    let app_client_shared_chunk_grou = async {
++    let app_client_shared_chunk_group = async {
+         client_chunking_context
+             .evaluated_chunk_group(
+                 ident,
+@@ -33,6 +34,10 @@ pub async fn get_app_client_shared_chunk_group(
+                         .collect(),
+                 ),
+                 module_graph,
++                // The shared chunk group must stay shared across pages; page-specific HMR
++                // chunks (e.g. client references) are routed through a separate page-specific
++                // evaluated chunk group instead.
++                OutputAssets::empty(),
+                 AvailabilityInfo::root(),
+             )
+             .to_resolved()
+@@ -42,5 +47,5 @@ pub async fn get_app_client_shared_chunk_group(
+     .instrument(span)
+     .await?;
+ 
+-    Ok(app_client_shared_chunk_grou)
++    Ok(app_client_shared_chunk_group)
+ }
+diff --git a/crates/next-core/src/next_app/mod.rs b/crates/next-core/src/next_app/mod.rs
+index cd4ed30f744b..2ef5d3234f89 100644
+--- a/crates/next-core/src/next_app/mod.rs
++++ b/crates/next-core/src/next_app/mod.rs
+@@ -17,7 +17,10 @@ use turbo_rcstr::RcStr;
+ use turbo_tasks::{NonLocalValue, TaskInput, trace::TraceRawVcs};
+ 
+ pub use crate::next_app::{
+-    app_client_references_chunks::{ClientReferencesChunks, get_app_client_references_chunks},
++    app_client_references_chunks::{
++        ClientReferencesChunks, get_app_client_references_chunks,
++        get_client_references_chunks_for_hmr,
++    },
+     app_client_shared_chunks::get_app_client_shared_chunk_group,
+     app_entry::AppEntry,
+     app_page_entry::get_app_page_entry,
+diff --git a/crates/next-core/src/next_manifests/mod.rs b/crates/next-core/src/next_manifests/mod.rs
+index 1af9e4f009eb..77f0c9468689 100644
+--- a/crates/next-core/src/next_manifests/mod.rs
++++ b/crates/next-core/src/next_manifests/mod.rs
+@@ -35,6 +35,12 @@ pub struct BuildManifest {
+     pub root_main_files: Vec<ResolvedVc<Box<dyn OutputAsset>>>,
+     #[bincode(with = "turbo_bincode::indexmap")]
+     pub pages: FxIndexMap<RcStr, ResolvedVc<OutputAssets>>,
++    /// Per-page extra files that supplement `root_main_files` for App Router
++    /// pages. Serialized as `rootMainFilesTree[page] = [...root_main_files,
++    /// ...per_page_files]` so that `required-scripts.tsx` can load the correct
++    /// page-specific scripts without polluting the shared `rootMainFiles`.
++    #[bincode(with = "turbo_bincode::indexmap")]
++    pub root_main_files_per_page: FxIndexMap<RcStr, Vec<ResolvedVc<Box<dyn OutputAsset>>>>,
+ }
+ 
+ #[turbo_tasks::value_impl]
+@@ -50,11 +56,19 @@ impl OutputAssetsReference for BuildManifest {
+             .try_flat_join()
+             .await?;
+ 
++        let per_page_files = self
++            .root_main_files_per_page
++            .values()
++            .flatten()
++            .copied()
++            .collect::<Vec<_>>();
++
+         let references = chunks
+             .into_iter()
+             .flatten()
+             .chain(root_main_files)
+             .chain(self.polyfill_files.iter().copied())
++            .chain(per_page_files)
+             .collect();
+ 
+         Ok(OutputAssetsWithReferenced::from_assets(Vc::cell(
+@@ -87,6 +101,7 @@ impl Asset for BuildManifest {
+             pub root_main_files: Vec<RcStr>,
+             pub pages: FxIndexMap<RcStr, Vec<RcStr>>,
+             pub amp_first_pages: Vec<RcStr>,
++            pub root_main_files_tree: FxIndexMap<RcStr, Vec<RcStr>>,
+         }
+ 
+         let pages: Vec<(RcStr, Vec<RcStr>)> = self
+@@ -146,10 +161,41 @@ impl Asset for BuildManifest {
+             .try_flat_join()
+             .await?;
+ 
++        let root_main_files_tree: Vec<(RcStr, Vec<RcStr>)> = self
++            .root_main_files_per_page
++            .iter()
++            .map(async |(page, per_page_chunks)| {
++                let per_page_paths: Vec<RcStr> = per_page_chunks
++                    .iter()
++                    .copied()
++                    .map(async |chunk| {
++                        let chunk_path = chunk.path().await?;
++                        Ok(client_relative_path
++                            .get_path_to(&chunk_path)
++                            .context(
++                                "failed to resolve client-relative path to per-page root file",
++                            )?
++                            .into())
++                    })
++                    .try_join()
++                    .await?;
++                // Combine the shared root_main_files with this page's extra
++                // files so that required-scripts.tsx gets the full list.
++                let combined = root_main_files
++                    .iter()
++                    .cloned()
++                    .chain(per_page_paths)
++                    .collect();
++                Ok((page.clone(), combined))
++            })
++            .try_join()
++            .await?;
++
+         let manifest = SerializedBuildManifest {
+             pages: FxIndexMap::from_iter(pages),
+             polyfill_files,
+             root_main_files,
++            root_main_files_tree: FxIndexMap::from_iter(root_main_files_tree),
+             ..Default::default()
+         };
+ 
+diff --git a/crates/next-napi-bindings/src/next_api/project.rs b/crates/next-napi-bindings/src/next_api/project.rs
+index 895d650d7fa2..c6d0d1cfcc67 100644
+--- a/crates/next-napi-bindings/src/next_api/project.rs
++++ b/crates/next-napi-bindings/src/next_api/project.rs
+@@ -1827,6 +1827,7 @@ async fn hmr_update_with_issues_operation(
+     state: ResolvedVc<VersionState>,
+     target: HmrTarget,
+ ) -> Result<Vc<HmrUpdateWithIssues>> {
++    tracing::info!(chunk_name = %chunk_name, target = %target, "hmr subscription");
+     let update_op = project_hmr_update_operation(project, chunk_name, target, state);
+     // NOTE: we do not use `strongly_consistent_catch_collectables` here. The JS HMR
+     // consumers in `hot-reloader-turbopack.ts` (`subscribeToServerHmr` and
+diff --git a/packages/next-routing/tsconfig.json b/packages/next-routing/tsconfig.json
+index f0e03beec2f9..7d7811d529ad 100644
+--- a/packages/next-routing/tsconfig.json
++++ b/packages/next-routing/tsconfig.json
+@@ -7,7 +7,7 @@
+     "resolveJsonModule": true,
+     "esModuleInterop": true,
+     "skipLibCheck": false,
+-    "lib": ["es2022", "dom"],
++    "lib": ["es2022", "dom", "dom.iterable"],
+     "rootDir": "src",
+     "types": ["jest"]
+   },
+diff --git a/packages/next/src/client/dev/hot-reloader/turbopack-hot-reloader-common.ts b/packages/next/src/client/dev/hot-reloader/turbopack-hot-reloader-common.ts
+index 61f35d7b4649..9f582fb6b92b 100644
+--- a/packages/next/src/client/dev/hot-reloader/turbopack-hot-reloader-common.ts
++++ b/packages/next/src/client/dev/hot-reloader/turbopack-hot-reloader-common.ts
+@@ -141,6 +141,7 @@ function extractModulesFromTurbopackMessage(
+     }
+ 
+     for (const mergedUpdate of update.instruction.merged) {
++      if (!mergedUpdate.entries) continue
+       for (const name of Object.keys(mergedUpdate.entries)) {
+         const res = /(.*)\s+[([].*/.exec(name)
+         if (res === null) {
+diff --git a/packages/next/src/shared/lib/turbopack/manifest-loader.ts b/packages/next/src/shared/lib/turbopack/manifest-loader.ts
+index f6ef56c554fd..b92700c468c2 100644
+--- a/packages/next/src/shared/lib/turbopack/manifest-loader.ts
++++ b/packages/next/src/shared/lib/turbopack/manifest-loader.ts
+@@ -416,12 +416,16 @@ export class TurbopackManifestLoader {
+       polyfillFiles: [],
+       lowPriorityFiles,
+       rootMainFiles: [],
++      rootMainFilesTree: {},
+     }
+     for (const m of manifests) {
+       Object.assign(manifest.pages, m.pages)
+       if (m.rootMainFiles.length) manifest.rootMainFiles = m.rootMainFiles
+       // polyfillFiles should always be the same, so we can overwrite instead of actually merging
+       if (m.polyfillFiles.length) manifest.polyfillFiles = m.polyfillFiles
++      if (m.rootMainFilesTree) {
++        Object.assign(manifest.rootMainFilesTree!, m.rootMainFilesTree)
++      }
+     }
+     manifest.pages = sortObjectByKey(manifest.pages) as BuildManifest['pages']
+     return manifest
+diff --git a/test/development/acceptance-app/hydration-error.test.ts b/test/development/acceptance-app/hydration-error.test.ts
+index d6c90ff607d4..750394e0e016 100644
+--- a/test/development/acceptance-app/hydration-error.test.ts
++++ b/test/development/acceptance-app/hydration-error.test.ts
+@@ -153,7 +153,6 @@ describe('Error overlay for hydration errors in App router', () => {
+                              <Next.js Internal Component>
+                                <Next.js Internal Component>
+                                <script>
+-                               <script>
+                                <Next.js Internal Component>
+                                  <RootLayout params={Promise}>
+                                    <html
+@@ -789,7 +788,6 @@ describe('Error overlay for hydration errors in App router', () => {
+                                <Next.js Internal Component>
+                                  <Next.js Internal Component>
+                                  <script>
+-                                 <script>
+                                  <RootLayout>
+        >                           <html>
+                                      <body>
+diff --git a/test/development/app-dir/hmr-dynamic-component/app/components/dynamic.module.css b/test/development/app-dir/hmr-dynamic-component/app/components/dynamic.module.css
+new file mode 100644
+index 000000000000..8963f2c5131a
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/app/components/dynamic.module.css
+@@ -0,0 +1,3 @@
++.container {
++  color: red;
++}
+diff --git a/test/development/app-dir/hmr-dynamic-component/app/components/dynamic.tsx b/test/development/app-dir/hmr-dynamic-component/app/components/dynamic.tsx
+new file mode 100644
+index 000000000000..7394fb7cd8f2
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/app/components/dynamic.tsx
+@@ -0,0 +1,9 @@
++'use client'
++import styles from './dynamic.module.css'
++export default function Dynamic() {
++  return (
++    <div id="dynamic-component" className={styles.container}>
++      Dynamic Component
++    </div>
++  )
++}
+diff --git a/test/development/app-dir/hmr-dynamic-component/app/layout.tsx b/test/development/app-dir/hmr-dynamic-component/app/layout.tsx
+new file mode 100644
+index 000000000000..888614deda3b
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/app/layout.tsx
+@@ -0,0 +1,8 @@
++import { ReactNode } from 'react'
++export default function Root({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/development/app-dir/hmr-dynamic-component/app/lazy/page.tsx b/test/development/app-dir/hmr-dynamic-component/app/lazy/page.tsx
+new file mode 100644
+index 000000000000..183c2004b36e
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/app/lazy/page.tsx
+@@ -0,0 +1,17 @@
++'use client'
++import dynamic from 'next/dynamic'
++import { useState } from 'react'
++
++const Dynamic = dynamic(() => import('../components/dynamic'))
++
++export default function LazyPage() {
++  const [show, setShow] = useState(false)
++  return (
++    <div>
++      <button id="load-button" onClick={() => setShow(true)}>
++        Load Component
++      </button>
++      {show && <Dynamic />}
++    </div>
++  )
++}
+diff --git a/test/development/app-dir/hmr-dynamic-component/app/page.tsx b/test/development/app-dir/hmr-dynamic-component/app/page.tsx
+new file mode 100644
+index 000000000000..810a3be92c73
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/app/page.tsx
+@@ -0,0 +1,7 @@
++import dynamic from 'next/dynamic'
++
++const Dynamic = dynamic(() => import('./components/dynamic'))
++
++export default function Page() {
++  return <Dynamic />
++}
+diff --git a/test/development/app-dir/hmr-dynamic-component/chunk-list-subscriptions.test.ts b/test/development/app-dir/hmr-dynamic-component/chunk-list-subscriptions.test.ts
+new file mode 100644
+index 000000000000..be9cbdc53d45
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/chunk-list-subscriptions.test.ts
+@@ -0,0 +1,71 @@
++import { nextTestSetup } from 'e2e-utils'
++import { retry } from 'next-test-utils'
++import type * as Playwright from 'playwright'
++
++// Verifies the behavior introduced in https://github.com/vercel/next.js/pull/94062:
++// the App Router should register a single HMR chunk list per page entrypoint,
++// even when the page contains RSC client references (e.g. lazily-imported
++// client components). Previously each chunk_group call produced its own
++// Dynamic EcmascriptDevChunkList, resulting in one subscription per client
++// component group.
++describe('hmr-dynamic-component chunk list subscriptions', () => {
++  const { next, isTurbopack, isNextDev } = nextTestSetup({
++    files: __dirname,
++  })
++
++  if (!isTurbopack || !isNextDev) {
++    it('skipped on non-Turbopack or non-dev environments', () => {})
++    return
++  }
++
++  it('registers exactly one HMR chunk list subscription for the page entrypoint', async () => {
++    const sentSubscribes: Array<{ type: string; path: string }> = []
++
++    const browser = await next.browser('/', {
++      beforePageLoad(page: Playwright.Page) {
++        page.on('websocket', (ws) => {
++          // Only inspect the Next.js / Turbopack HMR websocket. Other
++          // websockets (e.g. devtools) should be ignored.
++          if (!ws.url().includes('/_next/hmr')) {
++            return
++          }
++          ws.on('framesent', (frame) => {
++            const payload =
++              typeof frame.payload === 'string'
++                ? frame.payload
++                : frame.payload.toString('utf8')
++            try {
++              const parsed = JSON.parse(payload)
++              if (
++                parsed?.type === 'turbopack-subscribe' &&
++                typeof parsed?.path === 'string'
++              ) {
++                sentSubscribes.push({ type: parsed.type, path: parsed.path })
++              }
++            } catch {
++              // Non-JSON frames are unrelated; ignore.
++            }
++          })
++        })
++      },
++    })
++
++    // Wait for the page to fully boot and for HMR subscriptions to settle.
++    await retry(async () => {
++      const div = await browser.elementByCss('#dynamic-component')
++      expect(await div.text()).toContain('Dynamic Component')
++    })
++
++    // Each `turbopack-subscribe` frame corresponds to one `registerChunkList`
++    // call in the browser runtime:
++    //   1. The shared client runtime chunk list (covers react/polyfills/etc.)
++    //   2. A page-specific chunk list that owns the RSC client reference chunks
++    //      (built outside the shared module graph via chunk_group(IsolatedMerged)).
++    await retry(async () => {
++      const chunkListPaths = new Set(
++        sentSubscribes.filter((m) => m.path.endsWith('.js')).map((m) => m.path)
++      )
++      expect(chunkListPaths.size).toBe(2)
++    })
++  })
++})
+diff --git a/test/development/app-dir/hmr-dynamic-component/hmr-dynamic-component.test.ts b/test/development/app-dir/hmr-dynamic-component/hmr-dynamic-component.test.ts
+new file mode 100644
+index 000000000000..e807662a5cbe
+--- /dev/null
++++ b/test/development/app-dir/hmr-dynamic-component/hmr-dynamic-component.test.ts
+@@ -0,0 +1,141 @@
++import { join } from 'path'
++import { nextTestSetup } from 'e2e-utils'
++import { retry } from 'next-test-utils'
++
++describe('hmr-dynamic-component', () => {
++  const { next } = nextTestSetup({
++    files: __dirname,
++    patchFileDelay: 500,
++  })
++
++  it('should update text in a dynamically-imported client component without a full reload', async () => {
++    const browser = await next.browser('/')
++    const componentPath = join('app', 'components', 'dynamic.tsx')
++    const originalContent = await next.readFile(componentPath)
++    try {
++      await retry(async () => {
++        const div = await browser.elementByCss('#dynamic-component')
++        expect(await div.text()).toContain('Dynamic Component')
++      })
++
++      const timeOrigin = await browser.eval('performance.timeOrigin')
++
++      const editedContent = originalContent.replace(
++        'Dynamic Component',
++        'Dynamic Component UPDATED'
++      )
++
++      await next.patchFile(componentPath, editedContent)
++
++      await retry(async () => {
++        const div = await browser.elementByCss('#dynamic-component')
++        expect(await div.text()).toContain('Dynamic Component UPDATED')
++      }, 10000)
++
++      // Ensure the page was updated via HMR and not a full reload
++      expect(await browser.eval('performance.timeOrigin')).toEqual(timeOrigin)
++    } finally {
++      await next.patchFile(componentPath, originalContent)
++    }
++  })
++
++  it('should update text via HMR after loading a button-triggered dynamic component', async () => {
++    const browser = await next.browser('/lazy')
++    const componentPath = join('app', 'components', 'dynamic.tsx')
++    const originalContent = await next.readFile(componentPath)
++    try {
++      // Click button to trigger the dynamic import
++      await browser.elementByCss('#load-button').click()
++
++      await retry(async () => {
++        const div = await browser.elementByCss('#dynamic-component')
++        expect(await div.text()).toContain('Dynamic Component')
++      })
++
++      const timeOrigin = await browser.eval('performance.timeOrigin')
++
++      await next.patchFile(
++        componentPath,
++        originalContent.replace(
++          'Dynamic Component',
++          'Dynamic Component UPDATED'
++        )
++      )
++
++      await retry(async () => {
++        const div = await browser.elementByCss('#dynamic-component')
++        expect(await div.text()).toContain('Dynamic Component UPDATED')
++      }, 10000)
++
++      // Ensure the page was updated via HMR and not a full reload
++      expect(await browser.eval('performance.timeOrigin')).toEqual(timeOrigin)
++    } finally {
++      await next.patchFile(componentPath, originalContent)
++    }
++  })
++
++  it('should load updated code when button is clicked after a code change', async () => {
++    const browser = await next.browser('/lazy')
++    const componentPath = join('app', 'components', 'dynamic.tsx')
++    const originalContent = await next.readFile(componentPath)
++    try {
++      // Patch the file before the dynamic component has been loaded
++      await next.patchFile(
++        componentPath,
++        originalContent.replace(
++          'Dynamic Component',
++          'Dynamic Component PRE-LOADED'
++        )
++      )
++
++      // Now click the button — the component should load with the updated code
++      await browser.elementByCss('#load-button').click()
++
++      await retry(async () => {
++        const div = await browser.elementByCss('#dynamic-component')
++        expect(await div.text()).toContain('Dynamic Component PRE-LOADED')
++      }, 10000)
++    } finally {
++      await next.patchFile(componentPath, originalContent)
++    }
++  })
++
++  it('should update styles in a dynamically-imported client component via HMR', async () => {
++    const browser = await next.browser('/')
++    const cssPath = join('app', 'components', 'dynamic.module.css')
++    const originalCss = await next.readFile(cssPath)
++    try {
++      await retry(async () => {
++        const div = await browser.elementByCss('#dynamic-component')
++        expect(await div.text()).toContain('Dynamic Component')
++      })
++
++      // Verify initial style
++      await retry(async () => {
++        const color = await browser.eval(
++          `window.getComputedStyle(document.getElementById('dynamic-component')).color`
++        )
++        expect(color).toBe('rgb(255, 0, 0)')
++      })
++
++      const timeOrigin = await browser.eval('performance.timeOrigin')
++
++      await next.patchFile(
++        cssPath,
++        originalCss.replace('color: red', 'color: blue')
++      )
++
++      await retry(async () => {
++        const color = await browser.eval(
++          `window.getComputedStyle(document.getElementById('dynamic-component')).color`
++        )
++        expect(color).toBe('rgb(0, 0, 255)')
++      }, 10000)
++
++      // Ensure the update was via HMR and not a full reload
++      expect(await browser.eval('performance.timeOrigin')).toEqual(timeOrigin)
++    } finally {
++      await next.patchFile(cssPath, originalCss)
++    }
++  })
++})
+diff --git a/test/development/basic/hmr/pages/hmr/style-dynamic-component.js b/test/development/basic/hmr/pages/hmr/dynamic-component.js
+similarity index 100%
+rename from test/development/basic/hmr/pages/hmr/style-dynamic-component.js
+rename to test/development/basic/hmr/pages/hmr/dynamic-component.js
+diff --git a/test/development/basic/hmr/run-hot-module-reload-hmr-test.util.ts b/test/development/basic/hmr/run-hot-module-reload-hmr-test.util.ts
+index a64958b6f3a6..7191dc0f3829 100644
+--- a/test/development/basic/hmr/run-hot-module-reload-hmr-test.util.ts
++++ b/test/development/basic/hmr/run-hot-module-reload-hmr-test.util.ts
+@@ -184,11 +184,9 @@ export function runHotModuleReloadHmrTest(nextConfig: {
+     // Added because of a regression in react-hot-loader, see issues: #4246 #4273
+     // Also: https://github.com/vercel/styled-jsx/issues/425
+     it('should update styles in a dynamic component correctly', async () => {
+-      const browser = await next.browser(
+-        basePath + '/hmr/style-dynamic-component'
+-      )
++      const browser = await next.browser(basePath + '/hmr/dynamic-component')
+       const secondBrowser = await next.browser(
+-        basePath + '/hmr/style-dynamic-component'
++        basePath + '/hmr/dynamic-component'
+       )
+       const pagePath = join('components', 'hmr', 'dynamic.js')
+       const originalContent = await next.readFile(pagePath)
+@@ -200,12 +198,12 @@ export function runHotModuleReloadHmrTest(nextConfig: {
+         expect(initialFontSize).toBe('100px')
+ 
+         const initialHtml = await next.render(
+-          basePath + '/hmr/style-dynamic-component'
++          basePath + '/hmr/dynamic-component'
+         )
+         expect(initialHtml.includes('100px')).toBeTruthy()
+ 
+         const $initialHtml = await next.render$(
+-          basePath + '/hmr/style-dynamic-component'
++          basePath + '/hmr/dynamic-component'
+         )
+         const initialServerClassName =
+           $initialHtml('#dynamic-component').attr('class')
+@@ -233,11 +231,11 @@ export function runHotModuleReloadHmrTest(nextConfig: {
+         expect(browserHtml.includes('font-size:100px')).toBe(false)
+ 
+         const editedHtml = await next.render(
+-          basePath + '/hmr/style-dynamic-component'
++          basePath + '/hmr/dynamic-component'
+         )
+         expect(editedHtml.includes('200px')).toBeTruthy()
+         const $editedHtml = await next.render$(
+-          basePath + '/hmr/style-dynamic-component'
++          basePath + '/hmr/dynamic-component'
+         )
+         const editedServerClassName =
+           $editedHtml('#dynamic-component').attr('class')
+@@ -250,6 +248,40 @@ export function runHotModuleReloadHmrTest(nextConfig: {
+       }
+     })
+ 
++    it('should update text in a dynamic component correctly', async () => {
++      const browser = await next.browser(basePath + '/hmr/dynamic-component')
++      const pagePath = join('components', 'hmr', 'dynamic.js')
++      const originalContent = await next.readFile(pagePath)
++      try {
++        const div = await browser.elementByCss('#dynamic-component')
++        const initialText = await div.text()
++        expect(initialText).toContain('Dynamic Component')
++
++        const timeOrigin = await browser.eval('performance.timeOrigin')
++
++        const editedContent = originalContent.replace(
++          'Dynamic Component',
++          'Dynamic Component UPDATED'
++        )
++
++        // Change the component text
++        await next.patchFile(pagePath, editedContent)
++
++        // Wait for HMR to propagate the text update
++        await retry(async () => {
++          const editedDiv = await browser.elementByCss('#dynamic-component')
++          const editedText = await editedDiv.text()
++          expect(editedText).toContain('Dynamic Component UPDATED')
++        })
++
++        // Ensure the page was updated via HMR and not a full reload
++        expect(await browser.eval('performance.timeOrigin')).toEqual(timeOrigin)
++      } finally {
++        // Restore the original content
++        await next.patchFile(pagePath, originalContent)
++      }
++    })
++
+     it('should not full reload when nonlatin characters are used', async () => {
+       const browser = await next.browser(basePath + '/hmr/nonlatin')
+       const pagePath = join('pages', 'hmr', 'nonlatin.js')
+diff --git a/turbopack/crates/turbopack-browser/src/chunking_context.rs b/turbopack/crates/turbopack-browser/src/chunking_context.rs
+index f78195c357dd..1fd5d28adf29 100644
+--- a/turbopack/crates/turbopack-browser/src/chunking_context.rs
++++ b/turbopack/crates/turbopack-browser/src/chunking_context.rs
+@@ -1,7 +1,9 @@
+ use anyhow::{Context, Result, bail};
+ use tracing::Instrument;
+ use turbo_rcstr::{RcStr, rcstr};
+-use turbo_tasks::{FxIndexMap, ResolvedVc, TaskInput, TryJoinIterExt, Upcast, ValueToString, Vc};
++use turbo_tasks::{
++    FxIndexMap, FxIndexSet, ResolvedVc, TaskInput, TryJoinIterExt, Upcast, ValueToString, Vc,
++};
+ use turbo_tasks_fs::FileSystemPath;
+ use turbo_tasks_hash::HashAlgorithm;
+ use turbopack_core::{
+@@ -23,7 +25,7 @@ use turbopack_core::{
+         binding_usage_info::{BindingUsageInfo, ModuleExportUsage},
+         chunk_group_info::ChunkGroup,
+     },
+-    output::{OutputAsset, OutputAssets},
++    output::{ExpandOutputAssetsInput, OutputAsset, OutputAssets, expand_output_assets},
+ };
+ use turbopack_ecmascript::{
+     async_chunk::module::AsyncLoaderModule,
+@@ -755,7 +757,6 @@ impl ChunkingContext for BrowserChunkingContext {
+     ) -> Result<Vc<ChunkGroupResult>> {
+         let span = tracing::info_span!("chunking", name = display(ident.to_string().await?));
+         async move {
+-            let this = self.await?;
+             let input_availability_info = availability_info;
+             let MakeChunkGroupResult {
+                 chunks,
+@@ -771,37 +772,12 @@ impl ChunkingContext for BrowserChunkingContext {
+ 
+             let chunks = chunks.await?;
+ 
+-            let mut assets = chunks
++            let assets = chunks
+                 .iter()
+                 .map(|chunk| self.generate_chunk(*chunk))
+                 .try_join()
+                 .await?;
+ 
+-            if this.enable_hot_module_replacement {
+-                let ident = if let Some(input_availability_info_ident) =
+-                    input_availability_info.ident().await?
+-                {
+-                    ident
+-                        .owned()
+-                        .await?
+-                        .with_modifier(input_availability_info_ident)
+-                        .into_vc()
+-                } else {
+-                    ident
+-                };
+-                let other_assets = Vc::cell(assets.clone());
+-                assets.push(
+-                    self.generate_chunk_list_register_chunk(
+-                        ident,
+-                        EvaluatableAssets::empty(),
+-                        other_assets,
+-                        EcmascriptDevChunkListSource::Dynamic,
+-                    )
+-                    .to_resolved()
+-                    .await?,
+-                );
+-            }
+-
+             Ok(ChunkGroupResult {
+                 assets: ResolvedVc::cell(assets),
+                 referenced_assets: OutputAssets::empty_resolved(),
+@@ -820,6 +796,9 @@ impl ChunkingContext for BrowserChunkingContext {
+         ident: Vc<AssetIdent>,
+         chunk_group: ChunkGroup,
+         module_graph: ResolvedVc<ModuleGraph>,
++        // Extra chunks to include in the HMR chunk list beyond what is reachable from this chunk
++        // group. Used to cover RSC client reference chunks that are built separately.
++        extra_chunks: Vc<OutputAssets>,
+         input_availability_info: AvailabilityInfo,
+     ) -> Result<Vc<ChunkGroupResult>> {
+         let span = tracing::info_span!(
+@@ -849,6 +828,10 @@ impl ChunkingContext for BrowserChunkingContext {
+                 .try_join()
+                 .await?;
+ 
++            // The evaluate chunk loads `other_assets` as `SourceType.Runtime` (without script
++            // tags), so it must contain only the directly-generated chunks for this chunk group.
++            // `extra_chunks` are loaded separately (already in the HTML), so excluding them here
++            // prevents the runtime from blocking on a load that will never happen.
+             let other_assets = Vc::cell(assets.clone());
+ 
+             let entries = Vc::cell(
+@@ -862,6 +845,29 @@ impl ChunkingContext for BrowserChunkingContext {
+             );
+ 
+             if this.enable_hot_module_replacement {
++                // Follow references (async loaders) to get actual dynamic component chunks, so
++                // the single HMR chunk list covers all lazily-loaded modules.
++                // inner=false: we only follow Reference inputs transitively, not Asset inputs,
++                // to avoid pulling in source maps and other asset-adjacent files that can't be
++                // reloaded by the DOM backend (which only handles CSS chunks via reloadChunk).
++                let all_dynamic_chunks = expand_output_assets(
++                    references
++                        .iter()
++                        .copied()
++                        .map(ExpandOutputAssetsInput::Reference)
++                        .chain(assets.iter().copied().map(ExpandOutputAssetsInput::Asset)),
++                    false,
++                )
++                .await?;
++
++                // Combine direct chunks, transitively-reachable dynamic chunks, and any caller-
++                // provided extras (e.g. RSC client reference chunks built outside this graph).
++                let extra_chunks_ref = extra_chunks.await?;
++                let mut hmr_chunks: FxIndexSet<ResolvedVc<Box<dyn OutputAsset>>> =
++                    all_dynamic_chunks.into_iter().collect();
++                hmr_chunks.extend(extra_chunks_ref.iter().copied());
++                let hmr_other_assets = Vc::cell(hmr_chunks.into_iter().collect());
++
+                 let ident = if let Some(input_availability_info_ident) =
+                     input_availability_info.ident().await?
+                 {
+@@ -877,7 +883,7 @@ impl ChunkingContext for BrowserChunkingContext {
+                     self.generate_chunk_list_register_chunk(
+                         ident,
+                         entries,
+-                        other_assets,
++                        hmr_other_assets,
+                         EcmascriptDevChunkListSource::Entry,
+                     )
+                     .to_resolved()
+@@ -903,6 +909,31 @@ impl ChunkingContext for BrowserChunkingContext {
+         .await
+     }
+ 
++    #[turbo_tasks::function]
++    async fn hmr_chunk_list(
++        self: Vc<Self>,
++        ident: Vc<AssetIdent>,
++        chunks: Vc<OutputAssets>,
++    ) -> Result<Vc<OutputAssets>> {
++        let this = self.await?;
++        if !this.enable_hot_module_replacement {
++            unreachable!("hmr_chunk_list called with enable_hot_module_replacement disabled");
++        }
++        if chunks.await?.is_empty() {
++            return Ok(OutputAssets::empty());
++        }
++        Ok(Vc::cell(vec![
++            self.generate_chunk_list_register_chunk(
++                ident,
++                EvaluatableAssets::empty(),
++                chunks,
++                EcmascriptDevChunkListSource::Entry,
++            )
++            .to_resolved()
++            .await?,
++        ]))
++    }
++
+     #[turbo_tasks::function]
+     fn entry_chunk_group(
+         self: Vc<Self>,
+diff --git a/turbopack/crates/turbopack-cli/src/build/mod.rs b/turbopack/crates/turbopack-cli/src/build/mod.rs
+index 509638b5a718..fa58d7190cb1 100644
+--- a/turbopack/crates/turbopack-cli/src/build/mod.rs
++++ b/turbopack/crates/turbopack-cli/src/build/mod.rs
+@@ -459,6 +459,7 @@ async fn build_internal(
+                                     [ResolvedVc::upcast(ecmascript)].into_iter().collect(),
+                                 ),
+                                 module_graph,
++                                OutputAssets::empty(),
+                                 AvailabilityInfo::root(),
+                             ),
+                             Target::Node => OutputAssetsWithReferenced {
+diff --git a/turbopack/crates/turbopack-core/src/chunk/chunking_context.rs b/turbopack/crates/turbopack-core/src/chunk/chunking_context.rs
+index d75cffc15a5b..80a5bd454f5c 100644
+--- a/turbopack/crates/turbopack-core/src/chunk/chunking_context.rs
++++ b/turbopack/crates/turbopack-core/src/chunk/chunking_context.rs
+@@ -433,15 +433,38 @@ pub trait ChunkingContext {
+         availability_info: AvailabilityInfo,
+     ) -> Vc<ChunkGroupResult>;
+ 
++    /// Like [`Self::chunk_group`], but additionally produces an evaluate chunk
++    /// (and, in dev, a chunk-list register chunk) that bootstraps and runs
++    /// `chunk_group`'s entries.
++    ///
++    /// `extra_chunks` are not part of this chunk group's module graph, but they
++    /// are loaded alongside the entries (and tracked in the chunk-list register
++    /// chunk for HMR) — used to extend the entry's HMR-tracked chunks with
++    /// chunks computed elsewhere (e.g. app-router client references).
+     #[turbo_tasks::function]
+     fn evaluated_chunk_group(
+         self: Vc<Self>,
+         ident: Vc<AssetIdent>,
+         chunk_group: ChunkGroup,
+         module_graph: Vc<ModuleGraph>,
++        extra_chunks: Vc<OutputAssets>,
+         availability_info: AvailabilityInfo,
+     ) -> Vc<ChunkGroupResult>;
+ 
++    /// In development, produces a standalone HMR chunk-list register chunk
++    /// that tracks `chunks` for hot-module-replacement without producing an
++    /// evaluate chunk. Returns `None` (empty vec) outside dev or when HMR is
++    /// disabled. Used to register a page-specific chunk list that covers
++    /// client-reference chunks built outside the shared module graph.
++    #[turbo_tasks::function]
++    fn hmr_chunk_list(
++        self: Vc<Self>,
++        _ident: Vc<AssetIdent>,
++        _chunks: Vc<OutputAssets>,
++    ) -> Vc<OutputAssets> {
++        OutputAssets::empty()
++    }
++
+     /// Generates an output chunk that:
+     /// * loads the given extra_chunks in addition to the generated chunks; and
+     /// * evaluates the given assets; and
+@@ -511,6 +534,7 @@ pub trait ChunkingContextExt {
+         ident: Vc<AssetIdent>,
+         chunk_group: ChunkGroup,
+         module_graph: Vc<ModuleGraph>,
++        extra_chunks: Vc<OutputAssets>,
+         availability_info: AvailabilityInfo,
+     ) -> Vc<OutputAssetsWithReferenced>
+     where
+@@ -597,6 +621,7 @@ impl<T: ChunkingContext + Send + Upcast<Box<dyn ChunkingContext>>> ChunkingConte
+         ident: Vc<AssetIdent>,
+         chunk_group: ChunkGroup,
+         module_graph: Vc<ModuleGraph>,
++        extra_chunks: Vc<OutputAssets>,
+         availability_info: AvailabilityInfo,
+     ) -> Vc<OutputAssetsWithReferenced> {
+         evaluated_chunk_group_assets(
+@@ -604,6 +629,7 @@ impl<T: ChunkingContext + Send + Upcast<Box<dyn ChunkingContext>>> ChunkingConte
+             ident,
+             chunk_group,
+             module_graph,
++            extra_chunks,
+             availability_info,
+         )
+     }
+@@ -745,10 +771,17 @@ fn evaluated_chunk_group_assets(
+     ident: Vc<AssetIdent>,
+     chunk_group: ChunkGroup,
+     module_graph: Vc<ModuleGraph>,
++    extra_chunks: Vc<OutputAssets>,
+     availability_info: AvailabilityInfo,
+ ) -> Vc<OutputAssetsWithReferenced> {
+     chunking_context
+-        .evaluated_chunk_group(ident, chunk_group, module_graph, availability_info)
++        .evaluated_chunk_group(
++            ident,
++            chunk_group,
++            module_graph,
++            extra_chunks,
++            availability_info,
++        )
+         .output_assets_with_referenced()
+ }
+ 
+diff --git a/turbopack/crates/turbopack-dev-server/src/html.rs b/turbopack/crates/turbopack-dev-server/src/html.rs
+index ec60b04e118e..c6d40f2cc71b 100644
+--- a/turbopack/crates/turbopack-dev-server/src/html.rs
++++ b/turbopack/crates/turbopack-dev-server/src/html.rs
+@@ -15,7 +15,7 @@ use turbopack_core::{
+     },
+     module::Module,
+     module_graph::{ModuleGraph, chunk_group_info::ChunkGroup},
+-    output::{OutputAsset, OutputAssetsReference, OutputAssetsWithReferenced},
++    output::{OutputAsset, OutputAssets, OutputAssetsReference, OutputAssetsWithReferenced},
+     version::{Version, VersionedContent},
+ };
+ 
+@@ -163,6 +163,7 @@ impl DevHtmlAsset {
+                                     .collect(),
+                             ),
+                             *module_graph,
++                            OutputAssets::empty(),
+                             AvailabilityInfo::root(),
+                         )
+                         .await?
+diff --git a/turbopack/crates/turbopack-ecmascript/src/worker_chunk/module.rs b/turbopack/crates/turbopack-ecmascript/src/worker_chunk/module.rs
+index f19713b178a1..f25b7d1ba0bc 100644
+--- a/turbopack/crates/turbopack-ecmascript/src/worker_chunk/module.rs
++++ b/turbopack/crates/turbopack-ecmascript/src/worker_chunk/module.rs
+@@ -72,6 +72,7 @@ impl WorkerLoaderModule {
+                     ident,
+                     ChunkGroup::Isolated(ResolvedVc::upcast(this.inner)),
+                     module_graph,
++                    OutputAssets::empty(),
+                     AvailabilityInfo::root(),
+                 )
+             }
+diff --git a/turbopack/crates/turbopack-nodejs/src/chunking_context.rs b/turbopack/crates/turbopack-nodejs/src/chunking_context.rs
+index 1542afb7550b..ab11059b23f3 100644
+--- a/turbopack/crates/turbopack-nodejs/src/chunking_context.rs
++++ b/turbopack/crates/turbopack-nodejs/src/chunking_context.rs
+@@ -634,6 +634,7 @@ impl ChunkingContext for NodeJsChunkingContext {
+         _ident: Vc<AssetIdent>,
+         _chunk_group: ChunkGroup,
+         _module_graph: Vc<ModuleGraph>,
++        _extra_chunks: Vc<OutputAssets>,
+         _availability_info: AvailabilityInfo,
+     ) -> Result<Vc<ChunkGroupResult>> {
+         bail!("the Node.js chunking context does not support evaluated chunk groups")
+diff --git a/turbopack/crates/turbopack-tests/tests/snapshot.rs b/turbopack/crates/turbopack-tests/tests/snapshot.rs
+index adea92a631de..a2f69048f384 100644
+--- a/turbopack/crates/turbopack-tests/tests/snapshot.rs
++++ b/turbopack/crates/turbopack-tests/tests/snapshot.rs
+@@ -589,6 +589,7 @@ async fn run_test_operation(resource: RcStr) -> Result<Vc<FileSystemPath>> {
+             entry_module.ident(),
+             ChunkGroup::Entry(entry_modules.into_iter().collect()),
+             module_graph,
++            OutputAssets::empty(),
+             AvailabilityInfo::root(),
+         ),
+         Runtime::NodeJs => {

@@ -1,0 +1,889 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index a9a1c4251b15..585f370faad4 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -10257,6 +10257,7 @@ dependencies = [
+  "turbo-tasks-bytes",
+  "turbo-tasks-env",
+  "turbo-tasks-fs",
++ "turbo-tasks-hash",
+  "turbo-tasks-testing",
+  "turbopack-cli-utils",
+  "turbopack-core",
+diff --git a/crates/next-core/src/next_client/context.rs b/crates/next-core/src/next_client/context.rs
+index 6b419f4b8010..64572a97134f 100644
+--- a/crates/next-core/src/next_client/context.rs
++++ b/crates/next-core/src/next_client/context.rs
+@@ -311,13 +311,21 @@ pub async fn get_client_module_options_context(
+ 
+     next_client_rules.extend(additional_rules);
+ 
++    let local_postcss_config = *next_config
++        .experimental_turbopack_local_postcss_config()
++        .await?;
++    let postcss_config_location = if local_postcss_config == Some(true) {
++        PostCssConfigLocation::LocalPathOrProjectPath
++    } else {
++        PostCssConfigLocation::ProjectPathOrLocalPath
++    };
+     let postcss_transform_options = PostCssTransformOptions {
+         postcss_package: Some(
+             get_postcss_package_mapping(project_path.clone())
+                 .to_resolved()
+                 .await?,
+         ),
+-        config_location: PostCssConfigLocation::ProjectPathOrLocalPath,
++        config_location: postcss_config_location,
+         ..Default::default()
+     };
+     let postcss_foreign_transform_options = PostCssTransformOptions {
+diff --git a/crates/next-core/src/next_config.rs b/crates/next-core/src/next_config.rs
+index 8e2db3bee4d9..aa7287013300 100644
+--- a/crates/next-core/src/next_config.rs
++++ b/crates/next-core/src/next_config.rs
+@@ -1176,6 +1176,11 @@ pub struct ExperimentalConfig {
+     /// present.
+     #[serde(default)]
+     turbopack_use_builtin_babel: Option<bool>,
++    /// Enable per-directory PostCSS config resolution. When true, Turbopack
++    /// searches for postcss.config.js starting from the CSS file's parent
++    /// directory first, then falls back to the project root.
++    #[serde(default)]
++    turbopack_local_postcss_config: Option<bool>,
+     // Whether to enable the global-not-found convention
+     global_not_found: Option<bool>,
+     /// Defaults to false in development mode, true in production mode.
+@@ -1869,6 +1874,11 @@ impl NextConfig {
+         Vc::cell(self.experimental.turbopack_use_builtin_sass)
+     }
+ 
++    #[turbo_tasks::function]
++    pub fn experimental_turbopack_local_postcss_config(&self) -> Vc<Option<bool>> {
++        Vc::cell(self.experimental.turbopack_local_postcss_config)
++    }
++
+     #[turbo_tasks::function]
+     pub fn react_compiler_options(&self) -> Vc<OptionalReactCompilerOptions> {
+         let options = &self.react_compiler;
+diff --git a/crates/next-core/src/next_server/context.rs b/crates/next-core/src/next_server/context.rs
+index 9599cdd70ade..48ee7d8db495 100644
+--- a/crates/next-core/src/next_server/context.rs
++++ b/crates/next-core/src/next_server/context.rs
+@@ -446,13 +446,21 @@ pub async fn get_server_module_options_context(
+ 
+     let foreign_code_context_condition =
+         foreign_code_context_condition(next_config, project_path.clone()).await?;
++    let local_postcss_config = *next_config
++        .experimental_turbopack_local_postcss_config()
++        .await?;
++    let postcss_config_location = if local_postcss_config == Some(true) {
++        PostCssConfigLocation::LocalPathOrProjectPath
++    } else {
++        PostCssConfigLocation::ProjectPathOrLocalPath
++    };
+     let postcss_transform_options = PostCssTransformOptions {
+         postcss_package: Some(
+             get_postcss_package_mapping(project_path.clone())
+                 .to_resolved()
+                 .await?,
+         ),
+-        config_location: PostCssConfigLocation::ProjectPathOrLocalPath,
++        config_location: postcss_config_location,
+         ..Default::default()
+     };
+     let postcss_foreign_transform_options = PostCssTransformOptions {
+diff --git a/docs/01-app/03-api-reference/05-config/01-next-config-js/turbopackLocalPostcssConfig.mdx b/docs/01-app/03-api-reference/05-config/01-next-config-js/turbopackLocalPostcssConfig.mdx
+new file mode 100644
+index 000000000000..498d3487ab35
+--- /dev/null
++++ b/docs/01-app/03-api-reference/05-config/01-next-config-js/turbopackLocalPostcssConfig.mdx
+@@ -0,0 +1,63 @@
++---
++title: turbopackLocalPostcssConfig
++description: Enable per-directory PostCSS config resolution in Turbopack so that the config closest to each CSS file takes precedence over the project root config.
++---
++
++The `turbopackLocalPostcssConfig` option changes how Turbopack resolves `postcss.config.js` files. When enabled, Turbopack searches for the config starting from the CSS file's own directory first, then falls back to the project root. By default, Turbopack checks the project root first, meaning a root-level `postcss.config.js` always takes precedence over configs in subdirectories.
++
++This option is only relevant when using Turbopack (`next dev` or `next build`).
++
++## Usage
++
++```ts filename="next.config.ts" switcher
++import type { NextConfig } from 'next'
++
++const nextConfig: NextConfig = {
++  experimental: {
++    turbopackLocalPostcssConfig: true,
++  },
++}
++
++export default nextConfig
++```
++
++```js filename="next.config.js" switcher
++/** @type {import('next').NextConfig} */
++const nextConfig = {
++  experimental: {
++    turbopackLocalPostcssConfig: true,
++  },
++}
++
++module.exports = nextConfig
++```
++
++## Behavior
++
++| Setting           | Config resolution order             |
++| ----------------- | ----------------------------------- |
++| `false` (default) | Project root → CSS file's directory |
++| `true`            | CSS file's directory → project root |
++
++With the default behavior, a `postcss.config.js` at the project root is used for all CSS files, and per-directory configs are only applied if no root config exists. Enabling `turbopackLocalPostcssConfig` reverses this: per-directory configs take precedence, and the root config serves as the fallback.
++
++## Example
++
++This is useful for projects that need different PostCSS transforms in different directories, such as a monorepo with multiple apps or design system packages:
++
++```
++my-app/
++├── postcss.config.js          ← fallback (applied if no local config is found)
++├── app/
++│   └── page.module.css        ← uses root config
++└── packages/
++    └── ui/
++        ├── postcss.config.js  ← takes precedence for files in this directory
++        └── button.module.css  ← uses packages/ui/postcss.config.js
++```
++
++## Version History
++
++| Version   | Changes                                   |
++| --------- | ----------------------------------------- |
++| `v16.3.0` | `turbopackLocalPostcssConfig` introduced. |
+diff --git a/docs/01-app/03-api-reference/08-turbopack.mdx b/docs/01-app/03-api-reference/08-turbopack.mdx
+index feda0e5f90bf..a92120bcd25e 100644
+--- a/docs/01-app/03-api-reference/08-turbopack.mdx
++++ b/docs/01-app/03-api-reference/08-turbopack.mdx
+@@ -254,24 +254,25 @@ Turbopack can be configured via `next.config.js` (or `next.config.ts`) under the
+ 
+ Additionally, the following experimental options are available under `experimental` in `next.config.js`:
+ 
+-| Option                                                                                                       | Description                                                                            | Default (dev) | Default (build)               |
+-| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------- | ----------------------------- |
+-| [`turbopackFileSystemCacheForDev`](/docs/app/api-reference/config/next-config-js/turbopackFileSystemCache)   | Enable filesystem cache for the dev server.                                            | `true`        | N/A                           |
+-| [`turbopackFileSystemCacheForBuild`](/docs/app/api-reference/config/next-config-js/turbopackFileSystemCache) | Enable filesystem cache for builds.                                                    | N/A           | `false`                       |
+-| `turbopackMinify`                                                                                            | Enable minification.                                                                   | `false`       | `true`                        |
+-| `turbopackSourceMaps`                                                                                        | Enable source maps.                                                                    | `true`        | `productionBrowserSourceMaps` |
+-| `turbopackInputSourceMaps`                                                                                   | Enable extraction of source maps from input files.                                     | `true`        | `true`                        |
+-| `turbopackTreeShaking`                                                                                       | Use advanced module-fragments tree shaking instead of the default reexports-only mode. | `false`       | `false`                       |
+-| `turbopackRemoveUnusedImports`                                                                               | Enable removing unused imports. Requires `turbopackRemoveUnusedExports`.               | `false`       | `true`                        |
+-| `turbopackRemoveUnusedExports`                                                                               | Enable removing unused exports.                                                        | `false`       | `true`                        |
+-| `turbopackInferModuleSideEffects`                                                                            | Enable local analysis to infer side-effect-free modules for better tree shaking.       | `true`        | `true`                        |
+-| `turbopackScopeHoisting`                                                                                     | Enable scope hoisting. Always disabled in dev mode.                                    | `false`       | `true`                        |
+-| `turbopackClientSideNestedAsyncChunking`                                                                     | Enable nested async chunking for client-side assets.                                   | `false`       | `true`                        |
+-| `turbopackServerSideNestedAsyncChunking`                                                                     | Enable nested async chunking for server-side assets.                                   | `false`       | `false`                       |
+-| `turbopackImportTypeBytes`                                                                                   | Enable support for `with {type: "bytes"}` for ESM imports.                             | `false`       | `false`                       |
+-| `turbopackUseBuiltinBabel`                                                                                   | Enable automatic Babel loader configuration when a Babel config file is present.       | `true`        | `true`                        |
+-| `turbopackUseBuiltinSass`                                                                                    | Enable automatic Sass loader configuration.                                            | `true`        | `true`                        |
+-| `turbopackModuleIds`                                                                                         | Module ID strategy: `'named'` or `'deterministic'`.                                    | `'named'`     | `'deterministic'`             |
++| Option                                                                                                       | Description                                                                             | Default (dev) | Default (build)               |
++| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------- | ----------------------------- |
++| [`turbopackFileSystemCacheForDev`](/docs/app/api-reference/config/next-config-js/turbopackFileSystemCache)   | Enable filesystem cache for the dev server.                                             | `true`        | N/A                           |
++| [`turbopackFileSystemCacheForBuild`](/docs/app/api-reference/config/next-config-js/turbopackFileSystemCache) | Enable filesystem cache for builds.                                                     | N/A           | `false`                       |
++| `turbopackMinify`                                                                                            | Enable minification.                                                                    | `false`       | `true`                        |
++| `turbopackSourceMaps`                                                                                        | Enable source maps.                                                                     | `true`        | `productionBrowserSourceMaps` |
++| `turbopackInputSourceMaps`                                                                                   | Enable extraction of source maps from input files.                                      | `true`        | `true`                        |
++| `turbopackTreeShaking`                                                                                       | Use advanced module-fragments tree shaking instead of the default reexports-only mode.  | `false`       | `false`                       |
++| `turbopackRemoveUnusedImports`                                                                               | Enable removing unused imports. Requires `turbopackRemoveUnusedExports`.                | `false`       | `true`                        |
++| `turbopackRemoveUnusedExports`                                                                               | Enable removing unused exports.                                                         | `false`       | `true`                        |
++| `turbopackInferModuleSideEffects`                                                                            | Enable local analysis to infer side-effect-free modules for better tree shaking.        | `true`        | `true`                        |
++| `turbopackScopeHoisting`                                                                                     | Enable scope hoisting. Always disabled in dev mode.                                     | `false`       | `true`                        |
++| `turbopackClientSideNestedAsyncChunking`                                                                     | Enable nested async chunking for client-side assets.                                    | `false`       | `true`                        |
++| `turbopackServerSideNestedAsyncChunking`                                                                     | Enable nested async chunking for server-side assets.                                    | `false`       | `false`                       |
++| `turbopackImportTypeBytes`                                                                                   | Enable support for `with {type: "bytes"}` for ESM imports.                              | `false`       | `false`                       |
++| `turbopackUseBuiltinBabel`                                                                                   | Enable automatic Babel loader configuration when a Babel config file is present.        | `true`        | `true`                        |
++| `turbopackUseBuiltinSass`                                                                                    | Enable automatic Sass loader configuration.                                             | `true`        | `true`                        |
++| `turbopackModuleIds`                                                                                         | Module ID strategy: `'named'` or `'deterministic'`.                                     | `'named'`     | `'deterministic'`             |
++| [`turbopackLocalPostcssConfig`](/docs/app/api-reference/config/next-config-js/turbopackLocalPostcssConfig)   | Resolve `postcss.config.js` from the CSS file's directory first, then the project root. | `false`       | `false`                       |
+ 
+ ```js filename="next.config.js"
+ module.exports = {
+diff --git a/packages/next/src/server/config-schema.ts b/packages/next/src/server/config-schema.ts
+index 6a0f6d37336c..e39c23f28a88 100644
+--- a/packages/next/src/server/config-schema.ts
++++ b/packages/next/src/server/config-schema.ts
+@@ -353,6 +353,7 @@ export const experimentalSchema = {
+   turbopackImportTypeText: z.boolean().optional(),
+   turbopackUseBuiltinBabel: z.boolean().optional(),
+   turbopackUseBuiltinSass: z.boolean().optional(),
++  turbopackLocalPostcssConfig: z.boolean().optional(),
+   turbopackModuleIds: z.enum(['named', 'deterministic']).optional(),
+   turbopackInferModuleSideEffects: z.boolean().optional(),
+   turbopackServerFastRefresh: z.boolean().optional(),
+diff --git a/packages/next/src/server/config-shared.ts b/packages/next/src/server/config-shared.ts
+index 95cb42581bfd..73ff9db12715 100644
+--- a/packages/next/src/server/config-shared.ts
++++ b/packages/next/src/server/config-shared.ts
+@@ -667,6 +667,15 @@ export interface ExperimentalConfig {
+    */
+   turbopackUseBuiltinSass?: boolean
+ 
++  /**
++   * Enable per-directory PostCSS config resolution for Turbopack. When enabled,
++   * Turbopack searches for `postcss.config.js` starting from the CSS file's
++   * parent directory first, then falls back to the project root. When disabled
++   * (default), the project root is checked first, with the CSS file's directory
++   * as a fallback.
++   */
++  turbopackLocalPostcssConfig?: boolean
++
+   /**
+    * The module ID strategy to use for Turbopack.
+    * If not set, the default is `'named'` for development and `'deterministic'`
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir1.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir1.tsx
+new file mode 100644
+index 000000000000..1e9f9fa4cb66
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir1.tsx
+@@ -0,0 +1,21 @@
++import s1 from '../../styles/dir1/style01.module.css'
++import s2 from '../../styles/dir1/style02.module.css'
++import s3 from '../../styles/dir1/style03.module.css'
++
++const styles = [s1, s2, s3]
++
++export default function Dir1() {
++  return (
++    <div>
++      {styles.map((s, i) => (
++        <p
++          key={i}
++          id={`dir1-file${String(i + 1).padStart(2, '0')}`}
++          className={s.text}
++        >
++          dir1 file{String(i + 1).padStart(2, '0')}
++        </p>
++      ))}
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir2.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir2.tsx
+new file mode 100644
+index 000000000000..4f4c622a485c
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir2.tsx
+@@ -0,0 +1,21 @@
++import s1 from '../../styles/dir2/style01.module.css'
++import s2 from '../../styles/dir2/style02.module.css'
++import s3 from '../../styles/dir2/style03.module.css'
++
++const styles = [s1, s2, s3]
++
++export default function Dir2() {
++  return (
++    <div>
++      {styles.map((s, i) => (
++        <p
++          key={i}
++          id={`dir2-file${String(i + 1).padStart(2, '0')}`}
++          className={s.text}
++        >
++          dir2 file{String(i + 1).padStart(2, '0')}
++        </p>
++      ))}
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir3.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir3.tsx
+new file mode 100644
+index 000000000000..feb940578614
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir3.tsx
+@@ -0,0 +1,21 @@
++import s1 from '../../styles/dir3/style01.module.css'
++import s2 from '../../styles/dir3/style02.module.css'
++import s3 from '../../styles/dir3/style03.module.css'
++
++const styles = [s1, s2, s3]
++
++export default function Dir3() {
++  return (
++    <div>
++      {styles.map((s, i) => (
++        <p
++          key={i}
++          id={`dir3-file${String(i + 1).padStart(2, '0')}`}
++          className={s.text}
++        >
++          dir3 file{String(i + 1).padStart(2, '0')}
++        </p>
++      ))}
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir4.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir4.tsx
+new file mode 100644
+index 000000000000..ce730c697421
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir4.tsx
+@@ -0,0 +1,21 @@
++import s1 from '../../styles/dir4/style01.module.css'
++import s2 from '../../styles/dir4/style02.module.css'
++import s3 from '../../styles/dir4/style03.module.css'
++
++const styles = [s1, s2, s3]
++
++export default function Dir4() {
++  return (
++    <div>
++      {styles.map((s, i) => (
++        <p
++          key={i}
++          id={`dir4-file${String(i + 1).padStart(2, '0')}`}
++          className={s.text}
++        >
++          dir4 file{String(i + 1).padStart(2, '0')}
++        </p>
++      ))}
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir5.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir5.tsx
+new file mode 100644
+index 000000000000..0c8be45b8456
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/components/Dir5.tsx
+@@ -0,0 +1,21 @@
++import s1 from '../../styles/dir5/style01.module.css'
++import s2 from '../../styles/dir5/style02.module.css'
++import s3 from '../../styles/dir5/style03.module.css'
++
++const styles = [s1, s2, s3]
++
++export default function Dir5() {
++  return (
++    <div>
++      {styles.map((s, i) => (
++        <p
++          key={i}
++          id={`dir5-file${String(i + 1).padStart(2, '0')}`}
++          className={s.text}
++        >
++          dir5 file{String(i + 1).padStart(2, '0')}
++        </p>
++      ))}
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/layout.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/layout.tsx
+new file mode 100644
+index 000000000000..888614deda3b
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/layout.tsx
+@@ -0,0 +1,8 @@
++import { ReactNode } from 'react'
++export default function Root({ children }: { children: ReactNode }) {
++  return (
++    <html>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/page.tsx b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/page.tsx
+new file mode 100644
+index 000000000000..27c2278b8bae
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/app/page.tsx
+@@ -0,0 +1,17 @@
++import Dir1 from './components/Dir1'
++import Dir2 from './components/Dir2'
++import Dir3 from './components/Dir3'
++import Dir4 from './components/Dir4'
++import Dir5 from './components/Dir5'
++
++export default function Page() {
++  return (
++    <div>
++      <Dir1 />
++      <Dir2 />
++      <Dir3 />
++      <Dir4 />
++      <Dir5 />
++    </div>
++  )
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/next.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/next.config.js
+new file mode 100644
+index 000000000000..b7d6493ca539
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/next.config.js
+@@ -0,0 +1,10 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {
++  experimental: {
++    turbopackLocalPostcssConfig: true,
++  },
++}
++
++module.exports = nextConfig
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/postcss-plugin.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/postcss-plugin.js
+new file mode 100644
+index 000000000000..ef5fcd3bbb25
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/postcss-plugin.js
+@@ -0,0 +1,11 @@
++// Root PostCSS plugin that does NOT transform colors.
++// The per-directory postcss.config.js files have plugins that transform
++// color: red → green. If Turbopack correctly resolves per-directory configs,
++// the CSS output will contain green. If it only uses this root config,
++// the CSS will still contain red (meaning the test fails).
++const plugin = () => ({
++  postcssPlugin: 'root-noop',
++  Declaration: {},
++})
++plugin.postcss = true
++module.exports = plugin
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/postcss.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/postcss.config.js
+new file mode 100644
+index 000000000000..936eae3d94b3
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/postcss.config.js
+@@ -0,0 +1,3 @@
++module.exports = {
++  plugins: [require('./postcss-plugin.js')],
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/postcss.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/postcss.config.js
+new file mode 100644
+index 000000000000..6ff0adeeaa81
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/postcss.config.js
+@@ -0,0 +1,3 @@
++module.exports = {
++  plugins: [require('../postcss-plugin.js')({ color: 'blue' })],
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style01.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style01.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style01.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style02.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style02.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style02.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style03.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style03.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir1/style03.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/postcss.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/postcss.config.js
+new file mode 100644
+index 000000000000..132469036502
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/postcss.config.js
+@@ -0,0 +1,3 @@
++module.exports = {
++  plugins: [require('../postcss-plugin.js')({ color: 'purple' })],
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style01.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style01.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style01.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style02.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style02.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style02.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style03.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style03.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir2/style03.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/postcss.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/postcss.config.js
+new file mode 100644
+index 000000000000..578eed0e8483
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/postcss.config.js
+@@ -0,0 +1,3 @@
++module.exports = {
++  plugins: [require('../postcss-plugin.js')({ color: 'orange' })],
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style01.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style01.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style01.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style02.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style02.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style02.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style03.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style03.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir3/style03.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/postcss.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/postcss.config.js
+new file mode 100644
+index 000000000000..a4a131631634
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/postcss.config.js
+@@ -0,0 +1,3 @@
++module.exports = {
++  plugins: [require('../postcss-plugin.js')({ color: 'cyan' })],
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style01.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style01.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style01.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style02.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style02.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style02.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style03.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style03.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir4/style03.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/postcss.config.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/postcss.config.js
+new file mode 100644
+index 000000000000..32ecd1ad0d28
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/postcss.config.js
+@@ -0,0 +1,3 @@
++module.exports = {
++  plugins: [require('../postcss-plugin.js')({ color: 'magenta' })],
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style01.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style01.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style01.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style02.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style02.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style02.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style03.module.css b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style03.module.css
+new file mode 100644
+index 000000000000..3efa99e6fb17
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/dir5/style03.module.css
+@@ -0,0 +1,3 @@
++.text {
++  color: red;
++}
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/postcss-plugin.js b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/postcss-plugin.js
+new file mode 100644
+index 000000000000..89f32fd3c19d
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/styles/postcss-plugin.js
+@@ -0,0 +1,14 @@
++// Shared PostCSS plugin used by each per-directory postcss.config.js.
++// Accepts { color: '<name>' } option and transforms `color: red` to the given color.
++const plugin = (opts = {}) => ({
++  postcssPlugin: 'test-color-transform',
++  Declaration: {
++    color(decl) {
++      if (decl.value === 'red') {
++        decl.value = opts.color || 'green'
++      }
++    },
++  },
++})
++plugin.postcss = true
++module.exports = plugin
+diff --git a/test/e2e/app-dir/turbopack-postcss-multiple-configs/turbopack-postcss-multiple-configs.test.ts b/test/e2e/app-dir/turbopack-postcss-multiple-configs/turbopack-postcss-multiple-configs.test.ts
+new file mode 100644
+index 000000000000..758a496d714c
+--- /dev/null
++++ b/test/e2e/app-dir/turbopack-postcss-multiple-configs/turbopack-postcss-multiple-configs.test.ts
+@@ -0,0 +1,97 @@
++import { nextTestSetup } from 'e2e-utils'
++
++describe('turbopack-postcss-multiple-configs', () => {
++  const { next, isTurbopack, skipped } = nextTestSetup({
++    files: __dirname,
++    // Per-directory PostCSS config resolution is a Turbopack-only feature
++    // (turbopackLocalPostcssConfig). Webpack does not support this feature and
++    // does not accept function-valued PostCSS plugins, so skip non-Turbopack runs.
++    skipStart: true,
++    skipDeployment: true,
++  })
++
++  if (skipped) return
++
++  if (!isTurbopack) {
++    it('should only run with Turbopack', () => {})
++    return
++  }
++
++  beforeAll(async () => {
++    await next.start()
++  })
++
++  // Each directory's postcss.config.js passes a unique color option to the
++  // shared plugin, which replaces `color: red` with the given color.
++  // In production mode the CSS minifier may shorten named colors to hex
++  // (e.g. blue → #00f), so we match on patterns that cover both forms.
++  const DIR_COLORS: Record<number, string | RegExp> = {
++    1: /blue|#00f/,
++    2: /purple|#800080/,
++    3: /orange|#ffa500/,
++    4: /cyan|#0ff/,
++    5: /magenta|#f0f/,
++  }
++
++  const DIRS = 5
++  const FILES_PER_DIR = 3
++
++  it('should render all elements with CSS module classes applied', async () => {
++    const $ = await next.render$('/')
++
++    for (let dir = 1; dir <= DIRS; dir++) {
++      for (let file = 1; file <= FILES_PER_DIR; file++) {
++        const padded = String(file).padStart(2, '0')
++        const id = `dir${dir}-file${padded}`
++        const el = $(`#${id}`)
++        expect(el.length).toBe(1)
++        expect(el.text().trim()).toBe(`dir${dir} file${padded}`)
++        expect(el.attr('class')).toBeTruthy()
++      }
++    }
++  })
++
++  it('should apply per-directory PostCSS transforms with distinct colors', async () => {
++    const cssContent = await collectCss(next)
++
++    // Each directory's PostCSS config passes a unique color option.
++    // Verify every expected color appears in the output.
++    for (const [, pattern] of Object.entries(DIR_COLORS)) {
++      expect(cssContent).toMatch(pattern)
++    }
++
++    // No original `color: red` should remain — all were transformed.
++    expect(cssContent).not.toMatch(/color\s*:\s*red/)
++
++    // The old hardcoded green should NOT appear, proving options are used.
++    expect(cssContent).not.toMatch(/green|#0f0|#008000/)
++  })
++})
++
++/** Collect all CSS from the page: inline <style> tags + linked .css files. */
++async function collectCss(next: any): Promise<string> {
++  const html = await next.render('/')
++  const parts: string[] = []
++
++  // Inline <style> content
++  const styleMatches = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)
++  if (styleMatches) {
++    parts.push(...styleMatches)
++  }
++
++  // Linked CSS files
++  const hrefMatches = html.match(/href="([^"]*\.css[^"]*)"/gi)
++  if (hrefMatches) {
++    for (const match of hrefMatches) {
++      const href = match.match(/href="([^"]+)"/)?.[1]
++      if (href) {
++        const res = await next.fetch(href)
++        if (res.ok) {
++          parts.push(await res.text())
++        }
++      }
++    }
++  }
++
++  return parts.join('\n')
++}
+diff --git a/turbopack/crates/turbopack-node/Cargo.toml b/turbopack/crates/turbopack-node/Cargo.toml
+index a0eb8099a85f..75cf73fee404 100644
+--- a/turbopack/crates/turbopack-node/Cargo.toml
++++ b/turbopack/crates/turbopack-node/Cargo.toml
+@@ -48,6 +48,7 @@ turbo-tasks = { workspace = true }
+ turbo-tasks-bytes = { workspace = true }
+ turbo-tasks-env = { workspace = true }
+ turbo-tasks-fs = { workspace = true }
++turbo-tasks-hash = { workspace = true }
+ turbopack-cli-utils = { workspace = true }
+ turbopack-core = { workspace = true }
+ turbopack-ecmascript = { workspace = true }
+diff --git a/turbopack/crates/turbopack-node/src/evaluate.rs b/turbopack/crates/turbopack-node/src/evaluate.rs
+index 8e195d419a9b..af3a67e4d19a 100644
+--- a/turbopack/crates/turbopack-node/src/evaluate.rs
++++ b/turbopack/crates/turbopack-node/src/evaluate.rs
+@@ -1,7 +1,4 @@
+-use std::{
+-    borrow::Cow, iter, process::ExitStatus, sync::Arc, thread::available_parallelism,
+-    time::Duration,
+-};
++use std::{iter, process::ExitStatus, sync::Arc, thread::available_parallelism, time::Duration};
+ 
+ use anyhow::{Result, bail};
+ use bincode::{Decode, Encode};
+@@ -12,11 +9,12 @@ use serde_json::Value as JsonValue;
+ use turbo_rcstr::{RcStr, rcstr};
+ use turbo_tasks::{
+     Completion, Effects, FxIndexMap, NonLocalValue, OperationVc, PrettyPrintError, ReadRef,
+-    ResolvedVc, TaskInput, TryJoinIterExt, Vc, duration_span, fxindexmap, get_effects,
+-    trace::TraceRawVcs,
++    ResolvedVc, TaskInput, TryJoinIterExt, ValueToString, Vc, duration_span, fxindexmap,
++    get_effects, trace::TraceRawVcs,
+ };
+ use turbo_tasks_env::{EnvMap, ProcessEnv};
+ use turbo_tasks_fs::{File, FileContent, FileSystemPath, to_sys_path};
++use turbo_tasks_hash::{DeterministicHash, Xxh3Hash64Hasher};
+ use turbopack_core::{
+     asset::AssetContent,
+     changed::content_changed,
+@@ -149,15 +147,13 @@ async fn emit_evaluate_pool_assets_operation(
+         main_entry_ident,
+     } = &*entries.await?;
+ 
+-    let module_path = main_entry_ident.path().await?;
+-    let file_name = module_path.file_name();
+-    let file_name = if file_name.ends_with(".js") {
+-        Cow::Borrowed(file_name)
+-    } else if let Some(file_name) = file_name.strip_suffix(".ts") {
+-        Cow::Owned(format!("{file_name}.js"))
+-    } else {
+-        Cow::Owned(format!("{file_name}.js"))
++    let module_ident = main_entry_ident.to_string().await?;
++    let module_ident_hash = {
++        let mut hasher = Xxh3Hash64Hasher::new();
++        module_ident.deterministic_hash(&mut hasher);
++        hasher.finish()
+     };
++    let file_name = format!("{module_ident_hash:016x}.js");
+     let entrypoint = chunking_context.output_root().await?.join(&file_name)?;
+ 
+     let bootstrap = chunking_context.root_entry_chunk_group_asset(
+diff --git a/turbopack/crates/turbopack-node/src/transforms/postcss.rs b/turbopack/crates/turbopack-node/src/transforms/postcss.rs
+index 5b441db36629..941e9452cc43 100644
+--- a/turbopack/crates/turbopack-node/src/transforms/postcss.rs
++++ b/turbopack/crates/turbopack-node/src/transforms/postcss.rs
+@@ -60,9 +60,18 @@ struct PostCssProcessingResult {
+     Decode,
+ )]
+ pub enum PostCssConfigLocation {
++    /// Searches for postcss config only starting from the project root directory.
++    /// Used for foreign code (node_modules) where per-directory configs should be ignored.
+     #[default]
+     ProjectPath,
++    /// Searches for postcss config starting from the project root directory first,
++    /// then falls back to searching from the CSS file's parent directory if not found
++    /// at the project root.
+     ProjectPathOrLocalPath,
++    /// Searches for postcss config starting from the CSS file's parent directory first,
++    /// then falls back to the project root if not found locally. This allows per-directory
++    /// postcss.config.js files to override the project root config.
++    LocalPathOrProjectPath,
+ }
+ 
+ #[turbo_tasks::value(shared)]
+@@ -431,22 +440,28 @@ async fn find_config_in_location(
+     location: PostCssConfigLocation,
+     source: Vc<Box<dyn Source>>,
+ ) -> Result<Option<FileSystemPath>> {
+-    if let FindContextFileResult::Found(config_path, _) =
+-        &*find_context_file_or_package_key(project_path, postcss_configs(), rcstr!("postcss"))
+-            .await?
+-    {
+-        return Ok(Some(config_path.clone()));
+-    }
++    // Build an ordered list of directories to search based on the location strategy.
++    let search_paths = match location {
++        // Only check project root (used for foreign/node_modules code).
++        PostCssConfigLocation::ProjectPath => {
++            vec![project_path]
++        }
++        // Check project root first, fall back to the CSS file's directory.
++        PostCssConfigLocation::ProjectPathOrLocalPath => {
++            vec![project_path, source.ident().path().await?.parent()]
++        }
++        // Check the CSS file's directory first, fall back to the project root.
++        PostCssConfigLocation::LocalPathOrProjectPath => {
++            vec![source.ident().path().await?.parent(), project_path]
++        }
++    };
+ 
+-    if matches!(location, PostCssConfigLocation::ProjectPathOrLocalPath)
+-        && let FindContextFileResult::Found(config_path, _) = &*find_context_file_or_package_key(
+-            source.ident().path().await?.parent(),
+-            postcss_configs(),
+-            rcstr!("postcss"),
+-        )
+-        .await?
+-    {
+-        return Ok(Some(config_path.clone()));
++    for path in search_paths {
++        if let FindContextFileResult::Found(config_path, _) =
++            &*find_context_file_or_package_key(path, postcss_configs(), rcstr!("postcss")).await?
++        {
++            return Ok(Some(config_path.clone()));
++        }
+     }
+ 
+     Ok(None)

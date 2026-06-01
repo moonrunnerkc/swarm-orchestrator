@@ -1,0 +1,403 @@
+diff --git a/packages/astro/CHANGELOG.md b/packages/astro/CHANGELOG.md
+index 66be9ce3ef63..d547e747b4e4 100644
+--- a/packages/astro/CHANGELOG.md
++++ b/packages/astro/CHANGELOG.md
+@@ -26,6 +26,14 @@
+ 
+ - [#16434](https://github.com/withastro/astro/pull/16434) [`ee079d4`](https://github.com/withastro/astro/commit/ee079d4c7f143076b84d663c832911009a077c7f) Thanks [@ematipico](https://github.com/ematipico)! - Fixes an issue where i18n domains would return 404 when `trailingSlash` is set to `never`.
+ 
++## 6.4.2
++
++### Patch Changes
++
++- [#16889](https://github.com/withastro/astro/pull/16889) [`b94bcfd`](https://github.com/withastro/astro/commit/b94bcfd8da64a3f2862a20572e7a9847aebdbc70) Thanks [@Princesseuh](https://github.com/Princesseuh)! - Fixes a `plugins is not iterable` crash when using a pre-6.0 `@astrojs/mdx` alongside integrations (e.g. Starlight) that set `markdown.remarkPlugins`, `markdown.rehypePlugins`, or `markdown.remarkRehype`.
++
++- [#16878](https://github.com/withastro/astro/pull/16878) [`b9f6bb9`](https://github.com/withastro/astro/commit/b9f6bb9a238b909d491ca4a7a99620908faf58a8) Thanks [@fkatsuhiro](https://github.com/fkatsuhiro)! - Fixes an issue where on-demand (SSR) dynamic routes would return 404 when a prerendered dynamic route with the same URL pattern was sorted first alphabetically. In production builds with `@astrojs/node` adapter, if `[a_prebuild].astro` (prerender=true) came before `[b_ssr].astro` alphabetically, requests to URLs not in the prerendered route's static paths would 404 instead of falling through to the SSR route. The fix adds fallthrough logic so that when a prerendered dynamic route matches but can't serve the request, Astro tries subsequent matching routes.
++
+ ## 6.4.1
+ 
+ ### Patch Changes
+diff --git a/packages/astro/src/core/app/base.ts b/packages/astro/src/core/app/base.ts
+index 528d9d22f0dc..37f2b9e69a99 100644
+--- a/packages/astro/src/core/app/base.ts
++++ b/packages/astro/src/core/app/base.ts
+@@ -296,8 +296,16 @@ export abstract class BaseApp<P extends Pipeline = AppPipeline> {
+ 		if (allowPrerenderedRoutes) {
+ 			return routeData;
+ 		}
+-		// missing routes fall-through, pre rendered are handled by static layer
++		// Prerendered routes are served as static files by the hosting layer.
++		// When the first match is a prerendered *dynamic* route, try to find
++		// a non-prerendered route that can serve this path. Dynamic prerendered
++		// routes only cover their specific static paths, so an SSR route with
++		// the same pattern should handle all other URLs.
+ 		if (routeData.prerender) {
++			if (routeData.params.length > 0) {
++				const allMatches = this.pipeline.matchAllRoutes(decodeURI(pathname));
++				return allMatches.find((r) => !r.prerender);
++			}
+ 			return undefined;
+ 		}
+ 		return routeData;
+diff --git a/packages/astro/src/core/base-pipeline.ts b/packages/astro/src/core/base-pipeline.ts
+index 83f4ba10ef38..650182bcd56a 100644
+--- a/packages/astro/src/core/base-pipeline.ts
++++ b/packages/astro/src/core/base-pipeline.ts
+@@ -207,6 +207,16 @@ export abstract class Pipeline {
+ 		return match.route;
+ 	}
+ 
++	/**
++	 * Returns all routes matching the given pathname, in priority order.
++	 * Used when the first match cannot serve the request (e.g. a
++	 * prerendered dynamic route that doesn't cover this specific path)
++	 * and the caller needs to try subsequent matches.
++	 */
++	matchAllRoutes(pathname: string): RouteData[] {
++		return this.#router.matchAll(pathname, { allowWithoutBase: true });
++	}
++
+ 	/**
+ 	 * Rebuilds the internal router after routes have been added or
+ 	 * removed (e.g. by the dev server on HMR).
+diff --git a/packages/astro/src/core/config/validate.ts b/packages/astro/src/core/config/validate.ts
+index 76ce90c489ee..5c6af337d5e4 100644
+--- a/packages/astro/src/core/config/validate.ts
++++ b/packages/astro/src/core/config/validate.ts
+@@ -51,11 +51,11 @@ function warnDeprecatedMarkdownOptions(
+ let didWarnAboutLegacyMarkdownPlugins = false;
+ let didWarnAboutProcessorMismatch = false;
+ 
++const migratedLegacyPluginCounts = new WeakMap<object, { remark: number; rehype: number }>();
+ /**
+  * Folds legacy `markdown.{remark,rehype}Plugins` / `remarkRehype` into the unified
+- * processor and clears the legacy keys. Mutates `config` in place.
+- * Runs on every validate pass so integration-added legacy plugins are picked up.
+- * Without this they'd land in `config.markdown.*` and be silently dropped.
++ * processor (mutates `config`). Runs on every validate pass to catch integration-added
++ * legacy plugins.
+  */
+ async function coerceLegacyMarkdownPlugins(
+ 	config: Pick<AstroUserConfig, 'markdown'>,
+@@ -80,23 +80,29 @@ async function coerceLegacyMarkdownPlugins(
+ 	if (!current || isUnifiedProcessor(current)) {
+ 		// `createRenderer` reads `.options.*` at render time, so in-place mutation propagates.
+ 		const target = (current ?? (md.processor = unified())) as ReturnType<typeof unified>;
+-		target.options.remarkPlugins.push(...remarkPlugins);
+-		target.options.rehypePlugins.push(...rehypePlugins);
++		const counts = migratedLegacyPluginCounts.get(target.options) ?? { remark: 0, rehype: 0 };
++		// Only push entries past what we've already folded; mergeConfig appends, so they sit at the tail.
++		if (remarkPlugins.length > counts.remark) {
++			target.options.remarkPlugins.push(...remarkPlugins.slice(counts.remark));
++		}
++		if (rehypePlugins.length > counts.rehype) {
++			target.options.rehypePlugins.push(...rehypePlugins.slice(counts.rehype));
++		}
++		// `remarkRehype` is an object, so Object.assign is idempotent for unchanged keys
++		// and absorbs any new keys integrations add.
+ 		Object.assign(target.options.remarkRehype, remarkRehype);
++		migratedLegacyPluginCounts.set(target.options, {
++			remark: remarkPlugins.length,
++			rehype: rehypePlugins.length,
++		});
+ 		if (!didWarnAboutLegacyMarkdownPlugins) {
+ 			didWarnAboutLegacyMarkdownPlugins = true;
+ 			console.warn(
+ 				'[astro] `markdown.remarkPlugins`, `markdown.rehypePlugins`, and `markdown.remarkRehype` are deprecated. Pass them to `unified({...})` from `@astrojs/markdown-remark` directly instead.',
+ 			);
+ 		}
+-		delete md.remarkPlugins;
+-		delete md.rehypePlugins;
+-		delete md.remarkRehype;
+ 	} else if (!didWarnAboutProcessorMismatch) {
+-		// Third-party processors can't run remark/rehype plugins. We *don't* swap the
+-		// user's chosen processor — that would silently flip their Markdown engine.
+-		// Instead, leave the legacy keys in place (so other tooling can still see them)
+-		// and warn loudly: the plugins won't run until they move to `unified()`.
++		// Third-party processors can't run remark/rehype plugins. And if they can, they should be passed directly to the processor (like it is for unified) instead of the legacy keys, so we warn either way.
+ 		didWarnAboutProcessorMismatch = true;
+ 		console.warn(
+ 			`[astro] \`markdown.remarkPlugins\`/\`rehypePlugins\`/\`remarkRehype\` are set, but your ` +
+diff --git a/packages/astro/src/core/fetch/fetch-state.ts b/packages/astro/src/core/fetch/fetch-state.ts
+index 69fa57ba1b17..afbbfc5eb552 100644
+--- a/packages/astro/src/core/fetch/fetch-state.ts
++++ b/packages/astro/src/core/fetch/fetch-state.ts
+@@ -801,8 +801,17 @@ export class FetchState implements AstroFetchState {
+ 		const matched = pipeline.matchRoute(this.pathname);
+ 		// In production SSR, prerendered routes are served as static files
+ 		// by the hosting layer and should not be rendered by the app.
++		// When the first match is a prerendered *dynamic* route, try to find
++		// a non-prerendered route that can serve this path. Dynamic prerendered
++		// routes only cover their specific static paths, so an SSR route with
++		// the same pattern should handle all other URLs.
+ 		if (matched && matched.prerender && pipeline.manifest.serverLike) {
+-			this.routeData = undefined;
++			if (matched.params.length > 0) {
++				const allMatches = pipeline.matchAllRoutes(this.pathname);
++				this.routeData = allMatches.find((r) => !r.prerender);
++			} else {
++				this.routeData = undefined;
++			}
+ 		} else {
+ 			this.routeData = matched;
+ 		}
+diff --git a/packages/astro/src/core/routing/router.ts b/packages/astro/src/core/routing/router.ts
+index 3577d8522ca7..e24a12c78413 100644
+--- a/packages/astro/src/core/routing/router.ts
++++ b/packages/astro/src/core/routing/router.ts
+@@ -118,6 +118,41 @@ export class Router {
+ 		const params = getParams(route, pathname);
+ 		return { type: 'match', route, params, pathname };
+ 	}
++
++	/**
++	 * Returns all routes that match the given pathname, in priority order.
++	 * Used when the first match (e.g. a prerendered route) cannot serve
++	 * the request and subsequent matches need to be tried.
++	 */
++	public matchAll(
++		inputPathname: string,
++		{ allowWithoutBase = false }: { allowWithoutBase?: boolean } = {},
++	): RouteData[] {
++		const normalized = getRedirectForPathname(inputPathname);
++		if (normalized.redirect) {
++			return [];
++		}
++
++		const baseResult = stripBase(
++			normalized.pathname,
++			this.#base,
++			this.#baseWithoutTrailingSlash,
++			this.#trailingSlash,
++		);
++		if (!baseResult && !allowWithoutBase) {
++			return [];
++		}
++
++		let pathname = baseResult ?? normalized.pathname;
++		if (this.#buildFormat === 'file') {
++			pathname = normalizeFileFormatPathname(pathname);
++		}
++
++		return this.#routes.filter((candidate) => {
++			if (candidate.pattern.test(pathname)) return true;
++			return candidate.fallbackRoutes.some((fallbackRoute) => fallbackRoute.pattern.test(pathname));
++		});
++	}
+ }
+ 
+ /**
+diff --git a/packages/astro/test/units/config/config-validate.test.ts b/packages/astro/test/units/config/config-validate.test.ts
+index 45e6be8f44f5..1477de903fb1 100644
+--- a/packages/astro/test/units/config/config-validate.test.ts
++++ b/packages/astro/test/units/config/config-validate.test.ts
+@@ -1,10 +1,14 @@
+ import * as assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ import { stripVTControlCharacters } from 'node:util';
++import { isUnifiedProcessor, type RehypePlugin, type RemarkPlugin } from '@astrojs/markdown-remark';
+ import * as z from 'zod/v4';
+ import { fontProviders } from '../../../dist/assets/fonts/providers/index.js';
+ import { LocalFontProvider } from '../../../dist/assets/fonts/providers/local.js';
+-import { validateConfig as _validateConfig } from '../../../dist/core/config/validate.js';
++import {
++	validateConfig as _validateConfig,
++	validateConfigRefined,
++} from '../../../dist/core/config/validate.js';
+ import { formatConfigErrorMessage } from '../../../dist/core/messages/runtime.js';
+ import { envField } from '../../../dist/env/config.js';
+ 
+@@ -620,6 +624,51 @@ describe('Config Validation', () => {
+ 		});
+ 	});
+ 
++	describe('markdown legacy plugins', () => {
++		it('preserves legacy markdown.rehypePlugins on the validated config (pre-6.0 mdx compat)', async () => {
++			const plugin: RehypePlugin = () => (tree) => tree;
++			const result = await validateConfig({
++				markdown: { rehypePlugins: [plugin] },
++			});
++			// Pre-6.0 `@astrojs/mdx` reads `config.markdown.rehypePlugins` directly to feed
++			// its own MDX-side processor, so the legacy key must survive validation.
++			assert.deepEqual(result.markdown.rehypePlugins, [plugin]);
++			const { processor } = result.markdown;
++			assert.ok(isUnifiedProcessor(processor));
++			assert.deepEqual(processor.options.rehypePlugins, [plugin]);
++		});
++
++		it('does not duplicate legacy plugins across repeated validateConfigRefined passes', async () => {
++			const remark: RemarkPlugin = () => (tree) => tree;
++			const rehype: RehypePlugin = () => (tree) => tree;
++			const validated = await validateConfig({
++				markdown: { remarkPlugins: [remark], rehypePlugins: [rehype] },
++			});
++			// The second pass runs after `astro:config:setup`; without the WeakMap guard
++			// it would re-fold the same plugins and double them up.
++			const again = await validateConfigRefined(validated);
++			const { processor } = again.markdown;
++			assert.ok(isUnifiedProcessor(processor));
++			assert.deepEqual(processor.options.remarkPlugins, [remark]);
++			assert.deepEqual(processor.options.rehypePlugins, [rehype]);
++		});
++
++		it('folds integration-appended legacy plugins without re-folding the originals', async () => {
++			const userPlugin: RehypePlugin = () => (tree) => tree;
++			const integrationPlugin: RehypePlugin = () => (tree) => tree;
++			const validated = await validateConfig({
++				markdown: { rehypePlugins: [userPlugin] },
++			});
++			// Simulate `mergeConfig` appending an integration-added plugin to the legacy key
++			// (Starlight-style `updateConfig({ markdown: { rehypePlugins: [...] } })`).
++			validated.markdown.rehypePlugins.push(integrationPlugin);
++			const refined = await validateConfigRefined(validated);
++			const { processor } = refined.markdown;
++			assert.ok(isUnifiedProcessor(processor));
++			assert.deepEqual(processor.options.rehypePlugins, [userPlugin, integrationPlugin]);
++		});
++	});
++
+ 	describe('devToolbar', () => {
+ 		it('should allow valid placement values', async () => {
+ 			for (const placement of ['bottom-left', 'bottom-center', 'bottom-right']) {
+diff --git a/packages/astro/test/units/fetch/index.test.ts b/packages/astro/test/units/fetch/index.test.ts
+index 6a702ad0e5ef..9f2d6fb33409 100644
+--- a/packages/astro/test/units/fetch/index.test.ts
++++ b/packages/astro/test/units/fetch/index.test.ts
+@@ -13,6 +13,7 @@ import {
+ } from '../../../dist/core/fetch/index.js';
+ import { createComponent, render } from '../../../dist/runtime/server/index.js';
+ import { createEndpoint, createPage, createRedirect, createTestApp } from '../mocks.ts';
++import { dynamicPart } from '../routing/test-helpers.ts';
+ 
+ /** A simple page component that renders `<h1>Hello</h1>`. */
+ const simplePage = createComponent((_result: any, _props: any, _slots: any) => {
+@@ -52,6 +53,32 @@ describe('FetchState (astro/fetch)', () => {
+ 		assert.ok(state.routeData, 'routeData should be set by the constructor');
+ 		assert.equal(state.routeData!.route, '/');
+ 	});
++
++	it('falls through to SSR route when prerendered dynamic route matches first', () => {
++		// Regression test for #16834: when a prerendered dynamic route like
++		// [a_prebuild].astro matches before an SSR dynamic route like [b_ssr].astro,
++		// the SSR route should be used instead of returning 404.
++		const prerenderPage = createPage(simplePage, {
++			route: '/[a_prebuild]',
++			prerender: true,
++			pathname: undefined,
++			segments: [[dynamicPart('a_prebuild')]],
++		});
++		const ssrPage = createPage(simplePage, {
++			route: '/[b_ssr]',
++			prerender: false,
++			pathname: undefined,
++			segments: [[dynamicPart('b_ssr')]],
++		});
++
++		const app = createTestApp([prerenderPage, ssrPage], { serverLike: true });
++		const request = stampApp(new Request('http://example.com/foobar'), app);
++		const state = new FetchState(request);
++
++		assert.ok(state.routeData, 'routeData should be set to the SSR route');
++		assert.equal(state.routeData!.route, '/[b_ssr]');
++		assert.equal(state.routeData!.prerender, false);
++	});
+ });
+ 
+ // #endregion
+diff --git a/packages/astro/test/units/routing/router-match.test.ts b/packages/astro/test/units/routing/router-match.test.ts
+index a88c9c8c219c..8258ac47dcc0 100644
+--- a/packages/astro/test/units/routing/router-match.test.ts
++++ b/packages/astro/test/units/routing/router-match.test.ts
+@@ -1,6 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ import { Router } from '../../../dist/core/routing/router.js';
++import type { RouteData } from '../../../dist/types/public/internal.js';
+ import { dynamicPart, makeRoute, spreadPart, staticPart } from './test-helpers.ts';
+ 
+ describe('Router.match', () => {
+@@ -427,3 +428,84 @@ describe('Router.match', () => {
+ 		}
+ 	});
+ });
++
++describe('Router.matchAll', () => {
++	it('returns all matching routes in priority order', () => {
++		const trailingSlash = 'ignore' as const;
++		const prerenderRoute = makeRoute({
++			segments: [[dynamicPart('a_prebuild')]],
++			trailingSlash,
++			route: '/[a_prebuild]',
++			pathname: undefined,
++			prerender: true,
++		});
++		const ssrRoute = makeRoute({
++			segments: [[dynamicPart('b_ssr')]],
++			trailingSlash,
++			route: '/[b_ssr]',
++			pathname: undefined,
++			prerender: false,
++		});
++
++		const router = new Router([prerenderRoute, ssrRoute], {
++			base: '/',
++			trailingSlash,
++			buildFormat: 'directory',
++		});
++
++		const allMatches = router.matchAll('/foobar');
++		assert.equal(allMatches.length, 2, 'should return both matching routes');
++		// Both have the same pattern, order determined by routeComparator
++		const routeNames = allMatches.map((r: RouteData) => r.route);
++		assert.ok(routeNames.includes('/[a_prebuild]'));
++		assert.ok(routeNames.includes('/[b_ssr]'));
++	});
++
++	it('returns empty array when no routes match', () => {
++		const trailingSlash = 'ignore' as const;
++		const route = makeRoute({
++			segments: [[staticPart('about')]],
++			trailingSlash,
++			route: '/about',
++			pathname: '/about',
++		});
++
++		const router = new Router([route], {
++			base: '/',
++			trailingSlash,
++			buildFormat: 'directory',
++		});
++
++		const allMatches = router.matchAll('/nonexistent');
++		assert.equal(allMatches.length, 0);
++	});
++
++	it('allows finding non-prerendered fallback when prerendered route matches first', () => {
++		const trailingSlash = 'ignore' as const;
++		const prerenderRoute = makeRoute({
++			segments: [[dynamicPart('a_prebuild')]],
++			trailingSlash,
++			route: '/[a_prebuild]',
++			pathname: undefined,
++			prerender: true,
++		});
++		const ssrRoute = makeRoute({
++			segments: [[dynamicPart('b_ssr')]],
++			trailingSlash,
++			route: '/[b_ssr]',
++			pathname: undefined,
++			prerender: false,
++		});
++
++		const router = new Router([prerenderRoute, ssrRoute], {
++			base: '/',
++			trailingSlash,
++			buildFormat: 'directory',
++		});
++
++		const allMatches = router.matchAll('/foobar');
++		const ssrMatch = allMatches.find((r: RouteData) => !r.prerender);
++		assert.ok(ssrMatch, 'should find a non-prerendered route');
++		assert.equal(ssrMatch!.route, '/[b_ssr]');
++	});
++});

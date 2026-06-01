@@ -1,0 +1,4617 @@
+diff --git a/astro-docs/.vale/styles/Nx/Headings.yml b/astro-docs/.vale/styles/Nx/Headings.yml
+index da6cb27298f..2c115e16974 100644
+--- a/astro-docs/.vale/styles/Nx/Headings.yml
++++ b/astro-docs/.vale/styles/Nx/Headings.yml
+@@ -67,6 +67,8 @@ exceptions:
+   - Expo
+   - React Native
+   - Module Federation
++  - TanStack
++  - TanStack Router
+   - IntelliJ
+   - VS Code
+   - VSCode
+diff --git a/astro-docs/src/content/docs/technologies/module-federation/consumer-and-provider.mdoc b/astro-docs/src/content/docs/technologies/module-federation/consumer-and-provider.mdoc
+new file mode 100644
+index 00000000000..a3ee77d8d60
+--- /dev/null
++++ b/astro-docs/src/content/docs/technologies/module-federation/consumer-and-provider.mdoc
+@@ -0,0 +1,190 @@
++---
++title: Module Federation Consumer and Provider (v23+)
++description: Use the new @nx/react:consumer and :provider generators to scaffold React Module Federation apps with Vite, Rsbuild, or Rspack.
++sidebar:
++  label: Consumer and Provider
++weight: 1
++---
++
++Nx v23 introduces a new generator surface in `@nx/react` (`@nx/react:consumer` and `@nx/react:provider`) that replaces the v22 `host` and `remote` generators. Shared logic (federation-name validation, port defaults, version pins) lives in `@nx/module-federation` so framework-specific generators can build on it. The new model has two roles:
++
++- **Provider** - an app that exposes a federated component.
++- **Consumer** - an app that loads federated components at runtime via a hardcoded `PROVIDERS` list in `src/mf.ts`.
++
++Both generators are React-only. The bundler is chosen at generation time and cannot be changed later (the bundler config is too different to switch in place).
++
++## Pick a bundler
++
++The generator emits a plain bundler config (no Nx wrapper). Pick one at generation time:
++
++| Bundler          | Pick it when                                                               |
++| ---------------- | -------------------------------------------------------------------------- |
++| `vite` (default) | Fastest dev iteration; smallest config surface; widest ecosystem.          |
++| `rsbuild`        | You want webpack-class production builds with a small config surface.      |
++| `rspack`         | You want full webpack-API compatibility and explicit control of the build. |
++
++## Generate a provider
++
++```shell
++nx g @nx/react:provider apps/my-provider --bundler=vite
++```
++
++Generated tree:
++
++```text
++apps/my-provider/
++├── package.json          # name, scripts, MF + framework deps
++├── vite.config.ts        # (or rsbuild/rspack equivalent) with federation plugin
++├── index.html
++├── src/
++│   ├── index.ts          # `import('./bootstrap')` indirection (required)
++│   ├── bootstrap.tsx     # createRoot + render
++│   └── App.tsx           # the federated component, default export
++└── tsconfig.json
++```
++
++The federation plugin exposes `./App` (or `--exposeName=<your-name>`). The expose name stays as you type it for the public MF key (consumers reference `<provider>/<exposeName>`, so `cart-widget` is fine); the generated React component and its filename are normalized to PascalCase (`CartWidget`) so the emitted TypeScript is valid. Consumers register the provider by its `remoteEntry.js` URL. The provider runs standalone on the configured port (default `5101` for Vite, `3101` for Rsbuild, `8101` for Rspack).
++
++## Generate a consumer
++
++```shell
++nx g @nx/react:consumer apps/my-consumer --bundler=vite --providerNames=my-provider
++```
++
++Generated tree:
++
++```text
++apps/my-consumer/
++├── package.json
++├── vite.config.ts        # NO build-time `remotes:` block
++├── index.html
++├── src/
++│   ├── index.ts          # `import('./bootstrap')`
++│   ├── bootstrap.tsx     # createRoot + render <App />
++│   ├── App.tsx           # imports + renders one lazy remote per PROVIDERS entry
++│   └── mf.ts             # hardcoded PROVIDERS list + registerRemotes + lazyProvider helper
++└── tsconfig.json
++```
++
++When `--providerNames=p1,p2,p3` is passed, the consumer generator also scaffolds a sibling `@nx/react:provider` app per entry (at `apps/p1`, `apps/p2`, `apps/p3`) and wires their `remoteEntry.js` URLs into the consumer's `PROVIDERS` list. Each provider's `serve` target depends on the consumer's `serve`, so `nx serve p1` brings the consumer up alongside the provider.
++
++Omit the flag and the consumer ships a placeholder `my-provider` entry in `PROVIDERS` (no actual provider project is generated).
++
++## How dynamic federation works
++
++The consumer's `src/mf.ts` holds the remote list inline:
++
++```ts
++// `name` is the provider's federation container name (derived from its
++// project name, so it can differ from `alias` - e.g. `myCart` -> `my_cart`).
++// `alias` is the key you loadRemote() with. `entry` is the remoteEntry.js URL.
++const PROVIDERS: Array<{ alias: string; name: string; entry: string }> = [
++  {
++    alias: 'my-provider',
++    name: 'my_provider',
++    entry: 'http://localhost:5101/remoteEntry.js',
++  },
++];
++
++registerRemotes(
++  // For vite providers only - vite emits ESM remoteEntry.js. The generator
++  // omits `type` for rspack/rsbuild (UMD) so the runtime auto-detects.
++  PROVIDERS.map((remote) => ({ ...remote, type: 'module' }))
++);
++
++export function lazyProvider(alias, exposeName) {
++  /* lazy + loadRemote */
++}
++```
++
++Edit `PROVIDERS` to point at different providers. The entry is each provider's `remoteEntry.js` URL - the entry every bundler emits at dev + build time. (The richer [`mf-manifest.json`](https://module-federation.io/configure/manifest-fields) works for production builds and for rspack/rsbuild dev, but `@module-federation/vite` only emits it at build time, so the generator uses `remoteEntry.js` for a consistent dev experience.)
++
++The generated `App.tsx` renders each provider inside a `ProviderBoundary` (an inline class that combines `Suspense` with an error boundary, so one unreachable provider can't unmount the whole tree):
++
++```tsx
++import { lazyProvider } from './mf';
++// ...ProviderBoundary class omitted...
++
++const ProviderMyProvider = lazyProvider('my-provider', 'App');
++
++export function App() {
++  return (
++    <main>
++      <h1>my-consumer</h1>
++      <ProviderBoundary name="my-provider">
++        <ProviderMyProvider />
++      </ProviderBoundary>
++    </main>
++  );
++}
++```
++
++Wrap each `<ProviderBoundary>` in your router of choice (TanStack Router, React Router, etc.) if you need routing.
++
++## What changed in v23
++
++The following surfaces are deprecated in v23 and will be removed in v24:
++
++- `@nx/react:host`, `@nx/react:remote`, `@nx/react:federate-module`
++- `@nx/angular:host`, `@nx/angular:remote`, `@nx/angular:setup-mf`, `@nx/angular:federate-module`
++- `@nx/react:module-federation-dev-server`, `@nx/react:module-federation-ssr-dev-server`, `@nx/react:module-federation-static-server`
++- `@nx/angular:module-federation-dev-server`, `@nx/angular:module-federation-dev-ssr`
++- `@nx/rspack:module-federation-dev-server`, `@nx/rspack:module-federation-ssr-dev-server`, `@nx/rspack:module-federation-static-server`
++
++The most user-visible change: **`nx serve <host>` no longer auto-builds and serves all remotes.** With dynamic federation, the relationship is inverted - serve a provider and Nx brings its consumer along (`provider.serve.dependsOn = ['<consumer>:serve']`). Missing providers don't crash the consumer; they reject at `loadRemote` time and the generated `ProviderBoundary` renders an inline fallback.
++
++Angular Module Federation in Nx is no longer supported. Use [`@angular-architects/native-federation`](https://www.npmjs.com/package/@angular-architects/native-federation) for the supported Angular path going forward.
++
++## Migrate from `host` / `remote`
++
++There is **no automated codemod**. Existing setups vary widely (custom executors, host orchestration, SSR variants) and a generator would not land cleanly. Migrate manually using the steps below, or paste the AI prompt at the end of this section into Cursor / Claude Code / Copilot to perform the rewrite on your own codebase.
++
++### Manual steps
++
++1. Generate a fresh `consumer` for each existing host and a `provider` for each existing remote, using the same bundler you were on (or upgrade to Vite). Use a temporary directory so nothing overwrites the originals.
++2. Delete `module-federation.config.ts` from each app.
++3. Replace the bundler config in each app with the generated one. Port any custom `withModuleFederation` wrapping to inline plugin options.
++4. Convert each consumer's static `remotes:` list into entries in `src/mf.ts`'s `PROVIDERS` constant (URLs point at each provider's `remoteEntry.js`).
++5. Rewrite `import('remote-name/Module')` calls to `lazyProvider('remote-name', 'Module')` from `src/mf.ts`.
++6. Drop the `customWebpackConfig` block from each `project.json`. Replace the `serve` target with one that runs `vite` / `rsbuild` / `rspack` directly via `nx:run-commands`.
++7. On each provider's `serve` target, add `dependsOn: ['<consumer>:serve']` if you want `nx serve <provider>` to spin up the consumer alongside.
++
++### AI prompt
++
++Paste this into your AI assistant of choice, adjusted with your project paths:
++
++```markdown
++You are migrating an Nx workspace from the deprecated `@nx/react:host` / `@nx/react:remote` generators to the new
++`@nx/react:consumer` / `@nx/react:provider` generators (Nx v23+).
++
++For each `host` app in `apps/`:
++
++1. Delete `module-federation.config.ts`.
++2. Replace the bundler config with a plain `vite.config.ts` / `rsbuild.config.ts` / `rspack.config.ts` that uses
++   `@module-federation/vite` (vite), `@module-federation/rsbuild-plugin` (rsbuild), or
++   `@module-federation/enhanced/rspack` (rspack) directly. No `withModuleFederation` wrappers.
++3. Create `src/mf.ts` with a `PROVIDERS` constant - an array of `{ alias, name, entry }` where `name` is the
++   provider's federation container name (derived from its project name, so it can differ from `alias`, e.g.
++   `myCart` -> `my_cart`) and `entry` is its `remoteEntry.js` URL. At module init, call `registerRemotes` from
++   `@module-federation/runtime` with one entry per provider (set `type: 'module'` for vite providers; omit it for
++   rspack/rsbuild). Export `lazyProvider(alias, exposeName)` that returns `React.lazy(() => loadRemote(...))`.
++4. Replace all `import('remote-name/Module')` calls with `lazyProvider('remote-name', 'Module')`.
++5. Drop the `customWebpackConfig` block from `project.json`. Replace `serve` and `build` targets with `nx:run-commands`
++   invocations of the bundler directly.
++
++For each `remote` app, do the equivalent provider conversion: drop the federation config file, write a plain bundler
++config with the federation plugin exposing the same modules, and emit a standalone `index.html` + `src/index.ts` ->
++`src/bootstrap.tsx` indirection. Add `serve.dependsOn: ['<host>:serve']` to the provider's project.json if you want
++`nx serve <provider>` to also start the consumer.
++
++Do not orchestrate remotes from the host. Each app is served independently; missing remotes render via the consumer's
++Suspense + ErrorBoundary.
++```
++
++## SSR
++
++SSR is not first-classed in the new generators. The deprecated `module-federation-ssr-dev-server` executors are gone. If you need SSR with federation, see the upstream Module Federation [SSR guide](https://module-federation.io/) and wire it yourself on top of the generated consumer skeleton.
++
++## Reference
++
++A worked reference workspace covering all three bundlers, dynamic federation, and Angular Native Federation lives at the [mf-examples repository](https://github.com/nrwl/mf-examples) (see `apps/nx-react-vite/` for the canonical Nx-wired setup).
+diff --git a/e2e/module-federation/eslint.config.mjs b/e2e/module-federation/eslint.config.mjs
+new file mode 100644
+index 00000000000..857e6a90daf
+--- /dev/null
++++ b/e2e/module-federation/eslint.config.mjs
+@@ -0,0 +1,3 @@
++import { baseConfig, e2eTestOnlyIgnores } from '../../eslint.config.mjs';
++
++export default [...baseConfig, e2eTestOnlyIgnores];
+diff --git a/e2e/module-federation/jest.config.cts b/e2e/module-federation/jest.config.cts
+new file mode 100644
+index 00000000000..e9793345d2a
+--- /dev/null
++++ b/e2e/module-federation/jest.config.cts
+@@ -0,0 +1,13 @@
++/* eslint-disable */
++module.exports = {
++  transform: {
++    '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
++  },
++  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'html'],
++  maxWorkers: 1,
++  globals: {},
++  globalSetup: '../utils/global-setup.ts',
++  globalTeardown: '../utils/global-teardown.ts',
++  displayName: 'e2e-module-federation-v2',
++  preset: '../jest.preset.e2e.js',
++};
+diff --git a/e2e/module-federation/package.json b/e2e/module-federation/package.json
+new file mode 100644
+index 00000000000..960922fed35
+--- /dev/null
++++ b/e2e/module-federation/package.json
+@@ -0,0 +1,10 @@
++{
++  "name": "@nx/e2e-module-federation-v2",
++  "version": "0.0.1",
++  "private": true,
++  "dependencies": {
++    "nx": "workspace:*",
++    "@nx/devkit": "workspace:*",
++    "@nx/e2e-utils": "workspace:*"
++  }
++}
+diff --git a/e2e/module-federation/project.json b/e2e/module-federation/project.json
+new file mode 100644
+index 00000000000..4945f409f7b
+--- /dev/null
++++ b/e2e/module-federation/project.json
+@@ -0,0 +1,15 @@
++{
++  "name": "e2e-module-federation-v2",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "e2e/module-federation",
++  "projectType": "application",
++  "implicitDependencies": ["react", "module-federation"],
++  "// targets": "to see all targets run: nx show project e2e-module-federation-v2 --web",
++  "targets": {
++    "lint": {
++      "options": {
++        "max-warnings": 10
++      }
++    }
++  }
++}
+diff --git a/e2e/module-federation/src/rsbuild.test.ts b/e2e/module-federation/src/rsbuild.test.ts
+new file mode 100644
+index 00000000000..e757f2b7ee1
+--- /dev/null
++++ b/e2e/module-federation/src/rsbuild.test.ts
+@@ -0,0 +1,85 @@
++import {
++  checkFilesExist,
++  killProcessAndPorts,
++  runCLI,
++  runCommandUntil,
++  runE2ETests,
++  uniq,
++} from '@nx/e2e-utils';
++import {
++  cleanupModuleFederationV2Test,
++  setupModuleFederationV2Test,
++} from './setup';
++
++describe('@nx/module-federation v2 - Rsbuild', () => {
++  beforeAll(() => {
++    setupModuleFederationV2Test();
++  });
++
++  afterAll(() => cleanupModuleFederationV2Test());
++
++  it('generates an rsbuild provider that serves standalone', async () => {
++    const provider = uniq('rsbuild-provider');
++    const providerPort = 3101;
++
++    runCLI(
++      `generate @nx/react:provider apps/${provider} --bundler=rsbuild --port=${providerPort} --no-interactive --skipFormat`
++    );
++
++    checkFilesExist(
++      `apps/${provider}/rsbuild.config.ts`,
++      `apps/${provider}/index.html`,
++      `apps/${provider}/src/index.ts`,
++      `apps/${provider}/src/bootstrap.tsx`,
++      `apps/${provider}/src/App.tsx`,
++      `apps/${provider}/package.json`
++    );
++
++    if (runE2ETests()) {
++      const serve = await runCommandUntil(
++        `serve ${provider}`,
++        (output) => output.includes('Local:'),
++        { timeout: 180000 }
++      );
++      await killProcessAndPorts(serve.pid, providerPort);
++    }
++  }, 600_000);
++
++  it('generates an rsbuild consumer + provider in one shot via --providerNames and wires the manifest', async () => {
++    const consumer = uniq('rsbuild-consumer');
++    const provider = uniq('rsbuild-provider');
++    const consumerPort = 3100;
++    const providerPort = 3101;
++
++    runCLI(
++      `generate @nx/react:consumer apps/${consumer} --bundler=rsbuild --providerNames=${provider} --no-interactive --skipFormat`
++    );
++
++    checkFilesExist(
++      `apps/${consumer}/rsbuild.config.ts`,
++      `apps/${consumer}/src/mf.ts`,
++      `apps/${consumer}/src/App.tsx`,
++      `apps/${provider}/rsbuild.config.ts`,
++      `apps/${provider}/src/App.tsx`
++    );
++
++    if (runE2ETests()) {
++      let consumerReady = false;
++      let providerReady = false;
++      const serve = await runCommandUntil(
++        `serve ${provider}`,
++        (output) => {
++          if (output.includes(`http://localhost:${consumerPort}/`)) {
++            consumerReady = true;
++          }
++          if (output.includes(`http://localhost:${providerPort}/`)) {
++            providerReady = true;
++          }
++          return consumerReady && providerReady;
++        },
++        { timeout: 180000 }
++      );
++      await killProcessAndPorts(serve.pid, consumerPort, providerPort);
++    }
++  }, 900_000);
++});
+diff --git a/e2e/module-federation/src/rspack.test.ts b/e2e/module-federation/src/rspack.test.ts
+new file mode 100644
+index 00000000000..3786a34aff6
+--- /dev/null
++++ b/e2e/module-federation/src/rspack.test.ts
+@@ -0,0 +1,84 @@
++import {
++  checkFilesExist,
++  killProcessAndPorts,
++  runCLI,
++  runCommandUntil,
++  runE2ETests,
++  uniq,
++} from '@nx/e2e-utils';
++import {
++  cleanupModuleFederationV2Test,
++  setupModuleFederationV2Test,
++} from './setup';
++
++describe('@nx/module-federation v2 - Rspack', () => {
++  beforeAll(() => {
++    setupModuleFederationV2Test();
++  });
++
++  afterAll(() => cleanupModuleFederationV2Test());
++
++  it('generates an rspack provider that serves standalone', async () => {
++    const provider = uniq('rspack-provider');
++    const providerPort = 8101;
++
++    runCLI(
++      `generate @nx/react:provider apps/${provider} --bundler=rspack --port=${providerPort} --no-interactive --skipFormat`
++    );
++
++    checkFilesExist(
++      `apps/${provider}/rspack.config.ts`,
++      `apps/${provider}/index.html`,
++      `apps/${provider}/src/index.ts`,
++      `apps/${provider}/src/bootstrap.tsx`,
++      `apps/${provider}/src/App.tsx`,
++      `apps/${provider}/package.json`
++    );
++
++    if (runE2ETests()) {
++      const serve = await runCommandUntil(
++        `serve ${provider}`,
++        (output) =>
++          output.includes('compiled successfully') ||
++          output.includes('Compiled successfully'),
++        { timeout: 240000 }
++      );
++      await killProcessAndPorts(serve.pid, providerPort);
++    }
++  }, 600_000);
++
++  it('generates an rspack consumer + provider in one shot via --providerNames and wires the manifest', async () => {
++    const consumer = uniq('rspack-consumer');
++    const provider = uniq('rspack-provider');
++    const consumerPort = 8100;
++    const providerPort = 8101;
++
++    runCLI(
++      `generate @nx/react:consumer apps/${consumer} --bundler=rspack --providerNames=${provider} --no-interactive --skipFormat`
++    );
++
++    checkFilesExist(
++      `apps/${consumer}/rspack.config.ts`,
++      `apps/${consumer}/src/mf.ts`,
++      `apps/${consumer}/src/App.tsx`,
++      `apps/${provider}/rspack.config.ts`,
++      `apps/${provider}/src/App.tsx`
++    );
++
++    if (runE2ETests()) {
++      // `nx serve <provider>` brings the consumer up via provider.serve.dependsOn.
++      // Both apps compile separately; wait for both compile-success messages.
++      let compileCount = 0;
++      const serve = await runCommandUntil(
++        `serve ${provider}`,
++        (output) => {
++          const matches = output.match(/compiled successfully/gi);
++          if (matches) compileCount = matches.length;
++          return compileCount >= 2;
++        },
++        { timeout: 300000 }
++      );
++      await killProcessAndPorts(serve.pid, consumerPort, providerPort);
++    }
++  }, 900_000);
++});
+diff --git a/e2e/module-federation/src/setup.ts b/e2e/module-federation/src/setup.ts
+new file mode 100644
+index 00000000000..272b7d80936
+--- /dev/null
++++ b/e2e/module-federation/src/setup.ts
+@@ -0,0 +1,13 @@
++import { cleanupProject, newProject } from '@nx/e2e-utils';
++
++// The new `consumer`/`provider` generators ship in @nx/react. The shared
++// utils (federation-name validator, version constants) live in
++// @nx/module-federation, which @nx/react already depends on - so installing
++// react alone is enough.
++export function setupModuleFederationV2Test(): void {
++  newProject({ packages: ['@nx/react'] });
++}
++
++export function cleanupModuleFederationV2Test(): void {
++  cleanupProject();
++}
+diff --git a/e2e/module-federation/src/vite.test.ts b/e2e/module-federation/src/vite.test.ts
+new file mode 100644
+index 00000000000..7b4528fdf49
+--- /dev/null
++++ b/e2e/module-federation/src/vite.test.ts
+@@ -0,0 +1,91 @@
++import {
++  checkFilesExist,
++  killProcessAndPorts,
++  runCLI,
++  runCommandUntil,
++  runE2ETests,
++  uniq,
++} from '@nx/e2e-utils';
++import {
++  cleanupModuleFederationV2Test,
++  setupModuleFederationV2Test,
++} from './setup';
++
++describe('@nx/module-federation v2 - Vite', () => {
++  beforeAll(() => {
++    setupModuleFederationV2Test();
++  });
++
++  afterAll(() => cleanupModuleFederationV2Test());
++
++  it('generates a vite provider that serves standalone', async () => {
++    const provider = uniq('vite-provider');
++    const providerPort = 5101;
++
++    runCLI(
++      `generate @nx/react:provider apps/${provider} --bundler=vite --port=${providerPort} --no-interactive --skipFormat`
++    );
++
++    checkFilesExist(
++      `apps/${provider}/vite.config.ts`,
++      `apps/${provider}/index.html`,
++      `apps/${provider}/src/index.ts`,
++      `apps/${provider}/src/bootstrap.tsx`,
++      `apps/${provider}/src/App.tsx`,
++      `apps/${provider}/package.json`,
++      `apps/${provider}/tsconfig.json`
++    );
++
++    if (runE2ETests()) {
++      const serve = await runCommandUntil(
++        `serve ${provider}`,
++        (output) => output.includes('Local:') || output.includes('ready in'),
++        { timeout: 120000 }
++      );
++      await killProcessAndPorts(serve.pid, providerPort);
++    }
++  }, 600_000);
++
++  it('generates a vite consumer + provider in one shot via --providerNames and wires the manifest', async () => {
++    const consumer = uniq('vite-consumer');
++    const provider = uniq('vite-provider');
++    // Per-bundler defaults: consumer 5100, first generated provider 5101.
++    const consumerPort = 5100;
++    const providerPort = 5101;
++
++    runCLI(
++      `generate @nx/react:consumer apps/${consumer} --bundler=vite --providerNames=${provider} --no-interactive --skipFormat`
++    );
++
++    checkFilesExist(
++      `apps/${consumer}/vite.config.ts`,
++      `apps/${consumer}/src/mf.ts`,
++      `apps/${consumer}/src/App.tsx`,
++      // Sibling provider auto-generated by --providerNames.
++      `apps/${provider}/vite.config.ts`,
++      `apps/${provider}/src/App.tsx`
++    );
++
++    if (runE2ETests()) {
++      // `nx serve <provider>` brings the consumer up via provider.serve.dependsOn.
++      // Wait for both Vite "Local:" lines (one per app) to confirm the chain
++      // is fully up before killing.
++      let consumerReady = false;
++      let providerReady = false;
++      const serve = await runCommandUntil(
++        `serve ${provider}`,
++        (output) => {
++          if (output.includes(`http://127.0.0.1:${consumerPort}/`)) {
++            consumerReady = true;
++          }
++          if (output.includes(`http://127.0.0.1:${providerPort}/`)) {
++            providerReady = true;
++          }
++          return consumerReady && providerReady;
++        },
++        { timeout: 180000 }
++      );
++      await killProcessAndPorts(serve.pid, consumerPort, providerPort);
++    }
++  }, 900_000);
++});
+diff --git a/e2e/module-federation/tsconfig.json b/e2e/module-federation/tsconfig.json
+new file mode 100644
+index 00000000000..2d7b9ef08b0
+--- /dev/null
++++ b/e2e/module-federation/tsconfig.json
+@@ -0,0 +1,22 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "types": ["node", "jest"]
++  },
++  "include": [],
++  "files": [],
++  "references": [
++    {
++      "path": "../utils"
++    },
++    {
++      "path": "../../packages/devkit"
++    },
++    {
++      "path": "../../packages/nx"
++    },
++    {
++      "path": "./tsconfig.spec.json"
++    }
++  ]
++}
+diff --git a/e2e/module-federation/tsconfig.spec.json b/e2e/module-federation/tsconfig.spec.json
+new file mode 100644
+index 00000000000..97710f252a9
+--- /dev/null
++++ b/e2e/module-federation/tsconfig.spec.json
+@@ -0,0 +1,20 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "module": "commonjs",
++    "types": ["jest", "node"]
++  },
++  "include": [
++    "**/*.test.ts",
++    "**/*.spec.ts",
++    "**/*.spec.tsx",
++    "**/*.test.tsx",
++    "**/*.spec.js",
++    "**/*.test.js",
++    "**/*.spec.jsx",
++    "**/*.test.jsx",
++    "src/**/*.ts",
++    "**/*.d.ts",
++    "jest.config.ts"
++  ]
++}
+diff --git a/e2e/utils/create-project-utils.ts b/e2e/utils/create-project-utils.ts
+index bed70aee65c..9b795e546ef 100644
+--- a/e2e/utils/create-project-utils.ts
++++ b/e2e/utils/create-project-utils.ts
+@@ -68,6 +68,7 @@ const nxPackages = [
+   `@nx/react-native`,
+   `@nx/expo`,
+   '@nx/dotnet',
++  `@nx/module-federation`,
+   `@nx/workspace`,
+ ] as const;
+ 
+diff --git a/packages/angular/generators.json b/packages/angular/generators.json
+index a3769a8dad8..0e6d22de1f1 100644
+--- a/packages/angular/generators.json
++++ b/packages/angular/generators.json
+@@ -53,7 +53,8 @@
+       "factory": "./src/generators/federate-module/federate-module",
+       "schema": "./src/generators/federate-module/schema.json",
+       "x-type": "application",
+-      "description": "Create a federated module, which is exposed by a remote and can be subsequently loaded by a host."
++      "description": "Create a federated module, which is exposed by a remote and can be subsequently loaded by a host.",
++      "x-deprecated": "Angular Module Federation in Nx is no longer supported. Use `@angular-architects/native-federation` instead. Removed in Nx v24."
+     },
+     "init": {
+       "factory": "./src/generators/init/init",
+@@ -79,7 +80,8 @@
+       "schema": "./src/generators/remote/schema.json",
+       "x-type": "application",
+       "description": "Generate a Remote Angular Module Federation Application.",
+-      "aliases": ["producer"]
++      "aliases": ["producer"],
++      "x-deprecated": "Angular Module Federation in Nx is no longer supported. Use `@angular-architects/native-federation` instead. Removed in Nx v24."
+     },
+     "convert-to-with-mf": {
+       "factory": "./src/generators/convert-to-with-mf/convert-to-with-mf",
+@@ -91,7 +93,8 @@
+       "schema": "./src/generators/host/schema.json",
+       "x-type": "application",
+       "description": "Generate a Host Angular Module Federation Application.",
+-      "aliases": ["consumer"]
++      "aliases": ["consumer"],
++      "x-deprecated": "Angular Module Federation in Nx is no longer supported. Use `@angular-architects/native-federation` instead. Removed in Nx v24."
+     },
+     "ng-add": {
+       "factory": "./src/generators/ng-add/ng-add",
+@@ -138,7 +141,8 @@
+     "setup-mf": {
+       "factory": "./src/generators/setup-mf/setup-mf",
+       "schema": "./src/generators/setup-mf/schema.json",
+-      "description": "Generate a Module Federation configuration for a given Angular application."
++      "description": "Generate a Module Federation configuration for a given Angular application.",
++      "x-deprecated": "Angular Module Federation in Nx is no longer supported. Use `@angular-architects/native-federation` instead. Removed in Nx v24."
+     },
+     "setup-ssr": {
+       "factory": "./src/generators/setup-ssr/setup-ssr",
+diff --git a/packages/angular/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts b/packages/angular/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
+index 3f54570cf47..a65aff77c9d 100644
+--- a/packages/angular/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
++++ b/packages/angular/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
+@@ -22,6 +22,7 @@ import {
+ } from '../../builders/utilities/module-federation';
+ import { extname, join } from 'path';
+ import { existsSync } from 'fs';
++import { warnAngularMfDevServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ // This is required to ensure that the webpack version used by the Module Federation is the same as the one used by the builders.
+ const Module = require('module');
+@@ -47,6 +48,7 @@ export async function* moduleFederationDevServerExecutor(
+   schema: Schema,
+   context: ExecutorContext
+ ) {
++  warnAngularMfDevServerExecutorDeprecation();
+   const options = normalizeOptions(schema);
+ 
+   const { projects: workspaceProjects } =
+diff --git a/packages/angular/src/executors/module-federation-dev-server/schema.json b/packages/angular/src/executors/module-federation-dev-server/schema.json
+index f1c10d05834..b19ec5a5032 100644
+--- a/packages/angular/src/executors/module-federation-dev-server/schema.json
++++ b/packages/angular/src/executors/module-federation-dev-server/schema.json
+@@ -1,6 +1,7 @@
+ {
+   "$schema": "http://json-schema.org/draft-07/schema",
+   "title": "Schema for Module Federation Dev Server",
++  "x-deprecated": "The `@nx/angular:module-federation-dev-server` executor is deprecated. Angular Module Federation in Nx is no longer supported; use `@angular-architects/native-federation`. Removed in Nx v24.",
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "description": "Serves host [Module Federation](https://module-federation.io/) applications ([webpack](https://webpack.js.org/)-based) allowing to specify which remote applications should be served with the host.",
+diff --git a/packages/angular/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts b/packages/angular/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
+index c2876f7b4d5..ce226ace6c0 100644
+--- a/packages/angular/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
++++ b/packages/angular/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
+@@ -19,6 +19,7 @@ import { assertBuilderPackageIsInstalled } from '../utilities/builder-package';
+ import { normalizeOptions } from './lib/normalize-options';
+ import { startRemotes } from './lib/start-dev-remotes';
+ import type { Schema } from './schema';
++import { warnAngularMfDevSsrExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ // This is required to ensure that the webpack version used by the Module Federation is the same as the one used by the builders.
+ const Module = require('module');
+@@ -44,6 +45,7 @@ export async function* moduleFederationSsrDevServerExecutor(
+   schema: Schema,
+   context: ExecutorContext
+ ) {
++  warnAngularMfDevSsrExecutorDeprecation();
+   const options = normalizeOptions(schema);
+ 
+   assertBuilderPackageIsInstalled('@angular-devkit/build-angular');
+diff --git a/packages/angular/src/executors/module-federation-ssr-dev-server/schema.json b/packages/angular/src/executors/module-federation-ssr-dev-server/schema.json
+index ac8ec682e9d..2a5e726daab 100644
+--- a/packages/angular/src/executors/module-federation-ssr-dev-server/schema.json
++++ b/packages/angular/src/executors/module-federation-ssr-dev-server/schema.json
+@@ -1,6 +1,7 @@
+ {
+   "$schema": "http://json-schema.org/draft-07/schema",
+   "title": "Module Federation SSR Dev Server Target",
++  "x-deprecated": "The `@nx/angular:module-federation-ssr-dev-server` executor is deprecated. Angular Module Federation in Nx is no longer supported; use `@angular-architects/native-federation`. Removed in Nx v24.",
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "description": "The module-federation-ssr-dev-server executor is reserved exclusively for use with host SSR Module Federation applications. It allows the user to specify which remote applications should be served with the host.",
+diff --git a/packages/angular/src/generators/federate-module/federate-module.ts b/packages/angular/src/generators/federate-module/federate-module.ts
+index 98536b1f186..1d12fc034dc 100644
+--- a/packages/angular/src/generators/federate-module/federate-module.ts
++++ b/packages/angular/src/generators/federate-module/federate-module.ts
+@@ -15,8 +15,10 @@ import {
+   addRemote,
+ } from './lib';
+ import type { Schema } from './schema';
++import { warnAngularFederateModuleGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export async function federateModuleGenerator(tree: Tree, schema: Schema) {
++  warnAngularFederateModuleGeneratorDeprecation();
+   assertSupportedAngularVersion(tree);
+   if (!tree.exists(schema.path)) {
+     throw new Error(stripIndents`The "path" provided  does not exist. Please verify the path is correct and pointing to a file that exists in the workspace.
+diff --git a/packages/angular/src/generators/host/host.ts b/packages/angular/src/generators/host/host.ts
+index 6fc0d1d254d..ee8fe491d72 100644
+--- a/packages/angular/src/generators/host/host.ts
++++ b/packages/angular/src/generators/host/host.ts
+@@ -24,8 +24,10 @@ import { assertNotUsingTsSolutionSetup } from '../utils/validations';
+ import { getInstalledAngularVersionInfo } from '../utils/version-utils';
+ import { updateSsrSetup, validateOptions } from './lib';
+ import type { Schema } from './schema';
++import { warnAngularHostGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export async function host(tree: Tree, schema: Schema) {
++  warnAngularHostGeneratorDeprecation();
+   assertSupportedAngularVersion(tree);
+   assertNotUsingTsSolutionSetup(tree, 'host');
+   validateOptions(tree, schema);
+diff --git a/packages/angular/src/generators/remote/remote.ts b/packages/angular/src/generators/remote/remote.ts
+index 6fd2835c1e9..1e6683c596c 100644
+--- a/packages/angular/src/generators/remote/remote.ts
++++ b/packages/angular/src/generators/remote/remote.ts
+@@ -24,8 +24,10 @@ import { assertNotUsingTsSolutionSetup } from '../utils/validations';
+ import { getInstalledAngularVersionInfo } from '../utils/version-utils';
+ import { findNextAvailablePort, updateSsrSetup, validateOptions } from './lib';
+ import type { Schema } from './schema';
++import { warnAngularRemoteGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export async function remote(tree: Tree, schema: Schema) {
++  warnAngularRemoteGeneratorDeprecation();
+   assertSupportedAngularVersion(tree);
+   assertNotUsingTsSolutionSetup(tree, 'remote');
+   validateOptions(tree, schema);
+diff --git a/packages/angular/src/generators/setup-mf/setup-mf.ts b/packages/angular/src/generators/setup-mf/setup-mf.ts
+index b4d22104d26..ac1812d5fbb 100644
+--- a/packages/angular/src/generators/setup-mf/setup-mf.ts
++++ b/packages/angular/src/generators/setup-mf/setup-mf.ts
+@@ -35,8 +35,10 @@ import {
+   updateTsConfig,
+ } from './lib';
+ import type { Schema } from './schema';
++import { warnAngularSetupMfGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export async function setupMf(tree: Tree, rawOptions: Schema) {
++  warnAngularSetupMfGeneratorDeprecation();
+   assertSupportedAngularVersion(tree);
+   const options = normalizeOptions(tree, rawOptions);
+   const projectConfig = readProjectConfiguration(tree, options.appName);
+diff --git a/packages/angular/src/utils/module-federation-deprecation.ts b/packages/angular/src/utils/module-federation-deprecation.ts
+new file mode 100644
+index 00000000000..a582964fc14
+--- /dev/null
++++ b/packages/angular/src/utils/module-federation-deprecation.ts
+@@ -0,0 +1,62 @@
++import { logger } from '@nx/devkit';
++
++// TODO(v24): Remove all Angular Module Federation surfaces from @nx/angular.
++// Angular Native Federation (@angular-architects/native-federation) is the
++// supported Angular MF path going forward; the new @nx/module-federation
++// generators are React-only.
++const MIGRATION_URL =
++  'https://nx.dev/docs/technologies/module-federation/consumer-and-provider';
++const ANGULAR_NATIVE_FED_URL =
++  'https://www.npmjs.com/package/@angular-architects/native-federation';
++
++const ANGULAR_MF_TRAILER = `Angular Module Federation in Nx is no longer supported. Use \`@angular-architects/native-federation\` (${ANGULAR_NATIVE_FED_URL}) for the supported Angular path. See ${MIGRATION_URL} for the v23 migration guide.`;
++
++export const ANGULAR_HOST_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/angular:host\` generator is deprecated and will be removed in Nx v24. ${ANGULAR_MF_TRAILER}`;
++
++export const ANGULAR_REMOTE_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/angular:remote\` generator is deprecated and will be removed in Nx v24. ${ANGULAR_MF_TRAILER}`;
++
++export const ANGULAR_SETUP_MF_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/angular:setup-mf\` generator is deprecated and will be removed in Nx v24. ${ANGULAR_MF_TRAILER}`;
++
++export const ANGULAR_FEDERATE_MODULE_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/angular:federate-module\` generator is deprecated and will be removed in Nx v24. ${ANGULAR_MF_TRAILER}`;
++
++export const ANGULAR_MF_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/angular:module-federation-dev-server\` executor is deprecated and will be removed in Nx v24. ${ANGULAR_MF_TRAILER}`;
++
++export const ANGULAR_MF_DEV_SSR_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/angular:module-federation-dev-ssr\` executor is deprecated and will be removed in Nx v24. ${ANGULAR_MF_TRAILER}`;
++
++export function warnAngularHostGeneratorDeprecation(): void {
++  logger.warn(ANGULAR_HOST_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++export function warnAngularRemoteGeneratorDeprecation(): void {
++  logger.warn(ANGULAR_REMOTE_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++export function warnAngularSetupMfGeneratorDeprecation(): void {
++  logger.warn(ANGULAR_SETUP_MF_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++export function warnAngularFederateModuleGeneratorDeprecation(): void {
++  logger.warn(ANGULAR_FEDERATE_MODULE_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++// Executor warnings fire once per process to avoid flooding dev-server loops.
++const executorWarned = new Set<string>();
++function warnOnce(key: string, message: string): void {
++  if (executorWarned.has(key)) return;
++  executorWarned.add(key);
++  logger.warn(message);
++}
++
++export function warnAngularMfDevServerExecutorDeprecation(): void {
++  warnOnce(
++    'angular-mf-dev-server',
++    ANGULAR_MF_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
++
++export function warnAngularMfDevSsrExecutorDeprecation(): void {
++  warnOnce(
++    'angular-mf-dev-ssr',
++    ANGULAR_MF_DEV_SSR_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
+diff --git a/packages/js/package.json b/packages/js/package.json
+index 75d59f52993..f681ea085e6 100644
+--- a/packages/js/package.json
++++ b/packages/js/package.json
+@@ -51,6 +51,9 @@
+       ],
+       "src/utils/assets/copy-assets-handler": [
+         "dist/src/utils/assets/copy-assets-handler.d.ts"
++      ],
++      "src/utils/versions": [
++        "dist/src/utils/versions.d.ts"
+       ]
+     }
+   },
+@@ -109,6 +112,11 @@
+       "@nx/nx-source": "./src/utils/assets/copy-assets-handler.ts",
+       "types": "./dist/src/utils/assets/copy-assets-handler.d.ts",
+       "default": "./dist/src/utils/assets/copy-assets-handler.js"
++    },
++    "./src/utils/versions": {
++      "@nx/nx-source": "./src/utils/versions.ts",
++      "types": "./dist/src/utils/versions.d.ts",
++      "default": "./dist/src/utils/versions.js"
+     }
+   },
+   "dependencies": {
+diff --git a/packages/react/generators.json b/packages/react/generators.json
+index fae3341b1d8..b01d9d1ca28 100644
+--- a/packages/react/generators.json
++++ b/packages/react/generators.json
+@@ -65,14 +65,26 @@
+       "schema": "./src/generators/host/schema.json",
+       "x-type": "application",
+       "description": "Generate a host react application",
+-      "aliases": ["consumer"]
++      "x-deprecated": "Use `@nx/react:consumer` instead (dynamic federation, no static-serve orchestration). Removed in Nx v24."
+     },
+     "remote": {
+       "factory": "./src/generators/remote/remote",
+       "schema": "./src/generators/remote/schema.json",
+       "x-type": "application",
+       "description": "Generate a remote react application",
+-      "aliases": ["producer"]
++      "x-deprecated": "Use `@nx/react:provider` instead. Removed in Nx v24."
++    },
++    "consumer": {
++      "factory": "./src/generators/consumer/consumer",
++      "schema": "./src/generators/consumer/schema.json",
++      "x-type": "application",
++      "description": "Create a React Module Federation consumer that loads federated components dynamically via an inline PROVIDERS list in src/mf.ts. Supports Vite (default), Rsbuild, and Rspack."
++    },
++    "provider": {
++      "factory": "./src/generators/provider/provider",
++      "schema": "./src/generators/provider/schema.json",
++      "x-type": "application",
++      "description": "Create a React Module Federation provider that exposes a federated component. Supports Vite (default), Rsbuild, and Rspack."
+     },
+     "cypress-component-configuration": {
+       "factory": "./src/generators/cypress-component-configuration/cypress-component-configuration#cypressComponentConfigGenerator",
+@@ -96,7 +108,8 @@
+       "factory": "./src/generators/federate-module/federate-module#federateModuleGenerator",
+       "schema": "./src/generators/federate-module/schema.json",
+       "description": "Federate a module.",
+-      "hidden": false
++      "hidden": false,
++      "x-deprecated": "The new `@nx/react:provider` generator exposes modules directly. Removed in Nx v24."
+     }
+   }
+ }
+diff --git a/packages/react/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts b/packages/react/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
+index 84f454b219f..4411f5e071b 100644
+--- a/packages/react/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
++++ b/packages/react/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
+@@ -12,11 +12,13 @@ import { existsSync } from 'fs';
+ import { extname, join } from 'path';
+ import { normalizeOptions, startRemotes } from './lib';
+ import { ModuleFederationDevServerOptions } from './schema';
++import { warnReactMfDevServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export default async function* moduleFederationDevServer(
+   schema: ModuleFederationDevServerOptions,
+   context: ExecutorContext
+ ): AsyncIterableIterator<{ success: boolean; baseUrl?: string }> {
++  warnReactMfDevServerExecutorDeprecation();
+   const options = normalizeOptions(schema);
+   const currIter = options.static
+     ? fileServerExecutor(
+diff --git a/packages/react/src/executors/module-federation-dev-server/schema.json b/packages/react/src/executors/module-federation-dev-server/schema.json
+index b04b6ae7c07..07c4de254b7 100644
+--- a/packages/react/src/executors/module-federation-dev-server/schema.json
++++ b/packages/react/src/executors/module-federation-dev-server/schema.json
+@@ -3,6 +3,7 @@
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "title": "Module Federation Dev Server",
++  "x-deprecated": "The `@nx/react:module-federation-dev-server` executor is deprecated. Dynamic federation in `@nx/react:consumer` removes the need for host-orchestrated remote serving. Removed in Nx v24.",
+   "description": "Serve a web application.",
+   "cli": "nx",
+   "type": "object",
+diff --git a/packages/react/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts b/packages/react/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
+index 9e6e6cc9ae4..5823599ca3a 100644
+--- a/packages/react/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
++++ b/packages/react/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
+@@ -11,11 +11,13 @@ import { existsSync } from 'fs';
+ import { extname, join } from 'path';
+ import { normalizeOptions, startRemotes } from './lib';
+ import { ModuleFederationSsrDevServerOptions } from './schema';
++import { warnReactMfSsrDevServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export default async function* moduleFederationSsrDevServer(
+   ssrDevServerOptions: ModuleFederationSsrDevServerOptions,
+   context: ExecutorContext
+ ) {
++  warnReactMfSsrDevServerExecutorDeprecation();
+   const options = normalizeOptions(ssrDevServerOptions);
+   // TODO(JamesHenry): remove type assertion once the nx repo is updated to use https://github.com/nrwl/nx/pull/33095
+   let iter: any = ssrDevServerExecutor(options, context as any);
+diff --git a/packages/react/src/executors/module-federation-ssr-dev-server/schema.json b/packages/react/src/executors/module-federation-ssr-dev-server/schema.json
+index 19b771d89d2..0b03a1d2dff 100644
+--- a/packages/react/src/executors/module-federation-ssr-dev-server/schema.json
++++ b/packages/react/src/executors/module-federation-ssr-dev-server/schema.json
+@@ -3,6 +3,7 @@
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "title": "Module Federation SSR Dev Server",
++  "x-deprecated": "The `@nx/react:module-federation-ssr-dev-server` executor is deprecated. SSR is not first-classed in the new `@nx/react:consumer`/`@nx/react:provider` generators. Removed in Nx v24.",
+   "description": "Serve a SSR Consumer (host) application along with its known Producers (remotes).",
+   "cli": "nx",
+   "type": "object",
+diff --git a/packages/react/src/executors/module-federation-static-server/module-federation-static-server.impl.ts b/packages/react/src/executors/module-federation-static-server/module-federation-static-server.impl.ts
+index f0376368680..af509319cc1 100644
+--- a/packages/react/src/executors/module-federation-static-server/module-federation-static-server.impl.ts
++++ b/packages/react/src/executors/module-federation-static-server/module-federation-static-server.impl.ts
+@@ -19,6 +19,7 @@ import {
+ } from '@nx/module-federation/src/utils';
+ import fileServerExecutor from '@nx/web/src/executors/file-server/file-server.impl';
+ import { waitForPortOpen } from '@nx/web/src/utils/wait-for-port-open';
++import { warnReactMfStaticServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ import type { WebpackExecutorOptions } from '@nx/webpack';
+ import { fork } from 'child_process';
+ import type { Express } from 'express';
+@@ -245,6 +246,7 @@ export default async function* moduleFederationStaticServer(
+   schema: ModuleFederationStaticServerSchema,
+   context: ExecutorContext
+ ) {
++  warnReactMfStaticServerExecutorDeprecation();
+   // Force Node to resolve to look for the nx binary that is inside node_modules
+   const nxBin = require.resolve('nx/bin/nx');
+ 
+diff --git a/packages/react/src/executors/module-federation-static-server/schema.json b/packages/react/src/executors/module-federation-static-server/schema.json
+index 2962665a4f8..fe226c55c58 100644
+--- a/packages/react/src/executors/module-federation-static-server/schema.json
++++ b/packages/react/src/executors/module-federation-static-server/schema.json
+@@ -3,6 +3,7 @@
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "title": "Module Federation Static Dev Server",
++  "x-deprecated": "The `@nx/react:module-federation-static-server` executor is deprecated. Use `vite preview` / `rsbuild preview` via `nx:run-commands` instead. Removed in Nx v24.",
+   "description": "Serve a Consumer (host) application statically along with its Producers (remotes).",
+   "cli": "nx",
+   "type": "object",
+diff --git a/packages/react/src/generators/_utils/mf-dependencies.ts b/packages/react/src/generators/_utils/mf-dependencies.ts
+new file mode 100644
+index 00000000000..c3113bf2fdf
+--- /dev/null
++++ b/packages/react/src/generators/_utils/mf-dependencies.ts
+@@ -0,0 +1,97 @@
++import * as mfVersions from './mf-versions';
++import { typescriptVersion } from '@nx/js/src/utils/versions';
++import {
++  reactVersion,
++  reactDomVersion,
++  typesReactVersion,
++  typesReactDomVersion,
++} from '../../utils/versions';
++import type { SupportedBundler } from './normalize';
++
++export interface DepsBundle {
++  dependencies: Record<string, string>;
++  devDependencies: Record<string, string>;
++}
++
++// Returned to both surfaces:
++// - addDependenciesToPackageJson(tree, deps, devDeps) writes to root package.json
++//   so bare `vite` / `rsbuild` / `rspack` in the run-commands serve target resolve
++//   in integrated workspaces.
++// - The per-project package.json template uses the same map so a pnpm-workspace
++//   setup (which installs per-project) gets the same versions without drift.
++export function getProviderDeps(bundler: SupportedBundler): DepsBundle {
++  const base = {
++    dependencies: {
++      react: reactVersion,
++      'react-dom': reactDomVersion,
++    },
++    devDependencies: {
++      '@types/react': typesReactVersion,
++      '@types/react-dom': typesReactDomVersion,
++      typescript: typescriptVersion,
++    },
++  };
++  return mergeWith(base, bundlerDeps(bundler));
++}
++
++export function getConsumerDeps(bundler: SupportedBundler): DepsBundle {
++  const base = {
++    dependencies: {
++      '@module-federation/runtime': mfVersions.moduleFederationRuntimeVersion,
++      react: reactVersion,
++      'react-dom': reactDomVersion,
++    },
++    devDependencies: {
++      '@types/react': typesReactVersion,
++      '@types/react-dom': typesReactDomVersion,
++      typescript: typescriptVersion,
++    },
++  };
++  return mergeWith(base, bundlerDeps(bundler));
++}
++
++function bundlerDeps(bundler: SupportedBundler): DepsBundle {
++  switch (bundler) {
++    case 'vite':
++      return {
++        dependencies: {},
++        devDependencies: {
++          '@module-federation/vite':
++            mfVersions.moduleFederationVitePluginVersion,
++          '@vitejs/plugin-react': mfVersions.vitejsPluginReactVersion,
++          vite: mfVersions.viteVersion,
++        },
++      };
++    case 'rsbuild':
++      return {
++        dependencies: {},
++        devDependencies: {
++          '@module-federation/rsbuild-plugin':
++            mfVersions.moduleFederationRsbuildPluginVersion,
++          '@rsbuild/core': mfVersions.rsbuildCoreVersion,
++          '@rsbuild/plugin-react': mfVersions.rsbuildPluginReactVersion,
++        },
++      };
++    case 'rspack':
++      // Rspack provider/consumer both put @module-federation/enhanced in
++      // dependencies (it's imported at runtime by the federation plugin call).
++      return {
++        dependencies: {
++          '@module-federation/enhanced':
++            mfVersions.moduleFederationEnhancedVersion,
++        },
++        devDependencies: {
++          '@rspack/cli': mfVersions.rspackCliVersion,
++          '@rspack/core': mfVersions.rspackCoreVersion,
++          '@rspack/dev-server': mfVersions.rspackDevServerVersion,
++        },
++      };
++  }
++}
++
++function mergeWith(a: DepsBundle, b: DepsBundle): DepsBundle {
++  return {
++    dependencies: { ...a.dependencies, ...b.dependencies },
++    devDependencies: { ...a.devDependencies, ...b.devDependencies },
++  };
++}
+diff --git a/packages/react/src/generators/_utils/mf-versions.ts b/packages/react/src/generators/_utils/mf-versions.ts
+new file mode 100644
+index 00000000000..f1370597947
+--- /dev/null
++++ b/packages/react/src/generators/_utils/mf-versions.ts
+@@ -0,0 +1,30 @@
++// Module Federation runtime + bundler-specific deps live here. Framework
++// versions (react, react-dom, @types/*, typescript) are owned by @nx/react
++// (../../utils/versions) and @nx/js so each dep has a single source of truth.
++
++// Module Federation runtime packages. Keep `runtime` on the same major as
++// `enhanced` / the `vite` plugin (both pull runtime 2.4.x). A 0.x runtime in
++// the consumer would mismatch the 2.x runtime baked into the providers.
++export const moduleFederationEnhancedVersion = '^2.4.0';
++export const moduleFederationVitePluginVersion = '^1.15.5';
++export const moduleFederationRuntimeVersion = '^2.4.0';
++
++// Vite stack.
++export const viteVersion = '^8.0.13';
++export const vitejsPluginReactVersion = '^6.0.2';
++
++// Rsbuild stack.
++export const rsbuildCoreVersion = '^1.4.0';
++export const rsbuildPluginReactVersion = '^1.3.0';
++// Official MF rsbuild integration. Peers @rsbuild/core ^1.3.21, so the pin
++// above satisfies it. Used instead of @module-federation/enhanced/rspack so
++// the federation config is a first-class rsbuild plugin, not a tools.rspack hack.
++export const moduleFederationRsbuildPluginVersion = '^2.5.0';
++
++// Rspack stack.
++export const rspackCoreVersion = '^2.0.3';
++export const rspackCliVersion = '^2.0.3';
++// Pinned (no ^) to dodge the broken 2.0.2 publish, which ships no dist/ so
++// @rspack/cli can't load it for `rspack serve`. Re-float to ^ once upstream
++// republishes a fixed 2.0.3+.
++export const rspackDevServerVersion = '2.0.1';
+diff --git a/packages/react/src/generators/_utils/normalize.spec.ts b/packages/react/src/generators/_utils/normalize.spec.ts
+new file mode 100644
+index 00000000000..9c73188a633
+--- /dev/null
++++ b/packages/react/src/generators/_utils/normalize.spec.ts
+@@ -0,0 +1,105 @@
++import { Tree } from '@nx/devkit';
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import {
++  getDefaultPort,
++  normalizeScaffoldOptions,
++  toFederationName,
++} from './normalize';
++
++describe('toFederationName', () => {
++  it('passes simple identifiers through', () => {
++    expect(toFederationName('myapp')).toBe('myapp');
++  });
++
++  it('converts hyphens to underscores', () => {
++    expect(toFederationName('my-app')).toBe('my_app');
++  });
++
++  it('strips disallowed characters', () => {
++    expect(toFederationName('my.app@v1')).toBe('myappv1');
++  });
++
++  it('throws when result would be empty', () => {
++    expect(() => toFederationName('---')).toThrow(/Cannot derive/);
++  });
++
++  it('throws when result starts with a digit', () => {
++    expect(() => toFederationName('1-app')).toThrow(
++      /cannot start with a digit/
++    );
++  });
++});
++
++describe('getDefaultPort', () => {
++  it.each([
++    ['vite', 'consumer', 5100],
++    ['vite', 'provider', 5101],
++    ['rsbuild', 'consumer', 3100],
++    ['rsbuild', 'provider', 3101],
++    ['rspack', 'consumer', 8100],
++    ['rspack', 'provider', 8101],
++  ] as const)(
++    'defaults %s %s to %i (provider = consumer base + 1 so they do not collide)',
++    (bundler, surface, expected) => {
++      expect(getDefaultPort(bundler, surface)).toBe(expected);
++    }
++  );
++});
++
++describe('normalizeScaffoldOptions', () => {
++  let tree: Tree;
++  beforeEach(() => {
++    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
++  });
++
++  it('infers project name + root from a positional directory path', async () => {
++    const opts = await normalizeScaffoldOptions(tree, {
++      directory: 'apps/shop',
++      surface: 'consumer',
++    });
++    expect(opts).toMatchInlineSnapshot(`
++      {
++        "bundler": "vite",
++        "federationName": "shop",
++        "port": 5100,
++        "projectName": "shop",
++        "projectRoot": "apps/shop",
++      }
++    `);
++  });
++
++  it('defaults provider port to consumer port + 1 so a workspace can spin up both without override', async () => {
++    const opts = await normalizeScaffoldOptions(tree, {
++      directory: 'apps/shop',
++      surface: 'provider',
++    });
++    expect(opts.port).toBe(5101);
++  });
++
++  it('coerces hyphenated names into a federation identifier', async () => {
++    const opts = await normalizeScaffoldOptions(tree, {
++      directory: 'apps/product-catalog',
++      surface: 'provider',
++      bundler: 'rspack',
++    });
++    expect(opts).toMatchInlineSnapshot(`
++      {
++        "bundler": "rspack",
++        "federationName": "product_catalog",
++        "port": 8101,
++        "projectName": "product-catalog",
++        "projectRoot": "apps/product-catalog",
++      }
++    `);
++  });
++
++  it('honours an explicit port override', async () => {
++    const opts = await normalizeScaffoldOptions(tree, {
++      directory: 'apps/shell',
++      surface: 'consumer',
++      bundler: 'rsbuild',
++      port: 4321,
++    });
++    expect(opts.port).toBe(4321);
++  });
++});
+diff --git a/packages/react/src/generators/_utils/normalize.ts b/packages/react/src/generators/_utils/normalize.ts
+new file mode 100644
+index 00000000000..35d426da78d
+--- /dev/null
++++ b/packages/react/src/generators/_utils/normalize.ts
+@@ -0,0 +1,78 @@
++import { names, Tree } from '@nx/devkit';
++import { determineProjectNameAndRootOptions } from '@nx/devkit/internal';
++
++export type SupportedBundler = 'vite' | 'rsbuild' | 'rspack';
++export type SupportedSurface = 'consumer' | 'provider';
++
++// Default ports are split so a `consumer` + `provider` generated with no
++// overrides don't collide. Consumer gets the round base (the user navigates
++// to it); providers get base+1, base+2, etc., so a manifest pointing at
++// `consumer-base + 1` lines up with the first generated provider.
++//
++// Vite base deliberately avoids 5000 (macOS AirTunes binds it on the IPv4
++// wildcard, leading to silent EADDRINUSE on `127.0.0.1`).
++const DEFAULT_BASE_PORTS: Record<SupportedBundler, number> = {
++  vite: 5100,
++  rsbuild: 3100,
++  rspack: 8100,
++};
++
++export interface NormalizedScaffoldOptions {
++  projectName: string;
++  federationName: string;
++  bundler: SupportedBundler;
++  port: number;
++  projectRoot: string;
++}
++
++export interface RawScaffoldOptions {
++  directory: string;
++  surface: SupportedSurface;
++  bundler?: SupportedBundler;
++  port?: number;
++}
++
++export function getDefaultPort(
++  bundler: SupportedBundler,
++  surface: SupportedSurface
++): number {
++  const base = DEFAULT_BASE_PORTS[bundler];
++  return surface === 'consumer' ? base : base + 1;
++}
++
++// Federation `name` must be a JS identifier so the bundler can use it as a
++// global namespace. Hyphens are allowed in project names but invalid as an
++// identifier, so we coerce to underscores.
++export function toFederationName(projectName: string): string {
++  if (!/[A-Za-z0-9]/.test(projectName)) {
++    throw new Error(
++      `Cannot derive a federation name from project name '${projectName}'. Use letters, digits, hyphens, or underscores.`
++    );
++  }
++  const candidate = projectName
++    .replace(/-/g, '_')
++    .replace(/[^A-Za-z0-9_]/g, '');
++  if (/^[0-9]/.test(candidate)) {
++    throw new Error(
++      `Federation name '${candidate}' (derived from project '${projectName}') cannot start with a digit. Rename the project.`
++    );
++  }
++  return candidate;
++}
++
++export async function normalizeScaffoldOptions(
++  tree: Tree,
++  raw: RawScaffoldOptions
++): Promise<NormalizedScaffoldOptions> {
++  const bundler: SupportedBundler = raw.bundler ?? 'vite';
++  const { projectName, projectRoot } = await determineProjectNameAndRootOptions(
++    tree,
++    {
++      projectType: 'application',
++      directory: raw.directory,
++    }
++  );
++  const federationName = toFederationName(names(projectName).fileName);
++  const port = raw.port ?? getDefaultPort(bundler, raw.surface);
++  return { projectName, federationName, bundler, port, projectRoot };
++}
+diff --git a/packages/react/src/generators/consumer/__snapshots__/consumer.spec.ts.snap b/packages/react/src/generators/consumer/__snapshots__/consumer.spec.ts.snap
+new file mode 100644
+index 00000000000..16398f908b7
+--- /dev/null
++++ b/packages/react/src/generators/consumer/__snapshots__/consumer.spec.ts.snap
+@@ -0,0 +1,758 @@
++// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
++
++exports[`@nx/react:consumer generates a consumer for the rsbuild bundler: project.json 1`] = `
++{
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "name": "my-consumer",
++  "projectType": "application",
++  "root": "apps/my-consumer",
++  "sourceRoot": "apps/my-consumer/src",
++  "targets": {
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rsbuild build",
++        "cwd": "apps/my-consumer",
++      },
++    },
++    "serve": {
++      "continuous": true,
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rsbuild dev",
++        "cwd": "apps/my-consumer",
++      },
++    },
++  },
++}
++`;
++
++exports[`@nx/react:consumer generates a consumer for the rsbuild bundler: rsbuild tree 1`] = `
++{
++  "apps/my-consumer/index.html": "<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title>my-consumer</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- Rsbuild's html plugin injects the entry script automatically. -->
++  </body>
++</html>
++",
++  "apps/my-consumer/package.json": "{
++  "name": "my-consumer",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rsbuild dev --port 3100",
++    "build": "rsbuild build",
++    "preview": "rsbuild preview --port 3100"
++  },
++  "dependencies": {
++    "@module-federation/runtime": "^2.4.0",
++    "react": "^19.0.0",
++    "react-dom": "^19.0.0"
++  },
++  "devDependencies": {
++    "@module-federation/rsbuild-plugin": "^2.5.0",
++    "@rsbuild/core": "^1.4.0",
++    "@rsbuild/plugin-react": "^1.3.0",
++    "@types/react": "^19.0.0",
++    "@types/react-dom": "^19.0.0",
++    "typescript": "~5.9.2"
++  }
++}
++",
++  "apps/my-consumer/project.json": "{
++  "name": "my-consumer",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "apps/my-consumer/src",
++  "projectType": "application",
++  "targets": {
++    "serve": {
++      "executor": "nx:run-commands",
++      "continuous": true,
++      "options": {
++        "command": "rsbuild dev",
++        "cwd": "apps/my-consumer"
++      }
++    },
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rsbuild build",
++        "cwd": "apps/my-consumer"
++      }
++    }
++  }
++}
++",
++  "apps/my-consumer/rsbuild.config.ts": "import { defineConfig } from '@rsbuild/core';
++import { pluginReact } from '@rsbuild/plugin-react';
++import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
++
++const PORT = 3100;
++const NAME = 'my_consumer';
++
++export default defineConfig({
++  server: { port: PORT },
++  // assetPrefix:true keeps chunk URLs aligned with the dev-server origin -
++  // mirrors the provider config so a consumer that also exposes federated
++  // modules later doesn't need a separate fix.
++  dev: { assetPrefix: true },
++  html: { template: './index.html' },
++  source: { entry: { index: './src/index.ts' } },
++  plugins: [
++    pluginReact(),
++    pluginModuleFederation({
++      name: NAME,
++      // No build-time \`remotes:\` block - registered at runtime in src/mf.ts
++      // at module load time.
++      shared: ['react', 'react-dom'],
++    }),
++  ],
++});
++",
++  "apps/my-consumer/src/App.tsx": "import { Component, Suspense, type ReactNode } from 'react';
++import { lazyProvider } from './mf';
++
++// ProviderBoundary catches the lazy() rejection that fires when a provider's
++// remoteEntry.js can't be fetched (provider not running, network error,
++// etc.). Without it any one missing provider unmounts the whole consumer
++// tree. React has no built-in functional error boundary so this is a class.
++// Wrap each <ProviderBoundary> in your router of choice if you need routing.
++class ProviderBoundary extends Component<
++  { children: ReactNode; name: string },
++  { error: Error | null }
++> {
++  state = { error: null as Error | null };
++  static getDerivedStateFromError(error: Error) {
++    return { error };
++  }
++  render() {
++    if (this.state.error) {
++      return (
++        <div role="alert">
++          <p>
++            Provider &quot;{this.props.name}&quot; unavailable:{' '}
++            {this.state.error.message}
++          </p>
++        </div>
++      );
++    }
++    return (
++      <Suspense fallback={<p>Loading {this.props.name}...</p>}>
++        {this.props.children}
++      </Suspense>
++    );
++  }
++}
++
++const ProviderMyProvider = lazyProvider('my-provider', 'App');
++
++export function App() {
++  return (
++    <main>
++      <h1>my-consumer</h1>
++      <ProviderBoundary name="my-provider">
++        <ProviderMyProvider />
++      </ProviderBoundary>
++    </main>
++  );
++}
++
++export default App;
++",
++  "apps/my-consumer/src/bootstrap.tsx": "import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
++",
++  "apps/my-consumer/src/index.ts": "// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom) is evaluated.
++import('./bootstrap');
++export {};
++",
++  "apps/my-consumer/src/mf.ts": "import { lazy, type ComponentType } from 'react';
++import { registerRemotes, loadRemote } from '@module-federation/runtime';
++
++// The providers this consumer loads at runtime. Edit \`entry\` to point at a
++// different URL (\`remoteEntry.js\` is what every supported bundler emits at dev
++// + build time). \`name\` is the provider build's federation container name and
++// must match the provider's federation \`name\`; \`alias\` is the key you pass to
++// loadRemote()/lazyProvider().
++const PROVIDERS: Array<{ alias: string; name: string; entry: string }> = [
++  {
++    alias: 'my-provider',
++    name: 'my_provider',
++    entry: 'http://localhost:3101/remoteEntry.js',
++  },
++];
++
++// \`type\` is omitted so the federation runtime auto-detects the entry format.
++// The providers in this workspace are rsbuild-built and emit UMD;
++// setting \`type: 'module'\` here breaks them with #RUNTIME-002.
++registerRemotes(PROVIDERS.map((remote) => ({ ...remote })));
++
++export function lazyProvider<Props = unknown>(
++  alias: string,
++  exposeName: string,
++) {
++  return lazy(async () => {
++    const mod = await loadRemote<{ default: ComponentType<Props> }>(
++      \`\${alias}/\${exposeName}\`,
++    );
++    return { default: mod!.default };
++  });
++}
++",
++  "apps/my-consumer/tsconfig.json": "{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
++",
++}
++`;
++
++exports[`@nx/react:consumer generates a consumer for the rspack bundler: project.json 1`] = `
++{
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "name": "my-consumer",
++  "projectType": "application",
++  "root": "apps/my-consumer",
++  "sourceRoot": "apps/my-consumer/src",
++  "targets": {
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rspack build --mode=production",
++        "cwd": "apps/my-consumer",
++      },
++    },
++    "serve": {
++      "continuous": true,
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rspack serve --mode=development",
++        "cwd": "apps/my-consumer",
++      },
++    },
++  },
++}
++`;
++
++exports[`@nx/react:consumer generates a consumer for the rspack bundler: rspack tree 1`] = `
++{
++  "apps/my-consumer/index.html": "<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title>my-consumer</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- HtmlRspackPlugin injects the entry script automatically; do not add it here. -->
++  </body>
++</html>
++",
++  "apps/my-consumer/package.json": "{
++  "name": "my-consumer",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rspack serve --mode=development",
++    "build": "rspack build --mode=production"
++  },
++  "dependencies": {
++    "@module-federation/enhanced": "^2.4.0",
++    "@module-federation/runtime": "^2.4.0",
++    "react": "^19.0.0",
++    "react-dom": "^19.0.0"
++  },
++  "devDependencies": {
++    "@rspack/cli": "^2.0.3",
++    "@rspack/core": "^2.0.3",
++    "@rspack/dev-server": "2.0.1",
++    "@types/react": "^19.0.0",
++    "@types/react-dom": "^19.0.0",
++    "typescript": "~5.9.2"
++  }
++}
++",
++  "apps/my-consumer/project.json": "{
++  "name": "my-consumer",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "apps/my-consumer/src",
++  "projectType": "application",
++  "targets": {
++    "serve": {
++      "executor": "nx:run-commands",
++      "continuous": true,
++      "options": {
++        "command": "rspack serve --mode=development",
++        "cwd": "apps/my-consumer"
++      }
++    },
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rspack build --mode=production",
++        "cwd": "apps/my-consumer"
++      }
++    }
++  }
++}
++",
++  "apps/my-consumer/rspack.config.ts": "import { defineConfig } from '@rspack/cli';
++import { rspack } from '@rspack/core';
++import { ModuleFederationPlugin } from '@module-federation/enhanced/rspack';
++import * as path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++// __dirname is undefined when @rspack/cli loads this config as ESM (it
++// does, because the file uses \`import\` statements). Derive it from the
++// module URL so the config works regardless of how the loader interprets it.
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++
++const PORT = 8100;
++const NAME = 'my_consumer';
++
++// Read mode from the rspack CLI arg (\`--mode=development|production\`) so the
++// config works the same on Windows + POSIX without depending on a shell
++// \`NODE_ENV=...\` prefix.
++export default defineConfig((_env, argv) => {
++  const isDev = argv.mode !== 'production';
++  return {
++    context: __dirname,
++    entry: { main: './src/index.ts' },
++    output: {
++      path: path.resolve(__dirname, 'dist'),
++      publicPath: 'auto',
++      uniqueName: NAME,
++      clean: true,
++    },
++    devServer: { port: PORT, historyApiFallback: true, hot: true },
++    resolve: { extensions: ['...', '.ts', '.tsx', '.jsx'] },
++    module: {
++      rules: [
++        {
++          test: /\\.(j|t)sx?$/,
++          exclude: [/node_modules/],
++          use: {
++            loader: 'builtin:swc-loader',
++            options: {
++              jsc: {
++                parser: { syntax: 'typescript', tsx: true },
++                transform: {
++                  react: { runtime: 'automatic', development: isDev },
++                },
++              },
++              env: {
++                targets:
++                  'Chrome >= 87, Firefox >= 78, Edge >= 88, Safari >= 14',
++              },
++            },
++          },
++        },
++      ],
++    },
++    plugins: [
++      new rspack.HtmlRspackPlugin({ template: './index.html' }),
++      new ModuleFederationPlugin({
++        name: NAME,
++        // No build-time \`remotes:\` block - registered at runtime in
++        // src/mf.ts at module load time.
++        shared: ['react', 'react-dom'],
++      }),
++    ],
++  };
++});
++",
++  "apps/my-consumer/src/App.tsx": "import { Component, Suspense, type ReactNode } from 'react';
++import { lazyProvider } from './mf';
++
++// ProviderBoundary catches the lazy() rejection that fires when a provider's
++// remoteEntry.js can't be fetched (provider not running, network error,
++// etc.). Without it any one missing provider unmounts the whole consumer
++// tree. React has no built-in functional error boundary so this is a class.
++// Wrap each <ProviderBoundary> in your router of choice if you need routing.
++class ProviderBoundary extends Component<
++  { children: ReactNode; name: string },
++  { error: Error | null }
++> {
++  state = { error: null as Error | null };
++  static getDerivedStateFromError(error: Error) {
++    return { error };
++  }
++  render() {
++    if (this.state.error) {
++      return (
++        <div role="alert">
++          <p>
++            Provider &quot;{this.props.name}&quot; unavailable:{' '}
++            {this.state.error.message}
++          </p>
++        </div>
++      );
++    }
++    return (
++      <Suspense fallback={<p>Loading {this.props.name}...</p>}>
++        {this.props.children}
++      </Suspense>
++    );
++  }
++}
++
++const ProviderMyProvider = lazyProvider('my-provider', 'App');
++
++export function App() {
++  return (
++    <main>
++      <h1>my-consumer</h1>
++      <ProviderBoundary name="my-provider">
++        <ProviderMyProvider />
++      </ProviderBoundary>
++    </main>
++  );
++}
++
++export default App;
++",
++  "apps/my-consumer/src/bootstrap.tsx": "import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
++",
++  "apps/my-consumer/src/index.ts": "// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom) is evaluated.
++import('./bootstrap');
++export {};
++",
++  "apps/my-consumer/src/mf.ts": "import { lazy, type ComponentType } from 'react';
++import { registerRemotes, loadRemote } from '@module-federation/runtime';
++
++// The providers this consumer loads at runtime. Edit \`entry\` to point at a
++// different URL (\`remoteEntry.js\` is what every supported bundler emits at dev
++// + build time). \`name\` is the provider build's federation container name and
++// must match the provider's federation \`name\`; \`alias\` is the key you pass to
++// loadRemote()/lazyProvider().
++const PROVIDERS: Array<{ alias: string; name: string; entry: string }> = [
++  {
++    alias: 'my-provider',
++    name: 'my_provider',
++    entry: 'http://localhost:8101/remoteEntry.js',
++  },
++];
++
++// \`type\` is omitted so the federation runtime auto-detects the entry format.
++// The providers in this workspace are rspack-built and emit UMD;
++// setting \`type: 'module'\` here breaks them with #RUNTIME-002.
++registerRemotes(PROVIDERS.map((remote) => ({ ...remote })));
++
++export function lazyProvider<Props = unknown>(
++  alias: string,
++  exposeName: string,
++) {
++  return lazy(async () => {
++    const mod = await loadRemote<{ default: ComponentType<Props> }>(
++      \`\${alias}/\${exposeName}\`,
++    );
++    return { default: mod!.default };
++  });
++}
++",
++  "apps/my-consumer/tsconfig.json": "{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
++",
++}
++`;
++
++exports[`@nx/react:consumer generates a consumer for the vite bundler: project.json 1`] = `
++{
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "name": "my-consumer",
++  "projectType": "application",
++  "root": "apps/my-consumer",
++  "sourceRoot": "apps/my-consumer/src",
++  "targets": {
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "vite build",
++        "cwd": "apps/my-consumer",
++      },
++    },
++    "serve": {
++      "continuous": true,
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "vite",
++        "cwd": "apps/my-consumer",
++      },
++    },
++  },
++}
++`;
++
++exports[`@nx/react:consumer generates a consumer for the vite bundler: vite tree 1`] = `
++{
++  "apps/my-consumer/index.html": "<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title>my-consumer</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/index.ts"></script>
++  </body>
++</html>
++",
++  "apps/my-consumer/package.json": "{
++  "name": "my-consumer",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite --port 5100 --strictPort",
++    "build": "vite build",
++    "preview": "vite preview --port 5100 --strictPort"
++  },
++  "dependencies": {
++    "@module-federation/runtime": "^2.4.0",
++    "react": "^19.0.0",
++    "react-dom": "^19.0.0"
++  },
++  "devDependencies": {
++    "@module-federation/vite": "^1.15.5",
++    "@types/react": "^19.0.0",
++    "@types/react-dom": "^19.0.0",
++    "@vitejs/plugin-react": "^6.0.2",
++    "typescript": "~5.9.2",
++    "vite": "^8.0.13"
++  }
++}
++",
++  "apps/my-consumer/project.json": "{
++  "name": "my-consumer",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "apps/my-consumer/src",
++  "projectType": "application",
++  "targets": {
++    "serve": {
++      "executor": "nx:run-commands",
++      "continuous": true,
++      "options": {
++        "command": "vite",
++        "cwd": "apps/my-consumer"
++      }
++    },
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "vite build",
++        "cwd": "apps/my-consumer"
++      }
++    }
++  }
++}
++",
++  "apps/my-consumer/src/App.tsx": "import { Component, Suspense, type ReactNode } from 'react';
++import { lazyProvider } from './mf';
++
++// ProviderBoundary catches the lazy() rejection that fires when a provider's
++// remoteEntry.js can't be fetched (provider not running, network error,
++// etc.). Without it any one missing provider unmounts the whole consumer
++// tree. React has no built-in functional error boundary so this is a class.
++// Wrap each <ProviderBoundary> in your router of choice if you need routing.
++class ProviderBoundary extends Component<
++  { children: ReactNode; name: string },
++  { error: Error | null }
++> {
++  state = { error: null as Error | null };
++  static getDerivedStateFromError(error: Error) {
++    return { error };
++  }
++  render() {
++    if (this.state.error) {
++      return (
++        <div role="alert">
++          <p>
++            Provider &quot;{this.props.name}&quot; unavailable:{' '}
++            {this.state.error.message}
++          </p>
++        </div>
++      );
++    }
++    return (
++      <Suspense fallback={<p>Loading {this.props.name}...</p>}>
++        {this.props.children}
++      </Suspense>
++    );
++  }
++}
++
++const ProviderMyProvider = lazyProvider('my-provider', 'App');
++
++export function App() {
++  return (
++    <main>
++      <h1>my-consumer</h1>
++      <ProviderBoundary name="my-provider">
++        <ProviderMyProvider />
++      </ProviderBoundary>
++    </main>
++  );
++}
++
++export default App;
++",
++  "apps/my-consumer/src/bootstrap.tsx": "import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
++",
++  "apps/my-consumer/src/index.ts": "// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom) is evaluated.
++import('./bootstrap');
++export {};
++",
++  "apps/my-consumer/src/mf.ts": "import { lazy, type ComponentType } from 'react';
++import { registerRemotes, loadRemote } from '@module-federation/runtime';
++
++// The providers this consumer loads at runtime. Edit \`entry\` to point at a
++// different URL (\`remoteEntry.js\` is what every supported bundler emits at dev
++// + build time). \`name\` is the provider build's federation container name and
++// must match the provider's federation \`name\`; \`alias\` is the key you pass to
++// loadRemote()/lazyProvider().
++const PROVIDERS: Array<{ alias: string; name: string; entry: string }> = [
++  {
++    alias: 'my-provider',
++    name: 'my_provider',
++    entry: 'http://localhost:5101/remoteEntry.js',
++  },
++];
++
++// \`type: 'module'\` is required because the providers in this workspace are
++// vite-built and emit ESM remoteEntry.js. The federation runtime would load
++// it as a classic \`<script>\` tag otherwise and the browser would throw
++// \`Cannot use import statement outside a module\` (#RUNTIME-001).
++registerRemotes(PROVIDERS.map((remote) => ({ ...remote, type: 'module' })));
++
++export function lazyProvider<Props = unknown>(
++  alias: string,
++  exposeName: string,
++) {
++  return lazy(async () => {
++    const mod = await loadRemote<{ default: ComponentType<Props> }>(
++      \`\${alias}/\${exposeName}\`,
++    );
++    return { default: mod!.default };
++  });
++}
++",
++  "apps/my-consumer/tsconfig.json": "{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
++",
++  "apps/my-consumer/vite.config.ts": "import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++import { federation } from '@module-federation/vite';
++
++const PORT = 5100;
++
++export default defineConfig({
++  server: {
++    port: PORT,
++    strictPort: true,
++    host: '127.0.0.1',
++  },
++  preview: { port: PORT, strictPort: true },
++  build: { target: 'chrome89' },
++  plugins: [
++    federation({
++      name: 'my_consumer',
++      // No build-time \`remotes:\` block - the consumer registers them at
++      // runtime in src/mf.ts at module load time.
++      shared: {
++        react: { singleton: true },
++        'react-dom': { singleton: true },
++      },
++    }),
++    react(),
++  ],
++});
++",
++}
++`;
+diff --git a/packages/react/src/generators/consumer/consumer.spec.ts b/packages/react/src/generators/consumer/consumer.spec.ts
+new file mode 100644
+index 00000000000..3cc58ee1c04
+--- /dev/null
++++ b/packages/react/src/generators/consumer/consumer.spec.ts
+@@ -0,0 +1,180 @@
++import { Tree, readProjectConfiguration } from '@nx/devkit';
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import consumerGenerator from './consumer';
++import type { SupportedBundler } from '../_utils/normalize';
++
++function snapshotTree(tree: Tree, root: string): Record<string, string> {
++  const files: Record<string, string> = {};
++  for (const entry of tree.listChanges()) {
++    if (!entry.path.startsWith(root)) continue;
++    if (entry.type === 'DELETE') continue;
++    files[entry.path] = entry.content?.toString() ?? '';
++  }
++  return files;
++}
++
++describe('@nx/react:consumer', () => {
++  let tree: Tree;
++
++  beforeEach(() => {
++    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
++  });
++
++  it.each<SupportedBundler>(['vite', 'rsbuild', 'rspack'])(
++    'generates a consumer for the %s bundler',
++    async (bundler) => {
++      await consumerGenerator(tree, {
++        directory: 'apps/my-consumer',
++        bundler,
++      });
++
++      const project = readProjectConfiguration(tree, 'my-consumer');
++      expect(project).toMatchSnapshot('project.json');
++      expect(snapshotTree(tree, 'apps/my-consumer')).toMatchSnapshot(
++        `${bundler} tree`
++      );
++    }
++  );
++
++  it('emits a mf.ts helper with the PROVIDERS list inlined (no separate JSON file)', async () => {
++    await consumerGenerator(tree, {
++      directory: 'apps/shell',
++      bundler: 'vite',
++    });
++
++    expect(tree.exists('apps/shell/src/mf.ts')).toBe(true);
++    expect(tree.exists('apps/shell/public/mf-remotes.json')).toBe(false);
++
++    const mf = tree.read('apps/shell/src/mf.ts', 'utf-8') ?? '';
++    expect(mf).toContain('const PROVIDERS:');
++    // Vite providers emit ESM, so the consumer's registerRemotes MUST set
++    // `type: 'module'`. Without it the runtime loads the script as a classic
++    // tag and the browser throws #RUNTIME-001 (Cannot use import statement).
++    expect(mf).toContain("({ ...remote, type: 'module' }))");
++
++    const viteConfig = tree.read('apps/shell/vite.config.ts', 'utf-8');
++    // No build-time `remotes:` property on the federation() call.
++    expect(viteConfig).not.toMatch(/^\s+remotes\s*:/m);
++  });
++
++  // Without --providerNames, ship a placeholder `my-provider`
++  // entry in PROVIDERS pointing at the per-bundler provider-default port
++  // (vite 5101, rsbuild 3101, rspack 8101). No actual provider gets
++  // generated. URLs point at remoteEntry.js (universally available at dev + prod).
++  it.each<[SupportedBundler, number]>([
++    ['vite', 5101],
++    ['rsbuild', 3101],
++    ['rspack', 8101],
++  ])(
++    'defaults the %s consumer PROVIDERS list to the matching provider-default port (%i) without generating a provider',
++    async (bundler, expectedProviderPort) => {
++      await consumerGenerator(tree, { directory: 'apps/shell', bundler });
++      const mf = tree.read('apps/shell/src/mf.ts', 'utf-8') ?? '';
++      expect(mf).toContain(`alias: 'my-provider'`);
++      expect(mf).toContain(`name: 'my_provider'`);
++      expect(mf).toContain(
++        `entry: 'http://localhost:${expectedProviderPort}/remoteEntry.js'`
++      );
++      expect(tree.exists('apps/my-provider')).toBe(false);
++    }
++  );
++
++  // --providerNames=p1,p2 generates a sibling provider per
++  // entry and wires their assigned ports into the consumer's PROVIDERS list.
++  it('generates one provider per --providerNames entry and wires the consumer PROVIDERS list', async () => {
++    await consumerGenerator(tree, {
++      directory: 'apps/shell',
++      bundler: 'vite',
++      providerNames: ['p1', 'p2'],
++    });
++
++    expect(tree.exists('apps/p1/vite.config.ts')).toBe(true);
++    expect(tree.exists('apps/p2/vite.config.ts')).toBe(true);
++
++    const mf = tree.read('apps/shell/src/mf.ts', 'utf-8') ?? '';
++    expect(mf).toContain(`alias: 'p1'`);
++    expect(mf).toContain(`entry: 'http://localhost:5101/remoteEntry.js'`);
++    expect(mf).toContain(`alias: 'p2'`);
++    expect(mf).toContain(`entry: 'http://localhost:5102/remoteEntry.js'`);
++
++    // App.tsx imports + renders every provider in PROVIDERS, not just the first.
++    const app = tree.read('apps/shell/src/App.tsx', 'utf-8') ?? '';
++    expect(app).toContain(`const ProviderP1 = lazyProvider('p1', 'App');`);
++    expect(app).toContain(`const ProviderP2 = lazyProvider('p2', 'App');`);
++    expect(app).toContain(`<ProviderP1 />`);
++    expect(app).toContain(`<ProviderP2 />`);
++    // Each provider is wrapped in ProviderBoundary so one missing provider
++    // can't unmount the whole tree (previous template used bare Suspense).
++    expect(app).toContain('class ProviderBoundary');
++    expect(app).toContain(`<ProviderBoundary name="p1">`);
++    expect(app).toContain(`<ProviderBoundary name="p2">`);
++  });
++
++  // A provider's federation container name is derived from its project name
++  // (names().fileName -> toFederationName), which strips chars invalid in a JS
++  // identifier. The consumer must register that exact name, not a naive
++  // `alias.replace(/-/g, '_')`: for a camelCase name like `myCart` the provider
++  // emits `my_cart` while the naive transform yields `myCart`, so loadRemote
++  // would resolve the URL but the runtime would look up a container that
++  // doesn't exist.
++  it('registers each provider under the federation container name the provider emits', async () => {
++    await consumerGenerator(tree, {
++      directory: 'apps/shell',
++      bundler: 'vite',
++      providerNames: ['myCart'],
++    });
++    const mf = tree.read('apps/shell/src/mf.ts', 'utf-8') ?? '';
++    expect(mf).toContain(`alias: 'myCart'`);
++    expect(mf).toContain(`name: 'my_cart'`);
++
++    // The generated provider emits the same federation name we registered.
++    const providerConfig =
++      tree.read('apps/myCart/vite.config.ts', 'utf-8') ?? '';
++    expect(providerConfig).toContain(`name: 'my_cart'`);
++  });
++
++  // The runtime needs `type: 'module'` for vite (ESM remoteEntry)
++  // and NO type for rspack/rsbuild (UMD remoteEntry). Wrong combo => runtime
++  // errors #RUNTIME-001 or #RUNTIME-002. The generator picks based on the
++  // consumer's bundler (since --providerNames creates same-bundler siblings).
++  it('emits type: "module" in registerRemotes only for vite', async () => {
++    await consumerGenerator(tree, { directory: 'apps/cv', bundler: 'vite' });
++    await consumerGenerator(tree, {
++      directory: 'apps/cr',
++      bundler: 'rsbuild',
++    });
++    await consumerGenerator(tree, { directory: 'apps/cp', bundler: 'rspack' });
++
++    // Assert on the registerRemotes() call shape, not a bare `type: 'module'`
++    // substring - the RUNTIME-002 comment in the UMD branch also mentions it.
++    expect(tree.read('apps/cv/src/mf.ts', 'utf-8')).toContain(
++      "({ ...remote, type: 'module' }))"
++    );
++    expect(tree.read('apps/cr/src/mf.ts', 'utf-8')).toContain(
++      '({ ...remote }))'
++    );
++    expect(tree.read('apps/cr/src/mf.ts', 'utf-8')).not.toContain(
++      "...remote, type: 'module'"
++    );
++    expect(tree.read('apps/cp/src/mf.ts', 'utf-8')).toContain(
++      '({ ...remote }))'
++    );
++    expect(tree.read('apps/cp/src/mf.ts', 'utf-8')).not.toContain(
++      "...remote, type: 'module'"
++    );
++  });
++
++  // Each generated provider's `serve` target depends on the
++  // consumer's `serve` so `nx serve p1` spins up the consumer too.
++  it('wires provider.serve.dependsOn back at the consumer for each generated provider', async () => {
++    await consumerGenerator(tree, {
++      directory: 'apps/shell',
++      bundler: 'vite',
++      providerNames: ['p1', 'p2'],
++    });
++    const p1 = readProjectConfiguration(tree, 'p1');
++    const p2 = readProjectConfiguration(tree, 'p2');
++    expect(p1.targets?.serve?.dependsOn).toEqual(['shell:serve']);
++    expect(p2.targets?.serve?.dependsOn).toEqual(['shell:serve']);
++  });
++});
+diff --git a/packages/react/src/generators/consumer/consumer.ts b/packages/react/src/generators/consumer/consumer.ts
+new file mode 100644
+index 00000000000..230e5407c58
+--- /dev/null
++++ b/packages/react/src/generators/consumer/consumer.ts
+@@ -0,0 +1,181 @@
++import {
++  addDependenciesToPackageJson,
++  addProjectConfiguration,
++  formatFiles,
++  generateFiles,
++  GeneratorCallback,
++  joinPathFragments,
++  names,
++  runTasksInSerial,
++  Tree,
++} from '@nx/devkit';
++import { typescriptVersion } from '@nx/js/src/utils/versions';
++import {
++  reactVersion,
++  reactDomVersion,
++  typesReactVersion,
++  typesReactDomVersion,
++} from '../../utils/versions';
++import * as mfVersions from '../_utils/mf-versions';
++import { getConsumerDeps } from '../_utils/mf-dependencies';
++import {
++  getDefaultPort,
++  normalizeScaffoldOptions,
++  toFederationName,
++} from '../_utils/normalize';
++import providerGenerator from '../provider/provider';
++import type { ConsumerGeneratorSchema } from './schema';
++
++// `--mode=...` is rspack's portable equivalent of `NODE_ENV=...` and works on
++// Windows without a shell prefix.
++const BUNDLER_DEV_COMMAND = {
++  vite: 'vite',
++  rsbuild: 'rsbuild dev',
++  rspack: 'rspack serve --mode=development',
++} as const;
++
++const BUNDLER_BUILD_COMMAND = {
++  vite: 'vite build',
++  rsbuild: 'rsbuild build',
++  rspack: 'rspack build --mode=production',
++} as const;
++
++export async function consumerGenerator(
++  tree: Tree,
++  schema: ConsumerGeneratorSchema
++): Promise<GeneratorCallback> {
++  const opts = await normalizeScaffoldOptions(tree, {
++    directory: schema.directory,
++    surface: 'consumer',
++    bundler: schema.bundler,
++    port: schema.port,
++  });
++
++  // When the user explicitly passes `--providerNames=p1,p2`, generate a
++  // sibling provider app per entry and wire them into the consumer's
++  // PROVIDERS list + App.tsx. When the flag is omitted, ship a placeholder
++  // `my-provider` entry pointing at the per-bundler provider-default port
++  // without generating an actual provider project.
++  const providerNames = schema.providerNames?.length
++    ? schema.providerNames
++    : ['my-provider'];
++  const shouldGenerateProviders = !!schema.providerNames?.length;
++  const providerDefaultPort = getDefaultPort(opts.bundler, 'provider');
++  const providers = providerNames.map((name, i) => ({
++    name,
++    // The federation container name the provider build emits. Must match the
++    // provider's federation `name`, which is derived the same way (see
++    // provider.ts / normalize.ts) - it strips chars that aren't valid in a JS
++    // identifier, so a naive `alias.replace(/-/g, '_')` in the consumer would
++    // diverge for names with dots/slashes/@ and loadRemote() would resolve the
++    // URL but look up the wrong container.
++    federationName: toFederationName(names(name).fileName),
++    componentName: `Provider${names(name).className}`,
++    directory: joinPathFragments(opts.projectRoot, '..', name),
++    port: providerDefaultPort + i,
++  }));
++
++  addProjectConfiguration(tree, opts.projectName, {
++    root: opts.projectRoot,
++    sourceRoot: joinPathFragments(opts.projectRoot, 'src'),
++    projectType: 'application',
++    targets: {
++      serve: {
++        executor: 'nx:run-commands',
++        continuous: true,
++        options: {
++          command: BUNDLER_DEV_COMMAND[opts.bundler],
++          cwd: opts.projectRoot,
++        },
++      },
++      build: {
++        executor: 'nx:run-commands',
++        options: {
++          command: BUNDLER_BUILD_COMMAND[opts.bundler],
++          cwd: opts.projectRoot,
++        },
++      },
++    },
++  });
++
++  const tasks: GeneratorCallback[] = [];
++  if (shouldGenerateProviders) {
++    for (const p of providers) {
++      tasks.push(
++        await providerGenerator(tree, {
++          directory: p.directory,
++          bundler: opts.bundler,
++          port: p.port,
++          // Wire `nx serve <provider>` to also spin up this consumer.
++          consumer: opts.projectName,
++        })
++      );
++    }
++  }
++
++  // Point at `remoteEntry.js`, which every supported bundler emits at dev
++  // time. `mf-manifest.json` is richer (https://module-federation.io/configure/manifest-fields)
++  // but `@module-federation/vite` only emits it at build time, so a consumer
++  // serving against a dev-mode vite provider would get the SPA-fallback HTML
++  // and crash on JSON.parse. Swap to mf-manifest.json manually for prod if
++  // you want the extra metadata.
++  const remotes = providers.map((p) => ({
++    // `alias` is the key the consumer references (loadRemote/lazyProvider);
++    // `name` is the provider's federation container name; `entry` is its
++    // remoteEntry.js URL.
++    alias: p.name,
++    name: p.federationName,
++    entry: `http://localhost:${p.port}/remoteEntry.js`,
++  }));
++
++  // Vite emits ESM `remoteEntry.js`; rspack/rsbuild emit UMD. The federation
++  // runtime needs `type: 'module'` for ESM (else loads as a classic <script>
++  // and the browser throws #RUNTIME-001) and NO type for UMD (else
++  // #RUNTIME-002). We only generate same-bundler providers via --providerNames,
++  // so a single per-consumer setting is correct.
++  const remoteType: 'module' | null = opts.bundler === 'vite' ? 'module' : null;
++
++  const templateSubstitutions = {
++    projectName: opts.projectName,
++    federationName: opts.federationName,
++    port: opts.port,
++    bundler: opts.bundler,
++    providers,
++    remotes,
++    remoteType,
++    versions: {
++      ...mfVersions,
++      reactVersion,
++      reactDomVersion,
++      typesReactVersion,
++      typesReactDomVersion,
++      typescriptVersion,
++    },
++    tmpl: '',
++  };
++
++  generateFiles(
++    tree,
++    joinPathFragments(__dirname, 'files', '_common'),
++    opts.projectRoot,
++    templateSubstitutions
++  );
++  generateFiles(
++    tree,
++    joinPathFragments(__dirname, 'files', opts.bundler),
++    opts.projectRoot,
++    templateSubstitutions
++  );
++
++  // Write deps into the workspace root package.json so bare bundler bins
++  // resolve when nx invokes the generated run-commands serve target.
++  const deps = getConsumerDeps(opts.bundler);
++  tasks.push(
++    addDependenciesToPackageJson(tree, deps.dependencies, deps.devDependencies)
++  );
++
++  await formatFiles(tree);
++  return runTasksInSerial(...tasks);
++}
++
++export default consumerGenerator;
+diff --git a/packages/react/src/generators/consumer/files/_common/src/App.tsx__tmpl__ b/packages/react/src/generators/consumer/files/_common/src/App.tsx__tmpl__
+new file mode 100644
+index 00000000000..a71e691647c
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/_common/src/App.tsx__tmpl__
+@@ -0,0 +1,53 @@
++import { Component, Suspense, type ReactNode } from 'react';
++import { lazyProvider } from './mf';
++
++// ProviderBoundary catches the lazy() rejection that fires when a provider's
++// remoteEntry.js can't be fetched (provider not running, network error,
++// etc.). Without it any one missing provider unmounts the whole consumer
++// tree. React has no built-in functional error boundary so this is a class.
++// Wrap each <ProviderBoundary> in your router of choice if you need routing.
++class ProviderBoundary extends Component<
++  { children: ReactNode; name: string },
++  { error: Error | null }
++> {
++  state = { error: null as Error | null };
++  static getDerivedStateFromError(error: Error) {
++    return { error };
++  }
++  render() {
++    if (this.state.error) {
++      return (
++        <div role="alert">
++          <p>
++            Provider &quot;{this.props.name}&quot; unavailable:{' '}
++            {this.state.error.message}
++          </p>
++        </div>
++      );
++    }
++    return (
++      <Suspense fallback={<p>Loading {this.props.name}...</p>}>
++        {this.props.children}
++      </Suspense>
++    );
++  }
++}
++
++<% providers.forEach((p) => { -%>
++const <%= p.componentName %> = lazyProvider('<%= p.name %>', 'App');
++<% }); -%>
++
++export function App() {
++  return (
++    <main>
++      <h1><%= projectName %></h1>
++<% providers.forEach((p) => { -%>
++      <ProviderBoundary name="<%= p.name %>">
++        <<%= p.componentName %> />
++      </ProviderBoundary>
++<% }); -%>
++    </main>
++  );
++}
++
++export default App;
+diff --git a/packages/react/src/generators/consumer/files/_common/src/bootstrap.tsx__tmpl__ b/packages/react/src/generators/consumer/files/_common/src/bootstrap.tsx__tmpl__
+new file mode 100644
+index 00000000000..d8cf3c45b8b
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/_common/src/bootstrap.tsx__tmpl__
+@@ -0,0 +1,12 @@
++import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>
++);
+diff --git a/packages/react/src/generators/consumer/files/_common/src/index.ts__tmpl__ b/packages/react/src/generators/consumer/files/_common/src/index.ts__tmpl__
+new file mode 100644
+index 00000000000..5ec1e71024e
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/_common/src/index.ts__tmpl__
+@@ -0,0 +1,4 @@
++// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom) is evaluated.
++import('./bootstrap');
++export {};
+diff --git a/packages/react/src/generators/consumer/files/_common/src/mf.ts__tmpl__ b/packages/react/src/generators/consumer/files/_common/src/mf.ts__tmpl__
+new file mode 100644
+index 00000000000..1e5a51d8f4c
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/_common/src/mf.ts__tmpl__
+@@ -0,0 +1,35 @@
++import { lazy, type ComponentType } from 'react';
++import { registerRemotes, loadRemote } from '@module-federation/runtime';
++
++// The providers this consumer loads at runtime. Edit `entry` to point at a
++// different URL (`remoteEntry.js` is what every supported bundler emits at dev
++// + build time). `name` is the provider build's federation container name and
++// must match the provider's federation `name`; `alias` is the key you pass to
++// loadRemote()/lazyProvider().
++const PROVIDERS: Array<{ alias: string; name: string; entry: string }> =
++  <%- JSON.stringify(remotes, null, 2) %>;
++
++<% if (remoteType === 'module') { -%>
++// `type: 'module'` is required because the providers in this workspace are
++// vite-built and emit ESM remoteEntry.js. The federation runtime would load
++// it as a classic `<script>` tag otherwise and the browser would throw
++// `Cannot use import statement outside a module` (#RUNTIME-001).
++registerRemotes(PROVIDERS.map((remote) => ({ ...remote, type: 'module' })));
++<% } else { -%>
++// `type` is omitted so the federation runtime auto-detects the entry format.
++// The providers in this workspace are <%= bundler %>-built and emit UMD;
++// setting `type: 'module'` here breaks them with #RUNTIME-002.
++registerRemotes(PROVIDERS.map((remote) => ({ ...remote })));
++<% } -%>
++
++export function lazyProvider<Props = unknown>(
++  alias: string,
++  exposeName: string
++) {
++  return lazy(async () => {
++    const mod = await loadRemote<{ default: ComponentType<Props> }>(
++      `${alias}/${exposeName}`
++    );
++    return { default: mod!.default };
++  });
++}
+diff --git a/packages/react/src/generators/consumer/files/_common/tsconfig.json__tmpl__ b/packages/react/src/generators/consumer/files/_common/tsconfig.json__tmpl__
+new file mode 100644
+index 00000000000..fc223b6ddc8
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/_common/tsconfig.json__tmpl__
+@@ -0,0 +1,17 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
+diff --git a/packages/react/src/generators/consumer/files/rsbuild/index.html__tmpl__ b/packages/react/src/generators/consumer/files/rsbuild/index.html__tmpl__
+new file mode 100644
+index 00000000000..a1356dd680e
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/rsbuild/index.html__tmpl__
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title><%= projectName %></title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- Rsbuild's html plugin injects the entry script automatically. -->
++  </body>
++</html>
+diff --git a/packages/react/src/generators/consumer/files/rsbuild/package.json__tmpl__ b/packages/react/src/generators/consumer/files/rsbuild/package.json__tmpl__
+new file mode 100644
+index 00000000000..0d74e1c3db6
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/rsbuild/package.json__tmpl__
+@@ -0,0 +1,23 @@
++{
++  "name": "<%= projectName %>",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rsbuild dev --port <%= port %>",
++    "build": "rsbuild build",
++    "preview": "rsbuild preview --port <%= port %>"
++  },
++  "dependencies": {
++    "@module-federation/runtime": "<%= versions.moduleFederationRuntimeVersion %>",
++    "react": "<%= versions.reactVersion %>",
++    "react-dom": "<%= versions.reactDomVersion %>"
++  },
++  "devDependencies": {
++    "@module-federation/rsbuild-plugin": "<%= versions.moduleFederationRsbuildPluginVersion %>",
++    "@rsbuild/core": "<%= versions.rsbuildCoreVersion %>",
++    "@rsbuild/plugin-react": "<%= versions.rsbuildPluginReactVersion %>",
++    "@types/react": "<%= versions.typesReactVersion %>",
++    "@types/react-dom": "<%= versions.typesReactDomVersion %>",
++    "typescript": "<%= versions.typescriptVersion %>"
++  }
++}
+diff --git a/packages/react/src/generators/consumer/files/rsbuild/rsbuild.config.ts__tmpl__ b/packages/react/src/generators/consumer/files/rsbuild/rsbuild.config.ts__tmpl__
+new file mode 100644
+index 00000000000..1807b84817d
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/rsbuild/rsbuild.config.ts__tmpl__
+@@ -0,0 +1,25 @@
++import { defineConfig } from '@rsbuild/core';
++import { pluginReact } from '@rsbuild/plugin-react';
++import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
++
++const PORT = <%= port %>;
++const NAME = '<%= federationName %>';
++
++export default defineConfig({
++  server: { port: PORT },
++  // assetPrefix:true keeps chunk URLs aligned with the dev-server origin -
++  // mirrors the provider config so a consumer that also exposes federated
++  // modules later doesn't need a separate fix.
++  dev: { assetPrefix: true },
++  html: { template: './index.html' },
++  source: { entry: { index: './src/index.ts' } },
++  plugins: [
++    pluginReact(),
++    pluginModuleFederation({
++      name: NAME,
++      // No build-time `remotes:` block - registered at runtime in src/mf.ts
++      // at module load time.
++      shared: ['react', 'react-dom'],
++    }),
++  ],
++});
+diff --git a/packages/react/src/generators/consumer/files/rspack/index.html__tmpl__ b/packages/react/src/generators/consumer/files/rspack/index.html__tmpl__
+new file mode 100644
+index 00000000000..92422e2da23
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/rspack/index.html__tmpl__
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title><%= projectName %></title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- HtmlRspackPlugin injects the entry script automatically; do not add it here. -->
++  </body>
++</html>
+diff --git a/packages/react/src/generators/consumer/files/rspack/package.json__tmpl__ b/packages/react/src/generators/consumer/files/rspack/package.json__tmpl__
+new file mode 100644
+index 00000000000..67ca3fa2447
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/rspack/package.json__tmpl__
+@@ -0,0 +1,23 @@
++{
++  "name": "<%= projectName %>",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rspack serve --mode=development",
++    "build": "rspack build --mode=production"
++  },
++  "dependencies": {
++    "@module-federation/enhanced": "<%= versions.moduleFederationEnhancedVersion %>",
++    "@module-federation/runtime": "<%= versions.moduleFederationRuntimeVersion %>",
++    "react": "<%= versions.reactVersion %>",
++    "react-dom": "<%= versions.reactDomVersion %>"
++  },
++  "devDependencies": {
++    "@rspack/cli": "<%= versions.rspackCliVersion %>",
++    "@rspack/core": "<%= versions.rspackCoreVersion %>",
++    "@rspack/dev-server": "<%= versions.rspackDevServerVersion %>",
++    "@types/react": "<%= versions.typesReactVersion %>",
++    "@types/react-dom": "<%= versions.typesReactDomVersion %>",
++    "typescript": "<%= versions.typescriptVersion %>"
++  }
++}
+diff --git a/packages/react/src/generators/consumer/files/rspack/rspack.config.ts__tmpl__ b/packages/react/src/generators/consumer/files/rspack/rspack.config.ts__tmpl__
+new file mode 100644
+index 00000000000..4cf2d9d6dd8
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/rspack/rspack.config.ts__tmpl__
+@@ -0,0 +1,59 @@
++import { defineConfig } from '@rspack/cli';
++import { rspack } from '@rspack/core';
++import { ModuleFederationPlugin } from '@module-federation/enhanced/rspack';
++import * as path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++// __dirname is undefined when @rspack/cli loads this config as ESM (it
++// does, because the file uses `import` statements). Derive it from the
++// module URL so the config works regardless of how the loader interprets it.
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++
++const PORT = <%= port %>;
++const NAME = '<%= federationName %>';
++
++// Read mode from the rspack CLI arg (`--mode=development|production`) so the
++// config works the same on Windows + POSIX without depending on a shell
++// `NODE_ENV=...` prefix.
++export default defineConfig((_env, argv) => {
++  const isDev = argv.mode !== 'production';
++  return {
++    context: __dirname,
++    entry: { main: './src/index.ts' },
++    output: {
++      path: path.resolve(__dirname, 'dist'),
++      publicPath: 'auto',
++      uniqueName: NAME,
++      clean: true,
++    },
++    devServer: { port: PORT, historyApiFallback: true, hot: true },
++    resolve: { extensions: ['...', '.ts', '.tsx', '.jsx'] },
++    module: {
++      rules: [
++        {
++          test: /\.(j|t)sx?$/,
++          exclude: [/node_modules/],
++          use: {
++            loader: 'builtin:swc-loader',
++            options: {
++              jsc: {
++                parser: { syntax: 'typescript', tsx: true },
++                transform: { react: { runtime: 'automatic', development: isDev } },
++              },
++              env: { targets: 'Chrome >= 87, Firefox >= 78, Edge >= 88, Safari >= 14' },
++            },
++          },
++        },
++      ],
++    },
++    plugins: [
++      new rspack.HtmlRspackPlugin({ template: './index.html' }),
++      new ModuleFederationPlugin({
++        name: NAME,
++        // No build-time `remotes:` block - registered at runtime in
++        // src/mf.ts at module load time.
++        shared: ['react', 'react-dom'],
++      }),
++    ],
++  };
++});
+diff --git a/packages/react/src/generators/consumer/files/vite/index.html__tmpl__ b/packages/react/src/generators/consumer/files/vite/index.html__tmpl__
+new file mode 100644
+index 00000000000..8094043ed68
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/vite/index.html__tmpl__
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title><%= projectName %></title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/index.ts"></script>
++  </body>
++</html>
+diff --git a/packages/react/src/generators/consumer/files/vite/package.json__tmpl__ b/packages/react/src/generators/consumer/files/vite/package.json__tmpl__
+new file mode 100644
+index 00000000000..13c6b4508f6
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/vite/package.json__tmpl__
+@@ -0,0 +1,24 @@
++{
++  "name": "<%= projectName %>",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite --port <%= port %> --strictPort",
++    "build": "vite build",
++    "preview": "vite preview --port <%= port %> --strictPort"
++  },
++  "dependencies": {
++    "@module-federation/runtime": "<%= versions.moduleFederationRuntimeVersion %>",
++    "react": "<%= versions.reactVersion %>",
++    "react-dom": "<%= versions.reactDomVersion %>"
++  },
++  "devDependencies": {
++    "@module-federation/vite": "<%= versions.moduleFederationVitePluginVersion %>",
++    "@types/react": "<%= versions.typesReactVersion %>",
++    "@types/react-dom": "<%= versions.typesReactDomVersion %>",
++    "@vitejs/plugin-react": "<%= versions.vitejsPluginReactVersion %>",
++    "typescript": "<%= versions.typescriptVersion %>",
++    "vite": "<%= versions.viteVersion %>"
++  }
++}
+diff --git a/packages/react/src/generators/consumer/files/vite/vite.config.ts__tmpl__ b/packages/react/src/generators/consumer/files/vite/vite.config.ts__tmpl__
+new file mode 100644
+index 00000000000..e3a250b4cd2
+--- /dev/null
++++ b/packages/react/src/generators/consumer/files/vite/vite.config.ts__tmpl__
+@@ -0,0 +1,27 @@
++import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++import { federation } from '@module-federation/vite';
++
++const PORT = <%= port %>;
++
++export default defineConfig({
++  server: {
++    port: PORT,
++    strictPort: true,
++    host: '127.0.0.1',
++  },
++  preview: { port: PORT, strictPort: true },
++  build: { target: 'chrome89' },
++  plugins: [
++    federation({
++      name: '<%= federationName %>',
++      // No build-time `remotes:` block - the consumer registers them at
++      // runtime in src/mf.ts at module load time.
++      shared: {
++        react: { singleton: true },
++        'react-dom': { singleton: true },
++      },
++    }),
++    react(),
++  ],
++});
+diff --git a/packages/react/src/generators/consumer/schema.d.ts b/packages/react/src/generators/consumer/schema.d.ts
+new file mode 100644
+index 00000000000..0da64ff7556
+--- /dev/null
++++ b/packages/react/src/generators/consumer/schema.d.ts
+@@ -0,0 +1,8 @@
++import type { SupportedBundler } from '../_utils/normalize';
++
++export interface ConsumerGeneratorSchema {
++  directory: string;
++  bundler?: SupportedBundler;
++  port?: number;
++  providerNames?: string[];
++}
+diff --git a/packages/react/src/generators/consumer/schema.json b/packages/react/src/generators/consumer/schema.json
+new file mode 100644
+index 00000000000..e448115d94e
+--- /dev/null
++++ b/packages/react/src/generators/consumer/schema.json
+@@ -0,0 +1,43 @@
++{
++  "$schema": "https://json-schema.org/schema",
++  "$id": "NxReactConsumer",
++  "title": "Create a Module Federation consumer",
++  "description": "Scaffold a React Module Federation consumer. The bundler is selected at generation time; remotes are registered dynamically at runtime from an inline PROVIDERS list in src/mf.ts (no build-time remotes list).",
++  "cli": "nx",
++  "type": "object",
++  "properties": {
++    "directory": {
++      "type": "string",
++      "description": "Directory the consumer is generated in, e.g. `apps/my-consumer`. The project name is inferred from the trailing path segment.",
++      "alias": "dir",
++      "$default": { "$source": "argv", "index": 0 },
++      "x-prompt": "Which directory do you want to create the consumer in?"
++    },
++    "bundler": {
++      "type": "string",
++      "description": "Bundler used by the consumer. Final choice; cannot be switched later.",
++      "enum": ["vite", "rsbuild", "rspack"],
++      "default": "vite",
++      "x-prompt": {
++        "message": "Which bundler should the consumer use?",
++        "type": "list",
++        "items": [
++          { "value": "vite", "label": "Vite (default)" },
++          { "value": "rsbuild", "label": "Rsbuild" },
++          { "value": "rspack", "label": "Rspack" }
++        ]
++      }
++    },
++    "port": {
++      "type": "number",
++      "description": "Dev-server port the consumer listens on."
++    },
++    "providerNames": {
++      "type": "array",
++      "items": { "type": "string" },
++      "description": "Comma-separated list of provider project names to generate alongside this consumer. Each becomes an `@nx/react:provider` app sibling to the consumer and an entry in the `PROVIDERS` list in `src/mf.ts`. Defaults to `[my-provider]` as a placeholder (no provider is generated until you pass the flag explicitly).",
++      "alias": "providers"
++    }
++  },
++  "required": ["directory"]
++}
+diff --git a/packages/react/src/generators/federate-module/federate-module.ts b/packages/react/src/generators/federate-module/federate-module.ts
+index 5648dede0a7..49fbd8fbf64 100644
+--- a/packages/react/src/generators/federate-module/federate-module.ts
++++ b/packages/react/src/generators/federate-module/federate-module.ts
+@@ -15,8 +15,10 @@ import { Schema } from './schema';
+ import { remoteGenerator } from '../remote/remote';
+ import { addPathToExposes, checkRemoteExists } from './lib/utils';
+ import { addTsConfigPath, getRootTsConfigPathInTree } from '@nx/js';
++import { warnReactFederateModuleGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export async function federateModuleGenerator(tree: Tree, schema: Schema) {
++  warnReactFederateModuleGeneratorDeprecation();
+   // Check if the file exists
+   if (!tree.exists(schema.path)) {
+     throw new Error(stripIndents`The "path" provided  does not exist. Please verify the path is correct and pointing to a file that exists in the workspace.
+diff --git a/packages/react/src/generators/host/host.ts b/packages/react/src/generators/host/host.ts
+index 3111e2174d8..e0ec82b7979 100644
+--- a/packages/react/src/generators/host/host.ts
++++ b/packages/react/src/generators/host/host.ts
+@@ -34,11 +34,13 @@ import {
+ } from '../../utils/versions';
+ import { updateModuleFederationTsconfig } from './lib/update-module-federation-tsconfig';
+ import { normalizeHostName } from './lib/normalize-host-name';
++import { warnReactHostGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export async function hostGenerator(
+   host: Tree,
+   schema: Schema
+ ): Promise<GeneratorCallback> {
++  warnReactHostGeneratorDeprecation();
+   const tasks: GeneratorCallback[] = [];
+   const name = await normalizeHostName(host, schema.directory, schema.name);
+   const options: NormalizedSchema = {
+diff --git a/packages/react/src/generators/provider/__snapshots__/provider.spec.ts.snap b/packages/react/src/generators/provider/__snapshots__/provider.spec.ts.snap
+new file mode 100644
+index 00000000000..a4c9fcf08a0
+--- /dev/null
++++ b/packages/react/src/generators/provider/__snapshots__/provider.spec.ts.snap
+@@ -0,0 +1,573 @@
++// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
++
++exports[`@nx/react:provider generates a provider for the rsbuild bundler: project.json 1`] = `
++{
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "name": "my-provider",
++  "projectType": "application",
++  "root": "apps/my-provider",
++  "sourceRoot": "apps/my-provider/src",
++  "targets": {
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rsbuild build",
++        "cwd": "apps/my-provider",
++      },
++    },
++    "serve": {
++      "continuous": true,
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rsbuild dev",
++        "cwd": "apps/my-provider",
++      },
++    },
++  },
++}
++`;
++
++exports[`@nx/react:provider generates a provider for the rsbuild bundler: rsbuild tree 1`] = `
++{
++  "apps/my-provider/index.html": "<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title>my-provider (standalone)</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- Rsbuild's html plugin injects the entry script automatically. -->
++  </body>
++</html>
++",
++  "apps/my-provider/package.json": "{
++  "name": "my-provider",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rsbuild dev --port 3101",
++    "build": "rsbuild build",
++    "preview": "rsbuild preview --port 3101"
++  },
++  "dependencies": {
++    "react": "^19.0.0",
++    "react-dom": "^19.0.0"
++  },
++  "devDependencies": {
++    "@module-federation/rsbuild-plugin": "^2.5.0",
++    "@rsbuild/core": "^1.4.0",
++    "@rsbuild/plugin-react": "^1.3.0",
++    "@types/react": "^19.0.0",
++    "@types/react-dom": "^19.0.0",
++    "typescript": "~5.9.2"
++  }
++}
++",
++  "apps/my-provider/project.json": "{
++  "name": "my-provider",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "apps/my-provider/src",
++  "projectType": "application",
++  "targets": {
++    "serve": {
++      "executor": "nx:run-commands",
++      "continuous": true,
++      "options": {
++        "command": "rsbuild dev",
++        "cwd": "apps/my-provider"
++      }
++    },
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rsbuild build",
++        "cwd": "apps/my-provider"
++      }
++    }
++  }
++}
++",
++  "apps/my-provider/rsbuild.config.ts": "import { defineConfig } from '@rsbuild/core';
++import { pluginReact } from '@rsbuild/plugin-react';
++import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
++
++const PORT = 3101;
++const NAME = 'my_provider';
++
++export default defineConfig({
++  server: {
++    port: PORT,
++    // Allow cross-origin fetches from a consumer on a different port.
++    headers: { 'Access-Control-Allow-Origin': '*' },
++  },
++  // assetPrefix:true tells rsbuild to emit chunks with the dev-server URL as
++  // their public path. Without it a consumer on a different port asks its
++  // own origin for the federated chunks and gets the SPA-fallback HTML.
++  dev: { assetPrefix: true },
++  html: { template: './index.html' },
++  source: { entry: { index: './src/index.ts' } },
++  plugins: [
++    pluginReact(),
++    pluginModuleFederation({
++      name: NAME,
++      filename: 'remoteEntry.js',
++      exposes: {
++        './App': './src/App.tsx',
++      },
++      shared: ['react', 'react-dom'],
++    }),
++  ],
++});
++",
++  "apps/my-provider/src/App.tsx": "// Exposed by the federation plugin as 'my-provider/App'.
++// Consumers render it lazily via \`lazyProvider('my-provider', 'App')\`.
++export function App() {
++  return (
++    <section data-testid="my-provider">
++      <h1>Hello from my-provider</h1>
++    </section>
++  );
++}
++
++export default App;
++",
++  "apps/my-provider/src/bootstrap.tsx": "import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
++",
++  "apps/my-provider/src/index.ts": "// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom, etc.) is evaluated. Dynamic
++// \`import('./bootstrap')\` defers the real entry until federation is ready.
++import('./bootstrap');
++export {};
++",
++  "apps/my-provider/tsconfig.json": "{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
++",
++}
++`;
++
++exports[`@nx/react:provider generates a provider for the rspack bundler: project.json 1`] = `
++{
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "name": "my-provider",
++  "projectType": "application",
++  "root": "apps/my-provider",
++  "sourceRoot": "apps/my-provider/src",
++  "targets": {
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rspack build --mode=production",
++        "cwd": "apps/my-provider",
++      },
++    },
++    "serve": {
++      "continuous": true,
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rspack serve --mode=development",
++        "cwd": "apps/my-provider",
++      },
++    },
++  },
++}
++`;
++
++exports[`@nx/react:provider generates a provider for the rspack bundler: rspack tree 1`] = `
++{
++  "apps/my-provider/index.html": "<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title>my-provider (standalone)</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- HtmlRspackPlugin injects the entry script automatically; do not add it here. -->
++  </body>
++</html>
++",
++  "apps/my-provider/package.json": "{
++  "name": "my-provider",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rspack serve --mode=development",
++    "build": "rspack build --mode=production"
++  },
++  "dependencies": {
++    "@module-federation/enhanced": "^2.4.0",
++    "react": "^19.0.0",
++    "react-dom": "^19.0.0"
++  },
++  "devDependencies": {
++    "@rspack/cli": "^2.0.3",
++    "@rspack/core": "^2.0.3",
++    "@rspack/dev-server": "2.0.1",
++    "@types/react": "^19.0.0",
++    "@types/react-dom": "^19.0.0",
++    "typescript": "~5.9.2"
++  }
++}
++",
++  "apps/my-provider/project.json": "{
++  "name": "my-provider",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "apps/my-provider/src",
++  "projectType": "application",
++  "targets": {
++    "serve": {
++      "executor": "nx:run-commands",
++      "continuous": true,
++      "options": {
++        "command": "rspack serve --mode=development",
++        "cwd": "apps/my-provider"
++      }
++    },
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "rspack build --mode=production",
++        "cwd": "apps/my-provider"
++      }
++    }
++  }
++}
++",
++  "apps/my-provider/rspack.config.ts": "import { defineConfig } from '@rspack/cli';
++import { rspack } from '@rspack/core';
++import { ModuleFederationPlugin } from '@module-federation/enhanced/rspack';
++import * as path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++// __dirname is undefined when @rspack/cli loads this config as ESM (it
++// does, because the file uses \`import\` statements). Derive it from the
++// module URL so the config works regardless of how the loader interprets it.
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++
++const PORT = 8101;
++const NAME = 'my_provider';
++
++// Read mode from the rspack CLI arg (\`--mode=development|production\`) so the
++// config works the same on Windows + POSIX without depending on a shell
++// \`NODE_ENV=...\` prefix.
++export default defineConfig((_env, argv) => {
++  const isDev = argv.mode !== 'production';
++  return {
++    context: __dirname,
++    entry: { main: './src/index.ts' },
++    output: {
++      path: path.resolve(__dirname, 'dist'),
++      publicPath: 'auto',
++      uniqueName: NAME,
++      clean: true,
++    },
++    devServer: {
++      port: PORT,
++      historyApiFallback: true,
++      hot: true,
++      headers: { 'Access-Control-Allow-Origin': '*' },
++    },
++    resolve: { extensions: ['...', '.ts', '.tsx', '.jsx'] },
++    module: {
++      rules: [
++        {
++          test: /\\.(j|t)sx?$/,
++          exclude: [/node_modules/],
++          use: {
++            loader: 'builtin:swc-loader',
++            options: {
++              jsc: {
++                parser: { syntax: 'typescript', tsx: true },
++                transform: {
++                  react: { runtime: 'automatic', development: isDev },
++                },
++              },
++              env: {
++                targets:
++                  'Chrome >= 87, Firefox >= 78, Edge >= 88, Safari >= 14',
++              },
++            },
++          },
++        },
++      ],
++    },
++    plugins: [
++      // excludeChunks is REQUIRED on a provider: without it the federation
++      // remoteEntry chunk gets injected into the standalone HTML and breaks
++      // direct serves.
++      new rspack.HtmlRspackPlugin({
++        template: './index.html',
++        excludeChunks: [NAME],
++      }),
++      new ModuleFederationPlugin({
++        name: NAME,
++        filename: 'remoteEntry.js',
++        exposes: {
++          './App': './src/App.tsx',
++        },
++        shared: ['react', 'react-dom'],
++      }),
++    ],
++  };
++});
++",
++  "apps/my-provider/src/App.tsx": "// Exposed by the federation plugin as 'my-provider/App'.
++// Consumers render it lazily via \`lazyProvider('my-provider', 'App')\`.
++export function App() {
++  return (
++    <section data-testid="my-provider">
++      <h1>Hello from my-provider</h1>
++    </section>
++  );
++}
++
++export default App;
++",
++  "apps/my-provider/src/bootstrap.tsx": "import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
++",
++  "apps/my-provider/src/index.ts": "// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom, etc.) is evaluated. Dynamic
++// \`import('./bootstrap')\` defers the real entry until federation is ready.
++import('./bootstrap');
++export {};
++",
++  "apps/my-provider/tsconfig.json": "{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
++",
++}
++`;
++
++exports[`@nx/react:provider generates a provider for the vite bundler: project.json 1`] = `
++{
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "name": "my-provider",
++  "projectType": "application",
++  "root": "apps/my-provider",
++  "sourceRoot": "apps/my-provider/src",
++  "targets": {
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "vite build",
++        "cwd": "apps/my-provider",
++      },
++    },
++    "serve": {
++      "continuous": true,
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "vite",
++        "cwd": "apps/my-provider",
++      },
++    },
++  },
++}
++`;
++
++exports[`@nx/react:provider generates a provider for the vite bundler: vite tree 1`] = `
++{
++  "apps/my-provider/index.html": "<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title>my-provider (standalone)</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/index.ts"></script>
++  </body>
++</html>
++",
++  "apps/my-provider/package.json": "{
++  "name": "my-provider",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite --port 5101 --strictPort",
++    "build": "vite build",
++    "preview": "vite preview --port 5101 --strictPort"
++  },
++  "dependencies": {
++    "react": "^19.0.0",
++    "react-dom": "^19.0.0"
++  },
++  "devDependencies": {
++    "@module-federation/vite": "^1.15.5",
++    "@types/react": "^19.0.0",
++    "@types/react-dom": "^19.0.0",
++    "@vitejs/plugin-react": "^6.0.2",
++    "typescript": "~5.9.2",
++    "vite": "^8.0.13"
++  }
++}
++",
++  "apps/my-provider/project.json": "{
++  "name": "my-provider",
++  "$schema": "../../node_modules/nx/schemas/project-schema.json",
++  "sourceRoot": "apps/my-provider/src",
++  "projectType": "application",
++  "targets": {
++    "serve": {
++      "executor": "nx:run-commands",
++      "continuous": true,
++      "options": {
++        "command": "vite",
++        "cwd": "apps/my-provider"
++      }
++    },
++    "build": {
++      "executor": "nx:run-commands",
++      "options": {
++        "command": "vite build",
++        "cwd": "apps/my-provider"
++      }
++    }
++  }
++}
++",
++  "apps/my-provider/src/App.tsx": "// Exposed by the federation plugin as 'my-provider/App'.
++// Consumers render it lazily via \`lazyProvider('my-provider', 'App')\`.
++export function App() {
++  return (
++    <section data-testid="my-provider">
++      <h1>Hello from my-provider</h1>
++    </section>
++  );
++}
++
++export default App;
++",
++  "apps/my-provider/src/bootstrap.tsx": "import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
++",
++  "apps/my-provider/src/index.ts": "// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom, etc.) is evaluated. Dynamic
++// \`import('./bootstrap')\` defers the real entry until federation is ready.
++import('./bootstrap');
++export {};
++",
++  "apps/my-provider/tsconfig.json": "{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
++",
++  "apps/my-provider/vite.config.ts": "import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++import { federation } from '@module-federation/vite';
++
++// Port deliberately avoids 5000 (macOS AirTunes binds it on 0.0.0.0, leading
++// to silent EADDRINUSE on 127.0.0.1). Override \`--port\` only if 5000+ is free.
++const PORT = 5101;
++
++export default defineConfig({
++  server: {
++    port: PORT,
++    strictPort: true,
++    origin: \`http://localhost:\${PORT}\`,
++    host: '127.0.0.1',
++    // Allow cross-origin fetches of mf-manifest.json + chunks from a consumer
++    // running on a different port. Vite 8 narrows the default CORS allowlist
++    // to specific localhost patterns; setting \`cors: true\` emits a wildcard
++    // \`Access-Control-Allow-Origin: *\` for dev which is what federation needs.
++    cors: true,
++  },
++  preview: { port: PORT, strictPort: true, cors: true },
++  build: { target: 'chrome89' },
++  plugins: [
++    federation({
++      name: 'my_provider',
++      filename: 'remoteEntry.js',
++      exposes: {
++        './App': './src/App.tsx',
++      },
++      shared: {
++        react: { singleton: true },
++        'react-dom': { singleton: true },
++      },
++    }),
++    react(),
++  ],
++});
++",
++}
++`;
+diff --git a/packages/react/src/generators/provider/files/_common/src/__componentName__.tsx__tmpl__ b/packages/react/src/generators/provider/files/_common/src/__componentName__.tsx__tmpl__
+new file mode 100644
+index 00000000000..6e1b47a3290
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/_common/src/__componentName__.tsx__tmpl__
+@@ -0,0 +1,11 @@
++// Exposed by the federation plugin as '<%= projectName %>/<%= exposeName %>'.
++// Consumers render it lazily via `lazyProvider('<%= projectName %>', '<%= exposeName %>')`.
++export function <%= componentName %>() {
++  return (
++    <section data-testid="<%= projectName %>">
++      <h1>Hello from <%= projectName %></h1>
++    </section>
++  );
++}
++
++export default <%= componentName %>;
+diff --git a/packages/react/src/generators/provider/files/_common/src/bootstrap.tsx__tmpl__ b/packages/react/src/generators/provider/files/_common/src/bootstrap.tsx__tmpl__
+new file mode 100644
+index 00000000000..aabb3f98807
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/_common/src/bootstrap.tsx__tmpl__
+@@ -0,0 +1,12 @@
++import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { <%= componentName %> } from './<%= componentName %>';
++
++const container = document.getElementById('root');
++if (!container) throw new Error('#root element not found');
++
++createRoot(container).render(
++  <StrictMode>
++    <<%= componentName %> />
++  </StrictMode>
++);
+diff --git a/packages/react/src/generators/provider/files/_common/src/index.ts__tmpl__ b/packages/react/src/generators/provider/files/_common/src/index.ts__tmpl__
+new file mode 100644
+index 00000000000..594ada73635
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/_common/src/index.ts__tmpl__
+@@ -0,0 +1,5 @@
++// Indirection required by Module Federation: the federation runtime must boot
++// before any shared dependency (React, react-dom, etc.) is evaluated. Dynamic
++// `import('./bootstrap')` defers the real entry until federation is ready.
++import('./bootstrap');
++export {};
+diff --git a/packages/react/src/generators/provider/files/_common/tsconfig.json__tmpl__ b/packages/react/src/generators/provider/files/_common/tsconfig.json__tmpl__
+new file mode 100644
+index 00000000000..fc223b6ddc8
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/_common/tsconfig.json__tmpl__
+@@ -0,0 +1,17 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["DOM", "DOM.Iterable", "ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
+diff --git a/packages/react/src/generators/provider/files/rsbuild/index.html__tmpl__ b/packages/react/src/generators/provider/files/rsbuild/index.html__tmpl__
+new file mode 100644
+index 00000000000..43132c22b22
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/rsbuild/index.html__tmpl__
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title><%= projectName %> (standalone)</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- Rsbuild's html plugin injects the entry script automatically. -->
++  </body>
++</html>
+diff --git a/packages/react/src/generators/provider/files/rsbuild/package.json__tmpl__ b/packages/react/src/generators/provider/files/rsbuild/package.json__tmpl__
+new file mode 100644
+index 00000000000..f3df1b663d7
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/rsbuild/package.json__tmpl__
+@@ -0,0 +1,22 @@
++{
++  "name": "<%= projectName %>",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rsbuild dev --port <%= port %>",
++    "build": "rsbuild build",
++    "preview": "rsbuild preview --port <%= port %>"
++  },
++  "dependencies": {
++    "react": "<%= versions.reactVersion %>",
++    "react-dom": "<%= versions.reactDomVersion %>"
++  },
++  "devDependencies": {
++    "@module-federation/rsbuild-plugin": "<%= versions.moduleFederationRsbuildPluginVersion %>",
++    "@rsbuild/core": "<%= versions.rsbuildCoreVersion %>",
++    "@rsbuild/plugin-react": "<%= versions.rsbuildPluginReactVersion %>",
++    "@types/react": "<%= versions.typesReactVersion %>",
++    "@types/react-dom": "<%= versions.typesReactDomVersion %>",
++    "typescript": "<%= versions.typescriptVersion %>"
++  }
++}
+diff --git a/packages/react/src/generators/provider/files/rsbuild/rsbuild.config.ts__tmpl__ b/packages/react/src/generators/provider/files/rsbuild/rsbuild.config.ts__tmpl__
+new file mode 100644
+index 00000000000..f450a0ac8a0
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/rsbuild/rsbuild.config.ts__tmpl__
+@@ -0,0 +1,31 @@
++import { defineConfig } from '@rsbuild/core';
++import { pluginReact } from '@rsbuild/plugin-react';
++import { pluginModuleFederation } from '@module-federation/rsbuild-plugin';
++
++const PORT = <%= port %>;
++const NAME = '<%= federationName %>';
++
++export default defineConfig({
++  server: {
++    port: PORT,
++    // Allow cross-origin fetches from a consumer on a different port.
++    headers: { 'Access-Control-Allow-Origin': '*' },
++  },
++  // assetPrefix:true tells rsbuild to emit chunks with the dev-server URL as
++  // their public path. Without it a consumer on a different port asks its
++  // own origin for the federated chunks and gets the SPA-fallback HTML.
++  dev: { assetPrefix: true },
++  html: { template: './index.html' },
++  source: { entry: { index: './src/index.ts' } },
++  plugins: [
++    pluginReact(),
++    pluginModuleFederation({
++      name: NAME,
++      filename: 'remoteEntry.js',
++      exposes: {
++        './<%= exposeName %>': './src/<%= componentName %>.tsx',
++      },
++      shared: ['react', 'react-dom'],
++    }),
++  ],
++});
+diff --git a/packages/react/src/generators/provider/files/rspack/index.html__tmpl__ b/packages/react/src/generators/provider/files/rspack/index.html__tmpl__
+new file mode 100644
+index 00000000000..1f68651ca95
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/rspack/index.html__tmpl__
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title><%= projectName %> (standalone)</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <!-- HtmlRspackPlugin injects the entry script automatically; do not add it here. -->
++  </body>
++</html>
+diff --git a/packages/react/src/generators/provider/files/rspack/package.json__tmpl__ b/packages/react/src/generators/provider/files/rspack/package.json__tmpl__
+new file mode 100644
+index 00000000000..5f221ead1bf
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/rspack/package.json__tmpl__
+@@ -0,0 +1,22 @@
++{
++  "name": "<%= projectName %>",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "rspack serve --mode=development",
++    "build": "rspack build --mode=production"
++  },
++  "dependencies": {
++    "@module-federation/enhanced": "<%= versions.moduleFederationEnhancedVersion %>",
++    "react": "<%= versions.reactVersion %>",
++    "react-dom": "<%= versions.reactDomVersion %>"
++  },
++  "devDependencies": {
++    "@rspack/cli": "<%= versions.rspackCliVersion %>",
++    "@rspack/core": "<%= versions.rspackCoreVersion %>",
++    "@rspack/dev-server": "<%= versions.rspackDevServerVersion %>",
++    "@types/react": "<%= versions.typesReactVersion %>",
++    "@types/react-dom": "<%= versions.typesReactDomVersion %>",
++    "typescript": "<%= versions.typescriptVersion %>"
++  }
++}
+diff --git a/packages/react/src/generators/provider/files/rspack/rspack.config.ts__tmpl__ b/packages/react/src/generators/provider/files/rspack/rspack.config.ts__tmpl__
+new file mode 100644
+index 00000000000..ba9f5996a5c
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/rspack/rspack.config.ts__tmpl__
+@@ -0,0 +1,69 @@
++import { defineConfig } from '@rspack/cli';
++import { rspack } from '@rspack/core';
++import { ModuleFederationPlugin } from '@module-federation/enhanced/rspack';
++import * as path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++// __dirname is undefined when @rspack/cli loads this config as ESM (it
++// does, because the file uses `import` statements). Derive it from the
++// module URL so the config works regardless of how the loader interprets it.
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++
++const PORT = <%= port %>;
++const NAME = '<%= federationName %>';
++
++// Read mode from the rspack CLI arg (`--mode=development|production`) so the
++// config works the same on Windows + POSIX without depending on a shell
++// `NODE_ENV=...` prefix.
++export default defineConfig((_env, argv) => {
++  const isDev = argv.mode !== 'production';
++  return {
++    context: __dirname,
++    entry: { main: './src/index.ts' },
++    output: {
++      path: path.resolve(__dirname, 'dist'),
++      publicPath: 'auto',
++      uniqueName: NAME,
++      clean: true,
++    },
++    devServer: {
++      port: PORT,
++      historyApiFallback: true,
++      hot: true,
++      headers: { 'Access-Control-Allow-Origin': '*' },
++    },
++    resolve: { extensions: ['...', '.ts', '.tsx', '.jsx'] },
++    module: {
++      rules: [
++        {
++          test: /\.(j|t)sx?$/,
++          exclude: [/node_modules/],
++          use: {
++            loader: 'builtin:swc-loader',
++            options: {
++              jsc: {
++                parser: { syntax: 'typescript', tsx: true },
++                transform: { react: { runtime: 'automatic', development: isDev } },
++              },
++              env: { targets: 'Chrome >= 87, Firefox >= 78, Edge >= 88, Safari >= 14' },
++            },
++          },
++        },
++      ],
++    },
++    plugins: [
++      // excludeChunks is REQUIRED on a provider: without it the federation
++      // remoteEntry chunk gets injected into the standalone HTML and breaks
++      // direct serves.
++      new rspack.HtmlRspackPlugin({ template: './index.html', excludeChunks: [NAME] }),
++      new ModuleFederationPlugin({
++        name: NAME,
++        filename: 'remoteEntry.js',
++        exposes: {
++          './<%= exposeName %>': './src/<%= componentName %>.tsx',
++        },
++        shared: ['react', 'react-dom'],
++      }),
++    ],
++  };
++});
+diff --git a/packages/react/src/generators/provider/files/vite/index.html__tmpl__ b/packages/react/src/generators/provider/files/vite/index.html__tmpl__
+new file mode 100644
+index 00000000000..11aa079e71b
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/vite/index.html__tmpl__
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width,initial-scale=1" />
++    <title><%= projectName %> (standalone)</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/index.ts"></script>
++  </body>
++</html>
+diff --git a/packages/react/src/generators/provider/files/vite/package.json__tmpl__ b/packages/react/src/generators/provider/files/vite/package.json__tmpl__
+new file mode 100644
+index 00000000000..d5fde5d8cfc
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/vite/package.json__tmpl__
+@@ -0,0 +1,23 @@
++{
++  "name": "<%= projectName %>",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite --port <%= port %> --strictPort",
++    "build": "vite build",
++    "preview": "vite preview --port <%= port %> --strictPort"
++  },
++  "dependencies": {
++    "react": "<%= versions.reactVersion %>",
++    "react-dom": "<%= versions.reactDomVersion %>"
++  },
++  "devDependencies": {
++    "@module-federation/vite": "<%= versions.moduleFederationVitePluginVersion %>",
++    "@types/react": "<%= versions.typesReactVersion %>",
++    "@types/react-dom": "<%= versions.typesReactDomVersion %>",
++    "@vitejs/plugin-react": "<%= versions.vitejsPluginReactVersion %>",
++    "typescript": "<%= versions.typescriptVersion %>",
++    "vite": "<%= versions.viteVersion %>"
++  }
++}
+diff --git a/packages/react/src/generators/provider/files/vite/vite.config.ts__tmpl__ b/packages/react/src/generators/provider/files/vite/vite.config.ts__tmpl__
+new file mode 100644
+index 00000000000..448f2f88bc6
+--- /dev/null
++++ b/packages/react/src/generators/provider/files/vite/vite.config.ts__tmpl__
+@@ -0,0 +1,37 @@
++import { defineConfig } from 'vite';
++import react from '@vitejs/plugin-react';
++import { federation } from '@module-federation/vite';
++
++// Port deliberately avoids 5000 (macOS AirTunes binds it on 0.0.0.0, leading
++// to silent EADDRINUSE on 127.0.0.1). Override `--port` only if 5000+ is free.
++const PORT = <%= port %>;
++
++export default defineConfig({
++  server: {
++    port: PORT,
++    strictPort: true,
++    origin: `http://localhost:${PORT}`,
++    host: '127.0.0.1',
++    // Allow cross-origin fetches of mf-manifest.json + chunks from a consumer
++    // running on a different port. Vite 8 narrows the default CORS allowlist
++    // to specific localhost patterns; setting `cors: true` emits a wildcard
++    // `Access-Control-Allow-Origin: *` for dev which is what federation needs.
++    cors: true,
++  },
++  preview: { port: PORT, strictPort: true, cors: true },
++  build: { target: 'chrome89' },
++  plugins: [
++    federation({
++      name: '<%= federationName %>',
++      filename: 'remoteEntry.js',
++      exposes: {
++        './<%= exposeName %>': './src/<%= componentName %>.tsx',
++      },
++      shared: {
++        react: { singleton: true },
++        'react-dom': { singleton: true },
++      },
++    }),
++    react(),
++  ],
++});
+diff --git a/packages/react/src/generators/provider/provider.spec.ts b/packages/react/src/generators/provider/provider.spec.ts
+new file mode 100644
+index 00000000000..bcf1762377f
+--- /dev/null
++++ b/packages/react/src/generators/provider/provider.spec.ts
+@@ -0,0 +1,180 @@
++import { Tree, readProjectConfiguration } from '@nx/devkit';
++import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
++import providerGenerator from './provider';
++import type { SupportedBundler } from '../_utils/normalize';
++
++function snapshotTree(tree: Tree, root: string): Record<string, string> {
++  const files: Record<string, string> = {};
++  for (const entry of tree.listChanges()) {
++    if (!entry.path.startsWith(root)) continue;
++    if (entry.type === 'DELETE') continue;
++    files[entry.path] = entry.content?.toString() ?? '';
++  }
++  return files;
++}
++
++describe('@nx/react:provider', () => {
++  let tree: Tree;
++
++  beforeEach(() => {
++    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
++  });
++
++  it.each<SupportedBundler>(['vite', 'rsbuild', 'rspack'])(
++    'generates a provider for the %s bundler',
++    async (bundler) => {
++      await providerGenerator(tree, {
++        directory: 'apps/my-provider',
++        bundler,
++      });
++
++      const project = readProjectConfiguration(tree, 'my-provider');
++      expect(project).toMatchSnapshot('project.json');
++      expect(snapshotTree(tree, 'apps/my-provider')).toMatchSnapshot(
++        `${bundler} tree`
++      );
++    }
++  );
++
++  it('coerces hyphenated names into a federation identifier', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/product-catalog',
++      bundler: 'vite',
++    });
++    const config = tree.read('apps/product-catalog/vite.config.ts', 'utf-8');
++    expect(config).toContain(`name: 'product_catalog'`);
++  });
++
++  it('respects an explicit port override', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/shell',
++      bundler: 'vite',
++      port: 7777,
++    });
++    const config = tree.read('apps/shell/vite.config.ts', 'utf-8');
++    expect(config).toContain('const PORT = 7777');
++  });
++
++  it('respects an explicit exposeName override', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/cart',
++      bundler: 'vite',
++      exposeName: 'Cart',
++    });
++    expect(tree.exists('apps/cart/src/Cart.tsx')).toBe(true);
++    const config = tree.read('apps/cart/vite.config.ts', 'utf-8');
++    expect(config).toContain(`'./Cart': './src/Cart.tsx'`);
++  });
++
++  // A kebab-case exposeName is normalized - the raw value stays
++  // the MF expose key (consumers reference it) while the component + filename
++  // use a PascalCase identifier so the emitted TS is valid.
++  it('normalizes a kebab-case exposeName into a PascalCase component', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/cart',
++      bundler: 'vite',
++      exposeName: 'cart-widget',
++    });
++    // Component file + function use the PascalCase identifier.
++    expect(tree.exists('apps/cart/src/CartWidget.tsx')).toBe(true);
++    const component = tree.read('apps/cart/src/CartWidget.tsx', 'utf-8') ?? '';
++    expect(component).toContain('export function CartWidget()');
++    // Expose key keeps the raw value; file points at the component.
++    const config = tree.read('apps/cart/vite.config.ts', 'utf-8') ?? '';
++    expect(config).toContain(`'./cart-widget': './src/CartWidget.tsx'`);
++    // bootstrap imports the component identifier.
++    const bootstrap = tree.read('apps/cart/src/bootstrap.tsx', 'utf-8') ?? '';
++    expect(bootstrap).toContain(`import { CartWidget } from './CartWidget'`);
++  });
++
++  // When --consumer is set, the provider's serve target depends
++  // on the consumer's serve so `nx serve <provider>` brings the consumer
++  // along (matches the deprecated host/remote UX).
++  it('wires serve.dependsOn against the consumer when --consumer is set', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/p1',
++      bundler: 'vite',
++      consumer: 'my-consumer',
++    });
++    const project = readProjectConfiguration(tree, 'p1');
++    expect(project.targets?.serve?.dependsOn).toEqual(['my-consumer:serve']);
++  });
++
++  it('leaves serve.dependsOn unset when --consumer is omitted', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/p1',
++      bundler: 'vite',
++    });
++    const project = readProjectConfiguration(tree, 'p1');
++    expect(project.targets?.serve?.dependsOn).toBeUndefined();
++  });
++
++  // Providers must serve cross-origin so a consumer on a
++  // different port can fetch mf-manifest.json + chunks without a CORS error.
++  it.each<[SupportedBundler, string, RegExp]>([
++    ['vite', 'vite.config.ts', /cors:\s*true/],
++    ['rsbuild', 'rsbuild.config.ts', /'Access-Control-Allow-Origin':\s*'\*'/],
++    ['rspack', 'rspack.config.ts', /'Access-Control-Allow-Origin':\s*'\*'/],
++  ])(
++    'emits cross-origin headers for the %s provider',
++    async (bundler, configFile, pattern) => {
++      await providerGenerator(tree, {
++        directory: 'apps/shop',
++        bundler,
++      });
++      const config = tree.read(`apps/shop/${configFile}`, 'utf-8') ?? '';
++      expect(config).toMatch(pattern);
++    }
++  );
++
++  // Rsbuild providers need `dev.assetPrefix: true` so chunk
++  // URLs point at the provider origin. Without it a consumer on a different
++  // port asks its own origin for the federated chunks and gets HTML.
++  it('configures the rsbuild provider with dev.assetPrefix so chunks load cross-origin', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/shop',
++      bundler: 'rsbuild',
++    });
++    const config = tree.read('apps/shop/rsbuild.config.ts', 'utf-8') ?? '';
++    expect(config).toMatch(/dev:\s*\{\s*assetPrefix:\s*true/);
++    // Federation is wired through the official rsbuild plugin (which scopes
++    // uniqueName from `name`), not the tools.rspack ModuleFederationPlugin hack.
++    expect(config).toContain(
++      "import { pluginModuleFederation } from '@module-federation/rsbuild-plugin'"
++    );
++    expect(config).toContain('pluginModuleFederation({');
++  });
++
++  // @rspack/cli loads rspack.config.ts as ESM (because the file
++  // uses `import`), so bare `__dirname` is undefined. The config must derive
++  // it from `import.meta.url`.
++  it('derives __dirname via fileURLToPath in the rspack provider config (ESM-safe)', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/shop',
++      bundler: 'rspack',
++    });
++    const config = tree.read('apps/shop/rspack.config.ts', 'utf-8') ?? '';
++    expect(config).toContain("import { fileURLToPath } from 'node:url'");
++    expect(config).toContain(
++      'const __dirname = path.dirname(fileURLToPath(import.meta.url))'
++    );
++  });
++
++  // Rspack targets must use `--mode=...` (Windows-safe) rather
++  // than a `NODE_ENV=...` shell prefix.
++  it('emits cross-platform rspack commands (no NODE_ENV prefix)', async () => {
++    await providerGenerator(tree, {
++      directory: 'apps/shop',
++      bundler: 'rspack',
++    });
++    const project = readProjectConfiguration(tree, 'shop');
++    expect(project.targets?.serve?.options?.command).toBe(
++      'rspack serve --mode=development'
++    );
++    expect(project.targets?.build?.options?.command).toBe(
++      'rspack build --mode=production'
++    );
++    const pkg = tree.read('apps/shop/package.json', 'utf-8');
++    expect(pkg).not.toMatch(/NODE_ENV=/);
++  });
++});
+diff --git a/packages/react/src/generators/provider/provider.ts b/packages/react/src/generators/provider/provider.ts
+new file mode 100644
+index 00000000000..b4a8d6e08cc
+--- /dev/null
++++ b/packages/react/src/generators/provider/provider.ts
+@@ -0,0 +1,131 @@
++import {
++  addDependenciesToPackageJson,
++  addProjectConfiguration,
++  formatFiles,
++  generateFiles,
++  GeneratorCallback,
++  joinPathFragments,
++  names,
++  runTasksInSerial,
++  Tree,
++} from '@nx/devkit';
++import { typescriptVersion } from '@nx/js/src/utils/versions';
++import {
++  reactVersion,
++  reactDomVersion,
++  typesReactVersion,
++  typesReactDomVersion,
++} from '../../utils/versions';
++import * as mfVersions from '../_utils/mf-versions';
++import { getProviderDeps } from '../_utils/mf-dependencies';
++import { normalizeScaffoldOptions } from '../_utils/normalize';
++import type { ProviderGeneratorSchema } from './schema';
++
++// `--mode=...` is rspack's portable equivalent of `NODE_ENV=...` and works on
++// Windows without a shell prefix.
++const BUNDLER_DEV_COMMAND = {
++  vite: 'vite',
++  rsbuild: 'rsbuild dev',
++  rspack: 'rspack serve --mode=development',
++} as const;
++
++const BUNDLER_BUILD_COMMAND = {
++  vite: 'vite build',
++  rsbuild: 'rsbuild build',
++  rspack: 'rspack build --mode=production',
++} as const;
++
++export async function providerGenerator(
++  tree: Tree,
++  schema: ProviderGeneratorSchema
++): Promise<GeneratorCallback> {
++  const opts = await normalizeScaffoldOptions(tree, {
++    directory: schema.directory,
++    surface: 'provider',
++    bundler: schema.bundler,
++    port: schema.port,
++  });
++  // `exposeName` is the public MF expose key (consumers reference
++  // `<provider>/<exposeName>`) and may be kebab-case, e.g. `cart-widget`.
++  // `componentName` is the PascalCase identifier used for the React function
++  // and its filename, since `export function cart-widget()` would be invalid.
++  const exposeName = schema.exposeName?.trim() || 'App';
++  const componentName = names(exposeName).className;
++
++  // `dependsOn` on a `continuous: true` target lets nx spin up the consumer
++  // alongside the provider - matches the deprecated host/remote 'serve a
++  // remote, host comes along' UX. Only wired when --consumer is set (e.g.
++  // when the consumer generator scaffolds this provider).
++  const serveTarget: Record<string, unknown> = {
++    executor: 'nx:run-commands',
++    continuous: true,
++    options: {
++      command: BUNDLER_DEV_COMMAND[opts.bundler],
++      cwd: opts.projectRoot,
++    },
++  };
++  if (schema.consumer) {
++    serveTarget.dependsOn = [`${schema.consumer}:serve`];
++  }
++
++  addProjectConfiguration(tree, opts.projectName, {
++    root: opts.projectRoot,
++    sourceRoot: joinPathFragments(opts.projectRoot, 'src'),
++    projectType: 'application',
++    targets: {
++      serve: serveTarget,
++      build: {
++        executor: 'nx:run-commands',
++        options: {
++          command: BUNDLER_BUILD_COMMAND[opts.bundler],
++          cwd: opts.projectRoot,
++        },
++      },
++    },
++  });
++
++  const templateSubstitutions = {
++    projectName: opts.projectName,
++    federationName: opts.federationName,
++    port: opts.port,
++    exposeName,
++    componentName,
++    versions: {
++      ...mfVersions,
++      reactVersion,
++      reactDomVersion,
++      typesReactVersion,
++      typesReactDomVersion,
++      typescriptVersion,
++    },
++    tmpl: '',
++  };
++
++  generateFiles(
++    tree,
++    joinPathFragments(__dirname, 'files', '_common'),
++    opts.projectRoot,
++    templateSubstitutions
++  );
++  generateFiles(
++    tree,
++    joinPathFragments(__dirname, 'files', opts.bundler),
++    opts.projectRoot,
++    templateSubstitutions
++  );
++
++  // Write deps into the workspace root package.json so bare bundler bins
++  // resolve when nx invokes the generated run-commands serve target. The
++  // per-project package.json template still ships for pnpm-workspace setups.
++  const deps = getProviderDeps(opts.bundler);
++  const installTask = addDependenciesToPackageJson(
++    tree,
++    deps.dependencies,
++    deps.devDependencies
++  );
++
++  await formatFiles(tree);
++  return runTasksInSerial(installTask);
++}
++
++export default providerGenerator;
+diff --git a/packages/react/src/generators/provider/schema.d.ts b/packages/react/src/generators/provider/schema.d.ts
+new file mode 100644
+index 00000000000..18ab9fc6e10
+--- /dev/null
++++ b/packages/react/src/generators/provider/schema.d.ts
+@@ -0,0 +1,9 @@
++import type { SupportedBundler } from '../_utils/normalize';
++
++export interface ProviderGeneratorSchema {
++  directory: string;
++  bundler?: SupportedBundler;
++  port?: number;
++  exposeName?: string;
++  consumer?: string;
++}
+diff --git a/packages/react/src/generators/provider/schema.json b/packages/react/src/generators/provider/schema.json
+new file mode 100644
+index 00000000000..8067c328a66
+--- /dev/null
++++ b/packages/react/src/generators/provider/schema.json
+@@ -0,0 +1,46 @@
++{
++  "$schema": "https://json-schema.org/schema",
++  "$id": "NxReactProvider",
++  "title": "Create a Module Federation provider",
++  "description": "Scaffold a React Module Federation provider that exposes a federated component. The bundler is selected at generation time; the generated project has no Nx-wrapped bundler config.",
++  "cli": "nx",
++  "type": "object",
++  "properties": {
++    "directory": {
++      "type": "string",
++      "description": "Directory the provider is generated in, e.g. `apps/my-provider`. The project name (also used as the federation `name`, with hyphens converted to underscores) is inferred from the trailing path segment.",
++      "alias": "dir",
++      "$default": { "$source": "argv", "index": 0 },
++      "x-prompt": "Which directory do you want to create the provider in?"
++    },
++    "bundler": {
++      "type": "string",
++      "description": "Bundler used by the provider. The choice is final - the bundler config is too different to switch later.",
++      "enum": ["vite", "rsbuild", "rspack"],
++      "default": "vite",
++      "x-prompt": {
++        "message": "Which bundler should the provider use?",
++        "type": "list",
++        "items": [
++          { "value": "vite", "label": "Vite (default)" },
++          { "value": "rsbuild", "label": "Rsbuild" },
++          { "value": "rspack", "label": "Rspack" }
++        ]
++      }
++    },
++    "port": {
++      "type": "number",
++      "description": "Dev-server port the provider listens on. Defaults to a non-5000 port to avoid the macOS AirTunes collision on Vite."
++    },
++    "exposeName": {
++      "type": "string",
++      "description": "Name under which the federated component is exposed (consumers reference `<name>/<exposeName>`).",
++      "default": "App"
++    },
++    "consumer": {
++      "type": "string",
++      "description": "Name of a consumer project whose `serve` target this provider should depend on. When set, `nx serve <provider>` also spins up the consumer (the 'serve a remote, host comes along' UX from the deprecated host/remote generators). Set automatically when the provider is generated as part of `@nx/react:consumer --providerNames=...`."
++    }
++  },
++  "required": ["directory"]
++}
+diff --git a/packages/react/src/generators/remote/remote.ts b/packages/react/src/generators/remote/remote.ts
+index 26b0b2596a5..cb059eca201 100644
+--- a/packages/react/src/generators/remote/remote.ts
++++ b/packages/react/src/generators/remote/remote.ts
+@@ -22,6 +22,7 @@ import { updateModuleFederationProject } from '../../rules/update-module-federat
+ import { addMfEnvToTargetDefaultInputs } from '../../utils/add-mf-env-to-inputs';
+ import { normalizeRemoteName } from '../../utils/normalize-remote';
+ import { maybeJs } from '../../utils/maybe-js';
++import { warnReactRemoteGeneratorDeprecation } from '../../utils/module-federation-deprecation';
+ import {
+   moduleFederationEnhancedVersion,
+   nxVersion,
+@@ -129,6 +130,7 @@ export function addModuleFederationFiles(
+ }
+ 
+ export async function remoteGenerator(host: Tree, schema: Schema) {
++  warnReactRemoteGeneratorDeprecation();
+   const tasks: GeneratorCallback[] = [];
+   const name = await normalizeRemoteName(host, schema.name, schema);
+   const options: NormalizedSchema<Schema> = {
+diff --git a/packages/react/src/utils/module-federation-deprecation.ts b/packages/react/src/utils/module-federation-deprecation.ts
+new file mode 100644
+index 00000000000..7f1e2004482
+--- /dev/null
++++ b/packages/react/src/utils/module-federation-deprecation.ts
+@@ -0,0 +1,60 @@
++import { logger } from '@nx/devkit';
++
++// TODO(v24): Remove these surfaces. Replaced by `@nx/react:consumer`
++// and `@nx/react:provider` (React, dynamic federation, Vite/Rsbuild/Rspack).
++const MIGRATION_URL =
++  'https://nx.dev/docs/technologies/module-federation/consumer-and-provider';
++
++export const REACT_HOST_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/react:host\` generator is deprecated and will be removed in Nx v24. Use \`nx g @nx/react:consumer\` (dynamic federation, no static-serve orchestration). See ${MIGRATION_URL} for the v23 migration guide.`;
++
++export const REACT_REMOTE_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/react:remote\` generator is deprecated and will be removed in Nx v24. Use \`nx g @nx/react:provider\` instead. See ${MIGRATION_URL} for the v23 migration guide.`;
++
++export const REACT_FEDERATE_MODULE_GENERATOR_DEPRECATION_MESSAGE = `The \`@nx/react:federate-module\` generator is deprecated and will be removed in Nx v24. The new \`@nx/react:provider\` generator exposes modules directly. See ${MIGRATION_URL} for the v23 migration guide.`;
++
++export const REACT_MF_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/react:module-federation-dev-server\` executor is deprecated and will be removed in Nx v24. Dynamic federation in \`@nx/react:consumer\` removes the need for host-orchestrated remote serving. See ${MIGRATION_URL} for the v23 migration guide.`;
++
++export const REACT_MF_SSR_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/react:module-federation-ssr-dev-server\` executor is deprecated and will be removed in Nx v24. SSR is not first-classed in the new generators; see ${MIGRATION_URL} for guidance on wiring SSR with \`@nx/react:consumer\`.`;
++
++export const REACT_MF_STATIC_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/react:module-federation-static-server\` executor is deprecated and will be removed in Nx v24. Use plain \`vite preview\` / \`rsbuild preview\` via \`nx:run-commands\` if a static-serve workflow is still needed. See ${MIGRATION_URL} for details.`;
++
++export function warnReactHostGeneratorDeprecation(): void {
++  logger.warn(REACT_HOST_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++export function warnReactRemoteGeneratorDeprecation(): void {
++  logger.warn(REACT_REMOTE_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++export function warnReactFederateModuleGeneratorDeprecation(): void {
++  logger.warn(REACT_FEDERATE_MODULE_GENERATOR_DEPRECATION_MESSAGE);
++}
++
++// Executor warnings fire once per process (dev-server reload loops would
++// otherwise flood the console).
++const executorWarned = new Set<string>();
++function warnOnce(key: string, message: string): void {
++  if (executorWarned.has(key)) return;
++  executorWarned.add(key);
++  logger.warn(message);
++}
++
++export function warnReactMfDevServerExecutorDeprecation(): void {
++  warnOnce(
++    'react-mf-dev-server',
++    REACT_MF_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
++
++export function warnReactMfSsrDevServerExecutorDeprecation(): void {
++  warnOnce(
++    'react-mf-ssr-dev-server',
++    REACT_MF_SSR_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
++
++export function warnReactMfStaticServerExecutorDeprecation(): void {
++  warnOnce(
++    'react-mf-static-server',
++    REACT_MF_STATIC_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
+diff --git a/packages/rspack/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts b/packages/rspack/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
+index 71702d9aa50..22387b3efd5 100644
+--- a/packages/rspack/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
++++ b/packages/rspack/src/executors/module-federation-dev-server/module-federation-dev-server.impl.ts
+@@ -12,11 +12,13 @@ import { extname, join } from 'path';
+ import devServerExecutor from '../dev-server/dev-server.impl';
+ import { normalizeOptions, startRemotes } from './lib';
+ import { ModuleFederationDevServerOptions } from './schema';
++import { warnRspackMfDevServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export default async function* moduleFederationDevServer(
+   schema: ModuleFederationDevServerOptions,
+   context: ExecutorContext
+ ): AsyncIterableIterator<{ success: boolean; baseUrl?: string }> {
++  warnRspackMfDevServerExecutorDeprecation();
+   const options = normalizeOptions(schema);
+   const currIter = options.static
+     ? fileServerExecutor(
+diff --git a/packages/rspack/src/executors/module-federation-dev-server/schema.json b/packages/rspack/src/executors/module-federation-dev-server/schema.json
+index 8343de11ef2..e72fcb84ea8 100644
+--- a/packages/rspack/src/executors/module-federation-dev-server/schema.json
++++ b/packages/rspack/src/executors/module-federation-dev-server/schema.json
+@@ -3,6 +3,7 @@
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "title": "Rspack Module Federation Dev Server",
++  "x-deprecated": "The `@nx/rspack:module-federation-dev-server` executor is deprecated. Dynamic federation in `@nx/react:consumer` removes the need for host-orchestrated remote serving. Removed in Nx v24.",
+   "description": "Serve a module federation application.",
+   "cli": "nx",
+   "type": "object",
+diff --git a/packages/rspack/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts b/packages/rspack/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
+index 701753185f6..f9ccb47774b 100644
+--- a/packages/rspack/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
++++ b/packages/rspack/src/executors/module-federation-ssr-dev-server/module-federation-ssr-dev-server.impl.ts
+@@ -11,11 +11,13 @@ import { extname, join } from 'path';
+ import ssrDevServerExecutor from '../ssr-dev-server/ssr-dev-server.impl';
+ import { normalizeOptions, startRemotes } from './lib';
+ import { ModuleFederationSsrDevServerOptions } from './schema';
++import { warnRspackMfSsrDevServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ export default async function* moduleFederationSsrDevServer(
+   ssrDevServerOptions: ModuleFederationSsrDevServerOptions,
+   context: ExecutorContext
+ ) {
++  warnRspackMfSsrDevServerExecutorDeprecation();
+   const options = normalizeOptions(ssrDevServerOptions);
+ 
+   const iter = ssrDevServerExecutor(options, context);
+diff --git a/packages/rspack/src/executors/module-federation-ssr-dev-server/schema.json b/packages/rspack/src/executors/module-federation-ssr-dev-server/schema.json
+index 8233fba44e2..26e5d80df14 100644
+--- a/packages/rspack/src/executors/module-federation-ssr-dev-server/schema.json
++++ b/packages/rspack/src/executors/module-federation-ssr-dev-server/schema.json
+@@ -3,6 +3,7 @@
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "title": "Module Federation SSR Dev Server",
++  "x-deprecated": "The `@nx/rspack:module-federation-ssr-dev-server` executor is deprecated. SSR is not first-classed in the new `@nx/react:consumer`/`@nx/react:provider` generators. Removed in Nx v24.",
+   "description": "Serve a SSR Consumer (host) application along with its known Producers (remotes).",
+   "cli": "nx",
+   "type": "object",
+diff --git a/packages/rspack/src/executors/module-federation-static-server/module-federation-static-server.impl.ts b/packages/rspack/src/executors/module-federation-static-server/module-federation-static-server.impl.ts
+index 125c05158a0..89f9fb8adbb 100644
+--- a/packages/rspack/src/executors/module-federation-static-server/module-federation-static-server.impl.ts
++++ b/packages/rspack/src/executors/module-federation-static-server/module-federation-static-server.impl.ts
+@@ -27,6 +27,7 @@ import { basename, extname, join } from 'path';
+ import { ModuleFederationDevServerOptions } from '../module-federation-dev-server/schema';
+ import type { RspackExecutorSchema } from '../rspack/schema';
+ import { ModuleFederationStaticServerSchema } from './schema';
++import { warnRspackMfStaticServerExecutorDeprecation } from '../../utils/module-federation-deprecation';
+ 
+ function getBuildAndServeOptionsFromServeTarget(
+   serveTarget: string,
+@@ -248,6 +249,7 @@ export default async function* moduleFederationStaticServer(
+   schema: ModuleFederationStaticServerSchema,
+   context: ExecutorContext
+ ) {
++  warnRspackMfStaticServerExecutorDeprecation();
+   // Force Node to resolve to look for the nx binary that is inside node_modules
+   const nxBin = require.resolve('nx/bin/nx');
+ 
+diff --git a/packages/rspack/src/executors/module-federation-static-server/schema.json b/packages/rspack/src/executors/module-federation-static-server/schema.json
+index 783a56c0ac8..2d6546a3db0 100644
+--- a/packages/rspack/src/executors/module-federation-static-server/schema.json
++++ b/packages/rspack/src/executors/module-federation-static-server/schema.json
+@@ -3,6 +3,7 @@
+   "continuous": true,
+   "outputCapture": "direct-nodejs",
+   "title": "Module Federation Static Dev Server",
++  "x-deprecated": "The `@nx/rspack:module-federation-static-server` executor is deprecated. Use `vite preview` / `rsbuild preview` via `nx:run-commands` instead. Removed in Nx v24.",
+   "description": "Serve a Consumer (host) application statically along with it's Producers (remotes).",
+   "cli": "nx",
+   "type": "object",
+diff --git a/packages/rspack/src/utils/module-federation-deprecation.ts b/packages/rspack/src/utils/module-federation-deprecation.ts
+new file mode 100644
+index 00000000000..b513d532d90
+--- /dev/null
++++ b/packages/rspack/src/utils/module-federation-deprecation.ts
+@@ -0,0 +1,41 @@
++import { logger } from '@nx/devkit';
++
++// TODO(v24): Remove these MF executors. Dynamic federation in the new
++// `@nx/react:consumer` generator removes the orchestration need.
++const MIGRATION_URL =
++  'https://nx.dev/docs/technologies/module-federation/consumer-and-provider';
++
++export const RSPACK_MF_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/rspack:module-federation-dev-server\` executor is deprecated and will be removed in Nx v24. Dynamic federation in \`@nx/react:consumer\` removes the need for host-orchestrated remote serving. See ${MIGRATION_URL} for the v23 migration guide.`;
++
++export const RSPACK_MF_SSR_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/rspack:module-federation-ssr-dev-server\` executor is deprecated and will be removed in Nx v24. SSR is not first-classed in the new generators; see ${MIGRATION_URL} for guidance on wiring SSR with \`@nx/react:consumer\`.`;
++
++export const RSPACK_MF_STATIC_SERVER_EXECUTOR_DEPRECATION_MESSAGE = `The \`@nx/rspack:module-federation-static-server\` executor is deprecated and will be removed in Nx v24. Use plain \`rsbuild preview\` / \`sirv-cli\` via \`nx:run-commands\` if a static-serve workflow is still needed. See ${MIGRATION_URL} for details.`;
++
++// Executor warnings fire once per process to avoid flooding dev-server loops.
++const executorWarned = new Set<string>();
++function warnOnce(key: string, message: string): void {
++  if (executorWarned.has(key)) return;
++  executorWarned.add(key);
++  logger.warn(message);
++}
++
++export function warnRspackMfDevServerExecutorDeprecation(): void {
++  warnOnce(
++    'rspack-mf-dev-server',
++    RSPACK_MF_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
++
++export function warnRspackMfSsrDevServerExecutorDeprecation(): void {
++  warnOnce(
++    'rspack-mf-ssr-dev-server',
++    RSPACK_MF_SSR_DEV_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
++
++export function warnRspackMfStaticServerExecutorDeprecation(): void {
++  warnOnce(
++    'rspack-mf-static-server',
++    RSPACK_MF_STATIC_SERVER_EXECUTOR_DEPRECATION_MESSAGE
++  );
++}
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 4ffc9e9846e..fbbfd9c9dad 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1525,6 +1525,18 @@ importers:
+         specifier: ^2.0.1
+         version: 2.0.1(supports-color@8.1.1)
+ 
++  e2e/module-federation:
++    dependencies:
++      '@nx/devkit':
++        specifier: workspace:*
++        version: link:../../packages/devkit
++      '@nx/e2e-utils':
++        specifier: workspace:*
++        version: link:../utils
++      nx:
++        specifier: workspace:*
++        version: link:../../packages/nx
++
+   e2e/next:
+     dependencies:
+       '@nx/e2e-utils':
+diff --git a/tsconfig.json b/tsconfig.json
+index 992d449f92f..fa8a8f4052d 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -331,6 +331,9 @@
+     {
+       "path": "./e2e/maven"
+     },
++    {
++      "path": "./e2e/module-federation"
++    },
+     {
+       "path": "./examples/angular-rspack/module-federation/remote"
+     },

@@ -1,0 +1,472 @@
+diff --git a/.changeset/funky-deserts-invite.md b/.changeset/funky-deserts-invite.md
+new file mode 100644
+index 000000000000..17e6aa26a626
+--- /dev/null
++++ b/.changeset/funky-deserts-invite.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Improves optimized fallbacks generation when using the Fonts API by using better metrics for bold variants
+diff --git a/packages/astro/src/assets/fonts/core/optimize-fallbacks.ts b/packages/astro/src/assets/fonts/core/optimize-fallbacks.ts
+index a706a19d281e..3ab0fdf65945 100644
+--- a/packages/astro/src/assets/fonts/core/optimize-fallbacks.ts
++++ b/packages/astro/src/assets/fonts/core/optimize-fallbacks.ts
+@@ -1,12 +1,27 @@
+ import type * as unifont from 'unifont';
+ import type { FontMetricsResolver, SystemFallbacksProvider } from '../definitions.js';
+-import type { FontFileData, ResolvedFontFamily } from '../types.js';
++import type { FallbackVariant, FontFileData, ResolvedFontFamily } from '../types.js';
+ import { isGenericFontFamily, unifontFontFaceDataToProperties } from '../utils.js';
+ 
+ export interface CollectedFontForMetrics extends FontFileData {
+ 	data: Partial<unifont.FontFaceData>;
+ }
+ 
++function deriveFallbackVariant(data: Partial<unifont.FontFaceData>): FallbackVariant {
++	const weight = data.weight;
++	if (typeof weight === 'number' && weight >= 700) {
++		return 'bold';
++	}
++	if (typeof weight === 'string') {
++		if (weight === 'bold') return 'bold';
++		// Variable weights (e.g. "100 900") are treated as normal.
++		if (weight.includes(' ')) return 'normal';
++		const n = Number.parseInt(weight, 10);
++		if (!Number.isNaN(n) && n >= 700) return 'bold';
++	}
++	return 'normal';
++}
++
+ export async function optimizeFallbacks({
+ 	family,
+ 	fallbacks: _fallbacks,
+@@ -37,37 +52,53 @@ export async function optimizeFallbacks({
+ 		return null;
+ 	}
+ 
+-	// If it's a generic family name, we get the associated local fonts (eg. Arial)
+-	const localFonts = systemFallbacksProvider.getLocalFonts(lastFallback);
++	// For each collected font, the local fallback list may differ based on its variant
++	// (e.g. italic-style fonts may map to a different local font than bold ones).
++	const collectedWithLocalFonts = collectedFonts.map((collected) => ({
++		collected,
++		localFonts:
++			systemFallbacksProvider.getLocalFonts(lastFallback, deriveFallbackVariant(collected.data)) ??
++			[],
++	}));
++
++	// Union of all local fonts seen across variants, preserving first-seen order.
++	const uniqueLocalFonts: Array<string> = [];
++	for (const { localFonts } of collectedWithLocalFonts) {
++		for (const font of localFonts) {
++			if (!uniqueLocalFonts.includes(font)) {
++				uniqueLocalFonts.push(font);
++			}
++		}
++	}
++
+ 	// Some generic families do not have associated local fonts so we abort early
+-	if (!localFonts || localFonts.length === 0) {
++	if (uniqueLocalFonts.length === 0) {
+ 		return null;
+ 	}
+ 
+ 	// If the family is already a system font, no need to generate fallbacks
+-	if (localFonts.includes(family.name)) {
++	if (uniqueLocalFonts.includes(family.name)) {
+ 		return null;
+ 	}
+ 
+-	const localFontsMappings = localFonts.map((font) => ({
+-		font,
++	const nameForFont = (font: string) =>
+ 		// We mustn't wrap in quote because that's handled by the CSS renderer
+-		name: `${family.uniqueName} fallback: ${font}`,
+-	}));
++		`${family.uniqueName} fallback: ${font}`;
+ 
+-	// We prepend the fallbacks with the local fonts and we dedupe in case a local font is already provided
+-	fallbacks = [...localFontsMappings.map((m) => m.name), ...fallbacks];
++	// We prepend the fallbacks with the local fonts
++	fallbacks = [...uniqueLocalFonts.map(nameForFont), ...fallbacks];
+ 	let css = '';
+ 
+-	for (const { font, name } of localFontsMappings) {
+-		for (const collected of collectedFonts) {
+-			// We generate a fallback for each font collected, which is per weight and style
++	for (const { collected, localFonts } of collectedWithLocalFonts) {
++		const properties = unifontFontFaceDataToProperties(collected.data);
++		const metrics = await fontMetricsResolver.getMetrics(family.name, collected);
++		for (const font of localFonts) {
+ 			css += fontMetricsResolver.generateFontFace({
+-				metrics: await fontMetricsResolver.getMetrics(family.name, collected),
++				metrics,
+ 				fallbackMetrics: systemFallbacksProvider.getMetricsForLocalFont(font),
+ 				font,
+-				name,
+-				properties: unifontFontFaceDataToProperties(collected.data),
++				name: nameForFont(font),
++				properties,
+ 			});
+ 		}
+ 	}
+diff --git a/packages/astro/src/assets/fonts/definitions.ts b/packages/astro/src/assets/fonts/definitions.ts
+index 997b9b236f82..d581354dd25c 100644
+--- a/packages/astro/src/assets/fonts/definitions.ts
++++ b/packages/astro/src/assets/fonts/definitions.ts
+@@ -2,6 +2,7 @@ import type * as unifont from 'unifont';
+ import type { CollectedFontForMetrics } from './core/optimize-fallbacks.js';
+ import type {
+ 	CssProperties,
++	FallbackVariant,
+ 	FontFaceMetrics,
+ 	FontFileData,
+ 	FontProvider,
+@@ -43,7 +44,10 @@ export interface FontMetricsResolver {
+ }
+ 
+ export interface SystemFallbacksProvider {
+-	getLocalFonts: (fallback: GenericFallbackName) => Array<string> | null;
++	getLocalFonts: (
++		fallback: GenericFallbackName,
++		variant: FallbackVariant,
++	) => Array<string> | null;
+ 	getMetricsForLocalFont: (family: string) => FontFaceMetrics;
+ }
+ 
+diff --git a/packages/astro/src/assets/fonts/infra/system-fallbacks-provider.ts b/packages/astro/src/assets/fonts/infra/system-fallbacks-provider.ts
+index 4f2e47b1eacb..52e813776d80 100644
+--- a/packages/astro/src/assets/fonts/infra/system-fallbacks-provider.ts
++++ b/packages/astro/src/assets/fonts/infra/system-fallbacks-provider.ts
+@@ -1,5 +1,5 @@
+ import type { SystemFallbacksProvider } from '../definitions.js';
+-import type { FontFaceMetrics, GenericFallbackName } from '../types.js';
++import type { FallbackVariant, FontFaceMetrics, GenericFallbackName } from '../types.js';
+ 
+ // Extracted from https://raw.githubusercontent.com/seek-oss/capsize/refs/heads/master/packages/metrics/src/entireMetricsCollection.json
+ const SYSTEM_METRICS = {
+@@ -10,6 +10,14 @@ const SYSTEM_METRICS = {
+ 		unitsPerEm: 2048,
+ 		xWidthAvg: 832,
+ 	},
++	'Times New Roman Bold': {
++		ascent: 1825,
++		descent: -443,
++		lineGap: 87,
++		unitsPerEm: 2048,
++		xWidthAvg: 886,
++	},
++	// Times New Roman Italic almost has the same properties as Times New Roman, we don't include it
+ 	Arial: {
+ 		ascent: 1854,
+ 		descent: -434,
+@@ -17,6 +25,14 @@ const SYSTEM_METRICS = {
+ 		unitsPerEm: 2048,
+ 		xWidthAvg: 913,
+ 	},
++	'Arial Bold': {
++		ascent: 1854,
++		descent: -434,
++		lineGap: 67,
++		unitsPerEm: 2048,
++		xWidthAvg: 983,
++	},
++	// Arial Italic has the same properties as Arial, we don't include it
+ 	'Courier New': {
+ 		ascent: 1705,
+ 		descent: -615,
+@@ -24,6 +40,8 @@ const SYSTEM_METRICS = {
+ 		unitsPerEm: 2048,
+ 		xWidthAvg: 1229,
+ 	},
++	// Courier New Bold has the same properties as Courier New, we don't include it
++	// Courier New Italic has the same properties as Courier New, we don't include it
+ 	BlinkMacSystemFont: {
+ 		ascent: 1980,
+ 		descent: -432,
+@@ -57,20 +75,42 @@ const SYSTEM_METRICS = {
+ type FallbackName = keyof typeof SYSTEM_METRICS;
+ 
+ // Source: https://github.com/nuxt/fonts/blob/3a3eb6dfecc472242b3011b25f3fcbae237d0acc/src/module.ts#L55-L75
+-const DEFAULT_FALLBACKS = {
+-	serif: ['Times New Roman'],
+-	'sans-serif': ['Arial'],
+-	monospace: ['Courier New'],
+-	'system-ui': ['BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial'],
+-	'ui-serif': ['Times New Roman'],
+-	'ui-sans-serif': ['Arial'],
+-	'ui-monospace': ['Courier New'],
+-} satisfies Partial<Record<GenericFallbackName, Array<FallbackName>>>;
++// Per-variant lists fall back to the `normal` entry when a variant is not explicitly listed.
++const DEFAULT_FALLBACKS: Partial<
++	Record<GenericFallbackName, Partial<Record<FallbackVariant, Array<FallbackName>>>>
++> = {
++	serif: {
++		normal: ['Times New Roman'],
++		bold: ['Times New Roman Bold'],
++	},
++	'sans-serif': {
++		normal: ['Arial'],
++		bold: ['Arial Bold'],
++	},
++	monospace: { normal: ['Courier New'] },
++	'system-ui': {
++		normal: ['BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial'],
++		bold: ['BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial Bold'],
++	},
++	'ui-serif': {
++		normal: ['Times New Roman'],
++		bold: ['Times New Roman Bold'],
++	},
++	'ui-sans-serif': {
++		normal: ['Arial'],
++		bold: ['Arial Bold'],
++	},
++	'ui-monospace': { normal: ['Courier New'] },
++};
+ 
+ // TODO: find a better name
+ export class RealSystemFallbacksProvider implements SystemFallbacksProvider {
+-	getLocalFonts(fallback: GenericFallbackName): Array<string> | null {
+-		return DEFAULT_FALLBACKS[fallback as keyof typeof DEFAULT_FALLBACKS] ?? null;
++	getLocalFonts(fallback: GenericFallbackName, variant: FallbackVariant): Array<string> | null {
++		const entry = DEFAULT_FALLBACKS[fallback];
++		if (!entry) {
++			return null;
++		}
++		return entry[variant] ?? entry.normal ?? null;
+ 	}
+ 
+ 	getMetricsForLocalFont(family: string): FontFaceMetrics {
+diff --git a/packages/astro/src/assets/fonts/types.ts b/packages/astro/src/assets/fonts/types.ts
+index aa38cafc2719..3b02b45348ae 100644
+--- a/packages/astro/src/assets/fonts/types.ts
++++ b/packages/astro/src/assets/fonts/types.ts
+@@ -220,6 +220,8 @@ export type FontFaceMetrics = Pick<
+ 
+ export type GenericFallbackName = (typeof GENERIC_FALLBACK_NAMES)[number];
+ 
++export type FallbackVariant = 'normal' | 'bold';
++
+ export type Defaults = Required<
+ 	Pick<
+ 		ResolvedFontFamily,
+diff --git a/packages/astro/test/units/assets/fonts/core.test.ts b/packages/astro/test/units/assets/fonts/core.test.ts
+index 904553be13eb..1f6f1f2e4167 100644
+--- a/packages/astro/test/units/assets/fonts/core.test.ts
++++ b/packages/astro/test/units/assets/fonts/core.test.ts
+@@ -1587,6 +1587,115 @@ describe('fonts core', () => {
+ 				},
+ 			]);
+ 		});
++
++		describe('variant-aware fallbacks', () => {
++			const variantProvider: SystemFallbacksProvider = {
++				getLocalFonts: (_fallback, variant) => {
++					if (variant === 'bold') return ['Arial Bold'];
++					return ['Arial'];
++				},
++				getMetricsForLocalFont: systemFallbacksProvider.getMetricsForLocalFont,
++			};
++
++			it('selects the bold list for numeric weight >= 700', async () => {
++				const result = await optimizeFallbacks({
++					family,
++					fallbacks: ['sans-serif'],
++					collectedFonts: [
++						{ url: '', id: '', data: { weight: 700, style: 'normal' }, init: undefined },
++					],
++					systemFallbacksProvider: variantProvider,
++					fontMetricsResolver,
++				});
++				assert.deepStrictEqual(result?.fallbacks, [
++					'Test-xxx fallback: Arial Bold',
++					'sans-serif',
++				]);
++			});
++
++			it('selects the bold list for string weight "bold"', async () => {
++				const result = await optimizeFallbacks({
++					family,
++					fallbacks: ['sans-serif'],
++					collectedFonts: [
++						{ url: '', id: '', data: { weight: 'bold', style: 'normal' }, init: undefined },
++					],
++					systemFallbacksProvider: variantProvider,
++					fontMetricsResolver,
++				});
++				assert.deepStrictEqual(result?.fallbacks, [
++					'Test-xxx fallback: Arial Bold',
++					'sans-serif',
++				]);
++			});
++
++			it('treats variable weight ranges as normal', async () => {
++				const result = await optimizeFallbacks({
++					family,
++					fallbacks: ['sans-serif'],
++					collectedFonts: [
++						{ url: '', id: '', data: { weight: '100 900', style: 'normal' }, init: undefined },
++					],
++					systemFallbacksProvider: variantProvider,
++					fontMetricsResolver,
++				});
++				assert.deepStrictEqual(result?.fallbacks, ['Test-xxx fallback: Arial', 'sans-serif']);
++			});
++
++			it('unions per-variant local fonts in the prepended stack and dedupes across variants', async () => {
++				const result = await optimizeFallbacks({
++					family,
++					fallbacks: ['sans-serif'],
++					collectedFonts: [
++						{ url: '', id: '', data: { weight: '400', style: 'normal' }, init: undefined },
++						{ url: '', id: '', data: { weight: '400', style: 'italic' }, init: undefined },
++						{ url: '', id: '', data: { weight: 700, style: 'normal' }, init: undefined },
++						{ url: '', id: '', data: { weight: 700, style: 'italic' }, init: undefined },
++					],
++					systemFallbacksProvider: variantProvider,
++					fontMetricsResolver,
++				});
++				assert.deepStrictEqual(result?.fallbacks, [
++					'Test-xxx fallback: Arial',
++					'Test-xxx fallback: Arial Bold',
++					'sans-serif',
++				]);
++				const faces = JSON.parse(`[${result?.css.slice(0, -1)}]`);
++				// One @font-face per collected font (each variant has one local font in this provider)
++				assert.equal(faces.length, 4);
++				assert.equal(faces[0].font, 'Arial');
++				assert.equal(faces[1].font, 'Arial');
++				assert.equal(faces[2].font, 'Arial Bold');
++				assert.equal(faces[3].font, 'Arial Bold');
++			});
++
++			it('aborts when no variant yields any local font', async () => {
++				const result = await optimizeFallbacks({
++					family,
++					fallbacks: ['sans-serif'],
++					collectedFonts: [{ url: '', id: '', data: { weight: '400' }, init: undefined }],
++					systemFallbacksProvider: {
++						getLocalFonts: () => null,
++						getMetricsForLocalFont: systemFallbacksProvider.getMetricsForLocalFont,
++					},
++					fontMetricsResolver,
++				});
++				assert.equal(result, null);
++			});
++
++			it('skips when the family is already one of the union local fonts', async () => {
++				const result = await optimizeFallbacks({
++					family: { name: 'Arial Bold', uniqueName: 'Arial-Bold-xxx' },
++					fallbacks: ['sans-serif'],
++					collectedFonts: [
++						{ url: '', id: '', data: { weight: '700', style: 'italic' }, init: undefined },
++					],
++					systemFallbacksProvider: variantProvider,
++					fontMetricsResolver,
++				});
++				assert.equal(result, null);
++			});
++		});
+ 	});
+ 
+ 	describe('filterPreloads()', () => {
+diff --git a/packages/astro/test/units/assets/fonts/e2e.test.ts b/packages/astro/test/units/assets/fonts/e2e.test.ts
+index 69143b618501..d877c1f47b9c 100644
+--- a/packages/astro/test/units/assets/fonts/e2e.test.ts
++++ b/packages/astro/test/units/assets/fonts/e2e.test.ts
+@@ -119,6 +119,7 @@ describe('Fonts E2E', () => {
+ 					name: 'Roboto',
+ 					cssVariable: '--font-roboto',
+ 					provider: fontProviders.fontsource(),
++					weights: ['700'],
+ 				},
+ 				{
+ 					name: 'Test',
+@@ -137,17 +138,17 @@ describe('Fonts E2E', () => {
+ 		assert.deepStrictEqual(result, {
+ 			fontFileById: new Map([
+ 				[
+-					'font-roboto-400-italic-latin-e473890ddd4ee723.woff2',
++					'font-roboto-700-italic-latin-f291476ed7fdb908.woff2',
+ 					{
+ 						init: undefined,
+-						url: 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-italic.woff2',
++						url: 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-italic.woff2',
+ 					},
+ 				],
+ 				[
+-					'font-roboto-400-normal-latin-4be39bb0bc16cc61.woff2',
++					'font-roboto-700-normal-latin-62f255dcb8a4f627.woff2',
+ 					{
+ 						init: undefined,
+-						url: 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2',
++						url: 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-700-normal.woff2',
+ 					},
+ 				],
+ 				[
+@@ -165,22 +166,22 @@ describe('Fonts E2E', () => {
+ 							{
+ 								format: 'woff2',
+ 								tech: undefined,
+-								url: '/font-roboto-400-normal-latin-4be39bb0bc16cc61.woff2',
++								url: '/font-roboto-700-normal-latin-62f255dcb8a4f627.woff2',
+ 							},
+ 						],
+ 						style: 'normal',
+-						weight: '400',
++						weight: '700',
+ 					},
+ 					{
+ 						src: [
+ 							{
+ 								format: 'woff2',
+ 								tech: undefined,
+-								url: '/font-roboto-400-italic-latin-e473890ddd4ee723.woff2',
++								url: '/font-roboto-700-italic-latin-f291476ed7fdb908.woff2',
+ 							},
+ 						],
+ 						style: 'italic',
+-						weight: '400',
++						weight: '700',
+ 					},
+ 				],
+ 				'--font-test': [
+@@ -201,21 +202,21 @@ describe('Fonts E2E', () => {
+ 				[
+ 					'--font-roboto',
+ 					{
+-						css: '@font-face{font-family:Roboto-3dec13cc6120e65b;src:url("/font-roboto-400-normal-latin-4be39bb0bc16cc61.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:400;font-style:normal;}@font-face{font-family:Roboto-3dec13cc6120e65b;src:url("/font-roboto-400-italic-latin-e473890ddd4ee723.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:400;font-style:italic;}@font-face{font-family:"Roboto-3dec13cc6120e65b fallback: Arial";src:local("Arial");font-display:swap;font-weight:400;font-style:normal;size-adjust:99.7809%;ascent-override:92.9771%;descent-override:24.4677%;line-gap-override:0%;}@font-face{font-family:"Roboto-3dec13cc6120e65b fallback: Arial";src:local("Arial");font-display:swap;font-weight:400;font-style:italic;size-adjust:99.7809%;ascent-override:92.9771%;descent-override:24.4677%;line-gap-override:0%;}:root{--font-roboto:Roboto-3dec13cc6120e65b,"Roboto-3dec13cc6120e65b fallback: Arial",sans-serif;}',
++						css: '@font-face{font-family:Roboto-5aa148eb18e50555;src:url("/font-roboto-700-normal-latin-62f255dcb8a4f627.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:700;font-style:normal;}@font-face{font-family:Roboto-5aa148eb18e50555;src:url("/font-roboto-700-italic-latin-f291476ed7fdb908.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:700;font-style:italic;}@font-face{font-family:"Roboto-5aa148eb18e50555 fallback: Arial Bold";src:local("Arial Bold");font-display:swap;font-weight:700;font-style:normal;size-adjust:94.2014%;ascent-override:98.4841%;descent-override:25.9169%;line-gap-override:0%;}@font-face{font-family:"Roboto-5aa148eb18e50555 fallback: Arial Bold";src:local("Arial Bold");font-display:swap;font-weight:700;font-style:italic;size-adjust:94.2014%;ascent-override:98.4841%;descent-override:25.9169%;line-gap-override:0%;}:root{--font-roboto:Roboto-5aa148eb18e50555,"Roboto-5aa148eb18e50555 fallback: Arial Bold",sans-serif;}',
+ 						preloads: [
+ 							{
+ 								style: 'normal',
+ 								subset: 'latin',
+ 								type: 'woff2',
+-								url: '/font-roboto-400-normal-latin-4be39bb0bc16cc61.woff2',
+-								weight: '400',
++								url: '/font-roboto-700-normal-latin-62f255dcb8a4f627.woff2',
++								weight: '700',
+ 							},
+ 							{
+ 								style: 'italic',
+ 								subset: 'latin',
+ 								type: 'woff2',
+-								url: '/font-roboto-400-italic-latin-e473890ddd4ee723.woff2',
+-								weight: '400',
++								url: '/font-roboto-700-italic-latin-f291476ed7fdb908.woff2',
++								weight: '700',
+ 							},
+ 						],
+ 					},
+@@ -337,7 +338,7 @@ describe('Fonts E2E', () => {
+ 				[
+ 					'--font-roboto',
+ 					{
+-						css: '@font-face{font-family:Roboto-b114abed7fe44c2b;src:url("/font-roboto-500-normal-latin-0f94d1c6c8982360.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:500;font-style:normal;}@font-face{font-family:Roboto-b114abed7fe44c2b;src:url("/font-roboto-700-italic-latin-f291476ed7fdb908.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:700;font-style:italic;}@font-face{font-family:"Roboto-b114abed7fe44c2b fallback: Arial";src:local("Arial");font-display:swap;font-weight:500;font-style:normal;size-adjust:100.6572%;ascent-override:92.1677%;descent-override:24.2547%;line-gap-override:0%;}@font-face{font-family:"Roboto-b114abed7fe44c2b fallback: Arial";src:local("Arial");font-display:swap;font-weight:700;font-style:italic;size-adjust:100.6572%;ascent-override:92.1677%;descent-override:24.2547%;line-gap-override:0%;}:root{--font-roboto:Roboto-b114abed7fe44c2b,"Roboto-b114abed7fe44c2b fallback: Arial",sans-serif;}',
++						css: '@font-face{font-family:Roboto-b114abed7fe44c2b;src:url("/font-roboto-500-normal-latin-0f94d1c6c8982360.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:500;font-style:normal;}@font-face{font-family:Roboto-b114abed7fe44c2b;src:url("/font-roboto-700-italic-latin-f291476ed7fdb908.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:700;font-style:italic;}@font-face{font-family:"Roboto-b114abed7fe44c2b fallback: Arial";src:local("Arial");font-display:swap;font-weight:500;font-style:normal;size-adjust:100.6572%;ascent-override:92.1677%;descent-override:24.2547%;line-gap-override:0%;}@font-face{font-family:"Roboto-b114abed7fe44c2b fallback: Arial Bold";src:local("Arial Bold");font-display:swap;font-weight:700;font-style:italic;size-adjust:93.4893%;ascent-override:99.2343%;descent-override:26.1143%;line-gap-override:0%;}:root{--font-roboto:Roboto-b114abed7fe44c2b,"Roboto-b114abed7fe44c2b fallback: Arial","Roboto-b114abed7fe44c2b fallback: Arial Bold",sans-serif;}',
+ 						preloads: [
+ 							{
+ 								style: 'normal',

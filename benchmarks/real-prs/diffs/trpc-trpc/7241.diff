@@ -1,0 +1,428 @@
+diff --git a/packages/client/src/links/httpBatchStreamLink.ts b/packages/client/src/links/httpBatchStreamLink.ts
+index 290472c172b..74082c6e86a 100644
+--- a/packages/client/src/links/httpBatchStreamLink.ts
++++ b/packages/client/src/links/httpBatchStreamLink.ts
+@@ -1,6 +1,7 @@
+ import type { AnyRouter, ProcedureType } from '@trpc/server';
+ import { observable } from '@trpc/server/observable';
+ import type { TRPCErrorShape, TRPCResponse } from '@trpc/server/rpc';
++import type { AnyClientTypes } from '@trpc/server/unstable-core-do-not-import';
+ import { jsonlStreamConsumer } from '@trpc/server/unstable-core-do-not-import';
+ import type { BatchLoader } from '../internals/dataLoader';
+ import { dataLoader } from '../internals/dataLoader';
+@@ -17,11 +18,22 @@ import {
+ } from './internals/httpUtils';
+ import type { Operation, TRPCLink } from './types';
+ 
++type HTTPBatchStreamLinkOptions<TRoot extends AnyClientTypes> =
++  HTTPBatchLinkOptions<TRoot> & {
++    /**
++     * Which header to use to signal the server that the client wants a streaming response.
++     * - `'trpc-accept'` (default): sends `trpc-accept: application/jsonl` header
++     * - `'accept'`: sends `Accept: application/jsonl` header, which can avoid CORS preflight for cross-origin streaming queries. Be aware that `application/jsonl` is not an official MIME type and so this is not completely spec-compliant - you should test that your infrastructure supports this value.
++     * @default 'trpc-accept'
++     */
++    streamHeader?: 'trpc-accept' | 'accept';
++  };
++
+ /**
+  * @see https://trpc.io/docs/client/links/httpBatchStreamLink
+  */
+ export function httpBatchStreamLink<TRouter extends AnyRouter>(
+-  opts: HTTPBatchLinkOptions<TRouter['_def']['_config']['$types']>,
++  opts: HTTPBatchStreamLinkOptions<TRouter['_def']['_config']['$types']>,
+ ): TRPCLink<TRouter> {
+   const resolvedOpts = resolveHTTPLinkOptions(opts);
+   const maxURLLength = opts.maxURLLength ?? Infinity;
+@@ -68,6 +80,7 @@ export function httpBatchStreamLink<TRouter extends AnyRouter>(
+             type,
+             contentTypeHeader: 'application/json',
+             trpcAcceptHeader: 'application/jsonl',
++            trpcAcceptHeaderKey: opts.streamHeader ?? 'trpc-accept',
+             getUrl,
+             getBody,
+             inputs,
+diff --git a/packages/client/src/links/internals/httpUtils.ts b/packages/client/src/links/internals/httpUtils.ts
+index 1f47c45ba9f..1de94be36b2 100644
+--- a/packages/client/src/links/internals/httpUtils.ts
++++ b/packages/client/src/links/internals/httpUtils.ts
+@@ -101,6 +101,7 @@ type GetBody = (opts: HTTPBaseRequestOptions) => RequestInitEsque['body'];
+ 
+ export type ContentOptions = {
+   trpcAcceptHeader?: TRPCAcceptHeader;
++  trpcAcceptHeaderKey?: 'trpc-accept' | 'accept';
+   contentTypeHeader?: string;
+   getUrl: GetUrl;
+   getBody: GetBody;
+@@ -210,7 +211,7 @@ export async function fetchHTTPResponse(opts: HTTPRequestOptions) {
+       ? { 'content-type': opts.contentTypeHeader }
+       : {}),
+     ...(opts.trpcAcceptHeader
+-      ? { 'trpc-accept': opts.trpcAcceptHeader }
++      ? { [opts.trpcAcceptHeaderKey ?? 'trpc-accept']: opts.trpcAcceptHeader }
+       : undefined),
+     ...resolvedHeaders,
+   };
+diff --git a/packages/server/src/unstable-core-do-not-import/http/contentType.ts b/packages/server/src/unstable-core-do-not-import/http/contentType.ts
+index e44e9365e65..570f8f84d62 100644
+--- a/packages/server/src/unstable-core-do-not-import/http/contentType.ts
++++ b/packages/server/src/unstable-core-do-not-import/http/contentType.ts
+@@ -5,6 +5,18 @@ import { emptyObject, isObject } from '../utils';
+ import { parseConnectionParamsFromString } from './parseConnectionParams';
+ import type { TRPCAcceptHeader, TRPCRequestInfo } from './types';
+ 
++export function getAcceptHeader(headers: Headers): TRPCAcceptHeader | null {
++  return (
++    (headers.get('trpc-accept') as TRPCAcceptHeader | null) ??
++    (headers
++      .get('accept')
++      ?.split(',')
++      .some((t) => t.trim() === 'application/jsonl')
++      ? ('application/jsonl' as TRPCAcceptHeader)
++      : null)
++  );
++}
++
+ type GetRequestInfoOptions = {
+   path: string;
+   req: Request;
+@@ -172,7 +184,7 @@ const jsonContentTypeHandler: ContentTypeHandler = {
+ 
+     const info: TRPCRequestInfo = {
+       isBatchCall,
+-      accept: req.headers.get('trpc-accept') as TRPCAcceptHeader | null,
++      accept: getAcceptHeader(req.headers),
+       calls,
+       type,
+       connectionParams:
+diff --git a/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts b/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
+index 39d4b99a0be..d37479e7e1d 100644
+--- a/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
++++ b/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
+@@ -21,7 +21,7 @@ import {
+   isObject,
+   run,
+ } from '../utils';
+-import { getRequestInfo } from './contentType';
++import { getAcceptHeader, getRequestInfo } from './contentType';
+ import { getHTTPStatusCode } from './getHTTPStatusCode';
+ import type {
+   HTTPBaseHandlerOptions,
+@@ -219,7 +219,7 @@ export async function resolveResponse<TRouter extends AnyRouter>(
+   opts: ResolveHTTPRequestOptions<TRouter>,
+ ): Promise<Response> {
+   const { router, req } = opts;
+-  const headers = new Headers([['vary', 'trpc-accept']]);
++  const headers = new Headers([['vary', 'trpc-accept, accept']]);
+   const config = router._def._config;
+ 
+   const url = new URL(req.url);
+@@ -301,7 +301,7 @@ export async function resolveResponse<TRouter extends AnyRouter>(
+   /**
+    * @deprecated
+    */
+-  const isStreamCall = req.headers.get('trpc-accept') === 'application/jsonl';
++  const isStreamCall = getAcceptHeader(req.headers) === 'application/jsonl';
+ 
+   const experimentalSSE = config.sse?.enabled ?? true;
+   try {
+diff --git a/packages/tests/server/adapters/awsLambda.test.tsx b/packages/tests/server/adapters/awsLambda.test.tsx
+index 6165c728b3f..7d666bd4d10 100644
+--- a/packages/tests/server/adapters/awsLambda.test.tsx
++++ b/packages/tests/server/adapters/awsLambda.test.tsx
+@@ -227,7 +227,7 @@ test('basic test', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -259,7 +259,7 @@ test('v1 request info', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -303,7 +303,7 @@ test('test v1 with leading prefix', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -336,7 +336,7 @@ test('test v1 can find procedure even if resource is not proxied', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -370,7 +370,7 @@ test('bad type', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 400,
+     }
+@@ -431,7 +431,7 @@ test('test v2 format', async () => {
+       "cookies": Array [],
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -477,7 +477,7 @@ test('test v2 format with multiple / in query key', async () => {
+       "cookies": Array [],
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -524,7 +524,7 @@ test('test v2 format with non default routeKey', async () => {
+       "cookies": Array [],
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -570,7 +570,7 @@ test('test v2 format with non default routeKey and nested router', async () => {
+       "cookies": Array [],
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -616,7 +616,7 @@ test('router with no context', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -642,7 +642,7 @@ test('test base64 encoded apigateway proxy integration', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+@@ -689,7 +689,7 @@ test('v1 cookies', async () => {
+     Object {
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "multiValueHeaders": Object {
+         "set-cookie": Array [
+@@ -759,7 +759,7 @@ test('v2 cookies', async () => {
+       ],
+       "headers": Object {
+         "content-type": "application/json",
+-        "vary": "trpc-accept",
++        "vary": "trpc-accept, accept",
+       },
+       "statusCode": 200,
+     }
+diff --git a/packages/tests/server/streaming.test.ts b/packages/tests/server/streaming.test.ts
+index 2ebae6cf32d..c905487dbdc 100644
+--- a/packages/tests/server/streaming.test.ts
++++ b/packages/tests/server/streaming.test.ts
+@@ -1301,3 +1301,148 @@ describe('with transformer', () => {
+     expect(error.message).toBe('foo');
+   });
+ });
++
++describe('streamHeader option', () => {
++  test('streamHeader: accept sends Accept header without trpc-accept header', async () => {
++    const t = initTRPC.create({});
++
++    const router = t.router({
++      deferred: t.procedure
++        .input(z.object({ wait: z.number() }))
++        .query(async (opts) => {
++          await new Promise<void>((resolve) =>
++            setTimeout(resolve, opts.input.wait * 10),
++          );
++          return opts.input.wait;
++        }),
++    });
++
++    const fetchSpy = vi.fn<(url: string, init: RequestInit) => void>();
++
++    await using ctx = testServerAndClientResource(router, {
++      server: {},
++      client(opts) {
++        const nativeFetch = globalThis.fetch;
++        return {
++          links: [
++            httpBatchStreamLink({
++              url: opts.httpUrl,
++              streamHeader: 'accept',
++              fetch(url, init) {
++                fetchSpy(url as string, init as RequestInit);
++                return nativeFetch(url, init);
++              },
++            }),
++          ],
++        };
++      },
++    });
++
++    const results = await Promise.all([
++      ctx.client.deferred.query({ wait: 2 }),
++      ctx.client.deferred.query({ wait: 1 }),
++    ]);
++
++    expect(results).toEqual([2, 1]);
++
++    expect(fetchSpy).toHaveBeenCalledOnce();
++    const [, init] = fetchSpy.mock.calls[0]!;
++    expect(init.headers).toHaveProperty('accept', 'application/jsonl');
++    expect(init.headers).not.toHaveProperty('trpc-accept');
++  });
++
++  test('streamHeader: trpc-accept sends trpc-accept header without Accept header', async () => {
++    const t = initTRPC.create({});
++
++    const router = t.router({
++      deferred: t.procedure
++        .input(z.object({ wait: z.number() }))
++        .query(async (opts) => {
++          await new Promise<void>((resolve) =>
++            setTimeout(resolve, opts.input.wait * 10),
++          );
++          return opts.input.wait;
++        }),
++    });
++
++    const fetchSpy = vi.fn<(url: string, init: RequestInit) => void>();
++
++    await using ctx = testServerAndClientResource(router, {
++      server: {},
++      client(opts) {
++        const nativeFetch = globalThis.fetch;
++        return {
++          links: [
++            httpBatchStreamLink({
++              url: opts.httpUrl,
++              streamHeader: 'trpc-accept',
++              fetch(url, init) {
++                fetchSpy(url as string, init as RequestInit);
++                return nativeFetch(url, init);
++              },
++            }),
++          ],
++        };
++      },
++    });
++
++    const results = await Promise.all([
++      ctx.client.deferred.query({ wait: 2 }),
++      ctx.client.deferred.query({ wait: 1 }),
++    ]);
++
++    expect(results).toEqual([2, 1]);
++
++    expect(fetchSpy).toHaveBeenCalledOnce();
++    const [, init] = fetchSpy.mock.calls[0]!;
++    expect(init.headers).toHaveProperty('trpc-accept', 'application/jsonl');
++    expect(init.headers).not.toHaveProperty('accept');
++  });
++
++  test('streamHeader defaults to trpc-accept when omitted', async () => {
++    const t = initTRPC.create({});
++
++    const router = t.router({
++      deferred: t.procedure
++        .input(z.object({ wait: z.number() }))
++        .query(async (opts) => {
++          await new Promise<void>((resolve) =>
++            setTimeout(resolve, opts.input.wait * 10),
++          );
++          return opts.input.wait;
++        }),
++    });
++
++    const fetchSpy = vi.fn<(url: string, init: RequestInit) => void>();
++
++    await using ctx = testServerAndClientResource(router, {
++      server: {},
++      client(opts) {
++        const nativeFetch = globalThis.fetch;
++        return {
++          links: [
++            httpBatchStreamLink({
++              url: opts.httpUrl,
++              fetch(url, init) {
++                fetchSpy(url as string, init as RequestInit);
++                return nativeFetch(url, init);
++              },
++            }),
++          ],
++        };
++      },
++    });
++
++    const results = await Promise.all([
++      ctx.client.deferred.query({ wait: 2 }),
++      ctx.client.deferred.query({ wait: 1 }),
++    ]);
++
++    expect(results).toEqual([2, 1]);
++
++    expect(fetchSpy).toHaveBeenCalledOnce();
++    const [, init] = fetchSpy.mock.calls[0]!;
++    expect(init.headers).toHaveProperty('trpc-accept', 'application/jsonl');
++    expect(init.headers).not.toHaveProperty('accept');
++  });
++});
+diff --git a/www/docs/client/links/httpBatchStreamLink.md b/www/docs/client/links/httpBatchStreamLink.md
+index 5fd655da5b7..6634b8a88a2 100644
+--- a/www/docs/client/links/httpBatchStreamLink.md
++++ b/www/docs/client/links/httpBatchStreamLink.md
+@@ -9,7 +9,11 @@ slug: /client/links/httpBatchStreamLink
+ 
+ ## Options
+ 
+-Options are identical to [`httpBatchLink options`](./httpBatchLink.md#options).
++Options are identical to [`httpBatchLink options`](./httpBatchLink.md#options), with the following addition:
++
++| Option         | Type                          | Default         | Description                                                                                                                                                                                                                                                                                 |
++| -------------- | ----------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
++| `streamHeader` | `'trpc-accept'` \| `'accept'` | `'trpc-accept'` | Which header to use to signal the server that the client wants a streaming response. `'accept'` uses the standard `Accept` header instead of the custom `trpc-accept` header, which can avoid CORS preflight for cross-origin streaming queries since `Accept` is a CORS-safelisted header. |
+ 
+ ## Usage
+ 
+@@ -96,7 +100,7 @@ const client = createTRPCClient<AppRouter>({
+ 
+ Compared to a regular `httpBatchLink`, a `httpBatchStreamLink` will:
+ 
+-- Cause the requests to be sent with a `trpc-accept: application/jsonl` header
++- Cause the requests to be sent with a `trpc-accept: application/jsonl` header (or `Accept: application/jsonl` when using `streamHeader: 'accept'`)
+ - Cause the response to be sent with a `transfer-encoding: chunked` and `content-type: application/jsonl`
+ - Remove the `data` key from the argument object passed to `responseMeta` (because with a streamed response, the headers are sent before the data is available)
+ 

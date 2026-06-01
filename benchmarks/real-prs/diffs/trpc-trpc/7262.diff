@@ -1,0 +1,436 @@
+diff --git a/packages/client/src/internals/types.ts b/packages/client/src/internals/types.ts
+index 294abd7f217..5171a4ba62a 100644
+--- a/packages/client/src/internals/types.ts
++++ b/packages/client/src/internals/types.ts
+@@ -72,6 +72,7 @@ export type NodeJSReadableStreamEsque = {
+  * @see Response from lib.dom.d.ts
+  */
+ export interface ResponseEsque {
++  readonly ok: boolean;
+   readonly body?: NodeJSReadableStreamEsque | WebReadableStreamEsque | null;
+   /**
+    * @remarks
+diff --git a/packages/client/src/links/httpBatchStreamLink.ts b/packages/client/src/links/httpBatchStreamLink.ts
+index 719a0b0430c..adcbae1f0b4 100644
+--- a/packages/client/src/links/httpBatchStreamLink.ts
++++ b/packages/client/src/links/httpBatchStreamLink.ts
+@@ -99,6 +99,29 @@ export function httpBatchStreamLink<TRouter extends AnyRouter>(
+           });
+ 
+           const res = await responsePromise;
++
++          if (!res.ok) {
++            // Server returned a non-2xx response (e.g. batching disabled).
++            // The body is plain JSON, not JSONL, so parse it directly and
++            // propagate the same error to every operation in the batch.
++            const json = (await res.json()) as TRPCResponse;
++            if ('error' in json) {
++              json.error = resolvedOpts.transformer.output.deserialize(
++                json.error,
++              );
++            }
++
++            return batchOps.map(
++              (): Promise<HTTPResult> =>
++                Promise.resolve({
++                  json,
++                  meta: {
++                    response: res,
++                  },
++                }),
++            );
++          }
++
+           const [head] = await jsonlStreamConsumer<
+             Record<string, Promise<any>>
+           >({
+diff --git a/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts b/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
+index d37479e7e1d..7e4fc35f866 100644
+--- a/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
++++ b/packages/server/src/unstable-core-do-not-import/http/resolveResponse.ts
+@@ -597,10 +597,10 @@ export async function resolveResponse<TRouter extends AnyRouter>(
+          * }
+          */
+         maxDepth: Infinity,
+-        data: rpcCalls.map(async (res) => {
++        data: rpcCalls.map(async (res, index) => {
+           const [error, result] = await res;
+ 
+-          const call = info.calls[0];
++          const call = info.calls[index];
+ 
+           if (error) {
+             return {
+diff --git a/packages/tests/server/batching.test.ts b/packages/tests/server/batching.test.ts
+index 035a537efd7..3262c1a0bd0 100644
+--- a/packages/tests/server/batching.test.ts
++++ b/packages/tests/server/batching.test.ts
+@@ -1,90 +1,197 @@
+ import { testServerAndClientResource } from '@trpc/client/__tests__/testClientResource';
+ import { waitError } from '@trpc/server/__tests__/waitError';
+ import { TRPCClientError } from '@trpc/client';
+-import { initTRPC } from '@trpc/server';
++import { initTRPC, TRPCError } from '@trpc/server';
++import superjson from 'superjson';
+ import { z } from 'zod';
+ 
+-const t = initTRPC.create();
+-
+-const router = t.router({
+-  hello: t.procedure
+-    .input(z.string().optional())
+-    .query((opts) => `Hello ${opts.input ?? 'world'}` as const),
+-});
+-
+-describe('batchIndex', () => {
+-  test('batchIndex is passed correctly in batched requests', async () => {
+-    const callIndices: (number | undefined)[] = [];
+-
+-    const tWithCallIndex = initTRPC.create();
+-    const routerWithCallIndex = tWithCallIndex.router({
+-      getCallIndex: tWithCallIndex.procedure.input(z.string()).query((opts) => {
+-        callIndices.push(opts.batchIndex);
+-        return { input: opts.input, batchIndex: opts.batchIndex };
+-      }),
++const scenarios = [
++  { clientLink: 'httpBatchLink', transformer: 'none' },
++  { clientLink: 'httpBatchLink', transformer: 'superjson' },
++  { clientLink: 'httpBatchStreamLink', transformer: 'none' },
++  { clientLink: 'httpBatchStreamLink', transformer: 'superjson' },
++] as const;
++
++describe.each(scenarios)(
++  'Server support for $clientLink (transformer: $transformer)',
++  ({ clientLink, transformer }) => {
++    const t = initTRPC.create({
++      transformer: transformer === 'none' ? undefined : superjson,
+     });
+ 
+-    await using ctx = testServerAndClientResource(routerWithCallIndex, {
+-      server: {},
+-      clientLink: 'httpBatchLink',
++    const router = t.router({
++      hello: t.procedure
++        .input(z.string().optional())
++        .query((opts) => `Hello ${opts.input ?? 'world'}` as const),
+     });
+ 
+-    const results = await Promise.all([
+-      ctx.client.getCallIndex.query('first'),
+-      ctx.client.getCallIndex.query('second'),
+-      ctx.client.getCallIndex.query('third'),
+-    ]);
+-
+-    expect(results).toEqual([
+-      { input: 'first', batchIndex: 0 },
+-      { input: 'second', batchIndex: 1 },
+-      { input: 'third', batchIndex: 2 },
+-    ]);
++    test('batching enabled', async () => {
++      await using ctx = testServerAndClientResource(router, {
++        server: {},
++        clientLink,
++      });
+ 
+-    expect(callIndices).toEqual([0, 1, 2]);
++      const results = await Promise.all([
++        ctx.client.hello.query('1'),
++        ctx.client.hello.query('2'),
++      ]);
+ 
+-    expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
+-  });
+-
+-  test('batchIndex is passed correctly in streamed batched requests', async () => {
+-    const callIndices: (number | undefined)[] = [];
++      expect(results).toEqual(['Hello 1', 'Hello 2']);
+ 
+-    const tWithCallIndex = initTRPC.create();
+-    const routerWithCallIndex = tWithCallIndex.router({
+-      getCallIndex: tWithCallIndex.procedure.input(z.string()).query((opts) => {
+-        callIndices.push(opts.batchIndex);
+-        return { input: opts.input, batchIndex: opts.batchIndex };
+-      }),
++      expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
+     });
+ 
+-    await using ctx = testServerAndClientResource(routerWithCallIndex, {
+-      server: {},
+-      clientLink: 'httpBatchStreamLink',
++    test('batching disabled', async () => {
++      await using ctx = testServerAndClientResource(router, {
++        server: {
++          allowBatching: false,
++        },
++        clientLink,
++      });
++
++      const err = await waitError(
++        Promise.all([ctx.client.hello.query('1'), ctx.client.hello.query('2')]),
++        TRPCClientError<typeof router>,
++      );
++
++      expect(err).toBeInstanceOf(TRPCClientError);
++      expect(err.data?.code).toBe('BAD_REQUEST');
++      expect(err.data?.httpStatus).toBe(400);
++      expect(err.message).toBe('Batching is not enabled on the server');
++
++      expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
+     });
+ 
+-    const results = await Promise.all([
+-      ctx.client.getCallIndex.query('first'),
+-      ctx.client.getCallIndex.query('second'),
+-      ctx.client.getCallIndex.query('third'),
+-    ]);
+-
+-    expect(results).toEqual([
+-      { input: 'first', batchIndex: 0 },
+-      { input: 'second', batchIndex: 1 },
+-      { input: 'third', batchIndex: 2 },
+-    ]);
+-
+-    expect(callIndices).toEqual([0, 1, 2]);
++    test('error on 2nd call returns correct error path', async () => {
++      const failingRouter = t.router({
++        ok: t.procedure
++          .input(z.string())
++          .query((opts) => `Hello ${opts.input}`),
++        failing: t.procedure.input(z.string()).query(() => {
++          throw new TRPCError({
++            code: 'BAD_REQUEST',
++            message: 'This procedure fails',
++          });
++        }),
++      });
++
++      await using ctx = testServerAndClientResource(failingRouter, {
++        server: {},
++        clientLink,
++      });
++
++      const results = await Promise.allSettled([
++        ctx.client.ok.query('first'),
++        ctx.client.failing.query('second'),
++      ]);
++
++      // First call should succeed
++      expect(results[0]).toMatchObject({
++        status: 'fulfilled',
++        value: 'Hello first',
++      });
++
++      // Second call should fail with the correct procedure path
++      expect(results[1].status).toBe('rejected');
++      const error = (results[1] as PromiseRejectedResult)
++        .reason as TRPCClientError<typeof failingRouter>;
++      expect(error).toBeInstanceOf(TRPCClientError);
++      expect(error.data?.path).toBe('failing');
++    });
+ 
+-    expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
+-  });
++    describe('batchIndex', () => {
++      test('batchIndex is passed correctly in batched requests', async () => {
++        const callIndices: (number | undefined)[] = [];
++
++        const routerWithCallIndex = t.router({
++          getCallIndex: t.procedure.input(z.string()).query((opts) => {
++            callIndices.push(opts.batchIndex);
++            return { input: opts.input, batchIndex: opts.batchIndex };
++          }),
++        });
++
++        await using ctx = testServerAndClientResource(routerWithCallIndex, {
++          server: {},
++          clientLink,
++        });
++
++        const results = await Promise.all([
++          ctx.client.getCallIndex.query('first'),
++          ctx.client.getCallIndex.query('second'),
++          ctx.client.getCallIndex.query('third'),
++        ]);
++
++        expect(results).toEqual([
++          { input: 'first', batchIndex: 0 },
++          { input: 'second', batchIndex: 1 },
++          { input: 'third', batchIndex: 2 },
++        ]);
++
++        expect(callIndices).toEqual([0, 1, 2]);
++
++        expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
++      });
++
++      test('batchIndex is provided for single-call batch requests', async () => {
++        const callIndices: (number | undefined)[] = [];
++
++        const routerWithCallIndex = t.router({
++          getCallIndex: t.procedure.input(z.string()).query((opts) => {
++            callIndices.push(opts.batchIndex);
++            return { input: opts.input, batchIndex: opts.batchIndex };
++          }),
++        });
++
++        await using ctx = testServerAndClientResource(routerWithCallIndex, {
++          server: {},
++          clientLink,
++        });
++
++        const result = await Promise.all([
++          ctx.client.getCallIndex.query('single'),
++        ]);
++
++        expect(result).toEqual([{ input: 'single', batchIndex: 0 }]);
++        expect(callIndices).toEqual([0]);
++      });
++
++      test('batchIndex is available in middleware', async () => {
++        const middlewareCallIndices: (number | undefined)[] = [];
++
++        const procedureWithMiddleware = t.procedure.use((opts) => {
++          middlewareCallIndices.push(opts.batchIndex);
++          return opts.next();
++        });
++
++        const routerWithMiddleware = t.router({
++          testProc: procedureWithMiddleware
++            .input(z.string())
++            .query((opts) => opts.input),
++        });
++
++        await using ctx = testServerAndClientResource(routerWithMiddleware, {
++          server: {},
++          clientLink,
++        });
++
++        await Promise.all([
++          ctx.client.testProc.query('a'),
++          ctx.client.testProc.query('b'),
++        ]);
++
++        expect(middlewareCallIndices).toEqual([0, 1]);
++      });
++    });
++  },
++);
+ 
++describe('batchIndex', () => {
+   test('batchIndex is provided for non-batched requests', async () => {
+     const callIndices: (number | undefined)[] = [];
+ 
+-    const tWithCallIndex = initTRPC.create();
+-    const routerWithCallIndex = tWithCallIndex.router({
+-      getCallIndex: tWithCallIndex.procedure.input(z.string()).query((opts) => {
++    const t = initTRPC.create();
++    const routerWithCallIndex = t.router({
++      getCallIndex: t.procedure.input(z.string()).query((opts) => {
+         callIndices.push(opts.batchIndex);
+         return { input: opts.input, batchIndex: opts.batchIndex };
+       }),
+@@ -99,104 +206,4 @@ describe('batchIndex', () => {
+ 
+     expect(result).toEqual({ input: 'single', batchIndex: 0 });
+   });
+-
+-  test('batchIndex is provided for single-call batch requests', async () => {
+-    const callIndices: (number | undefined)[] = [];
+-
+-    const tWithCallIndex = initTRPC.create();
+-    const routerWithCallIndex = tWithCallIndex.router({
+-      getCallIndex: tWithCallIndex.procedure.input(z.string()).query((opts) => {
+-        callIndices.push(opts.batchIndex);
+-        return { input: opts.input, batchIndex: opts.batchIndex };
+-      }),
+-    });
+-
+-    await using ctx = testServerAndClientResource(routerWithCallIndex, {
+-      server: {},
+-      clientLink: 'httpBatchLink',
+-    });
+-
+-    const result = await Promise.all([ctx.client.getCallIndex.query('single')]);
+-
+-    expect(result).toEqual([{ input: 'single', batchIndex: 0 }]);
+-    expect(callIndices).toEqual([0]);
+-  });
+-
+-  test('batchIndex is available in middleware', async () => {
+-    const middlewareCallIndices: (number | undefined)[] = [];
+-
+-    const tWithMiddleware = initTRPC.create();
+-
+-    const procedureWithMiddleware = tWithMiddleware.procedure.use((opts) => {
+-      middlewareCallIndices.push(opts.batchIndex);
+-      return opts.next();
+-    });
+-
+-    const routerWithMiddleware = tWithMiddleware.router({
+-      testProc: procedureWithMiddleware
+-        .input(z.string())
+-        .query((opts) => opts.input),
+-    });
+-
+-    await using ctx = testServerAndClientResource(routerWithMiddleware, {
+-      server: {},
+-      clientLink: 'httpBatchLink',
+-    });
+-
+-    await Promise.all([
+-      ctx.client.testProc.query('a'),
+-      ctx.client.testProc.query('b'),
+-    ]);
+-
+-    expect(middlewareCallIndices).toEqual([0, 1]);
+-  });
+-});
+-
+-test('batching enabled', async () => {
+-  await using ctx = testServerAndClientResource(router, {
+-    server: {},
+-    clientLink: 'httpBatchLink',
+-  });
+-
+-  const results = await Promise.all([
+-    ctx.client.hello.query('1'),
+-    ctx.client.hello.query('2'),
+-  ]);
+-
+-  expect(results).toMatchInlineSnapshot(`
+-      Array [
+-        "Hello 1",
+-        "Hello 2",
+-      ]
+-    `);
+-
+-  expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
+-  expect(ctx.onRequestSpy.mock.calls[0]![0].url).toMatchInlineSnapshot(
+-    `"/hello,hello?batch=1&input=%7B%220%22%3A%221%22%2C%221%22%3A%222%22%7D"`,
+-  );
+-});
+-
+-test('batching disabled', async () => {
+-  await using ctx = testServerAndClientResource(router, {
+-    server: {
+-      allowBatching: false,
+-    },
+-    clientLink: 'httpBatchLink',
+-  });
+-
+-  const err = await waitError(
+-    Promise.all([ctx.client.hello.query('1'), ctx.client.hello.query('2')]),
+-    TRPCClientError<typeof router>,
+-  );
+-  expect(err.data?.code).toMatchInlineSnapshot(`"BAD_REQUEST"`);
+-  expect(err.data?.httpStatus).toMatchInlineSnapshot(`400`);
+-  expect(err.message).toMatchInlineSnapshot(
+-    `"Batching is not enabled on the server"`,
+-  );
+-
+-  expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1);
+-  expect(ctx.onRequestSpy.mock.calls[0]![0].url).toMatchInlineSnapshot(
+-    `"/hello,hello?batch=1&input=%7B%220%22%3A%221%22%2C%221%22%3A%222%22%7D"`,
+-  );
+-  ctx;
+ });

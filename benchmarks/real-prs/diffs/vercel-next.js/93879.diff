@@ -1,0 +1,1273 @@
+diff --git a/packages/next/.storybook/fixtures/errors.ts b/packages/next/.storybook/fixtures/errors.ts
+index 97821600a632..dadeca6656cb 100644
+--- a/packages/next/.storybook/fixtures/errors.ts
++++ b/packages/next/.storybook/fixtures/errors.ts
+@@ -649,6 +649,21 @@ export const instantClientMathRandomErrors: ReadyRuntimeError[] = [
+   },
+ ]
+ 
++export const instantUnrenderedSegmentErrors: ReadyRuntimeError[] = [
++  {
++    id: 130,
++    runtime: true,
++    error: Object.assign(
++      new Error(
++        'Route "/81-instant-wrapper-unrendered-segment/trigger": Could not validate that a segment in your UI has instant navigation.\n\nThis segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.\n\nDropped segment:\n  test-app/app/81-instant-wrapper-unrendered-segment/trigger/page.tsx\n\nWays to fix this:\n  - Render the dropped segment\n  - Set `export const instant = false` on the dropped segment to skip validation\n\nLearn more: https://nextjs.org/docs/messages/unrendered-instant-segment'
++      ),
++      { __NEXT_ERROR_CODE: 'E1286' }
++    ),
++    frames: () => Promise.resolve([]),
++    type: 'runtime',
++  },
++]
++
+ export const mixedIssueAndInsightErrors: ReadyRuntimeError[] = [
+   runtimeErrors[0],
+   runtimeErrors[1],
+diff --git a/packages/next/errors.json b/packages/next/errors.json
+index eadae1a2df9b..baf7c33e5175 100644
+--- a/packages/next/errors.json
++++ b/packages/next/errors.json
+@@ -1279,12 +1279,10 @@
+   "1278": "compileRoute: either routeSpecifier or path is required",
+   "1279": "\\`experimental.appShells\\` requires the following to also be enabled: %s. Please update your %s accordingly.",
+   "1280": "Invariant: expected static metadata route to have a prerender pathname (%s)",
+-  "1281": "Cache Components HTTP fallback recovery unexpectedly produced a DynamicServerError",
+-  "1282": "Cache Components error recovery expected an original Flight prerender result",
+-  "1283": "Cache Components error recovery expected to know whether the original Flight prerender result was dynamic",
+-  "1284": "Cache Components error recovery expected an original prerender resume data cache",
+-  "1285": "Cache Components error recovery expected an original prerender store",
+-  "1286": "Cache Components error recovery unexpectedly produced a dynamic HTML hole",
+-  "1287": "Expected stream state to be initialized before reading",
+-  "1288": "Cache Components error recovery expected an original resume data cache"
++  "1281": "Expected stream state to be initialized before reading",
++  "1282": "Cache Components error recovery expected to know whether the original Flight prerender result was dynamic",
++  "1283": "Cache Components error recovery expected an original Flight prerender result",
++  "1284": "Cache Components error recovery expected an original prerender store",
++  "1285": "Cache Components error recovery expected an original resume data cache",
++  "1286": "Route \"%s\": Could not validate that a segment in your UI has instant navigation."
+ }
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame-shell.tsx b/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame-shell.tsx
+new file mode 100644
+index 000000000000..37f8e595fe1b
+--- /dev/null
++++ b/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame-shell.tsx
+@@ -0,0 +1,43 @@
++import type { ReactNode } from 'react'
++import { ExternalIcon } from '../../icons/external'
++
++type CodeFrameShellProps = {
++  header: ReactNode
++  onOpen?: () => void
++  openLabel?: string
++  children: ReactNode
++}
++
++export function CodeFrameShell({
++  header,
++  onOpen,
++  openLabel,
++  children,
++}: CodeFrameShellProps) {
++  return (
++    <div data-nextjs-codeframe>
++      <div className="code-frame-header">
++        {/* TODO: This is <div> in `Terminal` component.
++        Changing now will require multiple test snapshots updates.
++        Leaving as <div> as is trivial and does not affect the UI.
++        Change when the new redbox matcher `toDisplayRedbox` is used. */}
++        <p className="code-frame-link">
++          {header}
++          {onOpen && (
++            <button
++              aria-label={openLabel ?? 'Open in editor'}
++              data-with-open-in-editor-link-source-file
++              onClick={onOpen}
++              type="button"
++            >
++              <ExternalIcon />
++            </button>
++          )}
++        </p>
++      </div>
++      <pre className="code-frame-pre">
++        <div className="code-frame-lines">{children}</div>
++      </pre>
++    </div>
++  )
++}
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame.tsx b/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame.tsx
+index cb344848bac5..d0435dac5e3a 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/code-frame/code-frame.tsx
+@@ -2,8 +2,8 @@ import { useMemo } from 'react'
+ import { HotlinkedText } from '../hot-linked-text'
+ import { getStackFrameFile, type StackFrame } from '../../../shared/stack-frame'
+ import { useOpenInEditor } from '../../utils/use-open-in-editor'
+-import { ExternalIcon } from '../../icons/external'
+ import { FileIcon } from '../../icons/file'
++import { CodeFrameShell } from './code-frame-shell'
+ import {
+   formatCodeFrame,
+   groupCodeFrameLines,
+@@ -35,14 +35,9 @@ export function CodeFrame({ stackFrame, codeFrame }: CodeFrameProps) {
+ 
+   const fileExtension = stackFrame?.file?.split('.').pop()
+   return (
+-    <div data-nextjs-codeframe>
+-      <div className="code-frame-header">
+-        {/* TODO: This is <div> in `Terminal` component.
+-        Changing now will require multiple test snapshots updates.
+-        Leaving as <div> as is trivial and does not affect the UI.
+-        Change when the new redbox matcher `toDisplayRedbox` is used.
+-        */}
+-        <p className="code-frame-link">
++    <CodeFrameShell
++      header={
++        <>
+           <span className="code-frame-icon">
+             <FileIcon lang={fileExtension} />
+           </span>
+@@ -50,54 +45,45 @@ export function CodeFrame({ stackFrame, codeFrame }: CodeFrameProps) {
+             {getStackFrameFile(stackFrame)} @{' '}
+             <HotlinkedText text={stackFrame.methodName} />
+           </span>
+-          <button
+-            aria-label="Open in editor"
+-            data-with-open-in-editor-link-source-file
+-            onClick={open}
+-          >
+-            <ExternalIcon />
+-          </button>
+-        </p>
+-      </div>
+-      <pre className="code-frame-pre">
+-        <div className="code-frame-lines">
+-          {parsedLineStates.map(({ line, parsedLine }, lineIndex) => {
+-            const { lineNumber, isErroredLine } = parsedLine
+-
+-            const lineNumberProps: Record<string, string | boolean> = {}
+-            if (lineNumber) {
+-              lineNumberProps['data-nextjs-codeframe-line'] = lineNumber
+-            }
+-            if (isErroredLine) {
+-              lineNumberProps['data-nextjs-codeframe-line--errored'] = true
+-            }
+-
+-            return (
+-              <div key={`line-${lineIndex}`} {...lineNumberProps}>
+-                {line.map((entry, entryIndex) => (
+-                  <span
+-                    key={`frame-${entryIndex}`}
+-                    style={{
+-                      color: entry.fg ? `var(--color-${entry.fg})` : undefined,
+-                      ...(entry.decoration === 'bold'
+-                        ? // TODO(jiwon): This used to be 800, but the symbols like `─┬─` are
+-                          // having longer width than expected on Geist Mono font-weight
+-                          // above 600, hence a temporary fix is to use 500 for bold.
+-                          { fontWeight: 500 }
+-                        : entry.decoration === 'italic'
+-                          ? { fontStyle: 'italic' }
+-                          : undefined),
+-                    }}
+-                  >
+-                    {entry.content}
+-                  </span>
+-                ))}
+-              </div>
+-            )
+-          })}
+-        </div>
+-      </pre>
+-    </div>
++        </>
++      }
++      onOpen={open}
++    >
++      {parsedLineStates.map(({ line, parsedLine }, lineIndex) => {
++        const { lineNumber, isErroredLine } = parsedLine
++
++        const lineNumberProps: Record<string, string | boolean> = {}
++        if (lineNumber) {
++          lineNumberProps['data-nextjs-codeframe-line'] = lineNumber
++        }
++        if (isErroredLine) {
++          lineNumberProps['data-nextjs-codeframe-line--errored'] = true
++        }
++
++        return (
++          <div key={`line-${lineIndex}`} {...lineNumberProps}>
++            {line.map((entry, entryIndex) => (
++              <span
++                key={`frame-${entryIndex}`}
++                style={{
++                  color: entry.fg ? `var(--color-${entry.fg})` : undefined,
++                  ...(entry.decoration === 'bold'
++                    ? // TODO(jiwon): This used to be 800, but the symbols like `─┬─` are
++                      // having longer width than expected on Geist Mono font-weight
++                      // above 600, hence a temporary fix is to use 500 for bold.
++                      { fontWeight: 500 }
++                    : entry.decoration === 'italic'
++                      ? { fontStyle: 'italic' }
++                      : undefined),
++                }}
++              >
++                {entry.content}
++              </span>
++            ))}
++          </div>
++        )
++      })}
++    </CodeFrameShell>
+   )
+ }
+ 
+@@ -218,7 +204,7 @@ export const CODE_FRAME_STYLES = `
+   }
+ 
+   [data-nextjs-codeframe-line] > span:first-child {
+-    color: var(--color-gray-alpha-700) !important;
++    color: var(--color-gray-alpha-500) !important;
+   }
+ 
+   [data-nextjs-codeframe-line][data-nextjs-codeframe-line--errored="true"]
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance-data.ts b/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance-data.ts
+index d513b1c11c02..0f17e4026f3a 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance-data.ts
++++ b/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance-data.ts
+@@ -10,6 +10,8 @@ export type FixCardGroup =
+   | 'client'
+   | 'defer'
+   | 'measure'
++  | 'ignore'
++  | 'render'
+ 
+ export type FixCardIcon =
+   | 'align-left'
+@@ -18,6 +20,7 @@ export type FixCardIcon =
+   | 'layout'
+   | 'loading'
+   | 'pointer-click'
++  | 'minus-circle'
+   | 'server-stack'
+   | 'timer'
+   | 'zap'
+@@ -35,6 +38,8 @@ export const FIX_CARD_GROUPS: Record<
+   client: { label: 'Client', color: 'amber', icon: 'layout' },
+   defer: { label: 'Defer', color: 'amber', icon: 'pointer-click' },
+   measure: { label: 'Measure', color: 'gray', icon: 'timer' },
++  ignore: { label: 'Ignore', color: 'red', icon: 'minus-circle' },
++  render: { label: 'Render', color: 'gray', icon: 'layout' },
+ }
+ 
+ export type FixCard = {
+@@ -146,6 +151,47 @@ const dynamicCards: FixCard[] = [
+   },
+ ]
+ 
++// ── Unrendered-segment cards ──────────────────────
++
++const unrenderedSegmentCards: FixCard[] = [
++  {
++    id: 'render-the-dropped-segment',
++    title: 'Render the dropped segment',
++    group: 'render',
++    link: 'https://nextjs.org/docs/messages/unrendered-instant-segment#render-the-dropped-segment',
++    snippets: [
++      {
++        text: 'function Layout({ children }) {',
++        parts: [
++          { text: 'function Layout({ ' },
++          { text: 'children', highlight: true },
++          { text: ' }) {' },
++        ],
++      },
++      {
++        text: '  return <><Nav />{children}</>',
++        parts: [
++          { text: '  return <><Nav />{' },
++          { text: 'children', highlight: true },
++          { text: '}</>' },
++        ],
++      },
++      { text: '}' },
++    ],
++  },
++  {
++    id: 'skip-validation-on-the-segment',
++    title: 'Skip validation on the segment',
++    group: 'ignore',
++    link: 'https://nextjs.org/docs/messages/unrendered-instant-segment#skip-validation-on-the-segment',
++    snippets: [
++      { text: '// page.tsx or layout.tsx' },
++      { text: '' },
++      { text: 'export const instant = false', highlight: true },
++    ],
++  },
++]
++
+ // ── Metadata cards ────────────────────────────────
+ 
+ const metadataRuntimeCards: FixCard[] = [
+@@ -463,6 +509,7 @@ export type GuidanceKind =
+   | 'viewport'
+   | 'sync-io'
+   | 'sync-io-client'
++  | 'unrendered-segment'
+ 
+ export type GuidanceVariant = 'runtime' | 'dynamic'
+ 
+@@ -472,6 +519,8 @@ export const DOCS_URLS: Record<GuidanceKind, string> = {
+   viewport: 'https://nextjs.org/docs/messages/next-prerender-dynamic-viewport',
+   'sync-io': '',
+   'sync-io-client': '',
++  'unrendered-segment':
++    'https://nextjs.org/docs/messages/unrendered-instant-segment',
+ }
+ 
+ export const SYNC_IO_DOCS: Record<string, string> = {
+@@ -538,6 +587,8 @@ export const EXPLANATIONS: Record<GuidanceKind, string> = {
+   'sync-io': '',
+   'sync-io-client':
+     'This value would be evaluated during the prerender and fixed at build time, instead of recomputed on each visit.',
++  'unrendered-segment':
++    'This segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.',
+ }
+ 
+ export const BLOCKING_ROUTE_NAVIGATION_EXPLANATION =
+@@ -591,6 +642,8 @@ export function getCards(
+       return (cause && syncCardsByCause[cause]) || []
+     case 'sync-io-client':
+       return (cause && syncClientCardsByCause[cause]) || []
++    case 'unrendered-segment':
++      return unrenderedSegmentCards
+     default:
+       return kind satisfies never
+   }
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance.tsx b/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance.tsx
+index 5d7cb0538533..3d5c6f0edd76 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/instant/instant-guidance.tsx
+@@ -5,6 +5,7 @@ import {
+   FixCardLayoutIcon,
+   FixCardLoadingIcon,
+   FixCardPointerClickIcon,
++  FixCardMinusCircleIcon,
+   FixCardServerStackIcon,
+   FixCardTimerIcon,
+   FixCardZapIcon,
+@@ -41,6 +42,8 @@ function getCardIcon(icon: FixCardIcon) {
+       return <FixCardDatabaseIcon />
+     case 'timer':
+       return <FixCardTimerIcon />
++    case 'minus-circle':
++      return <FixCardMinusCircleIcon />
+     case 'loading':
+       return <FixCardLoadingIcon />
+     case 'zap':
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/instant/unrendered-segment-info.tsx b/packages/next/src/next-devtools/dev-overlay/components/instant/unrendered-segment-info.tsx
+new file mode 100644
+index 000000000000..6b591e5a7822
+--- /dev/null
++++ b/packages/next/src/next-devtools/dev-overlay/components/instant/unrendered-segment-info.tsx
+@@ -0,0 +1,186 @@
++import { useCallback } from 'react'
++import { FileIcon } from '../../icons/file'
++import { CodeFrameShell } from '../code-frame/code-frame-shell'
++import { css } from '../../utils/css'
++
++type UnrenderedSegmentInfoProps = {
++  route: string
++  files: string[]
++}
++
++type TreeNode = {
++  label: string
++  depth: number
++  isLastSibling: boolean
++  pipeMask: boolean[]
++  isMissing: boolean
++}
++
++export function UnrenderedSegmentInfo({
++  route,
++  files,
++}: UnrenderedSegmentInfoProps) {
++  const nodes = buildTree(route, files)
++  const firstMissingFile = files[0] ?? null
++  const open = useCallback(() => {
++    if (!firstMissingFile) return
++    const relative = firstMissingFile.replace(/^.*?app\//, '')
++    const params = new URLSearchParams()
++    params.append('file', relative)
++    params.append('isAppRelativePath', '1')
++    self
++      .fetch(
++        `${
++          process.env.__NEXT_ROUTER_BASEPATH || ''
++        }/__nextjs_launch-editor?${params.toString()}`
++      )
++      .then(
++        () => {},
++        (cause) => {
++          console.error(
++            `Failed to open file "${firstMissingFile}" in your editor. Cause:`,
++            cause
++          )
++        }
++      )
++  }, [firstMissingFile])
++
++  const fileExtension = firstMissingFile?.split('.').pop() ?? undefined
++  return (
++    <CodeFrameShell
++      header={
++        <>
++          <span className="code-frame-icon">
++            <FileIcon lang={fileExtension} />
++          </span>
++          <span data-text>{route}</span>
++        </>
++      }
++      onOpen={firstMissingFile ? open : undefined}
++      openLabel={
++        firstMissingFile ? `Open ${firstMissingFile} in editor` : undefined
++      }
++    >
++      <div data-nextjs-unrendered-segment-tree>
++        <div data-nextjs-codeframe-line="">
++          <span data-nextjs-unrendered-segment-tree-prefix>│</span>
++        </div>
++        {nodes.map((node, i) => (
++          <TreeRow key={i} node={node} />
++        ))}
++        <div data-nextjs-codeframe-line="">
++          <span data-nextjs-unrendered-segment-tree-prefix>│</span>
++        </div>
++      </div>
++    </CodeFrameShell>
++  )
++}
++
++function TreeRow({ node }: { node: TreeNode }) {
++  const lineProps: Record<string, string | boolean> = {
++    'data-nextjs-codeframe-line': '',
++  }
++  if (node.isMissing) {
++    lineProps['data-nextjs-codeframe-line--errored'] = true
++  }
++
++  let prefix = '│ '
++  for (let i = 0; i < node.depth; i++) {
++    prefix += node.pipeMask[i] ? '   ' : '│  '
++  }
++  prefix += node.isLastSibling ? '└─ ' : '├─ '
++
++  return (
++    <div {...lineProps}>
++      <span data-nextjs-unrendered-segment-tree-prefix>{prefix}</span>
++      <span>{node.label}</span>
++      {node.isMissing && (
++        <span data-nextjs-unrendered-segment-tree-pointer>
++          {' '}
++          ← dropped from rendering
++        </span>
++      )}
++    </div>
++  )
++}
++
++function buildTree(route: string, files: string[]): TreeNode[] {
++  type Raw = {
++    key: string
++    parts: string[]
++    isLeaf: boolean
++  }
++
++  const routeFirstSegment = route.split('/').filter(Boolean)[0]
++
++  const allKeys = new Set<string>()
++  const leafKeys = new Set<string>()
++
++  for (const file of files) {
++    let parts = file.split('/').filter(Boolean)
++    if (parts.length === 0) continue
++    if (routeFirstSegment) {
++      const anchor = parts.indexOf(routeFirstSegment)
++      if (anchor >= 0) parts = parts.slice(anchor)
++    }
++    for (let i = 1; i < parts.length; i++) {
++      allKeys.add(parts.slice(0, i).join('/'))
++    }
++    const leafKey = parts.join('/')
++    allKeys.add(leafKey)
++    leafKeys.add(leafKey)
++  }
++
++  const sortedKeys = Array.from(allKeys).sort()
++
++  const raw: Raw[] = sortedKeys.map((key) => {
++    const parts = key.split('/')
++    const isLeaf = leafKeys.has(key)
++    return { key, parts, isLeaf }
++  })
++
++  const isLastSiblingAt = (idx: number, depth: number) =>
++    !raw.some(
++      (other, otherIdx) =>
++        otherIdx > idx &&
++        other.parts.length > depth &&
++        other.parts.slice(0, depth).join('/') ===
++          raw[idx].parts.slice(0, depth).join('/')
++    )
++
++  return raw.map((row, idx) => {
++    const depth = row.parts.length - 1
++    const isLastSibling = isLastSiblingAt(idx, depth)
++    const pipeMask: boolean[] = []
++    for (let d = 0; d < depth; d++) {
++      pipeMask.push(isLastSiblingAt(idx, d))
++    }
++    const label =
++      depth === 0 || !row.isLeaf ? `${row.parts[depth]}/` : row.parts[depth]
++    return {
++      label,
++      depth,
++      isLastSibling,
++      pipeMask,
++      isMissing: row.isLeaf,
++    }
++  })
++}
++
++export const UNRENDERED_SEGMENT_INFO_STYLES = css`
++  [data-nextjs-unrendered-segment-tree-prefix] {
++    color: var(--color-gray-alpha-700) !important;
++  }
++
++  [data-nextjs-unrendered-segment-tree]
++    [data-nextjs-codeframe-line--errored='true']
++    [data-nextjs-unrendered-segment-tree-prefix] {
++    color: var(--color-gray-alpha-1000) !important;
++  }
++
++  [data-nextjs-unrendered-segment-tree-pointer] {
++    color: var(--color-red-900) !important;
++    margin-left: 8px;
++    white-space: pre;
++  }
++`
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx b/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx
+index 502d38444eb4..92fb454d57b3 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx
+@@ -10,6 +10,7 @@ import {
+   instantMetadataErrors,
+   instantMetadataUncachedErrors,
+   instantMathRandomErrors,
++  instantUnrenderedSegmentErrors,
+   instantRuntimeDataErrors,
+   instantUncachedDataErrors,
+   instantViewportErrors,
+@@ -186,3 +187,10 @@ export const InstantClientMathRandom: Story = {
+     runtimeErrors: instantClientMathRandomErrors,
+   },
+ }
++
++export const InstantUnrenderedSegment: Story = {
++  args: {
++    ...Default.args,
++    runtimeErrors: instantUnrenderedSegmentErrors,
++  },
++}
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts b/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts
+index 1b966eae19e5..c4780af82b93 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts
++++ b/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts
+@@ -19,6 +19,7 @@ import {
+ } from '../../../server/app-render/sync-io-messages'
+ import {
+   getBlockingRouteErrorDetails,
++  getUnrenderedSegmentErrorDetails,
+   isInstantNavigationError,
+   isRuntimeVariant,
+   isSyncIOClientError,
+@@ -255,7 +256,79 @@ describe('getBlockingRouteErrorDetails', () => {
+   })
+ })
+ 
++describe('getUnrenderedSegmentErrorDetails', () => {
++  function createUnrenderedSegmentError(
++    route: string,
++    files: string[] = []
++  ): Error {
++    let message = `Route "${route}": Could not validate that a segment in your UI has instant navigation.`
++    if (files.length > 0) {
++      const label = files.length === 1 ? 'Dropped segment' : 'Dropped segments'
++      message +=
++        `\n\nThis segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.` +
++        `\n\n${label}:\n${files.map((p) => `  ${p}`).join('\n')}` +
++        `\n\nWays to fix this:` +
++        `\n  - Render the dropped segment` +
++        `\n  - Set \`export const instant = false\` on the dropped segment to skip validation` +
++        `\n\nLearn more: https://nextjs.org/docs/messages/unrendered-instant-segment`
++    }
++    return new Error(message)
++  }
++
++  it('parses route and a single unrendered segment file', () => {
++    const error = createUnrenderedSegmentError(ROUTE, ['app/example/page.tsx'])
++    expect(getUnrenderedSegmentErrorDetails(error)).toEqual({
++      type: 'unrendered-segment',
++      route: ROUTE,
++      files: ['app/example/page.tsx'],
++    })
++  })
++
++  it('parses route and multiple unrendered segment files', () => {
++    const error = createUnrenderedSegmentError(ROUTE, [
++      'app/example/@sidebar/page.tsx',
++      'app/example/page.tsx',
++    ])
++    expect(getUnrenderedSegmentErrorDetails(error)).toEqual({
++      type: 'unrendered-segment',
++      route: ROUTE,
++      files: ['app/example/@sidebar/page.tsx', 'app/example/page.tsx'],
++    })
++  })
++
++  it('parses route with no segment list (defensive — framework currently always emits one)', () => {
++    const error = createUnrenderedSegmentError(ROUTE, [])
++    expect(getUnrenderedSegmentErrorDetails(error)).toEqual({
++      type: 'unrendered-segment',
++      route: ROUTE,
++      files: [],
++    })
++  })
++
++  it('returns null when the headline substring is absent', () => {
++    expect(getUnrenderedSegmentErrorDetails(new Error('regular bug'))).toBe(
++      null
++    )
++  })
++
++  it('returns null when the headline matches but the route prefix is missing', () => {
++    expect(
++      getUnrenderedSegmentErrorDetails(
++        new Error(
++          'Could not validate that a segment in your UI has instant navigation.'
++        )
++      )
++    ).toBe(null)
++  })
++})
++
+ describe('isInstantNavigationError', () => {
++  function createUnrenderedSegmentError(route: string): Error {
++    return new Error(
++      `Route "${route}": Could not validate that a segment in your UI has instant navigation.\n\nDropped segment:\n  app/example/page.tsx`
++    )
++  }
++
+   it('returns true for navigation-phase blocking-route errors', () => {
+     expect(
+       isInstantNavigationError(createRuntimeBodyErrorInNavigation(ROUTE))
+@@ -265,6 +338,12 @@ describe('isInstantNavigationError', () => {
+     ).toBe(true)
+   })
+ 
++  it('returns true for unrendered-segment errors', () => {
++    expect(isInstantNavigationError(createUnrenderedSegmentError(ROUTE))).toBe(
++      true
++    )
++  })
++
+   it('returns false for prerender-phase blocking-route errors', () => {
+     expect(isInstantNavigationError(createRuntimeBodyError(ROUTE))).toBe(false)
+     expect(isInstantNavigationError(createDynamicBodyError(ROUTE))).toBe(false)
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/errors.tsx b/packages/next/src/next-devtools/dev-overlay/container/errors.tsx
+index a1803738c9aa..9b705036a966 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/errors.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/container/errors.tsx
+@@ -36,6 +36,7 @@ import {
+   type GuidanceVariant,
+ } from '../components/instant/instant-guidance'
+ import { BLOCKING_ROUTE_NAVIGATION_EXPLANATION } from '../components/instant/instant-guidance-data'
++import { UnrenderedSegmentInfo } from '../components/instant/unrendered-segment-info'
+ import { CodeFrame } from '../components/code-frame/code-frame'
+ import { ErrorOverlayCallStack } from '../components/errors/error-overlay-call-stack/error-overlay-call-stack'
+ import { ErrorCause } from './runtime-error/error-cause'
+@@ -107,6 +108,9 @@ export function getErrorTypeLabel(
+   if (errorDetails.type === 'sync-io-client') {
+     return `Blocking Route`
+   }
++  if (errorDetails.type === 'unrendered-segment') {
++    return `Instant`
++  }
+   if (type === 'recoverable') {
+     return `Recoverable ${error.name}`
+   }
+@@ -124,6 +128,7 @@ type ErrorDetails =
+   | DynamicViewportErrorDetails
+   | SyncIOErrorDetails
+   | SyncIOClientErrorDetails
++  | UnrenderedSegmentErrorDetails
+ 
+ type NoErrorDetails = {
+   type: 'empty'
+@@ -162,6 +167,12 @@ type SyncIOClientErrorDetails = {
+   cause: string
+ }
+ 
++type UnrenderedSegmentErrorDetails = {
++  type: 'unrendered-segment'
++  route: string
++  files: string[]
++}
++
+ const noErrorDetails: ErrorDetails = {
+   type: 'empty',
+ }
+@@ -188,6 +199,11 @@ export function useErrorDetails(
+       return blockingRouteErrorDetails
+     }
+ 
++    const unrenderedSegmentDetails = getUnrenderedSegmentErrorDetails(error)
++    if (unrenderedSegmentDetails) {
++      return unrenderedSegmentDetails
++    }
++
+     return noErrorDetails
+   }, [error, getSquashedHydrationErrorDetails])
+ }
+@@ -339,7 +355,9 @@ export function isBlockingRouteInNavError(message: string): boolean {
+   return (
+     message.includes('or a navigation') ||
+     message.includes('Could not validate `unstable_instant`') ||
+-    message.includes('Could not validate instant UI')
++    message.includes(
++      'Could not validate that a segment in your UI has instant navigation'
++    )
+   )
+ }
+ 
+@@ -393,7 +411,45 @@ export function getBlockingRouteErrorDetails(
+   return null
+ }
+ 
++export function getUnrenderedSegmentErrorDetails(
++  error: Error
++): UnrenderedSegmentErrorDetails | null {
++  const message = error.message
++  if (typeof message !== 'string') return null
++  if (
++    !message.includes(
++      'Could not validate that a segment in your UI has instant navigation'
++    )
++  ) {
++    return null
++  }
++  const routeMatch = /^Route "([^"]+)":/.exec(message)
++  if (!routeMatch) return null
++  const route = routeMatch[1]
++
++  // The body lists `Dropped segment:` or `Dropped segments:` followed
++  // by indented file paths on subsequent lines until the next blank line.
++  const files: string[] = []
++  const filesBlockMatch = /\nDropped segments?:\n([^]*?)(?:\n\n|$)/.exec(
++    message
++  )
++  if (filesBlockMatch) {
++    for (const rawLine of filesBlockMatch[1].split('\n')) {
++      const trimmed = rawLine.replace(/^\s+/, '')
++      if (trimmed) files.push(trimmed)
++    }
++  }
++
++  return {
++    type: 'unrendered-segment',
++    route,
++    files,
++  }
++}
++
+ export function isInstantNavigationError(error: Error): boolean {
++  // Unrendered-segment errors are always instant-only
++  if (getUnrenderedSegmentErrorDetails(error)) return true
+   const details = getBlockingRouteErrorDetails(error)
+   return details?.type === 'blocking-route' && details.inNavigation
+ }
+@@ -1001,6 +1057,37 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+           </Suspense>
+         </ErrorOverlayLayout>
+       )
++    case 'unrendered-segment':
++      return (
++        <ErrorOverlayLayout
++          errorCode={errorCode}
++          errorType={errorType}
++          errorMessage="Next.js could not validate that a segment in your UI has instant navigation."
++          headerChildren={
++            <InstantHeaderExplanation kind="unrendered-segment" />
++          }
++          onClose={isServerError ? undefined : onClose}
++          debugInfo={debugInfo}
++          error={error}
++          runtimeErrors={runtimeErrors}
++          activeIdx={activeIdx}
++          setActiveIndex={setActiveIndex}
++          dialogResizerRef={dialogResizerRef}
++          generateErrorInfo={generateErrorInfo}
++          renderTabBar={renderTabBar}
++          {...props}
++        >
++          <UnrenderedSegmentInfo
++            route={errorDetails.route}
++            files={errorDetails.files}
++          />
++          <InstantGuidance
++            kind="unrendered-segment"
++            variant="dynamic"
++            showExplanation={false}
++          />
++        </ErrorOverlayLayout>
++      )
+     case 'empty':
+       errorMessage = <GenericErrorDescription error={error} />
+       break
+diff --git a/packages/next/src/next-devtools/dev-overlay/icons/fix-card-icons.tsx b/packages/next/src/next-devtools/dev-overlay/icons/fix-card-icons.tsx
+index e6e204b3cbfa..d725e1f625bb 100644
+--- a/packages/next/src/next-devtools/dev-overlay/icons/fix-card-icons.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/icons/fix-card-icons.tsx
+@@ -76,6 +76,15 @@ export function FixCardLoadingIcon() {
+   )
+ }
+ 
++export function FixCardMinusCircleIcon() {
++  return (
++    <svg {...ICON_PROPS}>
++      <circle cx="12" cy="12" r="10" />
++      <path d="M7 12h10" />
++    </svg>
++  )
++}
++
+ export function FixCardLayoutIcon() {
+   return (
+     <svg
+diff --git a/packages/next/src/next-devtools/dev-overlay/shared.test.ts b/packages/next/src/next-devtools/dev-overlay/shared.test.ts
+index 2419ca596064..7639ecbbd3d6 100644
+--- a/packages/next/src/next-devtools/dev-overlay/shared.test.ts
++++ b/packages/next/src/next-devtools/dev-overlay/shared.test.ts
+@@ -27,7 +27,7 @@ describe('getInstantErrorRoute', () => {
+ 
+   it('returns the route for the unrendered-segment wrapper', () => {
+     const error = new Error(
+-      `Route "${STATIC_ROUTE}": Could not validate instant UI because an expected segment was not rendered.\n\nUnrendered segment:\n  app/example/page.tsx`
++      `Route "${STATIC_ROUTE}": Could not validate that a segment in your UI has instant navigation.\n\nThis segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.\n\nDropped segment:\n  app/example/page.tsx`
+     )
+     expect(getInstantErrorRoute(error)).toBe(STATIC_ROUTE)
+   })
+diff --git a/packages/next/src/next-devtools/dev-overlay/shared.ts b/packages/next/src/next-devtools/dev-overlay/shared.ts
+index 0db34096c6dd..a038a77a1042 100644
+--- a/packages/next/src/next-devtools/dev-overlay/shared.ts
++++ b/packages/next/src/next-devtools/dev-overlay/shared.ts
+@@ -289,12 +289,8 @@ export function getInstantErrorRoute(error: unknown): string | null {
+   const message = (error as Error).message
+   if (typeof message !== 'string') return null
+   if (!isBlockingRouteInNavError(message)) return null
+-  // Most factories prefix `Route "<path>":`; the missing-segment factory in
+-  // `dynamic-rendering.ts` writes `Route: <path>` on its own line in the body.
+   const prefixMatch = /^Route "([^"]+)":/.exec(message)
+-  if (prefixMatch) return prefixMatch[1]
+-  const lineMatch = /\nRoute: (\S+)/.exec(message)
+-  return lineMatch ? lineMatch[1] : null
++  return prefixMatch ? prefixMatch[1] : null
+ }
+ 
+ // The route stored on an instant error is the route *template* from
+diff --git a/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx b/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx
+index fb98b91229c9..4a8dfece002c 100644
+--- a/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/styles/component-styles.tsx
+@@ -18,6 +18,7 @@ import { DEV_TOOLS_INFO_USER_PREFERENCES_STYLES } from '../components/errors/dev
+ import { CALL_STACK_STYLES } from '../components/call-stack/call-stack'
+ import { SHORTCUT_RECORDER_STYLES } from '../components/errors/dev-tools-indicator/dev-tools-info/shortcut-recorder'
+ import { INSTANT_GUIDANCE_STYLES } from '../components/instant/instant-guidance'
++import { UNRENDERED_SEGMENT_INFO_STYLES } from '../components/instant/unrendered-segment-info'
+ 
+ export function ComponentStyles() {
+   return (
+@@ -42,6 +43,7 @@ export function ComponentStyles() {
+         ${DEV_TOOLS_INFO_USER_PREFERENCES_STYLES}
+         ${SHORTCUT_RECORDER_STYLES}
+         ${INSTANT_GUIDANCE_STYLES}
++        ${UNRENDERED_SEGMENT_INFO_STYLES}
+       `}
+     </style>
+   )
+diff --git a/packages/next/src/server/app-render/dynamic-rendering.ts b/packages/next/src/server/app-render/dynamic-rendering.ts
+index e8c699614460..e0dd7eb62bcf 100644
+--- a/packages/next/src/server/app-render/dynamic-rendering.ts
++++ b/packages/next/src/server/app-render/dynamic-rendering.ts
+@@ -1471,21 +1471,17 @@ export function getNavigationDisallowedDynamicReasons(
+         }
+       }
+       missingFiles.sort()
+-      let message = `Could not validate instant UI because an expected segment was not rendered.`
++      let message = `Route "${workStore.route}": Could not validate that a segment in your UI has instant navigation.`
+       if (missingFiles.length > 0) {
+         const label =
+-          missingFiles.length === 1
+-            ? 'Unrendered segment'
+-            : 'Unrendered segments'
++          missingFiles.length === 1 ? 'Dropped segment' : 'Dropped segments'
+         message +=
++          `\n\nThis segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.` +
+           `\n\n${label}:\n${missingFiles.map((p) => `  ${p}`).join('\n')}` +
+-          `\n\nRoute: ${workStore.route}` +
+-          `\n\nThis can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.` +
+-          `\nThis can happen when a client component opts out of rendering during SSR.` +
+-          `\n\nYou can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.` +
++          `\n\nWays to fix this:` +
++          `\n  - Render the dropped segment` +
++          `\n  - Set \`export const instant = false\` on the dropped segment to skip validation` +
+           `\n\nLearn more: https://nextjs.org/docs/messages/unrendered-instant-segment`
+-      } else {
+-        message += `\n\nRoute: ${workStore.route}`
+       }
+       const error = new Error(message)
+       return error
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/(group)/blocked/page.tsx
+similarity index 100%
+rename from test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx
+rename to test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/(group)/blocked/page.tsx
+diff --git a/test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked/page.tsx b/test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/(group)/unblocked/page.tsx
+similarity index 100%
+rename from test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked/page.tsx
+rename to test/e2e/app-dir/instant-validation/app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/(group)/unblocked/page.tsx
+diff --git a/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts b/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts
+index 91f1bfdba783..cc089184a056 100644
+--- a/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts
++++ b/test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts
+@@ -1,5 +1,6 @@
+ import { nextTestSetup, type Playwright } from 'e2e-utils'
+ import {
++  expectBuildValidationSkipped,
+   expectNoBuildValidationErrors,
+   extractBuildValidationError,
+   waitForValidation,
+@@ -582,51 +583,29 @@ describe('instant validation - parallel slot configs', () => {
+           const browser = await navigateTo(href)
+           await expect(browser).toDisplayCollapsedRedbox(`
+            {
+-             "code": "E1248",
+-             "description": "Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segment:
+-             app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked/page.tsx
+-
+-           Route: /suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked
+-
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
+-
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
+-
+-           Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment",
++             "code": "E1286",
++             "description": "Next.js could not validate that a segment in your UI has instant navigation.",
+              "environmentLabel": "Server",
+-             "label": "Console Error",
+-             "source": null,
++             "label": "Instant",
++             "source": "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked
++           │
++           │ ├─ suspense-in-root/
++           │ │  ├─ parallel/
++           │ │  │  ├─ conditional-breadcrumbs/
++           │ │  │  │  ├─ show-only-breadcrumbs/
++           │ │  │  │  │  ├─ (group)/
++           │ │  │  │  │  │  ├─ unblocked/
++           │                   └─ page.tsx ← dropped from rendering
++           │",
+              "stack": [],
+            }
+           `)
+         } else {
++          // The route group workaround only fires in dev mode; build-time
++          // pattern matching doesn't resolve through (group)/ so the
++          // route is skipped entirely (no validation markers emitted).
+           const result = await prerender(href)
+-          expect(extractBuildValidationError(result.cliOutput))
+-            .toMatchInlineSnapshot(`
+-           "Error: Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segment:
+-             app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked/page.tsx
+-
+-           Route: /suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked
+-
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
+-
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
+-
+-           Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment
+-               at ignore-listed frames
+-           Build-time instant validation failed for route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked".
+-           To get a more detailed stack trace and pinpoint the issue, try one of the following:
+-             - Start the app in development mode by running \`next dev\`, then open "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/unblocked" in your browser to investigate the error.
+-             - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.
+-           Stopping prerender due to instant validation errors."
+-          `)
+-          expect(result.exitCode).toBe(1)
++          expectBuildValidationSkipped(result)
+         }
+       })
+ 
+@@ -640,11 +619,11 @@ describe('instant validation - parallel slot configs', () => {
+              "cause": [
+                {
+                  "label": "Caused by: Instant Validation",
+-                 "source": "app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx (1:33) @ unstable_instant
++                 "source": "app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/(group)/blocked/page.tsx (1:33) @ unstable_instant
+            > 1 | export const unstable_instant = { level: 'experimental-error' }
+                |                                 ^",
+                  "stack": [
+-                   "unstable_instant app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked/page.tsx (1:33)",
++                   "unstable_instant app/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/(group)/blocked/page.tsx (1:33)",
+                    "Set.forEach <anonymous>",
+                  ],
+                },
+@@ -662,30 +641,11 @@ describe('instant validation - parallel slot configs', () => {
+            }
+           `)
+         } else {
++          // The route group workaround only fires in dev mode; build-time
++          // pattern matching doesn't resolve through (group)/ so the
++          // route is skipped entirely (no validation markers emitted).
+           const result = await prerender(href)
+-          expect(extractBuildValidationError(result.cliOutput))
+-            .toMatchInlineSnapshot(`
+-           "Error: Route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked": Next.js encountered runtime data during prerendering or a navigation.
+-
+-           \`cookies()\`, \`headers()\`, \`params\`, or \`searchParams\` accessed outside of \`<Suspense>\` prevents the route from being prerendered or the navigation from being instant, leading to a slower user experience.
+-
+-           Ways to fix this:
+-             - Provide a placeholder with \`<Suspense fallback={...}>\` around the data access
+-             - If the runtime data is \`params\` and they're known, prerender them with \`generateStaticParams\`
+-             - Set \`export const instant = false\` to allow a blocking route
+-
+-           Learn more: https://nextjs.org/docs/messages/blocking-route
+-               at main (<anonymous>)
+-               at body (<anonymous>)
+-               at html (<anonymous>)
+-               at a (<anonymous>)
+-           Build-time instant validation failed for route "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked".
+-           To get a more detailed stack trace and pinpoint the issue, try one of the following:
+-             - Start the app in development mode by running \`next dev\`, then open "/suspense-in-root/parallel/conditional-breadcrumbs/show-only-breadcrumbs/blocked" in your browser to investigate the error.
+-             - Rerun the production build with \`next build --debug-prerender\` to generate better stack traces.
+-           Stopping prerender due to instant validation errors."
+-          `)
+-          expect(result.exitCode).toBe(1)
++          expectBuildValidationSkipped(result)
+         }
+       })
+     })
+diff --git a/test/e2e/app-dir/instant-validation/instant-validation.test.ts b/test/e2e/app-dir/instant-validation/instant-validation.test.ts
+index c0949057e320..a90a26734f79 100644
+--- a/test/e2e/app-dir/instant-validation/instant-validation.test.ts
++++ b/test/e2e/app-dir/instant-validation/instant-validation.test.ts
+@@ -2520,7 +2520,7 @@ describe('instant validation', () => {
+         if (isNextDev) {
+           // if generateViewport uses dynamic data, it'll always block regardless of prefetching.
+           // this can be allowed if a page opts into blocking. but if it violates a static
+-          // assertion on a parent layout, it should still fail.
++          // assertion on the parent layout, it should still fail.
+           const browser = await navigateTo(
+             '/suspense-in-root/head/invalid-dynamic-viewport-in-blocking-inside-static'
+           )
+@@ -3430,23 +3430,18 @@ describe('instant validation', () => {
+           )
+           await expect(browser).toDisplayCollapsedRedbox(`
+            {
+-             "code": "E1248",
+-             "description": "Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segment:
+-             app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx
+-
+-           Route: /suspense-in-root/static/multi-depth-deferred-fallback/inner
+-
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
+-
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
+-
+-           Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment",
++             "code": "E1286",
++             "description": "Next.js could not validate that a segment in your UI has instant navigation.",
+              "environmentLabel": "Server",
+-             "label": "Console Error",
+-             "source": null,
++             "label": "Instant",
++             "source": "/suspense-in-root/static/multi-depth-deferred-fallback/inner
++           │
++           │ ├─ suspense-in-root/
++           │ │  ├─ static/
++           │ │  │  ├─ multi-depth-deferred-fallback/
++           │ │  │  │  ├─ inner/
++           │             └─ page.tsx ← dropped from rendering
++           │",
+              "stack": [],
+            }
+           `)
+@@ -3456,17 +3451,16 @@ describe('instant validation', () => {
+           )
+           expect(extractBuildValidationError(result.cliOutput))
+             .toMatchInlineSnapshot(`
+-           "Error: Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segment:
+-             app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx
++           "Error: Route "/suspense-in-root/static/multi-depth-deferred-fallback/inner": Could not validate that a segment in your UI has instant navigation.
+ 
+-           Route: /suspense-in-root/static/multi-depth-deferred-fallback/inner
++           This segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.
+ 
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
++           Dropped segment:
++             app/suspense-in-root/static/multi-depth-deferred-fallback/inner/page.tsx
+ 
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
++           Ways to fix this:
++             - Render the dropped segment
++             - Set \`export const instant = false\` on the dropped segment to skip validation
+ 
+            Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment
+                at ignore-listed frames
+@@ -3494,23 +3488,18 @@ describe('instant validation', () => {
+           )
+           await expect(browser).toDisplayCollapsedRedbox(`
+            {
+-             "code": "E1248",
+-             "description": "Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segment:
+-             app/suspense-in-root/static/test-firstmod/inter/layout.tsx
+-
+-           Route: /suspense-in-root/static/test-firstmod/inter/inner
+-
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
+-
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
+-
+-           Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment",
++             "code": "E1286",
++             "description": "Next.js could not validate that a segment in your UI has instant navigation.",
+              "environmentLabel": "Server",
+-             "label": "Console Error",
+-             "source": null,
++             "label": "Instant",
++             "source": "/suspense-in-root/static/test-firstmod/inter/inner
++           │
++           │ ├─ suspense-in-root/
++           │ │  ├─ static/
++           │ │  │  ├─ test-firstmod/
++           │ │  │  │  ├─ inter/
++           │             └─ layout.tsx ← dropped from rendering
++           │",
+              "stack": [],
+            }
+           `)
+@@ -3520,17 +3509,16 @@ describe('instant validation', () => {
+           )
+           expect(extractBuildValidationError(result.cliOutput))
+             .toMatchInlineSnapshot(`
+-           "Error: Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segment:
+-             app/suspense-in-root/static/test-firstmod/inter/layout.tsx
++           "Error: Route "/suspense-in-root/static/test-firstmod/inter/inner": Could not validate that a segment in your UI has instant navigation.
+ 
+-           Route: /suspense-in-root/static/test-firstmod/inter/inner
++           This segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.
+ 
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
++           Dropped segment:
++             app/suspense-in-root/static/test-firstmod/inter/layout.tsx
+ 
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
++           Ways to fix this:
++             - Render the dropped segment
++             - Set \`export const instant = false\` on the dropped segment to skip validation
+ 
+            Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment
+                at ignore-listed frames
+@@ -3556,24 +3544,19 @@ describe('instant validation', () => {
+           )
+           await expect(browser).toDisplayCollapsedRedbox(`
+            {
+-             "code": "E1248",
+-             "description": "Could not validate instant UI because an expected segment was not rendered.
+-
+-           Unrendered segments:
+-             app/suspense-in-root/static/test-multi-unrendered/@sidebar/page.tsx
+-             app/suspense-in-root/static/test-multi-unrendered/page.tsx
+-
+-           Route: /suspense-in-root/static/test-multi-unrendered
+-
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
+-
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
+-
+-           Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment",
++             "code": "E1286",
++             "description": "Next.js could not validate that a segment in your UI has instant navigation.",
+              "environmentLabel": "Server",
+-             "label": "Console Error",
+-             "source": null,
++             "label": "Instant",
++             "source": "/suspense-in-root/static/test-multi-unrendered
++           │
++           │ ├─ suspense-in-root/
++           │ │  ├─ static/
++           │ │  │  ├─ test-multi-unrendered/
++           │ │  │  │  ├─ @sidebar/
++           │ │  │  │  │  └─ page.tsx ← dropped from rendering
++           │          └─ page.tsx ← dropped from rendering
++           │",
+              "stack": [],
+            }
+           `)
+@@ -3583,18 +3566,17 @@ describe('instant validation', () => {
+           )
+           expect(extractBuildValidationError(result.cliOutput))
+             .toMatchInlineSnapshot(`
+-           "Error: Could not validate instant UI because an expected segment was not rendered.
++           "Error: Route "/suspense-in-root/static/test-multi-unrendered": Could not validate that a segment in your UI has instant navigation.
+ 
+-           Unrendered segments:
++           This segment was dropped from rendering. Issues that would prevent instant navigation will go undetected.
++
++           Dropped segments:
+              app/suspense-in-root/static/test-multi-unrendered/@sidebar/page.tsx
+              app/suspense-in-root/static/test-multi-unrendered/page.tsx
+ 
+-           Route: /suspense-in-root/static/test-multi-unrendered
+-
+-           This can happen when you conditionally render a parallel route, for instance a login page when a user is logged out.
+-           This can happen when a client component opts out of rendering during SSR.
+-
+-           You can mark this layout as not requiring instant UI with \`export const unstable_instant = false\` if you want to silence this warning.
++           Ways to fix this:
++             - Render the dropped segment
++             - Set \`export const instant = false\` on the dropped segment to skip validation
+ 
+            Learn more: https://nextjs.org/docs/messages/unrendered-instant-segment
+                at ignore-listed frames

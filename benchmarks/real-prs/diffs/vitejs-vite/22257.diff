@@ -1,0 +1,848 @@
+diff --git a/packages/vite/src/node/__tests__/plugins/define.spec.ts b/packages/vite/src/node/__tests__/plugins/define.spec.ts
+index 68bd23aaa92cde..a7c72e50241495 100644
+--- a/packages/vite/src/node/__tests__/plugins/define.spec.ts
++++ b/packages/vite/src/node/__tests__/plugins/define.spec.ts
+@@ -27,6 +27,9 @@ async function createDefinePluginTransform(
+       )
+       return result?.code || result
+     } else {
++      const nativeDefinePlugin = await (
++        definePlugin(config) as any
++      ).applyToEnvironment(environment)
+       const bundler = await rolldown({
+         input: 'entry.js',
+         plugins: [
+@@ -45,9 +48,7 @@ async function createDefinePluginTransform(
+           },
+           {
+             name: 'native:define',
+-            options: (definePlugin(config).options! as any).bind({
+-              environment,
+-            }),
++            options: nativeDefinePlugin.options.bind({ environment }),
+           },
+         ],
+         experimental: {
+diff --git a/packages/vite/src/node/build.ts b/packages/vite/src/node/build.ts
+index 71d0a91af58232..f76091f958624a 100644
+--- a/packages/vite/src/node/build.ts
++++ b/packages/vite/src/node/build.ts
+@@ -512,18 +512,24 @@ export function resolveBuildPlugins(config: ResolvedConfig): {
+       ...(isBuild && !config.isWorker ? [prepareOutDirPlugin()] : []),
+       perEnvironmentPlugin(
+         'vite:rollup-options-plugins',
+-        async (environment) =>
+-          (
++        async (environment) => {
++          if (!isBuild && !environment.config.isBundled) {
++            return false
++          }
++          return (
+             await asyncFlatten(
+               arraify(environment.config.build.rollupOptions.plugins),
+             )
+-          ).filter(Boolean) as Plugin[],
++          ).filter(Boolean) as Plugin[]
++        },
+       ),
+       ...(config.isWorker ? [webWorkerPostPlugin(config)] : []),
+     ],
+     post: [
+       ...(isBuild ? buildImportAnalysisPlugin(config) : []),
+-      ...(config.build.minify === 'esbuild' ? [buildEsbuildPlugin()] : []),
++      ...(isBuild && config.build.minify === 'esbuild'
++        ? [buildEsbuildPlugin()]
++        : []),
+       ...(isBuild ? [terserPlugin(config)] : []),
+       ...(isBuild && !config.isWorker
+         ? [
+diff --git a/packages/vite/src/node/config.ts b/packages/vite/src/node/config.ts
+index 18806e3280fdb0..9638fea087e7e6 100644
+--- a/packages/vite/src/node/config.ts
++++ b/packages/vite/src/node/config.ts
+@@ -303,6 +303,17 @@ export interface SharedEnvironmentOptions {
+    * Optimize deps config
+    */
+   optimizeDeps?: DepOptimizationOptions
++  /**
++   * Whether this environment produces a bundled output.
++   *
++   * During `build`, this defaults to `true` for every environment.
++   * During `serve`, this defaults to `true` only for the client environment
++   * when `experimental.bundledDev` is enabled, and `false` otherwise.
++   * Setting this explicitly on an environment always overrides the default.
++   *
++   * @experimental
++   */
++  isBundled?: boolean
+ }
+ 
+ export interface EnvironmentOptions extends SharedEnvironmentOptions {
+@@ -326,6 +337,7 @@ export type ResolvedEnvironmentOptions = {
+   optimizeDeps: DepOptimizationOptions
+   dev: ResolvedDevEnvironmentOptions
+   build: ResolvedBuildEnvironmentOptions
++  isBundled: boolean
+   plugins: readonly Plugin[]
+   /** @internal */
+   optimizeDepsPluginNames: string[]
+@@ -568,7 +580,11 @@ export interface ExperimentalOptions {
+    */
+   hmrPartialAccept?: boolean
+   /**
+-   * Enable full bundle mode.
++   * Enable full bundle mode during `serve`.
++   *
++   * This seeds the default for the client environment's `isBundled` option.
++   * Other environments default to `false` during `serve`. Any environment
++   * can override its `isBundled` value via `environments[name].isBundled`.
+    *
+    * This is highly experimental.
+    *
+@@ -654,8 +670,6 @@ export interface ResolvedConfig extends Readonly<
+     cacheDir: string
+     command: 'build' | 'serve'
+     mode: string
+-    /** `true` when build or full-bundle mode dev */
+-    isBundled: boolean
+     isWorker: boolean
+     // in nested worker bundle to find the main config
+     /** @internal */
+@@ -907,6 +921,7 @@ function resolveEnvironmentOptions(
+   forceOptimizeDeps: boolean | undefined,
+   logger: Logger,
+   environmentName: string,
++  isBuild: boolean,
+   isBundledDev: boolean,
+   // Backward compatibility
+   isSsrTargetWebworkerSet?: boolean,
+@@ -918,6 +933,9 @@ function resolveEnvironmentOptions(
+   const isSsrTargetWebworkerEnvironment =
+     isSsrTargetWebworkerSet && environmentName === 'ssr'
+ 
++  const isBundled =
++    options.isBundled ?? (isBuild || (isClientEnvironment && isBundledDev))
++
+   if (options.define?.['process.env']) {
+     const processEnvDefine = options.define['process.env']
+     if (typeof processEnvDefine === 'object') {
+@@ -970,9 +988,10 @@ function resolveEnvironmentOptions(
+       options.build ?? {},
+       logger,
+       consumer,
+-      isBundledDev,
++      isBundled && !isBuild,
+       isSsrTargetWebworkerEnvironment,
+     ),
++    isBundled,
+     plugins: undefined!, // to be resolved later
+     // will be set by `setOptimizeDepsPluginNames` later
+     optimizeDepsPluginNames: undefined!,
+@@ -1608,6 +1627,7 @@ export async function resolveConfig(
+       inlineConfig.forceOptimizeDeps,
+       logger,
+       environmentName,
++      isBuild,
+       isBundledDev,
+       config.ssr?.target === 'webworker',
+       config.server?.preTransformRequests,
+@@ -1900,7 +1920,6 @@ export async function resolveConfig(
+     cacheDir,
+     command,
+     mode,
+-    isBundled: config.experimental?.bundledDev || isBuild,
+     isWorker: false,
+     mainConfig: null,
+     bundleChain: [],
+diff --git a/packages/vite/src/node/plugins/asset.ts b/packages/vite/src/node/plugins/asset.ts
+index 102e1c3125d2a3..35cd29ea8cf582 100644
+--- a/packages/vite/src/node/plugins/asset.ts
++++ b/packages/vite/src/node/plugins/asset.ts
+@@ -475,7 +475,7 @@ async function fileToBuiltUrl(
+ 
+     if (
+       environment.config.command === 'serve' &&
+-      environment.config.experimental.bundledDev
++      environment.config.isBundled
+     ) {
+       const outputFilename = pluginContext.getFileName(referenceId)
+       url = toOutputFilePathInJSForBundledDev(environment, outputFilename)
+diff --git a/packages/vite/src/node/plugins/clientInjections.ts b/packages/vite/src/node/plugins/clientInjections.ts
+index 4671f3fbe0e525..852b395914aec1 100644
+--- a/packages/vite/src/node/plugins/clientInjections.ts
++++ b/packages/vite/src/node/plugins/clientInjections.ts
+@@ -34,6 +34,9 @@ export function clientInjectionsPlugin(config: ResolvedConfig): Plugin {
+ 
+   return {
+     name: 'vite:client-inject',
++    applyToEnvironment(environment) {
++      return !environment.config.isBundled
++    },
+     async buildStart() {
+       injectConfigValues = await createClientConfigValueReplacer(config)
+     },
+diff --git a/packages/vite/src/node/plugins/css.ts b/packages/vite/src/node/plugins/css.ts
+index 9ab2901f0e85c2..4003c0b15c5bbf 100644
+--- a/packages/vite/src/node/plugins/css.ts
++++ b/packages/vite/src/node/plugins/css.ts
+@@ -594,7 +594,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
+ 
+           const cssContent = await getContentWithSourcemap(css)
+           const code = [
+-            config.isBundled
++            this.environment.config.isBundled
+               ? `const { updateStyle: __vite__updateStyle, removeStyle: __vite__removeStyle } = import.meta.hot._internal`
+               : `import { updateStyle as __vite__updateStyle, removeStyle as __vite__removeStyle } from ${JSON.stringify(
+                   path.posix.join(config.base, CLIENT_PUBLIC_PATH),
+@@ -1175,6 +1175,10 @@ export function cssAnalysisPlugin(config: ResolvedConfig): Plugin {
+   return {
+     name: 'vite:css-analysis',
+ 
++    applyToEnvironment(environment) {
++      return !environment.config.isBundled
++    },
++
+     transform: {
+       filter: {
+         id: {
+diff --git a/packages/vite/src/node/plugins/define.ts b/packages/vite/src/node/plugins/define.ts
+index 5d2e4a4aa82980..3b653265de1da4 100644
+--- a/packages/vite/src/node/plugins/define.ts
++++ b/packages/vite/src/node/plugins/define.ts
+@@ -10,7 +10,6 @@ const isNonJsRequest = (request: string): boolean => nonJsRe.test(request)
+ const escapedDotRE = /(?<!\\)\\./g
+ 
+ export function definePlugin(config: ResolvedConfig): Plugin {
+-  const isBundled = config.isBundled
+   const isBuild = config.command === 'build'
+   const isBuildLib = isBuild && config.build.lib
+ 
+@@ -28,27 +27,28 @@ export function definePlugin(config: ResolvedConfig): Plugin {
+     })
+   }
+ 
+-  // during dev, import.meta properties are handled by importAnalysis plugin.
+-  const importMetaKeys: Record<string, string> = {}
+-  const importMetaEnvKeys: Record<string, string> = {}
+-  const importMetaFallbackKeys: Record<string, string> = {}
+-  if (isBuild) {
+-    importMetaKeys['import.meta.hot'] = `undefined`
+-  }
+-  if (isBundled) {
+-    for (const key in config.env) {
+-      const val = JSON.stringify(config.env[key])
+-      importMetaKeys[`import.meta.env.${key}`] = val
+-      importMetaEnvKeys[key] = val
+-    }
+-    // these will be set to a proper value in `generatePattern`
+-    importMetaKeys['import.meta.env.SSR'] = `undefined`
+-    importMetaFallbackKeys['import.meta.env'] = `undefined`
+-  }
+-
+   function generatePattern(environment: Environment) {
++    const isBundled = environment.config.isBundled
+     const keepProcessEnv = environment.config.keepProcessEnv
+ 
++    // during dev, import.meta properties are handled by importAnalysis plugin.
++    const importMetaKeys: Record<string, string> = {}
++    const importMetaEnvKeys: Record<string, string> = {}
++    const importMetaFallbackKeys: Record<string, string> = {}
++    if (isBuild) {
++      importMetaKeys['import.meta.hot'] = `undefined`
++    }
++    if (isBundled) {
++      for (const key in config.env) {
++        const val = JSON.stringify(config.env[key])
++        importMetaKeys[`import.meta.env.${key}`] = val
++        importMetaEnvKeys[key] = val
++      }
++      // these will be set to a proper value below
++      importMetaKeys['import.meta.env.SSR'] = `undefined`
++      importMetaFallbackKeys['import.meta.env'] = `undefined`
++    }
++
+     const userDefine: Record<string, string> = {}
+     const userDefineEnv: Record<string, any> = {}
+     for (const key in environment.config.define) {
+@@ -113,24 +113,27 @@ export function definePlugin(config: ResolvedConfig): Plugin {
+     return pattern
+   }
+ 
+-  if (isBundled) {
+-    return {
+-      name: 'vite:define',
+-      options(option) {
+-        const [define, _pattern, importMetaEnvVal] = getPattern(
+-          this.environment,
+-        )
+-        define['import.meta.env'] = importMetaEnvVal
+-        define['import.meta.env.*'] = 'undefined'
+-        option.transform ??= {}
+-        option.transform.define = { ...option.transform.define, ...define }
+-      },
+-    }
+-  }
+-
+   return {
+     name: 'vite:define',
+ 
++    applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
++        return {
++          name: 'vite:define',
++          options(option) {
++            const [define, _pattern, importMetaEnvVal] = getPattern(
++              this.environment,
++            )
++            define['import.meta.env'] = importMetaEnvVal
++            define['import.meta.env.*'] = 'undefined'
++            option.transform ??= {}
++            option.transform.define = { ...option.transform.define, ...define }
++          },
++        }
++      }
++      return true
++    },
++
+     transform: {
+       handler(code, id) {
+         if (this.environment.config.consumer === 'client') {
+diff --git a/packages/vite/src/node/plugins/dynamicImportVars.ts b/packages/vite/src/node/plugins/dynamicImportVars.ts
+index 32138e26de9e50..70f3f3af5ed559 100644
+--- a/packages/vite/src/node/plugins/dynamicImportVars.ts
++++ b/packages/vite/src/node/plugins/dynamicImportVars.ts
+@@ -6,7 +6,7 @@ import { parseAst } from 'rolldown/parseAst'
+ import { dynamicImportToGlob } from '@rollup/plugin-dynamic-import-vars'
+ import { viteDynamicImportVarsPlugin as nativeDynamicImportVarsPlugin } from 'rolldown/experimental'
+ import { exactRegex } from 'rolldown/filter'
+-import { type Plugin, perEnvironmentPlugin } from '../plugin'
++import type { Plugin } from '../plugin'
+ import type { ResolvedConfig } from '../config'
+ import { CLIENT_ENTRY } from '../constants'
+ import { createBackCompatIdResolver } from '../idResolver'
+@@ -173,22 +173,6 @@ export function dynamicImportVarsPlugin(config: ResolvedConfig): Plugin {
+     extensions: [],
+   })
+ 
+-  if (config.isBundled) {
+-    return perEnvironmentPlugin('native:dynamic-import-vars', (environment) => {
+-      const { include, exclude } =
+-        environment.config.build.dynamicImportVarsOptions
+-
+-      return nativeDynamicImportVarsPlugin({
+-        include,
+-        exclude,
+-        resolver(id, importer) {
+-          return resolve(environment, id, importer)
+-        },
+-        sourcemap: !!environment.config.build.sourcemap,
+-      })
+-    })
+-  }
+-
+   const getFilter = perEnvironmentState((environment: Environment) => {
+     const { include, exclude } =
+       environment.config.build.dynamicImportVarsOptions
+@@ -198,6 +182,23 @@ export function dynamicImportVarsPlugin(config: ResolvedConfig): Plugin {
+   return {
+     name: 'vite:dynamic-import-vars',
+ 
++    applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
++        const { include, exclude } =
++          environment.config.build.dynamicImportVarsOptions
++
++        return nativeDynamicImportVarsPlugin({
++          include,
++          exclude,
++          resolver(id, importer) {
++            return resolve(environment, id, importer)
++          },
++          sourcemap: !!environment.config.build.sourcemap,
++        })
++      }
++      return true
++    },
++
+     resolveId: {
+       filter: { id: exactRegex(dynamicImportHelperId) },
+       handler(id) {
+diff --git a/packages/vite/src/node/plugins/html.ts b/packages/vite/src/node/plugins/html.ts
+index 52def92e4577aa..b11e51cfed3ab6 100644
+--- a/packages/vite/src/node/plugins/html.ts
++++ b/packages/vite/src/node/plugins/html.ts
+@@ -430,6 +430,10 @@ export function buildHtmlPlugin(config: ResolvedConfig): Plugin {
+   return {
+     name: 'vite:build-html',
+ 
++    applyToEnvironment(environment) {
++      return environment.config.isBundled
++    },
++
+     transform: {
+       filter: { id: /\.html$/ },
+       async handler(html, id) {
+diff --git a/packages/vite/src/node/plugins/importAnalysis.ts b/packages/vite/src/node/plugins/importAnalysis.ts
+index c97851b0d69106..bd346f86f1c1bb 100644
+--- a/packages/vite/src/node/plugins/importAnalysis.ts
++++ b/packages/vite/src/node/plugins/importAnalysis.ts
+@@ -257,6 +257,10 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
+   return {
+     name: 'vite:import-analysis',
+ 
++    applyToEnvironment(environment) {
++      return !environment.config.isBundled
++    },
++
+     async transform(source, importer) {
+       const environment = this.environment as DevEnvironment
+       const ssr = environment.config.consumer === 'server'
+diff --git a/packages/vite/src/node/plugins/importMetaGlob.ts b/packages/vite/src/node/plugins/importMetaGlob.ts
+index 98b0ee03d9dbd0..516359e8bad8e7 100644
+--- a/packages/vite/src/node/plugins/importMetaGlob.ts
++++ b/packages/vite/src/node/plugins/importMetaGlob.ts
+@@ -35,14 +35,6 @@ interface ParsedGeneralImportGlobOptions extends GeneralImportGlobOptions {
+ }
+ 
+ export function importGlobPlugin(config: ResolvedConfig): Plugin {
+-  if (config.isBundled) {
+-    return nativeImportGlobPlugin({
+-      root: config.root,
+-      sourcemap: !!config.build.sourcemap,
+-      restoreQueryExtension: config.experimental.importGlobRestoreExtension,
+-    })
+-  }
+-
+   const importGlobMaps = new Map<
+     Environment,
+     Map<string, Array<(file: string) => boolean>>
+@@ -50,6 +42,17 @@ export function importGlobPlugin(config: ResolvedConfig): Plugin {
+ 
+   return {
+     name: 'vite:import-glob',
++    applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
++        return nativeImportGlobPlugin({
++          root: environment.config.root,
++          sourcemap: !!environment.config.build.sourcemap,
++          restoreQueryExtension:
++            environment.config.experimental.importGlobRestoreExtension,
++        })
++      }
++      return true
++    },
+     buildStart() {
+       importGlobMaps.clear()
+     },
+diff --git a/packages/vite/src/node/plugins/index.ts b/packages/vite/src/node/plugins/index.ts
+index b793e372813ddb..2255d37416b620 100644
+--- a/packages/vite/src/node/plugins/index.ts
++++ b/packages/vite/src/node/plugins/index.ts
+@@ -47,9 +47,10 @@ export async function resolvePlugins(
+   postPlugins: Plugin[],
+ ): Promise<Plugin[]> {
+   const isBuild = config.command === 'build'
+-  const isBundled = config.isBundled
+   const isWorker = config.isWorker
+-  const buildPlugins = isBundled
++  const anyEnvBundled =
++    isBuild || Object.values(config.environments).some((env) => env.isBundled)
++  const buildPlugins = anyEnvBundled
+     ? (await import('../build')).resolveBuildPlugins(config)
+     : { pre: [], post: [] }
+   const devtoolsIntegrationPlugin =
+@@ -59,28 +60,37 @@ export async function resolvePlugins(
+   const { modulePreload } = config.build
+ 
+   return [
+-    !isBundled ? optimizedDepsPlugin() : null,
++    optimizedDepsPlugin(),
+     !isWorker ? watchPackageDataPlugin(config.packageCache) : null,
+-    !isBundled ? preAliasPlugin(config) : null,
+-    isBundled && !config.resolve.alias.some((v) => v.customResolver)
+-      ? nativeAliasPlugin({
+-          entries: config.resolve.alias.map((item) => {
+-            return {
+-              find: item.find,
+-              replacement: item.replacement,
+-            }
+-          }),
+-        })
+-      : aliasPlugin({
+-          // @ts-expect-error aliasPlugin receives rollup types
+-          entries: config.resolve.alias,
+-          customResolver: viteAliasCustomResolver,
+-        }),
++    preAliasPlugin(config),
++    {
++      ...aliasPlugin({
++        // @ts-expect-error aliasPlugin receives rollup types
++        entries: config.resolve.alias,
++        customResolver: viteAliasCustomResolver,
++      }),
++      applyToEnvironment(environment) {
++        if (
++          environment.config.isBundled &&
++          !environment.config.resolve.alias.some((v) => v.customResolver)
++        ) {
++          return nativeAliasPlugin({
++            entries: config.resolve.alias.map((item) => {
++              return {
++                find: item.find,
++                replacement: item.replacement,
++              }
++            }),
++          })
++        }
++        return true
++      },
++    } as Plugin,
+ 
+     ...prePlugins,
+ 
+     modulePreload !== false && modulePreload.polyfill
+-      ? modulePreloadPolyfillPlugin(config)
++      ? modulePreloadPolyfillPlugin()
+       : null,
+     ...oxcResolvePlugin(
+       {
+@@ -94,14 +104,26 @@ export async function resolvePlugins(
+         legacyInconsistentCjsInterop: config.legacy?.inconsistentCjsInterop,
+       },
+       isWorker
+-        ? { ...config, consumer: 'client', optimizeDepsPluginNames: [] }
++        ? {
++            ...config,
++            consumer: 'client',
++            isBundled: true,
++            optimizeDepsPluginNames: [],
++          }
+         : undefined,
+     ),
+     htmlInlineProxyPlugin(config),
+     cssPlugin(config),
+     esbuildBannerFooterCompatPlugin(config),
+     // @oxc-project/runtime resolution is handled by rolldown in build
+-    config.oxc !== false && !isBundled ? oxcRuntimePlugin() : null,
++    config.oxc !== false
++      ? ({
++          ...oxcRuntimePlugin(),
++          applyToEnvironment(environment) {
++            return !environment.config.isBundled
++          },
++        } satisfies Plugin)
++      : null,
+     config.oxc !== false ? oxcPlugin(config) : null,
+     nativeJsonPlugin({ ...config.json, minify: isBuild }),
+     wasmHelperPlugin(),
+@@ -116,7 +138,7 @@ export async function resolvePlugins(
+     nativeWasmFallbackPlugin(),
+     definePlugin(config),
+     cssPostPlugin(config),
+-    isBundled && buildHtmlPlugin(config),
++    buildHtmlPlugin(config),
+     workerImportMetaUrlPlugin(config),
+     assetImportMetaUrlPlugin(config),
+     ...buildPlugins.pre,
+@@ -129,13 +151,9 @@ export async function resolvePlugins(
+     devtoolsIntegrationPlugin,
+ 
+     // internal server-only plugins are always applied after everything else
+-    ...(isBundled
+-      ? []
+-      : [
+-          clientInjectionsPlugin(config),
+-          cssAnalysisPlugin(config),
+-          importAnalysisPlugin(config),
+-        ]),
++    clientInjectionsPlugin(config),
++    cssAnalysisPlugin(config),
++    importAnalysisPlugin(config),
+   ].filter(Boolean) as Plugin[]
+ }
+ 
+diff --git a/packages/vite/src/node/plugins/modulePreloadPolyfill.ts b/packages/vite/src/node/plugins/modulePreloadPolyfill.ts
+index 2d92db55c97065..bedcf046c4f957 100644
+--- a/packages/vite/src/node/plugins/modulePreloadPolyfill.ts
++++ b/packages/vite/src/node/plugins/modulePreloadPolyfill.ts
+@@ -1,25 +1,21 @@
+ import { exactRegex } from 'rolldown/filter'
+ import { viteModulePreloadPolyfillPlugin as nativeModulePreloadPolyfillPlugin } from 'rolldown/experimental'
+-import { type ResolvedConfig, perEnvironmentPlugin } from '..'
+ import type { Plugin } from '../plugin'
+ 
+ export const modulePreloadPolyfillId = 'vite/modulepreload-polyfill'
+ const resolvedModulePreloadPolyfillId = '\0' + modulePreloadPolyfillId + '.js'
+ 
+-export function modulePreloadPolyfillPlugin(config: ResolvedConfig): Plugin {
+-  if (config.isBundled) {
+-    return perEnvironmentPlugin(
+-      'native:modulepreload-polyfill',
+-      (environment) => {
++export function modulePreloadPolyfillPlugin(): Plugin {
++  return {
++    name: 'vite:modulepreload-polyfill',
++    applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
+         return nativeModulePreloadPolyfillPlugin({
+           isServer: environment.config.consumer !== 'client',
+         })
+-      },
+-    )
+-  }
+-
+-  return {
+-    name: 'vite:modulepreload-polyfill',
++      }
++      return true
++    },
+     resolveId: {
+       filter: { id: exactRegex(modulePreloadPolyfillId) },
+       handler(_id) {
+diff --git a/packages/vite/src/node/plugins/optimizedDeps.ts b/packages/vite/src/node/plugins/optimizedDeps.ts
+index 59fc3079efc3c6..a7b4c524ce7c27 100644
+--- a/packages/vite/src/node/plugins/optimizedDeps.ts
++++ b/packages/vite/src/node/plugins/optimizedDeps.ts
+@@ -22,6 +22,9 @@ export function optimizedDepsPlugin(): Plugin {
+     name: 'vite:optimized-deps',
+ 
+     applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
++        return false
++      }
+       return !isDepOptimizationDisabled(environment.config.optimizeDeps)
+     },
+ 
+diff --git a/packages/vite/src/node/plugins/oxc.ts b/packages/vite/src/node/plugins/oxc.ts
+index ede897068e17a9..2c47d0d86ac1ef 100644
+--- a/packages/vite/src/node/plugins/oxc.ts
++++ b/packages/vite/src/node/plugins/oxc.ts
+@@ -12,7 +12,7 @@ import { createFilter, ensureWatchedFile, normalizePath } from '../utils'
+ import type { ResolvedConfig } from '../config'
+ import type { Plugin } from '../plugin'
+ import { cleanUrl } from '../../shared/utils'
+-import { type Environment, perEnvironmentPlugin } from '..'
++import type { Environment } from '..'
+ import type { ViteDevServer } from '../server'
+ import { JS_TYPES_RE } from '../constants'
+ import type { Logger } from '../logger'
+@@ -208,35 +208,6 @@ function shouldSkipWarning(warning: RolldownLog): boolean {
+ }
+ 
+ export function oxcPlugin(config: ResolvedConfig): Plugin {
+-  if (config.isBundled) {
+-    return perEnvironmentPlugin('native:transform', (environment) => {
+-      const {
+-        jsxInject,
+-        include = /\.(m?ts|[jt]sx)$/,
+-        exclude = /\.js$/,
+-        jsxRefreshInclude,
+-        jsxRefreshExclude,
+-        ..._transformOptions
+-      } = config.oxc as Exclude<OxcOptions, false | undefined>
+-
+-      const transformOptions: OxcTransformOptions = _transformOptions
+-      transformOptions.sourcemap =
+-        environment.config.mode !== 'build' ||
+-        !!environment.config.build.sourcemap
+-
+-      return nativeTransformPlugin({
+-        root: environment.config.root,
+-        include,
+-        exclude,
+-        jsxRefreshInclude,
+-        jsxRefreshExclude,
+-        isServerConsumer: environment.config.consumer === 'server',
+-        jsxInject,
+-        transformOptions,
+-      })
+-    })
+-  }
+-
+   const options = config.oxc as OxcOptions
+   const {
+     jsxInject,
+@@ -303,6 +274,35 @@ export function oxcPlugin(config: ResolvedConfig): Plugin {
+ 
+   return {
+     name: 'vite:oxc',
++    applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
++        const {
++          jsxInject,
++          include = /\.(m?ts|[jt]sx)$/,
++          exclude = /\.js$/,
++          jsxRefreshInclude,
++          jsxRefreshExclude,
++          ..._transformOptions
++        } = environment.config.oxc as Exclude<OxcOptions, false | undefined>
++
++        const transformOptions: OxcTransformOptions = _transformOptions
++        transformOptions.sourcemap =
++          environment.config.mode !== 'build' ||
++          !!environment.config.build.sourcemap
++
++        return nativeTransformPlugin({
++          root: environment.config.root,
++          include,
++          exclude,
++          jsxRefreshInclude,
++          jsxRefreshExclude,
++          isServerConsumer: environment.config.consumer === 'server',
++          jsxInject,
++          transformOptions,
++        })
++      }
++      return true
++    },
+     configureServer(_server) {
+       server = _server
+     },
+diff --git a/packages/vite/src/node/plugins/preAlias.ts b/packages/vite/src/node/plugins/preAlias.ts
+index ae9013c751db17..3ca589a9cbd644 100644
+--- a/packages/vite/src/node/plugins/preAlias.ts
++++ b/packages/vite/src/node/plugins/preAlias.ts
+@@ -26,6 +26,9 @@ export function preAliasPlugin(config: ResolvedConfig): Plugin {
+   return {
+     name: 'vite:pre-alias',
+     applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
++        return false
++      }
+       return !isDepOptimizationDisabled(environment.config.optimizeDeps)
+     },
+     async resolveId(id, importer, options) {
+diff --git a/packages/vite/src/node/plugins/resolve.ts b/packages/vite/src/node/plugins/resolve.ts
+index 964a1082492068..3e43ac4302cb6e 100644
+--- a/packages/vite/src/node/plugins/resolve.ts
++++ b/packages/vite/src/node/plugins/resolve.ts
+@@ -237,7 +237,7 @@ export function oxcResolvePlugin(
+         const depsOptimizerEnabled =
+           resolveOptions.optimizeDeps &&
+           !resolveOptions.isBuild &&
+-          !partialEnv.config.experimental.bundledDev &&
++          !partialEnv.config.isBundled &&
+           !isDepOptimizationDisabled(partialEnv.config.optimizeDeps)
+         const getDepsOptimizer = () => {
+           const env = getEnv()
+@@ -392,7 +392,7 @@ function optimizerResolvePlugin(
+     name: 'vite:resolve-dev',
+     applyToEnvironment(environment) {
+       return (
+-        !environment.config.experimental.bundledDev &&
++        !environment.config.isBundled &&
+         !isDepOptimizationDisabled(environment.config.optimizeDeps)
+       )
+     },
+diff --git a/packages/vite/src/node/plugins/worker.ts b/packages/vite/src/node/plugins/worker.ts
+index 648ecf35759bc6..7d5f02c7117249 100644
+--- a/packages/vite/src/node/plugins/worker.ts
++++ b/packages/vite/src/node/plugins/worker.ts
+@@ -5,7 +5,7 @@ import colors from 'picocolors'
+ import { type ImportSpecifier, init, parse } from 'es-module-lexer'
+ import { viteWebWorkerPostPlugin as nativeWebWorkerPostPlugin } from 'rolldown/experimental'
+ import type { ResolvedConfig } from '../config'
+-import { type Plugin, perEnvironmentPlugin } from '../plugin'
++import type { Plugin } from '../plugin'
+ import { ENV_ENTRY, ENV_PUBLIC_PATH } from '../constants'
+ import {
+   encodeURIPath,
+@@ -315,20 +315,18 @@ export async function workerFileToUrl(
+   return bundle
+ }
+ 
+-export function webWorkerPostPlugin(config: ResolvedConfig): Plugin {
+-  if (config.isBundled) {
+-    return perEnvironmentPlugin(
+-      'native:web-worker-post-plugin',
+-      (environment) => {
++export function webWorkerPostPlugin(_config: ResolvedConfig): Plugin {
++  return {
++    name: 'vite:worker-post',
++    applyToEnvironment(environment) {
++      if (environment.config.isBundled) {
+         if (environment.config.worker.format === 'iife') {
+           return nativeWebWorkerPostPlugin()
+         }
+-      },
+-    )
+-  }
+-
+-  return {
+-    name: 'vite:worker-post',
++        return false
++      }
++      return true
++    },
+     transform: {
+       filter: {
+         code: 'import.meta',
+@@ -405,7 +403,8 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
+         const { format } = config.worker
+         const workerConstructor =
+           workerMatch[1] === 'sharedworker' ? 'SharedWorker' : 'Worker'
+-        const workerType = config.isBundled
++        const isBundled = this.environment.config.isBundled
++        const workerType = isBundled
+           ? format === 'es'
+             ? 'module'
+             : 'classic'
+@@ -416,7 +415,7 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
+         }`
+ 
+         let urlCode: string
+-        if (config.isBundled) {
++        if (isBundled) {
+           if (isWorker && config.bundleChain.at(-1) === cleanUrl(id)) {
+             urlCode = 'self.location.href'
+           } else if (inlineRE.test(id)) {
+@@ -474,7 +473,7 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
+             let url: string
+             if (
+               this.environment.config.command === 'serve' &&
+-              this.environment.config.experimental.bundledDev
++              this.environment.config.isBundled
+             ) {
+               url = toOutputFilePathInJSForBundledDev(
+                 this.environment,
+@@ -533,7 +532,7 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
+             const scriptPath = JSON.stringify(ENV_PUBLIC_PATH)
+             injectEnv = `import ${scriptPath}\n`
+           } else if (workerType === 'ignore') {
+-            if (config.isBundled) {
++            if (this.environment.config.isBundled) {
+               injectEnv = ''
+             } else {
+               // dynamic worker type we can't know how import the env
+diff --git a/packages/vite/src/node/plugins/workerImportMetaUrl.ts b/packages/vite/src/node/plugins/workerImportMetaUrl.ts
+index 55d28d17e0f97b..1e58cb7f8ddcef 100644
+--- a/packages/vite/src/node/plugins/workerImportMetaUrl.ts
++++ b/packages/vite/src/node/plugins/workerImportMetaUrl.ts
+@@ -185,7 +185,6 @@ export const workerImportMetaUrlRE: RegExp =
+   /\bnew\s+(?:Worker|SharedWorker)\s*\(\s*(new\s+URL\s*\(\s*('[^']+'|"[^"]+"|`[^`]+`)\s*,\s*import\.meta\.url\s*(?:,\s*)?\))/dg
+ 
+ export function workerImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
+-  const isBundled = config.isBundled
+   let workerResolver: ResolveIdFn
+ 
+   const fsResolveOptions: InternalResolveOptions = {
+@@ -207,6 +206,7 @@ export function workerImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
+     transform: {
+       filter: { code: workerImportMetaUrlRE },
+       async handler(code, id) {
++        const isBundled = this.environment.config.isBundled
+         let s: MagicString | undefined
+         const cleanString = stripLiteral(code)
+         const re = new RegExp(workerImportMetaUrlRE)
+@@ -256,10 +256,7 @@ export function workerImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
+             let builtUrl: string
+             if (isBundled) {
+               const result = await workerFileToUrl(config, file)
+-              if (
+-                this.environment.config.command === 'serve' &&
+-                this.environment.config.experimental.bundledDev
+-              ) {
++              if (this.environment.config.command === 'serve') {
+                 builtUrl = toOutputFilePathInJSForBundledDev(
+                   this.environment,
+                   result.entryFilename,

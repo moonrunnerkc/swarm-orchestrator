@@ -1,0 +1,957 @@
+diff --git a/.changeset/afraid-sheep-end.md b/.changeset/afraid-sheep-end.md
+new file mode 100644
+index 000000000000..5d970c40f6f8
+--- /dev/null
++++ b/.changeset/afraid-sheep-end.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Skips the static preview server when an adapter provides its own `previewEntrypoint`, allowing the adapter to handle both static and dynamic routes
+diff --git a/.changeset/cloudflare-preserve-build-dirs.md b/.changeset/cloudflare-preserve-build-dirs.md
+new file mode 100644
+index 000000000000..f922ee13a9c7
+--- /dev/null
++++ b/.changeset/cloudflare-preserve-build-dirs.md
+@@ -0,0 +1,18 @@
++---
++'astro': minor
++---
++
++Adds a new `preserveBuildServerDir` adapter feature
++
++Adapters can now set `preserveBuildServerDir: true` in their adapter features to keep the `dist/server/` directory structure for static builds, mirroring the existing `preserveBuildClientDir` option. This is useful for adapters that require a consistent `dist/client/` and `dist/server/` layout regardless of build output type.
++
++```js
++setAdapter({
++  name: 'my-adapter',
++  adapterFeatures: {
++    buildOutput,
++    preserveBuildClientDir: true,
++    preserveBuildServerDir: true,
++  },
++});
++```
+diff --git a/.changeset/cloudflare-static-buildoutput.md b/.changeset/cloudflare-static-buildoutput.md
+new file mode 100644
+index 000000000000..6afb2b6f5a63
+--- /dev/null
++++ b/.changeset/cloudflare-static-buildoutput.md
+@@ -0,0 +1,5 @@
++---
++'@astrojs/cloudflare': patch
++---
++
++Fixes static Cloudflare builds with server islands or image endpoints that failed at preview time due to mismatched output directories.
+diff --git a/.changeset/funky-peas-exist.md b/.changeset/funky-peas-exist.md
+new file mode 100644
+index 000000000000..078a0d08b65c
+--- /dev/null
++++ b/.changeset/funky-peas-exist.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Fixes the static preview server to respect `preserveBuildClientDir`, serving files from `build.client` instead of `outDir` when the adapter requires it
+diff --git a/.changeset/icy-days-sneeze.md b/.changeset/icy-days-sneeze.md
+new file mode 100644
+index 000000000000..d386c0adf7f5
+--- /dev/null
++++ b/.changeset/icy-days-sneeze.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Exempts internal routes (e.g. server islands) from `getStaticPaths()` validation, fixing server island rendering on static sites
+diff --git a/.changeset/two-views-clean.md b/.changeset/two-views-clean.md
+new file mode 100644
+index 000000000000..42ae2fde33d0
+--- /dev/null
++++ b/.changeset/two-views-clean.md
+@@ -0,0 +1,5 @@
++---
++'astro': patch
++---
++
++Fixes preview for static sites that contain non-prerendered routes. Previously, the preview command ignored SSR routes discovered during route scanning and always used the static preview server.
+diff --git a/packages/astro/src/core/build/static-build.ts b/packages/astro/src/core/build/static-build.ts
+index 3fd2276c138d..33e7113b5c88 100644
+--- a/packages/astro/src/core/build/static-build.ts
++++ b/packages/astro/src/core/build/static-build.ts
+@@ -10,11 +10,11 @@ import { emptyDir, removeEmptyDirs } from '../../core/fs/index.js';
+ import { appendForwardSlash, prependForwardSlash } from '../../core/path.js';
+ import { runHookBuildSetup } from '../../integrations/hooks.js';
+ import { SERIALIZED_MANIFEST_RESOLVED_ID } from '../../manifest/serialized.js';
+-import { getPrerenderOutputDirectory } from '../../prerender/utils.js';
++import { getPrerenderOutputDirectory, getServerOutputDirectory } from '../../prerender/utils.js';
+ import type { RouteData } from '../../types/public/internal.js';
+ import { PAGE_SCRIPT_ID } from '../../vite-plugin-scripts/index.js';
+ import { routeIsRedirect } from '../routing/helpers.js';
+-import { getOutDirWithinCwd } from './common.js';
++
+ import { generatePages } from './generate.js';
+ import { trackPageData } from './internal.js';
+ import { getAllBuildPlugins } from './plugins/index.js';
+@@ -27,7 +27,10 @@ import { NOOP_MODULE_ID } from './plugins/plugin-noop.js';
+ import { ASTRO_VITE_ENVIRONMENT_NAMES } from '../constants.js';
+ import type { InputOption } from 'rollup';
+ import { getSSRAssets } from './internal.js';
+-import { SERVER_ISLAND_MAP_MARKER } from '../server-islands/vite-plugin-server-islands.js';
++import {
++	SERVER_ISLAND_MAP_MARKER,
++	hasServerIslands,
++} from '../server-islands/vite-plugin-server-islands.js';
+ import { createViteBuildConfig } from './vite-build-config.js';
+ 
+ const PRERENDER_ENTRY_FILENAME_PREFIX = 'prerender-entry';
+@@ -257,9 +260,9 @@ async function buildEnvironments(opts: StaticBuildOptions, internals: BuildInter
+ 				const prerenderChunks = extractRelevantChunks(prerenderOutputs, true);
+ 				prerenderOutput = undefined as any;
+ 
+-				// Build ssr environment for server output (only for non-static builds)
++				// Build ssr environment for server output
+ 				let ssrChunks: BuildInternals['extractedChunks'] = [];
+-				if (settings.buildOutput !== 'static') {
++				if (needsServerBuild(settings, builder)) {
+ 					settings.timer.start('SSR build');
+ 					let ssrOutput = await builder.build(
+ 						builder.environments[ASTRO_VITE_ENVIRONMENT_NAMES.ssr],
+@@ -398,7 +401,6 @@ async function writeMutatedChunks(
+ 	mutations: Map<string, { code: string; prerender: boolean }>,
+ ) {
+ 	const { settings } = opts;
+-	const config = settings.config;
+ 
+ 	for (const [fileName, mutation] of mutations) {
+ 		let root: URL;
+@@ -406,10 +408,8 @@ async function writeMutatedChunks(
+ 		if (mutation.prerender) {
+ 			// Write to prerender directory
+ 			root = getPrerenderOutputDirectory(settings);
+-		} else if (settings.buildOutput === 'server') {
+-			root = config.build.server;
+ 		} else {
+-			root = getOutDirWithinCwd(config.outDir);
++			root = getServerOutputDirectory(settings);
+ 		}
+ 
+ 		const fullPath = path.join(fileURLToPath(root), fileName);
+@@ -499,6 +499,18 @@ function getClientInput(
+ 	return clientInput;
+ }
+ 
++/**
++ * Determines whether the SSR build environment needs to be built.
++ * This is true when the build output is 'server', or when server islands
++ * were discovered during the prerender build (even for static sites).
++ */
++function needsServerBuild(settings: StaticBuildOptions['settings'], builder: vite.ViteBuilder): boolean {
++	if (settings.buildOutput === 'server') {
++		return true;
++	}
++	return hasServerIslands(builder.environments.prerender as vite.BuildEnvironment);
++}
++
+ /**
+  * This function takes the virtual module name of any page entrypoint and
+  * transforms it to generate a final `.mjs` output file.
+diff --git a/packages/astro/src/core/preview/index.ts b/packages/astro/src/core/preview/index.ts
+index 177e2415e246..b6ac3bf8cf5f 100644
+--- a/packages/astro/src/core/preview/index.ts
++++ b/packages/astro/src/core/preview/index.ts
+@@ -11,7 +11,7 @@ import { resolveConfig } from '../config/config.js';
+ import { loadOrCreateNodeLogger } from '../logger/load.js';
+ import { createSettings } from '../config/settings.js';
+ import { createRoutesList } from '../routing/create-manifest.js';
+-import { getPrerenderDefault } from '../../prerender/utils.js';
++import { getClientOutputDirectory, getPrerenderDefault } from '../../prerender/utils.js';
+ import { ensureProcessNodeEnv } from '../util.js';
+ import createStaticPreviewServer from './static-preview-server.js';
+ import { getResolvedHostForHttpServer } from './util.js';
+@@ -40,15 +40,17 @@ export default async function preview(inlineConfig: AstroInlineConfig): Promise<
+ 		logger: logger,
+ 	});
+ 
+-	// Create a route manifest so we can know if the build output is a static site or not
+-	await createRoutesList({ settings: settings, cwd: inlineConfig.root }, logger);
++	// Create a route manifest and determine buildOutput from actual routes.
++	// Route scanning sets settings.buildOutput to 'server' if any route is non-prerendered.
+ 	settings.buildOutput = getPrerenderDefault(settings.config) ? 'static' : 'server';
++	await createRoutesList({ settings: settings, cwd: inlineConfig.root }, logger);
+ 
+ 	await runHookConfigDone({ settings: settings, logger: logger, command: 'preview' });
+ 
+-	if (settings.buildOutput === 'static') {
+-		if (!fs.existsSync(settings.config.outDir)) {
+-			const outDirPath = fileURLToPath(settings.config.outDir);
++	if (settings.buildOutput === 'static' && !settings.adapter?.previewEntrypoint) {
++		const clientOutDir = getClientOutputDirectory(settings);
++		if (!fs.existsSync(clientOutDir)) {
++			const outDirPath = fileURLToPath(clientOutDir);
+ 			throw new Error(
+ 				`[preview] The output directory ${outDirPath} does not exist. Did you run \`astro build\`?`,
+ 			);
+diff --git a/packages/astro/src/core/preview/static-preview-server.ts b/packages/astro/src/core/preview/static-preview-server.ts
+index e64d1ae94372..e55fc96f2c93 100644
+--- a/packages/astro/src/core/preview/static-preview-server.ts
++++ b/packages/astro/src/core/preview/static-preview-server.ts
+@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
+ import type * as vite from 'vite';
+ import { mergeConfig, preview, type PreviewServer as VitePreviewServer } from 'vite';
+ import type { AstroSettings } from '../../types/astro.js';
++import { getClientOutputDirectory } from '../../prerender/utils.js';
+ import type { AstroLogger } from '../logger/core.js';
+ import * as msg from '../messages/runtime.js';
+ import { getResolvedHostForHttpServer } from './util.js';
+@@ -33,7 +34,7 @@ export default async function createStaticPreviewServer(
+ 			base: settings.config.base,
+ 			appType: 'mpa',
+ 			build: {
+-				outDir: fileURLToPath(settings.config.outDir),
++				outDir: fileURLToPath(getClientOutputDirectory(settings)),
+ 			},
+ 			root: fileURLToPath(settings.config.root),
+ 			preview: {
+diff --git a/packages/astro/src/core/render/params-and-props.ts b/packages/astro/src/core/render/params-and-props.ts
+index 9498057d1ee2..6c995083c497 100644
+--- a/packages/astro/src/core/render/params-and-props.ts
++++ b/packages/astro/src/core/render/params-and-props.ts
+@@ -62,7 +62,7 @@ export async function getProps(opts: GetParamsAndPropsOptions): Promise<Props> {
+ 	// the ones expected from the users
+ 	const params = getParams(route, pathname);
+ 	const matchedStaticPath = findPathItemByKey(staticPaths, params, route, logger, trailingSlash);
+-	if (!matchedStaticPath && (serverLike ? route.prerender : true)) {
++	if (!matchedStaticPath && route.origin !== 'internal' && (serverLike ? route.prerender : true)) {
+ 		throw new AstroError({
+ 			...AstroErrorData.NoMatchingStaticPathFound,
+ 			message: AstroErrorData.NoMatchingStaticPathFound.message(pathname),
+diff --git a/packages/astro/src/core/render/route-cache.ts b/packages/astro/src/core/render/route-cache.ts
+index 53608a0863a9..5580100af896 100644
+--- a/packages/astro/src/core/render/route-cache.ts
++++ b/packages/astro/src/core/render/route-cache.ts
+@@ -44,8 +44,8 @@ export async function callGetStaticPaths({
+ 
+ 	validateDynamicRouteModule(mod, { ssr, route });
+ 
+-	// No static paths in SSR mode. Return an empty RouteCacheEntry.
+-	if (ssr && !route.prerender) {
++	// No static paths in SSR mode or for internal routes. Return an empty RouteCacheEntry.
++	if ((ssr && !route.prerender) || route.origin === 'internal') {
+ 		const entry: GetStaticPathsResultKeyed = Object.assign([], { keyed: new Map() });
+ 		// Store `mod` alongside the entry so the fast-path above hits on
+ 		// subsequent requests; otherwise `cached.mod === mod` is always false
+diff --git a/packages/astro/src/core/routing/validation.ts b/packages/astro/src/core/routing/validation.ts
+index 157ab1f8281d..29960231f147 100644
+--- a/packages/astro/src/core/routing/validation.ts
++++ b/packages/astro/src/core/routing/validation.ts
+@@ -14,7 +14,7 @@ export function validateDynamicRouteModule(
+ 		route: RouteData;
+ 	},
+ ) {
+-	if ((!ssr || route.prerender) && !mod.getStaticPaths) {
++	if ((!ssr || route.prerender) && route.origin !== 'internal' && !mod.getStaticPaths) {
+ 		throw new AstroError({
+ 			...AstroErrorData.GetStaticPathsRequired,
+ 			location: { file: route.component },
+diff --git a/packages/astro/src/core/server-islands/vite-plugin-server-islands.ts b/packages/astro/src/core/server-islands/vite-plugin-server-islands.ts
+index f0da3ac67315..64d467545e78 100644
+--- a/packages/astro/src/core/server-islands/vite-plugin-server-islands.ts
++++ b/packages/astro/src/core/server-islands/vite-plugin-server-islands.ts
+@@ -1,4 +1,4 @@
+-import type { ConfigEnv, DevEnvironment, Plugin as VitePlugin } from 'vite';
++import type { BuildEnvironment, ConfigEnv, DevEnvironment, Plugin as VitePlugin } from 'vite';
+ import type { AstroPluginOptions } from '../../types/astro.js';
+ import type { AstroPluginMetadata } from '../../vite-plugin-astro/index.js';
+ import { ASTRO_VITE_ENVIRONMENT_NAMES } from '../constants.js';
+@@ -39,6 +39,11 @@ export function vitePluginServerIslands({
+ 	return {
+ 		name: 'astro:server-islands',
+ 		enforce: 'post',
++		api: {
++			hasServerIslands(): boolean {
++				return serverIslandsState.hasIslands();
++			},
++		},
+ 		config(_config, { command: _command }) {
+ 			command = _command;
+ 		},
+@@ -131,9 +136,8 @@ export function vitePluginServerIslands({
+ 				}
+ 
+ 				if (id === RESOLVED_SERVER_ISLAND_MANIFEST) {
+-					if (command === 'build' && settings.buildOutput) {
+-						const hasServerIslands = serverIslandsState.hasIslands();
+-						if (hasServerIslands && settings.buildOutput !== 'server') {
++					if (command === 'build') {
++						if (serverIslandsState.hasIslands() && !settings.adapter) {
+ 							throw new AstroError(AstroErrorData.NoAdapterInstalledServerIslands);
+ 						}
+ 					}
+@@ -196,3 +200,16 @@ export function vitePluginServerIslands({
+ 		},
+ 	};
+ }
++
++/**
++ * Checks if the prerender environment discovered any server islands during the build.
++ * This encapsulates the logic of finding the server islands plugin and querying its state.
++ */
++export function hasServerIslands(environment: BuildEnvironment): boolean {
++	const plugins = environment.config.plugins ?? [];
++	const serverIslandsPlugin = plugins.find((p) => p.name === 'astro:server-islands');
++	return (
++		typeof serverIslandsPlugin?.api?.hasServerIslands === 'function' &&
++		serverIslandsPlugin.api.hasServerIslands()
++	);
++}
+diff --git a/packages/astro/src/prerender/utils.ts b/packages/astro/src/prerender/utils.ts
+index 351e40706331..9f056763465a 100644
+--- a/packages/astro/src/prerender/utils.ts
++++ b/packages/astro/src/prerender/utils.ts
+@@ -10,9 +10,12 @@ export function getPrerenderDefault(config: AstroConfig) {
+  * Returns the correct output directory of the SSR build based on the configuration
+  */
+ export function getServerOutputDirectory(settings: AstroSettings): URL {
+-	return settings.buildOutput === 'server'
+-		? settings.config.build.server
+-		: getOutDirWithinCwd(settings.config.outDir);
++	const preserveStructure = settings.adapter?.adapterFeatures?.preserveBuildServerDir;
++
++	if (settings.buildOutput === 'server' || preserveStructure) {
++		return settings.config.build.server;
++	}
++	return getOutDirWithinCwd(settings.config.outDir);
+ }
+ 
+ /**
+diff --git a/packages/astro/src/types/public/integrations.ts b/packages/astro/src/types/public/integrations.ts
+index 838557ee9650..c96ea5bfb5cf 100644
+--- a/packages/astro/src/types/public/integrations.ts
++++ b/packages/astro/src/types/public/integrations.ts
+@@ -123,6 +123,15 @@ export interface AstroAdapterFeatures {
+ 	 * of the build output type.
+ 	 */
+ 	preserveBuildClientDir?: boolean;
++
++	/**
++	 * When true, static builds will preserve the server directory structure
++	 * instead of outputting to outDir. This ensures static builds use
++	 * build.server for server output, maintaining consistency with server builds.
++	 * Useful for adapters that require a specific directory structure regardless
++	 * of the build output type.
++	 */
++	preserveBuildServerDir?: boolean;
+ }
+ 
+ /**
+diff --git a/packages/integrations/cloudflare/package.json b/packages/integrations/cloudflare/package.json
+index 3bf31cb6ef0a..a82fe12324b0 100644
+--- a/packages/integrations/cloudflare/package.json
++++ b/packages/integrations/cloudflare/package.json
+@@ -45,7 +45,7 @@
+   "dependencies": {
+     "@astrojs/internal-helpers": "workspace:*",
+     "@astrojs/underscore-redirects": "workspace:*",
+-    "@cloudflare/vite-plugin": "^1.32.3",
++    "@cloudflare/vite-plugin": "^1.39.0",
+     "piccolore": "^0.1.3",
+     "tinyglobby": "^0.2.15",
+     "vite": "^7.3.2"
+diff --git a/packages/integrations/cloudflare/src/index.ts b/packages/integrations/cloudflare/src/index.ts
+index 39ec3502b80d..7392c6564621 100644
+--- a/packages/integrations/cloudflare/src/index.ts
++++ b/packages/integrations/cloudflare/src/index.ts
+@@ -122,10 +122,10 @@ export default function createIntegration({
+ 	...cloudflareOptions
+ }: Options = {}): AstroIntegration {
+ 	let _config: AstroConfig;
++	let _buildOutput: 'server' | 'static';
+ 	let _originalClientDir: URL;
+ 
+ 	let _routes: IntegrationResolvedRoute[];
+-	let _isFullyStatic = false;
+ 	let cfPluginConfig: PluginConfig;
+ 
+ 	const { buildService, runtimeService } = normalizeImageServiceConfig(imageService);
+@@ -251,7 +251,11 @@ export default function createIntegration({
+ 							...(prerenderEnvironment === 'node' && command === 'dev'
+ 								? [createNodePrerenderPlugin()]
+ 								: []),
+-							cfVitePlugin({ ...cfPluginConfig, viteEnvironment: { name: 'ssr' } }),
++							cfVitePlugin({
++								...cfPluginConfig,
++								viteEnvironment: { name: 'ssr' },
++								assetsOnly: () => _buildOutput === 'static',
++							}),
+ 							{
+ 								name: '@astrojs/cloudflare:cf-imports',
+ 								enforce: 'pre',
+@@ -387,13 +391,10 @@ export default function createIntegration({
+ 			},
+ 			'astro:routes:resolved': ({ routes }) => {
+ 				_routes = routes;
+-				// Check if all non-internal routes are prerendered (fully static site)
+-				const nonInternalRoutes = routes.filter((route) => route.origin !== 'internal');
+-				_isFullyStatic =
+-					nonInternalRoutes.length > 0 && nonInternalRoutes.every((route) => route.isPrerendered);
+ 			},
+-			'astro:config:done': ({ setAdapter, config, injectTypes, logger }) => {
++			'astro:config:done': ({ setAdapter, config, injectTypes, logger, buildOutput }) => {
+ 				_config = config;
++				_buildOutput = buildOutput;
+ 				_originalClientDir = new URL(config.build.client.href);
+ 
+ 				// When a base path is configured, nest the client output directory under
+@@ -412,9 +413,10 @@ export default function createIntegration({
+ 				setAdapter({
+ 					name: '@astrojs/cloudflare',
+ 					adapterFeatures: {
+-						buildOutput: 'server',
++						buildOutput,
+ 						middlewareMode: 'classic',
+ 						preserveBuildClientDir: true,
++						preserveBuildServerDir: true,
+ 					},
+ 					entrypointResolution: 'auto',
+ 					previewEntrypoint: '@astrojs/cloudflare/entrypoints/preview',
+@@ -570,7 +572,7 @@ export default function createIntegration({
+ 						),
+ 					),
+ 					dir,
+-					buildOutput: _isFullyStatic ? 'static' : 'server',
++					buildOutput: _buildOutput,
+ 					assets,
+ 				});
+ 
+diff --git a/packages/integrations/cloudflare/test/sessions.test.ts b/packages/integrations/cloudflare/test/sessions.test.ts
+index d651a4810026..d55ba1877192 100644
+--- a/packages/integrations/cloudflare/test/sessions.test.ts
++++ b/packages/integrations/cloudflare/test/sessions.test.ts
+@@ -118,7 +118,7 @@ describe('session wrangler config', () => {
+ 		};
+ 		await fixture.build(config);
+ 
+-		const wrangler = JSON.parse(await fixture.readFile('/server/wrangler.json')) as {
++		const wrangler = JSON.parse(await fixture.readFile('/client/wrangler.json')) as {
+ 			kv_namespaces?: Array<{ binding: string }>;
+ 		};
+ 		assert.equal(
+@@ -142,7 +142,7 @@ describe('session wrangler config', () => {
+ 		};
+ 		await fixture.build(config);
+ 
+-		const wrangler = JSON.parse(await fixture.readFile('/server/wrangler.json')) as {
++		const wrangler = JSON.parse(await fixture.readFile('/client/wrangler.json')) as {
+ 			kv_namespaces?: Array<{ binding: string }>;
+ 		};
+ 		assert.deepEqual(wrangler.kv_namespaces, [{ binding: 'SESSION' }]);
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 010677b39b5c..1af88f8b570e 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -33,10 +33,10 @@ importers:
+         version: 2.29.8(@types/node@22.19.19)
+       '@flue/cli':
+         specifier: ^0.3.10
+-        version: 0.3.10(typescript@6.0.3)(wrangler@4.83.0)(ws@8.19.0)(zod@4.3.6)
++        version: 0.3.10(typescript@6.0.3)(wrangler@4.95.0)(ws@8.20.1)(zod@4.3.6)
+       '@flue/sdk':
+         specifier: ^0.3.10
+-        version: 0.3.10(typescript@6.0.3)(wrangler@4.83.0)(ws@8.19.0)(zod@4.3.6)
++        version: 0.3.10(typescript@6.0.3)(wrangler@4.95.0)(ws@8.20.1)(zod@4.3.6)
+       '@types/node':
+         specifier: ^22.19.0
+         version: 22.19.19
+@@ -4379,8 +4379,8 @@ importers:
+         specifier: workspace:*
+         version: link:../../underscore-redirects
+       '@cloudflare/vite-plugin':
+-        specifier: ^1.32.3
+-        version: 1.32.3(@cloudflare/workers-types@4.20260228.0)(vite@7.3.2)(workerd@1.20260415.1)
++        specifier: ^1.39.0
++        version: 1.39.0(@cloudflare/workers-types@4.20260228.0)(vite@7.3.2)(workerd@1.20260526.1)
+       piccolore:
+         specifier: ^0.1.3
+         version: 0.1.3
+@@ -4439,7 +4439,7 @@ importers:
+     devDependencies:
+       wrangler:
+         specifier: ^4.83.0
+-        version: 4.83.0(@cloudflare/workers-types@4.20260228.0)
++        version: 4.83.0
+ 
+   packages/integrations/cloudflare/test/fixtures/astro-env:
+     dependencies:
+@@ -4452,7 +4452,7 @@ importers:
+     devDependencies:
+       wrangler:
+         specifier: ^4.83.0
+-        version: 4.83.0(@cloudflare/workers-types@4.20260228.0)
++        version: 4.83.0
+ 
+   packages/integrations/cloudflare/test/fixtures/binding-image-service:
+     dependencies:
+@@ -4500,7 +4500,7 @@ importers:
+         version: link:../../../../../astro
+       wrangler:
+         specifier: ^4.83.0
+-        version: 4.83.0(@cloudflare/workers-types@4.20260228.0)
++        version: 4.83.0
+ 
+   packages/integrations/cloudflare/test/fixtures/dev-image-endpoint:
+     dependencies:
+@@ -4614,7 +4614,7 @@ importers:
+     devDependencies:
+       wrangler:
+         specifier: ^4.83.0
+-        version: 4.83.0(@cloudflare/workers-types@4.20260228.0)
++        version: 4.83.0
+ 
+   packages/integrations/cloudflare/test/fixtures/server-entry:
+     dependencies:
+@@ -4651,7 +4651,7 @@ importers:
+         version: link:../../../../../astro
+       wrangler:
+         specifier: ^4.83.0
+-        version: 4.83.0(@cloudflare/workers-types@4.20260228.0)
++        version: 4.83.0
+ 
+   packages/integrations/cloudflare/test/fixtures/sql-import:
+     dependencies:
+@@ -7541,6 +7541,10 @@ packages:
+     resolution: {integrity: sha512-SIOD2DxrRRwQ+jgzlXCqoEFiKOFqaPjhnNTGKXSRLvp1HiOvapLaFG2kEr9dYQTYe8rKrd9uvDUzmAITeNyaHQ==}
+     engines: {node: '>=18.0.0'}
+ 
++  '@cloudflare/kv-asset-handler@0.5.0':
++    resolution: {integrity: sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg==}
++    engines: {node: '>=22.0.0'}
++
+   '@cloudflare/shell@0.3.6':
+     resolution: {integrity: sha512-k2tjxzIAeMU932L98KOOcq0Z37TXdnXY+WrOirCupVfrBYH3UaS7AaiYdjRc5w44NlK/ea9hBQvdHSDI7TTdLQ==}
+ 
+@@ -7553,8 +7557,17 @@ packages:
+       workerd:
+         optional: true
+ 
+-  '@cloudflare/vite-plugin@1.32.3':
+-    resolution: {integrity: sha512-a8ZkCA/SOiJ36jT3LlBLkUb7ZzGInhYJoTY4BMRBGdk+nsh44HavbNvtu/RdaqS5VJEMLM4+LqVIJ+V0ahGeFg==}
++  '@cloudflare/unenv-preset@2.16.1':
++    resolution: {integrity: sha512-ECxObrMfyTl5bhQf/lZCXwo5G6xX9IAUo+nDMKK4SZ8m4Jvvxp52vilxyySSWh2YTZz8+HQ07qGH/2rEom1vDw==}
++    peerDependencies:
++      unenv: 2.0.0-rc.24
++      workerd: '>1.20260305.0 <2.0.0-0'
++    peerDependenciesMeta:
++      workerd:
++        optional: true
++
++  '@cloudflare/vite-plugin@1.39.0':
++    resolution: {integrity: sha512-AHC+KSR+3dtGu7Ab7I0Ode4Whx12TxMEmiZt7w+Fc3/2wYNByIzbb6cndWZ78tnveFdO1xhNLv1YaNngxGtOPg==}
+     peerDependencies:
+       vite: ^6.1.0 || ^7.0.0 || ^8.0.0
+ 
+@@ -7564,30 +7577,60 @@ packages:
+     cpu: [x64]
+     os: [darwin]
+ 
++  '@cloudflare/workerd-darwin-64@1.20260526.1':
++    resolution: {integrity: sha512-/pR3GH3gfv0PUp7DjI8v0aAIDOqFwibq4bg5xT7TZgcVdBV/cJQWckdXCMqiRtHiawLwogUX00EIOINkYJ1Zqg==}
++    engines: {node: '>=16'}
++    cpu: [x64]
++    os: [darwin]
++
+   '@cloudflare/workerd-darwin-arm64@1.20260415.1':
+     resolution: {integrity: sha512-+JgSgVA49KyKteHRA1SnonE4Zn5Ei5zdAp5FQMxFmXI8qulZw4Hl7safXxRyK4i9sTO8gl7TFOKO5Q64VPvSDQ==}
+     engines: {node: '>=16'}
+     cpu: [arm64]
+     os: [darwin]
+ 
++  '@cloudflare/workerd-darwin-arm64@1.20260526.1':
++    resolution: {integrity: sha512-rcyu0iANYfaiezKh3Mcao1O4IIgVfQldxduiL5TZT1sP0NIeRY4YReSTrzPxNnXxSYaIqaqRHMcHbUM/ic4knA==}
++    engines: {node: '>=16'}
++    cpu: [arm64]
++    os: [darwin]
++
+   '@cloudflare/workerd-linux-64@1.20260415.1':
+     resolution: {integrity: sha512-tU+9pwsqCy8afOVlGtiWrWQc/fedQK4SRm4KPIAt+zOiQWDxWASm6YGBUJis5c648WN80yz47qnmdDi8DQNOcA==}
+     engines: {node: '>=16'}
+     cpu: [x64]
+     os: [linux]
+ 
++  '@cloudflare/workerd-linux-64@1.20260526.1':
++    resolution: {integrity: sha512-5EZAEnlLwa9oGJRo8Nd3iY5Wcd9ROGNNG90xNIGp8MEjj8v2jTn42NC47fCZKFdnLj3+S+vWEhu1x0GVJnALjA==}
++    engines: {node: '>=16'}
++    cpu: [x64]
++    os: [linux]
++
+   '@cloudflare/workerd-linux-arm64@1.20260415.1':
+     resolution: {integrity: sha512-bR9uITnV19r5NQ14xnypi2xHXu2iQvfYV8cVgx0JouFUmWwTEEAwFVojDdssGq93VHX9hr/pi2IRUZeegbYBog==}
+     engines: {node: '>=16'}
+     cpu: [arm64]
+     os: [linux]
+ 
++  '@cloudflare/workerd-linux-arm64@1.20260526.1':
++    resolution: {integrity: sha512-X/YBQXeXFeCN7QTStoWrATEBc9WKl7PIqkw/dQkjyJ72gh3rkLe0+Xkzp3wO7gtxTDQMa7NPGy1W4+sdMf8q1g==}
++    engines: {node: '>=16'}
++    cpu: [arm64]
++    os: [linux]
++
+   '@cloudflare/workerd-windows-64@1.20260415.1':
+     resolution: {integrity: sha512-4NuMLlerI0Ijua3Ir8HXQ+qyNvCUDEG5gDco5Om+sAiK6rnWiz+aGoSlbB8W16yW9QAgzCstbmXLiVknUBflfQ==}
+     engines: {node: '>=16'}
+     cpu: [x64]
+     os: [win32]
+ 
++  '@cloudflare/workerd-windows-64@1.20260526.1':
++    resolution: {integrity: sha512-R+tqpFFdcfZIljx8fIW9rj9fRTtDgfoA2yonsfAGa6e8snrmr+38mdFHtkRC0D3UyZpn/hOtmXiUBfdX2gMR7Q==}
++    engines: {node: '>=16'}
++    cpu: [x64]
++    os: [win32]
++
+   '@cloudflare/workers-types@4.20260228.0':
+     resolution: {integrity: sha512-9LfRg93ncQq6Oc4MFpqGSs+PmPhqWvg8TspXwbiYNR201IhXB4WqHR/aTSudPI0ujsf/NLc8E9fF3C+aA2g8KQ==}
+ 
+@@ -13767,6 +13810,11 @@ packages:
+     engines: {node: '>=18.0.0'}
+     hasBin: true
+ 
++  miniflare@4.20260526.0:
++    resolution: {integrity: sha512-JYQ7jPZZWoaaj9jWHb8Ucp6Cu2SbDVqIsAJhumqdzzLkkfq0pYkDeino/sZfW1ixJWPjv/C44zjm9gVJC2izCA==}
++    engines: {node: '>=22.0.0'}
++    hasBin: true
++
+   minimatch@10.2.4:
+     resolution: {integrity: sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg==}
+     engines: {node: 18 || 20 || >=22}
+@@ -14950,6 +14998,26 @@ packages:
+     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
+     hasBin: true
+ 
++  rosie-skills-darwin-arm64@0.6.4:
++    resolution: {integrity: sha512-rn1s5hqFKcxeiDEWWoFa1hdGPshR8TkwHLzy/cBavb9XJNAaUxbe3oQ78W9sQkRHAgRyzJYyk9tw68Qrdnizgg==}
++    cpu: [arm64]
++    os: [darwin]
++
++  rosie-skills-freebsd-x64@0.6.4:
++    resolution: {integrity: sha512-SxCRduPBMtfjkQ+q56Yw9OLA3PyaqoALzt7kER7IDKuUVfM2O/1w8sa5xhTDiCvWkZJixnH5d5Ya6KT+/Mwcng==}
++    cpu: [x64]
++    os: [freebsd]
++
++  rosie-skills-linux-x64@0.6.4:
++    resolution: {integrity: sha512-D9Y9mfu7goB0s0X59uU3hcFeUTef3VbpCIDwFMzyvJrAq3XhRACWBDMHQsHlyWdHxTXPX/ILyW65RXyrJlgqng==}
++    cpu: [x64]
++    os: [linux]
++
++  rosie-skills@0.6.4:
++    resolution: {integrity: sha512-ojfhSiQRdZ2QyWbmKAHOSAUbaLYrTc5zIH7mS1jKoP8KCFSQddwVhMyFqldckTeybTfW3zNcsZzyOTzGTN1SBA==}
++    engines: {node: '>=18'}
++    hasBin: true
++
+   router@2.2.0:
+     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
+     engines: {node: '>= 18'}
+@@ -16249,6 +16317,11 @@ packages:
+     engines: {node: '>=16'}
+     hasBin: true
+ 
++  workerd@1.20260526.1:
++    resolution: {integrity: sha512-IHzymht98p10JH1zzwdCpbViAqw97HrwKl7+KfZeASFMsYSrIsAULWdPn0LRC5FTUzBpamLNyKCCKxbgXHgRHQ==}
++    engines: {node: '>=16'}
++    hasBin: true
++
+   workerpool@9.3.4:
+     resolution: {integrity: sha512-TmPRQYYSAnnDiEB0P/Ytip7bFGvqnSU6I2BcuSw7Hx+JSg/DsUi5ebYfc8GYaSdpuvOcEs6dXxPurOYpe9QFwg==}
+ 
+@@ -16262,6 +16335,16 @@ packages:
+       '@cloudflare/workers-types':
+         optional: true
+ 
++  wrangler@4.95.0:
++    resolution: {integrity: sha512-vgXzFVSCdUbeCadgVXvu8fK5tzNm8T9W+7lriyGWZMx0B1+CAdr4d8JTlZszHfgjypRAHmAxb49etZGIRD9pgg==}
++    engines: {node: '>=22.0.0'}
++    hasBin: true
++    peerDependencies:
++      '@cloudflare/workers-types': ^4.20260526.1
++    peerDependenciesMeta:
++      '@cloudflare/workers-types':
++        optional: true
++
+   wrap-ansi@6.2.0:
+     resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
+     engines: {node: '>=8'}
+@@ -16305,6 +16388,18 @@ packages:
+       utf-8-validate:
+         optional: true
+ 
++  ws@8.20.1:
++    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
++    engines: {node: '>=10.0.0'}
++    peerDependencies:
++      bufferutil: ^4.0.1
++      utf-8-validate: '>=5.0.2'
++    peerDependenciesMeta:
++      bufferutil:
++        optional: true
++      utf-8-validate:
++        optional: true
++
+   wsl-utils@0.1.0:
+     resolution: {integrity: sha512-h3Fbisa2nKGPxCpm89Hk33lBLsnaGBvctQopaBSOW/uIs6FTe1ATyAnKFJrzVs9vpGdsTe73WF3V4lIsk4Gacw==}
+     engines: {node: '>=18'}
+@@ -17507,6 +17602,8 @@ snapshots:
+ 
+   '@cloudflare/kv-asset-handler@0.4.2': {}
+ 
++  '@cloudflare/kv-asset-handler@0.5.0': {}
++
+   '@cloudflare/shell@0.3.6(@modelcontextprotocol/sdk@1.29.0)(zod@4.3.6)':
+     dependencies:
+       '@cloudflare/codemode': 0.3.4(@modelcontextprotocol/sdk@1.29.0)(zod@4.3.6)
+@@ -17523,14 +17620,20 @@ snapshots:
+     optionalDependencies:
+       workerd: 1.20260415.1
+ 
+-  '@cloudflare/vite-plugin@1.32.3(@cloudflare/workers-types@4.20260228.0)(vite@7.3.2)(workerd@1.20260415.1)':
++  '@cloudflare/unenv-preset@2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260526.1)':
+     dependencies:
+-      '@cloudflare/unenv-preset': 2.16.0(unenv@2.0.0-rc.24)(workerd@1.20260415.1)
+-      miniflare: 4.20260415.0
++      unenv: 2.0.0-rc.24
++    optionalDependencies:
++      workerd: 1.20260526.1
++
++  '@cloudflare/vite-plugin@1.39.0(@cloudflare/workers-types@4.20260228.0)(vite@7.3.2)(workerd@1.20260526.1)':
++    dependencies:
++      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260526.1)
++      miniflare: 4.20260526.0
+       unenv: 2.0.0-rc.24
+       vite: 7.3.2(@types/node@22.19.19)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.98.0)(tsx@4.21.0)(yaml@2.8.3)
+-      wrangler: 4.83.0(@cloudflare/workers-types@4.20260228.0)
+-      ws: 8.18.0
++      wrangler: 4.95.0(@cloudflare/workers-types@4.20260228.0)
++      ws: 8.20.1
+     transitivePeerDependencies:
+       - '@cloudflare/workers-types'
+       - bufferutil
+@@ -17540,18 +17643,33 @@ snapshots:
+   '@cloudflare/workerd-darwin-64@1.20260415.1':
+     optional: true
+ 
++  '@cloudflare/workerd-darwin-64@1.20260526.1':
++    optional: true
++
+   '@cloudflare/workerd-darwin-arm64@1.20260415.1':
+     optional: true
+ 
++  '@cloudflare/workerd-darwin-arm64@1.20260526.1':
++    optional: true
++
+   '@cloudflare/workerd-linux-64@1.20260415.1':
+     optional: true
+ 
++  '@cloudflare/workerd-linux-64@1.20260526.1':
++    optional: true
++
+   '@cloudflare/workerd-linux-arm64@1.20260415.1':
+     optional: true
+ 
++  '@cloudflare/workerd-linux-arm64@1.20260526.1':
++    optional: true
++
+   '@cloudflare/workerd-windows-64@1.20260415.1':
+     optional: true
+ 
++  '@cloudflare/workerd-windows-64@1.20260526.1':
++    optional: true
++
+   '@cloudflare/workers-types@4.20260228.0': {}
+ 
+   '@codspeed/core@5.2.0':
+@@ -18369,9 +18487,9 @@ snapshots:
+       fastq: 1.20.1
+       glob: 13.0.3
+ 
+-  '@flue/cli@0.3.10(typescript@6.0.3)(wrangler@4.83.0)(ws@8.19.0)(zod@4.3.6)':
++  '@flue/cli@0.3.10(typescript@6.0.3)(wrangler@4.95.0)(ws@8.20.1)(zod@4.3.6)':
+     dependencies:
+-      '@flue/sdk': 0.3.10(typescript@6.0.3)(wrangler@4.83.0)(ws@8.19.0)(zod@4.3.6)
++      '@flue/sdk': 0.3.10(typescript@6.0.3)(wrangler@4.95.0)(ws@8.20.1)(zod@4.3.6)
+       '@vercel/detect-agent': 1.2.3
+     transitivePeerDependencies:
+       - '@cfworker/json-schema'
+@@ -18386,12 +18504,12 @@ snapshots:
+       - ws
+       - zod
+ 
+-  '@flue/sdk@0.3.10(typescript@6.0.3)(wrangler@4.83.0)(ws@8.19.0)(zod@4.3.6)':
++  '@flue/sdk@0.3.10(typescript@6.0.3)(wrangler@4.95.0)(ws@8.20.1)(zod@4.3.6)':
+     dependencies:
+       '@cloudflare/shell': 0.3.6(@modelcontextprotocol/sdk@1.29.0)(zod@4.3.6)
+       '@hono/node-server': 1.19.14(hono@4.12.16)
+-      '@mariozechner/pi-agent-core': 0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.19.0)(zod@4.3.6)
+-      '@mariozechner/pi-ai': 0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.19.0)(zod@4.3.6)
++      '@mariozechner/pi-agent-core': 0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.20.1)(zod@4.3.6)
++      '@mariozechner/pi-ai': 0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.20.1)(zod@4.3.6)
+       '@modelcontextprotocol/sdk': 1.29.0
+       '@valibot/to-json-schema': 1.5.0(valibot@1.2.0)
+       esbuild: 0.25.5
+@@ -18400,7 +18518,7 @@ snapshots:
+       package-up: 5.0.0
+       valibot: 1.2.0(typescript@6.0.3)
+     optionalDependencies:
+-      wrangler: 4.83.0(@cloudflare/workers-types@4.20260228.0)
++      wrangler: 4.95.0(@cloudflare/workers-types@4.20260228.0)
+     transitivePeerDependencies:
+       - '@cfworker/json-schema'
+       - '@tanstack/ai'
+@@ -18708,9 +18826,9 @@ snapshots:
+       - encoding
+       - supports-color
+ 
+-  '@mariozechner/pi-agent-core@0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.19.0)(zod@4.3.6)':
++  '@mariozechner/pi-agent-core@0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.20.1)(zod@4.3.6)':
+     dependencies:
+-      '@mariozechner/pi-ai': 0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.19.0)(zod@4.3.6)
++      '@mariozechner/pi-ai': 0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.20.1)(zod@4.3.6)
+       typebox: 1.1.37
+     transitivePeerDependencies:
+       - '@modelcontextprotocol/sdk'
+@@ -18721,14 +18839,14 @@ snapshots:
+       - ws
+       - zod
+ 
+-  '@mariozechner/pi-ai@0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.19.0)(zod@4.3.6)':
++  '@mariozechner/pi-ai@0.71.1(@modelcontextprotocol/sdk@1.29.0)(ws@8.20.1)(zod@4.3.6)':
+     dependencies:
+       '@anthropic-ai/sdk': 0.91.1(zod@4.3.6)
+       '@aws-sdk/client-bedrock-runtime': 3.1041.0
+       '@google/genai': 1.51.0(@modelcontextprotocol/sdk@1.29.0)
+       '@mistralai/mistralai': 2.2.1
+       chalk: 5.6.2
+-      openai: 6.26.0(ws@8.19.0)(zod@4.3.6)
++      openai: 6.26.0(ws@8.20.1)(zod@4.3.6)
+       partial-json: 0.1.7
+       proxy-agent: 6.5.0
+       typebox: 1.1.37
+@@ -24446,6 +24564,18 @@ snapshots:
+       - bufferutil
+       - utf-8-validate
+ 
++  miniflare@4.20260526.0:
++    dependencies:
++      '@cspotcode/source-map-support': 0.8.1
++      sharp: 0.34.5
++      undici: 7.24.8
++      workerd: 1.20260526.1
++      ws: 8.20.1
++      youch: 4.1.0-beta.10
++    transitivePeerDependencies:
++      - bufferutil
++      - utf-8-validate
++
+   minimatch@10.2.4:
+     dependencies:
+       brace-expansion: 5.0.2
+@@ -24718,9 +24848,9 @@ snapshots:
+       is-inside-container: 1.0.0
+       wsl-utils: 0.1.0
+ 
+-  openai@6.26.0(ws@8.19.0)(zod@4.3.6):
++  openai@6.26.0(ws@8.20.1)(zod@4.3.6):
+     optionalDependencies:
+-      ws: 8.19.0
++      ws: 8.20.1
+       zod: 4.3.6
+ 
+   optionator@0.9.4:
+@@ -25865,6 +25995,21 @@ snapshots:
+       '@rollup/rollup-win32-x64-msvc': 4.59.1
+       fsevents: 2.3.3
+ 
++  rosie-skills-darwin-arm64@0.6.4:
++    optional: true
++
++  rosie-skills-freebsd-x64@0.6.4:
++    optional: true
++
++  rosie-skills-linux-x64@0.6.4:
++    optional: true
++
++  rosie-skills@0.6.4:
++    optionalDependencies:
++      rosie-skills-darwin-arm64: 0.6.4
++      rosie-skills-freebsd-x64: 0.6.4
++      rosie-skills-linux-x64: 0.6.4
++
+   router@2.2.0:
+     dependencies:
+       debug: 4.4.3(supports-color@8.1.1)
+@@ -27242,9 +27387,17 @@ snapshots:
+       '@cloudflare/workerd-linux-arm64': 1.20260415.1
+       '@cloudflare/workerd-windows-64': 1.20260415.1
+ 
++  workerd@1.20260526.1:
++    optionalDependencies:
++      '@cloudflare/workerd-darwin-64': 1.20260526.1
++      '@cloudflare/workerd-darwin-arm64': 1.20260526.1
++      '@cloudflare/workerd-linux-64': 1.20260526.1
++      '@cloudflare/workerd-linux-arm64': 1.20260526.1
++      '@cloudflare/workerd-windows-64': 1.20260526.1
++
+   workerpool@9.3.4: {}
+ 
+-  wrangler@4.83.0(@cloudflare/workers-types@4.20260228.0):
++  wrangler@4.83.0:
+     dependencies:
+       '@cloudflare/kv-asset-handler': 0.4.2
+       '@cloudflare/unenv-preset': 2.16.0(unenv@2.0.0-rc.24)(workerd@1.20260415.1)
+@@ -27254,6 +27407,23 @@ snapshots:
+       path-to-regexp: 6.3.0
+       unenv: 2.0.0-rc.24
+       workerd: 1.20260415.1
++    optionalDependencies:
++      fsevents: 2.3.3
++    transitivePeerDependencies:
++      - bufferutil
++      - utf-8-validate
++
++  wrangler@4.95.0(@cloudflare/workers-types@4.20260228.0):
++    dependencies:
++      '@cloudflare/kv-asset-handler': 0.5.0
++      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260526.1)
++      blake3-wasm: 2.1.5
++      esbuild: 0.27.3
++      miniflare: 4.20260526.0
++      path-to-regexp: 6.3.0
++      rosie-skills: 0.6.4
++      unenv: 2.0.0-rc.24
++      workerd: 1.20260526.1
+     optionalDependencies:
+       '@cloudflare/workers-types': 4.20260228.0
+       fsevents: 2.3.3
+@@ -27290,6 +27460,8 @@ snapshots:
+ 
+   ws@8.19.0: {}
+ 
++  ws@8.20.1: {}
++
+   wsl-utils@0.1.0:
+     dependencies:
+       is-wsl: 3.1.1
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index be1715612550..f7a887f84306 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -41,6 +41,10 @@ minimumReleaseAgeExclude:
+   # TODO: remove once more stable
+   - '@flue/*'
+   - '@astrojs/*'
++  - '@cloudflare/*'
++  - workerd
++  - miniflare
++  - wrangler
+   - 'satteri'
+   - '@bruits/*'
+ peerDependencyRules:

@@ -1,0 +1,521 @@
+diff --git a/.github/workflows/release-manual.yml b/.github/workflows/release-manual.yml
+index 2d8f1484cc1..2a982a6de15 100644
+--- a/.github/workflows/release-manual.yml
++++ b/.github/workflows/release-manual.yml
+@@ -47,4 +47,4 @@ jobs:
+ 
+       - name: Publish packages
+         run: |
+-          pnpm lerna publish ${{ inputs.version_bump }} --force-publish --dist-tag ${{ inputs.dist_tag }} --yes
++          pnpm lerna publish ${{ inputs.version_bump }} --force-publish --dist-tag ${{ inputs.dist_tag }} --no-verify-access --yes
+diff --git a/packages/openapi/README.md b/packages/openapi/README.md
+index 2787f3463ba..0d34ed37bce 100644
+--- a/packages/openapi/README.md
++++ b/packages/openapi/README.md
+@@ -4,6 +4,7 @@
+ 
+ - [ ] SSE subscriptions
+ - [ ] non-json content types (might already work, needs tests)
++- [ ] Improved handling of recursive/self-referencing types like trees/graphs - may be limited to 20 depth currently
+ - [ ] non-nodejs example
+ - [ ] an ai/mcp example
+ 
+diff --git a/packages/openapi/package.json b/packages/openapi/package.json
+index 6e6b3683de5..8702a9b3e45 100644
+--- a/packages/openapi/package.json
++++ b/packages/openapi/package.json
+@@ -2,7 +2,7 @@
+   "name": "@trpc/openapi",
+   "type": "module",
+   "sideEffects": false,
+-  "version": "11.12.1",
++  "version": "11.12.1-alpha",
+   "description": "OpenAPI document generator for tRPC routers",
+   "author": "KATT",
+   "license": "MIT",
+@@ -67,7 +67,8 @@
+     "heyapi"
+   ],
+   "publishConfig": {
+-    "access": "public"
++    "access": "public",
++    "tag": "alpha"
+   },
+   "devDependencies": {
+     "@hey-api/openapi-ts": "^0.94.1",
+diff --git a/packages/openapi/src/generate.ts b/packages/openapi/src/generate.ts
+index 972ae5bef6b..16b32daf7b0 100644
+--- a/packages/openapi/src/generate.ts
++++ b/packages/openapi/src/generate.ts
+@@ -7,6 +7,8 @@ import {
+   type RuntimeDescriptions,
+ } from './schemaExtraction';
+ 
++const log = console;
++
+ /**
+  * A minimal JSON Schema subset used for OpenAPI 3.1 schemas.
+  */
+@@ -187,6 +189,9 @@ function typeToJsonSchema(
+   depth = 0,
+ ): JsonSchema {
+   if (depth > 20) {
++    log.warn(
++      `[openapi] Schema conversion reached maximum depth (20) for type "${ctx.checker.typeToString(type)}". The resulting schema will be incomplete.`,
++    );
+     return {};
+   }
+ 
+@@ -514,8 +519,25 @@ function isInlineObjectSchema(s: JsonSchema): boolean {
+   return s.type === 'object' && !s.$ref;
+ }
+ 
+-/** Merge multiple `{ type: "object" }` schemas into one. */
++/**
++ * Merge multiple `{ type: "object" }` schemas into one.
++ * Falls back to `allOf` if any property names conflict across schemas.
++ */
+ function mergeObjectSchemas(schemas: JsonSchema[]): JsonSchema {
++  // Check for property name conflicts before merging.
++  const seen = new Set<string>();
++  for (const s of schemas) {
++    if (s.properties) {
++      for (const prop of Object.keys(s.properties)) {
++        if (seen.has(prop)) {
++          // Conflicting property — fall back to allOf to preserve both definitions.
++          return { allOf: schemas };
++        }
++        seen.add(prop);
++      }
++    }
++  }
++
+   const properties: Record<string, JsonSchema> = {};
+   const required: string[] = [];
+   let additionalProperties: JsonSchema | boolean | undefined;
+diff --git a/packages/openapi/test/edgeCases.test.ts b/packages/openapi/test/edgeCases.test.ts
+index 37b57698715..7203e68e1b2 100644
+--- a/packages/openapi/test/edgeCases.test.ts
++++ b/packages/openapi/test/edgeCases.test.ts
+@@ -1,7 +1,11 @@
+ import * as path from 'node:path';
+-import { beforeAll, describe, expect, it } from 'vitest';
++import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest';
+ import type { OpenAPIDocument } from '../src/generate';
+ import { generateOpenAPIDocument } from '../src/generate';
++import type {
++  ConflictingIntersectionResponses,
++  DisjointIntersectionResponses,
++} from './routers/edgeCaseRouter-heyapi/types.gen';
+ 
+ const routersDir = path.resolve(__dirname, 'routers');
+ const edgeCaseRouterPath = path.resolve(routersDir, 'edgeCaseRouter.ts');
+@@ -139,6 +143,57 @@ describe('generateOpenAPIDocument edge cases', () => {
+     expect(serialized).toContain('null');
+   });
+ 
++  it('merges disjoint intersection into a single object schema', () => {
++    // Verify the generated client type is a flat object with both properties
++    type DisjointData = DisjointIntersectionResponses[200]['result']['data'];
++    expectTypeOf<DisjointData>().toEqualTypeOf<{
++      name: string;
++      age: number;
++    }>();
++
++    // Verify the OpenAPI schema is a merged object, not allOf
++    const schema = unwrapSuccessData(
++      getResponseSchema(doc, 'disjointIntersection'),
++      doc,
++    );
++    expect(schema.type).toBe('object');
++    expect(schema).not.toHaveProperty('allOf');
++    expect(schema.properties.name).toEqual({ type: 'string' });
++    expect(schema.properties.age).toEqual({ type: 'number' });
++    expect(schema.required).toContain('name');
++    expect(schema.required).toContain('age');
++  });
++
++  it('uses allOf for intersection with conflicting property types', () => {
++    // Verify the generated client type preserves the intersection via allOf
++    type ConflictingData =
++      ConflictingIntersectionResponses[200]['result']['data'];
++    expectTypeOf<ConflictingData>().toHaveProperty('id');
++    expectTypeOf<ConflictingData>().toHaveProperty('label');
++    expectTypeOf<ConflictingData>().toHaveProperty('extra');
++    // Both sides of the intersection contribute their `id` type
++    expectTypeOf<
++      { id: string; label: string } & { id: number; extra: boolean }
++    >().toEqualTypeOf<ConflictingData>();
++
++    // Verify the OpenAPI schema uses allOf to preserve both definitions
++    const schema = unwrapSuccessData(
++      getResponseSchema(doc, 'conflictingIntersection'),
++      doc,
++    );
++    expect(schema).toHaveProperty('allOf');
++    expect(schema).not.toHaveProperty('type');
++    expect(schema.allOf).toHaveLength(2);
++
++    // Both schemas in allOf should retain their own definition of `id`
++    const allSchemas = schema.allOf as Array<{
++      properties?: Record<string, { type?: string }>;
++    }>;
++    const idTypes = allSchemas.map((s) => s.properties?.['id']?.type);
++    expect(idTypes).toContain('string');
++    expect(idTypes).toContain('number');
++  });
++
+   it('assigns correct tags based on top-level procedure path', () => {
+     const op = doc.paths['/level1.level2.level3.deep']?.['get'] as any;
+     expect(op.tags).toEqual(['level1']);
+diff --git a/packages/openapi/test/routers/edgeCaseRouter-heyapi/index.ts b/packages/openapi/test/routers/edgeCaseRouter-heyapi/index.ts
+index 0c71a87250d..98a3f896dbc 100644
+--- a/packages/openapi/test/routers/edgeCaseRouter-heyapi/index.ts
++++ b/packages/openapi/test/routers/edgeCaseRouter-heyapi/index.ts
+@@ -1,4 +1,4 @@
+ // This file is auto-generated by @hey-api/openapi-ts
+ 
+ export { Level1, Level2, Level3, type Options, Sdk } from './sdk.gen';
+-export type { AsyncIterable, AsyncReturnData, AsyncReturnError, AsyncReturnErrors, AsyncReturnResponse, AsyncReturnResponses, BigintData, BigintError, BigintErrors, BigintResponse, BigintResponses, BinaryData, BinaryError, BinaryErrors, BinaryResponse, BinaryResponses, BoolNullableData, BoolNullableError, BoolNullableErrors, BoolNullableResponse, BoolNullableResponses, BoolUnionData, BoolUnionError, BoolUnionErrors, BoolUnionResponse, BoolUnionResponses, ClientOptions, ComplexNullableData, ComplexNullableError, ComplexNullableErrors, ComplexNullableResponse, ComplexNullableResponses, DefaultErrorData, DefaultErrorShape, Level1Level2Level3DeepData, Level1Level2Level3DeepError, Level1Level2Level3DeepErrors, Level1Level2Level3DeepResponse, Level1Level2Level3DeepResponses, NeverField, NeverFieldData, NeverFieldError, NeverFieldErrors, NeverFieldResponse, NeverFieldResponses, NoInputMutationData, NoInputMutationError, NoInputMutationErrors, NoInputMutationResponse, NoInputMutationResponses, NullableObjectData, NullableObjectError, NullableObjectErrors, NullableObjectResponse, NullableObjectResponses, NullOnlyData, NullOnlyError, NullOnlyErrors, NullOnlyResponse, NullOnlyResponses, SimpleQueryData, SimpleQueryError, SimpleQueryErrors, SimpleQueryResponse, SimpleQueryResponses, UndefinedInputData, UndefinedInputError, UndefinedInputErrors, UndefinedInputResponse, UndefinedInputResponses, VoidExplicitData, VoidExplicitError, VoidExplicitErrors, VoidExplicitResponse, VoidExplicitResponses, VoidInputData, VoidInputError, VoidInputErrors, VoidInputResponse, VoidInputResponses, WithBigInt } from './types.gen';
++export type { AsyncIterable, AsyncReturnData, AsyncReturnError, AsyncReturnErrors, AsyncReturnResponse, AsyncReturnResponses, BigintData, BigintError, BigintErrors, BigintResponse, BigintResponses, BinaryData, BinaryError, BinaryErrors, BinaryResponse, BinaryResponses, BoolNullableData, BoolNullableError, BoolNullableErrors, BoolNullableResponse, BoolNullableResponses, BoolUnionData, BoolUnionError, BoolUnionErrors, BoolUnionResponse, BoolUnionResponses, ClientOptions, ComplexNullableData, ComplexNullableError, ComplexNullableErrors, ComplexNullableResponse, ComplexNullableResponses, ConflictingIntersectionData, ConflictingIntersectionError, ConflictingIntersectionErrors, ConflictingIntersectionResponse, ConflictingIntersectionResponses, DefaultErrorData, DefaultErrorShape, DisjointIntersectionData, DisjointIntersectionError, DisjointIntersectionErrors, DisjointIntersectionResponse, DisjointIntersectionResponses, Level1Level2Level3DeepData, Level1Level2Level3DeepError, Level1Level2Level3DeepErrors, Level1Level2Level3DeepResponse, Level1Level2Level3DeepResponses, NeverField, NeverFieldData, NeverFieldError, NeverFieldErrors, NeverFieldResponse, NeverFieldResponses, NoInputMutationData, NoInputMutationError, NoInputMutationErrors, NoInputMutationResponse, NoInputMutationResponses, NullableObjectData, NullableObjectError, NullableObjectErrors, NullableObjectResponse, NullableObjectResponses, NullOnlyData, NullOnlyError, NullOnlyErrors, NullOnlyResponse, NullOnlyResponses, SimpleQueryData, SimpleQueryError, SimpleQueryErrors, SimpleQueryResponse, SimpleQueryResponses, UndefinedInputData, UndefinedInputError, UndefinedInputErrors, UndefinedInputResponse, UndefinedInputResponses, VoidExplicitData, VoidExplicitError, VoidExplicitErrors, VoidExplicitResponse, VoidExplicitResponses, VoidInputData, VoidInputError, VoidInputErrors, VoidInputResponse, VoidInputResponses, WithBigInt } from './types.gen';
+diff --git a/packages/openapi/test/routers/edgeCaseRouter-heyapi/sdk.gen.ts b/packages/openapi/test/routers/edgeCaseRouter-heyapi/sdk.gen.ts
+index 448a446e64a..50e81f68468 100644
+--- a/packages/openapi/test/routers/edgeCaseRouter-heyapi/sdk.gen.ts
++++ b/packages/openapi/test/routers/edgeCaseRouter-heyapi/sdk.gen.ts
+@@ -2,7 +2,7 @@
+ 
+ import type { Client, Options as Options2, TDataShape } from './client';
+ import { client } from './client.gen';
+-import type { AsyncReturnData, AsyncReturnErrors, AsyncReturnResponses, BigintData, BigintErrors, BigintResponses, BinaryData, BinaryErrors, BinaryResponses, BoolNullableData, BoolNullableErrors, BoolNullableResponses, BoolUnionData, BoolUnionErrors, BoolUnionResponses, ComplexNullableData, ComplexNullableErrors, ComplexNullableResponses, Level1Level2Level3DeepData, Level1Level2Level3DeepErrors, Level1Level2Level3DeepResponses, NeverFieldData, NeverFieldErrors, NeverFieldResponses, NoInputMutationData, NoInputMutationErrors, NoInputMutationResponses, NullableObjectData, NullableObjectErrors, NullableObjectResponses, NullOnlyData, NullOnlyErrors, NullOnlyResponses, SimpleQueryData, SimpleQueryErrors, SimpleQueryResponses, UndefinedInputData, UndefinedInputErrors, UndefinedInputResponses, VoidExplicitData, VoidExplicitErrors, VoidExplicitResponses, VoidInputData, VoidInputErrors, VoidInputResponses } from './types.gen';
++import type { AsyncReturnData, AsyncReturnErrors, AsyncReturnResponses, BigintData, BigintErrors, BigintResponses, BinaryData, BinaryErrors, BinaryResponses, BoolNullableData, BoolNullableErrors, BoolNullableResponses, BoolUnionData, BoolUnionErrors, BoolUnionResponses, ComplexNullableData, ComplexNullableErrors, ComplexNullableResponses, ConflictingIntersectionData, ConflictingIntersectionErrors, ConflictingIntersectionResponses, DisjointIntersectionData, DisjointIntersectionErrors, DisjointIntersectionResponses, Level1Level2Level3DeepData, Level1Level2Level3DeepErrors, Level1Level2Level3DeepResponses, NeverFieldData, NeverFieldErrors, NeverFieldResponses, NoInputMutationData, NoInputMutationErrors, NoInputMutationResponses, NullableObjectData, NullableObjectErrors, NullableObjectResponses, NullOnlyData, NullOnlyErrors, NullOnlyResponses, SimpleQueryData, SimpleQueryErrors, SimpleQueryResponses, UndefinedInputData, UndefinedInputErrors, UndefinedInputResponses, VoidExplicitData, VoidExplicitErrors, VoidExplicitResponses, VoidInputData, VoidInputErrors, VoidInputResponses } from './types.gen';
+ 
+ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
+     /**
+@@ -129,6 +129,14 @@ export class Sdk extends HeyApiClient {
+         return (options?.client ?? this.client).post<NoInputMutationResponses, NoInputMutationErrors, ThrowOnError>({ url: '/noInputMutation', ...options });
+     }
+     
++    public disjointIntersection<ThrowOnError extends boolean = false>(options?: Options<DisjointIntersectionData, ThrowOnError>) {
++        return (options?.client ?? this.client).get<DisjointIntersectionResponses, DisjointIntersectionErrors, ThrowOnError>({ url: '/disjointIntersection', ...options });
++    }
++    
++    public conflictingIntersection<ThrowOnError extends boolean = false>(options?: Options<ConflictingIntersectionData, ThrowOnError>) {
++        return (options?.client ?? this.client).get<ConflictingIntersectionResponses, ConflictingIntersectionErrors, ThrowOnError>({ url: '/conflictingIntersection', ...options });
++    }
++    
+     public complexNullable<ThrowOnError extends boolean = false>(options?: Options<ComplexNullableData, ThrowOnError>) {
+         return (options?.client ?? this.client).get<ComplexNullableResponses, ComplexNullableErrors, ThrowOnError>({ url: '/complexNullable', ...options });
+     }
+diff --git a/packages/openapi/test/routers/edgeCaseRouter-heyapi/types.gen.ts b/packages/openapi/test/routers/edgeCaseRouter-heyapi/types.gen.ts
+index 30a13ce53d7..6c8da9573f1 100644
+--- a/packages/openapi/test/routers/edgeCaseRouter-heyapi/types.gen.ts
++++ b/packages/openapi/test/routers/edgeCaseRouter-heyapi/types.gen.ts
+@@ -14,7 +14,7 @@ export type NeverField = {
+ };
+ 
+ export type AsyncIterable = {
+-    '__@asyncIterator@5454': {
++    '__@asyncIterator@5456': {
+         [key: string]: unknown;
+     };
+ };
+@@ -485,6 +485,77 @@ export type NoInputMutationResponses = {
+ 
+ export type NoInputMutationResponse = NoInputMutationResponses[keyof NoInputMutationResponses];
+ 
++export type DisjointIntersectionData = {
++    body?: never;
++    path?: never;
++    query?: never;
++    url: '/disjointIntersection';
++};
++
++export type DisjointIntersectionErrors = {
++    /**
++     * Error response
++     */
++    default: {
++        error: DefaultErrorShape;
++    };
++};
++
++export type DisjointIntersectionError = DisjointIntersectionErrors[keyof DisjointIntersectionErrors];
++
++export type DisjointIntersectionResponses = {
++    /**
++     * Successful response
++     */
++    200: {
++        result: {
++            data: {
++                name: string;
++                age: number;
++            };
++        };
++    };
++};
++
++export type DisjointIntersectionResponse = DisjointIntersectionResponses[keyof DisjointIntersectionResponses];
++
++export type ConflictingIntersectionData = {
++    body?: never;
++    path?: never;
++    query?: never;
++    url: '/conflictingIntersection';
++};
++
++export type ConflictingIntersectionErrors = {
++    /**
++     * Error response
++     */
++    default: {
++        error: DefaultErrorShape;
++    };
++};
++
++export type ConflictingIntersectionError = ConflictingIntersectionErrors[keyof ConflictingIntersectionErrors];
++
++export type ConflictingIntersectionResponses = {
++    /**
++     * Successful response
++     */
++    200: {
++        result: {
++            data: {
++                id: string;
++                label: string;
++            } & {
++                id: number;
++                extra: boolean;
++            };
++        };
++    };
++};
++
++export type ConflictingIntersectionResponse = ConflictingIntersectionResponses[keyof ConflictingIntersectionResponses];
++
+ export type ComplexNullableData = {
+     body?: never;
+     path?: never;
+diff --git a/packages/openapi/test/routers/edgeCaseRouter.ts b/packages/openapi/test/routers/edgeCaseRouter.ts
+index 5a166b4dc4b..a2fcdd411b2 100644
+--- a/packages/openapi/test/routers/edgeCaseRouter.ts
++++ b/packages/openapi/test/routers/edgeCaseRouter.ts
+@@ -5,6 +5,15 @@ const t = initTRPC.create();
+ 
+ // ---------- Edge case types ----------
+ 
++// Intersection with disjoint anonymous properties (should merge into single object)
++type DisjointIntersection = { name: string } & { age: number };
++
++// Intersection with conflicting anonymous property types (should use allOf)
++type ConflictingIntersection = { id: string; label: string } & {
++  id: number;
++  extra: boolean;
++};
++
+ // BigInt type
+ type WithBigInt = {
+   id: bigint;
+@@ -101,6 +110,21 @@ export const EdgeCaseRouter = t.router({
+   // --- Mutation with no input ---
+   noInputMutation: t.procedure.mutation(() => ({ success: true })),
+ 
++  // --- Intersection with disjoint properties (merged into single object) ---
++  disjointIntersection: t.procedure.query(
++    (): DisjointIntersection => ({ name: 'Alice', age: 30 }),
++  ),
++
++  // --- Intersection with conflicting property types (allOf) ---
++  conflictingIntersection: t.procedure.query(
++    () =>
++      ({
++        id: 1,
++        label: 'test',
++        extra: true,
++      }) as ConflictingIntersection,
++  ),
++
+   // --- Query with complex nullable union ---
+   complexNullable: t.procedure.query(() => {
+     const val = null as string | number | null;
+diff --git a/packages/openapi/test/routers/edgeCaseRouter.ts.json b/packages/openapi/test/routers/edgeCaseRouter.ts.json
+index 5f546ece012..151514d7cef 100644
+--- a/packages/openapi/test/routers/edgeCaseRouter.ts.json
++++ b/packages/openapi/test/routers/edgeCaseRouter.ts.json
+@@ -621,6 +621,130 @@
+         }
+       }
+     },
++    "/disjointIntersection": {
++      "get": {
++        "operationId": "disjointIntersection",
++        "tags": [
++          "disjointIntersection"
++        ],
++        "responses": {
++          "200": {
++            "description": "Successful response",
++            "content": {
++              "application/json": {
++                "schema": {
++                  "type": "object",
++                  "properties": {
++                    "result": {
++                      "type": "object",
++                      "properties": {
++                        "data": {
++                          "type": "object",
++                          "properties": {
++                            "name": {
++                              "type": "string"
++                            },
++                            "age": {
++                              "type": "number"
++                            }
++                          },
++                          "required": [
++                            "name",
++                            "age"
++                          ],
++                          "additionalProperties": false
++                        }
++                      },
++                      "required": [
++                        "data"
++                      ]
++                    }
++                  },
++                  "required": [
++                    "result"
++                  ]
++                }
++              }
++            }
++          },
++          "default": {
++            "$ref": "#/components/responses/Error"
++          }
++        }
++      }
++    },
++    "/conflictingIntersection": {
++      "get": {
++        "operationId": "conflictingIntersection",
++        "tags": [
++          "conflictingIntersection"
++        ],
++        "responses": {
++          "200": {
++            "description": "Successful response",
++            "content": {
++              "application/json": {
++                "schema": {
++                  "type": "object",
++                  "properties": {
++                    "result": {
++                      "type": "object",
++                      "properties": {
++                        "data": {
++                          "allOf": [
++                            {
++                              "type": "object",
++                              "properties": {
++                                "id": {
++                                  "type": "string"
++                                },
++                                "label": {
++                                  "type": "string"
++                                }
++                              },
++                              "required": [
++                                "id",
++                                "label"
++                              ],
++                              "additionalProperties": false
++                            },
++                            {
++                              "type": "object",
++                              "properties": {
++                                "id": {
++                                  "type": "number"
++                                },
++                                "extra": {
++                                  "type": "boolean"
++                                }
++                              },
++                              "required": [
++                                "id",
++                                "extra"
++                              ],
++                              "additionalProperties": false
++                            }
++                          ]
++                        }
++                      },
++                      "required": [
++                        "data"
++                      ]
++                    }
++                  },
++                  "required": [
++                    "result"
++                  ]
++                }
++              }
++            }
++          },
++          "default": {
++            "$ref": "#/components/responses/Error"
++          }
++        }
++      }
++    },
+     "/complexNullable": {
+       "get": {
+         "operationId": "complexNullable",
+@@ -705,12 +829,12 @@
+       "AsyncIterable": {
+         "type": "object",
+         "properties": {
+-          "__@asyncIterator@5454": {
++          "__@asyncIterator@5456": {
+             "type": "object"
+           }
+         },
+         "required": [
+-          "__@asyncIterator@5454"
++          "__@asyncIterator@5456"
+         ],
+         "additionalProperties": false
+       },
+diff --git a/scripts/version.ts b/scripts/version.ts
+index 9375ef2790d..caccdd5558f 100644
+--- a/scripts/version.ts
++++ b/scripts/version.ts
+@@ -3,6 +3,9 @@ import path from 'path';
+ 
+ console.log('ℹ️ Running custom script to pin versions to each other');
+ 
++// Packages that should always have an -alpha prerelease suffix
++const ALPHA_PACKAGES = new Set(['openapi']);
++
+ const packages = fs
+   .readdirSync(path.join(import.meta.dirname, '..', 'packages'), {
+     withFileTypes: true,
+@@ -28,12 +31,10 @@ for (const name of packages) {
+   const parsed = JSON.parse(content);
+   let version = parsed.version;
+ 
+-  // If a package already has an -alpha or -beta suffix, preserve it across version bumps
+-  const prereleaseMatch = version.match(/-(alpha|beta)(\b|$)/);
+-  if (prereleaseMatch) {
+-    const suffix = prereleaseMatch[1];
++  // Ensure designated packages always have their prerelease suffix
++  if (ALPHA_PACKAGES.has(name)) {
+     const baseVersion = version.replace(/-.*$/, '');
+-    const suffixedVersion = `${baseVersion}-${suffix}`;
++    const suffixedVersion = `${baseVersion}-alpha`;
+     if (version !== suffixedVersion) {
+       content = content.replace(
+         `"version": "${version}"`,

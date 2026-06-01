@@ -1,0 +1,2396 @@
+diff --git a/packages/next/.storybook/decorators/with-dev-overlay-contexts.tsx b/packages/next/.storybook/decorators/with-dev-overlay-contexts.tsx
+index f44be6c2a0ab..99be6422497f 100644
+--- a/packages/next/.storybook/decorators/with-dev-overlay-contexts.tsx
++++ b/packages/next/.storybook/decorators/with-dev-overlay-contexts.tsx
+@@ -20,6 +20,8 @@ interface WithDevOverlayContextsOptions {
+   dispatch?: (action: DispatcherEvent) => void
+   runtimeErrors?: ReadyRuntimeError[]
+   totalErrorCount?: number
++  normalErrorCount?: number
++  instantErrorCount?: number
+   panel?: PanelStateKind | null
+   setPanel?: Dispatch<SetStateAction<PanelStateKind | null>>
+   selectedIndex?: number
+@@ -67,6 +69,11 @@ export const withDevOverlayContexts =
+           value={{
+             runtimeErrors: options?.runtimeErrors ?? [],
+             totalErrorCount: options?.totalErrorCount ?? 0,
++            normalErrorCount:
++              options?.normalErrorCount ??
++              (options?.totalErrorCount ?? 0) -
++                (options?.instantErrorCount ?? 0),
++            instantErrorCount: options?.instantErrorCount ?? 0,
+           }}
+         >
+           <PanelRouterContext.Provider
+diff --git a/packages/next/.storybook/fixtures/errors.ts b/packages/next/.storybook/fixtures/errors.ts
+index 3c30d0d6c6be..97821600a632 100644
+--- a/packages/next/.storybook/fixtures/errors.ts
++++ b/packages/next/.storybook/fixtures/errors.ts
+@@ -648,3 +648,58 @@ export const instantClientMathRandomErrors: ReadyRuntimeError[] = [
+     type: 'runtime',
+   },
+ ]
++
++export const mixedIssueAndInsightErrors: ReadyRuntimeError[] = [
++  runtimeErrors[0],
++  runtimeErrors[1],
++  {
++    id: 120,
++    runtime: true,
++    error: Object.assign(
++      new Error(
++        'Route "/nav-cookies-under-suspense": Next.js encountered runtime data during the initial render or a navigation.\n\n`cookies()`, `headers()`, `params`, or `searchParams` accessed under `<Suspense>` prevents the route from being prerendered or the navigation from being instant, leading to a slower user experience.\n\nWays to fix this:\n  - Use `generateStaticParams` to make route params static\n  - Provide a placeholder with `<Suspense fallback={...}>` around the data access\n  - Set `export const instant = false` to allow a blocking route\n\nLearn more: https://nextjs.org/docs/messages/blocking-route'
++      ),
++      { __NEXT_ERROR_CODE: 'E1247' }
++    ),
++    frames: createStoryFrames({
++      reason:
++        'Route "/nav-cookies-under-suspense": Next.js encountered runtime data during the initial render or a navigation.',
++      file: 'app/nav-cookies-under-suspense/page.tsx',
++      methodName: 'Page',
++      line: 5,
++      column: 15,
++      codeFrame: instantCodeFrame({
++        beforeLine: "import { cookies } from 'next/headers'",
++        line: 'const c = await cookies()',
++        markerLine: 5,
++        pointerColumn: 11,
++      }),
++    }),
++    type: 'runtime',
++  },
++  {
++    id: 121,
++    runtime: true,
++    error: Object.assign(
++      new Error(
++        'Route "/nav-fetch-under-suspense": Next.js encountered uncached data during the initial render or a navigation.\n\n`fetch(...)` or `connection()` accessed under `<Suspense>` prevents the route from being prerendered or the navigation from being instant, leading to a slower user experience.\n\nWays to fix this:\n  - Cache the data access with `"use cache"`\n  - Provide a placeholder with `<Suspense fallback={...}>` around the data access\n  - Set `export const instant = false` to allow a blocking route\n\nLearn more: https://nextjs.org/docs/messages/blocking-route'
++      ),
++      { __NEXT_ERROR_CODE: 'E1246' }
++    ),
++    frames: createStoryFrames({
++      reason:
++        'Route "/nav-fetch-under-suspense": Next.js encountered uncached data during the initial render or a navigation.',
++      file: 'app/nav-fetch-under-suspense/page.tsx',
++      methodName: 'Page',
++      line: 6,
++      column: 21,
++      codeFrame: instantCodeFrame({
++        beforeLine: 'export default async function Page() {',
++        line: 'const res = await fetch("http://example.com", { cache: "no-store" })',
++        markerLine: 6,
++        pointerColumn: 21,
++      }),
++    }),
++    type: 'runtime',
++  },
++]
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/next-logo.tsx b/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/next-logo.tsx
+index 11a9c1a55df5..01e4a2c5870f 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/next-logo.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/devtools-indicator/next-logo.tsx
+@@ -18,6 +18,54 @@ import { StatusIndicator, Status, getCurrentStatus } from './status-indicator'
+ 
+ const SHORT_DURATION_MS = 150
+ 
++function Plural({ count, animate }: { count: number; animate: boolean }) {
++  if (count <= 1) return null
++  return (
++    <span aria-hidden data-issues-count-plural data-animate={animate}>
++      s
++    </span>
++  )
++}
++
++function PillLabel({
++  normalCount,
++  instantCount,
++  normalCountAnimating,
++  instantCountAnimating,
++}: {
++  normalCount: number
++  instantCount: number
++  normalCountAnimating: boolean
++  instantCountAnimating: boolean
++}) {
++  const hasNormal = normalCount > 0
++  const hasInstant = instantCount > 0
++  return (
++    <>
++      {hasNormal && (
++        <>
++          Issue
++          <Plural
++            count={normalCount}
++            animate={normalCountAnimating && normalCount === 2}
++          />
++        </>
++      )}
++      {hasNormal && hasInstant && ' · '}
++      {hasInstant && (
++        <>
++          {hasNormal && <>{instantCount} </>}
++          Insight
++          <Plural
++            count={instantCount}
++            animate={instantCountAnimating && instantCount === 2}
++          />
++        </>
++      )}
++    </>
++  )
++}
++
+ // Smooth out rapid status transitions driven by bursty HMR events (e.g.
+ // Compiling→None→Compiling when consecutive compile episodes are <300ms apart,
+ // or Compiling→Rendering→Compiling oscillation). The debounce bridges burst
+@@ -29,12 +77,16 @@ export function NextLogo({
+   ...buttonProps
+ }: { onTriggerClick: () => void } & React.ComponentProps<'button'>) {
+   const { state, dispatch } = useDevOverlayContext()
+-  const { totalErrorCount } = useRenderErrorContext()
++  const { totalErrorCount, normalErrorCount, instantErrorCount } =
++    useRenderErrorContext()
+   const SIZE = BASE_LOGO_SIZE / state.scale
+   const { panel, triggerRef, setPanel } = usePanelRouterContext()
+   const isMenuOpen = panel === 'panel-selector'
+ 
+   const hasError = totalErrorCount > 0
++  // Only insights remain: use amber styling instead of red.
++  const insightsOnly =
++    hasError && normalErrorCount === 0 && instantErrorCount > 0
+   const [isErrorExpanded, setIsErrorExpanded] = useState(hasError)
+   const [previousHasError, setPreviousHasError] = useState(hasError)
+   if (previousHasError !== hasError) {
+@@ -43,10 +95,19 @@ export function NextLogo({
+     setIsErrorExpanded(hasError)
+   }
+   const [dismissed, setDismissed] = useState(false)
+-  const newErrorDetected = useUpdateAnimation(
+-    totalErrorCount,
++  const normalErrorAnimating = useUpdateAnimation(
++    normalErrorCount,
+     SHORT_DURATION_MS
+   )
++  const instantErrorAnimating = useUpdateAnimation(
++    instantErrorCount,
++    SHORT_DURATION_MS
++  )
++  const newErrorDetected = normalErrorAnimating || instantErrorAnimating
++  const leadingCount =
++    normalErrorCount > 0 ? normalErrorCount : instantErrorCount
++  const leadingCountAnimating =
++    normalErrorCount > 0 ? normalErrorAnimating : instantErrorAnimating
+ 
+   // Cache indicator state management
+   const isCacheBypassing = state.cacheIndicator === 'bypass'
+@@ -202,6 +263,15 @@ export function NextLogo({
+               }
+             }
+ 
++            &[data-insights-only='true']:not([data-error='true']) {
++              background: rgba(217, 119, 6, 0.95);
++              --color-inner-border: rgba(245, 158, 11, 0.9);
++
++              [data-issues-open] {
++                color: white;
++              }
++            }
++
+             &[data-error-expanded='false'][data-error='true'] ~ [data-dot] {
+               scale: 1;
+             }
+@@ -393,7 +463,8 @@ export function NextLogo({
+       </style>
+       <div
+         data-next-badge
+-        data-error={hasError}
++        data-error={hasError && !insightsOnly}
++        data-insights-only={insightsOnly}
+         data-error-expanded={isExpanded}
+         data-status={hasError || isCacheBypassing ? Status.None : currentStatus}
+         data-cache-bypassing={isCacheBypassing}
+@@ -451,27 +522,19 @@ export function NextLogo({
+                     )}
+                     <AnimateCount
+                       // Used the key to force a re-render when the count changes.
+-                      key={totalErrorCount}
+-                      animate={newErrorDetected}
++                      key={leadingCount}
++                      animate={leadingCountAnimating}
+                       data-issues-count-animation
+                     >
+-                      {totalErrorCount}
++                      {leadingCount}
+                     </AnimateCount>{' '}
+                     <div>
+-                      Issue
+-                      {totalErrorCount > 1 && (
+-                        <span
+-                          aria-hidden
+-                          data-issues-count-plural
+-                          // This only needs to animate once the count changes from 1 -> 2,
+-                          // otherwise it should stay static between re-renders.
+-                          data-animate={
+-                            newErrorDetected && totalErrorCount === 2
+-                          }
+-                        >
+-                          s
+-                        </span>
+-                      )}
++                      <PillLabel
++                        normalCount={normalErrorCount}
++                        instantCount={instantErrorCount}
++                        normalCountAnimating={normalErrorAnimating}
++                        instantCountAnimating={instantErrorAnimating}
++                      />
+                     </div>
+                   </button>
+                   {!state.buildError && (
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/dialog/dialog.tsx b/packages/next/src/next-devtools/dev-overlay/components/dialog/dialog.tsx
+index bc72a7453284..d511b543194d 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/dialog/dialog.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/dialog/dialog.tsx
+@@ -14,6 +14,7 @@ const CSS_SELECTORS_TO_EXCLUDE_ON_CLICK_OUTSIDE = [
+   '[data-issues-open]',
+   '#nextjs-dev-tools-menu',
+   '[data-nextjs-error-overlay-nav]',
++  '[data-nextjs-error-overlay-tab-bar]',
+   '[data-info-popover]',
+   '[data-nextjs-devtools-panel-overlay]',
+   '[data-nextjs-devtools-panel-footer]',
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/error-message/error-message.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/error-message/error-message.tsx
+index 72f774e83b90..c1026f636530 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/error-message/error-message.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/error-message/error-message.tsx
+@@ -26,7 +26,8 @@ export function ErrorMessage({ errorMessage, errorType }: ErrorMessageProps) {
+   // Instant errors are formatted specifically for the overlay rather than
+   // passed through from the console, so we don't truncate them — they rely
+   // on scroll overflow instead.
+-  const shouldTruncate = isTooTall && errorType !== 'Instant'
++  const shouldTruncate =
++    isTooTall && errorType !== 'Instant' && errorType !== 'Blocking Route'
+ 
+   return (
+     <>
+@@ -34,7 +35,7 @@ export function ErrorMessage({ errorMessage, errorType }: ErrorMessageProps) {
+         <div
+           ref={messageRef}
+           id="nextjs__container_errors_desc"
+-          className={`nextjs__container_errors_desc ${shouldTruncate && !isExpanded ? 'truncated' : ''} ${errorType === 'Instant' ? 'nextjs__container_errors_desc_instant' : ''}`}
++          className={`nextjs__container_errors_desc ${shouldTruncate && !isExpanded ? 'truncated' : ''} ${errorType === 'Instant' || errorType === 'Blocking Route' ? 'nextjs__container_errors_desc_instant' : ''}`}
+         >
+           {errorMessage}
+         </div>
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-layout/error-overlay-layout.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-layout/error-overlay-layout.tsx
+index 92ca1c4e8d46..6bde6d0a2851 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-layout/error-overlay-layout.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-layout/error-overlay-layout.tsx
+@@ -18,6 +18,7 @@ import {
+   ErrorOverlayNav,
+   styles as floatingHeaderStyles,
+ } from '../error-overlay-nav/error-overlay-nav'
++import type { ErrorOverlayTabBarRenderer } from '../error-overlay-pagination/error-overlay-pagination'
+ 
+ import { ErrorOverlayDialog, DIALOG_STYLES } from '../dialog/dialog'
+ import {
+@@ -38,6 +39,11 @@ export interface ErrorOverlayLayoutProps extends ErrorBaseProps {
+   errorType: ErrorType
+   children?: React.ReactNode
+   headerChildren?: React.ReactNode
++  renderTabBar?: ErrorOverlayTabBarRenderer
++  canGoPrevious?: boolean
++  canGoNext?: boolean
++  onPrevious?: () => void
++  onNext?: () => void
+   errorCode?: string
+   error: ReadyRuntimeError['error']
+   debugInfo?: DebugInfo
+@@ -56,6 +62,11 @@ export function ErrorOverlayLayout({
+   errorType,
+   children,
+   headerChildren,
++  renderTabBar,
++  canGoPrevious,
++  canGoNext,
++  onPrevious,
++  onNext,
+   errorCode,
+   errorCount: _errorCount,
+   error,
+@@ -111,10 +122,15 @@ export function ErrorOverlayLayout({
+           runtimeErrors={runtimeErrors}
+           activeIdx={activeIdx}
+           setActiveIndex={setActiveIndex}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={onPrevious}
++          onNext={onNext}
+           versionInfo={versionInfo}
+           error={error}
+           debugInfo={debugInfo}
+           generateErrorInfo={generateErrorInfo}
++          renderTabBar={renderTabBar}
+         />
+         <ErrorOverlayDialog onClose={onClose} data-has-footer={hasFooter}>
+           <Resizer
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-nav/error-overlay-nav.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-nav/error-overlay-nav.tsx
+index 9e6e11824bb0..57f93c421788 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-nav/error-overlay-nav.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-nav/error-overlay-nav.tsx
+@@ -1,7 +1,10 @@
+ import type { DebugInfo } from '../../../../shared/types'
+ import type { VersionInfo } from '../../../../../server/dev/parse-version-info'
+ 
+-import { ErrorOverlayPagination } from '../error-overlay-pagination/error-overlay-pagination'
++import {
++  ErrorOverlayPagination,
++  type ErrorOverlayTabBarRenderer,
++} from '../error-overlay-pagination/error-overlay-pagination'
+ import { ErrorOverlayToolbar } from '../error-overlay-toolbar/error-overlay-toolbar'
+ import type { ReadyRuntimeError } from '../../../utils/get-error-by-type'
+ 
+@@ -9,20 +12,30 @@ type ErrorOverlayNavProps = {
+   runtimeErrors?: ReadyRuntimeError[]
+   activeIdx?: number
+   setActiveIndex?: (index: number) => void
++  canGoPrevious?: boolean
++  canGoNext?: boolean
++  onPrevious?: () => void
++  onNext?: () => void
+   versionInfo?: VersionInfo
+   error: ReadyRuntimeError['error']
+   debugInfo?: DebugInfo
+   generateErrorInfo: () => Promise<string>
++  renderTabBar?: ErrorOverlayTabBarRenderer
+ }
+ 
+ export function ErrorOverlayNav({
+   runtimeErrors,
+   activeIdx,
+   setActiveIndex,
++  canGoPrevious,
++  canGoNext,
++  onPrevious,
++  onNext,
+   versionInfo,
+   error,
+   debugInfo,
+   generateErrorInfo,
++  renderTabBar,
+ }: ErrorOverlayNavProps) {
+   const bundlerName = (process.env.__NEXT_BUNDLER || 'Turbopack') as
+     | 'Turbopack'
+@@ -36,6 +49,11 @@ export function ErrorOverlayNav({
+           runtimeErrors={runtimeErrors ?? []}
+           activeIdx={activeIdx ?? 0}
+           onActiveIndexChange={setActiveIndex ?? (() => {})}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={onPrevious}
++          onNext={onNext}
++          renderTabBar={renderTabBar}
+         />
+       </NavItem>
+       <NavItem side="right">
+@@ -58,6 +76,7 @@ export const styles = `
+     display: flex;
+     justify-content: space-between;
+     align-items: center;
++    gap: 8px;
+     flex-shrink: 0;
+ 
+     width: 100%;
+@@ -84,6 +103,19 @@ export const styles = `
+     }
+   }
+ 
++  @media (max-width: 767px) {
++    [data-nextjs-error-overlay-nav] {
++      overflow-x: auto;
++      overflow-y: hidden;
++      scrollbar-width: none;
++      -ms-overflow-style: none;
++
++      &::-webkit-scrollbar {
++        display: none;
++      }
++    }
++  }
++
+ `
+ 
+ function NavItem({
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-pagination/error-overlay-pagination.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-pagination/error-overlay-pagination.tsx
+index bce5d2696eb3..1142bdb95e3f 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-pagination/error-overlay-pagination.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay-pagination/error-overlay-pagination.tsx
+@@ -9,18 +9,42 @@ import { LeftArrow } from '../../../icons/left-arrow'
+ import { RightArrow } from '../../../icons/right-arrow'
+ import type { ReadyRuntimeError } from '../../../utils/get-error-by-type'
+ 
++export type ErrorOverlayPaginationControls = {
++  previousButton: React.ReactNode
++  nextButton: React.ReactNode
++  createCount: (
++    activeIdx: number,
++    total: number,
++    isActive?: boolean
++  ) => React.ReactNode
++}
++
++export type ErrorOverlayTabBarRenderer = (
++  controls: ErrorOverlayPaginationControls
++) => React.ReactNode
++
+ type ErrorPaginationProps = {
+   runtimeErrors: ReadyRuntimeError[]
+   activeIdx: number
+   onActiveIndexChange: (index: number) => void
++  canGoPrevious?: boolean
++  canGoNext?: boolean
++  onPrevious?: () => void
++  onNext?: () => void
++  renderTabBar?: ErrorOverlayTabBarRenderer
+ }
+ 
+ export function ErrorOverlayPagination({
+   runtimeErrors,
+   activeIdx,
+   onActiveIndexChange,
++  canGoPrevious,
++  canGoNext,
++  onPrevious,
++  onNext,
++  renderTabBar,
+ }: ErrorPaginationProps) {
+-  const handlePrevious = useCallback(
++  const handlePreviousWithinGroup = useCallback(
+     () =>
+       startTransition(() => {
+         if (activeIdx > 0) {
+@@ -30,7 +54,7 @@ export function ErrorOverlayPagination({
+     [activeIdx, onActiveIndexChange]
+   )
+ 
+-  const handleNext = useCallback(
++  const handleNextWithinGroup = useCallback(
+     () =>
+       startTransition(() => {
+         if (activeIdx < runtimeErrors.length - 1) {
+@@ -42,6 +66,12 @@ export function ErrorOverlayPagination({
+     [activeIdx, runtimeErrors.length, onActiveIndexChange]
+   )
+ 
++  const canNavigatePrevious = canGoPrevious ?? activeIdx > 0
++  const canNavigateNext = canGoNext ?? activeIdx < runtimeErrors.length - 1
++
++  const handlePrevious = onPrevious ?? handlePreviousWithinGroup
++  const handleNext = onNext ?? handleNextWithinGroup
++
+   const buttonLeft = useRef<HTMLButtonElement | null>(null)
+   const buttonRight = useRef<HTMLButtonElement | null>(null)
+ 
+@@ -94,59 +124,87 @@ export function ErrorOverlayPagination({
+     if (root instanceof ShadowRoot) {
+       const a = root.activeElement
+ 
+-      if (activeIdx === 0) {
++      if (!canNavigatePrevious) {
+         if (buttonLeft.current && a === buttonLeft.current) {
+           buttonLeft.current.blur()
+         }
+-      } else if (activeIdx === runtimeErrors.length - 1) {
++      } else if (!canNavigateNext) {
+         if (buttonRight.current && a === buttonRight.current) {
+           buttonRight.current.blur()
+         }
+       }
+     }
+-  }, [nav, activeIdx, runtimeErrors.length])
++  }, [nav, canNavigateNext, canNavigatePrevious])
++
++  const previousButton = (
++    <button
++      ref={buttonLeft}
++      type="button"
++      disabled={!canNavigatePrevious}
++      aria-disabled={!canNavigatePrevious}
++      onClick={handlePrevious}
++      data-nextjs-dialog-error-previous
++      className="error-overlay-pagination-button"
++    >
++      <LeftArrow
++        title="previous"
++        className="error-overlay-pagination-button-icon"
++      />
++    </button>
++  )
++
++  const createCount = (
++    currentActiveIdx: number,
++    total: number,
++    isActive: boolean = true
++  ) => (
++    <div className="error-overlay-pagination-count">
++      <span
++        {...(isActive
++          ? { 'data-nextjs-dialog-error-index': currentActiveIdx }
++          : {})}
++      >
++        {total === 0 ? 0 : currentActiveIdx + 1}/
++      </span>
++      <span
++        {...(isActive ? { 'data-nextjs-dialog-header-total-count': '' } : {})}
++      >
++        {total}
++      </span>
++    </div>
++  )
++
++  const nextButton = (
++    <button
++      ref={buttonRight}
++      type="button"
++      disabled={!canNavigateNext}
++      aria-disabled={!canNavigateNext}
++      onClick={handleNext}
++      data-nextjs-dialog-error-next
++      className="error-overlay-pagination-button"
++    >
++      <RightArrow
++        title="next"
++        className="error-overlay-pagination-button-icon"
++      />
++    </button>
++  )
+ 
+   return (
+     <nav
+       className="error-overlay-pagination dialog-exclude-closing-from-outside-click"
+       ref={onNav}
+     >
+-      <button
+-        ref={buttonLeft}
+-        type="button"
+-        disabled={activeIdx === 0}
+-        aria-disabled={activeIdx === 0}
+-        onClick={handlePrevious}
+-        data-nextjs-dialog-error-previous
+-        className="error-overlay-pagination-button"
+-      >
+-        <LeftArrow
+-          title="previous"
+-          className="error-overlay-pagination-button-icon"
+-        />
+-      </button>
+-      <div className="error-overlay-pagination-count">
+-        <span data-nextjs-dialog-error-index={activeIdx}>{activeIdx + 1}/</span>
+-        <span data-nextjs-dialog-header-total-count>
+-          {/* Display 1 out of 1 if there are no errors (e.g. for build errors). */}
+-          {runtimeErrors.length || 1}
+-        </span>
+-      </div>
+-      <button
+-        ref={buttonRight}
+-        type="button"
+-        // If no errors or the last error is active, disable the button.
+-        disabled={activeIdx >= runtimeErrors.length - 1}
+-        aria-disabled={activeIdx >= runtimeErrors.length - 1}
+-        onClick={handleNext}
+-        data-nextjs-dialog-error-next
+-        className="error-overlay-pagination-button"
+-      >
+-        <RightArrow
+-          title="next"
+-          className="error-overlay-pagination-button-icon"
+-        />
+-      </button>
++      {renderTabBar ? (
++        renderTabBar({ previousButton, createCount, nextButton })
++      ) : (
++        <>
++          {previousButton}
++          {createCount(activeIdx, runtimeErrors.length || 1)}
++          {nextButton}
++        </>
++      )}
+     </nav>
+   )
+ }
+@@ -168,9 +226,11 @@ export const styles = `
+   }
+ 
+   .error-overlay-pagination-count {
+-    color: var(--color-gray-900);
++    display: flex;
++    align-items: center;
++    color: inherit;
+     text-align: center;
+-    font-size: var(--size-14);
++    font-size: var(--size-13);
+     font-family: var(--font-mono);
+     line-height: var(--size-16);
+     font-variant-numeric: tabular-nums;
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay/error-overlay.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay/error-overlay.tsx
+index 8c93f6e3d48a..2ff0f97a5c58 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay/error-overlay.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/error-overlay/error-overlay.tsx
+@@ -6,7 +6,7 @@ import {
+ 
+ import { Activity } from 'react'
+ import { BuildError } from '../../../container/build-error'
+-import { Errors } from '../../../container/errors'
++import { Errors, isInstantNavigationError } from '../../../container/errors'
+ import { useDelayedRender } from '../../../hooks/use-delayed-render'
+ import type { ReadyRuntimeError } from '../../../utils/get-error-by-type'
+ import type { HydrationErrorState } from '../../../../shared/hydration-error'
+@@ -65,9 +65,20 @@ export function ErrorOverlay({
+     return null
+   }
+ 
++  // Compute a key that resets tab state when the error composition changes
++  // (e.g., normal errors resolve leaving only instant errors).
++  const hasNormal = runtimeErrors.some(
++    (e) => !isInstantNavigationError(e.error)
++  )
++  const hasInstant = runtimeErrors.some((e) =>
++    isInstantNavigationError(e.error)
++  )
++  const tabKey = `${hasNormal ? 'n' : ''}${hasInstant ? 'i' : ''}`
++
+   return (
+     <Activity mode={mounted ? 'visible' : 'hidden'}>
+       <Errors
++        key={tabKey}
+         {...commonProps}
+         debugInfo={state.debugInfo}
+         getSquashedHydrationErrorDetails={getSquashedHydrationErrorDetails}
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/errors/error-type-label/error-type-label.tsx b/packages/next/src/next-devtools/dev-overlay/components/errors/error-type-label/error-type-label.tsx
+index 75296d6c1b8e..1e700bb930da 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/errors/error-type-label/error-type-label.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/errors/error-type-label/error-type-label.tsx
+@@ -15,7 +15,7 @@ export function ErrorTypeLabel({ errorType }: ErrorTypeLabelProps) {
+   return (
+     <span
+       id="nextjs__container_errors_label"
+-      className={`nextjs__container_errors_label ${errorType === 'Blocking Route' || errorType === 'Ambiguous Metadata' ? 'nextjs__container_errors_label_blocking_page' : ''} ${errorType === 'Instant' ? 'nextjs__container_errors_label_instant' : ''}`}
++      className={`nextjs__container_errors_label ${errorType === 'Ambiguous Metadata' ? 'nextjs__container_errors_label_blocking_page' : ''} ${errorType === 'Instant' ? 'nextjs__container_errors_label_instant' : ''}`}
+     >
+       {errorType}
+     </span>
+@@ -43,7 +43,5 @@ export const styles = `
+   .nextjs__container_errors_label_instant {
+     background: var(--color-amber-200);
+     color: var(--color-amber-900);
+-    font-family: var(--font-stack-sans);
+-    font-weight: 500;
+   }
+ `
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/resizer/index.tsx b/packages/next/src/next-devtools/dev-overlay/components/resizer/index.tsx
+index 07e475c30007..f96af0b8de38 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/resizer/index.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/resizer/index.tsx
+@@ -23,7 +23,7 @@ export const Resizer = forwardRef(function Resizer(
+       // [x] Responds to content growth
+       style={{
+         height: measuring ? 'auto' : height,
+-        transition: 'height 250ms var(--timing-swift)',
++        transition: measuring ? 'none' : 'height 250ms var(--timing-swift)',
+       }}
+     >
+       <div ref={setElement}>{children}</div>
+diff --git a/packages/next/src/next-devtools/dev-overlay/components/version-staleness-info/version-staleness-info.tsx b/packages/next/src/next-devtools/dev-overlay/components/version-staleness-info/version-staleness-info.tsx
+index 0003375d6250..f3b45c513a4c 100644
+--- a/packages/next/src/next-devtools/dev-overlay/components/version-staleness-info/version-staleness-info.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/components/version-staleness-info/version-staleness-info.tsx
+@@ -56,6 +56,8 @@ export const styles = `
+     justify-content: center;
+     align-items: center;
+     gap: 4px;
++    white-space: nowrap;
++    flex-shrink: 0;
+ 
+     height: var(--size-24);
+     padding: 6px 8px 6px 6px;
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx b/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx
+index 7951bd81ddd1..502d38444eb4 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/container/errors.stories.tsx
+@@ -14,6 +14,7 @@ import {
+   instantUncachedDataErrors,
+   instantViewportErrors,
+   instantViewportUncachedErrors,
++  mixedIssueAndInsightErrors,
+   runtimeErrors,
+ } from '../../../../.storybook/fixtures/errors'
+ 
+@@ -62,6 +63,13 @@ export const VeryLongErrorMessage: Story = {
+   },
+ }
+ 
++export const MixedIssuesAndInsights: Story = {
++  args: {
++    ...Default.args,
++    runtimeErrors: mixedIssueAndInsightErrors,
++  },
++}
++
+ export const WithHydrationWarning: Story = {
+   args: {
+     ...Default.args,
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts b/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts
+index 395f7daad31c..1b966eae19e5 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts
++++ b/packages/next/src/next-devtools/dev-overlay/container/errors.test.ts
+@@ -19,6 +19,7 @@ import {
+ } from '../../../server/app-render/sync-io-messages'
+ import {
+   getBlockingRouteErrorDetails,
++  isInstantNavigationError,
+   isRuntimeVariant,
+   isSyncIOClientError,
+   isSyncIOError,
+@@ -253,3 +254,37 @@ describe('getBlockingRouteErrorDetails', () => {
+     expect(getBlockingRouteErrorDetails(new Error('regular bug'))).toBe(null)
+   })
+ })
++
++describe('isInstantNavigationError', () => {
++  it('returns true for navigation-phase blocking-route errors', () => {
++    expect(
++      isInstantNavigationError(createRuntimeBodyErrorInNavigation(ROUTE))
++    ).toBe(true)
++    expect(
++      isInstantNavigationError(createDynamicBodyErrorInNavigation(ROUTE))
++    ).toBe(true)
++  })
++
++  it('returns false for prerender-phase blocking-route errors', () => {
++    expect(isInstantNavigationError(createRuntimeBodyError(ROUTE))).toBe(false)
++    expect(isInstantNavigationError(createDynamicBodyError(ROUTE))).toBe(false)
++  })
++
++  it('returns false for metadata/viewport/sync-io errors', () => {
++    expect(isInstantNavigationError(createDynamicMetadataError(ROUTE))).toBe(
++      false
++    )
++    expect(isInstantNavigationError(createRuntimeViewportError(ROUTE))).toBe(
++      false
++    )
++    expect(
++      isInstantNavigationError(
++        createSyncIOError(ROUTE, 'Math.random()', 'random')
++      )
++    ).toBe(false)
++  })
++
++  it('returns false for unrelated errors', () => {
++    expect(isInstantNavigationError(new Error('regular bug'))).toBe(false)
++  })
++})
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/errors.tsx b/packages/next/src/next-devtools/dev-overlay/container/errors.tsx
+index 0cb632cef28d..a1803738c9aa 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/errors.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/container/errors.tsx
+@@ -1,4 +1,11 @@
+-import React, { useMemo, useRef, Suspense, useCallback } from 'react'
++import React, {
++  startTransition,
++  Suspense,
++  useCallback,
++  useMemo,
++  useRef,
++  useState,
++} from 'react'
+ import type { DebugInfo } from '../../shared/types'
+ import { Overlay, OverlayBackdrop } from '../components/overlay'
+ import { RuntimeError } from './runtime-error'
+@@ -33,6 +40,7 @@ import { CodeFrame } from '../components/code-frame/code-frame'
+ import { ErrorOverlayCallStack } from '../components/errors/error-overlay-call-stack/error-overlay-call-stack'
+ import { ErrorCause } from './runtime-error/error-cause'
+ import { useFrames } from '../utils/get-error-by-type'
++import type { ErrorOverlayPaginationControls } from '../components/errors/error-overlay-pagination/error-overlay-pagination'
+ 
+ interface ErrorsProps extends ErrorBaseProps {
+   getSquashedHydrationErrorDetails: (error: Error) => HydrationErrorState | null
+@@ -85,19 +93,19 @@ export function getErrorTypeLabel(
+   errorDetails: ErrorDetails
+ ): ErrorOverlayLayoutProps['errorType'] {
+   if (errorDetails.type === 'blocking-route') {
+-    return `Instant`
++    return errorDetails.inNavigation ? `Instant` : `Blocking Route`
+   }
+   if (errorDetails.type === 'dynamic-metadata') {
+-    return `Instant`
++    return `Blocking Route`
+   }
+   if (errorDetails.type === 'dynamic-viewport') {
+-    return `Instant`
++    return `Blocking Route`
+   }
+   if (errorDetails.type === 'sync-io') {
+-    return `Instant`
++    return `Blocking Route`
+   }
+   if (errorDetails.type === 'sync-io-client') {
+-    return `Instant`
++    return `Blocking Route`
+   }
+   if (type === 'recoverable') {
+     return `Recoverable ${error.name}`
+@@ -385,6 +393,76 @@ export function getBlockingRouteErrorDetails(
+   return null
+ }
+ 
++export function isInstantNavigationError(error: Error): boolean {
++  const details = getBlockingRouteErrorDetails(error)
++  return details?.type === 'blocking-route' && details.inNavigation
++}
++
++export type ErrorTab = 'errors' | 'instant'
++
++export function ErrorTabBar({
++  activeTab,
++  onTabChange,
++  errorCount,
++  instantCount,
++  errorActiveIdx,
++  instantActiveIdx,
++  previousButton,
++  nextButton,
++  createCount,
++}: {
++  activeTab: ErrorTab
++  onTabChange: (tab: ErrorTab) => void
++  errorCount: number
++  instantCount: number
++  errorActiveIdx: number
++  instantActiveIdx: number
++  previousButton: React.ReactNode
++  nextButton: React.ReactNode
++  createCount: (
++    activeIdx: number,
++    total: number,
++    isActive?: boolean
++  ) => React.ReactNode
++}) {
++  return (
++    <div className="error-overlay-tab-bar" data-nextjs-error-overlay-tab-bar>
++      {previousButton}
++      <button
++        type="button"
++        className="error-overlay-tab"
++        data-active={activeTab === 'errors'}
++        disabled={errorCount === 0}
++        onClick={() => onTabChange('errors')}
++      >
++        Issues
++        <span
++          className="error-overlay-tab-count"
++          data-active={activeTab === 'errors'}
++        >
++          {createCount(errorActiveIdx, errorCount, activeTab === 'errors')}
++        </span>
++      </button>
++      <button
++        type="button"
++        className="error-overlay-tab"
++        data-active={activeTab === 'instant'}
++        disabled={instantCount === 0}
++        onClick={() => onTabChange('instant')}
++      >
++        Insights
++        <span
++          className="error-overlay-tab-count"
++          data-active={activeTab === 'instant'}
++        >
++          {createCount(instantActiveIdx, instantCount, activeTab === 'instant')}
++        </span>
++      </button>
++      {nextButton}
++    </div>
++  )
++}
++
+ export function Errors({
+   getSquashedHydrationErrorDetails,
+   runtimeErrors,
+@@ -394,6 +472,47 @@ export function Errors({
+ }: ErrorsProps) {
+   const dialogResizerRef = useRef<HTMLDivElement | null>(null)
+ 
++  const { normalErrors, instantErrors } = useMemo(() => {
++    const normal: ReadyRuntimeError[] = []
++    const instant: ReadyRuntimeError[] = []
++    for (const err of runtimeErrors) {
++      if (isInstantNavigationError(err.error)) {
++        instant.push(err)
++      } else {
++        normal.push(err)
++      }
++    }
++    return { normalErrors: normal, instantErrors: instant }
++  }, [runtimeErrors])
++
++  const [activeTab, setActiveTab] = useState<ErrorTab>(() =>
++    normalErrors.length > 0 ? 'errors' : 'instant'
++  )
++  const [activeIndices, setActiveIndices] = useState<Record<ErrorTab, number>>({
++    errors: 0,
++    instant: 0,
++  })
++  const effectiveActiveTab =
++    activeTab === 'errors'
++      ? normalErrors.length > 0
++        ? 'errors'
++        : 'instant'
++      : instantErrors.length > 0
++        ? 'instant'
++        : 'errors'
++  const activeErrors =
++    effectiveActiveTab === 'instant' ? instantErrors : normalErrors
++  const errorActiveIdx = Math.max(
++    0,
++    Math.min(activeIndices.errors, Math.max(0, normalErrors.length - 1))
++  )
++  const instantActiveIdx = Math.max(
++    0,
++    Math.min(activeIndices.instant, Math.max(0, instantErrors.length - 1))
++  )
++  const activeIdxForTab =
++    effectiveActiveTab === 'instant' ? instantActiveIdx : errorActiveIdx
++
+   const {
+     isLoading,
+     errorCode,
+@@ -402,7 +521,17 @@ export function Errors({
+     errorDetails,
+     activeError,
+     setActiveIndex,
+-  } = useActiveRuntimeError({ runtimeErrors, getSquashedHydrationErrorDetails })
++  } = useActiveRuntimeError({
++    runtimeErrors: activeErrors,
++    getSquashedHydrationErrorDetails,
++    activeIdx: activeIdxForTab,
++    setActiveIndex: (index) => {
++      setActiveIndices((previous) => ({
++        ...previous,
++        [effectiveActiveTab]: index,
++      }))
++    },
++  })
+ 
+   const generateErrorInfo = useCallback(async () => {
+     if (!activeError) return ''
+@@ -506,6 +635,96 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+     getErrorSource(error) || ''
+   )
+ 
++  // Show the tab bar whenever there are instant errors so the user
++  // knows they're looking at an insight, even if the other tab is empty.
++  const showTabBar = instantErrors.length > 0
++  const renderTabBar = showTabBar
++    ? ({
++        previousButton,
++        createCount,
++        nextButton,
++      }: ErrorOverlayPaginationControls) => (
++        <ErrorTabBar
++          activeTab={effectiveActiveTab}
++          onTabChange={(tab) => {
++            startTransition(() => {
++              setActiveTab(tab)
++            })
++          }}
++          errorCount={normalErrors.length}
++          instantCount={instantErrors.length}
++          errorActiveIdx={errorActiveIdx}
++          instantActiveIdx={instantActiveIdx}
++          previousButton={previousButton}
++          nextButton={nextButton}
++          createCount={createCount}
++        />
++      )
++    : undefined
++
++  const canGoPrevious = showTabBar
++    ? effectiveActiveTab === 'errors'
++      ? errorActiveIdx > 0
++      : instantActiveIdx > 0 || normalErrors.length > 0
++    : activeIdx > 0
++  const canGoNext = showTabBar
++    ? effectiveActiveTab === 'errors'
++      ? errorActiveIdx < normalErrors.length - 1 || instantErrors.length > 0
++      : instantActiveIdx < instantErrors.length - 1
++    : activeIdx < activeErrors.length - 1
++
++  const handlePrevious = showTabBar
++    ? () => {
++        startTransition(() => {
++          if (effectiveActiveTab === 'errors') {
++            if (errorActiveIdx > 0) {
++              setActiveIndex(errorActiveIdx - 1)
++            }
++            return
++          }
++
++          if (instantActiveIdx > 0) {
++            setActiveIndex(instantActiveIdx - 1)
++            return
++          }
++
++          if (normalErrors.length > 0) {
++            setActiveTab('errors')
++            setActiveIndices((previous) => ({
++              ...previous,
++              errors: Math.max(0, normalErrors.length - 1),
++            }))
++          }
++        })
++      }
++    : undefined
++
++  const handleNext = showTabBar
++    ? () => {
++        startTransition(() => {
++          if (effectiveActiveTab === 'errors') {
++            if (errorActiveIdx < normalErrors.length - 1) {
++              setActiveIndex(errorActiveIdx + 1)
++              return
++            }
++
++            if (instantErrors.length > 0) {
++              setActiveTab('instant')
++              setActiveIndices((previous) => ({
++                ...previous,
++                instant: 0,
++              }))
++            }
++            return
++          }
++
++          if (instantActiveIdx < instantErrors.length - 1) {
++            setActiveIndex(instantActiveIdx + 1)
++          }
++        })
++      }
++    : undefined
++
+   let errorMessage: React.ReactNode
+   let maybeNotes: React.ReactNode = null
+   let maybeDiff: React.ReactNode = null
+@@ -574,10 +793,15 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+               }
+             />
+           }
++          renderTabBar={renderTabBar}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={handlePrevious}
++          onNext={handleNext}
+           onClose={isServerError ? undefined : onClose}
+           debugInfo={debugInfo}
+           error={error}
+-          runtimeErrors={runtimeErrors}
++          runtimeErrors={activeErrors}
+           activeIdx={activeIdx}
+           setActiveIndex={setActiveIndex}
+           dialogResizerRef={dialogResizerRef}
+@@ -614,10 +838,15 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+             )
+           }
+           headerChildren={<InstantHeaderExplanation kind="metadata" />}
++          renderTabBar={renderTabBar}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={handlePrevious}
++          onNext={handleNext}
+           onClose={isServerError ? undefined : onClose}
+           debugInfo={debugInfo}
+           error={error}
+-          runtimeErrors={runtimeErrors}
++          runtimeErrors={activeErrors}
+           activeIdx={activeIdx}
+           setActiveIndex={setActiveIndex}
+           dialogResizerRef={dialogResizerRef}
+@@ -655,10 +884,15 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+             )
+           }
+           headerChildren={<InstantHeaderExplanation kind="viewport" />}
++          renderTabBar={renderTabBar}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={handlePrevious}
++          onNext={handleNext}
+           onClose={isServerError ? undefined : onClose}
+           debugInfo={debugInfo}
+           error={error}
+-          runtimeErrors={runtimeErrors}
++          runtimeErrors={activeErrors}
+           activeIdx={activeIdx}
+           setActiveIndex={setActiveIndex}
+           dialogResizerRef={dialogResizerRef}
+@@ -694,10 +928,15 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+               docsUrl={SYNC_IO_DOCS[errorDetails.cause]}
+             />
+           }
++          renderTabBar={renderTabBar}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={handlePrevious}
++          onNext={handleNext}
+           onClose={isServerError ? undefined : onClose}
+           debugInfo={debugInfo}
+           error={error}
+-          runtimeErrors={runtimeErrors}
++          runtimeErrors={activeErrors}
+           activeIdx={activeIdx}
+           setActiveIndex={setActiveIndex}
+           dialogResizerRef={dialogResizerRef}
+@@ -734,10 +973,15 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+               docsUrl={SYNC_IO_CLIENT_DOCS[errorDetails.cause]}
+             />
+           }
++          renderTabBar={renderTabBar}
++          canGoPrevious={canGoPrevious}
++          canGoNext={canGoNext}
++          onPrevious={handlePrevious}
++          onNext={handleNext}
+           onClose={isServerError ? undefined : onClose}
+           debugInfo={debugInfo}
+           error={error}
+-          runtimeErrors={runtimeErrors}
++          runtimeErrors={activeErrors}
+           activeIdx={activeIdx}
+           setActiveIndex={setActiveIndex}
+           dialogResizerRef={dialogResizerRef}
+@@ -769,10 +1013,15 @@ Next.js version: ${props.versionInfo.installed} (${process.env.__NEXT_BUNDLER})\
+       errorCode={errorCode}
+       errorType={errorType}
+       errorMessage={errorMessage}
++      renderTabBar={renderTabBar}
++      canGoPrevious={canGoPrevious}
++      canGoNext={canGoNext}
++      onPrevious={handlePrevious}
++      onNext={handleNext}
+       onClose={isServerError ? undefined : onClose}
+       debugInfo={debugInfo}
+       error={error}
+-      runtimeErrors={runtimeErrors}
++      runtimeErrors={activeErrors}
+       activeIdx={activeIdx}
+       setActiveIndex={setActiveIndex}
+       dialogResizerRef={dialogResizerRef}
+@@ -860,4 +1109,62 @@ export const styles = `
+   .external-link, .external-link:hover {
+     color:inherit;
+   }
++
++  .error-overlay-tab-bar {
++    display: flex;
++    gap: 6px;
++    translate: var(--next-dialog-border-width) 0;
++    max-width: var(--next-dialog-max-width);
++    width: 100%;
++    position: relative;
++    z-index: 1;
++  }
++
++  .error-overlay-tab {
++    display: flex;
++    align-items: center;
++    gap: 2px;
++    padding: 0 4px;
++    border: none;
++    background: none;
++    color: var(--color-gray-800);
++    font-size: var(--size-13);
++    font-family: var(--font-stack-sans);
++    cursor: pointer;
++    position: relative;
++    transition: color 0.15s ease;
++    border-radius: var(--rounded-md);
++
++    &:hover {
++      color: var(--color-gray-1000);
++    }
++
++    &[data-active='true'] {
++      color: var(--color-gray-1000);
++      font-weight: 500;
++    }
++
++    &:disabled {
++      opacity: 0.4;
++      cursor: default;
++    }
++
++    &:focus-visible {
++      outline: var(--focus-ring);
++      outline-offset: 2px;
++    }
++  }
++
++  .error-overlay-tab-count {
++    display: flex;
++    align-items: center;
++    color: inherit;
++
++    &[data-active='true'] {
++      .error-overlay-pagination-count {
++        font-weight: 500;
++      }
++    }
++  }
++
+ `
+diff --git a/packages/next/src/next-devtools/dev-overlay/container/runtime-error/render-error.tsx b/packages/next/src/next-devtools/dev-overlay/container/runtime-error/render-error.tsx
+index b445b13f847f..16c7f0755620 100644
+--- a/packages/next/src/next-devtools/dev-overlay/container/runtime-error/render-error.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/container/runtime-error/render-error.tsx
+@@ -6,6 +6,7 @@ import {
+   getErrorByType,
+   type ReadyRuntimeError,
+ } from '../../utils/get-error-by-type'
++import { isInstantNavigationError } from '../errors'
+ 
+ export type SupportedErrorEvent = {
+   id: number
+@@ -18,6 +19,8 @@ type Props = {
+   children: (params: {
+     runtimeErrors: ReadyRuntimeError[]
+     totalErrorCount: number
++    normalErrorCount: number
++    instantErrorCount: number
+   }) => React.ReactNode
+   state: OverlayState
+   isAppDir: boolean
+@@ -74,8 +77,18 @@ const RenderRuntimeError = ({ children, state, isAppDir }: Props) => {
+   }, [nextError, isAppDir])
+ 
+   const totalErrorCount = errors.length
++  const instantErrorCount = useMemo(
++    () => runtimeErrors.filter((e) => isInstantNavigationError(e.error)).length,
++    [runtimeErrors]
++  )
++  const normalErrorCount = runtimeErrors.length - instantErrorCount
+ 
+-  return children({ runtimeErrors, totalErrorCount })
++  return children({
++    runtimeErrors,
++    totalErrorCount,
++    normalErrorCount,
++    instantErrorCount,
++  })
+ }
+ 
+ const RenderBuildError = ({ children }: Props) => {
+@@ -84,5 +97,7 @@ const RenderBuildError = ({ children }: Props) => {
+     // Build errors and missing root layout tags persist until fixed,
+     // so we can set a fixed error count of 1
+     totalErrorCount: 1,
++    normalErrorCount: 1,
++    instantErrorCount: 0,
+   })
+ }
+diff --git a/packages/next/src/next-devtools/dev-overlay/dev-overlay.tsx b/packages/next/src/next-devtools/dev-overlay/dev-overlay.tsx
+index ce5d42b13436..859b9203e79f 100644
+--- a/packages/next/src/next-devtools/dev-overlay/dev-overlay.tsx
++++ b/packages/next/src/next-devtools/dev-overlay/dev-overlay.tsx
+@@ -14,6 +14,8 @@ import { ACTION_INSTANT_ERRORS_CLEAR, type DispatcherEvent } from './shared'
+ export const RenderErrorContext = createContext<{
+   runtimeErrors: ReadyRuntimeError[]
+   totalErrorCount: number
++  normalErrorCount: number
++  instantErrorCount: number
+ }>(null!)
+ 
+ export const useRenderErrorContext = () => useContext(RenderErrorContext)
+@@ -55,13 +57,23 @@ export function DevOverlay() {
+       <ComponentStyles />
+ 
+       <RenderError state={state} isAppDir={true}>
+-        {({ runtimeErrors, totalErrorCount }) => {
++        {({
++          runtimeErrors,
++          totalErrorCount,
++          normalErrorCount,
++          instantErrorCount,
++        }) => {
+           return (
+             <>
+               {state.showIndicator ? (
+                 <>
+                   <RenderErrorContext
+-                    value={{ runtimeErrors, totalErrorCount }}
++                    value={{
++                      runtimeErrors,
++                      totalErrorCount,
++                      normalErrorCount,
++                      instantErrorCount,
++                    }}
+                   >
+                     <PanelRouterContext
+                       value={{
+diff --git a/packages/next/src/next-devtools/dev-overlay/hooks/use-active-runtime-error.ts b/packages/next/src/next-devtools/dev-overlay/hooks/use-active-runtime-error.ts
+index 4944041af096..bc64fde6b948 100644
+--- a/packages/next/src/next-devtools/dev-overlay/hooks/use-active-runtime-error.ts
++++ b/packages/next/src/next-devtools/dev-overlay/hooks/use-active-runtime-error.ts
+@@ -8,11 +8,18 @@ import { extractNextErrorCode } from '../../../lib/error-telemetry-utils'
+ export function useActiveRuntimeError({
+   runtimeErrors,
+   getSquashedHydrationErrorDetails,
++  activeIdx: controlledActiveIdx,
++  setActiveIndex: controlledSetActiveIndex,
+ }: {
+   runtimeErrors: ReadyRuntimeError[]
+   getSquashedHydrationErrorDetails: (error: Error) => HydrationErrorState | null
++  activeIdx?: number
++  setActiveIndex?: (index: number) => void
+ }) {
+-  const [activeIdx, setActiveIndex] = useState<number>(0)
++  const [uncontrolledActiveIdx, setUncontrolledActiveIndex] =
++    useState<number>(0)
++  const activeIdx = controlledActiveIdx ?? uncontrolledActiveIdx
++  const setActiveIndex = controlledSetActiveIndex ?? setUncontrolledActiveIndex
+ 
+   const isLoading = useMemo<boolean>(() => {
+     return runtimeErrors.length === 0
+diff --git a/test/development/app-dir/cache-components-dev-errors/cache-components-dev-errors.test.ts b/test/development/app-dir/cache-components-dev-errors/cache-components-dev-errors.test.ts
+index f1d829fcf6e8..27310b097379 100644
+--- a/test/development/app-dir/cache-components-dev-errors/cache-components-dev-errors.test.ts
++++ b/test/development/app-dir/cache-components-dev-errors/cache-components-dev-errors.test.ts
+@@ -24,7 +24,7 @@ describe('Cache Components Dev Errors', () => {
+        "code": "E1261",
+        "description": "Next.js encountered the unstable value Math.random() while prerendering.",
+        "environmentLabel": "Server",
+-       "label": "Instant",
++       "label": "Blocking Route",
+        "source": "app/error/page.tsx (2:23) @ Page
+      > 2 |   const random = Math.random()
+          |                       ^",
+@@ -54,7 +54,7 @@ describe('Cache Components Dev Errors', () => {
+        "code": "E1261",
+        "description": "Next.js encountered the unstable value Math.random() while prerendering.",
+        "environmentLabel": "Server",
+-       "label": "Instant",
++       "label": "Blocking Route",
+        "source": "app/error/page.tsx (2:23) @ Page
+      > 2 |   const random = Math.random()
+          |                       ^",
+@@ -101,7 +101,7 @@ describe('Cache Components Dev Errors', () => {
+        "code": "E1265",
+        "description": "Next.js encountered uncached data during prerendering.",
+        "environmentLabel": "Server",
+-       "label": "Instant",
++       "label": "Blocking Route",
+        "source": "app/no-accessed-data/page.js (2:9) @ Page
+      > 2 |   await new Promise((r) => setTimeout(r, 200))
+          |         ^",
+diff --git a/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts b/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts
+index 2b7658bab07a..65eb277201e4 100644
+--- a/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts
++++ b/test/development/app-dir/cache-components-dev-fallback-validation/cache-components-dev-fallback-validation.test.ts
+@@ -55,7 +55,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (6:26) @ Page
+        > 6 |       Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
+            |                          ^",
+@@ -70,7 +70,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (6:26) @ Page
+        > 6 |       Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
+            |                          ^",
+@@ -88,7 +88,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (6:26) @ Page
+        > 6 |       Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
+            |                          ^",
+@@ -103,7 +103,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (6:26) @ Page
+        > 6 |       Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
+            |                          ^",
+@@ -121,7 +121,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (6:26) @ Page
+        > 6 |       Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
+            |                          ^",
+@@ -136,7 +136,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/partial/[top]/unwrapped/[bottom]/page.tsx (6:26) @ Page
+        > 6 |       Top: {(await props.params).top}, Bottom: {(await props.params).bottom}
+            |                          ^",
+@@ -158,7 +158,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/wrapped/layout.tsx (10:3) @ Layout
+        > 10 |   await params
+             |   ^",
+@@ -173,7 +173,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/wrapped/layout.tsx (10:3) @ Layout
+        > 10 |   await params
+             |   ^",
+@@ -191,7 +191,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/wrapped/layout.tsx (10:3) @ Layout
+        > 10 |   await params
+             |   ^",
+@@ -206,7 +206,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/wrapped/layout.tsx (10:3) @ Layout
+        > 10 |   await params
+             |   ^",
+@@ -224,7 +224,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/wrapped/layout.tsx (10:3) @ Layout
+        > 10 |   await params
+             |   ^",
+@@ -239,7 +239,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/wrapped/layout.tsx (10:3) @ Layout
+        > 10 |   await params
+             |   ^",
+@@ -257,7 +257,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/unwrapped/layout.tsx (8:3) @ Layout
+        >  8 |   await params
+             |   ^",
+@@ -272,7 +272,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/unwrapped/layout.tsx (8:3) @ Layout
+        >  8 |   await params
+             |   ^",
+@@ -290,7 +290,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/unwrapped/layout.tsx (8:3) @ Layout
+        >  8 |   await params
+             |   ^",
+@@ -305,7 +305,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/unwrapped/layout.tsx (8:3) @ Layout
+        >  8 |   await params
+             |   ^",
+@@ -323,7 +323,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/unwrapped/layout.tsx (8:3) @ Layout
+        >  8 |   await params
+             |   ^",
+@@ -338,7 +338,7 @@ describe('Cache Components Fallback Validation', () => {
+          "code": "E1272",
+          "description": "Next.js encountered runtime data during prerendering.",
+          "environmentLabel": "Server",
+-         "label": "Instant",
++         "label": "Blocking Route",
+          "source": "app/none/[top]/unwrapped/layout.tsx (8:3) @ Layout
+        >  8 |   await params
+             |   ^",
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/app/insight-only/layout.tsx b/test/development/app-dir/instant-insights-tab-overlay/app/insight-only/layout.tsx
+new file mode 100644
+index 000000000000..cbcdc20a3c0c
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/app/insight-only/layout.tsx
+@@ -0,0 +1,5 @@
++import { Suspense } from 'react'
++
++export default function Layout({ children }: { children: React.ReactNode }) {
++  return <Suspense fallback={<p>Loading...</p>}>{children}</Suspense>
++}
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/app/insight-only/page.tsx b/test/development/app-dir/instant-insights-tab-overlay/app/insight-only/page.tsx
+new file mode 100644
+index 000000000000..5f6164407109
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/app/insight-only/page.tsx
+@@ -0,0 +1,4 @@
++export default async function Page() {
++  const res = await fetch('http://example.com', { cache: 'no-store' })
++  return <p>Status: {res.status}</p>
++}
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/app/issue-only/page.tsx b/test/development/app-dir/instant-insights-tab-overlay/app/issue-only/page.tsx
+new file mode 100644
+index 000000000000..c57038eaa27d
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/app/issue-only/page.tsx
+@@ -0,0 +1,4 @@
++export default async function Page() {
++  const now = Date.now()
++  return <p>Now: {now}</p>
++}
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/app/layout.tsx b/test/development/app-dir/instant-insights-tab-overlay/app/layout.tsx
+new file mode 100644
+index 000000000000..745e32b8a8d2
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/app/layout.tsx
+@@ -0,0 +1,9 @@
++export default function Root({ children }: { children: React.ReactNode }) {
++  return (
++    <html>
++      <body>
++        <main>{children}</main>
++      </body>
++    </html>
++  )
++}
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/app/page.tsx b/test/development/app-dir/instant-insights-tab-overlay/app/page.tsx
+new file mode 100644
+index 000000000000..577cfcfc712e
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/app/page.tsx
+@@ -0,0 +1,14 @@
++import Link from 'next/link'
++
++export default function HomePage() {
++  return (
++    <ul>
++      <li>
++        <Link href="/issue-only">issue-only</Link>
++      </li>
++      <li>
++        <Link href="/insight-only">insight-only</Link>
++      </li>
++    </ul>
++  )
++}
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/instant-insights-tab-overlay.test.ts b/test/development/app-dir/instant-insights-tab-overlay/instant-insights-tab-overlay.test.ts
+new file mode 100644
+index 000000000000..9ab373a0efc8
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/instant-insights-tab-overlay.test.ts
+@@ -0,0 +1,212 @@
++import { nextTestSetup, type Playwright } from 'e2e-utils'
++import { retry } from 'next-test-utils'
++
++describe('instant insights tab overlay', () => {
++  const { next } = nextTestSetup({
++    files: __dirname,
++  })
++
++  // The dev overlay UI lives inside <nextjs-portal>'s shadow DOM, so we
++  // can't use Playwright's regular selectors.
++  function evalInPortal<T>(browser: Playwright, fn: (root: any) => T) {
++    return browser.eval(`(() => {
++      const portal = document.querySelector('nextjs-portal');
++      const root = portal && portal.shadowRoot;
++      if (!root) return null;
++      return (${fn.toString()})(root);
++    })()`) as Promise<T>
++  }
++
++  function getIndicatorPillState(browser: Playwright) {
++    return evalInPortal(browser, (root) => {
++      const badge = root.querySelector('[data-next-badge]')
++      if (!badge) return null
++      return {
++        hasError: badge.getAttribute('data-error') === 'true',
++        insightsOnly: badge.getAttribute('data-insights-only') === 'true',
++        text: badge.textContent?.trim() ?? '',
++      }
++    })
++  }
++
++  function hasErrorOverlayTabBar(browser: Playwright) {
++    return evalInPortal(browser, (root) => {
++      return !!root.querySelector('[data-nextjs-error-overlay-tab-bar]')
++    })
++  }
++
++  function getErrorOverlayTabCounts(browser: Playwright) {
++    return evalInPortal(browser, (root) => {
++      const bar = root.querySelector('[data-nextjs-error-overlay-tab-bar]')
++      if (!bar) return null
++      const tabs = bar.querySelectorAll('.error-overlay-tab')
++      const parseTotal = (tab: Element | undefined) => {
++        const totalEl = tab?.querySelector(
++          '.error-overlay-pagination-count > span:last-child'
++        )
++        return parseInt(totalEl?.textContent || '0', 10)
++      }
++      return {
++        errors: parseTotal(tabs[0]),
++        instant: parseTotal(tabs[1]),
++      }
++    })
++  }
++
++  function getActiveErrorOverlayTab(browser: Playwright) {
++    return evalInPortal(browser, (root) => {
++      const bar = root.querySelector('[data-nextjs-error-overlay-tab-bar]')
++      if (!bar) return null
++      const tabs = [...bar.querySelectorAll('.error-overlay-tab')]
++      const activeIndex = tabs.findIndex(
++        (tab) => tab.getAttribute('data-active') === 'true'
++      )
++      if (activeIndex === -1) return null
++      return activeIndex === 0 ? 'errors' : 'instant'
++    })
++  }
++
++  function getErrorOverlayTabs(browser: Playwright) {
++    return evalInPortal(browser, (root) => {
++      const bar = root.querySelector('[data-nextjs-error-overlay-tab-bar]')
++      if (!bar) return null
++      const variants = ['errors', 'instant'] as const
++      return [...bar.querySelectorAll('.error-overlay-tab')].map(
++        (tab: any, index: number) => ({
++          variant: variants[index],
++          disabled: tab.disabled === true,
++          active: tab.getAttribute('data-active') === 'true',
++        })
++      )
++    })
++  }
++
++  function clickIssuesTab(browser: Playwright) {
++    return browser.eval(`(() => {
++      const portal = document.querySelector('nextjs-portal');
++      const root = portal && portal.shadowRoot;
++      if (!root) return;
++      const tabs = root.querySelectorAll(
++        '[data-nextjs-error-overlay-tab-bar] .error-overlay-tab'
++      );
++      tabs[0] && tabs[0].click();
++    })()`)
++  }
++
++  function clickInsightsTab(browser: Playwright) {
++    return browser.eval(`(() => {
++      const portal = document.querySelector('nextjs-portal');
++      const root = portal && portal.shadowRoot;
++      if (!root) return;
++      const tabs = root.querySelectorAll(
++        '[data-nextjs-error-overlay-tab-bar] .error-overlay-tab'
++      );
++      tabs[1] && tabs[1].click();
++    })()`)
++  }
++
++  it('should show a red pill and no tab bar when only an Issue is present', async () => {
++    const browser = await next.browser('/issue-only')
++
++    await retry(async () => {
++      const state = await getIndicatorPillState(browser)
++      expect(state).not.toBeNull()
++      expect(state!.hasError).toBe(true)
++      expect(state!.insightsOnly).toBe(false)
++      expect(state!.text).toMatch(/1\s*Issue/i)
++    })
++
++    expect(await hasErrorOverlayTabBar(browser)).toBe(false)
++  })
++
++  it('should show an amber pill when only an Insight is present', async () => {
++    const browser = await next.browser('/')
++    await browser.elementByCss('a[href="/insight-only"]').click()
++
++    await retry(async () => {
++      const state = await getIndicatorPillState(browser)
++      expect(state).not.toBeNull()
++      expect(state!.hasError).toBe(false)
++      expect(state!.insightsOnly).toBe(true)
++      expect(state!.text).toMatch(/1\s*Insight/i)
++    })
++
++    expect(await hasErrorOverlayTabBar(browser)).toBe(true)
++    expect(await getActiveErrorOverlayTab(browser)).toBe('instant')
++
++    expect(await getErrorOverlayTabs(browser)).toEqual([
++      { variant: 'errors', disabled: true, active: false },
++      { variant: 'instant', disabled: false, active: true },
++    ])
++    expect(await getErrorOverlayTabCounts(browser)).toEqual({
++      errors: 0,
++      instant: 1,
++    })
++  })
++
++  it('should not switch tabs when clicking a disabled tab', async () => {
++    const browser = await next.browser('/')
++    await browser.elementByCss('a[href="/insight-only"]').click()
++
++    await retry(async () => {
++      expect(await getActiveErrorOverlayTab(browser)).toBe('instant')
++    })
++
++    await clickIssuesTab(browser)
++    expect(await getActiveErrorOverlayTab(browser)).toBe('instant')
++  })
++
++  it('should show both tabs when an Issue and an Insight coexist', async () => {
++    const browser = await next.browser('/')
++    await browser.elementByCss('a[href="/issue-only"]').click()
++
++    await retry(async () => {
++      const state = await getIndicatorPillState(browser)
++      expect(state?.text).toMatch(/1\s*Issue/i)
++    })
++
++    await browser.eval('history.back()')
++    await browser.waitForElementByCss('a[href="/insight-only"]')
++    await browser.elementByCss('a[href="/insight-only"]').click()
++
++    await retry(async () => {
++      const counts = await getErrorOverlayTabCounts(browser)
++      expect(counts).toEqual({ errors: 1, instant: 1 })
++    })
++
++    const pill = await getIndicatorPillState(browser)
++    expect(pill?.hasError).toBe(true)
++    expect(pill?.insightsOnly).toBe(false)
++    expect(pill?.text).toMatch(/1\s*Issue\s*·\s*1\s*Insight/i)
++
++    expect(await getErrorOverlayTabs(browser)).toEqual([
++      { variant: 'errors', disabled: false, active: true },
++      { variant: 'instant', disabled: false, active: false },
++    ])
++
++    await clickInsightsTab(browser)
++    await retry(async () => {
++      expect(await getActiveErrorOverlayTab(browser)).toBe('instant')
++    })
++  })
++
++  it('should clear the Insight when navigating away from the offending route', async () => {
++    const browser = await next.browser('/')
++    await browser.elementByCss('a[href="/insight-only"]').click()
++
++    await retry(async () => {
++      const state = await getIndicatorPillState(browser)
++      expect(state?.text).toMatch(/1\s*Insight/i)
++    })
++
++    await browser.eval('history.back()')
++    await browser.waitForElementByCss('a[href="/insight-only"]')
++
++    await retry(async () => {
++      const state = await getIndicatorPillState(browser)
++      expect(state).not.toBeNull()
++      expect(state!.hasError).toBe(false)
++      expect(state!.insightsOnly).toBe(false)
++    })
++  })
++})
+diff --git a/test/development/app-dir/instant-insights-tab-overlay/next.config.js b/test/development/app-dir/instant-insights-tab-overlay/next.config.js
+new file mode 100644
+index 000000000000..335eaa67b08e
+--- /dev/null
++++ b/test/development/app-dir/instant-insights-tab-overlay/next.config.js
+@@ -0,0 +1,11 @@
++/**
++ * @type {import('next').NextConfig}
++ */
++const nextConfig = {
++  cacheComponents: true,
++  experimental: {
++    instantInsights: { validationLevel: 'experimental-error' },
++  },
++}
++
++module.exports = nextConfig
+diff --git a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+index 83c0236237f8..d53a40a96085 100644
+--- a/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
++++ b/test/e2e/app-dir/cache-components-errors/cache-components-errors.test.ts
+@@ -89,7 +89,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1231",
+              "description": "Next.js encountered uncached data in generateMetadata().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-metadata-static-route/page.tsx (2:9) @ Module.generateMetadata
+            > 2 |   await new Promise((r) => setTimeout(r, 0))
+                |         ^",
+@@ -161,7 +161,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1265",
+              "description": "Next.js encountered uncached data during prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-metadata-error-route/page.tsx (21:9) @ Dynamic
+            > 21 |   await new Promise((r) => setTimeout(r))
+                 |         ^",
+@@ -328,7 +328,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1231",
+              "description": "Next.js encountered uncached data in generateMetadata().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-metadata-static-with-suspense/page.tsx (2:9) @ Module.generateMetadata
+            > 2 |   await new Promise((r) => setTimeout(r, 0))
+                |         ^",
+@@ -400,7 +400,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1231",
+              "description": "Next.js encountered uncached data in generateMetadata().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-metadata-static-with-suspense-above-body/page.tsx (2:9) @ Module.generateMetadata
+            > 2 |   await new Promise((r) => setTimeout(r, 0))
+                |         ^",
+@@ -472,7 +472,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1231",
+              "description": "Next.js encountered uncached data in generateMetadata().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-metadata-static-with-instant-false/page.tsx (4:9) @ Module.generateMetadata
+            > 4 |   await new Promise((r) => setTimeout(r, 0))
+                |         ^",
+@@ -569,7 +569,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1255",
+              "description": "Next.js encountered uncached data in generateViewport().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-viewport-static-route/page.tsx (2:9) @ Module.generateViewport
+            > 2 |   await new Promise((r) => setTimeout(r, 0))
+                |         ^",
+@@ -679,7 +679,7 @@ describe('Cache Components Errors', () => {
+              "code": "E1255",
+              "description": "Next.js encountered uncached data in generateViewport().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/dynamic-viewport-dynamic-route/page.tsx (4:9) @ Module.generateViewport
+            > 4 |   await new Promise((r) => setTimeout(r, 0))
+                |         ^",
+@@ -771,7 +771,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1265",
+                "description": "Next.js encountered uncached data during prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/dynamic-root/page.tsx (63:26) @ fetchRandom
+            > 63 |   const response = await fetch(
+                 |                          ^",
+@@ -785,7 +785,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1265",
+                "description": "Next.js encountered uncached data during prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/dynamic-root/page.tsx (63:26) @ fetchRandom
+            > 63 |   const response = await fetch(
+                 |                          ^",
+@@ -1092,7 +1092,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value Math.random() while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-random-with-fallback/page.tsx (37:23) @ RandomReadingComponent
+              > 37 |   const random = Math.random()
+                   |                       ^",
+@@ -1240,7 +1240,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value Math.random() while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-random-without-fallback/page.tsx (32:15) @ getRandomNumber
+              > 32 |   return Math.random()
+                   |               ^",
+@@ -2180,7 +2180,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1266",
+                "description": "Next.js encountered the unstable value new Date() in a Client Component.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-attribution/guarded-async-unguarded-clientsync/client.tsx (5:16) @ SyncIO
+              > 5 |   const data = new Date().toISOString()
+                  |                ^",
+@@ -2328,7 +2328,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1272",
+                "description": "Next.js encountered runtime data during prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-attribution/unguarded-async-guarded-clientsync/page.tsx (34:18) @ RequestData
+              > 34 |   ;(await cookies()).get('foo')
+                   |                  ^",
+@@ -2466,7 +2466,7 @@ describe('Cache Components Errors', () => {
+                "code": "E1266",
+                "description": "Next.js encountered the unstable value new Date() in a Client Component.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-attribution/unguarded-async-unguarded-clientsync/client.tsx (5:16) @ SyncIO
+              > 5 |   const data = new Date().toISOString()
+                  |                ^",
+@@ -3044,7 +3044,7 @@ describe('Cache Components Errors', () => {
+                  "code": "E1272",
+                  "description": "Next.js encountered runtime data during prerendering.",
+                  "environmentLabel": "Server",
+-                 "label": "Instant",
++                 "label": "Blocking Route",
+                  "source": "app/use-cache-low-expire/fast/page.tsx (3:16) @ Page
+                > 3 | export default async function Page() {
+                    |                ^",
+@@ -3166,7 +3166,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                  "code": "E1272",
+                  "description": "Next.js encountered runtime data during prerendering.",
+                  "environmentLabel": "Server",
+-                 "label": "Instant",
++                 "label": "Blocking Route",
+                  "source": "app/use-cache-low-expire/slow/page.tsx (3:16) @ Page
+                > 3 | export default async function Page() {
+                    |                ^",
+@@ -3447,7 +3447,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                  "code": "E1272",
+                  "description": "Next.js encountered runtime data during prerendering.",
+                  "environmentLabel": "Server",
+-                 "label": "Instant",
++                 "label": "Blocking Route",
+                  "source": "app/use-cache-revalidate-0/fast/page.tsx (3:16) @ Page
+                > 3 | export default async function Page() {
+                    |                ^",
+@@ -3569,7 +3569,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                  "code": "E1272",
+                  "description": "Next.js encountered runtime data during prerendering.",
+                  "environmentLabel": "Server",
+-                 "label": "Instant",
++                 "label": "Blocking Route",
+                  "source": "app/use-cache-revalidate-0/slow/page.tsx (3:16) @ Page
+                > 3 | export default async function Page() {
+                    |                ^",
+@@ -3851,7 +3851,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1272",
+                "description": "Next.js encountered runtime data during prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": null,
+                "stack": [
+                  "Page [Prerender] <anonymous>",
+@@ -4752,7 +4752,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1272",
+                "description": "Next.js encountered runtime data during prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/use-cache-private-without-suspense/page.tsx (15:1) @ Private
+              > 15 | async function Private() {
+                   | ^",
+@@ -4955,7 +4955,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1261",
+              "description": "Next.js encountered the unstable value Date() while prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/sync-io-current-time/date/page.tsx (19:16) @ DateReadingComponent
+            > 19 |   return <div>{Date()}</div>
+                 |                ^",
+@@ -5100,7 +5100,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1261",
+              "description": "Next.js encountered the unstable value Date.now() while prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/sync-io-current-time/date-now/page.tsx (19:21) @ DateReadingComponent
+            > 19 |   return <div>{Date.now()}</div>
+                 |                     ^",
+@@ -5245,7 +5245,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1261",
+              "description": "Next.js encountered the unstable value new Date() while prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/sync-io-current-time/new-date/page.tsx (19:16) @ DateReadingComponent
+            > 19 |   return <div>{new Date().toString()}</div>
+                 |                ^",
+@@ -5390,7 +5390,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1261",
+              "description": "Next.js encountered the unstable value Math.random() while prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/sync-io-random/math-random/page.tsx (19:21) @ SyncIOComponent
+            > 19 |   return <div>{Math.random()}</div>
+                 |                     ^",
+@@ -5531,7 +5531,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1261",
+              "description": "Next.js encountered the unstable value crypto.getRandomValues() while prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/sync-io-web-crypto/get-random-value/page.tsx (20:10) @ SyncIOComponent
+            > 20 |   crypto.getRandomValues(buffer)
+                 |          ^",
+@@ -5675,7 +5675,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1261",
+              "description": "Next.js encountered the unstable value crypto.randomUUID() while prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/sync-io-web-crypto/random-uuid/page.tsx (19:23) @ SyncIOComponent
+            > 19 |   return <div>{crypto.randomUUID()}</div>
+                 |                       ^",
+@@ -5817,7 +5817,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').generateKeyPairSync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/generate-key-pair-sync/page.tsx (20:24) @ SyncIOComponent
+              > 20 |   const first = crypto.generateKeyPairSync('rsa', keyGenOptions)
+                   |                        ^",
+@@ -5833,7 +5833,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').generateKeyPairSync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/generate-key-pair-sync/page.tsx (20:17) @ SyncIOComponent
+              > 20 |   const first = crypto.generateKeyPairSync('rsa', keyGenOptions)
+                   |                 ^",
+@@ -5979,7 +5979,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').generateKeySync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/generate-key-sync/page.tsx (21:6) @ SyncIOComponent
+              > 21 |     .generateKeySync('hmac', {
+                   |      ^",
+@@ -5995,7 +5995,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').generateKeySync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/generate-key-sync/page.tsx (20:17) @ SyncIOComponent
+              > 20 |   const first = crypto
+                   |                 ^",
+@@ -6141,7 +6141,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').generatePrimeSync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/generate-prime-sync/page.tsx (20:39) @ SyncIOComponent
+              > 20 |   const first = new Uint8Array(crypto.generatePrimeSync(128))
+                   |                                       ^",
+@@ -6157,7 +6157,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').generatePrimeSync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/generate-prime-sync/page.tsx (20:32) @ SyncIOComponent
+              > 20 |   const first = new Uint8Array(crypto.generatePrimeSync(128))
+                   |                                ^",
+@@ -6303,7 +6303,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value crypto.getRandomValues() while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/get-random-values/page.tsx (21:10) @ SyncIOComponent
+              > 21 |   crypto.getRandomValues(first)
+                   |          ^",
+@@ -6319,7 +6319,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value crypto.getRandomValues() while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/get-random-values/page.tsx (21:3) @ SyncIOComponent
+              > 21 |   crypto.getRandomValues(first)
+                   |   ^",
+@@ -6465,7 +6465,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomBytes(size) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-bytes/page.tsx (20:24) @ SyncIOComponent
+              > 20 |   const first = crypto.randomBytes(8)
+                   |                        ^",
+@@ -6481,7 +6481,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomBytes(size) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-bytes/page.tsx (20:17) @ SyncIOComponent
+              > 20 |   const first = crypto.randomBytes(8)
+                   |                 ^",
+@@ -6627,7 +6627,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomFillSync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-fill-sync/page.tsx (21:10) @ SyncIOComponent
+              > 21 |   crypto.randomFillSync(first, 4, 8)
+                   |          ^",
+@@ -6643,7 +6643,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomFillSync(...) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-fill-sync/page.tsx (21:3) @ SyncIOComponent
+              > 21 |   crypto.randomFillSync(first, 4, 8)
+                   |   ^",
+@@ -6789,7 +6789,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomInt(min, max) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-int-between/page.tsx (20:24) @ SyncIOComponent
+              > 20 |   const first = crypto.randomInt(128, 256)
+                   |                        ^",
+@@ -6805,7 +6805,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomInt(min, max) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-int-between/page.tsx (20:17) @ SyncIOComponent
+              > 20 |   const first = crypto.randomInt(128, 256)
+                   |                 ^",
+@@ -6951,7 +6951,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomInt(min, max) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-int-up-to/page.tsx (20:24) @ SyncIOComponent
+              > 20 |   const first = crypto.randomInt(128)
+                   |                        ^",
+@@ -6967,7 +6967,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomInt(min, max) while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-int-up-to/page.tsx (20:17) @ SyncIOComponent
+              > 20 |   const first = crypto.randomInt(128)
+                   |                 ^",
+@@ -7113,7 +7113,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomUUID() while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-uuid/page.tsx (20:24) @ SyncIOComponent
+              > 20 |   const first = crypto.randomUUID()
+                   |                        ^",
+@@ -7129,7 +7129,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+                "code": "E1261",
+                "description": "Next.js encountered the unstable value require('node:crypto').randomUUID() while prerendering.",
+                "environmentLabel": "Server",
+-               "label": "Instant",
++               "label": "Blocking Route",
+                "source": "app/sync-io-node-crypto/random-uuid/page.tsx (20:17) @ SyncIOComponent
+              > 20 |   const first = crypto.randomUUID()
+                   |                 ^",
+@@ -7274,7 +7274,7 @@ Learn more: https://nextjs.org/docs/messages/blocking-route`
+              "code": "E1265",
+              "description": "Next.js encountered uncached data during prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/client-awaited-io/client.tsx (6:19) @ Client
+            > 6 |   const data = use(io)
+                |                   ^",
+diff --git a/test/e2e/app-dir/instant-validation-level-manual-warning/instant-validation-level-manual-warning.test.ts b/test/e2e/app-dir/instant-validation-level-manual-warning/instant-validation-level-manual-warning.test.ts
+index 59452fc6446d..ea3800273164 100644
+--- a/test/e2e/app-dir/instant-validation-level-manual-warning/instant-validation-level-manual-warning.test.ts
++++ b/test/e2e/app-dir/instant-validation-level-manual-warning/instant-validation-level-manual-warning.test.ts
+@@ -232,7 +232,7 @@ describe('instant validation - level manual-warning', () => {
+              "code": "E1265",
+              "description": "Next.js encountered uncached data during prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/without-root-suspense/bare/page.tsx (10:19) @ Page
+            > 10 |   await connection()
+                 |                   ^",
+@@ -252,7 +252,7 @@ describe('instant validation - level manual-warning', () => {
+              "code": "E1265",
+              "description": "Next.js encountered uncached data during prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/without-root-suspense/explicit-error/page.tsx (11:19) @ Page
+            > 11 |   await connection()
+                 |                   ^",
+@@ -272,7 +272,7 @@ describe('instant validation - level manual-warning', () => {
+              "code": "E1265",
+              "description": "Next.js encountered uncached data during prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/without-root-suspense/explicit-true/page.tsx (11:19) @ Page
+            > 11 |   await connection()
+                 |                   ^",
+@@ -292,7 +292,7 @@ describe('instant validation - level manual-warning', () => {
+              "code": "E1265",
+              "description": "Next.js encountered uncached data during prerendering.",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/without-root-suspense/explicit-warning/page.tsx (10:19) @ Page
+            > 10 |   await connection()
+                 |                   ^",
+diff --git a/test/e2e/app-dir/instant-validation-static-shells/instant-validation-static-shells.test.ts b/test/e2e/app-dir/instant-validation-static-shells/instant-validation-static-shells.test.ts
+index 058273c80438..d1c58e8f8eb3 100644
+--- a/test/e2e/app-dir/instant-validation-static-shells/instant-validation-static-shells.test.ts
++++ b/test/e2e/app-dir/instant-validation-static-shells/instant-validation-static-shells.test.ts
+@@ -48,7 +48,7 @@ describe('instant validation', () => {
+            "code": "E1265",
+            "description": "Next.js encountered uncached data during prerendering.",
+            "environmentLabel": "Server",
+-           "label": "Instant",
++           "label": "Blocking Route",
+            "source": "app/blocking-page-below-static/page.tsx (6:19) @ Page
+          > 6 |   await connection()
+              |                   ^",
+diff --git a/test/e2e/app-dir/instant-validation/instant-validation.test.ts b/test/e2e/app-dir/instant-validation/instant-validation.test.ts
+index 36e23d192616..70840d31f8a1 100644
+--- a/test/e2e/app-dir/instant-validation/instant-validation.test.ts
++++ b/test/e2e/app-dir/instant-validation/instant-validation.test.ts
+@@ -746,7 +746,7 @@ describe('instant validation', () => {
+            "code": "E1261",
+            "description": "Next.js encountered the unstable value Date.now() while prerendering.",
+            "environmentLabel": "Server",
+-           "label": "Instant",
++           "label": "Blocking Route",
+            "source": "app/suspense-in-root/runtime/invalid-sync-io/page.tsx (8:20) @ Page
+          >  8 |   const now = Date.now()
+               |                    ^",
+@@ -824,7 +824,7 @@ describe('instant validation', () => {
+            "code": "E1261",
+            "description": "Next.js encountered the unstable value Date.now() while prerendering.",
+            "environmentLabel": "Server",
+-           "label": "Instant",
++           "label": "Blocking Route",
+            "source": "app/suspense-in-root/runtime/invalid-sync-io-in-runtime-with-valid-static-parent/page.tsx (12:20) @ Page
+          > 12 |   const now = Date.now()
+               |                    ^",
+@@ -927,7 +927,7 @@ describe('instant validation', () => {
+            "code": "E1261",
+            "description": "Next.js encountered the unstable value Date.now() while prerendering.",
+            "environmentLabel": "Server",
+-           "label": "Instant",
++           "label": "Blocking Route",
+            "source": "app/suspense-in-root/runtime/invalid-sync-io-after-cache-with-cookie-input/page.tsx (28:20) @ Page
+          > 28 |   const now = Date.now()
+               |                    ^",
+@@ -995,7 +995,7 @@ describe('instant validation', () => {
+            "code": "E1261",
+            "description": "Next.js encountered the unstable value Date.now() while prerendering.",
+            "environmentLabel": "Server",
+-           "label": "Instant",
++           "label": "Blocking Route",
+            "source": "app/suspense-in-root/runtime/invalid-sync-io-in-generate-metadata/page.tsx (9:20) @ Module.generateMetadata
+          >  9 |   const now = Date.now()
+               |                    ^",
+@@ -1091,7 +1091,7 @@ describe('instant validation', () => {
+            "code": "E1261",
+            "description": "Next.js encountered the unstable value Date.now() while prerendering.",
+            "environmentLabel": "Server",
+-           "label": "Instant",
++           "label": "Blocking Route",
+            "source": "app/suspense-in-root/runtime/invalid-sync-io-in-layout-generate-metadata/layout.tsx (11:20) @ Module.generateMetadata
+          > 11 |   const now = Date.now()
+               |                    ^",
+@@ -2364,7 +2364,7 @@ describe('instant validation', () => {
+              "code": "E1252",
+              "description": "Next.js encountered runtime data in generateViewport().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/suspense-in-root/head/invalid-runtime-viewport-in-static/page.tsx (11:16) @ Module.generateViewport
+            > 11 |   await cookies()
+                 |                ^",
+@@ -2423,7 +2423,7 @@ describe('instant validation', () => {
+              "code": "E1255",
+              "description": "Next.js encountered uncached data in generateViewport().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/suspense-in-root/head/invalid-dynamic-viewport-in-runtime/page.tsx (11:19) @ Module.generateViewport
+            > 11 |   await connection()
+                 |                   ^",
+@@ -2520,7 +2520,7 @@ describe('instant validation', () => {
+              "code": "E1255",
+              "description": "Next.js encountered uncached data in generateViewport().",
+              "environmentLabel": "Server",
+-             "label": "Instant",
++             "label": "Blocking Route",
+              "source": "app/suspense-in-root/head/invalid-dynamic-viewport-in-blocking-inside-static/page.tsx (6:23) @ Module.generateViewport
+            > 6 | export async function generateViewport(): Promise<Viewport> {
+                |                       ^",

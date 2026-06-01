@@ -1,0 +1,529 @@
+diff --git a/.github/workflows/main.yml b/.github/workflows/main.yml
+index 0497781ae51..a926ba781aa 100644
+--- a/.github/workflows/main.yml
++++ b/.github/workflows/main.yml
+@@ -80,6 +80,18 @@ jobs:
+ 
+       - run: MUTE_REACT_ACT_WARNINGS=1 pnpm test -- --coverage
+ 
++      - name: Verify committed openapi test fixtures
++        run: |
++          if [[ -n "$(git status --porcelain -- packages/openapi/test/routers/)" ]]; then
++            echo "Generated files in packages/openapi/test/routers/ are out of date."
++            echo "Run 'pnpm -C packages/openapi codegen' locally and commit the resulting changes."
++            git status --short -- packages/openapi/test/routers/
++            echo ""
++            echo "Diff for generated fixtures:"
++            git --no-pager diff -- packages/openapi/test/routers/
++            exit 1
++          fi
++
+       - uses: codecov/codecov-action@v5
+         with:
+           fail_ci_if_error: true
+diff --git a/.gitignore b/.gitignore
+index 17ef50616ee..de2118a9230 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -21,6 +21,7 @@ yalc.lock
+ tests-results/
+ coverage/
+ __generated__/
++packages/openapi/test/.cache/
+ 
+ 
+ # Ignore all folders except `src/` and `tests/` in every published package
+diff --git a/packages/openapi/src/generate.ts b/packages/openapi/src/generate.ts
+index 6b05405d792..c925a9ed59d 100644
+--- a/packages/openapi/src/generate.ts
++++ b/packages/openapi/src/generate.ts
+@@ -1084,13 +1084,7 @@ function getJsDocComment(
+   sym: ts.Symbol,
+   checker: ts.TypeChecker,
+ ): string | undefined {
+-  const isWithinPath = (candidate: string, parent: string): boolean => {
+-    const rel = path.relative(parent, candidate);
+-    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+-  };
+-
+   const normalize = (filePath: string): string => filePath.replace(/\\/g, '/');
+-  const workspaceRoot = normalize(process.cwd());
+ 
+   const declarations = sym.declarations ?? [];
+   const isExternalNodeModulesDeclaration =
+@@ -1109,11 +1103,9 @@ function getJsDocComment(
+       try {
+         const realPath = normalize(fs.realpathSync.native(sourceFile.fileName));
+         // Keep JSDoc for workspace packages linked into node_modules
+-        // (e.g. monorepos using pnpm/yarn workspaces).
+-        if (
+-          isWithinPath(realPath, workspaceRoot) &&
+-          !realPath.includes('/node_modules/')
+-        ) {
++        // (e.g. monorepos using pnpm/yarn workspaces). The resolved target
++        // may sit outside the current cwd, so avoid cwd-based checks here.
++        if (!realPath.includes('/node_modules/')) {
+           return false;
+         }
+       } catch {
+diff --git a/packages/openapi/test/amazonIon.test.ts b/packages/openapi/test/amazonIon.test.ts
+index 43dbc7cb544..c6f9a8b3d2e 100644
+--- a/packages/openapi/test/amazonIon.test.ts
++++ b/packages/openapi/test/amazonIon.test.ts
+@@ -3,12 +3,12 @@ import { createHTTPHandler } from '@trpc/server/adapters/standalone';
+ import { makeAsyncResource } from '@trpc/server/unstable-core-do-not-import/stream/utils/disposable';
+ import { describe, expect, it } from 'vitest';
+ import { configureTRPCHeyApiClient } from '../src/heyapi';
++import { Sdk } from './routers/amazonIonRouter-heyapi';
++import { client } from './routers/amazonIonRouter-heyapi/client.gen';
+ import {
+   AmazonIonRouter,
+   amazonIonTransformer,
+-} from './routers/amazonIonRouter';
+-import { Sdk } from './routers/amazonIonRouter-heyapi';
+-import { client } from './routers/amazonIonRouter-heyapi/client.gen';
++} from './routers/amazonIonRouter.router';
+ 
+ const richInput = {
+   name: 'Alice',
+diff --git a/packages/openapi/test/cli.test.ts b/packages/openapi/test/cli.test.ts
+index 04f6d086acd..140ab161c87 100644
+--- a/packages/openapi/test/cli.test.ts
++++ b/packages/openapi/test/cli.test.ts
+@@ -6,10 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+ const cliPath = path.resolve(__dirname, '../src/cli.ts');
+ const tsxPath = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
+ const routersDir = path.resolve(__dirname, 'routers');
+-const appRouterPath = path.resolve(routersDir, 'appRouter.ts');
++const appRouterPath = path.resolve(routersDir, 'appRouter.router.ts');
+ const errorFormatterRouterPath = path.resolve(
+   routersDir,
+-  'errorFormatterRouter.ts',
++  'errorFormatterRouter.router.ts',
+ );
+ 
+ /** Isolated output directory for CLI tests — gitignored via __generated__ prefix. */
+diff --git a/packages/openapi/test/cyclicTypes.test.ts b/packages/openapi/test/cyclicTypes.test.ts
+index d9466b7ef8c..93ca4c69e52 100644
+--- a/packages/openapi/test/cyclicTypes.test.ts
++++ b/packages/openapi/test/cyclicTypes.test.ts
+@@ -14,7 +14,10 @@ import {
+ } from './types';
+ import { validateOpenApi } from './validateOpenApi';
+ 
+-const routerPath = path.resolve(__dirname, 'routers/cyclicTypesRouter.ts');
++const routerPath = path.resolve(
++  __dirname,
++  'routers/cyclicTypesRouter.router.ts',
++);
+ 
+ describe('cyclic types', () => {
+   let doc: Document;
+diff --git a/packages/openapi/test/edgeCases.test.ts b/packages/openapi/test/edgeCases.test.ts
+index 440e3f4cdcd..f0f0c336188 100644
+--- a/packages/openapi/test/edgeCases.test.ts
++++ b/packages/openapi/test/edgeCases.test.ts
+@@ -18,8 +18,8 @@ import {
+ import { validateOpenApi } from './validateOpenApi';
+ 
+ const routersDir = path.resolve(__dirname, 'routers');
+-const edgeCaseRouterPath = path.resolve(routersDir, 'edgeCaseRouter.ts');
+-const appRouterPath = path.resolve(routersDir, 'appRouter.ts');
++const edgeCaseRouterPath = path.resolve(routersDir, 'edgeCaseRouter.router.ts');
++const appRouterPath = path.resolve(routersDir, 'appRouter.router.ts');
+ 
+ describe('generateOpenAPIDocument edge cases', () => {
+   let doc: Document;
+@@ -245,7 +245,7 @@ describe('generateOpenAPIDocument default options', () => {
+   });
+ 
+   it('uses default exportName AppRouter', () => {
+-    // appRouter.ts exports AppRouter, so default should work
++    // appRouter.router.ts exports AppRouter, so default should work
+     expect(doc.paths).toHaveProperty('/greeting');
+   });
+ 
+diff --git a/packages/openapi/test/generate.test.ts b/packages/openapi/test/generate.test.ts
+index 45318bc5864..db71a192581 100644
+--- a/packages/openapi/test/generate.test.ts
++++ b/packages/openapi/test/generate.test.ts
+@@ -10,7 +10,6 @@ import {
+   createTRPCHeyApiClientConfig,
+ } from '../src/heyapi';
+ import type { Document } from '../src/types';
+-import { AppRouter } from './routers/appRouter';
+ import { client as heyapiClient } from './routers/appRouter-heyapi/client.gen';
+ import { Sdk as HeyapiSdk } from './routers/appRouter-heyapi/sdk.gen';
+ import type {
+@@ -22,9 +21,10 @@ import type {
+   GreetingResponses,
+   UserProfile as HeyApiUserProfile,
+ } from './routers/appRouter-heyapi/types.gen';
+-import { SuperjsonRouter } from './routers/superjsonRouter';
++import { AppRouter } from './routers/appRouter.router';
+ import { client as superjsonClient } from './routers/superjsonRouter-heyapi/client.gen';
+ import { Sdk as SuperjsonSdk } from './routers/superjsonRouter-heyapi/sdk.gen';
++import { SuperjsonRouter } from './routers/superjsonRouter.router';
+ import {
+   getSchemas,
+   isArraySchema,
+@@ -42,12 +42,15 @@ import {
+ import { validateOpenApi } from './validateOpenApi';
+ 
+ const routersDir = path.resolve(__dirname, 'routers');
+-const appRouterPath = path.resolve(routersDir, 'appRouter.ts');
++const appRouterPath = path.resolve(routersDir, 'appRouter.router.ts');
+ const errorFormatterRouterPath = path.resolve(
+   routersDir,
+-  'errorFormatterRouter.ts',
++  'errorFormatterRouter.router.ts',
++);
++const superjsonRouterPath = path.resolve(
++  routersDir,
++  'superjsonRouter.router.ts',
+ );
+-const superjsonRouterPath = path.resolve(routersDir, 'superjsonRouter.ts');
+ 
+ function getErrorEnvelopeSchema(doc: Document) {
+   return requireSchemaObject(
+@@ -602,7 +605,7 @@ describe('generateOpenAPIDocument', () => {
+   describe('procedure descriptions from JSDoc', () => {
+     const descriptionsRouterPath = path.resolve(
+       routersDir,
+-      'descriptionsRouter.ts',
++      'descriptionsRouter.router.ts',
+     );
+     let doc: Document;
+ 
+@@ -634,7 +637,7 @@ describe('generateOpenAPIDocument', () => {
+   describe('runtime Zod schema extraction', () => {
+     const descriptionsRouterPath = path.resolve(
+       routersDir,
+-      'descriptionsRouter.ts',
++      'descriptionsRouter.router.ts',
+     );
+     let doc: Document;
+ 
+@@ -740,7 +743,7 @@ describe('generateOpenAPIDocument', () => {
+   describe('inline type JSDoc descriptions', () => {
+     const descriptionsRouterPath = path.resolve(
+       routersDir,
+-      'descriptionsRouter.ts',
++      'descriptionsRouter.router.ts',
+     );
+     let doc: Document;
+ 
+diff --git a/packages/openapi/test/heyapi.test.ts b/packages/openapi/test/heyapi.test.ts
+index aaceca44a09..e53d0c30751 100644
+--- a/packages/openapi/test/heyapi.test.ts
++++ b/packages/openapi/test/heyapi.test.ts
+@@ -7,12 +7,12 @@ import {
+   configureTRPCHeyApiClient,
+   createTRPCHeyApiClientConfig,
+ } from '../src/heyapi';
+-import { ErrorFormatterRouter } from './routers/errorFormatterRouter';
+ import { client as errorFormatterClient } from './routers/errorFormatterRouter-heyapi/client.gen';
+ import { Sdk as ErrorFormatterSdk } from './routers/errorFormatterRouter-heyapi/sdk.gen';
+-import { SuperjsonRouter } from './routers/superjsonRouter';
++import { ErrorFormatterRouter } from './routers/errorFormatterRouter.router';
+ import { client as superjsonClient } from './routers/superjsonRouter-heyapi/client.gen';
+ import { Sdk as SuperjsonSdk } from './routers/superjsonRouter-heyapi/sdk.gen';
++import { SuperjsonRouter } from './routers/superjsonRouter.router';
+ 
+ describe('createTRPCHeyApiClientConfig', () => {
+   describe('without transformer', () => {
+diff --git a/packages/openapi/test/mongoEjson.test.ts b/packages/openapi/test/mongoEjson.test.ts
+index 3b242f06fa1..358f189addf 100644
+--- a/packages/openapi/test/mongoEjson.test.ts
++++ b/packages/openapi/test/mongoEjson.test.ts
+@@ -3,12 +3,12 @@ import { createHTTPHandler } from '@trpc/server/adapters/standalone';
+ import { makeAsyncResource } from '@trpc/server/unstable-core-do-not-import/stream/utils/disposable';
+ import { describe, expect, it } from 'vitest';
+ import { configureTRPCHeyApiClient } from '../src/heyapi';
++import { Sdk } from './routers/mongoEjsonRouter-heyapi';
++import { client } from './routers/mongoEjsonRouter-heyapi/client.gen';
+ import {
+   MongoEjsonRouter,
+   mongoEjsonTransformer,
+-} from './routers/mongoEjsonRouter';
+-import { Sdk } from './routers/mongoEjsonRouter-heyapi';
+-import { client } from './routers/mongoEjsonRouter-heyapi/client.gen';
++} from './routers/mongoEjsonRouter.router';
+ 
+ const richInput = {
+   name: 'Alice',
+diff --git a/packages/openapi/test/nodeModulesJsDoc.test.ts b/packages/openapi/test/nodeModulesJsDoc.test.ts
+index d3594882784..503b6c9fbb8 100644
+--- a/packages/openapi/test/nodeModulesJsDoc.test.ts
++++ b/packages/openapi/test/nodeModulesJsDoc.test.ts
+@@ -9,7 +9,10 @@ import {
+ } from './types';
+ import { validateOpenApi } from './validateOpenApi';
+ 
+-const routerPath = path.resolve(__dirname, 'routers/nodeModulesJsDocRouter.ts');
++const routerPath = path.resolve(
++  __dirname,
++  'routers/nodeModulesJsDocRouter.router.ts',
++);
+ 
+ describe('JSDoc source filtering', () => {
+   let doc: Document;
+diff --git a/packages/openapi/test/routers/amazonIonRouter.ts.json b/packages/openapi/test/routers/amazonIonRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/amazonIonRouter.ts.json
+rename to packages/openapi/test/routers/amazonIonRouter.openapi.json
+diff --git a/packages/openapi/test/routers/amazonIonRouter.ts b/packages/openapi/test/routers/amazonIonRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/amazonIonRouter.ts
+rename to packages/openapi/test/routers/amazonIonRouter.router.ts
+diff --git a/packages/openapi/test/routers/appRouter.ts.json b/packages/openapi/test/routers/appRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/appRouter.ts.json
+rename to packages/openapi/test/routers/appRouter.openapi.json
+diff --git a/packages/openapi/test/routers/appRouter.ts b/packages/openapi/test/routers/appRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/appRouter.ts
+rename to packages/openapi/test/routers/appRouter.router.ts
+diff --git a/packages/openapi/test/routers/cyclicTypesRouter.ts.json b/packages/openapi/test/routers/cyclicTypesRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/cyclicTypesRouter.ts.json
+rename to packages/openapi/test/routers/cyclicTypesRouter.openapi.json
+diff --git a/packages/openapi/test/routers/cyclicTypesRouter.ts b/packages/openapi/test/routers/cyclicTypesRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/cyclicTypesRouter.ts
+rename to packages/openapi/test/routers/cyclicTypesRouter.router.ts
+diff --git a/packages/openapi/test/routers/descriptionsRouter.ts.json b/packages/openapi/test/routers/descriptionsRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/descriptionsRouter.ts.json
+rename to packages/openapi/test/routers/descriptionsRouter.openapi.json
+diff --git a/packages/openapi/test/routers/descriptionsRouter.ts b/packages/openapi/test/routers/descriptionsRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/descriptionsRouter.ts
+rename to packages/openapi/test/routers/descriptionsRouter.router.ts
+diff --git a/packages/openapi/test/routers/edgeCaseRouter.ts.json b/packages/openapi/test/routers/edgeCaseRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/edgeCaseRouter.ts.json
+rename to packages/openapi/test/routers/edgeCaseRouter.openapi.json
+diff --git a/packages/openapi/test/routers/edgeCaseRouter.ts b/packages/openapi/test/routers/edgeCaseRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/edgeCaseRouter.ts
+rename to packages/openapi/test/routers/edgeCaseRouter.router.ts
+diff --git a/packages/openapi/test/routers/errorFormatterRouter.ts.json b/packages/openapi/test/routers/errorFormatterRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/errorFormatterRouter.ts.json
+rename to packages/openapi/test/routers/errorFormatterRouter.openapi.json
+diff --git a/packages/openapi/test/routers/errorFormatterRouter.ts b/packages/openapi/test/routers/errorFormatterRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/errorFormatterRouter.ts
+rename to packages/openapi/test/routers/errorFormatterRouter.router.ts
+diff --git a/packages/openapi/test/routers/mongoEjsonRouter.ts.json b/packages/openapi/test/routers/mongoEjsonRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/mongoEjsonRouter.ts.json
+rename to packages/openapi/test/routers/mongoEjsonRouter.openapi.json
+diff --git a/packages/openapi/test/routers/mongoEjsonRouter.ts b/packages/openapi/test/routers/mongoEjsonRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/mongoEjsonRouter.ts
+rename to packages/openapi/test/routers/mongoEjsonRouter.router.ts
+diff --git a/packages/openapi/test/routers/nodeModulesJsDocRouter.ts.json b/packages/openapi/test/routers/nodeModulesJsDocRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/nodeModulesJsDocRouter.ts.json
+rename to packages/openapi/test/routers/nodeModulesJsDocRouter.openapi.json
+diff --git a/packages/openapi/test/routers/nodeModulesJsDocRouter.ts b/packages/openapi/test/routers/nodeModulesJsDocRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/nodeModulesJsDocRouter.ts
+rename to packages/openapi/test/routers/nodeModulesJsDocRouter.router.ts
+diff --git a/packages/openapi/test/routers/superjsonRouter.ts.json b/packages/openapi/test/routers/superjsonRouter.openapi.json
+similarity index 100%
+rename from packages/openapi/test/routers/superjsonRouter.ts.json
+rename to packages/openapi/test/routers/superjsonRouter.openapi.json
+diff --git a/packages/openapi/test/routers/superjsonRouter.ts b/packages/openapi/test/routers/superjsonRouter.router.ts
+similarity index 100%
+rename from packages/openapi/test/routers/superjsonRouter.ts
+rename to packages/openapi/test/routers/superjsonRouter.router.ts
+diff --git a/packages/openapi/test/scripts/codegen.ts b/packages/openapi/test/scripts/codegen.ts
+index 322c0386b5d..b5088fbd214 100644
+--- a/packages/openapi/test/scripts/codegen.ts
++++ b/packages/openapi/test/scripts/codegen.ts
+@@ -1,12 +1,22 @@
++/* eslint-disable no-console */
+ /**
+  * Generates hey-api SDK clients from all router files in test/routers/.
+  * Used by both vitest globalSetup and the postinstall script.
+  *
+- * Convention: each router file `fooBar.ts` must export a router named `FooBar`
++ * Convention: each router file `fooBar.router.ts` must export a router named
++ * `FooBar`
+  * (filename stem with first letter uppercased). The generated hey-api client
+  * is output to `fooBar-heyapi/` alongside the source file.
+  */
+-import { readdirSync, rmSync, writeFileSync } from 'node:fs';
++import { createHash } from 'node:crypto';
++import {
++  existsSync,
++  mkdirSync,
++  readdirSync,
++  readFileSync,
++  rmSync,
++  writeFileSync,
++} from 'node:fs';
+ import * as path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import { createClient } from '@hey-api/openapi-ts';
+@@ -15,27 +25,127 @@ import { generateOpenAPIDocument } from '../../src/generate';
+ 
+ const __filename = fileURLToPath(import.meta.url);
+ const __dirname = path.dirname(__filename);
++const packageDir = path.resolve(__dirname, '..', '..');
+ const routersDir = path.resolve(__dirname, '..', 'routers');
++const cacheDir = path.resolve(packageDir, 'test', '.cache');
++const cacheFilePath = path.resolve(cacheDir, 'codegen.json');
++const CACHE_VERSION = 1;
++const CACHE_INPUT_PATTERNS = [
++  'package.json',
++  '../../pnpm-lock.yaml',
++  'src/**',
++  '../server/src/**',
++  'test/scripts/**',
++  '$router',
++] as const;
++
++type CodegenCache = {
++  version: number;
++  routers: Record<string, string>;
++};
+ 
+ function getExportName(stem: string): string {
+   return stem.charAt(0).toUpperCase() + stem.slice(1);
+ }
+ 
++function listFilesRecursively(dir: string): string[] {
++  return readdirSync(dir, { withFileTypes: true })
++    .sort((a, b) => a.name.localeCompare(b.name))
++    .flatMap((entry) => {
++      const entryPath = path.resolve(dir, entry.name);
++      if (entry.isDirectory()) {
++        return listFilesRecursively(entryPath);
++      }
++
++      return entryPath;
++    });
++}
++
++function getRouterFiles(): string[] {
++  return readdirSync(routersDir)
++    .filter((file) => file.endsWith('.router.ts'))
++    .sort()
++    .map((file) => path.resolve(routersDir, file));
++}
++
++function hashFiles(paths: string[]): string {
++  const hash = createHash('sha256');
++
++  for (const filePath of paths) {
++    hash.update(path.relative(packageDir, filePath));
++    hash.update('\0');
++    hash.update(readFileSync(filePath));
++    hash.update('\0');
++  }
++
++  return hash.digest('hex');
++}
++
++function getRouterInputsHash(routerPath: string): string {
++  const inputPaths = CACHE_INPUT_PATTERNS.flatMap((pattern) => {
++    if (pattern === '$router') {
++      return routerPath;
++    }
++
++    if (pattern.endsWith('/**')) {
++      const dirPath = path.resolve(packageDir, pattern.slice(0, -3));
++      return listFilesRecursively(dirPath);
++    }
++
++    return path.resolve(packageDir, pattern);
++  });
++
++  return hashFiles(inputPaths);
++}
++
++function hasExpectedArtifacts(docPath: string, outputDir: string): boolean {
++  return existsSync(docPath) && existsSync(outputDir);
++}
++
++function readCache(): CodegenCache | null {
++  try {
++    return JSON.parse(readFileSync(cacheFilePath, 'utf8')) as CodegenCache;
++  } catch {
++    return null;
++  }
++}
++
++function writeCache(cache: CodegenCache): void {
++  mkdirSync(cacheDir, { recursive: true });
++  writeFileSync(cacheFilePath, JSON.stringify(cache, null, 2) + '\n');
++}
++
+ export async function codegen() {
+-  const routerFiles = readdirSync(routersDir).filter(
+-    (f) => f.endsWith('.ts') && !f.endsWith('.d.ts'),
+-  );
++  const routerFiles = getRouterFiles();
++  const existingCache = readCache();
++  const nextCache: CodegenCache = {
++    version: CACHE_VERSION,
++    routers: {},
++  };
+ 
+   for (const file of routerFiles) {
+-    const stem = path.basename(file, '.ts');
++    const stem = path.basename(file, '.router.ts');
+     const exportName = getExportName(stem);
+-    const routerPath = path.resolve(routersDir, file);
++    const routerPath = file;
++    const docPath = path.resolve(routersDir, `${stem}.openapi.json`);
+     const outputDir = path.resolve(routersDir, `${stem}-heyapi`);
++    const routerInputsHash = getRouterInputsHash(routerPath);
++    const artifactsExist = hasExpectedArtifacts(docPath, outputDir);
++
++    nextCache.routers[stem] = routerInputsHash;
++
++    if (
++      existingCache?.version === CACHE_VERSION &&
++      existingCache.routers[stem] === routerInputsHash &&
++      artifactsExist
++    ) {
++      console.log(`[openapi codegen] Cache hit for ${file}, skipping`);
++      continue;
++    }
+ 
+     rmSync(outputDir, { recursive: true, force: true });
+ 
+     const doc = await generateOpenAPIDocument(routerPath, { exportName });
+-    const docPath = path.resolve(routersDir, `${stem}.ts.json`);
+     writeFileSync(docPath, JSON.stringify(doc, null, 2) + '\n');
+ 
+     await createClient({
+@@ -54,4 +164,6 @@ export async function codegen() {
+       logs: { level: 'error' },
+     });
+   }
++
++  writeCache(nextCache);
+ }
+diff --git a/packages/openapi/vitest.config.ts b/packages/openapi/vitest.config.ts
+index a57c3daa1de..8a0850e1595 100644
+--- a/packages/openapi/vitest.config.ts
++++ b/packages/openapi/vitest.config.ts
+@@ -8,7 +8,11 @@ export default mergeConfig(
+       globalSetup: ['./test/scripts/globalSetup.ts'],
+ 
+       // force a rerun of globalSetup whenever these files change under watch mode
+-      forceRerunTriggers: ['./test/routers/**/*.ts', './src/**/*.ts'],
++      forceRerunTriggers: [
++        './test/routers/**/*.router.ts',
++        './src/**/*.ts',
++        './package.json',
++      ],
+     },
+   }),
+ );
