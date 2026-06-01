@@ -187,10 +187,28 @@ Registered in
 
 Each detector lives in its own file under [`src/audit/cheat-detector/`](src/audit/cheat-detector/).
 
+Beyond the ten structural detectors, a judge-primary path catches two
+semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) that have no
+structural tell, by asking the judge whether the diff delivers the PR's
+stated claim. Large diffs are split into hunk-grouped chunks rather than
+head-truncated, so a defect in the tail still reaches the judge.
+
 Per-repo configuration in `.swarm/audit-config.yaml`: `excludePaths` exempts
 globs from detection, `intentSeverityPolicy` (`strict` | `lenient` | `off`)
-controls the PR-intent severity-upgrade layer. See
+controls the PR-intent severity-upgrade layer, and `judgePrimary`
+(`enabled`, `categories`) controls the semantic path. See
 [`docs/audit-config.md`](docs/audit-config.md).
+
+### Reproducible evaluation
+
+Detection is measured against a defect-injection oracle, not asserted: an
+injector splices one labeled cheat into a presumed-clean real PR, and
+`npm run benchmarks:full` regenerates per-detector recall, judge
+calibration, tail-defect and evasion reports, and `COVERAGE.md`. The pre
+vs post A/B is in
+[`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md); the
+method and honesty caveats are in
+[`docs/audit/methodology.md`](docs/audit/methodology.md).
 
 ## Use as a GitHub Action
 

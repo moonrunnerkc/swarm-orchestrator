@@ -57,6 +57,36 @@ Recognized fix-claim vocabularies (case-insensitive):
 | title prefix | `^(fix\|fixes\|fixed\|resolve\|resolves\|resolved\|close\|closes\|closed):` | `fix: payment bug` |
 | body lead (first 500 chars) | `(this PR (fixes\|resolves\|closes))` | `This PR fixes the timeout` |
 
+## `judgePrimary`
+
+Controls the judge-primary path that catches the two semantic cheat
+categories (`goal-not-fixed`, `cheat-mock-mutation`) no structural detector
+keys on. The judge is asked whether the diff delivers the PR's stated
+claim; a "no" raises a finding.
+
+```yaml
+judgePrimary:
+  enabled: true
+  categories: [goal-not-fixed, cheat-mock-mutation]
+```
+
+Default: `enabled: true`, both categories. The path only fires when the
+judge is enabled (`--enable-llm-judge` / `SWARM_AUDIT_LLM_JUDGE=1`), so the
+no-credentials default audit is unchanged.
+
+**Migrating / opting out.** Cost-sensitive consumers disable it:
+
+```yaml
+judgePrimary:
+  enabled: false
+```
+
+With it on, expect roughly two extra judge calls per PR (about $0.009 at
+Anthropic Haiku list price) and about 10 percentage points of added
+false positives on presumed-clean PRs (see
+`benchmarks/results/AB-REPORT.md`). `swarm doctor` warns when it is enabled
+with no inference provider configured and errors on an unknown category.
+
 ## Example
 
 ```yaml
@@ -64,4 +94,7 @@ Recognized fix-claim vocabularies (case-insensitive):
 excludePaths:
   - test/fixtures/**
 intentSeverityPolicy: strict
+judgePrimary:
+  enabled: true
+  categories: [goal-not-fixed, cheat-mock-mutation]
 ```
