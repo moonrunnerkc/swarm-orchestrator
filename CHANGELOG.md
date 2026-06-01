@@ -45,7 +45,10 @@ false-positive rate on their own merged-PR window (see
   prompt with the best held-out recall whose clean-PR false-positive rate
   stays within a point of the most conservative version.
 - **Per-hunk judging** (`chunkUnifiedDiffByHunk`) that localizes a verdict
-  to a stable (file, hunk-index) id.
+  to a stable (file, hunk-index) id. This is infrastructure with no current
+  recall lift: the mechanism test passes, but on the current judge per-hunk
+  localization does not improve over whole-diff (a localized confirm prompt
+  did not move it). See `benchmarks/oracle-corpus/per-hunk-localization.md`.
 - **Evaluation harnesses and reports**: `benchmarks:baseline`,
   `benchmarks:oracle`, `benchmarks:full`, plus per-detector recall,
   judge-primary-vs-structural, judge calibration, tail-defect recovery,
@@ -69,7 +72,11 @@ false-positive rate on their own merged-PR window (see
 
 - **Large diffs are chunked, not head-truncated, before the judge.** A
   defect in the tail of an oversized PR used to be invisible to the judge;
-  it is now judged in hunk-grouped chunks under the model's budget.
+  it is now judged in hunk-grouped chunks under the model's budget. This is
+  infrastructure: it lets a tail defect reach the judge, but the recall is
+  bounded by the judge (1/10 with the shipped conservative confirm prompt; a
+  localized prompt reaches 5/10 in measurement but is not yet shipped). No
+  current recall win is claimed beyond the mechanism.
 - **test-relaxation** recognizes a strict equality rewritten to any
   threshold matcher (`toBe(42)` to `toBeGreaterThan(0)`), a class it
   walked past before.

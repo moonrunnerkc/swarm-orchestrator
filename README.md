@@ -6,11 +6,14 @@
 
 A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 
+<!-- BADGES:START -->
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
-[![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
-[![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a.svg)](package.json)
-[![Version 10.3.0-advisory](https://img.shields.io/badge/version-10.3.0--advisory-22d3ee.svg)](package.json)
-[![Real-corpus F1 0.167](https://img.shields.io/badge/real--corpus%20F1-0.167%20%28205%20AI--labeled%29-orange.svg)](benchmarks/real-corpus/scores/latest.json)
+[![license ISC](https://img.shields.io/static/v1?label=license&message=ISC&color=blue)](LICENSE)
+[![node >= 20](https://img.shields.io/static/v1?label=node&message=%3E%3D%2020&color=3c873a)](package.json)
+[![version 11.0.0](https://img.shields.io/static/v1?label=version&message=11.0.0&color=22d3ee)](package.json)
+[![oracle recall 84% (253/300)](https://img.shields.io/static/v1?label=oracle%20recall&message=84%25%20(253%2F300)&color=brightgreen)](benchmarks/results/AB-REPORT.md)
+[![real-PR false alarms 0.11/PR](https://img.shields.io/static/v1?label=real-PR%20false%20alarms&message=0.11%2FPR&color=brightgreen)](benchmarks/real-prs/REAL-WORLD-REPORT.md)
+<!-- BADGES:END -->
 
 <a href="#install"><b>Install</b></a> ·
 <a href="#quick-start"><b>Quick start</b></a> ·
@@ -209,6 +212,21 @@ vs post A/B is in
 [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md); the
 method and honesty caveats are in
 [`docs/audit/methodology.md`](docs/audit/methodology.md).
+
+Hunk-grouped chunking and per-hunk localization are infrastructure, not
+shipped recall wins: their mechanism tests pass, but on the current judge
+the tail-defect and per-hunk recall numbers stay low (a localized confirm
+prompt lifts tail-defect to 0.5 in measurement but is not shipped pending
+real-PR false-positive validation). The numbers are reported honestly in
+`benchmarks/oracle-corpus/tail-defect-recovery.md` and
+`per-hunk-localization.md`.
+
+The auditor is also validated on unbiased real PRs: `npm run real-prs:full`
+fetches recent merged PRs from public repos, audits them, and has an
+independent arbiter classify every finding. On an 18-PR pilot the
+post-upgrade false-alarm burden is 0.11 per PR, at or below the pre-upgrade
+auditor's, with the oracle recall gain intact
+([`benchmarks/real-prs/REAL-WORLD-REPORT.md`](benchmarks/real-prs/REAL-WORLD-REPORT.md)).
 
 ## Use as a GitHub Action
 

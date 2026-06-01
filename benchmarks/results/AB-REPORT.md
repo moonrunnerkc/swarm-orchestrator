@@ -87,17 +87,29 @@ is a pilot (18 PRs); the harness scales to the default 100-PR run.
 | per-PR cost delta with judge-primary on | ~$0.009 (2 semantic calls) | judge-calibration.md |
 | p95 judge latency (local model) | ~13 s small diff, up to ~40 s on a 48k-token diff | judge-calibration.md / pre-upgrade baseline |
 
-## Robustness deltas
+## Infrastructure for a future judge upgrade (no current recall lift)
+
+Tail-defect recovery and per-hunk localization are chunking infrastructure,
+not shipped recall wins. The deterministic mechanism tests
+(`diff-chunker.test.ts`, `tail-defect.test.ts`) prove the plumbing; the
+recall numbers are held down by the judge, not the splitter.
 
 - **Tail-defect recovery** (`tail-defect-recovery.md`): head-truncation 0/10,
-  hunk-aware chunking 1/10. Head-truncation never shows the tail defect to
-  the judge; chunking does. The absolute is capped by the conservative
-  confirm prompt; the mechanism is pinned in the tail-defect test.
-- **Per-hunk localization** (`per-hunk-localization.md`): whole-diff judging
-  localizes 0 by construction (one verdict, no hunk id); per-hunk judging
-  attributes a verdict to a stable (file, hunk-index) id. The local confirm
-  judge is too noisy to score the synthetic fixture cleanly; the splitter is
-  pinned in the chunker test.
+  hunk-aware chunking 1/10 with the shipped conservative confirm prompt.
+  Chunking is what lets the tail defect reach the judge at all; the absolute
+  is the judge declining isolated catches. A localized confirm prompt lifts
+  this to 5/10 in measurement (v2 section), but is not shipped pending
+  real-PR false-positive validation and a cache key that folds the prompt.
+- **Per-hunk localization** (`per-hunk-localization.md`): per-hunk judging
+  attributes a verdict to a stable (file, hunk-index) id; whole-diff judging
+  localizes 0 by construction. The local confirm judge flags benign hunks
+  and misses the planted one regardless of prompt (the localized prompt did
+  not move it), so there is no localization accuracy to claim yet; the
+  splitter is pinned in the chunker test. A stronger judge is the only path
+  to a real number here.
+
+## Robustness deltas
+
 - **Evasion survival** (`evasion-report.md`): every detector is robust to the
   cosmetic evader stack (rename, whitespace, reorder, noise file) — flat
   survival curves at their base recall.

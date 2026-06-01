@@ -58,6 +58,28 @@ not prove detection of unobserved defect classes. False-positive rate is
 measured against presumed-clean real PRs; the "presumed" is load-bearing.
 Both numbers are defensible, neither is overclaimed.
 
+## Chunking and per-hunk are infrastructure, not recall wins
+
+Hunk-aware chunking and per-hunk localization put the right substrate in
+front of the judge: a tail defect in an oversized PR reaches the judge
+instead of being truncated away, and a verdict can be attributed to a
+stable (file, hunk-index) id. But the confirm judge defaults to
+high-precision and declines isolated patterns, so on the current judge the
+recall on these paths stays low (tail-defect 1/10, per-hunk localization
+0/10). The mechanism tests (`diff-chunker.test.ts`, `tail-defect.test.ts`)
+prove the plumbing; the reports state the recall honestly rather than
+claiming a win the judge does not deliver.
+
+A `LOCALIZED_CONFIRM_SYSTEM_PROMPT` (judge a single hunk on its face rather
+than withholding a YES for unseen context) lifts tail-defect recall to 5/10
+in measurement but does not move per-hunk (a model failure, not prompt
+conservatism). It is not shipped: the judge cache key does not fold the
+prompt text, so a production switch needs a cache-key discriminator, and
+the prompt's false-positive impact on real PRs is unmeasured. Future work:
+ship a per-path prompt assignment (conservative whole-diff, localized
+single-hunk) once the localized prompt's real-PR false-positive rate is
+validated, or move to a stronger judge for per-hunk localization.
+
 ## How to add a new injector
 
 1. Add `src/audit/oracle/inject/<category>.ts` exporting an `Injector`
