@@ -4,8 +4,8 @@
     "repo": "nrwl/nx",
     "prNumber": 34951,
     "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "The empty catch block is not new—it already existed in the pre-patch code (`try { await ensureNxConsoleInstalledViaDaemon(); } catch {}`). The diff merely wraps that pre-existing try/catch inside an `if (!process.env.NX_COMPLETE)` guard so the daemon isn't spawned during shell-completion calls. The error-swallowing behavior is unchanged and is intentionally scoped to an optional, best-effort NxConsole installation that should not block command execution. The deterministic detector flagged a `catch {}` that the patch did not actually introduce, so the finding is incorrect.",
+    "confidence": 0.92,
+    "reasoning": "The empty catch block is not newly introduced by this PR — it already existed in the original code (the diff shows the same `try { await ensureNxConsoleInstalledViaDaemon(); } catch {}` block being moved inside a new `if (!process.env.NX_COMPLETE)` guard). The PR merely wraps the pre-existing logic in a condition to avoid spawning the daemon during shell completion. The error-swallowing behavior is unchanged and is a deliberate, well-scoped design choice: failing to ensure an optional NxConsole install should not break normal CLI invocation. The auditor's deterministic detector fired on the textual presence of `catch {}` in the added lines, but it is the same swallow that was already there, not a regression hidden behind a relaxed check.",
     "arbiterModel": "claude-opus-4-8"
   },
   {
@@ -13,8 +13,8 @@
     "repo": "nrwl/nx",
     "prNumber": 34951,
     "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "This is correctly-scoped error handling for a shell tab-completion code path. The whole point of completion is that any failure must produce no output rather than splice a stack trace into the user's command line. The catch block is not silent: it surfaces the error to stderr when NX_VERBOSE_LOGGING is set, providing a diagnostic escape hatch. Swallowing here is the intended and correct behavior for a completion fast path — a thrown error would corrupt the user's terminal session. The auditor itself flags this as 'logging-only — typically legitimate observability shape,' which matches a legitimate, intentional design choice rather than a regression-hiding swallow.",
+    "confidence": 0.93,
+    "reasoning": "This is a correctly-scoped, intentional error swallow in a shell tab-completion fast path. The semantics demand that a broken completion produce no suggestions rather than splicing a stack trace into the user's command line, which is exactly what proper shell completion contracts require. The error is not silently lost: it is surfaced to stderr when NX_VERBOSE_LOGGING is set, and the comments document the rationale clearly. This is legitimate observability/UX shaping, not a regression-hiding swallow; the auditor's own body-class note even acknowledges this is 'typically legitimate observability shape.'",
     "arbiterModel": "claude-opus-4-8"
   },
   {
@@ -23,196 +23,25 @@
     "prNumber": 34951,
     "verdict": "false-alarm",
     "confidence": 0.9,
-    "reasoning": "The empty catch is correctly scoped error handling, not a swallowed regression. The try block attempts to read a cached project graph, which legitimately may not exist (a cold workspace). The catch comment ('No cached graph — conventional set only.') explains the intended fallback behavior: when the graph is unavailable, the code proceeds with the CONVENTIONAL_TARGETS set already seeded into targetNames. This is a tab-completion convenience feature where degrading gracefully to a conventional default is the right design—a failure to read the graph should not crash shell completion. The error is non-critical and a sensible fallback is provided, so this is intentional, correctly-scoped error handling rather than a cheat.",
+    "reasoning": "The empty catch block is correctly scoped and intentional: it wraps readCachedProjectGraph(), which may legitimately fail or be absent in cold/uninitialized workspaces. The code already pre-seeds targetNames with CONVENTIONAL_TARGETS, and the comment explicitly documents the fallback behavior ('No cached graph — conventional set only.'). For a shell tab-completion feature, failing to read the cached graph should degrade gracefully to a conventional set of target names rather than crash or block completion entirely. This is exactly the kind of correctly-scoped, behavior-preserving error handling that the instructions describe as a false alarm, not a swallowed error masking a regression.",
     "arbiterModel": "claude-opus-4-8"
   },
   {
-    "key": "nrwl/nx#34951:no-op-fix:.nx/workflows/agents.yaml:1",
-    "repo": "nrwl/nx",
-    "prNumber": 34951,
+    "key": "trpc/trpc#7296:no-op-fix:.github/workflows/main.yml:1",
+    "repo": "trpc/trpc",
+    "prNumber": 7296,
     "verdict": "false-alarm",
     "confidence": 0.85,
-    "reasoning": "The diff slice shown is an unrelated CI infrastructure change (pinning corepack to avoid pnpm 11 in e2e temp dirs), not the tab-completion feature itself. The auditor's own rationale actually concludes the PR legitimately implements the tab-completion functionality via command handlers, metadata, shell wrappers, and env checks — which contradicts the no-op-fix claim. The finding asserts the title claims a fix the non-test code doesn't exercise, but the auditor provides no concrete evidence of that; the visible hunk is a real, well-documented config fix, and the broader PR plausibly delivers the feature. The no-op-fix category does not fit either the shown diff or the auditor's own description.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "nrwl/nx#35720:no-op-fix:.gitignore:1",
-    "repo": "nrwl/nx",
-    "prNumber": 35720,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The finding alleges the PR title claims a fix that the changed non-test code does not exercise. The PR is a clearly-scoped build/packaging migration (moving @nx/eslint and @nx/eslint-plugin to local dist builds with exports maps), which is exactly the kind of infrastructure change whose 'fix' is delivered via build config, package.json exports, tsconfig changes, and migrations rather than runtime feature code. The single diff slice shown is a trivial .gitignore addition for generated README files, fully consistent with the stated migration. The auditor's own rationale actually corroborates that the PR does deliver the relevant change (a migration rewriting internal subpath imports). Nothing here shows a no-op fix or a hidden regression; the title and the work plausibly align.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "nrwl/nx#35756:no-op-fix:packages/js/src/executors/release-publish/release-publish.impl.ts:1",
-    "repo": "nrwl/nx",
-    "prNumber": 35756,
-    "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "The diff clearly implements the fix described in the PR title. It refactors the publish logic into a reusable runPublish function, detects authentication errors in bun publish output via a regex, and when npm is installed and the error looks auth-related, recursively calls runPublish with pm: 'npm' as a fallback. This directly delivers the claimed behavior of falling back to npm publish when bun publish fails with an auth error. The auditor's own rationale even concedes the code 'directly implements the PR title's claimed fix.' This is not a no-op fix; real functional behavior was added. The 'judge YES' appears to contradict the auditor's own correct rationale.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "nrwl/nx#35825:no-op-fix:astro-docs/.vale/styles/Nx/Headings.yml:1",
-    "repo": "nrwl/nx",
-    "prNumber": 35825,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The auditor's own rationale describes the PR adding a provider generator and modifying the remote generator to call a deprecation warning—which would be legitimate implementation matching the PR's stated intent. But the actual diff slice shown is entirely unrelated: it only adds 'TanStack' and 'TanStack Router' to a Vale style exceptions list for documentation headings. This is a trivial linter-config tweak with no bearing on the no-op-fix claim. The auditor's reasoning references code not present in the provided slice, so based on the evidence in front of me, the finding that the patch is a no-op fix for the stated feature does not hold—the diff is just unrelated docs/linter config, not a fake or hollow fix of the claimed feature. There's no test relaxation, no stripped assertion, no swallowed error. This is not a no-op-fix cheat.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7241:no-op-fix:packages/client/src/links/httpBatchStreamLink.ts:1",
-    "repo": "trpc/trpc",
-    "prNumber": 7241,
-    "verdict": "false-alarm",
-    "confidence": 0,
-    "reasoning": "The auditor's own rationale actually concludes the code changes plausibly implement the feature (header construction in httpUtils.ts, server-side detection in contentType.ts and resolveResponse.ts). The finding's claim that the title describes a fix not exercised by non-test code is contradicted by that rationale. The visible diff shows the new HTTPBatchStreamLinkOptions type with the streamHeader option being added and wired into the function signature, which is the entry point for the feature; the actual header-building logic is referenced as living in adjacent files the auditor acknowledges are modified. This is a legitimate feature addition, not a no-op fix. The deterministic checks did not fire, and the judge's intent-vs-diff disagreement appears to be a misread, especially since this PR adds a feature rather than claiming a bug fix.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7242:no-op-fix:.github/workflows/release-manual.yml:1",
-    "repo": "trpc/trpc",
-    "prNumber": 7242,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The auditor's rationale describes changes to `mergeObjectSchemas` in `packages/openapi/src/generate.ts`, but the diff slice provided shows only a single unrelated change to a GitHub Actions release workflow (adding `--no-verify-access` to a lerna publish command). The auditor appears to be reasoning about code it cannot see in this slice, while the actual visible change is a CI/CD configuration tweak that has nothing to do with the OpenAPI fix. A no-op-fix finding would require evidence that the claimed fix is absent or ineffective in the changed code, but the only code shown here is unrelated infrastructure. The judge's intent-vs-diff disagreement is not supported by the slice; nothing here demonstrates a no-op fix. The visible change is legitimate and orthogonal, so the finding does not hold up on the evidence presented.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:no-op-fix:packages/client/src/internals/types.ts:1",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The auditor's own rationale actually contradicts its 'finding': it states the fix correctly changes info.calls[0] to info.calls[index], directly addressing the PR's stated goal. The diff slice shown here only includes an unrelated change to types.ts (adding a readonly ok field), not the resolveResponse.ts change the PR describes, but the PR body clearly documents the intended fix and the auditor confirms it exists. The no-op-fix claim is not supported—there is no evidence the stated fix was omitted or that a test was relaxed; the auditor essentially concludes the fix is delivered as described.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:103",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "The auditor claims the 'batchIndex is provided for single-call batch requests' test was removed with no replacement, but the diff clearly shows this test was relocated and parametrized into the new describe.each block (it appears as an added test inside the scenarios loop, now running across multiple client links and transformers). The original standalone version was deleted because it was moved, not dropped, and coverage actually increases since it now runs for both httpBatchLink and httpBatchStreamLink with and without superjson. Additionally, a new error-path test directly validates the bug fix. The auditor's own rationale even concedes the judge refuted the finding. This is a legitimate refactor, not a test relaxation.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:125",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "The auditor flagged removal of the 'batchIndex is available in middleware' test, but the diff clearly shows this test was not deleted—it was moved into the parametrized describe.each block (it appears in the added lines as a new test using clientLink), and only the old standalone copy was removed. Far from reducing coverage, the refactor runs the middleware batchIndex test across all four client-link/transformer scenarios and adds a brand-new 'error on 2nd call returns correct error path' test that directly validates the PR's bug fix. The auditor's own rationale concedes the block was refuted. This is a legitimate, coverage-expanding refactor.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:155",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "The 'batching enabled' test was not deleted but relocated into a parametrized describe.each block that runs across multiple client links and transformers. The diff clearly shows a new 'test('batching enabled', ...)' added inside the describe.each scenarios, asserting results equal ['Hello 1', 'Hello 2'] and onRequestSpy called once. Likewise 'batching disabled' and the batchIndex tests are preserved and expanded. The only substantive change is dropping two inline-snapshot URL assertions, which is incidental to parametrizing. Additionally, a new test directly validates the bug fix (error on 2nd call returns correct path). This is a legitimate refactor that increases coverage, not test relaxation hiding a regression.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:179",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.95,
-    "reasoning": "The 'batching disabled' test was not removed without replacement; it was moved into the parameterized describe.each block at the top of the file (where it now runs across all four client-link/transformer scenarios and retains the same core assertions about BAD_REQUEST, httpStatus 400, and the 'Batching is not enabled on the server' message). The diff only strips an inline-snapshot URL assertion in the 'batching enabled' case, which is incidental to the refactor. Additionally, the PR adds a brand-new test ('error on 2nd call returns correct error path') that directly validates the bug fix. Coverage is preserved and arguably expanded, so the finding that coverage is now zero is incorrect.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:166",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.93,
-    "reasoning": "This is a large test refactor that converts the batching tests into a parameterized `describe.each` covering both batch and stream links plus transformers. The deleted `toMatchInlineSnapshot` assertion on `results` (the 'batching enabled' test) was not removed to hide a regression—it was replaced by an equivalent and stronger assertion `expect(results).toEqual(['Hello 1', 'Hello 2'])` in the new parameterized 'batching enabled' test. The same real contract (results equal the two greetings, onRequestSpy called once) is still asserted, and a brittle URL-snapshot assertion was dropped because the test now runs across multiple link types where that exact URL doesn't apply. Additionally a new test ('error on 2nd call returns correct error path') was added that directly exercises the bug being fixed. The deterministic detector merely fired on the deleted snapshot line without recognizing the compensating `toEqual` assertion elsewhere in the refactor.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:174",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.82,
-    "reasoning": "This is a major test refactor that restructures the existing flat tests into a parameterized describe.each block covering 4 transport/transformer scenarios. The deleted line `expect(ctx.onRequestSpy.mock.calls[0]![0].url).toMatchInlineSnapshot(...)` was a URL snapshot assertion in the old 'batching enabled' test. The new 'batching enabled' test still asserts the meaningful contract (`expect(results).toEqual(['Hello 1','Hello 2'])` and `expect(ctx.onRequestSpy).toHaveBeenCalledTimes(1)`). The URL snapshot was dropped because the test now runs across both httpBatchLink and httpBatchStreamLink with different transformers, making a single hardcoded URL snapshot inappropriate. Additionally, the PR adds a brand-new test directly exercising the bug being fixed ('error on 2nd call returns correct error path' asserting `error.data?.path === 'failing'`), which strengthens coverage. The behavioral contract is preserved and the dropped assertion was an implementation-detail snapshot incompatible with the new parameterization, not a regression-hiding relaxation.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:191",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "This is a major test refactor that parameterizes the existing tests across four scenarios (httpBatchLink/httpBatchStreamLink x none/superjson) using describe.each, and adds a new test specifically targeting the bug being fixed. The deleted inline snapshot `expect(err.data?.code).toMatchInlineSnapshot('\"BAD_REQUEST\"')` from the old 'batching disabled' test is directly replaced by `expect(err.data?.code).toBe('BAD_REQUEST')` in the new parameterized 'batching disabled' test, which asserts the same contract (plus additional assertions on httpStatus and message). The assertion was not stripped to hide a regression; it was migrated and strengthened, and the new tests actually expand coverage including a new test verifying the error path fix. The deterministic detector merely matched a deleted assertion line without recognizing its equivalent replacement elsewhere in the diff.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:192",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "insufficient-context",
-    "confidence": 0,
-    "reasoning": "parse error: Bad escaped character in JSON at position 149 (line 1 column 150); raw: {\"verdict\": \"false-alarm\", \"confidence\": 0.9, \"reasoning\": \"The auditor flagged the deletion of `expect(err.data?.httpStatus).toMatchInlineSnapshot(\\`400\\`)`, but this is a test restructuring, not a r",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:193",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "This is a substantial test refactor that reorganizes the existing tests into a parameterized describe.each block covering four scenarios (httpBatchLink/httpBatchStreamLink × none/superjson transformers), plus adds a new test specifically validating the bug fix ('error on 2nd call returns correct error path' which asserts error.data?.path === 'failing'). The auditor flagged the deletion of a `toMatchInlineSnapshot` assertion on `results`, but that exact assertion was replaced with the stronger/equivalent `expect(results).toEqual(['Hello 1', 'Hello 2'])` in the new 'batching enabled' test. Similarly the 'batching disabled' test was preserved with the same `expect(err.message)` and code/status assertions. The removed inline-snapshot of the URL was dropped as part of generalizing across link types, but no contract assertion was actually weakened—the batching behavior, error messages, and the core fix are all still asserted, and coverage was expanded rather than relaxed. The detector fired purely on the deleted snapshot line without recognizing the compensating assertions elsewhere in the refactor.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "trpc/trpc#7262:test-relaxation:packages/tests/server/batching.test.ts:198",
-    "repo": "trpc/trpc",
-    "prNumber": 7262,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The deleted assertion on `ctx.onRequestSpy.mock.calls[0]![0].url` belonged to the old standalone 'batching enabled' test which the PR restructured into a parameterized `describe.each` block covering 4 scenarios (two link types × two transformers). The URL inline-snapshot was link/transformer-specific and would not hold across all scenarios, so dropping it while keeping the meaningful contract assertions (`results` equality and `toHaveBeenCalledTimes(1)`) is a legitimate consequence of the refactor, not a regression-hiding relaxation. The PR also adds genuinely new coverage—including the 'error on 2nd call returns correct error path' test that directly validates the actual fix. This is a behavior-preserving/expanding test reorganization, so the deterministic detector's flag is a false alarm.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vercel/next.js#93879:no-op-fix:packages/next/errors.json:1",
-    "repo": "vercel/next.js",
-    "prNumber": 93879,
-    "verdict": "false-alarm",
-    "confidence": 0.8,
-    "reasoning": "The diff slice shown is only the errors.json registry update, which renumbers existing error codes and adds a new message (\"Route ... Could not validate that a segment in your UI has instant navigation\") that directly corresponds to the unrendered-segment instant validation overlay the PR describes. This is exactly the kind of supporting change one expects from such a redesign. The auditor's own rationale acknowledges the PR modifies dynamic-rendering.ts and adds UI components and parsing logic that exercise the claimed code path — which contradicts the no-op-fix claim. The deterministic checks did not fire, and the LLM judge's complaint amounts to a reading-of-intent disagreement rather than evidence that the fix is absent. The new error string aligning with the overlay's purpose strongly indicates the fix is real, so the no-op-fix finding does not hold up on the visible evidence.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vercel/next.js#93879:test-relaxation:test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts:607",
-    "repo": "vercel/next.js",
-    "prNumber": 93879,
-    "verdict": "false-alarm",
-    "confidence": 0.8,
-    "reasoning": "The deleted assertion (extractBuildValidationError and exitCode === 1) was replaced with expectBuildValidationSkipped(result), which is a new compensating assertion in the same hunk. The diff includes a clear explanatory comment that the route-group workaround only fires in dev mode and that build-time pattern matching doesn't resolve through (group)/, so the route is legitimately skipped with no validation markers — meaning expecting a build error is no longer the correct behavior. The change reflects an intentional behavior change (introducing a (group)/ segment) rather than relaxing a test to hide a regression. The new assertion still verifies a real contract (that validation was skipped), so this is a legitimate test update, not a cheat. The deterministic detector simply fired on the deleted assert line without recognizing the replacement helper.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vercel/next.js#93879:test-relaxation:test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts:666",
-    "repo": "vercel/next.js",
-    "prNumber": 93879,
-    "verdict": "false-alarm",
-    "confidence": 0.82,
-    "reasoning": "The deleted assertion (extractBuildValidationError plus exitCode === 1) was replaced with expectBuildValidationSkipped(result), which is a real compensating assertion checking the genuinely changed behavior. The comment explains that the redesign changed the build-time path: the route group workaround now only fires in dev, so build-time validation is skipped (no markers, no error, no exit code 1). This is an intentional behavior change reflected in the test, not a stripped assertion hiding a regression — the dev-mode redbox path was also updated to assert the new E1286 message and source tree. The deterministic detector merely flagged the literal deletion of an expect line without recognizing the new assertion that replaced it; the contract is still being asserted, just the new contract.",
+    "reasoning": "The PR is a chore titled 'Add cache checks for openapi router fixtures,' and the diff slice shows exactly that: a CI step that verifies committed openapi test fixtures are up to date by checking git status and failing if they drift. This is the core deliverable and it is plainly present and functional. The auditor's complaint about generate.ts simplifying JSDoc filtering being 'unrelated to caching' misreads the PR's scope—this is a chore/tooling PR, not a feature with a code fix that tests must exercise. The no-op-fix category requires that a claimed fix isn't actually delivered; here the claimed work (CI fixture verification) IS delivered. There's no relaxed test, stripped assertion, or swallowed error. The auditor itself notes deterministic checks did not fire and relied on a debatable intent reading.",
     "arbiterModel": "claude-opus-4-8"
   },
   {
     "key": "vercel/next.js#93879:assertion-strip:test/e2e/app-dir/instant-validation/instant-validation-parallel-slots.test.ts:607",
     "repo": "vercel/next.js",
     "prNumber": 93879,
-    "verdict": "debatable",
-    "confidence": 0.55,
-    "reasoning": "The redbox assertion in the dev branch was legitimately updated to the new error message format, which is the genuine purpose of the PR. However, the build-time branch is concerning: the old code asserted both a detailed build validation error message AND `expect(result.exitCode).toBe(1)`, and these were replaced with a single `expectBuildValidationSkipped(result)` call. The inline comment claims the route is now skipped entirely because build-time pattern matching doesn't resolve through `(group)/` — which is plausibly a real behavioral change introduced by moving the page into a `(group)/` directory (visible in the other hunk). If true, asserting 'skipped' is the correct new contract rather than a stripped assertion hiding a regression. But from the diff alone I can't verify what `expectBuildValidationSkipped` actually asserts, nor whether the exit-code-1 build failure was a meaningful regression guard that should still hold. The change is plausibly legitimate given the route-group restructuring, but the net loss of a hard exitCode==1 assertion in favor of an opaque helper leaves genuine ambiguity.",
+    "verdict": "insufficient-context",
+    "confidence": 0,
+    "reasoning": "unparseable: The auditor flagged that the build-validation branch dropped its assertions: previously the `else` branch asserted a detailed error message via `toMatchInlineSnapshot` plus `expect(result.exitCode).toBe(1)`, and now just calls `expectBuildValidationSkipped(result)`. The key question is whether this ",
     "arbiterModel": "claude-opus-4-8"
   },
   {
@@ -221,7 +50,7 @@
     "prNumber": 93879,
     "verdict": "insufficient-context",
     "confidence": 0,
-    "reasoning": "unparseable: Looking at this carefully, the build-time branch changes from asserting `result.exitCode).toBe(1)` (build fails) to `expectBuildValidationSkipped(result)`. This is a meaningful behavioral change — the test previously verified the build failed with a specific validation error, and now it verifies the",
+    "reasoning": "unparseable: The key concern is that two `expect(result.exitCode).toBe(1)` assertions (along with detailed error snapshots) were replaced with `expectBuildValidationSkipped(result)`. This is a semantic inversion: the old test asserted that the build FAILED (exit code 1) with a validation error, while the new tes",
     "arbiterModel": "claude-opus-4-8"
   },
   {
@@ -230,7 +59,7 @@
     "prNumber": 93879,
     "verdict": "debatable",
     "confidence": 0.55,
-    "reasoning": "In the dev branch, the redbox assertion was legitimately updated to the new error format/UI, which is a clean refactor. The concern is the build branch: previously it asserted a detailed build validation error AND exitCode === 1, and now it calls expectBuildValidationSkipped(result), justified by a comment that build-time pattern matching can't resolve through (group)/ so the route is skipped entirely. If that behavioral change is real and intended, expectBuildValidationSkipped presumably asserts the route was skipped (and likely a successful exit), preserving a meaningful contract — a legitimate change. But the diff replaces a test that the build *fails* (exitCode 1) with one asserting it *skips*, which materially relaxes what the build does; whether expectBuildValidationSkipped actually asserts anything strong is not visible in the slice. The exitCode === 1 assertion in particular was dropped, and I can't confirm the replacement helper enforces an equivalent guarantee, so this sits between a justified behavior change and a relaxation that could mask a regression.",
+    "reasoning": "The dev-mode branch was legitimately updated to the new redesigned overlay format, which is a fair refactor. The concern is the build-mode branch: it previously asserted a specific error message AND that exitCode === 1 (build fails), and now asserts only expectBuildValidationSkipped(result). The diff comment claims that build-time pattern matching 'doesn't resolve through (group)/ so the route is skipped entirely (no validation markers emitted)' — meaning the build now succeeds where it previously failed with exit code 1. If this reflects a genuine behavioral change (the redesign), then expectBuildValidationSkipped is the correct new contract and not a cheat. But it could also mask a real regression where build validation that used to catch the unrendered segment now silently skips it. Without seeing the implementation of expectBuildValidationSkipped and whether the route-group skipping is intended behavior, this sits between false-alarm and a real loss-of-coverage concern; the dropped exitCode===1 assertion is exactly the kind of safety check that matters here, so I cannot confidently call it a clean false alarm.",
     "arbiterModel": "claude-opus-4-8"
   },
   {
@@ -238,314 +67,8 @@
     "repo": "vercel/next.js",
     "prNumber": 93879,
     "verdict": "false-alarm",
-    "confidence": 0.72,
-    "reasoning": "The auditor flags the removal of `expect(result.exitCode).toBe(1)` and the inline build-validation-error snapshot, but the diff replaces them with `expectBuildValidationSkipped(result)`, which is clearly a new helper assertion that verifies the route is now skipped (no validation markers emitted) per the PR's behavior change. The comment explains the build-time path now skips the route through the route group, so expecting exitCode 1 would be wrong; the assertion was intentionally updated to match the new contract rather than stripped to hide a regression. The dev-mode branch also still asserts a full redbox snapshot. The only uncertainty is the behavior of `expectBuildValidationSkipped`, which is defined in an untouched file, but its name strongly implies it asserts the skipped state, so the substituted assertion appears legitimate.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vercel/next.js#94062:no-op-fix:crates/next-api/src/app.rs:1",
-    "repo": "vercel/next.js",
-    "prNumber": 94062,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The PR is a performance optimization that reduces HMR chunk list subscriptions, and even the auditor's own rationale confirms the diff introduces real mechanisms (a new `hmr_chunk_list` method, page-specific HMR chunk lists, and a `root_main_files_per_page` field) that plausibly implement the stated change. The visible diff slice shows imports of new functions like `get_client_references_chunks_for_hmr` and the addition of `FxIndexMap`, consistent with restructuring how client reference chunks are tracked and subscribed. The auditor explicitly notes deterministic checks did not fire and bases the no-op claim only on a model's reading of intent. There is no evidence here that the fix is absent or non-functional; rather the opposite. A no-op-fix finding requires showing the claimed change isn't actually delivered, and the diff plus the auditor's own description contradict that.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vercel/next.js#94073:no-op-fix:packages/next/.storybook/decorators/with-dev-overlay-contexts.tsx:1",
-    "repo": "vercel/next.js",
-    "prNumber": 94073,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The auditor's own rationale actually concludes the PR genuinely implements the claimed Errors/Insights split—adding normalErrorCount/instantErrorCount tracking, separate tabs, and indicator pill styling. The diff slice shown adds normalErrorCount and instantErrorCount to a Storybook context decorator, which is supporting infrastructure consistent with the feature. There is no evidence of a no-op fix: the code is real and exercises the claimed behavior. The finding's headline (claim not exercised) contradicts its own rationale, and nothing in the diff suggests the fix is fake or hidden behind a test relaxation.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vercel/next.js#94284:no-op-fix:Cargo.lock:1",
-    "repo": "vercel/next.js",
-    "prNumber": 94284,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The diff slice shown is only a single-line addition to Cargo.lock (adding the turbo-tasks-hash dependency), which is a legitimate side effect of implementing the feature. The auditor's own rationale actually describes the feature being implemented correctly (adding turbopackLocalPostcssConfig and controlling the PostCssConfigLocation enum), and the auditor explicitly notes deterministic checks did not fire. The finding rests purely on an LLM judge's intent-vs-diff disagreement, but the visible evidence is consistent with a genuine backport of a real feature. There is nothing here resembling a no-op fix, stripped assertion, or hidden regression—this is a normal dependency-graph update accompanying a feature backport.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#12807:no-op-fix:.eslintrc.cjs:1",
-    "repo": "vitejs/vite",
-    "prNumber": 12807,
-    "verdict": "false-alarm",
-    "confidence": 0.92,
-    "reasoning": "The auditor's own rationale refutes the finding: it acknowledges the PR adds the actual Lightning CSS support (compileLightningCSS, convertTargets, conditional routing on config.css?.transformer === 'lightningcss'), which directly delivers the claimed feature. The diff slice shown here is merely an ESLint config tweak adding scripts/** to an override list, an incidental supporting change, not evidence that the fix is absent. A no-op-fix would require that the stated fix isn't actually delivered, but the auditor concedes the substantive feature code exists elsewhere in the PR. There is no relaxed test, stripped assertion, or swallowed error here.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:no-op-fix:packages/vite/src/node/build.ts:1",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The diff directly implements the stated fix: it moves the `isBundled` check to a per-environment basis by reading `environment.config.isBundled` rather than a global config property, and adds a guard returning `false` when not building and the environment is not bundled. It also tightens the esbuild plugin condition to respect `isBuild`. These are real, behavior-affecting changes in non-test code that plausibly exercise the per-environment `isBundled` path the title describes. The auditor's own rationale (the judge refuting the block) confirms the change properly implements per-environment behavior. The finding's claim that the fix is not plausibly exercised is contradicted by the diff itself.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/build.ts:516",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The flagged change is a source-code modification in build.ts that adds per-environment isBundled logic and a guard clause; it is not a test change at all. The coverage-erosion category requires a test being relaxed, an assertion stripped, or coverage removed in a way that hides a regression. The auditor's own evidence is a source line, and its rationale explicitly concedes that the test changes elsewhere were refactoring existing infrastructure rather than removing coverage of the new behavior. Adding new source behavior without a co-located test in the same diff slice is not coverage erosion, and the absence of a test in this particular slice does not demonstrate that coverage was removed or weakened. The finding does not exhibit the named pattern.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/define.ts:38",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.92,
-    "reasoning": "The auditor's evidence is just the line `+ if (isBuild) {`, which is a relocation of an existing block from module scope into the `generatePattern` function as part of refactoring `isBundled` to be per-environment. This is a behavior-preserving/extending refactor of production code in define.ts; the coverage-erosion category concerns weakening tests, not adding source code without tests. Adding source without a visible test in the same diff slice is not coverage erosion, and the auditor's own rationale concedes the test changes are infrastructure refactoring rather than removal of coverage. There is no stripped assertion, relaxed test, or hidden regression evident here.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/define.ts:41",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.88,
-    "reasoning": "This is a pure source-code refactor that moves the `isBundled` computation from plugin-creation scope into per-environment scope (reading `environment.config.isBundled` instead of a single `config.isBundled`), and migrates the plugin to use `applyToEnvironment`. The `if (isBundled)` line the auditor flagged is not a new untested branch hiding behavior; it is the same conditional logic relocated to operate per environment. The diff shows no test files at all, and the coverage-erosion category specifically concerns relaxed/removed tests or stripped assertions — none of which appear here. The absence of an added test in this slice does not constitute coverage erosion; that is a test-completeness concern at most, not the named cheat. The auditor's own rationale even concedes the block was 'refuted.'",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/define.ts:120",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "This is a pure refactor making `isBundled` per-environment: the previously module-scoped `isBundled` logic is moved inside `generatePattern` (reading `environment.config.isBundled`) and the build-time plugin behavior is moved into an `applyToEnvironment` hook keyed on `environment.config.isBundled`. The behavior is preserved; no assertions were stripped or tests relaxed. The auditor's own rationale concedes the test changes are refactoring of existing infrastructure rather than removing coverage. The 'coverage-erosion' label is not justified by simply adding a config branch without a new test in the same diff slice; absence of a test addition in a refactor that preserves contract is not erosion of existing coverage.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/dynamicImportVars.ts:186",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.92,
-    "reasoning": "The diff is a behavior-preserving refactor: the previous code checked `config.isBundled` at the top level and returned a separate plugin via `perEnvironmentPlugin`, while the new code moves the same `isBundled` check into an `applyToEnvironment` hook so the decision is made per-environment. This is exactly what the PR title and body describe (making `isBundled` per environment). The auditor's own rationale concedes the test changes are infrastructure refactoring, not removal of coverage for the new behavior. The 'coverage-erosion' category requires a test being relaxed or assertions stripped to hide a regression; nothing in the diff shows that, and the absence of a new test in this slice for an equivalence-preserving refactor does not constitute coverage erosion. The auditor's heuristic (new branch + no test = erosion) is mechanical and not supported by the evidence here.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/importMetaGlob.ts:46",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The diff is a legitimate refactor that moves the `isBundled` branch from a config-global check into the plugin's `applyToEnvironment` hook so the decision is made per-environment, which is exactly what the PR title states. No test assertions are visible in this slice, nothing is being relaxed, no error is swallowed, and the behavior is preserved/improved rather than masked. The auditor's own rationale concedes the test changes are refactoring existing infrastructure rather than removing coverage of the new behavior. A source-only change with no accompanying test in a given diff slice is not itself coverage erosion, especially when the finding cannot point to any deleted or weakened test.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/index.ts:73",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.92,
-    "reasoning": "The auditor's finding is about coverage erosion, but the diff slice is entirely production source code (packages/vite/src/node/plugins/index.ts) with no test files shown. The change refactors plugin resolution to make `isBundled` per-environment using `applyToEnvironment` callbacks and source-level branching—this is the legitimate feature/fix the PR describes, not a relaxation of any test or assertion. The 'evidence' (`+ if (`) is just a conditional inside the new per-environment logic, not a weakened test condition. Coverage erosion requires showing a test was removed or assertions stripped; nothing in this diff slice does that, and the auditor's own rationale concedes the judge refuted the block. There is no test code here to erode coverage from, so the finding does not hold against the shown evidence.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/modulePreloadPolyfill.ts:12",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "This is a pure refactor of source code to make `isBundled` per-environment: the global `config.isBundled` check is replaced with a per-environment `environment.config.isBundled` check inside `applyToEnvironment`. No test was relaxed, no assertion stripped, and the behavior is preserved/improved. The auditor's complaint that a source-code change lacks an accompanying test addition in this same hunk is not coverage erosion at all—coverage erosion involves removing or weakening existing tests, not the absence of new tests for new source. Even the auditor's own rationale (the 'judge refuted the block' note) concedes the test changes are legitimate refactoring of test infrastructure rather than removal of coverage. There is no evidence of the named cheat pattern here.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/optimizedDeps.ts:25",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The diff simply adds a source-code guard that returns false from applyToEnvironment when the environment is bundled, implementing the per-environment isBundled behavior. The coverage-erosion category requires a test being relaxed, an assertion stripped, or coverage removed. Nothing in this slice removes or weakens any test; it is purely a source addition. The mere absence of a new test in the shown slice is not coverage erosion—the auditor's own rationale even concedes the test changes are legitimate refactoring rather than removal of coverage. The finding does not match the named pattern.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/oxc.ts:278",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The diff is a behavior-preserving refactor that moves the `config.isBundled` branch logic from the top-level plugin factory into an `applyToEnvironment` hook, reading `environment.config.isBundled` instead of the global `config.isBundled`. This is exactly the intent of the PR ('make isBundled per environment'). The `if (environment.config.isBundled)` line the auditor flags is not a swallowed error, stripped assertion, or relaxed test—it is production source code implementing the stated fix. Coverage-erosion is about test changes that hide regressions; nothing here touches tests or removes coverage. The auditor's own rationale even concedes the block was refuted. Adding source logic without a test in the same hunk is not coverage erosion. ",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/preAlias.ts:29",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The finding alleges coverage erosion, but the diff slice shows only a small addition of a guard clause in source code (`if (environment.config.isBundled) return false`). Coverage erosion is about relaxing or removing tests in a way that hides a regression. Adding a new source branch without a dedicated test is at most a missing-test-coverage concern, not coverage erosion—no test was relaxed, no assertion stripped, no behavior masked. The auditor's own rationale even concedes the test changes are legitimate refactoring of test infrastructure rather than removal of coverage. The 'fix:' label and lack of a co-located test do not establish the named cheat pattern.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/worker.ts:322",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The flagged line is a refactor of source logic in worker.ts: it converts a config-level `isBundled` branch into a per-environment `applyToEnvironment` check, which is exactly what the PR title describes (making `isBundled` per-environment). The auditor's own rationale concedes the test changes are refactoring existing infrastructure rather than removing coverage of new behavior. A source-only diff slice with no test hunk shown does not constitute evidence of coverage erosion; the finding is essentially 'no test added in this slice,' which is not the same as relaxing or removing a test. There is no assertion stripping, no relaxed test, and no swallowed error visible. This is a legitimate behavior-preserving/feature refactor, so the coverage-erosion claim does not hold.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/worker.ts:418",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0,
-    "reasoning": "The flagged `if (isBundled)` is not new behavior at all—it is a pure refactor. The diff shows that `config.isBundled` was simply hoisted into a local variable `const isBundled = this.environment.config.isBundled`, and the subsequent `if (config.isBundled)` was changed to `if (isBundled)`. The other change swaps `experimental.bundledDev` for the now per-environment `isBundled` flag, which is exactly the stated purpose of the PR. No assertions were stripped, no test was relaxed, and the logic remains semantically equivalent except for sourcing the flag per-environment. The auditor's own rationale concedes the finding was refuted. This is not coverage erosion.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/worker.ts:535",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The diff is a straightforward source refactor: it replaces references to `experimental.bundledDev` and `config.isBundled` with `this.environment.config.isBundled` to make the flag per-environment, matching the PR's stated intent. The auditor's own rationale concedes this is legitimate behavior change with test infrastructure being refactored rather than coverage being removed. The coverage-erosion category requires evidence that tests were weakened, stripped, or rewired to hide a regression; nothing in this slice shows any test being removed or assertions relaxed. Simply adding a source-side branch without a visible test addition in this slice is not coverage erosion, especially when tests may be updated elsewhere in the PR. The finding does not demonstrate the named pattern.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "vitejs/vite#22257:coverage-erosion:packages/vite/src/node/plugins/workerImportMetaUrl.ts:259",
-    "repo": "vitejs/vite",
-    "prNumber": 22257,
-    "verdict": "false-alarm",
-    "confidence": 0.82,
-    "reasoning": "The auditor's evidence is the line `if (this.environment.config.command === 'serve')`, which is not a newly added source branch but a simplification of an existing conditional that previously also checked `experimental.bundledDev`. The diff shows a `-` removal of two conditions and a `+` of the narrower single condition, so this is refactoring existing logic, not introducing untested new behavior. The new `isBundled` per-environment lookup is a config refactor. There's no test relaxation, stripped assertion, or hidden regression in this slice. The auditor's own rationale even concedes the test changes are refactoring infrastructure rather than removing coverage of new behavior. This does not constitute coverage erosion.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:no-op-fix:packages/astro/src/core/build/static-build.ts:1",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The no-op-fix category claims the stated fix is not actually delivered. The diff slice only shows import changes (adding getServerOutputDirectory and hasServerIslands imports, removing getOutDirWithinCwd), which are clearly setup for substantive logic changes elsewhere in the file that aren't fully shown in this slice. The auditor's own rationale actually argues the PR DOES address the claimed fix by detecting server islands and conditionally building SSR. The finding text is contradictory and weakly supported—the judge fired YES but the rationale describes the fix being delivered, not absent. The PR is a real feature (skipping SSR for static Cloudflare sites) and these imports are consistent with implementing that. There's no evidence of a no-op here; the visible changes are legitimate prerequisites for real logic. Nothing suggests the fix is hollow.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/build/static-build.ts:265",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "This is a deterministic detector flagging the introduction of a conditional (`needsServerBuild`) without an accompanying test in the same diff. The change is a legitimate refactor of production logic: it replaces the inline `settings.buildOutput !== 'static'` check with a helper that presumably also accounts for server islands (hence the new `hasServerIslands` import) to decide whether the SSR environment build is needed. This is the actual feature change described in the PR (skip SSR build for fully static Cloudflare sites), not a relaxed test or stripped assertion. Coverage-erosion as a cheat category concerns weakening tests to hide regressions; adding a guarded code path in production source is not coverage erosion, and the absence of a new test in this specific hunk does not demonstrate any test was removed or weakened.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/build/static-build.ts:508",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The auditor's detector flagged the appearance of a branch condition `if (settings.buildOutput === 'server')` in a new helper function `needsServerBuild`, treating it as 'source branch added with no compensating test.' This is a legitimate refactor and feature addition: the diff extracts directory resolution into `getServerOutputDirectory` and introduces a clear, well-documented helper to determine whether the SSR build environment is needed. This is exactly the kind of behavior-preserving/feature-implementing production code change the PR describes. Coverage erosion concerns the relaxing or removal of tests, not the addition of production branches. There is no test being weakened here; the finding is a deterministic false positive from a branch-counting heuristic, not evidence of any cheat.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/preview/index.ts:50",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The auditor's 'coverage-erosion' finding is based purely on a deterministic detector noticing a new conditional branch without an accompanying test in this PR. But adding a branch without a test is not coverage erosion in the cheat sense—nothing existing was relaxed, no assertion stripped, no test weakened. The change is a legitimate feature: it refines preview behavior so adapters with a previewEntrypoint use the server preview path and static sites check the correct client output directory. There is no evidence of a test being modified or removed to hide a regression. At worst this is undertested new code, which is a coverage gap, not the named cheat pattern of eroding existing coverage.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/preview/index.ts:52",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The flagged line is not a test relaxation or assertion removal; it is a legitimate refactor of production preview logic. The change replaces a hardcoded outDir check with a computed client output directory (getClientOutputDirectory) and adds an adapter condition, while still throwing the same error when the directory is missing. The contract is preserved/improved, not eroded. The auditor's 'coverage-erosion' label is a deterministic heuristic triggered merely by the absence of an accompanying test for a new branch in a source file, but adding a feature branch without a new test is not itself coverage erosion—no existing test or assertion was weakened or deleted. There is no evidence in the diff of any test change at all.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/render/params-and-props.ts:65",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The finding is from a deterministic detector flagging a new branch condition without an accompanying test, calling it 'coverage erosion.' But coverage erosion specifically means relaxing or stripping tests to hide regressions. This diff adds a guard condition (`route.origin !== 'internal'`) to source logic—it is a behavioral change, not a test modification. Adding a new conditional branch in production code without a new test is at most a test-coverage gap, not erosion of existing coverage, and merely lacking a test in this PR does not constitute the named cheat of relaxing tests to hide regressions. The detector has misfired by treating any untested new branch as coverage erosion.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/render/route-cache.ts:48",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The finding is a deterministic detector firing on a new conditional branch (`route.origin === 'internal'`) added without an accompanying test. But coverage-erosion as a cheat category means a test was relaxed, stripped, or weakened to hide a regression. This diff adds a new behavior branch to production source code; it does not touch or weaken any test. Adding a new code path without a dedicated test is, at most, a missing-test-coverage concern, not the relaxation of existing assertions that defines coverage erosion. The auditor admits the detector is heuristic with no real rationale, and the change appears to be a legitimate behavioral addition supporting the PR's static-build feature.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/routing/validation.ts:17",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.85,
-    "reasoning": "The diff adds a guard condition (route.origin !== 'internal') to an existing error-throwing check, narrowing when the GetStaticPathsRequired error is raised. This is a legitimate behavioral change, not a relaxation of a test or stripping of an assertion. The auditor's 'coverage-erosion' classification is based purely on a deterministic heuristic that a source-branch change lacks an accompanying test in this PR. Adding a branch to production code without a new test is not itself coverage erosion in the cheat sense (relaxing tests to hide regressions); it's normal feature work. The change appears intentional and tied to the PR's purpose of handling internal/static routes differently. No test was modified or weakened here at all.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/server-islands/vite-plugin-server-islands.ts:139",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The auditor's 'coverage-erosion' detector merely fired on a new source branch (`if (command === 'build')`) without any test being relaxed, removed, or weakened. This diff is purely additive/refactoring source logic: it exposes a `hasServerIslands` API, adds a helper function, and slightly changes the condition for throwing NoAdapterInstalledServerIslands. No test assertions were stripped or loosened, no mock was rewired, and no error was swallowed. The absence of an accompanying test in the same PR is not evidence of coverage erosion—it is at most a coverage-gap concern, and the named cheat category (coverage-erosion, which requires hiding a regression by relaxing tests) does not apply here.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/core/server-islands/vite-plugin-server-islands.ts:140",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.8,
-    "reasoning": "The flagged line is a refactor of an existing error-throwing condition, not coverage erosion. The original code already threw NoAdapterInstalledServerIslands when server islands existed without proper output; the new code restructures the same guard to check for an adapter directly (consistent with the PR's goal of supporting static Cloudflare builds while still erroring when no adapter is installed). The error still throws, so no regression is hidden and no assertion was removed. The auditor's detector is a deterministic 'new branch without new test' heuristic, but the branch preserves the existing contract and the diff slice contains no test files at all—so this is a behavior-preserving/intentional logic change, not a relaxation of coverage. The new exported helper is additive support code.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16468:coverage-erosion:packages/astro/src/prerender/utils.ts:15",
-    "repo": "withastro/astro",
-    "prNumber": 16468,
-    "verdict": "false-alarm",
-    "confidence": 0.9,
-    "reasoning": "The diff adds a new feature flag branch to source logic; it is a behavior-preserving refactor plus a legitimate new feature (preserveBuildServerDir). The 'coverage-erosion' category concerns relaxing or removing tests in ways that hide regressions, or stripping assertions. Nothing here touches tests, weakens assertions, or swallows errors. The auditor's claim is merely that new source code lacks an accompanying test in this PR, which is not coverage erosion—adding untested code is not the same as eroding existing coverage, and the detector is purely heuristic with no evidence of any test being weakened. This is a feature implementation matching the PR description, not a cheat.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16811:no-op-fix:packages/astro/src/core/app/entrypoints/node.ts:1",
-    "repo": "withastro/astro",
-    "prNumber": 16811,
-    "verdict": "false-alarm",
-    "confidence": 0.82,
-    "reasoning": "The diff slice shown is merely an export statement adding `createRequestFromNodeRequest` to the re-exports of node entrypoints. This is a legitimate plumbing change consistent with the PR's stated intent of refactoring X-Forwarded-* header resolution into FetchState. The auditor's own rationale actually describes a coherent, plausible implementation that matches the PR title—adding an `#applyForwardedHeaders()` method and deferring header validation so user code can set headers before processing. The finding alleges the non-test code does not plausibly exercise the claimed fix, but nothing in the visible diff (or even the auditor's description) supports that; if anything the auditor's narrative supports that the fix is delivered. The judge's 'reading of intent vs. diff' is unsubstantiated, and the actual core implementation isn't even in the shown slice, but the export change is exactly what such a refactor would require.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16893:no-op-fix:packages/astro/src/core/app/base.ts:1",
-    "repo": "withastro/astro",
-    "prNumber": 16893,
-    "verdict": "false-alarm",
     "confidence": 0.78,
-    "reasoning": "The auditor's finding is built on a mismatch between the PR's actual stated intent and what the auditor analyzed. The PR title and body explicitly describe a routine merge of main into next, with conflicts limited to version skew (package.json, pnpm-lock.yaml, CHANGELOG.md). The PR makes no claim about adding matchAll fallthrough routing logic. The auditor's rationale describes a feature (matchAllRoutes for prerendered dynamic routes) that is genuinely present in the diff, but this is incidental code being carried over by the merge, not a 'fix' the PR claims to deliver. The no-op-fix category requires that the PR claim a fix the code doesn't deliver; here the PR claims only a merge, and the merge is performed. The auditor conflated the merged-in code's purpose with a fix claim that the PR never made, so the finding does not establish the named pattern.",
-    "arbiterModel": "claude-opus-4-8"
-  },
-  {
-    "key": "withastro/astro#16908:no-op-fix:packages/astro/src/assets/fonts/core/optimize-fallbacks.ts:1",
-    "repo": "withastro/astro",
-    "prNumber": 16908,
-    "verdict": "false-alarm",
-    "confidence": 0,
-    "reasoning": "The diff clearly implements the claimed feature. A new `deriveFallbackVariant()` function detects bold fonts (weight >= 700, 'bold', or parseable numeric strings), and this variant is passed to `getLocalFonts(lastFallback, variant)`, enabling variant-specific local fallback fonts like 'Arial Bold'. The metrics resolution and font-face generation are correctly rewired to use the per-variant local fonts. This is a genuine implementation of the PR's stated 'better bold fallbacks' goal, not a no-op. The auditor's own rationale actually confirms the fix is delivered; the finding text seems to be a generic mismatch flag that the auditor itself argues against.",
+    "reasoning": "The diff shows the assertions were not stripped to hide a regression; they were replaced. The dev-mode redbox assertion was updated to the new error format (E1286, new source UI), and the build-mode branch replaced the inline-snapshot + exitCode==1 assertion with a call to expectBuildValidationSkipped(result), with an explanatory comment that build-time pattern matching doesn't resolve through (group)/ so the route is legitimately skipped. The exitCode==1 check was removed because the expected behavior changed (no longer an error in build mode for this route-group case), and a new helper presumably asserts the skipped contract. The raw assertion count dropped, but a new helper assertion was added that verifies the new expected behavior. The only caveat is that expectBuildValidationSkipped is defined in an untouched file, so we can't fully verify it asserts something meaningful—but the change is clearly an intentional, documented behavior alignment rather than a cheat, so the finding (assertions removed without equivalents) is wrong.",
     "arbiterModel": "claude-opus-4-8"
   }
 ]
