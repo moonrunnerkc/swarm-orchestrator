@@ -105,3 +105,57 @@ per semantic category), about $0.009 per PR at Anthropic Haiku list price
 points to the false-positive rate on presumed-clean reals. Leave it off if
 you cannot afford either. `swarm doctor` warns when it is enabled with no
 inference provider configured.
+
+## Promoting judge-primary from advisory to blocking
+
+Judge-primary findings ship advisory by default: severity `warn`, never
+`block`. A semantic finding rests on a single LLM verdict, and the +10pp
+false-positive cost above is measured on our presumed-clean corpus, not on
+the consumer's repo. Blocking a merge on that without per-repo evidence
+trains maintainers to disable the auditor. So the default is advisory, and
+promotion to blocking requires the consumer to measure the path on their
+own code first.
+
+The bar a consumer should clear before flipping `judgePrimary.block: true`:
+
+- Run the post-upgrade auditor (judge-primary on) across the consumer's own
+  last 100 merged PRs, which are presumed clean because they were reviewed
+  and merged.
+- Count the judge-primary findings raised. The false-positive rate is that
+  count over the window (a finding on an already-merged PR is, by
+  assumption, a false alarm).
+- Compare against the pre-upgrade auditor's false-positive rate on the same
+  window. Promote only when the judge-primary false-positive rate is within
+  **2 percentage points** of that baseline, on a window of **at least 100
+  PRs**.
+
+Record the measurement in
+`benchmarks/real-corpus/judge-primary-measurements.json` keyed by category:
+
+```json
+{
+  "goal-not-fixed": {
+    "fpRatePostPp": 3.0,
+    "fpRateBaselinePp": 2.0,
+    "windowPrCount": 120,
+    "source": "acme/widgets last-120-merged, 2026-06"
+  }
+}
+```
+
+`npm run promotions:compute` reads that file and flips the category to
+`block: true` only when the delta and window clear the bar; otherwise it
+stays advisory and records why. `npm run promotions:check` fails CI if a
+category is set to block without a qualifying measurement on file, so the
+gate cannot be hand-edited open. Once the policy promotes the category, set
+`judgePrimary.block: true` in the consumer's `.swarm/audit-config.yaml` to
+make the findings gate:
+
+```yaml
+judgePrimary:
+  enabled: true
+  block: true
+```
+
+Until both the measurement and the config flip are in place, judge-primary
+stays advisory and a semantic finding never fails a build on its own.

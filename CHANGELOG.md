@@ -15,8 +15,12 @@ On the 300-defect oracle the post-upgrade pipeline catches 253/300
 injected cheats vs 210/300 before (+20.5%), driven by the judge-primary
 path on the two semantic categories (0 to 20/50) and a test-relaxation
 reshape (1/25 to 24/25). The judge-primary path adds about 10 points of
-false positives on presumed-clean reals; it is on by default and opt-out
-per `judgePrimary.enabled: false`. Full A/B in
+false positives on presumed-clean reals, so its findings ship advisory
+(severity `warn`, never blocking) by default; it is on by default and
+opt-out per `judgePrimary.enabled: false`, and a consumer flips it to
+blocking with `judgePrimary.block: true` only after measuring the
+false-positive rate on their own merged-PR window (see
+`docs/audit/methodology.md`). Full A/B in
 `benchmarks/results/AB-REPORT.md`; reproduce with `npm run benchmarks:full`.
 
 #### Added
@@ -32,6 +36,10 @@ per `judgePrimary.enabled: false`. Full A/B in
   claim is not delivered. Gated by `judgePrimary` in
   `.swarm/audit-config.yaml` (default on, requires the judge enabled).
   Roughly two extra judge calls per PR, about $0.009 at Haiku list price.
+  Findings are advisory by default (severity `warn`); a consumer opts in
+  to gating with `judgePrimary.block: true`, which the promotion policy
+  only honors once a qualifying per-repo false-positive measurement is on
+  file (`benchmarks/real-corpus/judge-primary-measurements.json`).
 - **Versioned judge prompts** (`src/audit/cheat-detector/judge-prompts/`)
   and a calibration harness (`npm run calibrate:judge`) that picks the
   prompt with the best held-out recall whose clean-PR false-positive rate
