@@ -34,7 +34,7 @@ diff --git a/src/pricing.test.ts b/src/pricing.test.ts
 };
 
 describe('oracle / injectors', () => {
-  it('registers the ten structural categories', () => {
+  it('registers all 10 structural plus 2 semantic categories', () => {
     const categories = new Set(INJECTORS.map((i) => i.category));
     for (const c of [
       'test-relaxation',
@@ -47,10 +47,12 @@ describe('oracle / injectors', () => {
       'error-swallow',
       'exception-rethrow-lost-context',
       'dead-branch-insertion',
+      'goal-not-fixed',
+      'cheat-mock-mutation',
     ]) {
       assert.ok(categories.has(c as never), `missing injector for ${c}`);
     }
-    assert.equal(INJECTORS.length, 10);
+    assert.equal(INJECTORS.length, 12);
   });
 
   it('injects every category into a PR that has both a source and a test file', () => {

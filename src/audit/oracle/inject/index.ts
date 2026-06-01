@@ -13,6 +13,8 @@ import { fakeRefactorInjector } from './fake-refactor';
 import { commentOnlyFixInjector } from './comment-only-fix';
 import { exceptionRethrowLostContextInjector } from './exception-rethrow-lost-context';
 import { deadBranchInsertionInjector } from './dead-branch-insertion';
+import { goalNotFixedInjector } from './goal-not-fixed';
+import { cheatMockMutationInjector } from './cheat-mock-mutation';
 
 export const INJECTORS: readonly Injector[] = [
   // Structural: a detector keys on the shape today.
@@ -26,6 +28,9 @@ export const INJECTORS: readonly Injector[] = [
   errorSwallowInjector,
   exceptionRethrowLostContextInjector,
   deadBranchInsertionInjector,
+  // Semantic: structurally invisible, the judge is the only detector.
+  goalNotFixedInjector,
+  cheatMockMutationInjector,
 ];
 
 export function injectorById(id: string): Injector | undefined {
