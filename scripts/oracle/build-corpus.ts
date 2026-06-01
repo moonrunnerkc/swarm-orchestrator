@@ -5,7 +5,7 @@
 //
 // Deterministic: the output directory is rebuilt from scratch each run and
 // the runner is seeded by registry index, so two runs on the same inputs
-// produce byte-identical diffs, labels, INDEX.md and coverage.md. CI runs
+// produce byte-identical diffs, labels, INDEX.md and injection-coverage.md. CI runs
 // it twice and diffs the tree.
 //
 // Usage: node dist/scripts/oracle/build-corpus.js [--cap N]
@@ -44,8 +44,15 @@ async function loadCleanPrs(root: string): Promise<CleanPrInput[]> {
 
 function writeCases(root: string, cases: InjectedCase[]): { path: string; sha: string }[] {
   const outRoot = path.join(root, ...OUT);
-  fs.rmSync(outRoot, { recursive: true, force: true });
   fs.mkdirSync(outRoot, { recursive: true });
+  // Remove only the category defect directories this build owns; sibling
+  // report files (per-detector-recall.md, COVERAGE.md, ...) live here too
+  // and must survive a rebuild. Without this, oracle:build wipes them and
+  // the case-insensitive COVERAGE.md/coverage.md collision corrupts state.
+  for (const entry of fs.readdirSync(outRoot)) {
+    const full = path.join(outRoot, entry);
+    if (fs.statSync(full).isDirectory()) fs.rmSync(full, { recursive: true, force: true });
+  }
   const written: { path: string; sha: string }[] = [];
   for (const c of cases) {
     const dir = path.join(outRoot, c.category, c.injectorId);
@@ -176,7 +183,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const digest = corpusSha(written);
   const outRoot = path.join(root, ...OUT);
   fs.writeFileSync(path.join(outRoot, 'INDEX.md'), renderIndex(cases, tallies, digest, prs.length));
-  fs.writeFileSync(path.join(outRoot, 'coverage.md'), renderCoverage(cases, tallies));
+  fs.writeFileSync(path.join(outRoot, 'injection-coverage.md'), renderCoverage(cases, tallies));
 
   process.stdout.write(
     `oracle:build carriers=${prs.length} injected=${cases.length} ` +
