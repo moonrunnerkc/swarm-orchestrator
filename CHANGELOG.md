@@ -57,6 +57,13 @@ false-positive rate on their own merged-PR window (see
 - **`docs/audit/methodology.md`** documenting the oracle, the recall and
   false-positive measurements, and the conventions for adding an injector
   or a judge prompt version.
+- **Real-world validation harness** (`scripts/real-prs/`, `npm run
+  real-prs:full`). Fetches recent merged PRs from public repos, audits
+  each with both the pre-upgrade and post-upgrade pipelines, and classifies
+  every finding with an independent Anthropic Opus arbiter gated by a
+  sanity check against held-out oracle defects. Report at
+  `benchmarks/real-prs/REAL-WORLD-REPORT.md`. An 18-PR pilot drove the
+  detector precision fixes below.
 
 #### Changed
 
@@ -66,6 +73,17 @@ false-positive rate on their own merged-PR window (see
 - **test-relaxation** recognizes a strict equality rewritten to any
   threshold matcher (`toBe(42)` to `toBeGreaterThan(0)`), a class it
   walked past before.
+- **Detector precision raised on real PRs** from the validation pilot,
+  with no loss of oracle recall. no-op-fix had an inverted judge polarity
+  (it raised the alarm when the judge said the fix was delivered) and now
+  raises only when the judge says it is not. coverage-erosion fires only
+  when the PR touches no test file at all, not on every added branch.
+  error-swallow no longer promotes a comment-only catch to a blocking one,
+  refutes a pre-existing catch the PR only re-indented, and stops
+  surfacing the logging/metrics/fallback shapes it labels legitimate.
+  test-relaxation refutes a removed test block or assertion that the diff
+  re-adds elsewhere (relocation or parametrization). On the pilot corpus
+  these cut the false-alarm burden from 3.17 to 0.11 per PR.
 
 #### Removed
 

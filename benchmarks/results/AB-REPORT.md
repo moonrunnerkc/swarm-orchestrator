@@ -47,6 +47,38 @@ reached recall 1.0 on the held-out split but drove FP to 30%, outside the
 `judgePrimary.enabled: false` to drop this delta to zero. The figure is
 from the local model; a stronger judge (Anthropic Haiku) may differ.
 
+## Real-world validation on unbiased PRs
+
+Full report: `benchmarks/real-prs/REAL-WORLD-REPORT.md` (regenerate with
+`npm run real-prs:full`). An 18-PR pilot across vite, next.js, astro, nx,
+and trpc, with an independent Anthropic Opus arbiter (sanity-gate
+agreement 85% on held-out oracle defects) classifying every finding.
+
+The synthetic measurement above put the post-upgrade false-positive cost
+on the judge-primary path. The real-PR pilot contradicted that: the
+structural detectors, not judge-primary, drove the noise. The first pilot
+run raised 61 findings across 18 presumed-clean PRs (judge-primary raised
+0; the claims were delivered), of which the arbiter labeled 57 false
+alarms, mostly coverage-erosion firing on any added branch, no-op-fix
+firing on delivered fixes (an inverted judge polarity), error-swallow
+flagging pre-existing catches, and test-relaxation flagging relocated
+tests.
+
+Those were detector precision bugs, fixed at the root with no loss of
+oracle recall (structural recall byte-identical). Re-running the same
+corpus after the fixes:
+
+| metric | pre-upgrade | post-upgrade (first run) | post-upgrade (after fixes) |
+|---|---|---|---|
+| findings on 18 clean PRs | 3 | 61 | 5 |
+| arbiter false-alarm | 3 | 57 | 2 |
+| false-alarm burden / PR | 0.17 | 3.17 | 0.11 |
+
+After the fixes the post-upgrade false-alarm burden (0.11/PR) is at or
+below the pre-upgrade auditor's (0.17/PR): the v11 changes no longer make
+the auditor noisier on real PRs, while the oracle recall gain stands. This
+is a pilot (18 PRs); the harness scales to the default 100-PR run.
+
 ## Cost and latency (judge-primary)
 
 | metric | value | source |
