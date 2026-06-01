@@ -7,7 +7,7 @@
 
 import { strict as assert } from 'assert';
 import parseDiff from 'parse-diff';
-import { errorSwallowDetector } from '../../../src/audit/cheat-detector/error-swallow';
+import { errorSwallowDetector, __testing } from '../../../src/audit/cheat-detector/error-swallow';
 import type { Finding } from '../../../src/audit/types';
 
 function run(diff: string): Finding[] {
@@ -30,46 +30,77 @@ function diffOf(body: string): string {
   );
 }
 
-describe('error-swallow v2.0 catch-body classification', () => {
-  it('classifies logger.error catch body as logging-only (info)', () => {
+describe('error-swallow v2.1 catch-body classification', () => {
+  // v2.1: the body shapes the detector classifies as "typically
+  // legitimate" (logging-only, metrics-only, fallback-assignment) are no
+  // longer surfaced as findings. A real-PR pilot showed they are noise a
+  // maintainer would disable the auditor over. The classifier still
+  // distinguishes them (verified via __testing.classifyCatch) so the
+  // distinction is preserved; only the emission is suppressed.
+  it('does not surface a logger.error catch body (classified logging-only)', () => {
     const body = '  try { doIt(); } catch (e) { logger.error("failed", e); }';
-    const findings = run(diffOf(body));
-    assert.equal(findings.length, 1);
-    assert.equal(findings[0]!.severity, 'info');
-    assert.match(findings[0]!.message, /body-class: logging-only/);
+    assert.equal(run(diffOf(body)).length, 0);
+    assert.equal(
+      __testing.classifyCatch('try { doIt(); } catch (e) { logger.error("failed", e); }'),
+      'logging-only',
+    );
   });
 
-  it('classifies console.warn catch body as logging-only (info)', () => {
+  it('does not surface a console.warn catch body (classified logging-only)', () => {
     const body = '  try { doIt(); } catch (e) { console.warn("ignored", e); }';
-    const findings = run(diffOf(body));
-    assert.equal(findings.length, 1);
-    assert.equal(findings[0]!.severity, 'info');
-    assert.match(findings[0]!.message, /logging-only/);
+    assert.equal(run(diffOf(body)).length, 0);
   });
 
-  it('classifies metric.increment catch body as metrics-only (info)', () => {
+  it('does not surface a metric.increment catch body (classified metrics-only)', () => {
     const body = '  try { doIt(); } catch (e) { metrics.increment("err.count"); }';
-    const findings = run(diffOf(body));
-    assert.equal(findings.length, 1);
-    assert.equal(findings[0]!.severity, 'info');
-    assert.match(findings[0]!.message, /body-class: metrics-only/);
+    assert.equal(run(diffOf(body)).length, 0);
+    assert.equal(
+      __testing.classifyCatch('try { doIt(); } catch (e) { metrics.increment("err.count"); }'),
+      'metrics-only',
+    );
   });
 
-  it('classifies prom.Counter inc() catch body as metrics-only', () => {
+  it('does not surface a prom.Counter inc() catch body (classified metrics-only)', () => {
     const body =
       '  try { doIt(); } catch (e) { new Counter({ name: "errs" }).inc(); }';
-    const findings = run(diffOf(body));
-    assert.equal(findings.length, 1);
-    assert.equal(findings[0]!.severity, 'info');
-    assert.match(findings[0]!.message, /metrics-only/);
+    assert.equal(run(diffOf(body)).length, 0);
   });
 
-  it('classifies literal-default assignment catch body as fallback-assignment (info)', () => {
+  it('does not surface a literal-default assignment catch body (classified fallback-assignment)', () => {
     const body = '  try { doIt(); } catch (e) { result = null }';
-    const findings = run(diffOf(body));
+    assert.equal(run(diffOf(body)).length, 0);
+    assert.equal(
+      __testing.classifyCatch('try { doIt(); } catch (e) { result = null }'),
+      'fallback-assignment',
+    );
+  });
+
+  it('does not flag a pre-existing bare catch that the PR only re-indented', () => {
+    // nrwl/nx#34951: an existing `} catch {}` was wrapped in a new `if`,
+    // so the formatter re-indented it and the diff marks it both removed
+    // (old indent) and added (new indent). The PR did not introduce the
+    // swallow, so it must not be flagged.
+    const diff =
+      'diff --git a/src/x.ts b/src/x.ts\n' +
+      '--- a/src/x.ts\n' +
+      '+++ b/src/x.ts\n' +
+      '@@ -1,4 +1,6 @@\n' +
+      ' function f() {\n' +
+      '-    try {\n' +
+      '-      doIt();\n' +
+      '-    } catch {}\n' +
+      '+    if (enabled) {\n' +
+      '+      try {\n' +
+      '+        doIt();\n' +
+      '+      } catch {}\n' +
+      '+    }\n';
+    assert.equal(run(diff).length, 0);
+  });
+
+  it('still flags a newly added bare catch (no matching deleted line)', () => {
+    const findings = run(diffOf('  try { doIt(); } catch {}'));
     assert.equal(findings.length, 1);
-    assert.equal(findings[0]!.severity, 'info');
-    assert.match(findings[0]!.message, /body-class: fallback-assignment/);
+    assert.equal(findings[0]!.severity, 'block');
   });
 
   it('does NOT fire when the catch body throws (mixed-with-rethrow)', () => {

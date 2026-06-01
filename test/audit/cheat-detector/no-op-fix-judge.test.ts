@@ -207,6 +207,46 @@ describe('cheat-detector / no-op-fix v2.0 with judge', () => {
     assert.equal(stub2.calls.length, 0);
   });
 
+  // DIFF_BOTH_SIDES_OVERLAP fires no deterministic check (asserted above),
+  // so it isolates the judge-only path: the verdict alone decides.
+  function prewarm(repo: string, diff: string, answer: 'yes' | 'no', reason: string): void {
+    const { cacheKey, diffSha, titleSha } = computeJudgeCacheKey({
+      diff,
+      title: PR_TITLE,
+      modelId: PINNED_JUDGE_MODEL_ID,
+      detector: 'no-op-fix',
+    });
+    writeCachedAnswer(repo, cacheKey, {
+      diffSha,
+      titleSha,
+      modelId: PINNED_JUDGE_MODEL_ID,
+      answer,
+      reason,
+    });
+  }
+
+  it('judge NO (fix not delivered) with no deterministic finding raises a warn', async () => {
+    const repo = tempRepo();
+    prewarm(repo, DIFF_BOTH_SIDES_OVERLAP, 'no', 'the changed code does not touch the claimed path');
+    const findings = await runDetector(DIFF_BOTH_SIDES_OVERLAP, repo, {
+      enabled: true,
+      unifiedDiff: DIFF_BOTH_SIDES_OVERLAP,
+    });
+    const warn = findings.filter((f) => f.category === 'no-op-fix' && f.severity === 'warn');
+    assert.equal(warn.length, 1, `expected one warn no-op finding; got ${JSON.stringify(findings)}`);
+    assert.match(warn[0]?.evidence ?? '', /judge NO/);
+  });
+
+  it('judge YES (fix delivered) with no deterministic finding raises nothing', async () => {
+    const repo = tempRepo();
+    prewarm(repo, DIFF_BOTH_SIDES_OVERLAP, 'yes', 'the change directly affects the claimed path');
+    const findings = await runDetector(DIFF_BOTH_SIDES_OVERLAP, repo, {
+      enabled: true,
+      unifiedDiff: DIFF_BOTH_SIDES_OVERLAP,
+    });
+    assert.equal(findings.length, 0, `expected no findings on judge YES; got ${JSON.stringify(findings)}`);
+  });
+
   it('malformed judge reply falls back to unavailable without writing cache', async () => {
     const repo = tempRepo();
     const stub = buildJudgeClientStub({ reply: judgeReply('malformed') });

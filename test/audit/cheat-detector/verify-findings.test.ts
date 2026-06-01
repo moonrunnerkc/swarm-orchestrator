@@ -100,6 +100,67 @@ deleted file mode 100644
     assert.equal(suppressed[0]!.rule, 'source-co-removed');
   });
 
+  it('drops a removed-block finding when the block is re-added elsewhere (relocated)', () => {
+    // The block is deleted in one hunk and re-added (parametrized) in
+    // another hunk of the same file: coverage is preserved.
+    const files = parseDiff(`diff --git a/test/batching.test.ts b/test/batching.test.ts
+--- a/test/batching.test.ts
++++ b/test/batching.test.ts
+@@ -1,4 +1,2 @@
+-describe('batchIndex', () => {
+-  test('batchIndex is passed correctly', () => { expect(x).toBe(1); });
+-});
+ const keep = 1;
+@@ -40,1 +38,5 @@
+ const scenarios = [{ link: 'a' }, { link: 'b' }];
++describe.each(scenarios)('batchIndex', (s) => {
++  test('batchIndex is passed correctly', () => { expect(x).toBe(1); });
++  test('error path', () => { expect(y).toBe(2); });
++});
+`);
+    const findings = [
+      finding({
+        category: 'test-relaxation',
+        severity: 'block',
+        location: { file: 'test/batching.test.ts', line: 1 },
+        message: 'Test block was removed without a replacement in the same hunk. Coverage for the original case is now zero.',
+        evidence: "- describe('batchIndex', () => {",
+      }),
+    ];
+    const { kept, suppressed } = verifyFindings(findings, {
+      files,
+      intent: { claimsFix: false, evidence: '' },
+    });
+    assert.equal(kept.length, 0);
+    assert.equal(suppressed[0]!.rule, 'test-relocated');
+  });
+
+  it('keeps a removed-block finding when nothing is re-added', () => {
+    const files = parseDiff(`diff --git a/test/x.test.ts b/test/x.test.ts
+--- a/test/x.test.ts
++++ b/test/x.test.ts
+@@ -1,4 +1,1 @@
+-describe('gone', () => {
+-  it('checks', () => { expect(x).toBe(1); });
+-});
+ const keep = 1;
+`);
+    const findings = [
+      finding({
+        category: 'test-relaxation',
+        severity: 'block',
+        location: { file: 'test/x.test.ts', line: 1 },
+        message: 'Test block was removed without a replacement in the same hunk. Coverage for the original case is now zero.',
+        evidence: "- describe('gone', () => {",
+      }),
+    ];
+    const { kept } = verifyFindings(findings, {
+      files,
+      intent: { claimsFix: false, evidence: '' },
+    });
+    assert.equal(kept.length, 1);
+  });
+
   it('keeps test-removal findings when no source is deleted', () => {
     const files = parseDiff(`diff --git a/test/x.test.ts b/test/x.test.ts
 --- a/test/x.test.ts

@@ -47,11 +47,14 @@ diff --git a/src/feat.test.ts b/src/feat.test.ts
     assert.equal(run(coverageErosionDetector, diff).length, 0);
   });
 
-  it('still fires when the only test-file addition is a non-assertion line', () => {
-    // Regression: a single comment line in any test file used to count
-    // as a "matching test was added" and suppressed the finding. The
-    // detector now requires the addition to contain an assertion or a
-    // test-block opener.
+  it('does not fire when the PR edits a test file, even without a new assertion', () => {
+    // A real-PR pilot showed the prior, stricter rule (require an
+    // assertion-shaped added line) fired on ordinary refactors that add a
+    // conditional and touch their tests with non-assertion setup lines (a
+    // fixture, a `.bind()` call, a comment). Those PRs engaged their
+    // tests; the finding was noise. The detector now treats any test-file
+    // edit as engagement and only flags source branches when the PR leaves
+    // the test suite untouched (the shape the oracle injector plants).
     const diff = `diff --git a/src/feat.ts b/src/feat.ts
 --- a/src/feat.ts
 +++ b/src/feat.ts
@@ -67,7 +70,7 @@ diff --git a/src/feat.test.ts b/src/feat.test.ts
  it('positive', () => { expect(f(2)).toBe(4); });
 +// negative branch is exercised by integration tests elsewhere
 `;
-    assert.equal(run(coverageErosionDetector, diff).length, 1);
+    assert.equal(run(coverageErosionDetector, diff).length, 0);
   });
 
   it('recognizes Python pytest assertions as a real test addition', () => {

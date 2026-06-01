@@ -32,9 +32,9 @@
 
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding, Severity } from '../types';
-import { filePath, isCommentOnlyLine, isTestFile, shouldInspect, walkHunks } from './diff-walker';
+import { filePath, isTestFile, shouldInspect, walkHunks } from './diff-walker';
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const BARE_EMPTY_CATCH_PATTERNS: RegExp[] = [
   /\bcatch\s*(?:\([^)]*\))?\s*\{\s*\}/,
@@ -94,17 +94,33 @@ export const errorSwallowDetector: Detector = {
   version: VERSION,
   run(ctx: DetectorContext): Finding[] {
     const findings: Finding[] = [];
-    for (const hunk of walkHunks(ctx.files)) {
+    // Diff-wide deleted lines, whitespace-normalized. Used to refute a
+    // catch that pre-existed and only appears "added" because the PR
+    // re-indented it (e.g. wrapping the surrounding try in a new `if`).
+    const hunks = walkHunks(ctx.files);
+    const deletedNormalized = new Set<string>();
+    for (const hunk of hunks) {
+      for (const d of hunk.deleted) deletedNormalized.add(normalizeLine(d.content));
+    }
+    for (const hunk of hunks) {
       if (isTestFile(hunk.file)) continue;
       const file = ctx.files.find((f) => filePath(f) === hunk.file);
       if (file === undefined || !shouldInspect(file)) continue;
-      const addedJoined = hunk.added
-        .filter((a) => !isCommentOnlyLine(a.content))
-        .map((a) => a.content)
-        .join('\n');
+      // Classify on the unfiltered added text. Filtering comment lines out
+      // first turned a legitimate comment-only catch (`} catch {\n // why
+      // \n}`) into a bare one and promoted it to a blocking finding; the
+      // brace-aware body scan handles comments correctly on its own.
+      const addedJoined = hunk.added.map((a) => a.content).join('\n');
 
       const classification = classifyCatch(addedJoined);
       if (classification === 'none') continue;
+
+      // A bare empty catch that also appears verbatim (modulo whitespace)
+      // as a deleted line pre-existed; the PR did not introduce the
+      // swallow. Do not flag it.
+      if (classification === 'bare' && bareCatchPreexisted(hunk.added, deletedNormalized)) {
+        continue;
+      }
 
       const firstAdd = hunk.added[0];
       const finding = buildFinding(classification, hunk.file, firstAdd?.lineNumber ?? 1, hunk.added.map((a) => a.content));
@@ -114,6 +130,25 @@ export const errorSwallowDetector: Detector = {
   },
 };
 
+function normalizeLine(content: string): string {
+  return content.replace(/\s+/g, ' ').trim();
+}
+
+// True when a single added line that is itself a bare empty catch also
+// appears (normalized) among the diff's deleted lines: the catch was moved
+// or re-indented, not newly introduced.
+function bareCatchPreexisted(
+  added: readonly { content: string }[],
+  deletedNormalized: ReadonlySet<string>,
+): boolean {
+  for (const a of added) {
+    if (BARE_EMPTY_CATCH_PATTERNS.some((re) => re.test(a.content))) {
+      if (deletedNormalized.has(normalizeLine(a.content))) return true;
+    }
+  }
+  return false;
+}
+
 function buildFinding(
   classification: CatchClass,
   file: string,
@@ -121,6 +156,18 @@ function buildFinding(
   rawAdded: readonly string[],
 ): Finding | undefined {
   if (classification === 'mixed-with-rethrow' || classification === 'none') return undefined;
+  // The body-shape classes the detector itself labels "typically
+  // legitimate" (a logger call, a metric increment, a literal-default
+  // fallback) are not surfaced: the real-PR pilot showed they are noise a
+  // maintainer would disable the auditor over. Only a genuinely empty
+  // (`bare`, block) or comment-only (`info`) catch is reported.
+  if (
+    classification === 'logging-only' ||
+    classification === 'metrics-only' ||
+    classification === 'fallback-assignment'
+  ) {
+    return undefined;
+  }
   const evidence = rawAdded.map((a) => `+ ${a.trim()}`).join('\n').slice(0, 400);
   const severity = severityFor(classification);
   const message = messageFor(classification, file);

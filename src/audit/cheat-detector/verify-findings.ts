@@ -75,6 +75,19 @@ const TEST_REMOVAL: ReadonlySet<CheatCategory> = new Set<CheatCategory>([
 
 const RENAME_MESSAGE = /^Function "([^"]+)" was renamed to "([^"]+)"/;
 
+// The two test-relaxation/assertion-strip messages that fire on a deletion
+// scoped to a single hunk. They miss a test that was relocated or
+// parametrized into a different hunk or file of the same PR. The
+// AST-graded "Matcher strictness was weakened" message (the high-precision
+// path the oracle exercises) is deliberately NOT in this set, so the
+// relocation refuter never touches it.
+const REMOVED_BLOCK_MESSAGE = /^Test block was removed without a replacement/;
+const DELETED_ASSERTION_MESSAGE = /^Assertion-bearing line was deleted with no compensating/;
+
+const TEST_BLOCK_OPENER = /\b(?:describe|it|test|context|specify)\b/;
+const TEST_BLOCK_NAME = /\b(?:describe|it|test|context|specify)\b[^(]*\(\s*(['"`])(.+?)\1/;
+const ASSERTION_SIGNAL = /\bexpect\s*\(|\bassert\b/;
+
 /**
  * Refute candidate findings against the diff context. Returns the
  * findings that survived plus the ones that were suppressed, each with
@@ -90,11 +103,13 @@ export function verifyFindings(
 
   const ambiguousRenameKeys = collectAmbiguousRenameKeys(findings);
   const deletesNonTestSource = hasNonTestSourceDeletion(ctx.files);
+  const testSignals = collectTestSignals(ctx.files);
 
   for (const finding of findings) {
     const refutation = refute(finding, ctx, {
       ambiguousRenameKeys,
       deletesNonTestSource,
+      testSignals,
     });
     if (refutation === undefined) {
       kept.push(finding);
@@ -116,9 +131,19 @@ export function verifyFindings(
   return { kept, suppressed };
 }
 
+interface TestSignals {
+  /** Quoted names of test blocks added anywhere in the diff. */
+  addedBlockNames: ReadonlySet<string>;
+  addedBlockCount: number;
+  removedBlockCount: number;
+  addedAssertionCount: number;
+  removedAssertionCount: number;
+}
+
 interface RefuteState {
   ambiguousRenameKeys: ReadonlySet<string>;
   deletesNonTestSource: boolean;
+  testSignals: TestSignals;
 }
 
 function refute(
@@ -163,7 +188,88 @@ function refute(
     };
   }
 
+  // Relocation / parametrization. A test deleted in one hunk that is
+  // re-added (often inside a `describe.each`) in another hunk or file
+  // reads as "removed" to the single-hunk detector, but coverage is
+  // preserved. Refute when the removed block's name reappears among the
+  // added test blocks, or the diff is net non-decreasing in test blocks
+  // (block removal) / assertions (assertion deletion). Scoped to the
+  // single-hunk messages; the AST-graded relaxation path is untouched.
+  if (TEST_REMOVAL.has(finding.category)) {
+    const s = state.testSignals;
+    if (REMOVED_BLOCK_MESSAGE.test(finding.message)) {
+      const name = removedBlockName(finding);
+      const nameRelocated = name !== undefined && s.addedBlockNames.has(name);
+      if (nameRelocated || s.addedBlockCount >= s.removedBlockCount) {
+        return {
+          action: 'drop',
+          rule: 'test-relocated',
+          reason: nameRelocated
+            ? `the removed test block "${name}" is re-added elsewhere in the diff ` +
+              '(relocated or parametrized), so coverage is preserved'
+            : 'the diff adds at least as many test blocks as it removes, so the ' +
+              'tests were relocated or expanded rather than dropped',
+        };
+      }
+    }
+    if (
+      DELETED_ASSERTION_MESSAGE.test(finding.message) &&
+      s.addedAssertionCount >= s.removedAssertionCount &&
+      s.removedAssertionCount > 0
+    ) {
+      return {
+        action: 'drop',
+        rule: 'assertions-relocated',
+        reason:
+          'the diff adds at least as many assertions as it removes, so the ' +
+          'assertions were relocated or rewritten rather than stripped',
+      };
+    }
+  }
+
   return undefined;
+}
+
+// Walk every change in the diff once and tally the test-coverage signals
+// the relocation refuter needs. Added/removed test-block openers and
+// assertion-bearing lines, plus the quoted names of added test blocks.
+function collectTestSignals(files: readonly ParsedDiffFile[]): TestSignals {
+  const addedBlockNames = new Set<string>();
+  let addedBlockCount = 0;
+  let removedBlockCount = 0;
+  let addedAssertionCount = 0;
+  let removedAssertionCount = 0;
+  for (const file of files) {
+    const p = filePath(file);
+    if (p.length === 0 || !isTestFile(p)) continue;
+    for (const chunk of file.chunks) {
+      for (const change of chunk.changes) {
+        if (change.type === 'add') {
+          if (TEST_BLOCK_OPENER.test(change.content)) {
+            addedBlockCount += 1;
+            const m = change.content.match(TEST_BLOCK_NAME);
+            if (m && m[2] !== undefined) addedBlockNames.add(m[2]);
+          }
+          if (ASSERTION_SIGNAL.test(change.content)) addedAssertionCount += 1;
+        } else if (change.type === 'del') {
+          if (TEST_BLOCK_OPENER.test(change.content)) removedBlockCount += 1;
+          if (ASSERTION_SIGNAL.test(change.content)) removedAssertionCount += 1;
+        }
+      }
+    }
+  }
+  return {
+    addedBlockNames,
+    addedBlockCount,
+    removedBlockCount,
+    addedAssertionCount,
+    removedAssertionCount,
+  };
+}
+
+function removedBlockName(finding: Finding): string | undefined {
+  const m = finding.evidence.match(TEST_BLOCK_NAME);
+  return m && m[2] !== undefined ? m[2] : undefined;
 }
 
 /**

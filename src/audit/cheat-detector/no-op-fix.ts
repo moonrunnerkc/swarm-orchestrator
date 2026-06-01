@@ -186,10 +186,15 @@ async function runJudge(
     return out;
   }
 
-  // The judge composes by "either signal fires". When deterministic
-  // already fired, the judge's role is just to attach reasoning to
-  // an existing finding rather than create a duplicate.
-  if (result.answer === 'yes' && deterministicFindings.length > 0) {
+  // Polarity: the judge prompt asks whether the changed code plausibly
+  // AFFECTS the path the PR claims to fix. So judge YES means the fix is
+  // plausibly delivered (legitimate) and judge NO means the changed code
+  // does not touch the claimed path (the no-op signal). The no-op alarm
+  // is the NO case, not the YES case.
+  //
+  // Judge agrees with a deterministic no-op finding (says NO): attach its
+  // reasoning to the existing finding rather than duplicate it.
+  if (result.answer === 'no' && deterministicFindings.length > 0) {
     for (const finding of deterministicFindings) {
       finding.judgeModelId = result.modelId;
       if (result.reason !== undefined) finding.judgeReasoning = result.reason;
@@ -197,12 +202,11 @@ async function runJudge(
     return out;
   }
 
-  // Judge says NO and deterministic already fired: leave the
-  // deterministic finding alone but record that the judge dissented
-  // so the renderer can flag the disagreement. We do not silence the
-  // deterministic finding on a judge NO; "either fires" is the
-  // composition policy.
-  if (result.answer === 'no' && deterministicFindings.length > 0) {
+  // Judge says the fix IS delivered (YES) but a deterministic check fired:
+  // leave the deterministic finding (the "either fires" composition
+  // policy) but record that the judge dissented so the renderer can flag
+  // the disagreement.
+  if (result.answer === 'yes' && deterministicFindings.length > 0) {
     for (const finding of deterministicFindings) {
       finding.judgeModelId = result.modelId;
       if (result.reason !== undefined) {
@@ -212,8 +216,10 @@ async function runJudge(
     return out;
   }
 
-  if (result.answer === 'yes' && deterministicFindings.length === 0) {
-    const evidenceLine = `(judge YES; modelId: ${result.modelId})`;
+  // Judge-only no-op detection: NO with no deterministic finding. The
+  // changed code does not plausibly exercise the claimed fix.
+  if (result.answer === 'no' && deterministicFindings.length === 0) {
+    const evidenceLine = `(judge NO; modelId: ${result.modelId})`;
     const finding: Finding = {
       category: 'no-op-fix',
       severity: 'warn',
@@ -229,6 +235,8 @@ async function runJudge(
     out.push(finding);
   }
 
+  // Judge YES with no deterministic finding: the fix is plausibly
+  // delivered, so nothing is raised.
   return out;
 }
 
