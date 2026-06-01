@@ -1,0 +1,345 @@
+{
+  "0cdc1a3b2f9f31d7403a0cf9e056c967b820a2e9596da85d0b1aa03042549eb7": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 671,
+    "completionTokens": 62,
+    "latencyMs": 1198,
+    "reason": "The PR title claims to fix a mobile tap issue, but the change adds a separate `onTouchEnd` handler that calls the same function as `onClick`. This is not a no-op; it explicitly adds mobile touch support to a button that previously only had a click handler."
+  },
+  "0e8fbc32521311ad8762d47709859042b0651934fab78341042531da8897ed14": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 3478,
+    "completionTokens": 53,
+    "latencyMs": 2465,
+    "reason": "The diff imports `UserCardDto` from `@/api/types` and uses it in the `onPick` callback and test file. The type is defined in the project's API layer, not a hallucinated external module."
+  },
+  "154989631c58e4fa4055c2ff9820c4c1e9847aa7f26d4472d8d20e54544e9d90": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 671,
+    "completionTokens": 57,
+    "latencyMs": 1093,
+    "reason": "NO The new `handleOpenConsumerReviewQueue` function is a thin wrapper around the existing `openDrawer` call, and the added `onTouchEnd` handler is a standard accessibility pattern for mobile tap handling that is covered by existing drawer interaction tests. VERDICT: NO"
+  },
+  "1640f11c50d5044a39ba27ef5f6cadc80871b631dd03efd20fa35cc1436cabec": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 2043,
+    "completionTokens": 56,
+    "latencyMs": 1526,
+    "reason": "The added catch block in `batch_add_stocks` handles parsing errors for `price_override` and `market_price` by silently passing (ignoring invalid values) to ensure the import process continues for other valid stocks, which is intentional control flow for robust data ingestion."
+  },
+  "1b0bcdfbd29f28a032e8b8d8b394545ff113f43762cf9be438e03ce5f24a25e8": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 29348,
+    "completionTokens": 65,
+    "latencyMs": 42390,
+    "reason": "NO The catch block in `run_steamcmd_install` and `run_steamcmd_workshop_download` logs the error to the console log via `_append_console_log` and returns the structured result dict, ensuring the caller (e.g., `install_mod`) can inspect the failure state."
+  },
+  "1e01720251dee1f80e1964343121a73f7f06e838b45f785b04699ba4c7e9eab6": {
+    "model": "glm47-flash-abl",
+    "answer": "yes",
+    "promptTokens": 3709,
+    "completionTokens": 46,
+    "latencyMs": 2141,
+    "reason": "The catch block in `App.svelte` at line 90-92 simply swallows the error from `check_dependencies` without logging or rethrowing, preventing the UI from displaying missing dependencies."
+  },
+  "2338e158d02d70ee6e16cce76d5a14f346e9aef28c75fc121e0e357b063d867a": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 5648,
+    "completionTokens": 69,
+    "latencyMs": 4322,
+    "reason": "NO The new behavior (reverse geocoding failure gracefully falling back to coordinates) is already implicitly tested by the existing `if (deviceLocation)` check in `App.tsx`, and the refactored `reverseGeocode` function now explicitly returns `null` on error, which is the intended new contract."
+  },
+  "2f0ffc141e9c65d12486b81fc474ebaa181b52655ea4446282bdecdf020b243e": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 975,
+    "completionTokens": 37,
+    "latencyMs": 925,
+    "reason": "The change modifies the signature verification logic to use constant-time comparison and adds error handling to the verification endpoints, which directly addresses the PR's claims of security and error handling improvements."
+  },
+  "364a08cbe856495f62249e85030f1a7da88cae0dbf5ce5c28cdf2b0427ab5c7e": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 1161,
+    "completionTokens": 52,
+    "latencyMs": 1190,
+    "reason": "NO The change adds a check for the `/onboarding` pathname in AuthGuard.tsx and redirects new signups to `/onboarding` in SignUpPage.tsx, which directly affects the code path the PR claims to fix."
+  },
+  "3e04677eff9565bf4d97114479efc2101f143de57af576c411804db1fc641903": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 3644,
+    "completionTokens": 62,
+    "latencyMs": 2376,
+    "reason": "The change introduces new retry logic and a TTL cache in yfinance_utils.py, and the diff shows it is actually called in multiple places (holding_advisor_agent.py, tw_market_agent.py, app.py) to replace direct yf.Ticker calls, so it is not a no-op fix."
+  },
+  "3ebdb8409d90393bfa41332ec3a244dac7a1c3e659e22050fe9f58a09671641a": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 3926,
+    "completionTokens": 37,
+    "latencyMs": 2428,
+    "reason": "The test changes are a legitimate refactor to verify the new per-member scoping logic, adding a new test for legacy data cleanup and simplifying assertions to match the updated behavior."
+  },
+  "3f279d3c9d871330284c553c6ecb659bc52b1f58f472baa4b762307c66041761": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 20429,
+    "completionTokens": 90,
+    "latencyMs": 23747,
+    "reason": "NO The added catch blocks in `fig_m1_network_vial.py`, `fig_m2_rutas_baseline.py`, `fig_m3_fragilidad_espacial.py`, `fig_m4_variabilidad_vial.py`, and `fig_m5_comparacion_escenarios.py` print a warning message to the console before continuing, which is a legitimate error-handling pattern for optional dependencies or network issues."
+  },
+  "49d0d5f10ea9994cf4d781f51df4d4ce48ce5919d5c06c1fdd29a640a17eada8": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 26711,
+    "completionTokens": 47,
+    "latencyMs": 36685,
+    "reason": "The diff adds new test files and imports from internal modules (e.g., `aircraft_data_hierarchy.work_breakdown_structure.*`) and the `graphviz` library, which are all real, existing dependencies or internal packages."
+  },
+  "4ab61af026a38ac116cea3315eea461541f34f154da5aaac4ffc8babf30f95d1": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 2034,
+    "completionTokens": 57,
+    "latencyMs": 1515,
+    "reason": "The change adds a `price_override` parameter to `add_stock` and `batch_add_stocks`, and updates the export logic to preserve it, which directly addresses the issue of calculating P&L rate after import when the market is closed or offline."
+  },
+  "520060b895fd11cb311d77686e6d2ee4d237892979606ba090e8b8550e3e6357": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 5657,
+    "completionTokens": 44,
+    "latencyMs": 3869,
+    "reason": "NO The catch block in App.tsx sets deviceLocation to null and allows the code to fall through to use coordinates only, which is a valid fallback strategy for reverse geocoding failures."
+  },
+  "5764e5d7fdb14b5bdaf215b817a987fdfef28edbefcb9b97ef15bc706b821f96": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 6095,
+    "completionTokens": 76,
+    "latencyMs": 4729,
+    "reason": "The test that verified the round-trip behavior of the `AppSettings.min_deposit` and `min_withdraw` columns was removed along with the columns themselves, and the comment explicitly states the test was deleted because the columns were never read by any wallet code path, leaving the actual enforcement points (`Currency.min_deposit`/`min_withdraw`) to be tested elsewhere."
+  },
+  "655d0c7d8faa0388a4b530e04e6da850eb04f0798f57ea086e23a854c52a604e": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 12815,
+    "completionTokens": 49,
+    "latencyMs": 11235,
+    "reason": "NO The test now verifies the new behavior (prettified text and raw model in tooltip) and includes a new test for ACP conversations, so the assertions were updated to match the new implementation rather than removed."
+  },
+  "77f1103b04eef2d3b2c52d6531ba84db8ec76341fad73c61c721c75358e22acc": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 17058,
+    "completionTokens": 53,
+    "latencyMs": 15133,
+    "reason": "NO The catch block in RoleSelect.jsx logs no error, rethrows nothing, and returns no value; it simply allows the function to continue execution, which is a standard pattern for handling non-critical auth state updates in preview mode."
+  },
+  "8159dbc79ac3a0d2314065bf2995fb52276e3838d9fe4a7906e70017230d4cc5": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 3922,
+    "completionTokens": 55,
+    "latencyMs": 2755,
+    "reason": "NO The test was refactored to verify the new behavior (private scoping) rather than the old behavior (broadcasting), and the assertions were updated to match the new expectations; the tested behavior was not removed, only the implementation changed."
+  },
+  "8d1ede626472654b1104081c9cea05dc445f5287df59ee14e13f171ba58bbbb3": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 27891,
+    "completionTokens": 37,
+    "latencyMs": 39961,
+    "reason": "The added catch block in `_add_acknowledgement_reaction` logs a warning and returns early, which is clearly intentional best-effort behavior for a non-essential acknowledgement reaction."
+  },
+  "901262b3ffc62f8e834c43ed9f67c8cba94a24a343cb79931947acd8bcf67e5a": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 15200,
+    "completionTokens": 44,
+    "latencyMs": 14666,
+    "reason": "The test `test_bot_profile_summary_uses_trust_deposit_balance` was added to replace the old test that asserted `deposit_total` was used, and the new test explicitly checks the correct field is read."
+  },
+  "94f249ef6d49bda5fdd153e80d1f3f27c32049ddb4ac1ef456f150ad07ae030d": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 6296,
+    "completionTokens": 72,
+    "latencyMs": 4557,
+    "reason": "NO The catch blocks in `defer-idle.ts` and `HeroVideo.tsx` are explicitly marked with comments like `/* ignore */` and are used to suppress non-critical errors (e.g., `sessionStorage` access failures, network fetch errors) that are acceptable to fail silently for performance optimization and user experience."
+  },
+  "99801f4d03823b3b12dc6c062e34c51761d0e7610204babd98e255ddaca83651": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 2349,
+    "completionTokens": 39,
+    "latencyMs": 1558,
+    "reason": "The test change removes a specific regression test for a previous behavior and adds new tests that explicitly verify the new behavior (reward acceptance on nonzero exit), ensuring the contract change is properly guarded."
+  },
+  "ab08e340beaba4774f52b23fb213388afd92053cbb5d9199f706db2ab876229f": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 6099,
+    "completionTokens": 71,
+    "latencyMs": 4618,
+    "reason": "NO The test change removes a specific round-trip test for the now-dropped `AppSettings.min_deposit` and `min_withdraw` columns, but the diff explicitly documents that the per-currency enforcement points (`Currency.min_deposit`/`min_withdraw`) are still tested above, so the verification is not weakened."
+  },
+  "ac29571ff3420ee80836c24789f4f1d3123aa598438285a6cea07932488fbef1": {
+    "model": "glm47-flash-abl",
+    "answer": "yes",
+    "promptTokens": 32935,
+    "completionTokens": 6,
+    "latencyMs": 53468
+  },
+  "b0bbebd315ab30e5ac7ada1068ad7e4ace941398924b921af3bb81d12d2b9bae": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 13140,
+    "completionTokens": 70,
+    "latencyMs": 11160,
+    "reason": "The assertions were not removed; they were refactored into new tests (r205-plan-state-machine.test.ts, r205-plan-withdraw.test.ts) and the existing r055-activate-zero-reviewers.test.ts was updated to test the legacy zero-reviewer path with the force override, preserving coverage of the state-machine invariants."
+  },
+  "b0e813fe1b638c57b2a261ddcf23ecdedaf5d4ab70c4ecee7899666f599c6088": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 22459,
+    "completionTokens": 42,
+    "latencyMs": 27439,
+    "reason": "The catch block in `src/app/api/chat/route.ts` returns a JSON error response with a 500 status code, which is a standard, visible error handling pattern rather than silent error swallowing."
+  },
+  "b52ba2321bf7a8b57733cd6cfcb1d143c18c0a03051e3a3d660f6f4e6a1eea09": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 1161,
+    "completionTokens": 64,
+    "latencyMs": 1357,
+    "reason": "NO The PR adds explicit redirects to the onboarding and agreement pages to prevent redirect loops and ensure users complete required steps, which is new behavior that should be tested; the coverage-erosion check is a false positive because the change is not removing a test but adding logic that requires verification."
+  },
+  "b5f0392adc4f3a90d03143edfc9d0d0f79dae8a38a2829348ff3a2da9e4885fb": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 17369,
+    "completionTokens": 35,
+    "latencyMs": 16243,
+    "reason": "NO The catch block prints the error to stdout and continues execution, which is a standard pattern for non-critical telemetry failures in a monitoring script."
+  },
+  "c6aff72343ca12fad7b6bfad6efbd8712bcd84723fb895ea2ed92b9aadfb8d32": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 5227,
+    "completionTokens": 34,
+    "latencyMs": 3029,
+    "reason": "The added code uses a for loop to iterate over multiple possible keys for a level lookup and returns immediately upon finding a match, so no error is silently discarded."
+  },
+  "cb8798d5856a357c7572dba473689fc4f26c19c19e85d72fb8d4dbf8db19fcc7": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 3248,
+    "completionTokens": 57,
+    "latencyMs": 2120,
+    "reason": "The \"UNKNOWN\" type was added to the type definition and used in the telemetry logic, and the \"collapsed posture\" column was removed from the UI without any references to the `POSTURE_COLORS` record or `postureLabel` variable, indicating a clean refactoring."
+  },
+  "cfe6a9d10415517d4d43ad29d8a9232ad9a9eb17562aa7a8561d10d1f992170a": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 27382,
+    "completionTokens": 50,
+    "latencyMs": 34799,
+    "reason": "NO The catch block in RoleSelect.jsx is a legitimate error handler that allows the user to continue with the selected role locally if the API update fails, which is a common pattern for previewing or handling logged-out states."
+  },
+  "d1073ca7a42030ddfd6244f72661546cfab9a5af79b510c89c3db2dde6f69f0d": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 1247,
+    "completionTokens": 30,
+    "latencyMs": 1190,
+    "reason": "The change modifies package.json and pnpm-lock.yaml to redirect the dependency, which directly affects the code path by updating the dependency resolution logic."
+  },
+  "d42ae883eb6ecc7f8342837b8112faad9b9b7f092247aa31744c81c3a35f4b97": {
+    "model": "glm47-flash-abl",
+    "answer": "yes",
+    "promptTokens": 811,
+    "completionTokens": 44,
+    "latencyMs": 1018,
+    "reason": "The PR title claims to fix a protobuf dependency bump, but the diff only updates the version in requirements/development.txt without touching the code that uses protobuf, making it a no-op fix."
+  },
+  "d82b5d2b4f9375d3817c63c9990fa09bdca182b2c8583f0085703ad21372618b": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 1715,
+    "completionTokens": 78,
+    "latencyMs": 1723,
+    "reason": "NO The renamed type `KeyValueStorageAdapter` to `KeyValueStoragePort` and the renamed methods `load`/`save` to `get`/`set` are internal to the storage module and are not used by external callers; the only external consumer `createAppDataStorageAdapter` was updated to accept the new type and use the new methods."
+  },
+  "da4973f53cda8e78100afd1f552aef01442711df7a673ce75990fe49a9a4d507": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 7293,
+    "completionTokens": 44,
+    "latencyMs": 4536,
+    "reason": "NO The catch block in the reminders route logs no error, but the comment explicitly states that the in-app notification is a \"best effort\" fallback, making the silent discard intentional control flow."
+  },
+  "dffd424c06acb5e194889a60201a84e0bfbb24f1b1e7d41ebb23abed137e244b": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 1247,
+    "completionTokens": 46,
+    "latencyMs": 1079,
+    "reason": "NO The script is a one-time build-time fix for a missing dependency, not new runtime behavior, and the existing CI pipeline likely validates the Docker build process itself, covering the necessity of this patch. VERDICT: NO"
+  },
+  "e222d7975406a2150abe5c128d03319dd87c6edbde8b939c6aaa699428d304d9": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 5117,
+    "completionTokens": 41,
+    "latencyMs": 3034,
+    "reason": "The change updates error handling for timeout exceptions in multiple files, including the specific `httpx.TimeoutException` catch block in `adt_client.py`, which is the code path for SAP system requests."
+  },
+  "e747e1ef308f0f2dfd5ab399b3e8497ed94dc3cb82d2483c6b55c24f51661403": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 27887,
+    "completionTokens": 41,
+    "latencyMs": 40348,
+    "reason": "The mocked target `jira_dc_manager` is a real internal module defined in the same diff (`enterprise/integrations/jira_dc/jira_dc_manager.py`), not a hallucination."
+  },
+  "edade2dbbefb3c34ec8154d4ce5dfd40f3df593a840de5cc59a7a1ed80b78f6b": {
+    "model": "glm47-flash-abl",
+    "answer": "yes",
+    "promptTokens": 5648,
+    "completionTokens": 62,
+    "latencyMs": 4160,
+    "reason": "The PR title claims to fix 11 bugs, but the diff only contains 10 changes. The missing change is the removal of the `getTemperatureTrend` function from `src/utils/temperature.ts`, which was deleted in the diff but not accounted for in the title."
+  },
+  "edf77382429507cfb9592dfa259eae5d06b04fc30b6f8a86283fd4d0f05520a6": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 48069,
+    "completionTokens": 21,
+    "latencyMs": 106973,
+    "reason": "The catch block logs the error and continues the loop, which is intentional control flow for resilience."
+  },
+  "f5b3dac7a53c06af662be4e070b13ffc283782cd0220c5f2c8ac09bd18a9e86a": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 16860,
+    "completionTokens": 49,
+    "latencyMs": 17558,
+    "reason": "NO The catch block logs the error to the UI via `self._safe_log` before the thread finishes, which is a standard pattern for background worker threads to report failures to the main thread without crashing the application."
+  },
+  "f89b8c4295d7ae9252cb13638b2c1ce61dde73316d2f04cb5c289a96a7741da8": {
+    "model": "glm47-flash-abl",
+    "answer": "no",
+    "promptTokens": 15204,
+    "completionTokens": 33,
+    "latencyMs": 14080,
+    "reason": "The test changes are legitimate refactoring to remove a legacy column and its dependent filter, with updated assertions reflecting the new source of truth (trust_deposit_balance)."
+  }
+}
