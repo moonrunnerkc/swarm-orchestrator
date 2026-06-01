@@ -214,7 +214,8 @@ async function resolveOpusModel(explicit?: string): Promise<string> {
 }
 
 export async function createArbiter(options: CreateArbiterOptions): Promise<Arbiter> {
-  const template = loadPromptTemplate(options.promptVersion ?? 'v1');
+  const version = options.promptVersion ?? process.env.ARBITER_PROMPT_VERSION ?? 'v1';
+  const template = loadPromptTemplate(version);
   if (options.provider === 'local') {
     const baseUrl = options.localBaseUrl ?? 'http://localhost:8000';
     const model = options.localModel ?? process.env.RAPIDMLX_MODEL ?? 'local-model';

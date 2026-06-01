@@ -54,11 +54,11 @@ export function makeOctokit(token: string): Octokit {
   return new Octokit({ auth: token });
 }
 
-function isTestFile(filename: string): boolean {
+export function isTestFile(filename: string): boolean {
   return TEST_FILE.test(filename) || TEST_NAME.test(filename);
 }
 
-function isSourceFile(filename: string): boolean {
+export function isSourceFile(filename: string): boolean {
   if (isTestFile(filename)) return false;
   if (!SOURCE_EXT.test(filename)) return false;
   // Exclude obvious non-source code files.
@@ -158,6 +158,223 @@ export async function listQualifyingMergedPrs(
     }
   }
   return { prs: selected, scanned };
+}
+
+// --- Regression mining ----------------------------------------------------
+
+/** A merged PR that a later artifact (a revert, a fix-PR, a hotfix, or an
+ *  issue) points at as the thing that broke. `mentionedInBody` is the
+ *  exact text that names the bad PR so the link is auditable. */
+export interface RegressionSignal {
+  /** The number of the PR that is being labeled bad. */
+  badPrNumber: number;
+  kind: 'revert' | 'fix-pr' | 'hotfix' | 'issue';
+  /** The proving artifact's URL (the revert/fix PR, or the issue). */
+  url: string;
+  /** SHA of the proving artifact's merge commit when known. */
+  sha: string | null;
+  mentionedInBody: string;
+}
+
+/** Phrases in a PR title/body that name an earlier broken PR. The capture
+ *  group is the referenced PR number. Ordered most-specific first. */
+const FIX_REFERENCE_PATTERNS: RegExp[] = [
+  /regression (?:from|introduced in|caused by) #(\d+)/gi,
+  /(?:broke|broken by|breaks) #(\d+)/gi,
+  /introduced (?:in|by) #(\d+)/gi,
+];
+
+/** `Reverts #N` in a revert PR body. */
+const REVERT_PR_NUMBER = /reverts?\s+#(\d+)/gi;
+
+interface SearchIssueItem {
+  number: number;
+  title: string;
+  body: string;
+  html_url: string;
+}
+
+/**
+ * Pure extraction of retrospective-bad signals from one proving PR's text.
+ * A revert PR (title starting "Revert") that names "Reverts #N" labels PR N
+ * bad; a fix-PR whose body says "regression from #N" / "broken by #N" /
+ * "introduced in #N" labels PR N bad. Self-references are dropped.
+ * Separated from the network walk so the matching is unit-tested.
+ */
+export function extractRegressionSignals(item: SearchIssueItem): RegressionSignal[] {
+  const out: RegressionSignal[] = [];
+  const hay = `${item.title}\n${item.body}`;
+  const isRevertTitle = /^revert\b/i.test(item.title);
+  const seen = new Set<string>();
+  const push = (bad: number, kind: 'revert' | 'fix-pr', text: string): void => {
+    const key = `${kind}:${bad}`;
+    if (bad !== item.number && !seen.has(key)) {
+      seen.add(key);
+      out.push({ badPrNumber: bad, kind, url: item.html_url, sha: null, mentionedInBody: text });
+    }
+  };
+  if (isRevertTitle) {
+    REVERT_PR_NUMBER.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = REVERT_PR_NUMBER.exec(hay)) !== null) push(Number(m[1]), 'revert', m[0]);
+  }
+  for (const re of FIX_REFERENCE_PATTERNS) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(hay)) !== null) push(Number(m[1]), isRevertTitle ? 'revert' : 'fix-pr', m[0]);
+  }
+  return out;
+}
+
+/**
+ * Search a repo's merged PRs for retrospective-bad signals: revert PRs
+ * and fix-PRs whose title or body names an earlier merged PR. Returns one
+ * signal per (badPrNumber, provingPr). Uses the GitHub search API, which
+ * is rate-limited to 30 req/min, so callers should mine repos serially.
+ */
+export async function mineRegressionSignals(
+  octokit: Octokit,
+  target: RepoTarget,
+  windowMonths: number,
+  perRepoScan = 200,
+): Promise<RegressionSignal[]> {
+  const since = monthsAgoIso(windowMonths);
+  const slug = `${target.owner}/${target.repo}`;
+  const queries = [
+    `repo:${slug} is:pr is:merged in:title revert merged:>=${since}`,
+    `repo:${slug} is:pr is:merged regression merged:>=${since}`,
+    `repo:${slug} is:pr is:merged "broken by" merged:>=${since}`,
+    `repo:${slug} is:pr is:merged "introduced in" merged:>=${since}`,
+  ];
+  const signals: RegressionSignal[] = [];
+  const seen = new Set<string>();
+  let scanned = 0;
+  for (const q of queries) {
+    let page = 1;
+    while (scanned < perRepoScan) {
+      const items = await searchIssuesWithRetry(octokit, q, page);
+      if (items.length === 0) break;
+      for (const item of items) {
+        scanned += 1;
+        for (const sig of extractRegressionSignals(item)) {
+          const key = `${sig.kind}:${sig.badPrNumber}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            signals.push(sig);
+          }
+        }
+        if (scanned >= perRepoScan) break;
+      }
+      if (items.length < 100) break;
+      page += 1;
+    }
+  }
+  return signals;
+}
+
+async function searchIssuesWithRetry(
+  octokit: Octokit,
+  q: string,
+  page: number,
+  attempt = 0,
+): Promise<SearchIssueItem[]> {
+  try {
+    const res = await octokit.search.issuesAndPullRequests({ q, per_page: 100, page });
+    return res.data.items.map((i) => ({
+      number: i.number,
+      title: i.title,
+      body: i.body ?? '',
+      html_url: i.html_url,
+    }));
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if ((status === 403 || status === 429) && attempt < 5) {
+      const waitMs = 3_000 * 2 ** attempt;
+      log.warn(`search rate-limited (${status}); backing off ${waitMs}ms`);
+      await sleep(waitMs);
+      return searchIssuesWithRetry(octokit, q, page, attempt + 1);
+    }
+    throw err;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function monthsAgoIso(months: number): string {
+  const now = new Date();
+  const then = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  return then.toISOString().slice(0, 10);
+}
+
+/**
+ * Fetch enough detail about a candidate bad PR to decide whether it
+ * belongs in the corpus: that it was merged, is not bot-authored, touches
+ * at least one source file, and its changed-line count is inside a band.
+ * Returns null when the PR does not qualify or cannot be fetched.
+ */
+export async function fetchBadPrDetail(
+  octokit: Octokit,
+  target: RepoTarget,
+  prNumber: number,
+  maxChangedLines = 8_000,
+  minChangedLines = 10,
+): Promise<{ pr: CandidatePr; filenames: string[] } | null> {
+  let detail;
+  try {
+    detail = await octokit.pulls.get({ owner: target.owner, repo: target.repo, pull_number: prNumber });
+  } catch (err) {
+    log.debug(`bad-PR detail unavailable for #${prNumber}: ${(err as Error).message}`);
+    return null;
+  }
+  const d = detail.data;
+  if (d.merged_at === null || d.merged_at === undefined) return null;
+  const author = d.user?.login ?? '';
+  if (BOT_AUTHOR.test(author)) return null;
+  const changed = d.additions + d.deletions;
+  if (changed < minChangedLines || changed > maxChangedLines) return null;
+  const files = await octokit.paginate(octokit.pulls.listFiles, {
+    owner: target.owner,
+    repo: target.repo,
+    pull_number: prNumber,
+    per_page: 100,
+  });
+  const filenames = files.map((f) => f.filename);
+  if (!filenames.some(isSourceFile)) return null;
+  return {
+    pr: {
+      number: d.number,
+      title: d.title,
+      body: d.body ?? '',
+      author,
+      mergedAt: d.merged_at,
+      headSha: d.head.sha,
+      url: d.html_url,
+      additions: d.additions,
+      deletions: d.deletions,
+      changedFiles: d.changed_files,
+    },
+    filenames,
+  };
+}
+
+export type RegressionBucket =
+  | 'test-changed-no-code-fix'
+  | 'code-change-missed-bug'
+  | 'covered-behavior-regressed'
+  | 'other';
+
+/** Classify a bad PR into a cheat-relevant stratification bucket from its
+ *  changed file list. Coarse but auditable: keys on whether the PR touched
+ *  tests, source, or neither. */
+export function bucketFromFilenames(names: string[]): RegressionBucket {
+  const touchedTest = names.some(isTestFile);
+  const touchedSource = names.some(isSourceFile);
+  if (touchedTest && !touchedSource) return 'test-changed-no-code-fix';
+  if (touchedSource && touchedTest) return 'covered-behavior-regressed';
+  if (touchedSource) return 'code-change-missed-bug';
+  return 'other';
 }
 
 /** Fetch the raw unified diff for a PR. */

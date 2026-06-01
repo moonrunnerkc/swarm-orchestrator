@@ -49,6 +49,22 @@ function realPrBurden(): number | null {
   return m && m[1] !== undefined ? Number(m[1]) : null;
 }
 
+/** Regression-corpus recall and the uniquely-caught count from the v11
+ *  benefit report's headline, so the badges cite real-world benefit. */
+function benefitHeadline(): { recallPct: number; flagged: number; unique: number } | null {
+  const file = path.join(root(), 'benchmarks', 'real-prs', 'v11-BENEFIT-REPORT.md');
+  if (!fs.existsSync(file)) return null;
+  const text = fs.readFileSync(file, 'utf8');
+  const recall = text.match(/flagged \*\*(\d+)\*\* of the[\s\S]*?recall ([\d.]+)%/);
+  const unique = text.match(/\*\*(\d+)\*\* are not flagged by Semgrep/);
+  if (recall === null || recall[1] === undefined || recall[2] === undefined) return null;
+  return {
+    flagged: Number(recall[1]),
+    recallPct: Number(recall[2]),
+    unique: unique && unique[1] !== undefined ? Number(unique[1]) : 0,
+  };
+}
+
 function buildBadges(): string {
   const version = (JSON.parse(read('package.json')) as { version: string }).version;
   // The CI badge is GitHub's live workflow badge, not a shields.io static
@@ -82,6 +98,23 @@ function buildBadges(): string {
         `${burden.toFixed(2)}/PR`,
         burden <= 0.2 ? 'brightgreen' : 'orange',
         'benchmarks/real-prs/REAL-WORLD-REPORT.md',
+      ),
+    );
+  }
+  const benefit = benefitHeadline();
+  if (benefit !== null) {
+    lines.push(
+      shield(
+        'regression-PR recall',
+        `${benefit.recallPct.toFixed(0)}% (${benefit.flagged} flagged)`,
+        'brightgreen',
+        'benchmarks/real-prs/v11-BENEFIT-REPORT.md',
+      ),
+      shield(
+        'uniquely caught',
+        `${benefit.unique} vs Semgrep+ESLint`,
+        benefit.unique > 0 ? 'brightgreen' : 'lightgrey',
+        'benchmarks/real-prs/v11-BENEFIT-REPORT.md',
       ),
     );
   }

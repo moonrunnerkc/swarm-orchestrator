@@ -52,3 +52,67 @@ export function costFile(root = repoRoot()): string {
 export function repoSlug(repo: string): string {
   return repo.replace(/[^A-Za-z0-9._-]+/g, '-');
 }
+
+// --- v2 clean corpus (scaled to 10 repos) ---------------------------------
+
+export function sourcesV2File(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'sources-v2.json');
+}
+
+export function auditResultsV2Dir(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'audit-results-v2');
+}
+
+export function repoSelectionFile(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'repo-selection.md');
+}
+
+export function costLedgerFile(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'cost-ledger.json');
+}
+
+export function benefitReportFile(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'v11-BENEFIT-REPORT.md');
+}
+
+export function redundancyFindingFile(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'REDUNDANCY-FINDING.md');
+}
+
+export function dualArbiterLabelsFile(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'arbiter-labels-dual.json');
+}
+
+// --- Regression corpus (retrospectively-bad PRs) --------------------------
+
+export function regressionDir(root = repoRoot()): string {
+  return path.join(root, 'benchmarks', 'regression-corpus');
+}
+
+export function regressionSourcesFile(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'sources.json');
+}
+
+export function regressionDiffsDir(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'diffs');
+}
+
+export function regressionCoverageFile(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'coverage.md');
+}
+
+export function regressionAuditResultsDir(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'audit-results');
+}
+
+export function differentialDir(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'differential');
+}
+
+export function vennJsonFile(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'venn.json');
+}
+
+export function vennMdFile(root = repoRoot()): string {
+  return path.join(regressionDir(root), 'venn.md');
+}
