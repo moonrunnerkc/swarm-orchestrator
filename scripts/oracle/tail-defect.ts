@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   CONFIRM_SYSTEM_PROMPT,
+  LOCALIZED_CONFIRM_SYSTEM_PROMPT,
   buildConfirmationPrompt,
 } from '../../src/audit/cheat-detector/llm-judge/anthropic-judge';
 import { MAX_JUDGE_DIFF_CHARS } from '../../src/audit/cheat-detector/llm-judge';
@@ -51,10 +52,15 @@ async function judgeHeadTruncate(judge: BenchJudge, diff: string, live: boolean)
   return a.answer === 'yes';
 }
 
-async function judgeChunked(judge: BenchJudge, diff: string, live: boolean): Promise<boolean> {
+async function judgeChunked(
+  judge: BenchJudge,
+  diff: string,
+  live: boolean,
+  systemPrompt: string,
+): Promise<boolean> {
   for (const chunk of chunkUnifiedDiff(diff, MAX_JUDGE_DIFF_CHARS)) {
     const user = buildConfirmationPrompt('error-swallow', 'fix persistence', chunk);
-    const a = await judge.ask(CONFIRM_SYSTEM_PROMPT, user, live);
+    const a = await judge.ask(systemPrompt, user, live);
     if (a.answer === 'yes') return true;
   }
   return false;
@@ -62,6 +68,12 @@ async function judgeChunked(judge: BenchJudge, diff: string, live: boolean): Pro
 
 async function main(argv = process.argv.slice(2)): Promise<void> {
   const live = !argv.includes('--no-live');
+  // --localized swaps the chunked path to the localized confirm prompt
+  // (the experiment that decides whether a less-conservative single-hunk
+  // prompt lifts tail-defect recall). Whole-diff / head-truncate stays on
+  // the conservative prompt.
+  const localized = argv.includes('--localized');
+  const chunkedSystem = localized ? LOCALIZED_CONFIRM_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT;
   const countArg = argv.indexOf('--count');
   const count = countArg !== -1 ? Number(argv[countArg + 1]) : 10;
   loadDotenv();
@@ -74,7 +86,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   for (let seed = 0; seed < count; seed += 1) {
     const diff = bigDiffWithTailDefect(seed);
     if (await judgeHeadTruncate(judge, diff, live)) headHits += 1;
-    if (await judgeChunked(judge, diff, live)) chunkHits += 1;
+    if (await judgeChunked(judge, diff, live, chunkedSystem)) chunkHits += 1;
   }
   cache.flush();
 
@@ -105,8 +117,15 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
       'chunking and dropped under head-truncation.',
   );
   lines.push('');
-  fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'tail-defect-recovery.md'), `${lines.join('\n')}\n`);
-  process.stdout.write(`tail-defect: head=${headHits}/${count} chunk=${chunkHits}/${count}\n`);
+  // A --localized measurement run does not overwrite the committed v1
+  // report; it only prints the number so the experiment can be judged.
+  if (!localized) {
+    fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'tail-defect-recovery.md'), `${lines.join('\n')}\n`);
+  }
+  process.stdout.write(
+    `tail-defect: head=${headHits}/${count} chunk=${chunkHits}/${count} ` +
+      `prompt=${localized ? 'localized' : 'conservative'}\n`,
+  );
 }
 
 if (require.main === module) {

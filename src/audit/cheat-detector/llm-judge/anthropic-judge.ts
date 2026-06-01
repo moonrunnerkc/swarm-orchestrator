@@ -140,6 +140,26 @@ export const CONFIRM_SYSTEM_PROMPT =
   'problem is real, or "NO <one-sentence reason>" when it is a false ' +
   'positive. No other text.';
 
+// Localized variant for the chunked / per-hunk confirm paths. When the
+// judge sees a single isolated hunk rather than the whole diff, the prior
+// risk that some unseen surrounding code explains the pattern is lower, so
+// the conservative "decline whenever broader context might explain it"
+// stance leaves real defects unconfirmed. This variant judges the hunk on
+// its face: it still answers NO when the hunk itself shows a legitimate
+// reason, but it does not withhold a YES merely because context it cannot
+// see might. Used only on localized (single-hunk) calls; the whole-diff
+// path keeps the conservative prompt.
+export const LOCALIZED_CONFIRM_SYSTEM_PROMPT =
+  'You are a code-audit assistant reviewing one suspected problem in a ' +
+  'single, isolated hunk of an AI-generated pull request. A deterministic ' +
+  'check flagged this hunk. Because you are shown only this localized hunk, ' +
+  'judge it on its face: answer YES when the hunk plainly exhibits the ' +
+  'flagged pattern, and NO only when the hunk itself contains a clear ' +
+  'legitimate explanation. Do not withhold a YES merely because broader ' +
+  'context you cannot see might explain it. Respond with exactly one line: ' +
+  '"YES <one-sentence reason>" when the problem is real, or "NO ' +
+  '<one-sentence reason>" when it is a false positive. No other text.';
+
 const CONFIRM_QUESTION: Record<string, string> = {
   'error-swallow':
     'Question: Does the added catch block silently discard an error that a ' +

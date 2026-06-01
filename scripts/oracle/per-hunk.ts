@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   CONFIRM_SYSTEM_PROMPT,
+  LOCALIZED_CONFIRM_SYSTEM_PROMPT,
   buildConfirmationPrompt,
 } from '../../src/audit/cheat-detector/llm-judge/anthropic-judge';
 import { chunkUnifiedDiffByHunk } from '../../src/audit/cheat-detector/diff-chunker';
@@ -63,6 +64,11 @@ function buildCase(seed: number): { diff: string; defectFile: string; defectHunk
 
 async function main(argv = process.argv.slice(2)): Promise<void> {
   const live = !argv.includes('--no-live');
+  // --localized: judge each hunk with the localized confirm prompt (the
+  // experiment for whether a less-conservative single-hunk prompt lifts
+  // per-hunk localization). Whole-diff stays on the conservative prompt.
+  const localized = argv.includes('--localized');
+  const perHunkSystem = localized ? LOCALIZED_CONFIRM_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT;
   const countArg = argv.indexOf('--count');
   const count = countArg !== -1 ? Number(argv[countArg + 1]) : 10;
   loadDotenv();
@@ -85,7 +91,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
     let benignYes = false;
     for (const hunk of chunkUnifiedDiffByHunk(c.diff)) {
       const user = buildConfirmationPrompt('mock-of-hallucination', 'add tests', hunk.text);
-      const a = await judge.ask(CONFIRM_SYSTEM_PROMPT, user, live);
+      const a = await judge.ask(perHunkSystem, user, live);
       if (a.answer !== 'yes') continue;
       if (hunk.file === c.defectFile && hunk.hunkIndex === c.defectHunkIndex) defectYes = true;
       else benignYes = true;
@@ -128,10 +134,15 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
       'judge would lift the accuracy; the per-hunk infrastructure is in place.',
   );
   lines.push('');
-  fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'per-hunk-localization.md'), `${lines.join('\n')}\n`);
+  // A --localized measurement run does not overwrite the committed v1
+  // report; it only prints the numbers so the experiment can be judged.
+  if (!localized) {
+    fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'per-hunk-localization.md'), `${lines.join('\n')}\n`);
+  }
   process.stdout.write(
     `per-hunk: whole=${wholeFlagged}/${count} defect-localized=${defectHunkFlagged}/${count} ` +
-      `clean-localized=${pointedCorrectly}/${count} benign-false=${benignHunkFalse}/${count}\n`,
+      `clean-localized=${pointedCorrectly}/${count} benign-false=${benignHunkFalse}/${count} ` +
+      `prompt=${localized ? 'localized' : 'conservative'}\n`,
   );
 }
 
