@@ -18,6 +18,7 @@ import {
   parsePrimaryCategory,
   primarySystemPrompt,
 } from './anthropic-judge';
+import { LocalJudge, localJudgeModelId } from './local-judge';
 import {
   computeJudgeCacheKey,
   readCachedAnswer,
@@ -46,8 +47,23 @@ export interface AskJudgeOptions {
   allowLiveCall?: boolean;
 }
 
+/** Resolve the judge provider. `SWARM_JUDGE_PROVIDER=local` points the
+ *  judge at a free OpenAI-compatible server (so the audit's judge gate
+ *  works without a paid API); anything else keeps the pinned Anthropic
+ *  Haiku judge. The model id is folded into the cache key, so a local
+ *  answer never collides with a Haiku one. */
+function resolveJudgeProvider(opts: AskJudgeOptions): { client: JudgeClient; modelId: string } {
+  if (opts.client !== undefined) return { client: opts.client, modelId: opts.modelId ?? PINNED_JUDGE_MODEL_ID };
+  if ((process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase() === 'local') {
+    return { client: new LocalJudge(), modelId: opts.modelId ?? localJudgeModelId() };
+  }
+  return { client: new AnthropicJudge(), modelId: opts.modelId ?? PINNED_JUDGE_MODEL_ID };
+}
+
 export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
-  const modelId = opts.modelId ?? PINNED_JUDGE_MODEL_ID;
+  const provider = resolveJudgeProvider(opts);
+  const resolvedOpts: AskJudgeOptions = { ...opts, client: provider.client };
+  const modelId = provider.modelId;
   // Hunk-aware chunking. A diff over the judge's budget used to be
   // head-truncated, hiding any defect in the tail. Instead split it into
   // chunks that each stay under the budget and judge every chunk; a YES on
@@ -63,7 +79,7 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
 
   const outcomes: ChunkOutcome[] = [];
   for (const chunk of chunks) {
-    outcomes.push(await judgeChunk(opts, chunk, modelId));
+    outcomes.push(await judgeChunk(resolvedOpts, chunk, modelId));
   }
   const merged = mergeOutcomes(outcomes);
 
