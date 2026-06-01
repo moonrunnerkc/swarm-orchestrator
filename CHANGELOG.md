@@ -26,7 +26,7 @@ false-positive rate on their own merged-PR window (see
 #### Added
 
 - **Defect-injection oracle** (`src/audit/oracle/inject/`,
-  `benchmarks/oracle-corpus/`). Twelve injectors (ten structural, two
+  `benchmarks/oracle-corpus/`). Thirteen injectors (eleven structural, two
   semantic) splice one labeled defect into a presumed-clean real PR and
   stamp a sha256-pinned label. `npm run oracle:build` regenerates the
   corpus byte-identical.
@@ -67,6 +67,21 @@ false-positive rate on their own merged-PR window (see
   sanity check against held-out oracle defects. Report at
   `benchmarks/real-prs/REAL-WORLD-REPORT.md`. An 18-PR pilot drove the
   detector precision fixes below.
+- **Regression corpus and the benefit evaluation** (`benchmarks/regression-corpus/`,
+  `scripts/real-prs/mine-regressions.ts`, `npm run benefit:full`). Mines
+  merged PRs that later proved wrong (a revert or a fix-PR names them) into
+  a corpus of 70-plus retrospectively-bad PRs across twelve repos, each
+  carrying its proof link; scales the presumed-clean corpus past 200 PRs;
+  runs a differential against Semgrep and ESLint security rules; computes a
+  Venn of what only this auditor catches; and classifies every finding with
+  two independent arbiters (local model plus Opus, agreement required).
+  Headline report at `benchmarks/real-prs/v11-BENEFIT-REPORT.md`.
+- **Type-suppression detector** (`src/audit/cheat-detector/type-suppression.ts`)
+  and its oracle injector. Flags an added `@ts-ignore` / `@ts-expect-error`
+  / `eslint-disable` / `# type: ignore` on a non-test source line: silencing
+  the checker over a flagged line ships the defect with its warning off, a
+  cheat no security analyzer keys on. Advisory (severity `warn`); refutes a
+  directive that only moved.
 
 #### Changed
 

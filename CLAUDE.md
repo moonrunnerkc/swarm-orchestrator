@@ -3,7 +3,7 @@
 A CLI and library with two surfaces. The **audit surface** (v10, the
 headline) is `swarm audit <pr | --diff-file | --diff-stdin>`: it walks a
 PR diff through a pluggable cheat-detector registry (test relaxation,
-mock-of-hallucination, assertion strip, no-op fix, and six more),
+mock-of-hallucination, assertion strip, no-op fix, and seven more),
 fingerprints the AI agent that wrote the PR, optionally emits a
 CycloneDX-ML or SPDX 3.0 AI-Profile AIBOM, and posts a deterministic
 finding back to the PR. The **orchestrator surface** (v8) compiles a
@@ -54,7 +54,7 @@ Before any PR: `npm test`, `npm run typecheck`, then a descriptive commit. The L
   - `src/cli/v8/doctor-handler.ts`: `swarm doctor` diagnostics (with `--fix`).
   - `src/cli/v8/run-handler.ts`: `swarm run` with auto-discover and preset integration.
 - `src/audit/`: the v10 audit surface.
-  - `src/audit/cheat-detector/`: ten detectors (`test-relaxation`, `mock-of-hallucination`, `assertion-strip`, `no-op-fix`, `comment-only-fix`, `coverage-erosion`, `dead-branch-insertion`, `error-swallow`, `exception-rethrow-lost-context`, `fake-refactor`) behind a single registry in `index.ts`. Adding a category is one import + one array entry. Detectors are high-recall candidate generators; two verification stages run after them in `index.ts`: `verify-findings.ts` (deterministic refuters that drop or demote a candidate the diff shows is legitimate, plus `assignConfidence`) and `confirm-findings.ts` (the LLM-judge confirmation gate, opt-in, that must confirm a finding before it blocks). Shared utilities: `diff-walker.ts`, `diff-chunker.ts` (hunk-aware chunking and per-hunk splitting for the judge, replacing head-truncation), `subject-paths.ts`, `detector-types.ts`, `internal-roots.ts`, `audit-config.ts` (project-level `.swarm/audit-config.yaml` loader, including the `judgePrimary: { enabled, categories }` knob). `judge-primary.ts` runs the judge as a primary detector for the two semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) that no structural detector keys on; `judge-prompts/` holds the versioned prompt sets both judge paths read from. The block-eligibility gate is a precision policy computed into `benchmarks/real-corpus/promotions.json` by `scripts/promotions/compute-promotions.ts` and held fresh in CI by `scripts/promotions/check-policy.ts` (`npm run promotions:check`).
+  - `src/audit/cheat-detector/`: eleven detectors (`test-relaxation`, `mock-of-hallucination`, `assertion-strip`, `no-op-fix`, `comment-only-fix`, `coverage-erosion`, `dead-branch-insertion`, `error-swallow`, `exception-rethrow-lost-context`, `fake-refactor`, `type-suppression`) behind a single registry in `index.ts`. Adding a category is one import + one array entry. Detectors are high-recall candidate generators; two verification stages run after them in `index.ts`: `verify-findings.ts` (deterministic refuters that drop or demote a candidate the diff shows is legitimate, plus `assignConfidence`) and `confirm-findings.ts` (the LLM-judge confirmation gate, opt-in, that must confirm a finding before it blocks). Shared utilities: `diff-walker.ts`, `diff-chunker.ts` (hunk-aware chunking and per-hunk splitting for the judge, replacing head-truncation), `subject-paths.ts`, `detector-types.ts`, `internal-roots.ts`, `audit-config.ts` (project-level `.swarm/audit-config.yaml` loader, including the `judgePrimary: { enabled, categories }` knob). `judge-primary.ts` runs the judge as a primary detector for the two semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) that no structural detector keys on; `judge-prompts/` holds the versioned prompt sets both judge paths read from. The block-eligibility gate is a precision policy computed into `benchmarks/real-corpus/promotions.json` by `scripts/promotions/compute-promotions.ts` and held fresh in CI by `scripts/promotions/check-policy.ts` (`npm run promotions:check`).
   - `src/audit/oracle/`: the defect-injection oracle. `inject/` holds the injector registry (`index.ts`), the runner (`injection-runner.ts`), the diff-carrier primitives, and one module per category; `category-map.ts` maps an injected category to the detector or judge-primary path that should catch it; `evade/` holds the evasion transforms. Scored by `scripts/benchmarks/` (`run-baseline.ts`, `run-oracle.ts`, `full.ts`) and `scripts/oracle/` (`build-corpus.ts`, `calibrate-judge.ts`, `tail-defect.ts`, `per-hunk.ts`, `run-evasion.ts`); outputs land in `benchmarks/oracle-corpus/`, `benchmarks/baselines/pre-upgrade/`, and `benchmarks/results/`. See `docs/audit/methodology.md`.
   - `src/audit/pr-source/`: AI-agent fingerprinter (Claude Code, Cursor, Devin, Aider, Codex CLI, Copilot Workspace, Replit Agent, OpenHands).
   - `src/audit/report-comment/`: deterministic PR-comment renderer.
@@ -214,11 +214,11 @@ CLI surface shifted.
 - **`swarm audit` subcommand** with three input modes: `--pr <ref>`,
   `--diff-file <path>`, `--diff-stdin`. Also exposed as a `swarm-audit`
   bin alias.
-- **Cheat-detector registry** with ten detectors covering test relaxation,
+- **Cheat-detector registry** with eleven detectors covering test relaxation,
   mock-of-hallucination, assertion strip, no-op fix, comment-only fix,
   coverage erosion, dead-branch insertion, error swallow, exception
-  rethrow with lost context, and fake refactor. Project consumers can
-  exempt paths via `.swarm/audit-config.yaml`.
+  rethrow with lost context, fake refactor, and type suppression. Project
+  consumers can exempt paths via `.swarm/audit-config.yaml`.
 - **PR-source fingerprinter** identifies the AI agent that authored the
   PR (Claude Code, Cursor, Devin, Aider, Codex CLI, Copilot Workspace,
   Replit Agent, OpenHands).

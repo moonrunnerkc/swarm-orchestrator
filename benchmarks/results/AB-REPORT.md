@@ -1,5 +1,13 @@
 # A/B: pre-upgrade vs post-upgrade auditor
 
+> For the real-world benefit question (does this auditor catch a class of
+> review failure that off-the-shelf analyzers miss, at a meaningful
+> scale), see `benchmarks/real-prs/v11-BENEFIT-REPORT.md`: recall on a
+> retrospectively-bad PR corpus, the clean-PR false-positive rate at
+> scale, and the differential against Semgrep and ESLint. This A/B is the
+> synthetic-oracle measurement; the benefit report is the real-PR one.
+
+
 **Definition of benefit.** The post-upgrade auditor catches **20.5% more
 injected cheats** (253/300 vs 210/300, +43 defects, +14.3 percentage
 points) across **12 categories**, with the false-positive rate on

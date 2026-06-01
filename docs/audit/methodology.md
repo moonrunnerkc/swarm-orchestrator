@@ -58,6 +58,52 @@ not prove detection of unobserved defect classes. False-positive rate is
 measured against presumed-clean real PRs; the "presumed" is load-bearing.
 Both numbers are defensible, neither is overclaimed.
 
+## The regression corpus and the differential
+
+The oracle measures recall against planted defects; it cannot answer
+whether the auditor catches a real-world review failure that the team
+missed at merge time. The regression corpus answers that. `npm run
+benefit:mine` searches each repo's merged PRs for retrospective-bad
+signals: a revert PR that names `Reverts #N`, or a fix-PR whose body says
+`regression from #N` / `broken by #N` / `introduced in #N`. The named PR
+N is labeled bad and carries a proof object (the revert or fix-PR URL and
+the exact text that names it). A PR is in the corpus only if a later
+artifact demonstrates it was wrong; nothing is labeled bad by the auditor
+or by an arbiter. The mining, signal patterns, and per-repo floor live in
+`scripts/real-prs/lib/github.ts` and `mine-regressions.ts`.
+
+The differential (`scripts/real-prs/run-differential.ts`) runs Semgrep
+(`p/javascript`, `p/typescript`, `p/owasp-top-ten`, `p/security-audit`)
+and ESLint with `eslint-plugin-security` + `eslint-plugin-no-secrets`
+against the post-merge content of each PR's changed source files,
+restricted to the lines the PR introduced. `differential-venn.ts` then
+splits, per PR, what only the auditor caught, what only the external tools
+caught, and what both caught (an external finding on the same file within
+a few lines of the auditor finding). On the regression corpus, where every
+PR is independently labeled bad, the "only auditor" set is the candidate
+class this tool uniquely catches.
+
+## The arbiter cross-check
+
+Two arbiters classify every finding: the local model and Anthropic Opus.
+A finding is high-confidence only when both arbiters return the same
+verdict; a disagreement is tagged `arbiter-split` and excluded from the
+headline false-positive and true-positive counts (reported separately as
+an uncertainty bucket). Both arbiters run the same held-out oracle sanity
+gate; the lower of the two agreements is the floor the headline owns, and
+a sub-threshold arbiter is disclaimed rather than hidden. On the
+regression corpus the attached revert / fix-PR is the ground truth; the
+arbiters there only characterize a finding, they do not override the
+retrospective label.
+
+A regression corpus is biased toward what historical reviewers eventually
+caught (only PRs that were reverted or hotfixed can be mined). The auditor
+is therefore competing against the same review process that already let
+the bug through, which is the right benchmark for the only question that
+matters to a consumer: would adopting this tool have changed the merge
+outcome. Full results and the honest caveats are in
+`benchmarks/real-prs/v11-BENEFIT-REPORT.md`.
+
 ## Chunking and per-hunk are infrastructure, not recall wins
 
 Hunk-aware chunking and per-hunk localization put the right substrate in
