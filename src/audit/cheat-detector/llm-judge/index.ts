@@ -23,6 +23,7 @@ import {
   readCachedAnswer,
   writeCachedAnswer,
 } from './cache';
+import { chunkUnifiedDiff } from '../diff-chunker';
 import {
   PINNED_JUDGE_MODEL_ID,
   type JudgeClient,
@@ -47,103 +48,128 @@ export interface AskJudgeOptions {
 
 export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
   const modelId = opts.modelId ?? PINNED_JUDGE_MODEL_ID;
-  // Cap the diff before it reaches the model and the cache key. Haiku's
-  // context is 200k tokens; lockfile regenerations and vendored trees
-  // exceed it and the API rejects the whole call. Every caller that
-  // sends a diff (the confirmation gate and the no-op-fix detector)
-  // gets the cap from one place. The head of the diff is where flagged
-  // hunks sit, and the cap is part of the cache key so replay matches.
-  const diff = capDiffForJudge(opts.request.unifiedDiff);
-  const { cacheKey, diffSha, titleSha } = computeJudgeCacheKey({
-    diff,
+  // Hunk-aware chunking. A diff over the judge's budget used to be
+  // head-truncated, hiding any defect in the tail. Instead split it into
+  // chunks that each stay under the budget and judge every chunk; a YES on
+  // any chunk is a YES overall. Diffs under the budget are a single chunk,
+  // so the common path and its cache keys are unchanged.
+  const chunks = chunkUnifiedDiff(opts.request.unifiedDiff, MAX_JUDGE_DIFF_CHARS);
+  const fullIds = computeJudgeCacheKey({
+    diff: opts.request.unifiedDiff,
     title: opts.request.prTitle,
     modelId,
     detector: opts.request.detector,
   });
 
+  const outcomes: ChunkOutcome[] = [];
+  for (const chunk of chunks) {
+    outcomes.push(await judgeChunk(opts, chunk, modelId));
+  }
+  const merged = mergeOutcomes(outcomes);
+
+  const result: JudgeResult = {
+    answer: merged.answer,
+    modelId,
+    cacheHit: merged.allCached,
+    diffSha: fullIds.diffSha,
+    titleSha: fullIds.titleSha,
+  };
+  if (merged.reason !== undefined) result.reason = merged.reason;
+  recordLedger(opts.ledger, opts.request.detector, result);
+  return result;
+}
+
+interface ChunkOutcome {
+  answer: JudgeResult['answer'];
+  reason?: string;
+  cacheHit: boolean;
+}
+
+function buildJudgePrompts(
+  detector: string,
+  prTitle: string,
+  diff: string,
+): { system: string; user: string } {
+  const primary = parsePrimaryCategory(detector);
+  const confirm = primary === undefined ? parseConfirmCategory(detector) : undefined;
+  return {
+    system:
+      primary !== undefined
+        ? primarySystemPrompt()
+        : confirm === undefined
+          ? JUDGE_SYSTEM_PROMPT
+          : CONFIRM_SYSTEM_PROMPT,
+    user:
+      primary !== undefined
+        ? buildPrimaryPrompt(primary, prTitle, diff)
+        : confirm === undefined
+          ? buildJudgeUserPrompt(prTitle, diff)
+          : buildConfirmationPrompt(confirm, prTitle, diff),
+  };
+}
+
+async function judgeChunk(
+  opts: AskJudgeOptions,
+  chunkDiff: string,
+  modelId: string,
+): Promise<ChunkOutcome> {
+  const { cacheKey, diffSha, titleSha } = computeJudgeCacheKey({
+    diff: chunkDiff,
+    title: opts.request.prTitle,
+    modelId,
+    detector: opts.request.detector,
+  });
   const cached = readCachedAnswer(opts.repoRoot, cacheKey);
   if (cached !== undefined) {
-    const cachedResult: JudgeResult = {
-      answer: cached.answer,
-      modelId,
-      cacheHit: true,
-      diffSha,
-      titleSha,
-    };
-    if (cached.reason !== undefined) cachedResult.reason = cached.reason;
-    recordLedger(opts.ledger, opts.request.detector, cachedResult);
-    return cachedResult;
+    const out: ChunkOutcome = { answer: cached.answer, cacheHit: true };
+    if (cached.reason !== undefined) out.reason = cached.reason;
+    return out;
   }
-
   const liveAllowed = opts.allowLiveCall ?? true;
   if (!liveAllowed || !hasCredentials(opts)) {
-    const unavailable: JudgeResult = {
-      answer: 'unavailable',
-      modelId,
-      cacheHit: false,
-      diffSha,
-      titleSha,
-    };
-    recordLedger(opts.ledger, opts.request.detector, unavailable);
-    return unavailable;
+    return { answer: 'unavailable', cacheHit: false };
   }
-
   const client: JudgeClient = opts.client ?? new AnthropicJudge();
   let raw: { answer: JudgeResult['answer']; reason?: string };
   try {
-    const primary = parsePrimaryCategory(opts.request.detector);
-    const confirm = primary === undefined ? parseConfirmCategory(opts.request.detector) : undefined;
-    raw = await client.ask({
-      system:
-        primary !== undefined
-          ? primarySystemPrompt()
-          : confirm === undefined
-            ? JUDGE_SYSTEM_PROMPT
-            : CONFIRM_SYSTEM_PROMPT,
-      user:
-        primary !== undefined
-          ? buildPrimaryPrompt(primary, opts.request.prTitle, diff)
-          : confirm === undefined
-            ? buildJudgeUserPrompt(opts.request.prTitle, diff)
-            : buildConfirmationPrompt(confirm, opts.request.prTitle, diff),
-      modelId,
-    });
+    const { system, user } = buildJudgePrompts(opts.request.detector, opts.request.prTitle, chunkDiff);
+    raw = await client.ask({ system, user, modelId });
   } catch (err) {
-    logger.warn(
-      `llm-judge call failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    const failed: JudgeResult = {
-      answer: 'unavailable',
-      modelId,
-      cacheHit: false,
-      diffSha,
-      titleSha,
-    };
-    recordLedger(opts.ledger, opts.request.detector, failed);
-    return failed;
+    logger.warn(`llm-judge call failed: ${err instanceof Error ? err.message : String(err)}`);
+    return { answer: 'unavailable', cacheHit: false };
   }
-
-  const result: JudgeResult = {
-    answer: raw.answer,
-    modelId,
-    cacheHit: false,
-    diffSha,
-    titleSha,
-  };
-  if (raw.reason !== undefined) result.reason = raw.reason;
-
-  if (result.answer !== 'unavailable') {
+  if (raw.answer !== 'unavailable') {
     const entry: Parameters<typeof writeCachedAnswer>[2] = {
       diffSha,
       titleSha,
       modelId,
-      answer: result.answer,
+      answer: raw.answer,
     };
-    if (result.reason !== undefined) entry.reason = result.reason;
+    if (raw.reason !== undefined) entry.reason = raw.reason;
     writeCachedAnswer(opts.repoRoot, cacheKey, entry);
   }
-  recordLedger(opts.ledger, opts.request.detector, result);
-  return result;
+  const out: ChunkOutcome = { answer: raw.answer, cacheHit: false };
+  if (raw.reason !== undefined) out.reason = raw.reason;
+  return out;
+}
+
+/** A YES on any chunk wins (the cheat is somewhere in the diff); otherwise
+ *  a NO if any chunk could judge; unavailable only when no chunk could. */
+function mergeOutcomes(outcomes: ChunkOutcome[]): {
+  answer: JudgeResult['answer'];
+  reason?: string;
+  allCached: boolean;
+} {
+  const allCached = outcomes.every((o) => o.cacheHit);
+  const yes = outcomes.find((o) => o.answer === 'yes');
+  if (yes !== undefined) {
+    return yes.reason !== undefined ? { answer: 'yes', reason: yes.reason, allCached } : { answer: 'yes', allCached };
+  }
+  const no = outcomes.find((o) => o.answer === 'no');
+  if (no !== undefined) {
+    return no.reason !== undefined ? { answer: 'no', reason: no.reason, allCached } : { answer: 'no', allCached };
+  }
+  return { answer: 'unavailable', allCached };
 }
 
 function hasCredentials(opts: AskJudgeOptions): boolean {
@@ -152,18 +178,10 @@ function hasCredentials(opts: AskJudgeOptions): boolean {
 }
 
 // ~120k chars is well under Haiku's 200k-token ceiling once the prompt
-// scaffold is added. Exported so callers can size their own context if
-// they need to, but the cap is applied unconditionally inside askJudge.
+// scaffold is added. It is the per-chunk budget for the hunk-aware
+// chunker, and is exported so the benchmark harnesses size their context
+// the same way.
 export const MAX_JUDGE_DIFF_CHARS = 120_000;
-
-function capDiffForJudge(diff: string): string {
-  if (diff.length <= MAX_JUDGE_DIFF_CHARS) return diff;
-  return (
-    `${diff.slice(0, MAX_JUDGE_DIFF_CHARS)}\n` +
-    `... [diff truncated at ${MAX_JUDGE_DIFF_CHARS} chars for the judge; ` +
-    `${diff.length - MAX_JUDGE_DIFF_CHARS} more chars omitted]`
-  );
-}
 
 function recordLedger(
   ledger: JudgeLedgerSink | undefined,
