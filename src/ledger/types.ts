@@ -273,6 +273,18 @@ export interface LedgerEntryPayloadMap {
     answer: 'yes' | 'no' | 'unavailable';
     reason?: string;
   };
+  // v11 judge-primary finding. Distinct from `pr-audit-finding` so a
+  // semantic finding the judge raised on its own (no deterministic
+  // candidate behind it) is distinguishable in the ledger from a
+  // detector finding the judge merely confirmed.
+  'pr-audit-judge-primary': {
+    category: string;
+    modelId: string;
+    answer: 'yes' | 'no' | 'unavailable';
+    file: string;
+    line: number;
+    reason?: string;
+  };
 }
 
 export type LedgerEntryType = keyof LedgerEntryPayloadMap;
@@ -312,3 +324,4 @@ export type PrAuditStartedEntry = LedgerEntry<'pr-audit-started'>;
 export type PrAuditFindingEntry = LedgerEntry<'pr-audit-finding'>;
 export type PrAuditCompletedEntry = LedgerEntry<'pr-audit-completed'>;
 export type LlmJudgeResultEntry = LedgerEntry<'llm-judge-result'>;
+export type PrAuditJudgePrimaryEntry = LedgerEntry<'pr-audit-judge-primary'>;

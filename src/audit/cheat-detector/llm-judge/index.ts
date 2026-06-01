@@ -11,9 +11,12 @@ import {
   AnthropicJudge,
   buildConfirmationPrompt,
   buildJudgeUserPrompt,
+  buildPrimaryPrompt,
   CONFIRM_SYSTEM_PROMPT,
   JUDGE_SYSTEM_PROMPT,
   parseConfirmCategory,
+  parsePrimaryCategory,
+  primarySystemPrompt,
 } from './anthropic-judge';
 import {
   computeJudgeCacheKey,
@@ -88,13 +91,21 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
   const client: JudgeClient = opts.client ?? new AnthropicJudge();
   let raw: { answer: JudgeResult['answer']; reason?: string };
   try {
-    const confirm = parseConfirmCategory(opts.request.detector);
+    const primary = parsePrimaryCategory(opts.request.detector);
+    const confirm = primary === undefined ? parseConfirmCategory(opts.request.detector) : undefined;
     raw = await client.ask({
-      system: confirm === undefined ? JUDGE_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT,
+      system:
+        primary !== undefined
+          ? primarySystemPrompt()
+          : confirm === undefined
+            ? JUDGE_SYSTEM_PROMPT
+            : CONFIRM_SYSTEM_PROMPT,
       user:
-        confirm === undefined
-          ? buildJudgeUserPrompt(opts.request.prTitle, diff)
-          : buildConfirmationPrompt(confirm, opts.request.prTitle, diff),
+        primary !== undefined
+          ? buildPrimaryPrompt(primary, opts.request.prTitle, diff)
+          : confirm === undefined
+            ? buildJudgeUserPrompt(opts.request.prTitle, diff)
+            : buildConfirmationPrompt(confirm, opts.request.prTitle, diff),
       modelId,
     });
   } catch (err) {

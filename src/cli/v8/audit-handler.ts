@@ -53,6 +53,7 @@ import type {
   PrAuditStartedEntry,
   PrAuditFindingEntry,
   PrAuditCompletedEntry,
+  PrAuditJudgePrimaryEntry,
 } from '../../ledger/types';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { fetchPrManifests } from './pr-manifest-fetch';
@@ -335,6 +336,30 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   );
 
   for (const finding of result.findings) {
+    // A judge-primary finding has no deterministic candidate behind it, so
+    // it is recorded under its own kind to stay distinguishable from a
+    // detector finding the judge merely confirmed.
+    if (finding.judgePrimary === true) {
+      const primaryPayload: Omit<
+        PrAuditJudgePrimaryEntry,
+        'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'
+      > = {
+        type: 'pr-audit-judge-primary',
+        category: finding.category,
+        modelId: finding.judgeModelId ?? 'unknown',
+        answer: 'yes',
+        file: finding.location.file,
+        line: finding.location.line,
+      };
+      if (finding.judgeReasoning !== undefined) {
+        (primaryPayload as PrAuditJudgePrimaryEntry).reason = finding.judgeReasoning;
+      }
+      ledger.append<PrAuditJudgePrimaryEntry>(
+        primaryPayload,
+        attribution !== undefined ? { aiAgent: attribution } : undefined,
+      );
+      continue;
+    }
     const evidenceSha256 = crypto.createHash('sha256').update(finding.evidence).digest('hex');
     const payload: Omit<PrAuditFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
       type: 'pr-audit-finding',

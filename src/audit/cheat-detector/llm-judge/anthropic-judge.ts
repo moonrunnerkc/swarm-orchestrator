@@ -7,6 +7,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { JudgeAnswer, JudgeClient } from './types';
+import type { SemanticCheatCategory } from '../../types';
+import { getJudgePromptSet } from '../judge-prompts';
 
 export interface AnthropicJudgeOptions {
   apiKey?: string;
@@ -185,6 +187,43 @@ export function buildConfirmationPrompt(
     `Suspected problem category: ${category}`,
     '',
     question,
+    '',
+    'Unified diff:',
+    '```diff',
+    unifiedDiff,
+    '```',
+  ].join('\n');
+}
+
+// Judge-primary track. Where the confirmation gate confirms a deterministic
+// candidate, the primary path has no candidate: the judge is the only
+// detector for a semantic cheat. The marker is `primary:<category>` and the
+// prompt is framed around the PR's stated claim, not a flagged pattern.
+
+export function parsePrimaryCategory(detector: string): SemanticCheatCategory | undefined {
+  if (!detector.startsWith('primary:')) return undefined;
+  const category = detector.slice('primary:'.length);
+  return category === 'goal-not-fixed' || category === 'cheat-mock-mutation'
+    ? category
+    : undefined;
+}
+
+export function primarySystemPrompt(version?: string): string {
+  return getJudgePromptSet(version).primarySystem;
+}
+
+export function buildPrimaryPrompt(
+  category: SemanticCheatCategory,
+  claim: string,
+  unifiedDiff: string,
+  version?: string,
+): string {
+  const set = getJudgePromptSet(version);
+  return [
+    `PR intent (claim): ${claim}`,
+    `Suspected cheat category: ${category}`,
+    '',
+    set.primaryQuestion(category),
     '',
     'Unified diff:',
     '```diff',

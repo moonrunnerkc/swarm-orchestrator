@@ -14,7 +14,22 @@ export type CheatCategory =
   | 'comment-only-fix'
   | 'error-swallow'
   | 'exception-rethrow-lost-context'
-  | 'dead-branch-insertion';
+  | 'dead-branch-insertion'
+  // Semantic categories. No structural detector keys on these: the diff
+  // looks legitimate and only a judge reading the PR's claim against the
+  // code can call the cheat. They are produced by the judge-primary path,
+  // never by a deterministic detector.
+  | 'goal-not-fixed'
+  | 'cheat-mock-mutation';
+
+/** The two judge-primary-only categories, separated for the call sites
+ *  that must not hand a semantic category to a structural detector. */
+export type SemanticCheatCategory = 'goal-not-fixed' | 'cheat-mock-mutation';
+
+export const SEMANTIC_CHEAT_CATEGORIES: readonly SemanticCheatCategory[] = [
+  'goal-not-fixed',
+  'cheat-mock-mutation',
+];
 
 export type Severity = 'block' | 'warn' | 'info';
 
@@ -65,6 +80,13 @@ export interface Finding {
    * in the PR comment so the reader sees it on every finding.
    */
   confidence?: 'high' | 'medium' | 'low';
+  /**
+   * v11: set by the judge-primary path on a finding the judge raised on
+   * its own, with no deterministic candidate behind it (the semantic
+   * categories). The ledger writer records these as
+   * `pr-audit-judge-primary` rather than `pr-audit-finding`.
+   */
+  judgePrimary?: boolean;
 }
 
 export interface AuditAgentAttribution {

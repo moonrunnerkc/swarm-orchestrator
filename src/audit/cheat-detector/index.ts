@@ -18,6 +18,7 @@ import { parsePrIntent, upgradeSeverity, type PrIntent } from './pr-intent';
 import { resolveDetectors, type DetectorSet } from './detector-sets';
 import { verifyFindings, assignConfidence } from './verify-findings';
 import { confirmFindings } from './confirm-findings';
+import { runJudgePrimary } from './judge-primary';
 
 // Re-exported for backwards compatibility with callers that pinned the
 // flat list. New code should pass `detectorSet` on the AuditInput.
@@ -89,6 +90,24 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
     if (input.judgeLedger !== undefined) confirmCtx.ledger = input.judgeLedger;
     const confirmed = await confirmFindings(kept, confirmCtx);
     kept = confirmed.findings;
+
+    // Judge-primary path. The structural detectors are blind to the
+    // semantic categories, so the judge runs directly against the diff and
+    // the PR's claim and raises a finding when the claim is not delivered.
+    // Gated by judgePrimary.enabled (default on); requires the judge to be
+    // enabled so the no-credentials default path stays deterministic.
+    if (config.judgePrimary.enabled && config.judgePrimary.categories.length > 0) {
+      const primaryCtx: import('./judge-primary').JudgePrimaryContext = {
+        unifiedDiff: input.unifiedDiff,
+        claim: input.pr?.title ?? '',
+        repoRoot: input.repoRoot,
+        files,
+        categories: config.judgePrimary.categories,
+      };
+      if (input.judgeLedger !== undefined) primaryCtx.ledger = input.judgeLedger;
+      const primaryFindings = await runJudgePrimary(primaryCtx);
+      for (const f of primaryFindings) kept.push(f);
+    }
   }
 
   // Confidence reflects the final severity and judge verdict, so it is

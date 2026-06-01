@@ -27,18 +27,34 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import type { IntentSeverityPolicy } from './pr-intent';
+import { SEMANTIC_CHEAT_CATEGORIES, type SemanticCheatCategory } from '../types';
 
 const CONFIG_FILE = path.join('.swarm', 'audit-config.yaml');
 const DEFAULT_INTENT_POLICY: IntentSeverityPolicy = 'strict';
 
+/** Controls the judge-primary path for the semantic categories. Default
+ *  on so semantic cheats are caught out of the box; a cost-sensitive
+ *  consumer sets `enabled: false` to keep the audit deterministic. */
+export interface JudgePrimaryConfig {
+  enabled: boolean;
+  categories: readonly SemanticCheatCategory[];
+}
+
 export interface AuditConfig {
   excludePaths: readonly string[];
   intentSeverityPolicy: IntentSeverityPolicy;
+  judgePrimary: JudgePrimaryConfig;
 }
+
+const DEFAULT_JUDGE_PRIMARY: JudgePrimaryConfig = {
+  enabled: true,
+  categories: SEMANTIC_CHEAT_CATEGORIES,
+};
 
 const EMPTY_CONFIG: AuditConfig = {
   excludePaths: [],
   intentSeverityPolicy: DEFAULT_INTENT_POLICY,
+  judgePrimary: DEFAULT_JUDGE_PRIMARY,
 };
 
 export function loadAuditConfig(repoRoot: string): AuditConfig {
@@ -47,8 +63,79 @@ export function loadAuditConfig(repoRoot: string): AuditConfig {
   const text = fs.readFileSync(file, 'utf8');
   const excludePaths = parseExcludePaths(text);
   const intentSeverityPolicy = parseIntentSeverityPolicy(text);
+  const judgePrimary = parseJudgePrimary(text);
   warnIfUnrecognized(file, text, excludePaths);
-  return { excludePaths, intentSeverityPolicy };
+  return { excludePaths, intentSeverityPolicy, judgePrimary };
+}
+
+// Parses the optional `judgePrimary:` block:
+//
+//   judgePrimary:
+//     enabled: true
+//     categories: [goal-not-fixed, cheat-mock-mutation]
+//
+// Absent block -> default (enabled, both categories). A present block with
+// `enabled: false` turns the path off. `categories` accepts an inline
+// array or a YAML block list; unknown category names are dropped.
+function parseJudgePrimary(text: string): JudgePrimaryConfig {
+  const lines = text.split(/\r?\n/);
+  let inBlock = false;
+  let enabled = DEFAULT_JUDGE_PRIMARY.enabled;
+  let categories: SemanticCheatCategory[] | undefined;
+  let inCategoryList = false;
+  const seenBlock = { value: false };
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/#.*$/, '');
+    const trimmed = line.trim();
+    if (/^judgePrimary\s*:/.test(trimmed)) {
+      inBlock = true;
+      seenBlock.value = true;
+      continue;
+    }
+    if (!inBlock) continue;
+    // A non-indented, non-empty line ends the block.
+    if (trimmed.length > 0 && !/^\s/.test(rawLine) && !/^judgePrimary/.test(trimmed)) {
+      break;
+    }
+    const enabledMatch = trimmed.match(/^enabled\s*:\s*(true|false)\s*$/i);
+    if (enabledMatch && enabledMatch[1] !== undefined) {
+      enabled = enabledMatch[1].toLowerCase() === 'true';
+      inCategoryList = false;
+      continue;
+    }
+    const inlineCats = trimmed.match(/^categories\s*:\s*\[(.*)\]\s*$/);
+    if (inlineCats && inlineCats[1] !== undefined) {
+      categories = toSemanticCategories(inlineCats[1].split(','));
+      inCategoryList = false;
+      continue;
+    }
+    if (/^categories\s*:\s*$/.test(trimmed)) {
+      categories = [];
+      inCategoryList = true;
+      continue;
+    }
+    if (inCategoryList) {
+      const item = trimmed.match(/^-\s*(['"]?)(.+?)\1\s*$/);
+      if (item && item[2] !== undefined) {
+        categories = toSemanticCategories([...(categories ?? []), item[2]]);
+        continue;
+      }
+      inCategoryList = false;
+    }
+  }
+  if (!seenBlock.value) return DEFAULT_JUDGE_PRIMARY;
+  return { enabled, categories: categories ?? DEFAULT_JUDGE_PRIMARY.categories };
+}
+
+function toSemanticCategories(raw: readonly string[]): SemanticCheatCategory[] {
+  const out: SemanticCheatCategory[] = [];
+  for (const r of raw) {
+    const v = r.trim().replace(/^['"]|['"]$/g, '');
+    if (v === 'goal-not-fixed' || v === 'cheat-mock-mutation') {
+      if (!out.includes(v)) out.push(v);
+    }
+  }
+  return out;
 }
 
 // Surface a typo or indentation slip in `.swarm/audit-config.yaml`
@@ -63,6 +150,7 @@ function warnIfUnrecognized(
 ): void {
   if (excludePaths.length > 0) return;
   if (/^\s*intentSeverityPolicy\s*:/m.test(text)) return;
+  if (/^\s*judgePrimary\s*:/m.test(text)) return;
   const hasContent = text
     .split(/\r?\n/)
     .some((line) => line.replace(/#.*$/, '').trim().length > 0);
