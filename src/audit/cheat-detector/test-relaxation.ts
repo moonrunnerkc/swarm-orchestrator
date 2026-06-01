@@ -19,7 +19,7 @@ import type { Finding } from '../types';
 import { isTestFile, walkHunks } from './diff-walker';
 import { gradeReplacement } from './matcher-grader';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 // AST grading is bounded so the audit stays cheap on large PRs. Above the
 // cap the regex layer still runs on every hunk; the cap only governs the
@@ -47,8 +47,17 @@ const LOOSE_MATCHERS: RegExp[] = [
   /\btoBeDefined\s*\(/,
   /\btoBeTruthy\s*\(/,
   /\btoBeFalsy\s*\(/,
-  /\btoBeGreaterThanOrEqual\s*\(\s*0\s*\)/,
-  /\btoBeGreaterThan\s*\(\s*-?\s*1\s*\)/,
+  // A one-sided threshold matcher replacing a strict equality is a
+  // relaxation regardless of the bound: `toBe(42)` -> `toBeGreaterThan(0)`
+  // turns an exact-value check into "anything past a bound". The earlier
+  // list only caught the obviously-tautological `toBeGreaterThan(-1)` and
+  // `toBeGreaterThanOrEqual(0)` and walked past the common forms. The
+  // regex layer only fires when paired with a deleted strict assertion in
+  // the same hunk, so broadening it does not flag a freshly-added bound.
+  /\btoBeGreaterThan\s*\(/,
+  /\btoBeGreaterThanOrEqual\s*\(/,
+  /\btoBeLessThan\s*\(/,
+  /\btoBeLessThanOrEqual\s*\(/,
   /\bexpect\.anything\s*\(/,
   /\bexpect\.any\s*\(/,
   /\bassertTrue\s*\(\s*True\s*\)/,
