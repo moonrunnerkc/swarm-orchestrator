@@ -103,6 +103,7 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
         repoRoot: input.repoRoot,
         files,
         categories: config.judgePrimary.categories,
+        block: config.judgePrimary.block,
       };
       if (input.judgeLedger !== undefined) primaryCtx.ledger = input.judgeLedger;
       const primaryFindings = await runJudgePrimary(primaryCtx);

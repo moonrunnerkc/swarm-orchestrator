@@ -22,7 +22,7 @@ function tempRepo(): string {
 }
 
 describe('cheat-detector / judge-primary', () => {
-  it('raises a block finding when the judge says the claim is not delivered', async () => {
+  it('raises an advisory (warn) finding by default when the judge says the claim is not delivered', async () => {
     const findings = await runJudgePrimary({
       unifiedDiff: DIFF,
       claim: 'fix null-pointer crash in parseConfig',
@@ -36,9 +36,26 @@ describe('cheat-detector / judge-primary', () => {
     const f = findings[0];
     assert.ok(f !== undefined);
     assert.equal(f.category, 'goal-not-fixed');
-    assert.equal(f.severity, 'block');
+    assert.equal(f.severity, 'warn');
     assert.equal(f.judgePrimary, true);
     assert.equal(f.location.file, 'src/x.ts');
+  });
+
+  it('raises a block finding only when block is opted in', async () => {
+    const findings = await runJudgePrimary({
+      unifiedDiff: DIFF,
+      claim: 'fix null-pointer crash in parseConfig',
+      repoRoot: tempRepo(),
+      files: parseDiff(DIFF),
+      categories: ['goal-not-fixed'],
+      client: stubClient('yes'),
+      allowLiveCall: true,
+      block: true,
+    });
+    assert.equal(findings.length, 1);
+    const f = findings[0];
+    assert.ok(f !== undefined);
+    assert.equal(f.severity, 'block');
   });
 
   it('raises nothing when the judge refutes', async () => {
@@ -84,9 +101,21 @@ describe('audit-config / judgePrimary', () => {
     ]);
   });
 
+  it('defaults block to false (advisory) when no file', () => {
+    const cfg = loadAuditConfig(tempRepo());
+    assert.equal(cfg.judgePrimary.block, false);
+  });
+
   it('parses an explicit disable', () => {
     const cfg = configFrom('judgePrimary:\n  enabled: false\n');
     assert.equal(cfg.judgePrimary.enabled, false);
+    assert.equal(cfg.judgePrimary.block, false);
+  });
+
+  it('parses block opt-in', () => {
+    const cfg = configFrom('judgePrimary:\n  enabled: true\n  block: true\n');
+    assert.equal(cfg.judgePrimary.enabled, true);
+    assert.equal(cfg.judgePrimary.block, true);
   });
 
   it('parses an inline category list', () => {

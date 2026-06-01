@@ -34,9 +34,16 @@ const DEFAULT_INTENT_POLICY: IntentSeverityPolicy = 'strict';
 
 /** Controls the judge-primary path for the semantic categories. Default
  *  on so semantic cheats are caught out of the box; a cost-sensitive
- *  consumer sets `enabled: false` to keep the audit deterministic. */
+ *  consumer sets `enabled: false` to keep the audit deterministic.
+ *
+ *  `block` is off by default: judge-primary findings ship advisory
+ *  (severity `warn`) until a consumer has its own per-repo false-positive
+ *  data to justify promotion. A consumer that has measured the path on its
+ *  own merged-PR window flips `block: true` to make these findings gate.
+ *  See docs/audit/methodology.md for the measurement bar. */
 export interface JudgePrimaryConfig {
   enabled: boolean;
+  block: boolean;
   categories: readonly SemanticCheatCategory[];
 }
 
@@ -48,6 +55,7 @@ export interface AuditConfig {
 
 const DEFAULT_JUDGE_PRIMARY: JudgePrimaryConfig = {
   enabled: true,
+  block: false,
   categories: SEMANTIC_CHEAT_CATEGORIES,
 };
 
@@ -72,15 +80,19 @@ export function loadAuditConfig(repoRoot: string): AuditConfig {
 //
 //   judgePrimary:
 //     enabled: true
+//     block: false
 //     categories: [goal-not-fixed, cheat-mock-mutation]
 //
-// Absent block -> default (enabled, both categories). A present block with
-// `enabled: false` turns the path off. `categories` accepts an inline
-// array or a YAML block list; unknown category names are dropped.
+// Absent block -> default (enabled, advisory, both categories). A present
+// block with `enabled: false` turns the path off; `block: true` promotes
+// judge-primary findings from advisory `warn` to gating `block`.
+// `categories` accepts an inline array or a YAML block list; unknown
+// category names are dropped.
 function parseJudgePrimary(text: string): JudgePrimaryConfig {
   const lines = text.split(/\r?\n/);
   let inBlock = false;
   let enabled = DEFAULT_JUDGE_PRIMARY.enabled;
+  let block = DEFAULT_JUDGE_PRIMARY.block;
   let categories: SemanticCheatCategory[] | undefined;
   let inCategoryList = false;
   const seenBlock = { value: false };
@@ -100,6 +112,12 @@ function parseJudgePrimary(text: string): JudgePrimaryConfig {
     const enabledMatch = trimmed.match(/^enabled\s*:\s*(true|false)\s*$/i);
     if (enabledMatch && enabledMatch[1] !== undefined) {
       enabled = enabledMatch[1].toLowerCase() === 'true';
+      inCategoryList = false;
+      continue;
+    }
+    const blockMatch = trimmed.match(/^block\s*:\s*(true|false)\s*$/i);
+    if (blockMatch && blockMatch[1] !== undefined) {
+      block = blockMatch[1].toLowerCase() === 'true';
       inCategoryList = false;
       continue;
     }
@@ -124,7 +142,7 @@ function parseJudgePrimary(text: string): JudgePrimaryConfig {
     }
   }
   if (!seenBlock.value) return DEFAULT_JUDGE_PRIMARY;
-  return { enabled, categories: categories ?? DEFAULT_JUDGE_PRIMARY.categories };
+  return { enabled, block, categories: categories ?? DEFAULT_JUDGE_PRIMARY.categories };
 }
 
 function toSemanticCategories(raw: readonly string[]): SemanticCheatCategory[] {

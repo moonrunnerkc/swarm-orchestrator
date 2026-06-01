@@ -26,6 +26,11 @@ export interface JudgePrimaryContext {
   client?: JudgeClient;
   /** When false, never make a live call (returns no findings). */
   allowLiveCall?: boolean;
+  /** Promote judge-primary findings from advisory `warn` to gating
+   *  `block`. Off by default: the path ships advisory until a consumer has
+   *  its own per-repo false-positive data to justify blocking. Set via
+   *  `judgePrimary.block: true` in .swarm/audit-config.yaml. */
+  block?: boolean;
 }
 
 const CATEGORY_MESSAGE: Record<SemanticCheatCategory, string> = {
@@ -54,7 +59,7 @@ export async function runJudgePrimary(ctx: JudgePrimaryContext): Promise<Finding
     if (verdict.answer !== 'yes') continue;
     const finding: Finding = {
       category,
-      severity: 'block',
+      severity: ctx.block === true ? 'block' : 'warn',
       message: CATEGORY_MESSAGE[category],
       location,
       evidence: `claim: ${ctx.claim}`,
