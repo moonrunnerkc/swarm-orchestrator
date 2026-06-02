@@ -209,6 +209,16 @@ function runInstall(
  * to go through the matching manager. Throws on failure; the caller records
  * the check as skipped.
  */
+/** Yarn classic (v1) vs Berry (v2+), detected from the lockfile header. */
+function isYarnClassic(dir: string): boolean {
+  try {
+    const lock = fs.readFileSync(path.join(dir, 'yarn.lock'), 'utf8').slice(0, 200);
+    return lock.includes('yarn lockfile v1');
+  } catch {
+    return false;
+  }
+}
+
 export function addDevTools(
   manager: PackageManager,
   dir: string,
@@ -227,12 +237,14 @@ export function addDevTools(
       bin = execBin('corepack');
       args = ['pnpm', 'add', '-w', '-D', '--ignore-scripts', ...packages];
       break;
-    case 'yarn':
-      // Yarn Berry adds to the root when run at the root; -W targets the root
-      // for Yarn classic. Berry ignores unknown flags it does not need here.
+    case 'yarn': {
+      // Yarn classic (v1) refuses a workspace-root add without -W; Yarn Berry
+      // does not accept -W. Detect the major from the lockfile header.
       bin = execBin('corepack');
-      args = ['yarn', 'add', '-D', ...packages];
+      const classic = isYarnClassic(dir);
+      args = classic ? ['yarn', 'add', '-D', '-W', ...packages] : ['yarn', 'add', '-D', ...packages];
       break;
+    }
     case 'bun':
       bin = 'bun';
       args = ['add', '-d', ...packages];
