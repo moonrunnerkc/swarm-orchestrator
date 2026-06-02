@@ -1,0 +1,60 @@
+{
+  "repo": "vercel/next.js",
+  "prNumber": 94027,
+  "headSha": "71edcda4c910756042ab47033e4fb964a4d3a744",
+  "pre": [
+    {
+      "key": "vercel/next.js#94027:error-swallow:packages/next/src/shared/lib/instant-nav-cookie.ts:1",
+      "repo": "vercel/next.js",
+      "prNumber": 94027,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/next/src/shared/lib/instant-nav-cookie.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/next/src/shared/lib/instant-nav-cookie.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ import type { FlightRouterState } from './app-router-types'\n+ \n+ export type InstantNavCookieData =\n+ | { state: 'pending' }\n+ | { state: 'mpa' }\n+ | {\n+ state: 'spa'\n+ fromTree: FlightRouterState\n+ toTree: FlightRouterState | null\n+ }\n+ \n+ export function parseInstantNavCookieValue(raw: string): InstantNavCookieData {\n+ try {\n+ const parsed = JSON.parse(raw)\n+ if (Array.isArray(parsed) && parse",
+      "judgeRationale": null
+    }
+  ],
+  "post": [
+    {
+      "key": "vercel/next.js#94027:no-op-fix:packages/next/src/client/components/segment-cache/navigation-testing-lock.ts:1",
+      "repo": "vercel/next.js",
+      "prNumber": 94027,
+      "category": "no-op-fix",
+      "severity": "info",
+      "subjectPath": "packages/next/src/client/components/segment-cache/navigation-testing-lock.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "LLM judge was requested but is unavailable (no ANTHROPIC_API_KEY or the upstream call errored); deterministic-only verdict stands for this run.",
+      "evidence": "(modelId: local:glm47-flash-abl)",
+      "judgeRationale": null
+    },
+    {
+      "key": "vercel/next.js#94027:test-relaxation:test/development/app-dir/instant-navs-devtools/instant-navs-devtools.test.ts:163",
+      "repo": "vercel/next.js",
+      "prNumber": 94027,
+      "category": "test-relaxation",
+      "severity": "block",
+      "subjectPath": "test/development/app-dir/instant-navs-devtools/instant-navs-devtools.test.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 163,
+        "end": 163
+      },
+      "judgePath": "structural",
+      "message": "Matcher strictness was weakened (AST-graded): tolerance widened, literal replaced with a wildcard, or range expanded. The test no longer constrains the original behavior as tightly.",
+      "evidence": "- expect(text).toContain('Page load')\n+ expect(text).toContain(expected)",
+      "judgeRationale": null
+    }
+  ]
+}

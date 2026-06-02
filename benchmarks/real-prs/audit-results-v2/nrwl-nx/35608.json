@@ -1,0 +1,94 @@
+{
+  "repo": "nrwl/nx",
+  "prNumber": 35608,
+  "headSha": "0f8a7fae4829fb7814de02c1386593c318f1dfef",
+  "pre": [
+    {
+      "key": "nrwl/nx#35608:error-swallow:packages/eslint-plugin/src/rules/nx-plugin-checks.ts:434",
+      "repo": "nrwl/nx",
+      "prNumber": 35608,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/eslint-plugin/src/rules/nx-plugin-checks.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 434,
+        "end": 434
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/eslint-plugin/src/rules/nx-plugin-checks.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ // Under Node's native TS strip, swc-node isn't registered, so `require.resolve`\n+ // no longer auto-tries `.ts` extensions. Try them explicitly before giving up.\n+ const TS_EXTENSIONS = ['.ts', '.tsx', '.cts', '.mts'];\n+ \n+ function tryResolveImplementation(modulePath: string): string | undefined {\n+ try {\n+ return require.resolve(modulePath);\n+ } catch {\n+ // fall through\n+ }\n+ for (const ext ",
+      "judgeRationale": null
+    },
+    {
+      "key": "nrwl/nx#35608:error-swallow:packages/nx/src/plugins/js/utils/register.ts:473",
+      "repo": "nrwl/nx",
+      "prNumber": 35608,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/nx/src/plugins/js/utils/register.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 473,
+        "end": 473
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/nx/src/plugins/js/utils/register.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ /**\n+ * Node.js throws this code when native type stripping hits an unsupported\n+ * construct (enum, runtime namespace, legacy decorators, import = require,\n+ * parameter properties on older Node, etc.).\n+ *\n+ * Exported for tests.\n+ */\n+ export function isNativeTypeStripError(err: unknown): boolean {\n+ if (!err || typeof err !== 'object') return false;\n+ return (\n+ (err as { code?: string }).co",
+      "judgeRationale": null
+    },
+    {
+      "key": "nrwl/nx#35608:error-swallow:packages/nx/src/utils/handle-import.ts:36",
+      "repo": "nrwl/nx",
+      "prNumber": 35608,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/nx/src/utils/handle-import.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 36,
+        "end": 36
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/nx/src/utils/handle-import.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ // ERR_REQUIRE_ESM (legacy) and ERR_REQUIRE_ASYNC_MODULE (Node 22.12+,\n+ // ESM with top-level await) both indicate the module must be loaded via\n+ // dynamic import(). Native strip handles `.ts` extension resolution on\n+ // the import() path, so this recovers TLA plugin entry points without\n+ // requiring swc-node or ts-node to be installed.\n+ if (e.code === 'ERR_REQUIRE_ESM' || e.code === 'ERR",
+      "judgeRationale": null
+    }
+  ],
+  "post": [
+    {
+      "key": "nrwl/nx#35608:no-op-fix:astro-docs/src/content/docs/reference/environment-variables.mdoc:1",
+      "repo": "nrwl/nx",
+      "prNumber": 35608,
+      "category": "no-op-fix",
+      "severity": "info",
+      "subjectPath": "astro-docs/src/content/docs/reference/environment-variables.mdoc",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "LLM judge was requested but is unavailable (no ANTHROPIC_API_KEY or the upstream call errored); deterministic-only verdict stands for this run.",
+      "evidence": "(modelId: local:glm47-flash-abl)",
+      "judgeRationale": null
+    },
+    {
+      "key": "nrwl/nx#35608:type-suppression:packages/cypress/src/generators/base-setup/files/config-ts-esm/__directory__/support/commands.ts__ext__:13",
+      "repo": "nrwl/nx",
+      "prNumber": 35608,
+      "category": "type-suppression",
+      "severity": "warn",
+      "subjectPath": "packages/cypress/src/generators/base-setup/files/config-ts-esm/__directory__/support/commands.ts__ext__",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 13,
+        "end": 13
+      },
+      "judgePath": "structural",
+      "message": "A eslint-disable suppression was added in packages/cypress/src/generators/base-setup/files/config-ts-esm/__directory__/support/commands.ts__ext__. The checker was silenced rather than the underlying diagnostic resolved; if the PR claims a fix, the suppressed warning may be the defect shipping with its alarm turned off.",
+      "evidence": "// eslint-disable-next-line @typescript-eslint/no-namespace<% } %>",
+      "judgeRationale": null
+    }
+  ]
+}

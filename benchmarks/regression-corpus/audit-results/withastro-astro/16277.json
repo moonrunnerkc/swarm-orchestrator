@@ -1,0 +1,43 @@
+{
+  "repo": "withastro/astro",
+  "prNumber": 16277,
+  "headSha": "074e29afbb683de41297e1b3dd6cdd26eb21df03",
+  "pre": [
+    {
+      "key": "withastro/astro#16277:error-swallow:packages/integrations/cloudflare/src/index.ts:450",
+      "repo": "withastro/astro",
+      "prNumber": 16277,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/integrations/cloudflare/src/index.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 450,
+        "end": 450
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/integrations/cloudflare/src/index.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ // Move platform files from the base-prefixed client dir to the\n+ // original client root, since Cloudflare reads them from there.\n+ if (_config.base !== '/') {\n+ for (const file of ['.assetsignore', '_headers']) {\n+ try {\n+ await rename(\n+ new URL(`./${file}`, _config.build.client),\n+ new URL(`./${file}`, _originalClientDir),\n+ );\n+ } catch {\n+ // File may not exist — that's fine\n+ }\n+ }\n+ }\n+ ",
+      "judgeRationale": null
+    }
+  ],
+  "post": [
+    {
+      "key": "withastro/astro#16277:no-op-fix:packages/integrations/cloudflare/src/index.ts:1",
+      "repo": "withastro/astro",
+      "prNumber": 16277,
+      "category": "no-op-fix",
+      "severity": "warn",
+      "subjectPath": "packages/integrations/cloudflare/src/index.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "LLM judge was requested but is unavailable (no ANTHROPIC_API_KEY or the upstream call errored); deterministic-only verdict stands for this run. Severity raised because the PR claims a fix (\"fix #16276\").",
+      "evidence": "(modelId: local:glm47-flash-abl)",
+      "judgeRationale": null
+    }
+  ]
+}

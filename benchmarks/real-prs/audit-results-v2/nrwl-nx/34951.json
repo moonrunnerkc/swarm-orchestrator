@@ -1,0 +1,77 @@
+{
+  "repo": "nrwl/nx",
+  "prNumber": 34951,
+  "headSha": "88f10e5dabcf5be1926b606b679dbf447725c3c7",
+  "pre": [
+    {
+      "key": "nrwl/nx#34951:error-swallow:packages/nx/bin/init-local.ts:37",
+      "repo": "nrwl/nx",
+      "prNumber": 34951,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/nx/bin/init-local.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 37,
+        "end": 37
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/nx/bin/init-local.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ // Skip per-TAB shell completion calls — those must not spawn the daemon.\n+ if (!process.env.NX_COMPLETE) {\n+ try {\n+ await ensureNxConsoleInstalledViaDaemon();\n+ } catch {}\n+ }\n+ if (\n+ command === 'completion' ||\n+ command === 'run' ||\n+ command === 'g' ||\n+ command === 'generate'\n+ ) {",
+      "judgeRationale": null
+    },
+    {
+      "key": "nrwl/nx#34951:error-swallow:packages/nx/bin/nx.ts:40",
+      "repo": "nrwl/nx",
+      "prNumber": 34951,
+      "category": "error-swallow",
+      "severity": "info",
+      "subjectPath": "packages/nx/bin/nx.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 40,
+        "end": 40
+      },
+      "judgePath": "structural",
+      "message": "A logging-only catch block was added in packages/nx/bin/nx.ts. The error is being preserved as a log entry rather than rethrown. [body-class: logging-only — typically legitimate observability shape]",
+      "evidence": "+ // Tab-completion fast path. Bare env-var read so nothing runs before\n+ // the try/catch — a throw here would splice a stack trace into the\n+ // user's command line.\n+ if (process.env.NX_COMPLETE) {\n+ try {\n+ performance.mark('init-local');\n+ const { tryValueCompletion } = await import(\n+ 'nx/src/command-line/completion/value-completions'\n+ );\n+ if (tryValueCompletion()) return;\n+ const { tryCom",
+      "judgeRationale": null
+    },
+    {
+      "key": "nrwl/nx#34951:error-swallow:packages/nx/src/command-line/completion/infix-targets.ts:1",
+      "repo": "nrwl/nx",
+      "prNumber": 34951,
+      "category": "error-swallow",
+      "severity": "block",
+      "subjectPath": "packages/nx/src/command-line/completion/infix-targets.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "A bare empty catch block was added in packages/nx/src/command-line/completion/infix-targets.ts. Errors raised inside the try will be silently swallowed.",
+      "evidence": "+ import { getRegisteredTopLevelPaths, registerCompletion } from './metadata';\n+ import { getProjectNamesWithTarget } from './completion-providers';\n+ import { readCachedProjectGraph } from '../../project-graph/project-graph';\n+ \n+ // `nx <target> <project>` infix completion. Every unique target name in\n+ // the cached graph gets its own path; union with a conventional set so\n+ // cold workspaces ",
+      "judgeRationale": null
+    }
+  ],
+  "post": [
+    {
+      "key": "nrwl/nx#34951:no-op-fix:.nx/workflows/agents.yaml:1",
+      "repo": "nrwl/nx",
+      "prNumber": 34951,
+      "category": "no-op-fix",
+      "severity": "info",
+      "subjectPath": ".nx/workflows/agents.yaml",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "LLM judge was requested but is unavailable (no ANTHROPIC_API_KEY or the upstream call errored); deterministic-only verdict stands for this run.",
+      "evidence": "(modelId: local:glm47-flash-abl)",
+      "judgeRationale": null
+    }
+  ]
+}

@@ -13,6 +13,7 @@ A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 [![version 11.0.0](https://img.shields.io/static/v1?label=version&message=11.0.0&color=22d3ee)](package.json)
 [![oracle recall 84% (253/300)](https://img.shields.io/static/v1?label=oracle%20recall&message=84%25%20(253%2F300)&color=brightgreen)](benchmarks/results/AB-REPORT.md)
 [![real-PR false alarms 0.11/PR](https://img.shields.io/static/v1?label=real-PR%20false%20alarms&message=0.11%2FPR&color=brightgreen)](benchmarks/real-prs/REAL-WORLD-REPORT.md)
+[![real-PR cheats vs linters 4 confirmed (Semgrep+ESLint: 1)](https://img.shields.io/static/v1?label=real-PR%20cheats%20vs%20linters&message=4%20confirmed%20(Semgrep%2BESLint%3A%201)&color=brightgreen)](benchmarks/real-prs/v11-BENEFIT-REPORT.md)
 <!-- BADGES:END -->
 
 <a href="#install"><b>Install</b></a> ·
