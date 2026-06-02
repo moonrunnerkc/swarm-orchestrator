@@ -122,7 +122,22 @@ function coverageCommand(runner: TestRunner): CoverageCommand | null {
     case 'vitest':
       return {
         cmd: 'npx',
-        args: ['vitest', 'run', '--coverage.enabled', '--coverage.provider', 'v8', '--coverage.reporter', 'json', '--coverage.reportsDirectory', 'coverage'],
+        // --browser.enabled=false forces the node environment: some corpus
+        // repos (tldraw, vite) enable vitest browser mode in their config,
+        // which launches a real browser. We want changed-line unit coverage,
+        // not browser tests, and never a window on the auditor's desktop.
+        args: [
+          'vitest',
+          'run',
+          '--browser.enabled=false',
+          '--coverage.enabled',
+          '--coverage.provider',
+          'v8',
+          '--coverage.reporter',
+          'json',
+          '--coverage.reportsDirectory',
+          'coverage',
+        ],
         install: '@vitest/coverage-v8',
       };
     case 'mocha':

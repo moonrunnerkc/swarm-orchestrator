@@ -14,10 +14,30 @@ export function execBin(name: string): string {
   return dir !== undefined && dir.length > 0 ? path.join(dir, name) : name;
 }
 
+/** Headless / non-interactive forcing for every sandboxed child process.
+ *  Real repo suites (tldraw, vite, next.js, ...) use vitest browser mode,
+ *  Playwright, or Cypress, which pop up real browser windows when run headed.
+ *  CI=true is the master switch: Playwright and vitest browser default to
+ *  headless under CI, dev servers do not open a browser, and watch modes are
+ *  off. The skip-download flags make any suite that still tries to launch a
+ *  browser fail closed (the run is recorded as a skip) rather than open a
+ *  window on the auditor's desktop. */
+const HEADLESS_ENV: NodeJS.ProcessEnv = {
+  CI: 'true',
+  BROWSER: 'none',
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+  PLAYWRIGHT_HTML_OPEN: 'never',
+  CYPRESS_INSTALL_BINARY: '0',
+  PUPPETEER_SKIP_DOWNLOAD: '1',
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: '1',
+  npm_config_yes: 'true',
+};
+
 /** Build the child-process environment: the pinned Node bin dir prepended to
- *  PATH, plus an optional package-manager cache override. */
+ *  PATH, headless/non-interactive forcing, plus an optional package-manager
+ *  cache override. */
 export function execEnv(cacheDir?: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env: NodeJS.ProcessEnv = { ...process.env, ...HEADLESS_ENV };
   const dir = process.env.SWARM_EG_NODE_BIN;
   if (dir !== undefined && dir.length > 0) {
     env.PATH = `${dir}${path.delimiter}${env.PATH ?? ''}`;
