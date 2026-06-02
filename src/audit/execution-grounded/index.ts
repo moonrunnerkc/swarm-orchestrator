@@ -233,7 +233,12 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       }
       const pkgPath =
         scope.packageDir === '' ? workspaces.post.workspacePath : path.join(workspaces.post.workspacePath, scope.packageDir);
-      const runner = detectTestRunner(pkgPath);
+      // A workspace package often does not list the runner itself (it is
+      // hoisted to the root), so fall back to the root-detected runner.
+      const runner = detectTestRunner(pkgPath) ?? workspaces.post.testRunner;
+      // Install Stryker/coverage tools into the root node_modules, not the
+      // package, to avoid fighting the workspace symlink layout.
+      const installDir = workspaces.post.workspacePath;
       const evDir = (sub: string): { evidenceDir: string } | Record<string, never> =>
         input.evidenceDir !== undefined
           ? { evidenceDir: path.join(input.evidenceDir, scope.packageDir || '_root', sub) }
@@ -250,6 +255,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           testRunner: runner,
           changedLines: scope.changedLines,
           timeoutMs: Math.max(1, deadline - Date.now()),
+          installDir,
           ...evDir('coverage'),
           ...cacheArg,
         });
@@ -265,6 +271,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           changedLines: scope.changedLines,
           testRunner: runner,
           timeoutMs: Math.max(1, deadline - Date.now()),
+          installDir,
           ...evDir('mutation'),
           ...cacheArg,
         });

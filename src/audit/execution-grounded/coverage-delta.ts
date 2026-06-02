@@ -140,6 +140,10 @@ export interface CoverageRunOptions {
   timeoutMs?: number;
   evidenceDir?: string;
   cacheDir?: string;
+  /** Where to install the coverage tool (c8 / @vitest/coverage-v8). Defaults
+   *  to workspacePath; pass the workspace root for a monorepo package so the
+   *  tool lands in the hoisted node_modules. The run uses workspacePath as cwd. */
+  installDir?: string;
 }
 
 export interface CoverageRunOutcome {
@@ -173,7 +177,7 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
   if (command.install !== undefined) {
     try {
       execFileSync(execBin('npm'), ['install', '--no-save', '--no-audit', '--no-fund', command.install], {
-        cwd: workspacePath,
+        cwd: opts.installDir ?? workspacePath,
         stdio: ['ignore', 'ignore', 'pipe'],
         timeout: Math.max(1, Math.min(5 * 60 * 1000, deadline - Date.now())),
         encoding: 'utf8',

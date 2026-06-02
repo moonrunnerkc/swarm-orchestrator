@@ -223,6 +223,11 @@ export interface MutationRunOptions {
   /** Shared package cache so the Stryker install is a cache hit after the
    *  first PR in a run. */
   cacheDir?: string;
+  /** Where to install Stryker and resolve its binary. Defaults to
+   *  workspacePath; for a monorepo package, pass the workspace root so the
+   *  install lands in the hoisted node_modules instead of fighting the
+   *  workspace symlink layout. The run still uses workspacePath as cwd. */
+  installDir?: string;
 }
 
 export interface MutationRunOutcome {
@@ -264,6 +269,7 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   const runner = testRunner as 'jest' | 'vitest' | 'mocha';
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
+  const installDir = opts.installDir ?? workspacePath;
 
   // Stryker resolves its runner plugin from the project under test, so it has
   // to be installed into the workspace. --no-save keeps the project's own
@@ -272,7 +278,7 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
     const installArgs = ['install', '--no-save', '--no-audit', '--no-fund', `@stryker-mutator/core@9`, `${adapter}@9`];
     const env = execEnv(opts.cacheDir);
     execFileSync(execBin('npm'), installArgs, {
-      cwd: workspacePath,
+      cwd: installDir,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: Math.min(INSTALL_TIMEOUT_MS, deadline - Date.now()),
       encoding: 'utf8',
@@ -294,7 +300,7 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 
   try {
-    execFileSync(execBin('node'), [path.join(workspacePath, 'node_modules', '.bin', 'stryker'), 'run', configPath], {
+    execFileSync(execBin('node'), [path.join(installDir, 'node_modules', '.bin', 'stryker'), 'run', configPath], {
       cwd: workspacePath,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: Math.max(1, deadline - Date.now()),
