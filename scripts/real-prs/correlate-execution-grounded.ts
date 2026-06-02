@@ -192,7 +192,13 @@ async function main(): Promise<void> {
 
   const cleanEvaluated = clean.filter((r) => r.mutationRuns.some((m) => m.ran) || r.coverageRuns.some((c) => c.ran));
   const cleanFindings = clean.reduce((n, r) => n + r.findings.length, 0);
-  const fClean = clean.length > 0 ? cleanFindings / clean.length : 0;
+  // F_clean is the false-alarm burden per *evaluated* clean PR: a PR whose
+  // install/provision failed never ran a check and cannot raise a false alarm,
+  // so counting it in the denominator would understate the burden. Divide by
+  // the PRs where a check actually ran. F_clean_attempted keeps the per-attempt
+  // figure for reference.
+  const fClean = cleanEvaluated.length > 0 ? cleanFindings / cleanEvaluated.length : 0;
+  const fCleanAttempted = clean.length > 0 ? cleanFindings / clean.length : 0;
 
   const summary = {
     generatedAt: new Date().toISOString(),
@@ -201,7 +207,8 @@ async function main(): Promise<void> {
     regressionRan: regression.filter((r) => r.mutationRuns.some((m) => m.ran) || r.coverageRuns.some((c) => c.ran)).length,
     cleanEvaluated: clean.length,
     cleanRan: cleanEvaluated.length,
-    headline: { M, R, C, U, F_clean: Number(fClean.toFixed(3)) },
+    cleanFindings,
+    headline: { M, R, C, U, F_clean: Number(fClean.toFixed(3)), F_clean_attempted: Number(fCleanAttempted.toFixed(3)) },
     perPr,
   };
   const outFile = path.join(regressionDir(), 'execution-grounded', 'correlation.json');
