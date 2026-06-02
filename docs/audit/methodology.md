@@ -104,6 +104,59 @@ matters to a consumer: would adopting this tool have changed the merge
 outcome. Full results and the honest caveats are in
 `benchmarks/real-prs/v11-BENEFIT-REPORT.md`.
 
+## The execution-grounded layer
+
+The cheat detectors and the judge read the diff; they cannot see whether
+the change behaves. A reverted PR ships a logic bug, which leaves no
+cheat-shaped tell, so a diff-reading auditor does not catch it (the
+companion `REDUNDANCY-FINDING.md` documents that negative result). The
+execution-grounded layer runs the change instead of reading it. It is
+opt-in (`executionGrounded.enabled: true` in `.swarm/audit-config.yaml`),
+advisory-only, and for evidence runs and deep audits, not every PR: it
+provisions a sandboxed checkout and runs the repo's suite.
+
+Three checks, each scoped to the lines the PR changed:
+
+- **Mutation testing (Stryker).** For each changed line, Stryker mutates
+  it and reruns the package's suite. A mutation that survives is a line the
+  tests execute but do not constrain: a regression there would pass. The
+  mutate set is scoped to the diff's line ranges, so the run stays bounded
+  and the signal is local to the change. A survivor on a covered line is
+  `mutation-survives-on-changed-line`; one on a line no test runs is
+  `mutation-survives-on-uncovered-changed-line` (higher confidence).
+- **Issue-linked repro.** When a PR closes an issue that carries a runnable
+  script or test snippet, the repro is executed against both the pre- and
+  post-PR checkouts. A repro that failed before and still fails after the
+  fix is `issue-repro-still-fails`: the fix did not deliver. A repro that
+  passed before and fails after is `pr-breaks-issue-repro`.
+- **Coverage delta.** The post-PR suite runs under Istanbul coverage; a
+  changed line no test executes is `uncovered-changed-line` (info). It also
+  sharpens the mutation result (a survivor on an uncovered line could not
+  have been killed by any test).
+
+**The honest caveat: mutation testing is bounded by the test suite.** A
+mutation can only be killed by a test that runs the line and asserts on its
+behavior. A repo with a thin suite produces few mutations that matter, and
+many survivors that reflect missing tests rather than a defect in this PR.
+The layer measures what the suite constrains, not ground truth; a survivor
+is a question for the reviewer, not a verdict. The two semantic categories
+remain judge-only, and structural cheats remain detector-only; this layer
+adds a third, orthogonal signal.
+
+**Monorepo scoping.** The real-world corpus is entirely pnpm/yarn
+workspaces, so each check runs inside the package that owns the changed
+file (its test runner and config live there), with Stryker and the coverage
+provider installed into the hoisted root `node_modules`. Findings are
+re-rooted to the repo-relative paths the diff used.
+
+**Deployment mode.** Advisory-only, opt-in per repo. The findings ship at
+severity `warn` (or `info` for coverage) and never gate a merge. Promotion
+to blocking would go through the same per-consumer false-positive evidence
+bar as judge-primary; until then a run-grounded finding is a prompt for a
+reviewer, not a build failure. The evidence run and its honest numbers are
+in `benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`; reproduce with
+`npm run execution-grounded:full`.
+
 ## Chunking and per-hunk are infrastructure, not recall wins
 
 Hunk-aware chunking and per-hunk localization put the right substrate in
