@@ -250,6 +250,18 @@ function strykerReportPath(workspacePath: string): string {
   return path.join(workspacePath, 'reports', 'mutation', 'mutation.json');
 }
 
+/** Pull the most diagnostic line out of a tool's stderr for a skip reason:
+ *  prefer a line naming an error/cause, else the last non-empty line (which
+ *  is usually just the Node version banner, so the error line is better). */
+function meaningfulErrorLine(stderr: string): string | undefined {
+  const lines = stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !/^at\s/.test(l) && !/^Node\.js v/.test(l));
+  const named = lines.find((l) => /error|cannot|could not|missing|not found|unable|failed/i.test(l));
+  return (named ?? lines[lines.length - 1])?.slice(0, 240);
+}
+
 /**
  * Run diff-scoped mutation testing in a provisioned workspace. Installs
  * Stryker plus the matching runner adapter into the workspace, writes a
@@ -321,8 +333,8 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
       return { ran: false, results: [], summary: empty, scope, skipReason: `mutation run exceeded the ${Math.round(timeoutMs / 1000)}s budget` };
     }
     if (!fs.existsSync(strykerReportPath(workspacePath))) {
-      const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).slice(-1500) : '';
-      return { ran: false, results: [], summary: empty, scope, skipReason: `Stryker run failed: ${stderr.trim().split('\n').slice(-1)[0] ?? String(err)}` };
+      const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : '';
+      return { ran: false, results: [], summary: empty, scope, skipReason: `Stryker run failed: ${meaningfulErrorLine(stderr) ?? String(err)}` };
     }
     log.warn('Stryker exited non-zero but a report was written; parsing it');
   }
