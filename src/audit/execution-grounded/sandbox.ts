@@ -48,6 +48,25 @@ function installInvocation(manager: PackageManager): { bin: string; args: string
   }
 }
 
+/** Non-frozen install, tried only when the frozen install fails. A real PR's
+ *  committed lockfile can be out of sync with package.json at the exact commit
+ *  (a dependency bump landed without a lockfile update, or the PM version
+ *  differs), which makes the frozen install refuse rather than resolve. The
+ *  non-frozen form lets the PM reconcile the lockfile so the suite can run. */
+function fallbackInstallInvocation(manager: PackageManager): { bin: string; args: string[] } {
+  switch (manager) {
+    case 'npm':
+      return { bin: execBin('npm'), args: ['install', '--no-audit', '--no-fund'] };
+    case 'pnpm':
+      return { bin: execBin('corepack'), args: ['pnpm', 'install', '--no-frozen-lockfile'] };
+    case 'yarn':
+      // Plain install: classic updates the lockfile; Berry drops immutability.
+      return { bin: execBin('corepack'), args: ['yarn', 'install'] };
+    case 'bun':
+      return { bin: 'bun', args: ['install'] };
+  }
+}
+
 const DEFAULT_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const DISK_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -185,7 +204,6 @@ function runInstall(
   cacheDir: string | undefined,
   timeoutMs: number,
 ): void {
-  const { bin, args } = installInvocation(manager);
   // Only npm's download cache is safe to redirect. pnpm/yarn/bun resolve a
   // content-addressed store/cache that a later `add` must agree with; pointing
   // it at a per-run dir desyncs the store and breaks the tool add
@@ -194,29 +212,47 @@ function runInstall(
   const env = execEnv(manager === 'npm' ? cacheDir : undefined);
   // Corepack must not interactively prompt before downloading a pinned PM.
   env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
-  try {
-    execFileSync(bin, args, {
-      cwd: dir,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      timeout: timeoutMs,
-      encoding: 'utf8',
-      env,
-    });
-  } catch (err) {
-    const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : '';
-    const timedOut = err instanceof Error && 'signal' in err && (err as { signal: unknown }).signal === 'SIGTERM';
-    throw new SwarmError(
-      `dependency install (${manager} ${args.join(' ')}) failed in ${dir}`,
-      'sandbox-install-failed',
-      {
-        remediation: timedOut
-          ? `Install exceeded ${Math.round(timeoutMs / 1000)}s. Raise installTimeoutMs or exclude this repo.`
-          : 'The repo may need a non-frozen install, a native toolchain, or a different package manager. ' +
-            'Record it as yellow (with a documented config patch) or red (excluded) in stryker-viability.json.',
-        cause: stderr.length > 0 ? new Error(stderr.trim().slice(-2000)) : err,
-      },
-    );
+  // Try the frozen install first (reproducible); on a non-timeout failure,
+  // retry once with a non-frozen install so a lockfile that drifted at this
+  // commit does not strand the whole PR. A timeout is not retried: it means a
+  // slow install, not a lockfile mismatch.
+  const attempts = [installInvocation(manager), fallbackInstallInvocation(manager)];
+  let lastErr: unknown;
+  let lastArgs: string[] = [];
+  for (let i = 0; i < attempts.length; i += 1) {
+    const { bin, args } = attempts[i]!;
+    lastArgs = args;
+    try {
+      execFileSync(bin, args, {
+        cwd: dir,
+        stdio: ['ignore', 'ignore', 'pipe'],
+        timeout: timeoutMs,
+        encoding: 'utf8',
+        env,
+      });
+      if (i > 0) log.info(`install in ${dir} succeeded with the non-frozen fallback`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const timedOut = err instanceof Error && 'signal' in err && (err as { signal: unknown }).signal === 'SIGTERM';
+      if (timedOut || i === attempts.length - 1) break;
+      log.warn(`frozen install failed in ${dir}; retrying without a frozen lockfile`);
+    }
   }
+  const stderr = lastErr instanceof Error && 'stderr' in lastErr ? String((lastErr as { stderr: unknown }).stderr) : '';
+  const timedOut =
+    lastErr instanceof Error && 'signal' in lastErr && (lastErr as { signal: unknown }).signal === 'SIGTERM';
+  throw new SwarmError(
+    `dependency install (${manager} ${lastArgs.join(' ')}) failed in ${dir}`,
+    'sandbox-install-failed',
+    {
+      remediation: timedOut
+        ? `Install exceeded ${Math.round(timeoutMs / 1000)}s. Raise installTimeoutMs or exclude this repo.`
+        : 'The repo may need a native toolchain or a different package manager. ' +
+          'Record it as yellow (with a documented config patch) or red (excluded) in stryker-viability.json.',
+      cause: stderr.length > 0 ? new Error(stderr.trim().slice(-2000)) : lastErr instanceof Error ? lastErr : new Error(String(lastErr)),
+    },
+  );
 }
 
 /**
@@ -306,6 +342,22 @@ function buildWorkspace(dir: string, manager: PackageManager, timeoutMs: number)
   }
 }
 
+/** Kill any process still running out of a workspace: dev servers (next-server),
+ *  native-binary build scripts (profiling-node's prune step), jest workers, and
+ *  browsers a test launched. These are detached grandchildren that survive the
+ *  SIGTERM a check's timeout sends to its direct child, so without this sweep
+ *  they accumulate across PRs and starve the host. The mkdtemp workspace path is
+ *  unique, so matching processes by it cannot hit anything unrelated.
+ *  Best-effort. */
+function killWorkspaceProcesses(workspacePath: string): void {
+  try {
+    execFileSync('pkill', ['-9', '-f', workspacePath], { timeout: 30_000, stdio: 'ignore' });
+  } catch {
+    // pkill exits non-zero when nothing matched, which is the common case.
+    return;
+  }
+}
+
 function directorySizeBytes(dir: string): number {
   try {
     const out = execFileSync('du', ['-sk', dir], { encoding: 'utf8', timeout: 60_000 });
@@ -328,6 +380,7 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
   const slug = repo.replace(/[^a-zA-Z0-9]+/g, '-');
   const workspacePath = fs.mkdtempSync(path.join(baseDir, `eg-${slug}-${commit.slice(0, 8)}-`));
   const cleanup = (): void => {
+    killWorkspaceProcesses(workspacePath);
     try {
       fs.rmSync(workspacePath, { recursive: true, force: true });
     } catch (err) {
@@ -348,6 +401,10 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
       }
       if (opts.runBuild === true) {
         buildWorkspace(workspacePath, packageManager, opts.buildTimeoutMs ?? 10 * 60 * 1000);
+        // A build script can leave a hung native-binary step (profiling-node's
+        // linux-target prune) running detached after the build itself returns;
+        // sweep it now so it does not idle through the whole check phase.
+        killWorkspaceProcesses(workspacePath);
       }
     }
     const testRunner = detectTestRunner(workspacePath);
