@@ -17,19 +17,28 @@ export function execBin(name: string): string {
 /** Headless / non-interactive forcing for every sandboxed child process.
  *  Real repo suites (tldraw, vite, next.js, ...) use vitest browser mode,
  *  Playwright, or Cypress, which pop up real browser windows when run headed.
- *  CI=true is the master switch: Playwright and vitest browser default to
- *  headless under CI, dev servers do not open a browser, and watch modes are
- *  off. The skip-download flags make any suite that still tries to launch a
- *  browser fail closed (the run is recorded as a skip) rather than open a
- *  window on the auditor's desktop. */
+ *
+ *  CI=true is the master switch (Playwright and vitest browser default to
+ *  headless under CI, dev servers do not open a browser, watch modes are off),
+ *  but it is not enough: a repo whose own test code calls `chromium.launch()`
+ *  with an explicit headed option (next.js integration tests do this) ignores
+ *  it. So we also make the browser binaries un-launchable -- PLAYWRIGHT_BROWSERS_PATH
+ *  points at a path with no browsers, and PUPPETEER_EXECUTABLE_PATH at a binary
+ *  that exits immediately. Any launch attempt then fails closed (the test
+ *  errors, the run is recorded as a skip) instead of opening a window on the
+ *  auditor's desktop. Browser-driven tests are not the changed-line coverage
+ *  signal we are after, so failing them closed costs nothing here. */
+const NO_BROWSERS_PATH = '/tmp/swarm-eg-no-browsers';
 const HEADLESS_ENV: NodeJS.ProcessEnv = {
   CI: 'true',
   BROWSER: 'none',
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
   PLAYWRIGHT_HTML_OPEN: 'never',
-  CYPRESS_INSTALL_BINARY: '0',
+  PLAYWRIGHT_BROWSERS_PATH: NO_BROWSERS_PATH,
+  PUPPETEER_EXECUTABLE_PATH: '/usr/bin/false',
   PUPPETEER_SKIP_DOWNLOAD: '1',
   PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: '1',
+  CYPRESS_INSTALL_BINARY: '0',
   npm_config_yes: 'true',
 };
 

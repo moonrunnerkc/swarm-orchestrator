@@ -19,6 +19,8 @@ echo "regression results: ${reg}/72   clean results: ${cln}"
 echo "current: ${cur:-<provisioning/none>}"
 echo "last done: ${lastdone:-none}"
 echo "runner alive: ${alive}   pipeline alive: ${pipealive}"
+leak=$(pgrep -f "ms-playwright/chromium|playwright_chromiumdev_profile|swarm-eg-run.*chrom" 2>/dev/null | tr '\n' ' ')
+echo "browser-leak: ${leak:-none}"
 if [ -f "$EGDIR/correlation.json" ]; then
   echo "CORRELATION READY:"
   node -e 'console.log(JSON.stringify(require("./'"$EGDIR"'/correlation.json").headline))' 2>/dev/null
