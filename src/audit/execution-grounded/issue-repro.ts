@@ -205,11 +205,39 @@ function testCommand(runner: TestRunner, file: string): { cmd: string; args: str
   }
 }
 
+/** A repro that cannot compile, parse, or resolve its imports never executed
+ *  the code under test, so its non-zero exit is a harness/extraction artifact,
+ *  not the bug reproducing. These signatures (esbuild/tsx transform errors,
+ *  syntax errors, missing modules, ESM/extension mismatches) mark the run as
+ *  errored (unevaluable) rather than a genuine failing repro. */
+const SETUP_FAILURE = new RegExp(
+  [
+    'Transform failed',
+    'TransformError',
+    'SyntaxError',
+    'Cannot find module',
+    'Cannot find package',
+    'ERR_MODULE_NOT_FOUND',
+    'ERR_UNKNOWN_FILE_EXTENSION',
+    'ERR_UNKNOWN_BUILTIN_MODULE',
+    'Cannot use import statement outside a module',
+    'Unexpected token',
+    'Unexpected end of (input|file)',
+    'Failed to (load|resolve)',
+  ].join('|'),
+);
+
 function classifyExit(err: unknown): { status: ReproStatus; exitCode: number | null; stdout: string; stderr: string } {
   const e = err as { status?: number; signal?: string; stdout?: Buffer | string; stderr?: Buffer | string };
   const stdout = e.stdout !== undefined ? String(e.stdout) : '';
   const stderr = e.stderr !== undefined ? String(e.stderr) : '';
   if (e.signal === 'SIGTERM') return { status: 'timeout', exitCode: null, stdout, stderr };
+  // A compile/parse/module-resolution failure means the repro never ran the
+  // code under test, so it is not evidence the bug reproduces; treat it as
+  // errored (unevaluable) regardless of the exit code.
+  if (SETUP_FAILURE.test(stderr) || SETUP_FAILURE.test(stdout)) {
+    return { status: 'errored', exitCode: typeof e.status === 'number' ? e.status : null, stdout, stderr };
+  }
   if (typeof e.status === 'number') return { status: 'failed', exitCode: e.status, stdout, stderr };
   return { status: 'errored', exitCode: null, stdout, stderr };
 }

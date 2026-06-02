@@ -117,5 +117,21 @@ describe('execution-grounded / issue-repro (pure logic)', () => {
         fs.rmSync(ws, { recursive: true, force: true });
       }
     });
+    it('treats a non-parseable repro as errored (unevaluable), not a failing repro', () => {
+      const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'eg-repro-it-'));
+      fs.writeFileSync(path.join(ws, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+      try {
+        // A malformed extraction (invalid syntax) exits non-zero, but it never
+        // ran the code under test, so it is unevaluable, not a failing repro.
+        const bad = executeIssueRepro({
+          workspacePath: ws,
+          repro: { kind: 'script', language: 'js', code: 'const x = {.;' },
+          testRunner: null,
+        });
+        assert.equal(bad.status, 'errored');
+      } finally {
+        fs.rmSync(ws, { recursive: true, force: true });
+      }
+    });
   });
 });
