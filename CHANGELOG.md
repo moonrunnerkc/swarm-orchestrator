@@ -70,12 +70,20 @@ false-positive rate on their own merged-PR window (see
 - **Regression corpus and the benefit evaluation** (`benchmarks/regression-corpus/`,
   `scripts/real-prs/mine-regressions.ts`, `npm run benefit:full`). Mines
   merged PRs that later proved wrong (a revert or a fix-PR names them) into
-  a corpus of 70-plus retrospectively-bad PRs across twelve repos, each
-  carrying its proof link; scales the presumed-clean corpus past 200 PRs;
-  runs a differential against Semgrep and ESLint security rules; computes a
-  Venn of what only this auditor catches; and classifies every finding with
-  two independent arbiters (local model plus Opus, agreement required).
-  Headline report at `benchmarks/real-prs/v11-BENEFIT-REPORT.md`.
+  a corpus of 72 retrospectively-bad PRs across twelve repos, each carrying
+  its proof link; scales the presumed-clean corpus to 232 PRs; runs a
+  differential against Semgrep and the ESLint security rules; computes a
+  Venn of what only this auditor catches; and classifies a stratified
+  sample with two independent model families (a local GLM judge and a Kimi
+  cloud model, both clearing the oracle sanity gate). The honest result is
+  a scope narrowing: Semgrep and ESLint raise ~nothing on the bad PRs, so
+  the auditor's cheat class is invisible to them, but the auditor over-flags
+  real PRs (95.7% of clean ones) and the two arbiters confirm 0 of its
+  bad-PR findings as cheats. Reverted PRs are logic bugs, not cheats, so a
+  cheat detector does not catch them. The tool's demonstrated value is
+  advisory cheat-detection (the two models did confirm four real cheats on
+  clean PRs that the linters missed), not regression prevention. See
+  `benchmarks/real-prs/v11-BENEFIT-REPORT.md` and `REDUNDANCY-FINDING.md`.
 - **Type-suppression detector** (`src/audit/cheat-detector/type-suppression.ts`)
   and its oracle injector. Flags an added `@ts-ignore` / `@ts-expect-error`
   / `eslint-disable` / `# type: ignore` on a non-test source line: silencing

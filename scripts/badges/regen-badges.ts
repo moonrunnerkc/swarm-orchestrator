@@ -49,19 +49,20 @@ function realPrBurden(): number | null {
   return m && m[1] !== undefined ? Number(m[1]) : null;
 }
 
-/** Regression-corpus recall and the uniquely-caught count from the v11
- *  benefit report's headline, so the badges cite real-world benefit. */
-function benefitHeadline(): { recallPct: number; flagged: number; unique: number } | null {
+/** The honest real-PR numbers from the v11 benefit report: how many cheats
+ *  two independent arbiters confirmed that the linters missed, and the
+ *  external-tool finding count on the bad PRs (the empty set the auditor is
+ *  measured against). Cites the real, non-overclaiming result. */
+function benefitHeadline(): { confirmedCheats: number; externalOnBad: number } | null {
   const file = path.join(root(), 'benchmarks', 'real-prs', 'v11-BENEFIT-REPORT.md');
   if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, 'utf8');
-  const recall = text.match(/flagged \*\*(\d+)\*\* of the[\s\S]*?recall ([\d.]+)%/);
-  const unique = text.match(/\*\*(\d+)\*\* are not flagged by Semgrep/);
-  if (recall === null || recall[1] === undefined || recall[2] === undefined) return null;
+  const confirmed = text.match(/The (\d+) confirmed true-cheats both models/);
+  const external = text.match(/raised essentially nothing on the bad PRs \((\d+) findings? across all/);
+  if (confirmed === null || confirmed[1] === undefined) return null;
   return {
-    flagged: Number(recall[1]),
-    recallPct: Number(recall[2]),
-    unique: unique && unique[1] !== undefined ? Number(unique[1]) : 0,
+    confirmedCheats: Number(confirmed[1]),
+    externalOnBad: external && external[1] !== undefined ? Number(external[1]) : 0,
   };
 }
 
@@ -105,15 +106,9 @@ function buildBadges(): string {
   if (benefit !== null) {
     lines.push(
       shield(
-        'regression-PR recall',
-        `${benefit.recallPct.toFixed(0)}% (${benefit.flagged} flagged)`,
-        'brightgreen',
-        'benchmarks/real-prs/v11-BENEFIT-REPORT.md',
-      ),
-      shield(
-        'uniquely caught',
-        `${benefit.unique} vs Semgrep+ESLint`,
-        benefit.unique > 0 ? 'brightgreen' : 'lightgrey',
+        'real-PR cheats vs linters',
+        `${benefit.confirmedCheats} confirmed (Semgrep+ESLint: ${benefit.externalOnBad})`,
+        benefit.confirmedCheats > 0 ? 'brightgreen' : 'lightgrey',
         'benchmarks/real-prs/v11-BENEFIT-REPORT.md',
       ),
     );
