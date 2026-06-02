@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { runExecutionGrounded, type ExecutionGroundedOutcome } from '../../src/audit/execution-grounded';
 import { getLogger } from '../../src/logger';
-import { repoRoot, regressionDir, regressionDiffsDir, repoSlug } from './lib/paths';
+import { repoRoot, regressionDir, repoSlug } from './lib/paths';
 import { makeOctokit, parseRepo, resolveGithubToken } from './lib/github';
 
 const log = getLogger('eg-run');
@@ -157,10 +157,14 @@ async function main(): Promise<void> {
         log.info(`skip (done): ${corpus.name} ${pr.repo}#${pr.prNumber}`);
         continue;
       }
-      const diffFile = pr.diffPath.startsWith('diffs/')
-        ? path.join(regressionDir(), pr.diffPath)
-        : path.join(corpus.name === 'regression' ? regressionDir() : path.join(root, 'benchmarks', 'real-prs'), pr.diffPath);
-      const altDiff = path.join(regressionDiffsDir(), slug, `${pr.prNumber}.diff`);
+      // Diffs live under each corpus's own base dir: the regression corpus at
+      // benchmarks/regression-corpus/, the clean corpus at benchmarks/real-prs/.
+      // A diffPath like "diffs/<slug>/<pr>.diff" is relative to that base, so it
+      // must resolve against the corpus base, not always the regression dir.
+      const corpusBase =
+        corpus.name === 'regression' ? regressionDir() : path.join(root, 'benchmarks', 'real-prs');
+      const diffFile = path.join(corpusBase, pr.diffPath);
+      const altDiff = path.join(corpusBase, 'diffs', slug, `${pr.prNumber}.diff`);
       const diffPath = fs.existsSync(diffFile) ? diffFile : altDiff;
       if (!fs.existsSync(diffPath)) {
         log.warn(`no stored diff for ${pr.repo}#${pr.prNumber} (${diffPath}); skipping`);
