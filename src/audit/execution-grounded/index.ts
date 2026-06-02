@@ -253,6 +253,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         const cov = computeCoverageDelta({
           workspacePath: pkgPath,
           testRunner: runner,
+          packageManager: workspaces.post.packageManager,
           changedLines: scope.changedLines,
           timeoutMs: Math.max(1, deadline - Date.now()),
           installDir,
@@ -270,6 +271,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           workspacePath: pkgPath,
           changedLines: scope.changedLines,
           testRunner: runner,
+          packageManager: workspaces.post.packageManager,
           timeoutMs: Math.max(1, deadline - Date.now()),
           installDir,
           ...evDir('mutation'),

@@ -137,8 +137,19 @@ function gitFetchCheckout(repo: string, commit: string, dir: string, depth: numb
     run(['init', '-q'], 30_000);
     run(['remote', 'add', 'origin', url], 30_000);
     // GitHub enables allowReachableSHA1InWant, so fetching a merged PR head
-    // (reachable from a ref) by sha works at shallow depth.
-    run(['fetch', '--depth', String(depth), '--quiet', 'origin', commit], 4 * 60 * 1000);
+    // (reachable from a ref) by sha works at shallow depth. The fetch is the
+    // flaky step (large repos, transient network), so retry it once with a
+    // generous timeout before giving up.
+    let fetched = false;
+    for (let attempt = 1; attempt <= 2 && !fetched; attempt += 1) {
+      try {
+        run(['fetch', '--depth', String(depth), '--quiet', 'origin', commit], 8 * 60 * 1000);
+        fetched = true;
+      } catch (fetchErr) {
+        if (attempt === 2) throw fetchErr;
+        log.warn(`fetch of ${repo}@${commit.slice(0, 10)} failed (attempt ${attempt}); retrying`);
+      }
+    }
     run(['checkout', '--quiet', commit], 60_000);
   } catch (err) {
     const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : '';
@@ -158,16 +169,14 @@ function runInstall(
   timeoutMs: number,
 ): void {
   const { bin, args } = installInvocation(manager);
+  // Only npm's download cache is safe to redirect. pnpm/yarn/bun resolve a
+  // content-addressed store/cache that a later `add` must agree with; pointing
+  // it at a per-run dir desyncs the store and breaks the tool add
+  // (ERR_PNPM_UNEXPECTED_STORE). Their default global stores are already
+  // shared across runs, so the cache benefit stands without the override.
   const env = execEnv(manager === 'npm' ? cacheDir : undefined);
   // Corepack must not interactively prompt before downloading a pinned PM.
   env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
-  if (cacheDir !== undefined) {
-    fs.mkdirSync(cacheDir, { recursive: true });
-    // Each manager reads its cache location from a different env var.
-    if (manager === 'yarn') env.YARN_CACHE_FOLDER = cacheDir;
-    if (manager === 'pnpm') env.PNPM_HOME = cacheDir;
-    if (manager === 'bun') env.BUN_INSTALL_CACHE_DIR = cacheDir;
-  }
   try {
     execFileSync(bin, args, {
       cwd: dir,
@@ -191,6 +200,53 @@ function runInstall(
       },
     );
   }
+}
+
+/**
+ * Add dev tooling (Stryker, a coverage provider) to an already-installed
+ * workspace using the workspace's own package manager. `npm install` into a
+ * pnpm/yarn workspace root fails on the `workspace:` protocol, so the add has
+ * to go through the matching manager. Throws on failure; the caller records
+ * the check as skipped.
+ */
+export function addDevTools(
+  manager: PackageManager,
+  dir: string,
+  packages: readonly string[],
+  opts: { cacheDir?: string; timeoutMs: number },
+): void {
+  let bin: string;
+  let args: string[];
+  switch (manager) {
+    case 'npm':
+      bin = execBin('npm');
+      args = ['install', '--no-save', '--no-audit', '--no-fund', '--ignore-scripts', ...packages];
+      break;
+    case 'pnpm':
+      // -w adds to the workspace root; --ignore-scripts skips postinstall.
+      bin = execBin('corepack');
+      args = ['pnpm', 'add', '-w', '-D', '--ignore-scripts', ...packages];
+      break;
+    case 'yarn':
+      // Yarn Berry adds to the root when run at the root; -W targets the root
+      // for Yarn classic. Berry ignores unknown flags it does not need here.
+      bin = execBin('corepack');
+      args = ['yarn', 'add', '-D', ...packages];
+      break;
+    case 'bun':
+      bin = 'bun';
+      args = ['add', '-d', ...packages];
+      break;
+  }
+  const env = execEnv(opts.cacheDir);
+  env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
+  execFileSync(bin, args, {
+    cwd: dir,
+    stdio: ['ignore', 'ignore', 'pipe'],
+    timeout: opts.timeoutMs,
+    encoding: 'utf8',
+    env,
+  });
 }
 
 function directorySizeBytes(dir: string): number {

@@ -16,8 +16,8 @@ import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges, LineRange } from '../cheat-detector/diff-walker';
 import { lineInRanges } from '../cheat-detector/diff-walker';
-import { execBin, execEnv } from './exec-env';
-import type { TestRunner } from './sandbox';
+import { execEnv } from './exec-env';
+import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
 const log = getLogger('audit:execution-grounded:mutation');
 
@@ -91,6 +91,10 @@ export function buildMutateScope(changed: ChangedLineRanges, maxLines = MAX_MUTA
 
 export interface StrykerConfig {
   testRunner: string;
+  /** Named explicitly (not the default `@stryker-mutator/*` glob) so the
+   *  plugin resolves by require from the package dir up to the hoisted root,
+   *  which the glob scan misses under pnpm's strict node_modules. */
+  plugins: string[];
   reporters: string[];
   mutate: string[];
   concurrency: number;
@@ -114,6 +118,7 @@ export function generateStrykerConfig(opts: {
 }): StrykerConfig {
   return {
     testRunner: opts.testRunner,
+    plugins: [ADAPTER[opts.testRunner]!],
     reporters: ['json'],
     mutate: opts.mutate,
     concurrency: opts.concurrency ?? defaultConcurrency(),
@@ -216,6 +221,8 @@ export interface MutationRunOptions {
   workspacePath: string;
   changedLines: ChangedLineRanges;
   testRunner: TestRunner | null;
+  /** Package manager of the workspace, used to add Stryker correctly. */
+  packageManager?: PackageManager;
   /** Total wall-clock budget for install + run. Defaults to 30 minutes. */
   timeoutMs?: number;
   /** Directory to copy the raw Stryker report into for evidence. */
@@ -272,17 +279,12 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   const installDir = opts.installDir ?? workspacePath;
 
   // Stryker resolves its runner plugin from the project under test, so it has
-  // to be installed into the workspace. --no-save keeps the project's own
-  // dependency manifest untouched.
+  // to be added to the workspace with the workspace's own package manager
+  // (npm install into a pnpm/yarn root fails on the workspace: protocol).
   try {
-    const installArgs = ['install', '--no-save', '--no-audit', '--no-fund', `@stryker-mutator/core@9`, `${adapter}@9`];
-    const env = execEnv(opts.cacheDir);
-    execFileSync(execBin('npm'), installArgs, {
-      cwd: installDir,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      timeout: Math.min(INSTALL_TIMEOUT_MS, deadline - Date.now()),
-      encoding: 'utf8',
-      env,
+    addDevTools(opts.packageManager ?? 'npm', installDir, [`@stryker-mutator/core@9`, `${adapter}@9`], {
+      timeoutMs: Math.min(INSTALL_TIMEOUT_MS, deadline - Date.now()),
+      ...(opts.cacheDir !== undefined ? { cacheDir: opts.cacheDir } : {}),
     });
   } catch (err) {
     const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr).slice(-1500) : '';
@@ -300,7 +302,10 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 
   try {
-    execFileSync(execBin('node'), [path.join(installDir, 'node_modules', '.bin', 'stryker'), 'run', configPath], {
+    // Invoke the Stryker bin directly rather than via `node <path>`: under
+    // pnpm the .bin entry is a shell shim, not a JS file. Its shebang picks up
+    // node from PATH, which execEnv has pinned to the chosen Node.
+    execFileSync(path.join(installDir, 'node_modules', '.bin', 'stryker'), ['run', configPath], {
       cwd: workspacePath,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: Math.max(1, deadline - Date.now()),

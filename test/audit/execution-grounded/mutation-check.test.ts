@@ -46,6 +46,7 @@ describe('execution-grounded / mutation-check (pure logic)', () => {
     it('scopes mutate to the patterns and disables the break threshold', () => {
       const cfg = generateStrykerConfig({ testRunner: 'mocha', mutate: ['src/a.ts:1-2'], concurrency: 3 });
       assert.equal(cfg.testRunner, 'mocha');
+      assert.deepEqual(cfg.plugins, ['@stryker-mutator/mocha-runner']);
       assert.deepEqual(cfg.reporters, ['json']);
       assert.deepEqual(cfg.mutate, ['src/a.ts:1-2']);
       assert.equal(cfg.concurrency, 3);

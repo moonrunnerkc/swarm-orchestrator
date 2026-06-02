@@ -12,7 +12,7 @@ import * as path from 'path';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
 import { execBin, execEnv } from './exec-env';
-import type { TestRunner } from './sandbox';
+import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
 const log = getLogger('audit:execution-grounded:coverage');
 
@@ -137,6 +137,7 @@ export interface CoverageRunOptions {
   workspacePath: string;
   testRunner: TestRunner | null;
   changedLines: ChangedLineRanges;
+  packageManager?: PackageManager;
   timeoutMs?: number;
   evidenceDir?: string;
   cacheDir?: string;
@@ -176,12 +177,9 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
 
   if (command.install !== undefined) {
     try {
-      execFileSync(execBin('npm'), ['install', '--no-save', '--no-audit', '--no-fund', command.install], {
-        cwd: opts.installDir ?? workspacePath,
-        stdio: ['ignore', 'ignore', 'pipe'],
-        timeout: Math.max(1, Math.min(5 * 60 * 1000, deadline - Date.now())),
-        encoding: 'utf8',
-        env,
+      addDevTools(opts.packageManager ?? 'npm', opts.installDir ?? workspacePath, [command.install], {
+        timeoutMs: Math.max(1, Math.min(5 * 60 * 1000, deadline - Date.now())),
+        ...(opts.cacheDir !== undefined ? { cacheDir: opts.cacheDir } : {}),
       });
     } catch (err) {
       return { ran: false, deltas: [], skipReason: `coverage tool install (${command.install}) failed: ${String(err).slice(-200)}` };
