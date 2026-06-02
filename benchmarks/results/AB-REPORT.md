@@ -6,6 +6,11 @@
 > retrospectively-bad PR corpus, the clean-PR false-positive rate at
 > scale, and the differential against Semgrep and ESLint. This A/B is the
 > synthetic-oracle measurement; the benefit report is the real-PR one.
+>
+> For the execution-grounded layer (mutation testing, issue-linked repro,
+> coverage delta run against a sandboxed checkout, the v11.1 work that adds
+> a signal the diff-reading layers cannot produce), see
+> `benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`.
 
 
 **Definition of benefit.** The post-upgrade auditor catches **20.5% more

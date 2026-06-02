@@ -4,6 +4,58 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [11.1.0] - 2026-06-02
+
+### Execution-grounded checks: run the change instead of reading it
+
+The cheat detectors and the judge read the diff; a reverted PR ships a logic
+bug that leaves no cheat-shaped tell, so a diff-reading auditor does not catch
+it (`benchmarks/real-prs/REDUNDANCY-FINDING.md`). This release adds an opt-in,
+advisory-only layer that provisions a sandboxed checkout of a PR and runs it.
+Three checks, each scoped to the lines the PR changed: diff-scoped mutation
+testing (a surviving mutation on a changed line is a line the tests run past
+without constraining), issue-linked repro execution (a repro from a closed
+issue that still fails after the fix did not deliver), and a coverage delta (a
+changed line no test executes). The layer is off by default
+(`executionGrounded.enabled: true` to turn it on), needs no LLM, and costs
+nothing external. Verified end to end on `trpc/trpc#6098`: 69 mutants on the
+changed lines, 53 killed, 10 surviving plus 6 on uncovered lines, sixteen
+advisory findings no diff-only tool in this repo can emit. Full evaluation,
+the per-repo viability, and the headline corpus numbers are in
+`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`; reproduce with `npm
+run execution-grounded:full`.
+
+#### Added
+
+- **Execution-grounded layer** (`src/audit/execution-grounded/`): `sandbox.ts`
+  (clone-by-sha, package-manager and test-runner detection, install, optional
+  build), `mutation-check.ts` (diff-scoped Stryker), `issue-repro.ts`
+  (issue-linked repro execution), `coverage-delta.ts` (Istanbul coverage on
+  changed lines), `monorepo.ts` (per-package scoping), and `index.ts` (the
+  orchestrator). Wired into `swarm audit --pr` when enabled.
+- **Five advisory finding categories**:
+  `mutation-survives-on-changed-line`,
+  `mutation-survives-on-uncovered-changed-line`, `issue-repro-still-fails`,
+  `pr-breaks-issue-repro`, and `uncovered-changed-line`. Recorded under the
+  ledger kinds `pr-audit-mutation-finding`, `pr-audit-issue-repro-finding`,
+  and `pr-audit-coverage-finding`.
+- **`executionGrounded` config block** in `.swarm/audit-config.yaml` (enabled,
+  per-check flags, per-PR wall-clock cap), default off. `swarm doctor` checks
+  it. Dev dependencies: `@stryker-mutator/core` and the jest/vitest/mocha
+  runner adapters; no new runtime dependencies.
+- **Evidence harness**: `npm run execution-grounded:run`,
+  `execution-grounded:viability`, `execution-grounded:correlate`, and
+  `execution-grounded:full`, over the existing regression and clean corpora.
+
+#### Notes
+
+- Advisory-only by default, like judge-primary: a run-grounded finding is a
+  prompt for a reviewer, never a merge gate.
+- Mutation testing requires a green baseline suite in the checkout. Large OSS
+  monorepos often do not meet that in a generic sandbox (live databases,
+  browsers, native runtimes, self-host builds); the report documents which
+  corpus repos are viable and why.
+
 ## [11.0.0] - 2026-06-01
 
 ### Defect-injection oracle and a judge-primary path for semantic cheats

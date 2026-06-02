@@ -10,7 +10,7 @@ A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![license ISC](https://img.shields.io/static/v1?label=license&message=ISC&color=blue)](LICENSE)
 [![node >= 20](https://img.shields.io/static/v1?label=node&message=%3E%3D%2020&color=3c873a)](package.json)
-[![version 11.0.0](https://img.shields.io/static/v1?label=version&message=11.0.0&color=22d3ee)](package.json)
+[![version 11.1.0](https://img.shields.io/static/v1?label=version&message=11.1.0&color=22d3ee)](package.json)
 [![oracle recall 84% (253/300)](https://img.shields.io/static/v1?label=oracle%20recall&message=84%25%20(253%2F300)&color=brightgreen)](benchmarks/results/AB-REPORT.md)
 [![real-PR false alarms 0.11/PR](https://img.shields.io/static/v1?label=real-PR%20false%20alarms&message=0.11%2FPR&color=brightgreen)](benchmarks/real-prs/REAL-WORLD-REPORT.md)
 [![real-PR cheats vs linters 4 confirmed (Semgrep+ESLint: 1)](https://img.shields.io/static/v1?label=real-PR%20cheats%20vs%20linters&message=4%20confirmed%20(Semgrep%2BESLint%3A%201)&color=brightgreen)](benchmarks/real-prs/v11-BENEFIT-REPORT.md)
@@ -228,6 +228,16 @@ independent arbiter classify every finding. On an 18-PR pilot the
 post-upgrade false-alarm burden is 0.11 per PR, at or below the pre-upgrade
 auditor's, with the oracle recall gain intact
 ([`benchmarks/real-prs/REAL-WORLD-REPORT.md`](benchmarks/real-prs/REAL-WORLD-REPORT.md)).
+
+The optional execution-grounded layer is evaluated separately: `npm run
+execution-grounded:full` provisions a sandboxed checkout of each corpus PR
+and runs diff-scoped mutation testing, issue-linked repro execution, and a
+coverage delta, then correlates the findings against each PR's revert/hotfix
+proof. It surfaces under-constrained changed lines that no diff-only tool can
+see (proof anchor `trpc/trpc#6098`: 10 surviving plus 6 uncovered changed-line
+mutations), where the repo's test suite is green in a generic sandbox; the
+per-repo viability and the headline numbers are in
+[`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`](benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md).
 
 ## Use as a GitHub Action
 
