@@ -43,6 +43,8 @@ interface Args {
   noJudge: boolean;
   limit: number | null;
   force: boolean;
+  shardIndex: number;
+  shardCount: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -51,6 +53,8 @@ function parseArgs(argv: string[]): Args {
   let noJudge = false;
   let limit: number | null = null;
   let force = false;
+  let shardIndex = 0;
+  let shardCount = 1;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -59,8 +63,15 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--no-judge') noJudge = true;
     else if (a === '--force') force = true;
     else if (a === '--limit' && next !== undefined) (limit = Number(next)), (i += 1);
+    // --shard i/N runs only PRs whose index mod N === i, so N processes can
+    // audit disjoint slices in parallel against a batching judge server.
+    else if (a === '--shard' && next !== undefined) {
+      const m = /^(\d+)\/(\d+)$/.exec(next);
+      if (m !== null) (shardIndex = Number(m[1])), (shardCount = Number(m[2]));
+      i += 1;
+    }
   }
-  return { corpus, noPre, noJudge, limit, force };
+  return { corpus, noPre, noJudge, limit, force, shardIndex, shardCount };
 }
 
 /** Counts judge calls so the cost ledger can price them. Live calls are
@@ -166,7 +177,9 @@ async function processCorpus(
   preCli: string | null,
   counter: JudgeCounter,
 ): Promise<void> {
-  const prs = loadCorpus(corpus);
+  const allPrs = loadCorpus(corpus);
+  const prs =
+    args.shardCount > 1 ? allPrs.filter((_, i) => i % args.shardCount === args.shardIndex) : allPrs;
   if (prs.length === 0) {
     log.warn(`${corpus} corpus empty; skipping`);
     return;
@@ -191,7 +204,11 @@ async function processCorpus(
     const diff = fs.readFileSync(absDiff, 'utf8');
     const postRaw = await runPost(diff, repoRootDir, pr, !args.noJudge, counter);
     const post = normalizeFindings(pr.repo, pr.prNumber, postRaw);
-    const preRaw = preCli !== null ? runPre(preCli, absDiff, !args.noJudge) : null;
+    // The frozen pre-upgrade CLI only knows the Anthropic judge; with the
+    // post judge pointed at a local server (or no credentials), the pre
+    // judge would only make dead calls, so pre runs structural-only then.
+    const preJudge = !args.noJudge && (process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase() !== 'local';
+    const preRaw = preCli !== null ? runPre(preCli, absDiff, preJudge) : null;
     const pre = preRaw === null ? null : normalizeFindings(pr.repo, pr.prNumber, preRaw);
     const record: AuditResultRecord = { repo: pr.repo, prNumber: pr.prNumber, headSha: pr.headSha, pre, post };
     fs.mkdirSync(repoOut, { recursive: true });
@@ -220,11 +237,16 @@ async function main(): Promise<void> {
     await processCorpus(corpus, args, preCli, counter);
   }
 
-  // Sidecar for the cost ledger: the audit's billable judge calls.
+  // Sidecar for the cost ledger: the audit's billable judge calls. The
+  // model reflects the provider actually used; a local judge is free.
+  const judgeModel =
+    (process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase() === 'local'
+      ? `local:${process.env.SWARM_JUDGE_MODEL ?? process.env.RAPIDMLX_MODEL ?? 'local-model'}`
+      : 'claude-haiku-4-5';
   const costSidecar = path.join(realPrsDir(), 'audit-cost.json');
   fs.writeFileSync(
     costSidecar,
-    JSON.stringify({ judgeModel: 'claude-haiku-4-5', liveJudgeCalls: counter.liveCalls, judgeCacheHits: counter.cacheHits }, null, 2) + '\n',
+    JSON.stringify({ judgeModel, liveJudgeCalls: counter.liveCalls, judgeCacheHits: counter.cacheHits }, null, 2) + '\n',
   );
   log.info(`audit-v2 complete; billable judge calls=${counter.liveCalls}, cache hits=${counter.cacheHits}`);
 }

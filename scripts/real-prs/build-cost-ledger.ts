@@ -45,25 +45,34 @@ function main(): void {
   const batches: Array<{ batch: string; model: string; calls: number; usd: number; note: string }> = [];
 
   const judgeCalls = audit?.liveJudgeCalls ?? 0;
-  const judgeUsd = judgeCalls * HAIKU_PER_CALL_USD;
+  const judgeModel = audit?.judgeModel ?? 'claude-haiku-4-5';
+  // A local judge is free; only the paid Haiku judge is priced.
+  const judgeIsLocal = /^local/i.test(judgeModel);
+  const judgeUsd = judgeIsLocal ? 0 : judgeCalls * HAIKU_PER_CALL_USD;
   batches.push({
     batch: 'audit-judge',
-    model: audit?.judgeModel ?? 'claude-haiku-4-5',
+    model: judgeModel,
     calls: judgeCalls,
     usd: Number(judgeUsd.toFixed(4)),
-    note: `${audit?.judgeCacheHits ?? 0} cache hits were free replays; live calls priced at $${HAIKU_PER_CALL_USD}/call`,
+    note: judgeIsLocal
+      ? 'judge ran on a free local model (the paid Anthropic and OpenAI accounts were out of credit during the run)'
+      : `${audit?.judgeCacheHits ?? 0} cache hits were free replays; live calls priced at $${HAIKU_PER_CALL_USD}/call`,
   });
 
-  const opusUsd = arbiter?.spentUsd ?? 0;
+  const arbiterUsd = arbiter?.spentUsd ?? 0;
+  const arbiterModels = (arbiter?.perModel ?? []).map((m) => m.model).join(' + ') || 'arbiters';
+  const arbiterIsPaid = /opus|claude|gpt|sonnet|haiku/i.test(arbiterModels);
   batches.push({
-    batch: 'arbiter-opus',
-    model: arbiter?.perModel?.find((m) => m.model.toLowerCase().includes('opus'))?.model ?? 'claude-opus',
+    batch: 'arbiters',
+    model: arbiterModels,
     calls: arbiter?.calls ?? 0,
-    usd: Number(opusUsd.toFixed(4)),
-    note: 'priced from recorded input/output token counts; the local arbiter is free and not counted',
+    usd: Number(arbiterUsd.toFixed(4)),
+    note: arbiterIsPaid
+      ? 'priced from recorded input/output token counts'
+      : 'both arbiters ran on free local / cloud-via-Ollama models (the paid Opus second opinion was out of credit during the run)',
   });
 
-  const total = Number((judgeUsd + opusUsd).toFixed(4));
+  const total = Number((judgeUsd + arbiterUsd).toFixed(4));
   const ledger = {
     generatedAt: new Date().toISOString(),
     ceilingUsd: ceiling,

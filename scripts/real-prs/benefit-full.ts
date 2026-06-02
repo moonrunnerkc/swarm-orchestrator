@@ -61,11 +61,23 @@ function main(): void {
 
   // Dual-arbiter: sanity gate for both arbiters, then classify. The gate
   // does not hard-stop here; the report owns disclosure of a weak arbiter.
-  run('arbiter-sanity-dual', ['--threshold', '0.75', '--max-cost-usd', args.maxCostUsd]);
-  // Stratified per-(corpus, category) cap keeps the paid arbiter measuring
-  // a representative precision for every detector instead of draining the
+  // Arbiter setup. Two independent model families: the primary is the local
+  // rapid-mlx GLM judge (small, low memory) under the v2 prompt; the
+  // secondary is a different family served by Ollama under the v3 prompt
+  // (a cloud model by default, so it adds no local memory). The
+  // originally-planned paid Opus second opinion was out of credit during
+  // the run; override with --secondary-provider anthropic when credits
+  // exist. Set OLLAMA_ARBITER_MODEL to pick the secondary model (default in
+  // lib/arbiter). The report records which models ran.
+  const arbiterCfg = [
+    '--primary-provider', 'local', '--secondary-provider', 'ollama',
+    '--primary-prompt', 'v2', '--secondary-prompt', 'v3',
+  ];
+  run('arbiter-sanity-dual', ['--threshold', '0.75', '--max-cost-usd', args.maxCostUsd, ...arbiterCfg]);
+  // Stratified per-(corpus, category) cap keeps the arbiter measuring a
+  // representative precision for every detector instead of draining the
   // budget on the highest-volume one. The report discloses the sampling.
-  run('run-arbiter-dual', ['--corpus', 'both', '--per-category', '12', '--max-cost-usd', args.maxCostUsd]);
+  run('run-arbiter-dual', ['--corpus', 'both', '--per-category', '12', '--max-cost-usd', args.maxCostUsd, ...arbiterCfg]);
 
   run('build-cost-ledger', ['--ceiling', '150']);
   run('build-benefit-report', []);

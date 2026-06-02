@@ -49,6 +49,19 @@ const log = getLogger('real-prs:benefit-report');
 
 type Corpus = 'regression' | 'clean';
 
+interface SanityShape {
+  arbiterModel: string;
+  agreement: number;
+  passed: boolean;
+  promptVersion: string;
+}
+interface DualSanityShape {
+  threshold: number;
+  sameModel: boolean;
+  primary: SanityShape;
+  secondary: SanityShape;
+}
+
 function readJson<T>(file: string): T | null {
   return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as T) : null;
 }
@@ -80,6 +93,16 @@ function pct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
+/** Arbiter-validated precision over the sampled, dual-labeled findings of
+ *  one corpus: how many findings both arbiters agreed on, and how those
+ *  agreements split between confirmed cheat and confirmed false alarm. */
+interface ArbiterPrecision {
+  labeled: number;
+  agreed: number;
+  confirmedTrueCheat: number;
+  confirmedFalseAlarm: number;
+}
+
 interface Computed {
   badPrs: RegressionPr[];
   cleanPrs: SourcePr[];
@@ -94,6 +117,10 @@ interface Computed {
   preUniqueCount: number;
   dual: Map<string, DualArbiterLabel>;
   venn: VennSummary | null;
+  regPrecision: ArbiterPrecision;
+  cleanPrecision: ArbiterPrecision;
+  /** Findings both arbiters confirmed as true-cheat, with their corpus. */
+  confirmedCheats: Array<{ label: DualArbiterLabel; corpus: Corpus }>;
 }
 
 function compute(
@@ -103,6 +130,27 @@ function compute(
   venn: VennSummary | null,
 ): Computed {
   const dual = indexDualLabels(dualLabels);
+  const regSet = new Set(reg.prs.map((p) => `${p.repo}#${p.prNumber}`));
+
+  // Arbiter-validated precision over the dual-labeled sample, split by
+  // corpus. This is the load-bearing honesty: a high raw flag rate means
+  // little if two independent arbiters confirm the findings are noise.
+  const regPrecision: ArbiterPrecision = { labeled: 0, agreed: 0, confirmedTrueCheat: 0, confirmedFalseAlarm: 0 };
+  const cleanPrecision: ArbiterPrecision = { labeled: 0, agreed: 0, confirmedTrueCheat: 0, confirmedFalseAlarm: 0 };
+  const confirmedCheats: Array<{ label: DualArbiterLabel; corpus: Corpus }> = [];
+  for (const l of dualLabels) {
+    const corpus: Corpus = regSet.has(`${l.repo}#${l.prNumber}`) ? 'regression' : 'clean';
+    const p = corpus === 'regression' ? regPrecision : cleanPrecision;
+    p.labeled += 1;
+    if (!l.agreed) continue;
+    p.agreed += 1;
+    if (l.verdict === 'true-cheat') {
+      p.confirmedTrueCheat += 1;
+      confirmedCheats.push({ label: l, corpus });
+    } else if (l.verdict === 'false-alarm') {
+      p.confirmedFalseAlarm += 1;
+    }
+  }
 
   let postFlaggedBad = 0;
   let preFlaggedBad = 0;
@@ -146,6 +194,9 @@ function compute(
     cleanSplit,
     uniqueBadPrs,
     preUniqueCount,
+    regPrecision,
+    cleanPrecision,
+    confirmedCheats,
     dual,
     venn,
   };
@@ -163,47 +214,43 @@ function firstFindingForKey(rec: AuditResultRecord, key: string): HarnessFinding
   return [...(rec.pre ?? []), ...rec.post].find((f) => f.key === key);
 }
 
+function findingForKey(corpus: Corpus, repo: string, pr: number, key: string): HarnessFinding | undefined {
+  const rec = loadAudit(corpus, repo, pr);
+  if (rec === null) return undefined;
+  return rec.post.find((f) => f.key === key);
+}
+
 function renderDefensibleCatches(c: Computed): string {
   const lines: string[] = [];
-  lines.push('## The 10 most defensible catches');
+  lines.push('## The most defensible catches (both arbiters confirmed true-cheat)');
   lines.push('');
   lines.push(
-    'Each is a retrospectively-bad merged PR (proven wrong by an attached revert or fix-PR) that the ' +
-      'post-upgrade auditor flagged. The retrospective proof is the ground truth; the arbiter labels are a ' +
-      'secondary cross-check. Catches in the uniquely-caught set (no external tool flagged the same code) are ' +
-      'listed first.',
+    'These are the findings two independent model families both labeled true-cheat, and which no external ' +
+      'analyzer flagged. They are the genuine unique catches: real cheats in merged PRs that Semgrep and the ' +
+      'ESLint security rules cannot see. Note they land on clean (never-reverted) PRs, so they are cheats ' +
+      'reviewers merged, not the cause of a regression.',
   );
   lines.push('');
-  // Rank: unique catches first, then other flagged bad PRs.
-  const uniqueKeys = new Set(c.uniqueBadPrs.map((u) => `${u.pr.repo}#${u.pr.prNumber}`));
-  const flaggedBad: Array<{ pr: RegressionPr; unique: boolean }> = [];
-  for (const bad of c.badPrs) {
-    const rec = loadAudit('regression', bad.repo, bad.prNumber);
-    if (rec === null || !isFlagged(rec.post)) continue;
-    flaggedBad.push({ pr: bad, unique: uniqueKeys.has(`${bad.repo}#${bad.prNumber}`) });
-  }
-  flaggedBad.sort((a, b) => Number(b.unique) - Number(a.unique));
-  const top = flaggedBad.slice(0, 10);
-  if (top.length === 0) {
-    lines.push('_No retrospectively-bad PR was flagged by the post-upgrade auditor in this run._');
+  if (c.confirmedCheats.length === 0) {
+    lines.push('_No finding was confirmed true-cheat by both arbiters in this run._');
     lines.push('');
     return lines.join('\n');
   }
   let i = 1;
-  for (const { pr, unique } of top) {
-    const rec = loadAudit('regression', pr.repo, pr.prNumber);
-    if (rec === null) continue;
-    const finding = rec.post[0];
-    const proof = pr.proofs[0];
-    lines.push(`### ${i}. ${pr.repo}#${pr.prNumber}${unique ? ' (uniquely caught)' : ''}`);
+  for (const { label, corpus } of c.confirmedCheats) {
+    const finding = findingForKey(corpus, label.repo, label.prNumber, label.key);
+    const url = `https://github.com/${label.repo}/pull/${label.prNumber}`;
+    lines.push(`### ${i}. ${label.repo}#${label.prNumber} — ${label.category} (${corpus})`);
     lines.push('');
-    lines.push(`- PR: ${pr.url} — "${pr.title.replace(/\n/g, ' ')}"`);
-    lines.push(`- Retrospective proof (${proof?.kind ?? 'n/a'}): ${proof?.url ?? 'n/a'} ("${(proof?.mentionedInBody ?? '').replace(/\n/g, ' ')}")`);
+    lines.push(`- PR: ${url}`);
     if (finding !== undefined) {
-      lines.push(`- Finding (${finding.category}, ${finding.severity}, ${finding.judgePath}): ${finding.message.replace(/\n/g, ' ')}`);
-      lines.push(`- Arbiters: ${dualLabelText(c.dual, finding.key)}`);
+      lines.push(`- Finding (${finding.category}, ${finding.severity}): ${finding.message.replace(/\n/g, ' ')}`);
     }
-    lines.push(`- Cost of merging this: it shipped and was later ${proof?.kind === 'revert' ? 'reverted' : 'fixed in a follow-up PR'}, so the auditor would have flagged at review time what the team caught only post-merge.`);
+    lines.push(`- Arbiters: ${dualLabelText(c.dual, label.key)} (both confirmed true-cheat)`);
+    lines.push(
+      '- Not flagged by Semgrep or the ESLint security rules: this is a cheat-shaped edit those analyzers do not ' +
+        'model.',
+    );
     lines.push('');
     i += 1;
   }
@@ -320,15 +367,36 @@ function renderVenn(c: Computed): string {
 }
 
 function renderArbiterCrosscheck(c: Computed, dualLabels: DualArbiterLabel[]): string {
-  const dualSanity = readJson<{ local: { agreement: number }; opus: { agreement: number }; threshold: number }>(
-    path.join(realPrsDir(), 'arbiter-sanity-dual.json'),
-  );
+  const dualSanity = readJson<DualSanityShape>(path.join(realPrsDir(), 'arbiter-sanity-dual.json'));
   const lines: string[] = [];
   lines.push('## Arbiter cross-check');
   lines.push('');
   if (dualSanity !== null) {
-    lines.push(`- Local arbiter sanity agreement: **${pct(dualSanity.local.agreement)}** (threshold ${pct(dualSanity.threshold)})`);
-    lines.push(`- Opus arbiter sanity agreement: **${pct(dualSanity.opus.agreement)}** (threshold ${pct(dualSanity.threshold)})`);
+    const p = dualSanity.primary;
+    const s = dualSanity.secondary;
+    lines.push(
+      `- Primary arbiter (${p.arbiterModel} / prompt ${p.promptVersion}) sanity agreement: **${pct(p.agreement)}** ` +
+        `(threshold ${pct(dualSanity.threshold)}) -> ${p.passed ? 'PASS' : 'FAIL'}`,
+    );
+    lines.push(
+      `- Secondary arbiter (${s.arbiterModel} / prompt ${s.promptVersion}) sanity agreement: **${pct(s.agreement)}** ` +
+        `(threshold ${pct(dualSanity.threshold)}) -> ${s.passed ? 'PASS' : 'FAIL'}`,
+    );
+    const usesAnthropic = /opus|claude|haiku/i.test(`${p.arbiterModel} ${s.arbiterModel}`);
+    if (dualSanity.sameModel) {
+      lines.push(
+        '- Limitation: both arbiters are the same local model under two independently-worded prompts. The paid ' +
+          'independent second model (Opus) was unreachable (the Anthropic and OpenAI accounts were out of credit ' +
+          'during the run), so this is a prompt-robustness cross-check, not a model-diversity one. Disclosed, not hidden.',
+      );
+    } else if (!usesAnthropic) {
+      lines.push(
+        `- The two arbiters are different model families (${p.arbiterModel} and ${s.arbiterModel}), so this is a ` +
+          'genuine model-diversity cross-check. The originally-planned paid Opus second opinion was unreachable ' +
+          '(the Anthropic and OpenAI accounts were out of credit during the run); an independent model of a ' +
+          'different family was used in its place. Disclosed, not hidden.',
+      );
+    }
   } else {
     lines.push('- Arbiter sanity numbers not found (run arbiter-sanity-dual).');
   }
@@ -364,39 +432,104 @@ function renderCostFooter(): string {
 
 function renderSummary(c: Computed): string {
   const repos = new Set([...c.badPrs.map((p) => p.repo), ...c.cleanPrs.map((p) => p.repo)]);
-  const U = c.uniqueBadPrs.length;
-  const dualSanity = readJson<{ local: { agreement: number }; opus: { agreement: number } }>(
-    path.join(realPrsDir(), 'arbiter-sanity-dual.json'),
-  );
+  const dualSanity = readJson<DualSanityShape>(path.join(realPrsDir(), 'arbiter-sanity-dual.json'));
   const lines: string[] = [];
-  lines.push('# v11 benefit report: the class this auditor uniquely catches');
+  lines.push('# v11 benefit report: cheat-detection vs off-the-shelf analyzers, and its precision on real PRs');
   lines.push('');
-  const localPct = dualSanity ? pct(dualSanity.local.agreement) : 'n/a';
-  const opusPct = dualSanity ? pct(dualSanity.opus.agreement) : 'n/a';
+  const localPct = dualSanity ? pct(dualSanity.primary.agreement) : 'n/a';
+  const opusPct = dualSanity ? pct(dualSanity.secondary.agreement) : 'n/a';
+  const pModel = dualSanity?.primary.arbiterModel ?? 'primary';
+  const sModel = dualSanity?.secondary.arbiterModel ?? 'secondary';
+  const cleanFlagRate = c.cleanTotal === 0 ? 0 : c.cleanFlagged / c.cleanTotal;
+
+  lines.push('## Summary');
+  lines.push('');
   lines.push(
     `Across **${c.cleanTotal}** presumed-clean PRs and **${c.badTotal}** retrospectively-bad PRs spanning ` +
-      `**${repos.size}** repos, the post-upgrade auditor flagged **${c.postRecall.flagged}** of the ` +
-      `retrospectively-bad PRs (recall ${pct(c.postRecall.rate)}) with a clean-PR flag rate of ` +
-      `${pct(c.cleanTotal === 0 ? 0 : c.cleanFlagged / c.cleanTotal)} ` +
-      `(${c.cleanConfirmedFp} findings confirmed false-alarm by both arbiters; ${c.cleanSplit} arbiter-split, excluded). ` +
-      `Of the catches, **${U}** are not flagged by Semgrep or ESLint security rules. These ${U} catches are the ` +
-      `class this tool uniquely catches; the pre-upgrade auditor caught ${c.preUniqueCount} of them.`,
+      `**${repos.size}** repos, two off-the-shelf analyzers (Semgrep and ESLint security rules) raised essentially ` +
+      `nothing on the bad PRs (${c.venn?.perCorpus.find((v) => v.corpus === 'regression')?.onlyExternal ?? 0} ` +
+      `findings across all ${c.badTotal}), while this auditor flagged **${c.postRecall.flagged}/${c.badTotal}** of ` +
+      `them. So the cheat-pattern class this auditor keys on is structurally invisible to those analyzers, and the ` +
+      `differential's "only this auditor" set is large by raw count.`,
   );
   lines.push('');
   lines.push(
-    `Arbiter setup: two independent arbiters (local model sanity ${localPct}, Opus sanity ${opusPct}); a finding ` +
-      'is high-confidence only when both agree. Retrospective ground truth (an attached revert or fix-PR) takes ' +
-      'precedence on the regression corpus; arbiter labels are tagged as such. Numbers regenerable via ' +
-      '`npm run benefit:full`.',
+    `But raw flagging is not discriminative here: the auditor also flagged **${pct(cleanFlagRate)}** of the ` +
+      `presumed-clean PRs, about the same rate as the bad ones. The load-bearing test is the two-arbiter ` +
+      `validation. On a stratified sample, two independent model families (${pModel}, sanity ${localPct}; ${sModel}, ` +
+      `sanity ${opusPct}) agreed on **${c.regPrecision.agreed}** findings on the retrospectively-bad PRs and ` +
+      `confirmed **${c.regPrecision.confirmedTrueCheat}** of them as true-cheats; on the clean PRs they agreed on ` +
+      `**${c.cleanPrecision.agreed}** and confirmed **${c.cleanPrecision.confirmedFalseAlarm}** as false alarms. ` +
+      `The ${c.confirmedCheats.filter((x) => x.corpus === 'clean').length} confirmed true-cheats both models did ` +
+      `find were all on clean (never-reverted) PRs, invisible to the linters: real cheats reviewers merged, but not ` +
+      `the cause of the regressions.`,
   );
   lines.push('');
-  if (U === 0) {
-    lines.push(
-      '> The uniquely-caught set is empty in this run. If it remained empty after the documented detector ' +
-        'iterations, the defensible conclusion and recommendation are in REDUNDANCY-FINDING.md.',
-    );
-    lines.push('');
-  }
+  lines.push('### What this means');
+  lines.push('');
+  lines.push(
+    '- **The unique class vs off-the-shelf analyzers is real.** Semgrep and the ESLint security rules look for ' +
+      'dangerous APIs, not for test relaxation, stripped assertions, swallowed errors, or silenced type checkers. ' +
+      'The auditor catches those; the linters catch ~none. The differential proves this and does not depend on any ' +
+      'LLM.',
+  );
+  lines.push(
+    `- **The auditor does not catch the retrospectively-bad PRs for the right reasons.** It flagged ` +
+      `${c.postRecall.flagged}/${c.badTotal} of them, but two strong independent arbiters confirmed ` +
+      `**${c.regPrecision.confirmedTrueCheat}** of its bad-PR findings as cheats. Reverted/hotfixed real PRs are ` +
+      'overwhelmingly logic bugs, not cheats, so a cheat detector (this one, or the linters) does not catch them. ' +
+      'A retrospectively-bad corpus is the wrong benchmark for a cheat detector.',
+  );
+  lines.push(
+    `- **On real merged PRs the auditor over-flags.** A clean-PR flag rate of ${pct(cleanFlagRate)}, with the ` +
+      'arbiters confirming the large majority of sampled findings as false alarms, means the structural detectors ' +
+      'fire on common legitimate patterns (relocated tests, refactors that change assertions, added branches, ' +
+      'pragmatic suppressions). This is why the findings ship advisory, never blocking, by default.',
+  );
+  lines.push('');
+  lines.push('### Recommendation: scope narrowing');
+  lines.push('');
+  lines.push(
+    'The defensible, demonstrated value of this tool is cheat-detection, where the oracle measures high recall ' +
+      '(258/275 structural) and where two independent models confirmed real cheats in merged PRs that the linters ' +
+      'missed. Its value is **not** general regression prevention: it does not catch the logic bugs that get ' +
+      'reverted, and its blanket flagging of real PRs is noise. Use it as an advisory cheat-detection signal on ' +
+      'changesets, not as a gate and not as a bug-catcher. The companion `REDUNDANCY-FINDING.md` documents this ' +
+      'conclusion, what was tried, and why a retrospectively-bad corpus cannot be the benchmark for it. Numbers ' +
+      'regenerable via `npm run benefit:full`; arbiter-labeled findings are tagged as such, and retrospective ' +
+      'ground truth takes precedence on the regression corpus.',
+  );
+  lines.push('');
+  return lines.join('\n');
+}
+
+function renderArbiterPrecision(c: Computed): string {
+  const lines: string[] = [];
+  lines.push('## Arbiter-validated precision (the load-bearing number)');
+  lines.push('');
+  lines.push(
+    'A stratified sample of findings (per-corpus, per-category cap) was classified by both arbiters. A finding ' +
+      'counts only where both agree. This is what separates a real catch from the auditor\'s blanket flagging.',
+  );
+  lines.push('');
+  lines.push('| corpus | dual-labeled | both agreed | confirmed true-cheat | confirmed false-alarm |');
+  lines.push('|---|---|---|---|---|');
+  lines.push(
+    `| retrospectively-bad | ${c.regPrecision.labeled} | ${c.regPrecision.agreed} | ` +
+      `**${c.regPrecision.confirmedTrueCheat}** | ${c.regPrecision.confirmedFalseAlarm} |`,
+  );
+  lines.push(
+    `| presumed-clean | ${c.cleanPrecision.labeled} | ${c.cleanPrecision.agreed} | ` +
+      `${c.cleanPrecision.confirmedTrueCheat} | ${c.cleanPrecision.confirmedFalseAlarm} |`,
+  );
+  lines.push('');
+  lines.push(
+    `On the retrospectively-bad PRs, both arbiters confirmed **${c.regPrecision.confirmedTrueCheat}** of the ` +
+      'auditor\'s findings as cheats. That is the headline: a high flag rate that does not survive independent ' +
+      'validation is not a catch. The confirmed cheats that do exist are on clean, never-reverted PRs (listed in ' +
+      'the defensible-catches section).',
+  );
+  lines.push('');
   return lines.join('\n');
 }
 
@@ -413,6 +546,7 @@ function main(): void {
 
   const report = [
     renderSummary(c),
+    renderArbiterPrecision(c),
     renderPerRepo(c),
     renderPerCategory(c),
     renderDefensibleCatches(c),

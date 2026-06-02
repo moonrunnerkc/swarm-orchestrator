@@ -47,6 +47,10 @@ interface Args {
   maxCostUsd: number;
   limit: number | null;
   perCategory: number | null;
+  primaryProvider: 'anthropic' | 'local' | 'ollama';
+  secondaryProvider: 'anthropic' | 'local' | 'ollama';
+  primaryPrompt: string;
+  secondaryPrompt: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -54,6 +58,10 @@ function parseArgs(argv: string[]): Args {
   let maxCostUsd = 40;
   let limit: number | null = null;
   let perCategory: number | null = null;
+  let primaryProvider: 'anthropic' | 'local' | 'ollama' = 'local';
+  let secondaryProvider: 'anthropic' | 'local' | 'ollama' = 'anthropic';
+  let primaryPrompt = 'v2';
+  let secondaryPrompt = 'v1';
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -61,8 +69,12 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--max-cost-usd' && next !== undefined) (maxCostUsd = Number(next)), (i += 1);
     else if (a === '--limit' && next !== undefined) (limit = Number(next)), (i += 1);
     else if (a === '--per-category' && next !== undefined) (perCategory = Number(next)), (i += 1);
+    else if (a === '--primary-provider' && (next === 'anthropic' || next === 'local' || next === 'ollama')) (primaryProvider = next), (i += 1);
+    else if (a === '--secondary-provider' && (next === 'anthropic' || next === 'local' || next === 'ollama')) (secondaryProvider = next), (i += 1);
+    else if (a === '--primary-prompt' && next !== undefined) (primaryPrompt = next), (i += 1);
+    else if (a === '--secondary-prompt' && next !== undefined) (secondaryPrompt = next), (i += 1);
   }
-  return { corpus, maxCostUsd, limit, perCategory };
+  return { corpus, maxCostUsd, limit, perCategory, primaryProvider, secondaryProvider, primaryPrompt, secondaryPrompt };
 }
 
 interface PrMeta {
@@ -150,11 +162,22 @@ async function main(): Promise<void> {
   const prIndex = loadPrIndex();
 
   const ledger = new CostLedger(args.maxCostUsd);
-  // Local arbiter is free; Opus is the paid second opinion. Both share the
-  // ledger so the Opus spend is tracked and capped.
-  const localArbiter = await createArbiter({ provider: 'local', ledger });
-  const opusArbiter = await createArbiter({ provider: 'anthropic', ledger });
-  log.info(`arbiters: primary=${localArbiter.modelId} (free), secondary=${opusArbiter.modelId}; ceiling $${args.maxCostUsd}`);
+  // Two independent arbiters. By default the local model (free) is the
+  // primary and Anthropic Opus the paid second opinion; when no paid
+  // credits are available, --secondary-provider local runs the same local
+  // model under a second, independently-worded prompt, a prompt-robustness
+  // cross-check rather than a model-diversity one. The report discloses
+  // which configuration ran.
+  const localArbiter = await createArbiter({ provider: args.primaryProvider, ledger, promptVersion: args.primaryPrompt });
+  const opusArbiter = await createArbiter({
+    provider: args.secondaryProvider,
+    ledger,
+    promptVersion: args.secondaryPrompt,
+  });
+  log.info(
+    `arbiters: primary=${localArbiter.modelId}/${args.primaryPrompt}, ` +
+      `secondary=${opusArbiter.modelId}/${args.secondaryPrompt}; ceiling $${args.maxCostUsd}`,
+  );
 
   const existing: DualArbiterLabel[] = fs.existsSync(dualArbiterLabelsFile())
     ? (JSON.parse(fs.readFileSync(dualArbiterLabelsFile(), 'utf8')) as DualArbiterLabel[])

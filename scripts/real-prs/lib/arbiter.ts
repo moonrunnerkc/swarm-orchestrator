@@ -28,7 +28,7 @@ const VERDICTS: readonly ArbiterVerdict[] = [
 // into the harness's behavior.
 const FALLBACK_OPUS_MODEL = 'claude-opus-4-8';
 
-export type ArbiterProvider = 'anthropic' | 'local';
+export type ArbiterProvider = 'anthropic' | 'local' | 'ollama';
 
 export interface ArbiterInput {
   prTitle: string;
@@ -195,6 +195,63 @@ export interface CreateArbiterOptions {
   anthropicModel?: string;
   localBaseUrl?: string;
   localModel?: string;
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
+}
+
+interface OllamaChatResponse {
+  message?: { content?: string };
+}
+
+/**
+ * An arbiter backed by an Ollama model through the native /api/chat
+ * endpoint with `format: json` and `think: false`. Ollama's /v1 OpenAI
+ * shim returns empty content for several reasoning-capable models (the
+ * answer lands in a separate reasoning field), so the native endpoint with
+ * forced JSON is the reliable path. Free and local; records zero cost.
+ */
+class OllamaArbiter implements Arbiter {
+  readonly modelId: string;
+  private readonly baseUrl: string;
+  private readonly model: string;
+  private readonly template: string;
+  private readonly ledger: CostLedger;
+
+  constructor(model: string, baseUrl: string, template: string, ledger: CostLedger) {
+    this.model = model;
+    this.modelId = `ollama:${model}`;
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.template = template;
+    this.ledger = ledger;
+  }
+
+  async classify(input: ArbiterInput): Promise<ArbiterOutput> {
+    this.ledger.guardBeforeCall();
+    const user = fillPrompt(this.template, input);
+    const res = await fetch(`${this.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        think: false,
+        format: 'json',
+        stream: false,
+        options: { temperature: 0, num_predict: 512 },
+        messages: [{ role: 'user', content: user }],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new SwarmError(
+        `ollama arbiter request failed (${res.status}): ${body.slice(0, 200)}`,
+        'REAL_PRS_OLLAMA_ARBITER_FAILED',
+        { remediation: 'Confirm `ollama serve` is running and the model is pulled.' },
+      );
+    }
+    const json = (await res.json()) as OllamaChatResponse;
+    this.ledger.record(this.modelId, 0, 0);
+    return parseReply((json.message?.content ?? '').trim());
+  }
 }
 
 /** Resolve an Opus model id from the Anthropic models list at runtime so
@@ -220,6 +277,11 @@ export async function createArbiter(options: CreateArbiterOptions): Promise<Arbi
     const baseUrl = options.localBaseUrl ?? 'http://localhost:8000';
     const model = options.localModel ?? process.env.RAPIDMLX_MODEL ?? 'local-model';
     return new LocalArbiter(model, baseUrl, template, options.ledger);
+  }
+  if (options.provider === 'ollama') {
+    const baseUrl = options.ollamaBaseUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
+    const model = options.ollamaModel ?? process.env.OLLAMA_ARBITER_MODEL ?? 'kimi-k2.6:cloud';
+    return new OllamaArbiter(model, baseUrl, template, options.ledger);
   }
   if (process.env.ANTHROPIC_API_KEY === undefined || process.env.ANTHROPIC_API_KEY.length === 0) {
     throw new SwarmError('ANTHROPIC_API_KEY not set for the Anthropic arbiter', 'REAL_PRS_NO_ANTHROPIC_KEY', {

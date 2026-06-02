@@ -29,6 +29,7 @@ interface Args {
   threshold: number;
   maxCostUsd: number;
   perCategory: number;
+  promptVersion?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -39,7 +40,7 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = argv[i + 1];
-    if (a === '--arbiter-provider' && (next === 'anthropic' || next === 'local')) {
+    if (a === '--arbiter-provider' && (next === 'anthropic' || next === 'local' || next === 'ollama')) {
       provider = next;
       i += 1;
     } else if (a === '--slice' && next !== undefined) {
@@ -76,7 +77,9 @@ function heldOutSlice(cases: OracleCase[], perCategory: number): OracleCase[] {
 
 export async function runArbiterSanity(args: Args): Promise<ArbiterSanity> {
   const ledger = new CostLedger(args.maxCostUsd);
-  const arbiter = await createArbiter({ provider: args.provider, ledger });
+  const createOpts: Parameters<typeof createArbiter>[0] = { provider: args.provider, ledger };
+  if (args.promptVersion !== undefined) createOpts.promptVersion = args.promptVersion;
+  const arbiter = await createArbiter(createOpts);
   log.info(`arbiter model: ${arbiter.modelId}`);
   const cases = heldOutSlice(loadOracleCorpus(), args.perCategory);
   log.info(`sanity slice: ${cases.length} cases across categories`);
