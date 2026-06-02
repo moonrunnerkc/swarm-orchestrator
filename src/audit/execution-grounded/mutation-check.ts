@@ -16,6 +16,7 @@ import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges, LineRange } from '../cheat-detector/diff-walker';
 import { lineInRanges } from '../cheat-detector/diff-walker';
+import { execBin, execEnv } from './exec-env';
 import type { TestRunner } from './sandbox';
 
 const log = getLogger('audit:execution-grounded:mutation');
@@ -269,9 +270,8 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   // dependency manifest untouched.
   try {
     const installArgs = ['install', '--no-save', '--no-audit', '--no-fund', `@stryker-mutator/core@9`, `${adapter}@9`];
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    if (opts.cacheDir !== undefined) env.npm_config_cache = opts.cacheDir;
-    execFileSync('npm', installArgs, {
+    const env = execEnv(opts.cacheDir);
+    execFileSync(execBin('npm'), installArgs, {
       cwd: workspacePath,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: Math.min(INSTALL_TIMEOUT_MS, deadline - Date.now()),
@@ -294,12 +294,13 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 
   try {
-    execFileSync('node', [path.join(workspacePath, 'node_modules', '.bin', 'stryker'), 'run', configPath], {
+    execFileSync(execBin('node'), [path.join(workspacePath, 'node_modules', '.bin', 'stryker'), 'run', configPath], {
       cwd: workspacePath,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: Math.max(1, deadline - Date.now()),
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
+      env: execEnv(opts.cacheDir),
     });
   } catch (err) {
     // Stryker exits non-zero on a run error, but it may still have written a

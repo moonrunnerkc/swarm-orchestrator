@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
+import { execBin, execEnv } from './exec-env';
 
 const log = getLogger('audit:execution-grounded:sandbox');
 
@@ -144,17 +145,16 @@ function runInstall(
   timeoutMs: number,
 ): void {
   const args = [...INSTALL_COMMAND[manager]];
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env = execEnv(manager === 'npm' ? cacheDir : undefined);
   if (cacheDir !== undefined) {
     fs.mkdirSync(cacheDir, { recursive: true });
     // Each manager reads its cache location from a different env var.
-    if (manager === 'npm') env.npm_config_cache = cacheDir;
     if (manager === 'yarn') env.YARN_CACHE_FOLDER = cacheDir;
     if (manager === 'pnpm') env.PNPM_HOME = cacheDir;
     if (manager === 'bun') env.BUN_INSTALL_CACHE_DIR = cacheDir;
   }
   try {
-    execFileSync(manager, args, {
+    execFileSync(execBin(manager), args, {
       cwd: dir,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: timeoutMs,

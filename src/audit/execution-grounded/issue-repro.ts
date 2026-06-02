@@ -14,6 +14,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
+import { execBin, execEnv } from './exec-env';
 import type { TestRunner } from './sandbox';
 
 const log = getLogger('audit:execution-grounded:issue-repro');
@@ -256,12 +257,13 @@ export function executeIssueRepro(opts: ExecuteReproOptions): ReproExecution {
 
   try {
     fs.writeFileSync(filePath, repro.code, 'utf8');
-    const stdout = execFileSync(cmd, args, {
+    const stdout = execFileSync(execBin(cmd), args, {
       cwd: workspacePath,
       timeout: timeoutMs,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       maxBuffer: 16 * 1024 * 1024,
+      env: execEnv(),
     });
     return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - started, status: 'passed' };
   } catch (err) {
