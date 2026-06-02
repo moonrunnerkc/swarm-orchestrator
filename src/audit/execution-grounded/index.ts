@@ -51,16 +51,27 @@ function shortEvidence(text: string, limit = 1200): string {
 /**
  * Build mutation findings from surviving mutants. A survivor on a line a test
  * executes (covered) is `mutation-survives-on-changed-line`; one on a line no
- * test executes (NoCoverage, or coverage says uncovered) is the higher-signal
- * `mutation-survives-on-uncovered-changed-line`.
+ * test executes (NoCoverage, or coverage says uncovered) is
+ * `mutation-survives-on-uncovered-changed-line`. The covered-survivor category
+ * is only emitted when the run killed at least one mutant: a zero-kill run is
+ * non-discriminating, so its covered survivors are an artifact, not signal.
  */
 export function mutationFindings(results: MutationResult[], coverage?: CoverageMap): Finding[] {
   const findings: Finding[] = [];
+  // A "covered line whose mutant survived" only means the tests run past it
+  // without constraining it when the suite is actually discriminating, i.e. it
+  // kills at least one mutant. A run that kills nothing (the changed package's
+  // tests pass but assert nothing about this code, or the wrong runner ran) is
+  // non-validating: its covered survivors are an artifact, not signal. Require a
+  // kill before emitting the covered-survivor category; genuinely uncovered
+  // lines (NoCoverage) are a coverage fact and stand regardless.
+  const killedAny = results.some((m) => m.killed);
   for (const m of results) {
     if (m.killed) continue;
     if (m.status !== 'Survived' && m.status !== 'NoCoverage') continue;
     const uncovered =
       m.status === 'NoCoverage' || (coverage !== undefined && !isLineCovered(coverage, m.file, m.line));
+    if (!uncovered && !killedAny) continue;
     const category = uncovered
       ? 'mutation-survives-on-uncovered-changed-line'
       : 'mutation-survives-on-changed-line';

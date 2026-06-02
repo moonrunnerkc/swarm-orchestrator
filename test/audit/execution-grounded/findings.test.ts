@@ -28,12 +28,20 @@ describe('execution-grounded / finding builders', () => {
     it('ignores killed mutants', () => {
       assert.equal(mutationFindings([killed]).length, 0);
     });
-    it('classifies a Survived mutant as on-changed-line (covered)', () => {
-      const [f] = mutationFindings([survivedCovered]);
+    it('classifies a Survived mutant as on-changed-line (covered) when the run discriminates', () => {
+      // A killed mutant in the same run proves the suite discriminates, so the
+      // covered survivor is real signal.
+      const f = mutationFindings([survivedCovered, killed]).find((x) => x.location.line === 5);
       assert.equal(f?.category, 'mutation-survives-on-changed-line');
       assert.equal(f?.severity, 'warn');
     });
-    it('classifies a NoCoverage mutant as on-uncovered-changed-line', () => {
+    it('suppresses covered survivors when the run killed nothing (non-discriminating)', () => {
+      // No kill anywhere in the run: the suite asserts nothing here, so a
+      // covered survivor is an artifact, not signal.
+      assert.equal(mutationFindings([survivedCovered]).length, 0);
+    });
+    it('still reports NoCoverage survivors even when the run killed nothing', () => {
+      // An uncovered line is a coverage fact, independent of the suite killing.
       const [f] = mutationFindings([noCoverage]);
       assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
     });
