@@ -187,6 +187,7 @@ async function main(): Promise<void> {
           issueCacheDir: path.join(regressionDir(), 'issue-cache'),
           ...(token !== null ? { githubToken: token } : {}),
           installTimeoutMs,
+          runBuild: true,
         });
       } catch (err) {
         log.warn(`run failed for ${pr.repo}#${pr.prNumber}: ${String(err)}`);

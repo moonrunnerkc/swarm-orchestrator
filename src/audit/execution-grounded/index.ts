@@ -157,6 +157,8 @@ export interface ExecutionGroundedInput {
    *  well over the 5-minute sandbox default to install, so the evidence run
    *  raises it. */
   installTimeoutMs?: number;
+  /** Build the repo after install (self-hosting / compiled repos). */
+  runBuild?: boolean;
 }
 
 export interface PackagedMutationRun {
@@ -207,6 +209,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       baseDir: input.baseDir,
       ...(input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {}),
       ...(input.installTimeoutMs !== undefined ? { installTimeoutMs: input.installTimeoutMs } : {}),
+      ...(input.runBuild !== undefined ? { runBuild: input.runBuild } : {}),
     });
   } catch (err) {
     const reason = err instanceof SwarmError ? `${err.code}: ${err.message}` : String(err);
@@ -225,13 +228,14 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     const pm = workspaces.post.packageManager;
 
     // Run mutation + coverage for one scope (a cwd plus its changed-line map,
-    // keyed package-relative). Returns whether the suite actually executed.
+    // keyed package-relative). Returns which checks executed.
     const runScope = (
       cwd: string,
       packageDir: string,
       scopeChanged: ChangedLineRanges,
       runner: TestRunner | null,
-    ): boolean => {
+      doCoverage: boolean,
+    ): { mutationRan: boolean; coverageRan: boolean } => {
       const evDir = (sub: string): { evidenceDir: string } | Record<string, never> =>
         input.evidenceDir !== undefined
           ? { evidenceDir: path.join(input.evidenceDir, packageDir || '_root', sub) }
@@ -241,8 +245,9 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         location: { ...f.location, file: rerootToRepo(packageDir, f.location.file) },
       });
       let coverageMap: CoverageMap | undefined;
-      let ran = false;
-      if (input.config.coverage && Date.now() < deadline) {
+      let coverageRan = false;
+      let mutationRan = false;
+      if (input.config.coverage && doCoverage && Date.now() < deadline) {
         const cov = computeCoverageDelta({
           workspacePath: cwd,
           testRunner: runner,
@@ -256,7 +261,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         outcome.coverageRuns.push({ packageDir, outcome: cov });
         if (cov.ran) {
           coverageMap = cov.coverage;
-          ran = true;
+          coverageRan = true;
         } else skipped.push(`coverage[${packageDir || '<root>'}]: ${cov.skipReason ?? 'did not run'}`);
       }
       const scopeFindings: Finding[] = [];
@@ -273,31 +278,40 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         });
         outcome.mutationRuns.push({ packageDir, outcome: mut });
         if (mut.ran) {
-          ran = true;
+          mutationRan = true;
           scopeFindings.push(...mutationFindings(mut.results, coverageMap));
         } else skipped.push(`mutation[${packageDir || '<root>'}]: ${mut.skipReason ?? 'did not run'}`);
       }
-      const lastCov = outcome.coverageRuns[outcome.coverageRuns.length - 1];
-      if (lastCov?.packageDir === packageDir && lastCov.outcome.ran) {
+      if (coverageRan && coverageMap !== undefined) {
+        const lastCov = outcome.coverageRuns[outcome.coverageRuns.length - 1];
+        const deltas = lastCov?.packageDir === packageDir ? lastCov.outcome.deltas : [];
         const mutationLines = new Set(
           scopeFindings.filter((f) => f.category.startsWith('mutation-survives')).map((f) => `${f.location.file}:${f.location.line}`),
         );
-        scopeFindings.push(...coverageFindings(lastCov.outcome.deltas, mutationLines));
+        scopeFindings.push(...coverageFindings(deltas, mutationLines));
       }
       findings.push(...scopeFindings.map(reroot));
-      return ran;
+      return { mutationRan, coverageRan };
     };
 
     // Root-first. A unified-config monorepo (one root vitest/jest config) ties
-    // a package's source to tests that may live in another package, so the
-    // whole change is run at the root with the root config. Only when the root
-    // has no runner, or its suite cannot execute the change, fall back to
-    // per-package scoping (a repo with independent per-package configs).
-    let ranAtRoot = false;
+    // a package's source to tests that may live in another package (trpc keeps
+    // its tests in packages/tests), so the whole change is run at the root.
+    // When the root suite cannot run the change (a repo with independent
+    // per-package configs, or a root suite with environment-dependent
+    // failures), fall back to per-package, where the narrower suite often
+    // passes. Coverage that already ran at the root is not repeated.
+    let mutationRanAtRoot = false;
+    let coverageRanAtRoot = false;
     if (workspaces.post.testRunner !== null && Date.now() < deadline) {
-      ranAtRoot = runScope(installDir, '', changed, workspaces.post.testRunner);
+      const r = runScope(installDir, '', changed, workspaces.post.testRunner, input.config.coverage);
+      mutationRanAtRoot = r.mutationRan;
+      coverageRanAtRoot = r.coverageRan;
     }
-    if (!ranAtRoot) {
+    const needPackageFallback = input.config.mutation
+      ? !mutationRanAtRoot
+      : input.config.coverage && !coverageRanAtRoot;
+    if (needPackageFallback) {
       for (const scope of groupChangedLinesByPackage(installDir, changed)) {
         if (scope.packageDir === '') continue; // already tried at the root
         if (Date.now() >= deadline) {
@@ -306,7 +320,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         }
         const pkgPath = path.join(installDir, scope.packageDir);
         const runner = detectTestRunner(pkgPath) ?? workspaces.post.testRunner;
-        runScope(pkgPath, scope.packageDir, scope.changedLines, runner);
+        runScope(pkgPath, scope.packageDir, scope.changedLines, runner, input.config.coverage && !coverageRanAtRoot);
       }
     }
 
@@ -318,6 +332,16 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
   } finally {
     workspaces.cleanup();
   }
+
+  // A root run and a package fallback can both report coverage on the same
+  // line; keep one finding per (category, file, line).
+  const seen = new Set<string>();
+  outcome.findings = findings.filter((f) => {
+    const key = `${f.category}|${f.location.file}|${f.location.line}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   return outcome;
 }

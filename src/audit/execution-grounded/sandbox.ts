@@ -69,6 +69,11 @@ export interface ProvisionOptions {
   /** Shallow-fetch depth. Defaults to 1. Use 2 when the caller needs the
    *  commit's parent (to derive a PR's pre-change base from its head). */
   depth?: number;
+  /** Run the repo's build script after install. Needed for self-hosting repos
+   *  and TypeScript-compiled packages whose tests import built output. */
+  runBuild?: boolean;
+  /** Wall-clock cap for the build step. Defaults to 10 minutes. */
+  buildTimeoutMs?: number;
 }
 
 export interface Workspace {
@@ -273,6 +278,34 @@ export function addDevTools(
   });
 }
 
+/** Run the repo's `build` script, best-effort. Self-hosting repos (vite's own
+ *  vitest imports vite/dist) and TypeScript-compiled packages need a build
+ *  before their tests run. A failure or timeout is logged and swallowed: the
+ *  checks may still run, or fail with a recorded reason. */
+function buildWorkspace(dir: string, manager: PackageManager, timeoutMs: number): void {
+  let pkg: { scripts?: Record<string, string> };
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as typeof pkg;
+  } catch {
+    return;
+  }
+  if (pkg.scripts?.build === undefined) return;
+  const env = execEnv();
+  env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
+  const inv =
+    manager === 'npm'
+      ? { bin: execBin('npm'), args: ['run', 'build'] }
+      : manager === 'bun'
+        ? { bin: 'bun', args: ['run', 'build'] }
+        : { bin: execBin('corepack'), args: [manager, 'run', 'build'] };
+  try {
+    log.info(`building ${dir} (${manager} run build)`);
+    execFileSync(inv.bin, inv.args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], timeout: timeoutMs, encoding: 'utf8', env });
+  } catch (err) {
+    log.warn(`build of ${dir} did not complete cleanly (continuing): ${String(err).slice(-160)}`);
+  }
+}
+
 function directorySizeBytes(dir: string): number {
   try {
     const out = execFileSync('du', ['-sk', dir], { encoding: 'utf8', timeout: 60_000 });
@@ -313,6 +346,9 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
           `workspace ${workspacePath} is ${(size / 1e9).toFixed(2)}GB, over the ${DISK_CAP_BYTES / 1e9}GB soft cap`,
         );
       }
+      if (opts.runBuild === true) {
+        buildWorkspace(workspacePath, packageManager, opts.buildTimeoutMs ?? 10 * 60 * 1000);
+      }
     }
     const testRunner = detectTestRunner(workspacePath);
     return { workspacePath, packageManager, testRunner, cleanup };
@@ -332,6 +368,8 @@ export interface ProvisionPROptions {
   baseDir: string;
   cacheDir?: string;
   installTimeoutMs?: number;
+  /** Run the repo's build after install on both workspaces. */
+  runBuild?: boolean;
 }
 
 export interface PRWorkspaces {
@@ -358,6 +396,7 @@ export function provisionPRWorkspaces(opts: ProvisionPROptions): PRWorkspaces {
     cacheDir,
     ...(opts.prBaseSha === undefined ? { depth: 2 } : {}),
     ...(opts.installTimeoutMs !== undefined ? { installTimeoutMs: opts.installTimeoutMs } : {}),
+    ...(opts.runBuild !== undefined ? { runBuild: opts.runBuild } : {}),
   });
   // Resolve the base commit. With an explicit base we fetch it directly;
   // otherwise the post workspace already has the head, and its first parent
@@ -390,6 +429,7 @@ export function provisionPRWorkspaces(opts: ProvisionPROptions): PRWorkspaces {
       baseDir: opts.baseDir,
       cacheDir,
       ...(opts.installTimeoutMs !== undefined ? { installTimeoutMs: opts.installTimeoutMs } : {}),
+      ...(opts.runBuild !== undefined ? { runBuild: opts.runBuild } : {}),
     });
   } catch (err) {
     post.cleanup();
