@@ -1,6 +1,7 @@
 // Helpers over parse-diff output. Each detector walks the same parsed
 // diff; centralizing the iteration prevents drift between detectors.
 
+import parseDiff from 'parse-diff';
 import type { File as ParsedDiffFile, Chunk, Change, AddChange, DeleteChange } from 'parse-diff';
 
 export interface AddedLine {
@@ -73,6 +74,84 @@ export function walkHunks(files: ParsedDiffFile[]): HunkPair[] {
     }
   }
   return out;
+}
+
+/** A contiguous run of post-image line numbers, inclusive on both ends. */
+export interface LineRange {
+  start: number;
+  end: number;
+}
+
+/** Per-file post-image line ranges the diff added or modified. */
+export type ChangedLineRanges = Record<string, LineRange[]>;
+
+function coalesce(lines: number[]): LineRange[] {
+  if (lines.length === 0) return [];
+  const sorted = [...new Set(lines)].sort((a, b) => a - b);
+  const ranges: LineRange[] = [];
+  let start = sorted[0]!;
+  let prev = sorted[0]!;
+  for (let i = 1; i < sorted.length; i += 1) {
+    const n = sorted[i]!;
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    ranges.push({ start, end: prev });
+    start = n;
+    prev = n;
+  }
+  ranges.push({ start, end: prev });
+  return ranges;
+}
+
+/**
+ * Extract the post-image line ranges a diff added or modified, per file.
+ * These are the lines a mutation- or coverage-scoped tool should target:
+ * the code the PR actually introduced, not the surrounding context. Only
+ * added/modified lines (post-image line numbers) are reported; pure
+ * deletions have no post-image line and are not mutable.
+ *
+ * `filter` (default: every inspected file) narrows the set, e.g. to source
+ * files Stryker can mutate. Returns a map keyed by the post-image path.
+ */
+export function changedLineRangesFromFiles(
+  files: ParsedDiffFile[],
+  filter: (path: string) => boolean = () => true,
+): ChangedLineRanges {
+  const byFile: Record<string, number[]> = {};
+  for (const file of files) {
+    if (!shouldInspect(file)) continue;
+    const path = filePath(file);
+    if (!filter(path)) continue;
+    for (const chunk of file.chunks) {
+      for (const change of chunk.changes) {
+        if (isAdd(change)) {
+          (byFile[path] ??= []).push(change.ln);
+        }
+      }
+    }
+  }
+  const out: ChangedLineRanges = {};
+  for (const [path, lines] of Object.entries(byFile)) {
+    const ranges = coalesce(lines);
+    if (ranges.length > 0) out[path] = ranges;
+  }
+  return out;
+}
+
+/** Convenience wrapper that parses a raw unified diff first. */
+export function extractChangedLineRanges(
+  diff: string,
+  filter?: (path: string) => boolean,
+): ChangedLineRanges {
+  return changedLineRangesFromFiles(parseDiff(diff), filter);
+}
+
+/** True when `line` falls within any of the ranges. */
+export function lineInRanges(line: number, ranges: LineRange[] | undefined): boolean {
+  if (ranges === undefined) return false;
+  return ranges.some((r) => line >= r.start && line <= r.end);
 }
 
 function isAdd(change: Change): change is AddChange {
