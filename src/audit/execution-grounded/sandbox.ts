@@ -28,15 +28,25 @@ const LOCKFILES: ReadonlyArray<{ file: string; manager: PackageManager }> = [
   { file: 'package-lock.json', manager: 'npm' },
 ];
 
-/** The frozen-lockfile install command for each manager. Frozen so the
- *  checkout we audit is the dependency tree the PR author shipped, not a
- *  re-resolved one. */
-const INSTALL_COMMAND: Record<PackageManager, readonly string[]> = {
-  npm: ['ci', '--no-audit', '--no-fund'],
-  yarn: ['install', '--frozen-lockfile', '--non-interactive'],
-  pnpm: ['install', '--frozen-lockfile'],
-  bun: ['install', '--frozen-lockfile'],
-};
+/** The install invocation for each manager. pnpm and yarn run through
+ *  corepack so the repo's declared `packageManager` version is used (and so
+ *  yarn need not be installed standalone). Frozen/immutable so the checkout we
+ *  audit is the dependency tree the PR author shipped, not a re-resolved one.
+ *  npm and bun are self-contained. */
+function installInvocation(manager: PackageManager): { bin: string; args: string[] } {
+  switch (manager) {
+    case 'npm':
+      return { bin: execBin('npm'), args: ['ci', '--no-audit', '--no-fund'] };
+    case 'pnpm':
+      return { bin: execBin('corepack'), args: ['pnpm', 'install', '--frozen-lockfile'] };
+    case 'yarn':
+      // --immutable is Yarn Berry; classic ignores it and treats install as
+      // frozen by default when a lockfile is present, so this is safe for both.
+      return { bin: execBin('corepack'), args: ['yarn', 'install', '--immutable'] };
+    case 'bun':
+      return { bin: 'bun', args: ['install', '--frozen-lockfile'] };
+  }
+}
 
 const DEFAULT_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const DISK_CAP_BYTES = 2 * 1024 * 1024 * 1024;
@@ -56,6 +66,9 @@ export interface ProvisionOptions {
   /** Skip `npm install` etc. Used by the deterministic fixture tests where
    *  the dependencies are vendored into the fixture. */
   skipInstall?: boolean;
+  /** Shallow-fetch depth. Defaults to 1. Use 2 when the caller needs the
+   *  commit's parent (to derive a PR's pre-change base from its head). */
+  depth?: number;
 }
 
 export interface Workspace {
@@ -144,8 +157,10 @@ function runInstall(
   cacheDir: string | undefined,
   timeoutMs: number,
 ): void {
-  const args = [...INSTALL_COMMAND[manager]];
+  const { bin, args } = installInvocation(manager);
   const env = execEnv(manager === 'npm' ? cacheDir : undefined);
+  // Corepack must not interactively prompt before downloading a pinned PM.
+  env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
   if (cacheDir !== undefined) {
     fs.mkdirSync(cacheDir, { recursive: true });
     // Each manager reads its cache location from a different env var.
@@ -154,7 +169,7 @@ function runInstall(
     if (manager === 'bun') env.BUN_INSTALL_CACHE_DIR = cacheDir;
   }
   try {
-    execFileSync(execBin(manager), args, {
+    execFileSync(bin, args, {
       cwd: dir,
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: timeoutMs,
@@ -208,7 +223,7 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
   };
   try {
     log.info(`provisioning ${repo}@${commit.slice(0, 10)} -> ${workspacePath}`);
-    gitFetchCheckout(repo, commit, workspacePath, 1);
+    gitFetchCheckout(repo, commit, workspacePath, opts.depth ?? 1);
     const packageManager = detectPackageManager(workspacePath);
     if (opts.skipInstall !== true) {
       runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS);
@@ -254,11 +269,14 @@ export interface PRWorkspaces {
  */
 export function provisionPRWorkspaces(opts: ProvisionPROptions): PRWorkspaces {
   const cacheDir = opts.cacheDir ?? path.join(opts.baseDir, '.pm-cache');
+  // When the base is not given we derive it from the head's first parent, so
+  // the head must be fetched at depth 2 for the parent to exist locally.
   const post = provisionWorkspace({
     repo: opts.repo,
     commit: opts.prHeadSha,
     baseDir: opts.baseDir,
     cacheDir,
+    ...(opts.prBaseSha === undefined ? { depth: 2 } : {}),
     ...(opts.installTimeoutMs !== undefined ? { installTimeoutMs: opts.installTimeoutMs } : {}),
   });
   // Resolve the base commit. With an explicit base we fetch it directly;

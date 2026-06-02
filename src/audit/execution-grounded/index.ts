@@ -153,6 +153,10 @@ export interface ExecutionGroundedInput {
   evidenceDir?: string;
   issueCacheDir?: string;
   githubToken?: string;
+  /** Per-workspace dependency-install cap. The corpus monorepos can take
+   *  well over the 5-minute sandbox default to install, so the evidence run
+   *  raises it. */
+  installTimeoutMs?: number;
 }
 
 export interface PackagedMutationRun {
@@ -202,6 +206,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       ...(input.prBaseSha !== undefined ? { prBaseSha: input.prBaseSha } : {}),
       baseDir: input.baseDir,
       ...(input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {}),
+      ...(input.installTimeoutMs !== undefined ? { installTimeoutMs: input.installTimeoutMs } : {}),
     });
   } catch (err) {
     const reason = err instanceof SwarmError ? `${err.code}: ${err.message}` : String(err);
