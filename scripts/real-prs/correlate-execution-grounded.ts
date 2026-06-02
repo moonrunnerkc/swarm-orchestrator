@@ -163,25 +163,37 @@ async function main(): Promise<void> {
     const proof = src !== undefined ? await proofRanges(octokit, src, auditedFiles, proofCache) : {};
     const proofExpanded = expand(proof, LINE_TOLERANCE);
 
-    const mutationFindings = result.findings.filter((f) => f.category.startsWith('mutation-survives'));
-    const mutationHighConf = mutationFindings.filter((f) => withinProof(f, proofExpanded));
+    // Two grades of mutation signal, kept separate for honesty. The strong one
+    // (covered-survivor on a discriminating suite) is what no diff-reader and no
+    // coverage tool can produce; the weaker one (an uncovered changed line,
+    // surfaced via a trivially-surviving mutant) is a coverage-grade fact. M
+    // counts only the strong grade on a proof-changed line.
+    const coveredSurvivors = result.findings.filter((f) => f.category === 'mutation-survives-on-changed-line');
+    const uncoveredSurvivors = result.findings.filter(
+      (f) => f.category === 'mutation-survives-on-uncovered-changed-line',
+    );
+    const coveredHighConf = coveredSurvivors.filter((f) => withinProof(f, proofExpanded));
+    const uncoveredHighConf = uncoveredSurvivors.filter((f) => withinProof(f, proofExpanded));
     const reproFails = result.findings.filter((f) => f.category === 'issue-repro-still-fails');
     const uncovered = result.findings.filter((f) => f.category === 'uncovered-changed-line');
 
     const other = otherFindingLines(result.repo, result.prNumber);
-    const correlated = [...mutationHighConf, ...reproFails];
+    // U is the strong, unique catches: a covered-survivor or a still-failing
+    // repro on a proof line that the cheat detectors / Semgrep / ESLint missed.
+    const correlated = [...coveredHighConf, ...reproFails];
     const uniqueCorrelated = correlated.filter((f) => !withinProof(f, other));
 
-    if (mutationHighConf.length > 0) M += 1;
+    if (coveredHighConf.length > 0) M += 1;
     if (reproFails.length > 0) R += 1;
-    if (uncovered.length > 0) C += 1;
+    if (uncovered.length > 0 || uncoveredHighConf.length > 0) C += 1;
     if (uniqueCorrelated.length > 0) U += 1;
 
     perPr.push({
       repo: result.repo,
       prNumber: result.prNumber,
       ran: result.mutationRuns.some((r) => r.ran) || result.coverageRuns.some((r) => r.ran),
-      mutationHighConf: mutationHighConf.length,
+      coveredSurvivorsOnProof: coveredHighConf.length,
+      uncoveredSurvivorsOnProof: uncoveredHighConf.length,
       reproFails: reproFails.length,
       uncovered: uncovered.length,
       uniqueCorrelated: uniqueCorrelated.length,

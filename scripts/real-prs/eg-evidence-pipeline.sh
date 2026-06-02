@@ -12,7 +12,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
-export SWARM_EG_NODE_BIN=/opt/homebrew/opt/node@20/bin
+export SWARM_EG_NODE_BIN=/opt/homebrew/opt/node@22/bin
 export SWARM_EG_INSTALL_TIMEOUT_MS="${SWARM_EG_INSTALL_TIMEOUT_MS:-480000}"
 export SWARM_EG_WALLCLOCK_MS="${SWARM_EG_WALLCLOCK_MS:-600000}"
 # Both corpora are sampled per-repo, not run as a census. M (mutation
