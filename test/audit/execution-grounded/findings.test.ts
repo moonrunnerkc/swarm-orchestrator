@@ -6,7 +6,6 @@ import {
   reproFindings,
   type ReproComparison,
 } from '../../../src/audit/execution-grounded/index';
-import { parseIstanbulCoverage } from '../../../src/audit/execution-grounded/coverage-delta';
 import type { MutationResult } from '../../../src/audit/execution-grounded/mutation-check';
 
 describe('execution-grounded / finding builders', () => {
@@ -45,13 +44,13 @@ describe('execution-grounded / finding builders', () => {
       const [f] = mutationFindings([noCoverage]);
       assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
     });
-    it('upgrades a Survived mutant to uncovered when coverage says the line is not hit', () => {
-      const cov = parseIstanbulCoverage(
-        { '/ws/src/a.ts': { path: '/ws/src/a.ts', statementMap: { '0': { start: { line: 5 }, end: { line: 5 } } }, s: { '0': 0 } } },
-        '/ws',
-      );
-      const [f] = mutationFindings([survivedCovered], cov);
-      assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
+    it('trusts Stryker coverage: a Survived mutant stays covered (suite discriminates)', () => {
+      // Coverage comes from Stryker's own per-test analysis: a Survived mutant
+      // was executed by the suite, so it is covered regardless of what a
+      // separate istanbul run reports. With a kill in the run it is the strong
+      // covered-survivor signal.
+      const f = mutationFindings([survivedCovered, killed]).find((x) => x.location.line === 5);
+      assert.equal(f?.category, 'mutation-survives-on-changed-line');
     });
   });
 

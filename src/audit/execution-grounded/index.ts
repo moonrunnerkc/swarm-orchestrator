@@ -18,7 +18,6 @@ import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
 import { runMutationCheck, type MutationResult, type MutationRunOutcome } from './mutation-check';
 import {
   computeCoverageDelta,
-  isLineCovered,
   type CoverageDelta,
   type CoverageMap,
   type CoverageRunOutcome,
@@ -56,8 +55,14 @@ function shortEvidence(text: string, limit = 1200): string {
  * is only emitted when the run killed at least one mutant: a zero-kill run is
  * non-discriminating, so its covered survivors are an artifact, not signal.
  */
-export function mutationFindings(results: MutationResult[], coverage?: CoverageMap): Finding[] {
+export function mutationFindings(results: MutationResult[]): Finding[] {
   const findings: Finding[] = [];
+  // Coverage is read from Stryker's own per-test analysis, not a separate
+  // istanbul run: a `Survived` mutant was executed by the suite (that is why it
+  // is not `NoCoverage`), so the line is covered by definition. A separate
+  // coverage run selects different tests and disagrees, so it must not override
+  // Stryker here.
+  //
   // A "covered line whose mutant survived" only means the tests run past it
   // without constraining it when the suite is actually discriminating, i.e. it
   // kills at least one mutant. A run that kills nothing (the changed package's
@@ -69,8 +74,7 @@ export function mutationFindings(results: MutationResult[], coverage?: CoverageM
   for (const m of results) {
     if (m.killed) continue;
     if (m.status !== 'Survived' && m.status !== 'NoCoverage') continue;
-    const uncovered =
-      m.status === 'NoCoverage' || (coverage !== undefined && !isLineCovered(coverage, m.file, m.line));
+    const uncovered = m.status === 'NoCoverage';
     if (!uncovered && !killedAny) continue;
     const category = uncovered
       ? 'mutation-survives-on-uncovered-changed-line'
@@ -290,7 +294,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         outcome.mutationRuns.push({ packageDir, outcome: mut });
         if (mut.ran) {
           mutationRan = true;
-          scopeFindings.push(...mutationFindings(mut.results, coverageMap));
+          scopeFindings.push(...mutationFindings(mut.results));
         } else skipped.push(`mutation[${packageDir || '<root>'}]: ${mut.skipReason ?? 'did not run'}`);
       }
       if (coverageRan && coverageMap !== undefined) {
