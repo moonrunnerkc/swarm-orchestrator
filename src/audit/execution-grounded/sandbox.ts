@@ -98,6 +98,7 @@ export function detectTestRunner(workspacePath: string): TestRunner | null {
     devDependencies?: Record<string, string>;
     dependencies?: Record<string, string>;
     scripts?: Record<string, string>;
+    jest?: unknown;
   };
   try {
     pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as typeof pkg;
@@ -109,7 +110,7 @@ export function detectTestRunner(workspacePath: string): TestRunner | null {
   // Priority order: a repo that depends on vitest and also transitively on
   // jest is a vitest repo; check the modern/explicit runners first.
   if ('vitest' in deps) return 'vitest';
-  if ('jest' in deps || 'ts-jest' in deps) return 'jest';
+  if ('jest' in deps || 'ts-jest' in deps || 'jest-expo' in deps) return 'jest';
   if ('mocha' in deps) return 'mocha';
   if ('ava' in deps) return 'ava';
   const testScript = pkg.scripts?.test ?? '';
@@ -120,6 +121,17 @@ export function detectTestRunner(workspacePath: string): TestRunner | null {
   if (/\bjest\b/.test(testScript)) return 'jest';
   if (/\bmocha\b/.test(testScript)) return 'mocha';
   if (/\bava\b/.test(testScript)) return 'ava';
+  // A `jest` config key in package.json is as good a signal as the dep.
+  if (pkg.jest !== undefined) return 'jest';
+  // Config files, for repos that hoist the runner and keep a thin root
+  // package.json (vitest workspace, jest preset packages).
+  const has = (f: string): boolean => fs.existsSync(path.join(workspacePath, f));
+  if (['vitest.config.ts', 'vitest.config.js', 'vitest.config.mts', 'vitest.config.mjs', 'vitest.workspace.ts', 'vitest.workspace.js'].some(has)) {
+    return 'vitest';
+  }
+  if (['jest.config.js', 'jest.config.ts', 'jest.config.cjs', 'jest.config.mjs', 'jest.config.json'].some(has)) {
+    return 'jest';
+  }
   return null;
 }
 

@@ -62,6 +62,18 @@ describe('execution-grounded / sandbox detection', () => {
     it('detects a runner named only in the test script', () => {
       assert.equal(detectTestRunner(path.join(FIX, 'runner-script-only')), 'vitest');
     });
+    it('detects jest from jest-expo', () => {
+      assert.equal(detectTestRunner(path.join(FIX, 'runner-jest-expo')), 'jest');
+    });
+    it('detects jest from a jest.config file', () => {
+      assert.equal(detectTestRunner(path.join(FIX, 'runner-jest-config')), 'jest');
+    });
+    it('detects jest from the package.json jest key', () => {
+      assert.equal(detectTestRunner(path.join(FIX, 'runner-jest-pkgkey')), 'jest');
+    });
+    it('detects vitest from a vitest.config file', () => {
+      assert.equal(detectTestRunner(path.join(FIX, 'runner-vitest-configfile')), 'vitest');
+    });
     it('returns null when no runner is recognizable', () => {
       assert.equal(detectTestRunner(path.join(FIX, 'runner-none')), null);
     });
