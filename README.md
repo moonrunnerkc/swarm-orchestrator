@@ -234,8 +234,11 @@ execution-grounded:full` provisions a sandboxed checkout of each corpus PR
 and runs diff-scoped mutation testing, issue-linked repro execution, and a
 coverage delta, then correlates the findings against each PR's revert/hotfix
 proof. It surfaces under-constrained changed lines that no diff-only tool can
-see (proof anchor `trpc/trpc#6098`: 10 surviving plus 6 uncovered changed-line
-mutations), where the repo's test suite is green in a generic sandbox; the
+see (proof anchor `trpc/trpc#6098`: 10 mutants surviving on covered lines plus
+6 on uncovered lines, 8 of them on the lines the hotfix later changed), where
+the repo's test suite discriminates in a generic sandbox. This is a modest,
+honest result (1 proof-correlated catch in the sampled corpus, against a 3.357
+advisory-findings-per-clean-PR burden), measured rather than asserted; the
 per-repo viability and the headline numbers are in
 [`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`](benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md).
 

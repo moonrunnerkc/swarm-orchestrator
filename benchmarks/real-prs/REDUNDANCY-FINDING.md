@@ -100,3 +100,34 @@ The auditor's value is cheat-detection, and that value is real:
    independent models. Not "catches the bugs that get reverted."
 
 Reproduce the whole evaluation with `npm run benefit:full`.
+
+## Amendment: the execution-grounded layer (v11.1)
+
+The recommendation above stands, with one addition. The v11.1 cycle built an
+execution-grounded layer that does not read the diff: it provisions a sandboxed
+checkout and runs the change (diff-scoped mutation testing, issue-linked repro
+execution, coverage delta). Evaluated on the same regression and clean corpora
+(`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`):
+
+- **M = 1, R = 0, U = 1, F_clean = 3.357.** One regression PR (`trpc/trpc#6098`)
+  carries 8 covered mutation survivors on the exact lines its hotfix
+  (`trpc/trpc#6140`) later changed, and none of the cheat detectors, Semgrep, or
+  ESLint flag them. That is a genuine unique catch of a class the diff-reading
+  layers structurally cannot emit: a changed line the suite executes but does
+  not constrain.
+- It does **not** overturn the negative result. The layer found one
+  proof-correlated catch in the sampled corpus, not a recall win on reverted
+  bugs, and it carries a real false-alarm burden (3.357 advisory findings per
+  evaluated clean PR, concentrated in 2 of 14 PRs). Mutation viability is the
+  binding constraint: 4 of 12 repos run a discriminating mutation suite in a
+  generic sandbox.
+- Two naive catches were withdrawn after scrutiny rather than reported:
+  `expo/expo#35036` (its mutation killed 0 of 113 mutants, so its survivors are
+  non-validating) and `vercel/next.js#55978` (its issue repro failed to compile,
+  an extraction artifact, not the bug reproducing). The harness now suppresses
+  both classes at the source.
+
+Net position: the execution-grounded layer adds one orthogonal, advisory signal
+class (under-tested changed lines) worth keeping for the repos where mutation is
+viable, but it does not change the headline recommendation. Reproduce with `npm
+run execution-grounded:full` under a Node 22 toolchain.

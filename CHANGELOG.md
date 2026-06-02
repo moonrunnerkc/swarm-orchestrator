@@ -19,11 +19,13 @@ issue that still fails after the fix did not deliver), and a coverage delta (a
 changed line no test executes). The layer is off by default
 (`executionGrounded.enabled: true` to turn it on), needs no LLM, and costs
 nothing external. Verified end to end on `trpc/trpc#6098`: 69 mutants on the
-changed lines, 53 killed, 10 surviving plus 6 on uncovered lines, sixteen
-advisory findings no diff-only tool in this repo can emit. Full evaluation,
-the per-repo viability, and the headline corpus numbers are in
-`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`; reproduce with `npm
-run execution-grounded:full`.
+changed lines, 53 killed, 10 surviving on covered lines and 6 on uncovered
+lines, fifteen advisory findings (after de-duplication by file and line) no
+diff-only tool in this repo can emit; 8 of the covered survivors fall on the
+lines the hotfix `trpc/trpc#6140` later changed. Full evaluation, the per-repo
+viability, and the headline corpus numbers (M=1, R=0, U=1, F_clean=3.357) are
+in `benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`; reproduce with `npm
+run execution-grounded:full` under a Node 22 toolchain.
 
 #### Added
 
