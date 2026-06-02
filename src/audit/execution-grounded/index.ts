@@ -13,6 +13,8 @@ import { extractChangedLineRanges, isPlausiblyTestReachable, isTestFile } from '
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
 import type { ExecutionGroundedConfig } from '../cheat-detector/audit-config';
 import { provisionPRWorkspaces } from './sandbox';
+import { detectTestRunner } from './sandbox';
+import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
 import { runMutationCheck, type MutationResult, type MutationRunOutcome } from './mutation-check';
 import {
   computeCoverageDelta,
@@ -153,11 +155,21 @@ export interface ExecutionGroundedInput {
   githubToken?: string;
 }
 
+export interface PackagedMutationRun {
+  packageDir: string;
+  outcome: MutationRunOutcome;
+}
+export interface PackagedCoverageRun {
+  packageDir: string;
+  outcome: CoverageRunOutcome;
+}
+
 export interface ExecutionGroundedOutcome {
   findings: Finding[];
-  /** Per-check status for the evidence run and the report. */
-  mutation?: MutationRunOutcome;
-  coverage?: CoverageRunOutcome;
+  /** Per-package check status for the evidence run and the report. A PR can
+   *  touch more than one package; each is run in its own package directory. */
+  mutationRuns: PackagedMutationRun[];
+  coverageRuns: PackagedCoverageRun[];
   repros: ReproComparison[];
   skipped: string[];
 }
@@ -170,7 +182,7 @@ export interface ExecutionGroundedOutcome {
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], repros: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], skipped };
   if (!input.config.enabled) {
     skipped.push('executionGrounded disabled');
     return empty;
@@ -200,51 +212,72 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, repros: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
-    let coverageMap: CoverageMap | undefined;
-    if (input.config.coverage && Date.now() < deadline) {
-      const cov = computeCoverageDelta({
-        workspacePath: workspaces.post.workspacePath,
-        testRunner: workspaces.post.testRunner,
-        changedLines: changed,
-        timeoutMs: Math.max(1, deadline - Date.now()),
-        ...(input.evidenceDir !== undefined ? { evidenceDir: path.join(input.evidenceDir, 'coverage') } : {}),
-        ...cacheArg,
-      });
-      outcome.coverage = cov;
-      if (cov.ran) coverageMap = cov.coverage;
-      else skipped.push(`coverage: ${cov.skipReason ?? 'did not run'}`);
-    }
-
-    if (input.config.mutation && Date.now() < deadline) {
-      const mut = runMutationCheck({
-        workspacePath: workspaces.post.workspacePath,
-        changedLines: changed,
-        testRunner: workspaces.post.testRunner,
-        timeoutMs: Math.max(1, deadline - Date.now()),
-        ...(input.evidenceDir !== undefined ? { evidenceDir: path.join(input.evidenceDir, 'mutation') } : {}),
-        ...cacheArg,
-      });
-      outcome.mutation = mut;
-      if (mut.ran) {
-        const mf = mutationFindings(mut.results, coverageMap);
-        findings.push(...mf);
-      } else {
-        skipped.push(`mutation: ${mut.skipReason ?? 'did not run'}`);
+    // The corpus repos are workspaces, so a PR's changed files can span
+    // several packages. Run each check inside the package that owns its
+    // files (its test runner and config live there), and re-root the
+    // findings back to the repo-relative paths the diff used.
+    const scopes = groupChangedLinesByPackage(workspaces.post.workspacePath, changed);
+    for (const scope of scopes) {
+      if (Date.now() >= deadline) {
+        skipped.push(`wall-clock budget reached before package ${scope.packageDir || '<root>'}`);
+        break;
       }
-    }
+      const pkgPath =
+        scope.packageDir === '' ? workspaces.post.workspacePath : path.join(workspaces.post.workspacePath, scope.packageDir);
+      const runner = detectTestRunner(pkgPath);
+      const evDir = (sub: string): { evidenceDir: string } | Record<string, never> =>
+        input.evidenceDir !== undefined
+          ? { evidenceDir: path.join(input.evidenceDir, scope.packageDir || '_root', sub) }
+          : {};
+      const reroot = (f: Finding): Finding => ({
+        ...f,
+        location: { ...f.location, file: rerootToRepo(scope.packageDir, f.location.file) },
+      });
 
-    // Coverage findings, suppressing lines a mutation finding already raised.
-    if (outcome.coverage?.ran === true) {
-      const mutationLines = new Set(
-        findings
-          .filter((f) => f.category.startsWith('mutation-survives'))
-          .map((f) => `${f.location.file}:${f.location.line}`),
-      );
-      findings.push(...coverageFindings(outcome.coverage.deltas, mutationLines));
+      let coverageMap: CoverageMap | undefined;
+      if (input.config.coverage) {
+        const cov = computeCoverageDelta({
+          workspacePath: pkgPath,
+          testRunner: runner,
+          changedLines: scope.changedLines,
+          timeoutMs: Math.max(1, deadline - Date.now()),
+          ...evDir('coverage'),
+          ...cacheArg,
+        });
+        outcome.coverageRuns.push({ packageDir: scope.packageDir, outcome: cov });
+        if (cov.ran) coverageMap = cov.coverage;
+        else skipped.push(`coverage[${scope.packageDir || '<root>'}]: ${cov.skipReason ?? 'did not run'}`);
+      }
+
+      const pkgFindings: Finding[] = [];
+      if (input.config.mutation && Date.now() < deadline) {
+        const mut = runMutationCheck({
+          workspacePath: pkgPath,
+          changedLines: scope.changedLines,
+          testRunner: runner,
+          timeoutMs: Math.max(1, deadline - Date.now()),
+          ...evDir('mutation'),
+          ...cacheArg,
+        });
+        outcome.mutationRuns.push({ packageDir: scope.packageDir, outcome: mut });
+        if (mut.ran) pkgFindings.push(...mutationFindings(mut.results, coverageMap));
+        else skipped.push(`mutation[${scope.packageDir || '<root>'}]: ${mut.skipReason ?? 'did not run'}`);
+      }
+
+      // Coverage findings, suppressing lines a mutation finding already raised.
+      const lastCov = outcome.coverageRuns[outcome.coverageRuns.length - 1];
+      if (lastCov?.packageDir === scope.packageDir && lastCov.outcome.ran) {
+        const mutationLines = new Set(
+          pkgFindings.filter((f) => f.category.startsWith('mutation-survives')).map((f) => `${f.location.file}:${f.location.line}`),
+        );
+        pkgFindings.push(...coverageFindings(lastCov.outcome.deltas, mutationLines));
+      }
+
+      findings.push(...pkgFindings.map(reroot));
     }
 
     if (input.config.issueRepro && input.prText !== undefined && Date.now() < deadline) {

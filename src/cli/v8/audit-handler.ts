@@ -302,11 +302,17 @@ async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Prom
     logger.info(`execution-grounded skipped: ${outcome.skipped.join('; ')}`);
   }
 
-  const mutationReport = outcome.mutation?.rawReportPath;
-  const coverageReport = outcome.coverage?.rawReportPath;
-  const survivorAt = new Map<string, { mutator: string; status: string }>();
-  for (const m of outcome.mutation?.results ?? []) {
-    survivorAt.set(`${m.file}:${m.line}`, { mutator: m.mutator, status: m.status });
+  const coverageReport = outcome.coverageRuns.find((r) => r.outcome.rawReportPath !== undefined)?.outcome.rawReportPath;
+  const survivorAt = new Map<string, { mutator: string; status: string; evidencePath?: string }>();
+  for (const run of outcome.mutationRuns) {
+    for (const m of run.outcome.results) {
+      const repoFile = run.packageDir.length > 0 ? `${run.packageDir}/${m.file}` : m.file;
+      survivorAt.set(`${repoFile}:${m.line}`, {
+        mutator: m.mutator,
+        status: m.status,
+        ...(run.outcome.rawReportPath !== undefined ? { evidencePath: run.outcome.rawReportPath } : {}),
+      });
+    }
   }
 
   for (const finding of outcome.findings) {
@@ -321,7 +327,7 @@ async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Prom
         mutator: detail?.mutator ?? 'unknown',
         status: detail?.status ?? 'Survived',
       };
-      if (mutationReport !== undefined) (payload as PrAuditMutationFindingEntry).evidencePath = mutationReport;
+      if (detail?.evidencePath !== undefined) (payload as PrAuditMutationFindingEntry).evidencePath = detail.evidencePath;
       ledger.append<PrAuditMutationFindingEntry>(payload, aiAgent);
     } else if (finding.category === 'uncovered-changed-line') {
       const payload: Omit<PrAuditCoverageFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
