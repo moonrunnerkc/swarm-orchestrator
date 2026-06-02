@@ -1,0 +1,19 @@
+This PR fixes https://github.com/prisma/prisma/issues/23911.
+
+---
+
+It seems that `vitest` is incompatible with conditional dynamic module imports, which we use to resolve `import('#wasm-engine-loader')` to different modules depending on the JavaScript runtime that loads the module itself.
+When `@prisma/client` (with Wasm `driverAdapters`) is run through `vitest`, we get a runtime error:
+> "No such module .prisma/client/#wasm-engine-loader".
+
+It looks like `#wasm-engine-loader` is interpreted as a physical file to load, rather than an abstract dynamic import tag. This is inconsistent with how Node.js, Workerd, and other runtimes resolve modules.
+
+Here is a reproduction: https://github.com/vladinator1000/prisma-vitest-miniflare.
+
+---
+
+This PR provides a workaround:
+- if `getQueryEngineWasmModule` fails with an error that starts with `No such module`, try `import('./query_engine_bg.wasm')` directly
+- on other unexpected errors, keep on failing (we don't want to silently dismiss other unknown import problems)
+
+[Here](https://discord.com/channels/917386801235247114/917386801235247117/1252205218024919114) is a thread I've opened on Discord for this topic (click here for an invite to [Vitest's Discord](https://chat.vitest.dev)).

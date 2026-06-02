@@ -1,0 +1,59 @@
+In order to allow Cloudflare Durable Objects to hibernate while maintaining active WebSocket connections, this PR adds session resume/snapshot APIs to `TLSocketRoom`, replaces the periodic session pruning interval with on-demand pruning (with optional interval when a finite idle timeout is set), and updates both the `sync-cloudflare` template and the dotcom sync-worker to use the WebSocket Hibernation API.
+
+Closes #7754
+
+### Changes
+
+**`@tldraw/sync-core`**
+
+- Added `handleSocketResume()` to `TLSocketRoom` — restores a session from a `SessionStateSnapshot` without re-attaching event listeners (hibernation environments deliver events via class methods)
+- Added `getSessionSnapshot()` to `TLSocketRoom` — captures a connected session's state (schema, presence, flags) for persistence in WebSocket attachments; strips scribbles/chatMessage/meta from tldraw instance_presence to keep attachments small
+- Added optional `onSessionSnapshot` to `TLSocketRoom` — room debounces (5s) after message activity and invokes the callback with the session snapshot for persisting to WebSocket attachments; clears pending snapshot when the session closes
+- Exported `SessionStateSnapshot` interface
+- Added `handleResumedSession()` to `TLSyncRoom` — lower-level session restoration that reconstructs the session state machine
+- Replaced always-on interval pruning with: throttled on-demand pruning on message, one-shot `setTimeout` for `AwaitingRemoval` cleanup, and an optional interval that runs only when `clientTimeout` is finite and > 0 (so `clientTimeout: Infinity` keeps the DO hibernation-friendly)
+- Added `clientTimeout` option to `TLSyncRoom` constructor (set to `Infinity` in Cloudflare deployments since the platform handles keep-alive)
+
+**`sync-cloudflare` template**
+
+- Switched to `DurableObject` base class with `webSocketMessage`, `webSocketClose`, `webSocketError` handlers for hibernation
+- Added `setWebSocketAutoResponse` to handle ping/pong at the platform layer without waking the DO
+- On wake-up, reconstructs `TLSocketRoom` by iterating `ctx.getWebSockets()` and resuming sessions from deserialized attachments
+- Stores session snapshots in WebSocket attachments via TLSocketRoom's `onSessionSnapshot` (built-in 5s debounce)
+- When the DO is woken by a disconnecting socket, resume the session from the attachment briefly then close so the room can broadcast presence removal to other clients
+
+**`apps/dotcom/sync-worker` (TLDrawDurableObject)**
+
+- WebSocket hibernation: `setWebSocketAutoResponse` for ping/pong, `state.acceptWebSocket()`, `webSocketMessage`/`webSocketClose`/`webSocketError` handlers, attachment with sessionId/meta/isReadonly/snapshot, resume loop on room creation, resume-from-attachment on close for presence cleanup, `onSessionSnapshot` for snapshot storage (built-in debounce)
+- Replaced `createPostgresConnectionPool` with `TLPostgresPool` + Kysely so the DO can hibernate (no long-lived pg connections or timers); tear down pool when room becomes empty
+
+### Change type
+
+- [x] `feature`
+
+### Test plan
+
+1. Deploy the `sync-cloudflare` template to Cloudflare
+2. Open a document and draw some shapes
+3. Wait for the DO to hibernate (no activity for ~10s)
+4. Resume drawing — the session should seamlessly continue without reconnection
+5. With multiple clients, close one tab — other clients should see that user's presence disappear
+
+- [x] Unit tests
+
+### Release notes
+
+- Add WebSocket hibernation support to `TLSocketRoom` with new `handleSocketResume()` and `getSessionSnapshot()` methods
+- Add optional `onSessionSnapshot` to `TLSocketRoom` for debounced snapshot persistence (e.g. WebSocket attachments)
+- Replace always-on interval pruning with on-demand pruning and optional interval when `clientTimeout` is finite
+- Update `sync-cloudflare` template to use Cloudflare's WebSocket Hibernation API
+- Add WebSocket hibernation and `TLPostgresPool` to dotcom sync-worker TLDrawDurableObject
+
+### API changes
+
+- Added `TLSocketRoom.handleSocketResume()` for restoring sessions after hibernation
+- Added `TLSocketRoom.getSessionSnapshot()` for capturing session state (presence record may be stripped for size)
+- Added `onSessionSnapshot` option to `TLSocketRoom` (callback invoked after 5s idle; room clears pending snapshot on session close)
+- Added `SessionStateSnapshot` interface (exported from `@tldraw/sync-core`)
+- Added `clientTimeout` option to `TLSyncRoom` constructor
+- Changed `TLSyncRoom.pruneSessions` from a plain function to a throttled function (`DebouncedFuncLeading`)

@@ -1,0 +1,10 @@
+Mirrors mui/mui-x#22447.
+
+## Changes
+
+- **Run route screenshots concurrently.** The `routes.forEach` loop in `test/regressions/index.test.js` is wrapped in `describe.concurrent` and each test pulls a Playwright page out of a small lazy pool via a `test.extend` fixture. The fixture also clears `localStorage` before yielding, replacing the previous `beforeEach`.
+- **Keep stateful describe blocks sequential.** `Rating`, `Autocomplete`, `Switch`, `TextField`, and `Textarea` still run sequentially (outside `describe.concurrent`) but consume the same pool, so they get fresh isolated pages too. Forced-colors `try`/`finally` cleanups are preserved.
+- **`maxConcurrency: 4`** in `test/regressions/vitest.config.ts` bounds concurrent route tests, so the lazy pool naturally peaks at ~4 pages.
+- **Bumped `test_regressions` to `large`** (4 vCPU / 8 GB) on CircleCI to actually use the new parallelism.
+
+Locally on a 4-core machine the suite drops from ~68s to ~36s (~47% faster) over 631 route tests.

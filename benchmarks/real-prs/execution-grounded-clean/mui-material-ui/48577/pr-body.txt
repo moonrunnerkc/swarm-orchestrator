@@ -1,0 +1,11 @@
+Converts `@mui/styled-engine-sc` to true TypeScript (same setup as `@mui/utils`/`@mui/styled-engine`/`@mui/private-theming`): hand-written `.js` + `.d.ts` source replaced with `.ts`/`.tsx`, declarations now emitted by `tsc`, `--skipTsc` dropped, `tsconfig.build.json` added.
+
+The hand-written `.d.ts` over-claimed the type surface by re-exporting the entire `styled-components` named-export set (`export * from 'styled-components'`) while the runtime `.js` only re-exported `ThemeContext`, `keyframes`, `css`. To keep the exported type surface 100% identical (verified via a bidirectional type-equivalence probe over the root and every subpath entry), the new `src/index.ts` keeps `export * from 'styled-components'`, so the runtime JS now also re-exports the broader surface — fixing the prior type/runtime divergence rather than narrowing the types to match the runtime. The local default stays the dev-mode wrapper, cast to `typeof scStyled` so its public type matches the hand `.d.ts`'s `export { default } from 'styled-components'`.
+
+Other `.js` deltas are limited to standard true-TS conversion artifacts: propTypes assignments now wrap in `process.env.NODE_ENV !== 'production' ? … : void 0` via the `/* remove-proptypes */` marker, and `index`'s default export form becomes `function styled; export default styled;` (same runtime). `.d.ts` differences are type-preserving forms (`import type`, `export type *`, `declare`).
+
+There are no internal MUI workspace consumers of `@mui/styled-engine-sc`, so no downstream `tsconfig.build.json` `references` updates were needed.
+
+## Published artifact diff
+
+https://code-infra-dashboard.onrender.com/diff-package?package1=https%3A%2F%2Fpkg.pr.new%2Fmui%2Fmaterial-ui%2F%40mui%2Fstyled-engine-sc%4074a6177&package2=https%3A%2F%2Fpkg.pr.new%2Fmui%2Fmaterial-ui%2F%40mui%2Fstyled-engine-sc%402f907c1

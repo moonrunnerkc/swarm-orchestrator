@@ -1,0 +1,22 @@
+## Summary
+
+When a project manages CocoaPods via Bundler (i.e., has a `Gemfile` that lists `cocoapods` as a dependency), `pod-install` currently fails to detect it and only looks for a globally installed `pod` CLI. This causes "pod not found" errors for projects using `bundle install` to manage their Ruby dependencies.
+
+This PR adds Bundler detection to `pod-install` and `CocoaPodsPackageManager`:
+
+- **`isUsingBundlerAsync(projectRoot)`** — walks up from the project root looking for a `Gemfile` that contains `cocoapods`, then verifies `bundle exec pod --version` works
+- **`useBundler` constructor option** — when set, all pod commands (`install`, `update`, `--version`) run via `bundle exec pod` instead of bare `pod`
+- **`pod-install` CLI** — automatically detects Bundler and passes `useBundler` through to the package manager
+
+### Changes
+- `packages/@expo/package-manager/src/ios/CocoaPodsPackageManager.ts` — add `isUsingBundlerAsync()`, `findGemfile()`, `useBundler` support in constructor, `_runAsync`, `versionAsync`, `isCLIInstalledAsync`
+- `packages/pod-install/src/index.ts` — detect Bundler before CLI check, pass `useBundler` to manager
+- `packages/@expo/package-manager/src/ios/__tests__/CocoaPodsPackageManager-test.ts` — tests for Bundler detection and Bundler-mode execution
+
+## Test plan
+- [x] Added unit tests for `isUsingBundlerAsync` (no Gemfile, Gemfile without cocoapods, Gemfile with cocoapods but bundle fails, Gemfile with cocoapods and bundle succeeds)
+- [x] Added unit tests for Bundler-mode `versionAsync` and `isCLIInstalledAsync`
+- [x] Added unit test for Bundler-mode `installAsync`
+- [ ] Manual: create a project with `Gemfile` containing `gem 'cocoapods'`, run `bundle install`, then `npx pod-install` — should see "Using Bundler to run CocoaPods" and use `bundle exec pod install`
+
+Fixes #34949

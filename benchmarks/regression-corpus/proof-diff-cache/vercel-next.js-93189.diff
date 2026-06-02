@@ -1,0 +1,136 @@
+diff --git a/packages/next/src/build/templates/app-route.ts b/packages/next/src/build/templates/app-route.ts
+index 183e4f34832f..9d0599202428 100644
+--- a/packages/next/src/build/templates/app-route.ts
++++ b/packages/next/src/build/templates/app-route.ts
+@@ -408,7 +408,7 @@ export async function handler(
+               nodeNextReq,
+               nodeNextRes,
+               response,
+-              context.renderOpts.pendingWaitUntil
++              pendingWaitUntil
+             )
+             return null
+           }
+diff --git a/test/e2e/app-dir/app-static/app-static.test.ts b/test/e2e/app-dir/app-static/app-static.test.ts
+index 71d200f3f529..984258fa2d8a 100644
+--- a/test/e2e/app-dir/app-static/app-static.test.ts
++++ b/test/e2e/app-dir/app-static/app-static.test.ts
+@@ -3342,9 +3342,6 @@ describe('app-dir static/dynamic handling', () => {
+     // Prime the cache.
+     let res = await next.fetch(path)
+     expect(res.status).toBe(200)
+-
+-    // Consume the cache, the revalidations are completed on the end of the
+-    // stream so we need to wait for that to complete.
+     await res.text()
+ 
+     for (let i = 0; i < 6; i++) {
+@@ -3374,6 +3371,7 @@ describe('app-dir static/dynamic handling', () => {
+           )
+         }
+       }
++      const finishedAt = Date.now()
+ 
+       const startedResponding = +data.start
+       if (Number.isNaN(startedResponding)) {
+@@ -3387,12 +3385,17 @@ describe('app-dir static/dynamic handling', () => {
+         )
+       }
+ 
+-      // We just want to ensure the response isn't blocked on revalidating the fetch.
+-      // So we use the start time when route started processing not when we
+-      // send off the response because that includes cold boots of the infra.
++      // The response must not be blocked on the 3s background revalidation:
++      // neither the first byte (TTFB) nor the terminating chunk (res.end).
++      // Using the route-start time excludes cold-boot/infra latency.
+       if (startedStreaming - startedResponding >= 3000) {
+         throw new Error(
+-          `Response #${i} took too long to complete: ${startedStreaming - startedResponding}ms`
++          `Response #${i} first byte took too long: ${startedStreaming - startedResponding}ms`
++        )
++      }
++      if (finishedAt - startedResponding >= 3000) {
++        throw new Error(
++          `Response #${i} took too long to complete: ${finishedAt - startedResponding}ms`
+         )
+       }
+     }
+diff --git a/test/e2e/app-dir/use-cache-swr/app/delayed-route/route.ts b/test/e2e/app-dir/use-cache-swr/app/delayed-route/route.ts
+new file mode 100644
+index 000000000000..56df5ea66fd5
+--- /dev/null
++++ b/test/e2e/app-dir/use-cache-swr/app/delayed-route/route.ts
+@@ -0,0 +1,19 @@
++import { cacheLife } from 'next/cache'
++import { setTimeout } from 'timers/promises'
++
++async function getCachedData() {
++  'use cache'
++
++  cacheLife('seconds')
++
++  await setTimeout(1000)
++
++  return new Date().toISOString()
++}
++
++export async function GET() {
++  const cached = await getCachedData()
++  const dynamic = new Date().toISOString()
++
++  return Response.json({ cached, dynamic })
++}
+diff --git a/test/e2e/app-dir/use-cache-swr/use-cache-swr.test.ts b/test/e2e/app-dir/use-cache-swr/use-cache-swr.test.ts
+index fc73230a58be..0726e2b9e551 100644
+--- a/test/e2e/app-dir/use-cache-swr/use-cache-swr.test.ts
++++ b/test/e2e/app-dir/use-cache-swr/use-cache-swr.test.ts
+@@ -103,6 +103,49 @@ describe('use-cache-swr', () => {
+     expect(duration3).toBeLessThan(1000)
+   })
+ 
++  it('should serve stale data without blocking on the background regeneration (route handler)', async () => {
++    // Fetch 1: cold cache. The cached function blocks for ~1s.
++    const res1 = await next.fetch('/delayed-route')
++    const { cached: cached1, dynamic: dynamic1 } = await res1.json()
++    expect(cached1).toBeDateString()
++    expect(dynamic1).toBeDateString()
++
++    // Wait past the 1s revalidate window (cacheLife('seconds')).
++    await new Promise((resolve) => setTimeout(resolve, 1200))
++
++    outputIndex = next.cliOutput.length
++
++    // Fetch 2: stale hit. Should return the stale entry immediately and kick
++    // off the regeneration in the background, rather than blocking on the 1s
++    // delay in the cached function.
++    const start2 = Date.now()
++    const res2 = await next.fetch('/delayed-route')
++    const { cached: cached2, dynamic: dynamic2 } = await res2.json()
++    const duration2 = Date.now() - start2
++
++    expect(cached2).toBe(cached1)
++    expect(dynamic2).not.toBe(dynamic1)
++    expect(duration2).toBeLessThan(1000)
++
++    // Wait for the background regen to finish writing the fresh entry.
++    await retry(() => {
++      expect(next.cliOutput.slice(outputIndex)).toMatch(
++        /PersistentCacheHandler::set/
++      )
++    })
++
++    // Fetch 3: should serve the pre-warmed fresh entry from the background
++    // regen, not a new stale value.
++    const start3 = Date.now()
++    const res3 = await next.fetch('/delayed-route')
++    const { cached: cached3, dynamic: dynamic3 } = await res3.json()
++    const duration3 = Date.now() - start3
++
++    expect(cached3).not.toBe(cached1)
++    expect(dynamic3).not.toBe(dynamic2)
++    expect(duration3).toBeLessThan(1000)
++  })
++
+   it('should pass implicit tags to cache handler get() for nested caches during SWR', async () => {
+     const browser = await next.browser('/')
+     await browser.elementById('outer-data').text()

@@ -1,0 +1,24 @@
+diff --git a/.changeset/fix-persister-query-key-infer.md b/.changeset/fix-persister-query-key-infer.md
+new file mode 100644
+index 00000000000..e721d6dcfb9
+--- /dev/null
++++ b/.changeset/fix-persister-query-key-infer.md
+@@ -0,0 +1,5 @@
++---
++'@tanstack/query-core': patch
++---
++
++fix(query-core): wrap `persister`'s `TQueryKey` in `NoInfer` so that the `persister` slot no longer contributes to `TQueryKey` inference. Follow-up to #10510, which removed `NoInfer` on all three `persister` generics. Preserving `NoInfer<TQueryKey>` keeps that fix's benefit for `TQueryFnData` while preventing `TQueryKey` from widening to the augmented constraint when `Register.queryKey` is narrowed — which made `DataTag`-branded wrapper returns un-assignable in contravariant slots.
+diff --git a/packages/query-core/src/types.ts b/packages/query-core/src/types.ts
+index 6e26b02746a..dcd5f7e9e2e 100644
+--- a/packages/query-core/src/types.ts
++++ b/packages/query-core/src/types.ts
+@@ -246,7 +246,7 @@ export interface QueryOptions<
+    */
+   gcTime?: number
+   queryFn?: QueryFunction<TQueryFnData, TQueryKey, TPageParam> | SkipToken
+-  persister?: QueryPersister<TQueryFnData, TQueryKey, TPageParam>
++  persister?: QueryPersister<TQueryFnData, NoInfer<TQueryKey>, TPageParam>
+   queryHash?: string
+   queryKey?: TQueryKey
+   queryKeyHashFn?: QueryKeyHashFunction<TQueryKey>

@@ -1,0 +1,22 @@
+## Current Behavior
+
+The `projectsAffectedByDependencyUpdates: "auto"` setting only works for pnpm lock files. For npm (`package-lock.json`), yarn (`yarn.lock`), and bun (`bun.lock`/`bun.lockb`), auto mode silently returns an empty array -- meaning lockfile-only changes (e.g. `npm audit fix`, transitive dependency updates) produce zero affected projects.
+
+## Expected Behavior
+
+Auto mode detects affected projects from lock file changes for all supported package managers:
+
+- **pnpm** (`pnpm-lock.yaml`): Inspects the `importers` section to determine exactly which workspace projects had dependency changes (unchanged).
+- **npm** (`package-lock.json`): Inspects the `packages` entries to determine which workspace projects had dependency changes.
+- **bun** (`bun.lock`): Inspects the `workspaces` section to determine which workspace projects had dependency changes.
+- **yarn** (`yarn.lock`): The lock file is a flat list with no per-project structure, so all projects are marked as affected when any dependency changes.
+- **Binary lock files** (`bun.lockb`) / **WholeFileChange**: Cannot be parsed for granular changes, so all projects are marked as affected.
+
+The implementation uses a `LOCK_FILE_RESOLVERS` map with a `SupportedLockFile` type guard so that adding a new lock file format requires adding exactly one entry -- no separate lists to keep in sync.
+
+## Related Issue(s)
+
+Follow-up to #34937 which documented the pnpm-only limitation.
+
+Fixes NXC-4185
+Fixes https://github.com/nrwl/nx/issues/35173

@@ -1,0 +1,25 @@
+Adds explicit Terms of Service acceptance before Wrangler creates an anonymous temporary preview account via `--temporary`.
+
+What changed:
+
+- Prompts for explicit acceptance before creating a new anonymous preview account.
+- Includes links to Cloudflare's Terms of Service and Privacy Policy in the prompt.
+- Requires the user to type `yes`; any other input fails closed before provisioning.
+- Handles non-interactive stdin, including piped input and empty/closed stdin.
+- Skips the prompt when reusing an already-cached anonymous preview account.
+- Keeps `--temporary` scoped to non-interactive auth fallback in this PR.
+- Includes the interactive anonymous-auth behavior from #14093, now merged into this branch.
+- Updates anonymous account provisioning to send the provisioning service's required TOS acceptance payload.
+- Preserves environment-specific anonymous account caches and clears cached preview accounts on logout.
+
+---
+
+- Tests
+  - [x] Tests included/updated
+  - [ ] Automated tests not possible - manual testing has been completed as follows:
+  - [ ] Additional testing not necessary because:
+- Public documentation
+  - [ ] Cloudflare docs PR(s): <!--e.g. <https://github.com/cloudflare/cloudflare-docs/pull/>...-->
+  - [x] Documentation not necessary because: `--allow-anonymous` is a hidden Wrangler flag and the required legal URLs are included directly in the CLI prompt.
+
+*A picture of a cute animal (not mandatory, but encouraged)*

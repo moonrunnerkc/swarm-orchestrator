@@ -1,0 +1,73 @@
+diff --git a/packages/integrations/cloudflare/test/fixtures/astro-env/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/astro-env/wrangler.toml
+index 121ab5993ac1..b7f916a4f0ac 100644
+--- a/packages/integrations/cloudflare/test/fixtures/astro-env/wrangler.toml
++++ b/packages/integrations/cloudflare/test/fixtures/astro-env/wrangler.toml
+@@ -1,4 +1,5 @@
+ name = "astro-env"
++compatibility_flags = ["nodejs_compat"]
+ 
+ [vars]
+ API_URL = "https://google.de"
+diff --git a/packages/integrations/cloudflare/test/fixtures/compile-image-service/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/compile-image-service/wrangler.toml
+new file mode 100644
+index 000000000000..74b9c7dec201
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/compile-image-service/wrangler.toml
+@@ -0,0 +1 @@
++compatibility_flags = ["nodejs_compat"]
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/module-loader/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/module-loader/wrangler.toml
+new file mode 100644
+index 000000000000..74b9c7dec201
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/module-loader/wrangler.toml
+@@ -0,0 +1 @@
++compatibility_flags = ["nodejs_compat"]
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/with-solid-js/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/with-solid-js/wrangler.toml
+new file mode 100644
+index 000000000000..74b9c7dec201
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/with-solid-js/wrangler.toml
+@@ -0,0 +1 @@
++compatibility_flags = ["nodejs_compat"]
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/with-svelte/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/with-svelte/wrangler.toml
+new file mode 100644
+index 000000000000..74b9c7dec201
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/with-svelte/wrangler.toml
+@@ -0,0 +1 @@
++compatibility_flags = ["nodejs_compat"]
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/with-vue/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/with-vue/wrangler.toml
+new file mode 100644
+index 000000000000..74b9c7dec201
+--- /dev/null
++++ b/packages/integrations/cloudflare/test/fixtures/with-vue/wrangler.toml
+@@ -0,0 +1 @@
++compatibility_flags = ["nodejs_compat"]
+\ No newline at end of file
+diff --git a/packages/integrations/cloudflare/test/fixtures/wrangler-preview-platform/wrangler.toml b/packages/integrations/cloudflare/test/fixtures/wrangler-preview-platform/wrangler.toml
+index ba0fa64c4b09..321c3e211327 100644
+--- a/packages/integrations/cloudflare/test/fixtures/wrangler-preview-platform/wrangler.toml
++++ b/packages/integrations/cloudflare/test/fixtures/wrangler-preview-platform/wrangler.toml
+@@ -1,4 +1,5 @@
+ name = "test"
++compatibility_flags = ["nodejs_compat"]
+ 
+ [vars]
+ COOL = "ME"
+diff --git a/packages/integrations/cloudflare/test/wrangler-preview-platform.test.js b/packages/integrations/cloudflare/test/wrangler-preview-platform.test.js
+index bf1fb5c4724d..77a7cb18785a 100644
+--- a/packages/integrations/cloudflare/test/wrangler-preview-platform.test.js
++++ b/packages/integrations/cloudflare/test/wrangler-preview-platform.test.js
+@@ -19,7 +19,7 @@ describe('WranglerPreviewPlatform', () => {
+ 				if (data.toString().includes('http://127.0.0.1:8788')) resolve();
+ 			});
+ 			wrangler.stderr.on('data', (_data) => {
+-				// console.log('[stderr]', data.toString());
++				// console.log('[stderr]', _data.toString());
+ 			});
+ 		});
+ 	});

@@ -1,0 +1,14 @@
+This PR adds tagging behavior that applies appropriate service and environment tags to Workers with multiple environments when deploying or uploading a new version. If any environments are detected in the Wrangler config file, running `wrangler deploy` or `wrangler version upload` will apply a `cf:service=${topLevelName}` and (if a `--env` was specified) a `cf:environment=${environmentName}` tag. This metadata will be used by the Cloudflare Dashboard to group these Workers together in a more user-friendly way.
+
+This PR also adds a new `definedEnvironments` computed field to Wrangler config that can be used to more easily determine whether a Worker uses environments.
+
+- Tests
+  - [x] Tests included
+  - [ ] Tests not necessary because:
+- Public documentation
+  - [ ] Cloudflare docs PR(s):
+  - [x] Documentation not necessary because: not a public-facing Wrangler feature
+- Wrangler V3 Backport
+  - [ ] Wrangler PR: <!--e.g. <https://github.com/cloudflare/workers-sdk/pull/>...-->
+  - [x] Not necessary because: Not scoped for v3
+

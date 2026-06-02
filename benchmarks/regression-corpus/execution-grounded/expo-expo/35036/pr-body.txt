@@ -1,0 +1,83 @@
+Related #23431
+
+# Why
+
+We're never using any functionality in `fs-extra` that doesn't exist in Node.js' `node:fs` module already, especially assuming Node 18+ support. It also is a package that's duplicate excessively across the monorepo and on `main` we're currently installing **five** different versions of it. While we can align most of these, since no functionality in `fs-extra` cannot be replaced with a 1–3 line change, it's easier to just drop it.
+
+This removes **three** copies of `fs-extra` from typical expo projects.
+Including transitive dependencies it'll remove 7–8 packages from a typical project.
+
+**Overview of code mentions and reviewable changes:**
+
+| Packages | Changes |
+| - | - |
+| @expo/cli | `src/utils/dir.ts` changes affecting several sub-commands |
+| @expo/config-types | **only the script changed (& tested)** |
+| @expo/image-utils | `Download.ts`, `Cache.ts` and `jimp.ts` |
+| @expo/metro-config | `serializer/exportHermes.ts` |
+| @expo/package-manager | **only tests changed** |
+| @expo/prebuild-config | `plugins/unversioned/expo-splash-screen`, `plugins/unversioned/expo-notifications`, `plugins/icons` |
+| babel-preset-expo | **only tests changed** |
+| create-expo-module | `src/createExampleApp.ts` and `src/create-expo-module.ts` |
+| create-expo-nightly | `Project.ts` and `ExpoRepo` |
+| expo-modules-autolinking | `autolinking/findModules.ts`, `src/autolinking/mergeLinkingOptions.ts` and `src/platforms/` |
+| expo-updates | `utils/src/workflow.ts` and `cli/src/syncConfigurationToNativeAsync.ts` |
+| patch-project | `src/cli/dir.ts` (tests cover this) |
+
+# How
+
+Typically the replacements are:
+- `mkdirp -> mkdir(..., { recursive: true })`
+- `writeJSON -> writeFile(..., JSON.stringify(...))`
+- `pathExists -> existsSync`
+- `open -> promises.open` while using `fd` methods
+- `copy -> cpSync/cp` (only used twice)
+- `remove -> rm(..., { recursive: true, force: true })`
+- `ensureDir -> `mkdir(..., { recursive: true })`
+- other functions are typically re-exports from `fs`
+
+**Affected monorepo packages:**
+- `@expo/cli`
+- `@expo/image-utils`
+- `expo-updates`
+- `expo-modules-autolinking`
+- `@expo/metro-config`
+- `@expo/prebuild-config`
+- `patch-project`
+- `expo-test-runner`
+- `create-expo-module`
+- `create-expo-nightly`
+
+**Changed but unaffected:** (No published files change)
+- `babel-preset-expo` contains a test file that relied on `fs-extra`
+- `@expo/package-manager` contains a test file that relied on `fs-extra`
+- `@expo/config-types` contains a script that relied on `fs-extra`
+
+# Test Plan
+
+- [x] Existing tests and integration/e2e tests
+- [x] Update mocks in `@expo/cli/src/export/__tests__/exportHermes.test.ts`
+- [x] Run `@expo/cli` commands manually that depend on `src/utils/dir.ts`
+  - [x] `rm -r dist && expo export -p web`
+  - [x] `rm -r ios && expo prebuild -p ios`
+  - [x] `expo export:embed --platform android --bundle-output build/output.js`
+- [x] Run `@expo/config-types/scripts/generate.ts`
+- [x] Run `expo export` to check `@expo/metro-config/build/serializer/exportHermes.js`
+- [x] Run `@expo/prebuild-config`'s unversioned splash plugin (may already be covered?)
+- [x] Run `@expo/prebuild-config`'s unversioned notifications plugin (may already be covered?)
+- [x] Run `@expo/prebuild-config`'s icons plugin (may already be covered?)
+- [x] Run `create-expo-module` (check for overriding existing directories)
+- [x] Run `create-expo-nightly` (check for overriding existing directories)
+- ~Run `expo-test-runner`~ (no existing tests, example setup, or docs present)
+- [x] Test `expo-updates` functionality affected by `expo-updates/utils/src/workflow.ts`
+- [x] Test `expo-updates` CLI features affected by `expo-updates/cli/build/syncConfigurationToNativeAsync`
+
+# Checklist
+
+<!--
+Please check the appropriate items below if they apply to your diff.
+-->
+
+- [x] I added a `changelog.md` entry and rebuilt the package sources according to [this short guide](https://github.com/expo/expo/blob/main/CONTRIBUTING.md#-before-submitting)
+- [x] This diff will work correctly for `npx expo prebuild` & EAS Build (eg: updated a module plugin).
+- [ ] Conforms with the [Documentation Writing Style Guide](https://github.com/expo/expo/blob/main/guides/Expo%20Documentation%20Writing%20Style%20Guide.md)

@@ -1,0 +1,1313 @@
+diff --git a/packages/patch-project/CHANGELOG.md b/packages/patch-project/CHANGELOG.md
+index 797b61e601a448..21e74b78aaa6d8 100644
+--- a/packages/patch-project/CHANGELOG.md
++++ b/packages/patch-project/CHANGELOG.md
+@@ -8,6 +8,8 @@
+ 
+ ### 🐛 Bug fixes
+ 
++- Fixed running error on SDK 53. ([#37923](https://github.com/expo/expo/pull/37923) by [@kudo](https://github.com/kudo))
++
+ ### 💡 Others
+ 
+ ## 0.2.9 - 2025-07-03
+diff --git a/packages/patch-project/build/cli/dir.d.ts b/packages/patch-project/build/cli/dir.d.ts
+index 60ea6eabd1ecdd..6d05c08e064253 100644
+--- a/packages/patch-project/build/cli/dir.d.ts
++++ b/packages/patch-project/build/cli/dir.d.ts
+@@ -1,3 +1,3 @@
+ export declare function directoryExistsAsync(file: string): Promise<boolean>;
+-export declare function ensureDirectoryAsync(path: string): Promise<void>;
++export declare function ensureDirectoryAsync(path: string): Promise<string>;
+ export declare function moveAsync(src: string, dest: string): Promise<void>;
+diff --git a/packages/patch-project/build/cli/dir.js b/packages/patch-project/build/cli/dir.js
+index b37814612092b6..7d130c0c6afb48 100644
+--- a/packages/patch-project/build/cli/dir.js
++++ b/packages/patch-project/build/cli/dir.js
+@@ -13,6 +13,7 @@ async function directoryExistsAsync(file) {
+ }
+ async function ensureDirectoryAsync(path) {
+     await fs_1.default.promises.mkdir(path, { recursive: true });
++    return path;
+ }
+ async function moveAsync(src, dest) {
+     // First, remove target, so there are no conflicts (explicit overwrite)
+diff --git a/packages/patch-project/build/cli/dir.js.map b/packages/patch-project/build/cli/dir.js.map
+index c20ed4c9a85650..f9e8f746354dfa 100644
+--- a/packages/patch-project/build/cli/dir.js.map
++++ b/packages/patch-project/build/cli/dir.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"dir.js","sourceRoot":"","sources":["../../src/cli/dir.ts"],"names":[],"mappings":";;;;;AAGA,oDAEC;AAED,oDAEC;AAED,8BAiBC;AA5BD,4CAAoB;AACpB,gDAAwB;AAEjB,KAAK,UAAU,oBAAoB,CAAC,IAAY;IACrD,OAAO,CAAC,MAAM,YAAE,CAAC,QAAQ,CAAC,IAAI,CAAC,IAAI,CAAC,CAAC,KAAK,CAAC,GAAG,EAAE,CAAC,IAAI,CAAC,CAAC,EAAE,WAAW,EAAE,IAAI,KAAK,CAAC;AAClF,CAAC;AAEM,KAAK,UAAU,oBAAoB,CAAC,IAAY;IACrD,MAAM,YAAE,CAAC,QAAQ,CAAC,KAAK,CAAC,IAAI,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;AACrD,CAAC;AAEM,KAAK,UAAU,SAAS,CAAC,GAAW,EAAE,IAAY;IACvD,uEAAuE;IACvE,MAAM,YAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,IAAI,EAAE,EAAE,KAAK,EAAE,IAAI,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;IAC7D,0DAA0D;IAC1D,MAAM,YAAE,CAAC,QAAQ,CAAC,KAAK,CAAC,cAAI,CAAC,OAAO,CAAC,IAAI,CAAC,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;IACjE,IAAI,CAAC;QACH,sDAAsD;QACtD,MAAM,YAAE,CAAC,QAAQ,CAAC,MAAM,CAAC,GAAG,EAAE,IAAI,CAAC,CAAC;IACtC,CAAC;IAAC,OAAO,KAAU,EAAE,CAAC;QACpB,IAAI,KAAK,CAAC,IAAI,KAAK,OAAO,EAAE,CAAC;YAC3B,qFAAqF;YACrF,MAAM,YAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,GAAG,EAAE,IAAI,EAAE,EAAE,YAAY,EAAE,IAAI,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;YACzE,MAAM,YAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,KAAK,EAAE,IAAI,EAAE,CAAC,CAAC;QAC9D,CAAC;aAAM,CAAC;YACN,MAAM,KAAK,CAAC;QACd,CAAC;IACH,CAAC;AACH,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"dir.js","sourceRoot":"","sources":["../../src/cli/dir.ts"],"names":[],"mappings":";;;;;AAGA,oDAEC;AAED,oDAGC;AAED,8BAiBC;AA7BD,4CAAoB;AACpB,gDAAwB;AAEjB,KAAK,UAAU,oBAAoB,CAAC,IAAY;IACrD,OAAO,CAAC,MAAM,YAAE,CAAC,QAAQ,CAAC,IAAI,CAAC,IAAI,CAAC,CAAC,KAAK,CAAC,GAAG,EAAE,CAAC,IAAI,CAAC,CAAC,EAAE,WAAW,EAAE,IAAI,KAAK,CAAC;AAClF,CAAC;AAEM,KAAK,UAAU,oBAAoB,CAAC,IAAY;IACrD,MAAM,YAAE,CAAC,QAAQ,CAAC,KAAK,CAAC,IAAI,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;IACnD,OAAO,IAAI,CAAC;AACd,CAAC;AAEM,KAAK,UAAU,SAAS,CAAC,GAAW,EAAE,IAAY;IACvD,uEAAuE;IACvE,MAAM,YAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,IAAI,EAAE,EAAE,KAAK,EAAE,IAAI,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;IAC7D,0DAA0D;IAC1D,MAAM,YAAE,CAAC,QAAQ,CAAC,KAAK,CAAC,cAAI,CAAC,OAAO,CAAC,IAAI,CAAC,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;IACjE,IAAI,CAAC;QACH,sDAAsD;QACtD,MAAM,YAAE,CAAC,QAAQ,CAAC,MAAM,CAAC,GAAG,EAAE,IAAI,CAAC,CAAC;IACtC,CAAC;IAAC,OAAO,KAAU,EAAE,CAAC;QACpB,IAAI,KAAK,CAAC,IAAI,KAAK,OAAO,EAAE,CAAC;YAC3B,qFAAqF;YACrF,MAAM,YAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,GAAG,EAAE,IAAI,EAAE,EAAE,YAAY,EAAE,IAAI,EAAE,SAAS,EAAE,IAAI,EAAE,CAAC,CAAC;YACzE,MAAM,YAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,SAAS,EAAE,IAAI,EAAE,KAAK,EAAE,IAAI,EAAE,CAAC,CAAC;QAC9D,CAAC;aAAM,CAAC;YACN,MAAM,KAAK,CAAC;QACd,CAAC;IACH,CAAC;AACH,CAAC"}
+\ No newline at end of file
+diff --git a/packages/patch-project/build/cli/normalizeNativeProjects.d.ts b/packages/patch-project/build/cli/normalizeNativeProjects.d.ts
+index 3a207f6bb87c38..e6a2811c2b7ef9 100644
+--- a/packages/patch-project/build/cli/normalizeNativeProjects.d.ts
++++ b/packages/patch-project/build/cli/normalizeNativeProjects.d.ts
+@@ -1,3 +1,4 @@
++import { XcodeProject } from '@bacons/xcode';
+ import { type ModPlatform } from 'expo/config-plugins';
+ import type { WorkingDirectories } from './workingDirectories';
+ interface Params {
+@@ -15,4 +16,14 @@ export declare function normalizeNativeProjectsAsync(params: Params): Promise<Ba
+  * Revert the changes made by `normalizeNativeProjectsAsync()`.
+  */
+ export declare function revertNormalizeNativeProjectsAsync(backupFileMappings: BackupFileMappings): Promise<void>;
++/**
++ * Normalize the Xcode project file by removing some dynamic values.
++ * - Remove the `noop-file.swift` file that is generated by the prebuild process.
++ * - Remove the Swift bridging header file that is generated by the prebuild process.
++ * - Remove the `ExpoModulesProvider.swift` that is generated by expo-modules-autolinking and `pod install`.
++ * - Remove the `PrivacyInfo.xcprivacy` file that is generated by `pod install`.
++ * - Remove the build phase that is generated by expo-modules-autolinking and `pod install`.
++ * - Remove the all the other CocoaPods generated properties.
++ */
++export declare function normalizeXcodeProjectAsync(projectRoot: string, xcodeProjectPath: string): Promise<XcodeProject>;
+ export {};
+diff --git a/packages/patch-project/build/cli/normalizeNativeProjects.js b/packages/patch-project/build/cli/normalizeNativeProjects.js
+index 4a8fea8653c99a..e6a1213dcc233b 100644
+--- a/packages/patch-project/build/cli/normalizeNativeProjects.js
++++ b/packages/patch-project/build/cli/normalizeNativeProjects.js
+@@ -5,6 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.normalizeNativeProjectsAsync = normalizeNativeProjectsAsync;
+ exports.revertNormalizeNativeProjectsAsync = revertNormalizeNativeProjectsAsync;
++exports.normalizeXcodeProjectAsync = normalizeXcodeProjectAsync;
++const xcode_1 = require("@bacons/xcode");
++const json_1 = require("@bacons/xcode/json");
+ const config_plugins_1 = require("expo/config-plugins");
+ const promises_1 = __importDefault(require("fs/promises"));
+ const path_1 = __importDefault(require("path"));
+@@ -35,7 +38,8 @@ async function normalizeIosProjectsAsync({ projectRoot, workingDirectories, back
+         await promises_1.default.copyFile(xcodeProjectPath, xcodeProjectPathBackup);
+         backupFileMappings[xcodeProjectPath] = xcodeProjectPathBackup;
+     }
+-    await normalizeXcodeProjectAsync(projectRoot, xcodeProjectPath);
++    const normalizedProject = await normalizeXcodeProjectAsync(projectRoot, xcodeProjectPath);
++    await promises_1.default.writeFile(xcodeProjectPath, (0, json_1.build)(normalizedProject.toJSON()), 'utf8');
+     return backupFileMappings;
+ }
+ /**
+@@ -43,51 +47,119 @@ async function normalizeIosProjectsAsync({ projectRoot, workingDirectories, back
+  * - Remove the `noop-file.swift` file that is generated by the prebuild process.
+  * - Remove the Swift bridging header file that is generated by the prebuild process.
+  * - Remove the `ExpoModulesProvider.swift` that is generated by expo-modules-autolinking and `pod install`.
+- * - Remove the `[Expo] Configure project` build phase that is generated by expo-modules-autolinking and `pod install`.
+- * - Remove the CocoaPods build phases that are generated by `pod install`.
++ * - Remove the `PrivacyInfo.xcprivacy` file that is generated by `pod install`.
++ * - Remove the build phase that is generated by expo-modules-autolinking and `pod install`.
++ * - Remove the all the other CocoaPods generated properties.
+  */
+ async function normalizeXcodeProjectAsync(projectRoot, xcodeProjectPath) {
+     const projectName = config_plugins_1.IOSConfig.XcodeUtils.getProjectName(projectRoot);
+-    const project = config_plugins_1.IOSConfig.XcodeUtils.getPbxproj(projectRoot);
+-    const mainAppGroup = findXcodeProjectMainAppGroupKey(project, projectName);
+-    project.removeSourceFile('noop-file.swift', null, mainAppGroup);
+-    project.removeSourceFile('ExpoModulesProvider.swift', null, mainAppGroup);
+-    project.removeSourceFile(`${projectName}-Bridging-Header.h`, null, mainAppGroup);
+-    removeXcodeProjectBuildPhase(project, '[Expo] Configure project');
+-    removeXcodeProjectBuildPhase(project, '[CP] Embed Pods Frameworks');
+-    removeXcodeProjectBuildPhase(project, '[CP] Check Pods Manifest.lock');
+-    removeXcodeProjectBuildPhase(project, '[CP] Copy Pods Resources');
+-    await promises_1.default.writeFile(xcodeProjectPath, project.writeSync(), 'utf8');
+-}
+-/**
+- * Find the main app group key in the Xcode project.
+- */
+-function findXcodeProjectMainAppGroupKey(project, projectName) {
+-    const targetGroupKey = project.findPBXGroupKey({ name: projectName });
+-    // Sanity check
+-    const { firstProject } = project.getFirstProject();
+-    const mainGroup = project.getPBXGroupByKey(firstProject.mainGroup);
+-    // @ts-expect-error
+-    const targetGroupKey2 = mainGroup?.children.find(({ comment }) => comment === projectName)?.value;
+-    if (!targetGroupKey || targetGroupKey !== targetGroupKey2) {
+-        throw new Error('Unable to find the main app group key');
++    const project = xcode_1.XcodeProject.open(xcodeProjectPath);
++    // Remove generated PBXGroup
++    //   - file references
++    //   - generated groups like `Pods` and `Supporting`
++    const mainGroup = project.rootObject.props.mainGroup;
++    for (const child of mainGroup.props.children) {
++        if (child.props.isa === 'PBXGroup' && child.props.name === projectName) {
++            const mainAppGroup = child;
++            for (const mainAppGroupChild of mainAppGroup.props.children) {
++                if (mainAppGroupChild.props.isa === 'PBXFileReference' &&
++                    ['noop-file.swift', `${projectName}-Bridging-Header.h`, 'PrivacyInfo.xcprivacy'].includes(mainAppGroupChild.props.name ?? '')) {
++                    mainAppGroupChild.removeFromProject();
++                }
++            }
++            for (const mainAppGroupChild of mainAppGroup.getChildGroups()) {
++                if (mainAppGroupChild.props.name === 'Supporting') {
++                    mainAppGroupChild.removeFromProject();
++                }
++            }
++        }
++        if (child.props.isa === 'PBXGroup' && child.props.name === 'Pods') {
++            child.removeFromProject();
++        }
++    }
++    // Remove ExpoModulesProviders group
++    for (const child of mainGroup.getChildGroups()) {
++        if (child.props.isa === 'PBXGroup' && child.props.name === 'ExpoModulesProviders') {
++            for (const grandChild of child.getChildGroups()) {
++                grandChild.removeFromProject();
++            }
++            child.removeFromProject();
++        }
++    }
++    // Remove shell script build phases
++    const mainAppTarget = project.rootObject.getMainAppTarget();
++    for (const removeBuildPhaseName of [
++        '[Expo] Configure project',
++        '[CP] Embed Pods Frameworks',
++        '[CP] Check Pods Manifest.lock',
++        '[CP] Copy Pods Resources',
++    ]) {
++        const buildPhases = mainAppTarget?.props.buildPhases;
++        for (const buildPhase of buildPhases ?? []) {
++            if (buildPhase?.isa === 'PBXShellScriptBuildPhase' &&
++                buildPhase.props.name === removeBuildPhaseName) {
++                buildPhase.removeFromProject();
++                removeChildrenByUuid(buildPhases ?? [], buildPhase.uuid);
++            }
++        }
++    }
++    // Remove frameworks build phase
++    const frameworksBuildPhase = mainAppTarget?.getFrameworksBuildPhase();
++    for (const file of frameworksBuildPhase?.props.files ?? []) {
++        if (file.isa === 'PBXBuildFile' &&
++            file.props.fileRef.props.path === `libPods-${projectName}.a`) {
++            removeChildrenByUuid(frameworksBuildPhase?.props.files ?? [], file.uuid);
++        }
++    }
++    // Remove resources build phase
++    const resourcesBuildPhase = mainAppTarget?.getResourcesBuildPhase();
++    for (const file of resourcesBuildPhase?.props.files ?? []) {
++        if (file.isa === 'PBXBuildFile' && file.props.fileRef.props.name === 'PrivacyInfo.xcprivacy') {
++            removeChildrenByUuid(resourcesBuildPhase?.props.files ?? [], file.uuid);
++        }
++    }
++    const sourcesBuildPhase = mainAppTarget?.getSourcesBuildPhase();
++    for (const file of sourcesBuildPhase?.props.files ?? []) {
++        if (file.isa === 'PBXBuildFile' &&
++            ['ExpoModulesProvider.swift', 'PrivacyInfo.xcprivacy'].includes(file.props.fileRef.props.name ?? '')) {
++            removeChildrenByUuid(sourcesBuildPhase?.props.files ?? [], file.uuid);
++        }
++    }
++    // Remove frameworks group
++    const frameworksGroup = project.rootObject.getFrameworksGroup();
++    for (const child of frameworksGroup.props.children) {
++        if (child.props.isa === 'PBXFileReference' && child.props.path === `libPods-${projectName}.a`) {
++            child.removeFromProject();
++            removeChildrenByUuid(frameworksGroup.props.children ?? [], child.uuid);
++        }
++    }
++    // Remove `baseConfigurationReference` for Pods xcconfig
++    const buildConfigurationList = mainAppTarget?.props.buildConfigurationList;
++    for (const buildConfiguration of buildConfigurationList?.props.buildConfigurations ?? []) {
++        if ([`Pods-${projectName}.debug.xcconfig`, `Pods-${projectName}.release.xcconfig`].includes(buildConfiguration.props.baseConfigurationReference?.props.name ?? '')) {
++            delete buildConfiguration.props.baseConfigurationReference;
++        }
++    }
++    // Remove additional file references
++    for (const child of project.values()) {
++        if (child.isa === 'PBXFileReference' &&
++            [
++                'ExpoModulesProvider.swift',
++                `Pods-${projectName}.debug.xcconfig`,
++                `Pods-${projectName}.release.xcconfig`,
++            ].includes(child.props.name ?? '')) {
++            child.removeFromProject();
++        }
+     }
+-    return targetGroupKey;
++    return project;
+ }
+ /**
+- * Remove a shell script build phase from the Xcode project.
++ * Remove a child by its UUID from a pbx array.
+  */
+-function removeXcodeProjectBuildPhase(project, name) {
+-    const [, nativeTarget] = config_plugins_1.IOSConfig.Target.findFirstNativeTarget(project);
+-    // @ts-expect-error
+-    const index = nativeTarget.buildPhases.findIndex((item) => item.comment === name);
+-    if (index < 0) {
+-        return;
++function removeChildrenByUuid(children, uuid) {
++    const index = children.findIndex((child) => child.uuid === uuid);
++    if (index >= 0) {
++        children?.splice(index, 1);
+     }
+-    const buildPhaseId = nativeTarget.buildPhases[index].value;
+-    nativeTarget.buildPhases.splice(index, 1);
+-    const buildPhases = project.getPBXObject('PBXShellScriptBuildPhase');
+-    delete buildPhases[buildPhaseId];
+-    delete buildPhases[`${buildPhaseId}_comment`];
+ }
+ //# sourceMappingURL=normalizeNativeProjects.js.map
+\ No newline at end of file
+diff --git a/packages/patch-project/build/cli/normalizeNativeProjects.js.map b/packages/patch-project/build/cli/normalizeNativeProjects.js.map
+index c7f69dadb9dfb4..abf5156643ba5d 100644
+--- a/packages/patch-project/build/cli/normalizeNativeProjects.js.map
++++ b/packages/patch-project/build/cli/normalizeNativeProjects.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"normalizeNativeProjects.js","sourceRoot":"","sources":["../../src/cli/normalizeNativeProjects.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"normalizeNativeProjects.js","sourceRoot":"","sources":["../../src/cli/normalizeNativeProjects.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/patch-project/e2e/__tests__/localPackages.ts b/packages/patch-project/e2e/__tests__/localPackages.ts
+index 40de0b882fbf39..e95811ce93472f 100644
+--- a/packages/patch-project/e2e/__tests__/localPackages.ts
++++ b/packages/patch-project/e2e/__tests__/localPackages.ts
+@@ -18,3 +18,11 @@ export async function packBareTemplateTarballAsync(outputRoot: string): Promise<
+   const outputJson = JSON.parse(stdout);
+   return path.join(outputRoot, outputJson[0].filename);
+ }
++
++export async function packBlankTemplateTarballAsync(outputRoot: string): Promise<string> {
++  const { stdout } = await spawnAsync('npm', ['pack', '--json', '--pack-destination', outputRoot], {
++    cwd: path.join(EXPO_DIR, 'templates', 'expo-template-blank'),
++  });
++  const outputJson = JSON.parse(stdout);
++  return path.join(outputRoot, outputJson[0].filename);
++}
+diff --git a/packages/patch-project/e2e/__tests__/patchProject-test.ts b/packages/patch-project/e2e/__tests__/patchProject-test.ts
+index dbacf53a196bc8..89d14d51bfeb0b 100644
+--- a/packages/patch-project/e2e/__tests__/patchProject-test.ts
++++ b/packages/patch-project/e2e/__tests__/patchProject-test.ts
+@@ -1,11 +1,15 @@
+-/* eslint-env jest */
+ import spawnAsync from '@expo/spawn-async';
++import crypto from 'crypto';
+ import fs from 'fs/promises';
+ import path from 'path';
+-import rimraf from 'rimraf';
+ 
+-import { addLinkedPackagesAsync, packBareTemplateTarballAsync } from './localPackages';
++import {
++  addLinkedPackagesAsync,
++  packBareTemplateTarballAsync,
++  packBlankTemplateTarballAsync,
++} from './localPackages';
+ const localExpoCli = path.join(__dirname, '../../../@expo/cli/build/bin/cli');
++const localPatchProjectCli = path.join(__dirname, '../../bin/cli.js');
+ 
+ const originalCI = process.env.CI;
+ 
+@@ -14,12 +18,16 @@ describe('patch-project', () => {
+   const tmpDir = require('temp-dir');
+   const projectName = 'patch-project-test';
+   const projectRoot = path.join(tmpDir, projectName);
+-  let templateTarball;
++  let blankTemplateTarball: string;
++  let templateTarball: string;
+ 
+   beforeAll(async () => {
+     process.env.CI = '1';
+-    rimraf.sync(projectRoot);
+-    await await spawnAsync('bunx', ['create-expo-app', '-t', 'blank', projectName], {
++    await fs.rm(projectRoot, { recursive: true, force: true });
++    await fs.mkdir(projectRoot, { recursive: true });
++
++    blankTemplateTarball = await packBlankTemplateTarballAsync(tmpDir);
++    await spawnAsync('bunx', ['create-expo-app', '-t', blankTemplateTarball, projectName], {
+       stdio: 'inherit',
+       cwd: tmpDir,
+       env: {
+@@ -50,14 +58,15 @@ describe('patch-project', () => {
+ 
+   afterAll(async () => {
+     process.env.CI = originalCI;
+-    rimraf.sync(projectRoot);
++    await fs.rm(blankTemplateTarball, { force: true });
++    await fs.rm(projectRoot, { recursive: true, force: true });
+   });
+ 
+   it('runs `patch-project` should convert a project to CNG patches`', async () => {
+     await fs.rm(path.join(projectRoot, 'cng-patches'), { recursive: true, force: true });
+ 
+     await spawnAsync(
+-      'node',
++      'bun',
+       [
+         localExpoCli,
+         'prebuild',
+@@ -76,12 +85,16 @@ describe('patch-project', () => {
+     // Do some manual changes
+     const appGradlePath = path.join(projectRoot, 'android', 'app', 'build.gradle');
+     let contents = await fs.readFile(appGradlePath, 'utf8');
+-    contents = contents.replace('org.webkit:android-jsc:+', 'org.webkit:android-jsc-intl:+');
++    const maunalChange = `# Some maunual changes ${crypto.randomUUID()}`;
++    contents = contents.replace(
++      /^(def enableProguardInReleaseBuilds.*)$/m,
++      `$1\n\n${maunalChange}`
++    );
+     await fs.writeFile(appGradlePath, contents, 'utf8');
+ 
+     await spawnAsync(
+-      'bunx',
+-      ['patch-project', '--clean', '--platform', 'android', '--template', templateTarball],
++      'bun',
++      [localPatchProjectCli, '--clean', '--platform', 'android', '--template', templateTarball],
+       {
+         cwd: projectRoot,
+       }
+@@ -102,16 +115,14 @@ describe('patch-project', () => {
+       path.join(projectRoot, 'cng-patches', patchFiles[0]),
+       'utf8'
+     );
+-    expect(patchContents).toMatch(`\
+--def jscFlavor = 'org.webkit:android-jsc:+'
+-+def jscFlavor = 'org.webkit:android-jsc-intl:+'`);
++    expect(patchContents).toMatch(`+${maunalChange}`);
+   });
+ 
+   it('runs `patch-project` should convert a project to CNG patches` and `npx expo prebuild` should apply the patches', async () => {
+     await fs.rm(path.join(projectRoot, 'cng-patches'), { recursive: true, force: true });
+ 
+     await spawnAsync(
+-      'node',
++      'bun',
+       [
+         localExpoCli,
+         'prebuild',
+@@ -130,15 +141,16 @@ describe('patch-project', () => {
+     // Do some manual changes
+     const appGradlePath = path.join(projectRoot, 'android', 'app', 'build.gradle');
+     const contents = await fs.readFile(appGradlePath, 'utf8');
++    const maunalChange = `# Some maunual changes ${crypto.randomUUID()}`;
+     const patchedContents = contents.replace(
+-      'org.webkit:android-jsc:+',
+-      'org.webkit:android-jsc-intl:+'
++      /^(def enableProguardInReleaseBuilds.*)$/m,
++      `$1\n\n${maunalChange}`
+     );
+     await fs.writeFile(appGradlePath, patchedContents, 'utf8');
+ 
+     await spawnAsync(
+-      'bunx',
+-      ['patch-project', '--clean', '--platform', 'android', '--template', templateTarball],
++      'bun',
++      [localPatchProjectCli, '--clean', '--platform', 'android', '--template', templateTarball],
+       {
+         cwd: projectRoot,
+       }
+@@ -152,7 +164,7 @@ describe('patch-project', () => {
+     await fs.writeFile(path.join(projectRoot, 'app.json'), appConfigContents, 'utf8');
+ 
+     await spawnAsync(
+-      'node',
++      'bun',
+       [
+         localExpoCli,
+         'prebuild',
+diff --git a/packages/patch-project/package.json b/packages/patch-project/package.json
+index 32f017fdcfd027..9bb6d449664c03 100644
+--- a/packages/patch-project/package.json
++++ b/packages/patch-project/package.json
+@@ -46,6 +46,7 @@
+     "memfs": "^3.2.0"
+   },
+   "dependencies": {
++    "@bacons/xcode": "1.0.0-alpha.24",
+     "@expo/config": "~11.0.10",
+     "@expo/config-plugins": "~10.0.2",
+     "@expo/env": "~1.0.5",
+diff --git a/packages/patch-project/src/cli/__tests__/fixtures/sdk53.pbxproj b/packages/patch-project/src/cli/__tests__/fixtures/sdk53.pbxproj
+new file mode 100644
+index 00000000000000..2f4a9821c66d36
+--- /dev/null
++++ b/packages/patch-project/src/cli/__tests__/fixtures/sdk53.pbxproj
+@@ -0,0 +1,545 @@
++// !$*UTF8*$!
++{
++	archiveVersion = 1;
++	classes = {
++	};
++	objectVersion = 54;
++	objects = {
++
++/* Begin PBXBuildFile section */
++		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
++		25132FA0708F64520D8E110D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AB6AF72B3A0FE5CC052391D4 /* PrivacyInfo.xcprivacy */; };
++		3A25678BC8E449606E3B5442 /* libPods-sdk53.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38A193C740C7B6F3D7D7ABB1 /* libPods-sdk53.a */; };
++		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
++		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
++		BEC93FC0B6922AC29655A271 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06D805A335281B3988B3683F /* ExpoModulesProvider.swift */; };
++		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
++/* End PBXBuildFile section */
++
++/* Begin PBXFileReference section */
++		06D805A335281B3988B3683F /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-sdk53/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
++		13B07F961A680F5B00A75B9A /* sdk53.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = sdk53.app; sourceTree = BUILT_PRODUCTS_DIR; };
++		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = sdk53/Images.xcassets; sourceTree = "<group>"; };
++		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = sdk53/Info.plist; sourceTree = "<group>"; };
++		2BE36D2C79BF8763566DBDC8 /* Pods-sdk53.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-sdk53.debug.xcconfig"; path = "Target Support Files/Pods-sdk53/Pods-sdk53.debug.xcconfig"; sourceTree = "<group>"; };
++		38A193C740C7B6F3D7D7ABB1 /* libPods-sdk53.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-sdk53.a"; sourceTree = BUILT_PRODUCTS_DIR; };
++		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = sdk53/SplashScreen.storyboard; sourceTree = "<group>"; };
++		AB6AF72B3A0FE5CC052391D4 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = sdk53/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
++		B740D7D3000E5DF8525000B0 /* Pods-sdk53.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-sdk53.release.xcconfig"; path = "Target Support Files/Pods-sdk53/Pods-sdk53.release.xcconfig"; sourceTree = "<group>"; };
++		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
++		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
++		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = sdk53/AppDelegate.swift; sourceTree = "<group>"; };
++		F11748442D0722820044C1D9 /* sdk53-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "sdk53-Bridging-Header.h"; path = "sdk53/sdk53-Bridging-Header.h"; sourceTree = "<group>"; };
++/* End PBXFileReference section */
++
++/* Begin PBXFrameworksBuildPhase section */
++		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
++			isa = PBXFrameworksBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++				3A25678BC8E449606E3B5442 /* libPods-sdk53.a in Frameworks */,
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++		};
++/* End PBXFrameworksBuildPhase section */
++
++/* Begin PBXGroup section */
++		13B07FAE1A68108700A75B9A /* sdk53 */ = {
++			isa = PBXGroup;
++			children = (
++				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
++				F11748442D0722820044C1D9 /* sdk53-Bridging-Header.h */,
++				BB2F792B24A3F905000567C9 /* Supporting */,
++				13B07FB51A68108700A75B9A /* Images.xcassets */,
++				13B07FB61A68108700A75B9A /* Info.plist */,
++				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
++				AB6AF72B3A0FE5CC052391D4 /* PrivacyInfo.xcprivacy */,
++			);
++			name = sdk53;
++			sourceTree = "<group>";
++		};
++		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
++			isa = PBXGroup;
++			children = (
++				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
++				38A193C740C7B6F3D7D7ABB1 /* libPods-sdk53.a */,
++			);
++			name = Frameworks;
++			sourceTree = "<group>";
++		};
++		321C93908ACC5C390939C2C9 /* ExpoModulesProviders */ = {
++			isa = PBXGroup;
++			children = (
++				913661940B54C9D3E85EE441 /* sdk53 */,
++			);
++			name = ExpoModulesProviders;
++			sourceTree = "<group>";
++		};
++		42A01781D8365E4E8E861F31 /* Pods */ = {
++			isa = PBXGroup;
++			children = (
++				2BE36D2C79BF8763566DBDC8 /* Pods-sdk53.debug.xcconfig */,
++				B740D7D3000E5DF8525000B0 /* Pods-sdk53.release.xcconfig */,
++			);
++			name = Pods;
++			path = Pods;
++			sourceTree = "<group>";
++		};
++		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
++			isa = PBXGroup;
++			children = (
++			);
++			name = Libraries;
++			sourceTree = "<group>";
++		};
++		83CBB9F61A601CBA00E9B192 = {
++			isa = PBXGroup;
++			children = (
++				13B07FAE1A68108700A75B9A /* sdk53 */,
++				832341AE1AAA6A7D00B99B32 /* Libraries */,
++				83CBBA001A601CBA00E9B192 /* Products */,
++				2D16E6871FA4F8E400B85C8A /* Frameworks */,
++				42A01781D8365E4E8E861F31 /* Pods */,
++				321C93908ACC5C390939C2C9 /* ExpoModulesProviders */,
++			);
++			indentWidth = 2;
++			sourceTree = "<group>";
++			tabWidth = 2;
++			usesTabs = 0;
++		};
++		83CBBA001A601CBA00E9B192 /* Products */ = {
++			isa = PBXGroup;
++			children = (
++				13B07F961A680F5B00A75B9A /* sdk53.app */,
++			);
++			name = Products;
++			sourceTree = "<group>";
++		};
++		913661940B54C9D3E85EE441 /* sdk53 */ = {
++			isa = PBXGroup;
++			children = (
++				06D805A335281B3988B3683F /* ExpoModulesProvider.swift */,
++			);
++			name = sdk53;
++			sourceTree = "<group>";
++		};
++		BB2F792B24A3F905000567C9 /* Supporting */ = {
++			isa = PBXGroup;
++			children = (
++				BB2F792C24A3F905000567C9 /* Expo.plist */,
++			);
++			name = Supporting;
++			path = sdk53/Supporting;
++			sourceTree = "<group>";
++		};
++/* End PBXGroup section */
++
++/* Begin PBXNativeTarget section */
++		13B07F861A680F5B00A75B9A /* sdk53 */ = {
++			isa = PBXNativeTarget;
++			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "sdk53" */;
++			buildPhases = (
++				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
++				38454177440B6292E35CB0F1 /* [Expo] Configure project */,
++				13B07F871A680F5B00A75B9A /* Sources */,
++				13B07F8C1A680F5B00A75B9A /* Frameworks */,
++				13B07F8E1A680F5B00A75B9A /* Resources */,
++				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
++				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
++				10E75DA9E1F67D1B6F51406F /* [CP] Embed Pods Frameworks */,
++			);
++			buildRules = (
++			);
++			dependencies = (
++			);
++			name = sdk53;
++			productName = sdk53;
++			productReference = 13B07F961A680F5B00A75B9A /* sdk53.app */;
++			productType = "com.apple.product-type.application";
++		};
++/* End PBXNativeTarget section */
++
++/* Begin PBXProject section */
++		83CBB9F71A601CBA00E9B192 /* Project object */ = {
++			isa = PBXProject;
++			attributes = {
++				LastUpgradeCheck = 1130;
++				TargetAttributes = {
++					13B07F861A680F5B00A75B9A = {
++						LastSwiftMigration = 1250;
++					};
++				};
++			};
++			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "sdk53" */;
++			compatibilityVersion = "Xcode 3.2";
++			developmentRegion = en;
++			hasScannedForEncodings = 0;
++			knownRegions = (
++				en,
++				Base,
++			);
++			mainGroup = 83CBB9F61A601CBA00E9B192;
++			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
++			projectDirPath = "";
++			projectRoot = "";
++			targets = (
++				13B07F861A680F5B00A75B9A /* sdk53 */,
++			);
++		};
++/* End PBXProject section */
++
++/* Begin PBXResourcesBuildPhase section */
++		13B07F8E1A680F5B00A75B9A /* Resources */ = {
++			isa = PBXResourcesBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
++				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
++				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
++				25132FA0708F64520D8E110D /* PrivacyInfo.xcprivacy in Resources */,
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++		};
++/* End PBXResourcesBuildPhase section */
++
++/* Begin PBXShellScriptBuildPhase section */
++		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {
++			isa = PBXShellScriptBuildPhase;
++			alwaysOutOfDate = 1;
++			buildActionMask = 2147483647;
++			files = (
++			);
++			inputPaths = (
++			);
++			name = "Bundle React Native code and images";
++			outputPaths = (
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++			shellPath = /bin/sh;
++			shellScript = "if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env\"\nfi\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.updates\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\n\n";
++		};
++		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
++			isa = PBXShellScriptBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++			);
++			inputFileListPaths = (
++			);
++			inputPaths = (
++				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
++				"${PODS_ROOT}/Manifest.lock",
++			);
++			name = "[CP] Check Pods Manifest.lock";
++			outputFileListPaths = (
++			);
++			outputPaths = (
++				"$(DERIVED_FILE_DIR)/Pods-sdk53-checkManifestLockResult.txt",
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++			shellPath = /bin/sh;
++			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
++			showEnvVarsInLog = 0;
++		};
++		10E75DA9E1F67D1B6F51406F /* [CP] Embed Pods Frameworks */ = {
++			isa = PBXShellScriptBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++			);
++			inputPaths = (
++				"${PODS_ROOT}/Target Support Files/Pods-sdk53/Pods-sdk53-frameworks.sh",
++				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
++			);
++			name = "[CP] Embed Pods Frameworks";
++			outputPaths = (
++				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++			shellPath = /bin/sh;
++			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-sdk53/Pods-sdk53-frameworks.sh\"\n";
++			showEnvVarsInLog = 0;
++		};
++		38454177440B6292E35CB0F1 /* [Expo] Configure project */ = {
++			isa = PBXShellScriptBuildPhase;
++			alwaysOutOfDate = 1;
++			buildActionMask = 2147483647;
++			files = (
++			);
++			inputFileListPaths = (
++			);
++			inputPaths = (
++			);
++			name = "[Expo] Configure project";
++			outputFileListPaths = (
++			);
++			outputPaths = (
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++			shellPath = /bin/sh;
++			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-sdk53/expo-configure-project.sh\"\n";
++		};
++		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
++			isa = PBXShellScriptBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++			);
++			inputPaths = (
++				"${PODS_ROOT}/Target Support Files/Pods-sdk53/Pods-sdk53-resources.sh",
++				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoSystemUI/ExpoSystemUI_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/SDWebImage/SDWebImage.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
++				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
++			);
++			name = "[CP] Copy Pods Resources";
++			outputPaths = (
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoSystemUI_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/SDWebImage.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
++				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++			shellPath = /bin/sh;
++			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-sdk53/Pods-sdk53-resources.sh\"\n";
++			showEnvVarsInLog = 0;
++		};
++/* End PBXShellScriptBuildPhase section */
++
++/* Begin PBXSourcesBuildPhase section */
++		13B07F871A680F5B00A75B9A /* Sources */ = {
++			isa = PBXSourcesBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
++				BEC93FC0B6922AC29655A271 /* ExpoModulesProvider.swift in Sources */,
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++		};
++/* End PBXSourcesBuildPhase section */
++
++/* Begin XCBuildConfiguration section */
++		13B07F941A680F5B00A75B9A /* Debug */ = {
++			isa = XCBuildConfiguration;
++			baseConfigurationReference = 2BE36D2C79BF8763566DBDC8 /* Pods-sdk53.debug.xcconfig */;
++			buildSettings = {
++				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
++				CLANG_ENABLE_MODULES = YES;
++				CODE_SIGN_ENTITLEMENTS = sdk53/sdk53.entitlements;
++				CURRENT_PROJECT_VERSION = 1;
++				ENABLE_BITCODE = NO;
++				GCC_PREPROCESSOR_DEFINITIONS = (
++					"$(inherited)",
++					"FB_SONARKIT_ENABLED=1",
++				);
++				INFOPLIST_FILE = sdk53/Info.plist;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
++				LD_RUNPATH_SEARCH_PATHS = (
++					"$(inherited)",
++					"@executable_path/Frameworks",
++				);
++				MARKETING_VERSION = 1.0;
++				OTHER_LDFLAGS = (
++					"$(inherited)",
++					"-ObjC",
++					"-lc++",
++				);
++				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
++				PRODUCT_BUNDLE_IDENTIFIER = dev.expo.kudo.sdk53;
++				PRODUCT_NAME = sdk53;
++				SWIFT_OBJC_BRIDGING_HEADER = "sdk53/sdk53-Bridging-Header.h";
++				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
++				SWIFT_VERSION = 5.0;
++				TARGETED_DEVICE_FAMILY = "1,2";
++				VERSIONING_SYSTEM = "apple-generic";
++			};
++			name = Debug;
++		};
++		13B07F951A680F5B00A75B9A /* Release */ = {
++			isa = XCBuildConfiguration;
++			baseConfigurationReference = B740D7D3000E5DF8525000B0 /* Pods-sdk53.release.xcconfig */;
++			buildSettings = {
++				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
++				CLANG_ENABLE_MODULES = YES;
++				CODE_SIGN_ENTITLEMENTS = sdk53/sdk53.entitlements;
++				CURRENT_PROJECT_VERSION = 1;
++				INFOPLIST_FILE = sdk53/Info.plist;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
++				LD_RUNPATH_SEARCH_PATHS = (
++					"$(inherited)",
++					"@executable_path/Frameworks",
++				);
++				MARKETING_VERSION = 1.0;
++				OTHER_LDFLAGS = (
++					"$(inherited)",
++					"-ObjC",
++					"-lc++",
++				);
++				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
++				PRODUCT_BUNDLE_IDENTIFIER = dev.expo.kudo.sdk53;
++				PRODUCT_NAME = sdk53;
++				SWIFT_OBJC_BRIDGING_HEADER = "sdk53/sdk53-Bridging-Header.h";
++				SWIFT_VERSION = 5.0;
++				TARGETED_DEVICE_FAMILY = "1,2";
++				VERSIONING_SYSTEM = "apple-generic";
++			};
++			name = Release;
++		};
++		83CBBA201A601CBA00E9B192 /* Debug */ = {
++			isa = XCBuildConfiguration;
++			buildSettings = {
++				ALWAYS_SEARCH_USER_PATHS = NO;
++				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
++				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
++				CLANG_CXX_LIBRARY = "libc++";
++				CLANG_ENABLE_MODULES = YES;
++				CLANG_ENABLE_OBJC_ARC = YES;
++				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
++				CLANG_WARN_BOOL_CONVERSION = YES;
++				CLANG_WARN_COMMA = YES;
++				CLANG_WARN_CONSTANT_CONVERSION = YES;
++				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
++				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
++				CLANG_WARN_EMPTY_BODY = YES;
++				CLANG_WARN_ENUM_CONVERSION = YES;
++				CLANG_WARN_INFINITE_RECURSION = YES;
++				CLANG_WARN_INT_CONVERSION = YES;
++				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
++				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
++				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
++				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
++				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
++				CLANG_WARN_STRICT_PROTOTYPES = YES;
++				CLANG_WARN_SUSPICIOUS_MOVE = YES;
++				CLANG_WARN_UNREACHABLE_CODE = YES;
++				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
++				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
++				COPY_PHASE_STRIP = NO;
++				ENABLE_STRICT_OBJC_MSGSEND = YES;
++				ENABLE_TESTABILITY = YES;
++				GCC_C_LANGUAGE_STANDARD = gnu99;
++				GCC_DYNAMIC_NO_PIC = NO;
++				GCC_NO_COMMON_BLOCKS = YES;
++				GCC_OPTIMIZATION_LEVEL = 0;
++				GCC_PREPROCESSOR_DEFINITIONS = (
++					"DEBUG=1",
++					"$(inherited)",
++				);
++				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
++				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
++				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
++				GCC_WARN_UNDECLARED_SELECTOR = YES;
++				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
++				GCC_WARN_UNUSED_FUNCTION = YES;
++				GCC_WARN_UNUSED_VARIABLE = YES;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
++				LD_RUNPATH_SEARCH_PATHS = (
++					/usr/lib/swift,
++					"$(inherited)",
++				);
++				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
++				MTL_ENABLE_DEBUG_INFO = YES;
++				ONLY_ACTIVE_ARCH = YES;
++				OTHER_LDFLAGS = (
++					"$(inherited)",
++					" ",
++				);
++				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
++				SDKROOT = iphoneos;
++				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
++				USE_HERMES = true;
++			};
++			name = Debug;
++		};
++		83CBBA211A601CBA00E9B192 /* Release */ = {
++			isa = XCBuildConfiguration;
++			buildSettings = {
++				ALWAYS_SEARCH_USER_PATHS = NO;
++				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
++				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
++				CLANG_CXX_LIBRARY = "libc++";
++				CLANG_ENABLE_MODULES = YES;
++				CLANG_ENABLE_OBJC_ARC = YES;
++				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
++				CLANG_WARN_BOOL_CONVERSION = YES;
++				CLANG_WARN_COMMA = YES;
++				CLANG_WARN_CONSTANT_CONVERSION = YES;
++				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
++				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
++				CLANG_WARN_EMPTY_BODY = YES;
++				CLANG_WARN_ENUM_CONVERSION = YES;
++				CLANG_WARN_INFINITE_RECURSION = YES;
++				CLANG_WARN_INT_CONVERSION = YES;
++				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
++				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
++				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
++				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
++				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
++				CLANG_WARN_STRICT_PROTOTYPES = YES;
++				CLANG_WARN_SUSPICIOUS_MOVE = YES;
++				CLANG_WARN_UNREACHABLE_CODE = YES;
++				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
++				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
++				COPY_PHASE_STRIP = YES;
++				ENABLE_NS_ASSERTIONS = NO;
++				ENABLE_STRICT_OBJC_MSGSEND = YES;
++				GCC_C_LANGUAGE_STANDARD = gnu99;
++				GCC_NO_COMMON_BLOCKS = YES;
++				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
++				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
++				GCC_WARN_UNDECLARED_SELECTOR = YES;
++				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
++				GCC_WARN_UNUSED_FUNCTION = YES;
++				GCC_WARN_UNUSED_VARIABLE = YES;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
++				LD_RUNPATH_SEARCH_PATHS = (
++					/usr/lib/swift,
++					"$(inherited)",
++				);
++				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
++				MTL_ENABLE_DEBUG_INFO = NO;
++				OTHER_LDFLAGS = (
++					"$(inherited)",
++					" ",
++				);
++				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
++				SDKROOT = iphoneos;
++				USE_HERMES = true;
++				VALIDATE_PRODUCT = YES;
++			};
++			name = Release;
++		};
++/* End XCBuildConfiguration section */
++
++/* Begin XCConfigurationList section */
++		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "sdk53" */ = {
++			isa = XCConfigurationList;
++			buildConfigurations = (
++				13B07F941A680F5B00A75B9A /* Debug */,
++				13B07F951A680F5B00A75B9A /* Release */,
++			);
++			defaultConfigurationIsVisible = 0;
++			defaultConfigurationName = Release;
++		};
++		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "sdk53" */ = {
++			isa = XCConfigurationList;
++			buildConfigurations = (
++				83CBBA201A601CBA00E9B192 /* Debug */,
++				83CBBA211A601CBA00E9B192 /* Release */,
++			);
++			defaultConfigurationIsVisible = 0;
++			defaultConfigurationName = Release;
++		};
++/* End XCConfigurationList section */
++	};
++	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
++}
+diff --git a/packages/patch-project/src/cli/__tests__/normalizeNativeProjects-test.ts b/packages/patch-project/src/cli/__tests__/normalizeNativeProjects-test.ts
+new file mode 100644
+index 00000000000000..4d3ad8c54427cb
+--- /dev/null
++++ b/packages/patch-project/src/cli/__tests__/normalizeNativeProjects-test.ts
+@@ -0,0 +1,30 @@
++import { IOSConfig } from 'expo/config-plugins';
++import path from 'node:path';
++
++import { normalizeXcodeProjectAsync } from '../normalizeNativeProjects';
++
++jest.mock('expo/config-plugins');
++
++describe(normalizeXcodeProjectAsync, () => {
++  it('should remove generated properties', async () => {
++    const mockGetProjectName = IOSConfig.XcodeUtils.getProjectName as jest.MockedFunction<
++      typeof IOSConfig.XcodeUtils.getProjectName
++    >;
++    mockGetProjectName.mockReturnValueOnce('sdk53');
++
++    const project = await normalizeXcodeProjectAsync(
++      '/app',
++      path.join(__dirname, 'fixtures', 'sdk53.pbxproj')
++    );
++    const serializedText = JSON.stringify(project.toJSON(), null, 2);
++    expect(serializedText).not.toMatch(/ExpoModulesProvider\.swift/);
++    expect(serializedText).not.toMatch(/PrivacyInfo\.xcprivacy/);
++    expect(serializedText).not.toMatch(/noop-file\.swift/);
++    expect(serializedText).not.toMatch(/Pods/);
++    expect(serializedText).not.toMatch(/Supporting/);
++    expect(serializedText).not.toMatch(/[Expo] Configure project/);
++    expect(serializedText).not.toMatch(/[CP] Embed Pods Frameworks/);
++    expect(serializedText).not.toMatch(/[CP] Check Pods Manifest\.lock/);
++    expect(serializedText).not.toMatch(/[CP] Copy Pods Resources/);
++  });
++});
+diff --git a/packages/patch-project/src/cli/dir.ts b/packages/patch-project/src/cli/dir.ts
+index 6e652d148f24fc..7d38d5b615d0d5 100644
+--- a/packages/patch-project/src/cli/dir.ts
++++ b/packages/patch-project/src/cli/dir.ts
+@@ -5,8 +5,9 @@ export async function directoryExistsAsync(file: string): Promise<boolean> {
+   return (await fs.promises.stat(file).catch(() => null))?.isDirectory() ?? false;
+ }
+ 
+-export async function ensureDirectoryAsync(path: string): Promise<void> {
++export async function ensureDirectoryAsync(path: string): Promise<string> {
+   await fs.promises.mkdir(path, { recursive: true });
++  return path;
+ }
+ 
+ export async function moveAsync(src: string, dest: string): Promise<void> {
+diff --git a/packages/patch-project/src/cli/normalizeNativeProjects.ts b/packages/patch-project/src/cli/normalizeNativeProjects.ts
+index 06de068b2e4e0f..5548e53d6aca75 100644
+--- a/packages/patch-project/src/cli/normalizeNativeProjects.ts
++++ b/packages/patch-project/src/cli/normalizeNativeProjects.ts
+@@ -1,4 +1,11 @@
+-import { IOSConfig, type ModPlatform, type XcodeProject } from 'expo/config-plugins';
++import {
++  XcodeProject,
++  type PBXFileReference,
++  type PBXGroup,
++  type PBXShellScriptBuildPhase,
++} from '@bacons/xcode';
++import { build as buildXcodeProject } from '@bacons/xcode/json';
++import { IOSConfig, type ModPlatform } from 'expo/config-plugins';
+ import fs from 'fs/promises';
+ import path from 'path';
+ 
+@@ -56,7 +63,8 @@ async function normalizeIosProjectsAsync({
+     await fs.copyFile(xcodeProjectPath, xcodeProjectPathBackup);
+     backupFileMappings[xcodeProjectPath] = xcodeProjectPathBackup;
+   }
+-  await normalizeXcodeProjectAsync(projectRoot, xcodeProjectPath);
++  const normalizedProject = await normalizeXcodeProjectAsync(projectRoot, xcodeProjectPath);
++  await fs.writeFile(xcodeProjectPath, buildXcodeProject(normalizedProject.toJSON()), 'utf8');
+ 
+   return backupFileMappings;
+ }
+@@ -66,60 +74,150 @@ async function normalizeIosProjectsAsync({
+  * - Remove the `noop-file.swift` file that is generated by the prebuild process.
+  * - Remove the Swift bridging header file that is generated by the prebuild process.
+  * - Remove the `ExpoModulesProvider.swift` that is generated by expo-modules-autolinking and `pod install`.
+- * - Remove the `[Expo] Configure project` build phase that is generated by expo-modules-autolinking and `pod install`.
+- * - Remove the CocoaPods build phases that are generated by `pod install`.
++ * - Remove the `PrivacyInfo.xcprivacy` file that is generated by `pod install`.
++ * - Remove the build phase that is generated by expo-modules-autolinking and `pod install`.
++ * - Remove the all the other CocoaPods generated properties.
+  */
+-async function normalizeXcodeProjectAsync(
++export async function normalizeXcodeProjectAsync(
+   projectRoot: string,
+   xcodeProjectPath: string
+-): Promise<void> {
++): Promise<XcodeProject> {
+   const projectName = IOSConfig.XcodeUtils.getProjectName(projectRoot);
+-  const project = IOSConfig.XcodeUtils.getPbxproj(projectRoot);
+-
+-  const mainAppGroup = findXcodeProjectMainAppGroupKey(project, projectName);
+-  project.removeSourceFile('noop-file.swift', null, mainAppGroup);
+-  project.removeSourceFile('ExpoModulesProvider.swift', null, mainAppGroup);
+-  project.removeSourceFile(`${projectName}-Bridging-Header.h`, null, mainAppGroup);
+-  removeXcodeProjectBuildPhase(project, '[Expo] Configure project');
+-  removeXcodeProjectBuildPhase(project, '[CP] Embed Pods Frameworks');
+-  removeXcodeProjectBuildPhase(project, '[CP] Check Pods Manifest.lock');
+-  removeXcodeProjectBuildPhase(project, '[CP] Copy Pods Resources');
+-
+-  await fs.writeFile(xcodeProjectPath, project.writeSync(), 'utf8');
+-}
++  const project = XcodeProject.open(xcodeProjectPath);
++
++  // Remove generated PBXGroup
++  //   - file references
++  //   - generated groups like `Pods` and `Supporting`
++  const mainGroup = project.rootObject.props.mainGroup;
++  for (const child of mainGroup.props.children) {
++    if (child.props.isa === 'PBXGroup' && child.props.name === projectName) {
++      const mainAppGroup = child as PBXGroup;
++
++      for (const mainAppGroupChild of mainAppGroup.props.children) {
++        if (
++          mainAppGroupChild.props.isa === 'PBXFileReference' &&
++          ['noop-file.swift', `${projectName}-Bridging-Header.h`, 'PrivacyInfo.xcprivacy'].includes(
++            mainAppGroupChild.props.name ?? ''
++          )
++        ) {
++          mainAppGroupChild.removeFromProject();
++        }
++      }
++
++      for (const mainAppGroupChild of mainAppGroup.getChildGroups()) {
++        if (mainAppGroupChild.props.name === 'Supporting') {
++          mainAppGroupChild.removeFromProject();
++        }
++      }
++    }
++    if (child.props.isa === 'PBXGroup' && child.props.name === 'Pods') {
++      child.removeFromProject();
++    }
++  }
+ 
+-/**
+- * Find the main app group key in the Xcode project.
+- */
+-function findXcodeProjectMainAppGroupKey(project: XcodeProject, projectName: string): string {
+-  const targetGroupKey = project.findPBXGroupKey({ name: projectName });
+-
+-  // Sanity check
+-  const { firstProject } = project.getFirstProject();
+-  const mainGroup = project.getPBXGroupByKey(firstProject.mainGroup);
+-  // @ts-expect-error
+-  const targetGroupKey2 = mainGroup?.children.find(({ comment }) => comment === projectName)?.value;
+-  if (!targetGroupKey || targetGroupKey !== targetGroupKey2) {
+-    throw new Error('Unable to find the main app group key');
++  // Remove ExpoModulesProviders group
++  for (const child of mainGroup.getChildGroups()) {
++    if (child.props.isa === 'PBXGroup' && child.props.name === 'ExpoModulesProviders') {
++      for (const grandChild of child.getChildGroups()) {
++        grandChild.removeFromProject();
++      }
++      child.removeFromProject();
++    }
++  }
++
++  // Remove shell script build phases
++  const mainAppTarget = project.rootObject.getMainAppTarget();
++  for (const removeBuildPhaseName of [
++    '[Expo] Configure project',
++    '[CP] Embed Pods Frameworks',
++    '[CP] Check Pods Manifest.lock',
++    '[CP] Copy Pods Resources',
++  ]) {
++    const buildPhases = mainAppTarget?.props.buildPhases;
++    for (const buildPhase of buildPhases ?? []) {
++      if (
++        buildPhase?.isa === 'PBXShellScriptBuildPhase' &&
++        (buildPhase as PBXShellScriptBuildPhase).props.name === removeBuildPhaseName
++      ) {
++        buildPhase.removeFromProject();
++        removeChildrenByUuid(buildPhases ?? [], buildPhase.uuid);
++      }
++    }
++  }
++
++  // Remove frameworks build phase
++  const frameworksBuildPhase = mainAppTarget?.getFrameworksBuildPhase();
++  for (const file of frameworksBuildPhase?.props.files ?? []) {
++    if (
++      file.isa === 'PBXBuildFile' &&
++      file.props.fileRef.props.path === `libPods-${projectName}.a`
++    ) {
++      removeChildrenByUuid(frameworksBuildPhase?.props.files ?? [], file.uuid);
++    }
++  }
++  // Remove resources build phase
++  const resourcesBuildPhase = mainAppTarget?.getResourcesBuildPhase();
++  for (const file of resourcesBuildPhase?.props.files ?? []) {
++    if (file.isa === 'PBXBuildFile' && file.props.fileRef.props.name === 'PrivacyInfo.xcprivacy') {
++      removeChildrenByUuid(resourcesBuildPhase?.props.files ?? [], file.uuid);
++    }
++  }
++  const sourcesBuildPhase = mainAppTarget?.getSourcesBuildPhase();
++  for (const file of sourcesBuildPhase?.props.files ?? []) {
++    if (
++      file.isa === 'PBXBuildFile' &&
++      ['ExpoModulesProvider.swift', 'PrivacyInfo.xcprivacy'].includes(
++        file.props.fileRef.props.name ?? ''
++      )
++    ) {
++      removeChildrenByUuid(sourcesBuildPhase?.props.files ?? [], file.uuid);
++    }
+   }
+ 
+-  return targetGroupKey;
++  // Remove frameworks group
++  const frameworksGroup = project.rootObject.getFrameworksGroup();
++  for (const child of frameworksGroup.props.children) {
++    if (child.props.isa === 'PBXFileReference' && child.props.path === `libPods-${projectName}.a`) {
++      child.removeFromProject();
++      removeChildrenByUuid(frameworksGroup.props.children ?? [], child.uuid);
++    }
++  }
++
++  // Remove `baseConfigurationReference` for Pods xcconfig
++  const buildConfigurationList = mainAppTarget?.props.buildConfigurationList;
++  for (const buildConfiguration of buildConfigurationList?.props.buildConfigurations ?? []) {
++    if (
++      [`Pods-${projectName}.debug.xcconfig`, `Pods-${projectName}.release.xcconfig`].includes(
++        buildConfiguration.props.baseConfigurationReference?.props.name ?? ''
++      )
++    ) {
++      delete buildConfiguration.props.baseConfigurationReference;
++    }
++  }
++
++  // Remove additional file references
++  for (const child of project.values()) {
++    if (
++      child.isa === 'PBXFileReference' &&
++      [
++        'ExpoModulesProvider.swift',
++        `Pods-${projectName}.debug.xcconfig`,
++        `Pods-${projectName}.release.xcconfig`,
++      ].includes((child as PBXFileReference).props.name ?? '')
++    ) {
++      child.removeFromProject();
++    }
++  }
++
++  return project;
+ }
+ 
+ /**
+- * Remove a shell script build phase from the Xcode project.
++ * Remove a child by its UUID from a pbx array.
+  */
+-function removeXcodeProjectBuildPhase(project: XcodeProject, name: string) {
+-  const [, nativeTarget] = IOSConfig.Target.findFirstNativeTarget(project);
+-  // @ts-expect-error
+-  const index = nativeTarget.buildPhases.findIndex((item) => item.comment === name);
+-  if (index < 0) {
+-    return;
++function removeChildrenByUuid<T extends { uuid: string }>(children: T[], uuid: string) {
++  const index = children.findIndex((child) => child.uuid === uuid);
++  if (index >= 0) {
++    children?.splice(index, 1);
+   }
+-  const buildPhaseId = nativeTarget.buildPhases[index].value;
+-  nativeTarget.buildPhases.splice(index, 1);
+-
+-  const buildPhases = project.getPBXObject('PBXShellScriptBuildPhase') as Record<string, any>;
+-  delete buildPhases[buildPhaseId];
+-  delete buildPhases[`${buildPhaseId}_comment`];
+ }
+diff --git a/packages/patch-project/tsconfig.json b/packages/patch-project/tsconfig.json
+index fcdb0ff2428f74..648a525e325e8f 100644
+--- a/packages/patch-project/tsconfig.json
++++ b/packages/patch-project/tsconfig.json
+@@ -5,6 +5,6 @@
+     "outDir": "./build",
+     "sourceMap": true
+   },
+-  "include": ["./src", "e2e/__tests__/*.ts"],
++  "include": ["./src"],
+   "exclude": ["**/__mocks__/*", "**/__tests__/*"]
+ }
+diff --git a/yarn.lock b/yarn.lock
+index 79f298d1bc44e2..c75dbfe168d935 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -1237,6 +1237,15 @@
+     "@babel/helper-string-parser" "^7.27.1"
+     "@babel/helper-validator-identifier" "^7.27.1"
+ 
++"@bacons/xcode@1.0.0-alpha.24":
++  version "1.0.0-alpha.24"
++  resolved "https://registry.yarnpkg.com/@bacons/xcode/-/xcode-1.0.0-alpha.24.tgz#fb91a6cab6153dfd70d0e0cff1c79471cca10cb0"
++  integrity sha512-RaYUNsGBJVp0t2vgXaT4L668WIvbhtdl1JFJHedPkebIPR6h/+E2Kq32O49t+8f4LUPW9UF4CfXBrDc+XdXUUQ==
++  dependencies:
++    "@expo/plist" "^0.0.18"
++    debug "^4.3.4"
++    uuid "^8.3.2"
++
+ "@bcoe/v8-coverage@^0.2.3":
+   version "0.2.3"
+   resolved "https://registry.yarnpkg.com/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz#75a2e8b51cb758a7553d6804a5932d7aace75c39"
+@@ -1505,6 +1514,15 @@
+   dependencies:
+     semver "^5.3.0"
+ 
++"@expo/plist@^0.0.18":
++  version "0.0.18"
++  resolved "https://registry.yarnpkg.com/@expo/plist/-/plist-0.0.18.tgz#9abcde78df703a88f6d9fa1a557ee2f045d178b0"
++  integrity sha512-+48gRqUiz65R21CZ/IXa7RNBXgAI/uPSdvJqoN9x1hfL44DNbUoWHgHiEXTx7XelcATpDwNTz6sHLfy0iNqf+w==
++  dependencies:
++    "@xmldom/xmldom" "~0.7.0"
++    base64-js "^1.2.3"
++    xmlbuilder "^14.0.0"
++
+ "@expo/react-native-action-sheet@^4.1.1":
+   version "4.1.1"
+   resolved "https://registry.yarnpkg.com/@expo/react-native-action-sheet/-/react-native-action-sheet-4.1.1.tgz#a94a11088b8f146ac86b3ae710deef609a922d82"
+@@ -4598,6 +4616,11 @@
+   resolved "https://registry.yarnpkg.com/@xmldom/xmldom/-/xmldom-0.8.10.tgz#a1337ca426aa61cef9fe15b5b28e340a72f6fa99"
+   integrity sha512-2WALfTl4xo2SkGCYRt6rDTFfk9R1czmBvUQy12gK2KuRKIpWEhcbbzy8EZXtz/jkRqHX8bFEc6FC1HjX4TUWYw==
+ 
++"@xmldom/xmldom@~0.7.0":
++  version "0.7.13"
++  resolved "https://registry.yarnpkg.com/@xmldom/xmldom/-/xmldom-0.7.13.tgz#ff34942667a4e19a9f4a0996a76814daac364cf3"
++  integrity sha512-lm2GW5PkosIzccsaZIz7tp8cPADSIlIHWDFTR1N0SzfinhhYgeIQjFMz4rYzanCScr3DqQLeomUDArp6MWKm+g==
++
+ "@yarnpkg/lockfile@^1.1.0":
+   version "1.1.0"
+   resolved "https://registry.yarnpkg.com/@yarnpkg/lockfile/-/lockfile-1.1.0.tgz#e77a97fbd345b76d83245edcd17d393b1b41fb31"
+@@ -16597,6 +16620,11 @@ xml2js@0.6.0:
+     sax ">=0.6.0"
+     xmlbuilder "~11.0.0"
+ 
++xmlbuilder@^14.0.0:
++  version "14.0.0"
++  resolved "https://registry.yarnpkg.com/xmlbuilder/-/xmlbuilder-14.0.0.tgz#876b5aec4f05ffd5feb97b0a871c855d16fbeb8c"
++  integrity sha512-ts+B2rSe4fIckR6iquDjsKbQFK2NlUk6iG5nf14mDEyldgoc2nEKZ3jZWMPTxGQwVgToSjt6VGIho1H8/fNFTg==
++
+ xmlbuilder@^15.1.1:
+   version "15.1.1"
+   resolved "https://registry.yarnpkg.com/xmlbuilder/-/xmlbuilder-15.1.1.tgz#9dcdce49eea66d8d10b42cae94a79c3c8d0c2ec5"

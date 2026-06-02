@@ -1,0 +1,45 @@
+This PR flattens the color theme object and introduces a new helper, `getColorValue`, that helps pull a color from the theme. This should actually make #6462 (and other color-related work) much more practical.
+
+## Flattening `DefaultColorThemePalette`
+
+This PR flattens the `DefaultColorThemePalette`, removing the nested properties and renaming them instead.
+
+```ts
+theme.black.frame.fill
+```
+
+Becomes
+
+```ts
+theme.black.frameFill
+```
+
+## `getColorValue`
+
+This pull request standardizes and simplifies how color values are accessed throughout the codebase by introducing and consistently using the new `getColorValue` utility function.
+
+```ts
+theme.black.frameFill
+```
+
+Becomes
+
+```ts
+getColorValue(theme, 'black', 'frameFill')
+```
+
+### Change type
+
+- [x] `api`
+
+### Test plan
+
+- [ ] Unit tests (if present)
+- [ ] End to end tests (if present)
+
+### Release notes
+
+- Flattened the color theme object and introduced a `getColorValue` helper for more consistent color access.
+
+### API changes
+- Changes to the `DefaultColorThemePalette` object. Any color customization may need to be refactored.

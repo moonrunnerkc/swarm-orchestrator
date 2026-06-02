@@ -1,0 +1,12 @@
+This is phase 1 of the plan to move all server utils into a single reusable package that can be shared across SSJS SDKs.
+
+Right now it does not do much, just houses the `diagnostics_channel` redis integrations. In subsequent steps:
+
+1. Code will *not* be moved out of `@sentry/core/server` into `@sentry-internal/server-utils`, in v10.
+2. Some or all code in `@sentry/core/server` may be moved into `@sentry-internal/server-utils` in v11, as this would be breaking change. (Redis channel integration was not, because it hasn't yet shipped in a release. Other high-level portable components may move over later, if justified.)
+3. No components will ever live in *both* places, because `server-utils` depends on `core`, and that would create a type dependency cycle.
+
+`@sentry/core/server` will live on for at least v10, possibly into v11. New server components will be placed in `@sentry-internal/server-utils`.
+
+fix: #21222
+fix: JS-2631

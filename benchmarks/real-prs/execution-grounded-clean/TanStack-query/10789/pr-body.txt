@@ -1,0 +1,48 @@
+## Summary
+
+Fix unnecessary Lit host updates in `@tanstack/lit-query` when refreshed controller state is referentially new but semantically unchanged.
+
+This closes a render-loop/crash path with function-backed query options ( followup for [10716](https://github.com/TanStack/query/pull/10716) ) and restores default tracked-result behavior for query controllers.
+
+## 🎯 Changes
+
+- Suppress controller-triggered `requestUpdate()` calls during Lit’s active `hostUpdate` phase.
+- Reuse observer current results instead of publishing fresh optimistic results on stable option refreshes.
+- Track accessed query result fields for `createQueryController`, `createInfiniteQueryController`, and `createQueriesController`.
+- Keep `createQueriesController` subscription handling on the emitted result to avoid per-emit option defaulting.
+- Sync accessor reads from observer state so suppressed tracked notifications do not leave later reads stale.
+- Apply structural sharing to `useMutationState` selected results.
+
+
+<!-- What changes are made in this PR? Describe the change and its motivation. -->
+
+## ✅ Checklist
+
+- [ ] I have followed the steps in the [Contributing guide](https://github.com/TanStack/query/blob/main/CONTRIBUTING.md).
+- [x] I have tested this code locally with `pnpm run test:pr`.
+
+## 🚀 Release Impact
+
+- [x] This change affects published code, and I have generated a [changeset](https://github.com/changesets/changesets/blob/main/docs/adding-a-changeset.md).
+- [ ] This change is docs/CI/dev-only (no release).
+
+
+<!-- This is an auto-generated comment: release notes by coderabbit.ai -->
+
+## Summary by CodeRabbit
+
+* **Bug Fixes**
+  * Fixed unnecessary host updates that occurred when query results remained structurally unchanged, significantly improving application performance and reducing re-renders.
+  * Optimized update handling for various query operations including refetching, infinite queries, and mutation state tracking.
+  * Enhanced result stability when using selector functions and tracked result reads.
+
+* **Tests**
+  * Added comprehensive test coverage validating update behavior and result stability across query and mutation scenarios.
+
+<!-- review_stack_entry_start -->
+
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/TanStack/query/pull/10789?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+
+<!-- review_stack_entry_end -->
+
+<!-- end of auto-generated comment: release notes by coderabbit.ai -->

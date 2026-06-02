@@ -1,0 +1,56 @@
+# Why
+
+resolve sdk53 expo-updates fingerprint runtime version resolving issue: https://expo.dev/accounts/kudochien/projects/sdk53/builds/7cb6d24c-ebdb-4735-b337-13f127b4610a
+
+for CNG projects, local fingerprint is generated without gradle.properties. on eas, fingerprint is generated after prebuild. the inconsistent autolinking behavior causes the inconsistent fingerprint output
+
+```
+
+Runtime version mismatch:
+- Runtime version calculated on local machine: c3ef84e90fb2d4a8d2c1fe822b350a9bd83b673c
+- Runtime version calculated on EAS: 9c28d2d6542887a1c6a74763bd7e8251a4b09ca3
+
+This may be due to one or more factors:
+- Differing result of conditional app config (app.config.js) evaluation for runtime version resolution.
+- Differing fingerprint when using fingerprint runtime version policy. If applicable, see fingerprint diff below.
+
+This would cause any updates published on the local machine to not be compatible with this build.
+Difference between local and EAS fingerprints:
+[
+ {
+  "op": "added",
+  "addedSource": {
+   "type": "dir",
+   "filePath": "android",
+   "reasons": [
+    "bareNativeDir"
+   ],
+   "hash": null
+  }
+ },
+ {
+  "op": "added",
+  "addedSource": {
+   "type": "dir",
+   "filePath": "node_modules/react-native-edge-to-edge",
+   "reasons": [
+    "rncoreAutolinkingAndroid"
+   ],
+   "hash": "4cbdb586fc8eca4b0249d064a35097b62a41aba8"
+  }
+ },
+```
+
+# How
+
+for CNG project and android.edgeToEdgeEnabled is true, we will add the `--transitive-linking-dependencies` argument to autolinking
+
+# Test Plan
+
+tested local sdk 53 project + expo-updates + `fingerprint` runtimeVersion policy, the fingerprint should include edge-to-edge
+
+# Checklist
+
+- [x] I added a `changelog.md` entry and rebuilt the package sources according to [this short guide](https://github.com/expo/expo/blob/main/CONTRIBUTING.md#-before-submitting)
+- [x] This diff will work correctly for `npx expo prebuild` & EAS Build (eg: updated a module plugin).
+- [x] Conforms with the [Documentation Writing Style Guide](https://github.com/expo/expo/blob/main/guides/Expo%20Documentation%20Writing%20Style%20Guide.md)

@@ -1,0 +1,49 @@
+## 🎯 Changes
+
+Fixes #10728.
+
+Updates `no-unstable-deps` to track simple same-file custom hooks that directly return a TanStack Query hook result. This makes the rule report wrapped unstable query or mutation results when they are used directly in React dependency arrays.
+
+The new coverage includes direct wrappers such as:
+
+```ts
+const useMyMutation = () => useMutation(...)
+const mutation = useMyMutation()
+```
+
+and function declarations that directly return `useQuery(...)`.
+
+Validation run locally:
+
+- `npx nx run @tanstack/eslint-plugin-query:test:lib`
+- `pnpm --filter @tanstack/eslint-plugin-query run test:eslint`
+- `pnpm --filter @tanstack/eslint-plugin-query run test:types:tscurrent`
+
+## ✅ Checklist
+
+- [x] I have followed the steps in the [Contributing guide](https://github.com/TanStack/query/blob/main/CONTRIBUTING.md).
+- [x] I have tested this code locally with `pnpm run test:pr`.
+
+## 🚀 Release Impact
+
+- [ ] This change affects published code, and I have generated a [changeset](https://github.com/changesets/changesets/blob/main/docs/adding-a-changeset.md).
+- [ ] This change is docs/CI/dev-only (no release).
+
+<!-- This is an auto-generated comment: release notes by coderabbit.ai -->
+## Summary by CodeRabbit
+
+* **Bug Fixes**
+  * no-unstable-deps now detects unstable TanStack Query results returned through custom wrapper hooks as well as direct hook calls, preventing unstable values in React dependency arrays.
+
+* **Tests**
+  * Added invalid test cases covering wrapper hooks declared before and after use for both query and mutation results.
+
+* **Refactor**
+  * Refactored detection/resolution to track custom hooks while preserving existing special-case handling for combined queries.
+
+<!-- review_stack_entry_start -->
+
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/TanStack/query/pull/10730?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+
+<!-- review_stack_entry_end -->
+<!-- end of auto-generated comment: release notes by coderabbit.ai -->

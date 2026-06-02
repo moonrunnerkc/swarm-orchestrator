@@ -1,0 +1,18 @@
+We keep getting these weird 'Failed to fetch dynamically imported module' errors after deploys. From some debugging this time around, it looks like this is maybe related to cloudflare caching 404 responses, then continuing to server 404s long after they're no longer valid.
+
+This was happening because we were setting an immutable cache-control header on all requests to /assets/ regardless of whether or not they were successful. This diff removes that blanket header, and instead only applies it to assets that we know definitely exist.
+
+### Change type
+
+- [x] `other` (or improvement, feature, api, other - pick ONE)
+
+### Test plan
+
+1. Verify build scripts correctly identify assets for caching.
+
+- [ ] Unit tests (if present)
+- [ ] End to end tests (if present)
+
+### Release notes
+
+- Fixes an issue where Cloudflare would cache 404 responses for assets after a deploy.

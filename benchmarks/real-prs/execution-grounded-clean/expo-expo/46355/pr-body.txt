@@ -1,0 +1,21 @@
+# Why
+
+In brownfield, when a host iOS app already ships a framework dependency that an Expo module brings in, integrating the artifact in the host will fail with a `Multiple commands produce '…/Frameworks/XYZ.framework'` error 
+
+While integrating [OsmAnd iOS](https://github.com/expo/expo-brownfield-examples/issues/84) for expo-brownfield-examples, we hit this issue with `expo-image`, which depends on `SDWebImage`, where the host app also ships its own `SDWebImage`. 
+
+# How 
+
+This PR adds a new `ios.hostProvidedFrameworks` option to the `expo-brownfield` config-plugin, that filters matching xcframeworks out of every code path that ships artifacts: `enumerateAllPrebuildModules`, `copyXCFrameworks`, the generated `Package.swift` binary targets, the source-built `@rpath` dep enumerator, and the missing-SPM-dep completeness check (so declaring SDWebImage as host-provided no longer fails the build when `expo-image`'s `spm.config.json` lists it as required).
+
+The `--host-provided <frameworks...>` CLI flag mirrors the plugin option and takes precedence when both are set. Mostly useful for CI smoke tests and quick repros where re-running prebuild would be heavyweight.
+
+# Test Plan
+
+- Add new unit tests under `e2e/cli/__tests__/` 
+
+- End-to-end repro (tested with https://github.com/briones-agent/Signal-iOS):
+1. Create an Expo project with `expo-image`, enable `expo-build-properties` `ios.usePrecompiledModules: true`, add `["expo-brownfield", { "ios": { "hostProvidedFrameworks": ["SDWebImage", "SDWebImageWebPCoder", "SDWebImageAVIFCoder", "SDWebImageSVGCoder", "libavif", "libdav1d"] } }]` to the plugins array.
+2. Run `npx expo prebuild --platform ios`
+3. Run `npx expo-brownfield build:ios --release --package MyAppPackage`. Confirm: no `SDWebImage*.xcframework` in `./artifacts/MyAppPackage-release/xcframeworks/`, the generated `Package.swift` has no matching `.binaryTarget` entries, and the build log includes `expo-brownfield: excluding SDWebImage (X.Y.Z) ...` for each entry.
+7. Add the package to a host iOS app that already has `pod 'SDWebImage'` in its `Podfile`. Build the host. The "Multiple commands produce" error is gone; `<Image source={{ uri }} />` renders at runtime; `otool -L MyHostApp.app/MyHostApp | grep -i sdwebimage` shows one resolved framework reference. 

@@ -1,0 +1,48 @@
+Closes #
+
+## 🎯 Changes
+
+Fix hardcoded `info.calls[0]` in the streaming batch response handler
+(`resolveResponse.ts`). When a batch request contains multiple calls and
+the 2nd+ call errors, the error shape incorrectly uses the first call's
+`path`, `input`, and `type`.
+
+The non-streaming batch handler in the same file correctly uses the map
+index:
+
+```typescript
+// Non-streaming (L700) — correct:
+const resultAsRPCResponse = results.map(
+  ([error, result], index) => {
+    const call = info.calls[index]!;
+```
+
+Only the streaming path (L600) was hardcoded to `[0]`.
+
+```diff
+-data: rpcCalls.map(async (res) => {
++data: rpcCalls.map(async (res, index) => {
+   const [error, result] = await res;
+-  const call = info.calls[0];
++  const call = info.calls[index];
+```
+
+This bug was not caught earlier because it only manifests when the 2nd+
+call in a streaming batch request errors — a relatively narrow code path
+compared to single-call or non-streaming batch errors.
+
+## ✅ Checklist
+
+- [x] I have followed the steps listed in the [Contributing guide](https://github.com/trpc/trpc/blob/main/CONTRIBUTING.md).
+- [x] If necessary, I have added documentation related to the changes made.
+- [x] I have added or updated the tests related to the changes made.
+
+<!-- This is an auto-generated comment: release notes by coderabbit.ai -->
+## Summary by CodeRabbit
+
+* **Bug Fixes**
+  * Fixed batch streaming so each RPC call in a multi-call batch is matched to its corresponding response or error, preventing misrouting to the first call.
+
+* **Tests**
+  * Added a regression test that verifies errors and results are correctly mapped to the proper call in a batched stream scenario.
+<!-- end of auto-generated comment: release notes by coderabbit.ai -->

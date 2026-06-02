@@ -1,0 +1,24 @@
+Closes https://linear.app/prisma-company/issue/TML-2092/customer-support-issue-qpe-crash-on-prisma-710
+
+When a driver adapter error arrived with `kind: 'postgres'` (or `mysql` / `sqlite` / `mssql`) and the adapter did not map the underlying database error code to a more specific `MappedError` kind, `rethrowAsUserFacing` rethrew the raw `DriverAdapterError` unchanged.
+
+Locally, that surfaced as `PrismaClientUnknownRequestError`. Worse, the query plan executor returned HTTP 500 with the real error message in the body, and Accelerate strips 500 response bodies, so end users only saw a generic P6000 with no way to diagnose the underlying problem.
+
+This commonly happens on schema drift — e.g. an `upsert()` targeting a column whose unique index was dropped in the DB raises Postgres `42P10` ("there is no unique or exclusion constraint matching the ON CONFLICT specification"), which is not individually mapped by the adapter. These errors are not bugs and end users need to see the underlying DB code and message to debug.
+
+## Fix
+
+When `getErrorCode` / `renderErrorMessage` have no specific mapping for a database-specific kind, fall back to a P2039 `UserFacingError` with the format `` Database error. Code: `X`. Message: `Y` `` carrying the raw `originalCode` / `originalMessage`. Consequences:
+
+1. Locally, the error is a `PrismaClientKnownRequestError(P2039, …)` with the real DB details.
+2. The query plan executor returns HTTP 400 with the structured error, which Accelerate forwards unchanged.
+3. Truly unknown kinds (e.g. new variants from a driver-adapter ahead of the client) still fall through to `assertNever` so they remain visible during development.
+
+P2010 "Raw query failed." is kept as-is for `$executeRaw` / `$queryRaw` via `rethrowAsUserFacingRawError`, so non-raw queries no longer claim to be raw in their error message.
+
+P2038 and P2039 are allocated outside the public Error Reference; both are now documented in `AGENTS.md` and cross-referenced from the code. We need to add them to the public docs.
+
+## Tests
+
+- New unit tests in `packages/client-engine-runtime/src/user-facing-error.test.ts` covering all four DB kinds, missing `originalCode`/`originalMessage`, raw-query parity (P2010 still), and a regression guard that specifically-mapped kinds (e.g. `UniqueConstraintViolation` → P2002) still win over the fallback.
+- New functional regression test in `packages/client/tests/functional/issues/unmapped-driver-error-user-facing/` that reproduces the real `42P10` upsert scenario by dropping the unique index and asserting `PrismaClientKnownRequestError(P2039, …)` with the raw DB details. Passes locally against `js_pg`, `js_neon`, and the QPE (`--remote-executor`) path.

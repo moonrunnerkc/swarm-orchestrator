@@ -1,0 +1,23 @@
+### Description
+
+No more log spamming with `WebSocket connection to * failed:` 🙂
+
+I came up with an idea to eliminate the WebSocket pinging in the network tab and the connection error logs and this PR implements that idea.
+
+This PR moves the pinging logic to a shared worker. This makes the connection error log and the network request to be output in a different location (at least for Chrome, haven't checked with other browsers). Except for that, everything should work the same.
+Since the error log and the network requests won't be output in the (main) devtools, I guess this would reduce the memory consumption.
+
+closes #16361
+
+<!-- What is this PR solving? Write a clear description or reference the issues it solves (e.g. `fixes #123`). What other alternatives have you explored? Are there any parts you think require more attention from reviewers? -->
+
+<!----------------------------------------------------------------------
+Before creating the pull request, please make sure you do the following:
+
+- Read the Contributing Guidelines at https://github.com/vitejs/vite/blob/main/CONTRIBUTING.md.
+- Check that there isn't already a PR that solves the problem the same way. If you find a duplicate, please help us reviewing it.
+- Update the corresponding documentation if needed.
+- Include relevant tests that fail without this PR but pass with it.
+
+Thank you for contributing to Vite!
+----------------------------------------------------------------------->

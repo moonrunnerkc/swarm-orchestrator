@@ -1,0 +1,35 @@
+In order to avoid redundant work in the spatial index when shape props change without affecting bounds, this PR makes `SpatialIndexManager` skip rbush mutation on prop-only diffs and exposes a private `_boundsEpoch` that only ticks when the index actually changes.
+
+While drawing on a populated page, every pointer move emits one updated shape (the active draw shape with new `segments`) through the store diff. Previously the index would unconditionally `upsert` the shape — an O(log N) tree rebalance — and bump its return value, invalidating downstream consumers like `getShapeIdsInsideBounds`. It also walked every indexed shape allocating a `Box` per shape during the transitive-bounds sweep.
+
+Three changes:
+
+1. `processIncrementalUpdate` compares incoming bounds to the indexed bounds and skips `upsert` when they're equal, removing the rebalance for prop-only updates.
+2. The computed returns a private `_boundsEpoch` that only ticks when an add/remove/upsert actually happened, so consumers like `notVisibleShapes` no longer invalidate when nothing in the rbush moved. Bookkeeping is centralised in a small `rebuildAndBumpEpoch` helper.
+3. The transitive-bounds sweep iterates the rbush's element map directly and compares against the raw `SpatialElement` instead of allocating a `Box` per shape and a fresh shape-id array. Existence checks use `RBushIndex.has(id)` instead of `getBounds(id) !== undefined`.
+
+The transitive sweep itself still runs unconditionally — it has to, because some diffs (e.g. a geo's `rectangle`→`ellipse` flip at the same width/height) leave the source shape's axis-aligned bounds unchanged but shift a bound arrow's intersection points. There's a regression test covering exactly that case.
+
+### Change type
+
+- [x] \`improvement\`
+
+### Test plan
+
+1. Open a page with a few hundred shapes.
+2. Start drawing a freehand stroke and move the pointer continuously.
+3. Confirm no perf regression in interaction; existing culling behavior (shapes outside the viewport hidden) is unchanged when panning/zooming or when shapes are added, moved, or deleted.
+
+- [x] Unit tests
+- [ ] End to end tests
+
+### Release notes
+
+- Improve drawing performance on pages with many shapes by skipping spatial index updates when only shape props change.
+
+### Code changes
+
+| Section   | LOC change |
+| --------- | ---------- |
+| Core code | +100 / -28 |
+| Tests     | +240 / -0  |

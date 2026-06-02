@@ -1,0 +1,79 @@
+diff --git a/packages/vite/src/node/plugins/assetImportMetaUrl.ts b/packages/vite/src/node/plugins/assetImportMetaUrl.ts
+index 48c48c3b495d5b..a579658fba81f5 100644
+--- a/packages/vite/src/node/plugins/assetImportMetaUrl.ts
++++ b/packages/vite/src/node/plugins/assetImportMetaUrl.ts
+@@ -56,7 +56,7 @@ export function assetImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
+         id: {
+           exclude: [exactRegex(preloadHelperId), exactRegex(CLIENT_ENTRY)],
+         },
+-        code: /new\s+URL.+import\.meta\.url/,
++        code: /new\s+URL.+import\.meta\.url/s,
+       },
+       async handler(code, id) {
+         let s: MagicString | undefined
+diff --git a/playground/assets/__tests__/assets.spec.ts b/playground/assets/__tests__/assets.spec.ts
+index baf37be9c874f5..1b60ddd0d16a41 100644
+--- a/playground/assets/__tests__/assets.spec.ts
++++ b/playground/assets/__tests__/assets.spec.ts
+@@ -671,6 +671,16 @@ test("new URL(/* @vite-ignore */ 'non-existent', import.meta.url)", async () =>
+   )
+ })
+ 
++test('new URL(..., import.meta.url) (multiline)', async () => {
++  const assetMatch = isBuild
++    ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png/
++    : '/foo/bar/nested/asset.png'
++
++  expect(await page.textContent('.import-meta-url-multiline')).toMatch(
++    assetMatch,
++  )
++})
++
+ test.runIf(isBuild)('manifest', async () => {
+   const manifest = readManifest('foo')
+   const entry = manifest['index.html']
+diff --git a/playground/assets/index.html b/playground/assets/index.html
+index 94d77d5ce6d854..6d2af8675452c8 100644
+--- a/playground/assets/index.html
++++ b/playground/assets/index.html
+@@ -377,6 +377,9 @@ <h2>new URL(`${dynamic}`, import.meta.url)</h2>
+   <code class="dynamic-import-meta-url-all"></code>
+ </p>
+ 
++<h2>Multiline new URL(..., import.meta.url)</h2>
++<code class="import-meta-url-multiline"></code>
++
+ <h2>simple script tag import-expression</h2>
+ <code class="import-expression"></code>
+ <code class="obj-import-express"></code>
+@@ -489,6 +492,7 @@ <h3>assets in template</h3>
+   import './css/css-url.css'
+   import './css/icons.css'
+   import './css/manual-chunks.css'
++  import { multilineUrl } from './multiline-import-meta-url.js'
+ 
+   text('.base', `import.meta.${``}env.BASE_URL: ${import.meta.env.BASE_URL}`)
+ 
+@@ -709,6 +713,8 @@ <h3>assets in template</h3>
+     text(`.dynamic-import-meta-url-all`, metaUrl)
+   }
+ 
++  text('.import-meta-url-multiline', multilineUrl)
++
+   function text(el, text) {
+     document.querySelector(el).textContent = text
+   }
+diff --git a/playground/assets/multiline-import-meta-url.js b/playground/assets/multiline-import-meta-url.js
+new file mode 100644
+index 00000000000000..4b40342522fc82
+--- /dev/null
++++ b/playground/assets/multiline-import-meta-url.js
+@@ -0,0 +1,8 @@
++// Test for multiline expressions
++// This is a separate file to ensure the regex filter in assetImportMetaUrlPlugin
++// correctly detects and processes multiline expressions that span multiple lines.
++export const multilineUrl = new URL(
++  './nested/asset.png',
++
++  import.meta.url,
++)

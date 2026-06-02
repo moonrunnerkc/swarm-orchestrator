@@ -1,0 +1,149 @@
+diff --git a/.changeset/green-parents-play.md b/.changeset/green-parents-play.md
+new file mode 100644
+index 0000000000..154a80aeb7
+--- /dev/null
++++ b/.changeset/green-parents-play.md
+@@ -0,0 +1,5 @@
++---
++"wrangler": patch
++---
++
++Fix: mark the `r2 bulk` command as hidden and experimental
+diff --git a/packages/wrangler/src/__tests__/index.test.ts b/packages/wrangler/src/__tests__/index.test.ts
+index 4eb4cec5e0..37a2984eee 100644
+--- a/packages/wrangler/src/__tests__/index.test.ts
++++ b/packages/wrangler/src/__tests__/index.test.ts
+@@ -301,7 +301,6 @@ describe("wrangler", () => {
+ 				  wrangler r2 object  Manage R2 objects
+ 				  wrangler r2 bucket  Manage R2 buckets
+ 				  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
+-				  wrangler r2 bulk    Interact with multiple R2 objects at once
+ 
+ 				GLOBAL FLAGS
+ 				  -c, --config    Path to Wrangler configuration file  [string]
+diff --git a/packages/wrangler/src/__tests__/r2/bulk.test.ts b/packages/wrangler/src/__tests__/r2/bulk.test.ts
+index 0dd48824c0..afa741b101 100644
+--- a/packages/wrangler/src/__tests__/r2/bulk.test.ts
++++ b/packages/wrangler/src/__tests__/r2/bulk.test.ts
+@@ -23,11 +23,6 @@ describe("r2", () => {
+ 			expect(std.out).toMatchInlineSnapshot(`
+ 				"wrangler r2 bulk
+ 
+-				Interact with multiple R2 objects at once
+-
+-				COMMANDS
+-				  wrangler r2 bulk put <bucket>  Create objects in an R2 bucket
+-
+ 				GLOBAL FLAGS
+ 				  -c, --config    Path to Wrangler configuration file  [string]
+ 				      --cwd       Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
+diff --git a/packages/wrangler/src/__tests__/r2/help.test.ts b/packages/wrangler/src/__tests__/r2/help.test.ts
+index 4556f49f64..c52d9ed3ae 100644
+--- a/packages/wrangler/src/__tests__/r2/help.test.ts
++++ b/packages/wrangler/src/__tests__/r2/help.test.ts
+@@ -15,24 +15,23 @@ describe("r2", () => {
+ 			await runWrangler("r2");
+ 			await endEventLoop();
+ 			expect(std.out).toMatchInlineSnapshot(`
+-			"wrangler r2
++				"wrangler r2
+ 
+-			📦 Manage R2 buckets & objects
++				📦 Manage R2 buckets & objects
+ 
+-			COMMANDS
+-			  wrangler r2 object  Manage R2 objects
+-			  wrangler r2 bucket  Manage R2 buckets
+-			  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
+-			  wrangler r2 bulk    Interact with multiple R2 objects at once
++				COMMANDS
++				  wrangler r2 object  Manage R2 objects
++				  wrangler r2 bucket  Manage R2 buckets
++				  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
+ 
+-			GLOBAL FLAGS
+-			  -c, --config    Path to Wrangler configuration file  [string]
+-			      --cwd       Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
+-			  -e, --env       Environment to use for operations, and for selecting .env and .dev.vars files  [string]
+-			      --env-file  Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
+-			  -h, --help      Show help  [boolean]
+-			  -v, --version   Show version number  [boolean]"
+-		`);
++				GLOBAL FLAGS
++				  -c, --config    Path to Wrangler configuration file  [string]
++				      --cwd       Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
++				  -e, --env       Environment to use for operations, and for selecting .env and .dev.vars files  [string]
++				      --env-file  Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
++				  -h, --help      Show help  [boolean]
++				  -v, --version   Show version number  [boolean]"
++			`);
+ 		});
+ 
+ 		it("should show help when an invalid argument is passed", async () => {
+@@ -46,25 +45,24 @@ describe("r2", () => {
+ 			"
+ 		`);
+ 			expect(std.out).toMatchInlineSnapshot(`
+-			"
+-			wrangler r2
++				"
++				wrangler r2
+ 
+-			📦 Manage R2 buckets & objects
++				📦 Manage R2 buckets & objects
+ 
+-			COMMANDS
+-			  wrangler r2 object  Manage R2 objects
+-			  wrangler r2 bucket  Manage R2 buckets
+-			  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
+-			  wrangler r2 bulk    Interact with multiple R2 objects at once
++				COMMANDS
++				  wrangler r2 object  Manage R2 objects
++				  wrangler r2 bucket  Manage R2 buckets
++				  wrangler r2 sql     Send queries and manage R2 SQL [open-beta]
+ 
+-			GLOBAL FLAGS
+-			  -c, --config    Path to Wrangler configuration file  [string]
+-			      --cwd       Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
+-			  -e, --env       Environment to use for operations, and for selecting .env and .dev.vars files  [string]
+-			      --env-file  Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
+-			  -h, --help      Show help  [boolean]
+-			  -v, --version   Show version number  [boolean]"
+-		`);
++				GLOBAL FLAGS
++				  -c, --config    Path to Wrangler configuration file  [string]
++				      --cwd       Run as if Wrangler was started in the specified directory instead of the current working directory  [string]
++				  -e, --env       Environment to use for operations, and for selecting .env and .dev.vars files  [string]
++				      --env-file  Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
++				  -h, --help      Show help  [boolean]
++				  -v, --version   Show version number  [boolean]"
++			`);
+ 		});
+ 	});
+ });
+diff --git a/packages/wrangler/src/r2/object.ts b/packages/wrangler/src/r2/object.ts
+index 7e67426d19..286f9fc439 100644
+--- a/packages/wrangler/src/r2/object.ts
++++ b/packages/wrangler/src/r2/object.ts
+@@ -37,8 +37,9 @@ export const r2ObjectNamespace = createNamespace({
+ export const r2BulkNamespace = createNamespace({
+ 	metadata: {
+ 		description: `Interact with multiple R2 objects at once`,
+-		status: "stable",
++		status: "experimental",
+ 		owner: "Product: R2",
++		hidden: true,
+ 	},
+ });
+ 
+@@ -450,8 +451,9 @@ export const r2ObjectDeleteCommand = createCommand({
+ export const r2BulkPutCommand = createCommand({
+ 	metadata: {
+ 		description: "Create objects in an R2 bucket",
+-		status: "stable",
++		status: "experimental",
+ 		owner: "Product: R2",
++		hidden: true,
+ 	},
+ 	positionalArgs: ["bucket"],
+ 	args: {

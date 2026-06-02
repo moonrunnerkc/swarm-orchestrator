@@ -1,0 +1,140 @@
+diff --git a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+index 9619b487ce0b..3edb3402b18a 100644
+--- a/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
++++ b/packages/client/src/runtime/core/engines/client/parameterization/parameterize.ts
+@@ -6,7 +6,7 @@
+  * both schema rules and runtime value types agree.
+  */
+ 
+-import { deserializeJsonObject } from '@prisma/client-engine-runtime'
++import { deserializeJsonObject, safeJsonStringify } from '@prisma/client-engine-runtime'
+ import type {
+   JsonArgumentValue,
+   JsonBatchQuery,
+@@ -273,7 +273,7 @@ class Parameterizer {
+    */
+   #handleArray(items: unknown[], originalValue: unknown, edge: InputEdge): unknown {
+     if (hasFlag(edge, EdgeFlag.ParamScalar) && getScalarMask(edge) & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(deserializeJsonObject(items))
++      const jsonValue = safeJsonStringify(deserializeJsonObject(items))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+@@ -324,7 +324,7 @@ class Parameterizer {
+ 
+     const mask = getScalarMask(edge)
+     if (mask & ScalarMask.Json) {
+-      const jsonValue = JSON.stringify(deserializeJsonObject(obj))
++      const jsonValue = safeJsonStringify(deserializeJsonObject(obj))
+       const type: PlaceholderType = { type: 'Json' }
+       return this.#getOrCreatePlaceholder(jsonValue, type)
+     }
+diff --git a/packages/client/tests/functional/issues/29267-uint8array-in-json/_matrix.ts b/packages/client/tests/functional/issues/29267-uint8array-in-json/_matrix.ts
+new file mode 100644
+index 000000000000..169663a76317
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29267-uint8array-in-json/_matrix.ts
+@@ -0,0 +1,4 @@
++import { defineMatrix } from '../../_utils/defineMatrix'
++import { allProviders, Providers } from '../../_utils/providers'
++
++export default defineMatrix(() => [allProviders.filter(({ provider }) => provider !== Providers.SQLSERVER)])
+diff --git a/packages/client/tests/functional/issues/29267-uint8array-in-json/prisma/_schema.ts b/packages/client/tests/functional/issues/29267-uint8array-in-json/prisma/_schema.ts
+new file mode 100644
+index 000000000000..04ec2a7bf437
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29267-uint8array-in-json/prisma/_schema.ts
+@@ -0,0 +1,19 @@
++import { idForProvider } from '../../../_utils/idForProvider'
++import testMatrix from '../_matrix'
++
++export default testMatrix.setupSchema(({ provider }) => {
++  return /* Prisma */ `
++    generator client {
++      provider = "prisma-client-js"
++    }
++
++    datasource db {
++      provider = "${provider}"
++    }
++
++    model TestRecord {
++      id ${idForProvider(provider)}
++      data Json
++    }
++  `
++})
+diff --git a/packages/client/tests/functional/issues/29267-uint8array-in-json/tests.ts b/packages/client/tests/functional/issues/29267-uint8array-in-json/tests.ts
+new file mode 100644
+index 000000000000..d4665451d2fb
+--- /dev/null
++++ b/packages/client/tests/functional/issues/29267-uint8array-in-json/tests.ts
+@@ -0,0 +1,68 @@
++import testMatrix from './_matrix'
++// @ts-ignore
++import type { PrismaClient } from './generated/prisma/client'
++
++declare let prisma: PrismaClient
++
++testMatrix.setupTestSuite(
++  () => {
++    test('serializes Uint8Array nested in object as base64', async () => {
++      const uint8 = new Uint8Array([72, 101, 108, 108, 111])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: { payload: uint8, label: 'test' } as any,
++        },
++      })
++
++      expect(record.data).toEqual({
++        payload: 'SGVsbG8=',
++        label: 'test',
++      })
++    })
++
++    test('serializes Uint8Array nested in array as base64', async () => {
++      const uint8 = new Uint8Array([72, 101, 108, 108, 111])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: [uint8, 'hello'] as any,
++        },
++      })
++
++      expect(record.data).toEqual(['SGVsbG8=', 'hello'])
++    })
++
++    test('serializes Uint8Array directly as base64', async () => {
++      const uint8 = new Uint8Array([72, 101, 108, 108, 111])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: uint8 as any,
++        },
++      })
++
++      expect(record.data).toBe('SGVsbG8=')
++    })
++
++    test('serializes deeply nested Uint8Array as base64', async () => {
++      const uint8 = new Uint8Array([1, 2, 3])
++
++      const record = await prisma.testRecord.create({
++        data: {
++          data: { outer: { inner: uint8 } } as any,
++        },
++      })
++
++      expect(record.data).toEqual({
++        outer: { inner: 'AQID' },
++      })
++    })
++  },
++  {
++    optOut: {
++      from: ['sqlserver'],
++      reason: 'SQL Server does not support JSON fields',
++    },
++  },
++)

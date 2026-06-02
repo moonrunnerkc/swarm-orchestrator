@@ -1,0 +1,16 @@
+Improve `sx` performance by removing allocations.
+
+
+[Example user code](https://gist.github.com/romgrk/03bd148e5e93e5a166b3f195e86562fd):
+```
+Before: 23.4ms +-1.6
+After:  15.2ms +-1.1
+
+n=100
+```
+
+We get roughly **35% less rendering time** for the example above which makes heavy use of the `sx` prop, so I guess user-code would see something in the 0-40% less rendering time depending on how much they use that prop.
+
+We can still get a lot more improvement by eliminating more memory allocations (I think we can get that example to at least 50% less rendering time), but the remaining changes would require more substantial work. The format of the `style({ [prop]: value, theme })` sx style handlers is expensive, we could instead use something like `style(prop, value, theme)`, though IIUC the system props also use those so there's a bit of refactoring to do.
+
+The logic to create an empty breakpoint object for each `sx` object/subobject is also expensive, I've tried to remove it by lazily initializing the breakpoints but `handleBreakpoints` is used too much in the codebase so that's another large refactor.
