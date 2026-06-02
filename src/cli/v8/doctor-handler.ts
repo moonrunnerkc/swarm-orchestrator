@@ -39,6 +39,7 @@ import { DEFAULT_TOURNAMENT_CONFIG } from '../../population/tournament';
 import type { ObligationV1 } from '../../contract/types';
 import { loadAuditConfig } from '../../audit/cheat-detector/audit-config';
 import { SEMANTIC_CHEAT_CATEGORIES } from '../../audit/types';
+import { detectTestRunner } from '../../audit/execution-grounded/sandbox';
 
 const logger = getLogger('cli:v8:doctor');
 
@@ -94,6 +95,7 @@ export async function handleDoctor(argv: string[]): Promise<number> {
   results.push(probeCwd(flags.cwd, flags.requireGit));
   results.push(...probeSwarmDirectory(flags.cwd));
   results.push(...probeJudgePrimary(flags.cwd));
+  results.push(...probeExecutionGrounded(flags.cwd));
 
   if (flags.connectors) {
     results.push(...probeConnectorSurface(flags.cwd));
@@ -653,6 +655,67 @@ function probeJudgePrimary(cwd: string): ProbeResult[] {
         detail: 'benchmarks/oracle-corpus exists but has no injected defects; run `npm run oracle:build`.',
       });
     }
+  }
+  return out;
+}
+
+function probeExecutionGrounded(cwd: string): ProbeResult[] {
+  const out: ProbeResult[] = [];
+  const config = loadAuditConfig(cwd);
+  if (!config.executionGrounded.enabled) {
+    out.push({
+      name: 'executionGrounded',
+      ok: true,
+      required: false,
+      fixable: false,
+      detail: 'disabled (default); enable per repo for mutation/repro/coverage evidence runs',
+    });
+    return out;
+  }
+  const configPath = path.join(cwd, '.swarm', 'audit-config.yaml');
+
+  const strykerResolvable = ((): boolean => {
+    try {
+      require.resolve('@stryker-mutator/core');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  if (config.executionGrounded.mutation && !strykerResolvable) {
+    out.push({
+      name: 'executionGrounded mutation (Stryker)',
+      ok: false,
+      required: false,
+      fixable: fs.existsSync(configPath),
+      detail:
+        'executionGrounded.mutation is on but @stryker-mutator/core is not resolvable. ' +
+        'The mutation check installs Stryker into each audited workspace, but the auditor host needs it too.',
+      fixHint: 'install @stryker-mutator/core (and the matching runner adapter), or set executionGrounded.mutation: false',
+    });
+  }
+
+  const runner = detectTestRunner(cwd);
+  if (runner === null) {
+    out.push({
+      name: 'executionGrounded test runner',
+      ok: false,
+      required: false,
+      fixable: false,
+      detail:
+        'executionGrounded is enabled but no test runner (jest/vitest/mocha/ava/node-test) was detected in ' +
+        'this repo. Mutation and coverage need one; the checks will skip with a recorded reason.',
+    });
+  }
+
+  if (out.length === 0) {
+    out.push({
+      name: 'executionGrounded',
+      ok: true,
+      required: false,
+      fixable: false,
+      detail: `enabled; runner=${runner ?? 'none'}, Stryker resolvable`,
+    });
   }
   return out;
 }

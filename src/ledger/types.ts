@@ -285,6 +285,34 @@ export interface LedgerEntryPayloadMap {
     line: number;
     reason?: string;
   };
+  // v11.1 execution-grounded findings. Distinct kinds so a finding that
+  // came from running the change (mutation, repro, coverage) is
+  // distinguishable in the ledger from a structural or judge finding.
+  // `evidencePath` points at the stored raw artifact (Stryker JSON, repro
+  // stdout/stderr, coverage JSON) that backs the finding.
+  'pr-audit-mutation-finding': {
+    category: string;
+    severity: 'block' | 'warn' | 'info';
+    file: string;
+    line: number;
+    mutator: string;
+    status: string;
+    evidencePath?: string;
+  };
+  'pr-audit-issue-repro-finding': {
+    category: string;
+    severity: 'block' | 'warn' | 'info';
+    issueRef: string;
+    verdict: string;
+    evidencePath?: string;
+  };
+  'pr-audit-coverage-finding': {
+    category: string;
+    severity: 'block' | 'warn' | 'info';
+    file: string;
+    line: number;
+    evidencePath?: string;
+  };
 }
 
 export type LedgerEntryType = keyof LedgerEntryPayloadMap;
@@ -325,3 +353,6 @@ export type PrAuditFindingEntry = LedgerEntry<'pr-audit-finding'>;
 export type PrAuditCompletedEntry = LedgerEntry<'pr-audit-completed'>;
 export type LlmJudgeResultEntry = LedgerEntry<'llm-judge-result'>;
 export type PrAuditJudgePrimaryEntry = LedgerEntry<'pr-audit-judge-primary'>;
+export type PrAuditMutationFindingEntry = LedgerEntry<'pr-audit-mutation-finding'>;
+export type PrAuditIssueReproFindingEntry = LedgerEntry<'pr-audit-issue-repro-finding'>;
+export type PrAuditCoverageFindingEntry = LedgerEntry<'pr-audit-coverage-finding'>;

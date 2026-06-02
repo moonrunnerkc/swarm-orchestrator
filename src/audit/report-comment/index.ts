@@ -11,6 +11,7 @@
 //     the merge. In `gate` the comment matches the v10.1 contract.
 
 import type { AuditMode, AuditResult, Finding, Severity } from '../types';
+import { isExecutionGroundedCategory } from '../types';
 import { formatPrecisionBadge } from './detector-precision';
 
 export interface RenderOptions {
@@ -203,7 +204,11 @@ function renderFinding(finding: Finding): string {
       '',
     );
   }
-  lines.push('```diff', finding.evidence, '```');
+  // Structural findings carry a diff snippet as evidence; execution-grounded
+  // findings (mutation, repro, coverage) carry a run record or captured
+  // output, which is not a diff, so it renders in a plain fence.
+  const fence = isExecutionGroundedCategory(finding.category) ? '```text' : '```diff';
+  lines.push(fence, finding.evidence, '```');
   return lines.join('\n');
 }
 

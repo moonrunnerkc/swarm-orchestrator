@@ -26,6 +26,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { getLogger } from '../../logger';
@@ -54,7 +55,12 @@ import type {
   PrAuditFindingEntry,
   PrAuditCompletedEntry,
   PrAuditJudgePrimaryEntry,
+  PrAuditMutationFindingEntry,
+  PrAuditIssueReproFindingEntry,
+  PrAuditCoverageFindingEntry,
 } from '../../ledger/types';
+import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
+import { runExecutionGrounded } from '../../audit/execution-grounded';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
@@ -255,6 +261,92 @@ export async function handleAudit(argv: string[]): Promise<number> {
   return await runAudit(flags);
 }
 
+interface ExecutionGroundedLayerArgs {
+  result: AuditResult;
+  prContext: PrContext;
+  unifiedDiff: string;
+  config: ExecutionGroundedConfig;
+  ledger: HashChainedLedger;
+  attribution: LedgerAgentAttribution | undefined;
+}
+
+/** Run the execution-grounded layer for a --pr audit and fold its advisory
+ *  findings into the result and the ledger (under dedicated entry kinds). */
+async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Promise<void> {
+  const { result, prContext, unifiedDiff, config, ledger, attribution } = args;
+  const pr = prContext.prMetadata;
+  const evidenceDir = path.join('.swarm', 'execution-grounded', `${pr.repository.replace('/', '-')}-${pr.number}`);
+  const aiAgent = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  let outcome;
+  try {
+    outcome = await runExecutionGrounded({
+      prDiff: unifiedDiff,
+      repo: pr.repository,
+      prNumber: pr.number,
+      prHeadSha: pr.headSha,
+      ...(pr.baseSha.length > 0 ? { prBaseSha: pr.baseSha } : {}),
+      prText: `${pr.title}\n\n${pr.body}`,
+      config,
+      baseDir: path.join(os.tmpdir(), 'swarm-eg'),
+      evidenceDir,
+      issueCacheDir: path.join(evidenceDir, 'issue-cache'),
+      ...(process.env.GITHUB_TOKEN !== undefined && process.env.GITHUB_TOKEN.length > 0
+        ? { githubToken: process.env.GITHUB_TOKEN }
+        : {}),
+    });
+  } catch (err) {
+    logger.warn(`execution-grounded layer failed for ${pr.repository}#${pr.number}: ${String(err)}`);
+    return;
+  }
+  if (outcome.skipped.length > 0) {
+    logger.info(`execution-grounded skipped: ${outcome.skipped.join('; ')}`);
+  }
+
+  const mutationReport = outcome.mutation?.rawReportPath;
+  const coverageReport = outcome.coverage?.rawReportPath;
+  const survivorAt = new Map<string, { mutator: string; status: string }>();
+  for (const m of outcome.mutation?.results ?? []) {
+    survivorAt.set(`${m.file}:${m.line}`, { mutator: m.mutator, status: m.status });
+  }
+
+  for (const finding of outcome.findings) {
+    if (finding.category.startsWith('mutation-survives')) {
+      const detail = survivorAt.get(`${finding.location.file}:${finding.location.line}`);
+      const payload: Omit<PrAuditMutationFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+        type: 'pr-audit-mutation-finding',
+        category: finding.category,
+        severity: finding.severity,
+        file: finding.location.file,
+        line: finding.location.line,
+        mutator: detail?.mutator ?? 'unknown',
+        status: detail?.status ?? 'Survived',
+      };
+      if (mutationReport !== undefined) (payload as PrAuditMutationFindingEntry).evidencePath = mutationReport;
+      ledger.append<PrAuditMutationFindingEntry>(payload, aiAgent);
+    } else if (finding.category === 'uncovered-changed-line') {
+      const payload: Omit<PrAuditCoverageFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+        type: 'pr-audit-coverage-finding',
+        category: finding.category,
+        severity: finding.severity,
+        file: finding.location.file,
+        line: finding.location.line,
+      };
+      if (coverageReport !== undefined) (payload as PrAuditCoverageFindingEntry).evidencePath = coverageReport;
+      ledger.append<PrAuditCoverageFindingEntry>(payload, aiAgent);
+    } else {
+      const payload: Omit<PrAuditIssueReproFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+        type: 'pr-audit-issue-repro-finding',
+        category: finding.category,
+        severity: finding.severity,
+        issueRef: finding.location.file,
+        verdict: finding.category === 'issue-repro-still-fails' ? 'fix-not-delivered' : 'pr-broke-repro',
+      };
+      ledger.append<PrAuditIssueReproFindingEntry>(payload, aiAgent);
+    }
+    result.findings.push(finding);
+  }
+}
+
 async function runAudit(flags: AuditFlags): Promise<number> {
   const startedAt = Date.now();
   const unifiedDiff = await loadDiff(flags);
@@ -377,6 +469,22 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       payload,
       attribution !== undefined ? { aiAgent: attribution } : undefined,
     );
+  }
+
+  // Execution-grounded layer (opt-in, advisory). Only meaningful for --pr
+  // audits, where we have the repo and the head/base commits to provision a
+  // sandboxed checkout. Defaults off; a failure here is logged and does not
+  // fail the audit (the findings ship advisory and never gate).
+  const auditConfig = loadAuditConfig(flags.repoRoot);
+  if (auditConfig.executionGrounded.enabled && prContext !== undefined) {
+    await runExecutionGroundedLayer({
+      result,
+      prContext,
+      unifiedDiff,
+      config: auditConfig.executionGrounded,
+      ledger,
+      attribution,
+    });
   }
 
   ledger.append<PrAuditCompletedEntry>(
