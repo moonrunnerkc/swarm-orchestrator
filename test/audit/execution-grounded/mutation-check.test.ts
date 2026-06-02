@@ -34,6 +34,10 @@ describe('execution-grounded / mutation-check (pure logic)', () => {
       assert.equal(scope.includedLines, 3);
       assert.equal(scope.droppedLines, 0);
     });
+    it('glob-escapes file paths so dynamic-route names do not break the run', () => {
+      const scope = buildMutateScope({ 'src/pages/api/[id].ts': [{ start: 1, end: 2 }] });
+      assert.deepEqual(scope.patterns, ['src/pages/api/\\[id\\].ts:1-2']);
+    });
     it('caps the total changed lines and reports the drop, never silently', () => {
       const scope = buildMutateScope({ 'src/a.ts': [{ start: 1, end: 100 }] }, 10);
       assert.deepEqual(scope.patterns, ['src/a.ts:1-10']);

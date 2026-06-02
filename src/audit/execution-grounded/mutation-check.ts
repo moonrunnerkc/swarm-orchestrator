@@ -66,13 +66,24 @@ export interface MutateScope {
   droppedLines: number;
 }
 
+// fast-glob (which Stryker uses to resolve `mutate`) treats these as glob
+// metacharacters. A real path containing them (a Next.js dynamic route like
+// `[trpc].ts`) is rejected when combined with a line range unless escaped.
+const GLOB_META = /[[\]{}()!*?+@|]/g;
+
+function escapeGlobPath(file: string): string {
+  return file.replace(GLOB_META, '\\$&');
+}
+
 /** Build Stryker `mutate` patterns (`file:start-end`) from changed-line
- *  ranges, capped at `maxLines` total changed lines. */
+ *  ranges, capped at `maxLines` total changed lines. File paths are
+ *  glob-escaped so dynamic-route names do not break the run. */
 export function buildMutateScope(changed: ChangedLineRanges, maxLines = MAX_MUTATE_LINES): MutateScope {
   const patterns: string[] = [];
   let included = 0;
   let dropped = 0;
   for (const [file, ranges] of Object.entries(changed)) {
+    const escaped = escapeGlobPath(file);
     for (const r of ranges) {
       const span = r.end - r.start + 1;
       if (included >= maxLines) {
@@ -81,7 +92,7 @@ export function buildMutateScope(changed: ChangedLineRanges, maxLines = MAX_MUTA
       }
       const room = maxLines - included;
       const end = span <= room ? r.end : r.start + room - 1;
-      patterns.push(`${file}:${r.start}-${end}`);
+      patterns.push(`${escaped}:${r.start}-${end}`);
       included += end - r.start + 1;
       if (end < r.end) dropped += r.end - end;
     }

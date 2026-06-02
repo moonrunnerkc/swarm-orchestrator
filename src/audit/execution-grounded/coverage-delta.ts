@@ -162,6 +162,19 @@ const DEFAULT_COVERAGE_TIMEOUT_MS = 15 * 60 * 1000;
  * Returns `ran: false` with a skipReason when the runner has no supported
  * coverage path or the suite produces no report.
  */
+/** Pin @vitest/coverage-v8 to the installed vitest version (it must match
+ *  exactly); other tools are installed unpinned. */
+function versionPinnedInstall(pkg: string, installDir: string): string {
+  if (pkg !== '@vitest/coverage-v8') return pkg;
+  try {
+    const vitestPkg = path.join(installDir, 'node_modules', 'vitest', 'package.json');
+    const version = (JSON.parse(fs.readFileSync(vitestPkg, 'utf8')) as { version?: string }).version;
+    return version !== undefined ? `${pkg}@${version}` : pkg;
+  } catch {
+    return pkg;
+  }
+}
+
 export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutcome {
   const { workspacePath, testRunner, changedLines } = opts;
   if (testRunner === null) {
@@ -177,7 +190,11 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
 
   if (command.install !== undefined) {
     try {
-      addDevTools(opts.packageManager ?? 'npm', opts.installDir ?? workspacePath, [command.install], {
+      // @vitest/coverage-v8 must match the project's vitest version exactly or
+      // vitest reports it as a missing dependency. Pin it to the installed
+      // vitest version when we can read it.
+      const pkg = versionPinnedInstall(command.install, opts.installDir ?? workspacePath);
+      addDevTools(opts.packageManager ?? 'npm', opts.installDir ?? workspacePath, [pkg], {
         timeoutMs: Math.max(1, Math.min(5 * 60 * 1000, deadline - Date.now())),
         ...(opts.cacheDir !== undefined ? { cacheDir: opts.cacheDir } : {}),
       });

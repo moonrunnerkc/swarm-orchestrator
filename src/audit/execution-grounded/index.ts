@@ -13,7 +13,7 @@ import { extractChangedLineRanges, isPlausiblyTestReachable, isTestFile } from '
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
 import type { ExecutionGroundedConfig } from '../cheat-detector/audit-config';
 import { provisionPRWorkspaces } from './sandbox';
-import { detectTestRunner } from './sandbox';
+import { detectTestRunner, type TestRunner } from './sandbox';
 import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
 import { runMutationCheck, type MutationResult, type MutationRunOutcome } from './mutation-check';
 import {
@@ -221,77 +221,93 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
-    // The corpus repos are workspaces, so a PR's changed files can span
-    // several packages. Run each check inside the package that owns its
-    // files (its test runner and config live there), and re-root the
-    // findings back to the repo-relative paths the diff used.
-    const scopes = groupChangedLinesByPackage(workspaces.post.workspacePath, changed);
-    for (const scope of scopes) {
-      if (Date.now() >= deadline) {
-        skipped.push(`wall-clock budget reached before package ${scope.packageDir || '<root>'}`);
-        break;
-      }
-      const pkgPath =
-        scope.packageDir === '' ? workspaces.post.workspacePath : path.join(workspaces.post.workspacePath, scope.packageDir);
-      // A workspace package often does not list the runner itself (it is
-      // hoisted to the root), so fall back to the root-detected runner.
-      const runner = detectTestRunner(pkgPath) ?? workspaces.post.testRunner;
-      // Install Stryker/coverage tools into the root node_modules, not the
-      // package, to avoid fighting the workspace symlink layout.
-      const installDir = workspaces.post.workspacePath;
+    const installDir = workspaces.post.workspacePath;
+    const pm = workspaces.post.packageManager;
+
+    // Run mutation + coverage for one scope (a cwd plus its changed-line map,
+    // keyed package-relative). Returns whether the suite actually executed.
+    const runScope = (
+      cwd: string,
+      packageDir: string,
+      scopeChanged: ChangedLineRanges,
+      runner: TestRunner | null,
+    ): boolean => {
       const evDir = (sub: string): { evidenceDir: string } | Record<string, never> =>
         input.evidenceDir !== undefined
-          ? { evidenceDir: path.join(input.evidenceDir, scope.packageDir || '_root', sub) }
+          ? { evidenceDir: path.join(input.evidenceDir, packageDir || '_root', sub) }
           : {};
       const reroot = (f: Finding): Finding => ({
         ...f,
-        location: { ...f.location, file: rerootToRepo(scope.packageDir, f.location.file) },
+        location: { ...f.location, file: rerootToRepo(packageDir, f.location.file) },
       });
-
       let coverageMap: CoverageMap | undefined;
-      if (input.config.coverage) {
+      let ran = false;
+      if (input.config.coverage && Date.now() < deadline) {
         const cov = computeCoverageDelta({
-          workspacePath: pkgPath,
+          workspacePath: cwd,
           testRunner: runner,
-          packageManager: workspaces.post.packageManager,
-          changedLines: scope.changedLines,
+          packageManager: pm,
+          changedLines: scopeChanged,
           timeoutMs: Math.max(1, deadline - Date.now()),
           installDir,
           ...evDir('coverage'),
           ...cacheArg,
         });
-        outcome.coverageRuns.push({ packageDir: scope.packageDir, outcome: cov });
-        if (cov.ran) coverageMap = cov.coverage;
-        else skipped.push(`coverage[${scope.packageDir || '<root>'}]: ${cov.skipReason ?? 'did not run'}`);
+        outcome.coverageRuns.push({ packageDir, outcome: cov });
+        if (cov.ran) {
+          coverageMap = cov.coverage;
+          ran = true;
+        } else skipped.push(`coverage[${packageDir || '<root>'}]: ${cov.skipReason ?? 'did not run'}`);
       }
-
-      const pkgFindings: Finding[] = [];
+      const scopeFindings: Finding[] = [];
       if (input.config.mutation && Date.now() < deadline) {
         const mut = runMutationCheck({
-          workspacePath: pkgPath,
-          changedLines: scope.changedLines,
+          workspacePath: cwd,
+          changedLines: scopeChanged,
           testRunner: runner,
-          packageManager: workspaces.post.packageManager,
+          packageManager: pm,
           timeoutMs: Math.max(1, deadline - Date.now()),
           installDir,
           ...evDir('mutation'),
           ...cacheArg,
         });
-        outcome.mutationRuns.push({ packageDir: scope.packageDir, outcome: mut });
-        if (mut.ran) pkgFindings.push(...mutationFindings(mut.results, coverageMap));
-        else skipped.push(`mutation[${scope.packageDir || '<root>'}]: ${mut.skipReason ?? 'did not run'}`);
+        outcome.mutationRuns.push({ packageDir, outcome: mut });
+        if (mut.ran) {
+          ran = true;
+          scopeFindings.push(...mutationFindings(mut.results, coverageMap));
+        } else skipped.push(`mutation[${packageDir || '<root>'}]: ${mut.skipReason ?? 'did not run'}`);
       }
-
-      // Coverage findings, suppressing lines a mutation finding already raised.
       const lastCov = outcome.coverageRuns[outcome.coverageRuns.length - 1];
-      if (lastCov?.packageDir === scope.packageDir && lastCov.outcome.ran) {
+      if (lastCov?.packageDir === packageDir && lastCov.outcome.ran) {
         const mutationLines = new Set(
-          pkgFindings.filter((f) => f.category.startsWith('mutation-survives')).map((f) => `${f.location.file}:${f.location.line}`),
+          scopeFindings.filter((f) => f.category.startsWith('mutation-survives')).map((f) => `${f.location.file}:${f.location.line}`),
         );
-        pkgFindings.push(...coverageFindings(lastCov.outcome.deltas, mutationLines));
+        scopeFindings.push(...coverageFindings(lastCov.outcome.deltas, mutationLines));
       }
+      findings.push(...scopeFindings.map(reroot));
+      return ran;
+    };
 
-      findings.push(...pkgFindings.map(reroot));
+    // Root-first. A unified-config monorepo (one root vitest/jest config) ties
+    // a package's source to tests that may live in another package, so the
+    // whole change is run at the root with the root config. Only when the root
+    // has no runner, or its suite cannot execute the change, fall back to
+    // per-package scoping (a repo with independent per-package configs).
+    let ranAtRoot = false;
+    if (workspaces.post.testRunner !== null && Date.now() < deadline) {
+      ranAtRoot = runScope(installDir, '', changed, workspaces.post.testRunner);
+    }
+    if (!ranAtRoot) {
+      for (const scope of groupChangedLinesByPackage(installDir, changed)) {
+        if (scope.packageDir === '') continue; // already tried at the root
+        if (Date.now() >= deadline) {
+          skipped.push(`wall-clock budget reached before package ${scope.packageDir}`);
+          break;
+        }
+        const pkgPath = path.join(installDir, scope.packageDir);
+        const runner = detectTestRunner(pkgPath) ?? workspaces.post.testRunner;
+        runScope(pkgPath, scope.packageDir, scope.changedLines, runner);
+      }
     }
 
     if (input.config.issueRepro && input.prText !== undefined && Date.now() < deadline) {
