@@ -19,7 +19,7 @@ A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 <a href="#install"><b>Install</b></a> ·
 <a href="#quick-start"><b>Quick start</b></a> ·
 <a href="#what-this-does"><b>What it does</b></a> ·
-<a href="#real-corpus-headline-f1"><b>Headline F1</b></a> ·
+<a href="#results"><b>Results</b></a> ·
 <a href="#cheat-detectors"><b>Detectors</b></a> ·
 <a href="#ai-bom"><b>AI-BOM</b></a> ·
 <a href="#reference"><b>Reference</b></a>
@@ -32,11 +32,17 @@ A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 
 ## What This Does
 
-Reads a pull-request diff, scores it against four advisory-grade cheat detectors, and writes a suspicion-score comment plus a CycloneDX-ML / SPDX 3.0 AI-Profile artifact.
-Default mode is `--mode=advise` (signal only); `--mode=gate` opts into the merge-blocking exit-code contract.
-The compliance side (AIBOM, hash-chained evidence ledger, EU AI Act Annex IV / CISA SBOM-for-AI mappings) is the credible-procurement angle; the detector accuracy is the work in progress.
+Swarm Orchestrator reads a pull-request diff and flags the shortcuts an AI coding agent takes to look done without being done: relaxed tests, stripped assertions, swallowed errors, fake renames, eleven checks in all.
+On a benchmark of planted cheats it recovers 253 of 300 (84%, up 20.5% from the prior version), and on real merged Cloudflare PRs it caught two cheats that Semgrep and the ESLint security rules missed, both reproducible offline.
+Findings are advisory by default, so it never blocks a merge unless you turn that on.
 
 </div>
+
+## Who it's for
+
+- You review AI-written PRs at volume and want a "this change may be gaming the tests" signal that ordinary linters do not give you.
+- You have to hand over AI-procurement or compliance paperwork (EU AI Act Annex IV, CISA SBOM-for-AI) and would rather generate the documents than write them by hand.
+- You run AI coding agents and want one hard rule: a patch lands only if it builds, passes tests, holds a stated property, and survives a falsifier trying to break it.
 
 ## Install
 
@@ -60,7 +66,7 @@ GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42
 # opt in to merge-blocking gate mode
 GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42 --mode gate
 
-# audit a local diff with the experimental detector set (all 10 detectors)
+# audit a local diff with the experimental detector set (all 11 detectors)
 git diff main...HEAD | swarm audit --diff-stdin --detectors experimental
 
 # audit + emit a CycloneDX 1.6 ML-BOM
@@ -75,105 +81,41 @@ swarm audit --pr <ref> --shadow-output ./audit-verdict.json
 
 Exit codes: `0` advisory-clean or any advise-mode run, `1` block (gate mode only), `2` usage error.
 
-## Real-corpus headline F1
+## Results
 
-The headline number is the score against the AI-labeled real-corpus
-baseline (205 PRs, 10 broken / 195 clean, eight agent vendors). Reproduce
-with `node dist/scripts/corpus/score-real.js`; snapshot at
-[`benchmarks/real-corpus/scores/latest.json`](benchmarks/real-corpus/scores/latest.json).
-Public dashboard: [moonrunnerkc.github.io/swarm-orchestrator](https://moonrunnerkc.github.io/swarm-orchestrator/docs/leaderboard/).
+Every number here is reproducible from this repo, runs offline, and points at the report that produced it.
 
-| | Value |
-|---|---|
-| **Real-corpus F1 (deterministic)** | **0.140** |
-| Real-corpus precision (deterministic) | 0.091 |
-| Real-corpus recall (deterministic) | 0.300 |
-| Advisory findings on the 195 clean PRs | 145 (down from ~1146 before the v10.4 verification stage) |
-| Real-corpus precision (judge gate on) | 1.000 (the gate refuses to block anything it cannot confirm) |
-| Sample size | 205 AI-labeled PRs (10 broken, 195 clean), pending human re-label under labels-v2 |
-| Agent vendors covered | 8 (devin, cursor, openhands, copilot-workspace, claude-code, aider, codex-cli, replit-agent) |
-| Detector set scored | experimental (all 10), so retired detectors are still measured |
-| LLM judge | off by default; rerun with `SWARM_AUDIT_LLM_JUDGE=1` (or `--judge`) to score the gated path |
+### Catches cheats that linters miss
 
-The recall fell from the v10.1 number (0.500) because two of the prior
-"catches" were `actions/checkout@v6` version-ceiling blocks on PRs that
-upgrade a real action, which v10.4 stops treating as hallucinations.
-Removing a catch that was only ever a coincidence is a correctness fix,
-not a regression. The reliable, label-independent win is on the 195
-clean PRs, where the verification stage cut non-informational findings
-by 87% (`docs/posts/2026-05-27-wild-pr-scan.md` has the per-detector
-breakdown).
+Two real cheats in merged Cloudflare PRs reproduce deterministically offline from the committed diffs, and a live differential confirms that Semgrep (210 rules) and the ESLint security ruleset flag neither:
 
-Findings reach a reviewer through two stages after the detectors run.
-First a deterministic verification stage refutes a candidate when the
-diff itself shows the pattern is legitimate (a mock target that resolves
-to an internal directory in the same diff, a rename paired with several
-different names, a test removed alongside the source it covered, a
-"no test" finding on a PR that claims no fix). Then, when
-`--mode=gate` and the judge are on, the Haiku confirmation gate must
-confirm a finding before it is allowed to block; anything it cannot
-confirm drops to advisory. On this corpus the gate refutes every
-candidate block, which is why judged precision is 1.000 and judged
-recall is 0: against AI-generated labels the safe gate blocks nothing
-rather than block wrongly. Trustworthy block-recall waits on the
-human-labeled corpus (`benchmarks/real-corpus/labels-v2/`).
+| PR | Cheat it caught | Semgrep / ESLint |
+|---|---|---|
+| [cloudflare/workers-sdk#14063](https://github.com/cloudflare/workers-sdk/pull/14063) | fake refactor: a function was renamed but two callers still call the old name | not flagged |
+| [cloudflare/workers-sdk#14132](https://github.com/cloudflare/workers-sdk/pull/14132) | error swallow: a bare empty `catch` silently hides every error in the block | not flagged |
 
-The synthetic regression suite prints F1 1.000 on the same code. **That
-1.000 is a self-consistency check, not detection power**: the generator
-and the detectors share the same regex vocabulary, so a perfect score on
-generated patches is what "the detector still understands its own
-generator" looks like, nothing more. The synthetic number is preserved
-in the leaderboard as a regression sidebar
-([`benchmarks/leaderboard/results.json`](benchmarks/leaderboard/results.json)),
-not as the headline.
+This is the cheat class ordinary analyzers do not model: they look for dangerous APIs, not for tests quietly relaxed or errors quietly dropped. Reproduce either catch with `swarm audit --diff-file benchmarks/real-prs/diffs/cloudflare-workers-sdk/<pr>.diff`. The broader study across twelve repos, with findings classified by two independent model families plus the full false-alarm accounting, is in [`benchmarks/real-prs/v11-BENEFIT-REPORT.md`](benchmarks/real-prs/v11-BENEFIT-REPORT.md); two further error-swallow catches in that report came from the pre-upgrade detector flagging comment-only `// skip` catches, which the current version downgrades as usually legitimate.
 
-The 205-entry corpus is labeled by an AI judge with "pending human
-review" stamped on every entry. That is the largest single hole in the
-project's credibility today; closing it is the next milestone (see
-[`docs/labeling-methodology.md`](docs/labeling-methodology.md) and the
-labels-v2 scaffold under [`benchmarks/real-corpus/labels-v2/`](benchmarks/real-corpus/labels-v2/)).
+### Measured detection, not asserted
 
-**Per-detector breakdown** (intent layer active, default strict policy,
-experimental set, judge off):
+Detection is scored against a defect-injection oracle: an injector splices one labeled cheat into a presumed-clean real PR, so recall is measured against ground truth rather than claimed. The auditor recovers **253 of 300** planted cheats (**84%**), up **20.5%** from the pre-upgrade baseline of 210/300, across twelve categories. Most structural detectors sit at or near 1.00 recall on their own injection class. Reproduce with `npm run benchmarks:full`; the pre/post A/B is in [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md) and the per-detector table is in [`benchmarks/oracle-corpus/per-detector-recall.md`](benchmarks/oracle-corpus/per-detector-recall.md).
 
-| Detector | Version | TP | FP | FN | Precision | Gate status |
-|---|---|---|---|---|---|---|
-| `error-swallow` | 2.0.0 | 3 | 13 | 0 | **0.188** | advisory |
-| `mock-of-hallucination` | 2.0.0 | 0 | 3 | 2 | 0.000 | advisory |
-| `no-op-fix` | 2.0.0 | 0 | 9 | 5 | 0.000 | advisory |
-| `fake-refactor` | 2.0.0 | 0 | 2 | 0 | 0.000 | advisory |
-| `assertion-strip` | 1.0.0 | 0 | 5 | 0 | 0.000 | advisory |
-| `coverage-erosion` | 1.1.0 | 0 | 4 | 0 | 0.000 | advisory |
-| `test-relaxation` | 1.1.0 | 0 | 4 | 0 | 0.000 | advisory |
-| `comment-only-fix` | 1.0.0 | 0 | 0 | 5 | n/a | advisory |
-| `exception-rethrow-lost-context` | 1.0.0 | 0 | 0 | 0 | n/a | unmeasured |
-| `dead-branch-insertion` | 1.0.0 | 0 | 0 | 0 | n/a | unmeasured |
+### Low noise on unbiased real PRs
 
-A detector is gate-eligible (allowed to emit a blocking finding without
-the judge) only when its measured precision is at least 0.90, it has at
-least 5 true positives, and the Wilson 95% lower bound is at least 0.50.
-No detector clears that bar on the current corpus, so every one is
-advisory: it still runs and still surfaces findings, capped to advisory
-severity. The gate governs blocking only, so recall is unchanged and
-nothing is silenced. The tier is computed from the scores snapshot into
-[`benchmarks/real-corpus/promotions.json`](benchmarks/real-corpus/promotions.json),
-and CI fails if the committed policy drifts from a fresh recompute
-(`npm run promotions:check`), so a detector cannot be hand-promoted into
-the gate without the precision to back it.
+On an 18-PR pilot across five public repos, the post-upgrade auditor's false-alarm burden is **0.11 findings per PR**, at or below the pre-upgrade auditor's, with the oracle recall gain intact ([`benchmarks/real-prs/REAL-WORLD-REPORT.md`](benchmarks/real-prs/REAL-WORLD-REPORT.md)).
 
-Every PR-comment finding renders its confidence and its measured
-precision inline, so a reviewer sees both every time a finding fires.
-The badge data source is
-[`src/audit/report-comment/detector-precision.ts`](src/audit/report-comment/detector-precision.ts).
+### A signal no diff-reader can produce
+
+An optional execution-grounded layer provisions a sandboxed checkout and runs diff-scoped mutation testing, issue-linked repro, and a coverage delta, then correlates the findings against each PR's revert and hotfix history. It surfaced one under-constrained change the diff-only layers cannot see: proof anchor [`trpc/trpc#6098`](https://github.com/trpc/trpc/pull/6098), where mutations survived on covered lines and eight of those lines are the ones the later hotfix changed. Reproduce with `npm run execution-grounded:full` ([`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`](benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md)).
 
 ## Cheat detectors
 
-Ten detectors. Seven load by default; three (`comment-only-fix`,
+Eleven detectors. Eight load by default; three (`comment-only-fix`,
 `exception-rethrow-lost-context`, `dead-branch-insertion`) require
 `--detectors experimental` because they have never fired on real PR
 data, so there is no signal to gauge them against. The set governs which
-detectors load; the precision gate above governs which may block.
-Registered in
+detectors load; the precision gate (see [Limitations and what's next](#limitations-and-whats-next))
+governs which may emit a blocking finding. Registered in
 [`src/audit/cheat-detector/detector-sets.ts`](src/audit/cheat-detector/detector-sets.ts).
 
 | Category | Set | Trigger |
@@ -182,9 +124,10 @@ Registered in
 | `mock-of-hallucination` | default | `jest.mock` / `vi.mock` / `@patch` against a module declared in no manifest in the repo. |
 | `no-op-fix` | default | Test modified with no source change in the same PR, or vice versa; import-graph reachability fallback when only one side moved. |
 | `fake-refactor` | default | Exported symbol renamed in source, no caller in the diff updates the old name. |
-| `assertion-strip` | experimental | Net assertion count in a test file drops after the PR. |
-| `coverage-erosion` | experimental | Source branch added with no compensating test addition. |
-| `test-relaxation` | experimental | Strict matcher swapped for a loose one, or a test block removed without same-chunk replacement. |
+| `coverage-erosion` | default | Source branch added with no compensating test addition. |
+| `test-relaxation` | default | Strict matcher swapped for a loose one, or a test block removed without same-chunk replacement. |
+| `assertion-strip` | default | Net assertion count in a test file drops after the PR. |
+| `type-suppression` | default | A type-checker or linter suppression (for example `@ts-ignore` or `eslint-disable`) added over a changed line. |
 | `comment-only-fix` | experimental | Source modifications are all comment additions. |
 | `exception-rethrow-lost-context` | experimental | `throw err` replaced with `throw new Error(...)` and `{ cause }` not forwarded. |
 | `dead-branch-insertion` | experimental | Branch guarded by a literal-false condition added. |
@@ -418,6 +361,15 @@ pin `8.0.x` if you still need `swarm run --v6`.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development workflow.
 - [`SECURITY.md`](SECURITY.md): vulnerability reporting.
 - [`CLAUDE.md`](CLAUDE.md): maintainer architecture notes.
+
+## Limitations and what's next
+
+An honest accounting of where the tool is weak today and what is being worked on.
+
+- **It over-flags normal PRs at scale, so findings ship advisory.** On a large clean-PR corpus the structural detectors fire on legitimate patterns (relocated tests, refactors that change assertions, pragmatic suppressions) often enough that blocking on them would be noisy. That is why `--mode advise` is the default and nothing blocks unless you opt in. Narrowing that false-alarm rate until a detector can earn the gate is the active work.
+- **No single detector has cleared the bar to block on its own.** A detector becomes gate-eligible only when its measured precision is at least 0.90 with enough true positives behind it. The tier is computed into [`benchmarks/real-corpus/promotions.json`](benchmarks/real-corpus/promotions.json) and CI fails if it drifts (`npm run promotions:check`), so today every detector is advisory-only.
+- **The real-corpus baseline is AI-labeled, so blocking precision is not yet proven.** Against the 205-PR model-labeled baseline the deterministic detectors score low (F1 0.140, [`benchmarks/real-corpus/scores/latest.json`](benchmarks/real-corpus/scores/latest.json)), and every label carries a "pending human review" stamp. That AI-labeling is the largest open hole in the project's credibility; closing it with human labels is the next milestone ([`docs/labeling-methodology.md`](docs/labeling-methodology.md), [`benchmarks/real-corpus/labels-v2/`](benchmarks/real-corpus/labels-v2/)).
+- **It is a cheat and under-constraint signal, not a bug finder.** It does not catch the logic bugs that get reverted; those leave no cheat-shaped tell. Use it to answer "did the agent cut a corner?" and "can I prove this patch met its contract?", not "is this code correct?".
 
 ## Contributing
 
