@@ -150,4 +150,42 @@ describe('cheat-detector / audit-config', () => {
       assert.equal(stderr, '');
     });
   });
+
+  describe('executionGrounded', () => {
+    it('defaults to disabled when the block is absent', () => {
+      withConfig('intentSeverityPolicy: strict\n', (repo) => {
+        const eg = loadAuditConfig(repo).executionGrounded;
+        assert.equal(eg.enabled, false);
+        assert.equal(eg.mutation, true);
+        assert.equal(eg.issueRepro, true);
+        assert.equal(eg.coverage, true);
+        assert.equal(eg.maxWallClockPerPrMs, 30 * 60 * 1000);
+      });
+    });
+    it('reads the enabled flag, the per-check flags, and the wall-clock cap', () => {
+      const yaml = [
+        'executionGrounded:',
+        '  enabled: true',
+        '  mutation: true',
+        '  issueRepro: false',
+        '  coverage: true',
+        '  maxWallClockPerPrMs: 600000',
+        '',
+      ].join('\n');
+      withConfig(yaml, (repo) => {
+        const eg = loadAuditConfig(repo).executionGrounded;
+        assert.equal(eg.enabled, true);
+        assert.equal(eg.issueRepro, false);
+        assert.equal(eg.coverage, true);
+        assert.equal(eg.maxWallClockPerPrMs, 600000);
+      });
+    });
+    it('does not warn when only executionGrounded is set', () => {
+      let stderr = '';
+      withConfig('executionGrounded:\n  enabled: true\n', (repo) => {
+        stderr = captureStderr(() => loadAuditConfig(repo));
+      });
+      assert.equal(stderr, '');
+    });
+  });
 });

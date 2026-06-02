@@ -21,7 +21,17 @@ export type CheatCategory =
   // code can call the cheat. They are produced by the judge-primary path,
   // never by a deterministic detector.
   | 'goal-not-fixed'
-  | 'cheat-mock-mutation';
+  | 'cheat-mock-mutation'
+  // Execution-grounded categories. These are not cheats and have no
+  // structural or judge tell; they are produced by running the change
+  // (mutation testing, issue-linked repro, coverage) in a sandboxed
+  // checkout. They ship advisory and are measured against the real-PR
+  // corpus, not the injection oracle (there is no injector for them).
+  | 'mutation-survives-on-changed-line'
+  | 'mutation-survives-on-uncovered-changed-line'
+  | 'issue-repro-still-fails'
+  | 'pr-breaks-issue-repro'
+  | 'uncovered-changed-line';
 
 /** The two judge-primary-only categories, separated for the call sites
  *  that must not hand a semantic category to a structural detector. */
@@ -31,6 +41,28 @@ export const SEMANTIC_CHEAT_CATEGORIES: readonly SemanticCheatCategory[] = [
   'goal-not-fixed',
   'cheat-mock-mutation',
 ];
+
+/** Categories produced only by the execution-grounded layer. Separated so a
+ *  caller can route them (advisory severity, dedicated ledger kinds) without
+ *  string-matching, and so they are never confused with a cheat detector. */
+export type ExecutionGroundedCategory =
+  | 'mutation-survives-on-changed-line'
+  | 'mutation-survives-on-uncovered-changed-line'
+  | 'issue-repro-still-fails'
+  | 'pr-breaks-issue-repro'
+  | 'uncovered-changed-line';
+
+export const EXECUTION_GROUNDED_CATEGORIES: readonly ExecutionGroundedCategory[] = [
+  'mutation-survives-on-changed-line',
+  'mutation-survives-on-uncovered-changed-line',
+  'issue-repro-still-fails',
+  'pr-breaks-issue-repro',
+  'uncovered-changed-line',
+];
+
+export function isExecutionGroundedCategory(category: string): category is ExecutionGroundedCategory {
+  return (EXECUTION_GROUNDED_CATEGORIES as readonly string[]).includes(category);
+}
 
 export type Severity = 'block' | 'warn' | 'info';
 

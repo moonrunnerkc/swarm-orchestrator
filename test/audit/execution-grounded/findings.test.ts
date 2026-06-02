@@ -1,0 +1,93 @@
+import { strict as assert } from 'assert';
+import {
+  coverageFindings,
+  mutableSourceFilter,
+  mutationFindings,
+  reproFindings,
+  type ReproComparison,
+} from '../../../src/audit/execution-grounded/index';
+import { parseIstanbulCoverage } from '../../../src/audit/execution-grounded/coverage-delta';
+import type { MutationResult } from '../../../src/audit/execution-grounded/mutation-check';
+
+describe('execution-grounded / finding builders', () => {
+  describe('mutableSourceFilter', () => {
+    it('accepts source JS/TS, rejects tests and non-code', () => {
+      assert.equal(mutableSourceFilter('src/calc.ts'), true);
+      assert.equal(mutableSourceFilter('packages/x/src/a.mjs'), true);
+      assert.equal(mutableSourceFilter('src/calc.test.ts'), false);
+      assert.equal(mutableSourceFilter('README.md'), false);
+      assert.equal(mutableSourceFilter('package.json'), false);
+    });
+  });
+
+  describe('mutationFindings', () => {
+    const survivedCovered: MutationResult = { file: 'src/a.ts', line: 5, mutator: 'EqualityOperator', killed: false, status: 'Survived' };
+    const noCoverage: MutationResult = { file: 'src/a.ts', line: 9, mutator: 'BooleanLiteral', killed: false, status: 'NoCoverage' };
+    const killed: MutationResult = { file: 'src/a.ts', line: 2, mutator: 'ArithmeticOperator', killed: true, status: 'Killed' };
+
+    it('ignores killed mutants', () => {
+      assert.equal(mutationFindings([killed]).length, 0);
+    });
+    it('classifies a Survived mutant as on-changed-line (covered)', () => {
+      const [f] = mutationFindings([survivedCovered]);
+      assert.equal(f?.category, 'mutation-survives-on-changed-line');
+      assert.equal(f?.severity, 'warn');
+    });
+    it('classifies a NoCoverage mutant as on-uncovered-changed-line', () => {
+      const [f] = mutationFindings([noCoverage]);
+      assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
+    });
+    it('upgrades a Survived mutant to uncovered when coverage says the line is not hit', () => {
+      const cov = parseIstanbulCoverage(
+        { '/ws/src/a.ts': { path: '/ws/src/a.ts', statementMap: { '0': { start: { line: 5 }, end: { line: 5 } } }, s: { '0': 0 } } },
+        '/ws',
+      );
+      const [f] = mutationFindings([survivedCovered], cov);
+      assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
+    });
+  });
+
+  describe('coverageFindings', () => {
+    const deltas = [
+      { file: 'src/a.ts', line: 5, addedOrModified: true, coveredAfter: true },
+      { file: 'src/a.ts', line: 9, addedOrModified: true, coveredAfter: false },
+      { file: 'src/a.ts', line: 12, addedOrModified: true, coveredAfter: false },
+    ];
+    it('flags only uncovered lines as info findings', () => {
+      const fs = coverageFindings(deltas, new Set());
+      assert.deepEqual(fs.map((f) => f.location.line).sort((a, b) => a - b), [9, 12]);
+      assert.equal(fs[0]?.severity, 'info');
+      assert.equal(fs[0]?.category, 'uncovered-changed-line');
+    });
+    it('suppresses lines a mutation finding already raised', () => {
+      const fs = coverageFindings(deltas, new Set(['src/a.ts:9']));
+      assert.deepEqual(fs.map((f) => f.location.line), [12]);
+    });
+  });
+
+  describe('reproFindings', () => {
+    const base = {
+      issue: { owner: 'o', repo: 'r', number: 7 },
+      repro: { kind: 'script' as const, language: 'js' as const, code: 'x' },
+      preStatus: 'failed',
+      postStatus: 'failed',
+      preOutput: 'pre',
+      postOutput: 'still broken',
+    };
+    it('raises issue-repro-still-fails for fix-not-delivered', () => {
+      const fs = reproFindings([{ ...base, verdict: 'fix-not-delivered' } as ReproComparison]);
+      assert.equal(fs[0]?.category, 'issue-repro-still-fails');
+      assert.equal(fs[0]?.severity, 'warn');
+      assert.ok(fs[0]?.evidence.includes('still broken'));
+    });
+    it('raises pr-breaks-issue-repro for pr-broke-repro', () => {
+      const fs = reproFindings([{ ...base, verdict: 'pr-broke-repro' } as ReproComparison]);
+      assert.equal(fs[0]?.category, 'pr-breaks-issue-repro');
+    });
+    it('emits nothing for delivered or non-reproducible verdicts', () => {
+      assert.equal(reproFindings([{ ...base, verdict: 'fix-delivered' } as ReproComparison]).length, 0);
+      assert.equal(reproFindings([{ ...base, verdict: 'not-reproducible' } as ReproComparison]).length, 0);
+      assert.equal(reproFindings([{ ...base, verdict: 'unevaluable' } as ReproComparison]).length, 0);
+    });
+  });
+});

@@ -47,10 +47,24 @@ export interface JudgePrimaryConfig {
   categories: readonly SemanticCheatCategory[];
 }
 
+/** Controls the execution-grounded checks (mutation testing, issue-linked
+ *  repro, coverage delta). Off by default: these provision a sandboxed
+ *  checkout and run the repo's suite, so they are for evidence runs and deep
+ *  audits, not every PR. When enabled, the three checks default on and a PR's
+ *  total wall-clock is capped (Stryker can run long on a large change). */
+export interface ExecutionGroundedConfig {
+  enabled: boolean;
+  mutation: boolean;
+  issueRepro: boolean;
+  coverage: boolean;
+  maxWallClockPerPrMs: number;
+}
+
 export interface AuditConfig {
   excludePaths: readonly string[];
   intentSeverityPolicy: IntentSeverityPolicy;
   judgePrimary: JudgePrimaryConfig;
+  executionGrounded: ExecutionGroundedConfig;
 }
 
 const DEFAULT_JUDGE_PRIMARY: JudgePrimaryConfig = {
@@ -59,10 +73,19 @@ const DEFAULT_JUDGE_PRIMARY: JudgePrimaryConfig = {
   categories: SEMANTIC_CHEAT_CATEGORIES,
 };
 
+const DEFAULT_EXECUTION_GROUNDED: ExecutionGroundedConfig = {
+  enabled: false,
+  mutation: true,
+  issueRepro: true,
+  coverage: true,
+  maxWallClockPerPrMs: 30 * 60 * 1000,
+};
+
 const EMPTY_CONFIG: AuditConfig = {
   excludePaths: [],
   intentSeverityPolicy: DEFAULT_INTENT_POLICY,
   judgePrimary: DEFAULT_JUDGE_PRIMARY,
+  executionGrounded: DEFAULT_EXECUTION_GROUNDED,
 };
 
 export function loadAuditConfig(repoRoot: string): AuditConfig {
@@ -72,8 +95,48 @@ export function loadAuditConfig(repoRoot: string): AuditConfig {
   const excludePaths = parseExcludePaths(text);
   const intentSeverityPolicy = parseIntentSeverityPolicy(text);
   const judgePrimary = parseJudgePrimary(text);
+  const executionGrounded = parseExecutionGrounded(text);
   warnIfUnrecognized(file, text, excludePaths);
-  return { excludePaths, intentSeverityPolicy, judgePrimary };
+  return { excludePaths, intentSeverityPolicy, judgePrimary, executionGrounded };
+}
+
+// Parses the optional `executionGrounded:` block:
+//
+//   executionGrounded:
+//     enabled: true
+//     mutation: true
+//     issueRepro: true
+//     coverage: true
+//     maxWallClockPerPrMs: 1800000
+//
+// Absent -> the default (disabled). When `enabled: true` with the sub-flags
+// omitted, all three checks run and the wall-clock cap defaults to 30 min.
+function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
+  const lines = text.split(/\r?\n/);
+  let inBlock = false;
+  let seen = false;
+  const cfg: ExecutionGroundedConfig = { ...DEFAULT_EXECUTION_GROUNDED };
+  for (const rawLine of lines) {
+    const trimmed = rawLine.replace(/#.*$/, '').trim();
+    if (/^executionGrounded\s*:/.test(trimmed)) {
+      inBlock = true;
+      seen = true;
+      continue;
+    }
+    if (!inBlock) continue;
+    if (trimmed.length > 0 && !/^\s/.test(rawLine)) break;
+    const boolMatch = trimmed.match(/^(enabled|mutation|issueRepro|coverage)\s*:\s*(true|false)\s*$/i);
+    if (boolMatch && boolMatch[1] !== undefined && boolMatch[2] !== undefined) {
+      cfg[boolMatch[1] as 'enabled' | 'mutation' | 'issueRepro' | 'coverage'] =
+        boolMatch[2].toLowerCase() === 'true';
+      continue;
+    }
+    const numMatch = trimmed.match(/^maxWallClockPerPrMs\s*:\s*(\d+)\s*$/);
+    if (numMatch && numMatch[1] !== undefined) {
+      cfg.maxWallClockPerPrMs = Number.parseInt(numMatch[1], 10);
+    }
+  }
+  return seen ? cfg : DEFAULT_EXECUTION_GROUNDED;
 }
 
 // Parses the optional `judgePrimary:` block:
@@ -169,6 +232,7 @@ function warnIfUnrecognized(
   if (excludePaths.length > 0) return;
   if (/^\s*intentSeverityPolicy\s*:/m.test(text)) return;
   if (/^\s*judgePrimary\s*:/m.test(text)) return;
+  if (/^\s*executionGrounded\s*:/m.test(text)) return;
   const hasContent = text
     .split(/\r?\n/)
     .some((line) => line.replace(/#.*$/, '').trim().length > 0);
