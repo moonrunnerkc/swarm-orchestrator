@@ -110,6 +110,38 @@ is `retain-on-failure` (drop on success, keep on failure). See
 [docs/falsification-adapters.md](docs/falsification-adapters.md) for the
 full policy list.
 
+### Execution-grounded isolation
+
+The execution-grounded audit layer (`src/audit/execution-grounded/`, opt-in via
+`executionGrounded.enabled`, default off) provisions a real checkout of the PR
+under audit and runs the repo's own toolchain against it: a git clone, a
+dependency install (which executes the package's untrusted `postinstall`
+scripts), an optional build, then diff-scoped mutation testing, a coverage run,
+and any issue-linked repro. All of that is attacker-influenced code.
+
+| Property | Detail |
+|---|---|
+| What runs | git clone/checkout, `npm ci` / pnpm / yarn / bun install (including `postinstall`), optional repo build, Stryker mutation run, coverage run, issue-repro execution |
+| Where (host, default) | A `mkdtemp` checkout under the run's base dir; every command runs there as the invoking user |
+| Where (`runner: docker`) | Mutation, coverage, and issue-repro run inside a container built from this repo's `Dockerfile` (`--rm`, only the checkout bind-mounted). Clone and install stay on the host |
+| Environment | Deny-by-default allowlist (`exec-env.ts`): the child sees only a toolchain-pinned `PATH`, `HOME`, locale/tmp/cert vars, and headless forcing. `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `OPENAI_API_KEY`, and anything else are dropped unless named in `SWARM_EG_ENV_PASSTHROUGH`. In docker only the headless and passthrough vars cross the boundary |
+| Network | Inherited from the host on the host runner; `--network none` in docker (override `SWARM_EG_DOCKER_NETWORK`) |
+| Timeout | Per-command cap, 5 minutes by default (`SWARM_EG_COMMAND_TIMEOUT_MS`); on timeout the command's whole process group is SIGKILLed, so a forked dev server cannot outlive it |
+
+**Residual risk, stated plainly.** The host runner has no filesystem, process,
+or network isolation beyond the env scrub. Untrusted `postinstall` scripts and
+the PR's own test code run as the invoking user: they can read any file that
+user can read and reach the network. The env allowlist removes the auditor's
+credentials from their reach, but it is not a sandbox. Run the execution-grounded
+layer only against PRs you would be willing to install and test locally, or set
+`executionGrounded.runner: docker` to confine the mutation, coverage, and
+issue-repro execution to a network-isolated container. Even in docker mode the
+dependency install (and its `postinstall`) still runs on the host; full install
+containerization is a follow-up. The docker path relies on native-docker
+bind-mount writeback to read back its reports (rootless or userns-remapped
+daemons may not propagate writes), and a timed-out `docker run` can orphan its
+container.
+
 ### Summary
 
 | Path | Execution | Isolation | Rollback | Timeout |
@@ -119,6 +151,7 @@ full policy list.
 | Obligation commands (build, test, property, perf) | `spawnSync` via `/bin/bash` in `repoRoot` | **None** — runs as invoking user | ARIES rollback after each obligation | 5 min default |
 | Falsifier adapters (opt-in) | External CLI in its own sandbox | Per-adapter (see docs) | N/A — adapters operate on already-verified patches | Per-adapter timeout |
 | Post-merge verification | `spawnSync` via `/bin/bash` in `repoRoot` | **None** — runs as invoking user | N/A — final pass | 5 min default |
+| Execution-grounded checks (opt-in) | `spawnSync` in a temp checkout, or `docker run` when `runner: docker` | Env-scrubbed allowlist (host); plus bind mount, `--network none`, process-group kill (docker) for mutation/coverage/repro | N/A — disposable checkout, removed after the run | 5 min/command default |
 
 ## Secret Handling
 
