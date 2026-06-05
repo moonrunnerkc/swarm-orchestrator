@@ -61,6 +61,10 @@ import type {
 } from '../../ledger/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
 import { runExecutionGrounded } from '../../audit/execution-grounded';
+import {
+  corroborateStructuralFindings,
+  executionSignalsFromOutcome,
+} from '../../audit/execution-grounded/corroborate';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
@@ -350,6 +354,22 @@ async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Prom
       ledger.append<PrAuditIssueReproFindingEntry>(payload, aiAgent);
     }
     result.findings.push(finding);
+  }
+
+  // Runtime corroboration (opt-in). When this run's execution layer actually
+  // produced signals, mark the structural findings that a surviving mutant,
+  // coverage gap, or still-failing repro backs on the same line. Uncorroborated
+  // findings are untouched and stay advisory.
+  if (config.corroborateStructural) {
+    const ran =
+      outcome.mutationRuns.some((r) => r.outcome.ran) ||
+      outcome.coverageRuns.some((r) => r.outcome.ran) ||
+      outcome.repros.length > 0;
+    if (ran) {
+      const signals = executionSignalsFromOutcome(outcome);
+      const backed = corroborateStructuralFindings(result.findings, signals);
+      if (backed > 0) logger.info(`runtime corroboration backed ${backed} structural finding(s)`);
+    }
   }
 }
 

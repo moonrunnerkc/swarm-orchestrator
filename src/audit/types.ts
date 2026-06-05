@@ -120,6 +120,29 @@ export interface Finding {
    * `pr-audit-judge-primary` rather than `pr-audit-finding`.
    */
   judgePrimary?: boolean;
+  /**
+   * v11.1: set by the opt-in runtime corroboration step when an
+   * execution-grounded signal (a surviving mutant, a coverage gap, or a
+   * still-failing issue repro) on the same file within this finding's
+   * changed-line range backs the structural finding. Absent on findings
+   * with no runtime backing, which stay advisory unchanged. See
+   * `execution-grounded/corroborate.ts`.
+   */
+  runtimeCorroboration?: RuntimeCorroboration;
+}
+
+/** Evidence that an execution-grounded signal corroborates a structural
+ *  finding. Exactly one signal kind is recorded, with its underlying data: the
+ *  mutant ids that survived, the uncovered changed lines, or the issue repro
+ *  reference that still fails. */
+export interface RuntimeCorroboration {
+  signal: 'surviving-mutant' | 'coverage-gap' | 'repro-still-fails';
+  /** Surviving-mutant ids, e.g. `BlockStatement@src/x.ts:12 -> Survived`. */
+  mutants?: string[];
+  /** Changed lines no test executed. */
+  uncoveredLines?: number[];
+  /** Issue reference whose repro still fails, e.g. `owner/repo#123`. */
+  repro?: string;
 }
 
 export interface AuditAgentAttribution {

@@ -191,6 +191,7 @@ async function main(): Promise<void> {
             coverage: true,
             maxWallClockPerPrMs: wallClockMs,
             runner: process.env.SWARM_EG_RUNNER === 'docker' ? 'docker' : 'host',
+            corroborateStructural: false,
           },
           baseDir: scratch,
           cacheDir,

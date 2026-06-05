@@ -64,6 +64,12 @@ export interface ExecutionGroundedConfig {
    *  with only the checkout bind-mounted and the network locked down. The
    *  docker path is skipped cleanly when docker is unavailable. */
   runner: 'host' | 'docker';
+  /** Correlate structural cheat findings with this run's execution signals
+   *  (a surviving mutant, a coverage gap, a still-failing repro) and mark the
+   *  ones with runtime backing. Off by default; only takes effect when the
+   *  execution-grounded layer actually ran. Raises a corroborated finding's
+   *  confidence without touching uncorroborated findings, which stay advisory. */
+  corroborateStructural: boolean;
 }
 
 export interface AuditConfig {
@@ -86,6 +92,7 @@ const DEFAULT_EXECUTION_GROUNDED: ExecutionGroundedConfig = {
   coverage: true,
   maxWallClockPerPrMs: 30 * 60 * 1000,
   runner: 'host',
+  corroborateStructural: false,
 };
 
 const EMPTY_CONFIG: AuditConfig = {
@@ -132,9 +139,11 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
     }
     if (!inBlock) continue;
     if (trimmed.length > 0 && !/^\s/.test(rawLine)) break;
-    const boolMatch = trimmed.match(/^(enabled|mutation|issueRepro|coverage)\s*:\s*(true|false)\s*$/i);
+    const boolMatch = trimmed.match(
+      /^(enabled|mutation|issueRepro|coverage|corroborateStructural)\s*:\s*(true|false)\s*$/i,
+    );
     if (boolMatch && boolMatch[1] !== undefined && boolMatch[2] !== undefined) {
-      cfg[boolMatch[1] as 'enabled' | 'mutation' | 'issueRepro' | 'coverage'] =
+      cfg[boolMatch[1] as 'enabled' | 'mutation' | 'issueRepro' | 'coverage' | 'corroborateStructural'] =
         boolMatch[2].toLowerCase() === 'true';
       continue;
     }
