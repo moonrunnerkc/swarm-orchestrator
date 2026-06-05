@@ -14,6 +14,14 @@ export type BlockTriggerKind =
   | 'corroborated-under-constraint'
   | 'obligation-failure';
 
+/** Every trigger kind, in a fixed order, for callers that iterate over all of
+ *  them (the calibrator and the eligibility policy). */
+export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
+  'claim-falsified',
+  'corroborated-under-constraint',
+  'obligation-failure',
+];
+
 /**
  * The PR claims a fix (a close-keyword issue link or a fix-claim title/body),
  * and the linked issue's repro, executed against the patched checkout, still
