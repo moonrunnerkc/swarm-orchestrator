@@ -42,15 +42,69 @@ const HEADLESS_ENV: NodeJS.ProcessEnv = {
   npm_config_yes: 'true',
 };
 
-/** Build the child-process environment: the pinned Node bin dir prepended to
- *  PATH, headless/non-interactive forcing, plus an optional package-manager
- *  cache override. */
+// Deny-by-default: the sandbox runs `npm ci` (untrusted postinstall scripts)
+// and the PR's own test suite. Inheriting the auditor's full environment hands
+// that attacker-controlled code every host secret -- ANTHROPIC_API_KEY,
+// GITHUB_TOKEN, OPENAI_API_KEY, and anything else. So the child sees only the
+// variables a package manager and test runner actually need to function;
+// everything else, including a secret whose name does not match any pattern
+// (GH_PAT, DATABASE_URL), is dropped because it is simply not on this list.
+// An operator who needs a specific host var (a registry proxy, a custom CA)
+// names it in SWARM_EG_ENV_PASSTHROUGH. PATH is rebuilt separately to pin the
+// toolchain, so it is intentionally absent here.
+const ENV_ALLOWLIST: readonly string[] = [
+  'HOME', // npm/git/corepack resolve ~/.npmrc, ~/.gitconfig, and their caches from here
+  'TMPDIR',
+  'TEMP',
+  'TMP', // scratch dirs the toolchain writes to
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TZ', // locale and timezone, or some tools warn or mis-sort
+  'TERM',
+  'SHELL',
+  'USER',
+  'LOGNAME',
+  'HOSTNAME', // benign identity/tty, kept so shims that read them do not break
+  'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR', // custom trust roots for TLS during install
+];
+
+/** Host variable names the operator has opted to pass through to the sandbox,
+ *  from the comma-separated `SWARM_EG_ENV_PASSTHROUGH`. This is the only way a
+ *  credential reaches the child: an operator who, for example, audits private
+ *  PRs and needs `GITHUB_TOKEN` for the clone lists it explicitly and accepts
+ *  the exposure. Empty when the variable is unset. */
+function passthroughNames(): readonly string[] {
+  const raw = process.env.SWARM_EG_ENV_PASSTHROUGH;
+  if (raw === undefined || raw.trim().length === 0) return [];
+  return raw
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+/** Build the child-process environment for a sandboxed command: a deny-by-default
+ *  allowlist of host vars (plus any named in `SWARM_EG_ENV_PASSTHROUGH`),
+ *  headless/non-interactive forcing, the pinned Node bin dir prepended to a
+ *  PATH we control, and an optional package-manager cache override. The
+ *  auditor's API keys and other secrets are never copied unless passed through. */
 export function execEnv(cacheDir?: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, ...HEADLESS_ENV };
-  const dir = process.env.SWARM_EG_NODE_BIN;
-  if (dir !== undefined && dir.length > 0) {
-    env.PATH = `${dir}${path.delimiter}${env.PATH ?? ''}`;
+  const allowed = new Set<string>(ENV_ALLOWLIST);
+  for (const name of passthroughNames()) allowed.add(name);
+
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of allowed) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
   }
+  // Headless/non-interactive forcing always wins over anything passed through.
+  Object.assign(env, HEADLESS_ENV);
+
+  const dir = process.env.SWARM_EG_NODE_BIN;
+  const basePath = process.env.PATH ?? '';
+  env.PATH = dir !== undefined && dir.length > 0 ? `${dir}${path.delimiter}${basePath}` : basePath;
   if (cacheDir !== undefined) env.npm_config_cache = cacheDir;
   return env;
 }
