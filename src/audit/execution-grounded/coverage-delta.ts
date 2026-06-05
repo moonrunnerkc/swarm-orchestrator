@@ -11,6 +11,7 @@ import * as path from 'path';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
 import type { DockerContext } from './docker-runner';
+import { computeEgCacheKey, egCacheEnabled, readEgCache, writeEgCache, type EgCacheContext } from './eg-cache';
 import { execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
@@ -164,6 +165,47 @@ export interface CoverageRunOptions {
    *  instead of on the host. The coverage tool is installed on the host; only
    *  the suite execution is containerized. */
   docker?: DockerContext;
+  /** When set (and SWARM_EG_NO_CACHE is not), look up and store the run by its
+   *  content hash, so an identical re-audit skips the install and the spawn. */
+  cache?: EgCacheContext;
+}
+
+/** JSON-friendly form of a coverage outcome. The CoverageMap holds Sets, which
+ *  do not survive JSON, so it is flattened to sorted arrays for the cache and
+ *  rebuilt on read. */
+interface SerializedCoverageOutcome {
+  ran: boolean;
+  deltas: CoverageDelta[];
+  coverage?: Array<[string, { instrumented: number[]; covered: number[] }]>;
+  rawReportPath?: string;
+  skipReason?: string;
+}
+
+function serializeCoverageOutcome(outcome: CoverageRunOutcome): SerializedCoverageOutcome {
+  const out: SerializedCoverageOutcome = { ran: outcome.ran, deltas: outcome.deltas };
+  if (outcome.coverage !== undefined) {
+    out.coverage = [...outcome.coverage.entries()].map(([file, cov]) => [
+      file,
+      { instrumented: [...cov.instrumented], covered: [...cov.covered] },
+    ]);
+  }
+  if (outcome.rawReportPath !== undefined) out.rawReportPath = outcome.rawReportPath;
+  if (outcome.skipReason !== undefined) out.skipReason = outcome.skipReason;
+  return out;
+}
+
+function deserializeCoverageOutcome(serialized: SerializedCoverageOutcome): CoverageRunOutcome {
+  const out: CoverageRunOutcome = { ran: serialized.ran, deltas: serialized.deltas };
+  if (serialized.coverage !== undefined) {
+    const map: CoverageMap = new Map();
+    for (const [file, cov] of serialized.coverage) {
+      map.set(file, { instrumented: new Set(cov.instrumented), covered: new Set(cov.covered) });
+    }
+    out.coverage = map;
+  }
+  if (serialized.rawReportPath !== undefined) out.rawReportPath = serialized.rawReportPath;
+  if (serialized.skipReason !== undefined) out.skipReason = serialized.skipReason;
+  return out;
 }
 
 export interface CoverageRunOutcome {
@@ -206,6 +248,26 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
   const timeoutMs = opts.timeoutMs ?? DEFAULT_COVERAGE_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   const env = execEnv(opts.cacheDir);
+
+  // Content-addressed cache: an identical re-audit skips the install and the
+  // coverage spawn. Keyed on (repo, head sha, changed lines, toolchain).
+  const useCache = opts.cache !== undefined && egCacheEnabled();
+  const cacheKey = useCache
+    ? computeEgCacheKey({
+        repo: opts.cache!.repo,
+        headSha: opts.cache!.headSha,
+        changedLines,
+        toolchain: `${opts.packageManager ?? 'npm'}/${testRunner}`,
+        check: 'coverage',
+      })
+    : undefined;
+  if (useCache && cacheKey !== undefined) {
+    const cached = readEgCache<SerializedCoverageOutcome>(opts.cache!, cacheKey);
+    if (cached !== undefined) {
+      log.debug(`coverage cache hit for ${opts.cache!.repo}@${opts.cache!.headSha.slice(0, 10)}; skipping run`);
+      return deserializeCoverageOutcome(cached);
+    }
+  }
 
   if (command.install !== undefined) {
     try {
@@ -260,5 +322,6 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
 
   const outcome: CoverageRunOutcome = { ran: true, deltas, coverage };
   if (rawReportPath !== undefined) outcome.rawReportPath = rawReportPath;
+  if (useCache && cacheKey !== undefined) writeEgCache(opts.cache!, cacheKey, serializeCoverageOutcome(outcome));
   return outcome;
 }

@@ -20,6 +20,7 @@ import {
   resolveDockerImage,
   type DockerContext,
 } from './docker-runner';
+import type { EgCacheContext } from './eg-cache';
 import { provisionPRWorkspaces } from './sandbox';
 import { detectTestRunner, type TestRunner } from './sandbox';
 import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
@@ -182,6 +183,9 @@ export interface ExecutionGroundedInput {
   installTimeoutMs?: number;
   /** Build the repo after install (self-hosting / compiled repos). */
   runBuild?: boolean;
+  /** Directory for the content-addressed mutation/coverage cache. Defaults to
+   *  `<cwd>/.swarm/eg-cache`. The cache itself is opt-out via SWARM_EG_NO_CACHE. */
+  egCacheDir?: string;
 }
 
 export interface PackagedMutationRun {
@@ -243,6 +247,15 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     log.info(`execution-grounded checks will run in docker (image ${image}, network ${dockerCtx.network})`);
   }
 
+  // Content-addressed cache for the mutation and coverage runs (opt-out via
+  // SWARM_EG_NO_CACHE, checked inside the checks). Persistent, outside the
+  // throwaway workspace, so an identical re-audit skips the expensive spawns.
+  const cacheCtx: EgCacheContext = {
+    repo: input.repo,
+    headSha: input.prHeadSha,
+    dir: input.egCacheDir ?? path.join(process.cwd(), '.swarm', 'eg-cache'),
+  };
+
   let workspaces;
   try {
     workspaces = provisionPRWorkspaces({
@@ -302,6 +315,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           ...evDir('coverage'),
           ...cacheArg,
           ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
+          cache: cacheCtx,
         });
         outcome.coverageRuns.push({ packageDir, outcome: cov });
         if (cov.ran) {
@@ -321,6 +335,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           ...evDir('mutation'),
           ...cacheArg,
           ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
+          cache: cacheCtx,
         });
         outcome.mutationRuns.push({ packageDir, outcome: mut });
         if (mut.ran) {

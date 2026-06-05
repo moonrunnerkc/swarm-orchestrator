@@ -16,6 +16,7 @@ import { getLogger } from '../../logger';
 import type { ChangedLineRanges, LineRange } from '../cheat-detector/diff-walker';
 import { lineInRanges } from '../cheat-detector/diff-walker';
 import type { DockerContext } from './docker-runner';
+import { computeEgCacheKey, egCacheEnabled, readEgCache, writeEgCache, type EgCacheContext } from './eg-cache';
 import { execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
@@ -250,6 +251,9 @@ export interface MutationRunOptions {
    *  container instead of on the host. Stryker is still installed on the host;
    *  only the `stryker run` execution is containerized. */
   docker?: DockerContext;
+  /** When set (and SWARM_EG_NO_CACHE is not), look up and store the run by its
+   *  content hash, so an identical re-audit skips the install and the spawn. */
+  cache?: EgCacheContext;
 }
 
 export interface MutationRunOutcome {
@@ -304,6 +308,26 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   const installDir = opts.installDir ?? workspacePath;
+
+  // Content-addressed cache: an identical re-audit skips the install and the
+  // Stryker spawn entirely. Keyed on (repo, head sha, changed lines, toolchain).
+  const useCache = opts.cache !== undefined && egCacheEnabled();
+  const cacheKey = useCache
+    ? computeEgCacheKey({
+        repo: opts.cache!.repo,
+        headSha: opts.cache!.headSha,
+        changedLines,
+        toolchain: `${opts.packageManager ?? 'npm'}/${runner}`,
+        check: 'mutation',
+      })
+    : undefined;
+  if (useCache && cacheKey !== undefined) {
+    const cached = readEgCache<MutationRunOutcome>(opts.cache!, cacheKey);
+    if (cached !== undefined) {
+      log.info(`mutation cache hit for ${opts.cache!.repo}@${opts.cache!.headSha.slice(0, 10)}; skipping run`);
+      return cached;
+    }
+  }
 
   // Stryker resolves its runner plugin from the project under test, so it has
   // to be added to the workspace with the workspace's own package manager
@@ -377,5 +401,6 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
 
   const outcome: MutationRunOutcome = { ran: true, results, summary, scope };
   if (rawReportPath !== undefined) outcome.rawReportPath = rawReportPath;
+  if (useCache && cacheKey !== undefined) writeEgCache(opts.cache!, cacheKey, outcome);
   return outcome;
 }
