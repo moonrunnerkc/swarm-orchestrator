@@ -17,8 +17,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { extractChangedLineRanges, type ChangedLineRanges } from '../../src/audit/cheat-detector/diff-walker';
+import type { ChangedLineRanges } from '../../src/audit/cheat-detector/diff-walker';
 import { expandRanges, findingWithinRanges } from '../../src/audit/execution-grounded/corroborate';
+import { parseProofUrl, proofChangedRanges, type Proof } from '../../src/audit/gate/revert-proof';
 import type { Finding } from '../../src/audit/types';
 import { getLogger } from '../../src/logger';
 import { repoRoot, regressionDir, differentialDir, repoSlug } from './lib/paths';
@@ -27,7 +28,6 @@ import { fetchPrDiff, makeOctokit, parseRepo, resolveGithubToken } from './lib/g
 const log = getLogger('eg-correlate');
 const LINE_TOLERANCE = 10;
 
-interface Proof { kind: string; url: string }
 interface RegressionSource { repo: string; prNumber: number; diffPath: string; proofs?: Proof[] }
 interface EgResult {
   corpus: string;
@@ -94,34 +94,29 @@ async function proofRanges(
   auditedFiles: Set<string>,
   cacheDir: string,
 ): Promise<ChangedLineRanges> {
-  const merged: ChangedLineRanges = {};
-  if (octokit === null) return merged;
+  if (octokit === null) return {};
+  const diffs: string[] = [];
   for (const proof of src.proofs ?? []) {
-    const m = /github\.com\/([\w.-]+)\/([\w.-]+)\/(?:pull|commit)\/([\w]+)/.exec(proof.url);
-    if (m === null) continue;
-    const cacheFile = path.join(cacheDir, `${m[1]}-${m[2]}-${m[3]}.diff`);
-    let diff: string;
+    const ref = parseProofUrl(proof.url);
+    if (ref === null) continue;
+    const cacheFile = path.join(cacheDir, `${ref.owner}-${ref.repo}-${ref.ref}.diff`);
     if (fs.existsSync(cacheFile)) {
-      diff = fs.readFileSync(cacheFile, 'utf8');
-    } else {
-      const prNum = Number(m[3]);
-      if (!Number.isFinite(prNum)) continue;
-      try {
-        diff = await fetchPrDiff(octokit as never, parseRepo(`${m[1]}/${m[2]}`), prNum);
-        fs.mkdirSync(cacheDir, { recursive: true });
-        fs.writeFileSync(cacheFile, diff);
-      } catch (err) {
-        log.debug(`proof diff fetch failed for ${proof.url}: ${String(err)}`);
-        continue;
-      }
+      diffs.push(fs.readFileSync(cacheFile, 'utf8'));
+      continue;
     }
-    const ranges = extractChangedLineRanges(diff);
-    for (const [file, rs] of Object.entries(ranges)) {
-      if (!auditedFiles.has(file)) continue; // only files the audited PR also touched
-      (merged[file] ??= []).push(...rs);
+    const prNum = Number(ref.ref);
+    if (!Number.isFinite(prNum)) continue; // a commit sha, not a pull: skip
+    try {
+      const diff = await fetchPrDiff(octokit as never, parseRepo(`${ref.owner}/${ref.repo}`), prNum);
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(cacheFile, diff);
+      diffs.push(diff);
+    } catch (err) {
+      log.debug(`proof diff fetch failed for ${proof.url}: ${String(err)}`);
     }
   }
-  return merged;
+  // Only files the audited PR also touched, the same restriction as before.
+  return proofChangedRanges(diffs, auditedFiles);
 }
 
 async function main(): Promise<void> {
