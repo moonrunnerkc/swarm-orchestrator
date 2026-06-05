@@ -16,11 +16,12 @@
 
 import * as crypto from 'crypto';
 import { canonicalJson } from '../../ledger/ledger';
-import type { CheatCategory } from '../types';
+import type { CheatCategory, Finding } from '../types';
 import type { PrIntent } from '../cheat-detector/pr-intent';
 import type { ReproComparison } from '../execution-grounded';
 import { renderReproCommand, type IssueRef } from '../execution-grounded/issue-repro';
 import type { TestRunner } from '../execution-grounded/sandbox';
+import { corroborationFor, type ExecutionSignals } from '../execution-grounded/corroborate';
 
 /** The three verifiable-evidence triggers. Each is self-certifying and
  *  label-free: its truth comes from running the change, not from a label. */
@@ -168,6 +169,79 @@ export function detectClaimFalsified(input: ClaimFalsifiedInput): BlockTrigger[]
         `The fix this PR claims for ${issueRef} does not deliver: the issue repro still ` +
         `fails against the patched code (it also failed before, so it reproduces).`,
       reproduce: reproCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+// The structural categories a runtime constraint can corroborate into a block
+// candidate. A surviving mutant or an uncovered changed line on the same line a
+// coverage-erosion / assertion-strip / test-relaxation / fake-refactor finding
+// lands on is the conjunction that earns the candidate; neither half does
+// alone. This is exactly the set corroborate.ts keys a mutant signal on.
+const CORROBORATED_BLOCK_CATEGORIES: ReadonlySet<CheatCategory> = new Set<CheatCategory>([
+  'coverage-erosion',
+  'assertion-strip',
+  'test-relaxation',
+  'fake-refactor',
+]);
+
+export interface CorroboratedUnderConstraintInput {
+  /** Structural cheat findings from the detector pass. */
+  findings: Finding[];
+  /** This run's execution signals (surviving mutants, coverage gaps). */
+  signals: ExecutionSignals;
+  /** PR ref for the audit reproduce command, e.g. `owner/repo#123`. */
+  prRef: string;
+}
+
+/** Phrase the runtime constraint backing a finding for the candidate summary. */
+function constraintText(signal: 'surviving-mutant' | 'coverage-gap'): string {
+  return signal === 'surviving-mutant'
+    ? 'a mutation on the line survived the suite'
+    : 'no test executes the line';
+}
+
+/**
+ * T2: a structural finding in a corroboratable category lands on a changed line
+ * where this run also reports a surviving mutant or zero coverage. The
+ * conjunction is the signal: a refactor that looks suspicious AND leaves the
+ * line unconstrained at runtime is far more likely a real cheat than either
+ * half alone. Reuses `corroborationFor`, so a non-null result is exactly that
+ * conjunction on the finding's own line. Silent on findings with no runtime
+ * backing, which stay advisory.
+ *
+ * @param input the structural findings, this run's signals, and the PR ref
+ * @returns one candidate per corroborated finding, or []
+ */
+export function detectCorroboratedUnderConstraint(
+  input: CorroboratedUnderConstraintInput,
+): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const finding of input.findings) {
+    if (!CORROBORATED_BLOCK_CATEGORIES.has(finding.category)) continue;
+    const corroboration = corroborationFor(finding, input.signals);
+    if (corroboration === null) continue;
+    if (corroboration.signal !== 'surviving-mutant' && corroboration.signal !== 'coverage-gap') continue;
+    const evidence: CorroboratedUnderConstraintEvidence = {
+      kind: 'corroborated-under-constraint',
+      category: finding.category,
+      file: finding.location.file,
+      line: finding.location.line,
+      ...(finding.location.endLine !== undefined ? { endLine: finding.location.endLine } : {}),
+      signal: corroboration.signal,
+      ...(corroboration.mutants !== undefined ? { mutants: corroboration.mutants } : {}),
+      ...(corroboration.uncoveredLines !== undefined ? { uncoveredLines: corroboration.uncoveredLines } : {}),
+      findingEvidence: finding.evidence,
+    };
+    out.push({
+      kind: 'corroborated-under-constraint',
+      summary:
+        `A \`${finding.category}\` finding at ${finding.location.file}:${finding.location.line} ` +
+        `is corroborated under constraint: ${constraintText(corroboration.signal)}, so the ` +
+        `structural pattern and the runtime signal agree on this line.`,
+      reproduce: `swarm audit ${input.prRef}`,
       evidence,
     });
   }

@@ -2,13 +2,28 @@ import { strict as assert } from 'assert';
 import {
   blockTriggerEvidenceSha256,
   detectClaimFalsified,
+  detectCorroboratedUnderConstraint,
   type BlockTrigger,
   type ClaimFalsifiedEvidence,
   type CorroboratedUnderConstraintEvidence,
   type ObligationFailureEvidence,
 } from '../../../src/audit/gate/block-triggers';
 import type { ReproComparison } from '../../../src/audit/execution-grounded';
+import type { ExecutionSignals } from '../../../src/audit/execution-grounded/corroborate';
 import type { PrIntent } from '../../../src/audit/cheat-detector/pr-intent';
+import type { CheatCategory, Finding } from '../../../src/audit/types';
+
+function finding(category: CheatCategory, file: string, line: number): Finding {
+  return {
+    category,
+    severity: 'warn',
+    message: `${category} at ${file}:${line}`,
+    location: { file, line },
+    evidence: '- assertChargeApplied()\n+ // removed',
+  };
+}
+
+const noSignals: ExecutionSignals = { survivingMutants: [], coverageGaps: [], reproFailures: [] };
 
 function reproComparison(verdict: ReproComparison['verdict']): ReproComparison {
   return {
@@ -137,6 +152,63 @@ describe('detectClaimFalsified (T1)', () => {
       linkedIssues: [],
       repros: [reproComparison('fix-not-delivered')],
       testRunner: null,
+    });
+    assert.equal(triggers.length, 0);
+  });
+});
+
+describe('detectCorroboratedUnderConstraint (T2)', () => {
+  it('fires when a corroboratable finding shares its line with a surviving mutant', () => {
+    const signals: ExecutionSignals = {
+      survivingMutants: [{ file: 'src/pay.ts', line: 12, id: 'BlockStatement@src/pay.ts:12 -> Survived' }],
+      coverageGaps: [],
+      reproFailures: [],
+    };
+    const triggers = detectCorroboratedUnderConstraint({
+      findings: [finding('coverage-erosion', 'src/pay.ts', 12)],
+      signals,
+      prRef: 'acme/widgets#7',
+    });
+    assert.equal(triggers.length, 1);
+    const evidence = triggers[0]!.evidence as CorroboratedUnderConstraintEvidence;
+    assert.equal(evidence.signal, 'surviving-mutant');
+    assert.deepEqual(evidence.mutants, ['BlockStatement@src/pay.ts:12 -> Survived']);
+    assert.equal(triggers[0]!.reproduce, 'swarm audit acme/widgets#7');
+  });
+
+  it('does not fire on a finding with no runtime signal on its line', () => {
+    const signals: ExecutionSignals = {
+      survivingMutants: [{ file: 'src/other.ts', line: 99, id: 'x' }],
+      coverageGaps: [],
+      reproFailures: [],
+    };
+    const triggers = detectCorroboratedUnderConstraint({
+      findings: [finding('coverage-erosion', 'src/pay.ts', 12)],
+      signals,
+      prRef: 'acme/widgets#7',
+    });
+    assert.equal(triggers.length, 0, 'the structural half alone is not enough');
+  });
+
+  it('ignores categories outside the corroboratable set even with a signal on the line', () => {
+    const signals: ExecutionSignals = {
+      survivingMutants: [{ file: 'src/pay.ts', line: 12, id: 'x' }],
+      coverageGaps: [],
+      reproFailures: [],
+    };
+    const triggers = detectCorroboratedUnderConstraint({
+      findings: [finding('no-op-fix', 'src/pay.ts', 12)],
+      signals,
+      prRef: 'acme/widgets#7',
+    });
+    assert.equal(triggers.length, 0);
+  });
+
+  it('returns nothing when there are no signals at all', () => {
+    const triggers = detectCorroboratedUnderConstraint({
+      findings: [finding('assertion-strip', 'src/pay.ts', 12)],
+      signals: noSignals,
+      prRef: 'acme/widgets#7',
     });
     assert.equal(triggers.length, 0);
   });
