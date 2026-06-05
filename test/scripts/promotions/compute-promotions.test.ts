@@ -15,6 +15,7 @@ function writeScores(file: string): void {
       'small-sample-detector': '1.0.0',
       'mediocre-detector': '1.0.0',
       'silent-detector': '1.0.0',
+      'corroborated-detector': '1.0.0',
     },
     perDetector: [
       // High precision with enough firings: clears the gate.
@@ -60,6 +61,20 @@ function writeScores(file: string): void {
         precision: 0,
         recall: 0,
         f1: 0,
+      },
+      // Noisy standalone (precision 0.17), but the runtime-corroborated subset
+      // of its findings is clean (8 TP, 0 FP). Below the standalone gate, above
+      // the corroborated gate.
+      {
+        detector: 'corroborated-detector',
+        truePositive: 2,
+        falsePositive: 10,
+        trueNegative: 80,
+        falseNegative: 3,
+        precision: 2 / 12,
+        recall: 0.4,
+        f1: 0.25,
+        corroborated: { truePositive: 8, falsePositive: 0 },
       },
     ],
   };
@@ -114,6 +129,28 @@ describe('scripts/promotions/compute-promotions', () => {
     const good = out.rows.find((r) => r.detector === 'precise-detector')!;
     assert.ok(good.reason.includes('precision'));
     assert.ok(good.reason.includes(scoresFile));
+  });
+
+  it('promotes a noisy-standalone detector to corroborated-gate-eligible on its clean corroborated subset', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
+    const { out } = run(dir);
+    // Below the standalone gate...
+    assert.ok(!out.gateEligibleDetectors.includes('corroborated-detector'));
+    assert.ok(out.advisoryOnlyDetectors.includes('corroborated-detector'));
+    // ...but above the corroborated gate.
+    assert.deepEqual(out.corroboratedGateEligibleDetectors, ['corroborated-detector']);
+    const row = out.rows.find((r) => r.detector === 'corroborated-detector')!;
+    assert.equal(row.corroborated.status, 'gate-eligible');
+    assert.equal(row.corroborated.precision, 1);
+    assert.equal(row.corroborated.truePositive, 8);
+  });
+
+  it('leaves a detector with no corroborated subset corroborated-unmeasured', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
+    const { out } = run(dir);
+    const row = out.rows.find((r) => r.detector === 'precise-detector')!;
+    assert.equal(row.corroborated.status, 'unmeasured');
+    assert.ok(!out.corroboratedGateEligibleDetectors.includes('precise-detector'));
   });
 
   it('judge-primary categories are advisory (warn, not block) with no measurement on file', () => {

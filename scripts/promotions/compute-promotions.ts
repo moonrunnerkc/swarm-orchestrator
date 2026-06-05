@@ -6,10 +6,13 @@
 // (`benchmarks/real-corpus/scores/latest.json` by default) and emits
 // one row per detector with:
 //
-//   - the measured F1, precision, recall, firing count
-//   - the proposed status: `gate-eligible` (F1 ≥ threshold),
-//     `advisory-only` (fired but below threshold), or `unmeasured`
-//     (did not fire on the sample)
+//   - the measured precision, recall, F1, firing count
+//   - the proposed status: `gate-eligible` (precision >= threshold with a
+//     minimum TP count and Wilson lower bound), `advisory-only` (fired but
+//     below the gate), or `unmeasured` (did not fire on the sample)
+//   - the corroborated tier: the same gate computed on the detector's
+//     runtime-corroborated subset, so a detector that is noisy standalone can
+//     still gate on the findings an execution signal confirmed
 //   - the threshold the gate decision was made against
 //   - the corpus identifier the numbers came from
 //
@@ -32,6 +35,12 @@ interface ScoresSnapshot {
     precision: number;
     recall: number;
     f1: number;
+    /** TP/FP counted only among this detector's runtime-corroborated findings
+     *  (the corroborate.ts step backed them with a surviving mutant, coverage
+     *  gap, or still-failing repro). Absent until the scorer runs the
+     *  execution-grounded layer on the labeled corpus; absent leaves the
+     *  detector corroborated-unmeasured. */
+    corroborated?: { truePositive: number; falsePositive: number };
   }>;
 }
 
@@ -83,6 +92,20 @@ export interface JudgePrimaryPolicy {
   categories: JudgePrimaryCategoryPolicy[];
 }
 
+/** The corroborated-mode eligibility for a detector: its precision on the
+ *  runtime-corroborated subset of its findings. A detector can clear the
+ *  corroborated gate even when its standalone precision is below it, because a
+ *  finding that also leaves a surviving mutant (or fails the repro) is far more
+ *  likely a real cheat. `unmeasured` means no corroborated subset was scored. */
+export interface CorroboratedTier {
+  truePositive: number;
+  falsePositive: number;
+  firingCount: number;
+  precision: number;
+  status: PromotionStatus;
+  reason: string;
+}
+
 export interface PromotionRow {
   detector: string;
   detectorVersion: string;
@@ -96,6 +119,7 @@ export interface PromotionRow {
   falseNegative: number;
   firingCount: number;
   reason: string;
+  corroborated: CorroboratedTier;
 }
 
 export interface PromotionsOutput {
@@ -109,6 +133,9 @@ export interface PromotionsOutput {
   gateEligibleDetectors: string[];
   advisoryOnlyDetectors: string[];
   unmeasuredDetectors: string[];
+  /** Detectors that clear the gate on their runtime-corroborated subset even
+   *  if they do not clear it standalone. The path to the first gate. */
+  corroboratedGateEligibleDetectors: string[];
   judgePrimary: JudgePrimaryPolicy;
 }
 
@@ -261,6 +288,60 @@ export function wilsonLowerBound(successes: number, trials: number): number {
   return Math.max(0, (center - margin) / denom);
 }
 
+/**
+ * The corroborated-mode tier for one detector: precision on the subset of its
+ * findings that runtime corroboration backed. Same gate shape as standalone
+ * (precision, minimum TP, Wilson lower bound), but on the corroborated subset,
+ * so a detector that is noisy standalone can still gate on the findings a
+ * surviving mutant or failed repro confirms. `unmeasured` when no subset was
+ * scored. Pure.
+ */
+export function corroboratedTier(
+  corroborated: { truePositive: number; falsePositive: number } | undefined,
+  gatePrecision: number,
+  minTruePositive: number,
+  scoresFile: string,
+): CorroboratedTier {
+  if (corroborated === undefined) {
+    return {
+      truePositive: 0,
+      falsePositive: 0,
+      firingCount: 0,
+      precision: 0,
+      status: 'unmeasured',
+      reason: 'no runtime-corroborated subset scored (run the execution-grounded layer on the labeled corpus)',
+    };
+  }
+  const firingCount = corroborated.truePositive + corroborated.falsePositive;
+  if (firingCount === 0) {
+    return {
+      truePositive: 0,
+      falsePositive: 0,
+      firingCount: 0,
+      precision: 0,
+      status: 'unmeasured',
+      reason: 'detector produced no runtime-corroborated findings on the sample',
+    };
+  }
+  const precision = corroborated.truePositive / firingCount;
+  const lower = wilsonLowerBound(corroborated.truePositive, firingCount);
+  const clears = precision >= gatePrecision && corroborated.truePositive >= minTruePositive && lower >= 0.5;
+  return {
+    truePositive: corroborated.truePositive,
+    falsePositive: corroborated.falsePositive,
+    firingCount,
+    precision,
+    status: clears ? 'gate-eligible' : 'advisory-only',
+    reason: clears
+      ? `corroborated precision ${precision.toFixed(3)} (Wilson95 lower ${lower.toFixed(3)}) with ` +
+        `${corroborated.truePositive} TP on the runtime-corroborated subset clears the corroborated ` +
+        `gate (precision >= ${gatePrecision}, TP >= ${minTruePositive}) on ${scoresFile}`
+      : `corroborated precision ${precision.toFixed(3)} (Wilson95 lower ${lower.toFixed(3)}), ` +
+        `${corroborated.truePositive} TP: below the corroborated gate ` +
+        `(precision >= ${gatePrecision}, TP >= ${minTruePositive}) on ${scoresFile}`,
+  };
+}
+
 export function computePromotions(args: Args): PromotionsOutput {
   const text = fs.readFileSync(args.scoresFile, 'utf8');
   const scores = JSON.parse(text) as ScoresSnapshot;
@@ -277,6 +358,7 @@ export function computePromotions(args: Args): PromotionsOutput {
       trueNegative: row.trueNegative,
       falseNegative: row.falseNegative,
       firingCount,
+      corroborated: corroboratedTier(row.corroborated, args.gatePrecision, args.minTruePositive, args.scoresFile),
     };
     if (firingCount === 0 && row.falseNegative === 0) {
       return {
@@ -320,6 +402,9 @@ export function computePromotions(args: Args): PromotionsOutput {
     gateEligibleDetectors: rows.filter((r) => r.status === 'gate-eligible').map((r) => r.detector),
     advisoryOnlyDetectors: rows.filter((r) => r.status === 'advisory-only').map((r) => r.detector),
     unmeasuredDetectors: rows.filter((r) => r.status === 'unmeasured').map((r) => r.detector),
+    corroboratedGateEligibleDetectors: rows
+      .filter((r) => r.corroborated.status === 'gate-eligible')
+      .map((r) => r.detector),
     judgePrimary: computeJudgePrimaryPolicy(loadMeasurements(args.measurementsFile)),
   };
 }
