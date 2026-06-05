@@ -150,9 +150,36 @@ A label entry is final when:
   majority that includes the fourth rater.
 
 Final labels are committed to
-`benchmarks/real-corpus/labels-v2/final/<id>.json` (one file per PR,
-JSON not JSONL so the diff is reviewable). The corresponding scorer
-runs `npm run corpus:score-real -- --labels-dir benchmarks/real-corpus/labels-v2/final`.
+`benchmarks/real-corpus/labels-v2/final/<id>.label.json` (one file per
+PR, JSON not JSONL so the diff is reviewable). The `.label.json` suffix
+is what the scorer's loader resolves; see
+`benchmarks/falsification-corpus/label-store.ts` (`labelPathFor`). The
+corresponding scorer runs
+`npm run corpus:score-real -- --labels-dir benchmarks/real-corpus/labels-v2/final`.
+
+## Adjudication tooling
+
+The arbiter-split findings carry the most information per human minute,
+so the loop drives off them. `scripts/labeling/adjudicate.ts` has four
+verbs:
+
+- `queue` reads the dual-arbiter output
+  (`benchmarks/real-prs/arbiter-labels-dual.json`), keeps the
+  `agreed: false` findings, groups them by PR, and orders the queue
+  highest-information first (sharp-detector splits weighted ahead of the
+  high-volume coverage-erosion / no-op-fix bulk). It writes a machine
+  queue and a fill-in worksheet.
+- `apply` validates a decisions file against the rubric above and appends
+  the verdicts into `labels-v2/<rater>/labels.jsonl`, non-destructive
+  unless `--replace`.
+- `kappa` reports the pairwise rater kappa (the gate) and the
+  human-vs-AI kappa over the ids both sides decided.
+- `promote` refuses unless the pairwise kappa clears 0.60, then projects
+  the multi-rater consensus into the `final/` GroundTruthLabel files.
+  Writing requires `--write`, so a scored baseline is never updated
+  silently. The labels-v2 rater enum is mapped onto the scorer's
+  `BrokenCategory` enum; a broken majority whose categories have no v10
+  detector is dropped and reported, not coerced.
 
 ## Anonymization
 
