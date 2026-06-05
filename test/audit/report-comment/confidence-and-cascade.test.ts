@@ -47,6 +47,21 @@ describe('audit / report-comment / confidence + cascade', () => {
     assert.match(out, /\*Confidence:\* judge-confirmed\./);
   });
 
+  it('renders the runtime-corroboration backing next to the badge', () => {
+    const out = renderPrComment(
+      result([
+        finding({
+          category: 'coverage-erosion',
+          confidence: 'runtime-corroborated',
+          runtimeCorroboration: { signal: 'surviving-mutant', mutants: ['Block@src/a.ts:12 -> Survived'] },
+        }),
+      ]),
+      { mode: 'advise' },
+    );
+    assert.match(out, /\*Confidence:\* runtime-corroborated\./);
+    assert.match(out, /Runtime-corroborated by\* a surviving mutant \(Block@src\/a\.ts:12 -> Survived\)/);
+  });
+
   it('collapses a same-category cascade beyond the cap into one summary line', () => {
     const findings: Finding[] = [];
     for (let i = 0; i < 25; i += 1) {

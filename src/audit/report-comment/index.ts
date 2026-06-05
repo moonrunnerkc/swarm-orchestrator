@@ -10,7 +10,7 @@
 //     it explicit that the audit is reporting suspicions, not gating
 //     the merge. In `gate` the comment matches the v10.1 contract.
 
-import type { AuditMode, AuditResult, Finding, Severity } from '../types';
+import type { AuditMode, AuditResult, Finding, RuntimeCorroboration, Severity } from '../types';
 import { isExecutionGroundedCategory } from '../types';
 import { formatPrecisionBadge } from './detector-precision';
 
@@ -184,6 +184,19 @@ function renderBucketWithCascadeCap(bucket: readonly Finding[]): string[] {
   return out;
 }
 
+/** One-line description of the execution signal backing a runtime-corroborated
+ *  finding, shown under the confidence line so the grade is auditable. */
+function formatCorroboration(rc: RuntimeCorroboration): string {
+  switch (rc.signal) {
+    case 'surviving-mutant':
+      return `a surviving mutant (${(rc.mutants ?? []).join('; ')})`;
+    case 'coverage-gap':
+      return `an uncovered changed line (${(rc.uncoveredLines ?? []).join(', ')})`;
+    case 'repro-still-fails':
+      return `a still-failing issue repro (${rc.repro ?? ''})`;
+  }
+}
+
 function renderFinding(finding: Finding): string {
   const fileLine = finding.location.endLine !== undefined
     ? `\`${finding.location.file}\`:${finding.location.line}-${finding.location.endLine}`
@@ -195,9 +208,11 @@ function renderFinding(finding: Finding): string {
     '',
     `*Confidence:* ${confidence}. *Detector precision badge:* ${badge}.`,
     '',
-    finding.message,
-    '',
   ];
+  if (finding.runtimeCorroboration !== undefined) {
+    lines.push(`*Runtime-corroborated by* ${formatCorroboration(finding.runtimeCorroboration)}.`, '');
+  }
+  lines.push(finding.message, '');
   if (finding.judgeReasoning !== undefined && finding.judgeModelId !== undefined) {
     lines.push(
       `*LLM judge (\`${finding.judgeModelId}\`):* ${finding.judgeReasoning}`,
