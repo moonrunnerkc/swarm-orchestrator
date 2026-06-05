@@ -22,92 +22,22 @@ import type { ReproComparison } from '../execution-grounded';
 import { renderReproCommand, type IssueRef } from '../execution-grounded/issue-repro';
 import type { TestRunner } from '../execution-grounded/sandbox';
 import { corroborationFor, type ExecutionSignals } from '../execution-grounded/corroborate';
+import type {
+  BlockTrigger,
+  BlockTriggerEvidence,
+  ClaimFalsifiedEvidence,
+  CorroboratedUnderConstraintEvidence,
+  ObligationFailureEvidence,
+} from './block-trigger-types';
 
-/** The three verifiable-evidence triggers. Each is self-certifying and
- *  label-free: its truth comes from running the change, not from a label. */
-export type BlockTriggerKind =
-  | 'claim-falsified'
-  | 'corroborated-under-constraint'
-  | 'obligation-failure';
-
-/**
- * The PR claims a fix (a close-keyword issue link or a fix-claim title/body),
- * and the linked issue's repro, executed against the patched checkout, still
- * fails. Execution contradicts the claim. Evidence is the repro command and
- * its failing output.
- */
-export interface ClaimFalsifiedEvidence {
-  kind: 'claim-falsified';
-  /** Issue whose repro contradicts the fix claim, e.g. `owner/repo#123`. */
-  issueRef: string;
-  /** The PR's own fix-claim text, quoted back so the contradiction is plain. */
-  claim: string;
-  /** The command that ran the repro against the patched checkout. */
-  reproCommand: string;
-  /** Repro status before the PR (expected `failed`: the repro reproduces). */
-  preStatus: string;
-  /** Repro status after the PR (`failed`: the claimed fix did not land). */
-  postStatus: string;
-  /** Captured failing output from the post-PR repro run. */
-  postOutput: string;
-}
-
-/**
- * A structural finding in a category an execution signal can corroborate
- * (coverage-erosion, assertion-strip, test-relaxation, fake-refactor) lands on
- * a changed line where a mutant survived or no test ran. Neither half blocks
- * alone; the conjunction is the signal. Evidence is the finding plus the mutant
- * ids or the uncovered lines on that same line.
- */
-export interface CorroboratedUnderConstraintEvidence {
-  kind: 'corroborated-under-constraint';
-  category: CheatCategory;
-  file: string;
-  line: number;
-  endLine?: number;
-  /** The runtime constraint backing the structural finding on this line. */
-  signal: 'surviving-mutant' | 'coverage-gap';
-  /** Surviving mutant ids on the line, set when `signal` is surviving-mutant. */
-  mutants?: string[];
-  /** Uncovered changed lines, set when `signal` is coverage-gap. */
-  uncoveredLines?: number[];
-  /** The structural finding's own evidence snippet. */
-  findingEvidence: string;
-}
-
-/**
- * A declared contract obligation (build, test, property, falsifier) failed on
- * the patched workspace. This is the orchestrator's existing hard signal,
- * reused as a block trigger. Evidence is the obligation command and its
- * captured output.
- */
-export interface ObligationFailureEvidence {
-  kind: 'obligation-failure';
-  obligationType: string;
-  obligationIndex?: number;
-  /** The obligation command that failed. */
-  command: string;
-  /** Captured failure output / detail from the verifier. */
-  output: string;
-}
-
-export type BlockTriggerEvidence =
-  | ClaimFalsifiedEvidence
-  | CorroboratedUnderConstraintEvidence
-  | ObligationFailureEvidence;
-
-/**
- * A block-trigger candidate. `reproduce` is the exact command the author runs
- * to regenerate `evidence` and see the same result; `summary` is the one-line
- * human framing. A candidate is not a block on its own: the eligibility policy
- * decides whether its kind is allowed to gate.
- */
-export interface BlockTrigger {
-  kind: BlockTriggerKind;
-  summary: string;
-  reproduce: string;
-  evidence: BlockTriggerEvidence;
-}
+export type {
+  BlockTrigger,
+  BlockTriggerEvidence,
+  BlockTriggerKind,
+  ClaimFalsifiedEvidence,
+  CorroboratedUnderConstraintEvidence,
+  ObligationFailureEvidence,
+} from './block-trigger-types';
 
 /**
  * The sha256 of an evidence object's canonical JSON. Pins the evidence into the
@@ -245,5 +175,76 @@ export function detectCorroboratedUnderConstraint(
       evidence,
     });
   }
+  return out;
+}
+
+/**
+ * One declared-obligation outcome on the patched workspace. Mirrors the
+ * verifier / post-merge result shape so a caller maps an existing result onto
+ * it without re-running anything: `passed` is the verifier's `satisfied`,
+ * `command` is the obligation's command, `detail` is the captured output.
+ */
+export interface ObligationOutcome {
+  obligationType: string;
+  obligationIndex?: number;
+  passed: boolean;
+  command: string;
+  detail: string;
+}
+
+/**
+ * T3: a declared contract obligation (build, test, property, falsifier) failed
+ * on the patched workspace. This is the orchestrator's existing hard signal,
+ * surfaced as a block candidate so the audit gate treats it the same way.
+ * Reuses the verifier outcome; runs no logic of its own. Evidence is the
+ * obligation command and its captured failure output, and the reproduce command
+ * is the obligation command itself.
+ *
+ * @param outcomes declared-obligation results on the patched workspace
+ * @returns one candidate per failed obligation, or []
+ */
+export function detectObligationFailure(outcomes: ObligationOutcome[]): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.passed) continue;
+    const evidence: ObligationFailureEvidence = {
+      kind: 'obligation-failure',
+      obligationType: outcome.obligationType,
+      ...(outcome.obligationIndex !== undefined ? { obligationIndex: outcome.obligationIndex } : {}),
+      command: outcome.command,
+      output: outcome.detail,
+    };
+    out.push({
+      kind: 'obligation-failure',
+      summary: `A declared \`${outcome.obligationType}\` obligation failed on the patched workspace.`,
+      reproduce: outcome.command,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** The inputs each trigger needs, bundled so one call produces every candidate
+ *  a run can raise. A field left undefined skips that trigger (e.g. an audit
+ *  with no declared obligations omits `obligations`). */
+export interface BlockTriggerContext {
+  claimFalsified?: ClaimFalsifiedInput;
+  corroborated?: CorroboratedUnderConstraintInput;
+  obligations?: ObligationOutcome[];
+}
+
+/**
+ * Run every applicable trigger over one run's inputs and return all candidates.
+ * The candidates are not blocks: the revert-calibrated eligibility policy
+ * decides which kinds may gate.
+ *
+ * @param context the per-trigger inputs for this run
+ * @returns every block-trigger candidate the run produced
+ */
+export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  if (context.claimFalsified !== undefined) out.push(...detectClaimFalsified(context.claimFalsified));
+  if (context.corroborated !== undefined) out.push(...detectCorroboratedUnderConstraint(context.corroborated));
+  if (context.obligations !== undefined) out.push(...detectObligationFailure(context.obligations));
   return out;
 }

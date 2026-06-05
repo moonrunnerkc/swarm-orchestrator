@@ -1,8 +1,10 @@
 import { strict as assert } from 'assert';
 import {
   blockTriggerEvidenceSha256,
+  detectBlockTriggers,
   detectClaimFalsified,
   detectCorroboratedUnderConstraint,
+  detectObligationFailure,
   type BlockTrigger,
   type ClaimFalsifiedEvidence,
   type CorroboratedUnderConstraintEvidence,
@@ -211,5 +213,69 @@ describe('detectCorroboratedUnderConstraint (T2)', () => {
       prRef: 'acme/widgets#7',
     });
     assert.equal(triggers.length, 0);
+  });
+});
+
+describe('detectObligationFailure (T3)', () => {
+  it('fires on a failed obligation, carrying its command and output', () => {
+    const triggers = detectObligationFailure([
+      {
+        obligationType: 'test-must-pass',
+        obligationIndex: 0,
+        passed: false,
+        command: 'npm test',
+        detail: 'command "npm test" exited 1\n  1 failing',
+      },
+    ]);
+    assert.equal(triggers.length, 1);
+    assert.equal(triggers[0]!.reproduce, 'npm test');
+    const evidence = triggers[0]!.evidence as ObligationFailureEvidence;
+    assert.equal(evidence.obligationType, 'test-must-pass');
+    assert.match(evidence.output, /1 failing/);
+  });
+
+  it('stays silent when every obligation passed', () => {
+    const triggers = detectObligationFailure([
+      { obligationType: 'build-must-pass', passed: true, command: 'npm run build', detail: 'exited 0' },
+    ]);
+    assert.equal(triggers.length, 0);
+  });
+});
+
+describe('detectBlockTriggers (aggregate)', () => {
+  it('runs every applicable trigger and collects all candidates', () => {
+    const signals: ExecutionSignals = {
+      survivingMutants: [{ file: 'src/pay.ts', line: 12, id: 'm1' }],
+      coverageGaps: [],
+      reproFailures: [],
+    };
+    const triggers = detectBlockTriggers({
+      claimFalsified: {
+        prIntent: claimsFix,
+        linkedIssues: [{ owner: 'acme', repo: 'widgets', number: 42 }],
+        repros: [reproComparison('fix-not-delivered')],
+        testRunner: null,
+      },
+      corroborated: {
+        findings: [finding('coverage-erosion', 'src/pay.ts', 12)],
+        signals,
+        prRef: 'acme/widgets#7',
+      },
+      obligations: [
+        { obligationType: 'test-must-pass', passed: false, command: 'npm test', detail: 'failed' },
+      ],
+    });
+    const kinds = triggers.map((t) => t.kind).sort();
+    assert.deepEqual(kinds, ['claim-falsified', 'corroborated-under-constraint', 'obligation-failure']);
+  });
+
+  it('skips a trigger whose input is omitted', () => {
+    const triggers = detectBlockTriggers({
+      obligations: [
+        { obligationType: 'build-must-pass', passed: false, command: 'npm run build', detail: 'boom' },
+      ],
+    });
+    assert.equal(triggers.length, 1);
+    assert.equal(triggers[0]!.kind, 'obligation-failure');
   });
 });
