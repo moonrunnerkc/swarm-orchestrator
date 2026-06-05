@@ -41,6 +41,7 @@ Usage:
   swarm run --goal "<text>"     Compile + run in one step
   swarm resume <run-id>         Resume a killed run from the ledger
   swarm stats <run-id>          Aggregate diagnostic counts from a run ledger
+  swarm ledger verify <run-id>  Verify a hash-chained ledger at rest
   swarm doctor                  Probe local prerequisites (API key, falsifiers, PMs)
   swarm init                    Scaffold contract.yaml + patches.jsonl
   swarm audit <pr|--diff-*>     Audit a PR for AI-agent cheat patterns (v10)
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
       case 'compile':
       case 'resume':
       case 'stats':
+      case 'ledger':
       case 'doctor':
       case 'init':
       case 'audit':

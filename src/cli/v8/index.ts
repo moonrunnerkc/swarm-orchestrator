@@ -3,6 +3,7 @@ import { handleAudit } from './audit-handler';
 import { handleCompile } from './compile-handler';
 import { handleDoctor } from './doctor-handler';
 import { handleInit } from './init-handler';
+import { handleLedger } from './ledger-verify-handler';
 import { handleResume } from './resume-handler';
 import { handleRun } from './run-handler';
 import { handleStats } from './stats-handler';
@@ -29,6 +30,8 @@ export async function handleV8Command(argv: string[]): Promise<number> {
       return handleResume(rest);
     case 'stats':
       return handleStats(rest);
+    case 'ledger':
+      return handleLedger(rest);
     case 'init':
       return handleInit(rest);
     case 'doctor':
@@ -57,6 +60,7 @@ function printV8Usage(): void {
       '  run <contract>   run a compiled contract',
       '  resume <run-id>  resume a partially-completed run',
       '  stats <run-id>   aggregate diagnostic counts from a run ledger',
+      '  ledger verify <run-id>  verify a hash-chained ledger at rest',
       '  doctor           probe local prerequisites (API key, falsifiers, PMs)',
       '  init             scaffold contract.yaml + patches.jsonl',
       '  audit            audit a PR for AI-agent cheat patterns (v10)',
