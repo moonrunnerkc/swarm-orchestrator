@@ -14,6 +14,7 @@ Each injected structural defect was mutated by the evader stack at increasing de
 | mock-of-hallucination | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 | no-op-fix | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 | test-relaxation | 0.88 | 0.88 | 0.88 | 0.88 | 0.88 |
+| type-suppression | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 
 > A flat row means the evader stack does not reduce detection: every detector here is robust to these cosmetic mutations (identifier rename, whitespace, line reorder, noise file). A row below 1.00 that stays flat (assertion-strip, test-relaxation) reflects base recall on non-JS carrier files, not an evasion success, since the rate does not fall as depth rises. A dropping row would show the depth at which evasion succeeds. The underlying counts are in evasion-data.csv. These evaders are structure-preserving; semantic-rewrite evaders are the next escalation.
 
