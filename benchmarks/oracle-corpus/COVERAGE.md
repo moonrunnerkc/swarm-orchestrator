@@ -14,7 +14,8 @@ One table, per category: how many defects were injected, the detection rate, and
 | mock-of-hallucination | structural | 25 | 1.00 (detector) | yes (robust) |
 | no-op-fix | structural | 25 | 1.00 (detector) | yes (robust) |
 | test-relaxation | structural | 25 | 0.96 (detector) | yes (robust) |
-| goal-not-fixed | semantic | 25 | 0.64 (judge-primary) | n/a |
+| type-suppression | structural | 25 | 1.00 (detector) | yes (robust) |
+| goal-not-fixed | semantic | 25 | 0.68 (judge-primary) | n/a |
 | cheat-mock-mutation | semantic | 25 | 0.16 (judge-primary) | n/a |
 
 ## How to read this

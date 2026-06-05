@@ -7,7 +7,15 @@
 // Output: benchmarks/oracle-corpus/tail-defect-recovery.md
 // Judge calls replay from benchmarks/judge-cache/cache.json.
 //
+// The conservative-prompt numbers replay byte-identical from the committed
+// judge cache. The localized-prompt numbers are NOT in that cache (the
+// experiment was a one-time live run), so they are read from the frozen
+// sidecar `benchmarks/oracle-corpus/localized-experiment.json` and cited,
+// not recomputed. `--refresh-localized` re-measures them against a live
+// model and rewrites that sidecar.
+//
 // Usage: node dist/scripts/oracle/tail-defect.js [--count K] [--no-live]
+//        node dist/scripts/oracle/tail-defect.js --refresh-localized
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,6 +31,7 @@ import { repoRoot } from '../benchmarks/lib/corpora';
 import { JudgeCache } from '../benchmarks/lib/judge-cache';
 import { BenchJudge } from '../benchmarks/lib/judge-client';
 import { round, divide } from '../benchmarks/lib/metrics';
+import { readLocalizedExperiment, writeLocalizedExperiment } from './localized-experiment';
 
 function bigDiffWithTailDefect(seed: number): string {
   const parts: string[] = [];
@@ -57,39 +66,24 @@ async function judgeChunked(
   diff: string,
   live: boolean,
   systemPrompt: string,
-): Promise<boolean> {
+): Promise<{ hit: boolean; decisive: boolean }> {
+  let decisive = false;
   for (const chunk of chunkUnifiedDiff(diff, MAX_JUDGE_DIFF_CHARS)) {
     const user = buildConfirmationPrompt('error-swallow', 'fix persistence', chunk);
     const a = await judge.ask(systemPrompt, user, live);
-    if (a.answer === 'yes') return true;
+    if (a.answer !== 'unavailable') decisive = true;
+    if (a.answer === 'yes') return { hit: true, decisive: true };
   }
-  return false;
+  return { hit: false, decisive };
 }
 
-async function main(argv = process.argv.slice(2)): Promise<void> {
-  const live = !argv.includes('--no-live');
-  // --localized swaps the chunked path to the localized confirm prompt
-  // (the experiment that decides whether a less-conservative single-hunk
-  // prompt lifts tail-defect recall). Whole-diff / head-truncate stays on
-  // the conservative prompt.
-  const localized = argv.includes('--localized');
-  const chunkedSystem = localized ? LOCALIZED_CONFIRM_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT;
-  const countArg = argv.indexOf('--count');
-  const count = countArg !== -1 ? Number(argv[countArg + 1]) : 10;
-  loadDotenv();
-  const root = repoRoot();
-  const cache = new JudgeCache(root);
-  const judge = new BenchJudge(cache);
-
-  let headHits = 0;
-  let chunkHits = 0;
-  for (let seed = 0; seed < count; seed += 1) {
-    const diff = bigDiffWithTailDefect(seed);
-    if (await judgeHeadTruncate(judge, diff, live)) headHits += 1;
-    if (await judgeChunked(judge, diff, live, chunkedSystem)) chunkHits += 1;
-  }
-  cache.flush();
-
+function buildReport(args: {
+  count: number;
+  headHits: number;
+  chunkHits: number;
+  localizedCaught: number;
+}): string {
+  const { count, headHits, chunkHits, localizedCaught } = args;
   const lines: string[] = [];
   lines.push('# Tail-defect recovery');
   lines.push('');
@@ -117,14 +111,95 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
       'chunking and dropped under head-truncation.',
   );
   lines.push('');
-  // A --localized measurement run does not overwrite the committed v1
-  // report; it only prints the number so the experiment can be judged.
-  if (!localized) {
-    fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'tail-defect-recovery.md'), `${lines.join('\n')}\n`);
+  // The localized-prompt numbers are frozen evidence (see the sidecar);
+  // the conservative number is the live/cached chunkHits above.
+  const localizedRecall = round(divide(localizedCaught, count));
+  lines.push('## v2: localized confirm prompt (measured 2026-06)');
+  lines.push('');
+  lines.push(
+    'The v1 absolute was capped by the conservative confirm prompt declining ' +
+      'isolated catches. A localized confirm prompt (`LOCALIZED_CONFIRM_SYSTEM_PROMPT`) ' +
+      'judges a single hunk on its face rather than withholding a YES because ' +
+      'unseen surrounding code might explain the pattern. Measured against the ' +
+      'local model (`glm47-flash-abl`); the localized-prompt calls are not in the ' +
+      'committed judge cache, so this row is read from the frozen sidecar ' +
+      '`benchmarks/oracle-corpus/localized-experiment.json` and refreshed with ' +
+      '`node dist/scripts/oracle/tail-defect.js --refresh-localized`.',
+  );
+  lines.push('');
+  lines.push('| chunked confirm prompt | tail defects caught | recall |');
+  lines.push('|---|---|---|');
+  lines.push(`| conservative (v1, shipped) | ${chunkHits}/${count} | ${round(divide(chunkHits, count)).toFixed(3)} |`);
+  lines.push(`| localized (experiment) | ${localizedCaught}/${count} | ${localizedRecall.toFixed(3)} |`);
+  lines.push('');
+  lines.push(
+    `The localized prompt lifts tail-defect recall to ${localizedRecall.toFixed(1)} ` +
+      `(+${round(localizedRecall - divide(chunkHits, count)).toFixed(1)} absolute). It is ` +
+      'not yet shipped into the production chunked confirm path: a less-conservative ' +
+      "confirm prompt's false-positive impact on real PRs is unmeasured. The companion " +
+      'per-hunk experiment (`per-hunk-localization.md`) showed no lift, so the localized ' +
+      'prompt was not promoted under the joint precision/recall bar. Recommended ' +
+      'follow-up: ship the localized prompt for the chunked confirm path once its ' +
+      'real-PR false-positive rate is validated.',
+  );
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}
+
+async function main(argv = process.argv.slice(2)): Promise<void> {
+  const live = !argv.includes('--no-live');
+  // --refresh-localized re-measures the localized chunked prompt against a
+  // live model and rewrites the frozen sidecar. Without it, the localized
+  // row is read from the committed sidecar (the calls are not cached).
+  const refreshLocalized = argv.includes('--refresh-localized');
+  const countArg = argv.indexOf('--count');
+  const count = countArg !== -1 ? Number(argv[countArg + 1]) : 10;
+  loadDotenv();
+  const root = repoRoot();
+  const cache = new JudgeCache(root);
+  const judge = new BenchJudge(cache);
+
+  let headHits = 0;
+  let chunkHits = 0;
+  let localizedHits = 0;
+  let localizedDecisive = 0;
+  for (let seed = 0; seed < count; seed += 1) {
+    const diff = bigDiffWithTailDefect(seed);
+    if (await judgeHeadTruncate(judge, diff, live)) headHits += 1;
+    const conservative = await judgeChunked(judge, diff, live, CONFIRM_SYSTEM_PROMPT);
+    if (conservative.hit) chunkHits += 1;
+    if (refreshLocalized) {
+      const localized = await judgeChunked(judge, diff, live, LOCALIZED_CONFIRM_SYSTEM_PROMPT);
+      if (localized.hit) localizedHits += 1;
+      if (localized.decisive) localizedDecisive += 1;
+    }
   }
+  cache.flush();
+
+  const experiment = readLocalizedExperiment(root);
+  if (refreshLocalized) {
+    if (localizedDecisive === 0) {
+      process.stderr.write(
+        'tail-defect: --refresh-localized got no decisive localized answers ' +
+          '(local model unreachable?); keeping the frozen sidecar.\n',
+      );
+    } else {
+      experiment.tailDefect = { count, localizedCaught: localizedHits };
+      writeLocalizedExperiment(root, experiment);
+      process.stdout.write(`tail-defect: refreshed localized sidecar to ${localizedHits}/${count}\n`);
+    }
+  }
+
+  const report = buildReport({
+    count,
+    headHits,
+    chunkHits,
+    localizedCaught: experiment.tailDefect.localizedCaught,
+  });
+  fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'tail-defect-recovery.md'), report);
   process.stdout.write(
     `tail-defect: head=${headHits}/${count} chunk=${chunkHits}/${count} ` +
-      `prompt=${localized ? 'localized' : 'conservative'}\n`,
+      `localized=${experiment.tailDefect.localizedCaught}/${experiment.tailDefect.count} (frozen)\n`,
   );
 }
 
@@ -135,4 +210,4 @@ if (require.main === module) {
   });
 }
 
-export { main };
+export { main, buildReport };

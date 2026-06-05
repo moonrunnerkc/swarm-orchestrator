@@ -8,7 +8,14 @@
 //
 // Output: benchmarks/oracle-corpus/per-hunk-localization.md
 //
+// The conservative-prompt numbers replay byte-identical from the committed
+// judge cache. The localized-prompt numbers are NOT in that cache (a
+// one-time live run), so they are read from the frozen sidecar
+// `benchmarks/oracle-corpus/localized-experiment.json` and cited, not
+// recomputed. `--refresh-localized` re-measures them against a live model.
+//
 // Usage: node dist/scripts/oracle/per-hunk.js [--count K] [--no-live]
+//        node dist/scripts/oracle/per-hunk.js --refresh-localized
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,6 +30,7 @@ import { repoRoot } from '../benchmarks/lib/corpora';
 import { JudgeCache } from '../benchmarks/lib/judge-cache';
 import { BenchJudge } from '../benchmarks/lib/judge-client';
 import { round, divide } from '../benchmarks/lib/metrics';
+import { readLocalizedExperiment, writeLocalizedExperiment } from './localized-experiment';
 
 function benignHunk(file: string, seed: number, k: number): string {
   return (
@@ -62,46 +70,53 @@ function buildCase(seed: number): { diff: string; defectFile: string; defectHunk
   return { diff: blocks.join(''), defectFile, defectHunkIndex: 0 };
 }
 
-async function main(argv = process.argv.slice(2)): Promise<void> {
-  const live = !argv.includes('--no-live');
-  // --localized: judge each hunk with the localized confirm prompt (the
-  // experiment for whether a less-conservative single-hunk prompt lifts
-  // per-hunk localization). Whole-diff stays on the conservative prompt.
-  const localized = argv.includes('--localized');
-  const perHunkSystem = localized ? LOCALIZED_CONFIRM_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT;
-  const countArg = argv.indexOf('--count');
-  const count = countArg !== -1 ? Number(argv[countArg + 1]) : 10;
-  loadDotenv();
-  const root = repoRoot();
-  const cache = new JudgeCache(root);
-  const judge = new BenchJudge(cache);
+interface PerHunkTally {
+  defectHunkFlagged: number;
+  benignHunkFalse: number;
+  pointedCorrectly: number;
+  decisive: number;
+}
 
-  let wholeFlagged = 0;
-  let defectHunkFlagged = 0; // per-hunk pointed at the injected hunk
-  let benignHunkFalse = 0; // per-hunk false-flagged a benign hunk
-  let pointedCorrectly = 0; // per-hunk flagged the defect hunk and no benign hunk
+async function measurePerHunk(
+  judge: BenchJudge,
+  count: number,
+  live: boolean,
+  perHunkSystem: string,
+): Promise<PerHunkTally> {
+  const tally: PerHunkTally = {
+    defectHunkFlagged: 0,
+    benignHunkFalse: 0,
+    pointedCorrectly: 0,
+    decisive: 0,
+  };
   for (let seed = 0; seed < count; seed += 1) {
     const c = buildCase(seed);
-    // Whole-diff: one verdict, no hunk localization.
-    const wholeUser = buildConfirmationPrompt('mock-of-hallucination', 'add tests', c.diff);
-    const whole = await judge.ask(CONFIRM_SYSTEM_PROMPT, wholeUser, live);
-    if (whole.answer === 'yes') wholeFlagged += 1;
-    // Per-hunk: judge each hunk, collect the ones that say yes.
     let defectYes = false;
     let benignYes = false;
     for (const hunk of chunkUnifiedDiffByHunk(c.diff)) {
       const user = buildConfirmationPrompt('mock-of-hallucination', 'add tests', hunk.text);
       const a = await judge.ask(perHunkSystem, user, live);
+      if (a.answer !== 'unavailable') tally.decisive += 1;
       if (a.answer !== 'yes') continue;
       if (hunk.file === c.defectFile && hunk.hunkIndex === c.defectHunkIndex) defectYes = true;
       else benignYes = true;
     }
-    if (defectYes) defectHunkFlagged += 1;
-    if (benignYes) benignHunkFalse += 1;
-    if (defectYes && !benignYes) pointedCorrectly += 1;
+    if (defectYes) tally.defectHunkFlagged += 1;
+    if (benignYes) tally.benignHunkFalse += 1;
+    if (defectYes && !benignYes) tally.pointedCorrectly += 1;
   }
-  cache.flush();
+  return tally;
+}
 
+function buildReport(args: {
+  count: number;
+  wholeFlagged: number;
+  conservative: PerHunkTally;
+  localizedDefectFlagged: number;
+  localizedPointedCorrectly: number;
+  localizedBenignFalse: number;
+}): string {
+  const { count, wholeFlagged, conservative } = args;
   const lines: string[] = [];
   lines.push('# Per-hunk judge localization');
   lines.push('');
@@ -117,7 +132,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   lines.push('|---|---|---|---|');
   lines.push(`| whole-diff | ${wholeFlagged}/${count} | never (no hunk id) | 0/${count} |`);
   lines.push(
-    `| per-hunk | ${defectHunkFlagged}/${count} (defect hunk) | yes | ${pointedCorrectly}/${count} |`,
+    `| per-hunk | ${conservative.defectHunkFlagged}/${count} (defect hunk) | yes | ${conservative.pointedCorrectly}/${count} |`,
   );
   lines.push('');
   lines.push(
@@ -126,23 +141,105 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
       'judging produces a verdict per hunk under a stable (file, hunk-index) id, ' +
       'so a confirmed defect is localizable. On this synthetic fixture the local ' +
       `confirm judge is too noisy to give a clean accuracy number (it flagged ` +
-      `benign hunks ${benignHunkFalse}/${count} and the planted mock ` +
-      `${defectHunkFlagged}/${count} — a model failure on the isolated confirm ` +
-      'question, not a localization-mechanism failure). The mechanism itself ' +
+      `benign hunks ${conservative.benignHunkFalse}/${count} and the planted mock ` +
+      `${conservative.defectHunkFlagged}/${count}, a model failure on the isolated ` +
+      'confirm question, not a localization-mechanism failure). The mechanism itself ' +
       'is pinned deterministically in `test/audit/cheat-detector/diff-chunker.test.ts` ' +
       '(stable per-hunk ids, one valid one-hunk diff per chunk). A stronger ' +
       'judge would lift the accuracy; the per-hunk infrastructure is in place.',
   );
   lines.push('');
-  // A --localized measurement run does not overwrite the committed v1
-  // report; it only prints the numbers so the experiment can be judged.
-  if (!localized) {
-    fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'per-hunk-localization.md'), `${lines.join('\n')}\n`);
+  // The localized row is frozen evidence (sidecar); the conservative row is
+  // the live/cached measurement above.
+  lines.push('## v2: localized confirm prompt (measured 2026-06)');
+  lines.push('');
+  lines.push(
+    'To test whether the conservative prompt was the cap, the per-hunk path was ' +
+      'measured with the localized confirm prompt (local model `glm47-flash-abl`). ' +
+      'The localized-prompt calls are not in the committed judge cache, so this ' +
+      'row is read from the frozen sidecar ' +
+      '`benchmarks/oracle-corpus/localized-experiment.json` and refreshed with ' +
+      '`node dist/scripts/oracle/per-hunk.js --refresh-localized`.',
+  );
+  lines.push('');
+  lines.push('| per-hunk confirm prompt | defect hunk flagged | points only at the defect hunk | benign hunk false-flagged |');
+  lines.push('|---|---|---|---|');
+  lines.push(
+    `| conservative (v1) | ${conservative.defectHunkFlagged}/${count} | ${conservative.pointedCorrectly}/${count} | ${conservative.benignHunkFalse}/${count} |`,
+  );
+  lines.push(
+    `| localized (experiment) | ${args.localizedDefectFlagged}/${count} | ${args.localizedPointedCorrectly}/${count} | ${args.localizedBenignFalse}/${count} |`,
+  );
+  lines.push('');
+  lines.push(
+    'The localized prompt did not move per-hunk localization. Unlike tail-defect ' +
+      '(where the localized prompt lifted recall 0.1 to 0.5, see ' +
+      '`tail-defect-recovery.md`), the per-hunk failure is not conservatism: the ' +
+      'local model flags benign hunks and misses the planted mock regardless of ' +
+      'prompt framing. This is a model-capability gap. Per-hunk localization stays ' +
+      'infrastructure (the plumbing is proven by ' +
+      '`test/audit/cheat-detector/diff-chunker.test.ts`); a stronger judge is the ' +
+      'only path to a real localization number, not a prompt change.',
+  );
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}
+
+async function main(argv = process.argv.slice(2)): Promise<void> {
+  const live = !argv.includes('--no-live');
+  // --refresh-localized re-measures the localized per-hunk prompt against a
+  // live model and rewrites the frozen sidecar. Without it, the localized
+  // row is read from the committed sidecar (the calls are not cached).
+  const refreshLocalized = argv.includes('--refresh-localized');
+  const countArg = argv.indexOf('--count');
+  const count = countArg !== -1 ? Number(argv[countArg + 1]) : 10;
+  loadDotenv();
+  const root = repoRoot();
+  const cache = new JudgeCache(root);
+  const judge = new BenchJudge(cache);
+
+  let wholeFlagged = 0;
+  for (let seed = 0; seed < count; seed += 1) {
+    const c = buildCase(seed);
+    const wholeUser = buildConfirmationPrompt('mock-of-hallucination', 'add tests', c.diff);
+    const whole = await judge.ask(CONFIRM_SYSTEM_PROMPT, wholeUser, live);
+    if (whole.answer === 'yes') wholeFlagged += 1;
   }
+  const conservative = await measurePerHunk(judge, count, live, CONFIRM_SYSTEM_PROMPT);
+  const experiment = readLocalizedExperiment(root);
+  if (refreshLocalized) {
+    const localized = await measurePerHunk(judge, count, live, LOCALIZED_CONFIRM_SYSTEM_PROMPT);
+    if (localized.decisive === 0) {
+      process.stderr.write(
+        'per-hunk: --refresh-localized got no decisive localized answers ' +
+          '(local model unreachable?); keeping the frozen sidecar.\n',
+      );
+    } else {
+      experiment.perHunk = {
+        count,
+        localizedDefectFlagged: localized.defectHunkFlagged,
+        localizedPointedCorrectly: localized.pointedCorrectly,
+        localizedBenignFalse: localized.benignHunkFalse,
+      };
+      writeLocalizedExperiment(root, experiment);
+      process.stdout.write(`per-hunk: refreshed localized sidecar (defect ${localized.defectHunkFlagged}/${count})\n`);
+    }
+  }
+  cache.flush();
+
+  const report = buildReport({
+    count,
+    wholeFlagged,
+    conservative,
+    localizedDefectFlagged: experiment.perHunk.localizedDefectFlagged,
+    localizedPointedCorrectly: experiment.perHunk.localizedPointedCorrectly,
+    localizedBenignFalse: experiment.perHunk.localizedBenignFalse,
+  });
+  fs.writeFileSync(path.join(root, 'benchmarks', 'oracle-corpus', 'per-hunk-localization.md'), report);
   process.stdout.write(
-    `per-hunk: whole=${wholeFlagged}/${count} defect-localized=${defectHunkFlagged}/${count} ` +
-      `clean-localized=${pointedCorrectly}/${count} benign-false=${benignHunkFalse}/${count} ` +
-      `prompt=${localized ? 'localized' : 'conservative'}\n`,
+    `per-hunk: whole=${wholeFlagged}/${count} defect-localized=${conservative.defectHunkFlagged}/${count} ` +
+      `clean-localized=${conservative.pointedCorrectly}/${count} benign-false=${conservative.benignHunkFalse}/${count} ` +
+      `localized=frozen(${experiment.perHunk.localizedBenignFalse}/${experiment.perHunk.count} benign-false)\n`,
   );
 }
 
@@ -153,4 +250,4 @@ if (require.main === module) {
   });
 }
 
-export { main };
+export { main, buildReport };

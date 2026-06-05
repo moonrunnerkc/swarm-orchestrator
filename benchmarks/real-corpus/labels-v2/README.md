@@ -18,7 +18,7 @@ labels-v2/
   rater-003/
     labels.jsonl
   final/
-    <pr-id>.json                    promoted entries after kappa + dispute path
+    <pr-id>.label.json              promoted entries after kappa + dispute path
   dropped.json                      PRs dropped at the 2-2 split case
 ```
 
@@ -36,9 +36,19 @@ sidebar until labels-v2 reaches a comparable size.
 ## Reproducing
 
 ```bash
-# verify a rater pool's pairwise agreement
+# 1. queue the arbiter-split findings a human should adjudicate first
+node dist/scripts/labeling/adjudicate.js queue
+
+# 2. write a filled-in decisions.json into a rater's labels.jsonl
+node dist/scripts/labeling/adjudicate.js apply --decisions decisions.json
+
+# 3. verify the rater pool's pairwise + human-vs-AI agreement
+node dist/scripts/labeling/adjudicate.js kappa
 node dist/scripts/labeling/compute-kappa.js \
   --labels-dir benchmarks/real-corpus/labels-v2
+
+# 4. promote to final/ once the kappa gate clears (dry-run without --write)
+node dist/scripts/labeling/adjudicate.js promote --write
 
 # score against the human-labeled subset once final/ is populated
 node dist/scripts/corpus/score-real.js \
