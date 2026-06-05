@@ -742,7 +742,7 @@ function emitOutput(
     return;
   }
   if (format === 'markdown') {
-    process.stdout.write(renderPrComment(result, { ledgerUrl: ledgerPath, mode }));
+    process.stdout.write(renderPrComment(result, { ledgerUrl: ledgerPath, mode, blockTriggers: blockingTriggers }));
     return;
   }
   const blockedByTrigger = mode === 'gate' && blockingTriggers.length > 0;
