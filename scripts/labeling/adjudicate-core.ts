@@ -162,6 +162,48 @@ export function buildAdjudicationQueue(
 }
 
 /**
+ * Render a fill-in worksheet from the queue, one block per PR with the
+ * arbiter split shown so a human sees what the two model families
+ * disagreed on. Pure: the CLI writes the returned string to disk.
+ *
+ * @param queue the built adjudication queue
+ * @returns the Markdown worksheet text
+ */
+export function renderWorksheet(queue: AdjudicationQueue): string {
+  const lines: string[] = [];
+  lines.push('# Adjudication worksheet (arbiter-split findings)');
+  lines.push('');
+  lines.push(
+    `${queue.rows.length} PRs, ${queue.totalSplitFindings} split findings. ` +
+      'Mark each PR clean / broken / ambiguous. Copy your verdicts into a ' +
+      'decisions.json array and run `adjudicate apply`.',
+  );
+  if (queue.unresolvedPrKeys.length > 0) {
+    lines.push('');
+    lines.push(
+      `> ${queue.unresolvedPrKeys.length} PR(s) had no corpus id (raw corpus absent); ` +
+        'their `id` is blank below and must be filled before apply.',
+    );
+  }
+  for (const row of queue.rows) {
+    lines.push('');
+    lines.push(`## ${row.prKey} (info ${row.infoScore}, sharp splits ${row.sharpSplitCount})`);
+    lines.push(`- id: ${row.id ?? '(unresolved, fill in)'}`);
+    for (const f of row.splitFindings) {
+      lines.push(
+        `- split [${f.category}/${f.judgePath}] primary=${f.primaryVerdict} ` +
+          `secondary=${f.secondaryVerdict}`,
+      );
+    }
+    lines.push('- verdict: ');
+    lines.push('- confidence: ');
+    lines.push('- brokenCategories: ');
+    lines.push('- rationale: ');
+  }
+  return lines.join('\n') + '\n';
+}
+
+/**
  * Validate a human decision against the labels-v2 rubric. Returns the
  * list of human-readable violations; an empty list means the decision is
  * writable. Mirrors `benchmarks/real-corpus/labels-v2/schema.json`.

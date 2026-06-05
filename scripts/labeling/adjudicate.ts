@@ -24,17 +24,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadPrCorpus } from '../../benchmarks/real-corpus/loader';
+import { writeLabel } from '../../benchmarks/falsification-corpus/label-store';
 import type { DualArbiterLabel } from '../real-prs/lib/types';
 import {
   buildAdjudicationQueue,
   entryFromDecision,
   mergeRaterEntries,
+  renderWorksheet,
   validateDecision,
   type AdjudicationDecision,
-  type AdjudicationQueue,
   type HumanLabelEntry,
   type IdResolver,
 } from './adjudicate-core';
+import { compute as computeKappa } from './compute-kappa';
+import { buildPromotionPlan, humanVsAiKappa } from './promote-core';
 
 const DEFAULT_DUAL = path.join('benchmarks', 'real-prs', 'arbiter-labels-dual.json');
 const DEFAULT_RAW = path.join('benchmarks', 'real-corpus', 'raw');
@@ -64,40 +67,6 @@ async function buildIdResolver(rawDir: string): Promise<IdResolver> {
   const byRepoPr = new Map<string, string>();
   for (const e of entries) byRepoPr.set(`${e.pr.repository}#${e.pr.number}`, e.id);
   return (repo, prNumber) => byRepoPr.get(`${repo}#${prNumber}`) ?? null;
-}
-
-function renderWorksheet(queue: AdjudicationQueue): string {
-  const lines: string[] = [];
-  lines.push('# Adjudication worksheet (arbiter-split findings)');
-  lines.push('');
-  lines.push(
-    `${queue.rows.length} PRs, ${queue.totalSplitFindings} split findings. ` +
-      'Mark each PR clean / broken / ambiguous. Copy your verdicts into a ' +
-      'decisions.json array and run `adjudicate apply`.',
-  );
-  if (queue.unresolvedPrKeys.length > 0) {
-    lines.push('');
-    lines.push(
-      `> ${queue.unresolvedPrKeys.length} PR(s) had no corpus id (raw corpus absent); ` +
-        'their `id` is blank below and must be filled before apply.',
-    );
-  }
-  for (const row of queue.rows) {
-    lines.push('');
-    lines.push(`## ${row.prKey} (info ${row.infoScore}, sharp splits ${row.sharpSplitCount})`);
-    lines.push(`- id: ${row.id ?? '(unresolved — fill in)'}`);
-    for (const f of row.splitFindings) {
-      lines.push(
-        `- split [${f.category}/${f.judgePath}] primary=${f.primaryVerdict} ` +
-          `secondary=${f.secondaryVerdict}`,
-      );
-    }
-    lines.push('- verdict: ');
-    lines.push('- confidence: ');
-    lines.push('- brokenCategories: ');
-    lines.push('- rationale: ');
-  }
-  return lines.join('\n') + '\n';
 }
 
 async function runQueue(argv: string[]): Promise<number> {
@@ -191,6 +160,101 @@ async function runApply(argv: string[]): Promise<number> {
   return 0;
 }
 
+function readAllRaterEntries(labelsDir: string): Map<string, HumanLabelEntry[]> {
+  const out = new Map<string, HumanLabelEntry[]>();
+  if (!fs.existsSync(labelsDir)) return out;
+  for (const name of fs.readdirSync(labelsDir)) {
+    if (!/^rater-\d+/.test(name)) continue;
+    const entries = readRaterEntries(raterLabelsFile(labelsDir, name));
+    if (entries.length > 0) out.set(name, entries);
+  }
+  return out;
+}
+
+async function buildIdByPrKey(rawDir: string): Promise<Map<string, string>> {
+  const abs = path.resolve(rawDir);
+  const out = new Map<string, string>();
+  if (!fs.existsSync(abs)) return out;
+  for (const e of await loadPrCorpus(abs)) out.set(`${e.pr.repository}#${e.pr.number}`, e.id);
+  return out;
+}
+
+async function runKappa(argv: string[]): Promise<number> {
+  const labelsDir = readArg(argv, '--labels-dir') ?? DEFAULT_LABELS;
+  const dualFile = readArg(argv, '--dual') ?? DEFAULT_DUAL;
+  const rawDir = readArg(argv, '--raw-dir') ?? DEFAULT_RAW;
+  const threshold = Number(readArg(argv, '--threshold') ?? '0.6');
+
+  const agreement = computeKappa({ labelsDir, threshold });
+  process.stdout.write(
+    `adjudicate kappa: raters=${agreement.ratersIncluded.length} pairs=${agreement.pairs.length} ` +
+      `min-kappa=${agreement.minimumKappa ?? 'n/a'} passes-gate=${agreement.passesGate ?? 'n/a'} ` +
+      `(threshold ${threshold})\n`,
+  );
+
+  if (fs.existsSync(dualFile)) {
+    const dual = JSON.parse(fs.readFileSync(dualFile, 'utf8')) as DualArbiterLabel[];
+    const idByPrKey = await buildIdByPrKey(rawDir);
+    const flat = [...readAllRaterEntries(labelsDir).values()].flat();
+    const ha = humanVsAiKappa(flat, dual, idByPrKey);
+    process.stdout.write(
+      `adjudicate kappa: human-vs-AI overlap=${ha.comparisons} kappa=${ha.kappa ?? 'n/a'} ` +
+        `human-broken-share=${ha.humanBrokenShare.toFixed(2)} ai-broken-share=${ha.aiBrokenShare.toFixed(2)}\n`,
+    );
+  }
+  return agreement.passesGate === false ? 1 : 0;
+}
+
+async function runPromote(argv: string[]): Promise<number> {
+  const labelsDir = readArg(argv, '--labels-dir') ?? DEFAULT_LABELS;
+  const finalDir = readArg(argv, '--final-dir') ?? path.join(labelsDir, 'final');
+  const threshold = Number(readArg(argv, '--threshold') ?? '0.6');
+  const minRaters = Number(readArg(argv, '--min-raters') ?? '3');
+  const allowSingle = argv.includes('--allow-single-rater');
+  const write = argv.includes('--write');
+  const replace = argv.includes('--replace');
+
+  const agreement = computeKappa({ labelsDir, threshold });
+  if (agreement.passesGate === false) {
+    process.stderr.write(
+      `adjudicate promote: refused. Minimum pairwise kappa ${agreement.minimumKappa ?? 'n/a'} ` +
+        `is below the ${threshold} gate. Resolve the disputed PRs before promoting.\n`,
+    );
+    return 1;
+  }
+  if (agreement.passesGate === null && !allowSingle) {
+    process.stderr.write(
+      'adjudicate promote: refused. Fewer than two raters with overlap, so the agreement ' +
+        'gate cannot be cleared. Recruit raters, or pass --allow-single-rater to write a ' +
+        'non-final bootstrap baseline (flagged as such in every rationale).\n',
+    );
+    return 1;
+  }
+
+  const labeledAt = new Date().toISOString();
+  const plan = buildPromotionPlan(readAllRaterEntries(labelsDir), {
+    minRaters,
+    kappa: agreement.minimumKappa,
+    labeledAt,
+  });
+  process.stdout.write(
+    `adjudicate promote: ${plan.promote.length} promotable, ${plan.dropped.length} dropped, ` +
+      `${plan.insufficient.length} insufficient (min-raters ${minRaters})\n`,
+  );
+  for (const d of plan.dropped) process.stdout.write(`  drop ${d.id}: ${d.reason}\n`);
+  if (!write) {
+    process.stdout.write('adjudicate promote: dry run; pass --write to publish final/ labels\n');
+    return 0;
+  }
+  let written = 0;
+  for (const { id, label } of plan.promote) {
+    await writeLabel(finalDir, id, label, { replace });
+    written += 1;
+  }
+  process.stdout.write(`adjudicate promote: wrote ${written} label(s) to ${finalDir}\n`);
+  return 0;
+}
+
 async function main(): Promise<void> {
   const [verb, ...rest] = process.argv.slice(2);
   let code: number;
@@ -201,11 +265,19 @@ async function main(): Promise<void> {
     case 'apply':
       code = await runApply(rest);
       break;
+    case 'kappa':
+      code = await runKappa(rest);
+      break;
+    case 'promote':
+      code = await runPromote(rest);
+      break;
     default:
       process.stderr.write(
-        'adjudicate: unknown verb. Use one of: queue, apply.\n' +
-          '  queue  build the arbiter-split adjudication queue + worksheet\n' +
-          '  apply  write a decisions.json into labels-v2/<rater>/labels.jsonl\n',
+        'adjudicate: unknown verb. Use one of: queue, apply, kappa, promote.\n' +
+          '  queue    build the arbiter-split adjudication queue + worksheet\n' +
+          '  apply    write a decisions.json into labels-v2/<rater>/labels.jsonl\n' +
+          '  kappa    report pairwise and human-vs-AI agreement\n' +
+          '  promote  gate on kappa, then publish final/ labels for the scorer\n',
       );
       code = 2;
   }
@@ -218,5 +290,3 @@ if (require.main === module) {
     process.exit(2);
   });
 }
-
-export { renderWorksheet };

@@ -4,11 +4,11 @@ import {
   buildAdjudicationQueue,
   entryFromDecision,
   mergeRaterEntries,
+  renderWorksheet,
   validateDecision,
   type AdjudicationDecision,
   type HumanLabelEntry,
 } from '../../../scripts/labeling/adjudicate-core';
-import { renderWorksheet } from '../../../scripts/labeling/adjudicate';
 
 function dual(over: Partial<DualArbiterLabel>): DualArbiterLabel {
   return {
