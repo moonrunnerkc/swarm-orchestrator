@@ -25,26 +25,26 @@ function result(findings: Finding[]): AuditResult {
 }
 
 describe('audit / report-comment / confidence + cascade', () => {
-  it('assignConfidence: judge-confirmed and intent-upgraded are high, severity drives the rest', () => {
+  it('assignConfidence: runtime-corroborated > judge-confirmed > structural-only', () => {
     const fs = [
+      finding({ runtimeCorroboration: { signal: 'surviving-mutant', mutants: ['m'] }, judgeConfirmed: true }),
       finding({ judgeConfirmed: true, severity: 'warn' }),
       finding({ intentUpgraded: true, severity: 'warn' }),
       finding({ severity: 'block' }),
-      finding({ severity: 'warn' }),
       finding({ severity: 'info' }),
     ];
     assignConfidence(fs);
     assert.deepEqual(
       fs.map((f) => f.confidence),
-      ['high', 'high', 'high', 'medium', 'low'],
+      ['runtime-corroborated', 'judge-confirmed', 'structural-only', 'structural-only', 'structural-only'],
     );
   });
 
   it('renders the confidence on each finding', () => {
-    const out = renderPrComment(result([finding({ confidence: 'high', severity: 'warn' })]), {
+    const out = renderPrComment(result([finding({ confidence: 'judge-confirmed', severity: 'warn' })]), {
       mode: 'advise',
     });
-    assert.match(out, /\*Confidence:\* high\./);
+    assert.match(out, /\*Confidence:\* judge-confirmed\./);
   });
 
   it('collapses a same-category cascade beyond the cap into one summary line', () => {

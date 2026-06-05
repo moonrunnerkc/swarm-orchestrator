@@ -32,7 +32,7 @@
 // module) without changing the contract here.
 
 import type { File as ParsedDiffFile } from 'parse-diff';
-import type { CheatCategory, Finding, Severity } from '../types';
+import type { CheatCategory, Finding, FindingConfidence, Severity } from '../types';
 import type { PrIntent } from './pr-intent';
 import { fileKind, filePath, isTestFile } from './diff-walker';
 import { getLogger } from '../../logger';
@@ -307,28 +307,37 @@ function parseRename(finding: Finding): { oldName: string; newName: string } | u
   return { oldName: m[1], newName: m[2] };
 }
 
+const CONFIDENCE_RANK: Record<FindingConfidence, number> = {
+  'structural-only': 0,
+  'judge-confirmed': 1,
+  'runtime-corroborated': 2,
+};
+
 /**
- * Assign a reviewer-facing confidence to every finding from the
- * evidence behind it. Mutates in place. Judge confirmation is the
- * strongest signal; a PR-intent escalation is next; otherwise severity
- * stands in for confidence (an info-severity note is low confidence by
- * construction). Called by the engine after the verification and judge
- * stages so it sees the final severity and judge verdict.
+ * The single owner of a finding's confidence grade. Derives it from the
+ * evidence on the finding -- runtime corroboration is strongest, then judge
+ * confirmation, else structural-only -- and only ever raises it. The judge
+ * gate (confirm-findings) and the runtime corroborator (corroborate) run at
+ * different points in the pipeline, so routing both through this one setter is
+ * what keeps them from disagreeing or clobbering each other. Mutates in place.
+ */
+export function setFindingConfidence(finding: Finding): void {
+  let grade: FindingConfidence = 'structural-only';
+  if (finding.judgeConfirmed === true) grade = 'judge-confirmed';
+  if (finding.runtimeCorroboration !== undefined) grade = 'runtime-corroborated';
+  if (finding.confidence === undefined || CONFIDENCE_RANK[grade] > CONFIDENCE_RANK[finding.confidence]) {
+    finding.confidence = grade;
+  }
+}
+
+/**
+ * Assign the confidence grade to every finding through the shared setter.
+ * Called by the engine after the verification and judge stages; the audit
+ * handler re-runs the setter after runtime corroboration so a backed finding
+ * is raised to `runtime-corroborated`.
  */
 export function assignConfidence(findings: readonly Finding[]): void {
-  for (const f of findings) {
-    if (f.judgeConfirmed === true) {
-      f.confidence = 'high';
-    } else if (f.intentUpgraded === true) {
-      f.confidence = 'high';
-    } else if (f.severity === 'block') {
-      f.confidence = 'high';
-    } else if (f.severity === 'warn') {
-      f.confidence = 'medium';
-    } else {
-      f.confidence = 'low';
-    }
-  }
+  for (const f of findings) setFindingConfidence(f);
 }
 
 function hasNonTestSourceDeletion(files: readonly ParsedDiffFile[]): boolean {

@@ -66,6 +66,15 @@ export function isExecutionGroundedCategory(category: string): category is Execu
 
 export type Severity = 'block' | 'warn' | 'info';
 
+/**
+ * A finding's confidence grade, ordered weakest to strongest. The single value
+ * both precision gates write through their shared setter:
+ *   - `structural-only`: a deterministic detector hit with no further backing.
+ *   - `judge-confirmed`: the LLM judge confirmed the finding (confirm-findings).
+ *   - `runtime-corroborated`: an execution-grounded signal backs it (corroborate).
+ */
+export type FindingConfidence = 'structural-only' | 'judge-confirmed' | 'runtime-corroborated';
+
 export interface FindingLocation {
   file: string;
   line: number;
@@ -107,12 +116,15 @@ export interface Finding {
    */
   judgeConfirmed?: boolean;
   /**
-   * v10.4: how much weight a reviewer should give this finding,
-   * assigned by the verification stage from the evidence behind it
-   * (judge confirmation, PR-intent corroboration, severity). Surfaced
-   * in the PR comment so the reader sees it on every finding.
+   * v11.1: the single graded confidence both precision gates write
+   * through. Ordered weakest to strongest (structural-only <
+   * judge-confirmed < runtime-corroborated); the shared setter only ever
+   * raises it, so the judge gate (confirm-findings) and the runtime
+   * corroborator (corroborate), which run at different points, cannot
+   * disagree or clobber each other. Surfaced in the PR comment next to
+   * the measured-precision badge.
    */
-  confidence?: 'high' | 'medium' | 'low';
+  confidence?: FindingConfidence;
   /**
    * v11: set by the judge-primary path on a finding the judge raised on
    * its own, with no deterministic candidate behind it (the semantic

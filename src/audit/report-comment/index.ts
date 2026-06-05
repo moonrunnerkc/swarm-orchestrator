@@ -189,7 +189,7 @@ function renderFinding(finding: Finding): string {
     ? `\`${finding.location.file}\`:${finding.location.line}-${finding.location.endLine}`
     : `\`${finding.location.file}\`:${finding.location.line}`;
   const badge = formatPrecisionBadge(finding.category);
-  const confidence = finding.confidence ?? 'medium';
+  const confidence = finding.confidence ?? 'structural-only';
   const lines: string[] = [
     `### \`${finding.category}\` — ${fileLine}`,
     '',
