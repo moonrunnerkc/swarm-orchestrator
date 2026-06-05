@@ -1,6 +1,13 @@
 import { strict as assert } from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { execEnv } from '../../../src/audit/execution-grounded/exec-env';
+import {
+  commandTimeoutMs,
+  execEnv,
+  execFileGuarded,
+  isGuardedTimeout,
+} from '../../../src/audit/execution-grounded/exec-env';
 
 // execEnv builds the environment handed to untrusted code (npm postinstall, the
 // PR's own test suite). The contract under test: the auditor's credentials never
@@ -84,5 +91,67 @@ describe('execution-grounded / exec-env env scrubbing', () => {
       'pinned Node bin dir is prepended to PATH',
     );
     assert.equal(env.npm_config_cache, '/var/cache/eg');
+  });
+});
+
+// The sandbox runs a PR's own (untrusted) test command; a suite that hangs or
+// forks a dev server must not wedge the auditor. execFileGuarded caps the wall
+// clock and kills the whole process group, not just the direct child.
+describe('execution-grounded / exec-env guarded command runner', () => {
+  it('resolves the timeout: explicit wins, else env, else the 5m default', () => {
+    const SAVED = process.env.SWARM_EG_COMMAND_TIMEOUT_MS;
+    try {
+      delete process.env.SWARM_EG_COMMAND_TIMEOUT_MS;
+      assert.equal(commandTimeoutMs(), 5 * 60 * 1000);
+      assert.equal(commandTimeoutMs(1234), 1234);
+      process.env.SWARM_EG_COMMAND_TIMEOUT_MS = '7777';
+      assert.equal(commandTimeoutMs(), 7777);
+      assert.equal(commandTimeoutMs(1234), 1234, 'an explicit budget still wins over the env');
+    } finally {
+      if (SAVED === undefined) delete process.env.SWARM_EG_COMMAND_TIMEOUT_MS;
+      else process.env.SWARM_EG_COMMAND_TIMEOUT_MS = SAVED;
+    }
+  });
+
+  it('times out a command that never exits and flags it as a timeout', () => {
+    const start = Date.now();
+    let thrown: unknown;
+    try {
+      execFileGuarded(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+        cwd: process.cwd(),
+        env: process.env,
+        timeoutMs: 400,
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    const elapsed = Date.now() - start;
+    assert.ok(thrown !== undefined, 'a command that never exits must throw');
+    assert.ok(isGuardedTimeout(thrown), 'the throw carries the timedOut flag');
+    assert.ok(elapsed < 5000, `killed promptly, not at the 1000ms interval cadence (took ${elapsed}ms)`);
+  });
+
+  const groupTest = process.platform === 'win32' ? it.skip : it;
+  groupTest('kills the whole process group, not just the direct child', async () => {
+    const marker = path.join(os.tmpdir(), `swarm-eg-group-${process.pid}-${Date.now()}.marker`);
+    fs.rmSync(marker, { force: true });
+    // The direct child forks a grandchild that would write the marker after 3s,
+    // then hangs forever. If only the direct child were signalled on timeout,
+    // the grandchild would survive and write the marker. A process-group kill
+    // reaps both, so the marker never appears.
+    const grandchild = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'x'), 3000)`;
+    const script =
+      `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });` +
+      `setInterval(() => {}, 1000);`;
+    try {
+      execFileGuarded(process.execPath, ['-e', script], { cwd: process.cwd(), env: process.env, timeoutMs: 400 });
+      assert.fail('expected the hung command to time out');
+    } catch (err) {
+      assert.ok(isGuardedTimeout(err), 'timed out');
+    }
+    // Past the grandchild's 3s write deadline: if it were alive, the marker exists.
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    assert.equal(fs.existsSync(marker), false, 'the grandchild was reaped before it could write the marker');
+    fs.rmSync(marker, { force: true });
   });
 });

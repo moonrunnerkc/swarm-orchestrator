@@ -6,12 +6,11 @@
 // it). This runs the post-PR suite under coverage, parses the Istanbul
 // coverage-final.json, and reports per changed line whether a test reached it.
 
-import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
-import { execBin, execEnv } from './exec-env';
+import { execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
 const log = getLogger('audit:execution-grounded:coverage');
@@ -219,18 +218,15 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
   }
 
   try {
-    execFileSync(execBin(command.cmd), command.args, {
+    execFileGuarded(execBin(command.cmd), command.args, {
       cwd: workspacePath,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      timeout: Math.max(1, deadline - Date.now()),
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
       env,
+      timeoutMs: Math.max(1, deadline - Date.now()),
+      maxBuffer: 64 * 1024 * 1024,
     });
   } catch (err) {
     // A failing suite still emits coverage; only bail when there is no report.
-    const signal = err instanceof Error && 'signal' in err ? (err as { signal: unknown }).signal : undefined;
-    if (signal === 'SIGTERM') {
+    if (isGuardedTimeout(err)) {
       return { ran: false, deltas: [], skipReason: `coverage run exceeded the ${Math.round(timeoutMs / 1000)}s budget` };
     }
     log.debug(`coverage command exited non-zero, will read any partial report: ${String(err).slice(-200)}`);

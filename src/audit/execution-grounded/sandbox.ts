@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
-import { execBin, execEnv } from './exec-env';
+import { commandTimeoutMs, execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 
 const log = getLogger('audit:execution-grounded:sandbox');
 
@@ -67,7 +67,6 @@ function fallbackInstallInvocation(manager: PackageManager): { bin: string; args
   }
 }
 
-const DEFAULT_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const DISK_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
 export interface ProvisionOptions {
@@ -202,8 +201,9 @@ function runInstall(
   manager: PackageManager,
   dir: string,
   cacheDir: string | undefined,
-  timeoutMs: number,
+  explicitTimeoutMs: number | undefined,
 ): void {
+  const timeoutMs = commandTimeoutMs(explicitTimeoutMs);
   // Only npm's download cache is safe to redirect. pnpm/yarn/bun resolve a
   // content-addressed store/cache that a later `add` must agree with; pointing
   // it at a per-run dir desyncs the store and breaks the tool add
@@ -223,25 +223,17 @@ function runInstall(
     const { bin, args } = attempts[i]!;
     lastArgs = args;
     try {
-      execFileSync(bin, args, {
-        cwd: dir,
-        stdio: ['ignore', 'ignore', 'pipe'],
-        timeout: timeoutMs,
-        encoding: 'utf8',
-        env,
-      });
+      execFileGuarded(bin, args, { cwd: dir, env, timeoutMs });
       if (i > 0) log.info(`install in ${dir} succeeded with the non-frozen fallback`);
       return;
     } catch (err) {
       lastErr = err;
-      const timedOut = err instanceof Error && 'signal' in err && (err as { signal: unknown }).signal === 'SIGTERM';
-      if (timedOut || i === attempts.length - 1) break;
+      if (isGuardedTimeout(err) || i === attempts.length - 1) break;
       log.warn(`frozen install failed in ${dir}; retrying without a frozen lockfile`);
     }
   }
   const stderr = lastErr instanceof Error && 'stderr' in lastErr ? String((lastErr as { stderr: unknown }).stderr) : '';
-  const timedOut =
-    lastErr instanceof Error && 'signal' in lastErr && (lastErr as { signal: unknown }).signal === 'SIGTERM';
+  const timedOut = isGuardedTimeout(lastErr);
   throw new SwarmError(
     `dependency install (${manager} ${lastArgs.join(' ')}) failed in ${dir}`,
     'sandbox-install-failed',
@@ -305,13 +297,7 @@ export function addDevTools(
   }
   const env = execEnv(opts.cacheDir);
   env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
-  execFileSync(bin, args, {
-    cwd: dir,
-    stdio: ['ignore', 'ignore', 'pipe'],
-    timeout: opts.timeoutMs,
-    encoding: 'utf8',
-    env,
-  });
+  execFileGuarded(bin, args, { cwd: dir, env, timeoutMs: opts.timeoutMs });
 }
 
 /** Run the repo's `build` script, best-effort. Self-hosting repos (vite's own
@@ -336,7 +322,7 @@ function buildWorkspace(dir: string, manager: PackageManager, timeoutMs: number)
         : { bin: execBin('corepack'), args: [manager, 'run', 'build'] };
   try {
     log.info(`building ${dir} (${manager} run build)`);
-    execFileSync(inv.bin, inv.args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], timeout: timeoutMs, encoding: 'utf8', env });
+    execFileGuarded(inv.bin, inv.args, { cwd: dir, env, timeoutMs });
   } catch (err) {
     log.warn(`build of ${dir} did not complete cleanly (continuing): ${String(err).slice(-160)}`);
   }
@@ -392,7 +378,7 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
     gitFetchCheckout(repo, commit, workspacePath, opts.depth ?? 1);
     const packageManager = detectPackageManager(workspacePath);
     if (opts.skipInstall !== true) {
-      runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS);
+      runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs);
       const size = directorySizeBytes(workspacePath);
       if (size > DISK_CAP_BYTES) {
         log.warn(

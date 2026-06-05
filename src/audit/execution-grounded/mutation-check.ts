@@ -8,7 +8,6 @@
 // workspace and shells out; the pure helpers (scope, config, report parsing,
 // proof correlation) carry the logic and are unit-tested without a run.
 
-import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -16,7 +15,7 @@ import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges, LineRange } from '../cheat-detector/diff-walker';
 import { lineInRanges } from '../cheat-detector/diff-walker';
-import { execEnv } from './exec-env';
+import { execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
 const log = getLogger('audit:execution-grounded:mutation');
@@ -328,19 +327,16 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
     // Invoke the Stryker bin directly rather than via `node <path>`: under
     // pnpm the .bin entry is a shell shim, not a JS file. Its shebang picks up
     // node from PATH, which execEnv has pinned to the chosen Node.
-    execFileSync(path.join(installDir, 'node_modules', '.bin', 'stryker'), ['run', configPath], {
+    execFileGuarded(path.join(installDir, 'node_modules', '.bin', 'stryker'), ['run', configPath], {
       cwd: workspacePath,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      timeout: Math.max(1, deadline - Date.now()),
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
       env: execEnv(opts.cacheDir),
+      timeoutMs: Math.max(1, deadline - Date.now()),
+      maxBuffer: 64 * 1024 * 1024,
     });
   } catch (err) {
     // Stryker exits non-zero on a run error, but it may still have written a
     // partial report. Fall through to read it; only skip if there is none.
-    const signal = err instanceof Error && 'signal' in err ? (err as { signal: unknown }).signal : undefined;
-    if (signal === 'SIGTERM') {
+    if (isGuardedTimeout(err)) {
       return { ran: false, results: [], summary: empty, scope, skipReason: `mutation run exceeded the ${Math.round(timeoutMs / 1000)}s budget` };
     }
     if (!fs.existsSync(strykerReportPath(workspacePath))) {

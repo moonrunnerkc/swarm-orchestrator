@@ -5,6 +5,7 @@
 // processes should use; when unset, the ambient toolchain is used. Centralized
 // here so every shelled-out command in this surface resolves the same way.
 
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'child_process';
 import * as path from 'path';
 
 /** Resolve a toolchain binary (node/npm/npx) to the pinned Node bin dir when
@@ -107,4 +108,121 @@ export function execEnv(cacheDir?: string): NodeJS.ProcessEnv {
   env.PATH = dir !== undefined && dir.length > 0 ? `${dir}${path.delimiter}${basePath}` : basePath;
   if (cacheDir !== undefined) env.npm_config_cache = cacheDir;
   return env;
+}
+
+/** Fallback per-command wall-clock cap when neither the caller nor the
+ *  environment names one: five minutes. */
+export const DEFAULT_COMMAND_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Resolve the wall-clock cap for one sandboxed command. An explicit positive
+ *  budget from the caller wins (mutation and coverage deliberately allow more
+ *  than the default); otherwise SWARM_EG_COMMAND_TIMEOUT_MS overrides the
+ *  five-minute fallback. */
+export function commandTimeoutMs(explicit?: number): number {
+  if (explicit !== undefined && explicit > 0) return explicit;
+  const raw = process.env.SWARM_EG_COMMAND_TIMEOUT_MS;
+  const parsed = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_COMMAND_TIMEOUT_MS;
+}
+
+export interface GuardedRunOptions {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  /** Wall-clock cap. Falls back to commandTimeoutMs() when omitted. */
+  timeoutMs?: number;
+  /** Capture and return stdout. Off by default: installs and test suites emit
+   *  megabytes of stdout we do not read, so ignoring it avoids the buffer. */
+  captureStdout?: boolean;
+  maxBuffer?: number;
+}
+
+/** Error thrown by execFileGuarded. Mirrors the fields execFileSync attaches to
+ *  its thrown error (`status`, `signal`, `stdout`, `stderr`) so existing
+ *  classifiers keep working, and adds `timedOut` so callers do not have to
+ *  sniff the signal. */
+export interface GuardedRunError extends Error {
+  timedOut: boolean;
+  signal: NodeJS.Signals | null;
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** True when an error from execFileGuarded was caused by the timeout. */
+export function isGuardedTimeout(err: unknown): boolean {
+  return err instanceof Error && (err as Partial<GuardedRunError>).timedOut === true;
+}
+
+function guardedError(
+  message: string,
+  fields: { timedOut: boolean; signal: NodeJS.Signals | null; status: number | null; stdout: string; stderr: string },
+): GuardedRunError {
+  return Object.assign(new Error(message), fields) as GuardedRunError;
+}
+
+/**
+ * Run one untrusted sandbox command (install, build, mutation, coverage, test)
+ * in its own process group under a wall-clock cap. spawnSync's own timeout only
+ * signals the direct child; a test that forked a dev server or a build daemon
+ * leaves that grandchild running, which is how a hung suite wedges CI. So we
+ * spawn detached (the child leads a new process group) and, on timeout, send
+ * SIGKILL to the whole group. Returns stdout (empty unless captureStdout);
+ * throws a GuardedRunError carrying stderr, the exit signal, and a timedOut
+ * flag on any non-zero exit, spawn failure, or timeout.
+ */
+export function execFileGuarded(bin: string, args: readonly string[], opts: GuardedRunOptions): string {
+  const timeout = commandTimeoutMs(opts.timeoutMs);
+  const ownGroup = process.platform !== 'win32';
+  // `detached` puts the child in its own process group so the on-timeout
+  // SIGKILL below can target the group. spawnSync honors it at runtime, but the
+  // Node types only declare it on async spawn, hence the explicit widening.
+  const spawnOpts: SpawnSyncOptionsWithStringEncoding & { detached?: boolean } = {
+    cwd: opts.cwd,
+    env: opts.env,
+    stdio: ['ignore', opts.captureStdout === true ? 'pipe' : 'ignore', 'pipe'],
+    encoding: 'utf8',
+    timeout,
+    killSignal: 'SIGTERM',
+    detached: ownGroup,
+    maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
+  };
+  const res = spawnSync(bin, args, spawnOpts);
+  const timedOut = (res.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+  if (timedOut && ownGroup && res.pid !== undefined) {
+    try {
+      process.kill(-res.pid, 'SIGKILL');
+    } catch {
+      // The group already exited between the timeout and this reap; nothing to do.
+    }
+  }
+  const stdout = res.stdout ?? '';
+  const stderr = res.stderr ?? '';
+  if (timedOut) {
+    throw guardedError(`sandbox command timed out after ${timeout}ms: ${bin} ${args.join(' ')}`, {
+      timedOut: true,
+      signal: res.signal ?? null,
+      status: null,
+      stdout,
+      stderr,
+    });
+  }
+  if (res.error !== undefined) {
+    throw guardedError(`failed to run ${bin}: ${res.error.message}`, {
+      timedOut: false,
+      signal: res.signal ?? null,
+      status: res.status,
+      stdout,
+      stderr,
+    });
+  }
+  if (res.status !== 0) {
+    throw guardedError(`${bin} exited with status ${res.status ?? 'null'}`, {
+      timedOut: false,
+      signal: res.signal ?? null,
+      status: res.status,
+      stdout,
+      stderr,
+    });
+  }
+  return stdout;
 }
