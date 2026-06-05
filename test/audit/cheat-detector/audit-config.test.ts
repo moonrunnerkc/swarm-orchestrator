@@ -171,6 +171,14 @@ describe('cheat-detector / audit-config', () => {
         assert.equal(loadAuditConfig(repo).executionGrounded.runner, 'docker');
       });
     });
+    it('reads corroborateStructural, defaulting to false', () => {
+      withConfig('executionGrounded:\n  enabled: true\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.corroborateStructural, false);
+      });
+      withConfig('executionGrounded:\n  enabled: true\n  corroborateStructural: true\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.corroborateStructural, true);
+      });
+    });
     it('reads the enabled flag, the per-check flags, and the wall-clock cap', () => {
       const yaml = [
         'executionGrounded:',
