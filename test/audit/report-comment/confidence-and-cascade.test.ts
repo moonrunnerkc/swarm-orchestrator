@@ -47,6 +47,22 @@ describe('audit / report-comment / confidence + cascade', () => {
     assert.match(out, /\*Confidence:\* judge-confirmed\./);
   });
 
+  it('renders the judge model id and prompt hash for replay', () => {
+    const out = renderPrComment(
+      result([
+        finding({
+          severity: 'warn',
+          judgeModelId: 'claude-haiku-4-5-20251001',
+          judgePromptHash: 't:abc12345+d:def67890',
+          judgeReasoning: 'the path is untouched',
+        }),
+      ]),
+      { mode: 'advise' },
+    );
+    assert.match(out, /LLM judge \(`claude-haiku-4-5-20251001`, prompt `t:abc12345\+d:def67890`\)/);
+    assert.match(out, /the path is untouched/);
+  });
+
   it('renders the runtime-corroboration backing next to the badge', () => {
     const out = renderPrComment(
       result([

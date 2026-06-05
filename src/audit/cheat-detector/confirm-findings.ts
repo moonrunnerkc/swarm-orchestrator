@@ -15,7 +15,7 @@
 // separate from the no-op-fix detector's own judge usage.
 
 import type { CheatCategory, Finding, JudgeLedgerSink } from '../types';
-import { askJudge } from './llm-judge';
+import { askJudge, formatJudgePromptHash } from './llm-judge';
 import type { JudgeClient } from './llm-judge';
 
 export interface ConfirmContext {
@@ -65,7 +65,10 @@ export async function confirmFindings(
     }
   }
 
-  const verdicts = new Map<CheatCategory, { answer: string; reason?: string; modelId: string }>();
+  const verdicts = new Map<
+    CheatCategory,
+    { answer: string; reason?: string; modelId: string; promptHash: string }
+  >();
   for (const category of categoriesToConfirm) {
     const askOpts: Parameters<typeof askJudge>[0] = {
       repoRoot: ctx.repoRoot,
@@ -80,9 +83,10 @@ export async function confirmFindings(
     if (ctx.client !== undefined) askOpts.client = ctx.client;
     if (ctx.allowLiveCall !== undefined) askOpts.allowLiveCall = ctx.allowLiveCall;
     const result = await askJudge(askOpts);
-    const verdict: { answer: string; reason?: string; modelId: string } = {
+    const verdict: { answer: string; reason?: string; modelId: string; promptHash: string } = {
       answer: result.answer,
       modelId: result.modelId,
+      promptHash: formatJudgePromptHash(result.titleSha, result.diffSha),
     };
     if (result.reason !== undefined) verdict.reason = result.reason;
     verdicts.set(category, verdict);
@@ -97,6 +101,7 @@ export async function confirmFindings(
       continue;
     }
     f.judgeModelId = verdict.modelId;
+    f.judgePromptHash = verdict.promptHash;
     if (verdict.answer === 'no') {
       // Refuted: drop to advisory so it never blocks, and record why.
       f.severity = 'warn';

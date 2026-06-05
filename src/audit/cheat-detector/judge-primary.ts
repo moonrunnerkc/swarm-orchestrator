@@ -11,7 +11,7 @@
 import type { File as ParsedDiffFile } from 'parse-diff';
 import type { Finding, JudgeLedgerSink, SemanticCheatCategory } from '../types';
 import { filePath, fileKind } from './diff-walker';
-import { askJudge } from './llm-judge';
+import { askJudge, formatJudgePromptHash } from './llm-judge';
 import type { JudgeClient } from './llm-judge';
 
 export interface JudgePrimaryContext {
@@ -66,6 +66,7 @@ export async function runJudgePrimary(ctx: JudgePrimaryContext): Promise<Finding
       judgePrimary: true,
       judgeConfirmed: true,
       judgeModelId: verdict.modelId,
+      judgePromptHash: formatJudgePromptHash(verdict.titleSha, verdict.diffSha),
     };
     if (verdict.reason !== undefined) finding.judgeReasoning = verdict.reason;
     findings.push(finding);

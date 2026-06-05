@@ -110,6 +110,12 @@ export interface Finding {
    */
   judgeModelId?: string;
   /**
+   * v11.1: short hash of the judge's prompt inputs (title and diff shas),
+   * surfaced in the PR comment next to the model id so a reader can tie the
+   * rendered verdict back to the exact input recorded in the ledger.
+   */
+  judgePromptHash?: string;
+  /**
    * v10.4: the judge confirmation gate set this to `true` when the
    * judge confirmed the finding is a real cheat. Findings the judge
    * refuted are downgraded to advisory and do not carry this flag.

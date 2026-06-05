@@ -95,6 +95,13 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
   return result;
 }
 
+/** Short, stable identifier of a judge call's prompt inputs, from the title
+ *  and diff shas the ledger records. Shown in the PR comment so a reader can
+ *  match the rendered verdict to the recorded input without leaking the diff. */
+export function formatJudgePromptHash(titleSha: string, diffSha: string): string {
+  return `t:${titleSha.slice(0, 8)}+d:${diffSha.slice(0, 8)}`;
+}
+
 interface ChunkOutcome {
   answer: JudgeResult['answer'];
   reason?: string;

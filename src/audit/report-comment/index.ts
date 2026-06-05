@@ -214,8 +214,9 @@ function renderFinding(finding: Finding): string {
   }
   lines.push(finding.message, '');
   if (finding.judgeReasoning !== undefined && finding.judgeModelId !== undefined) {
+    const promptPart = finding.judgePromptHash !== undefined ? `, prompt \`${finding.judgePromptHash}\`` : '';
     lines.push(
-      `*LLM judge (\`${finding.judgeModelId}\`):* ${finding.judgeReasoning}`,
+      `*LLM judge (\`${finding.judgeModelId}\`${promptPart}):* ${finding.judgeReasoning}`,
       '',
     );
   }
