@@ -33,9 +33,17 @@ export function buildJudgeClientStub(options: StubBuildOptions): {
       system: req.system,
       userText: req.messages[0]?.content ?? '',
     });
-    return {
-      content: [{ type: 'text', text: options.reply }],
-    };
+    // The judge now forces tool use. Translate a YES/NO reply into a
+    // record_verdict tool_use block; leave anything else as a plain text block
+    // (no tool_use) so it exercises the fail-closed -> unavailable path.
+    const match = /^(YES|NO)\b[\s:.,-]*([\s\S]*)$/i.exec(options.reply.trim());
+    if (match !== null) {
+      const answer = (match[1] ?? '').toLowerCase();
+      const reason = (match[2] ?? '').trim();
+      const input = reason.length > 0 ? { answer, reason } : { answer };
+      return { content: [{ type: 'tool_use', name: 'record_verdict', input }] };
+    }
+    return { content: [{ type: 'text', text: options.reply }] };
   };
   return {
     client: { messages: { create } } as unknown as Anthropic,

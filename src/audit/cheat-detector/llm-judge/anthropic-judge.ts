@@ -36,43 +36,70 @@ export class AnthropicJudge implements JudgeClient {
     answer: JudgeAnswer;
     reason?: string;
   }> {
+    // Force a structured verdict via tool use: the model must call
+    // record_verdict with answer ∈ {yes, no}. A free-text reply (the model
+    // refusing the tool, or returning prose) has no tool_use block and parses
+    // to `unavailable`, so a malformed answer fails closed to the deterministic
+    // verdict instead of being misread as a confirmation. Temperature stays 0;
+    // the prompts are unchanged, so the judge cache (keyed on diff, title,
+    // model) is unaffected.
     const response = await this.client.messages.create({
       model: prompt.modelId,
       max_tokens: this.maxTokens,
       temperature: 0,
       system: prompt.system,
+      tools: [RECORD_VERDICT_TOOL],
+      tool_choice: { type: 'tool', name: RECORD_VERDICT_TOOL.name },
       messages: [{ role: 'user', content: prompt.user }],
     });
-    const raw = extractTextContent(response);
-    const parsed = parseJudgeReply(raw);
-    const out: { raw: string; answer: JudgeAnswer; reason?: string } = {
-      raw,
-      answer: parsed.answer,
+    return parseToolVerdict(response.content);
+  }
+}
+
+const RECORD_VERDICT_TOOL_NAME = 'record_verdict';
+
+const RECORD_VERDICT_TOOL: Anthropic.Tool = {
+  name: RECORD_VERDICT_TOOL_NAME,
+  description:
+    'Record the audit verdict for the flagged pattern. Call this exactly once and emit no other text.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      answer: {
+        type: 'string',
+        enum: ['yes', 'no'],
+        description: 'yes when the flagged problem is real, no when it is a false positive',
+      },
+      reason: { type: 'string', description: 'one sentence justifying the verdict' },
+    },
+    required: ['answer'],
+  },
+};
+
+/**
+ * Read the verdict out of a forced tool_use response. Strict and fail-closed:
+ * any deviation (no tool_use block, wrong tool, or an `answer` outside
+ * {yes, no}) returns `unavailable` so the caller keeps the deterministic
+ * verdict, never a misparsed confirm. `raw` carries the tool input for the
+ * audit record.
+ */
+export function parseToolVerdict(content: unknown): { raw: string; answer: JudgeAnswer; reason?: string } {
+  if (!Array.isArray(content)) return { raw: '', answer: 'unavailable' };
+  for (const block of content) {
+    const b = block as { type?: unknown; name?: unknown; input?: unknown };
+    if (b.type !== 'tool_use' || b.name !== RECORD_VERDICT_TOOL_NAME) continue;
+    const input = (typeof b.input === 'object' && b.input !== null ? b.input : {}) as {
+      answer?: unknown;
+      reason?: unknown;
     };
-    if (parsed.reason !== undefined) out.reason = parsed.reason;
-    return out;
+    const raw = JSON.stringify(input);
+    if (input.answer !== 'yes' && input.answer !== 'no') return { raw, answer: 'unavailable' };
+    const answer: JudgeAnswer = input.answer;
+    const reason =
+      typeof input.reason === 'string' && input.reason.trim().length > 0 ? input.reason.trim() : undefined;
+    return reason !== undefined ? { raw, answer, reason } : { raw, answer };
   }
-}
-
-interface AnthropicTextBlock {
-  type: string;
-  text?: string;
-}
-
-interface AnthropicResponse {
-  content?: AnthropicTextBlock[];
-}
-
-function extractTextContent(response: unknown): string {
-  const r = response as AnthropicResponse;
-  if (r.content === undefined) return '';
-  const parts: string[] = [];
-  for (const block of r.content) {
-    if (block.type === 'text' && typeof block.text === 'string') {
-      parts.push(block.text);
-    }
-  }
-  return parts.join('').trim();
+  return { raw: '', answer: 'unavailable' };
 }
 
 /**
