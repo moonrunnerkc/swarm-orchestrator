@@ -321,8 +321,10 @@ directly and publishes via GitHub Pages
 `--shadow-output <path>` writes one JSON object per audit with
 detector verdicts, judge invocation count, and the rendered comment;
 the existing `--shadow <repo-label>` per-repo rollup remains. No
-detector crosses the F1 0.5 promotion gate, so all ten stay
-advisory-only.
+detector clears the promotion gate, so all ten stay advisory-only. (The
+v10 cycle gated on F1 >= 0.5; that criterion was superseded by precision
+>= 0.90 with a minimum true-positive count, the single bar stated under
+[Limitations and what's next](#limitations-and-whats-next).)
 
 `10.2.0-advisory` repositions the project around the suspicion-score
 verdict the measured precision can credibly support. Synthetic 1.000 is
@@ -367,7 +369,7 @@ pin `8.0.x` if you still need `swarm run --v6`.
 An honest accounting of where the tool is weak today and what is being worked on.
 
 - **It over-flags normal PRs at scale, so findings ship advisory.** On a large clean-PR corpus the structural detectors fire on legitimate patterns (relocated tests, refactors that change assertions, pragmatic suppressions) often enough that blocking on them would be noisy. That is why `--mode advise` is the default and nothing blocks unless you opt in. Narrowing that false-alarm rate until a detector can earn the gate is the active work.
-- **No single detector has cleared the bar to block on its own.** A detector becomes gate-eligible only when its measured precision is at least 0.90 with enough true positives behind it. The tier is computed into [`benchmarks/real-corpus/promotions.json`](benchmarks/real-corpus/promotions.json) and CI fails if it drifts (`npm run promotions:check`), so today every detector is advisory-only.
+- **No single detector has cleared the bar to block on its own.** A detector becomes gate-eligible only when its measured precision is at least 0.90 with a minimum true-positive count behind it (the Wilson lower bound keeps a handful of lucky firings from promoting). This is the single criterion; the v10 F1 >= 0.5 gate is superseded. The tier is computed into [`benchmarks/real-corpus/promotions.json`](benchmarks/real-corpus/promotions.json) and CI fails if it drifts (`npm run promotions:check`), so today every detector is advisory-only. A second, corroborated tier applies the same 0.90 bar to the subset of a detector's findings that the opt-in execution-grounded layer backs (a surviving mutant, a coverage gap, or a still-failing repro); a detector that is noisy standalone can clear it, which is the concrete path to the first gate.
 - **The real-corpus baseline is AI-labeled, so blocking precision is not yet proven.** Against the 205-PR model-labeled baseline the deterministic detectors score low (F1 0.140, [`benchmarks/real-corpus/scores/latest.json`](benchmarks/real-corpus/scores/latest.json)), and every label carries a "pending human review" stamp. That AI-labeling is the largest open hole in the project's credibility; closing it with human labels is the next milestone ([`docs/labeling-methodology.md`](docs/labeling-methodology.md), [`benchmarks/real-corpus/labels-v2/`](benchmarks/real-corpus/labels-v2/)).
 - **It is a cheat and under-constraint signal, not a bug finder.** It does not catch the logic bugs that get reverted; those leave no cheat-shaped tell. Use it to answer "did the agent cut a corner?" and "can I prove this patch met its contract?", not "is this code correct?".
 
