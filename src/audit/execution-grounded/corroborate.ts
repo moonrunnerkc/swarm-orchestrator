@@ -20,6 +20,7 @@
 
 import type { CheatCategory, Finding, RuntimeCorroboration } from '../types';
 import { lineInRanges, type ChangedLineRanges } from '../cheat-detector/diff-walker';
+import { setFindingConfidence } from '../cheat-detector/verify-findings';
 import type { ExecutionGroundedOutcome } from './index';
 
 /** Widen every range in `ranges` by `by` lines on each side (floored at line 1).
@@ -115,8 +116,10 @@ export function corroborationFor(finding: Finding, signals: ExecutionSignals): R
 
 /**
  * Annotate each structural finding that an execution signal backs with its
- * `runtimeCorroboration`, in place. Findings with no runtime backing are left
- * exactly as they were and stay advisory. Returns the count corroborated.
+ * `runtimeCorroboration`, in place, and raise its confidence through the shared
+ * setter (so the judge gate and this step cannot disagree). Findings with no
+ * runtime backing are left exactly as they were and stay advisory. Returns the
+ * count corroborated.
  */
 export function corroborateStructuralFindings(findings: Finding[], signals: ExecutionSignals): number {
   let corroborated = 0;
@@ -124,6 +127,7 @@ export function corroborateStructuralFindings(findings: Finding[], signals: Exec
     const corroboration = corroborationFor(finding, signals);
     if (corroboration !== null) {
       finding.runtimeCorroboration = corroboration;
+      setFindingConfidence(finding);
       corroborated += 1;
     }
   }

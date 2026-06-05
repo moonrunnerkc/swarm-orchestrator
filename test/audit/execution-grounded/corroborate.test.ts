@@ -121,6 +121,28 @@ describe('execution-grounded / corroborate', () => {
       assert.equal(findings[1]!.runtimeCorroboration, undefined, 'test-relaxation has no matching signal');
       assert.equal(findings[2]!.runtimeCorroboration, undefined, 'no-op-fix is not eligible');
     });
+
+    it('raises a backed finding to runtime-corroborated through the shared setter', () => {
+      const f = finding('test-relaxation', 'src/a.ts', 3);
+      corroborateStructuralFindings([f], {
+        survivingMutants: [{ file: 'src/a.ts', line: 3, id: 'm' }],
+        coverageGaps: [],
+        reproFailures: [],
+      });
+      assert.equal(f.confidence, 'runtime-corroborated');
+    });
+
+    it('runtime corroboration outranks a prior judge-confirmed grade', () => {
+      const f = finding('coverage-erosion', 'src/a.ts', 12);
+      f.judgeConfirmed = true;
+      f.confidence = 'judge-confirmed'; // as the judge gate would have left it
+      corroborateStructuralFindings([f], {
+        survivingMutants: [{ file: 'src/a.ts', line: 12, id: 'm' }],
+        coverageGaps: [],
+        reproFailures: [],
+      });
+      assert.equal(f.confidence, 'runtime-corroborated', 'strongest wins, never downgrades');
+    });
   });
 
   describe('executionSignalsFromOutcome', () => {
