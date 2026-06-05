@@ -1,11 +1,29 @@
 import { strict as assert } from 'assert';
 import {
   blockTriggerEvidenceSha256,
+  detectClaimFalsified,
   type BlockTrigger,
   type ClaimFalsifiedEvidence,
   type CorroboratedUnderConstraintEvidence,
   type ObligationFailureEvidence,
 } from '../../../src/audit/gate/block-triggers';
+import type { ReproComparison } from '../../../src/audit/execution-grounded';
+import type { PrIntent } from '../../../src/audit/cheat-detector/pr-intent';
+
+function reproComparison(verdict: ReproComparison['verdict']): ReproComparison {
+  return {
+    issue: { owner: 'acme', repo: 'widgets', number: 42 },
+    repro: { kind: 'script', language: 'js', code: 'require("./").charge()' },
+    verdict,
+    preStatus: 'failed',
+    postStatus: verdict === 'fix-not-delivered' ? 'failed' : 'passed',
+    preOutput: 'before',
+    postOutput: 'Error: charge not applied',
+  };
+}
+
+const claimsFix: PrIntent = { claimsFix: true, evidence: 'fixes #42' };
+const noClaim: PrIntent = { claimsFix: false, evidence: '' };
 
 const claimFalsified: ClaimFalsifiedEvidence = {
   kind: 'claim-falsified',
@@ -81,5 +99,45 @@ describe('block-trigger evidence', () => {
       blockTriggerEvidenceSha256(tampered),
       'a different captured output must produce a different fingerprint',
     );
+  });
+});
+
+describe('detectClaimFalsified (T1)', () => {
+  it('fires when a claimed fix leaves the issue repro still failing', () => {
+    const triggers = detectClaimFalsified({
+      prIntent: claimsFix,
+      linkedIssues: [{ owner: 'acme', repo: 'widgets', number: 42 }],
+      repros: [reproComparison('fix-not-delivered')],
+      testRunner: null,
+    });
+    assert.equal(triggers.length, 1);
+    const trigger = triggers[0]!;
+    assert.equal(trigger.kind, 'claim-falsified');
+    const evidence = trigger.evidence as ClaimFalsifiedEvidence;
+    assert.equal(evidence.issueRef, 'acme/widgets#42');
+    assert.equal(evidence.postStatus, 'failed');
+    assert.match(evidence.postOutput, /charge not applied/);
+    assert.equal(evidence.reproCommand, 'node __swarm_repro__.js');
+    assert.equal(trigger.reproduce, evidence.reproCommand, 'reproduce is the repro command');
+  });
+
+  it('stays silent when the claimed fix actually delivered', () => {
+    const triggers = detectClaimFalsified({
+      prIntent: claimsFix,
+      linkedIssues: [{ owner: 'acme', repo: 'widgets', number: 42 }],
+      repros: [reproComparison('fix-delivered')],
+      testRunner: null,
+    });
+    assert.equal(triggers.length, 0);
+  });
+
+  it('stays silent when the PR makes no fix claim and links no issue', () => {
+    const triggers = detectClaimFalsified({
+      prIntent: noClaim,
+      linkedIssues: [],
+      repros: [reproComparison('fix-not-delivered')],
+      testRunner: null,
+    });
+    assert.equal(triggers.length, 0);
   });
 });

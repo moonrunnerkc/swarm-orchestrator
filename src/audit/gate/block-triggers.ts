@@ -17,6 +17,10 @@
 import * as crypto from 'crypto';
 import { canonicalJson } from '../../ledger/ledger';
 import type { CheatCategory } from '../types';
+import type { PrIntent } from '../cheat-detector/pr-intent';
+import type { ReproComparison } from '../execution-grounded';
+import { renderReproCommand, type IssueRef } from '../execution-grounded/issue-repro';
+import type { TestRunner } from '../execution-grounded/sandbox';
 
 /** The three verifiable-evidence triggers. Each is self-certifying and
  *  label-free: its truth comes from running the change, not from a label. */
@@ -115,4 +119,57 @@ export interface BlockTrigger {
  */
 export function blockTriggerEvidenceSha256(evidence: BlockTriggerEvidence): string {
   return crypto.createHash('sha256').update(canonicalJson(evidence), 'utf8').digest('hex');
+}
+
+export interface ClaimFalsifiedInput {
+  /** The PR's parsed fix claim (cheat-detector/pr-intent.ts). */
+  prIntent: PrIntent;
+  /** Issue references the PR closes (issue-repro parseIssueReferences). A
+   *  close-keyword reference is itself a fix claim. */
+  linkedIssues: IssueRef[];
+  /** Pre/post repro comparisons from the execution-grounded run. */
+  repros: ReproComparison[];
+  /** Runner the post workspace used, for rendering the inner repro command. */
+  testRunner: TestRunner | null;
+}
+
+/**
+ * T1: the PR claims a fix and the linked issue's repro still fails against the
+ * patched checkout. Execution contradicts the claim. Fires one candidate per
+ * `fix-not-delivered` repro (pre failed and post still fails, so the repro
+ * reproduces and the fix did not land). Silent when the PR makes no fix claim
+ * or every repro passed. The reproduce command is the repro's own command line,
+ * which produced the captured failing output verbatim.
+ *
+ * @param input the PR's fix claim, linked issues, repro comparisons, and runner
+ * @returns one block-trigger candidate per falsified fix claim, or []
+ */
+export function detectClaimFalsified(input: ClaimFalsifiedInput): BlockTrigger[] {
+  const claimsFix = input.prIntent.claimsFix || input.linkedIssues.length > 0;
+  if (!claimsFix) return [];
+  const out: BlockTrigger[] = [];
+  for (const comparison of input.repros) {
+    if (comparison.verdict !== 'fix-not-delivered') continue;
+    const issueRef = `${comparison.issue.owner}/${comparison.issue.repo}#${comparison.issue.number}`;
+    const reproCommand = renderReproCommand(comparison.repro, input.testRunner);
+    const claim = input.prIntent.evidence.length > 0 ? input.prIntent.evidence : `closes ${issueRef}`;
+    const evidence: ClaimFalsifiedEvidence = {
+      kind: 'claim-falsified',
+      issueRef,
+      claim,
+      reproCommand,
+      preStatus: comparison.preStatus,
+      postStatus: comparison.postStatus,
+      postOutput: comparison.postOutput,
+    };
+    out.push({
+      kind: 'claim-falsified',
+      summary:
+        `The fix this PR claims for ${issueRef} does not deliver: the issue repro still ` +
+        `fails against the patched code (it also failed before, so it reproduces).`,
+      reproduce: reproCommand,
+      evidence,
+    });
+  }
+  return out;
 }
