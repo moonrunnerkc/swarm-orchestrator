@@ -313,6 +313,26 @@ export interface LedgerEntryPayloadMap {
     line: number;
     evidencePath?: string;
   };
+  // A verifiable-evidence block-trigger candidate: a self-certifying
+  // runtime fact (a falsified issue repro, a structural finding a surviving
+  // mutant or coverage gap corroborates on the same line, or a failed
+  // declared obligation). `eligible` records whether the trigger is allowed
+  // to gate per the revert-calibrated block-eligibility policy; `blocked`
+  // records whether it actually failed the merge on this run. Both are false
+  // until the calibration promotes the trigger. `evidenceSha256` pins the
+  // canonical evidence so the rendered verdict ties back to a replayable fact,
+  // and `reproduce` is the exact command that regenerates it.
+  'pr-audit-block-trigger': {
+    trigger: 'claim-falsified' | 'corroborated-under-constraint' | 'obligation-failure';
+    eligible: boolean;
+    blocked: boolean;
+    summary: string;
+    reproduce: string;
+    evidenceSha256: string;
+    category?: string;
+    file?: string;
+    line?: number;
+  };
 }
 
 export type LedgerEntryType = keyof LedgerEntryPayloadMap;
@@ -356,3 +376,4 @@ export type PrAuditJudgePrimaryEntry = LedgerEntry<'pr-audit-judge-primary'>;
 export type PrAuditMutationFindingEntry = LedgerEntry<'pr-audit-mutation-finding'>;
 export type PrAuditIssueReproFindingEntry = LedgerEntry<'pr-audit-issue-repro-finding'>;
 export type PrAuditCoverageFindingEntry = LedgerEntry<'pr-audit-coverage-finding'>;
+export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;
