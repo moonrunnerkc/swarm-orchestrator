@@ -59,12 +59,18 @@ import type {
   PrAuditIssueReproFindingEntry,
   PrAuditCoverageFindingEntry,
 } from '../../ledger/types';
+import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
-import { runExecutionGrounded } from '../../audit/execution-grounded';
+import { runExecutionGrounded, type ExecutionGroundedOutcome } from '../../audit/execution-grounded';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
 } from '../../audit/execution-grounded/corroborate';
+import { parsePrIntent } from '../../audit/cheat-detector/pr-intent';
+import { parseIssueReferences } from '../../audit/execution-grounded/issue-repro';
+import { detectBlockTriggers, type BlockTrigger } from '../../audit/gate/block-triggers';
+import { appendBlockTriggerEntry } from '../../audit/gate/block-trigger-ledger';
+import { decideBlock, isBlockEligible } from '../../audit/gate/gate-decision';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
@@ -275,8 +281,12 @@ interface ExecutionGroundedLayerArgs {
 }
 
 /** Run the execution-grounded layer for a --pr audit and fold its advisory
- *  findings into the result and the ledger (under dedicated entry kinds). */
-async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Promise<void> {
+ *  findings into the result and the ledger (under dedicated entry kinds).
+ *  Returns the run outcome so the caller can build block triggers from its
+ *  signals, or undefined when the layer did not run. */
+async function runExecutionGroundedLayer(
+  args: ExecutionGroundedLayerArgs,
+): Promise<ExecutionGroundedOutcome | undefined> {
   const { result, prContext, unifiedDiff, config, ledger, attribution } = args;
   const pr = prContext.prMetadata;
   const evidenceDir = path.join('.swarm', 'execution-grounded', `${pr.repository.replace('/', '-')}-${pr.number}`);
@@ -300,7 +310,7 @@ async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Prom
     });
   } catch (err) {
     logger.warn(`execution-grounded layer failed for ${pr.repository}#${pr.number}: ${String(err)}`);
-    return;
+    return undefined;
   }
   if (outcome.skipped.length > 0) {
     logger.info(`execution-grounded skipped: ${outcome.skipped.join('; ')}`);
@@ -371,6 +381,39 @@ async function runExecutionGroundedLayer(args: ExecutionGroundedLayerArgs): Prom
       if (backed > 0) logger.info(`runtime corroboration backed ${backed} structural finding(s)`);
     }
   }
+  return outcome;
+}
+
+/**
+ * Build the verifiable-evidence block triggers for a --pr audit from the
+ * execution-grounded outcome: a falsified fix claim (T1) and a structural
+ * finding a surviving mutant or coverage gap corroborates on the same line
+ * (T2). The audit surface declares no obligations, so T3 does not apply here.
+ */
+function buildBlockTriggers(
+  outcome: ExecutionGroundedOutcome,
+  result: AuditResult,
+  prContext: PrContext,
+  prRef: string | undefined,
+): BlockTrigger[] {
+  const pr = prContext.prMetadata;
+  const prText = `${pr.title}\n\n${pr.body}`;
+  const structural = result.findings.filter(
+    (f) => !isExecutionGroundedCategory(f.category) && f.judgePrimary !== true,
+  );
+  return detectBlockTriggers({
+    claimFalsified: {
+      prIntent: parsePrIntent({ title: pr.title, body: pr.body }),
+      linkedIssues: parseIssueReferences(prText),
+      repros: outcome.repros,
+      testRunner: null,
+    },
+    corroborated: {
+      findings: structural,
+      signals: executionSignalsFromOutcome(outcome),
+      prRef: prRef ?? `${pr.repository}#${pr.number}`,
+    },
+  });
 }
 
 async function runAudit(flags: AuditFlags): Promise<number> {
@@ -502,8 +545,9 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   // sandboxed checkout. Defaults off; a failure here is logged and does not
   // fail the audit (the findings ship advisory and never gate).
   const auditConfig = loadAuditConfig(flags.repoRoot);
+  let egOutcome: ExecutionGroundedOutcome | undefined;
   if (auditConfig.executionGrounded.enabled && prContext !== undefined) {
-    await runExecutionGroundedLayer({
+    egOutcome = await runExecutionGroundedLayer({
       result,
       prContext,
       unifiedDiff,
@@ -512,6 +556,26 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       attribution,
     });
   }
+
+  // Verifiable-evidence block triggers. Built from the execution-grounded
+  // outcome's runtime facts and recorded to the ledger whether or not they
+  // gate. Only a block-eligible trigger affects the exit code, and only in
+  // gate mode; advise mode never blocks. The eligible set is empty today, so a
+  // clean PR's behavior is unchanged.
+  const blockTriggers =
+    egOutcome !== undefined && prContext !== undefined
+      ? buildBlockTriggers(egOutcome, result, prContext, flags.prRef)
+      : [];
+  for (const trigger of blockTriggers) {
+    const eligible = isBlockEligible(trigger.kind);
+    appendBlockTriggerEntry(
+      ledger,
+      trigger,
+      { eligible, blocked: eligible && flags.mode === 'gate' },
+      attribution,
+    );
+  }
+  const decision = decideBlock(blockTriggers, flags.mode, result.pass);
 
   ledger.append<PrAuditCompletedEntry>(
     {
@@ -567,10 +631,10 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     return 0;
   }
 
-  emitOutput(flags.output, result, ledgerPath, flags.mode);
+  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers);
 
   if (flags.mode === 'advise') return 0;
-  return result.pass ? 0 : 1;
+  return decision.blocked ? 1 : 0;
 }
 
 async function loadDiff(flags: AuditFlags): Promise<string> {
@@ -671,23 +735,29 @@ function emitOutput(
   result: AuditResult,
   ledgerPath: string,
   mode: AuditMode,
+  blockingTriggers: BlockTrigger[],
 ): void {
   if (format === 'json') {
-    process.stdout.write(JSON.stringify({ ...result, mode }, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ ...result, mode, blockingTriggers }, null, 2) + '\n');
     return;
   }
   if (format === 'markdown') {
     process.stdout.write(renderPrComment(result, { ledgerUrl: ledgerPath, mode }));
     return;
   }
+  const blockedByTrigger = mode === 'gate' && blockingTriggers.length > 0;
   const header = mode === 'advise'
     ? (result.findings.length === 0 ? 'ADVISORY-CLEAN' : 'ADVISORY')
-    : (result.pass ? 'PASS' : 'BLOCK');
+    : (result.pass && !blockedByTrigger ? 'PASS' : 'BLOCK');
   const blocking = result.findings.filter((f) => f.severity === 'block').length;
   const warnings = result.findings.filter((f) => f.severity === 'warn').length;
   logger.info(`audit ${header} (mode=${mode}): ${blocking} blocking, ${warnings} warning (ledger: ${ledgerPath})`);
   for (const finding of result.findings) {
     logger.info(`  [${finding.severity}] ${finding.category}: ${finding.location.file}:${finding.location.line} — ${finding.message}`);
+  }
+  for (const trigger of blockingTriggers) {
+    const verb = mode === 'gate' ? 'BLOCK' : 'advisory';
+    logger.info(`  [${verb}] ${trigger.kind}: ${trigger.summary} reproduce: ${trigger.reproduce}`);
   }
 }
 
