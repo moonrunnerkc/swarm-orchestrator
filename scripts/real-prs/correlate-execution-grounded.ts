@@ -17,7 +17,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { extractChangedLineRanges, lineInRanges, type ChangedLineRanges } from '../../src/audit/cheat-detector/diff-walker';
+import { extractChangedLineRanges, type ChangedLineRanges } from '../../src/audit/cheat-detector/diff-walker';
+import { expandRanges, findingWithinRanges } from '../../src/audit/execution-grounded/corroborate';
 import type { Finding } from '../../src/audit/types';
 import { getLogger } from '../../src/logger';
 import { repoRoot, regressionDir, differentialDir, repoSlug } from './lib/paths';
@@ -60,18 +61,6 @@ function collectResults(base: string): EgResult[] {
     }
   }
   return out;
-}
-
-function expand(ranges: ChangedLineRanges, by: number): ChangedLineRanges {
-  const out: ChangedLineRanges = {};
-  for (const [file, rs] of Object.entries(ranges)) {
-    out[file] = rs.map((r) => ({ start: Math.max(1, r.start - by), end: r.end + by }));
-  }
-  return out;
-}
-
-function withinProof(finding: Finding, proof: ChangedLineRanges): boolean {
-  return lineInRanges(finding.location.line, proof[finding.location.file]);
 }
 
 /** Other-tool findings (cheat detectors + Semgrep/ESLint) as a per-file set of
@@ -161,7 +150,7 @@ async function main(): Promise<void> {
     const src = sourceByKey.get(`${result.repo}#${result.prNumber}`);
     const auditedFiles = new Set(result.findings.map((f) => f.location.file));
     const proof = src !== undefined ? await proofRanges(octokit, src, auditedFiles, proofCache) : {};
-    const proofExpanded = expand(proof, LINE_TOLERANCE);
+    const proofExpanded = expandRanges(proof, LINE_TOLERANCE);
 
     // Two grades of mutation signal, kept separate for honesty. The strong one
     // (covered-survivor on a discriminating suite) is what no diff-reader and no
@@ -172,8 +161,8 @@ async function main(): Promise<void> {
     const uncoveredSurvivors = result.findings.filter(
       (f) => f.category === 'mutation-survives-on-uncovered-changed-line',
     );
-    const coveredHighConf = coveredSurvivors.filter((f) => withinProof(f, proofExpanded));
-    const uncoveredHighConf = uncoveredSurvivors.filter((f) => withinProof(f, proofExpanded));
+    const coveredHighConf = coveredSurvivors.filter((f) => findingWithinRanges(f, proofExpanded));
+    const uncoveredHighConf = uncoveredSurvivors.filter((f) => findingWithinRanges(f, proofExpanded));
     const reproFails = result.findings.filter((f) => f.category === 'issue-repro-still-fails');
     const uncovered = result.findings.filter((f) => f.category === 'uncovered-changed-line');
 
@@ -181,7 +170,7 @@ async function main(): Promise<void> {
     // U is the strong, unique catches: a covered-survivor or a still-failing
     // repro on a proof line that the cheat detectors / Semgrep / ESLint missed.
     const correlated = [...coveredHighConf, ...reproFails];
-    const uniqueCorrelated = correlated.filter((f) => !withinProof(f, other));
+    const uniqueCorrelated = correlated.filter((f) => !findingWithinRanges(f, other));
 
     if (coveredHighConf.length > 0) M += 1;
     if (reproFails.length > 0) R += 1;
