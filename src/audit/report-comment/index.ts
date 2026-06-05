@@ -13,6 +13,8 @@
 import type { AuditMode, AuditResult, Finding, RuntimeCorroboration, Severity } from '../types';
 import { isExecutionGroundedCategory } from '../types';
 import { formatPrecisionBadge } from './detector-precision';
+import { renderBlockTriggerSection } from './block-trigger-section';
+import type { BlockTrigger } from '../gate/block-trigger-types';
 
 export interface RenderOptions {
   ledgerUrl?: string;
@@ -26,6 +28,12 @@ export interface RenderOptions {
    * reviewer.
    */
   mode?: AuditMode;
+  /**
+   * Block-eligible triggers that fired on this PR (the verifiable-evidence
+   * gate). Rendered with their reproduce command and evidence so a blocked
+   * author can re-run the proof. Absent or empty renders nothing.
+   */
+  blockTriggers?: BlockTrigger[];
 }
 
 const SEVERITY_ORDER: Severity[] = ['block', 'warn', 'info'];
@@ -53,6 +61,10 @@ export function renderPrComment(result: AuditResult, options: RenderOptions = {}
   }
 
   lines.push(renderSummary(result), '');
+
+  for (const line of renderBlockTriggerSection(options.blockTriggers ?? [], mode)) {
+    lines.push(line);
+  }
 
   for (const severity of SEVERITY_ORDER) {
     const bucket = result.findings.filter((f) => f.severity === severity);

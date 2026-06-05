@@ -205,6 +205,44 @@ function testCommand(runner: TestRunner, file: string): { cmd: string; args: str
   }
 }
 
+/** The temp file name a repro is dropped into before it runs. Deterministic
+ *  from the repro kind and language so the executor and the command renderer
+ *  agree on one name. */
+export function reproFileName(repro: Repro): string {
+  const isTest = repro.kind === 'test';
+  const ext = repro.language === 'ts' ? (isTest ? 'test.ts' : 'ts') : isTest ? 'test.js' : 'js';
+  return `__swarm_repro__.${ext}`;
+}
+
+/** The command and args that run a repro against a workspace. Test snippets
+ *  need the detected runner (null when none was detected, which makes a test
+ *  repro unrunnable); scripts run under tsx (TypeScript) or node. The single
+ *  source of truth for both the executor below and `renderReproCommand`. */
+function reproCommandParts(repro: Repro, runner: TestRunner | null): { cmd: string; args: string[] } | null {
+  const fileName = reproFileName(repro);
+  if (repro.kind === 'test') {
+    return runner !== null ? testCommand(runner, fileName) : null;
+  }
+  if (repro.language === 'ts') return { cmd: 'npx', args: ['tsx', fileName] };
+  return { cmd: 'node', args: [fileName] };
+}
+
+/**
+ * Render the command line that runs `repro` against a provisioned workspace as
+ * a single string. This is quoted back as block-trigger evidence so a blocked
+ * author can see exactly what executed against the patched checkout. A test
+ * repro with no detected runner falls back to mocha, the repo's common default.
+ *
+ * @param repro the classified repro to render a command for
+ * @param runner the runner detected in the workspace, or null when none was
+ * @returns a runnable command line, e.g. `node __swarm_repro__.js`
+ */
+export function renderReproCommand(repro: Repro, runner: TestRunner | null): string {
+  const parts = reproCommandParts(repro, repro.kind === 'test' ? (runner ?? 'mocha') : runner);
+  if (parts === null) return `npx mocha ${reproFileName(repro)}`;
+  return `${parts.cmd} ${parts.args.join(' ')}`;
+}
+
 /** A repro that cannot compile, parse, or resolve its imports never executed
  *  the code under test, so its non-zero exit is a harness/extraction artifact,
  *  not the bug reproducing. These signatures (esbuild/tsx transform errors,
@@ -263,28 +301,16 @@ export interface ExecuteReproOptions {
 export function executeIssueRepro(opts: ExecuteReproOptions): ReproExecution {
   const { workspacePath, repro, testRunner } = opts;
   const isTest = repro.kind === 'test';
-  const ext = repro.language === 'ts' ? (isTest ? 'test.ts' : 'ts') : isTest ? 'test.js' : 'js';
-  const fileName = `__swarm_repro__.${ext}`;
+  const fileName = reproFileName(repro);
   const filePath = path.join(workspacePath, fileName);
   const timeoutMs = isTest ? TEST_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
   const started = Date.now();
 
-  let cmd: string;
-  let args: string[];
-  if (isTest) {
-    const tc = testRunner !== null ? testCommand(testRunner, fileName) : null;
-    if (tc === null) {
-      return { exitCode: null, stdout: '', stderr: `no runner for test repro (runner=${testRunner ?? 'none'})`, durationMs: 0, status: 'errored' };
-    }
-    cmd = tc.cmd;
-    args = tc.args;
-  } else if (repro.language === 'ts') {
-    cmd = 'npx';
-    args = ['tsx', fileName];
-  } else {
-    cmd = 'node';
-    args = [fileName];
+  const parts = reproCommandParts(repro, testRunner);
+  if (parts === null) {
+    return { exitCode: null, stdout: '', stderr: `no runner for test repro (runner=${testRunner ?? 'none'})`, durationMs: 0, status: 'errored' };
   }
+  const { cmd, args } = parts;
 
   try {
     fs.writeFileSync(filePath, repro.code, 'utf8');

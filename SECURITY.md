@@ -245,3 +245,30 @@ probabilistic: injected recall proves detection of the classes we inject,
 not of unobserved classes, and the judge-primary false-positive rate is
 measured against presumed-clean PRs. Do not treat a passing audit as proof
 a PR is free of semantic defects.
+
+## What can block a merge
+
+`swarm audit --mode advise` (the default) never blocks. `--mode gate` blocks
+only on verifiable runtime evidence, never on a structural detector's opinion:
+that opinion is scored against an AI-labeled corpus where its precision is 0
+(`benchmarks/real-corpus/promotions.json`), so a detector cannot earn a block.
+
+A block instead comes from one of three self-certifying triggers, each carrying
+the exact command to reproduce it: a fix claim the linked issue's repro still
+contradicts (`claim-falsified`), a structural finding a surviving mutant or
+coverage gap corroborates on the same changed line
+(`corroborated-under-constraint`), or a declared contract obligation that fails
+on the patched workspace (`obligation-failure`). A trigger's trustworthiness is
+calibrated against whether the PRs it fired on were actually reverted or
+hotfixed, not against any label. A trigger may gate only when that
+revert-calibrated Wilson 95% lower bound clears 0.90 with at least 5 confirmed
+reverted true positives; `npm run block-policy:check` enforces this in CI and
+refuses a threshold tuned below the floor.
+
+Current status: no trigger clears the bar
+(`benchmarks/real-corpus/block-eligibility.json`,
+`benchmarks/real-corpus/BLOCK-REPORT.md`), so `block-eligible` is 0 and gate
+mode blocks nothing on its own today. When a trigger clears the bar, the
+eligible set is bumped in source in the same commit and gate mode blocks on it
+with the evidence and reproduce command attached to the PR comment. The bar is
+never lowered to admit a trigger.

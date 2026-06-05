@@ -10,6 +10,9 @@ import {
   extractCodeBlocks,
   extractRepros,
   parseIssueReferences,
+  renderReproCommand,
+  reproFileName,
+  type Repro,
 } from '../../../src/audit/execution-grounded/issue-repro';
 
 const INTEGRATION = process.env.SWARM_EG_INTEGRATION === '1';
@@ -133,5 +136,27 @@ describe('execution-grounded / issue-repro (pure logic)', () => {
         fs.rmSync(ws, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('execution-grounded / issue-repro (command rendering)', () => {
+  const scriptJs: Repro = { kind: 'script', language: 'js', code: 'console.log(1)' };
+  const scriptTs: Repro = { kind: 'script', language: 'ts', code: 'const x: number = 1' };
+  const testJs: Repro = { kind: 'test', language: 'js', code: "it('x', () => {})" };
+
+  it('names the temp file from kind and language', () => {
+    assert.equal(reproFileName(scriptJs), '__swarm_repro__.js');
+    assert.equal(reproFileName(scriptTs), '__swarm_repro__.ts');
+    assert.equal(reproFileName(testJs), '__swarm_repro__.test.js');
+  });
+
+  it('renders node for a JS script and tsx for a TS script', () => {
+    assert.equal(renderReproCommand(scriptJs, null), 'node __swarm_repro__.js');
+    assert.equal(renderReproCommand(scriptTs, null), 'npx tsx __swarm_repro__.ts');
+  });
+
+  it('renders the detected runner for a test repro and falls back to mocha', () => {
+    assert.equal(renderReproCommand(testJs, 'jest'), 'npx jest --runTestsByPath __swarm_repro__.test.js');
+    assert.equal(renderReproCommand(testJs, null), 'npx mocha __swarm_repro__.test.js');
   });
 });
