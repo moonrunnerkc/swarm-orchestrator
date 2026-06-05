@@ -15,6 +15,7 @@ import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges, LineRange } from '../cheat-detector/diff-walker';
 import { lineInRanges } from '../cheat-detector/diff-walker';
+import type { DockerContext } from './docker-runner';
 import { execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
@@ -245,6 +246,10 @@ export interface MutationRunOptions {
    *  install lands in the hoisted node_modules instead of fighting the
    *  workspace symlink layout. The run still uses workspacePath as cwd. */
   installDir?: string;
+  /** When set, run the mutation suite (untrusted PR code) inside this
+   *  container instead of on the host. Stryker is still installed on the host;
+   *  only the `stryker run` execution is containerized. */
+  docker?: DockerContext;
 }
 
 export interface MutationRunOutcome {
@@ -332,6 +337,7 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
       env: execEnv(opts.cacheDir),
       timeoutMs: Math.max(1, deadline - Date.now()),
       maxBuffer: 64 * 1024 * 1024,
+      ...(opts.docker !== undefined ? { docker: opts.docker } : {}),
     });
   } catch (err) {
     // Stryker exits non-zero on a run error, but it may still have written a

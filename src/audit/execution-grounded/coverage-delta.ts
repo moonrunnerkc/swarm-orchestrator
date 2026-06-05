@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
+import type { DockerContext } from './docker-runner';
 import { execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { addDevTools, type PackageManager, type TestRunner } from './sandbox';
 
@@ -159,6 +160,10 @@ export interface CoverageRunOptions {
    *  to workspacePath; pass the workspace root for a monorepo package so the
    *  tool lands in the hoisted node_modules. The run uses workspacePath as cwd. */
   installDir?: string;
+  /** When set, run the coverage suite (untrusted PR code) inside this container
+   *  instead of on the host. The coverage tool is installed on the host; only
+   *  the suite execution is containerized. */
+  docker?: DockerContext;
 }
 
 export interface CoverageRunOutcome {
@@ -223,6 +228,7 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
       env,
       timeoutMs: Math.max(1, deadline - Date.now()),
       maxBuffer: 64 * 1024 * 1024,
+      ...(opts.docker !== undefined ? { docker: opts.docker } : {}),
     });
   } catch (err) {
     // A failing suite still emits coverage; only bail when there is no report.

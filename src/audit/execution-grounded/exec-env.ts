@@ -7,6 +7,7 @@
 
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'child_process';
 import * as path from 'path';
+import { buildDockerRunArgs, type DockerContext } from './docker-runner';
 
 /** Resolve a toolchain binary (node/npm/npx) to the pinned Node bin dir when
  *  SWARM_EG_NODE_BIN is set, otherwise to the bare name (ambient PATH). */
@@ -110,6 +111,23 @@ export function execEnv(cacheDir?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Environment to inject into a docker sandbox container via `-e`. The host
+ *  PATH/HOME/cache are intentionally absent: the image provides its own. Only
+ *  the headless forcing and the operator's explicit passthrough vars cross the
+ *  boundary, so the container's behavior matches the host run without leaking
+ *  host paths or secrets. */
+export function dockerInjectEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of passthroughNames()) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  for (const [key, value] of Object.entries(HEADLESS_ENV)) {
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 /** Fallback per-command wall-clock cap when neither the caller nor the
  *  environment names one: five minutes. */
 export const DEFAULT_COMMAND_TIMEOUT_MS = 5 * 60 * 1000;
@@ -134,6 +152,11 @@ export interface GuardedRunOptions {
    *  megabytes of stdout we do not read, so ignoring it avoids the buffer. */
   captureStdout?: boolean;
   maxBuffer?: number;
+  /** When set, run the command inside this container instead of on the host,
+   *  with `cwd` bind-mounted. The host PATH/HOME are not forwarded; only the
+   *  headless and passthrough env cross into the container (dockerInjectEnv).
+   *  The host-side `env` is then used only to locate the docker CLI. */
+  docker?: DockerContext;
 }
 
 /** Error thrown by execFileGuarded. Mirrors the fields execFileSync attaches to
@@ -171,6 +194,37 @@ function guardedError(
  * flag on any non-zero exit, spawn failure, or timeout.
  */
 export function execFileGuarded(bin: string, args: readonly string[], opts: GuardedRunOptions): string {
+  if (opts.docker !== undefined) {
+    const hasIds = process.platform !== 'win32' && typeof process.getuid === 'function' && typeof process.getgid === 'function';
+    const user = hasIds ? `${process.getuid!()}:${process.getgid!()}` : undefined;
+    const dockerArgs = buildDockerRunArgs({
+      image: opts.docker.image,
+      network: opts.docker.network,
+      checkoutDir: opts.cwd,
+      workdir: opts.cwd,
+      env: dockerInjectEnv(),
+      ...(user !== undefined ? { user } : {}),
+      bin,
+      args,
+    });
+    // The docker CLI runs on the host and only needs PATH to be found. The
+    // sandbox env was injected into the container above, not here.
+    return spawnGuarded('docker', dockerArgs, {
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH ?? '' },
+      ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+      ...(opts.captureStdout !== undefined ? { captureStdout: opts.captureStdout } : {}),
+      ...(opts.maxBuffer !== undefined ? { maxBuffer: opts.maxBuffer } : {}),
+    });
+  }
+  return spawnGuarded(bin, args, opts);
+}
+
+function spawnGuarded(
+  bin: string,
+  args: readonly string[],
+  opts: Omit<GuardedRunOptions, 'docker'>,
+): string {
   const timeout = commandTimeoutMs(opts.timeoutMs);
   const ownGroup = process.platform !== 'win32';
   // `detached` puts the child in its own process group so the on-timeout

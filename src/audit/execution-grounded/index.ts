@@ -12,6 +12,14 @@ import type { Finding } from '../types';
 import { extractChangedLineRanges, isPlausiblyTestReachable, isTestFile } from '../cheat-detector/diff-walker';
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
 import type { ExecutionGroundedConfig } from '../cheat-detector/audit-config';
+import {
+  dockerAvailable,
+  dockerImagePresent,
+  dockerSandboxNetwork,
+  dockerSkipReason,
+  resolveDockerImage,
+  type DockerContext,
+} from './docker-runner';
 import { provisionPRWorkspaces } from './sandbox';
 import { detectTestRunner, type TestRunner } from './sandbox';
 import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
@@ -214,6 +222,27 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     return empty;
   }
 
+  // Optional container isolation for the untrusted-execution checks. When
+  // requested but docker (or the image) is unavailable, skip the whole layer
+  // rather than fall back to the host: an operator who asked for isolation must
+  // not have the PR's code run unsandboxed behind their back.
+  let dockerCtx: DockerContext | undefined;
+  if (input.config.runner === 'docker') {
+    const image = resolveDockerImage();
+    const reason = dockerSkipReason({
+      runnerRequested: true,
+      dockerOk: dockerAvailable(),
+      imageOk: dockerImagePresent(image),
+      image,
+    });
+    if (reason !== null) {
+      skipped.push(reason);
+      return empty;
+    }
+    dockerCtx = { image, network: dockerSandboxNetwork() };
+    log.info(`execution-grounded checks will run in docker (image ${image}, network ${dockerCtx.network})`);
+  }
+
   let workspaces;
   try {
     workspaces = provisionPRWorkspaces({
@@ -272,6 +301,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           installDir,
           ...evDir('coverage'),
           ...cacheArg,
+          ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
         });
         outcome.coverageRuns.push({ packageDir, outcome: cov });
         if (cov.ran) {
@@ -290,6 +320,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           installDir,
           ...evDir('mutation'),
           ...cacheArg,
+          ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
         });
         outcome.mutationRuns.push({ packageDir, outcome: mut });
         if (mut.ran) {
@@ -340,7 +371,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     }
 
     if (input.config.issueRepro && input.prText !== undefined && Date.now() < deadline) {
-      const repros = await runIssueRepros(input, workspaces, deadline);
+      const repros = await runIssueRepros(input, workspaces, deadline, dockerCtx);
       outcome.repros = repros;
       findings.push(...reproFindings(repros));
     }
@@ -370,6 +401,7 @@ async function runIssueRepros(
   input: ExecutionGroundedInput,
   workspaces: ProvisionedPair,
   deadline: number,
+  dockerCtx: DockerContext | undefined,
 ): Promise<ReproComparison[]> {
   const out: ReproComparison[] = [];
   const refs = parseIssueReferences(input.prText ?? '');
@@ -388,8 +420,9 @@ async function runIssueRepros(
     if (issue === null) continue;
     for (const repro of extractRepros(issue.body)) {
       if (Date.now() >= deadline) break;
-      const pre = executeIssueRepro({ workspacePath: workspaces.pre.workspacePath, repro, testRunner: workspaces.pre.testRunner });
-      const post = executeIssueRepro({ workspacePath: workspaces.post.workspacePath, repro, testRunner: workspaces.post.testRunner });
+      const dockerArg = dockerCtx !== undefined ? { docker: dockerCtx } : {};
+      const pre = executeIssueRepro({ workspacePath: workspaces.pre.workspacePath, repro, testRunner: workspaces.pre.testRunner, ...dockerArg });
+      const post = executeIssueRepro({ workspacePath: workspaces.post.workspacePath, repro, testRunner: workspaces.post.testRunner, ...dockerArg });
       out.push({
         issue: { owner, repo, number: ref.number },
         repro,

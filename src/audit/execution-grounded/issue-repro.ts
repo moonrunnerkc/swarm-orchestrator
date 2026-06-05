@@ -13,6 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
+import type { DockerContext } from './docker-runner';
 import { execBin, execEnv, execFileGuarded } from './exec-env';
 import type { TestRunner } from './sandbox';
 
@@ -245,6 +246,9 @@ export interface ExecuteReproOptions {
   workspacePath: string;
   repro: Repro;
   testRunner: TestRunner | null;
+  /** When set, run the repro (untrusted code) inside this container instead of
+   *  on the host, with the workspace bind-mounted. */
+  docker?: DockerContext;
 }
 
 /**
@@ -290,6 +294,7 @@ export function executeIssueRepro(opts: ExecuteReproOptions): ReproExecution {
       timeoutMs,
       captureStdout: true,
       maxBuffer: 16 * 1024 * 1024,
+      ...(opts.docker !== undefined ? { docker: opts.docker } : {}),
     });
     return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - started, status: 'passed' };
   } catch (err) {

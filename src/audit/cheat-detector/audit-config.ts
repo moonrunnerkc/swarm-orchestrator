@@ -58,6 +58,12 @@ export interface ExecutionGroundedConfig {
   issueRepro: boolean;
   coverage: boolean;
   maxWallClockPerPrMs: number;
+  /** Where the untrusted-execution checks (mutation, coverage, issue-repro)
+   *  run. `host` (default) runs them directly with a secret-scrubbed env.
+   *  `docker` runs them inside a container built from the repo Dockerfile,
+   *  with only the checkout bind-mounted and the network locked down. The
+   *  docker path is skipped cleanly when docker is unavailable. */
+  runner: 'host' | 'docker';
 }
 
 export interface AuditConfig {
@@ -79,6 +85,7 @@ const DEFAULT_EXECUTION_GROUNDED: ExecutionGroundedConfig = {
   issueRepro: true,
   coverage: true,
   maxWallClockPerPrMs: 30 * 60 * 1000,
+  runner: 'host',
 };
 
 const EMPTY_CONFIG: AuditConfig = {
@@ -134,6 +141,11 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
     const numMatch = trimmed.match(/^maxWallClockPerPrMs\s*:\s*(\d+)\s*$/);
     if (numMatch && numMatch[1] !== undefined) {
       cfg.maxWallClockPerPrMs = Number.parseInt(numMatch[1], 10);
+      continue;
+    }
+    const runnerMatch = trimmed.match(/^runner\s*:\s*(['"]?)(host|docker)\1\s*$/i);
+    if (runnerMatch && runnerMatch[2] !== undefined) {
+      cfg.runner = runnerMatch[2].toLowerCase() === 'docker' ? 'docker' : 'host';
     }
   }
   return seen ? cfg : DEFAULT_EXECUTION_GROUNDED;

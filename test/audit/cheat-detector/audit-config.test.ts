@@ -160,6 +160,15 @@ describe('cheat-detector / audit-config', () => {
         assert.equal(eg.issueRepro, true);
         assert.equal(eg.coverage, true);
         assert.equal(eg.maxWallClockPerPrMs, 30 * 60 * 1000);
+        assert.equal(eg.runner, 'host');
+      });
+    });
+    it('reads the runner, defaulting to host and accepting docker', () => {
+      withConfig('executionGrounded:\n  enabled: true\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.runner, 'host');
+      });
+      withConfig('executionGrounded:\n  enabled: true\n  runner: docker\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.runner, 'docker');
       });
     });
     it('reads the enabled flag, the per-check flags, and the wall-clock cap', () => {
