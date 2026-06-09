@@ -38,6 +38,28 @@ if [ "$AUDIT_MODE" = "true" ]; then
     cd "$WORKING_DIRECTORY"
   fi
 
+  # The image runs as a non-root user, and GitHub mounts the workspace owned
+  # by the host runner uid, so cwd may not be writable from inside the
+  # container. The audit only reads its inputs; its artifacts (.swarm/ledger,
+  # .swarm/aibom) are cwd-relative. When cwd is unwritable, resolve the diff
+  # path, keep repo-root pointed at the workspace so .swarm/audit-config.yaml
+  # is still honored, and run from a writable scratch dir instead of dying on
+  # the first mkdir.
+  if ! touch .swarm-write-probe 2>/dev/null; then
+    if [ -n "$AUDIT_DIFF_FILE" ] && [ -f "$AUDIT_DIFF_FILE" ]; then
+      AUDIT_DIFF_FILE="$(cd "$(dirname "$AUDIT_DIFF_FILE")" && pwd)/$(basename "$AUDIT_DIFF_FILE")"
+    fi
+    if [ -z "$REPO_ROOT" ]; then
+      REPO_ROOT="$(pwd)"
+    fi
+    SCRATCH="${RUNNER_TEMP:-/tmp}/swarm-audit-scratch"
+    mkdir -p "$SCRATCH"
+    cd "$SCRATCH"
+    echo "swarm-audit: workspace is not writable from the container user; artifacts under ${SCRATCH}/.swarm"
+  else
+    rm -f .swarm-write-probe
+  fi
+
   AUDIT_CMD=("node" "/app/dist/src/cli.js" "audit")
 
   if [ -n "$AUDIT_DIFF_FILE" ]; then
