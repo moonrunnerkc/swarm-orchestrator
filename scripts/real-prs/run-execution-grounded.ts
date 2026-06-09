@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { runExecutionGrounded, type ExecutionGroundedOutcome } from '../../src/audit/execution-grounded';
+import { executionSignalsFromOutcome } from '../../src/audit/execution-grounded/corroborate';
 import { getLogger } from '../../src/logger';
 import { repoRoot, regressionDir, repoSlug } from './lib/paths';
 import { makeOctokit, parseRepo, resolveGithubToken } from './lib/github';
@@ -56,6 +57,10 @@ function envList(name: string): string[] | undefined {
 function summarizeOutcome(outcome: ExecutionGroundedOutcome): unknown {
   return {
     findings: outcome.findings,
+    // Per-line execution signals, persisted because the uncovered-survivor
+    // findings aggregate per file: trigger calibration and corroboration
+    // replay need the exact lines, which finding locations no longer carry.
+    signals: executionSignalsFromOutcome(outcome),
     mutationRuns: outcome.mutationRuns.map((r) => ({
       packageDir: r.packageDir,
       ran: r.outcome.ran,

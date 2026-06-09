@@ -44,6 +44,48 @@ describe('execution-grounded / finding builders', () => {
       const [f] = mutationFindings([noCoverage]);
       assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
     });
+    it('keeps per-line uncovered findings at or below the aggregation threshold', () => {
+      const mutants: MutationResult[] = [9, 11, 14].map((line) => ({
+        file: 'src/a.ts', line, mutator: 'BooleanLiteral', killed: false, status: 'NoCoverage',
+      }));
+      const fs = mutationFindings(mutants);
+      assert.equal(fs.length, 3);
+      assert.ok(fs.every((f) => f.category === 'mutation-survives-on-uncovered-changed-line'));
+    });
+    it('collapses an uncovered-survivor flood into one finding per file', () => {
+      // The flood case: a PR adds an untested region and every line repeats the
+      // same fact. One clean-corpus PR carried 32 such findings in one file.
+      const mutants: MutationResult[] = [3, 4, 5, 6, 9].map((line) => ({
+        file: 'src/region.ts', line, mutator: 'StringLiteral', killed: false, status: 'NoCoverage',
+      }));
+      const fs = mutationFindings(mutants);
+      assert.equal(fs.length, 1);
+      const f = fs[0];
+      assert.equal(f?.category, 'mutation-survives-on-uncovered-changed-line');
+      assert.equal(f?.location.line, 3);
+      assert.equal(f?.location.endLine, 9);
+      assert.ok(f?.message.includes('5 mutations across 5 uncovered changed lines'));
+      assert.ok(f?.evidence.includes('3-6, 9'));
+    });
+    it('aggregates per file, not across files', () => {
+      const mk = (file: string, line: number): MutationResult => ({
+        file, line, mutator: 'BooleanLiteral', killed: false, status: 'NoCoverage',
+      });
+      const fs = mutationFindings([
+        mk('src/a.ts', 1), mk('src/a.ts', 2), mk('src/a.ts', 3), mk('src/a.ts', 4),
+        mk('src/b.ts', 7),
+      ]);
+      assert.equal(fs.filter((f) => f.location.file === 'src/a.ts').length, 1);
+      assert.equal(fs.filter((f) => f.location.file === 'src/b.ts').length, 1);
+      assert.equal(fs.find((f) => f.location.file === 'src/b.ts')?.evidence.includes('BooleanLiteral'), true);
+    });
+    it('never aggregates covered survivors; each is an independent signal', () => {
+      const mutants: MutationResult[] = [1, 2, 3, 4, 5].map((line) => ({
+        file: 'src/hot.ts', line, mutator: 'EqualityOperator', killed: false, status: 'Survived',
+      }));
+      const fs = mutationFindings([...mutants, killed]);
+      assert.equal(fs.filter((f) => f.category === 'mutation-survives-on-changed-line').length, 5);
+    });
     it('trusts Stryker coverage: a Survived mutant stays covered (suite discriminates)', () => {
       // Coverage comes from Stryker's own per-test analysis: a Survived mutant
       // was executed by the suite, so it is covered regardless of what a

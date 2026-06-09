@@ -59,6 +59,10 @@ interface EgRepro {
 interface EgResult {
   findings?: EgFinding[];
   repros?: EgRepro[];
+  /** Persisted by run-execution-grounded since the uncovered-survivor
+   *  findings aggregate per file: the per-line signals can no longer be
+   *  reconstructed from finding locations, so the runner stores them. */
+  signals?: ExecutionSignals;
 }
 
 function readJson<T>(file: string): T | null {
@@ -100,6 +104,10 @@ function loadStructural(file: string): Finding[] {
  *  repro failure. The same mapping executionSignalsFromOutcome makes from a
  *  live run, applied to the recorded findings. */
 function signalsFrom(eg: EgResult | null): ExecutionSignals {
+  // Prefer the signals the runner persisted (exact per-line data even when the
+  // findings aggregate); fall back to finding-derived signals for results
+  // recorded before the runner stored them, whose findings are 1:1 per line.
+  if (eg?.signals !== undefined) return eg.signals;
   const signals: ExecutionSignals = { survivingMutants: [], coverageGaps: [], reproFailures: [] };
   for (const f of eg?.findings ?? []) {
     if (

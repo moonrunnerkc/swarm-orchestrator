@@ -56,6 +56,30 @@ function shortEvidence(text: string, limit = 1200): string {
   return t.length <= limit ? t : `${t.slice(0, limit)}\n... [truncated]`;
 }
 
+/** Above this many distinct uncovered-survivor lines in one file, the per-line
+ *  findings collapse into a single per-file finding. The flood case is a PR
+ *  adding an untested region: every line repeats the same fact ("no test runs
+ *  this region"), and on the clean corpus one such PR carried 32 of the 47
+ *  total findings. Covered survivors are never aggregated; each one is an
+ *  independent under-constraint fact the corroboration layer keys on. */
+const UNCOVERED_AGGREGATION_THRESHOLD = 3;
+
+function formatLineList(lines: number[]): string {
+  const sorted = [...new Set(lines)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0] as number;
+  let prev = start;
+  for (const n of sorted.slice(1).concat(NaN)) {
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    parts.push(start === prev ? String(start) : `${start}-${prev}`);
+    start = prev = n;
+  }
+  return parts.join(', ');
+}
+
 /**
  * Build mutation findings from surviving mutants. A survivor on a line a test
  * executes (covered) is `mutation-survives-on-changed-line`; one on a line no
@@ -63,6 +87,9 @@ function shortEvidence(text: string, limit = 1200): string {
  * `mutation-survives-on-uncovered-changed-line`. The covered-survivor category
  * is only emitted when the run killed at least one mutant: a zero-kill run is
  * non-discriminating, so its covered survivors are an artifact, not signal.
+ * Uncovered survivors aggregate to one finding per file past
+ * `UNCOVERED_AGGREGATION_THRESHOLD` distinct lines; the corroboration layer is
+ * unaffected because it reads the raw mutation results, not these findings.
  */
 export function mutationFindings(results: MutationResult[]): Finding[] {
   const findings: Finding[] = [];
@@ -80,25 +107,51 @@ export function mutationFindings(results: MutationResult[]): Finding[] {
   // kill before emitting the covered-survivor category; genuinely uncovered
   // lines (NoCoverage) are a coverage fact and stand regardless.
   const killedAny = results.some((m) => m.killed);
+  const uncoveredByFile = new Map<string, MutationResult[]>();
   for (const m of results) {
     if (m.killed) continue;
     if (m.status !== 'Survived' && m.status !== 'NoCoverage') continue;
-    const uncovered = m.status === 'NoCoverage';
-    if (!uncovered && !killedAny) continue;
-    const category = uncovered
-      ? 'mutation-survives-on-uncovered-changed-line'
-      : 'mutation-survives-on-changed-line';
-    const message = uncovered
-      ? `A \`${m.mutator}\` mutation on this changed line survived because no test executes the line. ` +
-        `The suite cannot catch a regression here.`
-      : `A \`${m.mutator}\` mutation on this changed line survived: a test runs the line but does not ` +
-        `constrain its behavior, so a regression on it would pass the suite.`;
+    if (m.status === 'NoCoverage') {
+      const list = uncoveredByFile.get(m.file) ?? [];
+      list.push(m);
+      uncoveredByFile.set(m.file, list);
+      continue;
+    }
+    if (!killedAny) continue;
     findings.push({
-      category,
+      category: 'mutation-survives-on-changed-line',
       severity: 'warn',
-      message,
+      message:
+        `A \`${m.mutator}\` mutation on this changed line survived: a test runs the line but does not ` +
+        `constrain its behavior, so a regression on it would pass the suite.`,
       location: { file: m.file, line: m.line },
       evidence: `mutation ${m.mutator} @ ${m.file}:${m.line} -> ${m.status}`,
+    });
+  }
+  for (const [file, mutants] of uncoveredByFile) {
+    const lines = [...new Set(mutants.map((m) => m.line))].sort((a, b) => a - b);
+    if (lines.length <= UNCOVERED_AGGREGATION_THRESHOLD) {
+      for (const m of mutants) {
+        findings.push({
+          category: 'mutation-survives-on-uncovered-changed-line',
+          severity: 'warn',
+          message:
+            `A \`${m.mutator}\` mutation on this changed line survived because no test executes the line. ` +
+            `The suite cannot catch a regression here.`,
+          location: { file: m.file, line: m.line },
+          evidence: `mutation ${m.mutator} @ ${m.file}:${m.line} -> ${m.status}`,
+        });
+      }
+      continue;
+    }
+    findings.push({
+      category: 'mutation-survives-on-uncovered-changed-line',
+      severity: 'warn',
+      message:
+        `${mutants.length} mutations across ${lines.length} uncovered changed lines in this file ` +
+        `survived because no test executes them. The suite cannot catch a regression in this region.`,
+      location: { file, line: lines[0] as number, endLine: lines[lines.length - 1] as number },
+      evidence: `uncovered survivor lines in ${file}: ${formatLineList(lines)}`,
     });
   }
   return findings;
