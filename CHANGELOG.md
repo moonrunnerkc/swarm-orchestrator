@@ -4,6 +4,60 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [11.2.0] - 2026-06-09
+
+### Distribution that works, quieter execution-grounded findings, and a field-incidence corpus
+
+Three verifiable distribution defects fixed: the GitHub Action rebuilt its
+Docker image from source on every PR audit even though CD already pushes
+tagged images to GHCR (it now pulls `ghcr.io/moonrunnerkc/swarm-orchestrator:11`);
+the npm registry sat four majors stale at 7.0.0-alpha.0 with no publish
+automation (CD now publishes on `v*` tags when `NPM_TOKEN` is configured,
+tag-to-version checked, `--provenance`); and the README pointed at a
+`block-policy:check` CI gate no workflow ran (now wired beside
+`promotions:check`). The Docker action also survives GitHub's unwritable
+workspace mount: as a non-root image user it died on `mkdir .swarm/ledger`
+before auditing anything; it now probes cwd writability and falls back to
+`RUNNER_TEMP` while keeping `repo-root` on the workspace so
+`.swarm/audit-config.yaml` still applies.
+
+#### Added
+
+- **Agent-incidence pipeline** (`npm run agent-incidence:full`): a global
+  GitHub search per vendor finds merged PRs, the shipped `pr-source`
+  fingerprinter confirms each from real PR metadata (search over-matches are
+  dropped and counted), the default audit configuration scores them, and two
+  independent arbiter model families classify every finding with
+  disagreements excluded. The committed pilot corpus is 60 merged
+  agent-attributed PRs across six vendors (228 findings,
+  `benchmarks/real-prs/agent-corpus/`); the report renders a Wilson 95%
+  interval once the arbiter stage runs, and an explicit
+  "classification pending" state before that, never a fake 0%.
+- **Per-repo mutation recipes**
+  (`benchmarks/regression-corpus/mutation-recipes/<slug>.json`): env and
+  Stryker-config adjustments for corpus repos whose suite cannot start under
+  the generic sandbox, folded into the eg-cache key. A recipe cannot change
+  what is mutated, only whether the suite starts. First recipe: nx with its
+  daemon off (the recorded daemon-hang failure).
+- **Persisted execution signals**: every execution-grounded `result.json`
+  now carries the per-line mutant/coverage/repro signals, so trigger
+  calibration and corroboration replay no longer reconstruct them from
+  finding locations.
+
+#### Changed
+
+- **Uncovered-survivor floods aggregate per file.** A PR adding an untested
+  region produced one finding per line (tldraw#8070: 32 findings in one
+  file). Past 3 distinct lines they collapse into one per-file finding with
+  the line list as evidence; covered survivors, the corroboration-bearing
+  signal, stay per-line. Replayed on the committed clean corpus, F_clean
+  drops from 3.357 to 0.929 findings per evaluated PR
+  (`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`).
+- **Ollama arbiter robustness**: the local-arbiter HTTP path no longer dies
+  on generations longer than fetch's fixed 300s header timeout, and the
+  agent-corpus arbiter flushes labels every 10 classifications so an
+  hours-long run is resumable.
+
 ## [11.1.0] - 2026-06-02
 
 ### Execution-grounded checks: run the change instead of reading it
