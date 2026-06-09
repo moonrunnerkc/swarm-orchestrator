@@ -6,6 +6,7 @@
 // arbiter-labeled.
 
 import * as fs from 'fs';
+import * as http from 'http';
 import * as path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { SwarmError } from '../../../src/errors';
@@ -228,10 +229,13 @@ class OllamaArbiter implements Arbiter {
   async classify(input: ArbiterInput): Promise<ArbiterOutput> {
     this.ledger.guardBeforeCall();
     const user = fillPrompt(this.template, input);
-    const res = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
+    // node:http, not fetch: with stream:false Ollama sends headers only when
+    // generation completes, and a long prompt on a partially-offloaded model
+    // can exceed fetch's fixed 300s header timeout ("fetch failed" with no
+    // useful cause). A request with an explicit generous timeout is the
+    // reliable path for a local server.
+    const body = await this.post(
+      JSON.stringify({
         model: this.model,
         think: false,
         format: 'json',
@@ -239,18 +243,45 @@ class OllamaArbiter implements Arbiter {
         options: { temperature: 0, num_predict: 512 },
         messages: [{ role: 'user', content: user }],
       }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new SwarmError(
-        `ollama arbiter request failed (${res.status}): ${body.slice(0, 200)}`,
-        'REAL_PRS_OLLAMA_ARBITER_FAILED',
-        { remediation: 'Confirm `ollama serve` is running and the model is pulled.' },
-      );
-    }
-    const json = (await res.json()) as OllamaChatResponse;
+    );
+    const json = JSON.parse(body) as OllamaChatResponse;
     this.ledger.record(this.modelId, 0, 0);
     return parseReply((json.message?.content ?? '').trim());
+  }
+
+  private post(payload: string, timeoutMs = 30 * 60 * 1000): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const req = http.request(
+        `${this.baseUrl}/api/chat`,
+        { method: 'POST', headers: { 'content-type': 'application/json' }, timeout: timeoutMs },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const text = Buffer.concat(chunks).toString('utf8');
+            if ((res.statusCode ?? 500) >= 300) {
+              reject(
+                new SwarmError(
+                  `ollama arbiter request failed (${res.statusCode}): ${text.slice(0, 200)}`,
+                  'REAL_PRS_OLLAMA_ARBITER_FAILED',
+                  { remediation: 'Confirm `ollama serve` is running and the model is pulled.' },
+                ),
+              );
+            } else resolve(text);
+          });
+        },
+      );
+      req.on('timeout', () => req.destroy(new Error(`ollama request exceeded ${timeoutMs}ms`)));
+      req.on('error', (err) =>
+        reject(
+          new SwarmError(`ollama arbiter request failed: ${err.message}`, 'REAL_PRS_OLLAMA_ARBITER_FAILED', {
+            remediation: 'Confirm `ollama serve` is running and the model is pulled.',
+            cause: err,
+          }),
+        ),
+      );
+      req.end(payload);
+    });
   }
 }
 

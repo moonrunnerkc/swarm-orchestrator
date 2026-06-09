@@ -164,7 +164,13 @@ async function main(): Promise<void> {
         verdict: isAgreed ? p.verdict : null,
       });
       classified += 1;
-      if (classified % 10 === 0) log.info(`dual-classified ${classified}; agreed ${agreed}; paid spend $${ledger.spentUsd().toFixed(2)}`);
+      if (classified % 10 === 0) {
+        log.info(`dual-classified ${classified}; agreed ${agreed}; paid spend $${ledger.spentUsd().toFixed(2)}`);
+        // Incremental save: local-model runs take hours and a crash must not
+        // lose paid-for or computed verdicts; the run is resumable from here.
+        fs.mkdirSync(agentCorpusDir(), { recursive: true });
+        fs.writeFileSync(agentLabelsFile(), JSON.stringify([...labels.values()], null, 2) + '\n');
+      }
     }
   }
 
