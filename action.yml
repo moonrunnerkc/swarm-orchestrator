@@ -158,4 +158,9 @@ outputs:
 
 runs:
   using: 'docker'
-  image: 'Dockerfile'
+  # Prebuilt image published by .github/workflows/cd.yml on every v11.x tag.
+  # Pulling beats rebuilding the TypeScript toolchain inside Docker on every
+  # PR audit (minutes to seconds for consumers). The :11 tag tracks the
+  # latest 11.x release; pin a full version or digest for stricter
+  # supply-chain guarantees.
+  image: 'docker://ghcr.io/moonrunnerkc/swarm-orchestrator:11'
