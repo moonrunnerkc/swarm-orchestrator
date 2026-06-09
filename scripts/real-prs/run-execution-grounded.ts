@@ -48,6 +48,15 @@ function loadViability(): Viability {
   return JSON.parse(fs.readFileSync(f, 'utf8')) as Viability;
 }
 
+/** Load the per-repo mutation recipe, if one is committed. Recipes live
+ *  beside the corpus because they encode corpus-repo quirks (the nx daemon
+ *  hang, a bespoke vitest config), not product behavior. */
+function loadRecipe(slug: string): import('../../src/audit/execution-grounded/mutation-check').MutationRecipe | undefined {
+  const f = path.join(regressionDir(), 'mutation-recipes', `${slug}.json`);
+  if (!fs.existsSync(f)) return undefined;
+  return JSON.parse(fs.readFileSync(f, 'utf8')) as import('../../src/audit/execution-grounded/mutation-check').MutationRecipe;
+}
+
 function envList(name: string): string[] | undefined {
   const v = process.env[name];
   if (v === undefined || v.trim().length === 0) return undefined;
@@ -179,6 +188,8 @@ async function main(): Promise<void> {
       fs.mkdirSync(outDir, { recursive: true });
       const prText = await fetchPrText(octokit, pr.repo, pr.prNumber, path.join(outDir, 'pr-body.txt'), pr.bodyExcerpt ?? '');
 
+      const recipe = loadRecipe(slug);
+      if (recipe !== undefined) log.info(`mutation recipe applied for ${slug}`);
       log.info(`run: ${corpus.name} ${pr.repo}#${pr.prNumber}`);
       const started = Date.now();
       let outcome: ExecutionGroundedOutcome;
@@ -202,6 +213,7 @@ async function main(): Promise<void> {
           cacheDir,
           evidenceDir: outDir,
           issueCacheDir: path.join(regressionDir(), 'issue-cache'),
+          ...(recipe !== undefined ? { mutationRecipe: recipe } : {}),
           ...(token !== null ? { githubToken: token } : {}),
           installTimeoutMs,
           runBuild: true,

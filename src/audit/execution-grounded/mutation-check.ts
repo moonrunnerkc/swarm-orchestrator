@@ -254,6 +254,20 @@ export interface MutationRunOptions {
   /** When set (and SWARM_EG_NO_CACHE is not), look up and store the run by its
    *  content hash, so an identical re-audit skips the install and the spawn. */
   cache?: EgCacheContext;
+  /** Per-repo adjustments for repos whose suite cannot run under the generic
+   *  sandbox (the corpus harness loads these from
+   *  benchmarks/regression-corpus/mutation-recipes/<slug>.json). */
+  recipe?: MutationRecipe;
+}
+
+/** A per-repo recipe for getting Stryker's initial test run green where the
+ *  generic config fails: extra env (NX_DAEMON=false for the nx daemon hang)
+ *  and config keys merged over the generated Stryker config (a vitest
+ *  configFile, a longer timeoutMS). A recipe never changes what is mutated,
+ *  only how the suite is executed, so it cannot manufacture signal. */
+export interface MutationRecipe {
+  env?: Record<string, string>;
+  strykerConfig?: Record<string, unknown>;
 }
 
 export interface MutationRunOutcome {
@@ -317,7 +331,9 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
         repo: opts.cache!.repo,
         headSha: opts.cache!.headSha,
         changedLines,
-        toolchain: `${opts.packageManager ?? 'npm'}/${runner}`,
+        toolchain:
+          `${opts.packageManager ?? 'npm'}/${runner}` +
+          (opts.recipe !== undefined ? `+recipe:${JSON.stringify(opts.recipe)}` : ''),
         check: 'mutation',
       })
     : undefined;
@@ -348,7 +364,10 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
     };
   }
 
-  const config = generateStrykerConfig({ testRunner: runner, mutate: scope.patterns });
+  const config = {
+    ...generateStrykerConfig({ testRunner: runner, mutate: scope.patterns }),
+    ...(opts.recipe?.strykerConfig ?? {}),
+  };
   const configPath = path.join(workspacePath, 'stryker.swarm.conf.json');
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 
@@ -358,7 +377,7 @@ export function runMutationCheck(opts: MutationRunOptions): MutationRunOutcome {
     // node from PATH, which execEnv has pinned to the chosen Node.
     execFileGuarded(path.join(installDir, 'node_modules', '.bin', 'stryker'), ['run', configPath], {
       cwd: workspacePath,
-      env: execEnv(opts.cacheDir),
+      env: { ...execEnv(opts.cacheDir), ...(opts.recipe?.env ?? {}) },
       timeoutMs: Math.max(1, deadline - Date.now()),
       maxBuffer: 64 * 1024 * 1024,
       ...(opts.docker !== undefined ? { docker: opts.docker } : {}),

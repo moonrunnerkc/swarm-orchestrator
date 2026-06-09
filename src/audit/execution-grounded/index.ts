@@ -24,7 +24,12 @@ import type { EgCacheContext } from './eg-cache';
 import { provisionPRWorkspaces } from './sandbox';
 import { detectTestRunner, type TestRunner } from './sandbox';
 import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
-import { runMutationCheck, type MutationResult, type MutationRunOutcome } from './mutation-check';
+import {
+  runMutationCheck,
+  type MutationRecipe,
+  type MutationResult,
+  type MutationRunOutcome,
+} from './mutation-check';
 import {
   computeCoverageDelta,
   type CoverageDelta,
@@ -239,6 +244,9 @@ export interface ExecutionGroundedInput {
   /** Directory for the content-addressed mutation/coverage cache. Defaults to
    *  `<cwd>/.swarm/eg-cache`. The cache itself is opt-out via SWARM_EG_NO_CACHE. */
   egCacheDir?: string;
+  /** Per-repo mutation recipe (env and Stryker-config adjustments) for repos
+   *  whose suite cannot start under the generic sandbox. */
+  mutationRecipe?: MutationRecipe;
 }
 
 export interface PackagedMutationRun {
@@ -385,6 +393,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
           packageManager: pm,
           timeoutMs: Math.max(1, deadline - Date.now()),
           installDir,
+          ...(input.mutationRecipe !== undefined ? { recipe: input.mutationRecipe } : {}),
           ...evDir('mutation'),
           ...cacheArg,
           ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
