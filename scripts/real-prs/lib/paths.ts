@@ -83,6 +83,32 @@ export function dualArbiterLabelsFile(root = repoRoot()): string {
   return path.join(realPrsDir(root), 'arbiter-labels-dual.json');
 }
 
+// --- Agent corpus (PRs the fingerprinter attributes to an AI agent) -------
+
+export function agentCorpusDir(root = repoRoot()): string {
+  return path.join(realPrsDir(root), 'agent-corpus');
+}
+
+export function agentSourcesFile(root = repoRoot()): string {
+  return path.join(agentCorpusDir(root), 'sources.json');
+}
+
+export function agentDiffsDir(root = repoRoot()): string {
+  return path.join(agentCorpusDir(root), 'diffs');
+}
+
+export function agentAuditResultsDir(root = repoRoot()): string {
+  return path.join(agentCorpusDir(root), 'audit-results');
+}
+
+export function agentLabelsFile(root = repoRoot()): string {
+  return path.join(agentCorpusDir(root), 'arbiter-labels-dual.json');
+}
+
+export function agentIncidenceReportFile(root = repoRoot()): string {
+  return path.join(agentCorpusDir(root), 'INCIDENCE-REPORT.md');
+}
+
 // --- Regression corpus (retrospectively-bad PRs) --------------------------
 
 export function regressionDir(root = repoRoot()): string {

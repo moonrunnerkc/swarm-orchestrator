@@ -302,6 +302,42 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** One PR returned by a global (cross-repo) search. The repo slug is
+ *  parsed from the result URL because the search API does not return a
+ *  repository object on issue items. */
+export interface GlobalSearchPr {
+  repo: string;
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+}
+
+/**
+ * Run a global `is:pr` search and return up to `cap` results across all
+ * repos, newest-first. Used by the agent-corpus fetcher, whose selection
+ * is by author/marker rather than per-repo listing. Retries on
+ * rate-limit like the regression miner.
+ */
+export async function searchMergedPrsGlobal(
+  octokit: Octokit,
+  q: string,
+  cap: number,
+): Promise<GlobalSearchPr[]> {
+  const out: GlobalSearchPr[] = [];
+  for (let page = 1; out.length < cap && page <= 10; page += 1) {
+    const items = await searchIssuesWithRetry(octokit, q, page);
+    if (items.length === 0) break;
+    for (const item of items) {
+      const m = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+      if (m === null) continue;
+      out.push({ repo: m[1] as string, number: item.number, title: item.title, body: item.body, url: item.html_url });
+      if (out.length >= cap) break;
+    }
+  }
+  return out;
+}
+
 function monthsAgoIso(months: number): string {
   const now = new Date();
   const then = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
