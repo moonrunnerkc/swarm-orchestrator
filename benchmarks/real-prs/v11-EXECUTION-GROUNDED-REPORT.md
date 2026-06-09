@@ -153,6 +153,27 @@ These set the F_clean burden. A consumer who only wants the strong signal can
 filter to `mutation-survives-on-changed-line` on a discriminating run, which
 drops the uncovered noise.
 
+### Update (v11.2): uncovered-survivor floods aggregate per file
+
+Both worst cases above are one flood each: every uncovered survivor in one
+file repeating "no test runs this region" line by line. Since v11.2,
+`mutationFindings` collapses more than 3 distinct uncovered-survivor lines in
+a file into one per-file finding carrying the line list as evidence
+(`src/audit/execution-grounded/index.ts`); covered survivors, the
+corroboration-bearing signal, are never aggregated, and the per-line execution
+signals are persisted in each `result.json` so trigger calibration and
+corroboration replay keep exact line data. Replaying the committed clean-corpus
+runs through the new builder:
+
+| clean PR | findings before | findings after |
+|---|---|---|
+| tldraw/tldraw#8070 | 38 | 7 (6 covered-survivor + 1 per-file uncovered) |
+| prisma/prisma#29512 | 9 | 6 (5 covered-survivor + 1 per-file uncovered) |
+
+F_clean = 13 / 14 = **0.929 per evaluated PR** (was 3.357), with zero
+information loss on the strong signal. The M=1 catch is unaffected: its
+covered survivors stay per-line.
+
 ## Repo viability table
 
 Derived from `benchmarks/regression-corpus/stryker-viability.json` (any-check

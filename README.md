@@ -180,8 +180,10 @@ proof. It surfaces under-constrained changed lines that no diff-only tool can
 see (proof anchor `trpc/trpc#6098`: 10 mutants surviving on covered lines plus
 6 on uncovered lines, 8 of them on the lines the hotfix later changed), where
 the repo's test suite discriminates in a generic sandbox. This is a modest,
-honest result (1 proof-correlated catch in the sampled corpus, against a 3.357
-advisory-findings-per-clean-PR burden), measured rather than asserted; the
+honest result (1 proof-correlated catch in the sampled corpus, against a 0.929
+advisory-findings-per-clean-PR burden since v11.2 aggregated the
+uncovered-survivor floods per file; 3.357 before), measured rather than
+asserted; the
 per-repo viability and the headline numbers are in
 [`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`](benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md).
 
