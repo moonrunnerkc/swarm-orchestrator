@@ -91,6 +91,14 @@ jobs:
       # the blocking gate without the measured precision to back it.
       run: npm run promotions:check
 
+    - name: Check block-trigger eligibility policy is fresh
+      if: matrix.node-version == 22
+      # Same discipline for the verifiable-evidence gate: the committed
+      # block-eligibility policy must equal a fresh recompute from the
+      # trigger calibration, and the threshold cannot be tuned below the
+      # floor. README points at this check; keep it wired.
+      run: npm run block-policy:check
+
     - name: Publish test summary
       if: always() && matrix.node-version == 22
       run: |
